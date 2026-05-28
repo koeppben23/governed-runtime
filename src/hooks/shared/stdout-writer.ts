@@ -88,10 +88,7 @@ function writeStdout(payload: string): Promise<void> {
 
     try {
       process.stdout.once('error', onError);
-      const accepted = process.stdout.write(payload, (err?: Error | null) => finish(err));
-      if (!accepted) {
-        finish(new Error('stdout write returned false'));
-      }
+      process.stdout.write(payload, (err?: Error | null) => finish(err));
     } catch (err) {
       finish(err instanceof Error ? err : new Error(String(err)));
     }

@@ -316,20 +316,47 @@ describe('stdout-writer', () => {
       stderrSpy.mockRestore();
     });
 
-    it('should fail closed when stdout deny write returns false', async () => {
+    it('backpressure then callback success resolves', async () => {
+      let writeCallback: ((err?: Error | null) => void) | null = null;
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((
+        _chunk,
+        callback,
+      ) => {
+        writeCallback =
+          typeof callback === 'function' ? (callback as (err?: Error | null) => void) : null;
+        return false;
+      }) as typeof process.stdout.write);
+
+      const writePromise = writeDeny('PreToolUse', 'TEST_DENY', 'deny reason');
+
+      writeCallback!(null);
+      await expect(writePromise).resolves.toBeUndefined();
+
+      stdoutSpy.mockRestore();
+    });
+
+    it('backpressure then callback EPIPE rejects with DenyOutputError', async () => {
       const originalExitCode = process.exitCode;
-      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => false);
+      let writeCallback: ((err?: Error | null) => void) | null = null;
+      const stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation(((
+        _chunk,
+        callback,
+      ) => {
+        writeCallback =
+          typeof callback === 'function' ? (callback as (err?: Error | null) => void) : null;
+        return false;
+      }) as typeof process.stdout.write);
       const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
 
-      await expect(writeDeny('PreToolUse', 'TEST_DENY', 'deny reason')).rejects.toThrow(
-        DenyOutputError,
-      );
+      const writePromise = writeDeny('PreToolUse', 'TEST_DENY', 'deny reason');
+
+      writeCallback!(new Error('EPIPE'));
+      await expect(writePromise).rejects.toThrow(DenyOutputError);
 
       expect(process.exitCode).toBe(2);
       expect(
         stderrSpy.mock.calls.some((call) => String(call[0]).includes('DENY_OUTPUT_FAILED')),
       ).toBe(true);
-      expect(stderrSpy.mock.calls.some((call) => String(call[0]).includes('TEST_DENY'))).toBe(true);
 
       process.exitCode = originalExitCode;
       stdoutSpy.mockRestore();

@@ -126,6 +126,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Issue #361:** `writeStdout` in `stdout-writer.ts` no longer treats `write()` returning `false` (backpressure) as a fatal error. The callback is now the sole delivery authority for write completion.
+
 - **Issue #354:** Restore the PreToolUse stdout guard before propagating fatal
   errors so the outer fail-closed handler can always deliver `HOOK_FATAL_ERROR`
   DENY JSON on real stdout instead of silently producing empty stdout/ALLOW.
