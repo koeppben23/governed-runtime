@@ -128,6 +128,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Issue #361:** `writeStdout` in `stdout-writer.ts` no longer treats `write()` returning `false` (backpressure) as a fatal error. The callback is now the sole delivery authority for write completion.
 
+- **Issue #331:** Corrected `docs/platform-limitations.md` — Gap 2 now states default Claude Code hooks are `type: command` (not HTTP), and HTTP hooks require external server management; Gap 3 audit claim corrected to specify PostToolUse persists tool-call events and PreToolUse decisions are logged to stderr only; all line references and timeout unit annotations updated to match current codebase.
+
 - **Issue #354:** Restore the PreToolUse stdout guard before propagating fatal
   errors so the outer fail-closed handler can always deliver `HOOK_FATAL_ERROR`
   DENY JSON on real stdout instead of silently producing empty stdout/ALLOW.
