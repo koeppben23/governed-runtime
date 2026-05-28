@@ -131,7 +131,7 @@ export function extractPathsFromBashCommand(cmd: string): string[] {
   }
 
   // 5. sed -i: sed -i[suffix] <expr> <file...>
-  const sedPattern = /\bsed\s+(?:-[^i\s]*)?-i[^\s]*\s+(?:'[^']*'|"[^"]*"|[^\s]+)\s+([^\s;&|]+)/g;
+  const sedPattern = /\bsed\s+(?:-[^i\s]*)?-i[^\s]*\s+(?:'[^']*'|"[^"]*"|[^\s]+)\s+([^\n;&|]+)/g;
   while ((match = sedPattern.exec(cmd)) !== null) {
     const argStr = (match[1] ?? '').trim();
     for (const arg of splitUnquotedArgs(argStr)) {
@@ -141,7 +141,7 @@ export function extractPathsFromBashCommand(cmd: string): string[] {
 
   // 6. chmod: chmod <mode> <file...>
   const chmodPattern =
-    /\bchmod\s+(?:-[a-zA-Z]+\s+)*(?:[0-7]{3,4}|[ugoa][+\-=/][rwxXst]+)\s+([^\s;&|]+)/g;
+    /\bchmod\s+(?:-[Rfvch]\s+)*(?:[0-7]{3,4}|[ugoa]?[+\-=/][rwxXst]+)\s+([^\n;&|]+)/g;
   while ((match = chmodPattern.exec(cmd)) !== null) {
     const argStr = (match[1] ?? '').trim();
     for (const arg of splitUnquotedArgs(argStr)) {
