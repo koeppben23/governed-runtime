@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Issue #361:** `writeStdout` in `stdout-writer.ts` no longer treats `write()` returning `false` (backpressure) as a fatal error. The callback is now the sole delivery authority for write completion.
+
 ### Changed
 
 - **Issue #310:** Hardened `/review url=...` HTTPS content loading with fail-closed
