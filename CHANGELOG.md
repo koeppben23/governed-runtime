@@ -146,6 +146,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   extract multiple files instead of only the first; add support for chmod
   `+x`/`-w` shorthand without `[ugoa]` mode prefix.
 
+- **Issue #358:** Fix `extractPathsFromPatch` to detect binary file diffs by
+  matching `Binary files a/<path> and b/<path> differ` lines and `diff --git`
+  header lines, which git uses instead of `---`/`+++` for binary content.
+
 - **Feat #321:** Add `flowguard inspect` CLI command for read-only session
   compliance reporting. Lists all sessions in the workspace with event count,
   phase progression, and age; generates per-session compliance reports
