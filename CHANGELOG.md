@@ -130,6 +130,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   errors so the outer fail-closed handler can always deliver `HOOK_FATAL_ERROR`
   DENY JSON on real stdout instead of silently producing empty stdout/ALLOW.
 
+- **Issue #355:** Fix fail-open EPIPE in stdout-guard `writeResponse` by
+  writing the DENY payload through the captured `originalWrite` and restoring
+  the guard only after the write callback confirms delivery or an error. The
+  callback is the sole resolution authority; backpressure (`write()` returning
+  `false`) defers to the callback without resolving on `drain`. Synchronous
+  throw during `write()` also restores the guard before rejecting.
+
 - **Feat #321:** Add `flowguard inspect` CLI command for read-only session
   compliance reporting. Lists all sessions in the workspace with event count,
   phase progression, and age; generates per-session compliance reports
