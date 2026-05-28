@@ -438,10 +438,7 @@ function buildProfileResolution(
     },
     secondary: candidates.secondary,
     rejected: candidates.rejected,
-    activeChecks: [
-      ...(config.profile.activeChecks ??
-        selectedProfile?.activeChecks ?? ['test_quality', 'rollback_safety']),
-    ],
+    activeChecks: [...(config.profile.activeChecks ?? selectedProfile?.activeChecks ?? [])],
   };
 }
 

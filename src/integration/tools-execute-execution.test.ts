@@ -36,7 +36,7 @@ import {
   plan,
   decision,
   implement,
-  validate,
+  run_check,
   review,
   abort_session,
   archive,
@@ -142,11 +142,31 @@ vi.mock('../adapters/persistence', async (importOriginal) => {
   };
 });
 
+// ─── Verification Executor Mock ─────────────────────────────────────────────
+// Mock executeCheck to avoid real subprocess execution.
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi
+    .fn()
+    .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => ({
+      kind: input.kind,
+      command: input.command,
+      exitCode: 0,
+      passed: true,
+      executionMs: 100,
+      outputDigest: 'a'.repeat(64),
+      stdout: 'OK',
+      stderr: '',
+      timedOut: false,
+      startedAt: new Date().toISOString(),
+    })),
+}));
+
 // Lazy import for per-test overrides
 const gitMock = await import('../adapters/git.js');
 const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
 const persistenceMock = await import('../adapters/persistence.js');
+const executorMock = await import('../verification/executor.js');
 
 // ─── Capability Gates ────────────────────────────────────────────────────────
 
@@ -250,16 +270,14 @@ describe('implement', () => {
     const planReviewFindings = await fulfillReview('plan', 0, 'approve');
     await plan.execute({ reviewVerdict: 'approve', reviewFindings: planReviewFindings }, ctx);
     // Solo: PLAN_REVIEW auto-approves → VALIDATION
-    // Submit validation results
-    await validate.execute(
-      {
-        results: [
-          { checkId: 'test_quality', passed: true, detail: 'OK' },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-        ],
-      },
-      ctx,
-    );
+    // Discovery detects TypeScript → activeChecks=['typecheck'] → run check to advance
+    const sessDir = await currentSessionDir();
+    const state = await readState(sessDir);
+    if (state && state.activeChecks.length > 0) {
+      for (const kind of state.activeChecks) {
+        await run_check.execute({ kind }, ctx);
+      }
+    }
   }
 
   describe('HAPPY', () => {
@@ -828,45 +846,38 @@ describe('implement', () => {
 });
 
 // =============================================================================
-// Tool 7: validate
+// Tool 7: run_check
 // =============================================================================
 
-describe('validate', () => {
+describe('run_check', () => {
   /** Helper: reach VALIDATION phase. */
   async function reachValidation(): Promise<void> {
     await hydrateAndTicket();
     await plan.execute({ planText: '## Plan' }, ctx);
     const reviewFindings = await fulfillReview('plan', 0, 'approve');
     await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
-    // Solo: auto-advances to VALIDATION
+    // Solo: auto-advances PLAN_REVIEW → VALIDATION
+    // (Discovery detects TypeScript → activeChecks=['typecheck'])
   }
 
   describe('HAPPY', () => {
-    it('ALL_PASSED advances to IMPLEMENTATION', async () => {
+    it('passing check advances to IMPLEMENTATION', async () => {
       await reachValidation();
-      const raw = await validate.execute(
-        {
-          results: [
-            { checkId: 'test_quality', passed: true, detail: 'OK' },
-            { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-          ],
-        },
-        ctx,
-      );
+      const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('IMPLEMENTATION');
+      expect(result.evidence).toBeDefined();
+      const evidence = result.evidence as Record<string, unknown>;
+      expect(evidence.passed).toBe(true);
+      expect(evidence.exitCode).toBe(0);
+      expect(evidence.kind).toBe('typecheck');
     });
   });
 
   describe('BAD', () => {
     it('blocks without session', async () => {
-      const raw = await validate.execute(
-        {
-          results: [{ checkId: 'test_quality', passed: true, detail: 'OK' }],
-        },
-        ctx,
-      );
+      const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('NO_SESSION');
@@ -874,93 +885,79 @@ describe('validate', () => {
   });
 
   describe('CORNER', () => {
-    it('CHECK_FAILED returns to PLAN', async () => {
+    it('failed check returns to PLAN', async () => {
       await reachValidation();
-      const raw = await validate.execute(
-        {
-          results: [
-            { checkId: 'test_quality', passed: false, detail: 'Missing tests' },
-            { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-          ],
-        },
-        ctx,
-      );
+      // Override executor to return failure
+      vi.mocked(executorMock.executeCheck).mockResolvedValueOnce({
+        kind: 'typecheck',
+        command: 'npx tsc --noEmit',
+        exitCode: 1,
+        passed: false,
+        executionMs: 200,
+        outputDigest: 'f'.repeat(64),
+        stdout: 'error TS2322: Type mismatch',
+        stderr: '',
+        timedOut: false,
+        startedAt: new Date().toISOString(),
+      });
+      const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('PLAN');
     });
 
-    it('blocks when required checks are missing', async () => {
+    it('blocks when kind is not in verificationCandidates', async () => {
       await reachValidation();
-      const raw = await validate.execute(
-        {
-          results: [
-            { checkId: 'test_quality', passed: true, detail: 'OK' },
-            // Missing rollback_safety
-          ],
-        },
-        ctx,
-      );
+      const raw = await run_check.execute({ kind: 'security' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('MISSING_CHECKS');
+      expect(result.code).toBe('CHECK_KIND_NOT_AVAILABLE');
     });
 
-    it('results are persisted in state', async () => {
+    it('execution evidence is persisted in state', async () => {
       await reachValidation();
-      await validate.execute(
-        {
-          results: [
-            { checkId: 'test_quality', passed: true, detail: 'Tests pass' },
-            { checkId: 'rollback_safety', passed: true, detail: 'Safe' },
-          ],
-        },
-        ctx,
-      );
-      const s = parseToolResult(await status.execute({}, ctx));
-      const vr = s.validationResults as Array<{ checkId: string; passed: boolean }>;
-      expect(vr).toHaveLength(2);
-      expect(vr[0].passed).toBe(true);
-    });
-
-    // P10a: evidence metadata is preserved in validation results
-    it('preserves evidence metadata (evidenceType, command, evidenceSummary)', async () => {
-      await reachValidation();
-      await validate.execute(
-        {
-          results: [
-            {
-              checkId: 'test_quality',
-              passed: true,
-              detail: 'Tests pass',
-              evidenceType: 'command_output',
-              command: 'npm test',
-              evidenceSummary: 'All 42 tests pass',
-            },
-            {
-              checkId: 'rollback_safety',
-              passed: true,
-              detail: 'Safe',
-              evidenceType: 'manual_review',
-              evidenceSummary: 'Reviewed migration scripts',
-            },
-          ],
-        },
-        ctx,
-      );
+      await run_check.execute({ kind: 'typecheck' }, ctx);
       const s = parseToolResult(await status.execute({}, ctx));
       const vr = s.validationResults as Array<{
         checkId: string;
         passed: boolean;
-        evidenceType?: string;
-        command?: string;
-        evidenceSummary?: string;
+        kind: string;
+        command: string;
+        exitCode: number;
+        executionMs: number;
+        timedOut: boolean;
       }>;
-      expect(vr).toHaveLength(2);
-      expect(vr[0].evidenceType).toBe('command_output');
-      expect(vr[0].command).toBe('npm test');
-      expect(vr[0].evidenceSummary).toBe('All 42 tests pass');
-      expect(vr[1].evidenceType).toBe('manual_review');
+      expect(vr).toHaveLength(1);
+      expect(vr[0].checkId).toBe('typecheck');
+      expect(vr[0].passed).toBe(true);
+      expect(vr[0].kind).toBe('typecheck');
+      expect(typeof vr[0].command).toBe('string');
+      expect(vr[0].exitCode).toBe(0);
+      expect(typeof vr[0].executionMs).toBe('number');
+      expect(vr[0].timedOut).toBe(false);
+    });
+
+    it('timed out check records timedOut evidence', async () => {
+      await reachValidation();
+      vi.mocked(executorMock.executeCheck).mockResolvedValueOnce({
+        kind: 'typecheck',
+        command: 'npx tsc --noEmit',
+        exitCode: -1,
+        passed: false,
+        executionMs: 60000,
+        outputDigest: '0'.repeat(64),
+        stdout: '',
+        stderr: '',
+        timedOut: true,
+        startedAt: new Date().toISOString(),
+      });
+      const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('PLAN'); // Timeout = failure → back to PLAN
+      const evidence = result.evidence as Record<string, unknown>;
+      expect(evidence.timedOut).toBe(true);
+      expect(evidence.passed).toBe(false);
     });
   });
 });

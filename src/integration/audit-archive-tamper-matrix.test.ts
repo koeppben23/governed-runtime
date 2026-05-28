@@ -13,7 +13,7 @@ import {
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
-import { hydrate, ticket, plan, decision, validate, implement, status } from './tools/index.js';
+import { hydrate, ticket, plan, decision, run_check, implement, status } from './tools/index.js';
 import { readState } from '../adapters/persistence.js';
 import { computeFingerprint, sessionDir, verifyArchive } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
@@ -41,6 +41,24 @@ vi.mock('../adapters/actor', async (importOriginal) => {
     }),
   };
 });
+
+// Mock the verification executor to avoid real subprocess execution
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi
+    .fn()
+    .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => ({
+      kind: input.kind,
+      command: input.command,
+      exitCode: 0,
+      passed: true,
+      executionMs: 100,
+      outputDigest: 'a'.repeat(64),
+      stdout: 'OK',
+      stderr: '',
+      timedOut: false,
+      startedAt: new Date().toISOString(),
+    })),
+}));
 
 const actorMock = await import('../adapters/actor.js');
 
@@ -106,12 +124,16 @@ async function completeRegulatedSession(): Promise<{
   });
   await callOk(decision, { verdict: 'approve', rationale: 'plan approved' });
 
-  await callOk(validate, {
-    results: [
-      { checkId: 'test_quality', passed: true, detail: 'OK' },
-      { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-    ],
-  });
+  // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
+  {
+    const ids = await getSessionPaths();
+    const st = await readState(ids.sessDir);
+    if (st && st.activeChecks.length > 0) {
+      for (const kind of st.activeChecks) {
+        await callOk(run_check, { kind });
+      }
+    }
+  }
 
   await callOk(implement, {});
   for (let i = 0; i < 8 && (await currentPhase()) !== 'EVIDENCE_REVIEW'; i++) {

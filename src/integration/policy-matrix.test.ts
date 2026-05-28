@@ -24,7 +24,7 @@ import {
   type TestWorkspace,
   withTestEnv,
 } from './test-helpers.js';
-import { status, hydrate, ticket, plan, decision, validate } from './tools/index.js';
+import { status, hydrate, ticket, plan, decision, run_check } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import {
@@ -61,6 +61,24 @@ vi.mock('../adapters/actor', async (importOriginal) => {
     }),
   };
 });
+
+// Mock the verification executor to avoid real subprocess execution
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi
+    .fn()
+    .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => ({
+      kind: input.kind,
+      command: input.command,
+      exitCode: 0,
+      passed: true,
+      executionMs: 100,
+      outputDigest: 'a'.repeat(64),
+      stdout: 'OK',
+      stderr: '',
+      timedOut: false,
+      startedAt: new Date().toISOString(),
+    })),
+}));
 
 const actorMock = await import('../adapters/actor.js');
 
@@ -230,11 +248,8 @@ async function scenarioMissingValidationEvidence(mode: Mode): Promise<CellResult
     });
     await callOk(decision, { verdict: 'approve', rationale: 'Move to validation' }, ctx);
   }
-  return callResult(
-    validate,
-    { results: [{ checkId: 'test_quality', passed: true, detail: 'Missing rollback check' }] },
-    ctx,
-  );
+  // In the new model: calling run_check with an unavailable kind → CHECK_KIND_NOT_AVAILABLE
+  return callResult(run_check, { kind: 'security' }, ctx);
 }
 
 async function scenarioLegacyAuditStrictness(mode: Mode): Promise<CellResult> {
@@ -301,10 +316,10 @@ const MATRIX: Array<{
     scenario: 'missing_validation_evidence',
     run: scenarioMissingValidationEvidence,
     expected: {
-      solo: { allowed: false, code: 'MISSING_CHECKS' },
-      team: { allowed: false, code: 'MISSING_CHECKS' },
-      'team-ci': { allowed: false, code: 'MISSING_CHECKS' },
-      regulated: { allowed: false, code: 'MISSING_CHECKS' },
+      solo: { allowed: false, code: 'CHECK_KIND_NOT_AVAILABLE' },
+      team: { allowed: false, code: 'CHECK_KIND_NOT_AVAILABLE' },
+      'team-ci': { allowed: false, code: 'CHECK_KIND_NOT_AVAILABLE' },
+      regulated: { allowed: false, code: 'CHECK_KIND_NOT_AVAILABLE' },
     },
   },
   {

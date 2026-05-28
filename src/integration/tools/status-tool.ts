@@ -186,9 +186,11 @@ function buildEvidenceStatus(state: SessionState): Record<string, unknown> {
     validationResults: state.validation.map((v) => ({
       checkId: v.checkId,
       passed: v.passed,
-      ...(v.evidenceType ? { evidenceType: v.evidenceType } : {}),
-      ...(v.command ? { command: v.command } : {}),
-      ...(v.evidenceSummary ? { evidenceSummary: v.evidenceSummary } : {}),
+      kind: v.kind,
+      command: v.command,
+      exitCode: v.exitCode,
+      executionMs: v.executionMs,
+      timedOut: v.timedOut,
     })),
   };
 }

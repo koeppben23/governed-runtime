@@ -91,10 +91,16 @@ describe('state schemas', () => {
 
     it('ValidationResult parses valid result', () => {
       const result = {
-        checkId: 'test_quality',
+        checkId: 'test',
         passed: true,
         detail: 'All pass',
         executedAt: FIXED_TIME,
+        kind: 'test',
+        command: 'npm test',
+        exitCode: 0,
+        executionMs: 1200,
+        outputDigest: 'a'.repeat(64),
+        timedOut: false,
       };
       expect(ValidationResult.parse(result)).toEqual(result);
     });

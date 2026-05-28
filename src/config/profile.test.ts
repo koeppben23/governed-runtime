@@ -1056,22 +1056,20 @@ describe('config/profile/detected-stack-instruction', () => {
   });
 });
 
-// P10a: profiles expose activeChecks but no heuristic check executors
-describe('config/P10a — no heuristic executors', () => {
-  it('baselineProfile.activeChecks contains test_quality and rollback_safety', () => {
-    expect(baselineProfile.activeChecks).toContain('test_quality');
-    expect(baselineProfile.activeChecks).toContain('rollback_safety');
-    expect(baselineProfile.activeChecks).toHaveLength(2);
+// activeChecks are now empty in profiles — derived from verificationCandidates at hydrate-time
+describe('config/profile — activeChecks derived from discovery', () => {
+  it('baselineProfile.activeChecks is empty (derived at hydrate-time)', () => {
+    expect(baselineProfile.activeChecks).toEqual([]);
   });
 
   it('baselineProfile has no checks property', () => {
     expect(baselineProfile).not.toHaveProperty('checks');
   });
 
-  it('all profiles have activeChecks but no checks', () => {
+  it('all profiles have empty activeChecks and no checks', () => {
     for (const profile of [baselineProfile, javaProfile, angularProfile, typescriptProfile]) {
       expect(profile.activeChecks).toBeDefined();
-      expect(profile.activeChecks.length).toBeGreaterThanOrEqual(2);
+      expect(profile.activeChecks).toEqual([]);
       expect(profile).not.toHaveProperty('checks');
     }
   });

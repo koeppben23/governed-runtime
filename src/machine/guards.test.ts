@@ -251,8 +251,8 @@ describe('guards', () => {
       expect(selfReviewPending(makeState('PLAN'))).toBe(false);
     });
 
-    it('allValidationsPassed does not fire with empty activeChecks', () => {
-      expect(allValidationsPassed(makeState('VALIDATION', { activeChecks: [] }))).toBe(false);
+    it('allValidationsPassed returns true (vacuous truth) with empty activeChecks', () => {
+      expect(allValidationsPassed(makeState('VALIDATION', { activeChecks: [] }))).toBe(true);
     });
 
     it('checkFailed does not fire with empty validation results', () => {

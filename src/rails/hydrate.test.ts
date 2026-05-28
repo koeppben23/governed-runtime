@@ -257,19 +257,18 @@ describe('hydrate rail unit tests', () => {
       expect(state.activeChecks).toEqual(['custom_check']);
     });
 
-    it('uses profile activeChecks when no explicit checks given', () => {
-      // profileId "baseline" has activeChecks: ['test_quality', 'rollback_safety']
+    it('uses profile activeChecks when no explicit checks given (now empty)', () => {
+      // Profiles now have empty activeChecks — derived from verificationCandidates
       const result = hydrateNew(minimalInput({ profile: { profileId: 'baseline' } }));
       const state = expectOk(result);
-      expect(state.activeChecks).toEqual(['test_quality', 'rollback_safety']);
+      expect(state.activeChecks).toEqual([]);
     });
 
-    it('falls back to default checks when no profile or explicit checks', () => {
+    it('falls back to empty checks when no profile or explicit checks', () => {
       const result = hydrateNew(minimalInput({ profile: {} }));
       const state = expectOk(result);
-      // Falls to baseline profile fallback
-      expect(state.activeChecks).toContain('test_quality');
-      expect(state.activeChecks).toContain('rollback_safety');
+      // No verificationCandidates provided → empty activeChecks
+      expect(state.activeChecks).toEqual([]);
     });
 
     it('slice() creates a copy — not a reference to profile array (isolation)', () => {

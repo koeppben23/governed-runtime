@@ -2,27 +2,50 @@
  * @module evidence-validation
  * @description Validation check result schema for the VALIDATION phase.
  *
- * @version v1
+ * v2: Execution-evidence-based validation. FlowGuard executes commands directly
+ * and records cryptographic evidence (outputDigest, exitCode, executionMs).
+ * Agent self-report is no longer accepted — only runtime execution evidence.
+ *
+ * @version v2
  */
 
 import { z } from 'zod';
 import { CheckId } from './evidence-primitives.js';
+import { VerificationCandidateKindSchema } from './discovery-schemas.js';
 
-/** Result of a single validation check. P10a: evidence metadata for agent-reported results. */
+/**
+ * Result of a single validation check — produced by flowguard_run_check execution.
+ *
+ * Cryptographic evidence binding:
+ * - outputDigest = sha256(stdout + stderr) computed at execution time
+ * - exitCode = actual process exit code (0 = passed)
+ * - executionMs = wall-clock duration
+ * - startedAt = ISO timestamp when execution began
+ *
+ * No agent self-report: all fields are runtime-produced, not agent-supplied.
+ */
 export const ValidationResult = z
   .object({
+    /** Which active check this result satisfies (derived from verificationCandidate kind). */
     checkId: CheckId,
+    /** Whether the check passed (exitCode === 0). */
     passed: z.boolean(),
+    /** Human-readable summary (auto-generated from execution). */
     detail: z.string(),
+    /** ISO timestamp when execution started. */
     executedAt: z.string().datetime(),
-    /** How this check was executed. */
-    evidenceType: z
-      .enum(['command_output', 'ci_run', 'manual_review', 'external_reference'])
-      .optional(),
-    /** The command that was run (if evidenceType is command_output). */
-    command: z.string().optional(),
-    /** Summary of the evidence (e.g. test output, CI URL, review notes). */
-    evidenceSummary: z.string().optional(),
+    /** The verification kind that was executed. */
+    kind: VerificationCandidateKindSchema,
+    /** The exact command that was run. */
+    command: z.string().min(1),
+    /** Process exit code. */
+    exitCode: z.number().int(),
+    /** Execution wall-clock duration in milliseconds. */
+    executionMs: z.number().int().nonnegative(),
+    /** sha256 hex digest of (stdout + stderr) — tamper-evident evidence binding. */
+    outputDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    /** Whether the process was killed due to timeout. */
+    timedOut: z.boolean(),
   })
   .readonly();
 export type ValidationResult = z.infer<typeof ValidationResult>;

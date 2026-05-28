@@ -81,7 +81,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate: 'No validation checks configured. Set activeChecks via /hydrate.',
     recoverySteps: [
       'Configure a profile with activeChecks during /hydrate',
-      'The baseline profile includes test_quality and rollback_safety',
+      'Ensure discovery finds verificationCandidates with commands (e.g., package.json scripts)',
     ],
   },
 

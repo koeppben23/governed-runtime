@@ -1,8 +1,8 @@
 /**
  * @module validate.test
- * @description Rail unit tests for /validate — explicit validation checks.
+ * @description Rail unit tests for /validate — execution-evidence validation.
  *
- * P10b: tests fail-closed phase gating, precondition enforcement,
+ * Tests fail-closed phase gating, vacuous truth for empty activeChecks,
  * all-pass/fail paths, and ordering guarantees.
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE
@@ -12,7 +12,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { executeValidate, type ValidateExecutors } from './validate.js';
 import { makeState, FIXED_TIME, TICKET } from '../__fixtures__.js';
 import type { RailContext } from './types.js';
-import type { PlanRecord } from '../state/evidence.js';
+import type { PlanRecord, ValidationResult } from '../state/evidence.js';
 
 const ctx: RailContext = {
   now: () => FIXED_TIME,
@@ -27,6 +27,22 @@ function planWith(body: string): PlanRecord {
   };
 }
 
+/** Create a full ValidationResult matching the v2 execution-evidence schema. */
+function makeValidationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
+  return {
+    checkId,
+    passed,
+    detail,
+    executedAt: FIXED_TIME,
+    kind: 'test',
+    command: 'npm test',
+    exitCode: passed ? 0 : 1,
+    executionMs: 1000,
+    outputDigest: 'a'.repeat(64),
+    timedOut: false,
+  };
+}
+
 function makeExecutors(
   results: Array<{ checkId: string; passed: boolean; detail: string }>,
 ): ValidateExecutors {
@@ -34,7 +50,7 @@ function makeExecutors(
     runCheck: vi.fn(async (checkId) => {
       const r = results.find((r) => r.checkId === checkId);
       if (!r) throw new Error(`Unexpected check: ${checkId}`);
-      return { ...r, executedAt: FIXED_TIME };
+      return makeValidationResult(r.checkId, r.passed, r.detail);
     }),
   };
 }
@@ -72,14 +88,25 @@ describe('validate rail', () => {
     it('ALL_PASSED advances to IMPLEMENTATION', async () => {
       const state = validationState();
       const executors = makeExecutors([
-        { checkId: 'test_quality', passed: true, detail: 'OK' },
-        { checkId: 'rollback_safety', passed: true, detail: 'OK' },
+        { checkId: 'test', passed: true, detail: 'OK' },
+        { checkId: 'lint', passed: true, detail: 'OK' },
       ]);
       const result = await executeValidate(state, ctx, executors);
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         expect(result.state.phase).toBe('IMPLEMENTATION');
         expect(result.state.validation).toHaveLength(2);
+      }
+    });
+
+    it('vacuous truth — empty activeChecks auto-advances (no checks needed)', async () => {
+      const state = validationState({ activeChecks: [] });
+      const executors = makeExecutors([]);
+      const result = await executeValidate(state, ctx, executors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        // With vacuous truth, VALIDATION passes immediately
+        expect(result.state.phase).toBe('IMPLEMENTATION');
       }
     });
   });
@@ -95,16 +122,16 @@ describe('validate rail', () => {
       }
     });
 
-    it('blocks with no active checks', async () => {
+    it('blocks without plan (precondition)', async () => {
       const state = makeState('VALIDATION', {
         ticket: TICKET,
-        plan: planWith('Plan'),
-        activeChecks: [],
+        plan: null,
+        activeChecks: ['test'],
       });
       const result = await executeValidate(state, ctx, makeExecutors([]));
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
-        expect(result.code).toBe('NO_ACTIVE_CHECKS');
+        expect(result.code).toBe('PLAN_REQUIRED');
       }
     });
   });
@@ -114,8 +141,8 @@ describe('validate rail', () => {
     it('CHECK_FAILED returns to PLAN and clears selfReview/reviewDecision', async () => {
       const state = validationState();
       const executors = makeExecutors([
-        { checkId: 'test_quality', passed: false, detail: 'Missing tests' },
-        { checkId: 'rollback_safety', passed: true, detail: 'OK' },
+        { checkId: 'test', passed: false, detail: 'Missing tests' },
+        { checkId: 'lint', passed: true, detail: 'OK' },
       ]);
       const result = await executeValidate(state, ctx, executors);
       expect(result.kind).toBe('ok');
@@ -137,7 +164,7 @@ describe('validate rail', () => {
       const executors: ValidateExecutors = {
         runCheck: vi.fn(async (checkId) => {
           order.push(checkId);
-          return { checkId, passed: true, detail: 'OK', executedAt: FIXED_TIME };
+          return makeValidationResult(checkId, true, 'OK');
         }),
       };
       await executeValidate(state, ctx, executors);

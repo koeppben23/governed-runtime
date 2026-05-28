@@ -75,7 +75,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // mandates Governance rules section, affecting all command templates.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'e02971198fcfb6cfb5c29b1a0e5c98ec6013d6bec253ae61a7df787b7a20293d',
+      '4ca78c8d9a250d168059b7d9c2572e655426ff9d76d347fd506efb3a276518e4',
     );
   });
 

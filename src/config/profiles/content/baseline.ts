@@ -358,7 +358,8 @@ When reviewing changes, MUST verify:
 | Shared State | Module-level mutable state, race conditions, test pollution |
 | Test Quality | Nondeterministic tests, implementation coupling, missing edge cases |
 | Security | Secrets in code/logs, unsanitized inputs, widened trust boundaries |
-| Architecture | Circular dependencies, boundary violations, responsibility bleed |`;
+| Architecture | Circular dependencies, boundary violations, responsibility bleed |
+| Rollback Safety | Implementation can be safely rolled back without data loss, migration is reversible, feature flags used for gradual rollout where appropriate |`;
 
 // ─── Exported PhaseInstructions ──────────────────────────────────────────────
 

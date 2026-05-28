@@ -1,23 +1,22 @@
 /**
  * @module validate
- * @description /validate rail — explicitly run validation checks.
+ * @description /validate rail — run verification checks via subprocess execution.
  *
- * Allowed only in VALIDATION phase. Runs all active checks and records results.
+ * Allowed only in VALIDATION phase. Runs all active checks by executing
+ * discovered verification commands and recording execution evidence.
+ *
  * After validation:
  * - ALL_PASSED → auto-advance to IMPLEMENTATION
  * - CHECK_FAILED → transition to PLAN (plan must be revised + re-approved)
  *
- * This is the explicit alternative to /continue at VALIDATION.
- * Benefit: clearer intent ("I want to validate") vs. generic routing.
+ * v2: Execution-evidence model. FlowGuard executes commands directly.
+ * Agent self-report is no longer accepted.
  *
- * The checks themselves are delegated to an executor interface.
- * The rail only orchestrates: which checks to run, recording results, evaluating.
- *
- * @version v1
+ * @version v2
  */
 
 import type { SessionState } from '../state/schema.js';
-import type { CheckId, ValidationResult } from '../state/evidence.js';
+import type { ValidationResult } from '../state/evidence-validation.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext } from './types.js';
 import { autoAdvance, createPolicyEvalFn } from './types.js';
@@ -25,13 +24,18 @@ import { blocked } from '../config/reasons.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 
+/**
+ * Executor for running a single verification check.
+ *
+ * In production: delegates to verification/executor.ts (subprocess execution).
+ * In tests: can be mocked with deterministic results.
+ */
 export interface ValidateExecutors {
   /**
-   * Run a single validation check.
-   * The executor performs the actual check logic (test coverage analysis,
-   * rollback safety analysis, business rules compliance, etc.).
+   * Run a single verification check and produce execution evidence.
+   * Must return a ValidationResult with cryptographic evidence binding.
    */
-  runCheck: (checkId: CheckId, state: SessionState) => Promise<ValidationResult>;
+  runCheck: (checkId: string, state: SessionState) => Promise<ValidationResult>;
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -49,9 +53,12 @@ export async function executeValidate(
     });
   }
 
-  // 2. Preconditions
+  // 2. Preconditions — vacuous truth: if no active checks, skip validation entirely
   if (state.activeChecks.length === 0) {
-    return blocked('NO_ACTIVE_CHECKS');
+    // No checks to run — auto-advance immediately (vacuous truth)
+    const evalFn = createPolicyEvalFn(ctx);
+    const { state: finalState, evalResult, transitions } = autoAdvance(state, evalFn, ctx);
+    return { kind: 'ok', state: finalState, evalResult, transitions };
   }
 
   if (!state.plan) {

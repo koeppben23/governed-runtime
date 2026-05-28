@@ -10,17 +10,17 @@
  * - architecture.ts   — ADR submission and review loop
  * - status-tool.ts    — read-only session state check
  * - decision-tool.ts  — human review verdict at user gates
- * - validate-tool.ts  — validation check result recording
+ * - run-check-tool.ts — verification command execution with evidence
  * - simple-tools.ts   — ticket, review, abort, archive
  *
  * Barrel re-exports are resolved by the post-build ESM import fixer.
  *
- * @version v5
+ * @version v6
  */
 
 import { status as rawStatus } from './status-tool.js';
 import { decision as rawDecision } from './decision-tool.js';
-import { validate as rawValidate } from './validate-tool.js';
+import { run_check as rawRunCheck } from './run-check-tool.js';
 import {
   ticket as rawTicket,
   review as rawReview,
@@ -88,7 +88,7 @@ function withGovernanceFooter(toolDef: ToolDefinition): ToolDefinition {
 // ── Focused tools ────────────────────────────────────────────────────────────
 export const status = withGovernanceFooter(rawStatus);
 export const decision = withGovernanceFooter(rawDecision);
-export const validate = withGovernanceFooter(rawValidate);
+export const run_check = withGovernanceFooter(rawRunCheck);
 
 // ── Simple tools ─────────────────────────────────────────────────────────────
 export const ticket = withGovernanceFooter(rawTicket);

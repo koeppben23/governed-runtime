@@ -35,7 +35,7 @@ import {
   plan,
   decision,
   implement,
-  validate,
+  run_check,
   review,
   abort_session,
   archive,
@@ -118,6 +118,25 @@ vi.mock('../adapters/actor', async (importOriginal) => {
     }),
   };
 });
+
+// ─── Verification Executor Mock ─────────────────────────────────────────────
+// Mock executeCheck to avoid real subprocess execution.
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi
+    .fn()
+    .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => ({
+      kind: input.kind,
+      command: input.command,
+      exitCode: 0,
+      passed: true,
+      executionMs: 100,
+      outputDigest: 'a'.repeat(64),
+      stdout: 'OK',
+      stderr: '',
+      timedOut: false,
+      startedAt: new Date().toISOString(),
+    })),
+}));
 
 // Lazy import for per-test overrides
 const gitMock = await import('../adapters/git.js');
@@ -351,15 +370,16 @@ describe('P26: regulated archive completion', () => {
         await executeWithStrictReview(plan, { reviewVerdict: 'approve' });
       }
       await decision.execute({ verdict: 'approve', rationale: 'OK' }, ctx);
-      await validate.execute(
-        {
-          results: [
-            { checkId: 'test_quality', passed: true, detail: 'OK' },
-            { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-          ],
-        },
-        ctx,
-      );
+      // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
+      {
+        const sd = await currentSessDir();
+        const st = await readState(sd);
+        if (st && st.activeChecks.length > 0) {
+          for (const kind of st.activeChecks) {
+            await run_check.execute({ kind }, ctx);
+          }
+        }
+      }
       await implement.execute({}, ctx);
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));
@@ -386,15 +406,16 @@ describe('P26: regulated archive completion', () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
       await executeWithStrictReview(plan, { reviewVerdict: 'approve' });
-      await validate.execute(
-        {
-          results: [
-            { checkId: 'test_quality', passed: true, detail: 'OK' },
-            { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-          ],
-        },
-        ctx,
-      );
+      // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
+      {
+        const sessDir = await currentSessDir();
+        const state = await readState(sessDir);
+        if (state && state.activeChecks.length > 0) {
+          for (const kind of state.activeChecks) {
+            await run_check.execute({ kind }, ctx);
+          }
+        }
+      }
       await implement.execute({}, ctx);
       await executeWithStrictReview(implement, { reviewVerdict: 'approve' });
 

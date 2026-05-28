@@ -5,7 +5,7 @@
  * All exports are re-exported here to ensure they're accessible
  * from the package entry point.
  *
- * @version v4
+ * @version v5
  */
 
 export {
@@ -15,7 +15,7 @@ export {
   plan,
   decision,
   implement,
-  validate,
+  run_check,
   review,
   continue,
   abort_session,

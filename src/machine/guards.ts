@@ -96,12 +96,16 @@ export const selfReviewPending: GuardFn = (s) => s.selfReview !== null && !selfR
 
 /**
  * All active validation checks passed.
- * Requires: at least one check exists AND every active check has a passing result.
+ *
+ * Vacuous truth: if activeChecks is empty (no verificationCandidates discovered),
+ * all checks are trivially satisfied → returns true. This allows sessions without
+ * discoverable commands to skip VALIDATION cleanly.
  *
  * Uses Set-based lookup for O(n + m) instead of O(n * m) nested iteration.
  */
 export const allValidationsPassed: GuardFn = (s) => {
-  if (s.activeChecks.length === 0) return false;
+  // Vacuous truth: no active checks → all passed (nothing to check).
+  if (s.activeChecks.length === 0) return true;
   const passedIds = new Set<string>();
   for (const v of s.validation) {
     if (v.passed) passedIds.add(v.checkId);

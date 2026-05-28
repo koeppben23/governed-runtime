@@ -23,7 +23,7 @@ import {
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
-import { hydrate, ticket, plan, decision, validate, implement, status } from './tools/index.js';
+import { hydrate, ticket, plan, decision, run_check, implement, status } from './tools/index.js';
 import { readState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { verifyChain } from '../audit/integrity.js';
@@ -56,6 +56,24 @@ vi.mock('../adapters/actor', async (importOriginal) => {
     }),
   };
 });
+
+// Mock the verification executor to avoid real subprocess execution
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi
+    .fn()
+    .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => ({
+      kind: input.kind,
+      command: input.command,
+      exitCode: 0,
+      passed: true,
+      executionMs: 100,
+      outputDigest: 'a'.repeat(64),
+      stdout: 'OK',
+      stderr: '',
+      timedOut: false,
+      startedAt: new Date().toISOString(),
+    })),
+}));
 
 vi.mock('../adapters/workspace/index.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/workspace/index.js')>();
@@ -155,12 +173,16 @@ async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDi
     assurance: 'claim_validated' as const,
   });
   await callOk(decision, { verdict: 'approve', rationale: 'Plan approved' });
-  await callOk(validate, {
-    results: [
-      { checkId: 'test_quality', passed: true, detail: 'OK' },
-      { checkId: 'rollback_safety', passed: true, detail: 'OK' },
-    ],
-  });
+  // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
+  {
+    const ids = await workspaceIds();
+    const st = await readState(ids.sessDir);
+    if (st && st.activeChecks.length > 0) {
+      for (const kind of st.activeChecks) {
+        await callOk(run_check, { kind });
+      }
+    }
+  }
   await callOk(implement, {});
   for (let i = 0; i < 8 && (await phase()) !== 'EVIDENCE_REVIEW'; i++) {
     await callOk(implement, { reviewVerdict: 'approve' });

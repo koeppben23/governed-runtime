@@ -40,7 +40,7 @@ const EXPECTED_TOOLS = [
   'flowguard_implement',
   'flowguard_architecture',
   'flowguard_decision',
-  'flowguard_validate',
+  'flowguard_run_check',
   'flowguard_ticket',
   'flowguard_review',
   'flowguard_abort_session',
@@ -109,9 +109,9 @@ describe('SDK Contract: MCP tool registry', () => {
       expect(schema.required).toContain('verdict');
     });
 
-    it('flowguard_validate requires results', () => {
-      const schema = loadSchema('flowguard_validate.json');
-      expect(schema.required).toContain('results');
+    it('flowguard_run_check requires kind', () => {
+      const schema = loadSchema('flowguard_run_check.json');
+      expect(schema.required).toContain('kind');
     });
 
     it('flowguard_ticket requires text', () => {
