@@ -73,6 +73,8 @@ Read-only orientation surface for the current session.
 Use `/status` to inspect where the workflow is, what is allowed, and what happens next.
 It does not mutate state and is safe to call at any time.
 
+Full `/status` responses include `implementationGuidance` when a session exists. This is a compact, runtime-only, advisory projection from `DiscoveryResult` and `SessionState` that can list relevant files, modules, surfaces, tests, contracts, and risk hotspots with confidence and evidence provenance. It is not persisted, is not a second plan/ticket/risk authority, and never overrides phase gates, policy gates, review obligations, validation requirements, or the approved plan. Missing or degraded discovery is surfaced with `NOT_VERIFIED` wording and capped confidence instead of fake certainty.
+
 Optional focused views:
 
 - `/status --why-blocked` — blocker analysis from evaluator/completeness truth

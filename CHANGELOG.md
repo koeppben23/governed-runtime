@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #385:** Added runtime-only `flowguard_status.implementationGuidance`
+  for compact, advisory implementation hints derived from `DiscoveryResult` and
+  `SessionState`. The projection includes evidence-backed files, modules,
+  surfaces, tests, contracts, and risk hotspots with confidence, explicit
+  `NOT_VERIFIED` wording for missing/degraded discovery, and no persistence or
+  gate-authority semantics.
+
 - **Issue #378:** Improve code-surface scan prioritization with weighted
   keyword-based ranking. Route/controller, auth/security, persistence/data,
   and config/entry-point files are now scanned before unrelated shallow

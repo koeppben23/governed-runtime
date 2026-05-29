@@ -479,6 +479,24 @@ describe('status', () => {
       expect(typeof result.profileRules).toBe('string');
       expect(result.profileRules as string).toContain('## Discovery Health');
       expect(result.profileRules as string).toContain('Check flowguard_status.discoveryHealth');
+      expect(result.profileRules as string).toContain('## Implementation Guidance');
+      expect(result.profileRules as string).toContain('inspect implementationGuidance');
+    });
+
+    it('surfaces implementationGuidance only on full status responses', async () => {
+      await hydrateAndTicket('Fix login auth bug in src/auth/login.ts');
+      const full = parseToolResult(await status.execute({}, ctx));
+      expect(full.implementationGuidance).toBeDefined();
+      const guidance = full.implementationGuidance as Record<string, unknown>;
+      expect(guidance.kind).toBe('derived_implementation_guidance');
+      expect(guidance.advisory).toBe(true);
+      expect(guidance.runtimeOnly).toBe(true);
+      expect(guidance.notVerified).toEqual(
+        expect.arrayContaining([expect.stringContaining('advisory')]),
+      );
+
+      const focused = parseToolResult(await status.execute({ evidence: true }, ctx));
+      expect(focused.implementationGuidance).toBeUndefined();
     });
 
     it('returns discoveryHealth: null when discovery artifact is corrupt', async () => {
