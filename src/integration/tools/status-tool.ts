@@ -15,6 +15,7 @@ import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
 import {
+  resolveWorkspacePaths,
   withReadOnlySession,
   formatBlocked,
   formatError,
@@ -28,6 +29,10 @@ import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { CompletenessReport } from '../../audit/completeness.js';
 import { renderPhaseAwareMandates } from '../../templates/mandates-renderer.js';
+import { readDiscovery } from '../../adapters/persistence-discovery.js';
+import { extractDiscoveryHealth } from '../../discovery/discovery-health.js';
+import type { DiscoveryHealthProjection } from '../../discovery/discovery-health.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';
@@ -160,14 +165,70 @@ function buildAppliedPolicyStatus(state: SessionState): Record<string, unknown> 
   };
 }
 
-function buildProfileStatus(state: SessionState): Record<string, unknown> {
+const DISCOVERY_HEALTH_INSTRUCTION = `\
+## Discovery Health
+
+Check flowguard_status.discoveryHealth when present. If healthy is false,
+discovery was degraded — failedCollectorNames lists failed collectors.
+Verification commands and stack detection may be incomplete. If
+hasBudgetExhaustion is true, code-surface analysis was truncated. If
+ageWarning is set, discovery data may be stale. Mark unsupported claims
+as NOT_VERIFIED.`;
+
+async function loadDiscoveryHealth(wsDir: string): Promise<DiscoveryHealthProjection | null> {
+  try {
+    const result = await readDiscovery(wsDir);
+    if (!result) {
+      getAdapterLogger().info(
+        'discovery-health',
+        'No discovery artifact available for health projection',
+        {
+          reason: 'discovery_artifact_missing',
+        },
+      );
+      return null;
+    }
+    return extractDiscoveryHealth(result);
+  } catch (error) {
+    getAdapterLogger().warn(
+      'discovery-health',
+      'Failed to load discovery health projection for status',
+      {
+        reason: 'discovery_health_unavailable',
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
+    return null;
+  }
+}
+
+function buildProfileStatus(
+  state: SessionState,
+  discoveryHealth: DiscoveryHealthProjection | null,
+): Record<string, unknown> {
   const base = state.activeProfile?.ruleContent ?? '';
   const phaseExtra = state.activeProfile?.phaseRuleContent?.[state.phase];
+  let profileRules = phaseExtra ? base + '\n\n' + phaseExtra : base;
+
+  if (discoveryHealth && !discoveryHealth.healthy) {
+    const failed = discoveryHealth.failedCollectorNames;
+    const warning =
+      '\n\nWARNING: Discovery is degraded.' +
+      ` ${discoveryHealth.failedCollectors} collector(s) failed` +
+      (failed.length > 0 ? ` (${failed.join(', ')})` : '') +
+      `, ${discoveryHealth.partialCollectors} partial. ` +
+      `Verification candidates and stack data may be incomplete. ` +
+      `Check flowguard_status.discoveryHealth.`;
+    profileRules += warning;
+  }
+
+  profileRules += '\n\n' + DISCOVERY_HEALTH_INSTRUCTION;
+
   return {
     initiatedBy: state.initiatedBy,
     profileId: state.activeProfile?.id ?? 'none',
     profileName: state.activeProfile?.name ?? 'None',
-    profileRules: phaseExtra ? base + '\n\n' + phaseExtra : base,
+    profileRules,
     detectedStack: state.detectedStack ?? null,
     verificationCandidates: state.verificationCandidates ?? [],
   };
@@ -217,6 +278,7 @@ function buildFullStatusResponse(
   policy: FlowGuardPolicy,
   ev: EvalResult,
   completeness: CompletenessReport,
+  discoveryHealth: DiscoveryHealthProjection | null,
 ): string {
   const projection = buildStatusProjection(state, policy);
 
@@ -226,9 +288,10 @@ function buildFullStatusResponse(
       phase: state.phase,
       sessionId: state.id,
       policyMode: state.policySnapshot?.mode ?? 'unknown',
+      discoveryHealth: discoveryHealth ?? null,
       archiveStatus: state.archiveStatus ?? null,
       appliedPolicy: buildAppliedPolicyStatus(state),
-      ...buildProfileStatus(state),
+      ...buildProfileStatus(state, discoveryHealth),
       ...buildEvidenceStatus(state),
       ...buildImplementationStatus(state),
       evalKind: ev.kind,
@@ -275,12 +338,14 @@ export const status: ToolDefinition = {
   },
   async execute(_args, context) {
     try {
+      const { wsDir } = await resolveWorkspacePaths(context);
       const { state, policy } = await withReadOnlySession(context);
 
       if (!state) {
         return JSON.stringify({
           phase: null,
           status: 'No FlowGuard session found.',
+          discoveryHealth: null,
           next: 'Run /hydrate to bootstrap a session.',
           governanceMandates: {
             source: 'src/templates/mandates.ts',
@@ -299,7 +364,8 @@ export const status: ToolDefinition = {
       const projection = resolveProjection(args, state, policy);
       if (projection !== null) return projection;
 
-      return buildFullStatusResponse(state, policy, ev, completeness);
+      const discoveryHealth = await loadDiscoveryHealth(wsDir);
+      return buildFullStatusResponse(state, policy, ev, completeness, discoveryHealth);
     } catch (err) {
       if (err instanceof ActorClaimError) {
         return formatBlocked(err.code);
