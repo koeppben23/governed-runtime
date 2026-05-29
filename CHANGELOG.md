@@ -93,6 +93,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   discovery is degraded or stale. Advisory projection only — DiscoveryResult
   remains SSOT.
 
+- **Issue #377:** Add allowlist-based import guard test preventing consumption of
+  deprecated `validationHints` symbols outside the discovery module. Guard fails
+  on any import or property access of `ValidationHints`, `ValidationHintsSchema`,
+  `CommandHint`, `CommandHintSchema`, or `.validationHints` outside the file-level
+  allowlist. `verificationCandidates` remains the canonical advisory verification
+  source.
+
 - **Issue #296:** Add real RFC 3161 timestamp authority support using
   `pkijs`/`asn1js`, including an HTTP TSA provider, cryptographic
   TimeStampToken verification, strict timestamp-assurance session blocking,
