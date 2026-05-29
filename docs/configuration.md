@@ -442,25 +442,31 @@ Override automatic profile detection:
 ### profile.activeChecks
 
 **Type:** `string[]`
-**Default:** Profile's default active checks
+**Default:** Empty (`[]` — derived from `verificationCandidates` at session creation)
 
-Override the active checks for the selected profile:
+Override the active checks for the selected profile. Each entry must match a
+verification candidate `kind` from `flowguard_status.verificationCandidates`.
+Valid kinds are: `build`, `test`, `lint`, `typecheck`, `format`, `security`,
+`coverage`.
 
 ```json
 {
   "profile": {
-    "activeChecks": ["test_quality", "custom_check"]
+    "activeChecks": ["test", "lint", "typecheck"]
   }
 }
 ```
 
 **Resolution priority:**
 
-1. `config.profile.activeChecks` (array)
-2. Selected profile's `activeChecks`
-3. Built-in defaults: `['test_quality', 'rollback_safety']`
+1. Explicit non-empty `config.profile.activeChecks` (highest priority)
+2. Derived from `verificationCandidates` (each unique candidate `kind` becomes
+   an active check)
+3. Empty (no checks — VALIDATION phase is vacuously passed)
 
-Note: `activeChecks` accepts arbitrary string values. Custom check names are allowed for profile-specific validation. Invalid check names will fail at runtime when the check runs.
+When an explicit override lists a kind not present in
+`verificationCandidates`, `flowguard_run_check` will reject it with
+`CHECK_KIND_NOT_AVAILABLE`.
 
 Applies only to new sessions. Existing sessions retain their snapshot value.
 
@@ -474,7 +480,7 @@ Custom profile configurations:
   "profile": {
     "overrides": {
       "typescript": {
-        "activeChecks": ["test_quality", "my_custom_check"]
+        "activeChecks": ["test", "lint"]
       }
     }
   }

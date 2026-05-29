@@ -40,29 +40,24 @@ If no evidence exists, `verificationCandidates` is an empty array.
 
 ## Baseline Profile
 
-Universal rules for all projects:
+The baseline profile provides minimal governance for projects without a
+detected stack. Active checks are derived from `verificationCandidates` at
+session creation — the profile itself declares no static checks.
 
-### Test Quality
+When verification candidates are present, each unique `kind` becomes an
+active check. Common kinds include `test`, `lint`, `typecheck`, `build`,
+`format`, `security`, and `coverage`. When no verification candidates are
+detected, VALIDATION is vacuously passed.
 
-**Check:** `test_quality`
-**Purpose:** Verify test coverage and quality
+### Verification Commands
 
-**Signals:**
+Verification commands are discovered automatically from the repository
+(`package.json` scripts, Java wrappers, detected tool defaults). They
+surface as `verificationCandidates` in `flowguard_status`. Use
+`/check` to execute them.
 
-- Presence of test files
-- Test naming conventions
-- Test frameworks detected
-
-### Rollback Safety
-
-**Check:** `rollback_safety`
-**Purpose:** Ensure changes can be reverted
-
-**Signals:**
-
-- Version control usage
-- Deployment documentation
-- Rollback procedures
+Refer to `docs/configuration.md#profileactivechecks` for overriding active
+checks at the config level.
 
 ## TypeScript Profile
 
@@ -124,7 +119,7 @@ export const myProfile = defineProfile({
     language: ['typescript', 'javascript'],
     framework: ['express'],
   },
-  checks: ['test_quality', 'rollback_safety', 'my_custom_check'],
+  activeChecks: [], // checks derived from verificationCandidates at hydrate-time
   instructions: {
     base: 'Follow Express.js best practices...',
     byPhase: {

@@ -192,7 +192,7 @@ Every successful `/review-decision` emits a decision receipt in the audit trail
 Run validation checks against the approved plan.
 
 **Allowed in:** VALIDATION
-**Checks:** Defined by active profile
+**Checks:** Derived from `verificationCandidates` (refer to `docs/configuration.md#profileactivechecks`)
 **ALL_PASSED** → advance to IMPLEMENTATION
 
 ### /implement
