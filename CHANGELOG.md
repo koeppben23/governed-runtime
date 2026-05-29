@@ -126,6 +126,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Issue #374:** Fix discovery drift detection false positives caused by volatile
+  runtime fields (`collectedAt`, `diagnostics[].durationMs`). Drift digest now
+  excludes timing metadata while preserving sensitivity to real content and
+  collector status changes. Full snapshot digest (`computeDiscoveryDigest`)
+  is unchanged.
+
 - **Issue #361:** `writeStdout` in `stdout-writer.ts` no longer treats `write()` returning `false` (backpressure) as a fatal error. The callback is now the sole delivery authority for write completion.
 
 - **Issue #331:** Corrected `docs/platform-limitations.md` — Gap 2 now states default Claude Code hooks are `type: command` (not HTTP), and HTTP hooks require external server management; Gap 3 audit claim corrected to specify PostToolUse persists tool-call events and PreToolUse decisions are logged to stderr only; all line references and timeout unit annotations updated to match current codebase.

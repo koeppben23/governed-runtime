@@ -11,12 +11,11 @@
  *
  * Also provides:
  * - extractDiscoverySummary(): extracts DiscoverySummary from DiscoveryResult
- * - computeDiscoveryDigest(): SHA-256 of canonical JSON for drift detection
+ * - computeDiscoveryDigest() (re-exported): SHA-256 of canonical JSON for snapshot/session integrity
  *
  * @version v2
  */
 
-import { createHash } from 'node:crypto';
 import { readFile as fsReadFile } from 'node:fs/promises';
 import * as nodePath from 'node:path';
 import { withSpan, addFingerprint } from '../telemetry/index.js';
@@ -44,6 +43,8 @@ import { collectCodeSurfaces } from './collectors/code-surface-analysis.js';
 import { collectDomainSignals } from './collectors/domain-signals.js';
 import { extractScopedStack } from './scoped-stack.js';
 import { runCollectorWithDiagnostics } from './collector-runner.js';
+
+export { computeDiscoveryDigest } from './discovery-digest.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -343,44 +344,6 @@ export async function extractDetectedStack(
     ...(targets.length > 0 ? { targets } : {}),
     ...(scopes && scopes.length > 0 ? { scopes } : {}),
   };
-}
-
-/**
- * Compute SHA-256 digest of a DiscoveryResult.
- *
- * Uses canonical JSON (recursively sorted keys) for deterministic hashing.
- * Used as `discoveryDigest` on SessionState for drift detection.
- */
-export function computeDiscoveryDigest(result: DiscoveryResult): string {
-  const canonical = JSON.stringify(canonicalize(result));
-  return createHash('sha256').update(canonical).digest('hex');
-}
-
-// ─── Internal Helpers ─────────────────────────────────────────────────────────
-
-/**
- * Recursively produce a canonical form of a JSON-compatible value.
- *
- * - Objects: keys sorted lexicographically, values canonicalized recursively.
- * - Arrays: element order preserved (order is semantic), values canonicalized.
- * - Primitives: returned unchanged.
- *
- * Guarantees two structurally equal values produce identical JSON.stringify
- * output regardless of original key insertion order.
- */
-function canonicalize(value: unknown): unknown {
-  if (value === null || value === undefined) return value;
-  if (typeof value !== 'object') return value;
-
-  if (Array.isArray(value)) {
-    return value.map(canonicalize);
-  }
-
-  const sorted: Record<string, unknown> = {};
-  for (const key of Object.keys(value).sort()) {
-    sorted[key] = canonicalize((value as Record<string, unknown>)[key]);
-  }
-  return sorted;
 }
 
 /**
