@@ -359,6 +359,104 @@ describe('discovery/collectors/code-surface-analysis', () => {
     });
   });
 
+  describe('PRIORITY', () => {
+    it('route/controller file displaces shallow utility under budget pressure', async () => {
+      const files: Record<string, string> = {};
+      const content = 'export const x = 1;';
+      for (let i = 0; i < 200; i++) {
+        files[`utils_${i}.ts`] = content;
+      }
+      files['src/controllers/users.ts'] = "app.get('/users', () => {});";
+
+      await withTempProject(files, async (input) => {
+        const result = await collectCodeSurfaces(input);
+        expect(result.status).toBe('partial');
+        expect(result.data.budget.budgetExhausted).toBe(true);
+        expect(result.data.budget.scannedFiles).toBe(200);
+        // Route file must be scanned: signal found
+        expect(result.data.endpoints.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('auth file displaces shallow utility under budget pressure', async () => {
+      const files: Record<string, string> = {};
+      const content = 'export const x = 1;';
+      for (let i = 0; i < 200; i++) {
+        files[`utils_${i}.ts`] = content;
+      }
+      files['src/auth/middleware.ts'] = 'app.use(authMiddleware, () => {});';
+
+      await withTempProject(files, async (input) => {
+        const result = await collectCodeSurfaces(input);
+        expect(result.status).toBe('partial');
+        expect(result.data.budget.scannedFiles).toBe(200);
+        expect(result.data.authBoundaries.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('persistence file displaces shallow utility under budget pressure', async () => {
+      const files: Record<string, string> = {};
+      const content = 'export const x = 1;';
+      for (let i = 0; i < 200; i++) {
+        files[`utils_${i}.ts`] = content;
+      }
+      files['src/db/repository.ts'] = 'prisma.user.findMany()';
+
+      await withTempProject(files, async (input) => {
+        const result = await collectCodeSurfaces(input);
+        expect(result.status).toBe('partial');
+        expect(result.data.budget.scannedFiles).toBe(200);
+        expect(result.data.dataAccess.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('multiple priority categories stack', async () => {
+      const files: Record<string, string> = {};
+      const content = 'export const x = 1;';
+      for (let i = 0; i < 200; i++) {
+        files[`utils_${i}.ts`] = content;
+      }
+      files['src/auth/controller.ts'] = 'app.post(() => {}); app.use(authMiddleware);';
+
+      await withTempProject(files, async (input) => {
+        const result = await collectCodeSurfaces(input);
+        expect(result.status).toBe('partial');
+        expect(result.data.budget.scannedFiles).toBe(200);
+        expect(result.data.endpoints.length).toBeGreaterThan(0);
+        expect(result.data.authBoundaries.length).toBeGreaterThan(0);
+      });
+    });
+
+    it('deterministic ranking with mixed separators', async () => {
+      const nameMixed = 'routes\\users.ts';
+      const nameUnix = 'routes/users.ts';
+
+      const files1: Record<string, string> = {};
+      for (let i = 0; i < 200; i++) files1[`utils_${i}.ts`] = 'const x = 1;';
+      files1[nameMixed] = "app.get('/api', () => {});";
+
+      const files2: Record<string, string> = {};
+      for (let i = 0; i < 200; i++) files2[`utils_${i}.ts`] = 'const x = 1;';
+      files2[nameUnix] = "app.get('/api', () => {});";
+
+      let endpoints1 = 0;
+      let endpoints2 = 0;
+
+      await withTempProject(files1, async (input) => {
+        const result = await collectCodeSurfaces(input);
+        endpoints1 = result.data.endpoints.length;
+      });
+
+      await withTempProject(files2, async (input) => {
+        const result = await collectCodeSurfaces(input);
+        endpoints2 = result.data.endpoints.length;
+      });
+
+      expect(endpoints1).toBe(endpoints2);
+      expect(endpoints1).toBeGreaterThan(0);
+    });
+  });
+
   describe('EDGE', () => {
     it('marks partial when candidate set exceeds file budget', async () => {
       const files: Record<string, string> = {};
