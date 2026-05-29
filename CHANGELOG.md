@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #376:** Aligned `docs/configuration.md`, `docs/profiles.md`,
+  `docs/commands.md`, and `docs/phases.md` with the current `activeChecks`
+  derivation contract. `activeChecks` are now correctly documented as derived
+  from `verificationCandidates` at session creation, not from static profile
+  defaults. Removed stale references to `test_quality` and `rollback_safety`.
+
 - **Issue #310:** Hardened `/review url=...` HTTPS content loading with fail-closed
   DNS target validation before native `fetch`. DNS lookup failures, empty answers,
   malformed addresses, private/reserved A or AAAA records, and mixed DNS answers

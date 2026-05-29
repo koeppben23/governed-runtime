@@ -209,8 +209,8 @@ Human reviews and approves the plan before implementation begins. When independe
 **Entry:** `/review-decision approve` from PLAN_REVIEW
 **Exit:** Automatic (all checks passed → IMPLEMENTATION, any check failed → back to PLAN)
 
-Runs automated validation checks defined by the active profile. All checks must pass to proceed.
-Use `/validate` to run the checks.
+Runs automated validation checks derived from `verificationCandidates`. All checks must pass to proceed.
+Use `/check` to execute the active verification candidates.
 
 ### IMPLEMENTATION
 
