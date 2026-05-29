@@ -445,4 +445,92 @@ describe('status', () => {
       expect(result.phase).toBe('TICKET');
     });
   });
+
+  describe('discoveryHealth in status', () => {
+    it('surfaces discoveryHealth after session creation', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.discoveryHealth).toBeDefined();
+      expect(result.discoveryHealth).not.toBeNull();
+      const dh = result.discoveryHealth as Record<string, unknown>;
+      expect(dh.kind).toBe('derived_discovery_health');
+      expect(dh.advisory).toBe(true);
+      expect(dh.source).toBe('persisted_discovery_result');
+      expect(typeof dh.completeCollectors).toBe('number');
+      expect(typeof dh.partialCollectors).toBe('number');
+      expect(typeof dh.failedCollectors).toBe('number');
+      expect(Array.isArray(dh.failedCollectorNames)).toBe(true);
+      expect(typeof dh.hasBudgetExhaustion).toBe('boolean');
+      expect(typeof dh.readFailureCount).toBe('number');
+      expect(typeof dh.healthy).toBe('boolean');
+      expect(dh.collectedAt).toBeDefined();
+      expect(typeof dh.collectedAt).toBe('string');
+    });
+
+    it('returns discoveryHealth: null when no session (no discovery artifact)', async () => {
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.discoveryHealth).toBeNull();
+    });
+
+    it('profileRules includes discovery health guidance', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.profileRules).toBeDefined();
+      expect(typeof result.profileRules).toBe('string');
+      expect(result.profileRules as string).toContain('## Discovery Health');
+      expect(result.profileRules as string).toContain('Check flowguard_status.discoveryHealth');
+    });
+
+    it('returns discoveryHealth: null when discovery artifact is corrupt', async () => {
+      await hydrateSession();
+      const { computeFingerprint } = await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const { workspaceDir: resolveWorkspace } = await import('../adapters/workspace/index.js');
+      const wsDir = resolveWorkspace(fp.fingerprint);
+      // Corrupt discovery.json by writing invalid JSON
+      const fs = await import('node:fs/promises');
+      const path = await import('node:path');
+      const discFile = path.join(wsDir, 'discovery', 'discovery.json');
+      await fs.writeFile(discFile, 'not json');
+
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.discoveryHealth).toBeNull();
+      expect(result.status).toBeDefined();
+    });
+
+    it('profileRules includes dynamic degradation warning when collectors are degraded', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      // Mutate discovery.json to simulate degraded discovery
+      const { readDiscovery, writeDiscovery } =
+        await import('../adapters/persistence-discovery.js');
+      const { workspaceDir: resolveWorkspace } = await import('../adapters/workspace/index.js');
+      const wsDir = resolveWorkspace(fp.fingerprint);
+      const disc = await readDiscovery(wsDir);
+      expect(disc).not.toBeNull();
+      if (disc) {
+        const degradedDisc = {
+          ...disc,
+          diagnostics: disc.diagnostics?.map((d: Record<string, unknown>) =>
+            d.name === 'stack-detection'
+              ? { ...d, status: 'failed', errorCode: 'TIMEOUT', timedOut: true }
+              : d,
+          ),
+        };
+        await writeDiscovery(wsDir, degradedDisc as typeof disc);
+      }
+
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.discoveryHealth).toBeDefined();
+      const dh = result.discoveryHealth as Record<string, unknown>;
+      expect(dh.healthy).toBe(false);
+      expect(dh.failedCollectors).toBeGreaterThan(0);
+      expect(result.profileRules as string).toContain('WARNING: Discovery is degraded.');
+    });
+  });
 });

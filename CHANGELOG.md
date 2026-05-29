@@ -79,6 +79,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Issue #375:** Surface discovery health in `flowguard_status` and agent
+  guidance. `discoveryHealth` is derived at status time from the persisted
+  DiscoveryResult — never stored on SessionState. Includes collector health
+  counts, failed collector names, code-surface budget exhaustion, read failure
+  count, age warning, and derived healthy flag. Agent guidance warns when
+  discovery is degraded or stale. Advisory projection only — DiscoveryResult
+  remains SSOT.
+
 - **Issue #296:** Add real RFC 3161 timestamp authority support using
   `pkijs`/`asn1js`, including an HTTP TSA provider, cryptographic
   TimeStampToken verification, strict timestamp-assurance session blocking,
