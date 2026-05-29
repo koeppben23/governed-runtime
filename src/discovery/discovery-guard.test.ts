@@ -35,6 +35,9 @@ const ALLOWLIST = new Set([
   path.normalize('src/discovery/types.ts'),
   path.normalize('src/discovery/orchestrator.ts'),
   path.normalize('src/discovery/discovery-digest.ts'),
+  // Shared test fixture: keeps the deprecated DiscoveryResult field in the
+  // discovery authority layer instead of duplicating it in downstream tests.
+  path.normalize('src/discovery/discovery-test-fixtures.ts'),
   path.normalize('src/discovery/discovery-guard.test.ts'),
 ]);
 

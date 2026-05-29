@@ -32,6 +32,7 @@ import { renderPhaseAwareMandates } from '../../templates/mandates-renderer.js';
 import { readDiscovery } from '../../adapters/persistence-discovery.js';
 import { extractDiscoveryHealth } from '../../discovery/discovery-health.js';
 import type { DiscoveryHealthProjection } from '../../discovery/discovery-health.js';
+import type { DiscoveryResult } from '../../discovery/types.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
 // State & Machine
@@ -49,6 +50,7 @@ import {
   buildContextProjection,
   buildReadinessProjection,
 } from '../status.js';
+import { buildImplementationGuidance } from '../implementation-guidance.js';
 
 // ─── Projection dispatch ──────────────────────────────────────────────────────
 
@@ -175,7 +177,29 @@ hasBudgetExhaustion is true, code-surface analysis was truncated. If
 ageWarning is set, discovery data may be stale. Mark unsupported claims
 as NOT_VERIFIED.`;
 
-async function loadDiscoveryHealth(wsDir: string): Promise<DiscoveryHealthProjection | null> {
+const IMPLEMENTATION_GUIDANCE_INSTRUCTION = `\
+## Implementation Guidance
+
+For full flowguard_status responses, inspect implementationGuidance when present.
+It is advisory, runtime-only, and never overrides phase gates, policy gates,
+review obligations, validation requirements, or the approved plan. Treat low
+confidence, missing discovery, or degraded discovery as NOT_VERIFIED.`;
+
+interface DiscoveryStatusContext {
+  readonly discovery: DiscoveryResult | null;
+  readonly discoveryHealth: DiscoveryHealthProjection | null;
+}
+
+interface FullStatusInput {
+  readonly state: SessionState;
+  readonly policy: FlowGuardPolicy;
+  readonly ev: EvalResult;
+  readonly completeness: CompletenessReport;
+  readonly discovery: DiscoveryResult | null;
+  readonly discoveryHealth: DiscoveryHealthProjection | null;
+}
+
+async function loadDiscoveryStatusContext(wsDir: string): Promise<DiscoveryStatusContext> {
   try {
     const result = await readDiscovery(wsDir);
     if (!result) {
@@ -186,9 +210,9 @@ async function loadDiscoveryHealth(wsDir: string): Promise<DiscoveryHealthProjec
           reason: 'discovery_artifact_missing',
         },
       );
-      return null;
+      return { discovery: null, discoveryHealth: null };
     }
-    return extractDiscoveryHealth(result);
+    return { discovery: result, discoveryHealth: extractDiscoveryHealth(result) };
   } catch (error) {
     getAdapterLogger().warn(
       'discovery-health',
@@ -198,7 +222,7 @@ async function loadDiscoveryHealth(wsDir: string): Promise<DiscoveryHealthProjec
         error: error instanceof Error ? error.message : String(error),
       },
     );
-    return null;
+    return { discovery: null, discoveryHealth: null };
   }
 }
 
@@ -208,21 +232,14 @@ function buildProfileStatus(
 ): Record<string, unknown> {
   const base = state.activeProfile?.ruleContent ?? '';
   const phaseExtra = state.activeProfile?.phaseRuleContent?.[state.phase];
-  let profileRules = phaseExtra ? base + '\n\n' + phaseExtra : base;
-
-  if (discoveryHealth && !discoveryHealth.healthy) {
-    const failed = discoveryHealth.failedCollectorNames;
-    const warning =
-      '\n\nWARNING: Discovery is degraded.' +
-      ` ${discoveryHealth.failedCollectors} collector(s) failed` +
-      (failed.length > 0 ? ` (${failed.join(', ')})` : '') +
-      `, ${discoveryHealth.partialCollectors} partial. ` +
-      `Verification candidates and stack data may be incomplete. ` +
-      `Check flowguard_status.discoveryHealth.`;
-    profileRules += warning;
-  }
-
-  profileRules += '\n\n' + DISCOVERY_HEALTH_INSTRUCTION;
+  const profileRules = [
+    phaseExtra ? base + '\n\n' + phaseExtra : base,
+    discoveryDegradationWarning(discoveryHealth),
+    DISCOVERY_HEALTH_INSTRUCTION,
+    IMPLEMENTATION_GUIDANCE_INSTRUCTION,
+  ]
+    .filter((part) => part.length > 0)
+    .join('\n\n');
 
   return {
     initiatedBy: state.initiatedBy,
@@ -232,6 +249,19 @@ function buildProfileStatus(
     detectedStack: state.detectedStack ?? null,
     verificationCandidates: state.verificationCandidates ?? [],
   };
+}
+
+function discoveryDegradationWarning(discoveryHealth: DiscoveryHealthProjection | null): string {
+  if (!discoveryHealth || discoveryHealth.healthy) return '';
+  const failed = discoveryHealth.failedCollectorNames;
+  return (
+    'WARNING: Discovery is degraded.' +
+    ` ${discoveryHealth.failedCollectors} collector(s) failed` +
+    (failed.length > 0 ? ` (${failed.join(', ')})` : '') +
+    `, ${discoveryHealth.partialCollectors} partial. ` +
+    `Verification candidates and stack data may be incomplete. ` +
+    `Check flowguard_status.discoveryHealth.`
+  );
 }
 
 function buildEvidenceStatus(state: SessionState): Record<string, unknown> {
@@ -273,14 +303,14 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
   };
 }
 
-function buildFullStatusResponse(
-  state: SessionState,
-  policy: FlowGuardPolicy,
-  ev: EvalResult,
-  completeness: CompletenessReport,
-  discoveryHealth: DiscoveryHealthProjection | null,
-): string {
+function buildFullStatusResponse(input: FullStatusInput): string {
+  const { state, policy, ev, completeness, discovery, discoveryHealth } = input;
   const projection = buildStatusProjection(state, policy);
+  const implementationGuidance = buildImplementationGuidance({
+    state,
+    discovery,
+    discoveryHealth,
+  });
 
   return appendNextAction(
     JSON.stringify({
@@ -289,6 +319,7 @@ function buildFullStatusResponse(
       sessionId: state.id,
       policyMode: state.policySnapshot?.mode ?? 'unknown',
       discoveryHealth: discoveryHealth ?? null,
+      implementationGuidance,
       archiveStatus: state.archiveStatus ?? null,
       appliedPolicy: buildAppliedPolicyStatus(state),
       ...buildProfileStatus(state, discoveryHealth),
@@ -364,8 +395,15 @@ export const status: ToolDefinition = {
       const projection = resolveProjection(args, state, policy);
       if (projection !== null) return projection;
 
-      const discoveryHealth = await loadDiscoveryHealth(wsDir);
-      return buildFullStatusResponse(state, policy, ev, completeness, discoveryHealth);
+      const { discovery, discoveryHealth } = await loadDiscoveryStatusContext(wsDir);
+      return buildFullStatusResponse({
+        state,
+        policy,
+        ev,
+        completeness,
+        discovery,
+        discoveryHealth,
+      });
     } catch (err) {
       if (err instanceof ActorClaimError) {
         return formatBlocked(err.code);
