@@ -9,8 +9,11 @@
  *
  * Scanning strategy:
  * - Filters allFiles to source-extension candidates only
- * - Sorts deterministically: shallow files first (fewer path segments), then alphabetical
- * - Takes first MAX_FILES from sorted candidates
+ * - Ranks candidates by keyword-based priority: routes/controllers first,
+ *   then auth/security, persistence/data, config/entry/integration,
+ *   framework/IOC, then unmatched. Within each tier, shallow files first, then
+ *   alphabetical. Ranking is deterministic across platforms and separators.
+ * - Takes first MAX_FILES from ranked candidates
  * - Reports `partial` based on source-candidate budget exhaustion, NOT total repo file count
  */
 
@@ -44,6 +47,110 @@ const SOURCE_EXTENSIONS = new Set([
   '.rb',
   '.cs',
 ]);
+
+// ─── Prioritization ───────────────────────────────────────────────────────────
+
+const CATEGORY_KEYWORDS: Record<string, number> = {
+  route: 5,
+  routes: 5,
+  controller: 5,
+  controllers: 5,
+  handler: 5,
+  handlers: 5,
+  endpoint: 5,
+  endpoints: 5,
+  api: 5,
+  router: 5,
+  auth: 4,
+  guard: 4,
+  guards: 4,
+  middleware: 4,
+  middlewares: 4,
+  protect: 4,
+  security: 4,
+  session: 4,
+  token: 4,
+  repository: 3,
+  repositories: 3,
+  model: 3,
+  models: 3,
+  schema: 3,
+  schemas: 3,
+  entity: 3,
+  entities: 3,
+  dao: 3,
+  store: 3,
+  database: 3,
+  prisma: 3,
+  migration: 3,
+  migrations: 3,
+  seed: 3,
+  config: 2,
+  configs: 2,
+  setup: 2,
+  main: 2,
+  index: 2,
+  server: 2,
+  app: 2,
+  bootstrap: 2,
+  client: 2,
+  clients: 2,
+  adapter: 2,
+  adapters: 2,
+  gateway: 2,
+  gateways: 2,
+  service: 1,
+  services: 1,
+  provider: 1,
+  providers: 1,
+  module: 1,
+  modules: 1,
+  factory: 1,
+  factories: 1,
+  decorator: 1,
+  interceptor: 1,
+  interceptors: 1,
+  filter: 1,
+  pipe: 1,
+  pipes: 1,
+  resolver: 1,
+  resolvers: 1,
+};
+
+function computePriority(filePath: string): number {
+  const normalized = filePath.replaceAll('\\', '/');
+  const segments = normalized.split('/').filter(Boolean);
+  const basename = segments.at(-1) ?? normalized;
+  const stem = basename.replace(/\.[^.]+$/, '').toLowerCase();
+
+  const seen = new Set<string>();
+  let score = 0;
+
+  function addWeight(key: string) {
+    const w = CATEGORY_KEYWORDS[key];
+    if (w !== undefined && !seen.has(key)) {
+      seen.add(key);
+      score += w;
+    }
+  }
+
+  addWeight(stem);
+
+  for (const seg of segments) {
+    const segStem = seg.replace(/\.[^.]+$/, '').toLowerCase();
+    addWeight(segStem);
+  }
+
+  return score;
+}
+
+function precomputePriorities(candidates: string[]): Map<string, number> {
+  const map = new Map<string, number>();
+  for (const f of candidates) {
+    map.set(f, computePriority(f));
+  }
+  return map;
+}
 
 interface Rule {
   readonly id: string;
@@ -156,8 +263,12 @@ async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
 
   const totalSourceCandidates = allSourceCandidates.length;
 
-  // Deterministic sort: shallow files first (entry points), then alphabetical
+  // Deterministic ranking: priority score (higher first), then depth, then alphabetical
+  const priorities = precomputePriorities(allSourceCandidates);
   const sorted = [...allSourceCandidates].sort((a, b) => {
+    const pA = priorities.get(a) ?? 0;
+    const pB = priorities.get(b) ?? 0;
+    if (pA !== pB) return pB - pA;
     const depthA = a.split(/[/\\]/).length;
     const depthB = b.split(/[/\\]/).length;
     if (depthA !== depthB) return depthA - depthB;

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #378:** Improve code-surface scan prioritization with weighted
+  keyword-based ranking. Route/controller, auth/security, persistence/data,
+  and config/entry-point files are now scanned before unrelated shallow
+  utilities under budget pressure. Ranking is deterministic across
+  platforms. Budgets, signal detection, and output shape unchanged.
+
 - **Issue #376:** Aligned `docs/configuration.md`, `docs/profiles.md`,
   `docs/commands.md`, and `docs/phases.md` with the current `activeChecks`
   derivation contract. `activeChecks` are now correctly documented as derived
