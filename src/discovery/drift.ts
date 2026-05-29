@@ -11,7 +11,8 @@
  * - Failure is explicit (throws), never silently passes.
  */
 
-import { computeDiscoveryDigest, runDiscovery } from './orchestrator.js';
+import { computeStableDriftDigest } from './discovery-digest.js';
+import { runDiscovery } from './orchestrator.js';
 import { readDiscovery } from '../adapters/persistence-discovery.js';
 import { listRepoSignals } from '../adapters/git.js';
 import type { CollectorDiagnostic } from './types.js';
@@ -56,7 +57,7 @@ export async function checkDiscoveryDrift(
 ): Promise<DriftResult> {
   // Read existing persisted discovery (may not exist for first-run)
   const persisted = await readDiscovery(workspaceDir);
-  const persistedDigest = persisted ? computeDiscoveryDigest(persisted) : null;
+  const persistedDigest = persisted ? computeStableDriftDigest(persisted) : null;
 
   // Re-run discovery (read-only — we never write)
   const repoSignals = await listRepoSignals(worktree);
@@ -70,7 +71,7 @@ export async function checkDiscoveryDrift(
     configFilePaths: repoSignals.configFilePaths,
   });
 
-  const currentDigest = computeDiscoveryDigest(freshResult);
+  const currentDigest = computeStableDriftDigest(freshResult);
   const drifted = persistedDigest !== null && currentDigest !== persistedDigest;
 
   // Identify which collectors changed status

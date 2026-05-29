@@ -34,6 +34,17 @@ vi.mock('../adapters/git', () => ({
   headCommit: vi.fn().mockResolvedValue('abc1234'),
   isClean: vi.fn().mockResolvedValue(true),
   remoteOriginUrl: vi.fn().mockResolvedValue(null),
+  listRepoSignals: vi.fn().mockResolvedValue({
+    files: [],
+    packageFiles: [],
+    configFiles: [],
+    packageFilePaths: [],
+    configFilePaths: [],
+  }),
+}));
+
+vi.mock('../adapters/persistence-discovery', () => ({
+  readDiscovery: vi.fn().mockResolvedValue(null),
 }));
 
 const EMPTY_INPUT: CollectorInput = {
@@ -385,10 +396,174 @@ describe('discovery/diagnostics (#372)', () => {
 
   // ─── Phase 7: Drift Detection ─────────────────────────────────────────────
 
-  describe('Phase 7: drift detection types', () => {
-    it('checkDiscoveryDrift module exports correctly', async () => {
-      const mod = await import('./drift.js');
-      expect(typeof mod.checkDiscoveryDrift).toBe('function');
+  describe('Phase 7: stable drift digest', () => {
+    it('computeStableDriftDigest returns deterministic hash', async () => {
+      const { computeStableDriftDigest } = await import('./discovery-digest.js');
+      const result = await runDiscovery(EMPTY_INPUT);
+      const d1 = computeStableDriftDigest(result);
+      const d2 = computeStableDriftDigest(result);
+      expect(d1).toBe(d2);
+      expect(d1.length).toBe(64);
+      expect(/^[0-9a-f]{64}$/.test(d1)).toBe(true);
+    });
+
+    it('stable digest unchanged when collectedAt differs', async () => {
+      const { computeStableDriftDigest } = await import('./discovery-digest.js');
+      const result = await runDiscovery(EMPTY_INPUT);
+      const d1 = computeStableDriftDigest(result);
+      const shifted = { ...result, collectedAt: new Date(Date.now() + 86_400_000).toISOString() };
+      const d2 = computeStableDriftDigest(shifted);
+      expect(d1).toBe(d2);
+    });
+
+    it('stable digest unchanged when diagnostics[].durationMs differs', async () => {
+      const { computeStableDriftDigest } = await import('./discovery-digest.js');
+      const result = await runDiscovery(EMPTY_INPUT);
+      const d1 = computeStableDriftDigest(result);
+      const shifted = {
+        ...result,
+        diagnostics: result.diagnostics!.map((d) => ({ ...d, durationMs: d.durationMs + 5000 })),
+      };
+      const d2 = computeStableDriftDigest(shifted);
+      expect(d1).toBe(d2);
+    });
+
+    it('stable digest unchanged when both volatile fields differ', async () => {
+      const { computeStableDriftDigest } = await import('./discovery-digest.js');
+      const result = await runDiscovery(EMPTY_INPUT);
+      const d1 = computeStableDriftDigest(result);
+      const shifted = {
+        ...result,
+        collectedAt: new Date(Date.now() + 86_400_000).toISOString(),
+        diagnostics: result.diagnostics!.map((d) => ({ ...d, durationMs: d.durationMs + 5000 })),
+      };
+      const d2 = computeStableDriftDigest(shifted);
+      expect(d1).toBe(d2);
+    });
+
+    it('stable digest changes when collectors status differs', async () => {
+      const { computeStableDriftDigest } = await import('./discovery-digest.js');
+      const result = await runDiscovery(EMPTY_INPUT);
+      const d1 = computeStableDriftDigest(result);
+      const changed = {
+        ...result,
+        collectors: { ...result.collectors, 'repo-metadata': 'failed' as const },
+      };
+      const d2 = computeStableDriftDigest(changed);
+      expect(d1).not.toBe(d2);
+    });
+
+    it('stable digest changes when stack content differs', async () => {
+      const { computeStableDriftDigest } = await import('./discovery-digest.js');
+      const result = await runDiscovery(EMPTY_INPUT);
+      const d1 = computeStableDriftDigest(result);
+      const changed = {
+        ...result,
+        stack: { ...result.stack, languages: [{ id: 'typescript', confidence: 1.0 }] },
+      };
+      const d2 = computeStableDriftDigest(changed);
+      expect(d1).not.toBe(d2);
+    });
+
+    it('full digest changes when collectedAt changes, stable digest does not', async () => {
+      const { computeStableDriftDigest } = await import('./discovery-digest.js');
+      const result = await runDiscovery(EMPTY_INPUT);
+      const full1 = computeDiscoveryDigest(result);
+      const stable1 = computeStableDriftDigest(result);
+      const shifted = { ...result, collectedAt: new Date(Date.now() + 86_400_000).toISOString() };
+      const full2 = computeDiscoveryDigest(shifted);
+      const stable2 = computeStableDriftDigest(shifted);
+      expect(full1).not.toBe(full2);
+      expect(stable1).toBe(stable2);
+    });
+  });
+
+  describe('Phase 7b: checkDiscoveryDrift behavior', () => {
+    it('unchanged repo with different timestamps reports drifted: false', async () => {
+      // Use same worktree path so runDiscovery produces consistent metadata
+      const result = await runDiscovery({
+        worktreePath: '/test/repo',
+        fingerprint: 'abcdef0123456789abcdef01',
+        allFiles: [],
+        packageFiles: [],
+        configFiles: [],
+      });
+
+      const { readDiscovery } = await import('../adapters/persistence-discovery.js');
+      (readDiscovery as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(result);
+
+      const { listRepoSignals } = await import('../adapters/git.js');
+      (listRepoSignals as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        files: [],
+        packageFiles: [],
+        configFiles: [],
+        packageFilePaths: [],
+        configFilePaths: [],
+      });
+
+      const { checkDiscoveryDrift } = await import('./drift.js');
+      const drift = await checkDiscoveryDrift(
+        '/workspace',
+        '/test/repo',
+        'abcdef0123456789abcdef01',
+      );
+      expect(drift.drifted).toBe(false);
+      expect(drift.persistedDigest).toBeTypeOf('string');
+    });
+
+    it('changed content reports drifted: true without collector status changes', async () => {
+      const persisted = await runDiscovery(EMPTY_INPUT);
+
+      const { readDiscovery } = await import('../adapters/persistence-discovery.js');
+      (readDiscovery as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(persisted);
+
+      const { listRepoSignals } = await import('../adapters/git.js');
+      (listRepoSignals as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        files: ['src/index.ts'],
+        packageFiles: ['package.json'],
+        configFiles: ['tsconfig.json'],
+        packageFilePaths: ['package.json'],
+        configFilePaths: ['tsconfig.json'],
+      });
+
+      const { checkDiscoveryDrift } = await import('./drift.js');
+      const drift = await checkDiscoveryDrift(
+        '/workspace',
+        '/test/ts-repo',
+        'abcdef0123456789abcdef01',
+      );
+      expect(drift.drifted).toBe(true);
+      expect(drift.currentDigest).not.toBe(drift.persistedDigest);
+    });
+
+    it('drifted: true with changedCollectors when collector status changes', async () => {
+      const persisted = await runDiscovery(EMPTY_INPUT);
+      // Mutate a collector status to 'failed'
+      const tampered = {
+        ...persisted,
+        collectors: { ...persisted.collectors, 'stack-detection': 'failed' as const },
+      };
+
+      const { readDiscovery } = await import('../adapters/persistence-discovery.js');
+      (readDiscovery as unknown as ReturnType<typeof vi.fn>).mockResolvedValue(tampered);
+
+      const { listRepoSignals } = await import('../adapters/git.js');
+      (listRepoSignals as unknown as ReturnType<typeof vi.fn>).mockResolvedValue({
+        files: [],
+        packageFiles: [],
+        configFiles: [],
+        packageFilePaths: [],
+        configFilePaths: [],
+      });
+
+      const { checkDiscoveryDrift } = await import('./drift.js');
+      const drift = await checkDiscoveryDrift(
+        '/workspace',
+        '/test/repo',
+        'abcdef0123456789abcdef01',
+      );
+      expect(drift.drifted).toBe(true);
+      expect(drift.changedCollectors).toContain('stack-detection');
     });
   });
 });
