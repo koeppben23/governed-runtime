@@ -7,6 +7,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import {
   createToolContext,
   createTestWorkspace,
@@ -29,7 +31,7 @@ import {
   archive,
   architecture,
 } from './tools/index.js';
-import { readState, writeState } from '../adapters/persistence.js';
+import { readState, statePath, writeState } from '../adapters/persistence.js';
 
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
 
@@ -481,6 +483,8 @@ describe('status', () => {
       expect(result.profileRules as string).toContain('Check flowguard_status.discoveryHealth');
       expect(result.profileRules as string).toContain('## Implementation Guidance');
       expect(result.profileRules as string).toContain('inspect implementationGuidance');
+      expect(result.profileRules as string).toContain('## Discovery Drift');
+      expect(result.profileRules as string).toContain('inspect discoveryDrift');
     });
 
     it('surfaces implementationGuidance only on full status responses', async () => {
@@ -497,6 +501,61 @@ describe('status', () => {
 
       const focused = parseToolResult(await status.execute({ evidence: true }, ctx));
       expect(focused.implementationGuidance).toBeUndefined();
+      expect(focused.discoveryDrift).toBeUndefined();
+    });
+
+    it('surfaces discoveryDrift as clean on unchanged repository', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+      const drift = result.discoveryDrift as Record<string, unknown>;
+
+      expect(drift).toBeDefined();
+      expect(drift.kind).toBe('derived_discovery_drift');
+      expect(drift.advisory).toBe(true);
+      expect(drift.runtimeOnly).toBe(true);
+      expect(drift.status).toBe('clean');
+      expect(drift.drifted).toBe(false);
+      expect(typeof drift.currentDigest).toBe('string');
+      expect(typeof drift.persistedDigest).toBe('string');
+    });
+
+    it('distinguishes stale discovery age from actual clean drift', async () => {
+      await hydrateSession();
+      const { computeFingerprint } = await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const { workspaceDir: resolveWorkspace } = await import('../adapters/workspace/index.js');
+      const wsDir = resolveWorkspace(fp.fingerprint);
+      const { readDiscovery, writeDiscovery } =
+        await import('../adapters/persistence-discovery.js');
+      const disc = await readDiscovery(wsDir);
+      expect(disc).not.toBeNull();
+      await writeDiscovery(wsDir, { ...disc!, collectedAt: '2000-01-01T00:00:00.000Z' });
+
+      const statusResult = parseToolResult(await status.execute({}, ctx));
+      const health = statusResult.discoveryHealth as Record<string, unknown>;
+      const drift = statusResult.discoveryDrift as Record<string, unknown>;
+
+      expect(health.ageWarning).toBeTruthy();
+      expect(drift.status).toBe('clean');
+      expect(drift.drifted).toBe(false);
+    });
+
+    it('surfaces missing discoveryDrift explicitly when discovery artifact is absent', async () => {
+      await hydrateSession();
+      const { computeFingerprint } = await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const { workspaceDir: resolveWorkspace } = await import('../adapters/workspace/index.js');
+      const wsDir = resolveWorkspace(fp.fingerprint);
+      await fs.rm(path.join(wsDir, 'discovery', 'discovery.json'));
+
+      const result = parseToolResult(await status.execute({}, ctx));
+      const drift = result.discoveryDrift as Record<string, unknown>;
+      expect(result.discoveryHealth).toBeNull();
+      expect(drift.status).toBe('missing_discovery');
+      expect(drift.drifted).toBeNull();
+      expect(drift.notVerified).toEqual(
+        expect.arrayContaining([expect.stringContaining('missing')]),
+      );
     });
 
     it('returns discoveryHealth: null when discovery artifact is corrupt', async () => {
@@ -513,7 +572,31 @@ describe('status', () => {
 
       const result = parseToolResult(await status.execute({}, ctx));
       expect(result.discoveryHealth).toBeNull();
+      const drift = result.discoveryDrift as Record<string, unknown>;
+      expect(drift.status).toBe('unavailable');
+      expect(drift.notVerified).toEqual(
+        expect.arrayContaining([expect.stringContaining('valid JSON')]),
+      );
       expect(result.status).toBeDefined();
+    });
+
+    it('does not write discovery or session state during drift status projection', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const { workspaceDir: resolveWorkspace } = await import('../adapters/workspace/index.js');
+      const wsDir = resolveWorkspace(fp.fingerprint);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const discoveryPath = path.join(wsDir, 'discovery', 'discovery.json');
+      const stateFile = statePath(sessDir);
+      const beforeDiscovery = await fs.readFile(discoveryPath, 'utf-8');
+      const beforeState = await fs.readFile(stateFile, 'utf-8');
+
+      await status.execute({}, ctx);
+
+      await expect(fs.readFile(discoveryPath, 'utf-8')).resolves.toBe(beforeDiscovery);
+      await expect(fs.readFile(stateFile, 'utf-8')).resolves.toBe(beforeState);
     });
 
     it('profileRules includes dynamic degradation warning when collectors are degraded', async () => {

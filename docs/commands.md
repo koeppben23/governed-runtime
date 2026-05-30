@@ -75,6 +75,8 @@ It does not mutate state and is safe to call at any time.
 
 Full `/status` responses include `implementationGuidance` when a session exists. This is a compact, runtime-only, advisory projection from `DiscoveryResult` and `SessionState` that can list relevant files, modules, surfaces, tests, contracts, and risk hotspots with confidence and evidence provenance. It is not persisted, is not a second plan/ticket/risk authority, and never overrides phase gates, policy gates, review obligations, validation requirements, or the approved plan. Missing or degraded discovery is surfaced with `NOT_VERIFIED` wording and capped confidence instead of fake certainty.
 
+Full `/status` responses also include `discoveryDrift` when a session exists. This is a bounded, read-only, advisory projection from `checkDiscoveryDrift()` with explicit statuses: `clean`, `drifted`, `missing_discovery`, `unavailable`, `timeout`, or `not_checked`. Drift status does not overwrite discovery artifacts, does not rehydrate, and is not an approval or denial authority. `discoveryHealth.ageWarning` only indicates stale collection time; `discoveryDrift.status` indicates whether a stable digest comparison found actual repository drift. Drift timeouts bound the status response, but underlying discovery work may continue if the existing discovery path cannot be aborted.
+
 Optional focused views:
 
 - `/status --why-blocked` — blocker analysis from evaluator/completeness truth

@@ -51,6 +51,8 @@ import {
   buildReadinessProjection,
 } from '../status.js';
 import { buildImplementationGuidance } from '../implementation-guidance.js';
+import type { DiscoveryDriftStatusProjection } from '../discovery-drift-status.js';
+import { buildDiscoveryDriftStatus } from '../discovery-drift-status.js';
 
 // ─── Projection dispatch ──────────────────────────────────────────────────────
 
@@ -185,6 +187,13 @@ It is advisory, runtime-only, and never overrides phase gates, policy gates,
 review obligations, validation requirements, or the approved plan. Treat low
 confidence, missing discovery, or degraded discovery as NOT_VERIFIED.`;
 
+const DISCOVERY_DRIFT_INSTRUCTION = `\
+## Discovery Drift
+
+For full flowguard_status responses, inspect discoveryDrift when present.
+It is advisory, read-only, and separate from discoveryHealth.ageWarning.
+Timeout or unavailable drift status means repository drift is NOT_VERIFIED.`;
+
 interface DiscoveryStatusContext {
   readonly discovery: DiscoveryResult | null;
   readonly discoveryHealth: DiscoveryHealthProjection | null;
@@ -197,6 +206,7 @@ interface FullStatusInput {
   readonly completeness: CompletenessReport;
   readonly discovery: DiscoveryResult | null;
   readonly discoveryHealth: DiscoveryHealthProjection | null;
+  readonly discoveryDrift: DiscoveryDriftStatusProjection;
 }
 
 async function loadDiscoveryStatusContext(wsDir: string): Promise<DiscoveryStatusContext> {
@@ -237,6 +247,7 @@ function buildProfileStatus(
     discoveryDegradationWarning(discoveryHealth),
     DISCOVERY_HEALTH_INSTRUCTION,
     IMPLEMENTATION_GUIDANCE_INSTRUCTION,
+    DISCOVERY_DRIFT_INSTRUCTION,
   ]
     .filter((part) => part.length > 0)
     .join('\n\n');
@@ -304,7 +315,7 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
 }
 
 function buildFullStatusResponse(input: FullStatusInput): string {
-  const { state, policy, ev, completeness, discovery, discoveryHealth } = input;
+  const { state, policy, ev, completeness, discovery, discoveryHealth, discoveryDrift } = input;
   const projection = buildStatusProjection(state, policy);
   const implementationGuidance = buildImplementationGuidance({
     state,
@@ -319,6 +330,7 @@ function buildFullStatusResponse(input: FullStatusInput): string {
       sessionId: state.id,
       policyMode: state.policySnapshot?.mode ?? 'unknown',
       discoveryHealth: discoveryHealth ?? null,
+      discoveryDrift,
       implementationGuidance,
       archiveStatus: state.archiveStatus ?? null,
       appliedPolicy: buildAppliedPolicyStatus(state),
@@ -377,6 +389,7 @@ export const status: ToolDefinition = {
           phase: null,
           status: 'No FlowGuard session found.',
           discoveryHealth: null,
+          discoveryDrift: null,
           next: 'Run /hydrate to bootstrap a session.',
           governanceMandates: {
             source: 'src/templates/mandates.ts',
@@ -396,6 +409,11 @@ export const status: ToolDefinition = {
       if (projection !== null) return projection;
 
       const { discovery, discoveryHealth } = await loadDiscoveryStatusContext(wsDir);
+      const discoveryDrift = await buildDiscoveryDriftStatus({
+        workspaceDir: wsDir,
+        worktree: state.binding.worktree,
+        fingerprint: state.binding.fingerprint,
+      });
       return buildFullStatusResponse({
         state,
         policy,
@@ -403,6 +421,7 @@ export const status: ToolDefinition = {
         completeness,
         discovery,
         discoveryHealth,
+        discoveryDrift,
       });
     } catch (err) {
       if (err instanceof ActorClaimError) {
