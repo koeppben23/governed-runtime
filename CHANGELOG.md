@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #388:** Added bounded semantic code-surface extraction for common
+  TypeScript/JavaScript and Java Spring route/controller, auth, data-access, and
+  test-target patterns. Signals remain advisory `DiscoveryResult.codeSurfaces`
+  evidence with deterministic budget limits, confidence, locations, and explicit
+  heuristic-only diagnostics for unsupported frameworks.
+
 - **Issue #387:** Made `flowguard_status.discoveryHealth` unavailable states
   explicit for sessions with missing, corrupt, schema-invalid, or unreadable
   discovery artifacts. Status now reports deterministic recovery and

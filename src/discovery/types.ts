@@ -289,6 +289,18 @@ export const CodeSurfaceSignalSchema = z.object({
 });
 export type CodeSurfaceSignal = z.infer<typeof CodeSurfaceSignalSchema>;
 
+export const SemanticExtractionStatusSchema = z.enum(['applied', 'heuristic_only', 'partial']);
+export type SemanticExtractionStatus = z.infer<typeof SemanticExtractionStatusSchema>;
+
+/** Runtime diagnostics for optional semantic code-surface extraction. */
+export const SemanticExtractionInfoSchema = z.object({
+  status: SemanticExtractionStatusSchema,
+  appliedExtractors: z.array(z.string()),
+  unsupportedReason: z.string().nullable(),
+  diagnostics: z.array(z.string()),
+});
+export type SemanticExtractionInfo = z.infer<typeof SemanticExtractionInfoSchema>;
+
 // CodeSurfaceStatusSchema + CodeSurfaceStatus: re-exported from state/discovery-schemas.ts
 
 /** Collector budget stats for code-surface analysis. */
@@ -313,7 +325,11 @@ export const CodeSurfacesInfoSchema = z.object({
   authBoundaries: z.array(CodeSurfaceSignalSchema),
   dataAccess: z.array(CodeSurfaceSignalSchema),
   integrations: z.array(CodeSurfaceSignalSchema),
+  /** Advisory semantic test targets when framework/test patterns are detected. */
+  testTargets: z.array(CodeSurfaceSignalSchema).optional(),
   budget: CodeSurfaceBudgetSchema,
+  /** Optional semantic extraction diagnostics; advisory, bounded, and non-authoritative. */
+  semanticExtraction: SemanticExtractionInfoSchema.optional(),
   /** Per-file read outcome diagnostics (populated when reads degrade). */
   readStatuses: z.record(z.string(), ReadOutcomeSchema).optional(),
 });

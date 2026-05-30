@@ -311,6 +311,84 @@ describe('discovery/collectors/code-surface-analysis', () => {
         },
       );
     });
+
+    it('extracts semantic TypeScript route, auth, data-access, and test-target signals', async () => {
+      await withTempProject(
+        {
+          'src/routes/users.ts': `
+            router.post('/users', requireAuth(), async () => prisma.user.create({ data: {} }));
+            app.use(authMiddleware());
+          `,
+          'src/routes/users.test.ts':
+            "describe('users route', () => { it('creates users', () => {}); });",
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+
+          expect(result.data.semanticExtraction?.status).toBe('applied');
+          expect(result.data.semanticExtraction?.appliedExtractors).toContain(
+            'typescript-javascript-frameworks',
+          );
+          expect(result.data.endpoints).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                id: 'semantic-ts-route-handler',
+                classification: 'derived_signal',
+                location: expect.stringContaining('src/routes/users.ts:'),
+                evidence: expect.arrayContaining([expect.stringContaining("router.post('/users'")]),
+              }),
+            ]),
+          );
+          expect(result.data.authBoundaries).toEqual(
+            expect.arrayContaining([expect.objectContaining({ id: 'semantic-ts-auth-boundary' })]),
+          );
+          expect(result.data.dataAccess).toEqual(
+            expect.arrayContaining([expect.objectContaining({ id: 'semantic-ts-data-access' })]),
+          );
+          expect(result.data.testTargets).toEqual(
+            expect.arrayContaining([expect.objectContaining({ id: 'semantic-ts-test-target' })]),
+          );
+        },
+      );
+    });
+
+    it('extracts conservative Java Spring route, auth, and data-access signals', async () => {
+      await withTempProject(
+        {
+          'src/main/java/com/acme/UserController.java': `
+            @RestController
+            class UserController {
+              @GetMapping("/users")
+              @PreAuthorize("hasRole('ADMIN')")
+              List<User> users(UserRepository repo) { return repo.findAll(); }
+            }
+          `,
+          'src/main/java/com/acme/UserRepository.java':
+            '@Repository interface UserRepository extends JpaRepository<User, String> {}',
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+
+          expect(result.data.semanticExtraction?.status).toBe('applied');
+          expect(result.data.semanticExtraction?.appliedExtractors).toContain(
+            'java-spring-frameworks',
+          );
+          expect(result.data.endpoints).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ id: 'semantic-java-spring-controller' }),
+            ]),
+          );
+          expect(result.data.authBoundaries).toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({ id: 'semantic-java-auth-boundary' }),
+            ]),
+          );
+          expect(result.data.dataAccess).toEqual(
+            expect.arrayContaining([expect.objectContaining({ id: 'semantic-java-data-access' })]),
+          );
+        },
+      );
+    });
   });
 
   describe('BAD', () => {
@@ -354,6 +432,51 @@ describe('discovery/collectors/code-surface-analysis', () => {
           expect(result.data.authBoundaries).toHaveLength(0);
           expect(result.data.dataAccess).toHaveLength(0);
           expect(result.data.integrations).toHaveLength(0);
+        },
+      );
+    });
+
+    it('degrades unsupported semantic extraction to heuristic-only behavior', async () => {
+      await withTempProject(
+        {
+          'src/app.py': 'def health():\n    return {"ok": True}\n',
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+
+          expect(result.status).toBe('complete');
+          expect(result.data.semanticExtraction).toMatchObject({
+            status: 'heuristic_only',
+            appliedExtractors: [],
+          });
+          expect(result.data.semanticExtraction?.unsupportedReason).toContain('heuristic');
+          expect(result.data.endpoints).toHaveLength(0);
+          expect(result.data.authBoundaries).toHaveLength(0);
+          expect(result.data.dataAccess).toHaveLength(0);
+        },
+      );
+    });
+
+    it('avoids semantic false positives in comments and plain text', async () => {
+      await withTempProject(
+        {
+          'src/commented.ts': `
+            // router.get('/commented', requireAuth())
+            /* @PreAuthorize("admin") */
+            const text = "prisma.user.findMany should not be a semantic signal";
+          `,
+        },
+        async (input) => {
+          const result = await collectCodeSurfaces(input);
+          const semanticIds = [
+            ...result.data.endpoints,
+            ...result.data.authBoundaries,
+            ...result.data.dataAccess,
+          ].map((signal) => signal.id);
+
+          expect(semanticIds).not.toContain('semantic-ts-route-handler');
+          expect(semanticIds).not.toContain('semantic-ts-auth-boundary');
+          expect(semanticIds).not.toContain('semantic-ts-data-access');
         },
       );
     });
@@ -468,6 +591,24 @@ describe('discovery/collectors/code-surface-analysis', () => {
         expect(result.status).toBe('partial');
         expect(result.data.status).toBe('partial');
         expect(result.data.budget.scannedFiles).toBeLessThanOrEqual(200);
+      });
+    });
+
+    it('keeps semantic extraction bounded by the existing file budget', async () => {
+      const files: Record<string, string> = {};
+      for (let i = 0; i < 260; i++) {
+        files[`src/file-${i}.ts`] = `router.get('/route-${i}', () => {});`;
+      }
+
+      await withTempProject(files, async (input) => {
+        const result = await collectCodeSurfaces(input);
+        expect(result.status).toBe('partial');
+        expect(result.data.budget.scannedFiles).toBe(200);
+        expect(
+          result.data.endpoints.filter((signal) => signal.id === 'semantic-ts-route-handler')
+            .length,
+        ).toBeLessThanOrEqual(200);
+        expect(result.data.semanticExtraction?.status).toBe('applied');
       });
     });
 
