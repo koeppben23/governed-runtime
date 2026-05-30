@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #387:** Made `flowguard_status.discoveryHealth` unavailable states
+  explicit for sessions with missing, corrupt, schema-invalid, or unreadable
+  discovery artifacts. Status now reports deterministic recovery and
+  `NOT_VERIFIED` guidance instead of ambiguous `null`, while preserving
+  `readDiscovery()` as the persistence validation authority and avoiding any
+  status-triggered hydrate or artifact rewrite.
+
 - **Issue #386:** Added runtime-only `flowguard_status.discoveryDrift` for
   bounded, read-only discovery drift awareness. The projection reuses
   `checkDiscoveryDrift()`, reports explicit clean/drifted/missing/unavailable/

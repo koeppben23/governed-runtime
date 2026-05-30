@@ -30,8 +30,15 @@ import type { EvalResult } from '../../machine/evaluate.js';
 import type { CompletenessReport } from '../../audit/completeness.js';
 import { renderPhaseAwareMandates } from '../../templates/mandates-renderer.js';
 import { readDiscovery } from '../../adapters/persistence-discovery.js';
-import { extractDiscoveryHealth } from '../../discovery/discovery-health.js';
-import type { DiscoveryHealthProjection } from '../../discovery/discovery-health.js';
+import {
+  extractDiscoveryHealth,
+  isDiscoveryHealthAvailable,
+  unavailableDiscoveryHealth,
+} from '../../discovery/discovery-health.js';
+import type {
+  DiscoveryHealthProjection,
+  DiscoveryHealthUnavailableReason,
+} from '../../discovery/discovery-health.js';
 import type { DiscoveryResult } from '../../discovery/types.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
@@ -40,6 +47,7 @@ import { evaluate } from '../../machine/evaluate.js';
 
 // Adapters
 import { ActorClaimError } from '../../adapters/actor.js';
+import { PersistenceError } from '../../adapters/persistence.js';
 
 // Config
 import { evaluateCompleteness } from '../../audit/completeness.js';
@@ -173,7 +181,11 @@ const DISCOVERY_HEALTH_INSTRUCTION = `\
 ## Discovery Health
 
 Check flowguard_status.discoveryHealth when present. If healthy is false,
-discovery was degraded — failedCollectorNames lists failed collectors.
+discovery was degraded or unavailable. If status is unavailable, inspect
+reason and recovery, mark discovery-dependent claims NOT_VERIFIED, and
+re-run /hydrate where appropriate. Do not treat unavailable discovery as
+healthy or as a hard block unless policy explicitly requires it. For
+available degraded discovery, failedCollectorNames lists failed collectors.
 Verification commands and stack detection may be incomplete. If
 hasBudgetExhaustion is true, code-surface analysis was truncated. If
 ageWarning is set, discovery data may be stale. Mark unsupported claims
@@ -220,20 +232,38 @@ async function loadDiscoveryStatusContext(wsDir: string): Promise<DiscoveryStatu
           reason: 'discovery_artifact_missing',
         },
       );
-      return { discovery: null, discoveryHealth: null };
+      return { discovery: null, discoveryHealth: unavailableDiscoveryHealth('missing') };
     }
     return { discovery: result, discoveryHealth: extractDiscoveryHealth(result) };
   } catch (error) {
+    const reason = classifyDiscoveryHealthUnavailable(error);
     getAdapterLogger().warn(
       'discovery-health',
       'Failed to load discovery health projection for status',
       {
-        reason: 'discovery_health_unavailable',
+        reason,
         error: error instanceof Error ? error.message : String(error),
       },
     );
-    return { discovery: null, discoveryHealth: null };
+    return { discovery: null, discoveryHealth: unavailableDiscoveryHealth(reason) };
   }
+}
+
+function classifyDiscoveryHealthUnavailable(error: unknown): DiscoveryHealthUnavailableReason {
+  if (error instanceof PersistenceError) {
+    switch (error.code) {
+      case 'PARSE_FAILED':
+        return 'corrupt';
+      case 'SCHEMA_VALIDATION_FAILED':
+        return 'schema_invalid';
+      case 'READ_FAILED':
+        return 'read_failed';
+      case 'WRITE_FAILED':
+      case 'LOCK_TIMEOUT':
+        return 'read_failed';
+    }
+  }
+  return 'read_failed';
 }
 
 function buildProfileStatus(
@@ -264,6 +294,14 @@ function buildProfileStatus(
 
 function discoveryDegradationWarning(discoveryHealth: DiscoveryHealthProjection | null): string {
   if (!discoveryHealth || discoveryHealth.healthy) return '';
+  if (!isDiscoveryHealthAvailable(discoveryHealth)) {
+    return (
+      'WARNING: Discovery health is unavailable.' +
+      ` Reason: ${discoveryHealth.reason}. ` +
+      `${discoveryHealth.recovery} ` +
+      'Mark discovery-dependent claims NOT_VERIFIED.'
+    );
+  }
   const failed = discoveryHealth.failedCollectorNames;
   return (
     'WARNING: Discovery is degraded.' +
