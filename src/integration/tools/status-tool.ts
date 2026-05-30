@@ -331,6 +331,7 @@ function buildEvidenceStatus(state: SessionState): Record<string, unknown> {
       exitCode: v.exitCode,
       executionMs: v.executionMs,
       timedOut: v.timedOut,
+      derivedRepairGuidance: v.derivedRepairGuidance ?? null,
     })),
   };
 }

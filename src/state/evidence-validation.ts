@@ -13,6 +13,68 @@ import { z } from 'zod';
 import { CheckId } from './evidence-primitives.js';
 import { VerificationCandidateKindSchema } from './discovery-schemas.js';
 
+export const RepairGuidanceCategory = z.enum([
+  'typecheck',
+  'lint',
+  'test',
+  'build',
+  'format',
+  'security',
+  'coverage',
+  'timeout',
+]);
+export type RepairGuidanceCategory = z.infer<typeof RepairGuidanceCategory>;
+
+export const RepairGuidanceConfidence = z.enum(['high', 'medium', 'low']);
+export type RepairGuidanceConfidence = z.infer<typeof RepairGuidanceConfidence>;
+
+export const RepairGuidanceEvidenceExcerpt = z
+  .object({
+    stream: z.enum(['stdout', 'stderr']),
+    excerpt: z.string().min(1),
+  })
+  .readonly();
+export type RepairGuidanceEvidenceExcerpt = z.infer<typeof RepairGuidanceEvidenceExcerpt>;
+
+export const RepairGuidanceLocation = z
+  .object({
+    file: z.string().min(1).nullable(),
+    line: z.number().int().positive().nullable(),
+    column: z.number().int().positive().nullable(),
+  })
+  .readonly();
+export type RepairGuidanceLocation = z.infer<typeof RepairGuidanceLocation>;
+
+export const RepairGuidance = z.discriminatedUnion('status', [
+  z
+    .object({
+      kind: z.literal('derived_repair_guidance'),
+      advisory: z.literal(true),
+      source: z.literal('run_check_output'),
+      status: z.literal('available'),
+      category: RepairGuidanceCategory,
+      confidence: RepairGuidanceConfidence,
+      affectedLocations: z.array(RepairGuidanceLocation),
+      evidence: z.array(RepairGuidanceEvidenceExcerpt),
+      recommendedNextActions: z.array(z.string().min(1)),
+      notVerified: z.array(z.string().min(1)),
+    })
+    .readonly(),
+  z
+    .object({
+      kind: z.literal('derived_repair_guidance'),
+      advisory: z.literal(true),
+      source: z.literal('run_check_output'),
+      status: z.literal('unavailable'),
+      reason: z.enum(['passed', 'unparseable', 'insufficient_confidence']),
+      evidence: z.array(RepairGuidanceEvidenceExcerpt),
+      recommendedNextActions: z.array(z.string().min(1)),
+      notVerified: z.array(z.string().min(1)),
+    })
+    .readonly(),
+]);
+export type RepairGuidance = z.infer<typeof RepairGuidance>;
+
 /**
  * Result of a single validation check — produced by flowguard_run_check execution.
  *
@@ -46,6 +108,8 @@ export const ValidationResult = z
     outputDigest: z.string().regex(/^[a-f0-9]{64}$/),
     /** Whether the process was killed due to timeout. */
     timedOut: z.boolean(),
+    /** Derived advisory repair guidance; never validation evidence authority. */
+    derivedRepairGuidance: RepairGuidance.optional(),
   })
   .readonly();
 export type ValidationResult = z.infer<typeof ValidationResult>;

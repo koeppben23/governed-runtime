@@ -42,6 +42,7 @@ import { autoAdvance } from '../../rails/types.js';
 
 // Verification executor
 import { executeCheck } from '../../verification/executor.js';
+import { deriveRepairGuidance } from '../../verification/repair-guidance.js';
 
 // Evidence types
 import type { ValidationResult } from '../../state/evidence-validation.js';
@@ -104,6 +105,7 @@ export const run_check: ToolDefinition = {
           command: candidate.command,
           cwd: worktree,
         });
+        const derivedRepairGuidance = evidence.passed ? undefined : deriveRepairGuidance(evidence);
 
         // Build the validation result
         const validationResult: ValidationResult = {
@@ -121,6 +123,7 @@ export const run_check: ToolDefinition = {
           executionMs: evidence.executionMs,
           outputDigest: evidence.outputDigest,
           timedOut: evidence.timedOut,
+          derivedRepairGuidance,
         };
 
         // Merge into existing validation results (replace if same checkId exists)
@@ -165,6 +168,7 @@ export const run_check: ToolDefinition = {
               outputDigest: evidence.outputDigest,
               timedOut: evidence.timedOut,
             },
+            derivedRepairGuidance,
             remainingChecks: state.activeChecks.filter((id) => !passedIds.has(id)),
             next: formatEval(ev),
             _audit: { transitions },

@@ -13,6 +13,7 @@ import {
   createToolContext,
   createTestWorkspace,
   parseToolResult,
+  withStrictReviewFindings,
   GIT_MOCK_DEFAULTS,
   type TestToolContext,
   type TestWorkspace,
@@ -130,9 +131,23 @@ vi.mock('../adapters/persistence-discovery.js', async (importOriginal) => {
   };
 });
 
+const executorOriginal = vi.hoisted(() => ({
+  executeCheck: null as unknown as (typeof import('../verification/executor.js'))['executeCheck'],
+}));
+
+vi.mock('../verification/executor.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../verification/executor.js')>();
+  executorOriginal.executeCheck = original.executeCheck;
+  return {
+    ...original,
+    executeCheck: vi.fn(original.executeCheck),
+  };
+});
+
 const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
 const discoveryPersistenceMock = await import('../adapters/persistence-discovery.js');
+const executorMock = await import('../verification/executor.js');
 
 // ─── Test Setup ──────────────────────────────────────────────────────────────
 
@@ -165,6 +180,9 @@ afterEach(async () => {
   vi.mocked(discoveryPersistenceMock.readDiscovery)
     .mockReset()
     .mockImplementation(discoveryPersistenceOriginal.readDiscovery);
+  vi.mocked(executorMock.executeCheck)
+    .mockReset()
+    .mockImplementation(executorOriginal.executeCheck);
   cleanupEnv();
   vi.clearAllMocks();
   await ws.cleanup();
@@ -702,6 +720,70 @@ describe('status', () => {
       expect(dh.healthy).toBe(false);
       expect(dh.failedCollectors).toBeGreaterThan(0);
       expect(result.profileRules as string).toContain('WARNING: Discovery is degraded.');
+    });
+
+    it('surfaces persisted derivedRepairGuidance in status validationResults after a failing check', async () => {
+      await hydrateSession();
+      // Drive to VALIDATION: ticket → plan → self-review → approve
+      const sd = await (async () => {
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace/index.js');
+        const fp = await computeFingerprint(ws.tmpDir);
+        return resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      })();
+      await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
+      await plan.execute(
+        await withStrictReviewFindings(sd, { planText: '## Plan\nTest plan' }),
+        ctx,
+      );
+      await plan.execute(await withStrictReviewFindings(sd, { reviewVerdict: 'approve' }), ctx);
+
+      // Mock a failing check
+      vi.mocked(executorMock.executeCheck).mockResolvedValueOnce({
+        kind: 'typecheck',
+        command: 'npx tsc --noEmit',
+        exitCode: 1,
+        passed: false,
+        executionMs: 300,
+        outputDigest: 'f'.repeat(64),
+        stdout:
+          "src/app.ts(10,5): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.",
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      });
+
+      await run_check.execute({ kind: 'typecheck' }, ctx);
+
+      // Verify state persistence
+      const state = await readState(sd);
+      expect(state!.validation.length).toBe(1);
+      expect(state!.validation[0].passed).toBe(false);
+      const persistedGuidance = state!.validation[0].derivedRepairGuidance;
+      expect(persistedGuidance).toBeDefined();
+      expect(persistedGuidance).toMatchObject({
+        kind: 'derived_repair_guidance',
+        advisory: true,
+        source: 'run_check_output',
+        status: 'available',
+      });
+
+      // Verify status surfaces the guidance
+      const statusResult = parseToolResult(await status.execute({}, ctx));
+      expect(Array.isArray(statusResult.validationResults)).toBe(true);
+      expect(statusResult.validationResults.length).toBeGreaterThanOrEqual(1);
+      const statusGuidance = (statusResult.validationResults as Record<string, unknown>[])[0]
+        .derivedRepairGuidance as Record<string, unknown>;
+      expect(statusGuidance).toBeDefined();
+      expect(statusGuidance).toMatchObject({
+        kind: 'derived_repair_guidance',
+        advisory: true,
+        source: 'run_check_output',
+        status: 'available',
+      });
+      expect(statusGuidance.notVerified).toEqual(
+        expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
+      );
     });
   });
 });
