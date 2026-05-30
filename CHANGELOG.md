@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #386:** Added runtime-only `flowguard_status.discoveryDrift` for
+  bounded, read-only discovery drift awareness. The projection reuses
+  `checkDiscoveryDrift()`, reports explicit clean/drifted/missing/unavailable/
+  timeout statuses, keeps age warnings separate from actual digest drift, and
+  never mutates discovery or session artifacts.
+
 - **Issue #385:** Added runtime-only `flowguard_status.implementationGuidance`
   for compact, advisory implementation hints derived from `DiscoveryResult` and
   `SessionState`. The projection includes evidence-backed files, modules,
