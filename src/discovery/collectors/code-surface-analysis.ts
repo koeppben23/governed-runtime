@@ -27,6 +27,7 @@ import type {
   EvidenceClass,
   ReadOutcome,
 } from '../types.js';
+import { extractSemanticCodeSurfaces } from './code-surface-semantic-extractors.js';
 
 const MAX_FILES = 200;
 const MAX_BYTES_PER_FILE = 64 * 1024;
@@ -242,6 +243,7 @@ export async function collectCodeSurfaces(
         authBoundaries: [],
         dataAccess: [],
         integrations: [],
+        testTargets: [],
         budget: {
           scannedFiles: 0,
           scannedBytes: 0,
@@ -249,6 +251,12 @@ export async function collectCodeSurfaces(
           maxBytesPerFile: MAX_BYTES_PER_FILE,
           maxTotalBytes: MAX_TOTAL_BYTES,
           timedOut: true,
+        },
+        semanticExtraction: {
+          status: 'partial',
+          appliedExtractors: [],
+          unsupportedReason: 'Code-surface collector failed before semantic extraction completed.',
+          diagnostics: ['semantic_extraction_not_completed'],
         },
       },
     };
@@ -283,7 +291,11 @@ async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
   const authBoundaries: CodeSurfaceSignal[] = [];
   const dataAccess: CodeSurfaceSignal[] = [];
   const integrations: CodeSurfaceSignal[] = [];
+  const testTargets: CodeSurfaceSignal[] = [];
   const readStatuses: Record<string, ReadOutcome> = {};
+  const semanticAppliedExtractors = new Set<string>();
+  const semanticDiagnostics: string[] = [];
+  let semanticPartial = false;
 
   let scannedFiles = 0;
   let scannedBytes = 0;
@@ -330,6 +342,17 @@ async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
     detectSignals(content, relPath, AUTH_RULES, authBoundaries);
     detectSignals(content, relPath, DATA_RULES, dataAccess);
     detectSignals(content, relPath, INTEGRATION_RULES, integrations);
+
+    const semantic = extractSemanticCodeSurfaces(content, relPath);
+    addUniqueSignals(endpoints, semantic.endpoints);
+    addUniqueSignals(authBoundaries, semantic.authBoundaries);
+    addUniqueSignals(dataAccess, semantic.dataAccess);
+    addUniqueSignals(testTargets, semantic.testTargets);
+    for (const extractor of semantic.appliedExtractors) semanticAppliedExtractors.add(extractor);
+    for (const diagnostic of semantic.diagnostics) {
+      if (diagnostic.startsWith('partial:')) semanticPartial = true;
+      semanticDiagnostics.push(`${relPath}:${diagnostic}`);
+    }
   }
 
   // Only include readStatuses if there were non-ok outcomes
@@ -341,6 +364,7 @@ async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
     authBoundaries,
     dataAccess,
     integrations,
+    testTargets,
     budget: {
       scannedFiles,
       scannedBytes,
@@ -351,8 +375,38 @@ async function runCollector(input: CollectorInput): Promise<CodeSurfacesInfo> {
       totalSourceCandidates,
       budgetExhausted,
     },
+    semanticExtraction: {
+      status: semanticPartial
+        ? 'partial'
+        : semanticAppliedExtractors.size > 0
+          ? 'applied'
+          : 'heuristic_only',
+      appliedExtractors: [...semanticAppliedExtractors].sort(),
+      unsupportedReason:
+        semanticAppliedExtractors.size === 0
+          ? 'No semantic extractor matched scanned source files; heuristic code-surface rules were used.'
+          : null,
+      diagnostics: semanticDiagnostics.slice(0, 24),
+    },
     ...(hasNonOkReads ? { readStatuses } : {}),
   };
+}
+
+function addUniqueSignals(
+  target: CodeSurfaceSignal[],
+  additions: readonly CodeSurfaceSignal[],
+): void {
+  const seen = new Set(target.map(signalKey));
+  for (const signal of additions) {
+    const key = signalKey(signal);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    target.push(signal);
+  }
+}
+
+function signalKey(signal: CodeSurfaceSignal): string {
+  return `${signal.id}:${signal.location}:${signal.evidence.join('\u001f')}`;
 }
 
 function detectSignals(
