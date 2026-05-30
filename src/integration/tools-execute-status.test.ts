@@ -31,7 +31,7 @@ import {
   archive,
   architecture,
 } from './tools/index.js';
-import { readState, statePath, writeState } from '../adapters/persistence.js';
+import { PersistenceError, readState, statePath, writeState } from '../adapters/persistence.js';
 
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
 
@@ -116,8 +116,23 @@ vi.mock('../adapters/actor', async (importOriginal) => {
   };
 });
 
+const discoveryPersistenceOriginal = vi.hoisted(() => ({
+  readDiscovery:
+    null as unknown as (typeof import('../adapters/persistence-discovery.js'))['readDiscovery'],
+}));
+
+vi.mock('../adapters/persistence-discovery.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/persistence-discovery.js')>();
+  discoveryPersistenceOriginal.readDiscovery = original.readDiscovery;
+  return {
+    ...original,
+    readDiscovery: vi.fn(original.readDiscovery),
+  };
+});
+
 const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
+const discoveryPersistenceMock = await import('../adapters/persistence-discovery.js');
 
 // ─── Test Setup ──────────────────────────────────────────────────────────────
 
@@ -147,6 +162,9 @@ afterEach(async () => {
       source: 'env' as const,
       assurance: 'best_effort' as const,
     });
+  vi.mocked(discoveryPersistenceMock.readDiscovery)
+    .mockReset()
+    .mockImplementation(discoveryPersistenceOriginal.readDiscovery);
   cleanupEnv();
   vi.clearAllMocks();
   await ws.cleanup();
@@ -458,6 +476,7 @@ describe('status', () => {
       expect(dh.kind).toBe('derived_discovery_health');
       expect(dh.advisory).toBe(true);
       expect(dh.source).toBe('persisted_discovery_result');
+      expect(dh.status).toBe('available');
       expect(typeof dh.completeCollectors).toBe('number');
       expect(typeof dh.partialCollectors).toBe('number');
       expect(typeof dh.failedCollectors).toBe('number');
@@ -550,7 +569,14 @@ describe('status', () => {
 
       const result = parseToolResult(await status.execute({}, ctx));
       const drift = result.discoveryDrift as Record<string, unknown>;
-      expect(result.discoveryHealth).toBeNull();
+      const health = result.discoveryHealth as Record<string, unknown>;
+      expect(health.status).toBe('unavailable');
+      expect(health.reason).toBe('missing');
+      expect(health.healthy).toBe(false);
+      expect(health.recovery).toContain('/hydrate');
+      expect(health.notVerified).toEqual(
+        expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
+      );
       expect(drift.status).toBe('missing_discovery');
       expect(drift.drifted).toBeNull();
       expect(drift.notVerified).toEqual(
@@ -558,7 +584,7 @@ describe('status', () => {
       );
     });
 
-    it('returns discoveryHealth: null when discovery artifact is corrupt', async () => {
+    it('returns explicit unavailable discoveryHealth when discovery artifact is corrupt', async () => {
       await hydrateSession();
       const { computeFingerprint } = await import('../adapters/workspace/index.js');
       const fp = await computeFingerprint(ws.tmpDir);
@@ -571,13 +597,57 @@ describe('status', () => {
       await fs.writeFile(discFile, 'not json');
 
       const result = parseToolResult(await status.execute({}, ctx));
-      expect(result.discoveryHealth).toBeNull();
+      const health = result.discoveryHealth as Record<string, unknown>;
+      expect(health.status).toBe('unavailable');
+      expect(health.reason).toBe('corrupt');
+      expect(health.healthy).toBe(false);
+      expect(health.recovery).toContain('/hydrate');
+      expect(health.notVerified).toEqual(
+        expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
+      );
       const drift = result.discoveryDrift as Record<string, unknown>;
       expect(drift.status).toBe('unavailable');
       expect(drift.notVerified).toEqual(
         expect.arrayContaining([expect.stringContaining('valid JSON')]),
       );
       expect(result.status).toBeDefined();
+    });
+
+    it('returns explicit unavailable discoveryHealth when discovery schema is invalid', async () => {
+      await hydrateSession();
+      const { computeFingerprint } = await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const { workspaceDir: resolveWorkspace } = await import('../adapters/workspace/index.js');
+      const wsDir = resolveWorkspace(fp.fingerprint);
+      const discFile = path.join(wsDir, 'discovery', 'discovery.json');
+      await fs.writeFile(discFile, JSON.stringify({ schemaVersion: 'discovery.v1' }), 'utf-8');
+
+      const result = parseToolResult(await status.execute({}, ctx));
+      const health = result.discoveryHealth as Record<string, unknown>;
+      expect(health.status).toBe('unavailable');
+      expect(health.reason).toBe('schema_invalid');
+      expect(health.healthy).toBe(false);
+      expect(health.recovery).toContain('schema-valid discovery artifacts');
+      expect(health.notVerified).toEqual(
+        expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
+      );
+    });
+
+    it('returns explicit unavailable discoveryHealth when discovery read fails', async () => {
+      await hydrateSession();
+      vi.mocked(discoveryPersistenceMock.readDiscovery).mockRejectedValueOnce(
+        new PersistenceError('READ_FAILED', 'simulated read failure'),
+      );
+
+      const result = parseToolResult(await status.execute({}, ctx));
+      const health = result.discoveryHealth as Record<string, unknown>;
+      expect(health.status).toBe('unavailable');
+      expect(health.reason).toBe('read_failed');
+      expect(health.healthy).toBe(false);
+      expect(health.recovery).toContain('filesystem access');
+      expect(health.notVerified).toEqual(
+        expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
+      );
     });
 
     it('does not write discovery or session state during drift status projection', async () => {

@@ -18,7 +18,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { extractDiscoveryHealth } from './discovery-health.js';
+import { extractDiscoveryHealth, unavailableDiscoveryHealth } from './discovery-health.js';
 import type { DiscoveryResult } from './types.js';
 
 function makeHealthyResult(overrides?: Partial<DiscoveryResult>): DiscoveryResult {
@@ -86,6 +86,7 @@ describe('discovery-health', () => {
       expect(health.kind).toBe('derived_discovery_health');
       expect(health.advisory).toBe(true);
       expect(health.source).toBe('persisted_discovery_result');
+      expect(health.status).toBe('available');
     });
 
     it('healthy: false when a collector failed', () => {
@@ -283,6 +284,30 @@ describe('discovery-health', () => {
       const result = makeHealthyResult({ collectedAt: '' as unknown as string });
       const health = extractDiscoveryHealth(result);
       expect(health.ageWarning).toBeNull();
+    });
+  });
+
+  describe('unavailableDiscoveryHealth', () => {
+    it.each([
+      ['missing', 'Run /hydrate to recreate discovery artifacts'],
+      ['corrupt', 'Repair or remove the corrupt discovery artifact'],
+      ['schema_invalid', 'regenerate schema-valid discovery artifacts'],
+      ['read_failed', 'Fix discovery artifact filesystem access'],
+    ] as const)('projects %s as an explicit unavailable health state', (reason, recovery) => {
+      const health = unavailableDiscoveryHealth(reason);
+
+      expect(health).toMatchObject({
+        kind: 'derived_discovery_health',
+        advisory: true,
+        source: 'persisted_discovery_result',
+        status: 'unavailable',
+        healthy: false,
+        reason,
+      });
+      expect(health.recovery).toContain(recovery);
+      expect(health.notVerified).toEqual([
+        'Discovery health is unavailable; mark discovery-dependent claims NOT_VERIFIED.',
+      ]);
     });
   });
 });

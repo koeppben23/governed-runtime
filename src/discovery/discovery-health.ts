@@ -15,10 +15,17 @@
 import type { DiscoveryResult } from './types.js';
 import type { CodeSurfaceStatus } from './types.js';
 
-export interface DiscoveryHealthProjection {
+export type DiscoveryHealthUnavailableReason =
+  | 'missing'
+  | 'corrupt'
+  | 'schema_invalid'
+  | 'read_failed';
+
+export interface DiscoveryHealthAvailableProjection {
   readonly kind: 'derived_discovery_health';
   readonly advisory: true;
   readonly source: 'persisted_discovery_result';
+  readonly status: 'available';
   readonly completeCollectors: number;
   readonly partialCollectors: number;
   readonly failedCollectors: number;
@@ -30,6 +37,21 @@ export interface DiscoveryHealthProjection {
   readonly ageWarning: string | null;
   readonly healthy: boolean;
 }
+
+export interface DiscoveryHealthUnavailableProjection {
+  readonly kind: 'derived_discovery_health';
+  readonly advisory: true;
+  readonly source: 'persisted_discovery_result';
+  readonly status: 'unavailable';
+  readonly healthy: false;
+  readonly reason: DiscoveryHealthUnavailableReason;
+  readonly recovery: string;
+  readonly notVerified: string[];
+}
+
+export type DiscoveryHealthProjection =
+  | DiscoveryHealthAvailableProjection
+  | DiscoveryHealthUnavailableProjection;
 
 /**
  * Extract a compact advisory health projection from a DiscoveryResult.
@@ -89,6 +111,7 @@ export function extractDiscoveryHealth(result: DiscoveryResult): DiscoveryHealth
     kind: 'derived_discovery_health',
     advisory: true,
     source: 'persisted_discovery_result',
+    status: 'available',
     completeCollectors,
     partialCollectors,
     failedCollectors,
@@ -100,6 +123,40 @@ export function extractDiscoveryHealth(result: DiscoveryResult): DiscoveryHealth
     ageWarning,
     healthy,
   };
+}
+
+export function unavailableDiscoveryHealth(
+  reason: DiscoveryHealthUnavailableReason,
+): DiscoveryHealthUnavailableProjection {
+  return {
+    kind: 'derived_discovery_health',
+    advisory: true,
+    source: 'persisted_discovery_result',
+    status: 'unavailable',
+    healthy: false,
+    reason,
+    recovery: recoveryForReason(reason),
+    notVerified: ['Discovery health is unavailable; mark discovery-dependent claims NOT_VERIFIED.'],
+  };
+}
+
+export function isDiscoveryHealthAvailable(
+  health: DiscoveryHealthProjection | null,
+): health is DiscoveryHealthAvailableProjection {
+  return health?.status === 'available';
+}
+
+function recoveryForReason(reason: DiscoveryHealthUnavailableReason): string {
+  switch (reason) {
+    case 'missing':
+      return 'Run /hydrate to recreate discovery artifacts before relying on discovery-dependent claims.';
+    case 'corrupt':
+      return 'Repair or remove the corrupt discovery artifact, then run /hydrate.';
+    case 'schema_invalid':
+      return 'Run /hydrate with the current runtime to regenerate schema-valid discovery artifacts.';
+    case 'read_failed':
+      return 'Fix discovery artifact filesystem access, then rerun /status or /hydrate.';
+  }
 }
 
 function computeAgeWarning(collectedAt: string | null): string | null {

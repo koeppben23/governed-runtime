@@ -8,6 +8,7 @@
  */
 
 import type { DiscoveryHealthProjection } from '../discovery/discovery-health.js';
+import { isDiscoveryHealthAvailable } from '../discovery/discovery-health.js';
 import type { CodeSurfaceSignal, DiscoveryResult, SurfaceInfo } from '../discovery/types.js';
 import type { SessionState } from '../state/schema.js';
 
@@ -340,6 +341,13 @@ function buildWarnings(
     });
     return warnings;
   }
+  if (!isDiscoveryHealthAvailable(health)) {
+    warnings.push({
+      code: 'discovery_health_unavailable',
+      message: `Discovery health is unavailable (${health.reason}); guidance confidence is capped. ${health.recovery}`,
+    });
+    return warnings;
+  }
   if (!health.healthy) {
     warnings.push({
       code: 'discovery_degraded',
@@ -381,10 +389,14 @@ function buildNotVerified(
   }
   if (!discovery) {
     notVerified.push('NOT_VERIFIED: Repository discovery facts are unavailable.');
-  } else if (!health || !health.healthy) {
+  } else if (!health) {
     notVerified.push(
       'NOT_VERIFIED: Repository discovery is missing health evidence or degraded; results may be incomplete.',
     );
+  } else if (!isDiscoveryHealthAvailable(health)) {
+    notVerified.push(...health.notVerified);
+  } else if (!health.healthy) {
+    notVerified.push('NOT_VERIFIED: Repository discovery is degraded; results may be incomplete.');
   }
   return notVerified;
 }
