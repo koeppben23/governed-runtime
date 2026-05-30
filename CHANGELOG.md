@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #389:** Added advisory `derivedRepairGuidance` to `flowguard_run_check`
+  responses and `flowguard_status.validationResults`. Bounded parsing of stdout/
+  stderr produces typed categories (`typecheck`, `lint`, `test`, `build`, `format`,
+  `security`, `coverage`, `timeout`) with file locations, evidence excerpts,
+  confidence, and recommended next actions. Unparseable or low-confidence output
+  returns explicit `status: "unavailable"`. Guidance never determines pass/fail or
+  phase transitions — `exitCode`, `passed`, `timedOut`, and `outputDigest` remain
+  the sole validation authority. Raw subprocess output is never persisted.
+
 - **Issue #388:** Added bounded semantic code-surface extraction for common
   TypeScript/JavaScript and Java Spring route/controller, auth, data-access, and
   test-target patterns. Signals remain advisory `DiscoveryResult.codeSurfaces`

@@ -285,11 +285,24 @@ describe('CORNER', () => {
     const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
     expect(result.evidence.passed).toBe(false);
     expect(result.evidence.exitCode).toBe(1);
+    expect(result.derivedRepairGuidance).toBeDefined();
+    if (result.derivedRepairGuidance) {
+      const rg = result.derivedRepairGuidance as Record<string, unknown>;
+      expect(rg.kind).toBe('derived_repair_guidance');
+      expect(rg.advisory).toBe(true);
+      expect(rg.source).toBe('run_check_output');
+      expect(rg.status).toBe('available');
+      expect(rg.notVerified).toEqual(
+        expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
+      );
+    }
 
     const sd = await getSessDir();
     const state = await readState(sd);
     // Phase goes to PLAN on failure (CHECK_FAILED transition)
     expect(state!.phase).toBe('PLAN');
+    // Derived repair guidance is persisted
+    expect(state!.validation[0].derivedRepairGuidance).toBeDefined();
   });
 });
 
@@ -316,6 +329,38 @@ describe('EDGE', () => {
     expect(result.evidence.timedOut).toBe(true);
     expect(result.evidence.exitCode).toBe(124);
     expect(result.status).toContain('timed out');
+    expect(result.derivedRepairGuidance).toBeDefined();
+    if (result.derivedRepairGuidance) {
+      const rg = result.derivedRepairGuidance as Record<string, unknown>;
+      expect(rg.status).toBe('available');
+      expect(rg.category).toBe('timeout');
+      expect(rg.confidence).toBe('high');
+    }
+  });
+
+  it('same exitCode/passed/timedOut/outputDigest with different derivedRepairGuidance does not change validation', async () => {
+    await driveToValidation();
+
+    vi.mocked(executeCheck).mockResolvedValueOnce({
+      kind: 'typecheck',
+      command: 'npx tsc --noEmit',
+      exitCode: 1,
+      passed: false,
+      executionMs: 200,
+      outputDigest: 'a'.repeat(64),
+      stdout: 'src/x.ts(1,1): error TS2322: type mismatch',
+      stderr: '',
+      timedOut: false,
+      startedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    const result1 = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    expect(result1.evidence.passed).toBe(false);
+    expect(result1.evidence.exitCode).toBe(1);
+    expect(result1.evidence.timedOut).toBe(false);
+    expect(result1.evidence.outputDigest).toBe('a'.repeat(64));
+    // Guidance exists but does not change pass/fail
+    expect(result1.derivedRepairGuidance).toBeDefined();
   });
 
   it('returns remainingChecks showing which checks still need to pass', async () => {

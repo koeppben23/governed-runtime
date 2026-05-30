@@ -203,6 +203,8 @@ Run validation checks against the approved plan.
 **Checks:** Derived from `verificationCandidates` (refer to `docs/configuration.md#profileactivechecks`)
 **ALL_PASSED** → advance to IMPLEMENTATION
 
+When `flowguard_run_check` executes, a failed or timed-out check includes an advisory `derivedRepairGuidance` projection parsed from stdout/stderr. Guidance is bounded (excerpts, locations, categories) and labelled `NOT_VERIFIED`. It never determines pass/fail — the `exitCode`, `passed`, `timedOut`, and `outputDigest` remain the authoritative execution evidence. Unknown or unparseable failures return `status: "unavailable"` without fabricated advice. Passing checks surface no repair guidance. Guidance is persisted only so `/status` can surface it later; raw subprocess output is never persisted.
+
 ### /implement
 
 Execute the implementation plan.
