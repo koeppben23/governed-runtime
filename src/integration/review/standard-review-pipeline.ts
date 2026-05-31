@@ -38,6 +38,7 @@ import {
   isOutputAlreadyBlocked,
   buildToolPrompt,
   buildAttemptFailedLogger,
+  buildReviewDiscoveryContextForPipeline,
 } from './shared-helpers.js';
 
 // ─── Standard Review Pipeline ────────────────────────────────────────────────
@@ -94,7 +95,7 @@ export async function runStandardReviewPipeline(
     return;
   }
 
-  const prompt = buildStandardPromptAndLog(ctx, toolName, input);
+  const prompt = await buildStandardPromptAndLog(ctx, toolName, input);
   if (!prompt) return;
 
   const policies = getReviewerPolicies(sessionState);
@@ -150,11 +151,11 @@ function buildToolArgsDiagnostics(
   return {};
 }
 
-function buildStandardPromptAndLog(
+async function buildStandardPromptAndLog(
   ctx: PipelineContext,
   toolName: string,
   input: unknown,
-): string | null {
+): Promise<string | null> {
   const { deps, sessionState, reviewCtx, parsedOutput, sessionId } = ctx;
   const ticketText = sessionState.ticket?.text ?? '';
   const planText = sessionState.plan?.current?.body ?? '';
@@ -165,6 +166,7 @@ function buildStandardPromptAndLog(
   const planRules = selectReviewerProfileRules(sessionState.activeProfile, 'PLAN_REVIEW');
   const implRules = selectReviewerProfileRules(sessionState.activeProfile, 'IMPL_REVIEW');
   const archRules = selectReviewerProfileRules(sessionState.activeProfile, 'ARCH_REVIEW');
+  const discoveryContext = await buildReviewDiscoveryContextForPipeline(ctx);
 
   const prompt = buildToolPrompt({
     toolName,
@@ -174,6 +176,7 @@ function buildStandardPromptAndLog(
     sessionState,
     rules: { planRules, implRules, archRules },
     deps,
+    discoveryContext,
   });
   if (!prompt) return null;
 

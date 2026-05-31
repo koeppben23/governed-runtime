@@ -30,6 +30,7 @@ import {
   isStrictEnforcementEnabled,
   getReviewerPolicies,
   buildAttemptFailedLogger,
+  buildReviewDiscoveryContextForPipeline,
 } from './shared-helpers.js';
 
 // ─── Review Content Pipeline ─────────────────────────────────────────────────
@@ -112,6 +113,7 @@ export async function runReviewContentPipeline(
     'REVIEW',
   );
   const ticketText = sessionState.ticket?.text ?? '';
+  const discoveryContext = await buildReviewDiscoveryContextForPipeline(ctx);
   const prompt = buildReviewContentPrompt({
     content,
     ticketText,
@@ -122,6 +124,7 @@ export async function runReviewContentPipeline(
     planVersion: reviewCtx.planVersion,
     profileName,
     profileRules,
+    discoveryContext,
   });
 
   const policies = getReviewerPolicies(sessionState);
