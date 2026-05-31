@@ -19,6 +19,8 @@ export interface DiscoveryContextLimits {
   readonly stackItems: number;
   readonly verificationCandidates: number;
   readonly relevantFiles: number;
+  readonly surfaces: number;
+  readonly modules: number;
   readonly contracts: number;
   readonly riskHotspots: number;
   readonly tests: number;
@@ -38,6 +40,8 @@ export interface DiscoveryReviewContext {
     | 'warnings'
     | 'notVerified'
     | 'relevantFiles'
+    | 'surfaces'
+    | 'modules'
     | 'contracts'
     | 'riskHotspots'
     | 'tests'
@@ -50,6 +54,8 @@ const DEFAULT_LIMITS: DiscoveryContextLimits = {
   stackItems: 8,
   verificationCandidates: 6,
   relevantFiles: 6,
+  surfaces: 5,
+  modules: 5,
   contracts: 4,
   riskHotspots: 5,
   tests: 5,
@@ -196,6 +202,8 @@ function appendImplementationGuidance(
   }
   lines.push(`- confidence: ${guidance.confidence}`);
   appendItems(lines, 'Relevant Files', guidance.relevantFiles, limits.relevantFiles);
+  appendItems(lines, 'Surfaces', guidance.surfaces, limits.surfaces);
+  appendItems(lines, 'Modules', guidance.modules, limits.modules);
   appendItems(lines, 'Contracts', guidance.contracts, limits.contracts);
   appendItems(lines, 'Risk Hotspots', guidance.riskHotspots, limits.riskHotspots);
   appendItems(lines, 'Tests', guidance.tests, limits.tests);

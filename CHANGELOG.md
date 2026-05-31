@@ -18,6 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never changes ReviewFindings schema, obligation binding, mandate digest, or
   attestation authority.
 
+- **Issue #397:** Completed reviewer Discovery context hardening: added `surfaces`
+  and `modules` from implementation guidance to Discovery context, strengthened
+  attestation-preservation tests for plan, implementation, and content prompts,
+  and added negative-path coverage for prompts without Discovery context.
+
 - **Issue #389:** Added advisory `derivedRepairGuidance` to `flowguard_run_check`
   responses and `flowguard_status.validationResults`. Bounded parsing of stdout/
   stderr produces typed categories (`typecheck`, `lint`, `test`, `build`, `format`,
