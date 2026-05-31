@@ -28,11 +28,11 @@ jobs:
         run: npm run test:fuzz:deep 2>&1 | tee fuzz-output.txt
         env:
           FAST_CHECK_SEED: 12345
-        continue-on-error: true
 
-      - name: Check fuzz result
+      - name: Check fuzz result for real failures
+        if: always()
         run: |
-          if grep -q 'FAIL' fuzz-output.txt; then
+          if grep -qE '^\s*(×|✗|❯)\s' fuzz-output.txt || grep -qE 'Test Files.*[1-9].*failed' fuzz-output.txt; then
             echo "Fuzz tests failed — check uploaded artifact for seed/path."
             exit 1
           fi
