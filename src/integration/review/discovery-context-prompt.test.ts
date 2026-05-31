@@ -9,6 +9,7 @@ import { unavailableDiscoveryHealth } from '../../discovery/discovery-health.js'
 import { makeState, PLAN_RECORD, TICKET } from '../../__fixtures__.js';
 import { notCheckedDiscoveryDriftStatus } from '../discovery-drift-status.js';
 import { buildImplementationGuidance } from '../implementation-guidance.js';
+import { PLAN_REVIEW_DISCOVERY_INSTRUCTION } from '../../config/profiles/content/shared.js';
 import {
   buildArchitectureReviewPrompt,
   buildImplReviewPrompt,
@@ -426,5 +427,24 @@ describe('review prompt Discovery context loading', () => {
     expect(section).toContain('module-0');
     expect(section).toContain('module-1');
     expect(section).not.toContain('module-2');
+  });
+
+  it('plan prompt with profile rules includes Discovery Evidence Check instruction', () => {
+    const prompt = buildPlanReviewPrompt({
+      planText: PLAN_RECORD.current.body,
+      ticketText: TICKET.text,
+      iteration: 0,
+      planVersion: 1,
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p35-v1',
+      mandateDigest: 'test-digest',
+      profileRules: PLAN_REVIEW_DISCOVERY_INSTRUCTION,
+      discoveryContext: BASE_CONTEXT,
+    });
+
+    expect(prompt.match(/## Discovery Context/g)).toHaveLength(1);
+    expect(prompt).toContain('Discovery Evidence Check');
+    expect(prompt).not.toContain('flowguard_status.detectedStack');
+    expect(prompt).not.toContain('<examples>');
   });
 });

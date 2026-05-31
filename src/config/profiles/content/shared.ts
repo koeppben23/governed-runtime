@@ -20,6 +20,21 @@ planning hints, not executed checks.
 Do not make version-specific claims without repository evidence; mark
 unsupported claims as NOT_VERIFIED.`;
 
+/** Phase-safe Discovery evidence check instruction for plan reviewers. */
+export const PLAN_REVIEW_DISCOVERY_INSTRUCTION = `\
+## Discovery Evidence Check
+
+Use the Discovery Context section when present for repository evidence
+(detected stack, verification candidates, implementation guidance).
+
+- Check whether the plan used repo-native verification candidates when they
+  exist. Flag any generic commands (e.g. "run tests") when repo-native
+  candidates are present.
+- Check whether the plan makes version-specific stack claims without
+  supporting evidence from the Discovery context.
+- If Discovery is unavailable or degraded, mark Discovery-dependent review
+  claims NOT_VERIFIED; do not invent confidence.`;
+
 /**
  * Build a NEGATIVE_TEST_MATRIX template with the given table rows injected.
  *

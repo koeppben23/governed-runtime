@@ -1010,6 +1010,19 @@ describe('config/profile/detected-stack-instruction', () => {
         }
       },
     );
+
+    it.each(ALL_PROFILES)(
+      '$name profile PLAN_REVIEW includes Discovery evidence check but NOT flowguard_status',
+      ({ profile }) => {
+        const resolved = resolveProfileInstructions(profile.instructions, 'PLAN_REVIEW');
+        expect(resolved).toContain('Discovery Evidence Check');
+        expect(resolved).toContain('Discovery Context');
+        expect(resolved).toContain('Review Checklist');
+        expect(resolved).not.toContain('flowguard_status.detectedStack');
+        expect(resolved).not.toContain('flowguard_status.verificationCandidates');
+        expect(resolved).not.toContain('<examples>');
+      },
+    );
   });
 
   // ─── CORNER ────────────────────────────────────────────────
@@ -1035,6 +1048,18 @@ describe('config/profile/detected-stack-instruction', () => {
         const base = extractBaseInstructions(profile.instructions);
         expect(base).not.toContain('flowguard_status.detectedStack');
         expect(base).not.toContain('flowguard_status.verificationCandidates');
+      },
+    );
+
+    it.each(ALL_PROFILES)(
+      '$name profile EVIDENCE_REVIEW does NOT contain Discovery evidence check',
+      ({ profile }) => {
+        const resolved = resolveProfileInstructions(profile.instructions, 'EVIDENCE_REVIEW');
+        expect(resolved).toContain('Review Checklist');
+        expect(resolved).not.toContain('Discovery Evidence Check');
+        expect(resolved).not.toContain('flowguard_status.detectedStack');
+        expect(resolved).not.toContain('flowguard_status.verificationCandidates');
+        expect(resolved).not.toContain('<examples>');
       },
     );
   });
