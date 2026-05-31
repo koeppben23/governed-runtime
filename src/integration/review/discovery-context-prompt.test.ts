@@ -239,4 +239,192 @@ describe('review prompt Discovery context loading', () => {
     );
     expect(archPrompt).toContain('Set attestation.mandateDigest=test-digest.');
   });
+
+  it('plan prompt without discovery context omits Discovery Context but preserves attestation', () => {
+    const prompt = buildPlanReviewPrompt({
+      planText: PLAN_RECORD.current.body,
+      ticketText: TICKET.text,
+      iteration: 0,
+      planVersion: 1,
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p35-v1',
+      mandateDigest: 'test-digest',
+    });
+
+    expect(prompt).not.toContain('## Discovery Context');
+    expect(prompt).toContain(
+      'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
+    );
+    expect(prompt).toContain('Set attestation.mandateDigest=test-digest.');
+  });
+
+  it('impl prompt without discovery context omits Discovery Context but preserves attestation', () => {
+    const prompt = buildImplReviewPrompt({
+      changedFiles: ['src/auth.ts'],
+      planText: PLAN_RECORD.current.body,
+      ticketText: TICKET.text,
+      iteration: 1,
+      planVersion: 2,
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p35-v1',
+      mandateDigest: 'test-digest',
+    });
+
+    expect(prompt).not.toContain('## Discovery Context');
+    expect(prompt).toContain(
+      'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
+    );
+    expect(prompt).toContain('Set attestation.mandateDigest=test-digest.');
+  });
+
+  it('content prompt without discovery context omits Discovery Context but preserves attestation', () => {
+    const prompt = buildReviewContentPrompt({
+      content: 'diff --git a/src/auth.ts b/src/auth.ts',
+      ticketText: TICKET.text,
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p35-v1',
+      mandateDigest: 'test-digest',
+      iteration: 0,
+      planVersion: 1,
+    });
+
+    expect(prompt).not.toContain('## Discovery Context');
+    expect(prompt).toContain('toolObligationId: "11111111-1111-4111-8111-111111111111"');
+    expect(prompt).toContain('mandateDigest: "test-digest"');
+  });
+
+  it('plan prompt with discovery context preserves attestation wording', () => {
+    const prompt = buildPlanReviewPrompt({
+      planText: PLAN_RECORD.current.body,
+      ticketText: TICKET.text,
+      iteration: 0,
+      planVersion: 1,
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p35-v1',
+      mandateDigest: 'test-digest',
+      discoveryContext: BASE_CONTEXT,
+    });
+
+    expect(prompt.match(/## Discovery Context/g)).toHaveLength(1);
+    expect(prompt).toContain(
+      'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
+    );
+    expect(prompt).toContain('Set attestation.mandateDigest=test-digest.');
+  });
+
+  it('impl prompt with discovery context preserves attestation wording', () => {
+    const prompt = buildImplReviewPrompt({
+      changedFiles: ['src/auth.ts'],
+      planText: PLAN_RECORD.current.body,
+      ticketText: TICKET.text,
+      iteration: 1,
+      planVersion: 2,
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p35-v1',
+      mandateDigest: 'test-digest',
+      discoveryContext: BASE_CONTEXT,
+    });
+
+    expect(prompt.match(/## Discovery Context/g)).toHaveLength(1);
+    expect(prompt).toContain(
+      'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
+    );
+    expect(prompt).toContain('Set attestation.mandateDigest=test-digest.');
+  });
+
+  it('content prompt with discovery context preserves attestation wording', () => {
+    const prompt = buildReviewContentPrompt({
+      content: 'diff --git a/src/auth.ts b/src/auth.ts',
+      ticketText: TICKET.text,
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p35-v1',
+      mandateDigest: 'test-digest',
+      iteration: 0,
+      planVersion: 1,
+      discoveryContext: BASE_CONTEXT,
+    });
+
+    expect(prompt.match(/## Discovery Context/g)).toHaveLength(1);
+    expect(prompt).toContain('toolObligationId: "11111111-1111-4111-8111-111111111111"');
+    expect(prompt).toContain('mandateDigest: "test-digest"');
+  });
+
+  it('renders surfaces and modules from implementation guidance', () => {
+    const context: DiscoveryReviewContext = {
+      ...BASE_CONTEXT,
+      implementationGuidance: {
+        confidence: 'high',
+        warnings: [],
+        notVerified: [],
+        relevantFiles: [],
+        surfaces: [
+          {
+            label: 'auth',
+            path: 'src/auth.ts',
+            source: 'code-surface-analysis',
+            confidence: 'high',
+            evidence: [],
+          },
+        ],
+        modules: [
+          {
+            label: 'auth-module',
+            path: 'src/auth/index.ts',
+            source: 'code-surface-analysis',
+            confidence: 'medium',
+            evidence: [],
+          },
+        ],
+        contracts: [],
+        riskHotspots: [],
+        tests: [],
+      },
+    };
+
+    const section = buildDiscoveryContextSection(context);
+    expect(section).toContain('src/auth/index.ts');
+    expect(section).toContain('auth-module');
+  });
+
+  it('bounds surfaces and modules to configured limits', () => {
+    const manySurfaces = Array.from({ length: 10 }, (_, i) => ({
+      label: `surface-${i}`,
+      path: `src/${i}.ts`,
+      source: 'analysis',
+      confidence: 'medium' as const,
+      evidence: [],
+    }));
+    const manyModules = Array.from({ length: 10 }, (_, i) => ({
+      label: `module-${i}`,
+      path: `src/mod/${i}.ts`,
+      source: 'analysis',
+      confidence: 'medium' as const,
+      evidence: [],
+    }));
+    const context: DiscoveryReviewContext = {
+      health: BASE_CONTEXT.health,
+      drift: BASE_CONTEXT.drift,
+      verificationCandidates: [],
+      implementationGuidance: {
+        confidence: 'high',
+        warnings: [],
+        notVerified: [],
+        relevantFiles: [],
+        surfaces: manySurfaces,
+        modules: manyModules,
+        contracts: [],
+        riskHotspots: [],
+        tests: [],
+      },
+      limits: { surfaces: 3, modules: 2 },
+    };
+
+    const section = buildDiscoveryContextSection(context);
+    expect(section).toContain('surface-0');
+    expect(section).toContain('surface-2');
+    expect(section).not.toContain('surface-3');
+    expect(section).toContain('module-0');
+    expect(section).toContain('module-1');
+    expect(section).not.toContain('module-2');
+  });
 });
