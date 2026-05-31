@@ -14,7 +14,11 @@
  */
 
 import type { PhaseInstructions } from '../../profile.js';
-import { DETECTED_STACK_INSTRUCTION, buildNegativeTestMatrix } from './shared.js';
+import {
+  DETECTED_STACK_INSTRUCTION,
+  PLAN_REVIEW_DISCOVERY_INSTRUCTION,
+  buildNegativeTestMatrix,
+} from './shared.js';
 
 // ─── Base Content (always injected regardless of phase) ──────────────────────
 
@@ -539,7 +543,7 @@ export const profileRuleContent: PhaseInstructions = {
       EVIDENCE_BY_CHANGE_TYPE +
       '\n\n---\n\n' +
       NEGATIVE_TEST_MATRIX,
-    PLAN_REVIEW: REVIEW_CHECKLIST,
+    PLAN_REVIEW: PLAN_REVIEW_DISCOVERY_INSTRUCTION + '\n\n---\n\n' + REVIEW_CHECKLIST,
     IMPLEMENTATION:
       DETECTED_STACK_INSTRUCTION +
       '\n\n---\n\n' +

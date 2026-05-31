@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attestation-preservation tests for plan, implementation, and content prompts,
   and added negative-path coverage for prompts without Discovery context.
 
+- **Issue #398:** Added phase-safe Discovery evidence check instruction to
+  PLAN_REVIEW profile content across all four profiles. Plan reviewers now
+  receive explicit instructions to check plans against repo-native verification
+  candidates and detected stack evidence from the Discovery Context section,
+  without leaking implementation-phase rules.
+
 - **Issue #389:** Added advisory `derivedRepairGuidance` to `flowguard_run_check`
   responses and `flowguard_status.validationResults`. Bounded parsing of stdout/
   stderr produces typed categories (`typecheck`, `lint`, `test`, `build`, `format`,
