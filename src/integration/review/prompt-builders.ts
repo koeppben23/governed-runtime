@@ -13,6 +13,10 @@
  */
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import {
+  buildDiscoveryContextSection,
+  type DiscoveryReviewContext,
+} from './discovery-context-prompt.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -27,6 +31,7 @@ export interface PlanReviewPromptOpts {
   readonly mandateDigest: string;
   readonly profileName?: string;
   readonly profileRules?: string;
+  readonly discoveryContext?: DiscoveryReviewContext;
 }
 
 /** Options for building an implementation review prompt. */
@@ -41,6 +46,7 @@ export interface ImplReviewPromptOpts {
   readonly mandateDigest: string;
   readonly profileName?: string;
   readonly profileRules?: string;
+  readonly discoveryContext?: DiscoveryReviewContext;
 }
 
 /** Options for building an architecture (ADR) review prompt. F13 slice 6. */
@@ -55,6 +61,7 @@ export interface ArchitectureReviewPromptOpts {
   readonly mandateDigest: string;
   readonly profileName?: string;
   readonly profileRules?: string;
+  readonly discoveryContext?: DiscoveryReviewContext;
 }
 
 // ─── Internal Helpers ────────────────────────────────────────────────────────
@@ -119,8 +126,10 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     mandateDigest,
     profileName,
     profileRules,
+    discoveryContext,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
+  const discoverySection = buildDiscoveryContextSection(discoveryContext);
   return [
     `You are reviewing a plan for iteration=${iteration}, planVersion=${planVersion}.`,
     '',
@@ -133,6 +142,7 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     planText,
     '',
     ...(stackSection ? [stackSection, ''] : []),
+    ...(discoverySection ? [discoverySection, ''] : []),
     '## Instructions',
     '',
     'Review this plan against the ticket requirements. Follow your review criteria',
@@ -163,8 +173,10 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     mandateDigest,
     profileName,
     profileRules,
+    discoveryContext,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
+  const discoverySection = buildDiscoveryContextSection(discoveryContext);
   return [
     `You are reviewing an implementation for iteration=${iteration}, planVersion=${planVersion}.`,
     '',
@@ -181,6 +193,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     changedFiles.map((f) => `- ${f}`).join('\n'),
     '',
     ...(stackSection ? [stackSection, ''] : []),
+    ...(discoverySection ? [discoverySection, ''] : []),
     '## Instructions',
     '',
     'Review this implementation against the approved plan and ticket.',
@@ -213,8 +226,10 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     mandateDigest,
     profileName,
     profileRules,
+    discoveryContext,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
+  const discoverySection = buildDiscoveryContextSection(discoveryContext);
   return [
     `You are reviewing an architecture decision (ADR) for iteration=${iteration}, planVersion=${planVersion}.`,
     '',
@@ -227,6 +242,7 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     adrText,
     '',
     ...(stackSection ? [stackSection, ''] : []),
+    ...(discoverySection ? [discoverySection, ''] : []),
     '## Instructions',
     '',
     'Review this ADR against the ticket and your review criteria for Architecture',
@@ -260,8 +276,10 @@ export function buildReviewContentPrompt(opts: {
   planVersion: number;
   profileName?: string;
   profileRules?: string;
+  discoveryContext?: DiscoveryReviewContext;
 }): string {
   const stackSection = buildStackProfileSection(opts.profileName, opts.profileRules);
+  const discoverySection = buildDiscoveryContextSection(opts.discoveryContext);
   const lines: string[] = [
     'You are ' + REVIEWER_SUBAGENT_TYPE + ' - a governance reviewer subagent.',
     'Review the following content for issues, risks, and missing verification.',
@@ -280,6 +298,9 @@ export function buildReviewContentPrompt(opts: {
   }
   if (stackSection) {
     lines.push(stackSection, '');
+  }
+  if (discoverySection) {
+    lines.push(discoverySection, '');
   }
   lines.push(
     'CONTENT TO REVIEW:',

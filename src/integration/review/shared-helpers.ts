@@ -20,6 +20,8 @@ import {
   buildArchitectureReviewPrompt,
   selectReviewerProfileRules,
 } from './prompt-builders.js';
+import { buildReviewDiscoveryContext } from './discovery-context-loader.js';
+import type { DiscoveryReviewContext } from './discovery-context-prompt.js';
 import {
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_IMPLEMENT,
@@ -274,6 +276,43 @@ export async function blockReviewOutcomeHelper(
   );
 }
 
+export async function buildReviewDiscoveryContextForPipeline(
+  ctx: PipelineContext,
+): Promise<DiscoveryReviewContext> {
+  let fingerprint: string | null = null;
+  let worktree = sessionWorktree(ctx.sessionState);
+  try {
+    fingerprint = await ctx.deps.resolveFingerprint();
+  } catch (error) {
+    safeWarn(ctx, 'failed to resolve fingerprint for review discovery context', error);
+  }
+  try {
+    worktree = ctx.deps.adapter.getWorktree();
+  } catch (error) {
+    safeWarn(ctx, 'failed to resolve worktree for review discovery context', error);
+  }
+  return buildReviewDiscoveryContext({
+    sessionState: ctx.sessionState,
+    fingerprint,
+    worktree,
+    includeDriftCheck: false,
+  });
+}
+
+function sessionWorktree(state: SessionState): string {
+  return (state as { binding?: { worktree?: string } }).binding?.worktree ?? '';
+}
+
+function safeWarn(ctx: PipelineContext, message: string, error: unknown): void {
+  try {
+    ctx.deps.log.warn('orchestrator', message, {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  } catch {
+    // Logging is diagnostic-only; Discovery context failures are surfaced in the prompt.
+  }
+}
+
 // ─── Prompt Building ─────────────────────────────────────────────────────────
 
 interface BuildToolPromptParams {
@@ -288,10 +327,12 @@ interface BuildToolPromptParams {
     archRules: ReturnType<typeof selectReviewerProfileRules>;
   };
   deps: OrchestratorDeps;
+  discoveryContext?: DiscoveryReviewContext;
 }
 
 export function buildToolPrompt(params: BuildToolPromptParams): string | null {
-  const { toolName, texts, reviewCtx, parsedOutput, sessionState, rules, deps } = params;
+  const { toolName, texts, reviewCtx, parsedOutput, sessionState, rules, deps, discoveryContext } =
+    params;
   const { planText, ticketText, adrText, adrTitle } = texts;
   const { planRules, implRules, archRules } = rules;
   if (toolName === TOOL_FLOWGUARD_PLAN) {
@@ -303,6 +344,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       obligationId: reviewCtx.obligationId,
       criteriaVersion: reviewCtx.criteriaVersion,
       mandateDigest: reviewCtx.mandateDigest,
+      discoveryContext,
       ...planRules,
     });
   }
@@ -318,6 +360,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       obligationId: reviewCtx.obligationId,
       criteriaVersion: reviewCtx.criteriaVersion,
       mandateDigest: reviewCtx.mandateDigest,
+      discoveryContext,
       ...implRules,
     });
   }
@@ -331,6 +374,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       obligationId: reviewCtx.obligationId,
       criteriaVersion: reviewCtx.criteriaVersion,
       mandateDigest: reviewCtx.mandateDigest,
+      discoveryContext,
       ...archRules,
     });
   }

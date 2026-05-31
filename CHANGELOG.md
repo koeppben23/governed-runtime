@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #396:** Added bounded advisory Discovery Context to independent
+  reviewer prompts. Plan, implementation, architecture, and content review prompts
+  now receive a shared deterministic context section with discovery health, drift
+  status, detected stack, verification candidates, and implementation guidance
+  when available. Context loading is failure-safe, defaults drift to explicit
+  `not_checked` during review prompt construction to avoid hidden latency, and
+  never changes ReviewFindings schema, obligation binding, mandate digest, or
+  attestation authority.
+
 - **Issue #389:** Added advisory `derivedRepairGuidance` to `flowguard_run_check`
   responses and `flowguard_status.validationResults`. Bounded parsing of stdout/
   stderr produces typed categories (`typecheck`, `lint`, `test`, `build`, `format`,
