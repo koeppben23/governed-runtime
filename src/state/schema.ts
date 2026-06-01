@@ -122,6 +122,54 @@ export const RiskGate = z.discriminatedUnion('status', [
 ]);
 export type RiskGate = z.infer<typeof RiskGate>;
 
+/**
+ * Cached drift verdict (#399). Drift is assessed only at /hydrate to bound cost;
+ * per-tool enforcement reads this cached value rather than re-running drift.
+ * Any non-'clean' value is fail-closed-eligible under onDrift policy.
+ */
+export const DiscoveryDriftAssessment = z.enum([
+  'clean',
+  'drifted',
+  'missing_discovery',
+  'unavailable',
+  'timeout',
+  'not_checked',
+]);
+export type DiscoveryDriftAssessment = z.infer<typeof DiscoveryDriftAssessment>;
+
+/** Discovery health gate reason codes (#399). */
+export const DiscoveryHealthGateCode = z.enum([
+  'DISCOVERY_HEALTH_UNAVAILABLE',
+  'DISCOVERY_HEALTH_DEGRADED',
+  'DISCOVERY_DRIFT_BLOCKED',
+]);
+export type DiscoveryHealthGateCode = z.infer<typeof DiscoveryHealthGateCode>;
+
+/**
+ * Persistent Discovery health gate (#399).
+ *
+ * Separates the gate DECISION (`status`) from cached drift EVIDENCE
+ * (`lastDriftAssessment`). A blocked gate stops the next mutating tool.
+ * The gate is cleared ONLY by reconcileDiscoveryHealthGate at /hydrate with
+ * fresh healthy Discovery and bounded drift — never by /status or by a
+ * subsequent unavailable re-read at the tool seam.
+ */
+export const DiscoveryHealthGate = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('clear'),
+    clearedAt: z.string().datetime().optional(),
+    lastDriftAssessment: DiscoveryDriftAssessment.optional(),
+  }),
+  z.object({
+    status: z.literal('blocked'),
+    code: DiscoveryHealthGateCode,
+    message: z.string().min(1),
+    blockedAt: z.string().datetime(),
+    lastDriftAssessment: DiscoveryDriftAssessment.optional(),
+  }),
+]);
+export type DiscoveryHealthGate = z.infer<typeof DiscoveryHealthGate>;
+
 // ─── Event ────────────────────────────────────────────────────────────────────
 
 /**
@@ -214,6 +262,9 @@ export const SessionState = z.object({
 
   /** Persistent runtime risk gate block state for mutating host tools. */
   riskGate: RiskGate.optional(),
+
+  /** Persistent Discovery health gate block state for mutating host tools (#399). */
+  discoveryHealthGate: DiscoveryHealthGate.optional(),
 
   /** Workspace binding (OpenCode session <-> git worktree). */
   binding: BindingInfo,

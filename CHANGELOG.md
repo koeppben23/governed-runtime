@@ -9,7 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Issue #396:** Added bounded advisory Discovery Context to independent
+- **Issue #399:** Added policy-gated, fail-closed Discovery health enforcement.
+  A new two-axis `discoveryHealth` policy (`enforcement`: `off` | `advisory` |
+  `required`; `onDegraded`/`onDrift`: `allow` | `warn` | `block`) is frozen into
+  the policy snapshot at hydrate time and surfaced read-only in
+  `flowguard_status`. When `enforcement` is `required`, a deterministic gate
+  blocks mutating tools (write/edit/apply_patch and bash mutations) at the same
+  seam as risk classification whenever persisted Discovery is unavailable,
+  degraded (`onDegraded: block`), or drifted (`onDrift: block`). The gate is
+  escalate-only at the tool seam and is reconciled — the only place it can be
+  cleared — during `flowguard_hydrate` against the persisted `DiscoveryResult`
+  (SSOT) plus a bounded drift check. Missing or unreadable Discovery never
+  produces a fake-healthy state; absent drift evidence is treated as
+  `not_checked` and blocks under `onDrift: block`. A blocked-transition audit
+  event (`discovery_health:gate_changed`) is emitted once per transition.
+
+  **Behavior change / upgrade note:** The `regulated` and `team-ci` presets
+  default `discoveryHealth.enforcement` to `required` (with `onDegraded: warn`,
+  `onDrift: block`); `solo` and `team` default to `off`. Legacy policy snapshots
+  without a `discoveryHealth` block receive the same fail-closed, mode-consistent
+  default on load. Operators on `regulated`/`team-ci` who do not maintain healthy
+  persisted Discovery may see mutating tools blocked until they run
+  `flowguard_hydrate`; set `policy.discoveryHealth.enforcement` to `advisory` or
+  `off` to opt out.
+
+ Added bounded advisory Discovery Context to independent
   reviewer prompts. Plan, implementation, architecture, and content review prompts
   now receive a shared deterministic context section with discovery health, drift
   status, detected stack, verification candidates, and implementation guidance

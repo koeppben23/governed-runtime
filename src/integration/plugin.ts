@@ -70,6 +70,11 @@ import {
   enforceRiskClassificationBefore as enforceRiskBefore,
   enforceRiskClassificationAfterBash as enforceRiskAfterBash,
 } from './plugin-risk.js';
+import {
+  type DiscoveryHealthEnforcementDeps,
+  enforceDiscoveryHealthBefore,
+  enforceDiscoveryHealthAfterBash,
+} from './plugin-discovery-health.js';
 
 const FG_PREFIX = 'flowguard_';
 
@@ -165,6 +170,11 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   const riskDeps: RiskEnforcementDeps = {
     getSessionDir: ws.getSessionDir,
     getWorktreeRoot: () => auditWorktree,
+  };
+
+  const discoveryHealthDeps: DiscoveryHealthEnforcementDeps = {
+    getSessionDir: ws.getSessionDir,
+    getWorkspaceDir: () => ws.cachedWsDir,
   };
 
   async function resolveEnforcement(
@@ -314,6 +324,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           }
 
           await enforceRiskBefore(riskDeps, sessDir, state, toolName, args);
+          await enforceDiscoveryHealthBefore(discoveryHealthDeps, sessDir, state, toolName);
         }
 
         if (!isFlowGuardVerdictTool(toolName)) return;
@@ -406,6 +417,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
         if (toolName === 'bash') {
           await enforceRiskAfterBash(riskDeps, sessionId, hookOutput);
+          await enforceDiscoveryHealthAfterBash(discoveryHealthDeps, sessionId, hookOutput);
         }
 
         await runOrchestrator(orchestratorDeps, {

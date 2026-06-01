@@ -34,11 +34,9 @@ import {
   extractDiscoveryHealth,
   isDiscoveryHealthAvailable,
   unavailableDiscoveryHealth,
+  classifyDiscoveryHealthUnavailable,
 } from '../../discovery/discovery-health.js';
-import type {
-  DiscoveryHealthProjection,
-  DiscoveryHealthUnavailableReason,
-} from '../../discovery/discovery-health.js';
+import type { DiscoveryHealthProjection } from '../../discovery/discovery-health.js';
 import type { DiscoveryResult } from '../../discovery/types.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
@@ -47,7 +45,6 @@ import { evaluate } from '../../machine/evaluate.js';
 
 // Adapters
 import { ActorClaimError } from '../../adapters/actor.js';
-import { PersistenceError } from '../../adapters/persistence.js';
 
 // Config
 import { evaluateCompleteness } from '../../audit/completeness.js';
@@ -174,6 +171,34 @@ function buildAppliedPolicyStatus(state: SessionState): Record<string, unknown> 
     centralPolicyDigest: snapshot.policyDigest ?? null,
     centralPolicyVersion: snapshot.policyVersion ?? null,
     centralPolicyPathHint: snapshot.policyPathHint ?? null,
+    discoveryHealth: snapshot.discoveryHealth,
+  };
+}
+
+/**
+ * Read-only projection of the persisted Discovery-health gate (#399).
+ * Status NEVER clears or mutates the gate; it only reports it.
+ *
+ * Exported for targeted read-only/no-mutation tests.
+ */
+export function buildDiscoveryHealthGateStatus(
+  state: SessionState,
+): Record<string, unknown> | null {
+  const gate = state.discoveryHealthGate;
+  if (!gate) return null;
+  if (gate.status === 'blocked') {
+    return {
+      status: 'blocked',
+      code: gate.code,
+      message: gate.message,
+      blockedAt: gate.blockedAt,
+      lastDriftAssessment: gate.lastDriftAssessment ?? null,
+    };
+  }
+  return {
+    status: 'clear',
+    clearedAt: gate.clearedAt ?? null,
+    lastDriftAssessment: gate.lastDriftAssessment ?? null,
   };
 }
 
@@ -247,23 +272,6 @@ async function loadDiscoveryStatusContext(wsDir: string): Promise<DiscoveryStatu
     );
     return { discovery: null, discoveryHealth: unavailableDiscoveryHealth(reason) };
   }
-}
-
-function classifyDiscoveryHealthUnavailable(error: unknown): DiscoveryHealthUnavailableReason {
-  if (error instanceof PersistenceError) {
-    switch (error.code) {
-      case 'PARSE_FAILED':
-        return 'corrupt';
-      case 'SCHEMA_VALIDATION_FAILED':
-        return 'schema_invalid';
-      case 'READ_FAILED':
-        return 'read_failed';
-      case 'WRITE_FAILED':
-      case 'LOCK_TIMEOUT':
-        return 'read_failed';
-    }
-  }
-  return 'read_failed';
 }
 
 function buildProfileStatus(
@@ -369,6 +377,7 @@ function buildFullStatusResponse(input: FullStatusInput): string {
       sessionId: state.id,
       policyMode: state.policySnapshot?.mode ?? 'unknown',
       discoveryHealth: discoveryHealth ?? null,
+      discoveryHealthGate: buildDiscoveryHealthGateStatus(state),
       discoveryDrift,
       implementationGuidance,
       archiveStatus: state.archiveStatus ?? null,

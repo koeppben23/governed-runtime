@@ -8,6 +8,7 @@ import { getAdapterLogger } from '../logging/adapter-logger.js';
 import type {
   EffectiveGateBehavior,
   CentralPolicyEvidence,
+  DiscoveryHealthPolicy,
   FlowGuardPolicy,
   HydratePolicyResolution,
   PolicyDegradedReason,
@@ -46,6 +47,7 @@ export interface HydratePolicyOptions {
   configEnforceRiskClassification?: boolean;
   configAllowRiskDowngradeOverride?: boolean;
   configAllowReducedCeremony?: boolean;
+  configDiscoveryHealth?: Partial<DiscoveryHealthPolicy>;
 }
 
 interface RequestedPolicyContext {
@@ -68,6 +70,7 @@ function applyConfigOverrides(
     configEnforceRiskClassification?: boolean;
     configAllowRiskDowngradeOverride?: boolean;
     configAllowReducedCeremony?: boolean;
+    configDiscoveryHealth?: Partial<DiscoveryHealthPolicy>;
   },
 ): FlowGuardPolicy {
   return {
@@ -89,6 +92,12 @@ function applyConfigOverrides(
     allowRiskDowngradeOverride:
       opts.configAllowRiskDowngradeOverride ?? basePolicy.allowRiskDowngradeOverride,
     allowReducedCeremony: opts.configAllowReducedCeremony ?? basePolicy.allowReducedCeremony,
+    discoveryHealth: {
+      enforcement:
+        opts.configDiscoveryHealth?.enforcement ?? basePolicy.discoveryHealth.enforcement,
+      onDegraded: opts.configDiscoveryHealth?.onDegraded ?? basePolicy.discoveryHealth.onDegraded,
+      onDrift: opts.configDiscoveryHealth?.onDrift ?? basePolicy.discoveryHealth.onDrift,
+    },
   };
 }
 

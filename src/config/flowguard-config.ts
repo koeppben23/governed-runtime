@@ -69,6 +69,17 @@ export const FlowGuardConfigSchema = z.object({
       allowRiskDowngradeOverride: z.boolean().optional(),
       /** Permit policy-gated reduced ceremony for runtime-verified TRIVIAL tasks. */
       allowReducedCeremony: z.boolean().optional(),
+      /**
+       * Policy-gated Discovery health enforcement (#399). Field-wise merged onto
+       * the resolved preset. Omitted fields fall back to the preset default.
+       */
+      discoveryHealth: z
+        .object({
+          enforcement: z.enum(['off', 'advisory', 'required']).optional(),
+          onDegraded: z.enum(['allow', 'warn', 'block']).optional(),
+          onDrift: z.enum(['allow', 'warn', 'block']).optional(),
+        })
+        .optional(),
     })
     .default({}),
 

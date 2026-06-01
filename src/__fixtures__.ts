@@ -59,6 +59,7 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   enforceRiskClassification: false,
   allowRiskDowngradeOverride: false,
   allowReducedCeremony: false,
+  discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
   audit: {
     emitTransitions: true,
     emitToolCalls: true,

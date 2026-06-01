@@ -101,6 +101,39 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'DISCOVERY_HEALTH_UNAVAILABLE',
+    category: 'admissibility',
+    messageTemplate:
+      'Discovery evidence is unavailable ({reason}) and policy requires healthy Discovery before mutating tools may run',
+    recoverySteps: [
+      'Restore Discovery evidence and run flowguard_hydrate to re-establish health',
+      'Do not proceed with mutating tools while Discovery is unavailable',
+    ],
+  },
+
+  {
+    code: 'DISCOVERY_HEALTH_DEGRADED',
+    category: 'admissibility',
+    messageTemplate:
+      'Discovery is available but degraded ({reason}); policy onDegraded=block stops mutating tools',
+    recoverySteps: [
+      'Resolve the degraded Discovery collectors and re-run flowguard_hydrate',
+      'Adjust discoveryHealth.onDegraded policy only with explicit governance approval',
+    ],
+  },
+
+  {
+    code: 'DISCOVERY_DRIFT_BLOCKED',
+    category: 'admissibility',
+    messageTemplate:
+      'Discovery drift verdict is {driftStatus}; policy onDrift=block stops mutating tools',
+    recoverySteps: [
+      'Re-run discovery and flowguard_hydrate to reconcile drift against persisted evidence',
+      'Investigate changed collectors before continuing implementation',
+    ],
+  },
+
+  {
     code: 'EMPTY_TICKET',
     category: 'input',
     messageTemplate: 'Ticket text must not be empty',

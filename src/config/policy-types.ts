@@ -82,6 +82,56 @@ export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
   strictEnforcement: true,
 };
 
+// ─── Discovery Health Policy ──────────────────────────────────────────────────
+
+/** Master switch for policy-gated Discovery health enforcement. */
+export type DiscoveryHealthEnforcement = 'off' | 'advisory' | 'required';
+
+/**
+ * Deterministic action for available-but-degraded or stale Discovery.
+ * Degraded = failed/partial collectors, budget exhaustion, read failures, or stale ageWarning.
+ */
+export type DiscoveryHealthDegradedAction = 'allow' | 'warn' | 'block';
+
+/** Deterministic action for non-clean Discovery drift verdicts. */
+export type DiscoveryHealthDriftAction = 'allow' | 'warn' | 'block';
+
+/**
+ * Policy-gated Discovery health enforcement (#399).
+ *
+ * Two-axis governance:
+ * - enforcement: master switch. 'off' = legacy advisory-only behavior (no new
+ *   workflow blocks). 'advisory' = surface warnings/NOT_VERIFIED but never block.
+ *   'required' = unavailable (missing/corrupt/schema_invalid/read_failed) ALWAYS
+ *   blocks; degraded/drift follow onDegraded/onDrift.
+ * - onDegraded: action when Discovery is available but degraded or stale.
+ * - onDrift: action when the cached drift verdict is not 'clean' (drifted,
+ *   missing_discovery, unavailable, timeout, not_checked — all fail-closed-eligible).
+ *
+ * Policy NEVER fabricates Discovery evidence; it only governs whether a workflow
+ * may proceed with degraded/unavailable evidence. DiscoveryResult remains SSOT.
+ */
+export interface DiscoveryHealthPolicy {
+  readonly enforcement: DiscoveryHealthEnforcement;
+  readonly onDegraded: DiscoveryHealthDegradedAction;
+  readonly onDrift: DiscoveryHealthDriftAction;
+}
+
+/**
+ * Mode-keyed default Discovery health policy.
+ *
+ * regulated/team-ci fail closed (required); solo/team stay advisory-off so
+ * existing default behavior introduces no new workflow blocks. This is the
+ * single source of truth for the default, reused by presets, snapshot
+ * normalization, and persisted-snapshot backward-compat resolution.
+ */
+export function defaultDiscoveryHealthForMode(mode: PolicyMode): DiscoveryHealthPolicy {
+  if (mode === 'regulated' || mode === 'team-ci') {
+    return { enforcement: 'required', onDegraded: 'warn', onDrift: 'block' };
+  }
+  return { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' };
+}
+
 // ─── FlowGuard Policy ─────────────────────────────────────────────────────────
 
 /**
@@ -197,6 +247,13 @@ export interface FlowGuardPolicy {
    * low risk. This never lets claimedTaskClass decide flow depth by itself.
    */
   readonly allowReducedCeremony: boolean;
+
+  /**
+   * Policy-gated fail-closed Discovery health enforcement (#399).
+   * Governs whether missing/corrupt/invalid/drifted/degraded Discovery blocks
+   * mutating host tools. Never fabricates evidence; DiscoveryResult stays SSOT.
+   */
+  readonly discoveryHealth: DiscoveryHealthPolicy;
 }
 
 /** Supported policy modes. */

@@ -213,3 +213,65 @@ Config (identityProviderMode, minimumActorAssuranceForApproval)
 ```
 
 The enforcement always reads from the persisted **policy snapshot** — not from reconstructed policy mode defaults. This guarantees that the exact policy active at session creation governs all decisions.
+
+## Discovery Health Enforcement
+
+FlowGuard can gate mutating tools on the health of persisted Discovery evidence.
+The `policy.discoveryHealth` block is a two-axis, fail-closed control that is
+frozen into the policy snapshot at hydrate time and surfaced read-only in
+`flowguard_status.discoveryHealthGate`.
+
+### Configuration
+
+```json
+{
+  "policy": {
+    "discoveryHealth": {
+      "enforcement": "required",
+      "onDegraded": "warn",
+      "onDrift": "block"
+    }
+  }
+}
+```
+
+| Field         | Values                        | Effect                                                                                   |
+| ------------- | ----------------------------- | ---------------------------------------------------------------------------------------- |
+| `enforcement` | `off`, `advisory`, `required` | Whether the gate blocks mutating tools. `off`/`advisory` never block; `required` blocks. |
+| `onDegraded`  | `allow`, `warn`, `block`      | Action when Discovery is available but degraded (failed/partial collectors).             |
+| `onDrift`     | `allow`, `warn`, `block`      | Action when persisted Discovery has drifted from the current workspace.                  |
+
+### Per-mode defaults
+
+| Mode        | `enforcement` | `onDegraded` | `onDrift` |
+| ----------- | ------------- | ------------ | --------- |
+| `solo`      | `off`         | `allow`      | `allow`   |
+| `team`      | `off`         | `allow`      | `allow`   |
+| `team-ci`   | `required`    | `warn`       | `block`   |
+| `regulated` | `required`    | `warn`       | `block`   |
+
+Legacy policy snapshots without a `discoveryHealth` block receive the same
+fail-closed, mode-consistent default when loaded.
+
+### Enforcement semantics
+
+- When `enforcement: required`, the gate evaluates at the same seam as risk
+  classification before write/edit/apply_patch and after bash mutations.
+- Precedence is `unavailable` > `degraded` (under `onDegraded: block`) >
+  `drift` (under `onDrift: block`). The corresponding block codes are
+  `DISCOVERY_HEALTH_UNAVAILABLE`, `DISCOVERY_HEALTH_DEGRADED`, and
+  `DISCOVERY_DRIFT_BLOCKED`.
+- Missing or unreadable Discovery is **never** treated as healthy. Absent drift
+  evidence is treated as `not_checked` and blocks under `onDrift: block`.
+- The gate is **escalate-only** at the tool seam: once blocked it stays blocked
+  until reconciled. `flowguard_hydrate` is the **only** authority that may clear
+  the gate, by re-reading the persisted `DiscoveryResult` (the SSOT) and running
+  a single bounded drift check.
+- A `discovery_health:gate_changed` audit event is emitted **once** on each
+  transition to blocked.
+
+### Recovery
+
+If a `required` gate blocks a mutating tool, run `flowguard_hydrate` to refresh
+Discovery and reconcile the gate. To opt out of enforcement entirely, set
+`policy.discoveryHealth.enforcement` to `advisory` or `off`.
