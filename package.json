@@ -53,6 +53,7 @@
     "test:coverage:ci": "vitest run --project unit --silent --coverage --coverage.reporter=json-summary",
     "test:watch": "vitest --project unit --project integration",
     "test:install-verify": "vitest run --project smoke src/cli/install-verify.test.ts",
+    "test:claude-plugin-load": "vitest run --project smoke src/cli/claude-plugin-load.test.ts",
     "test:acp": "vitest run --project smoke src/cli/run-acp-smoke.test.ts",
     "test:review-validation-host-contract": "vitest run --project integration src/integration/review-validation-host-contract.test.ts",
     "test:review-modeb-contract": "vitest run --project integration src/integration/review-modeb-contract.test.ts",

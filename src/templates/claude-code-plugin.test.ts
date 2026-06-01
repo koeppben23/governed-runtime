@@ -20,10 +20,17 @@ describe('Claude Code plugin templates', () => {
       displayName: 'FlowGuard Governance',
       version: '1.2.3',
       skills: './skills/',
-      hooks: './hooks/hooks.json',
       mcpServers: './.mcp.json',
     });
     expect(manifest.interface).toBeUndefined();
+    // Regression: hooks/hooks.json is auto-discovered at its default location.
+    // Declaring it in the manifest triggers Claude Code's duplicate-hooks load
+    // error, so the manifest must NOT reference it.
+    expect(manifest.hooks).toBeUndefined();
+    // Regression: agents/flowguard-reviewer.md is auto-discovered at its
+    // default location. Declaring an `agents` key silently drops the agent
+    // (Agents (0)), so the manifest must NOT reference it.
+    expect(manifest.agents).toBeUndefined();
   });
 
   it('renders hook config in exec form with FlowGuard matchers', () => {
