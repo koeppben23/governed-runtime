@@ -63,7 +63,12 @@ async function prepareReviewExecution(
   if (resolved.blocked) return resolved.blocked;
   const validationBlock = validateSubmittedReviewFindings(exec.args, resolved.obligation);
   if (validationBlock) return validationBlock;
-  const recorded = recordSubmittedReviewInvocation(result, resolved.obligation, exec);
+  const recorded = await recordSubmittedReviewInvocation(
+    result,
+    resolved.obligation,
+    exec,
+    sessDir,
+  );
   if (recorded.blocked) return recorded.blocked;
   if (refInput) refInput = { ...refInput, skipExternalContentLoad: true };
   return { result: recorded.result, refInput, validatedReviewObligation: resolved.obligation };

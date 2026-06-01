@@ -18,6 +18,7 @@ import {
   fulfillObligation,
 } from '../../review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import { readReviewerCaptures } from '../../../adapters/persistence-reviewer-capture.js';
 import {
   formatBlockedWithAttestation,
   formatSubagentReviewNotInvoked,
@@ -85,6 +86,55 @@ export function validateHostInvocationEvidence(input: {
   );
 }
 
+// ─── Native subagent attestation resolution ──────────────────────────────────
+
+export interface NativeAttestation {
+  readonly invocationMode: 'manual_attested' | 'native_subagent_attested';
+  readonly hostCapturedAgentId?: string;
+  readonly hostCapturedAgentType?: typeof REVIEWER_SUBAGENT_TYPE;
+  readonly hostCaptureSource?: 'subagent_stop_hook' | 'post_tool_use_hook';
+}
+
+const MANUAL_ATTESTATION: NativeAttestation = { invocationMode: 'manual_attested' };
+
+/**
+ * Decide whether agent-submitted attested findings can be upgraded to
+ * `native_subagent_attested`. The upgrade requires an independent FlowGuard
+ * host-captured corroboration record — a PostToolUse capture proving the review
+ * tool was invoked from inside a genuine `flowguard-reviewer` subagent AND bound
+ * to this exact obligation.
+ *
+ * Fail-closed: any read error, missing capture, or unbound capture returns
+ * `manual_attested` (no upgrade, never an error-open). Captures are read from this
+ * session's own directory, so they cannot be replayed across sessions. SubagentStop
+ * captures alone do NOT upgrade — they carry no obligation binding.
+ */
+export async function resolveNativeAttestation(input: {
+  sessDir: string;
+  obligationId: string;
+}): Promise<NativeAttestation> {
+  let read: Awaited<ReturnType<typeof readReviewerCaptures>>;
+  try {
+    read = await readReviewerCaptures(input.sessDir);
+  } catch {
+    return MANUAL_ATTESTATION;
+  }
+  const bound = read.captures.find(
+    (c) =>
+      c.agentType === REVIEWER_SUBAGENT_TYPE &&
+      c.source === 'post_tool_use_hook' &&
+      c.reviewToolInvoked === true &&
+      c.obligationId === input.obligationId,
+  );
+  if (!bound) return MANUAL_ATTESTATION;
+  return {
+    invocationMode: 'native_subagent_attested',
+    hostCapturedAgentId: bound.agentId,
+    hostCapturedAgentType: REVIEWER_SUBAGENT_TYPE,
+    hostCaptureSource: 'post_tool_use_hook',
+  };
+}
+
 // ─── Manual invocation state building ────────────────────────────────────────
 
 function buildManualInvocationState(input: {
@@ -95,20 +145,37 @@ function buildManualInvocationState(input: {
   findingsHash: string;
   promptHash: string;
   now: string;
+  attestation: NativeAttestation;
 }): StartedReviewResult {
-  const { result, obligation, context, childSessionId, findingsHash, promptHash, now } = input;
+  const {
+    result,
+    obligation,
+    context,
+    childSessionId,
+    findingsHash,
+    promptHash,
+    now,
+    attestation,
+  } = input;
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: 'review',
     parentSessionId: context.sessionID,
     childSessionId,
-    invocationMode: 'manual_attested',
+    invocationMode: attestation.invocationMode,
     hostVisible: false,
     promptHash,
     findingsHash,
     invokedAt: now,
     fulfilledAt: now,
     source: 'agent-submitted-attested',
+    ...(attestation.hostCapturedAgentId
+      ? { hostCapturedAgentId: attestation.hostCapturedAgentId }
+      : {}),
+    ...(attestation.hostCapturedAgentType
+      ? { hostCapturedAgentType: attestation.hostCapturedAgentType }
+      : {}),
+    ...(attestation.hostCaptureSource ? { hostCaptureSource: attestation.hostCaptureSource } : {}),
   });
   return {
     ...result,
@@ -129,15 +196,16 @@ function buildManualInvocationState(input: {
 
 // ─── Invocation recording orchestrators ──────────────────────────────────────
 
-function recordManualReviewInvocation(input: {
+async function recordManualReviewInvocation(input: {
   result: StartedReviewResult;
   obligation: ReviewObligation;
   exec: ReviewExecutionContext;
   childSessionId: string;
   findingsHash: string;
   assurance: ReturnType<typeof ensureReviewAssurance>;
-}): { result: StartedReviewResult; blocked?: string } {
-  const { result, obligation, exec, childSessionId, findingsHash, assurance } = input;
+  sessDir: string;
+}): Promise<{ result: StartedReviewResult; blocked?: string }> {
+  const { result, obligation, exec, childSessionId, findingsHash, assurance, sessDir } = input;
   if (exec.policy === 'host_task_required') {
     return {
       result,
@@ -168,6 +236,10 @@ function recordManualReviewInvocation(input: {
       ),
     };
   }
+  const attestation = await resolveNativeAttestation({
+    sessDir,
+    obligationId: obligation.obligationId,
+  });
   return {
     result: buildManualInvocationState({
       result,
@@ -177,15 +249,17 @@ function recordManualReviewInvocation(input: {
       findingsHash,
       promptHash: hashText(fingerprintReviewInput(exec.args)),
       now: exec.now,
+      attestation,
     }),
   };
 }
 
-export function recordSubmittedReviewInvocation(
+export async function recordSubmittedReviewInvocation(
   result: StartedReviewResult,
   obligation: ReviewObligation,
   exec: ReviewExecutionContext,
-): { result: StartedReviewResult; blocked?: string } {
+  sessDir: string,
+): Promise<{ result: StartedReviewResult; blocked?: string }> {
   const findings = exec.args.reviewFindings as Record<string, unknown>;
   const childSessionId = String((findings.reviewedBy as Record<string, unknown>).sessionId ?? '');
   if (!childSessionId) {
@@ -226,5 +300,6 @@ export function recordSubmittedReviewInvocation(
     childSessionId,
     findingsHash,
     assurance,
+    sessDir,
   });
 }
