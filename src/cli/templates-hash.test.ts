@@ -78,9 +78,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   it('COMMANDS matches compiled output hash', () => {
     // Refreshed for #262: GOVERNANCE_RULES is now a projection from the
     // mandates Governance rules section, affecting all command templates.
+    // Refreshed for #401: /review template now requires Discovery context
+    // (health/drift) and NOT_VERIFIED correlation for PR/content review.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '4ca78c8d9a250d168059b7d9c2572e655426ff9d76d347fd506efb3a276518e4',
+      'acec0e71a1e3ecfa026b779e3fb39ec7ef29949437fc676c818148f6fe9eab8a',
     );
   });
 

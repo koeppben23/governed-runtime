@@ -291,11 +291,17 @@ export async function buildReviewDiscoveryContextForPipeline(
   } catch (error) {
     safeWarn(ctx, 'failed to resolve worktree for review discovery context', error);
   }
+  // #401: PR/content review evaluates external diffs against the current repo, so
+  // drift between local Discovery and the reviewed branch is review-relevant evidence.
+  // Drift checking is bounded by DEFAULT_STATUS_DRIFT_TIMEOUT_MS and fails closed:
+  // a timeout or error produces an explicit drift failure status (timeout ->
+  // discovery_drift_timeout, error -> discovery_drift_unavailable) that renders
+  // NOT_VERIFIED — never a silent pass.
   return buildReviewDiscoveryContext({
     sessionState: ctx.sessionState,
     fingerprint,
     worktree,
-    includeDriftCheck: false,
+    includeDriftCheck: true,
   });
 }
 

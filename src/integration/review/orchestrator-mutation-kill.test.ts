@@ -359,6 +359,7 @@ describe('MUTATION_KILL: buildReviewContentPrompt with stack section', () => {
     criteriaVersion: 'v1',
     iteration: 1,
     planVersion: 1,
+    discoveryContext: {},
   };
 
   it('includes stack section when profileName and profileRules are given', () => {

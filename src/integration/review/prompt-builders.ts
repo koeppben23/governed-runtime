@@ -276,7 +276,11 @@ export function buildReviewContentPrompt(opts: {
   planVersion: number;
   profileName?: string;
   profileRules?: string;
-  discoveryContext?: DiscoveryReviewContext;
+  // #401: Discovery context is REQUIRED for standalone PR/content review so external
+  // diffs are evaluated against repo-native stack/verification/health/drift evidence.
+  // The loader always returns a populated (possibly "unavailable") context, so the
+  // section renders even when Discovery is degraded — never silently omitted.
+  discoveryContext: DiscoveryReviewContext;
 }): string {
   const stackSection = buildStackProfileSection(opts.profileName, opts.profileRules);
   const discoverySection = buildDiscoveryContextSection(opts.discoveryContext);

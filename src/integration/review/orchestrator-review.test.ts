@@ -419,6 +419,7 @@ describe('buildReviewContentPrompt', () => {
     criteriaVersion: 'p35-v1',
     iteration: 1,
     planVersion: 1,
+    discoveryContext: {},
   };
 
   it('includes content, ticket, and attestation values', () => {
@@ -645,6 +646,7 @@ describe('buildReviewContentPrompt edge cases', () => {
     criteriaVersion: 'p35-v1',
     iteration: 0,
     planVersion: 1,
+    discoveryContext: {},
   };
 
   it('handles zero iteration', () => {
