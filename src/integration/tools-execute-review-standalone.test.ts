@@ -1170,4 +1170,82 @@ describe('review (standalone flow)', () => {
       });
     });
   });
+
+  // =========================================================================
+  // TRANSPORT BY POLICY MODE (claude-code host)
+  //
+  // Keystone contract: on an out-of-process host (claude-code, manual_attested
+  // transport), the review invocation policy derived from the *real* hydrate
+  // path governs whether inline content-review evidence may converge.
+  //
+  //   - solo      → host_task_preferred → inline findings converge.
+  //   - team      → host_task_required  → fail-closed HOST_SUBAGENT_TASK_REQUIRED.
+  //   - regulated → host_task_required  → fail-closed HOST_SUBAGENT_TASK_REQUIRED.
+  //
+  // This exercises the snapshot policy produced by hydrate({policyMode}) (not a
+  // legacy missing-field fallback) and asserts both the snapshot keystone and
+  // the downstream transport effect, proving the fail-closed invariant
+  // (transport-evidence.ts:138) under a real out-of-process host platform.
+  // =========================================================================
+  describe('transport by policy mode (claude-code host)', () => {
+    let prevPlatform: string | undefined;
+
+    beforeEach(() => {
+      prevPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
+      process.env.FLOWGUARD_HOST_PLATFORM = 'claude-code';
+    });
+
+    afterEach(() => {
+      if (prevPlatform === undefined) delete process.env.FLOWGUARD_HOST_PLATFORM;
+      else process.env.FLOWGUARD_HOST_PLATFORM = prevPlatform;
+    });
+
+    // Hydrate under an explicit policy mode, then run the two-step standalone
+    // /review content flow (create obligation → submit inline findings).
+    async function runContentReviewUnderPolicy(policyMode: string) {
+      const hy = parseToolResult(await hydrate.execute({ policyMode, profileId: 'baseline' }, ctx));
+      if (hy.error) {
+        throw new Error(`hydrate(${policyMode}) failed: ${String(hy.message)}`);
+      }
+
+      // Keystone: real hydrate must derive the expected invocation policy.
+      const snapshot = (await readState(await currentSessionDir()))!.policySnapshot!;
+
+      // First call: create the review obligation (no findings yet).
+      const first = parseToolResult(await review.execute({ prNumber: 77, inputOrigin: 'pr' }, ctx));
+      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+      const uuid = (first.requiredReviewAttestation as Record<string, string>).toolObligationId;
+
+      // Second call: submit inline (manual_attested) findings.
+      const findings = buildAnalysisFindings('approve', uuid);
+      const second = parseToolResult(
+        await review.execute(
+          { prNumber: 77, reviewFindings: findings as never, inputOrigin: 'pr' },
+          ctx,
+        ),
+      );
+      return { snapshot, first, second };
+    }
+
+    it('solo (host_task_preferred): inline content review converges', async () => {
+      const { snapshot, second } = await runContentReviewUnderPolicy('solo');
+      expect(snapshot.reviewInvocationPolicy).toBe('host_task_preferred');
+      expect(second.error).toBeUndefined();
+      expect(second.phase).toBe('REVIEW_COMPLETE');
+    });
+
+    it('team (host_task_required): inline content review fails closed', async () => {
+      const { snapshot, second } = await runContentReviewUnderPolicy('team');
+      expect(snapshot.reviewInvocationPolicy).toBe('host_task_required');
+      expect(second.error).toBe(true);
+      expect(second.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
+    });
+
+    it('regulated (host_task_required): inline content review fails closed', async () => {
+      const { snapshot, second } = await runContentReviewUnderPolicy('regulated');
+      expect(snapshot.reviewInvocationPolicy).toBe('host_task_required');
+      expect(second.error).toBe(true);
+      expect(second.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
+    });
+  });
 });
