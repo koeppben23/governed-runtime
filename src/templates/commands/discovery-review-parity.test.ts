@@ -50,9 +50,7 @@ describe('templates/commands Discovery review parity (Item 2)', () => {
         expect(template).toMatch(
           /check Discovery health and drift BEFORE any repo-dependent quality claim/,
         );
-        expect(template).toMatch(
-          /cannot be correlated to local repository Discovery/,
-        );
+        expect(template).toMatch(/cannot be correlated to local repository Discovery/);
       });
 
       // EDGE — Discovery is evidence, not verdict authority.
