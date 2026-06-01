@@ -45,6 +45,8 @@ import {
   archive,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { appendReviewerCapture } from '../adapters/persistence-reviewer-capture.js';
+import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import * as persistence from '../adapters/persistence.js';
 import {
@@ -1246,6 +1248,135 @@ describe('review (standalone flow)', () => {
       expect(snapshot.reviewInvocationPolicy).toBe('host_task_required');
       expect(second.error).toBe(true);
       expect(second.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
+    });
+  });
+
+  // =========================================================================
+  // E2E: native_subagent_attested tier upgrade (claude-code host).
+  //
+  // Drives the REAL tool pipeline (hydrate → review obligation → inline attested
+  // findings) under solo/host_task_preferred and injects an obligation-bound
+  // host capture — exactly the artifact a real Claude PostToolUse hook writes
+  // from inside a genuine flowguard-reviewer subagent — into the session's own
+  // capture store BEFORE the findings submission. resolveNativeAttestation folds
+  // it at construction time, upgrading the recorded invocation evidence to
+  // native_subagent_attested. Falsification controls prove the upgrade is gated:
+  //   - no capture                → stays manual_attested
+  //   - capture bound to a DIFFERENT obligation → stays manual_attested
+  //   - SubagentStop-source capture (no obligation binding) → stays manual_attested
+  //
+  // This is the integration counterpart to the validation-layer negatives in
+  // review-validation.test.ts and the fold-layer negatives in
+  // native-attestation-fold.test.ts: it proves the end-to-end on-disk path,
+  // not just the pure resolver. NOT_VERIFIED beyond this: a full live `claude -p`
+  // lifecycle (long/non-deterministic) is out of scope.
+  // =========================================================================
+  describe('native_subagent_attested e2e (claude-code host)', () => {
+    let prevPlatform: string | undefined;
+
+    beforeEach(() => {
+      prevPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
+      process.env.FLOWGUARD_HOST_PLATFORM = 'claude-code';
+    });
+
+    afterEach(() => {
+      if (prevPlatform === undefined) delete process.env.FLOWGUARD_HOST_PLATFORM;
+      else process.env.FLOWGUARD_HOST_PLATFORM = prevPlatform;
+    });
+
+    /**
+     * Hydrate solo, create the review obligation, optionally inject a host
+     * capture keyed by `bindObligationId`, then submit inline attested findings.
+     * Returns the recorded invocation evidence for the obligation.
+     */
+    async function runWithCapture(
+      inject: ((obligationId: string, sessDir: string) => Promise<void>) | null,
+    ) {
+      const hy = parseToolResult(
+        await hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, ctx),
+      );
+      expect(hy.error).toBeFalsy();
+      const sessDir = await currentSessionDir();
+      expect((await readState(sessDir))!.policySnapshot!.reviewInvocationPolicy).toBe(
+        'host_task_preferred',
+      );
+
+      const first = parseToolResult(await review.execute({ prNumber: 88, inputOrigin: 'pr' }, ctx));
+      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+      const obligationId = (first.requiredReviewAttestation as Record<string, string>)
+        .toolObligationId;
+
+      if (inject) await inject(obligationId, sessDir);
+
+      const findings = buildAnalysisFindings('approve', obligationId);
+      const second = parseToolResult(
+        await review.execute(
+          { prNumber: 88, reviewFindings: findings as never, inputOrigin: 'pr' },
+          ctx,
+        ),
+      );
+      expect(second.error).toBeUndefined();
+      expect(second.phase).toBe('REVIEW_COMPLETE');
+
+      const state = (await readState(sessDir))!;
+      const invocation = state.reviewAssurance!.invocations.find(
+        (inv) => inv.obligationId === obligationId,
+      );
+      expect(invocation).toBeDefined();
+      return invocation!;
+    }
+
+    function postToolUseCapture(obligationId: string): Parameters<typeof appendReviewerCapture>[1] {
+      return {
+        capturedAt: '2026-01-01T00:00:00.000Z',
+        source: 'post_tool_use_hook',
+        sessionId: ctx.sessionID,
+        agentId: 'agent_native_e2e_001',
+        agentType: REVIEWER_SUBAGENT_TYPE,
+        toolName: 'mcp__flowguard__review',
+        reviewToolInvoked: true,
+        obligationId,
+      };
+    }
+
+    it('upgrades to native_subagent_attested with an obligation-bound host capture', async () => {
+      const invocation = await runWithCapture(async (obligationId, sessDir) => {
+        await appendReviewerCapture(sessDir, postToolUseCapture(obligationId));
+      });
+      expect(invocation.invocationMode).toBe('native_subagent_attested');
+      expect(invocation.hostCapturedAgentId).toBe('agent_native_e2e_001');
+      expect(invocation.hostCapturedAgentType).toBe(REVIEWER_SUBAGENT_TYPE);
+      expect(invocation.hostCaptureSource).toBe('post_tool_use_hook');
+    });
+
+    it('stays manual_attested without any host capture (fail-closed default)', async () => {
+      const invocation = await runWithCapture(null);
+      expect(invocation.invocationMode).toBe('manual_attested');
+      expect(invocation.hostCapturedAgentId).toBeUndefined();
+    });
+
+    it('stays manual_attested when capture is bound to a different obligation', async () => {
+      const invocation = await runWithCapture(async (_obligationId, sessDir) => {
+        await appendReviewerCapture(
+          sessDir,
+          postToolUseCapture('99999999-9999-4999-8999-999999999999'),
+        );
+      });
+      expect(invocation.invocationMode).toBe('manual_attested');
+    });
+
+    it('stays manual_attested for a SubagentStop-source capture (no obligation binding)', async () => {
+      const invocation = await runWithCapture(async (_obligationId, sessDir) => {
+        await appendReviewerCapture(sessDir, {
+          capturedAt: '2026-01-01T00:00:00.000Z',
+          source: 'subagent_stop_hook',
+          sessionId: ctx.sessionID,
+          agentId: 'agent_native_e2e_002',
+          agentType: REVIEWER_SUBAGENT_TYPE,
+          reviewToolInvoked: false,
+        });
+      });
+      expect(invocation.invocationMode).toBe('manual_attested');
     });
   });
 });
