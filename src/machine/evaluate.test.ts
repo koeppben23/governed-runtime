@@ -14,6 +14,7 @@ import {
   IMPL_REVIEW_CONVERGED,
   ERROR_INFO,
   ARCHITECTURE_DECISION,
+  POLICY_SNAPSHOT,
 } from '../__fixtures__.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
@@ -119,6 +120,69 @@ describe('evaluate', () => {
       if (result.kind === 'transition') {
         expect(result.event).toBe('CHECK_FAILED');
         expect(result.target).toBe('PLAN');
+      }
+    });
+
+    it('VALIDATION with empty activeChecks under required policy → pending (no vacuous auto-advance)', () => {
+      // #400: required enforcement must block the PLAN_REVIEW APPROVE → VALIDATION →
+      // ALL_PASSED → IMPLEMENTATION auto-advance chain when no verification evidence exists.
+      const state = makeState('VALIDATION', {
+        activeChecks: [],
+        validation: [],
+        policySnapshot: {
+          ...POLICY_SNAPSHOT,
+          validationEvidence: { enforcement: 'required', allowNoCommands: false },
+        },
+      });
+      const result = evaluate(state);
+      expect(result.kind).toBe('pending');
+      if (result.kind === 'pending') {
+        expect(result.phase).toBe('VALIDATION');
+      }
+    });
+
+    it('VALIDATION with empty activeChecks + allowNoCommands exception → ALL_PASSED auto-advance preserved', () => {
+      // #400: the sanctioned opt-out keeps legacy vacuous-pass behavior.
+      const state = makeState('VALIDATION', {
+        activeChecks: [],
+        validation: [],
+        policySnapshot: {
+          ...POLICY_SNAPSHOT,
+          validationEvidence: { enforcement: 'required', allowNoCommands: true },
+        },
+      });
+      const result = evaluate(state);
+      expect(result.kind).toBe('transition');
+      if (result.kind === 'transition') {
+        expect(result.event).toBe('ALL_PASSED');
+        expect(result.target).toBe('IMPLEMENTATION');
+      }
+    });
+
+    it('reduced-ceremony evidence on a blocked VALIDATION cannot bypass the evidence gate (#400)', () => {
+      // Falsification: reduced ceremony is strictly post-VALIDATION (IMPLEMENTATION →
+      // EVIDENCE_REVIEW). Even with reducedCeremony evidence attached, a blocked
+      // VALIDATION must stay pending and never jump past the evidence gate.
+      const state = makeState('VALIDATION', {
+        activeChecks: [],
+        validation: [],
+        reducedCeremony: {
+          profile: 'reduced',
+          reason: 'RUNTIME_VERIFIED_TRIVIAL',
+          claimedTaskClass: 'TRIVIAL',
+          computedMinimumTaskClass: 'TRIVIAL',
+          touchedSurfaces: [],
+          decidedAt: '2026-01-01T00:00:00.000Z',
+        },
+        policySnapshot: {
+          ...POLICY_SNAPSHOT,
+          validationEvidence: { enforcement: 'required', allowNoCommands: false },
+        },
+      });
+      const result = evaluate(state);
+      expect(result.kind).toBe('pending');
+      if (result.kind === 'pending') {
+        expect(result.phase).toBe('VALIDATION');
       }
     });
 

@@ -14,6 +14,7 @@ import type {
   PolicyDegradedReason,
   PolicyMode,
   PolicySource,
+  ValidationEvidencePolicy,
 } from './policy-types.js';
 import { PolicyConfigurationError } from './policy-errors.js';
 import { detectCiContext } from './policy-ci.js';
@@ -48,6 +49,7 @@ export interface HydratePolicyOptions {
   configAllowRiskDowngradeOverride?: boolean;
   configAllowReducedCeremony?: boolean;
   configDiscoveryHealth?: Partial<DiscoveryHealthPolicy>;
+  configValidationEvidence?: Partial<ValidationEvidencePolicy>;
 }
 
 interface RequestedPolicyContext {
@@ -71,6 +73,7 @@ function applyConfigOverrides(
     configAllowRiskDowngradeOverride?: boolean;
     configAllowReducedCeremony?: boolean;
     configDiscoveryHealth?: Partial<DiscoveryHealthPolicy>;
+    configValidationEvidence?: Partial<ValidationEvidencePolicy>;
   },
 ): FlowGuardPolicy {
   return {
@@ -97,6 +100,13 @@ function applyConfigOverrides(
         opts.configDiscoveryHealth?.enforcement ?? basePolicy.discoveryHealth.enforcement,
       onDegraded: opts.configDiscoveryHealth?.onDegraded ?? basePolicy.discoveryHealth.onDegraded,
       onDrift: opts.configDiscoveryHealth?.onDrift ?? basePolicy.discoveryHealth.onDrift,
+    },
+    validationEvidence: {
+      enforcement:
+        opts.configValidationEvidence?.enforcement ?? basePolicy.validationEvidence.enforcement,
+      allowNoCommands:
+        opts.configValidationEvidence?.allowNoCommands ??
+        basePolicy.validationEvidence.allowNoCommands,
     },
   };
 }

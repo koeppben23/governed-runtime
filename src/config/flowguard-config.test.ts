@@ -460,6 +460,49 @@ describe('FlowGuardConfigSchema', () => {
     expect(result.success).toBe(false);
   });
 
+  it('accepts a valid validationEvidence policy block (#400)', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: {
+        validationEvidence: { enforcement: 'required', allowNoCommands: true },
+      },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.policy.validationEvidence).toEqual({
+        enforcement: 'required',
+        allowNoCommands: true,
+      });
+    }
+  });
+
+  it('accepts a partial validationEvidence block (enforcement only) (#400)', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: { validationEvidence: { enforcement: 'advisory' } },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.policy.validationEvidence).toEqual({ enforcement: 'advisory' });
+    }
+  });
+
+  it('rejects an invalid validationEvidence enforcement value (#400)', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: { validationEvidence: { enforcement: 'mandatory' } },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('rejects a non-boolean validationEvidence.allowNoCommands (#400)', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      policy: { validationEvidence: { allowNoCommands: 'yes' } },
+    });
+    expect(result.success).toBe(false);
+  });
+
   // ── CORNER ─────────────────────────────────────────────────────────────
 
   it('accepts boundary values for iterations (1 and 10)', () => {

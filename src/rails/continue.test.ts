@@ -16,6 +16,7 @@ import {
   TICKET,
   PLAN_RECORD,
   ARCHITECTURE_DECISION,
+  POLICY_SNAPSHOT,
 } from '../__fixtures__.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord } from '../state/evidence.js';
@@ -132,6 +133,62 @@ describe('continue rail', () => {
       if (result.kind === 'blocked') {
         expect(result.code).toBe('COMMAND_NOT_ALLOWED');
         expect(result.reason).toContain('/continue');
+      }
+    });
+
+    it('VALIDATION with empty activeChecks under required policy → blocked, no auto-advance (#400)', async () => {
+      const runCheck = vi.fn();
+      const state = makeState('VALIDATION', {
+        activeChecks: [],
+        validation: [],
+        policySnapshot: {
+          ...POLICY_SNAPSHOT,
+          validationEvidence: { enforcement: 'required', allowNoCommands: false },
+        },
+      });
+      const result = await executeContinue(state, ctx, makeExecutors({ runCheck }));
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('VALIDATION_EVIDENCE_UNVERIFIED');
+      }
+      // Fail-closed: no checks were run and no transition happened.
+      expect(runCheck).not.toHaveBeenCalled();
+    });
+
+    it('VALIDATION with empty activeChecks + allowNoCommands exception → auto-advances (#400)', async () => {
+      const state = makeState('VALIDATION', {
+        ticket: TICKET,
+        plan: planWith('## Plan\nTest'),
+        activeChecks: [],
+        validation: [],
+        policySnapshot: {
+          ...POLICY_SNAPSHOT,
+          validationEvidence: { enforcement: 'required', allowNoCommands: true },
+        },
+        reviewDecision: {
+          verdict: 'approve',
+          decidedBy: 'r',
+          decidedAt: FIXED_TIME,
+          decidedByIdentity: {
+            actorId: 'r',
+            actorEmail: 'r@t.com',
+            actorSource: 'env' as const,
+            actorAssurance: 'best_effort' as const,
+          },
+        },
+        selfReview: {
+          iteration: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: 'd',
+          revisionDelta: 'none' as const,
+          verdict: 'converged' as const,
+        },
+      });
+      const result = await executeContinue(state, ctx, makeExecutors());
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.phase).toBe('IMPLEMENTATION');
       }
     });
   });

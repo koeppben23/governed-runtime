@@ -46,6 +46,19 @@ const PRODUCT_GUIDANCE = {
     text: 'Run validation checks with /check',
     commands: ['/check'],
   },
+  VALIDATION_EVIDENCE_REQUIRED: {
+    text:
+      'Policy requires validation evidence, but no verification commands were discovered. ' +
+      'Re-run discovery and /hydrate to detect repo-native checks, or enable ' +
+      'validationEvidence.allowNoCommands in policy with governance approval.',
+    commands: ['/hydrate', '/status'],
+  },
+  VALIDATION_EVIDENCE_UNVERIFIED: {
+    text:
+      'Policy requires validation evidence but Discovery is not trustworthy (NOT_VERIFIED). ' +
+      'Run /hydrate to restore healthy Discovery and clear any blocked discovery health gate.',
+    commands: ['/hydrate', '/status'],
+  },
   RUN_CONTINUE: {
     text: 'Run /continue to proceed',
     commands: ['/continue'],

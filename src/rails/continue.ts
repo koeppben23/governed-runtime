@@ -34,6 +34,7 @@ import type {
 } from '../state/evidence.js';
 import { validateAdrSections } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
+import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
 import type { RailResult, RailBlocked, RailContext } from './types.js';
 import {
@@ -126,6 +127,14 @@ export async function executeContinue(
   let workState: SessionState | RailBlocked = state;
 
   if (state.phase === 'VALIDATION') {
+    // #400: fail-closed when policy requires validation evidence but no active
+    // checks exist. Surface the explicit, case-distinguished reason from the
+    // single authority rather than letting autoAdvance silently stall in
+    // EvalPending. Off/advisory and the allowNoCommands exception fall through.
+    const evidence = evaluateValidationEvidence(state);
+    if (evidence.blocked && evidence.code !== null) {
+      return blocked(evidence.code);
+    }
     workState = await runValidationChecks(workState, ctx, executors);
   } else if (state.phase === 'PLAN') {
     workState = await runOneSelfReviewIteration(workState, ctx, executors);

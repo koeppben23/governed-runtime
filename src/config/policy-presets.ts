@@ -4,7 +4,11 @@
  */
 
 import type { FlowGuardPolicy, PolicyMode, TimestampAssurancePolicy } from './policy-types.js';
-import { DEFAULT_SELF_REVIEW_CONFIG, defaultDiscoveryHealthForMode } from './policy-types.js';
+import {
+  DEFAULT_SELF_REVIEW_CONFIG,
+  defaultDiscoveryHealthForMode,
+  defaultValidationEvidenceForMode,
+} from './policy-types.js';
 import { PolicyConfigurationError } from './policy-errors.js';
 
 const DEFAULT_TIMESTAMP_ASSURANCE: TimestampAssurancePolicy = {
@@ -44,6 +48,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   allowRiskDowngradeOverride: false,
   allowReducedCeremony: false,
   discoveryHealth: defaultDiscoveryHealthForMode('solo'),
+  validationEvidence: defaultValidationEvidenceForMode('solo'),
 };
 
 /** TEAM mode -- collaborative workflow. */
@@ -73,6 +78,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
   allowRiskDowngradeOverride: false,
   allowReducedCeremony: false,
   discoveryHealth: defaultDiscoveryHealthForMode('team'),
+  validationEvidence: defaultValidationEvidenceForMode('team'),
 };
 
 /** TEAM-CI mode -- CI pipeline workflow. */
@@ -102,6 +108,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   allowRiskDowngradeOverride: false,
   allowReducedCeremony: false,
   discoveryHealth: defaultDiscoveryHealthForMode('team-ci'),
+  validationEvidence: defaultValidationEvidenceForMode('team-ci'),
 };
 
 /** REGULATED mode -- full FlowGuard with four-eyes and complete audit trail. */
@@ -132,6 +139,7 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
   allowRiskDowngradeOverride: false,
   allowReducedCeremony: false,
   discoveryHealth: defaultDiscoveryHealthForMode('regulated'),
+  validationEvidence: defaultValidationEvidenceForMode('regulated'),
 };
 
 /** All known policy presets, indexed by mode. */

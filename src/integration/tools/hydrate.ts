@@ -208,6 +208,7 @@ async function resolveNewPolicyResolution(config: HydrateConfig, args: { policyM
     configAllowRiskDowngradeOverride: config.policy.allowRiskDowngradeOverride,
     configAllowReducedCeremony: config.policy.allowReducedCeremony,
     configDiscoveryHealth: config.policy.discoveryHealth,
+    configValidationEvidence: config.policy.validationEvidence,
   });
 }
 

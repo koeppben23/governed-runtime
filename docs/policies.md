@@ -291,3 +291,85 @@ fail-closed, mode-consistent default when loaded.
 If a `required` gate blocks a mutating tool, run `flowguard_hydrate` to refresh
 Discovery and reconcile the gate. To opt out of enforcement entirely, set
 `policy.discoveryHealth.enforcement` to `advisory` or `off`.
+
+## Validation Evidence Enforcement
+
+FlowGuard can refuse to let the `VALIDATION` phase pass **vacuously** — that is,
+with an empty `activeChecks` list and therefore no executed verification evidence.
+Without this control, a session with no Discovery-derived verification commands
+auto-advances `PLAN_REVIEW → VALIDATION → IMPLEMENTATION` while proving nothing.
+
+The `policy.validationEvidence` block is a fail-closed control frozen into the
+policy snapshot at hydrate time and consumed by the single authority
+`evaluateValidationEvidence`. It governs **progression admissibility only** — it
+never fabricates evidence and never injects fallback commands. The
+`verificationCandidates`/`activeChecks` lists remain the sole source of truth for
+what may be executed.
+
+### Configuration
+
+```json
+{
+  "policy": {
+    "validationEvidence": {
+      "enforcement": "required",
+      "allowNoCommands": false
+    }
+  }
+}
+```
+
+| Field             | Values                        | Effect                                                                                                         |
+| ----------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `enforcement`     | `off`, `advisory`, `required` | Whether an empty `activeChecks` list blocks progression. `off`/`advisory` preserve the legacy vacuous pass.    |
+| `allowNoCommands` | `true`, `false`               | The **only** sanctioned opt-out. When `true`, a verified "no verification commands" repo state passes legally. |
+
+Enforcement is effective only when `enforcement: required` **and**
+`allowNoCommands: false`. A non-empty `activeChecks` list is always governed by
+ordinary check pass/fail evaluation and is never blocked by this control.
+
+### Per-mode defaults
+
+| Mode        | `enforcement` | `allowNoCommands` |
+| ----------- | ------------- | ----------------- |
+| `solo`      | `off`         | `false`           |
+| `team`      | `off`         | `false`           |
+| `team-ci`   | `required`    | `false`           |
+| `regulated` | `required`    | `false`           |
+
+Legacy policy snapshots without a `validationEvidence` block receive the same
+fail-closed, mode-consistent default when loaded.
+
+> **Behavior change (#400):** Under `team-ci` and `regulated`, a `VALIDATION`
+> phase with **no active checks** now **blocks** instead of silently passing.
+> Sessions that previously relied on the vacuous pass must either expose
+> Discovery-derived verification commands or explicitly opt out with
+> `validationEvidence.allowNoCommands: true`.
+
+### Enforcement semantics
+
+When `enforcement: required`, `allowNoCommands: false`, and `activeChecks` is
+empty, the authority distinguishes two cases based on whether Discovery is
+trustworthy enough to assert that "no commands" is a true repository property:
+
+- **`VALIDATION_EVIDENCE_REQUIRED`** — Discovery is trustworthy (persisted
+  Discovery summary and digest present, `discoveryHealth` enforcement is
+  `required`, the health gate is `clear`, and the last drift assessment is
+  `clean`). The empty list is a verified repo property and policy forbids the
+  vacuous pass.
+- **`VALIDATION_EVIDENCE_UNVERIFIED`** — Discovery is **not** trustworthy, so the
+  runtime cannot prove the empty list is real. Rather than assert false
+  certainty, it blocks fail-closed and marks the outcome `NOT_VERIFIED`.
+
+Both codes are surfaced by `flowguard_run_check` (empty-check seam),
+`/continue` (which refuses to auto-advance past `VALIDATION`), and
+`flowguard_status` next-action guidance, which directs the operator to
+`/hydrate` and `/status`.
+
+### Recovery
+
+Expose Discovery-derived verification commands (so `activeChecks` is non-empty),
+or, if the repository legitimately has no verification commands, opt out
+explicitly by setting `policy.validationEvidence.allowNoCommands` to `true`.
+To disable the control entirely, set `policy.validationEvidence.enforcement` to
+`advisory` or `off`.

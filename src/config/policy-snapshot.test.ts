@@ -200,6 +200,61 @@ describe('normalizePolicySnapshot', () => {
     });
   });
 
+  describe('BAD — validationEvidence mode-consistent defaults (#400)', () => {
+    it('solo mode: validationEvidence enforcement off', () => {
+      expect(normalizePolicySnapshot({ mode: 'solo' }).validationEvidence).toEqual({
+        enforcement: 'off',
+        allowNoCommands: false,
+      });
+    });
+
+    it('team mode: validationEvidence enforcement off', () => {
+      expect(normalizePolicySnapshot({ mode: 'team' }).validationEvidence).toEqual({
+        enforcement: 'off',
+        allowNoCommands: false,
+      });
+    });
+
+    it('regulated mode: validationEvidence enforcement required, fail-closed', () => {
+      expect(normalizePolicySnapshot({ mode: 'regulated' }).validationEvidence).toEqual({
+        enforcement: 'required',
+        allowNoCommands: false,
+      });
+    });
+
+    it('team-ci mode: validationEvidence enforcement required, fail-closed', () => {
+      expect(normalizePolicySnapshot({ mode: 'team-ci' }).validationEvidence).toEqual({
+        enforcement: 'required',
+        allowNoCommands: false,
+      });
+    });
+
+    it('missing validationEvidence on regulated snapshot falls back to required (not off)', () => {
+      // Backward compatibility: legacy regulated snapshots must not silently weaken.
+      const normalized = normalizePolicySnapshot({ mode: 'regulated' });
+      expect(normalized.validationEvidence.enforcement).toBe('required');
+    });
+
+    it('malformed validationEvidence enforcement falls back to mode default', () => {
+      const normalized = normalizePolicySnapshot({
+        mode: 'regulated',
+        validationEvidence: { enforcement: 'bogus', allowNoCommands: false },
+      });
+      expect(normalized.validationEvidence.enforcement).toBe('required');
+    });
+
+    it('preserves explicit allowNoCommands opt-out', () => {
+      const normalized = normalizePolicySnapshot({
+        mode: 'regulated',
+        validationEvidence: { enforcement: 'required', allowNoCommands: true },
+      });
+      expect(normalized.validationEvidence).toEqual({
+        enforcement: 'required',
+        allowNoCommands: true,
+      });
+    });
+  });
+
   describe('BAD — field validation', () => {
     it('rejects invalid effectiveGateBehavior, defaults to mode-consistent value', () => {
       const normalized = normalizePolicySnapshot({

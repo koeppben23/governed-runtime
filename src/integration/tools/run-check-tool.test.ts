@@ -226,6 +226,44 @@ describe('BAD', () => {
     expect(result.error).toBe(true);
     expect(result.code).toBe('CHECK_NOT_ACTIVE');
   });
+
+  it('blocks empty activeChecks under required policy with VALIDATION_EVIDENCE_UNVERIFIED (#400)', async () => {
+    await driveToValidation();
+    // Force empty active checks + required enforcement, with untrustworthy discovery
+    // (solo hydrate leaves discoveryHealth off / no clear health gate).
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    await writeState(sd, {
+      ...state!,
+      activeChecks: [],
+      policySnapshot: {
+        ...state!.policySnapshot,
+        validationEvidence: { enforcement: 'required', allowNoCommands: false },
+      },
+    });
+
+    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('VALIDATION_EVIDENCE_UNVERIFIED');
+  });
+
+  it('blocks empty activeChecks with NO_ACTIVE_CHECKS when enforcement is off (#400)', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    await writeState(sd, {
+      ...state!,
+      activeChecks: [],
+      policySnapshot: {
+        ...state!.policySnapshot,
+        validationEvidence: { enforcement: 'off', allowNoCommands: false },
+      },
+    });
+
+    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('NO_ACTIVE_CHECKS');
+  });
 });
 
 // ─── CORNER ──────────────────────────────────────────────────────────────────

@@ -132,6 +132,57 @@ export function defaultDiscoveryHealthForMode(mode: PolicyMode): DiscoveryHealth
   return { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' };
 }
 
+// ─── Validation Evidence Policy ───────────────────────────────────────────────
+
+/**
+ * Master switch for policy-gated validation-evidence enforcement (#400).
+ *
+ * - 'off'      : legacy behavior. Empty activeChecks vacuously passes VALIDATION.
+ * - 'advisory' : never blocks, but surfaces a NOT_VERIFIED warning when VALIDATION
+ *                would pass with no verification evidence.
+ * - 'required' : VALIDATION must NOT pass vacuously. Empty activeChecks blocks
+ *                fail-closed unless an explicit policy-backed exception is set.
+ */
+export type ValidationEvidenceEnforcement = 'off' | 'advisory' | 'required';
+
+/**
+ * Policy-gated validation-evidence enforcement (#400).
+ *
+ * Prevents HIGH-RISK/regulated sessions from passing VALIDATION vacuously when no
+ * Discovery-derived verification commands are available. Under 'required',
+ * progression past VALIDATION demands at least one applicable active check OR an
+ * explicit policy-backed exception (`allowNoCommands`).
+ *
+ * This policy NEVER fabricates verification evidence and NEVER permits arbitrary
+ * fallback commands; command resolution stays candidate-only (verificationCandidates
+ * remains the source of truth). It only governs whether a workflow may proceed
+ * without runtime verification evidence.
+ */
+export interface ValidationEvidencePolicy {
+  readonly enforcement: ValidationEvidenceEnforcement;
+  /**
+   * Explicit policy-backed exception: when true, a session with genuinely no
+   * repo-native verification commands may still pass VALIDATION under 'required'.
+   * This is the ONLY sanctioned opt-out; it is recorded in the policy snapshot.
+   */
+  readonly allowNoCommands: boolean;
+}
+
+/**
+ * Mode-keyed default validation-evidence policy.
+ *
+ * regulated/team-ci fail closed ('required'); solo/team stay 'off' so existing
+ * low-risk default behavior introduces no new workflow blocks. Single source of
+ * truth for the default, reused by presets, snapshot normalization, and
+ * persisted-snapshot backward-compat resolution.
+ */
+export function defaultValidationEvidenceForMode(mode: PolicyMode): ValidationEvidencePolicy {
+  if (mode === 'regulated' || mode === 'team-ci') {
+    return { enforcement: 'required', allowNoCommands: false };
+  }
+  return { enforcement: 'off', allowNoCommands: false };
+}
+
 // ─── FlowGuard Policy ─────────────────────────────────────────────────────────
 
 /**
@@ -254,6 +305,13 @@ export interface FlowGuardPolicy {
    * mutating host tools. Never fabricates evidence; DiscoveryResult stays SSOT.
    */
   readonly discoveryHealth: DiscoveryHealthPolicy;
+
+  /**
+   * Policy-gated fail-closed validation-evidence enforcement (#400).
+   * Governs whether VALIDATION may pass with no Discovery-derived verification
+   * commands. Never fabricates evidence; verificationCandidates stays SSOT.
+   */
+  readonly validationEvidence: ValidationEvidencePolicy;
 }
 
 /** Supported policy modes. */

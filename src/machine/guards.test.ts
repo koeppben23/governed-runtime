@@ -27,6 +27,7 @@ import {
   IMPL_REVIEW_CONVERGED,
   IMPL_REVIEW_PENDING_RESULT,
   ERROR_INFO,
+  POLICY_SNAPSHOT,
 } from '../__fixtures__.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
@@ -251,8 +252,32 @@ describe('guards', () => {
       expect(selfReviewPending(makeState('PLAN'))).toBe(false);
     });
 
-    it('allValidationsPassed returns true (vacuous truth) with empty activeChecks', () => {
+    it('allValidationsPassed returns true (vacuous truth) with empty activeChecks under off-mode policy', () => {
       expect(allValidationsPassed(makeState('VALIDATION', { activeChecks: [] }))).toBe(true);
+    });
+
+    it('allValidationsPassed returns false with empty activeChecks under required validation-evidence policy', () => {
+      // #400: fail-closed — required enforcement must not pass vacuously.
+      const state = makeState('VALIDATION', {
+        activeChecks: [],
+        policySnapshot: {
+          ...POLICY_SNAPSHOT,
+          validationEvidence: { enforcement: 'required', allowNoCommands: false },
+        },
+      });
+      expect(allValidationsPassed(state)).toBe(false);
+    });
+
+    it('allValidationsPassed returns true with empty activeChecks when required + allowNoCommands exception', () => {
+      // #400: the only sanctioned opt-out preserves the vacuous pass.
+      const state = makeState('VALIDATION', {
+        activeChecks: [],
+        policySnapshot: {
+          ...POLICY_SNAPSHOT,
+          validationEvidence: { enforcement: 'required', allowNoCommands: true },
+        },
+      });
+      expect(allValidationsPassed(state)).toBe(true);
     });
 
     it('checkFailed does not fire with empty validation results', () => {
