@@ -55,13 +55,22 @@ export interface ReviewFindingsValidationContext {
   readonly reviewHostPlatform?: 'opencode' | 'claude-code' | 'codex' | 'unknown';
 }
 
-function allowsManualAttestedReviewWithoutPluginHandshake(input: {
+interface AttestedReviewCheckInput {
   readonly findings: ReviewFindings;
   readonly obligation: ReviewObligation;
   readonly invocation: ReviewInvocationEvidence;
   readonly findingsHash: string;
   readonly ctx: ReviewFindingsValidationContext;
-}): boolean {
+}
+
+/**
+ * Shared evidence checks for any agent-submitted attested review (manual_attested and
+ * its strict superset native_subagent_attested). Excludes the invocationMode check so
+ * each tier can assert its own mode plus tier-specific corroboration. The policy
+ * predicate here only ever permits host_task_preferred / sdk_allowed, so neither tier
+ * can satisfy host_task_required (which is validated on a separate, stricter branch).
+ */
+function baseAgentAttestedChecks(input: AttestedReviewCheckInput): boolean[] {
   const { findings, obligation, invocation, findingsHash, ctx } = input;
   const isExternalHost =
     ctx.reviewHostPlatform === 'claude-code' || ctx.reviewHostPlatform === 'codex';
@@ -69,12 +78,11 @@ function allowsManualAttestedReviewWithoutPluginHandshake(input: {
     ctx.reviewInvocationPolicy === 'sdk_allowed' ||
     ctx.reviewInvocationPolicy === 'host_task_preferred';
   const obligationOpen = obligation.status !== 'blocked' && obligation.status !== 'consumed';
-  const evidenceChecks = [
+  return [
     isExternalHost,
     policyAllowsManualAttested,
     obligationOpen,
     obligation.consumedAt === null,
-    invocation.invocationMode === 'manual_attested',
     invocation.hostVisible === false,
     invocation.source === 'agent-submitted-attested',
     invocation.obligationId === obligation.obligationId,
@@ -87,7 +95,38 @@ function allowsManualAttestedReviewWithoutPluginHandshake(input: {
     invocation.childSessionId !== ctx.reviewParentSessionId,
     findings.reviewedBy.sessionId !== ctx.reviewParentSessionId,
   ];
-  return evidenceChecks.every((check) => check === true);
+}
+
+function allowsManualAttestedReviewWithoutPluginHandshake(
+  input: AttestedReviewCheckInput,
+): boolean {
+  const checks = [
+    ...baseAgentAttestedChecks(input),
+    input.invocation.invocationMode === 'manual_attested',
+  ];
+  return checks.every((check) => check === true);
+}
+
+/**
+ * native_subagent_attested: a strictly stronger form of manual_attested. It requires every
+ * manual_attested check PLUS an independent FlowGuard host-captured corroboration record
+ * (folded into the invocation evidence at construction time) proving the review tool was
+ * invoked from inside a genuine `flowguard-reviewer` subagent. Failing any check does NOT
+ * silently downgrade to manual_attested — a native-mode invocation must pass here or be
+ * blocked (fail-closed). This path never permits host_task_required (excluded by the shared
+ * policy predicate), so it can never weaken the host_task_required guarantee.
+ */
+function allowsNativeSubagentAttestedReview(input: AttestedReviewCheckInput): boolean {
+  const { invocation } = input;
+  const checks = [
+    ...baseAgentAttestedChecks(input),
+    invocation.invocationMode === 'native_subagent_attested',
+    invocation.hostCapturedAgentType === REVIEWER_SUBAGENT_TYPE,
+    typeof invocation.hostCapturedAgentId === 'string' && invocation.hostCapturedAgentId.length > 0,
+    invocation.hostCaptureSource === 'subagent_stop_hook' ||
+      invocation.hostCaptureSource === 'post_tool_use_hook',
+  ];
+  return checks.every((check) => check === true);
 }
 
 // ─── Core Validation ──────────────────────────────────────────────────────────
@@ -211,7 +250,8 @@ export function validateReviewFindings(
     }
 
     if (
-      invocation.invocationMode === 'manual_attested' &&
+      (invocation.invocationMode === 'manual_attested' ||
+        invocation.invocationMode === 'native_subagent_attested') &&
       (invocation.childSessionId === ctx.reviewParentSessionId ||
         findings.reviewedBy.sessionId === ctx.reviewParentSessionId)
     ) {
@@ -223,6 +263,13 @@ export function validateReviewFindings(
     if (
       !obligation.pluginHandshakeAt &&
       !allowsManualAttestedReviewWithoutPluginHandshake({
+        findings,
+        obligation,
+        invocation,
+        findingsHash: submittedFindingsHash,
+        ctx,
+      }) &&
+      !allowsNativeSubagentAttestedReview({
         findings,
         obligation,
         invocation,

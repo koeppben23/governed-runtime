@@ -24,6 +24,11 @@ import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import { isMutatingHostTool } from './shared/phase-gate.js';
 import { assessObligationEscalation } from './shared/obligation-tracker.js';
+import {
+  isReviewTool,
+  extractObligationId,
+  writeReviewerCapture,
+} from './shared/reviewer-capture-writer.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
 import type { AuditEvent } from '../state/evidence-audit.js';
 
@@ -65,7 +70,6 @@ async function postToolUseLogic(): Promise<void> {
 
   // Resolve session state — needed for audit context.
   const resolution = await resolveSession(cwd, session_id);
-
   if (!resolution.ok) {
     // Cannot persist audit without session dir — log warning and exit.
     writeLog(`WARN: cannot persist audit (${resolution.code}): ${resolution.reason}`);
@@ -104,6 +108,25 @@ async function postToolUseLogic(): Promise<void> {
   const escalation = assessObligationEscalation(state, isMutatingHostTool(tool_name.toLowerCase()));
   if (escalation.message) {
     writeLog(escalation.message);
+  }
+
+  // native_subagent_attested: when the FlowGuard review tool is invoked from inside the
+  // reviewer subagent, record an independent host-captured corroboration record. Only the
+  // reviewer subagent (agent_type match) produces a capture; absence means no tier upgrade.
+  if (isReviewTool(tool_name) && validated.agent_id) {
+    await writeReviewerCapture(
+      sessionDir,
+      {
+        source: 'post_tool_use_hook',
+        sessionId: session_id,
+        agentId: validated.agent_id,
+        agentType: validated.agent_type,
+        toolName: tool_name,
+        reviewToolInvoked: true,
+        obligationId: extractObligationId(tool_input),
+      },
+      writeLog,
+    );
   }
 }
 

@@ -18,6 +18,7 @@ export const CLAUDE_CODE_PLUGIN_RELATIVE_FILES = [
   'dist/hooks/post-tool-use.js',
   'dist/hooks/session-start.js',
   'dist/hooks/stop.js',
+  'dist/hooks/subagent-stop.js',
 ] as const;
 
 const WRAPPER_RUNTIME = '../../node_modules/@flowguard/core/dist/';
@@ -140,6 +141,19 @@ export function claudeCodeHooksJson(): string {
               args: ['${CLAUDE_PLUGIN_ROOT}/dist/hooks/stop.js'],
               timeout: 15,
               statusMessage: 'FlowGuard: session checkpoint',
+            },
+          ],
+        },
+      ],
+      SubagentStop: [
+        {
+          hooks: [
+            {
+              type: 'command',
+              command: 'node',
+              args: ['${CLAUDE_PLUGIN_ROOT}/dist/hooks/subagent-stop.js'],
+              timeout: 15,
+              statusMessage: 'FlowGuard: recording reviewer corroboration',
             },
           ],
         },
@@ -333,5 +347,6 @@ export function claudeCodePluginFiles(version: string): Record<string, string> {
     'dist/hooks/post-tool-use.js': executableWrapper(`${HOOK_WRAPPER_RUNTIME}post-tool-use.js`),
     'dist/hooks/session-start.js': executableWrapper(`${HOOK_WRAPPER_RUNTIME}session-start.js`),
     'dist/hooks/stop.js': executableWrapper(`${HOOK_WRAPPER_RUNTIME}stop.js`),
+    'dist/hooks/subagent-stop.js': executableWrapper(`${HOOK_WRAPPER_RUNTIME}subagent-stop.js`),
   };
 }

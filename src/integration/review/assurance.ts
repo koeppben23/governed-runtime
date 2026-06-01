@@ -289,6 +289,10 @@ export function buildInvocationEvidence(input: {
   /** Complete raw findings from the reviewer's output (host-task only).
    *  Enables evidence-based findings resolution without agent reconstruction. */
   capturedRawFindings?: Record<string, unknown>;
+  /** Independent host-captured reviewer corroboration (native_subagent_attested only). */
+  hostCapturedAgentId?: string;
+  hostCapturedAgentType?: typeof REVIEWER_SUBAGENT_TYPE;
+  hostCaptureSource?: 'subagent_stop_hook' | 'post_tool_use_hook';
 }): ReviewInvocationEvidence {
   const reviewOutputMode = input.reviewOutputMode ?? 'structured_output';
   const structuredOutputUsed =
@@ -320,6 +324,9 @@ export function buildInvocationEvidence(input: {
     ...(input.modelCapabilityError ? { modelCapabilityError: input.modelCapabilityError } : {}),
     ...(input.capturedVerdict ? { capturedVerdict: input.capturedVerdict } : {}),
     ...(input.capturedRawFindings ? { capturedRawFindings: input.capturedRawFindings } : {}),
+    ...(input.hostCapturedAgentId ? { hostCapturedAgentId: input.hostCapturedAgentId } : {}),
+    ...(input.hostCapturedAgentType ? { hostCapturedAgentType: input.hostCapturedAgentType } : {}),
+    ...(input.hostCaptureSource ? { hostCaptureSource: input.hostCaptureSource } : {}),
   };
 }
 

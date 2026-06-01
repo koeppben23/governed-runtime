@@ -77,6 +77,12 @@ export function validateToolHookPayload(payload: Record<string, unknown>): {
   tool_input: Record<string, unknown>;
   session_id: string;
   cwd: string;
+  /** Present only when the hook fired inside a subagent call. */
+  agent_id?: string;
+  /** Subagent type name (frontmatter `name`), present inside a subagent call. */
+  agent_type?: string;
+  /** Tool result the model received; shape depends on the tool. */
+  tool_response?: unknown;
 } {
   const errors: string[] = [];
 
@@ -105,12 +111,34 @@ export function validateToolHookPayload(payload: Record<string, unknown>): {
     );
   }
 
-  return {
+  const result: {
+    tool_name: string;
+    tool_input: Record<string, unknown>;
+    session_id: string;
+    cwd: string;
+    agent_id?: string;
+    agent_type?: string;
+    tool_response?: unknown;
+  } = {
     tool_name: payload['tool_name'] as string,
     tool_input: toolInput,
     session_id: payload['session_id'] as string,
     cwd: payload['cwd'] as string,
   };
+
+  // Subagent context: present only when the hook fires inside a subagent.
+  // Absence is normal (main-thread call) — never an error.
+  if (typeof payload['agent_id'] === 'string' && payload['agent_id'].length > 0) {
+    result.agent_id = payload['agent_id'];
+  }
+  if (typeof payload['agent_type'] === 'string' && payload['agent_type'].length > 0) {
+    result.agent_type = payload['agent_type'];
+  }
+  if (payload['tool_response'] !== undefined) {
+    result.tool_response = payload['tool_response'];
+  }
+
+  return result;
 }
 
 /**
@@ -144,4 +172,75 @@ export function validateSessionPayload(payload: Record<string, unknown>): {
     session_id: payload['session_id'] as string,
     cwd: payload['cwd'] as string,
   };
+}
+
+/**
+ * Validate that the parsed payload contains required fields for SubagentStop.
+ *
+ * SubagentStop fires when a subagent completes. Per the Claude Code hooks contract,
+ * it carries `agent_id` and `agent_type` (the subagent's frontmatter `name`), plus
+ * optional `last_assistant_message` and `agent_transcript_path`.
+ *
+ * @param payload - Parsed stdin JSON.
+ * @returns Validated payload with required fields guaranteed present.
+ * @throws StdinReadError if required fields are missing.
+ */
+export function validateSubagentStopPayload(payload: Record<string, unknown>): {
+  session_id: string;
+  cwd: string;
+  agent_id: string;
+  agent_type: string;
+  last_assistant_message?: string;
+  agent_transcript_path?: string;
+} {
+  const errors: string[] = [];
+
+  if (typeof payload['session_id'] !== 'string' || payload['session_id'].length === 0) {
+    errors.push('session_id must be a non-empty string');
+  }
+  if (typeof payload['cwd'] !== 'string' || payload['cwd'].length === 0) {
+    errors.push('cwd must be a non-empty string');
+  }
+  if (typeof payload['agent_id'] !== 'string' || payload['agent_id'].length === 0) {
+    errors.push('agent_id must be a non-empty string');
+  }
+  if (typeof payload['agent_type'] !== 'string' || payload['agent_type'].length === 0) {
+    errors.push('agent_type must be a non-empty string');
+  }
+
+  if (errors.length > 0) {
+    throw new StdinReadError(
+      'STDIN_VALIDATION_FAILED',
+      `SubagentStop payload validation failed: ${errors.join('; ')}`,
+    );
+  }
+
+  const result: {
+    session_id: string;
+    cwd: string;
+    agent_id: string;
+    agent_type: string;
+    last_assistant_message?: string;
+    agent_transcript_path?: string;
+  } = {
+    session_id: payload['session_id'] as string,
+    cwd: payload['cwd'] as string,
+    agent_id: payload['agent_id'] as string,
+    agent_type: payload['agent_type'] as string,
+  };
+
+  if (
+    typeof payload['last_assistant_message'] === 'string' &&
+    payload['last_assistant_message'].length > 0
+  ) {
+    result.last_assistant_message = payload['last_assistant_message'];
+  }
+  if (
+    typeof payload['agent_transcript_path'] === 'string' &&
+    payload['agent_transcript_path'].length > 0
+  ) {
+    result.agent_transcript_path = payload['agent_transcript_path'];
+  }
+
+  return result;
 }
