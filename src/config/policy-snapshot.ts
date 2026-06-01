@@ -33,9 +33,10 @@ import type {
   ReviewOutputPolicy,
   ReviewInvocationPolicy,
   HydratePolicyResolution,
+  DiscoveryHealthPolicy,
 } from './policy-types.js';
 import type { PolicyResolution } from './policy-resolver.js';
-import { DEFAULT_SELF_REVIEW_CONFIG } from './policy-types.js';
+import { DEFAULT_SELF_REVIEW_CONFIG, defaultDiscoveryHealthForMode } from './policy-types.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { PolicyConfigurationError } from './policy-errors.js';
 
@@ -161,6 +162,11 @@ export function createPolicySnapshot(
     enforceRiskClassification: policy.enforceRiskClassification,
     allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride,
     allowReducedCeremony: policy.allowReducedCeremony,
+    discoveryHealth: {
+      enforcement: policy.discoveryHealth.enforcement,
+      onDegraded: policy.discoveryHealth.onDegraded,
+      onDrift: policy.discoveryHealth.onDrift,
+    },
   };
 }
 
@@ -363,6 +369,7 @@ function normalizePolicyFields(
   enforceRiskClassification: boolean;
   allowRiskDowngradeOverride: boolean;
   allowReducedCeremony: boolean;
+  discoveryHealth: DiscoveryHealthPolicy;
   normalized: boolean;
 } {
   let norm = false;
@@ -398,6 +405,12 @@ function normalizePolicyFields(
   );
   norm = norm || riskOverride.normalized || reducedCeremony.normalized;
 
+  const discoveryHealthResult = normalizeDiscoveryHealthField(
+    s.discoveryHealth,
+    defaults.discoveryHealth,
+  );
+  if (discoveryHealthResult.normalized) norm = true;
+
   return {
     effectiveGateBehavior,
     requireVerifiedActorsForApproval,
@@ -406,8 +419,43 @@ function normalizePolicyFields(
     enforceRiskClassification,
     allowRiskDowngradeOverride: riskOverride.value,
     allowReducedCeremony: reducedCeremony.value,
+    discoveryHealth: discoveryHealthResult.value,
     normalized: norm,
   };
+}
+
+/**
+ * Fail-closed normalization of a persisted discoveryHealth object (#399).
+ *
+ * Backward compatibility: snapshots written before #399 have no discoveryHealth
+ * field. Rather than silently defaulting to `off`, missing or malformed values
+ * fall back to the mode-consistent preset default, which preserves the
+ * fail-closed posture for regulated/team-ci modes.
+ */
+function normalizeDiscoveryHealthField(
+  raw: unknown,
+  fallback: DiscoveryHealthPolicy,
+): NormalizedField<DiscoveryHealthPolicy> {
+  if (raw === null || typeof raw !== 'object') {
+    return { value: { ...fallback }, normalized: true };
+  }
+  const obj = raw as Record<string, unknown>;
+  let normalized = false;
+
+  const enforcement =
+    obj.enforcement === 'off' || obj.enforcement === 'advisory' || obj.enforcement === 'required'
+      ? obj.enforcement
+      : ((normalized = true), fallback.enforcement);
+  const onDegraded =
+    obj.onDegraded === 'allow' || obj.onDegraded === 'warn' || obj.onDegraded === 'block'
+      ? obj.onDegraded
+      : ((normalized = true), fallback.onDegraded);
+  const onDrift =
+    obj.onDrift === 'allow' || obj.onDrift === 'warn' || obj.onDrift === 'block'
+      ? obj.onDrift
+      : ((normalized = true), fallback.onDrift);
+
+  return { value: { enforcement, onDegraded, onDrift }, normalized };
 }
 
 function normalizeActorAssurance(
@@ -629,6 +677,7 @@ export function normalizePolicySnapshotWithMeta(
       enforceRiskClassification: policy.enforceRiskClassification,
       allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride,
       allowReducedCeremony: policy.allowReducedCeremony,
+      discoveryHealth: policy.discoveryHealth,
     },
     normalized: anyNormalized,
     reason: anyNormalized ? 'incomplete_snapshot_normalized' : undefined,
@@ -648,6 +697,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
   readonly enforceRiskClassification: boolean;
   readonly allowRiskDowngradeOverride: boolean;
   readonly allowReducedCeremony: boolean;
+  readonly discoveryHealth: DiscoveryHealthPolicy;
 } {
   switch (mode) {
     case 'solo':
@@ -663,6 +713,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         enforceRiskClassification: false,
         allowRiskDowngradeOverride: false,
         allowReducedCeremony: false,
+        discoveryHealth: defaultDiscoveryHealthForMode('solo'),
       };
     case 'regulated':
       return {
@@ -677,6 +728,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         enforceRiskClassification: true,
         allowRiskDowngradeOverride: false,
         allowReducedCeremony: false,
+        discoveryHealth: defaultDiscoveryHealthForMode('regulated'),
       };
     case 'team':
       return {
@@ -691,6 +743,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         enforceRiskClassification: false,
         allowRiskDowngradeOverride: false,
         allowReducedCeremony: false,
+        discoveryHealth: defaultDiscoveryHealthForMode('team'),
       };
     case 'team-ci':
       return {
@@ -705,6 +758,7 @@ function modeConsistentDefaults(mode: PolicyMode): {
         enforceRiskClassification: true,
         allowRiskDowngradeOverride: false,
         allowReducedCeremony: false,
+        discoveryHealth: defaultDiscoveryHealthForMode('team-ci'),
       };
   }
 }
@@ -769,5 +823,9 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     allowReducedCeremony:
       snapshot.allowReducedCeremony ??
       modeConsistentDefaults(snapshot.mode as PolicyMode).allowReducedCeremony,
+    discoveryHealth: normalizeDiscoveryHealthField(
+      (snapshot as Record<string, unknown>).discoveryHealth,
+      modeConsistentDefaults(snapshot.mode as PolicyMode).discoveryHealth,
+    ).value,
   };
 }

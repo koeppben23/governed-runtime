@@ -103,6 +103,18 @@ export const PolicySnapshotSchema = z
     allowRiskDowngradeOverride: z.boolean().optional(),
     /** Reduced ceremony permission. Defaults closed for legacy snapshots. */
     allowReducedCeremony: z.boolean().optional(),
+    /**
+     * Policy-gated Discovery health enforcement frozen at hydrate time (#399).
+     * Optional for backward compatibility; the transform below applies a
+     * fail-closed, mode-consistent default for legacy snapshots.
+     */
+    discoveryHealth: z
+      .object({
+        enforcement: z.enum(['off', 'advisory', 'required']),
+        onDegraded: z.enum(['allow', 'warn', 'block']),
+        onDrift: z.enum(['allow', 'warn', 'block']),
+      })
+      .optional(),
     audit: z.object({
       emitTransitions: z.boolean(),
       emitToolCalls: z.boolean(),
@@ -144,6 +156,15 @@ export const PolicySnapshotSchema = z
       (snapshot.mode === 'regulated' || snapshot.mode === 'team-ci'),
     allowRiskDowngradeOverride: snapshot.allowRiskDowngradeOverride ?? false,
     allowReducedCeremony: snapshot.allowReducedCeremony ?? false,
+    discoveryHealth:
+      snapshot.discoveryHealth ??
+      (snapshot.mode === 'regulated' || snapshot.mode === 'team-ci'
+        ? {
+            enforcement: 'required' as const,
+            onDegraded: 'warn' as const,
+            onDrift: 'block' as const,
+          }
+        : { enforcement: 'off' as const, onDegraded: 'allow' as const, onDrift: 'allow' as const }),
   }))
   .readonly();
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;

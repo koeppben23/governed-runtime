@@ -107,5 +107,75 @@ describe('evidence-policy', () => {
         'best_effort',
       );
     });
+
+    it('applies a fail-closed off default for legacy non-regulated snapshots (#399)', () => {
+      const snapshot = {
+        mode: 'team',
+        hash: 'abc',
+        resolvedAt: FIXED_TIME,
+        requestedMode: 'team',
+        effectiveGateBehavior: 'human_gated' as const,
+        requireHumanGates: true,
+        maxSelfReviewIterations: 3,
+        maxImplReviewIterations: 3,
+        allowSelfApproval: true,
+        audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+        actorClassification: { flowguard_decision: 'human' },
+        // discoveryHealth intentionally absent (legacy snapshot)
+      };
+      expect(PolicySnapshotSchema.parse(snapshot).discoveryHealth).toEqual({
+        enforcement: 'off',
+        onDegraded: 'allow',
+        onDrift: 'allow',
+      });
+    });
+
+    it('applies a required default for legacy regulated snapshots (#399)', () => {
+      const snapshot = {
+        mode: 'regulated',
+        hash: 'abc',
+        resolvedAt: FIXED_TIME,
+        requestedMode: 'regulated',
+        effectiveGateBehavior: 'human_gated' as const,
+        requireHumanGates: true,
+        maxSelfReviewIterations: 3,
+        maxImplReviewIterations: 3,
+        allowSelfApproval: false,
+        audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+        actorClassification: { flowguard_decision: 'human' },
+        // discoveryHealth intentionally absent (legacy snapshot)
+      };
+      expect(PolicySnapshotSchema.parse(snapshot).discoveryHealth).toEqual({
+        enforcement: 'required',
+        onDegraded: 'warn',
+        onDrift: 'block',
+      });
+    });
+
+    it('preserves an explicit discoveryHealth block when present (#399)', () => {
+      const snapshot = {
+        mode: 'team',
+        hash: 'abc',
+        resolvedAt: FIXED_TIME,
+        requestedMode: 'team',
+        effectiveGateBehavior: 'human_gated' as const,
+        requireHumanGates: true,
+        maxSelfReviewIterations: 3,
+        maxImplReviewIterations: 3,
+        allowSelfApproval: true,
+        audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+        actorClassification: { flowguard_decision: 'human' },
+        discoveryHealth: {
+          enforcement: 'required' as const,
+          onDegraded: 'block' as const,
+          onDrift: 'block' as const,
+        },
+      };
+      expect(PolicySnapshotSchema.parse(snapshot).discoveryHealth).toEqual({
+        enforcement: 'required',
+        onDegraded: 'block',
+        onDrift: 'block',
+      });
+    });
   });
 });

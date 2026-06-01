@@ -22,8 +22,12 @@ export type {
   PolicyResolutionReason,
   ReviewOutputPolicy,
   ReviewInvocationPolicy,
+  DiscoveryHealthPolicy,
+  DiscoveryHealthEnforcement,
+  DiscoveryHealthDegradedAction,
+  DiscoveryHealthDriftAction,
 } from './policy-types.js';
-export { DEFAULT_SELF_REVIEW_CONFIG } from './policy-types.js';
+export { DEFAULT_SELF_REVIEW_CONFIG, defaultDiscoveryHealthForMode } from './policy-types.js';
 
 export { PolicyConfigurationError } from './policy-errors.js';
 export type { PolicyConfigurationErrorCode } from './policy-errors.js';
