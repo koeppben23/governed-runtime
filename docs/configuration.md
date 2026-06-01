@@ -489,11 +489,44 @@ Custom profile configurations:
 
 ## Environment Variables
 
-| Variable                | Description                                                              | Default              |
-| ----------------------- | ------------------------------------------------------------------------ | -------------------- |
-| `OPENCODE_CONFIG_DIR`   | Config root                                                              | `~/.config/opencode` |
-| `FLOWGUARD_LOG_LEVEL`   | Log level                                                                | `info`               |
-| `FLOWGUARD_POLICY_PATH` | Optional central policy file path (`schemaVersion: "v1"`, `minimumMode`) | unset                |
+| Variable                    | Description                                                                                    | Default              |
+| --------------------------- | ---------------------------------------------------------------------------------------------- | -------------------- |
+| `OPENCODE_CONFIG_DIR`       | Config root                                                                                    | `~/.config/opencode` |
+| `FLOWGUARD_LOG_LEVEL`       | Log level                                                                                      | `info`               |
+| `FLOWGUARD_POLICY_PATH`     | Optional central policy file path (`schemaVersion: "v1"`, `minimumMode`)                       | unset                |
+| `FLOWGUARD_REVIEWER_MODEL`  | Operative reviewer model id pinned into the reviewer agent frontmatter at install time         | unset (host default) |
+| `FLOWGUARD_REVIEWER_EFFORT` | Operative reviewer reasoning-effort pinned into the reviewer agent frontmatter at install time | unset (host default) |
+
+### Reviewer Transport Tuning (operative layer)
+
+`FLOWGUARD_REVIEWER_MODEL` and `FLOWGUARD_REVIEWER_EFFORT` adapt only the
+**operative reviewer transport** (which model runs the review and how hard it
+reasons). They are applied as frontmatter directives when the reviewer agent is
+written during `flowguard install`. They do **not** change any governance
+mandate, prompt body, or risk logic — the mandate body is byte-identical
+regardless of these values (governance stays model-invariant).
+
+Values are validated fail-closed at install time:
+
+- `FLOWGUARD_REVIEWER_MODEL` — alphanumerics, dots, slashes, `@`, colons, and
+  hyphens only; newlines rejected (YAML-injection guard).
+- `FLOWGUARD_REVIEWER_EFFORT` — lowercase letters only (e.g. `low`, `medium`,
+  `high`, `xhigh`, `max`). Any other value aborts the install.
+
+Per-host support matrix (the injected frontmatter key differs by host):
+
+| Host          | `model:` injection | Effort frontmatter key | Notes                                               |
+| ------------- | ------------------ | ---------------------- | --------------------------------------------------- |
+| `opencode`    | yes                | `reasoningEffort:`     | Provider passthrough.                               |
+| `claude-code` | yes                | `effort:`              | Effort values: `low`/`medium`/`high`/`xhigh`/`max`. |
+| `codex`       | no                 | unsupported            | See limitation below.                               |
+
+**Codex limitation:** FlowGuard ships the Codex reviewer as a markdown subagent,
+which does not honor `model`/`model_reasoning_effort` directives. Codex configures
+those natively via TOML custom agents under `.codex/agents/`. To avoid silently
+dropping operator intent, setting either env var while installing for Codex
+**fails closed** with an explicit error. Unset the variables for the Codex
+install, or configure the Codex custom agent directly.
 
 ## Examples
 

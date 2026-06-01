@@ -19,7 +19,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { invokeReviewer, type OrchestratorClient } from './orchestrator.js';
 import {
   _resetAgentResolutionCache,
-  _resetModelCapabilityCache,
   REVIEWER_AGENT_FALLBACK,
   REVIEWER_SYSTEM_DIRECTIVE,
 } from './agent-resolution.js';
@@ -520,7 +519,6 @@ describe('invokeReviewer — format-free retry fallback', () => {
 
   beforeEach(() => {
     _resetAgentResolutionCache();
-    _resetModelCapabilityCache();
   });
 
   // ─── HAPPY ──────────────────────────────────────────────────────────────────
@@ -907,7 +905,6 @@ describe('invokeReviewer — format-free retry fallback', () => {
 
     it('T19: format-free retry injects system directive for fallback agent', async () => {
       _resetAgentResolutionCache();
-      _resetModelCapabilityCache();
       // No 'flowguard-reviewer' in agents list → falls back to 'general'
       const promptFn = vi
         .fn()
@@ -1191,7 +1188,6 @@ describe('invokeReviewer — format-free retry fallback', () => {
 
     it('T28: complete flow with fallback agent (general) and system directive', async () => {
       _resetAgentResolutionCache();
-      _resetModelCapabilityCache();
       const diagnostics: Array<Record<string, unknown>> = [];
 
       const promptFn = vi

@@ -45,11 +45,15 @@ export {
 import {
   FLOWGUARD_REVIEWER_MODEL_ENV,
   VALID_MODEL_ID_PATTERN,
+  FLOWGUARD_REVIEWER_EFFORT_ENV,
+  VALID_EFFORT_PATTERN,
   OPENCODE_CONFIG_FILENAMES,
 } from './install-types.js';
 export {
   FLOWGUARD_REVIEWER_MODEL_ENV,
   VALID_MODEL_ID_PATTERN,
+  FLOWGUARD_REVIEWER_EFFORT_ENV,
+  VALID_EFFORT_PATTERN,
   OPENCODE_CONFIG_FILENAMES,
 } from './install-types.js';
 export {
@@ -84,9 +88,13 @@ export function reviewerDefinitionForPlatform(platform: InstallPlatform): {
   readonly content: string;
 } {
   if (platform === 'claude-code') {
-    return { relativePath: `agents/${REVIEWER_AGENT_FILENAME}`, content: CLAUDE_REVIEWER_AGENT };
+    return {
+      relativePath: `agents/${REVIEWER_AGENT_FILENAME}`,
+      content: buildReviewerAgentContent(CLAUDE_REVIEWER_AGENT, 'claude-code'),
+    };
   }
   if (platform === 'codex') {
+    assertReviewerTuningSupported('codex');
     return {
       relativePath: `subagents/${REVIEWER_AGENT_FILENAME}`,
       content: CODEX_REVIEWER_SUBAGENT,
@@ -94,7 +102,7 @@ export function reviewerDefinitionForPlatform(platform: InstallPlatform): {
   }
   return {
     relativePath: `agents/${REVIEWER_AGENT_FILENAME}`,
-    content: buildReviewerAgentContent(REVIEWER_AGENT),
+    content: buildReviewerAgentContent(REVIEWER_AGENT, 'opencode'),
   };
 }
 
@@ -172,14 +180,39 @@ export async function verifyTarballChecksum(
   }
 }
 
-// ---- Reviewer Agent Model Override ----
+// ---- Reviewer Agent Capability Transport (model + reasoning effort) ----
+//
+// Operative-layer adaptation ONLY. Governance ceremony/mandates stay
+// model-invariant; these knobs adjust the reviewer transport (which model and
+// how much reasoning effort) without ever hardcoding a model name and without
+// touching governance verbosity. Both knobs are operator-controlled env vars.
+//
+// Host support (verified against official host docs):
+//   - opencode:    `model:` + passthrough `reasoningEffort:` frontmatter.
+//   - claude-code: `model:` + `effort:` frontmatter.
+//   - codex:       custom-agent tuning is configured via native TOML under
+//                  `.codex/agents/` (model + model_reasoning_effort), NOT via the
+//                  markdown plugin subagent FlowGuard ships. Injecting these
+//                  directives into the markdown frontmatter is unsupported, so we
+//                  fail closed instead of silently emitting a no-op directive.
 
-export function buildReviewerAgentContent(template: string): string {
+/** Per-host frontmatter key for the reasoning-effort knob; null = unsupported. */
+function reviewerEffortFieldForPlatform(platform: InstallPlatform): string | null {
+  if (platform === 'claude-code') return 'effort';
+  if (platform === 'codex') return null;
+  return 'reasoningEffort'; // opencode (provider passthrough)
+}
+
+/** Whether reviewer `model:` frontmatter injection is supported for the host. */
+function reviewerModelSupportedForPlatform(platform: InstallPlatform): boolean {
+  return platform !== 'codex';
+}
+
+function readReviewerModelEnv(): string | null {
   const raw = process.env[FLOWGUARD_REVIEWER_MODEL_ENV];
-  if (!raw) return template;
-
+  if (!raw) return null;
   const model = raw.trim();
-  if (!model) return template;
+  if (!model) return null;
 
   if (/[\r\n]/.test(model)) {
     throw new Error(
@@ -187,20 +220,87 @@ export function buildReviewerAgentContent(template: string): string {
         'rejected to prevent YAML injection.',
     );
   }
-
   if (!VALID_MODEL_ID_PATTERN.test(model)) {
     throw new Error(
       `${FLOWGUARD_REVIEWER_MODEL_ENV} contains invalid characters: "${model}" — ` +
         'only alphanumeric, dots, slashes, @, colons, and hyphens are allowed.',
     );
   }
+  return model;
+}
+
+function readReviewerEffortEnv(): string | null {
+  const raw = process.env[FLOWGUARD_REVIEWER_EFFORT_ENV];
+  if (!raw) return null;
+  const effort = raw.trim();
+  if (!effort) return null;
+
+  if (!VALID_EFFORT_PATTERN.test(effort)) {
+    throw new Error(
+      `${FLOWGUARD_REVIEWER_EFFORT_ENV} contains invalid value: "${effort}" — ` +
+        'only lowercase letters are allowed (e.g. low, medium, high, xhigh, max).',
+    );
+  }
+  return effort;
+}
+
+/**
+ * Fail closed when reviewer tuning is requested for a host that cannot honor it.
+ *
+ * Silently dropping an operator's explicit override would hide that their intent
+ * is not applied (AGENTS.md red line: no silent fallback). For Codex we surface
+ * the limitation and point at the native mechanism.
+ */
+function assertReviewerTuningSupported(platform: InstallPlatform): void {
+  if (reviewerModelSupportedForPlatform(platform) && reviewerEffortFieldForPlatform(platform)) {
+    return;
+  }
+  const requested: string[] = [];
+  if (process.env[FLOWGUARD_REVIEWER_MODEL_ENV]?.trim())
+    requested.push(FLOWGUARD_REVIEWER_MODEL_ENV);
+  if (process.env[FLOWGUARD_REVIEWER_EFFORT_ENV]?.trim())
+    requested.push(FLOWGUARD_REVIEWER_EFFORT_ENV);
+  if (requested.length === 0) return;
+
+  throw new Error(
+    `${requested.join(' and ')} ${requested.length > 1 ? 'are' : 'is'} set but reviewer ` +
+      `model/effort tuning is not supported for platform "${platform}". ` +
+      'Codex configures custom-agent model and model_reasoning_effort via native TOML under ' +
+      '.codex/agents/, not via the FlowGuard markdown subagent. ' +
+      `Unset ${requested.join('/')} for this install, or configure the Codex custom agent directly.`,
+  );
+}
+
+/**
+ * Inject operator-configured reviewer transport tuning into agent frontmatter.
+ *
+ * Host defaults to opencode for backward compatibility. Returns the template
+ * unchanged when no override is set or the template has no frontmatter line.
+ */
+export function buildReviewerAgentContent(
+  template: string,
+  platform: InstallPlatform = 'opencode',
+): string {
+  const lines: string[] = [];
+
+  const model = readReviewerModelEnv();
+  if (model && reviewerModelSupportedForPlatform(platform)) {
+    lines.push(`model: ${model}`);
+  }
+
+  const effort = readReviewerEffortEnv();
+  const effortField = reviewerEffortFieldForPlatform(platform);
+  if (effort && effortField) {
+    lines.push(`${effortField}: ${effort}`);
+  }
+
+  if (lines.length === 0) return template;
 
   const firstNewline = template.indexOf('\n');
   if (firstNewline < 0) return template;
 
-  return (
-    template.slice(0, firstNewline + 1) + `model: ${model}\n` + template.slice(firstNewline + 1)
-  );
+  const injected = lines.map((line) => `${line}\n`).join('');
+  return template.slice(0, firstNewline + 1) + injected + template.slice(firstNewline + 1);
 }
 
 // ---- OpenCode Config Path ----
