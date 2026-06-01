@@ -473,6 +473,7 @@ async function checkPlatformPluginArtifacts(
           '.mcp.json',
           'hooks/hooks.json',
           'agents/flowguard-reviewer.md',
+          'commands/status.md',
         ]
       : [
           '.codex-plugin/plugin.json',

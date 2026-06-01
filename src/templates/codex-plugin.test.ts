@@ -29,6 +29,15 @@ describe('Codex plugin templates', () => {
     expect(manifest.Compliance).toBeUndefined();
   });
 
+  it('emits no plugin-shareable slash commands (fail-closed limitation)', () => {
+    const files = codexPluginFiles('1.2.3');
+
+    const commandFiles = Object.keys(files).filter((p) => p.startsWith('commands/'));
+    expect(commandFiles).toEqual([]);
+    expect(JSON.parse(files['.codex-plugin/plugin.json']).commands).toBeUndefined();
+    expect(files['AGENTS.md']).toContain('Codex does not provide plugin-shareable slash commands');
+  });
+
   it('renders Codex hook config with fail-closed PreToolUse wiring', () => {
     const hooks = JSON.parse(codexHooksJson());
     const preHook = hooks.hooks.PreToolUse[0].hooks[0];

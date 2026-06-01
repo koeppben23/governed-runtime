@@ -223,6 +223,14 @@ It is not a second FlowGuard governance authority.
 - PreToolUse is a guardrail and must fail closed if the FlowGuard hook cannot be reached.
 - PostToolUse may audit, contextualize, or mark continuation only; it must not claim mutation prevention or rollback.
 - Do not claim native Codex plugin load or hook enforcement unless Codex loaded this plugin and plugin hooks are explicitly trusted.
+
+## Slash commands
+
+Codex does not provide plugin-shareable slash commands: Codex custom prompts are
+deprecated, live only under the user home directory (\`~/.codex/prompts\`), and are
+not distributable inside a plugin. FlowGuard therefore ships no \`/flowguard:*\`
+commands for Codex (fail-closed: no command surface rather than an unenforced one).
+Use the FlowGuard skills and MCP tools, which carry the same governed workflow.
 `;
 
 export function codexPluginFiles(version: string): Record<string, string> {

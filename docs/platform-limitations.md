@@ -14,6 +14,7 @@ This document enumerates each gap with its impact assessment, mitigation strateg
 | 4   | Subagent Orchestration Has No OpenCode-Equivalent Plugin Handshake | MEDIUM | MEDIUM                         | Claude Code, Codex |
 | 5   | Compaction Context Is Hook-Gated                                   | LOW    | LOW                            | Codex              |
 | 6   | Codex Cloud Sandbox Deployment                                     | LOW    | LOW                            | Codex Cloud        |
+| 7   | Codex Has No Plugin-Shareable Slash Commands                       | LOW    | LOW                            | Codex              |
 
 ## Enforcement Levels
 
@@ -187,6 +188,32 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 **Code reference**: `scripts/codex-cloud-setup.sh`
 
 **Residual Risk**: LOW — Standard Codex cloud deployment pattern. Requires Node.js >= 20 (available in Codex containers).
+
+---
+
+## Gap 7: Codex Has No Plugin-Shareable Slash Commands
+
+**Description**: FlowGuard projects its command set as host slash commands for
+OpenCode (`/<name>`) and Claude Code (`/flowguard:<name>`, bundled in the plugin
+under `commands/`). Codex has no equivalent: Codex custom prompts are deprecated,
+resolved only from the user home directory (`~/.codex/prompts`), and cannot be
+distributed inside a plugin.
+
+**Behavior**: FlowGuard fails closed and ships **no** Codex slash-command surface
+rather than an unenforced or non-distributable one. The Codex plugin's `AGENTS.md`
+documents this explicitly.
+
+**Mitigation**: The same governed workflow is available on Codex through FlowGuard
+skills and the FlowGuard MCP tools (`mcp__flowguard__flowguard_*`). Governance
+authority is unchanged — it remains in the MCP tools, hooks, state, policy, and
+validated review evidence.
+
+**Code reference**: `src/templates/codex-plugin.ts` (no `commands/` entries),
+`src/templates/commands/host-adapt.ts` (`commandsForPlatform('codex')` returns an
+empty map).
+
+**Residual Risk**: LOW — No loss of governed capability; only the slash-command
+ergonomics differ. Commands remain reachable as skills/MCP tools.
 
 ---
 

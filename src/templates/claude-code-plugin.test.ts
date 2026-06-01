@@ -57,6 +57,25 @@ describe('Claude Code plugin templates', () => {
     expect(JSON.stringify(files)).not.toContain('@opencode-ai/plugin');
   });
 
+  it('keeps the declared file list and the rendered file map in lockstep', () => {
+    const files = claudeCodePluginFiles('1.2.3');
+    expect(Object.keys(files).sort()).toEqual([...CLAUDE_CODE_PLUGIN_RELATIVE_FILES].sort());
+  });
+
+  it('bundles host-adapted FlowGuard slash commands under commands/', () => {
+    const files = claudeCodePluginFiles('1.2.3');
+
+    expect(files['commands/status.md']).toBeDefined();
+    expect(files['commands/status.md']).toContain('mcp__flowguard__flowguard_status');
+    expect(files['commands/status.md']).not.toMatch(/(?<!mcp__flowguard__)\bflowguard_[a-z_]+\b/);
+    expect(files['commands/review.md']).not.toMatch(/^[ \t]*agent: build/m);
+  });
+
+  it('declares the commands directory in the plugin manifest', () => {
+    const manifest = JSON.parse(claudeCodePluginManifest('1.2.3'));
+    expect(manifest.commands).toBe('./commands/');
+  });
+
   it('keeps reviewer as transport-only and skills as MCP guidance', () => {
     const files = claudeCodePluginFiles('1.2.3');
 

@@ -22,6 +22,35 @@ The `/command` syntax invokes the corresponding `flowguard_command` tool interna
 For all other commands, slash and tool names match `1:1` (`/hydrate` →
 `flowguard_hydrate`, `/architecture` → `flowguard_architecture`, etc.).
 
+### Cross-Host Availability
+
+The FlowGuard command set is host-adapted from a single source of truth (the
+`COMMANDS` registry) at install time. The command _names_ are identical across
+hosts; the _invocation surface_ and tool binding are adapted per host.
+
+| Host        | Invocation           | Tool binding                        | Source                   |
+| ----------- | -------------------- | ----------------------------------- | ------------------------ |
+| OpenCode    | `/hydrate`           | `flowguard_hydrate`                 | `.opencode/command/*.md` |
+| Claude Code | `/flowguard:hydrate` | `mcp__flowguard__flowguard_hydrate` | plugin `commands/*.md`   |
+| Codex       | _not available_      | `mcp__flowguard__flowguard_hydrate` | skills + MCP tools only  |
+
+- **OpenCode** exposes the commands directly as `/<name>`.
+- **Claude Code** bundles the commands in the FlowGuard plugin under
+  `commands/`; Claude Code namespaces plugin commands, so they appear as
+  `/flowguard:<name>`. FlowGuard tools are exposed as MCP tools, so command
+  bodies reference `mcp__flowguard__flowguard_<name>`. The OpenCode-only
+  `agent: build` frontmatter is dropped and the `webfetch` primitive maps to
+  Claude's `WebFetch`. Governance authority remains in the FlowGuard MCP tools,
+  hooks, state, policy, and validated review evidence — identical to OpenCode.
+- **Codex** does **not** receive plugin slash commands. Codex custom prompts are
+  deprecated, home-directory-only (`~/.codex/prompts`), and not plugin-shareable,
+  so FlowGuard fails closed and ships no Codex command surface. The same governed
+  workflow is available through FlowGuard skills and MCP tools. See
+  [platform-limitations.md](platform-limitations.md).
+
+OpenCode command content is byte-identical to the canonical source; the
+templates hash and OpenCode contract are unchanged by cross-host projection.
+
 ### Interactive vs Non-Interactive Execution
 
 - Interactive chat sessions may ask one precise follow-up question when required inputs are missing.

@@ -1,8 +1,19 @@
 import { CLAUDE_REVIEWER_AGENT } from './mandates.js';
+import { COMMANDS } from './commands/index.js';
+import { commandsForPlatform } from './commands/host-adapt.js';
 
 export const CLAUDE_CODE_PLUGIN_DIR = 'flowguard-plugin';
 
-export const CLAUDE_CODE_PLUGIN_RELATIVE_FILES = [
+/**
+ * Plugin-relative paths for the host-adapted FlowGuard slash commands, derived
+ * from the canonical COMMANDS registry so the projected file map and the owned-
+ * file/snapshot tracking stay in lockstep (no drift).
+ */
+const CLAUDE_CODE_PLUGIN_COMMAND_FILES: readonly string[] = Object.keys(COMMANDS).map(
+  (basename) => `commands/${basename}`,
+);
+
+const CLAUDE_CODE_PLUGIN_STATIC_FILES = [
   '.claude-plugin/plugin.json',
   'skills/start/SKILL.md',
   'skills/plan/SKILL.md',
@@ -17,6 +28,11 @@ export const CLAUDE_CODE_PLUGIN_RELATIVE_FILES = [
   'dist/hooks/session-start.js',
   'dist/hooks/stop.js',
 ] as const;
+
+export const CLAUDE_CODE_PLUGIN_RELATIVE_FILES: readonly string[] = [
+  ...CLAUDE_CODE_PLUGIN_STATIC_FILES,
+  ...CLAUDE_CODE_PLUGIN_COMMAND_FILES,
+];
 
 const WRAPPER_RUNTIME = '../../node_modules/@flowguard/core/dist/';
 const HOOK_WRAPPER_RUNTIME = '../../../node_modules/@flowguard/core/dist/hooks/';
@@ -80,6 +96,7 @@ export function claudeCodePluginManifest(version: string): string {
     version,
     author: { name: 'FlowGuard' },
     skills: './skills/',
+    commands: './commands/',
     agents: ['./agents/flowguard-reviewer.md'],
     hooks: './hooks/hooks.json',
     mcpServers: './.mcp.json',
@@ -214,6 +231,7 @@ export function claudeCodePluginFiles(version: string): Record<string, string> {
   return {
     '.claude-plugin/plugin.json': claudeCodePluginManifest(version),
     ...CLAUDE_CODE_PLUGIN_SKILLS,
+    ...commandsForPlatform('claude-code'),
     'agents/flowguard-reviewer.md': CLAUDE_REVIEWER_AGENT,
     'hooks/hooks.json': claudeCodeHooksJson(),
     '.mcp.json': claudeCodeMcpJson(),
