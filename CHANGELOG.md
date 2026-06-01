@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #400:** Added policy-gated, fail-closed validation-evidence
+  enforcement that prevents the `VALIDATION` phase from passing **vacuously**
+  when no Discovery-derived verification commands exist (empty `activeChecks`).
+  A new `validationEvidence` policy (`enforcement`: `off` | `advisory` |
+  `required`; `allowNoCommands`: boolean) is frozen into the policy snapshot at
+  hydrate time and consumed by a single authority, `evaluateValidationEvidence`.
+  When `enforcement: required` and `allowNoCommands: false`, an empty
+  `activeChecks` list blocks progression instead of silently auto-advancing
+  `PLAN_REVIEW → VALIDATION → IMPLEMENTATION`. The control governs progression
+  admissibility only — it never fabricates evidence and never injects fallback
+  commands; `verificationCandidates`/`activeChecks` remain the sole source of
+  truth for what may be executed. The authority distinguishes two cases:
+  `VALIDATION_EVIDENCE_REQUIRED` when Discovery is trustworthy (the empty list is
+  a verified repo property), and `VALIDATION_EVIDENCE_UNVERIFIED` when Discovery
+  is not trustworthy (the runtime cannot prove the empty list is real and refuses
+  false certainty). Both codes are surfaced by `flowguard_run_check`,
+  `/continue`, and `flowguard_status` next-action guidance. `allowNoCommands:
+  true` is the only sanctioned opt-out for repositories that legitimately have no
+  verification commands.
+
+  **Behavior change / upgrade note:** The `regulated` and `team-ci` presets
+  default `validationEvidence.enforcement` to `required` (with `allowNoCommands:
+  false`); `solo` and `team` default to `off`. Legacy policy snapshots without a
+  `validationEvidence` block receive the same fail-closed, mode-consistent
+  default on load. Sessions on `regulated`/`team-ci` that previously relied on a
+  vacuous `VALIDATION` pass must now either expose Discovery-derived verification
+  commands or explicitly opt out with
+  `policy.validationEvidence.allowNoCommands: true`; set
+  `policy.validationEvidence.enforcement` to `advisory` or `off` to disable the
+  control entirely.
+
 - **Issue #399:** Added policy-gated, fail-closed Discovery health enforcement.
   A new two-axis `discoveryHealth` policy (`enforcement`: `off` | `advisory` |
   `required`; `onDegraded`/`onDrift`: `allow` | `warn` | `block`) is frozen into

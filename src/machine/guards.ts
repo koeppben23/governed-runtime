@@ -17,6 +17,7 @@
 
 import type { LoopVerdict } from '../state/evidence.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
+import { evaluateValidationEvidence } from './validation-evidence.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -97,15 +98,26 @@ export const selfReviewPending: GuardFn = (s) => s.selfReview !== null && !selfR
 /**
  * All active validation checks passed.
  *
- * Vacuous truth: if activeChecks is empty (no verificationCandidates discovered),
- * all checks are trivially satisfied → returns true. This allows sessions without
- * discoverable commands to skip VALIDATION cleanly.
+ * Vacuous truth (legacy): if activeChecks is empty (no verificationCandidates
+ * discovered), all checks are trivially satisfied → returns true. This allows
+ * low-risk sessions without discoverable commands to skip VALIDATION cleanly.
+ *
+ * Policy gate (#400): under policy-gated validation-evidence enforcement
+ * ('required' without the explicit `allowNoCommands` exception), an empty
+ * active-check list MUST NOT pass vacuously. The single authority
+ * `evaluateValidationEvidence` decides admissibility; when it reports `blocked`,
+ * this guard returns false so VALIDATION cannot silently auto-advance. The
+ * blocked session lands in EvalPending and the explicit reason is surfaced by the
+ * consuming rails/tools — guards stay pure booleans and do not fabricate evidence.
  *
  * Uses Set-based lookup for O(n + m) instead of O(n * m) nested iteration.
  */
 export const allValidationsPassed: GuardFn = (s) => {
-  // Vacuous truth: no active checks → all passed (nothing to check).
-  if (s.activeChecks.length === 0) return true;
+  if (s.activeChecks.length === 0) {
+    // Fail-closed under policy: a vacuous pass is not permitted when the
+    // validation-evidence authority blocks progression without evidence.
+    return !evaluateValidationEvidence(s).blocked;
+  }
   const passedIds = new Set<string>();
   for (const v of s.validation) {
     if (v.passed) passedIds.add(v.checkId);

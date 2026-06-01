@@ -26,8 +26,14 @@ export type {
   DiscoveryHealthEnforcement,
   DiscoveryHealthDegradedAction,
   DiscoveryHealthDriftAction,
+  ValidationEvidencePolicy,
+  ValidationEvidenceEnforcement,
 } from './policy-types.js';
-export { DEFAULT_SELF_REVIEW_CONFIG, defaultDiscoveryHealthForMode } from './policy-types.js';
+export {
+  DEFAULT_SELF_REVIEW_CONFIG,
+  defaultDiscoveryHealthForMode,
+  defaultValidationEvidenceForMode,
+} from './policy-types.js';
 
 export { PolicyConfigurationError } from './policy-errors.js';
 export type { PolicyConfigurationErrorCode } from './policy-errors.js';

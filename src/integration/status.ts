@@ -27,6 +27,7 @@ import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
 import { resolveNextAction } from '../machine/next-action.js';
+import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import {
   isCommandAllowed,
   Command,
@@ -303,10 +304,23 @@ export function buildBlockedProjection(
       hint: slot.status === 'failed' ? (slot.detail ?? null) : null,
     }));
 
+  // #400: surface the explicit validation-evidence reason when VALIDATION is
+  // fail-closed-blocked with no active checks. This is a projection of the single
+  // authority's decision — no independent interpretation.
+  const validationEvidence =
+    state.phase === 'VALIDATION' ? evaluateValidationEvidence(state) : null;
+  const validationEvidenceBlocked =
+    validationEvidence !== null && validationEvidence.blocked && validationEvidence.code !== null;
+
   return {
     blocked,
-    reasonCode: null,
-    reasonText: evalResult.kind === 'waiting' ? evalResult.reason : null,
+    reasonCode: validationEvidenceBlocked ? validationEvidence.code : null,
+    reasonText:
+      evalResult.kind === 'waiting'
+        ? evalResult.reason
+        : validationEvidenceBlocked
+          ? next.text
+          : null,
     recoveryHint: next.text,
     missingEvidence,
     nextResolvableCommand: next.commands[0] ?? null,

@@ -605,4 +605,30 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       'Re-hydrate if the check list needs updating',
     ],
   },
+
+  // ─── Validation Evidence Enforcement (#400) ─────────────────────────────────
+
+  {
+    code: 'VALIDATION_EVIDENCE_REQUIRED',
+    category: 'admissibility',
+    messageTemplate:
+      'Policy requires validation evidence before progressing past VALIDATION, but no Discovery-derived verification commands are active. VALIDATION must not pass vacuously under this policy.',
+    recoverySteps: [
+      'Re-run discovery and flowguard_hydrate so repo-native verification commands are detected',
+      'Execute the discovered checks with flowguard_run_check, then submit results with flowguard_validate',
+      'If this repository genuinely has no verification commands, set validationEvidence.allowNoCommands=true in policy with explicit governance approval (the only sanctioned exception)',
+    ],
+  },
+
+  {
+    code: 'VALIDATION_EVIDENCE_UNVERIFIED',
+    category: 'admissibility',
+    messageTemplate:
+      'Policy requires validation evidence but Discovery is not trustworthy, so the absence of verification commands cannot be verified (NOT_VERIFIED). VALIDATION is blocked fail-closed rather than asserting false certainty.',
+    recoverySteps: [
+      'Run flowguard_hydrate to restore trustworthy Discovery (clear health gate, clean drift, persisted summary and digest)',
+      'Resolve any blocked discoveryHealthGate before retrying VALIDATION',
+      'Do not treat an empty active-check list as a verified pass while Discovery health is unverified',
+    ],
+  },
 ];

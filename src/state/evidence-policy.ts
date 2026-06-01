@@ -115,6 +115,17 @@ export const PolicySnapshotSchema = z
         onDrift: z.enum(['allow', 'warn', 'block']),
       })
       .optional(),
+    /**
+     * Policy-gated validation-evidence enforcement frozen at hydrate time (#400).
+     * Optional for backward compatibility; the transform below applies a
+     * fail-closed, mode-consistent default for legacy snapshots.
+     */
+    validationEvidence: z
+      .object({
+        enforcement: z.enum(['off', 'advisory', 'required']),
+        allowNoCommands: z.boolean(),
+      })
+      .optional(),
     audit: z.object({
       emitTransitions: z.boolean(),
       emitToolCalls: z.boolean(),
@@ -165,6 +176,11 @@ export const PolicySnapshotSchema = z
             onDrift: 'block' as const,
           }
         : { enforcement: 'off' as const, onDegraded: 'allow' as const, onDrift: 'allow' as const }),
+    validationEvidence:
+      snapshot.validationEvidence ??
+      (snapshot.mode === 'regulated' || snapshot.mode === 'team-ci'
+        ? { enforcement: 'required' as const, allowNoCommands: false }
+        : { enforcement: 'off' as const, allowNoCommands: false }),
   }))
   .readonly();
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;

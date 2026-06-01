@@ -60,6 +60,7 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   allowRiskDowngradeOverride: false,
   allowReducedCeremony: false,
   discoveryHealth: { enforcement: 'off', onDegraded: 'allow', onDrift: 'allow' },
+  validationEvidence: { enforcement: 'off', allowNoCommands: false },
   audit: {
     emitTransitions: true,
     emitToolCalls: true,

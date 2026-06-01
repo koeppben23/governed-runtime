@@ -104,6 +104,49 @@ describe('config/policy', () => {
       expect(result.centralEvidence?.version).toBe('2026.04');
     });
 
+    it('resolvePolicyForHydrate threads configValidationEvidence into the frozen snapshot (#400)', async () => {
+      // Falsification of the config→resolver→snapshot path: a team base defaults to
+      // validationEvidence off; an explicit config override must survive resolution
+      // AND land in the frozen policy snapshot operators actually run under.
+      const result = await resolvePolicyForHydrate({
+        repoMode: 'team',
+        defaultMode: 'solo',
+        ciContext: false,
+        digestFn,
+        configValidationEvidence: { enforcement: 'required', allowNoCommands: true },
+      });
+
+      // Override reflected in the resolved policy.
+      expect(result.policy.validationEvidence).toEqual({
+        enforcement: 'required',
+        allowNoCommands: true,
+      });
+
+      // And preserved through snapshot freezing.
+      const snap = createPolicySnapshot(result.policy, '2026-01-01T00:00:00.000Z', digestFn);
+      expect(snap.validationEvidence).toEqual({
+        enforcement: 'required',
+        allowNoCommands: true,
+      });
+    });
+
+    it('resolvePolicyForHydrate partial configValidationEvidence merges onto preset default (#400)', async () => {
+      // Only enforcement overridden; allowNoCommands must fall back to the preset
+      // default (false), preserving the fail-closed posture.
+      const result = await resolvePolicyForHydrate({
+        explicitMode: 'regulated',
+        defaultMode: 'solo',
+        ciContext: false,
+        digestFn,
+        configValidationEvidence: { enforcement: 'advisory' },
+      });
+
+      expect(result.policy.validationEvidence).toEqual({
+        enforcement: 'advisory',
+        allowNoCommands: false,
+      });
+    });
+
     it('SOLO has no human gates and 1 iteration', () => {
       expect(SOLO_POLICY.requireHumanGates).toBe(false);
       expect(SOLO_POLICY.maxSelfReviewIterations).toBe(2);
@@ -968,6 +1011,32 @@ describe('config/policy', () => {
       expect(r.policy.selfReview.subagentEnabled).toBe(true);
       expect(r.policy.selfReview.fallbackToSelf).toBe(false);
       expect(r.policy.selfReview.strictEnforcement).toBe(true);
+    });
+
+    it('solo preset: validationEvidence off (#400)', () => {
+      const r = resolvePolicyWithContext('solo', false);
+      expect(r.policy.validationEvidence).toEqual({ enforcement: 'off', allowNoCommands: false });
+    });
+
+    it('team preset: validationEvidence off (#400)', () => {
+      const r = resolvePolicyWithContext('team', false);
+      expect(r.policy.validationEvidence).toEqual({ enforcement: 'off', allowNoCommands: false });
+    });
+
+    it('team-ci preset: validationEvidence required, fail-closed (#400)', () => {
+      const r = resolvePolicyWithContext('team-ci', true);
+      expect(r.policy.validationEvidence).toEqual({
+        enforcement: 'required',
+        allowNoCommands: false,
+      });
+    });
+
+    it('regulated preset: validationEvidence required, fail-closed (#400)', () => {
+      const r = resolvePolicyWithContext('regulated', false);
+      expect(r.policy.validationEvidence).toEqual({
+        enforcement: 'required',
+        allowNoCommands: false,
+      });
     });
 
     it('solo identityProvider is undefined', () => {

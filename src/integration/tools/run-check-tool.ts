@@ -35,6 +35,7 @@ import {
 import type { SessionState } from '../../state/schema.js';
 import { evaluate } from '../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
+import { evaluateValidationEvidence } from '../../machine/validation-evidence.js';
 import { VerificationCandidateKindSchema } from '../../state/discovery-schemas.js';
 
 // Rail helpers
@@ -75,6 +76,15 @@ export const run_check: ToolDefinition = {
         }
 
         if (state.activeChecks.length === 0) {
+          // #400: under policy-gated validation-evidence enforcement, an empty
+          // active-check list is not a clean vacuous pass. Surface the explicit,
+          // case-distinguished reason from the single authority instead of the
+          // bare NO_ACTIVE_CHECKS. The candidate-only command resolution below is
+          // unchanged — this only governs progression admissibility.
+          const evidence = evaluateValidationEvidence(state);
+          if (evidence.blocked && evidence.code !== null) {
+            return formatBlocked(evidence.code);
+          }
           return formatBlocked('NO_ACTIVE_CHECKS');
         }
 

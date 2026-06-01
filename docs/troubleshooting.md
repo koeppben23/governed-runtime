@@ -144,6 +144,13 @@ real, registered reason.
 | `INVALID_VERDICT`          | `/review-decision` verdict is not approve/changes_requested/reject       | Pass a valid verdict literal                                                   |
 | `INVALID_TRANSITION`       | Topology event not valid for current phase                               | Run `/status` and `/why` for diagnostic explanation                            |
 
+### Validation Evidence
+
+| Code                             | Description                                                                                   | Solution                                                                                                                             |
+| -------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `VALIDATION_EVIDENCE_REQUIRED`   | Policy requires validation evidence but no Discovery-derived verification commands are active | Re-run discovery and `/hydrate` to detect repo-native checks, or set `validationEvidence.allowNoCommands=true` (governance approval) |
+| `VALIDATION_EVIDENCE_UNVERIFIED` | Policy requires validation evidence but Discovery is not trustworthy (NOT_VERIFIED)           | Run `/hydrate` to restore healthy Discovery and clear any blocked discovery health gate before retrying VALIDATION                   |
+
 ### Evidence Integrity
 
 | Code                                | Description                                                     | Solution                                                                                       |
@@ -338,6 +345,8 @@ SUBAGENT_TYPE_UNAUTHORIZED
 SUBAGENT_UNABLE_TO_REVIEW
 TICKET_REQUIRED
 TOOL_ERROR
+VALIDATION_EVIDENCE_REQUIRED
+VALIDATION_EVIDENCE_UNVERIFIED
 VALIDATION_INCOMPLETE
 VERIFIED_ACTOR_REQUIRED
 CONFIG_INVALID

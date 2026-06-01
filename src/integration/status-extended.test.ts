@@ -88,6 +88,7 @@ function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState 
       actorClassification: 'solo',
       policyDigest: 'testdigest123',
       policyVersion: 'v1.0.0',
+      validationEvidence: { enforcement: 'off', allowNoCommands: false },
     },
     detectedStack: null,
     activeProfile: null,

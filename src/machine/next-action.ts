@@ -18,6 +18,7 @@
 
 import type { Phase, SessionState } from '../state/schema.js';
 import { isConverged } from './guards.js';
+import { evaluateValidationEvidence } from './validation-evidence.js';
 
 // ─── Type ─────────────────────────────────────────────────────────────────────
 
@@ -44,6 +45,8 @@ export const ACTION_CODES = {
   RUN_CONTINUE: 'RUN_CONTINUE',
   RUN_REVIEW_DECISION: 'RUN_REVIEW_DECISION',
   RUN_VALIDATE: 'RUN_VALIDATE',
+  VALIDATION_EVIDENCE_REQUIRED: 'VALIDATION_EVIDENCE_REQUIRED',
+  VALIDATION_EVIDENCE_UNVERIFIED: 'VALIDATION_EVIDENCE_UNVERIFIED',
   RUN_IMPLEMENT: 'RUN_IMPLEMENT',
   RUN_ARCHITECTURE: 'RUN_ARCHITECTURE',
   SESSION_COMPLETE: 'SESSION_COMPLETE',
@@ -120,8 +123,31 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
     commands: ['/review-decision'],
   }),
 
-  VALIDATION: (state) =>
-    state.validation.length === 0
+  VALIDATION: (state) => {
+    // #400: when policy requires validation evidence but no active checks exist,
+    // /validate would only fail-closed. Guide the user toward restoring real
+    // verification evidence instead of recommending a command that will block.
+    const evidence = evaluateValidationEvidence(state);
+    if (evidence.blocked && evidence.code !== null) {
+      return evidence.code === 'VALIDATION_EVIDENCE_REQUIRED'
+        ? {
+            code: ACTION_CODES.VALIDATION_EVIDENCE_REQUIRED,
+            text:
+              'Policy requires validation evidence, but no Discovery-derived verification ' +
+              'commands are active. Re-run discovery and /hydrate to detect repo-native checks, ' +
+              'or set validationEvidence.allowNoCommands=true in policy (governance approval).',
+            commands: ['/hydrate', '/status'],
+          }
+        : {
+            code: ACTION_CODES.VALIDATION_EVIDENCE_UNVERIFIED,
+            text:
+              'Policy requires validation evidence but Discovery is not trustworthy, so the ' +
+              'absence of verification commands cannot be verified (NOT_VERIFIED). Run /hydrate ' +
+              'to restore healthy Discovery and clear any blocked discovery health gate.',
+            commands: ['/hydrate', '/status'],
+          };
+    }
+    return state.validation.length === 0
       ? {
           code: ACTION_CODES.RUN_VALIDATE,
           text: 'Run validation checks with /validate',
@@ -131,7 +157,8 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
           code: ACTION_CODES.RUN_CONTINUE,
           text: 'Validation complete. Run /continue to advance',
           commands: ['/continue'],
-        },
+        };
+  },
 
   IMPLEMENTATION: (state) =>
     state.implementation === null

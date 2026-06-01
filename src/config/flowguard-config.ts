@@ -80,6 +80,18 @@ export const FlowGuardConfigSchema = z.object({
           onDrift: z.enum(['allow', 'warn', 'block']).optional(),
         })
         .optional(),
+      /**
+       * Policy-gated validation-evidence enforcement (#400). Field-wise merged
+       * onto the resolved preset. Omitted fields fall back to the preset default.
+       * `allowNoCommands` is the only sanctioned opt-out from the fail-closed
+       * `required` posture.
+       */
+      validationEvidence: z
+        .object({
+          enforcement: z.enum(['off', 'advisory', 'required']).optional(),
+          allowNoCommands: z.boolean().optional(),
+        })
+        .optional(),
     })
     .default({}),
 
