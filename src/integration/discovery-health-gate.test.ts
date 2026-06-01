@@ -8,7 +8,12 @@
 
 import { describe, it, expect } from 'vitest';
 
-import { isDiscoveryHealthAllowed, reconcileDiscoveryHealthGate } from './discovery-health-gate.js';
+import {
+  isDiscoveryHealthAllowed,
+  reconcileDiscoveryHealthGate,
+  classifyGateTransition,
+  evaluateDiscoveryEvidenceGate,
+} from './discovery-health-gate.js';
 import {
   extractDiscoveryHealth,
   unavailableDiscoveryHealth,
@@ -195,5 +200,111 @@ describe('reconcileDiscoveryHealthGate — sole clear authority', () => {
       now: NOW,
     });
     expect(gate.status).toBe('clear');
+  });
+});
+
+describe('classifyGateTransition — auditable transitions only', () => {
+  const blocked = (over: Partial<Extract<DiscoveryHealthGate, { status: 'blocked' }>> = {}) =>
+    ({
+      status: 'blocked',
+      code: 'DISCOVERY_HEALTH_UNAVAILABLE',
+      message: 'm',
+      blockedAt: NOW,
+      lastDriftAssessment: 'unavailable',
+      ...over,
+    }) as DiscoveryHealthGate;
+  const clear = (): DiscoveryHealthGate => ({ status: 'clear', clearedAt: NOW });
+
+  it('undefined -> blocked is to_blocked', () => {
+    expect(classifyGateTransition(undefined, blocked())).toBe('to_blocked');
+  });
+
+  it('clear -> blocked is to_blocked', () => {
+    expect(classifyGateTransition(clear(), blocked())).toBe('to_blocked');
+  });
+
+  it('blocked -> clear is to_clear (recovery is auditable)', () => {
+    expect(classifyGateTransition(blocked(), clear())).toBe('to_clear');
+  });
+
+  it('blocked -> blocked with same reason is none (no duplicate audit)', () => {
+    expect(classifyGateTransition(blocked(), blocked())).toBe('none');
+  });
+
+  it('blocked -> blocked with changed code is block_reason_changed', () => {
+    expect(classifyGateTransition(blocked(), blocked({ code: 'DISCOVERY_DRIFT_BLOCKED' }))).toBe(
+      'block_reason_changed',
+    );
+  });
+
+  it('undefined -> clear is none', () => {
+    expect(classifyGateTransition(undefined, clear())).toBe('none');
+  });
+
+  it('clear -> clear is none', () => {
+    expect(classifyGateTransition(clear(), clear())).toBe('none');
+  });
+});
+
+describe('evaluateDiscoveryEvidenceGate — read-only computed projection', () => {
+  it('passes when enforcement is off regardless of unhealthy evidence', () => {
+    const p = evaluateDiscoveryEvidenceGate(
+      { enforcement: 'off', onDegraded: 'block', onDrift: 'block' },
+      unavailableDiscoveryHealth('missing'),
+      'drifted',
+    );
+    expect(p.action).toBe('pass');
+    expect(p.code).toBeNull();
+    expect(p.source).toBe('computed_from_current_status_projection');
+  });
+
+  it('blocks UNAVAILABLE when required and Discovery unavailable', () => {
+    const p = evaluateDiscoveryEvidenceGate(
+      REQUIRED_BLOCK,
+      unavailableDiscoveryHealth('missing'),
+      'clean',
+    );
+    expect(p.action).toBe('block');
+    expect(p.code).toBe('DISCOVERY_HEALTH_UNAVAILABLE');
+  });
+
+  it('downgrades block to warn under advisory enforcement (never blocks)', () => {
+    const p = evaluateDiscoveryEvidenceGate(
+      { enforcement: 'advisory', onDegraded: 'block', onDrift: 'block' },
+      unavailableDiscoveryHealth('missing'),
+      'drifted',
+    );
+    expect(p.action).toBe('warn');
+  });
+
+  it('precedence: unavailable block wins over drift', () => {
+    const p = evaluateDiscoveryEvidenceGate(
+      REQUIRED_BLOCK,
+      unavailableDiscoveryHealth('missing'),
+      'drifted',
+    );
+    expect(p.code).toBe('DISCOVERY_HEALTH_UNAVAILABLE');
+  });
+
+  it('blocks DRIFT when healthy but drift not clean and onDrift=block', () => {
+    const p = evaluateDiscoveryEvidenceGate(REQUIRED_BLOCK, healthy(), 'drifted');
+    expect(p.action).toBe('block');
+    expect(p.code).toBe('DISCOVERY_DRIFT_BLOCKED');
+  });
+
+  it('passes when healthy and drift clean under required', () => {
+    const p = evaluateDiscoveryEvidenceGate(REQUIRED_BLOCK, healthy(), 'clean');
+    expect(p.action).toBe('pass');
+    expect(p.code).toBeNull();
+  });
+
+  it('warns degraded when onDegraded=warn', () => {
+    const p = evaluateDiscoveryEvidenceGate(
+      { enforcement: 'required', onDegraded: 'warn', onDrift: 'block' },
+      degraded(),
+      'clean',
+    );
+    expect(p.action).toBe('warn');
+    expect(p.code).toBe('DISCOVERY_HEALTH_DEGRADED');
   });
 });

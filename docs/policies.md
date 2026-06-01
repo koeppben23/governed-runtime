@@ -267,8 +267,24 @@ fail-closed, mode-consistent default when loaded.
   until reconciled. `flowguard_hydrate` is the **only** authority that may clear
   the gate, by re-reading the persisted `DiscoveryResult` (the SSOT) and running
   a single bounded drift check.
-- A `discovery_health:gate_changed` audit event is emitted **once** on each
-  transition to blocked.
+- A `discovery_health:gate_changed` audit event is emitted **once** per material
+  gate-status change, from a single audit authority. Both directions are
+  auditable: blocking (`to_blocked`), recovery/unblocking (`to_clear`), and a
+  changed block reason (`block_reason_changed`). Unchanged re-evaluations emit
+  nothing, keeping the audit trail signal-dense.
+
+### Status projections
+
+`flowguard_status` exposes two distinct, read-only views:
+
+- `discoveryHealthGate` — the **persisted, sticky** gate (the last block/clear
+  decision written to state). Status never mutates or clears it.
+- `discoveryEvidenceGate` — a **recomputed** projection of the live policy
+  decision (`pass` | `warn` | `block`) against the current Discovery evidence and
+  drift. It carries `source: "computed_from_current_status_projection"` and is
+  never persisted. Under `advisory` enforcement, `block` decisions are reported
+  as `warn`. Use it to preview the decision a mutating tool would face before the
+  next seam evaluation or `/hydrate` reconcile.
 
 ### Recovery
 

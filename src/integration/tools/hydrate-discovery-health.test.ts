@@ -10,9 +10,10 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockLoadContext, mockBuildDrift } = vi.hoisted(() => ({
+const { mockLoadContext, mockBuildDrift, mockAudit } = vi.hoisted(() => ({
   mockLoadContext: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   mockBuildDrift: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+  mockAudit: vi.fn<(...args: unknown[]) => Promise<void>>(),
 }));
 
 vi.mock('../../discovery/discovery-health.js', async () => {
@@ -24,6 +25,10 @@ vi.mock('../../discovery/discovery-health.js', async () => {
 
 vi.mock('../discovery-drift-status.js', () => ({
   buildDiscoveryDriftStatus: mockBuildDrift,
+}));
+
+vi.mock('../discovery-health-audit.js', () => ({
+  auditDiscoveryHealthGateTransition: mockAudit,
 }));
 
 import { reconcileHydrateDiscoveryHealthGate } from './hydrate.js';
@@ -47,15 +52,20 @@ function healthyProjection() {
   return extractDiscoveryHealth(result);
 }
 
-function okResult(discoveryHealth: SessionState['policySnapshot']['discoveryHealth']): RailResult {
+function okResult(
+  discoveryHealth: SessionState['policySnapshot']['discoveryHealth'],
+  stateOverrides: Partial<SessionState> = {},
+): RailResult {
   const base = makeState('READY');
   const state = makeState('READY', {
     policySnapshot: { ...base.policySnapshot, discoveryHealth },
+    ...stateOverrides,
   });
   return { kind: 'ok', state, evalResult: {} as never, transitions: [] };
 }
 
 const ctx = {
+  sessDir: '/tmp/sess',
   workspaceDir: '/tmp/ws',
   worktree: '/tmp/repo',
   fingerprint: 'fp-1',
@@ -66,6 +76,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockLoadContext.mockResolvedValue({ discoveryHealth: healthyProjection() });
   mockBuildDrift.mockResolvedValue({ status: 'clean' });
+  mockAudit.mockResolvedValue(undefined);
 });
 
 describe('reconcileHydrateDiscoveryHealthGate', () => {
@@ -113,5 +124,27 @@ describe('reconcileHydrateDiscoveryHealthGate', () => {
       expect(out.state.discoveryHealthGate?.status).toBe('blocked');
       expect(out.state.discoveryHealthGate?.lastDriftAssessment).toBe('drifted');
     }
+  });
+
+  it('emits a transition audit with the persisted previous gate and computed next gate', async () => {
+    const previous: SessionState['discoveryHealthGate'] = {
+      status: 'blocked',
+      code: 'DISCOVERY_HEALTH_UNAVAILABLE',
+      message: 'prior block',
+      blockedAt: NOW,
+    };
+    const result = okResult(
+      { enforcement: 'required', onDegraded: 'warn', onDrift: 'block' },
+      { discoveryHealthGate: previous },
+    );
+    const out = await reconcileHydrateDiscoveryHealthGate(result, ctx);
+    expect(mockAudit).toHaveBeenCalledTimes(1);
+    const [sessDir, auditedState, prevArg, nextArg] = mockAudit.mock.calls[0]!;
+    expect(sessDir).toBe('/tmp/sess');
+    expect(prevArg).toEqual(previous);
+    expect((nextArg as { status: string }).status).toBe('clear');
+    // The audited state must carry the freshly computed gate (not the stale one).
+    expect((auditedState as SessionState).discoveryHealthGate?.status).toBe('clear');
+    if (out.kind === 'ok') expect(out.state.discoveryHealthGate?.status).toBe('clear');
   });
 });

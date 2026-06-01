@@ -49,9 +49,15 @@ vi.mock('./plugin-helpers.js', () => ({
   strictBlockedOutput: mockStrictBlockedOutput,
 }));
 
-vi.mock('./discovery-health-gate.js', () => ({
-  isDiscoveryHealthAllowed: mockIsAllowed,
-}));
+vi.mock('./discovery-health-gate.js', async () => {
+  const actual = await vi.importActual<typeof import('./discovery-health-gate.js')>(
+    './discovery-health-gate.js',
+  );
+  return {
+    ...actual,
+    isDiscoveryHealthAllowed: mockIsAllowed,
+  };
+});
 
 vi.mock('./review/audit-events.js', () => ({
   appendReviewAuditEvent: mockAppendReviewAuditEvent,

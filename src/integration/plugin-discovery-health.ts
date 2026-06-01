@@ -14,16 +14,16 @@
 
 import { existsSync } from 'node:fs';
 
-import type { SessionState } from '../state/schema.js';
+import type { SessionState, DiscoveryHealthGate } from '../state/schema.js';
 import { writeState, readState } from '../adapters/persistence.js';
 import { strictBlockedOutput, buildEnforcementError } from './plugin-helpers.js';
-import { appendReviewAuditEvent } from './review/audit-events.js';
 import {
   loadDiscoveryHealthContext,
   unavailableDiscoveryHealth,
   type DiscoveryHealthProjection,
 } from '../discovery/discovery-health.js';
 import { isDiscoveryHealthAllowed, type DiscoveryHealthDecision } from './discovery-health-gate.js';
+import { auditDiscoveryHealthGateTransition } from './discovery-health-audit.js';
 
 export interface DiscoveryHealthEnforcementDeps {
   getSessionDir(sessionId: string): string | null;
@@ -56,43 +56,17 @@ async function persistDiscoveryHealthBlock(
   const blockedAt = new Date().toISOString();
   const code = decision.code ?? 'DISCOVERY_HEALTH_UNAVAILABLE';
   const message = decision.message ?? 'Discovery health gate blocked this mutating tool.';
-  const nextState: SessionState = {
-    ...state,
-    discoveryHealthGate: {
-      status: 'blocked',
-      code,
-      message,
-      blockedAt,
-      lastDriftAssessment: state.discoveryHealthGate?.lastDriftAssessment,
-    },
+  const blockedGate: DiscoveryHealthGate = {
+    status: 'blocked',
+    code,
+    message,
+    blockedAt,
+    lastDriftAssessment: decision.driftStatus ?? state.discoveryHealthGate?.lastDriftAssessment,
   };
+  const nextState: SessionState = { ...state, discoveryHealthGate: blockedGate };
   await writeState(sessDir, nextState);
-  await appendDiscoveryHealthGateAudit(sessDir, state, decision, code);
-}
-
-async function appendDiscoveryHealthGateAudit(
-  sessDir: string,
-  state: SessionState,
-  decision: DiscoveryHealthDecision,
-  code: string,
-): Promise<void> {
-  await appendReviewAuditEvent(
-    sessDir,
-    state.binding.sessionId,
-    state.phase,
-    'discovery_health:gate_changed',
-    {
-      decision: 'blocked',
-      reasonCode: code,
-      detail: decision.detail ?? null,
-      driftStatus: decision.driftStatus ?? null,
-      policyMode: state.policySnapshot.mode,
-      enforcement: state.policySnapshot.discoveryHealth.enforcement,
-      onDegraded: state.policySnapshot.discoveryHealth.onDegraded,
-      onDrift: state.policySnapshot.discoveryHealth.onDrift,
-      previousGateStatus: state.discoveryHealthGate?.status ?? 'none',
-    },
-  );
+  // Persist-then-audit, via the single gate-transition audit authority.
+  await auditDiscoveryHealthGateTransition(sessDir, state, state.discoveryHealthGate, blockedGate);
 }
 
 /**

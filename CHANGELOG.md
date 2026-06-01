@@ -21,8 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cleared — during `flowguard_hydrate` against the persisted `DiscoveryResult`
   (SSOT) plus a bounded drift check. Missing or unreadable Discovery never
   produces a fake-healthy state; absent drift evidence is treated as
-  `not_checked` and blocks under `onDrift: block`. A blocked-transition audit
-  event (`discovery_health:gate_changed`) is emitted once per transition.
+  `not_checked` and blocks under `onDrift: block`. Both block AND recovery
+  (clear) transitions are auditable: a `discovery_health:gate_changed` audit
+  event is emitted once per material gate-status change (block, clear/unblock, or
+  changed block reason) from a single audit authority. `flowguard_status` also
+  surfaces a read-only, recomputed `discoveryEvidenceGate` projection (the live
+  policy decision against current evidence), distinct from the persisted sticky
+  `discoveryHealthGate`.
 
   **Behavior change / upgrade note:** The `regulated` and `team-ci` presets
   default `discoveryHealth.enforcement` to `required` (with `onDegraded: warn`,

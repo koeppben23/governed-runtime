@@ -175,3 +175,148 @@ export function reconcileDiscoveryHealthGate(
 
   return clear;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Gate lifecycle transitions (auditable status changes)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Classify a gate status change for audit purposes (#399).
+ *
+ * For a HIGH-RISK fail-closed gate, both blocking AND recovery (unblock) must be
+ * auditable. Transitions that warrant a `discovery_health:gate_changed` event:
+ * - `to_blocked`: undefined|clear -> blocked
+ * - `to_clear`: blocked -> clear (recovery / reconciliation)
+ * - `block_reason_changed`: blocked -> blocked with a changed code/message/drift
+ * Everything else is `none` (no audit) to keep the trail signal-dense.
+ */
+export type GateTransitionKind = 'to_blocked' | 'to_clear' | 'block_reason_changed' | 'none';
+
+export function classifyGateTransition(
+  prev: DiscoveryHealthGate | undefined,
+  next: DiscoveryHealthGate,
+): GateTransitionKind {
+  const prevBlocked = prev?.status === 'blocked';
+  const nextBlocked = next.status === 'blocked';
+
+  if (!prevBlocked && nextBlocked) return 'to_blocked';
+  if (prevBlocked && !nextBlocked) return 'to_clear';
+  if (prev?.status === 'blocked' && next.status === 'blocked') {
+    const changed =
+      prev.code !== next.code ||
+      prev.message !== next.message ||
+      prev.lastDriftAssessment !== next.lastDriftAssessment;
+    return changed ? 'block_reason_changed' : 'none';
+  }
+  return 'none';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Read-only computed evidence gate (status surface)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export type DiscoveryEvidenceGateAction = 'pass' | 'warn' | 'block';
+
+/**
+ * Read-only projection of the CURRENT policy decision against CURRENT evidence.
+ *
+ * Distinct from the persisted sticky `discoveryHealthGate`: this is recomputed on
+ * every `flowguard_status` from live `discoveryHealth` + `discoveryDrift` + policy
+ * so operators can see the effective gate decision a mutating tool would face,
+ * even before the next tool runs or the next /hydrate reconciles the sticky gate.
+ * It NEVER mutates state and is never persisted.
+ */
+export interface DiscoveryEvidenceGateProjection {
+  readonly action: DiscoveryEvidenceGateAction;
+  readonly code: DiscoveryHealthGateCode | null;
+  readonly reason: string | null;
+  readonly recovery: string | null;
+  readonly source: 'computed_from_current_status_projection';
+}
+
+const EVIDENCE_GATE_SOURCE = 'computed_from_current_status_projection' as const;
+
+/** Map a policy action setting to the effective action under the enforcement axis. */
+function effectiveAction(
+  setting: DiscoveryHealthPolicy['onDegraded'],
+  advisory: boolean,
+): DiscoveryEvidenceGateAction {
+  if (setting === 'allow') return 'pass';
+  if (setting === 'warn') return 'warn';
+  // `block` is downgraded to `warn` under advisory enforcement (never blocks).
+  return advisory ? 'warn' : 'block';
+}
+
+interface EvidenceSignal {
+  readonly action: DiscoveryEvidenceGateAction;
+  readonly code: DiscoveryHealthGateCode;
+  readonly reason: string;
+  readonly recovery: string;
+}
+
+export function evaluateDiscoveryEvidenceGate(
+  policy: DiscoveryHealthPolicy,
+  health: DiscoveryHealthProjection,
+  drift: DiscoveryDriftAssessment,
+): DiscoveryEvidenceGateProjection {
+  if (policy.enforcement === 'off') {
+    return {
+      action: 'pass',
+      code: null,
+      reason: null,
+      recovery: null,
+      source: EVIDENCE_GATE_SOURCE,
+    };
+  }
+  const advisory = policy.enforcement === 'advisory';
+
+  const signals: EvidenceSignal[] = [];
+
+  if (health.status === 'unavailable') {
+    signals.push({
+      action: advisory ? 'warn' : 'block',
+      code: 'DISCOVERY_HEALTH_UNAVAILABLE',
+      reason: `Discovery evidence is unavailable (${health.reason}) and policy requires healthy Discovery.`,
+      recovery: health.recovery,
+    });
+  } else if (!health.healthy && policy.onDegraded !== 'allow') {
+    const detail = degradedDetail(health);
+    signals.push({
+      action: effectiveAction(policy.onDegraded, advisory),
+      code: 'DISCOVERY_HEALTH_DEGRADED',
+      reason: `Discovery is available but degraded (${detail}); policy onDegraded=${policy.onDegraded}.`,
+      recovery:
+        'Re-run Discovery to clear degraded collectors, then /hydrate to reconcile the gate.',
+    });
+  }
+
+  if (drift !== 'clean' && policy.onDrift !== 'allow') {
+    signals.push({
+      action: effectiveAction(policy.onDrift, advisory),
+      code: 'DISCOVERY_DRIFT_BLOCKED',
+      reason: `Discovery drift verdict is ${drift}; policy onDrift=${policy.onDrift}.`,
+      recovery: 'Run /hydrate to re-baseline Discovery against the current workspace.',
+    });
+  }
+
+  // Highest severity wins; precedence (unavailable > degraded > drift) breaks ties
+  // because signals are pushed in that order and `find` keeps the first match.
+  const chosen =
+    signals.find((s) => s.action === 'block') ?? signals.find((s) => s.action === 'warn');
+  if (!chosen) {
+    return {
+      action: 'pass',
+      code: null,
+      reason: null,
+      recovery: null,
+      source: EVIDENCE_GATE_SOURCE,
+    };
+  }
+  return {
+    action: chosen.action,
+    code: chosen.code,
+    reason: chosen.reason,
+    recovery: chosen.recovery,
+    source: EVIDENCE_GATE_SOURCE,
+  };
+}

@@ -58,6 +58,7 @@ import {
 import { buildImplementationGuidance } from '../implementation-guidance.js';
 import type { DiscoveryDriftStatusProjection } from '../discovery-drift-status.js';
 import { buildDiscoveryDriftStatus } from '../discovery-drift-status.js';
+import { evaluateDiscoveryEvidenceGate } from '../discovery-health-gate.js';
 
 // ─── Projection dispatch ──────────────────────────────────────────────────────
 
@@ -378,6 +379,11 @@ function buildFullStatusResponse(input: FullStatusInput): string {
       policyMode: state.policySnapshot?.mode ?? 'unknown',
       discoveryHealth: discoveryHealth ?? null,
       discoveryHealthGate: buildDiscoveryHealthGateStatus(state),
+      discoveryEvidenceGate: evaluateDiscoveryEvidenceGate(
+        state.policySnapshot.discoveryHealth,
+        discoveryHealth ?? unavailableDiscoveryHealth('missing'),
+        discoveryDrift.status,
+      ),
       discoveryDrift,
       implementationGuidance,
       archiveStatus: state.archiveStatus ?? null,

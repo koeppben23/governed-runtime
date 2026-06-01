@@ -556,6 +556,20 @@ describe('status', () => {
       expect(typeof drift.persistedDigest).toBe('string');
     });
 
+    it('surfaces a read-only computed discoveryEvidenceGate distinct from the persisted gate', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+      const evidenceGate = result.discoveryEvidenceGate as Record<string, unknown>;
+
+      expect(evidenceGate).toBeDefined();
+      expect(evidenceGate.source).toBe('computed_from_current_status_projection');
+      // Default test policy does not enforce, so the live decision is pass.
+      expect(evidenceGate.action).toBe('pass');
+      expect(evidenceGate.code).toBeNull();
+      // It is a separate field from the persisted sticky gate.
+      expect('discoveryHealthGate' in result).toBe(true);
+    });
+
     it('distinguishes stale discovery age from actual clean drift', async () => {
       await hydrateSession();
       const { computeFingerprint } = await import('../adapters/workspace/index.js');
