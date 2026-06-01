@@ -128,20 +128,19 @@ Rules:
 }
 
 export function renderClaudeReviewerAgent(reviewType: ReviewerPromptType = 'all'): string {
+  // Claude Code subagent frontmatter uses flat allow/deny fields, not the
+  // nested OpenCode `tools: { allow, deny }` shape. An unrecognized nested
+  // `tools` value is treated as omitted, which makes the subagent INHERIT ALL
+  // tools (Bash/Write/Edit) — a fail-open review boundary. `tools` is the
+  // read-only allowlist; `disallowedTools` belt-and-suspenders denies mutation.
+  // See https://docs.claude.com/en/docs/claude-code/sub-agents (Supported
+  // frontmatter fields).
   return `\
 ---
 name: ${REVIEWER_SUBAGENT_TYPE}
 description: Independent code reviewer for FlowGuard governance
-tools:
-  allow:
-    - Read
-    - Glob
-    - Grep
-    - mcp__flowguard__flowguard_review
-  deny:
-    - Bash
-    - Write
-    - Edit
+tools: Read, Glob, Grep, mcp__flowguard__flowguard_review
+disallowedTools: Bash, Write, Edit
 ---
 
 ${renderNativeReviewerBody(reviewType)}`;
