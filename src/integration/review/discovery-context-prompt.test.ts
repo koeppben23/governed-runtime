@@ -7,7 +7,10 @@ import { describe, expect, it, vi } from 'vitest';
 
 import { unavailableDiscoveryHealth } from '../../discovery/discovery-health.js';
 import { makeState, PLAN_RECORD, TICKET } from '../../__fixtures__.js';
-import { notCheckedDiscoveryDriftStatus } from '../discovery-drift-status.js';
+import {
+  buildDiscoveryDriftStatus,
+  notCheckedDiscoveryDriftStatus,
+} from '../discovery-drift-status.js';
 import { buildImplementationGuidance } from '../implementation-guidance.js';
 import { PLAN_REVIEW_DISCOVERY_INSTRUCTION } from '../../config/profiles/content/shared.js';
 import {
@@ -301,6 +304,43 @@ describe('review prompt Discovery context loading', () => {
     expect(prompt).toContain('NOT_VERIFIED');
     expect(prompt).toContain('toolObligationId: "11111111-1111-4111-8111-111111111111"');
     expect(prompt).toContain('mandateDigest: "test-digest"');
+  });
+
+  it('content prompt renders drift timeout as discovery_drift_timeout + NOT_VERIFIED (#401)', async () => {
+    // Real runtime contract: a drift check timeout produces an explicit
+    // status: "timeout" projection with a discovery_drift_timeout warning,
+    // NOT a silent "not_checked" status. Use a check that never resolves with
+    // a 1ms bound to exercise the genuine timeout path.
+    const driftTimeout = await buildDiscoveryDriftStatus({
+      workspaceDir: '/tmp/ws',
+      worktree: '/tmp/repo',
+      fingerprint: 'fp-1',
+      timeoutMs: 1,
+      check: () => new Promise(() => {}),
+    });
+
+    expect(driftTimeout.status).toBe('timeout');
+    expect(driftTimeout.warnings[0]?.code).toBe('discovery_drift_timeout');
+
+    const prompt = buildReviewContentPrompt({
+      content: 'diff --git a/src/auth.ts b/src/auth.ts',
+      ticketText: TICKET.text,
+      obligationId: '11111111-1111-4111-8111-111111111111',
+      criteriaVersion: 'p35-v1',
+      mandateDigest: 'test-digest',
+      iteration: 0,
+      planVersion: 1,
+      discoveryContext: {
+        health: BASE_CONTEXT.health,
+        drift: driftTimeout,
+        verificationCandidates: [],
+      },
+    });
+
+    expect(prompt).toContain('## Discovery Context');
+    expect(prompt).toContain('status: timeout');
+    expect(prompt).toContain('discovery_drift_timeout');
+    expect(prompt).toContain('NOT_VERIFIED');
   });
 
   it('plan prompt with discovery context preserves attestation wording', () => {

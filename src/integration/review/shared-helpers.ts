@@ -294,7 +294,9 @@ export async function buildReviewDiscoveryContextForPipeline(
   // #401: PR/content review evaluates external diffs against the current repo, so
   // drift between local Discovery and the reviewed branch is review-relevant evidence.
   // Drift checking is bounded by DEFAULT_STATUS_DRIFT_TIMEOUT_MS and fails closed:
-  // timeout/error degrades to a not_checked drift status that renders NOT_VERIFIED.
+  // a timeout or error produces an explicit drift failure status (timeout ->
+  // discovery_drift_timeout, error -> discovery_drift_unavailable) that renders
+  // NOT_VERIFIED — never a silent pass.
   return buildReviewDiscoveryContext({
     sessionState: ctx.sessionState,
     fingerprint,

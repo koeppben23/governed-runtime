@@ -16,9 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `discoveryContext` is no longer optional), and the content/PR review pipeline
   enables a **bounded drift check** (`includeDriftCheck: true`, bounded by the
   existing status drift timeout) so reviewers see whether local Discovery is
-  drifted relative to the reviewed branch/diff. Drift checking fails closed:
-  timeout or error degrades to a `not_checked` drift status rendered as
-  `NOT_VERIFIED`, never a silent pass. The standalone `/review` command template
+  drifted relative to the reviewed branch/diff. Drift checking fails closed: a
+  timeout or error produces an explicit drift failure status (`timeout` /
+  `discovery_drift_timeout`, or `unavailable` / `discovery_drift_unavailable`)
+  rendered as `NOT_VERIFIED`, never a silent pass. The standalone `/review` command template
   now requires the agent to (1) capture compact Discovery context (health,
   drift, detected stack, repo-native `verificationCandidates`, risk surfaces)
   from `flowguard_status`, (2) pass it to the manually-spawned reviewer
