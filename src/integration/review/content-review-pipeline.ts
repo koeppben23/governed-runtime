@@ -188,7 +188,7 @@ async function enforceContentStrictGate(
   },
   prompt: string,
 ): Promise<boolean> {
-  const { deps, sessDir, reviewCtx, sessionState, output, sessionId, now } = ctx;
+  const { deps, sessDir, reviewCtx, output, sessionId, now } = ctx;
 
   const attestation = validateStrictAttestation(findings, {
     obligationId: reviewCtx.obligationId,
@@ -197,7 +197,7 @@ async function enforceContentStrictGate(
     iteration: reviewCtx.iteration,
     planVersion: reviewCtx.planVersion,
     checkReviewedBy: true,
-    checkUnableToReview: false,
+    checkUnableToReview: true,
   });
 
   if (!attestation.valid) {
@@ -208,24 +208,6 @@ async function enforceContentStrictGate(
   const promptHash = hashText(prompt);
   const findingsHash = hashFindings(reviewerResult.findings);
 
-  // Check reuse before creating evidence.
-  const currentAssurance = ensureReviewAssurance(sessionState.reviewAssurance);
-  if (hasEvidenceReuse(currentAssurance.invocations, reviewerResult.sessionId, findingsHash)) {
-    await deps.updateReviewAssurance(sessDir, (s) =>
-      updateObligation(s, reviewCtx.obligationId, (item) => ({
-        ...item,
-        status: 'blocked',
-        blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
-      })),
-    );
-    output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
-      obligationId: reviewCtx.obligationId,
-      reason: 'subagent findings already used for a prior obligation',
-    });
-    return true;
-  }
-
-  // Atomically fulfill the obligation and append invocation evidence.
   const invocation = buildInvocationEvidence({
     obligationId: reviewCtx.obligationId,
     obligationType: 'review',
@@ -244,7 +226,22 @@ async function enforceContentStrictGate(
     extractionMethod: reviewerResult.extractionMethod,
     modelCapabilityError: reviewerResult.modelCapabilityError,
   });
+
+  // Atomically check evidence reuse AND record invocation in a single
+  // updateReviewAssurance transaction. Reading the freshest assurance state
+  // (`s`) inside the mutation closure closes the TOCTOU window between a
+  // stale in-memory reuse check and a later append.
+  let reused = false;
   await deps.updateReviewAssurance(sessDir, (s) => {
+    const assurance = ensureReviewAssurance(s.reviewAssurance);
+    if (hasEvidenceReuse(assurance.invocations, reviewerResult.sessionId, findingsHash)) {
+      reused = true;
+      return updateObligation(s, reviewCtx.obligationId, (item) => ({
+        ...item,
+        status: 'blocked',
+        blockedCode: 'SUBAGENT_EVIDENCE_REUSED',
+      }));
+    }
     const updated = updateObligation(s, reviewCtx.obligationId, (item) => ({
       ...item,
       pluginHandshakeAt: now,
@@ -260,6 +257,14 @@ async function enforceContentStrictGate(
       ),
     };
   });
+
+  if (reused) {
+    output.output = strictBlockedOutput('SUBAGENT_EVIDENCE_REUSED', {
+      obligationId: reviewCtx.obligationId,
+      reason: 'subagent findings already used for a prior obligation',
+    });
+    return true;
+  }
 
   return false;
 }

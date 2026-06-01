@@ -120,6 +120,7 @@ function buildSessionState(
   strictEnforcement = true,
   reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
   reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
+  seedInvocations: Array<Record<string, unknown>> = [],
 ) {
   return makeState('REVIEW', {
     ticket: {
@@ -156,7 +157,7 @@ function buildSessionState(
           consumedAt: null,
         },
       ],
-      invocations: [],
+      invocations: seedInvocations,
     },
   });
 }
@@ -211,12 +212,18 @@ async function runReviewContent(
   reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
   clientOverride?: unknown,
   reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
+  seedInvocations: Array<Record<string, unknown>> = [],
 ) {
   const client = (clientOverride ?? buildClient(findings)) as
     | ReturnType<typeof buildClient>
     | ReturnType<typeof buildTextCompatClient>;
   const stateRef = {
-    current: buildSessionState(strictEnforcement, reviewOutputPolicy, reviewInvocationPolicy),
+    current: buildSessionState(
+      strictEnforcement,
+      reviewOutputPolicy,
+      reviewInvocationPolicy,
+      seedInvocations,
+    ),
   };
   vi.mocked(readState).mockResolvedValue(stateRef.current);
   const { deps, blockReviewOutcome, updateReviewAssurance } = buildDeps(client, stateRef);
@@ -326,6 +333,33 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       error: true,
       code: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
     });
+  });
+
+  it('blocks with SUBAGENT_UNABLE_TO_REVIEW when strict /review reviewer declares content unreviewable', async () => {
+    // Item 1: the content pipeline MUST fail closed on the third LoopVerdict,
+    // symmetric with plan/implement/architecture. A reviewer that returns
+    // overallVerdict='unable_to_review' must NOT let /review complete.
+    const findings = buildFindings({
+      overallVerdict: 'unable_to_review',
+      blockingIssues: [],
+      majorRisks: [],
+    });
+
+    const { output, blockReviewOutcome, state } = await runReviewContent(findings);
+
+    expect(blockReviewOutcome).toHaveBeenCalledWith(
+      expect.anything(),
+      OBLIGATION_ID,
+      'SUBAGENT_UNABLE_TO_REVIEW',
+      { obligationId: OBLIGATION_ID },
+      output,
+    );
+    expect(JSON.parse(output.output)).toMatchObject({
+      error: true,
+      code: 'SUBAGENT_UNABLE_TO_REVIEW',
+    });
+    // Obligation must NOT be fulfilled when the reviewer is unable to review.
+    expect(state.reviewAssurance?.obligations[0]?.status).not.toBe('fulfilled');
   });
 
   it('injects pluginReviewFindings and records evidence when strict /review attestation is valid', async () => {
@@ -460,5 +494,42 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(parsed.pluginReviewFindings).toMatchObject({
       attestation: { mandateDigest: 'wrong-digest-value' },
     });
+  });
+
+  it('blocks with SUBAGENT_EVIDENCE_REUSED when subagent findings were already used (atomic reuse check)', async () => {
+    // Item 4: the reuse check and evidence append happen in a single
+    // updateReviewAssurance transaction. A pre-existing invocation that shares
+    // the reviewer child session must block reuse and must NOT fulfil the
+    // obligation.
+    const { output, blockReviewOutcome, state } = await runReviewContent(
+      buildFindings(),
+      { args: { text: 'diff content', inputOrigin: 'manual_text' } },
+      true,
+      'structured_required',
+      undefined,
+      undefined,
+      [
+        {
+          invocationId: 'prior-invocation-1',
+          obligationId: 'prior-obligation-1',
+          obligationType: 'review',
+          childSessionId: CHILD_SESSION_ID,
+          findingsHash: 'prior-findings-hash',
+          source: 'host-orchestrated',
+          consumedByObligationId: null,
+        },
+      ],
+    );
+
+    expect(blockReviewOutcome).not.toHaveBeenCalled();
+    expect(JSON.parse(output.output)).toMatchObject({
+      error: true,
+      code: 'SUBAGENT_EVIDENCE_REUSED',
+    });
+    const obligation = state.reviewAssurance?.obligations[0];
+    expect(obligation?.status).toBe('blocked');
+    expect(obligation?.blockedCode).toBe('SUBAGENT_EVIDENCE_REUSED');
+    // No new invocation may be appended on the reuse path.
+    expect(state.reviewAssurance?.invocations).toHaveLength(1);
   });
 });

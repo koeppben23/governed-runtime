@@ -31,7 +31,7 @@ export interface PlanReviewPromptOpts {
   readonly mandateDigest: string;
   readonly profileName?: string;
   readonly profileRules?: string;
-  readonly discoveryContext?: DiscoveryReviewContext;
+  readonly discoveryContext: DiscoveryReviewContext;
 }
 
 /** Options for building an implementation review prompt. */
@@ -46,7 +46,7 @@ export interface ImplReviewPromptOpts {
   readonly mandateDigest: string;
   readonly profileName?: string;
   readonly profileRules?: string;
-  readonly discoveryContext?: DiscoveryReviewContext;
+  readonly discoveryContext: DiscoveryReviewContext;
 }
 
 /** Options for building an architecture (ADR) review prompt. F13 slice 6. */
@@ -61,7 +61,7 @@ export interface ArchitectureReviewPromptOpts {
   readonly mandateDigest: string;
   readonly profileName?: string;
   readonly profileRules?: string;
-  readonly discoveryContext?: DiscoveryReviewContext;
+  readonly discoveryContext: DiscoveryReviewContext;
 }
 
 // ─── Internal Helpers ────────────────────────────────────────────────────────

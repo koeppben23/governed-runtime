@@ -962,6 +962,30 @@ describe('review (standalone flow)', () => {
         expect(invocations[0].childSessionId).toBe('flowguard-reviewer-session-123');
       });
 
+      it('H4b: submit path fails closed with SUBAGENT_REVIEW_NOT_INVOKED on unable_to_review verdict', async () => {
+        // Item 1 defense-in-depth: even if a reviewer returns a well-attested
+        // findings object whose verdict is the third LoopVerdict, the standalone
+        // /review submit path MUST reject it and MUST NOT record passing evidence.
+        const uuid = await obtainObligationUuid({ prNumber: 91, inputOrigin: 'pr' });
+        const findings = {
+          ...buildAnalysisFindings('approve', uuid),
+          overallVerdict: 'unable_to_review',
+        };
+        const raw = await review.execute(
+          { prNumber: 91, reviewFindings: findings as never, inputOrigin: 'pr' },
+          ctx,
+        );
+        const result = parseToolResult(raw);
+        expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
+
+        const { computeFingerprint, sessionDir: resolveSessionDir } =
+          await import('../adapters/workspace/index.js');
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const state = await readState(sessDir);
+        expect(state.reviewAssurance?.invocations ?? []).toHaveLength(0);
+      });
+
       it('H5: obligation is consumed after successful /review', async () => {
         const uuid = await obtainObligationUuid({ prNumber: 43, inputOrigin: 'pr' });
         const findings = buildAnalysisFindings('approve', uuid);

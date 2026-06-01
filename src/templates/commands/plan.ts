@@ -1,5 +1,9 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
-import { SHARED_REVIEW_LOOP } from './shared-review-loop.js';
+import {
+  SHARED_REVIEW_LOOP,
+  DISCOVERY_REVIEW_CAPTURE,
+  DISCOVERY_REVIEW_DONE_WHEN,
+} from './shared-review-loop.js';
 
 export const PLAN_COMMAND = `
 ---
@@ -21,6 +25,7 @@ Generate a comprehensive implementation plan for the current ticket, then obtain
    - If no session: call \`flowguard_hydrate\` first.
    - If no ticket: tell the user to run /ticket first and stop.
    - If phase does not allow /plan: report the current phase and stop.
+${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 2: Generate Plan
 
@@ -94,6 +99,7 @@ ${GOVERNANCE_RULES}
 - Plan contains all 7 required sections.
 - Verification Plan cites Source for each check OR states NOT_VERIFIED.
 - Independent review loop has converged (approved or max 3 iterations).
+${DISCOVERY_REVIEW_DONE_WHEN}
 - If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
 - Phase has advanced to PLAN_REVIEW.
 - Response ends with \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`

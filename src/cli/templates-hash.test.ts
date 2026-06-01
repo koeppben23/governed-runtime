@@ -80,9 +80,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // mandates Governance rules section, affecting all command templates.
     // Refreshed for #401: /review template now requires Discovery context
     // (health/drift) and NOT_VERIFIED correlation for PR/content review.
+    // Refreshed for Item 2: plan/implement/architecture review templates now
+    // capture Discovery context, pass it to the reviewer subagent, and require
+    // NOT_VERIFIED correlation (parity with /review). Changes the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'acec0e71a1e3ecfa026b779e3fb39ec7ef29949437fc676c818148f6fe9eab8a',
+      '50dc4ea66b241fa74ef4f55db49b584ee2b621ae587d8514cf583d08dc4329e7',
     );
   });
 
