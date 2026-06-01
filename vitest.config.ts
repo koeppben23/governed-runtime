@@ -41,6 +41,7 @@ export default defineConfig({
             'src/**/*.fuzz.test.ts',
             'src/mcp-server/mcp-protocol.test.ts',
             'src/cli/install-verify.test.ts',
+            'src/cli/claude-plugin-load.test.ts',
             'src/cli/cli-contract-smoke.test.ts',
             'src/cli/run-acp-smoke.test.ts',
           ],
@@ -100,6 +101,7 @@ export default defineConfig({
           name: 'smoke',
           include: [
             'src/cli/install-verify.test.ts',
+            'src/cli/claude-plugin-load.test.ts',
             'src/cli/cli-contract-smoke.test.ts',
             'src/cli/run-acp-smoke.test.ts',
             'src/cli/inspect-command.test.ts',
