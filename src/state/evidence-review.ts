@@ -169,8 +169,14 @@ export const ReviewInvocationEvidence = z
     parentSessionId: z.string().min(1),
     childSessionId: z.string().min(1),
     agentType: z.literal(REVIEWER_SUBAGENT_TYPE),
-    /** How the reviewer was invoked: host-visible Task tool, SDK, or manual attested. */
-    invocationMode: z.enum(['host_subagent_task', 'sdk_session_prompt', 'manual_attested']),
+    /** How the reviewer was invoked: host-visible Task tool, SDK, manual attested, or
+     *  manual attested corroborated by a FlowGuard-captured host hook (native_subagent_attested). */
+    invocationMode: z.enum([
+      'host_subagent_task',
+      'sdk_session_prompt',
+      'manual_attested',
+      'native_subagent_attested',
+    ]),
     /** Whether this invocation produced a host-visible child session in the OpenCode GUI. */
     hostVisible: z.boolean(),
     promptHash: z.string().min(1),
@@ -200,6 +206,13 @@ export const ReviewInvocationEvidence = z
     extractionMethod: z.enum(['direct_json', 'json_fence', 'outermost_braces']).optional(),
     /** Original model capability error that caused text compatibility mode. */
     modelCapabilityError: z.string().optional(),
+    /** Host-captured corroboration (native_subagent_attested only).
+     *  Populated from a FlowGuard hook (SubagentStop / PostToolUse) that fired inside the
+     *  reviewer subagent. These fields are the independent host witness that the review tool
+     *  was invoked from within a genuine `flowguard-reviewer` subagent, not the main thread. */
+    hostCapturedAgentId: z.string().min(1).optional(),
+    hostCapturedAgentType: z.literal(REVIEWER_SUBAGENT_TYPE).optional(),
+    hostCaptureSource: z.enum(['subagent_stop_hook', 'post_tool_use_hook']).optional(),
   })
   .readonly();
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
