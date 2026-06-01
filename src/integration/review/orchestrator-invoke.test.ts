@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   _resetAgentResolutionCache,
-  _resetModelCapabilityCache,
   REVIEWER_AGENT_PRIMARY,
   REVIEWER_AGENT_FALLBACK,
   REVIEWER_SYSTEM_DIRECTIVE,
@@ -20,7 +19,6 @@ import {
 describe('invokeReviewer — agent resolution integration', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();
-    _resetModelCapabilityCache();
   });
 
   // ─── HAPPY: Primary path ───────────────────────────────────────────────────
@@ -337,7 +335,6 @@ describe('invokeReviewer — agent resolution integration', () => {
       const client1 = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
       await invokeReviewer(client1, PROMPT, 'p1', { _sleepFn: NO_SLEEP });
       _resetAgentResolutionCache();
-      _resetModelCapabilityCache();
 
       // Fallback path
       const client2 = makeClient({ agents: [] });
@@ -762,7 +759,6 @@ describe('invokeReviewer — agent resolution integration', () => {
   describe('NON-RETRYABLE — isRetryable === false early exit', () => {
     beforeEach(() => {
       _resetAgentResolutionCache();
-      _resetModelCapabilityCache();
     });
 
     it('T1: returns null immediately when promptResult.error.isRetryable === false', async () => {
@@ -896,7 +892,6 @@ describe('invokeReviewer — agent resolution integration', () => {
   describe('MODEL CAPABILITY — model_capability_incompatible fail-closed', () => {
     beforeEach(() => {
       _resetAgentResolutionCache();
-      _resetModelCapabilityCache();
     });
 
     it('T5: returns null with model_capability_incompatible when tool_choice not supported', async () => {
@@ -1024,7 +1019,6 @@ describe('invokeReviewer — agent resolution integration', () => {
 
       for (const pattern of patterns) {
         _resetAgentResolutionCache();
-        _resetModelCapabilityCache();
         const diagnostics: Array<Record<string, unknown>> = [];
         const client = makeClient({
           agents: [{ id: 'flowguard-reviewer' }],

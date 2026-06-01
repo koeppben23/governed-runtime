@@ -148,7 +148,6 @@ export {
   REVIEWER_SYSTEM_DIRECTIVE,
   resolveReviewerAgent,
   _resetAgentResolutionCache,
-  _getModelCapabilityCache,
 } from './agent-resolution.js';
 
 // ─── Evidence Binding ────────────────────────────────────────────────────────

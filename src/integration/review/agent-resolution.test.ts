@@ -5,8 +5,6 @@ import { fileURLToPath } from 'node:url';
 import {
   resolveReviewerAgent,
   _resetAgentResolutionCache,
-  _resetModelCapabilityCache,
-  _getModelCapabilityCache,
   REVIEWER_AGENT_PRIMARY,
   REVIEWER_AGENT_FALLBACK,
   REVIEWER_SYSTEM_DIRECTIVE,
@@ -44,7 +42,6 @@ describe('Agent Resolution Constants', () => {
 describe('resolveReviewerAgent', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();
-    _resetModelCapabilityCache();
   });
 
   // ─── HAPPY ──────────────────────────────────────────────────────────────────
@@ -209,33 +206,9 @@ describe('resolveReviewerAgent', () => {
 // extractJsonFromText
 // ═══════════════════════════════════════════════════════════════════════════════
 
-describe('Model Capability Cache — removed global state guard', () => {
+describe('invokeReviewer — retry session behavior', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();
-    _resetModelCapabilityCache();
-  });
-
-  it('keeps model capability unknown across successful and incompatible invocations', async () => {
-    const structuredClient = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
-    await invokeReviewer(structuredClient, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-    expect(_getModelCapabilityCache()).toBe('unknown');
-
-    const incompatibleClient = makeClient({
-      agents: [{ id: 'flowguard-reviewer' }],
-      promptResult: {
-        data: {
-          parts: [],
-          info: { error: { name: 'APIError', message: 'does not support this tool_choice' } },
-        },
-        error: undefined,
-      },
-    });
-    await invokeReviewer(incompatibleClient, PROMPT, 'parent-1', {
-      maxRetries: 0,
-      _sleepFn: NO_SLEEP,
-      _onAttemptFailed: () => {},
-    });
-    expect(_getModelCapabilityCache()).toBe('unknown');
   });
 
   // ─── CORNER: New session for retry ────────────────────────────────────────

@@ -34,11 +34,13 @@ import {
   resolveOpencodeConfigPath,
   parseJsonc,
   buildReviewerAgentContent,
+  reviewerDefinitionForPlatform,
   createMalformedJsonBackup,
   FLOWGUARD_REVIEWER_MODEL_ENV,
+  FLOWGUARD_REVIEWER_EFFORT_ENV,
   verifyTarballChecksum,
 } from './install-helpers.js';
-import { REVIEWER_AGENT } from './templates.js';
+import { REVIEWER_AGENT, CLAUDE_REVIEWER_AGENT, CODEX_REVIEWER_SUBAGENT } from './templates.js';
 import { hashFile } from '../shared/hashing.js';
 
 describe('install-helpers', () => {
@@ -968,6 +970,154 @@ describe('buildReviewerAgentContent', () => {
     const modelLine = lines.findIndex((l) => l === 'model: opencode/big-pickle');
     expect(modelLine).toBeGreaterThan(0);
     expect(modelLine).toBeLessThan(closingDashIndex);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// buildReviewerAgentContent — per-host effort injection + governance invariance
+// (F4: capability-adaptive operative transport)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('buildReviewerAgentContent — per-host reasoning-effort injection', () => {
+  let restoreEnv: (() => void) | undefined;
+
+  afterEach(() => {
+    restoreEnv?.();
+    restoreEnv = undefined;
+  });
+
+  // Returns the lines inside the leading --- frontmatter block.
+  function frontmatterLines(content: string): string[] {
+    const lines = content.split('\n');
+    expect(lines[0]).toBe('---');
+    const close = lines.indexOf('---', 1);
+    expect(close).toBeGreaterThan(1);
+    return lines.slice(1, close);
+  }
+
+  // Everything after the closing --- of the frontmatter (the governance body).
+  function bodyAfterFrontmatter(content: string): string {
+    const close = content.indexOf('\n---', content.indexOf('\n') + 1);
+    expect(close).toBeGreaterThan(0);
+    return content.slice(close);
+  }
+
+  // ─── HAPPY: opencode uses reasoningEffort passthrough key ─────────────────────
+
+  it('F4-1: opencode injects reasoningEffort: from FLOWGUARD_REVIEWER_EFFORT', () => {
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: 'high' });
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
+    expect(frontmatterLines(result)).toContain('reasoningEffort: high');
+    expect(result).not.toContain('effort: high');
+  });
+
+  it('F4-2: opencode default platform also uses reasoningEffort', () => {
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: 'medium' });
+    const result = buildReviewerAgentContent(REVIEWER_AGENT);
+    expect(frontmatterLines(result)).toContain('reasoningEffort: medium');
+  });
+
+  // ─── HAPPY: claude-code uses effort key ───────────────────────────────────────
+
+  it('F4-3: claude-code injects effort: from FLOWGUARD_REVIEWER_EFFORT', () => {
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: 'xhigh' });
+    const result = buildReviewerAgentContent(CLAUDE_REVIEWER_AGENT, 'claude-code');
+    expect(frontmatterLines(result)).toContain('effort: xhigh');
+    expect(result).not.toContain('reasoningEffort:');
+  });
+
+  it('F4-4: claude-code injects both model: and effort: together', () => {
+    restoreEnv = withTestEnv({
+      [FLOWGUARD_REVIEWER_MODEL_ENV]: 'claude-opus-4-8',
+      [FLOWGUARD_REVIEWER_EFFORT_ENV]: 'high',
+    });
+    const result = buildReviewerAgentContent(CLAUDE_REVIEWER_AGENT, 'claude-code');
+    const fm = frontmatterLines(result);
+    expect(fm).toContain('model: claude-opus-4-8');
+    expect(fm).toContain('effort: high');
+  });
+
+  // ─── BAD: invalid effort fails closed ─────────────────────────────────────────
+
+  it('F4-5: throws on uppercase/invalid effort (fail-closed, no silent drop)', () => {
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: 'HIGH' });
+    expect(() => buildReviewerAgentContent(REVIEWER_AGENT, 'opencode')).toThrow(/invalid value/);
+  });
+
+  it('F4-6: throws on effort with digits/symbols (YAML injection guard)', () => {
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: 'high\ninjected: true' });
+    expect(() => buildReviewerAgentContent(REVIEWER_AGENT, 'opencode')).toThrow(/invalid value/);
+  });
+
+  it('F4-7: empty/whitespace effort leaves template unchanged', () => {
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: '   ' });
+    const result = buildReviewerAgentContent(REVIEWER_AGENT, 'opencode');
+    expect(result).toBe(REVIEWER_AGENT);
+  });
+
+  // ─── GOVERNANCE INVARIANCE: tuning never alters the mandate body ──────────────
+
+  it('F4-8: governance body is byte-identical regardless of model/effort env', () => {
+    const baseline = bodyAfterFrontmatter(buildReviewerAgentContent(REVIEWER_AGENT, 'opencode'));
+    restoreEnv = withTestEnv({
+      [FLOWGUARD_REVIEWER_MODEL_ENV]: 'opencode/big-pickle',
+      [FLOWGUARD_REVIEWER_EFFORT_ENV]: 'high',
+    });
+    const tuned = bodyAfterFrontmatter(buildReviewerAgentContent(REVIEWER_AGENT, 'opencode'));
+    expect(tuned).toBe(baseline);
+  });
+
+  // ─── SMOKE ────────────────────────────────────────────────────────────────────
+
+  it('F4-9: effort env constant matches expected name', () => {
+    expect(FLOWGUARD_REVIEWER_EFFORT_ENV).toBe('FLOWGUARD_REVIEWER_EFFORT');
+  });
+});
+
+describe('reviewerDefinitionForPlatform — Codex fails closed on unsupported tuning', () => {
+  let restoreEnv: (() => void) | undefined;
+
+  afterEach(() => {
+    restoreEnv?.();
+    restoreEnv = undefined;
+  });
+
+  it('F4-10: codex emits static subagent (no model/effort directive) when env unset', () => {
+    restoreEnv = withTestEnv({
+      [FLOWGUARD_REVIEWER_MODEL_ENV]: undefined,
+      [FLOWGUARD_REVIEWER_EFFORT_ENV]: undefined,
+    });
+    const def = reviewerDefinitionForPlatform('codex');
+    expect(def.content).toBe(CODEX_REVIEWER_SUBAGENT);
+    expect(def.content).not.toMatch(/^model:/m);
+    expect(def.content).not.toMatch(/^effort:/m);
+    expect(def.content).not.toMatch(/^reasoningEffort:/m);
+  });
+
+  it('F4-11: codex throws when FLOWGUARD_REVIEWER_MODEL is set (no silent drop)', () => {
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_MODEL_ENV]: 'gpt-5.5' });
+    expect(() => reviewerDefinitionForPlatform('codex')).toThrow(
+      /not supported for platform "codex"/,
+    );
+  });
+
+  it('F4-12: codex throws when FLOWGUARD_REVIEWER_EFFORT is set', () => {
+    restoreEnv = withTestEnv({ [FLOWGUARD_REVIEWER_EFFORT_ENV]: 'high' });
+    expect(() => reviewerDefinitionForPlatform('codex')).toThrow(
+      /not supported for platform "codex"/,
+    );
+  });
+
+  it('F4-13: opencode + claude-code definitions still build with tuning set', () => {
+    restoreEnv = withTestEnv({
+      [FLOWGUARD_REVIEWER_MODEL_ENV]: 'anthropic/claude-opus-4-8',
+      [FLOWGUARD_REVIEWER_EFFORT_ENV]: 'high',
+    });
+    const oc = reviewerDefinitionForPlatform('opencode');
+    expect(oc.content).toContain('reasoningEffort: high');
+    const cc = reviewerDefinitionForPlatform('claude-code');
+    expect(cc.content).toContain('effort: high');
+    expect(cc.content).toContain('model: anthropic/claude-opus-4-8');
   });
 });
 

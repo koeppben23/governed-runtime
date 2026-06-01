@@ -88,13 +88,3 @@ export async function resolveReviewerAgent(client: OrchestratorClient): Promise<
 export function _resetAgentResolutionCache(): void {
   cachedResolvedAgent = null;
 }
-
-/** @internal No-op retained for tests; model capability is no longer cached globally. */
-export function _resetModelCapabilityCache(): void {
-  // Capability depends on provider/model/agent and is intentionally not cached globally.
-}
-
-/** @internal Always unknown; model capability is evaluated per invocation. */
-export function _getModelCapabilityCache(): 'unknown' | 'supported' | 'unsupported' {
-  return 'unknown';
-}

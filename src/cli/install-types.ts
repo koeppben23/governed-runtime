@@ -119,4 +119,22 @@ export function hasNonFlowGuardInstructions(instructions: string[]): boolean {
 export const FLOWGUARD_REVIEWER_MODEL_ENV = 'FLOWGUARD_REVIEWER_MODEL';
 export const VALID_MODEL_ID_PATTERN = /^[A-Za-z0-9._/@:-]+$/;
 
+/**
+ * Operator-controlled reviewer reasoning-effort override.
+ *
+ * Capability-based, NOT model-name-based: the operator sets a strength level
+ * appropriate to the reviewer model they configured. FlowGuard never derives
+ * this from a model registry — governance ceremony stays model-invariant; only
+ * the operative reviewer transport adapts.
+ */
+export const FLOWGUARD_REVIEWER_EFFORT_ENV = 'FLOWGUARD_REVIEWER_EFFORT';
+
+/**
+ * Strict allow-pattern for reviewer effort values. Lowercase alphabetic only
+ * (e.g. low, medium, high, xhigh, max). Deliberately model-agnostic — it accepts
+ * future levels without a hardcoded enum — while blocking whitespace, colons,
+ * and newlines to prevent YAML injection into reviewer-agent frontmatter.
+ */
+export const VALID_EFFORT_PATTERN = /^[a-z]+$/;
+
 export const OPENCODE_CONFIG_FILENAMES = ['opencode.jsonc', 'opencode.json'] as const;
