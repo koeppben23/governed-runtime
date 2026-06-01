@@ -362,6 +362,7 @@ describe('P9c — profile rule non-leakage', () => {
       planVersion: 1,
       profileName: 'backend-java',
       profileRules: 'review-rule-789',
+      discoveryContext: {},
     });
     expect(prompt).toContain('review-rule-789');
     expect(prompt).not.toContain('plan-rule-123');

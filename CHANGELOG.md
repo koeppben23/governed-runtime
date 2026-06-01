@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #401:** Require Discovery context in standalone PR and content
+  `/review` so external diffs are evaluated against repository-native stack,
+  verification, health, and drift evidence. The content-review prompt now treats
+  Discovery context as a **required** input (`buildReviewContentPrompt`'s
+  `discoveryContext` is no longer optional), and the content/PR review pipeline
+  enables a **bounded drift check** (`includeDriftCheck: true`, bounded by the
+  existing status drift timeout) so reviewers see whether local Discovery is
+  drifted relative to the reviewed branch/diff. Drift checking fails closed:
+  timeout or error degrades to a `not_checked` drift status rendered as
+  `NOT_VERIFIED`, never a silent pass. The standalone `/review` command template
+  now requires the agent to (1) capture compact Discovery context (health,
+  drift, detected stack, repo-native `verificationCandidates`, risk surfaces)
+  from `flowguard_status`, (2) pass it to the manually-spawned reviewer
+  subagent, (3) check Discovery health and drift **before** any repo-dependent
+  quality claim, (4) flag generic verification suggestions when repo-native
+  candidates exist, and (5) mark Discovery-dependent claims `NOT_VERIFIED` when
+  the PR/diff content cannot be correlated to local repository Discovery (e.g.
+  the diff references files absent from the Discovery snapshot, or local
+  Discovery is drifted). Clean Code: the existing shared Discovery
+  review-context builder is reused; no separate PR-only Discovery authority is
+  introduced. Existing invariants are preserved — `/review` findings remain
+  structured and obligation-bound, external-reference provenance (`inputOrigin`,
+  `references`) and ReviewFindings attestation binding are unchanged, and
+  Discovery context remains advisory review **evidence**, not review verdict
+  authority.
+
 - **Issue #400:** Added policy-gated, fail-closed validation-evidence
   enforcement that prevents the `VALIDATION` phase from passing **vacuously**
   when no Discovery-derived verification commands exist (empty `activeChecks`).

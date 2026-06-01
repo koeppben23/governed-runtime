@@ -17,6 +17,14 @@ Start the compliance review flow for the current FlowGuard session.
 
 1. Call \`flowguard_status\` to verify a session exists in READY phase.
     - If not in READY: report the current phase and stop.
+    - Capture the compact Discovery context from the status response: Discovery
+      \`health\`, \`drift\`, \`detectedStack\`, repo-native \`verificationCandidates\`,
+      and risk surfaces. This is REQUIRED review evidence for repo-dependent claims.
+    - Discovery context is advisory falsification evidence, NOT review verdict
+      authority: ReviewFindings, obligation binding, mandate digest, and attestation
+      remain the review authority.
+    - If Discovery is unavailable, degraded, drifted, timed out, or not checked, mark
+      every Discovery-dependent claim \`NOT_VERIFIED\`; do not invent repository truth.
 
 2. **External Reference Resolution** (PR URLs, branches, commits, URLs, manual text):
     If the user provides a reference:
@@ -38,6 +46,15 @@ Start the compliance review flow for the current FlowGuard session.
     via Task tool:
     - Use \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`
     - Pass the loaded content and \`requiredReviewAttestation\` values in the prompt
+    - Pass the compact Discovery context captured in step 1 (health, drift,
+      detectedStack, verificationCandidates, risk surfaces). This is REQUIRED so the
+      external diff is reviewed against repo-native stack/verification/health/drift.
+    - Instruct the subagent to: check Discovery health and drift BEFORE making any
+      repo-dependent quality claim; correlate the reviewed PR/diff files against the
+      local Discovery snapshot; mark any claim \`NOT_VERIFIED\` when the content
+      cannot be correlated to local repository Discovery (e.g. the diff references
+      files absent from the Discovery snapshot, or local Discovery is drifted relative
+      to the reviewed branch).
     - Instruct the subagent to return a complete \`ReviewFindings\` JSON object
     - Parse the response as \`ReviewFindings\` object — preserve all fields
     - Set \`attestation.toolObligationId\` to the value from \`requiredReviewAttestation\`
@@ -74,11 +91,15 @@ Start the compliance review flow for the current FlowGuard session.
 ## Verification Review Check
 
 When reviewing evidence, verify:
+- Was Discovery health checked, and was drift checked, before repo-dependent quality claims?
 - Were verificationCandidates from flowguard_status used when available?
 - Were generic commands suggested despite specific repo-native candidates existing?
 - Are executed checks distinguished from planned checks?
 - Are unexecuted checks marked NOT_VERIFIED?
+- Are Discovery-dependent claims marked NOT_VERIFIED when the content could not be
+  correlated to local repository Discovery (missing files, drift, unavailable Discovery)?
 If generic commands are suggested despite specific candidates existing, flag this as a defect.
+If repo-dependent claims are made without checking Discovery health/drift, flag this as a defect.
 
 ## ExternalReference Format
 
@@ -100,6 +121,8 @@ ${GOVERNANCE_RULES}
 - Compliance report generated and presented.
 - If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
 - External references captured with audit provenance.
+- Discovery health and drift checked before repo-dependent quality claims.
+- Discovery-dependent claims marked NOT_VERIFIED when content could not be correlated to local Discovery.
 - Verification review checked for repo-native candidates vs generic mismatches.
 - Phase has reached REVIEW_COMPLETE.
 - Response ends with a \`Next action:\` line.

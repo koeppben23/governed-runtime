@@ -278,7 +278,7 @@ describe('review prompt Discovery context loading', () => {
     expect(prompt).toContain('Set attestation.mandateDigest=test-digest.');
   });
 
-  it('content prompt without discovery context omits Discovery Context but preserves attestation', () => {
+  it('content prompt with unavailable discovery renders Discovery Context as NOT_VERIFIED (#401)', () => {
     const prompt = buildReviewContentPrompt({
       content: 'diff --git a/src/auth.ts b/src/auth.ts',
       ticketText: TICKET.text,
@@ -287,9 +287,18 @@ describe('review prompt Discovery context loading', () => {
       mandateDigest: 'test-digest',
       iteration: 0,
       planVersion: 1,
+      discoveryContext: {
+        health: unavailableDiscoveryHealth('corrupt'),
+        drift: notCheckedDiscoveryDriftStatus('Discovery drift was not checked.'),
+        verificationCandidates: [],
+      },
     });
 
-    expect(prompt).not.toContain('## Discovery Context');
+    // #401: Discovery context is REQUIRED; the section must render even when degraded,
+    // and Discovery-dependent claims must be marked NOT_VERIFIED rather than omitted.
+    expect(prompt).toContain('## Discovery Context');
+    expect(prompt).toContain('status: unavailable');
+    expect(prompt).toContain('NOT_VERIFIED');
     expect(prompt).toContain('toolObligationId: "11111111-1111-4111-8111-111111111111"');
     expect(prompt).toContain('mandateDigest: "test-digest"');
   });
