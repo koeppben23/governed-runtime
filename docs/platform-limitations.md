@@ -14,6 +14,7 @@ This document enumerates each gap with its impact assessment, mitigation strateg
 | 4   | Subagent Orchestration Has No OpenCode-Equivalent Plugin Handshake | MEDIUM | MEDIUM                         | Claude Code, Codex |
 | 5   | Compaction Context Is Hook-Gated                                   | LOW    | LOW                            | Codex              |
 | 6   | Codex Cloud Sandbox Deployment                                     | LOW    | LOW                            | Codex Cloud        |
+| 7   | Slash Commands Are Not a Distinct, Plugin-Shareable Surface        | LOW    | LOW                            | Claude Code, Codex |
 
 ## Enforcement Levels
 
@@ -187,6 +188,40 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 **Code reference**: `scripts/codex-cloud-setup.sh`
 
 **Residual Risk**: LOW — Standard Codex cloud deployment pattern. Requires Node.js >= 20 (available in Codex containers).
+
+---
+
+## Gap 7: Slash Commands Are Not a Distinct, Plugin-Shareable Surface
+
+**Impact**: LOW
+
+**Description**: FlowGuard exposes governed actions as `/<name>` slash commands on
+OpenCode through the plugin SDK (`.opencode/command/*.md`). Out-of-process hosts do
+not provide an equivalent _distinct_ command surface:
+
+- **Claude Code**: plugin commands and skills load into a **single flat
+  namespace**. A plugin `commands/foo.md` and a `skills/foo/SKILL.md` both surface
+  as `/foo` (and collide if both define the same name); there is **no**
+  `/flowguard:<name>` command namespace and no separate "Commands" category.
+  Verified against `claude` 2.1.159 via the auth-free `plugin details` inventory,
+  which reports a single "Skills" category only.
+- **Codex**: custom prompts are deprecated, resolved only from the user home
+  directory (`~/.codex/prompts`), and cannot be distributed inside a plugin. (Per
+  Codex documentation; `NOT_VERIFIED` at runtime — no Codex CLI was available to
+  confirm.)
+
+**Behavior**: FlowGuard ships a small set of thin, MCP-routing **skills** on
+Claude Code and Codex rather than bundling the OpenCode command bodies (which are
+authored for OpenCode's `agent: build` pipeline and carry a high always-on token
+cost). Governance authority is unchanged — it remains in the MCP tools, hooks,
+state, policy, and validated review evidence.
+
+**Code reference**: `src/templates/claude-code-plugin.ts` (skills + MCP, no
+bundled `commands/`), `src/templates/codex-plugin.ts` (no `commands/` entries).
+
+**Residual Risk**: LOW — only the slash-command ergonomics differ across hosts.
+The governed workflow remains reachable through FlowGuard skills and MCP tools; no
+governed capability is lost.
 
 ---
 
