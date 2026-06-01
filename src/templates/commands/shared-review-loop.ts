@@ -7,6 +7,30 @@
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
+/**
+ * Phase 1 Discovery-context capture instruction, shared across the plan,
+ * implement, and architecture review templates (parity with /review). Discovery
+ * is advisory falsification evidence, NEVER review verdict authority.
+ *
+ * Rendered as 3-space-indented sub-bullets to match the existing Phase 1
+ * `flowguard_status` step in each template.
+ */
+export const DISCOVERY_REVIEW_CAPTURE = `   - Capture the compact Discovery context from the status response: Discovery
+     \`health\`, \`drift\`, \`detectedStack\`, repo-native \`verificationCandidates\`,
+     and risk surfaces. This is REQUIRED review evidence for repo-dependent claims.
+   - Discovery context is advisory falsification evidence, NOT review verdict
+     authority: ReviewFindings, obligation binding, mandate digest, and attestation
+     remain the review authority.
+   - If Discovery is unavailable, degraded, drifted, timed out, or not checked, mark
+     every Discovery-dependent claim \`NOT_VERIFIED\`; do not invent repository truth.`;
+
+/**
+ * Shared Done-when Discovery bullets for the plan/implement/architecture review
+ * templates (parity with /review Done-when).
+ */
+export const DISCOVERY_REVIEW_DONE_WHEN = `- Discovery health and drift checked before repo-dependent quality claims (or marked NOT_VERIFIED).
+- Discovery-dependent claims marked NOT_VERIFIED when they could not be correlated to local Discovery.`;
+
 export interface ReviewLoopParams {
   /** Full tool name, e.g. `flowguard_plan`. */
   toolName: string;
@@ -56,7 +80,7 @@ export function SHARED_REVIEW_LOOP(p: ReviewLoopParams): string {
        5. "changes_requested": Revise the ${p.artifactName} to address blocking issues, then call \`${p.toolName}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\` (or with \`reviewFindings\` in SDK mode).${p.changesRequestedExtra}
        6. "unable_to_review": The reviewer declared the ${p.artifactName} unreviewable (${p.unableDescription}). The tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same ${p.artifactName} — that obligation is consumed. Report the reviewer's findings to the user, then either ${p.unableRecoveryA} OR ${p.unableRecoveryB}.
    - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED":
-       1. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool${p.subagentExtra}.
+       1. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool${p.subagentExtra}. Pass the compact Discovery context captured in Phase 1 (health, drift, detectedStack, verificationCandidates, risk surfaces), and instruct the subagent to check Discovery health and drift BEFORE any repo-dependent quality claim and to mark Discovery-dependent claims NOT_VERIFIED when they cannot be correlated to local repository Discovery.
        2. Submit the verdict. In host_task_required mode, plugin evidence is resolved automatically — do not submit \`reviewFindings\`.
        3. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance.
        4. **FALLBACK**: If the Task tool cannot spawn the reviewer (error, agent unavailable${p.fallbackExtra}), submit \`${p.toolName}({ reviewVerdict: "approve", reviewerUnavailable: true })\` to proceed with self-review assurance.

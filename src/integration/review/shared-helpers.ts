@@ -333,7 +333,7 @@ interface BuildToolPromptParams {
     archRules: ReturnType<typeof selectReviewerProfileRules>;
   };
   deps: OrchestratorDeps;
-  discoveryContext?: DiscoveryReviewContext;
+  discoveryContext: DiscoveryReviewContext;
 }
 
 export function buildToolPrompt(params: BuildToolPromptParams): string | null {

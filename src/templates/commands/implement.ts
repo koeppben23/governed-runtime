@@ -1,5 +1,9 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
-import { SHARED_REVIEW_LOOP } from './shared-review-loop.js';
+import {
+  SHARED_REVIEW_LOOP,
+  DISCOVERY_REVIEW_CAPTURE,
+  DISCOVERY_REVIEW_DONE_WHEN,
+} from './shared-review-loop.js';
 
 export const IMPLEMENT_COMMAND = `
 ---
@@ -19,6 +23,7 @@ Implement the approved plan and obtain mandatory independent implementation revi
 
 1. Call \`flowguard_status\` to verify the session is in IMPLEMENTATION phase with a ticket, approved plan, and passed validation.
    - If any precondition is not met: report it and stop.
+${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 2: Implement
 
@@ -98,6 +103,7 @@ ${GOVERNANCE_RULES}
 - Verification Evidence distinguishes Planned from Executed checks.
 - Implementation evidence is recorded via flowguard_implement.
 - Independent review loop has converged.
+${DISCOVERY_REVIEW_DONE_WHEN}
 - If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
 - Phase has advanced to EVIDENCE_REVIEW.
 - Response ends with \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`

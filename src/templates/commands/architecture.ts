@@ -1,5 +1,9 @@
 import { GOVERNANCE_RULES } from './shared-rules.js';
-import { SHARED_REVIEW_LOOP } from './shared-review-loop.js';
+import {
+  SHARED_REVIEW_LOOP,
+  DISCOVERY_REVIEW_CAPTURE,
+  DISCOVERY_REVIEW_DONE_WHEN,
+} from './shared-review-loop.js';
 
 export const ARCHITECTURE_COMMAND = `
 ---
@@ -20,6 +24,7 @@ Create or revise an Architecture Decision Record (ADR) for the current FlowGuard
 1. Call \`flowguard_status\` to verify a session exists in READY or ARCHITECTURE phase.
    - If no session: call \`flowguard_hydrate\` first.
    - If phase does not allow /architecture: report the current phase and stop.
+${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 2: Submit ADR
 
@@ -91,6 +96,7 @@ ${GOVERNANCE_RULES}
 
 - ADR is created or revised with Context, Decision, and Consequences sections.
 - Independent review loop has converged (approved or max iterations reached).
+${DISCOVERY_REVIEW_DONE_WHEN}
 - If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
 - Phase has reached ARCH_REVIEW (ready for human review).
 - Response ends with a \`Next action:\` line.

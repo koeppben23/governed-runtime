@@ -242,6 +242,18 @@ export function validateSubmittedReviewFindings(
     );
   }
 
+  // Fail-closed on the third LoopVerdict: a reviewer that declared the
+  // content unreviewable MUST NOT let the standalone /review complete with a
+  // passing report. This mirrors the plan/implement/architecture tool-layer
+  // guard (review-validation.ts) and the SDK gate (content-review-pipeline.ts),
+  // keeping all review flows symmetric and fail-closed.
+  if ((findings.overallVerdict as string) === 'unable_to_review') {
+    return formatSubagentReviewNotInvoked(
+      'reviewer returned overallVerdict "unable_to_review" — the content was declared unreviewable; this obligation is consumed and cannot pass review',
+      obligation.obligationId,
+    );
+  }
+
   const verdict = validateStrictAttestation(
     findings as unknown as Parameters<typeof validateStrictAttestation>[0],
     {
