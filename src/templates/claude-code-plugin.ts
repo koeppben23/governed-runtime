@@ -80,8 +80,6 @@ export function claudeCodePluginManifest(version: string): string {
     version,
     author: { name: 'FlowGuard' },
     skills: './skills/',
-    agents: ['./agents/flowguard-reviewer.md'],
-    hooks: './hooks/hooks.json',
     mcpServers: './.mcp.json',
     keywords: ['governance', 'audit', 'workflow'],
   });
