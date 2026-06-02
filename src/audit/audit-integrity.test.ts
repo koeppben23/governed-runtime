@@ -7,6 +7,7 @@ import {
   type ChainedAuditEvent,
 } from './types.js';
 import { verifyEvent, verifyChain, getLastChainHash } from './integrity.js';
+import { computeCanonicalEventDigest } from './canonical-digest.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { SESSION_ID, TS1, TS2, TS3, buildChain } from './audit-test-helpers.js';
 
@@ -113,6 +114,57 @@ describe('audit integrity', () => {
       expect(result.reason).toBe('CHAIN_BREAK');
       expect(result.firstBreak?.expectedChainHash).toHaveLength(64);
       expect(result.firstBreak?.actualChainHash).toBe(event.chainHash);
+    });
+
+    it('strict timestamp verification fails when nested content tamper is re-sealed but TSA imprint is unchanged', () => {
+      const original = buildNestedDecisionEvent(GENESIS_HASH);
+      const originalDigest = computeCanonicalEventDigest(original);
+      const { chainHash: _originalChainHash, ...originalBody } = original;
+      const stampedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
+        ...originalBody,
+        canonicalEventDigest: originalDigest,
+        timestampEvidence: {
+          status: 'tsa_stamped',
+          source: 'tsa',
+          resolvedAt: TS1,
+          tsa: {
+            tokenDerBase64: 'trusted-token',
+            receivedAt: TS1,
+            messageImprint: originalDigest,
+            digestAlgorithm: 'sha256',
+            verificationStatus: 'unchecked',
+          },
+        },
+      };
+      const stamped = {
+        ...stampedBody,
+        chainHash: computeChainHash(GENESIS_HASH, stampedBody),
+      };
+      const { chainHash: _stampedChainHash, ...stampedWithoutHash } = stamped;
+      const tamperedBody = {
+        ...stampedWithoutHash,
+        detail: {
+          ...stamped.detail,
+          decision: {
+            ...(stamped.detail.decision as Record<string, unknown>),
+            verdict: 'reject',
+          },
+        },
+      } as Omit<ChainedAuditEvent, 'chainHash'>;
+      const tamperedWithUpdatedLocalDigest = {
+        ...tamperedBody,
+        canonicalEventDigest: computeCanonicalEventDigest(tamperedBody),
+      };
+      const resealedTamper = {
+        ...tamperedWithUpdatedLocalDigest,
+        chainHash: computeChainHash(GENESIS_HASH, tamperedWithUpdatedLocalDigest),
+      };
+
+      const result = verifyChain([resealedTamper], { strict: true, strictTimestamps: true });
+
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
+      expect(result.tokenVerificationRequired).toEqual([0]);
     });
 
     // ── Constant-time comparison tests for safeHashEqual ────────

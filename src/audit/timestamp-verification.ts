@@ -4,7 +4,7 @@
  *
  * Provides:
  * - verifyTimestampMonotonicity: checks event timestamps are non-decreasing
- * - verifyTimestampEvidence: checks TSA message imprint against canonical digest
+ * - verifyTimestampEvidence: checks cached trusted TSA imprint against recomputed canonical content digest
  * - verifyTimestampEvidencePresence: checks critical events have required evidence
  *
  * Used by verifyChain() when strictTimestamps is enabled.
@@ -13,6 +13,7 @@
  */
 
 import type { AuditEvent } from '../state/evidence.js';
+import { computeCanonicalEventDigest } from './canonical-digest.js';
 
 /**
  * Convert a hex string to Uint8Array.
@@ -61,13 +62,23 @@ export function verifyTimestampMonotonicity(
 export interface TimestampEvidenceCheck {
   readonly valid: boolean;
   readonly reason: string | null;
+  /** When true, the event has tokenDerBase64 and must be cryptographically verified before the imprint can be trusted. */
+  readonly needsTokenVerification: boolean;
 }
 
 /**
- * Verify TSA message imprint matches the canonical event digest.
+ * Verify TSA message imprint against recomputed canonical event digest.
  *
- * Only checks events that have both canonicalEventDigest and tsa evidence.
- * Events without TSA evidence pass (backward compat — legacy events).
+ * Only checks events that have TSA evidence. Events without TSA evidence pass
+ * (backward compat — legacy events). Stored canonicalEventDigest is cross-check
+ * evidence only; it is not the digest authority during verification.
+ *
+ * Trust model:
+ * - When tokenDerBase64 is present: mutable timestampEvidence.tsa.messageImprint
+ *   cannot be trusted. Returns needsTokenVerification=true to signal that async
+ *   cryptographic token verification is required.
+ * - When tokenDerBase64 is absent (mock/internal TSA): messageImprint is the
+ *   trusted internal imprint and is compared against the recomputed canonical digest.
  *
  * @param event - Audit event with optional timestampEvidence.
  */
@@ -75,38 +86,63 @@ export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceChe
   const evidence = (event as Record<string, unknown>).timestampEvidence as
     | Record<string, unknown>
     | undefined;
-  const canonicalDigest = (event as Record<string, unknown>).canonicalEventDigest as
+  const storedCanonicalDigest = (event as Record<string, unknown>).canonicalEventDigest as
     | string
     | undefined;
 
-  if (!evidence || !canonicalDigest) {
-    return { valid: true, reason: null };
+  if (!evidence) {
+    return { valid: true, reason: null, needsTokenVerification: false };
   }
 
   const tsa = evidence.tsa as Record<string, unknown> | undefined;
   const status = evidence.status as string | undefined;
 
   if (!tsa || status === 'local' || status === 'ntp_checked') {
-    return { valid: true, reason: null };
+    return { valid: true, reason: null, needsTokenVerification: false };
   }
 
   if (status === 'tsa_failed') {
-    return { valid: true, reason: null };
+    return { valid: true, reason: null, needsTokenVerification: false };
   }
 
   const imprint = tsa.messageImprint as string | undefined;
-  if (!imprint) {
-    return { valid: false, reason: 'TSA evidence missing messageImprint' };
-  }
+  const tokenDerBase64 = tsa.tokenDerBase64 as string | undefined;
 
-  if (imprint !== canonicalDigest) {
+  if (tokenDerBase64) {
     return {
       valid: false,
-      reason: `TSA messageImprint "${imprint}" does not match canonicalEventDigest "${canonicalDigest}"`,
+      reason: 'TSA token verification required — cannot trust mutable cached messageImprint',
+      needsTokenVerification: true,
     };
   }
 
-  return { valid: true, reason: null };
+  if (!imprint) {
+    return {
+      valid: false,
+      reason: 'TSA evidence missing messageImprint',
+      needsTokenVerification: false,
+    };
+  }
+
+  const recomputedDigest = computeCanonicalEventDigest(event);
+
+  if (storedCanonicalDigest && storedCanonicalDigest !== recomputedDigest) {
+    return {
+      valid: false,
+      reason: 'stored canonicalEventDigest does not match recomputed canonical event digest',
+      needsTokenVerification: false,
+    };
+  }
+
+  if (imprint !== recomputedDigest) {
+    return {
+      valid: false,
+      reason: 'TSA messageImprint does not match recomputed canonical event digest',
+      needsTokenVerification: false,
+    };
+  }
+
+  return { valid: true, reason: null, needsTokenVerification: false };
 }
 
 export interface EvidencePresenceCheck {

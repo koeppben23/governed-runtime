@@ -4,8 +4,49 @@ import {
   verifyTsaMessageImprint,
   verifyTimestampEvidencePresence,
 } from './timestamp-verification.js';
+import { computeCanonicalEventDigest } from './canonical-digest.js';
 import { makeAuditEvent } from './audit-test-helpers.js';
 import type { AuditEvent } from '../state/evidence.js';
+
+function makeTsaStampedEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
+  const event = makeAuditEvent(overrides);
+  const canonicalDigest = computeCanonicalEventDigest(event as Record<string, unknown>);
+  return {
+    ...event,
+    canonicalEventDigest: canonicalDigest,
+    timestampEvidence: {
+      status: 'tsa_stamped',
+      source: 'tsa',
+      resolvedAt: '2026-01-01T00:00:00.000Z',
+      tsa: {
+        verificationStatus: 'unchecked',
+        digestAlgorithm: 'sha256',
+        messageImprint: canonicalDigest,
+      },
+    },
+  } as unknown as AuditEvent;
+}
+
+function makeTokenTsaStampedEvent(overrides: Partial<AuditEvent> = {}): AuditEvent {
+  const event = makeAuditEvent(overrides);
+  const canonicalDigest = computeCanonicalEventDigest(event as Record<string, unknown>);
+  return {
+    ...event,
+    canonicalEventDigest: canonicalDigest,
+    timestampEvidence: {
+      status: 'tsa_stamped',
+      source: 'tsa',
+      resolvedAt: '2026-01-01T00:00:00.000Z',
+      tsa: {
+        tokenDerBase64: 'real-token-base64',
+        receivedAt: '2026-01-01T00:00:01.000Z',
+        verificationStatus: 'unchecked',
+        digestAlgorithm: 'sha256',
+        messageImprint: canonicalDigest,
+      },
+    },
+  } as unknown as AuditEvent;
+}
 
 describe('verifyTimestampMonotonicity', () => {
   it('passes for monotonically increasing timestamps', () => {
@@ -90,18 +131,25 @@ describe('verifyTsaMessageImprint', () => {
     expect(result.valid).toBe(true);
   });
 
-  it('fails when TSA messageImprint does not match canonicalEventDigest', () => {
+  it('passes when TSA messageImprint matches the recomputed canonical event digest', () => {
+    const event = makeTsaStampedEvent();
+    const result = verifyTsaMessageImprint(event);
+    expect(result.valid).toBe(true);
+  });
+
+  it('fails when TSA messageImprint does not match recomputed canonical event digest', () => {
+    const stamped = makeTsaStampedEvent();
+    const evidence = (stamped as Record<string, unknown>).timestampEvidence as Record<
+      string,
+      unknown
+    >;
+    const tsa = evidence.tsa as Record<string, unknown>;
     const event = {
-      ...makeAuditEvent(),
-      canonicalEventDigest: 'abcd1234',
+      ...stamped,
       timestampEvidence: {
-        status: 'tsa_stamped',
-        source: 'tsa',
-        resolvedAt: '2026-01-01T00:00:00.000Z',
+        ...evidence,
         tsa: {
-          tokenDerBase64: 'x',
-          receivedAt: '2026-01-01T00:00:01.000Z',
-          verificationStatus: 'unchecked',
+          ...tsa,
           messageImprint: 'different_digest',
         },
       },
@@ -109,6 +157,82 @@ describe('verifyTsaMessageImprint', () => {
     const result = verifyTsaMessageImprint(event);
     expect(result.valid).toBe(false);
     expect(result.reason).toContain('messageImprint');
+  });
+
+  it('fails on nested content tamper even when mutable stored digest is updated', () => {
+    const stamped = makeTsaStampedEvent();
+    const tampered = {
+      ...stamped,
+      detail: {
+        ...stamped.detail,
+        nested: { verdict: 'reject', depth: { changed: true } },
+      },
+    } as unknown as AuditEvent;
+    const attackerUpdatedDigest = computeCanonicalEventDigest(tampered as Record<string, unknown>);
+    const event = {
+      ...tampered,
+      canonicalEventDigest: attackerUpdatedDigest,
+    } as unknown as AuditEvent;
+
+    const result = verifyTsaMessageImprint(event);
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('messageImprint');
+  });
+
+  it('fails closed when stored canonicalEventDigest drifts from recomputed content digest', () => {
+    const event = {
+      ...makeTsaStampedEvent(),
+      canonicalEventDigest: '0'.repeat(64),
+    } as unknown as AuditEvent;
+
+    const result = verifyTsaMessageImprint(event);
+
+    expect(result.valid).toBe(false);
+    expect(result.reason).toContain('canonicalEventDigest');
+  });
+
+  it('fails-closed with needsTokenVerification when tokenDerBase64 exists and imprint is unverified', () => {
+    const event = makeTokenTsaStampedEvent();
+    const result = verifyTsaMessageImprint(event);
+
+    expect(result.valid).toBe(false);
+    expect(result.needsTokenVerification).toBe(true);
+    expect(result.reason).toContain('token verification required');
+  });
+
+  it('fails-closed for coordinated edit with tokenDerBase64 — cannot trust mutable messageImprint', () => {
+    const stamped = makeTokenTsaStampedEvent();
+    const tampered = {
+      ...stamped,
+      detail: {
+        ...stamped.detail,
+        nested: { verdict: 'reject', depth: { changed: true } },
+      },
+    } as unknown as AuditEvent;
+    const attackerUpdatedDigest = computeCanonicalEventDigest(tampered as Record<string, unknown>);
+    const evidence = (tampered as Record<string, unknown>).timestampEvidence as Record<
+      string,
+      unknown
+    >;
+    const tsa = evidence.tsa as Record<string, unknown>;
+    const coordinatedLocalEdit = {
+      ...tampered,
+      canonicalEventDigest: attackerUpdatedDigest,
+      timestampEvidence: {
+        ...evidence,
+        tsa: {
+          ...tsa,
+          messageImprint: attackerUpdatedDigest,
+        },
+      },
+    } as unknown as AuditEvent;
+
+    const result = verifyTsaMessageImprint(coordinatedLocalEdit);
+
+    expect(result.valid).toBe(false);
+    expect(result.needsTokenVerification).toBe(true);
+    expect(result.reason).toContain('token verification required');
   });
 });
 

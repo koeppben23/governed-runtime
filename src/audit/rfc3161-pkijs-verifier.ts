@@ -113,6 +113,10 @@ function serialHex(serial: asn1js.Integer): string {
   return Buffer.from(serial.valueBlock.valueHexView).toString('hex');
 }
 
+function imprintHex(tstInfo: TSTInfo): string {
+  return Buffer.from(tstInfo.messageImprint.hashedMessage.valueBlock.valueHexView).toString('hex');
+}
+
 function subjectText(cert: Certificate | null | undefined): string | undefined {
   const values = cert?.subject.typesAndValues ?? [];
   if (values.length === 0) return undefined;
@@ -292,6 +296,7 @@ export class PkijsTimestampVerifier implements TimestampVerifier {
       policyOid: parsed.tstInfo.policy,
       serialNumber: serialHex(parsed.tstInfo.serialNumber),
       signerSubject: subjectText(signer),
+      messageImprintHex: imprintHex(parsed.tstInfo),
     };
   }
 }
