@@ -87,19 +87,21 @@ FlowGuard provides `verifyArchive()` to validate archive integrity.
 
 ### Finding Codes
 
-| Code                        | Description                           |
-| --------------------------- | ------------------------------------- |
-| `missing_manifest`          | Archive manifest not found            |
-| `manifest_parse_error`      | Manifest is malformed                 |
-| `missing_file`              | File listed in manifest missing       |
-| `unexpected_file`           | File not listed in manifest           |
-| `file_digest_mismatch`      | File hash doesn't match manifest      |
-| `content_digest_mismatch`   | Content hash incorrect                |
-| `archive_checksum_missing`  | SHA256 sidecar not found              |
-| `archive_checksum_mismatch` | Archive hash doesn't match            |
-| `audit_chain_invalid`       | Audit trail chain verification failed |
-| `state_missing`             | Session state missing                 |
-| `snapshot_missing`          | Discovery snapshot missing            |
+| Code                             | Description                                                                |
+| -------------------------------- | -------------------------------------------------------------------------- |
+| `missing_manifest`               | Archive manifest not found                                                 |
+| `manifest_parse_error`           | Manifest is malformed                                                      |
+| `missing_file`                   | File listed in manifest missing                                            |
+| `unexpected_file`                | File not listed in manifest                                                |
+| `file_digest_mismatch`           | File hash doesn't match manifest                                           |
+| `content_digest_mismatch`        | Content hash incorrect                                                     |
+| `archive_checksum_missing`       | SHA256 sidecar not found                                                   |
+| `archive_checksum_mismatch`      | Archive hash doesn't match                                                 |
+| `audit_chain_invalid`            | Current-format v2 audit trail chain verification failed                    |
+| `audit_chain_legacy_format`      | Pre-v2 audit chain requires migration or explicit weak legacy verification |
+| `audit_chain_unsupported_format` | Audit trail declares an unsupported audit chain format                     |
+| `state_missing`                  | Session state missing                                                      |
+| `snapshot_missing`               | Discovery snapshot missing                                                 |
 
 ### Verification Example
 
@@ -155,6 +157,31 @@ Archives include tamper-evident features:
 3. **Archive checksum:** SHA-256 of the tar.gz file
 
 Modifying any archived file breaks the chain and is detectable.
+
+### Audit Chain Format
+
+Current audit events use `auditFormatVersion: "audit-chain.v2"`.
+The v2 chain hash is `SHA-256(prevHash + canonicalJson(eventWithoutChainHash))`,
+where canonical JSON sorts object keys recursively at every nesting depth while
+preserving array order. This binds nested audit content such as decision details,
+actor metadata, timestamp evidence, and enforcement metadata to the chain hash.
+
+Pre-v2 chained audit events either omit `auditFormatVersion` or declare
+`audit-chain.v1`. These events are not verified under the v2 tamper-evidence
+guarantee because the historical chain serializer did not bind nested content.
+Current verification reports them as `audit_chain_legacy_format`, not as
+`audit_chain_invalid`, so operators can distinguish old-format evidence from a
+tampered v2 chain.
+
+Recovery for legacy/pre-v2 archives:
+
+1. Treat the archive as reduced-assurance legacy evidence until migration is complete.
+2. If operational policy allows it, re-verify with an explicit weak legacy verifier and re-seal under v2.
+3. Otherwise retain the archive with the `audit_chain_legacy_format` finding documented in the evidence record.
+
+Unknown audit chain formats are reported as `audit_chain_unsupported_format` and
+must be handled by a runtime that explicitly supports that format. The default
+verifier does not silently fall back to legacy hashing.
 
 ## Retention
 

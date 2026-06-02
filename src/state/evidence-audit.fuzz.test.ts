@@ -21,7 +21,7 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
 import { verifyChain } from '../audit/integrity.js';
-import { computeChainHash, GENESIS_HASH } from '../audit/types.js';
+import { computeChainHash, CURRENT_AUDIT_FORMAT_VERSION, GENESIS_HASH } from '../audit/types.js';
 import type { ChainedAuditEvent } from '../audit/types.js';
 
 interface ChainedRecord extends Record<string, unknown> {
@@ -31,6 +31,7 @@ interface ChainedRecord extends Record<string, unknown> {
   event: string;
   timestamp: string;
   actor: string;
+  auditFormatVersion: string;
   detail: Record<string, unknown>;
   prevHash: string;
   chainHash: string;
@@ -50,6 +51,7 @@ function buildEvent(id: string, prevHash: string, idx: number): ChainedRecord {
     event: `transition:STEP_${idx}`,
     timestamp: `2026-01-01T00:${String(idx).padStart(2, '0')}:00.000Z`,
     actor: 'machine',
+    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: { kind: 'transition', from: 'TICKET', to: 'PLAN', idx },
     prevHash,
   };

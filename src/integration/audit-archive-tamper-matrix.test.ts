@@ -17,6 +17,7 @@ import { hydrate, ticket, plan, decision, run_check, implement, status } from '.
 import { readState } from '../adapters/persistence.js';
 import { computeFingerprint, sessionDir, verifyArchive } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
+import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -213,9 +214,81 @@ describe('audit/archive tamper matrix', () => {
     );
 
     expect(verifyChain(events, { strict: true }).valid).toBe(false);
-    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+    const logs: Array<{
+      level: string;
+      service: string;
+      message: string;
+      extra?: Record<string, unknown>;
+    }> = [];
+    const logger: AdapterLogger = {
+      info: (service, message, extra) => logs.push({ level: 'info', service, message, extra }),
+      warn: (service, message, extra) => logs.push({ level: 'warn', service, message, extra }),
+      error: (service, message, extra) => logs.push({ level: 'error', service, message, extra }),
+    };
+    const verification = await runWithAdapterLoggerAsync(logger, () =>
+      verifyArchive(ids.fingerprint, ctx.sessionID),
+    );
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.severity === 'error')).toBe(true);
+    expect(
+      logs.some(
+        (entry) =>
+          entry.level === 'error' &&
+          entry.service === 'archive' &&
+          typeof entry.extra?.eventId === 'string' &&
+          typeof entry.extra.expectedChainHash === 'string' &&
+          entry.extra.actualChainHash === '0'.repeat(64) &&
+          !('event' in entry.extra),
+      ),
+    ).toBe(true);
+  });
+
+  it.skipIf(!tarOk)('nested audit event content tamper -> chain integrity failure', async () => {
+    const ids = await completeRegulatedSession();
+    const lines = await readAuditLines(ids.sessDir);
+    const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const last = events[events.length - 1]!;
+    const detail = last.detail as Record<string, unknown>;
+    events[events.length - 1] = {
+      ...last,
+      detail: {
+        ...detail,
+        nestedTamper: { verdict: 'reject', depth: { changed: true } },
+      },
+    };
+    await fs.writeFile(
+      path.join(ids.sessDir, 'audit.jsonl'),
+      `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
+      'utf-8',
+    );
+
+    const chainResult = verifyChain(events, { strict: true });
+    expect(chainResult.valid).toBe(false);
+    expect(chainResult.reason).toBe('CHAIN_BREAK');
+    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+    expect(verification.passed).toBe(false);
+    expect(verification.findings.some((f) => f.code === 'audit_chain_invalid')).toBe(true);
+  });
+
+  it.skipIf(!tarOk)('pre-v2 chained audit format -> explicit legacy archive finding', async () => {
+    const ids = await completeRegulatedSession();
+    const lines = await readAuditLines(ids.sessDir);
+    const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    const last = { ...events[events.length - 1]! };
+    delete last.auditFormatVersion;
+    events[events.length - 1] = last;
+    await fs.writeFile(
+      path.join(ids.sessDir, 'audit.jsonl'),
+      `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
+      'utf-8',
+    );
+
+    const chainResult = verifyChain(events, { strict: true });
+    expect(chainResult.valid).toBe(false);
+    expect(chainResult.reason).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
+    const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
+    expect(verification.passed).toBe(false);
+    expect(verification.findings.some((f) => f.code === 'audit_chain_legacy_format')).toBe(true);
   });
 
   it.skipIf(!tarOk)('prevHash tamper -> integrity failure', async () => {

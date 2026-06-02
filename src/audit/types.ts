@@ -25,7 +25,7 @@
 import * as crypto from 'node:crypto';
 import type { Phase, Event } from '../state/schema.js';
 import type { ReviewVerdict, TimestampEvidence } from '../state/evidence.js';
-import { computeCanonicalEventDigest } from './canonical-digest.js';
+import { canonicalJsonStringify, computeCanonicalEventDigest } from './canonical-digest.js';
 
 // P2b: Canonical ActorInfo and ActorVerificationMeta live in state/evidence.ts (Zod SSOT).
 // Re-exported here for backward compatibility — all existing consumers continue to work.
@@ -39,6 +39,10 @@ export type { ActorInfo, ActorVerificationMeta };
  * Each kind has a specific detail payload structure.
  */
 export type AuditEventKind = 'transition' | 'tool_call' | 'error' | 'lifecycle' | 'decision';
+
+export type AuditFormatVersion = 'audit-chain.v1' | 'audit-chain.v2';
+
+export const CURRENT_AUDIT_FORMAT_VERSION: AuditFormatVersion = 'audit-chain.v2';
 
 // ─── Detail Payloads (typed, but stored as Record<string, unknown>) ──────────
 
@@ -143,6 +147,7 @@ export interface ChainedAuditEvent {
   readonly event: string;
   readonly timestamp: string;
   readonly actor: string;
+  readonly auditFormatVersion: AuditFormatVersion;
   readonly actorInfo?: ActorInfo;
   readonly detail: Readonly<Record<string, unknown>>;
   readonly prevHash: string;
@@ -177,8 +182,7 @@ export function computeChainHash(
   prevHash: string,
   event: Omit<ChainedAuditEvent, 'chainHash'>,
 ): string {
-  // Create a canonical representation: sorted keys, no whitespace
-  const canonical = JSON.stringify(event, Object.keys(event).sort());
+  const canonical = canonicalJsonStringify(event);
   const input = prevHash + canonical;
   return crypto.createHash('sha256').update(input, 'utf-8').digest('hex');
 }
@@ -273,6 +277,7 @@ export function buildTransitionBody(
     event: `transition:${detail.event}`,
     timestamp,
     actor: 'machine',
+    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: toDetailRecord({ ...detail, kind: 'transition' }),
     prevHash,
   };
@@ -327,6 +332,7 @@ export function buildToolCallBody(input: Omit<ToolCallEventInput, 'timestampEvid
     event: `tool_call:${detail.tool}`,
     timestamp,
     actor,
+    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     ...(actorInfo ? { actorInfo } : {}),
     detail: toDetailRecord({ ...detail, kind: 'tool_call' }),
     prevHash,
@@ -365,6 +371,7 @@ export function buildErrorBody(
     event: `error:${detail.code}`,
     timestamp,
     actor: 'machine',
+    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: toDetailRecord({ ...detail, kind: 'error' }),
     prevHash,
   };
@@ -419,6 +426,7 @@ export function buildLifecycleBody(
     event: `lifecycle:${detail.action}`,
     timestamp,
     actor,
+    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     ...(actorInfo ? { actorInfo } : {}),
     detail: toDetailRecord({ ...detail, kind: 'lifecycle' }),
     prevHash,
@@ -467,6 +475,7 @@ export function buildDecisionBody(input: Omit<DecisionEventInput, 'timestampEvid
     event: `decision:${detail.decisionId}`,
     timestamp,
     actor,
+    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     ...(actorInfo ? { actorInfo } : {}),
     detail: toDetailRecord({ ...detail, gatePhase, kind: 'decision' }),
     prevHash,

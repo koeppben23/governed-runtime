@@ -24,7 +24,11 @@ import { atomicWrite, readState } from '../persistence.js';
 import { appendAuditEvent, readAuditTrail } from '../persistence-audit.js';
 import { readConfig } from '../persistence-config.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
-import { verifyChain } from '../../audit/integrity.js';
+import {
+  verifyChain,
+  type ChainVerification,
+  type ChainVerificationReason,
+} from '../../audit/integrity.js';
 import {
   ArchiveManifestSchema,
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
@@ -590,6 +594,60 @@ function hasTimestampEvidence(event: Record<string, unknown>): boolean {
   return typeof evidence === 'object' && evidence !== null;
 }
 
+function isCurrentChainIntegrityFailure(reason: ChainVerificationReason | null): boolean {
+  return reason === 'CHAIN_BREAK' || reason === 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE';
+}
+
+function isAuditFormatFailure(reason: ChainVerificationReason | null): boolean {
+  return (
+    reason === 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2' ||
+    reason === 'UNSUPPORTED_AUDIT_FORMAT_VERSION'
+  );
+}
+
+function logAuditChainVerificationFailure(chainResult: ChainVerification): void {
+  if (chainResult.valid || !chainResult.firstBreak) return;
+
+  const logExtra: Record<string, unknown> = {
+    eventId: chainResult.firstBreak.eventId,
+    reason: chainResult.reason,
+  };
+  if (chainResult.firstBreak.expectedChainHash) {
+    logExtra.expectedChainHash = chainResult.firstBreak.expectedChainHash;
+  }
+  if (chainResult.firstBreak.actualChainHash) {
+    logExtra.actualChainHash = chainResult.firstBreak.actualChainHash;
+  }
+
+  const log = getAdapterLogger();
+  if (chainResult.reason === 'CHAIN_BREAK') {
+    log.error('archive', 'Audit chain verification failed', logExtra);
+    return;
+  }
+  log.warn('archive', 'Audit chain format is not verifiable with current v2 verifier', logExtra);
+}
+
+function addAuditFormatFindings(chainResult: ChainVerification, findings: ArchiveFinding[]): void {
+  if (chainResult.reason === 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2') {
+    findings.push({
+      code: 'audit_chain_legacy_format',
+      severity: 'error',
+      message:
+        'Audit chain uses a legacy/pre-v2 hash format and is not verifiable under the recursive v2 tamper-evidence guarantee; migrate or re-seal before treating it as current-format evidence',
+      file: 'audit.jsonl',
+    });
+  }
+  if (chainResult.reason === 'UNSUPPORTED_AUDIT_FORMAT_VERSION') {
+    findings.push({
+      code: 'audit_chain_unsupported_format',
+      severity: 'error',
+      message:
+        'Audit chain declares an unsupported auditFormatVersion and cannot be verified by this runtime',
+      file: 'audit.jsonl',
+    });
+  }
+}
+
 async function verifyAuditChainIntegrity(
   sessDir: string,
   manifest: ArchiveManifest,
@@ -617,10 +675,9 @@ async function verifyAuditChainIntegrity(
       const strictTimestamps = hasTsaEvidence || timestampPolicy?.enabled === true;
       const timestampFailuresAreFatal = strict || timestampPolicy?.strict === true;
       const chainResult = verifyChain(events, { strict, strictTimestamps });
-      const chainIntegrityFailed =
-        chainResult.reason === 'CHAIN_BREAK' ||
-        chainResult.reason === 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE';
-      if (!chainResult.valid && chainIntegrityFailed) {
+      logAuditChainVerificationFailure(chainResult);
+      addAuditFormatFindings(chainResult, findings);
+      if (!chainResult.valid && isCurrentChainIntegrityFailure(chainResult.reason)) {
         findings.push({
           code: 'audit_chain_invalid',
           severity: 'error',
@@ -632,7 +689,11 @@ async function verifyAuditChainIntegrity(
         });
       }
 
-      if (!chainResult.valid && !chainIntegrityFailed) {
+      if (
+        !chainResult.valid &&
+        !isCurrentChainIntegrityFailure(chainResult.reason) &&
+        !isAuditFormatFailure(chainResult.reason)
+      ) {
         findings.push({
           code:
             chainResult.reason === 'TSA_MESSAGE_IMPRINT_MISMATCH'

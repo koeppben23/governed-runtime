@@ -11,7 +11,8 @@
  * This digest is what the TSA stamps as messageImprint.
  * prevHash is excluded so the TSA stamp remains valid even when chain
  * position is recomputed inside an atomic append transaction.
- * The chainHash binds the full record including timestampEvidence.
+ * The chainHash binds the full record including timestampEvidence using the
+ * same recursive canonical JSON authority.
  *
  * Backward-compatibility: verification compares the stored
  * canonicalEventDigest with the stored timestampEvidence.tsa.messageImprint
@@ -21,7 +22,7 @@
  *
  * Two-digest architecture:
  *   canonicalEventDigest → TSA messageImprint (proves event content existed at trusted time)
- *   chainHash → bindet kompletten Record (protects integrity of full event)
+ *   chainHash → binds the complete record (protects integrity of full event)
  *
  * @version v1
  */
@@ -51,6 +52,27 @@ export function computeCanonicalEventDigest(event: Omit<ChainedAuditEvent, 'chai
     if (EXCLUDED_FIELDS.has(key)) continue;
     stripped[key] = (event as Record<string, unknown>)[key];
   }
-  const canonical = JSON.stringify(stripped);
+  const canonical = canonicalJsonStringify(stripped);
   return crypto.createHash('sha256').update(canonical, 'utf-8').digest('hex');
+}
+
+/**
+ * Serialize JSON-compatible values with object keys sorted at every depth.
+ * This is the single canonical JSON authority for audit digests and chain hashes.
+ */
+export function canonicalJsonStringify(value: unknown): string {
+  return JSON.stringify(canonicalize(value));
+}
+
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (!value || typeof value !== 'object') return value;
+
+  const record = value as Record<string, unknown>;
+  const sorted: Record<string, unknown> = {};
+  for (const key of Object.keys(record).sort()) {
+    const nested = record[key];
+    if (nested !== undefined) sorted[key] = canonicalize(nested);
+  }
+  return sorted;
 }

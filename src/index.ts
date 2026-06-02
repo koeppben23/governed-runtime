@@ -174,11 +174,13 @@ export {
   type LifecycleDetail,
   type TypedDetail,
   type ChainedAuditEvent,
+  type AuditFormatVersion,
 } from './audit/types.js';
 
 /** @internal */
 export {
   GENESIS_HASH,
+  CURRENT_AUDIT_FORMAT_VERSION,
   computeChainHash,
   finalizeWithTimestampEvidence,
   createTransitionEvent,

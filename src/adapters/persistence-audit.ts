@@ -15,7 +15,11 @@ import { AuditEvent } from '../state/evidence.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { auditPath, ensureDir, PersistenceError, isEnoent } from './persistence.js';
 import { getLastChainHash } from '../audit/integrity.js';
-import { computeChainHash, type ChainedAuditEvent } from '../audit/types.js';
+import {
+  computeChainHash,
+  CURRENT_AUDIT_FORMAT_VERSION,
+  type ChainedAuditEvent,
+} from '../audit/types.js';
 
 const AUDIT_LOCK_FILE = 'audit.jsonl.lock';
 const AUDIT_LOCK_TIMEOUT_MS = 10_000;
@@ -86,7 +90,11 @@ async function appendAuditLineAtomically(
     delete eventBody.prevHash;
     delete eventBody.chainHash;
     const prevHash = getLastChainHash(existingTrail.events);
-    const bodyWithPrevHash = { ...eventBody, prevHash } as Omit<ChainedAuditEvent, 'chainHash'>;
+    const bodyWithPrevHash = {
+      ...eventBody,
+      auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
+      prevHash,
+    } as Omit<ChainedAuditEvent, 'chainHash'>;
     const chained = {
       ...bodyWithPrevHash,
       chainHash: computeChainHash(prevHash, bodyWithPrevHash),
