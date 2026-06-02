@@ -26,3 +26,22 @@ node scripts/sdk-type-snapshot.mjs --update
 npm run update:opencode-sdk -- <sdk-version> <opencode-host-version>
 node scripts/docs-drift.mjs --update
 ```
+
+## Desktop update signal
+
+After accepting an OpenCode Desktop update locally, check whether the local host
+version is newer than this repository's host baseline:
+
+```bash
+npm run check:opencode-host
+```
+
+If drift is detected, trigger the governed GitHub workflow instead of changing
+baselines locally:
+
+```bash
+npm run trigger:opencode-host-update
+```
+
+The trigger only starts `opencode-sdk-update.yml`; the workflow remains the
+authority that regenerates baselines and opens a PR after CI gates pass.
