@@ -1,0 +1,204 @@
+name: OpenCode SDK Update
+
+on:
+  schedule:
+    - cron: '0 7 * * 1' # Mondays 07:00 UTC
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '@opencode-ai/plugin version or dist-tag'
+        required: false
+        default: latest
+      opencode_version:
+        description: 'opencode-ai host/Desktop version or dist-tag'
+        required: false
+        default: latest
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: opencode-sdk-update
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # actions/checkout v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Resolve target OpenCode versions
+        id: resolve
+        env:
+          REQUESTED_SDK_VERSION: ${{ github.event.inputs.version || 'latest' }}
+          REQUESTED_HOST_VERSION: ${{ github.event.inputs.opencode_version || 'latest' }}
+        run: |
+          REQUESTED_SDK="$REQUESTED_SDK_VERSION"
+          REQUESTED_HOST="$REQUESTED_HOST_VERSION"
+          TARGET_SDK=$(npm view "@opencode-ai/plugin@$REQUESTED_SDK" version)
+          TARGET_HOST=$(npm view "opencode-ai@$REQUESTED_HOST" version)
+          CURRENT_SDK=$(node -e "console.log(require('./package.json').devDependencies['@opencode-ai/plugin'])")
+          CURRENT_HOST=$(node -e "const fs=require('fs'); const p='.sdk-baselines/opencode/host-version.json'; console.log(fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).version : 'none')")
+          {
+            echo "requested_sdk=$REQUESTED_SDK"
+            echo "requested_host=$REQUESTED_HOST"
+            echo "target_sdk=$TARGET_SDK"
+            echo "target_host=$TARGET_HOST"
+            echo "current_sdk=$CURRENT_SDK"
+            echo "current_host=$CURRENT_HOST"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$CURRENT_SDK" = "$TARGET_SDK" ] && [ "$CURRENT_HOST" = "$TARGET_HOST" ]; then
+            echo "needs_update=false" >> "$GITHUB_OUTPUT"
+            echo "OpenCode SDK and host baselines already match latest targets."
+          else
+            echo "needs_update=true" >> "$GITHUB_OUTPUT"
+            echo "Updating @opencode-ai/plugin from $CURRENT_SDK to $TARGET_SDK"
+            echo "Updating OpenCode host/Desktop baseline from $CURRENT_HOST to $TARGET_HOST"
+          fi
+      - name: Create update branch
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: git switch -c "flowguard/opencode-${{ steps.resolve.outputs.target_sdk }}-host-${{ steps.resolve.outputs.target_host }}"
+      - name: Update SDK package and baselines
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: npm run update:opencode-sdk -- "${{ steps.resolve.outputs.target_sdk }}" "${{ steps.resolve.outputs.target_host }}"
+      - name: Install OpenCode host/Desktop target
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: npm install -g "opencode-ai@${{ steps.resolve.outputs.target_host }}"
+      - name: Verify OpenCode host/Desktop availability
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: |
+          if ! command -v opencode >/dev/null 2>&1; then
+            echo "::error::opencode CLI not found after installing opencode-ai@${{ steps.resolve.outputs.target_host }}."
+            exit 1
+          fi
+          opencode --version
+        env:
+          OPENCODE_DISABLE_AUTOUPDATE: '1'
+      - name: Type check
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: npm run check
+        env:
+          FORCE_COLOR: 0
+      - name: SDK baseline check
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: node scripts/sdk-type-snapshot.mjs --platform opencode
+      - name: SDK contract tests
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: npm run test:sdk-contract:all
+        env:
+          FORCE_COLOR: 0
+      - name: Integration tests
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: npm run test:integration
+        env:
+          FORCE_COLOR: 0
+      - name: Lint
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: npm run lint
+        env:
+          FORCE_COLOR: 0
+      - name: Build
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: npm run build
+        env:
+          FORCE_COLOR: 0
+      - name: OpenCode host/Desktop smoke tests
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: npm run test:smoke
+        env:
+          FORCE_COLOR: 0
+          OPENCODE_DISABLE_AUTOUPDATE: '1'
+          RUN_OPENCODE_ACP_TESTS: '1'
+      - name: OpenCode host/Desktop runtime e2e
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: npm run test:independent-review-e2e
+        env:
+          FORCE_COLOR: 0
+          OPENCODE_DISABLE_AUTOUPDATE: '1'
+      - name: Commit update
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json .sdk-baselines/opencode
+          git diff --cached --exit-code && exit 0
+          git commit -m "chore(deps-dev): update opencode sdk and host baselines"
+      - name: Push update branch
+        if: steps.resolve.outputs.needs_update == 'true'
+        run: git push --force-with-lease origin "flowguard/opencode-${{ steps.resolve.outputs.target_sdk }}-host-${{ steps.resolve.outputs.target_host }}"
+      - name: Create or update pull request
+        if: steps.resolve.outputs.needs_update == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: flowguard/opencode-${{ steps.resolve.outputs.target_sdk }}-host-${{ steps.resolve.outputs.target_host }}
+          TARGET_SDK: ${{ steps.resolve.outputs.target_sdk }}
+          TARGET_HOST: ${{ steps.resolve.outputs.target_host }}
+          CURRENT_SDK: ${{ steps.resolve.outputs.current_sdk }}
+          CURRENT_HOST: ${{ steps.resolve.outputs.current_host }}
+        run: |
+          cat > /tmp/opencode-sdk-pr-body.md <<EOF
+          Updates OpenCode compatibility baselines and verifies both SDK and Desktop/host surfaces.
+
+          Versions:
+          - @opencode-ai/plugin: $CURRENT_SDK -> $TARGET_SDK
+          - opencode-ai host/Desktop: $CURRENT_HOST -> $TARGET_HOST
+
+          Verification in workflow:
+          - npm run check
+          - node scripts/sdk-type-snapshot.mjs --platform opencode
+          - npm run test:sdk-contract:all
+          - npm run test:integration
+          - npm run lint
+          - npm run build
+          - npm run test:smoke with RUN_OPENCODE_ACP_TESTS=1
+          - npm run test:independent-review-e2e
+          EOF
+          EXISTING=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number')
+          if [ -n "$EXISTING" ]; then
+            gh pr edit "$EXISTING" --title "chore(deps-dev): update opencode sdk and host baselines" --body-file /tmp/opencode-sdk-pr-body.md
+          else
+            gh pr create --head "$BRANCH" --base main --title "chore(deps-dev): update opencode sdk and host baselines" --body-file /tmp/opencode-sdk-pr-body.md
+          fi
+      - name: Create issue on failure
+        if: failure() && steps.resolve.outputs.needs_update == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
+        with:
+          script: |
+            const targetSdk = '${{ steps.resolve.outputs.target_sdk }}' || 'unknown';
+            const targetHost = '${{ steps.resolve.outputs.target_host }}' || 'unknown';
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+            });
+            const title = `OpenCode update: SDK ${targetSdk} / host ${targetHost} requires manual review`;
+            if (issues.data.some((issue) => issue.title === title)) {
+              core.info('Matching sdk-drift issue already exists, skipping.');
+              return;
+            }
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title,
+              body: [
+                '## SDK Update Failure',
+                '',
+                `The automated OpenCode update for \`@opencode-ai/plugin@${targetSdk}\` and \`opencode-ai@${targetHost}\` failed.`,
+                '',
+                `**Run**: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+                '',
+                'Review the failed step before accepting any regenerated SDK baseline.',
+              ].join('\n'),
+            });

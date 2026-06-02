@@ -253,6 +253,9 @@ describe('SDK Contract: Type baseline infrastructure', () => {
     expect(existsSync(path.join(root, '.sdk-baselines', 'opencode', 'plugin-tool.d.ts'))).toBe(
       true,
     );
+    expect(existsSync(path.join(root, '.sdk-baselines', 'opencode', 'host-version.json'))).toBe(
+      true,
+    );
   });
 
   it('HAPPY: baseline files match installed SDK', () => {
@@ -272,13 +275,33 @@ describe('SDK Contract: Type baseline infrastructure', () => {
 
   it('HAPPY: version.json exists and records correct version', () => {
     const versionPath = path.join(root, '.sdk-baselines', 'opencode', 'version.json');
+    const sdkPackagePath = path.join(
+      root,
+      'node_modules',
+      '@opencode-ai',
+      'plugin',
+      'package.json',
+    );
     expect(existsSync(versionPath)).toBe(true);
+    expect(existsSync(sdkPackagePath)).toBe(true);
 
     const meta = JSON.parse(readFileSync(versionPath, 'utf-8'));
-    expect(meta.version).toBe('1.15.10');
+    const sdkPackage = JSON.parse(readFileSync(sdkPackagePath, 'utf-8'));
+    expect(meta.version).toBe(sdkPackage.version);
     expect(meta.files).toHaveLength(2);
     expect(meta.files[0].label).toBe('plugin/dist/index.d.ts');
     expect(meta.files[1].label).toBe('plugin/dist/tool.d.ts');
+  });
+
+  it('HAPPY: host-version.json records OpenCode Desktop compatibility package', () => {
+    const hostVersionPath = path.join(root, '.sdk-baselines', 'opencode', 'host-version.json');
+    expect(existsSync(hostVersionPath)).toBe(true);
+
+    const meta = JSON.parse(readFileSync(hostVersionPath, 'utf-8'));
+    expect(meta.platform).toBe('opencode');
+    expect(meta.package).toBe('opencode-ai');
+    expect(typeof meta.version).toBe('string');
+    expect(meta.version.length).toBeGreaterThan(0);
   });
 
   it('BAD: installed SDK at wrong path would be detected by snapshot script', () => {
