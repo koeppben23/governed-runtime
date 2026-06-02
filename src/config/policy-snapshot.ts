@@ -18,6 +18,7 @@
  */
 
 import type { PolicySnapshot } from '../state/evidence.js';
+import { POLICY_MODES, isPolicyMode } from '../state/policy-mode.js';
 import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
 import type {
   FlowGuardPolicy,
@@ -230,9 +231,9 @@ export interface NormalizedSnapshotResult {
   readonly reason?: 'incomplete_snapshot_normalized';
 }
 
-/** Validate that a policy mode value is one of the known modes. */
+/** Validate that a policy mode value is one of the known modes (SSOT). */
 function isValidMode(mode: unknown): mode is PolicyMode {
-  return typeof mode === 'string' && ['solo', 'team', 'team-ci', 'regulated'].includes(mode);
+  return isPolicyMode(mode);
 }
 
 /** Validate effective gate behavior value. */
@@ -314,10 +315,13 @@ function normalizeMode(s: Record<string, unknown>): NormalizedField<PolicyMode> 
   if (isValidMode(raw)) return { value: raw, normalized: false };
   // null/undefined = "not configured" → safe default (team)
   if (raw === undefined || raw === null) return { value: 'team', normalized: true };
-  // Any other value is an invalid mode — fail-closed, never silently degrade
+  // Any other value is an invalid mode — fail-closed, never silently degrade.
+  // Stay pure: surface structured details on the error and let the calling
+  // boundary log them. This normalizer performs no I/O and no logging.
   throw new PolicyConfigurationError(
     'INVALID_POLICY_MODE',
-    `Invalid policy mode "${String(raw)}". Valid modes: solo, team, team-ci, regulated.`,
+    `Invalid policy mode "${String(raw)}". Valid modes: ${POLICY_MODES.join(', ')}.`,
+    { received: String(raw), allowed: POLICY_MODES },
   );
 }
 
@@ -626,9 +630,12 @@ function normalizeSelfReviewCheck(s: Record<string, unknown>): boolean {
 
 function extractProvenanceFields(s: Record<string, unknown>, fallbackMode: PolicyMode) {
   const rawReqMode = s.requestedMode;
+  const requestedModeValid = isValidMode(rawReqMode);
   return {
-    requestedMode: typeof rawReqMode === 'string' ? rawReqMode : fallbackMode,
-    reqModeNormalized: !isValidMode(rawReqMode),
+    // Fail-closed: an invalid requestedMode falls back to the validated mode
+    // rather than persisting an arbitrary string.
+    requestedMode: requestedModeValid ? rawReqMode : fallbackMode,
+    reqModeNormalized: !requestedModeValid,
     resolvedAt:
       typeof s.resolvedAt === 'string'
         ? s.resolvedAt
@@ -832,23 +839,22 @@ function modeConsistentDefaults(mode: PolicyMode): {
  */
 export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
   return {
-    mode: snapshot.mode as PolicyMode,
+    mode: snapshot.mode,
     requireHumanGates: snapshot.requireHumanGates,
     maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
     maxImplReviewIterations: snapshot.maxImplReviewIterations,
     allowSelfApproval: snapshot.allowSelfApproval,
     selfReview: normalizeSelfReviewConfig(snapshot.selfReview),
     reviewOutputPolicy:
-      snapshot.reviewOutputPolicy ??
-      modeConsistentDefaults(snapshot.mode as PolicyMode).reviewOutputPolicy,
+      snapshot.reviewOutputPolicy ?? modeConsistentDefaults(snapshot.mode).reviewOutputPolicy,
     reviewInvocationPolicy:
       snapshot.reviewInvocationPolicy ??
-      modeConsistentDefaults(snapshot.mode as PolicyMode).reviewInvocationPolicy,
+      modeConsistentDefaults(snapshot.mode).reviewInvocationPolicy,
     minimumActorAssuranceForApproval:
       snapshot.minimumActorAssuranceForApproval ??
       (snapshot.requireVerifiedActorsForApproval
         ? 'claim_validated'
-        : modeConsistentDefaults(snapshot.mode as PolicyMode).minimumActorAssuranceForApproval),
+        : modeConsistentDefaults(snapshot.mode).minimumActorAssuranceForApproval),
     requireVerifiedActorsForApproval: snapshot.requireVerifiedActorsForApproval ?? false,
     audit: {
       emitTransitions: snapshot.audit.emitTransitions,
@@ -870,20 +876,19 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     identityProviderMode: snapshot.identityProviderMode ?? 'optional',
     enforceRiskClassification:
       snapshot.enforceRiskClassification ??
-      modeConsistentDefaults(snapshot.mode as PolicyMode).enforceRiskClassification,
+      modeConsistentDefaults(snapshot.mode).enforceRiskClassification,
     allowRiskDowngradeOverride:
       snapshot.allowRiskDowngradeOverride ??
-      modeConsistentDefaults(snapshot.mode as PolicyMode).allowRiskDowngradeOverride,
+      modeConsistentDefaults(snapshot.mode).allowRiskDowngradeOverride,
     allowReducedCeremony:
-      snapshot.allowReducedCeremony ??
-      modeConsistentDefaults(snapshot.mode as PolicyMode).allowReducedCeremony,
+      snapshot.allowReducedCeremony ?? modeConsistentDefaults(snapshot.mode).allowReducedCeremony,
     discoveryHealth: normalizeDiscoveryHealthField(
       (snapshot as Record<string, unknown>).discoveryHealth,
-      modeConsistentDefaults(snapshot.mode as PolicyMode).discoveryHealth,
+      modeConsistentDefaults(snapshot.mode).discoveryHealth,
     ).value,
     validationEvidence: normalizeValidationEvidenceField(
       (snapshot as Record<string, unknown>).validationEvidence,
-      modeConsistentDefaults(snapshot.mode as PolicyMode).validationEvidence,
+      modeConsistentDefaults(snapshot.mode).validationEvidence,
     ).value,
   };
 }

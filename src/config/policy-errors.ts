@@ -22,13 +22,23 @@ export type PolicyConfigurationErrorCode =
  * Thrown when policy configuration is invalid or contains an unsupported mode.
  *
  * Fail-stop: invalid policy must surface immediately, never silently degrade.
+ *
+ * Carries optional structured `details` so a logging boundary can emit
+ * diagnostics (e.g. `{ received, allowed }`) WITHOUT parsing the message string.
+ * The error stays a pure value — it performs no I/O and no logging itself.
  */
 export class PolicyConfigurationError extends Error {
   readonly code: PolicyConfigurationErrorCode;
+  readonly details?: Readonly<Record<string, unknown>>;
 
-  constructor(code: PolicyConfigurationErrorCode, message: string) {
+  constructor(
+    code: PolicyConfigurationErrorCode,
+    message: string,
+    details?: Readonly<Record<string, unknown>>,
+  ) {
     super(message);
     this.name = 'PolicyConfigurationError';
     this.code = code;
+    this.details = details;
   }
 }

@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #418:** Policy mode is now a closed enum end-to-end, so a near-miss
+  string (e.g. `"Regulated"`, `"regulatd"`, `"regulated "`) can no longer
+  silently disable enforcement. Introduced a single canonical SSOT —
+  `PolicyModeSchema`/`POLICY_MODES` in `src/state/policy-mode.ts` — and routed
+  every previously-duplicated definition/validator through it:
+  `PolicySnapshotSchema.mode`/`requestedMode` (was free-form `z.string()`),
+  `config/policy-types.ts` (`PolicyMode`/`CentralMinimumMode` re-exported from
+  state), `flowguard-config.ts`, `integration/tools/hydrate.ts`,
+  `policy-presets.normalizePolicyMode`, `policy-snapshot.isValidMode`, and the
+  CLI `VALID_POLICY_MODES`. Unknown modes now fail closed: the schema rejects at
+  parse, and the normalization boundary throws `INVALID_POLICY_MODE` while
+  emitting a diagnostic `warn` with `{ received, allowed }`. The
+  enforcement-default decision (`regulated`/`team-ci`) is centralized in a typed
+  `defaultsToEnforcement(mode)` predicate so a mistyped literal is now a
+  compile-time error rather than a silent permissive fallthrough. No data
+  migration (valid values unchanged).
+
 - **Issue #416:** Fixed audit chain hashing so nested event content is bound to
   `chainHash`. The audit runtime now uses a single recursive canonical JSON
   serializer in `src/audit/canonical-digest.ts` for both `canonicalEventDigest`

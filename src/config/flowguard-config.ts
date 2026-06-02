@@ -22,6 +22,7 @@
 
 import { z } from 'zod';
 import { IdpConfigSchema, IdentityProviderModeSchema } from '../identity/index.js';
+import { PolicyModeSchema } from '../state/policy-mode.js';
 import { HOST_IDS } from '../shared/hosts.js';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -46,7 +47,7 @@ export const FlowGuardConfigSchema = z.object({
   policy: z
     .object({
       /** Default policy mode when /hydrate is called without an explicit mode. */
-      defaultMode: z.enum(['solo', 'team', 'team-ci', 'regulated']).optional(),
+      defaultMode: PolicyModeSchema.optional(),
       /** Override max self-review iterations (PLAN phase). */
       maxSelfReviewIterations: z.number().int().min(1).max(10).optional(),
       /** Override max impl-review iterations (IMPL_REVIEW phase). */

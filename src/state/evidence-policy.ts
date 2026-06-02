@@ -7,6 +7,19 @@
 
 import { z } from 'zod';
 import { IdpConfigSchema } from '../identity/types.js';
+import { PolicyModeSchema, CentralMinimumModeSchema, type PolicyMode } from './policy-mode.js';
+
+/**
+ * Modes that enable risk-classification, Discovery-health, and validation-evidence
+ * enforcement by default when a (legacy) snapshot omits the explicit field.
+ *
+ * Centralized, typed predicate so the enforcement default is decided in one place
+ * instead of scattered string comparisons. `mode` is a typed {@link PolicyMode},
+ * so a near-miss literal would be a compile-time error rather than a silent miss.
+ */
+function defaultsToEnforcement(mode: PolicyMode): boolean {
+  return mode === 'regulated' || mode === 'team-ci';
+}
 
 /**
  * Immutable policy snapshot embedded in SessionState.
@@ -28,13 +41,13 @@ export const PolicySnapshotSchema = z
      * may differ from requestedMode when team-ci degrades without CI.
      * Use requestedMode to see what was originally requested.
      */
-    mode: z.string(),
+    mode: PolicyModeSchema,
     /** SHA-256 hash of the canonical JSON of the full GovernancePolicy. */
     hash: z.string(),
     /** When the policy was resolved and frozen. */
     resolvedAt: z.string().datetime(),
     /** Original requested policy mode at hydrate time. */
-    requestedMode: z.string(),
+    requestedMode: PolicyModeSchema,
     /** Applied policy source (P29): explicit, central, repo, or default. */
     source: z.enum(['explicit', 'central', 'repo', 'default']).optional(),
     /** Effective gate behavior after mode resolution. */
@@ -44,7 +57,7 @@ export const PolicySnapshotSchema = z
     /** Why source precedence selected/overrode a mode (P29). */
     resolutionReason: z.string().optional(),
     /** Central minimum mode that constrained resolution (P29). */
-    centralMinimumMode: z.enum(['solo', 'team', 'regulated']).optional(),
+    centralMinimumMode: CentralMinimumModeSchema.optional(),
     /** Digest of the central policy bundle used at hydrate time (P29). */
     policyDigest: z.string().optional(),
     /** Version string from central policy bundle (P29). */
@@ -163,13 +176,12 @@ export const PolicySnapshotSchema = z
   .transform((snapshot) => ({
     ...snapshot,
     enforceRiskClassification:
-      snapshot.enforceRiskClassification ??
-      (snapshot.mode === 'regulated' || snapshot.mode === 'team-ci'),
+      snapshot.enforceRiskClassification ?? defaultsToEnforcement(snapshot.mode),
     allowRiskDowngradeOverride: snapshot.allowRiskDowngradeOverride ?? false,
     allowReducedCeremony: snapshot.allowReducedCeremony ?? false,
     discoveryHealth:
       snapshot.discoveryHealth ??
-      (snapshot.mode === 'regulated' || snapshot.mode === 'team-ci'
+      (defaultsToEnforcement(snapshot.mode)
         ? {
             enforcement: 'required' as const,
             onDegraded: 'warn' as const,
@@ -178,7 +190,7 @@ export const PolicySnapshotSchema = z
         : { enforcement: 'off' as const, onDegraded: 'allow' as const, onDrift: 'allow' as const }),
     validationEvidence:
       snapshot.validationEvidence ??
-      (snapshot.mode === 'regulated' || snapshot.mode === 'team-ci'
+      (defaultsToEnforcement(snapshot.mode)
         ? { enforcement: 'required' as const, allowNoCommands: false }
         : { enforcement: 'off' as const, allowNoCommands: false }),
   }))

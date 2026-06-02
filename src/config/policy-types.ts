@@ -8,6 +8,7 @@
  */
 
 import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
+import type { PolicyMode, CentralMinimumMode } from '../state/policy-mode.js';
 
 // ─── Timestamp Assurance Policy ──────────────────────────────────────────────
 
@@ -314,8 +315,11 @@ export interface FlowGuardPolicy {
   readonly validationEvidence: ValidationEvidencePolicy;
 }
 
-/** Supported policy modes. */
-export type PolicyMode = 'solo' | 'team' | 'team-ci' | 'regulated';
+/**
+ * Supported policy modes. Canonical SSOT lives in the state layer
+ * ({@link ../state/policy-mode.ts}); re-exported here for config-layer consumers.
+ */
+export type { PolicyMode, CentralMinimumMode };
 
 /** Effective gate behavior after policy resolution. */
 export type EffectiveGateBehavior = 'auto_approve' | 'human_gated';
@@ -325,9 +329,6 @@ export type PolicyDegradedReason = 'ci_context_missing';
 
 /** Policy source used for hydrate-time authority resolution. */
 export type PolicySource = 'explicit' | 'central' | 'repo' | 'default';
-
-/** Central policy minimum modes (team-ci is intentionally excluded). */
-export type CentralMinimumMode = 'solo' | 'team' | 'regulated';
 
 /** Why a policy source was selected or overridden. */
 export type PolicyResolutionReason =

@@ -14,6 +14,7 @@ import { install } from './install-command.js';
 import { uninstall } from './uninstall-command.js';
 import { resetAdapterLogger } from '../logging/adapter-logger.js';
 import { HOST_IDS } from '../shared/hosts.js';
+import { POLICY_MODES } from '../state/policy-mode.js';
 import {
   type InstallScope,
   type InstallPlatform,
@@ -54,7 +55,7 @@ export { uninstall } from './uninstall-command.js';
 
 // ─── Argument Parsing ─────────────────────────────────────────────────────────
 
-const VALID_POLICY_MODES: readonly PolicyMode[] = ['solo', 'team', 'team-ci', 'regulated'] as const;
+const VALID_POLICY_MODES: readonly PolicyMode[] = POLICY_MODES;
 const VALID_SCOPES: readonly InstallScope[] = ['global', 'repo'] as const;
 const VALID_PLATFORMS: readonly InstallPlatform[] = HOST_IDS;
 const VALID_ACTIONS: readonly CliAction[] = [
