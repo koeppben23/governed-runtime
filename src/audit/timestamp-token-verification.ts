@@ -6,6 +6,7 @@
 import type { AuditEvent } from '../state/evidence.js';
 import type { TimestampVerifier } from './tsa-provider.js';
 import { canonicalDigestToUint8Array } from './timestamp-verification.js';
+import { computeCanonicalEventDigest } from './canonical-digest.js';
 
 export interface TimestampTokenFinding {
   readonly index: number;
@@ -26,12 +27,14 @@ export async function verifyTimestampTokensForEvents(input: {
 
   for (let i = 0; i < input.events.length; i++) {
     const event = input.events[i]! as Record<string, unknown>;
-    const canonicalDigest = event.canonicalEventDigest;
     const evidence = event.timestampEvidence as Record<string, unknown> | undefined;
     const tsa = evidence?.tsa as Record<string, unknown> | undefined;
     const tokenDerBase64 = tsa?.tokenDerBase64;
+    const cachedMessageImprint = tsa?.messageImprint;
 
-    if (typeof canonicalDigest !== 'string' || typeof tokenDerBase64 !== 'string') continue;
+    if (typeof tokenDerBase64 !== 'string') continue;
+
+    const canonicalDigest = computeCanonicalEventDigest(event);
 
     const result = await input.verifier.verifyToken({
       tokenDerBase64,
@@ -42,6 +45,15 @@ export async function verifyTimestampTokensForEvents(input: {
 
     if (result.status !== 'valid') {
       findings.push({ index: i, reason: result.reason ?? 'invalid_timestamp_token' });
+      continue;
+    }
+
+    if (
+      typeof cachedMessageImprint === 'string' &&
+      typeof result.messageImprintHex === 'string' &&
+      cachedMessageImprint !== result.messageImprintHex
+    ) {
+      findings.push({ index: i, reason: 'cached_message_imprint_mismatch' });
     }
   }
 

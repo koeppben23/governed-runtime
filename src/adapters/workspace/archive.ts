@@ -606,7 +606,28 @@ function isAuditFormatFailure(reason: ChainVerificationReason | null): boolean {
 }
 
 function logAuditChainVerificationFailure(chainResult: ChainVerification): void {
-  if (chainResult.valid || !chainResult.firstBreak) return;
+  if (chainResult.valid) return;
+
+  if (chainResult.reason === 'TSA_MESSAGE_IMPRINT_MISMATCH') {
+    const mismatchIndex = chainResult.tsaImprintMismatches[0];
+    getAdapterLogger().error('archive', 'TSA timestamp verification failed', {
+      eventId:
+        typeof mismatchIndex === 'number' ? chainResult.results[mismatchIndex]?.eventId : null,
+      reason: 'tsa_imprint_mismatch',
+    });
+    return;
+  }
+
+  if (chainResult.reason === 'TOKEN_VERIFICATION_REQUIRED') {
+    const tokenIndex = chainResult.tokenVerificationRequired[0];
+    getAdapterLogger().error('archive', 'TSA token verification required', {
+      eventId: typeof tokenIndex === 'number' ? chainResult.results[tokenIndex]?.eventId : null,
+      reason: 'token_verification_required',
+    });
+    return;
+  }
+
+  if (!chainResult.firstBreak) return;
 
   const logExtra: Record<string, unknown> = {
     eventId: chainResult.firstBreak.eventId,
@@ -696,7 +717,8 @@ async function verifyAuditChainIntegrity(
       ) {
         findings.push({
           code:
-            chainResult.reason === 'TSA_MESSAGE_IMPRINT_MISMATCH'
+            chainResult.reason === 'TSA_MESSAGE_IMPRINT_MISMATCH' ||
+            chainResult.reason === 'TOKEN_VERIFICATION_REQUIRED'
               ? 'tsa_verification_failed'
               : 'timestamp_unanchored',
           severity: timestampFailuresAreFatal ? 'error' : 'warning',

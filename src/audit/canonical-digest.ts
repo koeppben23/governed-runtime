@@ -14,22 +14,21 @@
  * The chainHash binds the full record including timestampEvidence using the
  * same recursive canonical JSON authority.
  *
- * Backward-compatibility: verification compares the stored
- * canonicalEventDigest with the stored timestampEvidence.tsa.messageImprint
- * without recomputation. Legacy v1 events (prevHash included in the digest)
- * therefore remain verifiable because both stored values were computed
- * together at event-creation time.
+ * Verification recomputes this digest from event content. Pure synchronous
+ * verification compares it to the current internal trusted-imprint
+ * representation at timestampEvidence.tsa.messageImprint. Cryptographic archive
+ * verification compares it to the imprint extracted from tokenDerBase64 via the
+ * configured timestamp verifier. Stored canonicalEventDigest is cross-check
+ * evidence only; it is never the verification authority.
  *
  * Two-digest architecture:
- *   canonicalEventDigest → TSA messageImprint (proves event content existed at trusted time)
+ *   recomputed canonicalEventDigest → TSA messageImprint (proves event content existed at trusted time)
  *   chainHash → binds the complete record (protects integrity of full event)
  *
  * @version v1
  */
 
 import * as crypto from 'node:crypto';
-import type { ChainedAuditEvent } from './types.js';
-
 const EXCLUDED_FIELDS = new Set([
   'chainHash',
   'timestampEvidence',
@@ -46,11 +45,11 @@ const EXCLUDED_FIELDS = new Set([
  * @param event - Full chained audit event (including timestampEvidence if attached).
  * @returns SHA-256 hex digest.
  */
-export function computeCanonicalEventDigest(event: Omit<ChainedAuditEvent, 'chainHash'>): string {
+export function computeCanonicalEventDigest(event: Record<string, unknown>): string {
   const stripped: Record<string, unknown> = {};
   for (const key of Object.keys(event).sort()) {
     if (EXCLUDED_FIELDS.has(key)) continue;
-    stripped[key] = (event as Record<string, unknown>)[key];
+    stripped[key] = event[key];
   }
   const canonical = canonicalJsonStringify(stripped);
   return crypto.createHash('sha256').update(canonical, 'utf-8').digest('hex');

@@ -46,6 +46,7 @@ export interface TimestampVerifier {
     policyOid?: string;
     serialNumber?: string;
     signerSubject?: string;
+    messageImprintHex?: string;
     reason?: string;
   }>;
 }

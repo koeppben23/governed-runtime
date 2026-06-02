@@ -72,6 +72,8 @@ import { materializeReviewCardArtifact } from './workspace/evidence-artifacts.js
 import { initWorkspace, archiveSession } from './workspace/index.js';
 import { benchmarkSync, measureAsync, PERF_BUDGETS } from '../test-policy.js';
 import { verifyChain } from '../audit/integrity.js';
+import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
+import { CURRENT_AUDIT_FORMAT_VERSION } from '../audit/types.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -974,19 +976,10 @@ describe('persistence', () => {
           id: crypto.randomUUID(),
           event: `transition:STEP_${idx}`,
         }) as AuditEvent & Record<string, unknown>;
-        const stripped = { ...event } as Record<string, unknown>;
-        delete stripped.chainHash;
-        delete stripped.prevHash;
-        delete stripped.timestampEvidence;
-        delete stripped.canonicalEventDigest;
-        const sorted: Record<string, unknown> = {};
-        for (const key of Object.keys(stripped).sort()) {
-          sorted[key] = stripped[key];
-        }
-        const canonicalDigest = crypto
-          .createHash('sha256')
-          .update(JSON.stringify(sorted), 'utf-8')
-          .digest('hex');
+        const canonicalDigest = computeCanonicalEventDigest({
+          ...event,
+          auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
+        } as Record<string, unknown>);
         const withTSA = {
           ...event,
           canonicalEventDigest: canonicalDigest,
@@ -1012,17 +1005,18 @@ describe('persistence', () => {
       expect(skipped).toBe(0);
       expect(events).toHaveLength(inputs.length);
       expect(verifyChain(events, { strict: true }).valid).toBe(true);
-      expect(verifyChain(events, { strict: true, strictTimestamps: true }).valid).toBe(true);
+      const tsResult = verifyChain(events, { strict: true, strictTimestamps: true });
+      expect(tsResult.valid).toBe(false);
+      expect(tsResult.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
       for (let i = 1; i < events.length; i++) {
         expect(events[i]!.prevHash).toBe(events[i - 1]!.chainHash);
       }
     });
 
-    it('legacy v1 TSA events (canonical digest includes prevHash) still verify correctly after lock reappends', async () => {
+    it('legacy v1 TSA events (canonical digest includes prevHash) fail closed in strict timestamp verification after lock reappends', async () => {
       // Simulate a v1 TSA event: canonicalEventDigest computed WITH prevHash.
-      // After appendAuditEvent recomputes prevHash under the lock, the stored
-      // canonicalEventDigest and timestampEvidence still match (both stored together,
-      // compare as-is without recomputation).
+      // After appendAuditEvent recomputes prevHash under the lock, strict timestamp
+      // verification recomputes the v2 digest and rejects the stale v1 imprint.
       const event = makeValidAuditEvent() as AuditEvent & Record<string, unknown>;
       const stripped = { ...event } as Record<string, unknown>;
       delete stripped.chainHash;
@@ -1060,7 +1054,9 @@ describe('persistence', () => {
       await appendAuditEvent(tmpDir, withTsa as unknown as AuditEvent);
       const { events } = await readAuditTrail(tmpDir);
       expect(events).toHaveLength(1);
-      expect(verifyChain(events, { strict: true, strictTimestamps: true }).valid).toBe(true);
+      const result = verifyChain(events, { strict: true, strictTimestamps: true });
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
     });
 
     it('refuses to append when existing audit trail has unparseable lines', async () => {

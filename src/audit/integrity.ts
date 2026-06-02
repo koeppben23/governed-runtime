@@ -71,7 +71,7 @@ function safeHashEqual(a: string, b: string): boolean {
  *   presence are only verified when this is enabled.
  *
  * - `strictTimestamps: true`: enables timestamp monotonicity checks, TSA message
- *   imprint verification against canonicalEventDigest, and required evidence
+ *   imprint verification against recomputed canonical event content digest, and required evidence
  *   presence for critical events. Additional reasons may be reported.
  */
 export interface ChainVerifyOptions {
@@ -89,7 +89,12 @@ export interface ChainVerifyOptions {
  * - `UNSUPPORTED_AUDIT_FORMAT_VERSION`: event declares an unknown audit chain format.
  * - `TIMESTAMP_NON_MONOTONIC`: event timestamps are not strictly non-decreasing.
  * - `TIMESTAMP_EVIDENCE_MISSING`: critical event lacks required timestamp evidence.
- * - `TSA_MESSAGE_IMPRINT_MISMATCH`: TSA messageImprint does not match canonicalEventDigest.
+ * - `TSA_MESSAGE_IMPRINT_MISMATCH`: TSA messageImprint does not match recomputed canonical content digest.
+ *   Returned when no tokenDerBase64 exists (internal-imprint model) and the cached imprint
+ *   fails comparison.
+ * - `TOKEN_VERIFICATION_REQUIRED`: event has tokenDerBase64 and is TSA-stamped but token has not
+ *   been cryptographically verified. Strict timestamp verification cannot trust mutable
+ *   timestampEvidence.tsa.messageImprint. Deferred to async token verification.
  */
 export type ChainVerificationReason =
   | 'CHAIN_BREAK'
@@ -98,7 +103,8 @@ export type ChainVerificationReason =
   | 'UNSUPPORTED_AUDIT_FORMAT_VERSION'
   | 'TIMESTAMP_NON_MONOTONIC'
   | 'TIMESTAMP_EVIDENCE_MISSING'
-  | 'TSA_MESSAGE_IMPRINT_MISMATCH';
+  | 'TSA_MESSAGE_IMPRINT_MISMATCH'
+  | 'TOKEN_VERIFICATION_REQUIRED';
 
 // ─── Verification Result ──────────────────────────────────────────────────────
 
@@ -146,6 +152,8 @@ export interface ChainVerification {
    * - `TIMESTAMP_NON_MONOTONIC`: timestamps decrease between events.
    * - `TIMESTAMP_EVIDENCE_MISSING`: critical events lack timestamp evidence.
    * - `TSA_MESSAGE_IMPRINT_MISMATCH`: TSA stamp does not match canonical digest.
+   * - `TOKEN_VERIFICATION_REQUIRED`: TSA-stamped event has tokenDerBase64 that must be
+   *   cryptographically verified before imprint can be trusted.
    *
    * Priority: CHAIN_BREAK > unsupported format > legacy format > legacy unchained > timestamp_*.
    */
@@ -160,6 +168,8 @@ export interface ChainVerification {
   readonly missingTimestampEvidence: readonly number[];
   /** Indices of events with TSA messageImprint mismatch. */
   readonly tsaImprintMismatches: readonly number[];
+  /** Indices of TSA-stamped events with tokenDerBase64 that require token verification. */
+  readonly tokenVerificationRequired: readonly number[];
 }
 
 // ─── Verification Functions ──────────────────────────────────────────────────
@@ -306,6 +316,7 @@ export function verifyChain(
     timestampMonotonicity: timestampChecks.timestampMonotonicity,
     missingTimestampEvidence: timestampChecks.missingTimestampEvidence,
     tsaImprintMismatches: timestampChecks.tsaImprintMismatches,
+    tokenVerificationRequired: timestampChecks.tokenVerificationRequired,
   };
 }
 
@@ -320,6 +331,7 @@ interface TimestampChecks {
   readonly timestampMonotonicity: ChainVerification['timestampMonotonicity'];
   readonly missingTimestampEvidence: readonly number[];
   readonly tsaImprintMismatches: readonly number[];
+  readonly tokenVerificationRequired: readonly number[];
 }
 
 function trackVerificationFailure(
@@ -347,6 +359,7 @@ function verifyTimestampChecks(
       timestampMonotonicity: null,
       missingTimestampEvidence: [],
       tsaImprintMismatches: [],
+      tokenVerificationRequired: [],
     };
   }
 
@@ -356,9 +369,19 @@ function verifyTimestampChecks(
     'decision',
     'lifecycle',
   ]).missingCriticalEvents;
-  const tsaImprintMismatches = chainedEvents.flatMap((event, index) =>
-    verifyTsaMessageImprint(event).valid ? [] : [index],
-  );
+
+  const tsaImprintMismatches: number[] = [];
+  const tokenVerificationRequired: number[] = [];
+
+  for (let i = 0; i < chainedEvents.length; i++) {
+    const check = verifyTsaMessageImprint(chainedEvents[i]!);
+    if (check.valid) continue;
+    if (check.needsTokenVerification) {
+      tokenVerificationRequired.push(i);
+    } else {
+      tsaImprintMismatches.push(i);
+    }
+  }
 
   return {
     timestampMonotonicity: {
@@ -368,6 +391,7 @@ function verifyTimestampChecks(
     },
     missingTimestampEvidence,
     tsaImprintMismatches,
+    tokenVerificationRequired,
   };
 }
 
@@ -400,6 +424,9 @@ function resolveStructuralChainReason(
 function resolveTimestampReason(timestampChecks: TimestampChecks): ChainVerificationReason | null {
   if (timestampChecks.timestampMonotonicity?.valid === false) {
     return 'TIMESTAMP_NON_MONOTONIC';
+  }
+  if (timestampChecks.tokenVerificationRequired.length > 0) {
+    return 'TOKEN_VERIFICATION_REQUIRED';
   }
   if (timestampChecks.tsaImprintMismatches.length > 0) {
     return 'TSA_MESSAGE_IMPRINT_MISMATCH';

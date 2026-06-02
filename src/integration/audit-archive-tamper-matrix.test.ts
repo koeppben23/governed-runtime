@@ -17,6 +17,8 @@ import { hydrate, ticket, plan, decision, run_check, implement, status } from '.
 import { readState } from '../adapters/persistence.js';
 import { computeFingerprint, sessionDir, verifyArchive } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
+import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
+import { computeChainHash, type ChainedAuditEvent } from '../audit/types.js';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
@@ -269,6 +271,166 @@ describe('audit/archive tamper matrix', () => {
     expect(verification.passed).toBe(false);
     expect(verification.findings.some((f) => f.code === 'audit_chain_invalid')).toBe(true);
   });
+
+  it.skipIf(!tarOk)(
+    'regulated nested content tamper with re-sealed chain -> TSA verification failure',
+    async () => {
+      const ids = await completeRegulatedSession();
+      const lines = await readAuditLines(ids.sessDir);
+      const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+      const last = events[events.length - 1]! as unknown as ChainedAuditEvent;
+      const originalDigest = computeCanonicalEventDigest(last);
+      const { chainHash: _originalChainHash, ...lastWithoutHash } = last;
+      const stampedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
+        ...lastWithoutHash,
+        canonicalEventDigest: originalDigest,
+        timestampEvidence: {
+          status: 'tsa_stamped',
+          source: 'tsa',
+          resolvedAt: last.timestamp,
+          tsa: {
+            tokenDerBase64: 'trusted-token-material-not-logged',
+            receivedAt: last.timestamp,
+            messageImprint: originalDigest,
+            digestAlgorithm: 'sha256',
+            verificationStatus: 'unchecked',
+          },
+        },
+      };
+      const stamped = {
+        ...stampedBody,
+        chainHash: computeChainHash(last.prevHash, stampedBody),
+      };
+      const { chainHash: _chainHash, ...stampedWithoutHash } = stamped;
+      const tamperedBody = {
+        ...stampedWithoutHash,
+        detail: {
+          ...stamped.detail,
+          nestedTamper: { verdict: 'reject', depth: { changed: true } },
+        },
+      };
+      const resealedTamper = {
+        ...tamperedBody,
+        canonicalEventDigest: computeCanonicalEventDigest(tamperedBody),
+      };
+      events[events.length - 1] = {
+        ...resealedTamper,
+        chainHash: computeChainHash(last.prevHash, resealedTamper),
+      } as unknown as Record<string, unknown>;
+      await fs.writeFile(
+        path.join(ids.sessDir, 'audit.jsonl'),
+        `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
+        'utf-8',
+      );
+
+      const chainResult = verifyChain(events, { strict: true, strictTimestamps: true });
+      expect(chainResult.valid).toBe(false);
+      expect(chainResult.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
+      const logs: Array<{
+        level: string;
+        service: string;
+        message: string;
+        extra?: Record<string, unknown>;
+      }> = [];
+      const logger: AdapterLogger = {
+        info: (service, message, extra) => logs.push({ level: 'info', service, message, extra }),
+        warn: (service, message, extra) => logs.push({ level: 'warn', service, message, extra }),
+        error: (service, message, extra) => logs.push({ level: 'error', service, message, extra }),
+      };
+
+      const verification = await runWithAdapterLoggerAsync(logger, () =>
+        verifyArchive(ids.fingerprint, ctx.sessionID),
+      );
+
+      expect(verification.passed).toBe(false);
+      expect(
+        verification.findings.some(
+          (f) => f.code === 'tsa_verification_failed' && f.severity === 'error',
+        ),
+      ).toBe(true);
+      expect(
+        logs.some(
+          (entry) =>
+            entry.level === 'error' &&
+            entry.service === 'archive' &&
+            entry.extra?.reason === 'token_verification_required' &&
+            typeof entry.extra.eventId === 'string' &&
+            !('tokenDerBase64' in entry.extra) &&
+            !('messageImprint' in entry.extra),
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it.skipIf(!tarOk)(
+    'regulated nested content tamper with coordinated imprint edit -> still TOKEN_VERIFICATION_REQUIRED',
+    async () => {
+      const ids = await completeRegulatedSession();
+      const lines = await readAuditLines(ids.sessDir);
+      const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+      const last = events[events.length - 1]! as unknown as ChainedAuditEvent;
+      const originalDigest = computeCanonicalEventDigest(last);
+      const { chainHash: _originalChainHash, ...lastWithoutHash } = last;
+      const stampedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
+        ...lastWithoutHash,
+        canonicalEventDigest: originalDigest,
+        timestampEvidence: {
+          status: 'tsa_stamped',
+          source: 'tsa',
+          resolvedAt: last.timestamp,
+          tsa: {
+            tokenDerBase64: 'trusted-token-material-not-logged',
+            receivedAt: last.timestamp,
+            messageImprint: originalDigest,
+            digestAlgorithm: 'sha256',
+            verificationStatus: 'unchecked',
+          },
+        },
+      };
+      const stamped = {
+        ...stampedBody,
+        chainHash: computeChainHash(last.prevHash, stampedBody),
+      };
+      const { chainHash: _chainHash, ...stampedWithoutHash } = stamped;
+      const tamperedBody = {
+        ...stampedWithoutHash,
+        detail: {
+          ...stamped.detail,
+          nestedTamper: { verdict: 'reject', depth: { changed: true } },
+        },
+      };
+      const attackerDigest = computeCanonicalEventDigest(tamperedBody);
+      const evidence = (stamped as Record<string, unknown>).timestampEvidence as Record<
+        string,
+        unknown
+      >;
+      const tsaObj = evidence.tsa as Record<string, unknown>;
+      const coordinatedTamper = {
+        ...tamperedBody,
+        canonicalEventDigest: attackerDigest,
+        timestampEvidence: {
+          ...evidence,
+          tsa: {
+            ...tsaObj,
+            messageImprint: attackerDigest,
+          },
+        },
+      };
+      events[events.length - 1] = {
+        ...coordinatedTamper,
+        chainHash: computeChainHash(last.prevHash, coordinatedTamper),
+      } as unknown as Record<string, unknown>;
+      await fs.writeFile(
+        path.join(ids.sessDir, 'audit.jsonl'),
+        `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
+        'utf-8',
+      );
+
+      const chainResult = verifyChain(events, { strict: true, strictTimestamps: true });
+      expect(chainResult.valid).toBe(false);
+      expect(chainResult.reason).toBe('TOKEN_VERIFICATION_REQUIRED');
+    },
+  );
 
   it.skipIf(!tarOk)('pre-v2 chained audit format -> explicit legacy archive finding', async () => {
     const ids = await completeRegulatedSession();
