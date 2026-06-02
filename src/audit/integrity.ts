@@ -28,7 +28,12 @@
  */
 
 import { timingSafeEqual } from 'node:crypto';
-import { computeChainHash, GENESIS_HASH, type ChainedAuditEvent } from './types.js';
+import {
+  computeChainHash,
+  CURRENT_AUDIT_FORMAT_VERSION,
+  GENESIS_HASH,
+  type ChainedAuditEvent,
+} from './types.js';
 import {
   verifyTimestampMonotonicity,
   verifyTsaMessageImprint,
@@ -79,6 +84,9 @@ export interface ChainVerifyOptions {
  *
  * - `CHAIN_BREAK`: hash chain integrity failure (tampered, inserted, or deleted event).
  * - `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`: strict mode rejects unchained events.
+ * - `LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2`: chained pre-v2 events cannot be verified
+ *   under the current recursive canonical hash guarantee.
+ * - `UNSUPPORTED_AUDIT_FORMAT_VERSION`: event declares an unknown audit chain format.
  * - `TIMESTAMP_NON_MONOTONIC`: event timestamps are not strictly non-decreasing.
  * - `TIMESTAMP_EVIDENCE_MISSING`: critical event lacks required timestamp evidence.
  * - `TSA_MESSAGE_IMPRINT_MISMATCH`: TSA messageImprint does not match canonicalEventDigest.
@@ -86,6 +94,8 @@ export interface ChainVerifyOptions {
 export type ChainVerificationReason =
   | 'CHAIN_BREAK'
   | 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE'
+  | 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2'
+  | 'UNSUPPORTED_AUDIT_FORMAT_VERSION'
   | 'TIMESTAMP_NON_MONOTONIC'
   | 'TIMESTAMP_EVIDENCE_MISSING'
   | 'TSA_MESSAGE_IMPRINT_MISMATCH';
@@ -102,6 +112,12 @@ export interface EventVerification {
   readonly valid: boolean;
   /** Reason for failure (null if valid). */
   readonly reason: string | null;
+  /** Machine-readable failure classification. */
+  readonly reasonCode: ChainVerificationReason | null;
+  /** Recomputed hash when a v2 chainHash mismatch is detected. */
+  readonly expectedChainHash?: string;
+  /** Stored hash when a v2 chainHash mismatch is detected. */
+  readonly actualChainHash?: string;
 }
 
 /** Result of full chain verification. */
@@ -124,11 +140,14 @@ export interface ChainVerification {
    * - `CHAIN_BREAK`: hash mismatch detected (firstBreak has details).
    * - `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`: strict mode rejects
    *   unchained legacy events (skippedCount > 0).
+   * - `LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2`: chained legacy format cannot
+   *   be verified under current v2 guarantees.
+   * - `UNSUPPORTED_AUDIT_FORMAT_VERSION`: event declares an unknown format.
    * - `TIMESTAMP_NON_MONOTONIC`: timestamps decrease between events.
    * - `TIMESTAMP_EVIDENCE_MISSING`: critical events lack timestamp evidence.
    * - `TSA_MESSAGE_IMPRINT_MISMATCH`: TSA stamp does not match canonical digest.
    *
-   * Priority: CHAIN_BREAK > LEGACY > TIMESTAMP_*.
+   * Priority: CHAIN_BREAK > unsupported format > legacy format > legacy unchained > timestamp_*.
    */
   readonly reason: ChainVerificationReason | null;
   /** Timestamp monotonicity result (null if strictTimestamps not enabled). */
@@ -157,6 +176,39 @@ export function verifyEvent(
   expectedPrevHash: string,
   index: number,
 ): EventVerification {
+  const formatVersion = (event as unknown as Record<string, unknown>).auditFormatVersion;
+  if (formatVersion === undefined) {
+    return {
+      index,
+      eventId: event.id,
+      valid: false,
+      reason:
+        'legacy audit chain format: missing auditFormatVersion cannot be verified with recursive v2 chain hashing',
+      reasonCode: 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2',
+    };
+  }
+
+  if (formatVersion === 'audit-chain.v1') {
+    return {
+      index,
+      eventId: event.id,
+      valid: false,
+      reason:
+        'legacy audit chain format audit-chain.v1 cannot be verified with recursive v2 chain hashing',
+      reasonCode: 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2',
+    };
+  }
+
+  if (formatVersion !== CURRENT_AUDIT_FORMAT_VERSION) {
+    return {
+      index,
+      eventId: event.id,
+      valid: false,
+      reason: `unsupported audit chain format: ${String(formatVersion)}`,
+      reasonCode: 'UNSUPPORTED_AUDIT_FORMAT_VERSION',
+    };
+  }
+
   // Check prevHash matches expected (constant-time comparison)
   if (!safeHashEqual(event.prevHash, expectedPrevHash)) {
     return {
@@ -164,6 +216,7 @@ export function verifyEvent(
       eventId: event.id,
       valid: false,
       reason: `prevHash mismatch: expected "${expectedPrevHash}", got "${event.prevHash}"`,
+      reasonCode: 'CHAIN_BREAK',
     };
   }
 
@@ -177,10 +230,13 @@ export function verifyEvent(
       eventId: event.id,
       valid: false,
       reason: `chainHash mismatch: expected "${recomputed}", got "${chainHash}" (event data may have been modified)`,
+      reasonCode: 'CHAIN_BREAK',
+      expectedChainHash: recomputed,
+      actualChainHash: chainHash,
     };
   }
 
-  return { index, eventId: event.id, valid: true, reason: null };
+  return { index, eventId: event.id, valid: true, reason: null, reasonCode: null };
 }
 
 /**
@@ -208,9 +264,9 @@ export function verifyChain(
   const strict = options?.strict === true;
   const strictTimestamps = options?.strictTimestamps === true;
   const results: EventVerification[] = [];
+  const failures: FirstVerificationFailures = {};
   let skippedCount = 0;
   let lastHash = GENESIS_HASH;
-  let firstBreak: EventVerification | null = null;
 
   for (let i = 0; i < events.length; i++) {
     const raw = events[i]!;
@@ -224,78 +280,134 @@ export function verifyChain(
     const event = raw as unknown as ChainedAuditEvent;
     const verification = verifyEvent(event, lastHash, i);
     results.push(verification);
-
-    if (!verification.valid && !firstBreak) {
-      firstBreak = verification;
-    }
+    trackVerificationFailure(failures, verification);
 
     // Advance chain hash (even if verification failed — to detect cascading breaks)
     lastHash = event.chainHash;
   }
 
-  // Timestamp verification (if enabled)
-  let timestampMonotonicity: ChainVerification['timestampMonotonicity'] = null;
-  let missingTimestampEvidence: number[] = [];
-  const tsaImprintMismatches: number[] = [];
-
-  if (strictTimestamps) {
-    const chainedEvents = events.filter(isChainedEvent).map((e) => e as unknown as AuditEvent);
-
-    const monotonicityResult = verifyTimestampMonotonicity(chainedEvents);
-    timestampMonotonicity = {
-      valid: monotonicityResult.valid,
-      firstBreak: monotonicityResult.firstBreak,
-      message: monotonicityResult.message,
-    };
-
-    const presenceCheck = verifyTimestampEvidencePresence(chainedEvents, ['decision', 'lifecycle']);
-    missingTimestampEvidence = presenceCheck.missingCriticalEvents;
-
-    for (let i = 0; i < chainedEvents.length; i++) {
-      const check = verifyTsaMessageImprint(chainedEvents[i]!);
-      if (!check.valid) {
-        tsaImprintMismatches.push(i);
-      }
-    }
-  }
-
-  // Determine validity and reason.
-  // Priority: CHAIN_BREAK > LEGACY > TIMESTAMP_NON_MONOTONIC > IMPRINT_MISMATCH > EVIDENCE_MISSING.
-  let valid: boolean;
-  let reason: ChainVerificationReason | null;
-
-  if (firstBreak !== null) {
-    valid = false;
-    reason = 'CHAIN_BREAK';
-  } else if (strict && skippedCount > 0) {
-    valid = false;
-    reason = 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE';
-  } else if (strictTimestamps && timestampMonotonicity && !timestampMonotonicity.valid) {
-    valid = false;
-    reason = 'TIMESTAMP_NON_MONOTONIC';
-  } else if (strictTimestamps && tsaImprintMismatches.length > 0) {
-    valid = false;
-    reason = 'TSA_MESSAGE_IMPRINT_MISMATCH';
-  } else if (strictTimestamps && missingTimestampEvidence.length > 0) {
-    valid = false;
-    reason = 'TIMESTAMP_EVIDENCE_MISSING';
-  } else {
-    valid = true;
-    reason = null;
-  }
+  const timestampChecks = verifyTimestampChecks(events, strictTimestamps);
+  const reason = resolveChainReason(
+    failures,
+    strict,
+    skippedCount,
+    strictTimestamps,
+    timestampChecks,
+  );
 
   return {
-    valid,
+    valid: reason === null,
     totalEvents: events.length,
     verifiedCount: results.length,
     skippedCount,
-    firstBreak,
+    firstBreak: failures.firstBreak ?? null,
     results,
     reason,
-    timestampMonotonicity,
+    timestampMonotonicity: timestampChecks.timestampMonotonicity,
+    missingTimestampEvidence: timestampChecks.missingTimestampEvidence,
+    tsaImprintMismatches: timestampChecks.tsaImprintMismatches,
+  };
+}
+
+interface FirstVerificationFailures {
+  firstBreak?: EventVerification;
+  firstChainBreak?: EventVerification;
+  firstLegacyFormat?: EventVerification;
+  firstUnsupportedFormat?: EventVerification;
+}
+
+interface TimestampChecks {
+  readonly timestampMonotonicity: ChainVerification['timestampMonotonicity'];
+  readonly missingTimestampEvidence: readonly number[];
+  readonly tsaImprintMismatches: readonly number[];
+}
+
+function trackVerificationFailure(
+  failures: FirstVerificationFailures,
+  verification: EventVerification,
+): void {
+  if (verification.valid) return;
+
+  failures.firstBreak ??= verification;
+  if (verification.reasonCode === 'CHAIN_BREAK') failures.firstChainBreak ??= verification;
+  if (verification.reasonCode === 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2') {
+    failures.firstLegacyFormat ??= verification;
+  }
+  if (verification.reasonCode === 'UNSUPPORTED_AUDIT_FORMAT_VERSION') {
+    failures.firstUnsupportedFormat ??= verification;
+  }
+}
+
+function verifyTimestampChecks(
+  events: Record<string, unknown>[],
+  strictTimestamps: boolean,
+): TimestampChecks {
+  if (!strictTimestamps) {
+    return {
+      timestampMonotonicity: null,
+      missingTimestampEvidence: [],
+      tsaImprintMismatches: [],
+    };
+  }
+
+  const chainedEvents = events.filter(isChainedEvent).map((e) => e as unknown as AuditEvent);
+  const monotonicityResult = verifyTimestampMonotonicity(chainedEvents);
+  const missingTimestampEvidence = verifyTimestampEvidencePresence(chainedEvents, [
+    'decision',
+    'lifecycle',
+  ]).missingCriticalEvents;
+  const tsaImprintMismatches = chainedEvents.flatMap((event, index) =>
+    verifyTsaMessageImprint(event).valid ? [] : [index],
+  );
+
+  return {
+    timestampMonotonicity: {
+      valid: monotonicityResult.valid,
+      firstBreak: monotonicityResult.firstBreak,
+      message: monotonicityResult.message,
+    },
     missingTimestampEvidence,
     tsaImprintMismatches,
   };
+}
+
+function resolveChainReason(
+  failures: FirstVerificationFailures,
+  strict: boolean,
+  skippedCount: number,
+  strictTimestamps: boolean,
+  timestampChecks: TimestampChecks,
+): ChainVerificationReason | null {
+  const structuralReason = resolveStructuralChainReason(failures, strict, skippedCount);
+  if (structuralReason) return structuralReason;
+  if (!strictTimestamps) return null;
+
+  return resolveTimestampReason(timestampChecks);
+}
+
+function resolveStructuralChainReason(
+  failures: FirstVerificationFailures,
+  strict: boolean,
+  skippedCount: number,
+): ChainVerificationReason | null {
+  if (failures.firstChainBreak) return 'CHAIN_BREAK';
+  if (failures.firstUnsupportedFormat) return 'UNSUPPORTED_AUDIT_FORMAT_VERSION';
+  if (failures.firstLegacyFormat) return 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2';
+  if (strict && skippedCount > 0) return 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE';
+  return null;
+}
+
+function resolveTimestampReason(timestampChecks: TimestampChecks): ChainVerificationReason | null {
+  if (timestampChecks.timestampMonotonicity?.valid === false) {
+    return 'TIMESTAMP_NON_MONOTONIC';
+  }
+  if (timestampChecks.tsaImprintMismatches.length > 0) {
+    return 'TSA_MESSAGE_IMPRINT_MISMATCH';
+  }
+  if (timestampChecks.missingTimestampEvidence.length > 0) {
+    return 'TIMESTAMP_EVIDENCE_MISSING';
+  }
+  return null;
 }
 
 /**

@@ -2,7 +2,7 @@
  * @module evidence-audit
  * @description Audit event schema — tamper-evident JSONL audit trail entries with hash-chain linking.
  *
- * @version v2 — added canonicalEventDigest and timestampEvidence for TSA anchoring.
+ * @version v3 — added auditFormatVersion for recursive chain-hash canonicalization.
  */
 
 import { z } from 'zod';
@@ -18,6 +18,8 @@ import { TimestampEvidence } from './evidence-timestamp.js';
  * - Legacy events (pre-chain) omit these fields
  * - New events always include them
  * - The integrity verifier handles mixed trails gracefully
+ * - Chained events without auditFormatVersion are pre-v2 legacy format and are
+ *   not verifiable under the current recursive chain-hash guarantee.
  *
  * Timestamp assurance fields (canonicalEventDigest, timestampEvidence) are optional:
  * - Legacy events (pre-#269) omit these fields
@@ -39,6 +41,8 @@ export const AuditEvent = z
     event: z.string(),
     timestamp: z.string().datetime(),
     actor: z.string(),
+    /** Audit chain hash format. Current events use audit-chain.v2. */
+    auditFormatVersion: z.enum(['audit-chain.v1', 'audit-chain.v2']).optional(),
     detail: z.record(z.string(), z.unknown()),
     /** Resolved actor identity. Present on human-influenced events, absent on machine-only. */
     actorInfo: ActorInfoSchema.optional(),

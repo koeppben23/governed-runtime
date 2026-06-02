@@ -27,7 +27,7 @@ import { hydrate, ticket, plan, decision, run_check, implement, status } from '.
 import { readState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { verifyChain } from '../audit/integrity.js';
-import { computeChainHash } from '../audit/types.js';
+import { computeChainHash, CURRENT_AUDIT_FORMAT_VERSION } from '../audit/types.js';
 import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
@@ -200,6 +200,7 @@ function chainedEvent(prevHash: string, event: string): Record<string, unknown> 
     event,
     timestamp: new Date().toISOString(),
     actor: 'test',
+    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
     detail: { event },
     prevHash,
   };
@@ -215,6 +216,15 @@ describe('audit and archive integrity fail-closed behavior', () => {
     const result = verifyChain([first, tampered]);
     expect(result.valid).toBe(false);
     expect(result.reason).toBe('CHAIN_BREAK');
+  });
+
+  it('classifies chained pre-v2 audit events as legacy format, not chain tamper', () => {
+    const first = chainedEvent('genesis', 'first');
+    const { auditFormatVersion: _auditFormatVersion, ...legacy } = first;
+
+    const result = verifyChain([legacy], { strict: true });
+    expect(result.valid).toBe(false);
+    expect(result.reason).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
   });
 
   it.skipIf(!tarOk)('regulated archive verification flags malformed audit lines', async () => {

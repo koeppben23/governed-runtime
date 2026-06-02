@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeChainHash,
+  CURRENT_AUDIT_FORMAT_VERSION,
   GENESIS_HASH,
   createTransitionEvent,
   createToolCallEvent,
@@ -24,6 +25,7 @@ describe('audit types', () => {
         event: 'transition:PLAN_READY',
         timestamp: TS1,
         actor: 'machine',
+        auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: {},
         prevHash: GENESIS_HASH,
       };
@@ -43,6 +45,7 @@ describe('audit types', () => {
       expect(event.phase).toBe('PLAN');
       expect(event.event).toBe('transition:PLAN_READY');
       expect(event.actor).toBe('machine');
+      expect(event.auditFormatVersion).toBe(CURRENT_AUDIT_FORMAT_VERSION);
       expect(event.prevHash).toBe(GENESIS_HASH);
       expect(event.chainHash).toMatch(/^[0-9a-f]{64}$/);
       expect(event.detail.kind).toBe('transition');
@@ -262,6 +265,7 @@ describe('audit types', () => {
         event: 'transition:PLAN_READY',
         timestamp: TS1,
         actor: 'machine',
+        auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: {},
         prevHash: GENESIS_HASH,
       };
@@ -278,6 +282,7 @@ describe('audit types', () => {
         event: 'transition:PLAN_READY',
         timestamp: TS1,
         actor: 'machine',
+        auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: {},
         prevHash: 'hash-a',
       };
@@ -356,7 +361,7 @@ describe('audit types', () => {
       // actorInfo should be absent from the object (not undefined-as-value)
       expect('actorInfo' in withoutActor).toBe(false);
 
-      // Manually build the same event object as pre-P27 code would have produced
+      // Manually build the same v2 event object as pre-P27 code would have produced.
       const prePatchEvent: Omit<ChainedAuditEvent, 'chainHash'> = {
         id: withoutActor.id,
         sessionId: withoutActor.sessionId,
@@ -364,6 +369,7 @@ describe('audit types', () => {
         event: withoutActor.event,
         timestamp: withoutActor.timestamp,
         actor: withoutActor.actor,
+        auditFormatVersion: withoutActor.auditFormatVersion,
         detail: withoutActor.detail,
         prevHash: withoutActor.prevHash,
       };
@@ -381,6 +387,7 @@ describe('audit types', () => {
         event: 'lifecycle:session_created',
         timestamp: TS1,
         actor: 'system',
+        auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: { kind: 'lifecycle', action: 'session_created', finalPhase: 'TICKET' },
         prevHash: GENESIS_HASH,
       };
@@ -424,6 +431,7 @@ describe('audit types', () => {
         event: 'transition:PLAN_READY',
         timestamp: TS1,
         actor: 'machine',
+        auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
         detail: { kind: 'transition', from: 'TICKET', to: 'PLAN' },
         prevHash: GENESIS_HASH,
       };

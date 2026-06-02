@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #416:** Fixed audit chain hashing so nested event content is bound to
+  `chainHash`. The audit runtime now uses a single recursive canonical JSON
+  serializer in `src/audit/canonical-digest.ts` for both `canonicalEventDigest`
+  and `computeChainHash`, replacing the broken `JSON.stringify(event,
+Object.keys(event).sort())` pattern that dropped nested properties. New audit
+  events declare `auditFormatVersion: "audit-chain.v2"`; v2 verification treats
+  nested-content mutation as `CHAIN_BREAK` and returns expected/actual hashes for
+  boundary diagnostics. Chained pre-v2 events are reported separately as
+  `LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2`, and unknown versions as
+  `UNSUPPORTED_AUDIT_FORMAT_VERSION`, so legacy archives do not fail like v2
+  tampering. Archive verification surfaces these as distinct findings
+  (`audit_chain_legacy_format`, `audit_chain_unsupported_format`) with documented
+  migration/re-sealing guidance. This is a breaking audit-format change for
+  historical archives that lack v2 format metadata.
+
 - **Issue #401:** Require Discovery context in standalone PR and content
   `/review` so external diffs are evaluated against repository-native stack,
   verification, health, and drift evidence. The content-review prompt now treats
@@ -53,12 +68,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   is not trustworthy (the runtime cannot prove the empty list is real and refuses
   false certainty). Both codes are surfaced by `flowguard_run_check`,
   `/continue`, and `flowguard_status` next-action guidance. `allowNoCommands:
-  true` is the only sanctioned opt-out for repositories that legitimately have no
+true` is the only sanctioned opt-out for repositories that legitimately have no
   verification commands.
 
   **Behavior change / upgrade note:** The `regulated` and `team-ci` presets
   default `validationEvidence.enforcement` to `required` (with `allowNoCommands:
-  false`); `solo` and `team` default to `off`. Legacy policy snapshots without a
+false`); `solo` and `team` default to `off`. Legacy policy snapshots without a
   `validationEvidence` block receive the same fail-closed, mode-consistent
   default on load. Sessions on `regulated`/`team-ci` that previously relied on a
   vacuous `VALIDATION` pass must now either expose Discovery-derived verification
@@ -96,14 +111,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `flowguard_hydrate`; set `policy.discoveryHealth.enforcement` to `advisory` or
   `off` to opt out.
 
- Added bounded advisory Discovery Context to independent
-  reviewer prompts. Plan, implementation, architecture, and content review prompts
-  now receive a shared deterministic context section with discovery health, drift
-  status, detected stack, verification candidates, and implementation guidance
-  when available. Context loading is failure-safe, defaults drift to explicit
-  `not_checked` during review prompt construction to avoid hidden latency, and
-  never changes ReviewFindings schema, obligation binding, mandate digest, or
-  attestation authority.
+Added bounded advisory Discovery Context to independent
+reviewer prompts. Plan, implementation, architecture, and content review prompts
+now receive a shared deterministic context section with discovery health, drift
+status, detected stack, verification candidates, and implementation guidance
+when available. Context loading is failure-safe, defaults drift to explicit
+`not_checked` during review prompt construction to avoid hidden latency, and
+never changes ReviewFindings schema, obligation binding, mandate digest, or
+attestation authority.
 
 - **Issue #397:** Completed reviewer Discovery context hardening: added `surfaces`
   and `modules` from implementation guidance to Discovery context, strengthened

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeChainHash,
+  CURRENT_AUDIT_FORMAT_VERSION,
   GENESIS_HASH,
   createTransitionEvent,
   type ChainedAuditEvent,
@@ -71,6 +72,47 @@ describe('audit integrity', () => {
       const result = verifyEvent(tampered, GENESIS_HASH, 0);
       expect(result.valid).toBe(false);
       expect(result.reason).toContain('chainHash mismatch');
+      expect(result.expectedChainHash).toHaveLength(64);
+      expect(result.actualChainHash).toBe('0'.repeat(64));
+    });
+
+    it('computeChainHash changes when nested event content changes', () => {
+      const event = buildNestedDecisionEvent(GENESIS_HASH);
+      const { chainHash: _chainHash, ...body } = event;
+      const tamperedBody = {
+        ...body,
+        detail: {
+          ...body.detail,
+          decision: {
+            ...(body.detail.decision as Record<string, unknown>),
+            verdict: 'reject',
+          },
+        },
+      } as Omit<ChainedAuditEvent, 'chainHash'>;
+
+      expect(computeChainHash(GENESIS_HASH, body)).not.toBe(
+        computeChainHash(GENESIS_HASH, tamperedBody),
+      );
+    });
+
+    it('verifyChain fails closed when nested event content is tampered', () => {
+      const event = buildNestedDecisionEvent(GENESIS_HASH);
+      const tampered = {
+        ...event,
+        detail: {
+          ...event.detail,
+          decision: {
+            ...(event.detail.decision as Record<string, unknown>),
+            verdict: 'reject',
+          },
+        },
+      } as unknown as Record<string, unknown>;
+
+      const result = verifyChain([tampered], { strict: true });
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('CHAIN_BREAK');
+      expect(result.firstBreak?.expectedChainHash).toHaveLength(64);
+      expect(result.firstBreak?.actualChainHash).toBe(event.chainHash);
     });
 
     // ── Constant-time comparison tests for safeHashEqual ────────
@@ -164,6 +206,40 @@ describe('audit integrity', () => {
       expect(result.firstBreak).not.toBeNull();
       expect(result.firstBreak!.index).toBe(2);
       expect(result.reason).toBe('CHAIN_BREAK');
+    });
+
+    it('verifyChain reports chained pre-v2 events as legacy format, not tampering', () => {
+      const event = buildNestedDecisionEvent(GENESIS_HASH);
+      const { auditFormatVersion: _auditFormatVersion, ...legacy } = event;
+
+      const result = verifyChain([legacy as unknown as Record<string, unknown>], { strict: true });
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
+      expect(result.firstBreak?.reasonCode).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
+    });
+
+    it('verifyChain reports audit-chain.v1 as legacy format, not tampering', () => {
+      const event = {
+        ...buildNestedDecisionEvent(GENESIS_HASH),
+        auditFormatVersion: 'audit-chain.v1',
+      };
+
+      const result = verifyChain([event as unknown as Record<string, unknown>], { strict: true });
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
+      expect(result.firstBreak?.reasonCode).toBe('LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2');
+    });
+
+    it('verifyChain reports unknown audit format as unsupported', () => {
+      const event = {
+        ...buildNestedDecisionEvent(GENESIS_HASH),
+        auditFormatVersion: 'audit-chain.v999',
+      };
+
+      const result = verifyChain([event as unknown as Record<string, unknown>], { strict: true });
+      expect(result.valid).toBe(false);
+      expect(result.reason).toBe('UNSUPPORTED_AUDIT_FORMAT_VERSION');
+      expect(result.firstBreak?.reasonCode).toBe('UNSUPPORTED_AUDIT_FORMAT_VERSION');
     });
   });
 
@@ -525,3 +601,24 @@ describe('audit integrity', () => {
     });
   });
 });
+
+function buildNestedDecisionEvent(prevHash: string): ChainedAuditEvent {
+  const body: Omit<ChainedAuditEvent, 'chainHash'> = {
+    id: '11111111-1111-4111-8111-111111111111',
+    sessionId: SESSION_ID,
+    phase: 'PLAN_REVIEW',
+    event: 'decision:DEC-001',
+    timestamp: TS1,
+    actor: 'human',
+    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
+    detail: {
+      decision: {
+        id: 'DEC-001',
+        verdict: 'approve',
+        reviewer: { id: 'reviewer-1', assurance: 'claim_validated' },
+      },
+    },
+    prevHash,
+  };
+  return { ...body, chainHash: computeChainHash(prevHash, body) };
+}

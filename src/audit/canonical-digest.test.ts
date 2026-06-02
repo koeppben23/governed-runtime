@@ -1,6 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { computeCanonicalEventDigest } from './canonical-digest.js';
-import { computeChainHash, GENESIS_HASH, createTransitionEvent } from './types.js';
+import { canonicalJsonStringify, computeCanonicalEventDigest } from './canonical-digest.js';
+import {
+  computeChainHash,
+  CURRENT_AUDIT_FORMAT_VERSION,
+  GENESIS_HASH,
+  createTransitionEvent,
+} from './types.js';
 import type { ChainedAuditEvent } from './types.js';
 
 describe('canonicalEventDigest', () => {
@@ -66,6 +71,20 @@ describe('canonicalEventDigest', () => {
     const digest = computeCanonicalEventDigest(event);
     expect(/^[0-9a-f]{64}$/.test(digest)).toBe(true);
   });
+
+  it('canonical JSON sorts nested object keys recursively', () => {
+    const left = { z: [{ b: 2, a: 1 }], a: { y: 'yes', x: 'ex' } };
+    const right = { a: { x: 'ex', y: 'yes' }, z: [{ a: 1, b: 2 }] };
+
+    expect(canonicalJsonStringify(left)).toBe(canonicalJsonStringify(right));
+  });
+
+  it('chainHash is deterministic for equivalent nested content with different key order', () => {
+    const bodyA = buildNestedBody({ verdict: 'approve', evidence: { b: 2, a: 1 } });
+    const bodyB = buildNestedBody({ evidence: { a: 1, b: 2 }, verdict: 'approve' });
+
+    expect(computeChainHash(GENESIS_HASH, bodyA)).toBe(computeChainHash(GENESIS_HASH, bodyB));
+  });
 });
 
 function buildEvent(
@@ -88,4 +107,18 @@ function buildEvent(
   );
   const { chainHash, ...base } = evt;
   return base;
+}
+
+function buildNestedBody(decision: Record<string, unknown>): Omit<ChainedAuditEvent, 'chainHash'> {
+  return {
+    id: '22222222-2222-4222-8222-222222222222',
+    sessionId: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
+    phase: 'PLAN_REVIEW',
+    event: 'decision:DEC-001',
+    timestamp: '2026-01-01T00:00:00.000Z',
+    actor: 'human',
+    auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
+    detail: { decision },
+    prevHash: GENESIS_HASH,
+  };
 }
