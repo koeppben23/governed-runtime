@@ -14,13 +14,9 @@ updates:
     labels:
       - dependencies
       - automated
+    ignore:
+      - dependency-name: '@opencode-ai/*'
     groups:
-      opencode-sdk:
-        patterns:
-          - '@opencode-ai/*'
-        update-types:
-          - minor
-          - patch
       production-dependencies:
         dependency-type: production
         update-types:

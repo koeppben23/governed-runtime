@@ -104,6 +104,20 @@ jobs:
         run: npm run check
         env:
           FORCE_COLOR: 0
+
+  sdk-baseline:
+    name: sdk-baseline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # actions/checkout v6.0.2
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
       - name: SDK type drift check
         run: node scripts/sdk-type-snapshot.mjs
 
@@ -281,11 +295,14 @@ jobs:
             exit 1
           fi
           opencode --version
+        env:
+          OPENCODE_DISABLE_AUTOUPDATE: '1'
 
       - name: Run smoke tests
         run: npm run test:smoke
         env:
           FORCE_COLOR: 0
+          OPENCODE_DISABLE_AUTOUPDATE: '1'
           RUN_OPENCODE_ACP_TESTS: '1'
 
   independent-review-e2e:
@@ -317,11 +334,14 @@ jobs:
             exit 1
           fi
           opencode --version
+        env:
+          OPENCODE_DISABLE_AUTOUPDATE: '1'
 
       - name: Run independent-review e2e verifier
         run: npm run test:independent-review-e2e
         env:
           FORCE_COLOR: 0
+          OPENCODE_DISABLE_AUTOUPDATE: '1'
 
   audit:
     name: audit
