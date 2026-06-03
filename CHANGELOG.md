@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   silent advisory into an explicit fail-closed block, preventing a
   non-terminating topology from masquerading as a completed advance.
 
+- **Issue #428 (root cause):** Fixed the `PLAN → PLAN_REVIEW → VALIDATION → PLAN`
+  oscillation that could otherwise drive `autoAdvance` toward the overflow limit on
+  a legitimate recovery path. `buildPlanSubmissionState` now resets stale
+  `validation` evidence (`validation: []`) when a new plan is submitted, so a
+  re-plan after `CHECK_FAILED` no longer inherits a prior failed validation that
+  forced VALIDATION to auto-fail instead of waiting for fresh evidence. With this
+  fix the overflow guard only fires on genuinely pathological (non-terminating)
+  topologies.
+
 - **Issue #420 (BREAKING — archive manifest `v1` → `v2`):** Strict-mode selection
   and archive completeness are now integrity-protected. Verification strictness is
   derived from the integrity-covered `state.policySnapshot.mode` (SSOT) instead of
