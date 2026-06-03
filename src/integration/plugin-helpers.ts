@@ -9,6 +9,7 @@
 
 import { defaultReasonRegistry } from '../config/reasons.js';
 import { buildBlockedDiagnostics } from '../diagnostics/index.js';
+import { AUTO_ADVANCE_OVERFLOW_CODE } from '../rails/auto-advance-overflow.js';
 import {
   REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
   REVIEW_ACCEPTANCE_PATH_NATIVE,
@@ -206,4 +207,30 @@ export function isNativeEnforcementUnavailableDenial(rawOutput: unknown): boolea
     (diagnostics as { deniedReviewPath?: unknown }).deniedReviewPath ===
     REVIEW_ACCEPTANCE_PATH_NATIVE
   );
+}
+
+/**
+ * Detect an auto-advance overflow fail-closed result in a FlowGuard tool output.
+ *
+ * #428: when auto-advance exceeds its step ceiling, the pure rail/boundary layers
+ * surface a structured fail-closed result. The plugin boundary is the only reliable
+ * logger writer (ALS-scoped), so it must detect overflow via the STRUCTURED result
+ * — `code === AUTO_ADVANCE_OVERFLOW` plus the typed `autoAdvanceOverflow` field —
+ * NOT a message substring, so detection cannot drift with copy changes.
+ *
+ * Fails closed on parse: any malformed output yields `null` (no throw, no guess).
+ *
+ * @param rawOutput - The raw tool output string from the tool.execute.after hook
+ * @returns `{ phase, limit }` when the output is a structured overflow result, else `null`
+ */
+export function getAutoAdvanceOverflow(
+  rawOutput: unknown,
+): { phase: string; limit: number } | null {
+  const parsed = parseToolResult(rawOutput);
+  if (!parsed || parsed.code !== AUTO_ADVANCE_OVERFLOW_CODE) return null;
+  const overflow = parsed.autoAdvanceOverflow;
+  if (typeof overflow !== 'object' || overflow === null) return null;
+  const { phase, limit } = overflow as { phase?: unknown; limit?: unknown };
+  if (typeof phase !== 'string' || typeof limit !== 'number') return null;
+  return { phase, limit };
 }

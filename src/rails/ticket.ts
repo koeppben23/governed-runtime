@@ -21,6 +21,7 @@ import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
 import { autoAdvance, createPolicyEvalFn, buildFlowSelectionTransition } from './types.js';
 import { blocked } from '../config/reasons.js';
+import { blockedFromOverflow } from './auto-advance-overflow.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -92,11 +93,11 @@ export function executeTicket(
 
   // 5. Auto-advance (policy-aware)
   const evalFn = createPolicyEvalFn(ctx);
-  const {
-    state: finalState,
-    evalResult: result,
-    transitions: advanceTransitions,
-  } = autoAdvance(nextState, evalFn, ctx);
+  const advanced = autoAdvance(nextState, evalFn, ctx);
+  if (advanced.kind === 'overflow') {
+    return blockedFromOverflow(advanced);
+  }
+  const { state: finalState, evalResult: result, transitions: advanceTransitions } = advanced;
   const transitions = [...preTransitions, ...advanceTransitions];
 
   return { kind: 'ok', state: finalState, evalResult: result, transitions };

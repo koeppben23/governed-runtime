@@ -11,7 +11,12 @@
 import { z } from 'zod';
 
 import type { ToolDefinition } from '../helpers.js';
-import { withMutableSessionTransaction, formatRailResult, formatError } from '../helpers.js';
+import {
+  withMutableSessionTransaction,
+  formatRailResult,
+  formatError,
+  formatAutoAdvanceOverflow,
+} from '../helpers.js';
 import { startReviewFlow, executeReview } from '../../../rails/review.js';
 import {
   InputOriginSchema,
@@ -131,13 +136,17 @@ async function persistCompletedReview(
       now,
     );
     const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);
+    if (completion.kind === 'overflow') {
+      return formatAutoAdvanceOverflow(completion.overflow);
+    }
     return buildReviewCompletionResponse({
       sessDir,
       args,
       result,
       report: reviewResult,
       validatedReviewObligation: prepared.validatedReviewObligation,
-      ...completion,
+      finalState: completion.finalState,
+      allTransitions: completion.allTransitions,
     });
   });
 }

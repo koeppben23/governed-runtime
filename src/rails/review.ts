@@ -25,6 +25,7 @@ import { evaluateCompleteness } from '../audit/completeness.js';
 import type { RailResult, RailContext, TransitionRecord, RailBlocked } from './types.js';
 import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
+import { blockedFromOverflow } from './auto-advance-overflow.js';
 import { hasGhCli, loadPrDiff, loadBranchDiff } from '../adapters/gh-cli.js';
 import { parseIPv4, isPrivateIPv4, isPrivateIPv6 } from '../adapters/ip-validation.js';
 import { lookupReviewHostname, type ReviewDnsLookup } from '../adapters/dns-resolution.js';
@@ -526,11 +527,11 @@ export function executeReviewFlow(state: SessionState, ctx: RailContext): RailRe
   );
 
   const evalFn = createPolicyEvalFn(ctx);
-  const {
-    state: finalState,
-    evalResult,
-    transitions: advanceTransitions,
-  } = autoAdvance(reviewState, evalFn, ctx);
+  const advanced = autoAdvance(reviewState, evalFn, ctx);
+  if (advanced.kind === 'overflow') {
+    return blockedFromOverflow(advanced);
+  }
+  const { state: finalState, evalResult, transitions: advanceTransitions } = advanced;
   const transitions = [...preTransitions, ...advanceTransitions];
 
   return { kind: 'ok', state: finalState, evalResult, transitions };

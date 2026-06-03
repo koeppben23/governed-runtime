@@ -20,6 +20,7 @@ import type { ValidationResult } from '../state/evidence-validation.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext } from './types.js';
 import { autoAdvance, createPolicyEvalFn } from './types.js';
+import { blockedFromOverflow } from './auto-advance-overflow.js';
 import { blocked } from '../config/reasons.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
@@ -57,7 +58,11 @@ export async function executeValidate(
   if (state.activeChecks.length === 0) {
     // No checks to run — auto-advance immediately (vacuous truth)
     const evalFn = createPolicyEvalFn(ctx);
-    const { state: finalState, evalResult, transitions } = autoAdvance(state, evalFn, ctx);
+    const advanced = autoAdvance(state, evalFn, ctx);
+    if (advanced.kind === 'overflow') {
+      return blockedFromOverflow(advanced);
+    }
+    const { state: finalState, evalResult, transitions } = advanced;
     return { kind: 'ok', state: finalState, evalResult, transitions };
   }
 
@@ -93,7 +98,11 @@ export async function executeValidate(
 
   // 5. Auto-advance (ALL_PASSED → IMPLEMENTATION, or CHECK_FAILED → PLAN) — policy-aware
   const evalFn = createPolicyEvalFn(ctx);
-  const { state: finalState, evalResult, transitions } = autoAdvance(nextState, evalFn, ctx);
+  const advanced = autoAdvance(nextState, evalFn, ctx);
+  if (advanced.kind === 'overflow') {
+    return blockedFromOverflow(advanced);
+  }
+  const { state: finalState, evalResult, transitions } = advanced;
 
   return { kind: 'ok', state: finalState, evalResult, transitions };
 }

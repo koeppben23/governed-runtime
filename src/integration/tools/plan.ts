@@ -42,6 +42,7 @@ import type { ToolDefinition } from './helpers.js';
 import {
   withMutableSessionTransaction,
   formatBlocked,
+  formatAutoAdvanceOverflow,
   formatError,
   extractSections,
   appendNextAction,
@@ -406,7 +407,12 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const reviewFindings = scope.args.reviewFindings ?? null;
   const nextState = buildPlanSubmissionState(scope, planEvidence, planVersion, reviewFindings);
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
-  const { state: finalState, transitions } = autoAdvance(nextState, evalFn, scope.ctx);
+  const advanced = autoAdvance(nextState, evalFn, scope.ctx);
+  // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
+  if (advanced.kind === 'overflow') {
+    return formatAutoAdvanceOverflow(advanced);
+  }
+  const { state: finalState, transitions } = advanced;
 
   await writeStateWithArtifacts(scope.sessDir, finalState);
   const response = buildSubmissionResponse({

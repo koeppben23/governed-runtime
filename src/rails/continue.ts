@@ -46,6 +46,7 @@ import {
   buildImplReviewState,
 } from './types.js';
 import { blocked } from '../config/reasons.js';
+import { blockedFromOverflow } from './auto-advance-overflow.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 
@@ -152,11 +153,11 @@ export async function executeContinue(
 
   // 4. Auto-advance (policy-aware)
   const evalFn = createPolicyEvalFn(ctx);
-  const {
-    state: advancedState,
-    evalResult: result,
-    transitions,
-  } = autoAdvance(workState, evalFn, ctx);
+  const advanced = autoAdvance(workState, evalFn, ctx);
+  if (advanced.kind === 'overflow') {
+    return blockedFromOverflow(advanced);
+  }
+  const { state: advancedState, evalResult: result, transitions } = advanced;
 
   // Finalize ADR status on architecture flow completion (solo auto-approve)
   const finalState =

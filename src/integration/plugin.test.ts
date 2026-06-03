@@ -269,6 +269,26 @@ describe('integration/plugin', () => {
       ).resolves.toBeUndefined();
     });
 
+    it('processes a structured auto-advance overflow output without throwing (#428)', async () => {
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
+      const handler = hooks['tool.execute.after']!;
+
+      // A FlowGuard tool returning the structured fail-closed overflow result.
+      // The after-hook detects it via getAutoAdvanceOverflow and emits an error
+      // log; the handler must process it without throwing.
+      const overflowOutput = JSON.stringify({
+        error: true,
+        code: 'AUTO_ADVANCE_OVERFLOW',
+        autoAdvanceOverflow: { phase: 'PLAN_REVIEW', limit: 10 },
+      });
+      await expect(
+        handler(
+          { tool: 'flowguard_plan', sessionID: 's1', callID: 'c1', args: {} },
+          { title: 'plan', output: overflowOutput, metadata: {} },
+        ),
+      ).resolves.toBeUndefined();
+    });
+
     it('multiple plugin initializations create independent instances', async () => {
       const hooks1 = await FlowGuardAuditPlugin(createMockInput({ worktree: '/wt1' }));
       const hooks2 = await FlowGuardAuditPlugin(createMockInput({ worktree: '/wt2' }));

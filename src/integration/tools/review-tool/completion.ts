@@ -13,6 +13,7 @@ import type { SessionState } from '../../../state/schema.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import type { ReviewExecutors } from '../../../rails/review.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
+import type { AutoAdvanceOverflow } from '../../../rails/types.js';
 import { PHASE_LABELS, buildReviewReportCard } from '../../../presentation/index.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { writeReport, reportPath } from '../../../adapters/persistence.js';
@@ -103,16 +104,29 @@ export async function persistReviewCompletion(
   result: StartedReviewResult,
   report: ReviewReportResult,
   ctx: Parameters<typeof createPolicyEvalFn>[0],
-): Promise<{ finalState: SessionState; allTransitions: StartedReviewResult['transitions'] }> {
-  await writeReport(sessDir, report);
+): Promise<
+  | { kind: 'overflow'; overflow: AutoAdvanceOverflow }
+  | {
+      kind: 'ok';
+      finalState: SessionState;
+      allTransitions: StartedReviewResult['transitions'];
+    }
+> {
   const stateWithReportPath = { ...result.state, reviewReportPath: reportPath(sessDir) };
-  const { state: finalState, transitions: advanceTransitions } = autoAdvance(
-    stateWithReportPath,
-    createPolicyEvalFn(ctx),
-    ctx,
-  );
+  const advanced = autoAdvance(stateWithReportPath, createPolicyEvalFn(ctx), ctx);
+  // #428: fail closed on overflow BEFORE any persistence — do not write the
+  // report artifact or the state, so no partially-advanced session is created.
+  if (advanced.kind === 'overflow') {
+    return { kind: 'overflow', overflow: advanced };
+  }
+  const { state: finalState, transitions: advanceTransitions } = advanced;
+  await writeReport(sessDir, report);
   await writeStateWithArtifacts(sessDir, finalState);
-  return { finalState, allTransitions: [...result.transitions, ...advanceTransitions] };
+  return {
+    kind: 'ok',
+    finalState,
+    allTransitions: [...result.transitions, ...advanceTransitions],
+  };
 }
 
 // ─── Review card construction ────────────────────────────────────────────────

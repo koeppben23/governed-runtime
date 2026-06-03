@@ -32,6 +32,7 @@ import {
   DEFAULT_MAX_REVIEW_ITERATIONS,
 } from './types.js';
 import { blocked } from '../config/reasons.js';
+import { blockedFromOverflow } from './auto-advance-overflow.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -120,11 +121,11 @@ export function executeArchitecture(
 
   // 7. Auto-advance (ARCHITECTURE → ARCH_REVIEW if loop converges)
   const evalFn = createPolicyEvalFn(ctx);
-  const {
-    state: finalState,
-    evalResult: result,
-    transitions: advanceTransitions,
-  } = autoAdvance(nextState, evalFn, ctx);
+  const advanced = autoAdvance(nextState, evalFn, ctx);
+  if (advanced.kind === 'overflow') {
+    return blockedFromOverflow(advanced);
+  }
+  const { state: finalState, evalResult: result, transitions: advanceTransitions } = advanced;
   const transitions = [...preTransitions, ...advanceTransitions];
 
   return { kind: 'ok', state: finalState, evalResult: result, transitions };
