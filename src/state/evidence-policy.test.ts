@@ -234,4 +234,49 @@ describe('evidence-policy', () => {
       });
     });
   });
+
+  // #418: mode/requestedMode are a closed enum; near-miss strings MUST fail closed
+  // instead of silently selecting the permissive enforcement default.
+  describe('FAIL-CLOSED mode enum (#418)', () => {
+    const validBase = {
+      hash: 'sha256-policy',
+      resolvedAt: FIXED_TIME,
+      effectiveGateBehavior: 'human_gated' as const,
+      requireHumanGates: true,
+      maxSelfReviewIterations: 3,
+      maxImplReviewIterations: 3,
+      allowSelfApproval: true,
+      audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: true },
+      actorClassification: { flowguard_decision: 'human' },
+    };
+
+    it.each(['regulatd', 'Regulated', 'regulated ', '', 'team_ci', 'admin'])(
+      'rejects invalid mode %p at parse (no permissive fallthrough)',
+      (badMode) => {
+        const snapshot = { ...validBase, mode: badMode, requestedMode: badMode };
+        expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
+      },
+    );
+
+    it('rejects a valid mode paired with an invalid requestedMode', () => {
+      const snapshot = { ...validBase, mode: 'regulated', requestedMode: 'regulatd' };
+      expect(() => PolicySnapshotSchema.parse(snapshot)).toThrow();
+    });
+
+    it.each(['solo', 'team', 'team-ci', 'regulated'] as const)(
+      'accepts the canonical mode %p',
+      (mode) => {
+        const snapshot = { ...validBase, mode, requestedMode: mode };
+        expect(PolicySnapshotSchema.parse(snapshot).mode).toBe(mode);
+      },
+    );
+
+    it('does not silently disable enforcement for a near-miss regulated typo', () => {
+      // Pre-fix defect: "regulatd" parsed as a free string and the regulated
+      // enforcement default (enforceRiskClassification) was silently skipped.
+      const snapshot = { ...validBase, mode: 'regulatd', requestedMode: 'regulatd' };
+      const result = PolicySnapshotSchema.safeParse(snapshot);
+      expect(result.success).toBe(false);
+    });
+  });
 });

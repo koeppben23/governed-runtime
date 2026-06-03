@@ -36,6 +36,7 @@ import { buildDiscoveryDriftStatus } from '../discovery-drift-status.js';
 import { reconcileDiscoveryHealthGate } from '../discovery-health-gate.js';
 import { auditDiscoveryHealthGateTransition } from '../discovery-health-audit.js';
 import type { DiscoveryDriftAssessment } from '../../state/schema.js';
+import { PolicyModeSchema } from '../../state/policy-mode.js';
 import type { RailResult } from '../../rails/types.js';
 
 // Adapters
@@ -127,7 +128,7 @@ function digestText(text: string): string {
 async function resolveCentralEvidenceForExisting(existing: ExistingHydrateState) {
   if (!existing) return undefined;
   return validateExistingPolicyAgainstCentral({
-    existingMode: existing.policySnapshot.mode as 'solo' | 'team' | 'team-ci' | 'regulated',
+    existingMode: existing.policySnapshot.mode,
     centralPolicyPath: process.env.FLOWGUARD_POLICY_PATH,
     digestFn: digestText,
   });
@@ -167,16 +168,12 @@ function resolveExistingPolicyResolution(
   centralEvidenceForExisting: Awaited<ReturnType<typeof validateExistingPolicyAgainstCentral>>,
 ): HydratePolicyResolution {
   return {
-    requestedMode: existing.policySnapshot.requestedMode as
-      | 'solo'
-      | 'team'
-      | 'team-ci'
-      | 'regulated',
+    requestedMode: existing.policySnapshot.requestedMode,
     requestedSource: (existing.policySnapshot.source ?? 'default') as
       | 'explicit'
       | 'repo'
       | 'default',
-    effectiveMode: existing.policySnapshot.mode as 'solo' | 'team' | 'team-ci' | 'regulated',
+    effectiveMode: existing.policySnapshot.mode,
     effectiveSource: existing.policySnapshot.source ?? 'default',
     effectiveGateBehavior: existing.policySnapshot.effectiveGateBehavior,
     degradedReason: existing.policySnapshot.degradedReason as 'ci_context_missing' | undefined,
@@ -544,11 +541,7 @@ function buildExistingPolicyInput(
 ): HydratePolicyInput {
   return {
     policyMode: existing.policySnapshot.mode,
-    requestedPolicyMode: existing.policySnapshot.requestedMode as
-      | 'solo'
-      | 'team'
-      | 'team-ci'
-      | 'regulated',
+    requestedPolicyMode: existing.policySnapshot.requestedMode,
     policySource: existing.policySnapshot.source ?? 'default',
     effectiveGateBehavior: existing.policySnapshot.effectiveGateBehavior,
     policyDegradedReason: existing.policySnapshot.degradedReason as
@@ -848,14 +841,11 @@ export const hydrate: ToolDefinition = {
     'Optionally configure policy mode (solo/team/regulated) and profile. ' +
     'This MUST be the first FlowGuard tool call in any workflow.',
   args: {
-    policyMode: z
-      .enum(['solo', 'team', 'team-ci', 'regulated'])
-      .optional()
-      .describe(
-        'FlowGuard policy mode. When omitted, reads from repo config ' +
-          "(policy.defaultMode), then falls back to 'solo'. " +
-          "Priority: explicit arg > config > 'solo'.",
-      ),
+    policyMode: PolicyModeSchema.optional().describe(
+      'FlowGuard policy mode. When omitted, reads from repo config ' +
+        "(policy.defaultMode), then falls back to 'solo'. " +
+        "Priority: explicit arg > config > 'solo'.",
+    ),
     profileId: z
       .string()
       .default('baseline')

@@ -27,6 +27,7 @@ import {
   type HydratePolicyResolution,
 } from './policy.js';
 import type { PolicySnapshot } from '../state/evidence.js';
+import { PolicyConfigurationError } from './policy-errors.js';
 
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf-8').digest('hex');
 const NOW = '2026-04-27T10:00:00.000Z';
@@ -191,6 +192,25 @@ describe('normalizePolicySnapshot', () => {
       expect(() => normalizePolicySnapshot({ mode: 'broken' })).toThrow(
         /Invalid policy mode "broken"/,
       );
+    });
+
+    it('carries structured { received, allowed } details on the error (#418)', () => {
+      // The normalizer stays pure: it performs no logging. It surfaces
+      // structured details on the thrown error so a logging boundary can
+      // emit diagnostics WITHOUT parsing the message string.
+      let caught: unknown;
+      try {
+        normalizePolicySnapshot({ mode: 'regulatd' });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).toBeInstanceOf(PolicyConfigurationError);
+      const err = caught as PolicyConfigurationError;
+      expect(err.code).toBe('INVALID_POLICY_MODE');
+      expect(err.details).toEqual({
+        received: 'regulatd',
+        allowed: ['solo', 'team', 'team-ci', 'regulated'],
+      });
     });
 
     it('missing mode (undefined) defaults to team (safe fallback)', () => {

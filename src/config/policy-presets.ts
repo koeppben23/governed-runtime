@@ -9,6 +9,7 @@ import {
   defaultDiscoveryHealthForMode,
   defaultValidationEvidenceForMode,
 } from './policy-types.js';
+import { POLICY_MODES, isPolicyMode } from '../state/policy-mode.js';
 import { PolicyConfigurationError } from './policy-errors.js';
 
 const DEFAULT_TIMESTAMP_ASSURANCE: TimestampAssurancePolicy = {
@@ -152,12 +153,13 @@ const POLICIES: Readonly<Record<PolicyMode, FlowGuardPolicy>> = {
 
 /** Validate and normalize a policy mode string. */
 export function normalizePolicyMode(mode: string): PolicyMode {
-  if (mode === 'solo' || mode === 'team' || mode === 'team-ci' || mode === 'regulated') {
+  if (isPolicyMode(mode)) {
     return mode;
   }
   throw new PolicyConfigurationError(
     'INVALID_POLICY_MODE',
-    `Unsupported policy mode: '${mode}'. Valid modes: solo, team, team-ci, regulated`,
+    `Unsupported policy mode: '${mode}'. Valid modes: ${POLICY_MODES.join(', ')}`,
+    { received: mode, allowed: POLICY_MODES },
   );
 }
 
