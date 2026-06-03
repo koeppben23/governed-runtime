@@ -130,6 +130,8 @@ npx --package ./flowguard-core-{version}.tgz flowguard doctor --host codex
 
 `doctor --host opencode|claude-code|codex` reports host-specific installation files plus a projection-only trust/capability report. This report is diagnostic evidence only; it does not create a new runtime, approval, review, policy, or risk authority. File presence can mean `configured`, but it never proves native plugin load, active governance, trust approval, or review approval.
 
+`doctor` also validates the shipped executable surface: every command declared in the package `bin` map (`flowguard`, `flowguard-mcp`, and the `flowguard-hook-*` binaries) must exist, be a regular file, and carry the Node shebang. A missing or corrupt runtime binary — or a missing/invalid `bin` manifest — is reported as a failure and makes `doctor` exit non-zero (fail-closed).
+
 The trust report surfaces:
 
 - Expected host capability shape and enforcement level from FlowGuard's Host Adapter contract.

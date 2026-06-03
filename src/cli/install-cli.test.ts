@@ -5,14 +5,12 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { mkdirSync } from 'node:fs';
 import { formatResult, formatDoctor, main } from './install.js';
 import type { CliResult, DoctorCheck } from './install.js';
 import {
   VERSION,
-  tmpDir,
   repoArgs,
   createMockTarball,
   setupCliTestEnvironment,
@@ -167,12 +165,10 @@ describe('cli/main', () => {
       expect(code).toBe(0);
     });
 
-    it('returns 0 for doctor after install (repo scope)', async () => {
-      const tarball = await createMockTarball();
-      await main(['install', '--install-scope', 'repo', '--core-tarball', tarball]);
-      const code = await main(['doctor', '--install-scope', 'repo']);
-      expect(code).toBe(0);
-    });
+    // NOTE: "doctor after install returns 0" is build-dependent (#423: doctor
+    // validates the running package's shipped dist/ executables) and therefore
+    // lives in the smoke project — see doctor-cli-smoke.test.ts. The unit project
+    // is no-build-required (vitest.config.ts) and must not assert a built dist.
   });
 
   describe('BAD', () => {
@@ -211,27 +207,8 @@ describe('cli/main', () => {
       expect(code).toBe(0);
     });
 
-    it('doctor returns 0 when only warn checks present (no errors)', async () => {
-      const tarball = await createMockTarball();
-      await main(['install', '--install-scope', 'repo', '--core-tarball', tarball]);
-      // Overwrite opencode.json to simulate desktop-owned config missing task hardening
-      const ocPath = path.join(tmpDir, 'opencode.json');
-      await fs.writeFile(
-        ocPath,
-        JSON.stringify(
-          {
-            plugin: ['flowguard-audit'],
-            instructions: ['.opencode/flowguard-mandates.md'],
-          },
-          null,
-          2,
-        ),
-        'utf-8',
-      );
-      const code = await main(['doctor', '--install-scope', 'repo']);
-      // warn for task-hardening, but no hard error → exit 0
-      expect(code).toBe(0);
-    });
+    // NOTE: "doctor returns 0 when only warn checks present" is build-dependent
+    // (#423) and lives in the smoke project — see doctor-cli-smoke.test.ts.
 
     it('doctor returns 1 when real errors exist', async () => {
       // Empty dir, no install → missing artifacts → exit 1

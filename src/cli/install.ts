@@ -8,11 +8,13 @@
  */
 
 import { realpathSync } from 'node:fs';
+import { relative } from 'node:path';
 import { initCliLogger } from './cli-logging.js';
 import { doctor } from './doctor-command.js';
 import { install } from './install-command.js';
 import { uninstall } from './uninstall-command.js';
 import { resetAdapterLogger } from '../logging/adapter-logger.js';
+import type { FlowGuardLogger } from '../logging/logger.js';
 import { HOST_IDS } from '../shared/hosts.js';
 import { POLICY_MODES } from '../state/policy-mode.js';
 import {
@@ -25,6 +27,8 @@ import {
   type DoctorStatus,
   type DoctorCheck,
   PACKAGE_VERSION,
+  SHIPPED_EXECUTABLE_CHECK,
+  resolvePackageRoot,
   resolveTarget,
 } from './install-helpers.js';
 
@@ -329,6 +333,28 @@ Examples:
 }
 
 /**
+ * Boundary-only diagnostics for shipped-executable validation (#423).
+ *
+ * doctor (rails) returns structured checks; the CLI closure is the only logger
+ * writer. Emit one `error` per failing shipped executable so a broken/missing
+ * runtime binary is visible in logs. Logs the package-relative path (never the
+ * absolute path) and no env/secret values; control flow is unaffected (the
+ * non-zero exit is decided by the caller's failure check).
+ */
+function logShippedExecutableFailures(checks: DoctorCheck[], cliLog: FlowGuardLogger): void {
+  const packageRoot = resolvePackageRoot();
+  for (const c of checks) {
+    if (c.check === SHIPPED_EXECUTABLE_CHECK && c.status !== 'ok' && c.status !== 'warn') {
+      cliLog.error('cli', 'shipped executable invalid', {
+        path: relative(packageRoot, c.file),
+        check: c.check,
+        status: c.status,
+      });
+    }
+  }
+}
+
+/**
  * CLI main entry point.
  * Only executes when this file is run directly (not when imported for testing).
  */
@@ -395,6 +421,7 @@ export async function main(argv: string[]): Promise<number> {
         console.log('');
         console.log(formatDoctor(checks));
         const hasFailure = checks.some((c) => c.status !== 'ok' && c.status !== 'warn');
+        logShippedExecutableFailures(checks, cliLog);
         cliLog.info('cli', 'doctor completed', {
           totalChecks: checks.length,
           hasFailure,
