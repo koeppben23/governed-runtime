@@ -23,7 +23,8 @@ import type { EvalResult } from '../../machine/evaluate.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 
 // Rail helpers
-import type { RailResult, RailContext } from '../../rails/types.js';
+import type { RailResult, RailContext, AutoAdvanceOverflow } from '../../rails/types.js';
+import { AUTO_ADVANCE_OVERFLOW_CODE } from '../../rails/auto-advance-overflow.js';
 
 // Adapters
 import { readState, writeStateAlreadyLocked } from '../../adapters/persistence.js';
@@ -130,6 +131,9 @@ export function formatRailResult(result: RailResult): ToolResult {
       recovery: result.recovery,
       quickFix: result.quickFix,
       ...(diagnostics ? { diagnostics } : {}),
+      // #428: surface structured overflow context so the plugin boundary can
+      // detect and log the fail-closed overflow without parsing the message.
+      ...(result.overflow ? { autoAdvanceOverflow: result.overflow } : {}),
     });
   }
   const nextAction = resolveNextAction(result.state.phase, result.state);
@@ -174,6 +178,31 @@ export function formatBlocked(code: string, vars?: Record<string, string>): stri
     recovery: info.recovery,
     quickFix: info.quickFix,
     ...(diagnostics ? { diagnostics } : {}),
+  });
+}
+
+/**
+ * Format an auto-advance overflow (#428) as a fail-closed blocked tool result.
+ *
+ * Used by boundary tools that call autoAdvance directly. MUST be returned
+ * BEFORE any state persistence: an overflow carries no advanced state, so the
+ * tool must stop completely rather than write a partially-advanced session.
+ *
+ * Emits a structured `autoAdvanceOverflow: { phase, limit }` field so the
+ * plugin boundary can detect and log the overflow without message parsing.
+ */
+export function formatAutoAdvanceOverflow(overflow: AutoAdvanceOverflow): string {
+  const info = defaultReasonRegistry.format(AUTO_ADVANCE_OVERFLOW_CODE, {
+    phase: overflow.phase,
+    limit: String(overflow.limit),
+  });
+  return JSON.stringify({
+    error: true,
+    code: info.code,
+    message: info.reason,
+    recovery: info.recovery,
+    quickFix: info.quickFix,
+    autoAdvanceOverflow: { phase: overflow.phase, limit: overflow.limit },
   });
 }
 

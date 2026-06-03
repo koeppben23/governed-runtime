@@ -377,6 +377,14 @@ describe('e2e-workflow', () => {
 
       // Can re-plan and re-validate
       await callOk(plan, { planText: '## Better Plan with tests' });
+      // #428 root cause: submitting a new plan resets stale validation evidence,
+      // so VALIDATION re-entry waits for fresh checks instead of immediately
+      // re-firing CHECK_FAILED → PLAN (the oscillation that drove auto-advance
+      // overflow). Without the reset, the prior failed check survives and the
+      // workflow loops back to PLAN here.
+      const stateAfterReplan = await readState(await getSessDir());
+      expect(stateAfterReplan!.validation).toHaveLength(0);
+
       await callOk(plan, { reviewVerdict: 'approve' });
       // In solo, may stop at PLAN_REVIEW (user gate) — need to advance
       const phaseAfterReplan = await getPhase();

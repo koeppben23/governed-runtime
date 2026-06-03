@@ -33,8 +33,12 @@ export interface TransitionRecord {
   readonly at: string;
 }
 
-/** Return type for autoAdvance(). */
-export interface AutoAdvanceResult {
+/**
+ * autoAdvance() reached a stable stop: the machine settled on a terminal,
+ * waiting, pending, or self-loop phase within the step budget.
+ */
+export interface AutoAdvanceAdvanced {
+  readonly kind: 'advanced';
   /** Final session state after all transitions. */
   readonly state: SessionState;
   /** Evaluation result at the final phase. */
@@ -45,10 +49,31 @@ export interface AutoAdvanceResult {
    * For audit: one audit event per entry.
    */
   readonly transitions: readonly TransitionRecord[];
-  /** Set to 'MAX_AUTO_ADVANCE_LIMIT' if the safety guard stopped the loop.
-   *  Undefined otherwise. Diagnostic only — no behavioral impact. */
-  readonly diagnostic?: string;
 }
+
+/**
+ * autoAdvance() hit the safety step limit while the machine still wanted to
+ * transition — a real topology-loop overflow (#428). This is a fail-closed
+ * outcome: it deliberately carries NO `state`/`evalResult` so a caller cannot
+ * persist a partially-advanced state. The caller MUST surface an explicit
+ * blocked failure. `transitions` is retained only for audit/diagnostic context.
+ */
+export interface AutoAdvanceOverflow {
+  readonly kind: 'overflow';
+  /** Phase the loop stalled on when the step budget was exhausted. */
+  readonly phase: Phase;
+  /** The step budget that was exceeded (MAX_AUTO_ADVANCE_STEPS). */
+  readonly limit: number;
+  /** Transitions recorded before the overflow (audit context only). */
+  readonly transitions: readonly TransitionRecord[];
+}
+
+/**
+ * Return type for autoAdvance(): a discriminated union so the overflow case
+ * cannot be silently ignored. `advanced` is the normal settle; `overflow` is
+ * fail-closed and forces the caller to block before any persistence.
+ */
+export type AutoAdvanceResult = AutoAdvanceAdvanced | AutoAdvanceOverflow;
 
 // ─── Rail Result ──────────────────────────────────────────────────────────────
 
@@ -78,6 +103,19 @@ export interface RailBlocked {
   readonly recovery?: readonly string[];
   /** Optional command that fixes the issue (from reason registry). */
   readonly quickFix?: string;
+  /**
+   * Structured auto-advance overflow context (#428). Present only when this
+   * block was produced from an {@link AutoAdvanceOverflow}. Carried as typed
+   * data (not parsed from `reason`) so the plugin boundary can detect and log
+   * the overflow structurally.
+   */
+  readonly overflow?: AutoAdvanceOverflowContext;
+}
+
+/** Structured overflow context surfaced on a blocked result and in tool output. */
+export interface AutoAdvanceOverflowContext {
+  readonly phase: Phase;
+  readonly limit: number;
 }
 
 /** Union of all rail outcomes. */
@@ -114,8 +152,10 @@ export const DEFAULT_MAX_REVIEW_ITERATIONS = 3;
 /**
  * Maximum auto-advance steps before forced stop.
  * Paranoia guard against infinite loops in misconfigured topology.
+ * Exported as the single source of the advance-step limit (also the `limit`
+ * surfaced on an {@link AutoAdvanceOverflow}).
  */
-const MAX_AUTO_ADVANCE_STEPS = 10;
+export const MAX_AUTO_ADVANCE_STEPS = 10;
 
 /**
  * Create a policy-aware evaluation closure.
@@ -199,12 +239,20 @@ export function autoAdvance(
     current = applyTransition(current, from, to, event, at);
     result = evalFn(current);
   }
-  // Only flag when the loop hit MAX_AUTO_ADVANCE_STEPS AND the final
-  // evaluation is still 'transition' (a real overflow, not a clean exit).
-  const hitLimit = transitions.length >= MAX_AUTO_ADVANCE_STEPS && result.kind === 'transition';
-  const diagnostic = hitLimit ? 'MAX_AUTO_ADVANCE_LIMIT' : undefined;
+  // Fail-closed overflow: the loop exhausted the step budget while the machine
+  // still wanted to transition (a real non-terminating/misconfigured topology,
+  // not a clean exit). Return an overflow result that carries NO state, so the
+  // caller cannot persist a partially-advanced session and must block (#428).
+  if (transitions.length >= MAX_AUTO_ADVANCE_STEPS && result.kind === 'transition') {
+    return {
+      kind: 'overflow',
+      phase: current.phase,
+      limit: MAX_AUTO_ADVANCE_STEPS,
+      transitions,
+    };
+  }
 
-  return { state: current, evalResult: result, transitions, diagnostic };
+  return { kind: 'advanced', state: current, evalResult: result, transitions };
 }
 
 // ─── Convergence Loop ─────────────────────────────────────────────────────────

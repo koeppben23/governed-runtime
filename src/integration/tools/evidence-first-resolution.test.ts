@@ -40,6 +40,13 @@ const mocks = vi.hoisted(() => {
     formatError: vi.fn((err: unknown) =>
       JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
     ),
+    formatAutoAdvanceOverflow: vi.fn((overflow: { phase: string; limit: number }) =>
+      JSON.stringify({
+        error: true,
+        code: 'AUTO_ADVANCE_OVERFLOW',
+        autoAdvanceOverflow: { phase: overflow.phase, limit: overflow.limit },
+      }),
+    ),
     appendNextAction: vi.fn((payload: string) => payload),
     writeStateWithArtifacts: vi.fn(async () => undefined),
     extractSections: vi.fn(() => []),
@@ -55,6 +62,7 @@ vi.mock('./helpers.js', () => ({
   formatEval: mocks.formatEval,
   formatBlocked: mocks.formatBlocked,
   formatError: mocks.formatError,
+  formatAutoAdvanceOverflow: mocks.formatAutoAdvanceOverflow,
   extractSections: mocks.extractSections,
   appendNextAction: mocks.appendNextAction,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
@@ -388,6 +396,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     mocks.autoAdvance.mockReturnValue({
+      kind: 'advanced',
       state: mocks.state,
       evalResult: { kind: 'pending' },
       transitions: [],
@@ -398,6 +407,42 @@ describe('BUG-17: plan evidence-first resolution', () => {
     const parsed = JSON.parse(String(res));
     // Evidence-resolved findings used — no BLOCKED
     expect(parsed.error).toBeUndefined();
+  });
+
+  it('FAIL-CLOSED: auto-advance overflow returns blocked and persists NO state (#428)', async () => {
+    mocks.state = planStateWithEvidence('approve');
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'host_task_required',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+    });
+    // autoAdvance overflows: a non-terminating topology. The overflow variant
+    // carries NO advanced state.
+    mocks.autoAdvance.mockReturnValue({
+      kind: 'overflow',
+      phase: 'PLAN_REVIEW',
+      limit: 10,
+      transitions: [],
+    });
+
+    const { plan } = await import('./plan.js');
+    const res = await plan.execute({ reviewVerdict: 'approve' }, {} as never);
+    const parsed = JSON.parse(String(res));
+
+    // 1. Surfaces the structured fail-closed overflow result.
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('AUTO_ADVANCE_OVERFLOW');
+    expect(parsed.autoAdvanceOverflow).toEqual({ phase: 'PLAN_REVIEW', limit: 10 });
+
+    // 2. No persistence: the boundary stopped before writeStateWithArtifacts.
+    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
+
+    // 3. No substitute advanced state: the success response (built from a
+    //    finalState and wrapped by appendNextAction) was never constructed —
+    //    a full stop before any state materialization, not just an unpersisted
+    //    write.
+    expect(mocks.appendNextAction).not.toHaveBeenCalled();
   });
 
   it('BAD: host_task_required + no evidence → BLOCKED', async () => {
@@ -452,6 +497,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     mocks.autoAdvance.mockReturnValue({
+      kind: 'advanced',
       state: mocks.state,
       evalResult: { kind: 'pending' },
       transitions: [],
@@ -539,6 +585,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
     });
     mocks.autoAdvance.mockReturnValue({
+      kind: 'advanced',
       state: mocks.state,
       evalResult: { kind: 'pending' },
       transitions: [],
@@ -581,6 +628,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     mocks.autoAdvance.mockReturnValue({
+      kind: 'advanced',
       state: mocks.state,
       evalResult: { kind: 'pending' },
       transitions: [],
@@ -646,6 +694,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
     mocks.autoAdvance.mockReturnValue({
+      kind: 'advanced',
       state: mocks.state,
       evalResult: { kind: 'pending' },
       transitions: [],
@@ -727,6 +776,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
     });
     mocks.autoAdvance.mockReturnValue({
+      kind: 'advanced',
       state: mocks.state,
       evalResult: { kind: 'pending' },
       transitions: [],
@@ -918,6 +968,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
       persistedState = s;
     });
     mocks.autoAdvance.mockImplementation((s: unknown) => ({
+      kind: 'advanced',
       state: s,
       evalResult: { kind: 'pending' },
       transitions: [],

@@ -42,6 +42,7 @@ import type { ToolDefinition } from './helpers.js';
 import {
   withMutableSessionTransaction,
   formatBlocked,
+  formatAutoAdvanceOverflow,
   formatError,
   extractSections,
   appendNextAction,
@@ -234,6 +235,13 @@ function buildPlanSubmissionState(
         ? [...(scope.state.plan?.reviewFindings ?? []), reviewFindings]
         : scope.state.plan?.reviewFindings,
     },
+    // #428: a new plan invalidates any prior validation evidence. Without this
+    // reset, a stale failed-check result (passed:false) survives the re-plan and
+    // makes VALIDATION re-entry fire CHECK_FAILED → PLAN before any check is
+    // re-executed — an infinite PLAN→PLAN_REVIEW→VALIDATION→PLAN cycle that
+    // auto-advance now (correctly) fails closed on. Clearing validation returns
+    // VALIDATION to the "checks pending" WAIT state so checks must be re-run.
+    validation: [],
     selfReview: {
       iteration: 0,
       maxIterations: scope.maxSelfReviewIterations,
@@ -406,7 +414,12 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const reviewFindings = scope.args.reviewFindings ?? null;
   const nextState = buildPlanSubmissionState(scope, planEvidence, planVersion, reviewFindings);
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
-  const { state: finalState, transitions } = autoAdvance(nextState, evalFn, scope.ctx);
+  const advanced = autoAdvance(nextState, evalFn, scope.ctx);
+  // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
+  if (advanced.kind === 'overflow') {
+    return formatAutoAdvanceOverflow(advanced);
+  }
+  const { state: finalState, transitions } = advanced;
 
   await writeStateWithArtifacts(scope.sessDir, finalState);
   const response = buildSubmissionResponse({

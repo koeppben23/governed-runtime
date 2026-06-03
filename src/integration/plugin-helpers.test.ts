@@ -21,8 +21,9 @@ import {
   getToolMetadata,
   getToolCallID,
   isNativeEnforcementUnavailableDenial,
+  getAutoAdvanceOverflow,
 } from './plugin-helpers.js';
-import { formatBlocked } from './tools/helpers.js';
+import { formatBlocked, formatAutoAdvanceOverflow } from './tools/helpers.js';
 
 describe('parseToolResult', () => {
   it('GOOD: parses valid JSON string', () => {
@@ -363,5 +364,47 @@ describe('isNativeEnforcementUnavailableDenial (#419)', () => {
 
   it('CORNER: false for a successful (non-blocked) tool result', () => {
     expect(isNativeEnforcementUnavailableDenial('{"ok":true}')).toBe(false);
+  });
+});
+
+describe('getAutoAdvanceOverflow (#428)', () => {
+  const overflow = { kind: 'overflow' as const, phase: 'PLAN_REVIEW', limit: 10, transitions: [] };
+
+  it('GOOD: returns { phase, limit } for a structured overflow result', () => {
+    const output = formatAutoAdvanceOverflow(overflow);
+    expect(getAutoAdvanceOverflow(output)).toEqual({ phase: 'PLAN_REVIEW', limit: 10 });
+  });
+
+  it('BAD: detects via STRUCTURED code+field, NOT a message substring', () => {
+    // Message mentions the code text, but code is different and there is no
+    // structured autoAdvanceOverflow field → must NOT be detected.
+    const output = JSON.stringify({
+      error: true,
+      code: 'SOME_OTHER_CODE',
+      message: 'something about AUTO_ADVANCE_OVERFLOW happened at phase PLAN_REVIEW (limit 10)',
+    });
+    expect(getAutoAdvanceOverflow(output)).toBeNull();
+  });
+
+  it('BAD: null when code matches but the structured field is missing', () => {
+    const output = JSON.stringify({ error: true, code: 'AUTO_ADVANCE_OVERFLOW' });
+    expect(getAutoAdvanceOverflow(output)).toBeNull();
+  });
+
+  it('CORNER: null when limit is not a number', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'AUTO_ADVANCE_OVERFLOW',
+      autoAdvanceOverflow: { phase: 'PLAN_REVIEW', limit: '10' },
+    });
+    expect(getAutoAdvanceOverflow(output)).toBeNull();
+  });
+
+  it('CORNER: null for unparseable output (fail closed, no throw)', () => {
+    expect(getAutoAdvanceOverflow('not json at all')).toBeNull();
+  });
+
+  it('CORNER: null for a successful (non-overflow) tool result', () => {
+    expect(getAutoAdvanceOverflow('{"ok":true}')).toBeNull();
   });
 });

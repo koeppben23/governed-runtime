@@ -21,6 +21,7 @@ import {
   getToolMetadata,
   getToolOutput,
   isNativeEnforcementUnavailableDenial,
+  getAutoAdvanceOverflow,
 } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
@@ -396,6 +397,20 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               path: REVIEW_ACCEPTANCE_PATH_NATIVE,
               reason: REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
               sessionId,
+            });
+          }
+
+          // #428: auto-advance overflow is a fail-closed result (no partially-advanced
+          // state was persisted). The pure rail/boundary layers surface it via a
+          // structured result; the plugin boundary is the only reliable logger writer,
+          // so emit the diagnostic here. A non-terminating topology is an operator-level
+          // defect, hence error severity.
+          const overflow = getAutoAdvanceOverflow(getToolOutput(hookOutput));
+          if (overflow) {
+            log.error('autoAdvance', 'auto-advance overflow: topology may be non-terminating', {
+              sessionId,
+              phase: overflow.phase,
+              limit: overflow.limit,
             });
           }
         } else if (toolName === 'task') {

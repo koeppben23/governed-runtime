@@ -61,6 +61,7 @@ import {
   formatEval,
   formatBlocked,
   formatError,
+  formatAutoAdvanceOverflow,
   appendNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
@@ -347,11 +348,39 @@ async function handleImplRecord(
     reviewAssurance: appendReviewObligation(input.state.reviewAssurance, nextObligation),
     error: null,
   };
-  const { state: finalState, transitions } = autoAdvance(
+  return persistImplRecordAndRespond({
+    input,
     nextState,
-    (s) => evaluate(s, input.policy),
-    input.ctx,
-  );
+    files,
+    domainFiles,
+    reviewIteration,
+    planVersion,
+    nextObligation,
+    reviewFindings: newReviewFindings,
+    ceremony,
+  });
+}
+
+interface PersistImplRecordArgs {
+  input: ImplementRuntime;
+  nextState: SessionState;
+  files: string[];
+  domainFiles: string[];
+  reviewIteration: number;
+  planVersion: number;
+  nextObligation: ReturnType<typeof createReviewObligation> | null;
+  reviewFindings: ReviewFindings[];
+  ceremony: ReturnType<typeof resolveCeremonyProfile>;
+}
+
+async function persistImplRecordAndRespond(args: PersistImplRecordArgs): Promise<string> {
+  const { input, nextState, files, domainFiles, reviewIteration, planVersion } = args;
+  const advanced = autoAdvance(nextState, (s) => evaluate(s, input.policy), input.ctx);
+  // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
+  if (advanced.kind === 'overflow') {
+    return formatAutoAdvanceOverflow(advanced);
+  }
+  const { state: finalState, transitions } = advanced;
   await writeStateWithArtifacts(input.sessDir, finalState);
 
   return appendNextAction(
@@ -362,10 +391,10 @@ async function handleImplRecord(
         domainFiles,
         reviewIteration,
         planVersion,
-        nextObligation,
+        nextObligation: args.nextObligation,
         transitions,
-        reviewFindings: newReviewFindings,
-        ceremony,
+        reviewFindings: args.reviewFindings,
+        ceremony: args.ceremony,
         policy: input.policy,
       }),
     ),
@@ -539,11 +568,16 @@ async function handleApprovedReview(input: {
   iteration: number;
   reviewFindings: ReviewFindings[];
 }): Promise<string> {
-  const {
-    state: finalState,
-    evalResult: ev,
-    transitions,
-  } = autoAdvance(input.reviewedState, (s) => evaluate(s, input.runtime.policy), input.runtime.ctx);
+  const advanced = autoAdvance(
+    input.reviewedState,
+    (s) => evaluate(s, input.runtime.policy),
+    input.runtime.ctx,
+  );
+  // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
+  if (advanced.kind === 'overflow') {
+    return formatAutoAdvanceOverflow(advanced);
+  }
+  const { state: finalState, evalResult: ev, transitions } = advanced;
   await writeStateWithArtifacts(input.runtime.sessDir, finalState);
 
   const response: Record<string, unknown> = {

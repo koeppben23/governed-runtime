@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #428 (internal BREAKING — `autoAdvance` return type):** `autoAdvance`
+  now fails closed when the per-invocation transition budget
+  (`MAX_AUTO_ADVANCE_STEPS = 10`, single SSOT in `src/rails/types.ts`) is
+  exhausted, instead of returning a frozen-but-advanced state with an advisory
+  diagnostic. The return type is now the discriminated union `AutoAdvanceResult`
+  (`{ kind: 'advanced'; state; transitions }` | `{ kind: 'overflow'; phase;
+  limit }`); the `overflow` variant carries **no** state and **no** evalResult, so
+  a partially-advanced state is unrepresentable and can never be persisted. All
+  eight rail call-sites map overflow to a `BLOCKED` rail result
+  (`blockedFromOverflow`, reason code `AUTO_ADVANCE_OVERFLOW`, category `state`),
+  and all seven persistence boundaries return `formatAutoAdvanceOverflow(...)`
+  **before** any `writeStateWithArtifacts` call (full stop before persistence —
+  no substitute advanced state is created). The audit plugin's `tool.execute.after`
+  hook detects overflow via a structured JSON field
+  (`getAutoAdvanceOverflow`: `code === 'AUTO_ADVANCE_OVERFLOW'` plus a typed
+  `autoAdvanceOverflow` payload — never a message substring) and emits a single
+  `log.error` (`auto-advance overflow: topology may be non-terminating`) at the
+  plugin boundary; the pure rails perform no I/O or logging. This converts a
+  silent advisory into an explicit fail-closed block, preventing a
+  non-terminating topology from masquerading as a completed advance.
+
+- **Issue #428 (root cause):** Fixed the `PLAN → PLAN_REVIEW → VALIDATION → PLAN`
+  oscillation that could otherwise drive `autoAdvance` toward the overflow limit on
+  a legitimate recovery path. `buildPlanSubmissionState` now resets stale
+  `validation` evidence (`validation: []`) when a new plan is submitted, so a
+  re-plan after `CHECK_FAILED` no longer inherits a prior failed validation that
+  forced VALIDATION to auto-fail instead of waiting for fresh evidence. With this
+  fix the overflow guard only fires on genuinely pathological (non-terminating)
+  topologies.
+
 - **Issue #420 (BREAKING — archive manifest `v1` → `v2`):** Strict-mode selection
   and archive completeness are now integrity-protected. Verification strictness is
   derived from the integrity-covered `state.policySnapshot.mode` (SSOT) instead of

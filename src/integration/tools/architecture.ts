@@ -27,6 +27,7 @@ import {
   formatEval,
   formatBlocked,
   formatError,
+  formatAutoAdvanceOverflow,
   appendNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
@@ -40,6 +41,7 @@ import { executeArchitecture } from '../../rails/architecture.js';
 
 // Rail helpers
 import { autoAdvance } from '../../rails/types.js';
+import type { AutoAdvanceResult } from '../../rails/types.js';
 
 // Evidence types
 import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../state/evidence.js';
@@ -116,7 +118,7 @@ type AdrRevision = {
   revisionDelta: RevisionDelta;
 };
 
-type AdvancedArchitectureState = ReturnType<typeof autoAdvanceArchitectureState>;
+type AdvancedArchitectureState = Extract<AutoAdvanceResult, { kind: 'advanced' }>;
 
 type ReviewResultContext = {
   args: ArchitectureArgs;
@@ -452,9 +454,15 @@ function buildReviewedState(
   };
 }
 
-function autoAdvanceArchitectureState(nextState: SessionState, session: ArchitectureSession) {
+function autoAdvanceArchitectureState(
+  nextState: SessionState,
+  session: ArchitectureSession,
+): AutoAdvanceResult {
   const { policy, ctx } = session;
   const advanced = autoAdvance(nextState, (s: SessionState) => evaluate(s, policy), ctx);
+  if (advanced.kind === 'overflow') {
+    return advanced;
+  }
   const finalState =
     advanced.state.phase === 'ARCH_COMPLETE' && advanced.state.architecture
       ? {
@@ -479,6 +487,10 @@ async function handleAdrReview(
 
   const reviewedState = buildReviewedState(revision, review, args, session);
   const advanced = autoAdvanceArchitectureState(reviewedState, session);
+  // #428: fail closed on overflow BEFORE persistence — no partially-advanced write.
+  if (advanced.kind === 'overflow') {
+    return formatAutoAdvanceOverflow(advanced);
+  }
   return persistAndFormatReviewResult({ args, session, review, revision, advanced, iteration: 0 });
 }
 

@@ -13,7 +13,7 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
@@ -27,6 +27,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createTestWorkspace, withTestEnv } from './test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { writeRepoConfig } from '../adapters/persistence-config.js';
+import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import {
   computeFingerprint,
@@ -267,6 +269,73 @@ describe('integration/plugin', () => {
           { title: 'status', output: 'not json at all', metadata: {} },
         ),
       ).resolves.toBeUndefined();
+    });
+
+    it('processes a structured auto-advance overflow output without throwing (#428)', async () => {
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
+      const handler = hooks['tool.execute.after']!;
+
+      // A FlowGuard tool returning the structured fail-closed overflow result.
+      // The after-hook detects it via getAutoAdvanceOverflow and emits an error
+      // log; the handler must process it without throwing.
+      const overflowOutput = JSON.stringify({
+        error: true,
+        code: 'AUTO_ADVANCE_OVERFLOW',
+        autoAdvanceOverflow: { phase: 'PLAN_REVIEW', limit: 10 },
+      });
+      await expect(
+        handler(
+          { tool: 'flowguard_plan', sessionID: 's1', callID: 'c1', args: {} },
+          { title: 'plan', output: overflowOutput, metadata: {} },
+        ),
+      ).resolves.toBeUndefined();
+    });
+
+    it('emits a boundary error log for auto-advance overflow (#428)', async () => {
+      // The boundary error log is a REQUIRED behavior of #428 (operators must be
+      // alerted to a non-terminating topology), not incidental observability.
+      // Exercise the real after-hook with the UI log sink active and assert the
+      // exact log.error shape: service 'autoAdvance', level 'error', and the
+      // { sessionId, phase, limit } extra carried from the structured result.
+      const ws = await createTestWorkspace();
+      try {
+        // mode 'both' activates the UI sink, which delegates to client.app.log.
+        await writeRepoConfig(ws.tmpDir, {
+          ...DEFAULT_CONFIG,
+          logging: { ...DEFAULT_CONFIG.logging, mode: 'both' },
+        });
+
+        const logSpy = vi.fn().mockResolvedValue(undefined);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: { app: { log: logSpy } },
+          }),
+        );
+        const handler = hooks['tool.execute.after']!;
+
+        const overflowOutput = JSON.stringify({
+          error: true,
+          code: 'AUTO_ADVANCE_OVERFLOW',
+          autoAdvanceOverflow: { phase: 'PLAN_REVIEW', limit: 10 },
+        });
+        await handler(
+          { tool: 'flowguard_plan', sessionID: 's1', callID: 'c1', args: {} },
+          { title: 'plan', output: overflowOutput, metadata: {} },
+        );
+
+        expect(logSpy).toHaveBeenCalledWith({
+          body: {
+            service: 'autoAdvance',
+            level: 'error',
+            message: 'auto-advance overflow: topology may be non-terminating',
+            extra: { sessionId: 's1', phase: 'PLAN_REVIEW', limit: 10 },
+          },
+        });
+      } finally {
+        await ws.cleanup();
+      }
     });
 
     it('multiple plugin initializations create independent instances', async () => {

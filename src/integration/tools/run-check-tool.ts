@@ -26,6 +26,7 @@ import {
   formatBlocked,
   formatError,
   formatEval,
+  formatAutoAdvanceOverflow,
   appendNextAction,
   getWorktree,
   writeStateWithArtifactsAlreadyLocked,
@@ -153,11 +154,13 @@ export const run_check: ToolDefinition = {
 
         // Evaluate + autoAdvance (ALL_PASSED → IMPLEMENTATION, CHECK_FAILED → PLAN)
         const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
-        const {
-          state: finalState,
-          evalResult: ev,
-          transitions,
-        } = autoAdvance(nextState, evalFn, ctx);
+        const advanced = autoAdvance(nextState, evalFn, ctx);
+        // #428: fail closed on overflow BEFORE persisting — an overflow carries
+        // no advanced state, so we must not write a partially-advanced session.
+        if (advanced.kind === 'overflow') {
+          return formatAutoAdvanceOverflow(advanced);
+        }
+        const { state: finalState, evalResult: ev, transitions } = advanced;
         await writeStateWithArtifactsAlreadyLocked(sessDir, finalState);
 
         // Build response with execution evidence

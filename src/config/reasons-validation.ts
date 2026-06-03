@@ -631,4 +631,18 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       'Do not treat an empty active-check list as a verified pass while Discovery health is unverified',
     ],
   },
+
+  // ─── Auto-Advance Safety Guard (#428) ───────────────────────────────────────
+
+  {
+    code: 'AUTO_ADVANCE_OVERFLOW',
+    category: 'state',
+    messageTemplate:
+      'Auto-advance exceeded the maximum step limit ({limit}) at phase {phase}; the workflow topology may be non-terminating. No partial state was persisted (fail-closed).',
+    recoverySteps: [
+      'Run flowguard_status to inspect the current phase and evidence',
+      'Report this as a topology defect: a phase chain advanced more than the allowed number of steps without settling',
+      'Do not retry the command until the misconfigured transition path is fixed',
+    ],
+  },
 ];

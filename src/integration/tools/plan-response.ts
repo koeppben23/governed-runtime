@@ -13,7 +13,13 @@ import type {
   PlanSubmissionResponseInput,
   ConvergedPlanReviewInput,
 } from './plan-types.js';
-import { formatEval, formatBlocked, appendNextAction, writeStateWithArtifacts } from './helpers.js';
+import {
+  formatEval,
+  formatBlocked,
+  formatAutoAdvanceOverflow,
+  appendNextAction,
+  writeStateWithArtifacts,
+} from './helpers.js';
 import {
   PHASE_LABELS,
   buildProductNextAction,
@@ -249,11 +255,12 @@ export async function persistPlanReview(
 ): Promise<string> {
   const nextState = buildReviewedPlanState(scope, revision, effectiveFindings, consumedAssurance);
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
-  const {
-    state: finalState,
-    evalResult: ev,
-    transitions,
-  } = autoAdvance(nextState, evalFn, scope.ctx);
+  const advanced = autoAdvance(nextState, evalFn, scope.ctx);
+  // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
+  if (advanced.kind === 'overflow') {
+    return formatAutoAdvanceOverflow(advanced);
+  }
+  const { state: finalState, evalResult: ev, transitions } = advanced;
   const iteration = scope.state.selfReview!.iteration + 1;
   const approvedConverged = revision.revisionDelta === 'none' && revision.verdict === 'approve';
   const maxReached = iteration >= scope.maxSelfReviewIterations;

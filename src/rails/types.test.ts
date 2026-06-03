@@ -6,9 +6,12 @@ import {
   runSingleIteration,
   createPolicyEvalFn,
   DEFAULT_MAX_REVIEW_ITERATIONS,
+  MAX_AUTO_ADVANCE_STEPS,
 } from '../rails/types.js';
 import type { RailContext, ConvergenceResult, IterationResult } from '../rails/types.js';
 import { evaluate } from '../machine/evaluate.js';
+import type { EvalResult } from '../machine/evaluate.js';
+import type { SessionState } from '../state/schema.js';
 import {
   makeState,
   makeProgressedState,
@@ -154,6 +157,28 @@ describe('rails/types', () => {
       // Should stop because SELF_REVIEW_PENDING → PLAN is a self-loop
       expect(result.state.phase).toBe('PLAN');
       expect(result.transitions.length).toBe(0);
+    });
+
+    it('autoAdvance fails closed on overflow with no advanced state (#428)', () => {
+      const state = makeState('PLAN', { ticket: TICKET, plan: PLAN_RECORD });
+      // Rotate targets between two phases so the self-loop guard
+      // (target === current.phase) never fires; the loop is forced to exhaust
+      // the step budget on a genuinely non-terminating topology.
+      const evalFn = (s: SessionState): EvalResult =>
+        s.phase === 'PLAN'
+          ? { kind: 'transition', target: 'VALIDATION', event: 'APPROVE' }
+          : { kind: 'transition', target: 'PLAN', event: 'CHECK_FAILED' };
+      const result = autoAdvance(state, evalFn, ctx);
+
+      expect(result.kind).toBe('overflow');
+      if (result.kind !== 'overflow') throw new Error('expected overflow variant');
+      expect(result.limit).toBe(MAX_AUTO_ADVANCE_STEPS);
+      expect(result.transitions.length).toBe(MAX_AUTO_ADVANCE_STEPS);
+      expect(typeof result.phase).toBe('string');
+      // Fail-closed contract: the overflow variant carries NO advanced state or
+      // evalResult, so no caller can persist a partially-advanced session.
+      expect((result as Record<string, unknown>).state).toBeUndefined();
+      expect((result as Record<string, unknown>).evalResult).toBeUndefined();
     });
 
     it('runConvergenceLoop converges on first iteration when approved+none', async () => {
