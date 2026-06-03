@@ -9,6 +9,10 @@
 
 import { defaultReasonRegistry } from '../config/reasons.js';
 import { buildBlockedDiagnostics } from '../diagnostics/index.js';
+import {
+  REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
+  REVIEW_ACCEPTANCE_PATH_NATIVE,
+} from '../shared/flowguard-identifiers.js';
 
 /**
  * Parse tool output JSON with fallback for NextAction footer lines.
@@ -180,4 +184,26 @@ export function getToolMetadata(output: unknown): Record<string, unknown> {
 export function getToolCallID(input: unknown): string {
   const val = (input as Record<string, unknown> | null | undefined)?.callID;
   return typeof val === 'string' ? val : '';
+}
+
+/**
+ * Detect a fail-closed review denial produced by the native_subagent_attested path
+ * because first-party plugin enforcement was unavailable (#419).
+ *
+ * Reads the structured blocked-result fields (`code` + `diagnostics.deniedReviewPath`)
+ * surfaced by the pure validation layer — never parses human-readable messages — so the
+ * plugin boundary can emit a single diagnostic warn without re-deriving the path.
+ *
+ * @param rawOutput - The raw tool output string from the tool.execute.after hook
+ * @returns true when the output is a native enforcement-unavailable denial
+ */
+export function isNativeEnforcementUnavailableDenial(rawOutput: unknown): boolean {
+  const parsed = parseToolResult(rawOutput);
+  if (!parsed || parsed.code !== REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE) return false;
+  const diagnostics = parsed.diagnostics;
+  if (typeof diagnostics !== 'object' || diagnostics === null) return false;
+  return (
+    (diagnostics as { deniedReviewPath?: unknown }).deniedReviewPath ===
+    REVIEW_ACCEPTANCE_PATH_NATIVE
+  );
 }

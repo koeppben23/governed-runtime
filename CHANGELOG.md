@@ -327,6 +327,29 @@ attestation authority.
 
 ### Fixed
 
+- **Issue #419:** The strict review-acceptance gate no longer lets the
+  `native_subagent_attested` path bypass the `PLUGIN_ENFORCEMENT_UNAVAILABLE`
+  fail-closed deny. Native corroboration is read from `reviewer-captures.jsonl`,
+  which is append-only plaintext with no hash chain (agent-writable), so it
+  cannot establish first-party enforcement availability. Introduced a single
+  canonical pre-acceptance gate
+  `pluginEnforcementUnavailableForReviewAcceptance` in
+  `src/integration/tools/review-validation.ts` (SSOT, no per-path duplicate):
+  enforcement counts as available only when the plugin actually handshook
+  (`pluginHandshakeAt`) or a policy-gated `manual_attested` invocation is
+  permitted. Without a plugin handshake the native path now fails closed exactly
+  like solo / `host_task_preferred`, and the removed
+  `allowsNativeSubagentAttestedReview` exemption no longer applies. Native
+  evidence production/folding is intentionally retained — only its acceptance
+  authority is denied when enforcement is unavailable. The denial surfaces a
+  structured `diagnostics.deniedReviewPath: "native"` discriminator (pure
+  validation layer), and the plugin boundary (`tool.execute.after`) — the only
+  logger writer — emits a `warn` with
+  `{ path: "native", reason: "PLUGIN_ENFORCEMENT_UNAVAILABLE", sessionId }`.
+  **Behavior change:** native_subagent_attested submissions that previously
+  passed without a plugin handshake are now denied; solo / host_task_preferred
+  behavior is unchanged.
+
 - **Issue #422:** The MCP session resolver no longer guesses `process.cwd()` when
   no working directory is advertised. `resolveSessionContext`
   (`src/mcp-server/session-resolver.ts`) now resolves strictly in order —

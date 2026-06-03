@@ -19,4 +19,9 @@ export interface RuntimeDiagnostics {
   readonly required: readonly string[];
   readonly missingEvidence?: readonly string[];
   readonly safeNextActions: readonly string[];
+  /**
+   * Review-acceptance path that produced a fail-closed denial, when applicable.
+   * Lets the plugin boundary log the denied path structurally (#419).
+   */
+  readonly deniedReviewPath?: string;
 }

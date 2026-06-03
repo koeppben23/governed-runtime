@@ -20,6 +20,17 @@ export const REVIEW_REPORT_SCHEMA_ID = 'flowguard-review-report.v1' as const;
 /** Block code when host-visible subagent Task invocation is required by policy. */
 export const REASON_HOST_SUBAGENT_TASK_REQUIRED = 'HOST_SUBAGENT_TASK_REQUIRED';
 
+/** Block code when first-party plugin enforcement is unavailable for review acceptance. */
+export const REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE = 'PLUGIN_ENFORCEMENT_UNAVAILABLE';
+
+/**
+ * Review-acceptance path discriminator for the native_subagent_attested tier.
+ *
+ * Surfaced in blocked-result diagnostics so the plugin boundary can log a
+ * fail-closed denial without re-deriving the path or parsing human messages (#419).
+ */
+export const REVIEW_ACCEPTANCE_PATH_NATIVE = 'native';
+
 /** Recovery guidance for HOST_SUBAGENT_TASK_REQUIRED blocks. */
 export const RECOVERY_HOST_SUBAGENT_TASK =
   'This policy mode requires host-visible subagent invocation via the OpenCode Task tool. ' +

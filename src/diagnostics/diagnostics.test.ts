@@ -54,6 +54,20 @@ describe('runtime diagnostics', () => {
     expect(diagnostics?.missingEvidence).toContain('readable_session_state');
   });
 
+  it('EDGE: surfaces the denied review-acceptance path when provided (#419)', () => {
+    const diagnostics = buildBlockedDiagnostics('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      deniedReviewPath: 'native',
+    });
+
+    expect(diagnostics?.deniedReviewPath).toBe('native');
+  });
+
+  it('EDGE: omits the denied review-acceptance path when absent (#419)', () => {
+    const diagnostics = buildBlockedDiagnostics('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+
+    expect(diagnostics?.deniedReviewPath).toBeUndefined();
+  });
+
   it('HAPPY: builds session-directory-missing diagnostics with actionable recovery', () => {
     const diagnostics = buildBlockedDiagnostics('SESSION_DIR_NOT_FOUND', {
       sessionId: 'ses-abc',
