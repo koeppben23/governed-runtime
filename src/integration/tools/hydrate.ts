@@ -24,6 +24,7 @@ import {
   formatBlocked,
   formatError,
   appendNextAction,
+  withSessionWriteTransaction,
 } from './helpers.js';
 
 // Rails
@@ -40,7 +41,11 @@ import { PolicyModeSchema } from '../../state/policy-mode.js';
 import type { RailResult } from '../../rails/types.js';
 
 // Adapters
-import { readState } from '../../adapters/persistence.js';
+import { readState, PersistenceError } from '../../adapters/persistence.js';
+import {
+  REASON_SESSION_LOCK_CONTENDED,
+  LOCK_CONTENDED_OUTPUT_FIELD,
+} from '../../shared/flowguard-identifiers.js';
 import { listRepoSignals } from '../../adapters/git.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import {
@@ -710,54 +715,104 @@ async function formatHydrateResult(
   return persistAndFormat(sessDir, result);
 }
 
+/**
+ * Annotate a successful hydrate result with `lockContended: true` IFF the
+ * session write lock had to wait for a concurrent holder.
+ *
+ * Faithful reporting (#429): the flag is only emitted on real contention, never
+ * on an uncontended acquire, so the plugin boundary does not produce noisy
+ * contention warnings. The JSON head (first line) carries the field; any
+ * trailing footer line (e.g. NextAction) is preserved verbatim.
+ */
+function withLockContended(result: ToolResult, waited: boolean): ToolResult {
+  if (!waited) return result;
+  if (typeof result === 'string') {
+    return injectLockContended(result);
+  }
+  return { ...result, output: injectLockContended(result.output) };
+}
+
+function injectLockContended(output: string): string {
+  const idx = output.indexOf('\n');
+  const head = idx >= 0 ? output.slice(0, idx) : output;
+  const tail = idx >= 0 ? output.slice(idx) : '';
+  const parsed = JSON.parse(head) as Record<string, unknown>;
+  // Faithful (#429): annotate ONLY a confirmed-success hydrate result. A
+  // blocked/error output (`error: true`, or one lacking the success marker
+  // `status: 'ok'`) MUST NOT carry lockContended — otherwise the plugin
+  // boundary would log a "waited success" for a hydrate that actually failed.
+  if (parsed.error === true || parsed.status !== 'ok') return output;
+  parsed[LOCK_CONTENDED_OUTPUT_FIELD] = true;
+  return JSON.stringify(parsed) + tail;
+}
+
+/**
+ * Hydrate read-modify-write, serialized under the session write lock (#429).
+ *
+ * Pre-lock: only pure path/config resolution (worktree, workspace, config) —
+ * none of which read session state. Everything that participates in the
+ * read-modify-write — the fresh state read, policy/discovery/actor resolution,
+ * the pure executeHydrate, the Discovery-health reconcile, and the final
+ * write — runs INSIDE the lock so a concurrent mutable transaction cannot
+ * interleave and be lost (the prior defect read state with no lock and only
+ * acquired it at write time).
+ *
+ * The lock is intentionally held across discovery/git for the duration of the
+ * transaction; the 10s acquisition timeout in the lock adapter is the
+ * fail-closed compensation (mapped to SESSION_LOCK_CONTENDED by the caller).
+ */
 async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<ToolResult> {
   const worktree = getWorktree(context);
   const workspace = await initWorkspace(worktree, context.sessionID);
   const config = await readConfig(worktree);
-  const existing = await readState(workspace.sessionDir);
-  const policyContext = await resolveHydratePolicy(existing, config, args);
-  const discovery = await resolveDiscoveryHydration({
-    existing,
-    worktree,
-    workspace,
-    config,
-    args,
-    resolvedAt: policyContext.ctx.now(),
-  });
-  const actorInfo = await resolveActor(worktree);
-  const rawResult = executeHydrate(
-    policyContext.existingWithCentralEvidence,
-    buildHydrateInput({
-      context,
+
+  return withSessionWriteTransaction(workspace.sessionDir, async ({ waited }) => {
+    const existing = await readState(workspace.sessionDir);
+    const policyContext = await resolveHydratePolicy(existing, config, args);
+    const discovery = await resolveDiscoveryHydration({
+      existing,
       worktree,
       workspace,
-      policyContext,
       config,
-      discovery,
-      actorInfo,
       args,
-    }),
-    policyContext.ctx,
-  );
-  // Sole Discovery-health clear authority (#399): reconcile the persisted gate
-  // from fresh persisted Discovery + a bounded drift assessment at hydrate time.
-  const result = await reconcileHydrateDiscoveryHealthGate(rawResult, {
-    sessDir: workspace.sessionDir,
-    workspaceDir: workspace.workspaceDir,
-    worktree,
-    fingerprint: workspace.fingerprint,
-    now: policyContext.ctx.now(),
+      resolvedAt: policyContext.ctx.now(),
+    });
+    const actorInfo = await resolveActor(worktree);
+    const rawResult = executeHydrate(
+      policyContext.existingWithCentralEvidence,
+      buildHydrateInput({
+        context,
+        worktree,
+        workspace,
+        policyContext,
+        config,
+        discovery,
+        actorInfo,
+        args,
+      }),
+      policyContext.ctx,
+    );
+    // Sole Discovery-health clear authority (#399): reconcile the persisted gate
+    // from fresh persisted Discovery + a bounded drift assessment at hydrate time.
+    const result = await reconcileHydrateDiscoveryHealthGate(rawResult, {
+      sessDir: workspace.sessionDir,
+      workspaceDir: workspace.workspaceDir,
+      worktree,
+      fingerprint: workspace.fingerprint,
+      now: policyContext.ctx.now(),
+    });
+    writeSessionPointer(workspace.fingerprint, context.sessionID, workspace.sessionDir).catch(
+      () => {},
+    );
+    const formatted = await formatHydrateResult(
+      workspace.sessionDir,
+      existing,
+      result,
+      discovery,
+      policyContext.policyResolution,
+    );
+    return withLockContended(formatted, waited);
   });
-  writeSessionPointer(workspace.fingerprint, context.sessionID, workspace.sessionDir).catch(
-    () => {},
-  );
-  return formatHydrateResult(
-    workspace.sessionDir,
-    existing,
-    result,
-    discovery,
-    policyContext.policyResolution,
-  );
 }
 
 interface ReconcileGateContext {
@@ -826,6 +881,12 @@ async function executeHydrateTool(args: HydrateArgs, context: ToolContext): Prom
     return await runHydrate(args, context);
   } catch (err) {
     if (err instanceof ActorClaimError) return formatBlocked(err.code);
+    // Fail-closed (#429): session write lock contention surfaces as an explicit
+    // BLOCKED with a registered reason — never the UNREGISTERED_REASON fallback
+    // that a raw LOCK_TIMEOUT code would otherwise hit via formatError.
+    if (err instanceof PersistenceError && err.code === 'LOCK_TIMEOUT') {
+      return formatBlocked(REASON_SESSION_LOCK_CONTENDED, { message: err.message });
+    }
     return formatError(err);
   }
 }

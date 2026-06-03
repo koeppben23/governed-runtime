@@ -76,6 +76,7 @@ describe('persistence-lock', () => {
 
     expect(raw).toContain(`pid=${process.pid}\n`);
     expect(raw).toMatch(/^token=.+$/m);
+    expect(lock.waited).toBe(false);
     expect(fs.writeFile).toHaveBeenCalledWith(lockPath, expect.any(String), {
       encoding: 'utf-8',
       flag: 'wx',
@@ -237,19 +238,24 @@ describe('persistence-lock', () => {
   it('EDGE: concurrent acquisition waits until the held lock is released', async () => {
     const firstLock = await acquireSessionWriteLock(sessionDir);
     let secondAcquired = false;
+    let secondWaited: boolean | undefined;
 
     const second = acquireSessionWriteLock(sessionDir, 2000).then(async (lock) => {
       secondAcquired = true;
+      secondWaited = lock.waited;
       await lock.release();
     });
 
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(secondAcquired).toBe(false);
+    expect(firstLock.waited).toBe(false);
 
     await firstLock.release();
     await second;
 
     expect(secondAcquired).toBe(true);
+    // The second acquisition contended with a live holder → waited flag set.
+    expect(secondWaited).toBe(true);
   });
 
   it('HAPPY: withSessionWriteLock returns the callback result and releases the lock', async () => {
