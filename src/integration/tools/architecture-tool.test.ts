@@ -945,7 +945,6 @@ describe('integration/tools/architecture (wrapper)', () => {
       });
       mocks.autoAdvance.mockReturnValue({
         kind: 'advanced',
-        kind: 'advanced',
         state: mocks.state,
         evalResult: { kind: 'pending' },
         transitions: [],
@@ -1043,7 +1042,6 @@ describe('integration/tools/architecture (wrapper)', () => {
       });
       mocks.autoAdvance.mockReturnValue({
         kind: 'advanced',
-        kind: 'advanced',
         state: mocks.state,
         evalResult: { kind: 'pending' },
         transitions: [],
@@ -1075,7 +1073,6 @@ describe('integration/tools/architecture (wrapper)', () => {
       });
       mocks.autoAdvance.mockReturnValue({
         kind: 'advanced',
-        kind: 'advanced',
         state: mocks.state,
         evalResult: { kind: 'pending' },
         transitions: [],
@@ -1106,7 +1103,6 @@ describe('integration/tools/architecture (wrapper)', () => {
       });
       mocks.autoAdvance.mockReturnValue({
         kind: 'advanced',
-        kind: 'advanced',
         state: mocks.state,
         evalResult: { kind: 'pending' },
         transitions: [],
@@ -1136,7 +1132,6 @@ describe('integration/tools/architecture (wrapper)', () => {
       });
       mocks.autoAdvance.mockReturnValue({
         kind: 'advanced',
-        kind: 'advanced',
         state: mocks.state,
         evalResult: { kind: 'pending' },
         transitions: [],
@@ -1160,7 +1155,6 @@ describe('integration/tools/architecture (wrapper)', () => {
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       });
       mocks.autoAdvance.mockReturnValue({
-        kind: 'advanced',
         kind: 'advanced',
         state: mocks.state,
         evalResult: { kind: 'pending' },
