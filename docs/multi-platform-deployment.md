@@ -292,12 +292,22 @@ cat .codex/mcp.json
 
 ## Environment Variables (All Platforms)
 
-| Variable                | Default     | Description                            |
-| ----------------------- | ----------- | -------------------------------------- |
-| `FLOWGUARD_HOOK_PORT`   | `18462`     | HTTP hook server port (Claude Code)    |
-| `FLOWGUARD_HOOK_HOST`   | `127.0.0.1` | HTTP hook server bind address          |
-| `FLOWGUARD_SESSION_DIR` | (computed)  | Override session directory for testing |
-| `FLOWGUARD_LOG_LEVEL`   | `info`      | Hook script log verbosity              |
+| Variable                | Default     | Description                         |
+| ----------------------- | ----------- | ----------------------------------- |
+| `FLOWGUARD_HOOK_PORT`   | `18462`     | HTTP hook server port (Claude Code) |
+| `FLOWGUARD_HOOK_HOST`   | `127.0.0.1` | HTTP hook server bind address       |
+| `FLOWGUARD_SESSION_DIR` | (none)      | Explicit session directory override |
+| `FLOWGUARD_PROJECT_DIR` | (none)      | Host-advertised project dir for MCP |
+| `FLOWGUARD_LOG_LEVEL`   | `info`      | Hook script log verbosity           |
+
+> **MCP session resolution is fail-closed.** The MCP server resolves the project
+> directory from `FLOWGUARD_SESSION_DIR`, then `FLOWGUARD_PROJECT_DIR`, then
+> host-advertised MCP roots — in that order. There is **no `cwd` fallback**: if
+> none of these is present, tool calls are denied with `SESSION_UNRESOLVABLE`.
+> The Claude Code MCP template sets `FLOWGUARD_PROJECT_DIR=${CLAUDE_PROJECT_DIR}`
+> automatically. Hosts that advertise neither an env source nor MCP roots
+> (currently the Codex MCP template) must set `FLOWGUARD_SESSION_DIR` or
+> `FLOWGUARD_PROJECT_DIR` for MCP tool calls to resolve.
 
 ## Troubleshooting
 
