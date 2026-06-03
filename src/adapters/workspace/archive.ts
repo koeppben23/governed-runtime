@@ -886,26 +886,27 @@ async function verifyArchiveIntegrity(
   verifyManifestPolicyMode(manifest, state, findings);
   await verifyAuditChainIntegrity(sessDir, manifest, findings, state, strict);
 
-  if (manifest.includedFiles.length > 0) {
-    const computedContentDigest = computeArchiveContentDigest({
-      includedFiles: manifest.includedFiles,
-      fileDigests: manifest.fileDigests,
-      policyMode: manifest.policyMode,
-      auditChainHead: manifest.auditChainHead,
-      auditEventCount: manifest.auditEventCount,
-      schemaVersion: manifest.schemaVersion,
-      sessionId: manifest.sessionId,
-      fingerprint: manifest.fingerprint,
-      discoveryDigest: manifest.discoveryDigest,
+  // Content digest is ALWAYS verified — including an empty archive (no included
+  // files). The integrity header (policy mode, audit anchor, identity) is part of
+  // the digest, so a tampered header on a 0-file manifest must still fail closed.
+  const computedContentDigest = computeArchiveContentDigest({
+    includedFiles: manifest.includedFiles,
+    fileDigests: manifest.fileDigests,
+    policyMode: manifest.policyMode,
+    auditChainHead: manifest.auditChainHead,
+    auditEventCount: manifest.auditEventCount,
+    schemaVersion: manifest.schemaVersion,
+    sessionId: manifest.sessionId,
+    fingerprint: manifest.fingerprint,
+    discoveryDigest: manifest.discoveryDigest,
+  });
+  if (computedContentDigest !== manifest.contentDigest) {
+    findings.push({
+      code: 'content_digest_mismatch',
+      severity: 'error',
+      message:
+        'Content digest does not match computed value from file digests and integrity header',
     });
-    if (computedContentDigest !== manifest.contentDigest) {
-      findings.push({
-        code: 'content_digest_mismatch',
-        severity: 'error',
-        message:
-          'Content digest does not match computed value from file digests and integrity header',
-      });
-    }
   }
 
   const archiveCheckDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');

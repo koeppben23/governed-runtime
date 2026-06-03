@@ -374,6 +374,59 @@ describe('archive/types', () => {
     it('ArchiveFindingCode rejects unknown code', () => {
       expect(ArchiveFindingCodeSchema.safeParse('unknown_code').success).toBe(false);
     });
+
+    it('ArchiveManifest rejects a policyMode outside the closed enum (fail-closed)', () => {
+      const result = ArchiveManifestSchema.safeParse({
+        schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
+        createdAt: new Date().toISOString(),
+        sessionId: crypto.randomUUID(),
+        fingerprint: 'abcdef0123456789abcdef01',
+        policyMode: 'Regulated', // wrong case → not a member of the closed enum
+        profileId: 'baseline',
+        discoveryDigest: null,
+        auditChainHead: 'genesis',
+        auditEventCount: 0,
+        includedFiles: [],
+        fileDigests: {},
+        contentDigest: 'hash',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('ArchiveManifest hard-rejects a v1 schemaVersion (no legacy path)', () => {
+      const result = ArchiveManifestSchema.safeParse({
+        schemaVersion: 'archive-manifest.v1',
+        createdAt: new Date().toISOString(),
+        sessionId: crypto.randomUUID(),
+        fingerprint: 'abcdef0123456789abcdef01',
+        policyMode: 'regulated',
+        profileId: 'baseline',
+        discoveryDigest: null,
+        auditChainHead: 'genesis',
+        auditEventCount: 0,
+        includedFiles: [],
+        fileDigests: {},
+        contentDigest: 'hash',
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('ArchiveManifest rejects missing audit completeness anchor fields', () => {
+      const result = ArchiveManifestSchema.safeParse({
+        schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
+        createdAt: new Date().toISOString(),
+        sessionId: crypto.randomUUID(),
+        fingerprint: 'abcdef0123456789abcdef01',
+        policyMode: 'regulated',
+        profileId: 'baseline',
+        discoveryDigest: null,
+        // auditChainHead / auditEventCount intentionally omitted — required in v2
+        includedFiles: [],
+        fileDigests: {},
+        contentDigest: 'hash',
+      });
+      expect(result.success).toBe(false);
+    });
   });
 });
 

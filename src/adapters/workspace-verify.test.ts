@@ -293,6 +293,29 @@ describe('verifyArchive', () => {
     );
   });
 
+  it('verifies contentDigest even for an empty (zero included files) manifest', async () => {
+    // The integrity header (policyMode, audit anchor, identity) is folded into
+    // contentDigest, so a 0-file manifest MUST still be digest-checked. A wrong
+    // contentDigest must fail closed even with includedFiles === [].
+    const { fingerprint, sessionId, sessDir } = await createArchivedSession();
+
+    const manifestPath = path.join(sessDir, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
+    manifest.includedFiles = [];
+    manifest.fileDigests = {};
+    manifest.auditChainHead = GENESIS_HASH;
+    manifest.auditEventCount = 0;
+    // Deliberately leave contentDigest at its old (now-stale) value → mismatch.
+    await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: 'content_digest_mismatch', severity: 'error' }),
+    );
+  });
+
   it('reports snapshot_missing when discoveryDigest is set but snapshots are absent', async () => {
     const { fingerprint, sessionId, sessDir } = await createArchivedSession();
 

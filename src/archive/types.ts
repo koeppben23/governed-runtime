@@ -33,19 +33,27 @@ import { FINGERPRINT_PATTERN } from '../shared/flowguard-identifiers.js';
 export const ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v2' as const;
 
 /**
- * Manifest policy mode value.
+ * Manifest policy mode value — a closed, fail-closed vocabulary.
  *
- * Recorded as a plain non-empty string at this leaf layer. The authoritative
- * check — that it equals the integrity-covered `state.policySnapshot.mode`
- * (a real PolicyMode) — is enforced by the verifier (adapter layer), which owns
- * the PolicyMode SSOT. Keeping the PolicyMode enum out of this leaf module
- * preserves the archive/types leaf-module architecture contract. The sentinel
- * 'unknown' is written when no policy snapshot was resolved at archive time;
- * it then fails the verifier cross-check (fail-closed) unless state is also
- * unresolvable, in which case strict-mode default-deny applies.
+ * This is a deliberate LOCAL enum, not an import of the PolicyMode SSOT
+ * (`state/policy-mode`): `archive/types` is a leaf module and MUST NOT import
+ * from `state` (architecture contract). The governed-mode members
+ * (`solo`/`team`/`team-ci`/`regulated`) MUST stay in sync with `POLICY_MODES`;
+ * the extra `unknown` sentinel is written only when no policy snapshot was
+ * resolved at archive time. Any value outside this set fails schema validation
+ * (`manifest_parse_error`, fail-closed). The authoritative check — that the
+ * recorded mode equals the integrity-covered `state.policySnapshot.mode` — is
+ * additionally enforced by the verifier (adapter layer) via cross-check.
  */
 export const MANIFEST_POLICY_MODE_UNKNOWN = 'unknown' as const;
-export const ManifestPolicyModeSchema = z.string().min(1);
+export const MANIFEST_POLICY_MODES = [
+  'solo',
+  'team',
+  'team-ci',
+  'regulated',
+  MANIFEST_POLICY_MODE_UNKNOWN,
+] as const;
+export const ManifestPolicyModeSchema = z.enum(MANIFEST_POLICY_MODES);
 export type ManifestPolicyMode = z.infer<typeof ManifestPolicyModeSchema>;
 
 // ─── Finding Codes ────────────────────────────────────────────────────────────
