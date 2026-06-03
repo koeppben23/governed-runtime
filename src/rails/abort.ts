@@ -13,7 +13,8 @@
  * - Does NOT use the evaluator (no guard evaluation)
  * - Directly writes phase = COMPLETE + error = ABORTED
  * - The ABORT event is recorded in the transition field for audit trail
- * - Idempotent at COMPLETE (already terminal — no-op)
+ * - Idempotent at any terminal phase (COMPLETE, ARCH_COMPLETE,
+ *   REVIEW_COMPLETE) — already terminal, so abort is a no-op
  *
  * After abort:
  * - state.phase === "COMPLETE"
@@ -31,6 +32,7 @@
 import type { SessionState } from '../state/schema.js';
 import type { ErrorInfo } from '../state/evidence.js';
 import { evaluate } from '../machine/evaluate.js';
+import { TERMINAL } from '../machine/topology.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
@@ -45,8 +47,8 @@ export interface AbortInput {
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
 export function executeAbort(state: SessionState, input: AbortInput, ctx: RailContext): RailResult {
-  // 1. Idempotent at COMPLETE — already terminal
-  if (state.phase === 'COMPLETE') {
+  // 1. Idempotent at any terminal phase — already terminal, no overwrite
+  if (TERMINAL.has(state.phase)) {
     const result = evaluate(state, ctx.policy);
     return { kind: 'ok', state, evalResult: result, transitions: [] };
   }

@@ -327,6 +327,19 @@ attestation authority.
 
 ### Fixed
 
+- **Issue #421:** `flowguard_abort_session` no longer overwrites non-`COMPLETE`
+  terminal phases. The abort rail previously special-cased only
+  `phase === "COMPLETE"` as idempotent, so aborting from `ARCH_COMPLETE` or
+  `REVIEW_COMPLETE` clobbered the phase to `COMPLETE` and injected a spurious
+  `ABORTED` error, corrupting terminal session state. The rail
+  (`src/rails/abort.ts`) now treats every terminal phase as idempotent by
+  reusing the canonical `TERMINAL` set (`src/machine/topology.ts`) — no
+  duplicate authority — so abort on any terminal phase is a no-op that
+  preserves state with no transition. The `abort_session` tool boundary emits a
+  diagnostic `warn` (`{ sessionId, phase, reason: "abort_on_terminal" }`) when
+  an abort is attempted on a terminal phase, then delegates to the rail, which
+  remains the sole authority over abort state transitions.
+
 - **Issue #374:** Fix discovery drift detection false positives caused by volatile
   runtime fields (`collectedAt`, `diagnostics[].durationMs`). Drift digest now
   excludes timing metadata while preserving sensitivity to real content and

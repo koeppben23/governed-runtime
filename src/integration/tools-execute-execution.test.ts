@@ -57,6 +57,7 @@ import {
 } from '../__fixtures__.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
+import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -1197,5 +1198,60 @@ describe('abort_session', () => {
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
     });
+  });
+
+  // #421: abort MUST NOT overwrite terminal phases. The tool boundary detects
+  // the terminal phase, emits a diagnostic warn, and delegates to the rail,
+  // which performs an idempotent no-op (no overwrite, no transition).
+  describe('#421 terminal-phase guard', () => {
+    it.each(['ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const)(
+      '%s: abort is a no-op and logs a boundary warn (no overwrite)',
+      async (phase) => {
+        await hydrateSession();
+        const sessDir = await currentSessionDir();
+        const live = await readState(sessDir);
+        const fixture = makeProgressedState(phase);
+        // Seed the terminal state on disk while preserving the live session's
+        // binding and resolved policy snapshot so the tool resolves normally.
+        await writeState(sessDir, {
+          ...fixture,
+          binding: live!.binding,
+          policySnapshot: live!.policySnapshot,
+        });
+
+        const warns: Array<{
+          service: string;
+          message: string;
+          extra?: Record<string, unknown>;
+        }> = [];
+        const capturing: AdapterLogger = {
+          info: () => {},
+          warn: (service, message, extra) => warns.push({ service, message, extra }),
+          error: () => {},
+        };
+
+        const raw = await runWithAdapterLoggerAsync(capturing, () =>
+          abort_session.execute({ reason: 'attempt on terminal' }, ctx),
+        );
+        const result = parseToolResult(raw);
+
+        // No overwrite: terminal phase preserved, no ABORTED error injected.
+        expect(result.error).toBeUndefined();
+        expect(result.phase).toBe(phase);
+        const persisted = await readState(sessDir);
+        expect(persisted?.phase).toBe(phase);
+        expect(persisted?.error?.code).not.toBe('ABORTED');
+
+        // Boundary warn carries full structured context — guards against
+        // worthless logs (assert sessionId and concrete phase, not just reason).
+        expect(warns).toHaveLength(1);
+        expect(warns[0]?.service).toBe('abort');
+        expect(warns[0]?.extra).toEqual({
+          sessionId: ctx.sessionID,
+          phase,
+          reason: 'abort_on_terminal',
+        });
+      },
+    );
   });
 });
