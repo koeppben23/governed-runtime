@@ -39,13 +39,14 @@ import {
   WorkspaceError,
   type WorkspaceInfo,
 } from './workspace/index.js';
-import * as crypto from 'node:crypto';
 import { withTestEnv } from '../integration/test-helpers.js';
 import { benchmarkSync, measureAsync } from '../test-policy.js';
 import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types.js';
 import { writeState, auditPath, globalConfigPath, PersistenceError } from './persistence.js';
 import { readAuditTrail } from './persistence-audit.js';
 import { makeState, POLICY_SNAPSHOT } from '../__fixtures__.js';
+import { computeArchiveContentDigest } from '../archive/content-digest.js';
+import type { ArchiveManifest } from '../archive/types.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -198,25 +199,14 @@ describe('archiveSession', () => {
     await archiveSession(fingerprint, sessionId);
 
     const manifestPath = path.join(sessDir, 'archive-manifest.json');
-    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as {
-      includedFiles: string[];
-      fileDigests: Record<string, string>;
-      contentDigest: string;
-    };
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as ArchiveManifest;
     manifest.includedFiles = manifest.includedFiles.filter(
       (file) => file !== 'artifacts/manual.v1.md',
     );
     delete manifest.fileDigests['artifacts/manual.v1.md'];
-    manifest.contentDigest = crypto
-      .createHash('sha256')
-      .update(
-        manifest.includedFiles
-          .map((file) => manifest.fileDigests[file])
-          .filter(Boolean)
-          .sort()
-          .join(''),
-      )
-      .digest('hex');
+    // Re-seal with the canonical v2 formula so this test isolates artifact-binding
+    // detection (not an incidental content_digest_mismatch).
+    manifest.contentDigest = computeArchiveContentDigest(manifest);
     await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
 
     const result = await verifyArchive(fingerprint, sessionId);
@@ -656,6 +646,59 @@ describe('archiveSession failure paths', () => {
     // Non-regulated: sidecar failure is non-fatal, archive succeeds
     const archivePath = await archiveSession(fingerprint, sessionId);
     expect(archivePath).toContain('.tar.gz');
+  });
+
+  // ── #420: strict-mode sourced from integrity-covered state, fail-closed ─────
+
+  it('non-regulated archive with resolvable state keeps sidecar-missing tolerant', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440420';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await writeState(
+      sessDir,
+      makeState('COMPLETE', {
+        policySnapshot: { ...POLICY_SNAPSHOT, mode: 'team', requestedMode: 'team' },
+      }),
+    );
+    await archiveSession(fingerprint, sessionId);
+
+    const archiveDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
+    await fs.unlink(path.join(archiveDir, `${sessionId}.tar.gz.sha256`));
+
+    const result = await verifyArchive(fingerprint, sessionId);
+    // Resolvable non-regulated mode → NOT escalated to strict; missing sidecar is a warning.
+    expect(
+      result.findings.some(
+        (f) => f.code === 'archive_checksum_missing' && f.severity === 'warning',
+      ),
+    ).toBe(true);
+  });
+
+  it('unresolvable state defaults to strict so sidecar-missing becomes fatal (#420)', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = '550e8400-e29b-41d4-a716-446655440421';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await writeState(
+      sessDir,
+      makeState('COMPLETE', {
+        policySnapshot: { ...POLICY_SNAPSHOT, mode: 'team', requestedMode: 'team' },
+      }),
+    );
+    await archiveSession(fingerprint, sessionId);
+
+    const archiveDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
+    await fs.unlink(path.join(archiveDir, `${sessionId}.tar.gz.sha256`));
+    // Remove the integrity-covered authority: mode can no longer be resolved.
+    await fs.unlink(path.join(sessDir, 'session-state.json'));
+
+    const result = await verifyArchive(fingerprint, sessionId);
+    expect(result.passed).toBe(false);
+    // Fail-closed default: unresolvable mode → strict → missing sidecar is fatal.
+    expect(
+      result.findings.some((f) => f.code === 'archive_checksum_missing' && f.severity === 'error'),
+    ).toBe(true);
   });
 
   // ── P4a: Fail-closed — state and audit trail read failures ──────────────────

@@ -26,16 +26,20 @@ import { readConfig } from '../persistence-config.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import {
   verifyChain,
+  getLastChainHash,
   type ChainVerification,
   type ChainVerificationReason,
 } from '../../audit/integrity.js';
 import {
   ArchiveManifestSchema,
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
+  MANIFEST_POLICY_MODE_UNKNOWN,
   type ArchiveManifest,
   type ArchiveVerification,
   type ArchiveFinding,
 } from '../../archive/types.js';
+import { computeArchiveContentDigest } from '../../archive/content-digest.js';
+import { isPolicyMode } from '../../state/policy-mode.js';
 import { decisionReceipts } from '../../audit/query.js';
 import {
   redactDecisionReceipts,
@@ -188,6 +192,16 @@ interface ArtifactBindingEntry {
 
 const ARTIFACT_BINDING_EVENT = 'archive:artifacts_bound';
 const ARTIFACT_BINDING_SCHEMA_VERSION = 'flowguard-archive-artifact-binding.v1';
+
+/**
+ * Fail-closed default: when the governed policy mode cannot be resolved from
+ * integrity-covered state, verification runs strict. A resolvable non-regulated
+ * mode is never escalated.
+ */
+const STRICT_WHEN_MODE_UNRESOLVED = true;
+
+/** Hex prefix length for logging chain-head fingerprints (never the full hash material). */
+const AUDIT_HEAD_LOG_PREFIX_LENGTH = 16;
 
 async function applyArchiveRedaction(
   sessDir: string,
@@ -669,15 +683,96 @@ function addAuditFormatFindings(chainResult: ChainVerification, findings: Archiv
   }
 }
 
+/**
+ * Resolve whether verification runs in strict mode.
+ *
+ * SSOT: strict is derived from the integrity-covered `state.policySnapshot.mode`,
+ * NOT from the mutable, unsigned `manifest.policyMode`. Fail-closed: when the mode
+ * cannot be safely resolved to a known PolicyMode (missing/invalid state), strict
+ * is assumed. A resolvable non-regulated mode is NOT escalated.
+ */
+function resolveStrictMode(state: import('../../state/schema.js').SessionState | null): boolean {
+  const mode = state?.policySnapshot?.mode;
+  if (!isPolicyMode(mode)) {
+    return STRICT_WHEN_MODE_UNRESOLVED;
+  }
+  return mode === 'regulated';
+}
+
+/**
+ * Cross-check the unsigned manifest.policyMode against the integrity-covered
+ * state mode. A mismatch is a tamper signal (e.g. flipping regulated→team to
+ * weaken verification) and fails closed. Skipped when state is unresolvable —
+ * that is already surfaced by state_missing/state_invalid.
+ */
+function verifyManifestPolicyMode(
+  manifest: ArchiveManifest,
+  state: import('../../state/schema.js').SessionState | null,
+  findings: ArchiveFinding[],
+): void {
+  const stateMode = state?.policySnapshot?.mode;
+  if (!isPolicyMode(stateMode)) return;
+  if (manifest.policyMode === stateMode) return;
+
+  getAdapterLogger().error('archive', 'Manifest policy mode does not match governed state', {
+    reason: 'manifest_policy_mode_mismatch',
+    manifestMode: manifest.policyMode,
+    stateMode,
+  });
+  findings.push({
+    code: 'manifest_policy_mode_mismatch',
+    severity: 'error',
+    message: `Manifest policyMode '${manifest.policyMode}' does not match governed state mode '${stateMode}'`,
+    file: 'archive-manifest.json',
+  });
+}
+
+/**
+ * Verify the audit tail anchor (head + count) against the manifest.
+ *
+ * A truncated trail is still a valid hash-chain prefix, so chain verification
+ * alone cannot detect a missing tail. The manifest anchor makes truncation
+ * explicit (defense-in-depth above file_digest_mismatch).
+ */
+function verifyAuditCompleteness(
+  manifest: ArchiveManifest,
+  events: readonly Record<string, unknown>[],
+  findings: ArchiveFinding[],
+): void {
+  const actualCount = events.length;
+  const actualHead = getLastChainHash([...events]);
+  if (actualCount === manifest.auditEventCount && actualHead === manifest.auditChainHead) {
+    return;
+  }
+
+  getAdapterLogger().error('archive', 'Audit trail completeness anchor mismatch', {
+    reason: 'audit_chain_truncated',
+    expectedCount: manifest.auditEventCount,
+    actualCount,
+    expectedHead: manifest.auditChainHead.slice(0, AUDIT_HEAD_LOG_PREFIX_LENGTH),
+    actualHead: actualHead.slice(0, AUDIT_HEAD_LOG_PREFIX_LENGTH),
+  });
+  findings.push({
+    code: 'audit_chain_truncated',
+    severity: 'error',
+    message:
+      `Audit trail does not match manifest anchor: expected ${manifest.auditEventCount} event(s), ` +
+      `found ${actualCount}`,
+    file: 'audit.jsonl',
+  });
+}
+
 async function verifyAuditChainIntegrity(
   sessDir: string,
   manifest: ArchiveManifest,
   findings: ArchiveFinding[],
   state: import('../../state/schema.js').SessionState | null,
+  strict: boolean,
 ): Promise<void> {
   try {
     const { events, skipped } = await readAuditTrail(sessDir);
-    const strict = manifest.policyMode === 'regulated';
+
+    verifyAuditCompleteness(manifest, events, findings);
 
     if (strict && skipped > 0) {
       findings.push({
@@ -765,7 +860,7 @@ async function verifyAuditChainIntegrity(
       });
     }
   } catch (error) {
-    if (manifest.policyMode === 'regulated') {
+    if (strict) {
       findings.push({
         code: 'audit_chain_invalid',
         severity: 'error',
@@ -779,29 +874,39 @@ async function verifyAuditChainIntegrity(
 }
 
 async function verifyArchiveIntegrity(
-  sessDir: string,
-  fingerprint: string,
-  validSessionId: string,
+  location: { sessDir: string; fingerprint: string; validSessionId: string },
   manifest: ArchiveManifest,
   findings: ArchiveFinding[],
   state: import('../../state/schema.js').SessionState | null,
 ): Promise<void> {
-  if (manifest.includedFiles.length > 0) {
-    const digestValues = manifest.includedFiles
-      .map((f) => manifest.fileDigests[f])
-      .filter(Boolean)
-      .sort();
-    const computedContentDigest = crypto
-      .createHash('sha256')
-      .update(digestValues.join(''))
-      .digest('hex');
-    if (computedContentDigest !== manifest.contentDigest) {
-      findings.push({
-        code: 'content_digest_mismatch',
-        severity: 'error',
-        message: 'Content digest does not match computed value from file digests',
-      });
-    }
+  const { sessDir, fingerprint, validSessionId } = location;
+  // Strict authority and completeness checks run BEFORE the content digest so a
+  // mode/anchor tamper surfaces explicitly rather than only as a digest mismatch.
+  const strict = resolveStrictMode(state);
+  verifyManifestPolicyMode(manifest, state, findings);
+  await verifyAuditChainIntegrity(sessDir, manifest, findings, state, strict);
+
+  // Content digest is ALWAYS verified — including an empty archive (no included
+  // files). The integrity header (policy mode, audit anchor, identity) is part of
+  // the digest, so a tampered header on a 0-file manifest must still fail closed.
+  const computedContentDigest = computeArchiveContentDigest({
+    includedFiles: manifest.includedFiles,
+    fileDigests: manifest.fileDigests,
+    policyMode: manifest.policyMode,
+    auditChainHead: manifest.auditChainHead,
+    auditEventCount: manifest.auditEventCount,
+    schemaVersion: manifest.schemaVersion,
+    sessionId: manifest.sessionId,
+    fingerprint: manifest.fingerprint,
+    discoveryDigest: manifest.discoveryDigest,
+  });
+  if (computedContentDigest !== manifest.contentDigest) {
+    findings.push({
+      code: 'content_digest_mismatch',
+      severity: 'error',
+      message:
+        'Content digest does not match computed value from file digests and integrity header',
+    });
   }
 
   const archiveCheckDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
@@ -812,7 +917,7 @@ async function verifyArchiveIntegrity(
   if (!checksumExists) {
     findings.push({
       code: 'archive_checksum_missing',
-      severity: manifest.policyMode === 'regulated' ? 'error' : 'warning',
+      severity: strict ? 'error' : 'warning',
       message: 'Archive checksum sidecar (.sha256) not found',
     });
   } else {
@@ -832,8 +937,6 @@ async function verifyArchiveIntegrity(
       // Can't read archive or sidecar — skip
     }
   }
-
-  await verifyAuditChainIntegrity(sessDir, manifest, findings, state);
 }
 
 async function verifyArchiveImpl(
@@ -892,7 +995,7 @@ async function verifyArchiveImpl(
 
   await verifyManifestFiles(sessDir, manifest, findings);
   await checkUnexpectedFiles(sessDir, manifest, findings);
-  await verifyArchiveIntegrity(sessDir, fingerprint, validSessionId, manifest, findings, state);
+  await verifyArchiveIntegrity({ sessDir, fingerprint, validSessionId }, manifest, findings, state);
 
   return buildVerificationResult(findings, manifest);
 }
@@ -926,15 +1029,11 @@ async function buildArchiveManifest(
     fileDigests[relPath] = crypto.createHash('sha256').update(content).digest('hex');
   }
 
-  // Content digest: SHA-256 of sorted, concatenated file digest values
-  const sortedDigestValues = files
-    .map((f) => fileDigests[f])
-    .filter(Boolean)
-    .sort();
-  const contentDigest = crypto
-    .createHash('sha256')
-    .update(sortedDigestValues.join(''))
-    .digest('hex');
+  // Audit completeness anchor — read AFTER the artifact-binding append so head and
+  // count reflect the final, digested audit.jsonl. Truncation anchor (#420).
+  const { events } = await readAuditTrail(sessDir);
+  const auditChainHead = getLastChainHash(events);
+  const auditEventCount = events.length;
 
   // includedFiles lists only session artifacts — NOT the manifest itself.
   // The manifest is metadata ABOUT the archive content. Self-referential
@@ -943,15 +1042,32 @@ async function buildArchiveManifest(
   // The manifest file IS physically present in the archive but is not
   // part of the content-digest computation.
   const includedFiles = [...files].sort();
+  const policyMode = state?.policySnapshot?.mode ?? MANIFEST_POLICY_MODE_UNKNOWN;
+  const discoveryDigest = state?.discoveryDigest ?? null;
+
+  // Content digest binds file digests AND integrity metadata (single SSOT formula).
+  const contentDigest = computeArchiveContentDigest({
+    includedFiles,
+    fileDigests,
+    policyMode,
+    auditChainHead,
+    auditEventCount,
+    schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
+    sessionId,
+    fingerprint,
+    discoveryDigest,
+  });
 
   return {
     schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
     createdAt: new Date().toISOString(),
     sessionId,
     fingerprint,
-    policyMode: state?.policySnapshot?.mode ?? 'unknown',
+    policyMode,
     profileId: state?.activeProfile?.id ?? 'baseline',
-    discoveryDigest: state?.discoveryDigest ?? null,
+    discoveryDigest,
+    auditChainHead,
+    auditEventCount,
     includedFiles,
     fileDigests,
     contentDigest,

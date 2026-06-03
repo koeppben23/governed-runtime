@@ -1,21 +1,24 @@
 import { describe, expect, it } from 'vitest';
 import { makeState } from '../../__fixtures__.js';
-import type { ArchiveFinding, ArchiveManifest } from '../../archive/types.js';
+import type { ArchiveFinding, ArchiveManifest, ManifestPolicyMode } from '../../archive/types.js';
+import { ARCHIVE_MANIFEST_SCHEMA_VERSION } from '../../archive/types.js';
 import type { AuditEvent } from '../../state/evidence.js';
 import { verifyArchiveTimestampTokens } from './archive-timestamp-verification.js';
 
 const SESSION_ID = 'aaaaaaaa-0000-4000-8000-000000000001';
 const FINGERPRINT = 'aaaabbbbccccddddeeeeffff';
 
-function manifest(policyMode: string): ArchiveManifest {
+function manifest(policyMode: ManifestPolicyMode): ArchiveManifest {
   return {
-    schemaVersion: 'archive-manifest.v1',
+    schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
     createdAt: '2026-01-01T00:00:00.000Z',
     sessionId: SESSION_ID,
     fingerprint: FINGERPRINT,
     policyMode,
     profileId: 'baseline',
     discoveryDigest: null,
+    auditChainHead: 'genesis',
+    auditEventCount: 0,
     includedFiles: [],
     fileDigests: {},
     contentDigest: '',
