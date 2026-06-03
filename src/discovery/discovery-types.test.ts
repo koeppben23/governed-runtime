@@ -299,6 +299,8 @@ describe('archive/types', () => {
         policyMode: 'solo',
         profileId: 'baseline',
         discoveryDigest: 'abc123',
+        auditChainHead: 'genesis',
+        auditEventCount: 2,
         includedFiles: ['session-state.json', 'audit.jsonl'],
         fileDigests: { 'session-state.json': 'sha256hash', 'audit.jsonl': 'sha256hash2' },
         contentDigest: 'overallhash',
@@ -330,7 +332,7 @@ describe('archive/types', () => {
       expect(result.success).toBe(true);
     });
 
-    it('all 11 finding codes are valid', () => {
+    it('representative finding codes are valid', () => {
       const codes = [
         'missing_manifest',
         'manifest_parse_error',
@@ -338,6 +340,8 @@ describe('archive/types', () => {
         'unexpected_file',
         'file_digest_mismatch',
         'content_digest_mismatch',
+        'manifest_policy_mode_mismatch',
+        'audit_chain_truncated',
         'archive_checksum_missing',
         'archive_checksum_mismatch',
         'audit_chain_invalid',

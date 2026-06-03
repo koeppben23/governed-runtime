@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #420 (BREAKING — archive manifest `v1` → `v2`):** Strict-mode selection
+  and archive completeness are now integrity-protected. Verification strictness is
+  derived from the integrity-covered `state.policySnapshot.mode` (SSOT) instead of
+  the mutable, unsigned `manifest.policyMode`; the verifier cross-checks the two and
+  reports `manifest_policy_mode_mismatch` (error) on disagreement (catches a
+  `regulated → team` downgrade). When the governed mode is unresolvable
+  (missing/invalid `session-state.json`) verification defaults to strict
+  (fail-closed default-deny); a resolvable non-regulated mode is never escalated.
+  The manifest now carries an audit completeness anchor (`auditChainHead` +
+  `auditEventCount`); the verifier recomputes both from the archived `audit.jsonl`
+  and reports `audit_chain_truncated` (error) on mismatch — defense-in-depth that
+  **adds to**, and does not replace, `file_digest_mismatch`. Security-relevant
+  metadata (`policyMode`, `auditChainHead`, `auditEventCount`, `schemaVersion`,
+  `sessionId`, `fingerprint`, `discoveryDigest`) is folded into `contentDigest` via
+  a single canonical authority (`src/archive/content-digest.ts`) shared by the
+  builder and verifier, so per-field mutation invalidates the digest. Authority and
+  completeness checks run before the content digest so a mode/anchor tamper surfaces
+  explicitly. The manifest schema is bumped to `archive-manifest.v2` with **no
+  legacy path**: `v1` archives are hard-rejected at parse (`manifest_parse_error`)
+  and must be re-sealed by re-running archive creation. Residual risk (documented in
+  `docs/security-hardening.md`): the anchor and content digest are keyless, so a
+  full `audit.jsonl` rewrite + manifest re-seal is NOT mitigated — the cryptographic
+  root of trust against that threat remains external timestamping (TSA / RFC 3161)
+  in regulated mode.
+
 - **Issue #418:** Policy mode is now a closed enum end-to-end, so a near-miss
   string (e.g. `"Regulated"`, `"regulatd"`, `"regulated "`) can no longer
   silently disable enforcement. Introduced a single canonical SSOT —

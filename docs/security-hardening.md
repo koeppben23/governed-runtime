@@ -212,13 +212,42 @@ explicitly via `skippedCount` in the verification result.
 ### Archive Verification Call-Site
 
 Archive verification (`verifyArchive`) is the first production call-site for strict chain
-verification. When the archive manifest declares `policyMode: "regulated"`, the verifier
-passes `{ strict: true }` to `verifyChain`. Unknown or non-regulated policy modes remain
-legacy-tolerant for backward compatibility.
+verification. Strictness is derived from the **integrity-covered**
+`state.policySnapshot.mode` (the SSOT), **not** from the mutable, unsigned
+`manifest.policyMode`. When the governed mode resolves to `regulated`, the verifier passes
+`{ strict: true }` to `verifyChain`. A resolvable non-regulated mode remains
+legacy-tolerant. When the mode cannot be resolved from state (missing/invalid
+`session-state.json`), verification **defaults to strict** (fail-closed default-deny) — a
+resolvable non-regulated mode is never escalated.
 
-On failure, the verifier emits an `audit_chain_invalid` finding with error severity. The
+The verifier additionally cross-checks `manifest.policyMode` against the governed state
+mode and reports `manifest_policy_mode_mismatch` (error) when they disagree — this catches a
+`regulated → team` flip aimed at weakening verification. Authority and completeness checks
+run **before** the content digest so a mode/anchor tamper surfaces as an explicit finding
+rather than only as a digest mismatch.
+
+On chain failure, the verifier emits an `audit_chain_invalid` finding with error severity. The
 finding message includes the chain verification reason (`CHAIN_BREAK` or
 `LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE`) and event counts for diagnosis.
+
+### Archive Audit Completeness Anchor and Residual Risk
+
+A truncated audit trail is still a valid hash-chain _prefix_, so `verifyChain` alone cannot
+detect a removed tail. The manifest records `auditChainHead` and `auditEventCount` at archive
+time, and the verifier recomputes both from the archived `audit.jsonl`, reporting
+`audit_chain_truncated` (error) on mismatch. The same security-relevant metadata
+(`policyMode`, `auditChainHead`, `auditEventCount`, `schemaVersion`, `sessionId`,
+`fingerprint`, `discoveryDigest`) is also folded into `contentDigest`, so individual-field
+mutation invalidates the digest. The truncation anchor **adds to** (does not replace)
+`file_digest_mismatch` and `content_digest_mismatch`.
+
+**Residual risk (`NOT_VERIFIED` as a full mitigation):** the completeness anchor and content
+digest are **keyless**. An attacker who can rewrite `audit.jsonl` _and_ re-seal the manifest
+(recomputing every file digest and the content digest) produces an internally consistent
+archive that passes these checks. These controls raise the cost of and make casual tampering
+detectable, but the cryptographic root of trust against a full re-write remains **external
+timestamping (TSA / RFC 3161)** in regulated mode (see below). Do not treat folded-digest
+coverage as a substitute for TSA anchoring.
 
 ### RFC 3161 Timestamp Assurance
 

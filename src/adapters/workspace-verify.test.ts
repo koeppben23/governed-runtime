@@ -43,8 +43,13 @@ import * as crypto from 'node:crypto';
 import { withTestEnv } from '../integration/test-helpers.js';
 import { benchmarkSync, measureAsync } from '../test-policy.js';
 import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types.js';
+import { getLastChainHash } from '../audit/integrity.js';
 import { writeState, auditPath, globalConfigPath, PersistenceError } from './persistence.js';
-import { makeState, POLICY_SNAPSHOT } from '../__fixtures__.js';
+import { readAuditTrail } from './persistence-audit.js';
+import { computeArchiveContentDigest } from '../archive/content-digest.js';
+import type { ArchiveManifest } from '../archive/types.js';
+import { makeState, POLICY_SNAPSHOT, REGULATED_POLICY_SNAPSHOT } from '../__fixtures__.js';
+import type { PolicySnapshot } from '../state/evidence.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
@@ -78,16 +83,77 @@ describe('verifyArchive', () => {
   /**
    * Helper: create a real archived session and return paths.
    * Uses archiveSession to produce manifest, tar, and sidecar.
+   *
+   * The governed policy mode is driven from session STATE (the integrity-covered
+   * SSOT), never from manifest.policyMode. Verification derives strict-mode and
+   * cross-checks the manifest against this state.
    */
-  async function createArchivedSession(sessionId = '550e8400-e29b-41d4-a716-446655440000') {
+  async function createArchivedSession(
+    sessionId = '550e8400-e29b-41d4-a716-446655440000',
+    policySnapshot: PolicySnapshot = POLICY_SNAPSHOT,
+  ) {
     const worktree = path.resolve('.');
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
 
     // Write valid session state so the archive has content
-    await writeState(sessDir, makeState('COMPLETE'));
+    await writeState(sessDir, makeState('COMPLETE', { policySnapshot }));
 
     const archivePath = await archiveSession(fingerprint, sessionId);
     return { fingerprint, sessionId, sessDir, archivePath };
+  }
+
+  /** Map a policy-mode string to the corresponding fixture snapshot. */
+  function policyModeToSnapshot(mode: string): PolicySnapshot {
+    return mode === 'regulated' ? REGULATED_POLICY_SNAPSHOT : POLICY_SNAPSHOT;
+  }
+
+  /**
+   * Re-seal a manifest after on-disk mutations so it is internally consistent
+   * with the v2 integrity contract:
+   * - file digests recomputed from disk for every included file present,
+   * - audit completeness anchor (head + count) recomputed via the same
+   *   readAuditTrail path the verifier uses,
+   * - contentDigest recomputed via the single canonical digest authority.
+   *
+   * policyMode is NOT touched here: it is owned by the archive builder (derived
+   * from state) and the verifier cross-checks it against state. Re-sealing must
+   * never silently "fix" a mode mismatch.
+   */
+  async function resealManifest(sessDir: string): Promise<void> {
+    const manifestPath = path.join(sessDir, 'archive-manifest.json');
+    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as ArchiveManifest;
+
+    const fileDigests: Record<string, string> = {};
+    for (const relPath of manifest.includedFiles) {
+      try {
+        const content = await fs.readFile(path.join(sessDir, relPath));
+        fileDigests[relPath] = crypto.createHash('sha256').update(content).digest('hex');
+      } catch {
+        // Preserve a prior digest for an intentionally-missing file so
+        // missing_file / file_digest_mismatch tests still fire as designed.
+        const prior = manifest.fileDigests[relPath];
+        if (prior) fileDigests[relPath] = prior;
+      }
+    }
+    manifest.fileDigests = fileDigests;
+
+    const { events } = await readAuditTrail(sessDir);
+    manifest.auditChainHead = getLastChainHash([...events]);
+    manifest.auditEventCount = events.length;
+
+    manifest.contentDigest = computeArchiveContentDigest({
+      includedFiles: manifest.includedFiles,
+      fileDigests: manifest.fileDigests,
+      policyMode: manifest.policyMode,
+      auditChainHead: manifest.auditChainHead,
+      auditEventCount: manifest.auditEventCount,
+      schemaVersion: manifest.schemaVersion,
+      sessionId: manifest.sessionId,
+      fingerprint: manifest.fingerprint,
+      discoveryDigest: manifest.discoveryDigest,
+    });
+
+    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
   }
 
   // ── HAPPY ──────────────────────────────────────────────────────
@@ -259,16 +325,9 @@ describe('verifyArchive', () => {
       (f: string) => f !== 'session-state.json',
     );
     delete manifest.fileDigests['session-state.json'];
-    // Recompute contentDigest from remaining file digests
-    const digestValues = manifest.includedFiles
-      .map((f: string) => manifest.fileDigests[f])
-      .filter(Boolean)
-      .sort();
-    manifest.contentDigest = crypto
-      .createHash('sha256')
-      .update(digestValues.join(''))
-      .digest('hex');
     await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+    // Re-seal via the canonical v2 path (recomputes digests + anchor + contentDigest).
+    await resealManifest(sessDir);
 
     const result = await verifyArchive(fingerprint, sessionId);
 
@@ -323,20 +382,24 @@ describe('verifyArchive', () => {
   // ── AUDIT CHAIN ────────────────────────────────────────────────
 
   /**
-   * Helper: create an archived session with custom audit trail and manifest policyMode.
+   * Helper: create an archived session with custom audit trail.
    *
-   * 1. Archives a minimal session (via createArchivedSession).
+   * 1. Archives a minimal session whose STATE carries the requested policy mode
+   *    (the manifest.policyMode is derived from state by the builder).
    * 2. Writes audit.jsonl with the given events (if any).
-   * 3. Patches the manifest to include audit.jsonl in inventory and set policyMode.
-   * 4. Recomputes contentDigest for consistency.
+   * 3. Adds audit.jsonl to the manifest inventory and re-seals the manifest so
+   *    file digests, the audit completeness anchor, and contentDigest are
+   *    internally consistent under the v2 integrity contract.
    */
   async function createArchivedSessionWithAudit(opts: {
     sessionId?: string;
     policyMode?: string;
     auditEvents?: Array<Record<string, unknown>>;
   }) {
+    const snapshot = policyModeToSnapshot(opts.policyMode ?? 'team');
     const { fingerprint, sessionId, sessDir, archivePath } = await createArchivedSession(
       opts.sessionId,
+      snapshot,
     );
 
     // Write audit.jsonl if events provided
@@ -345,37 +408,18 @@ describe('verifyArchive', () => {
       await fs.writeFile(path.join(sessDir, 'audit.jsonl'), auditContent, 'utf-8');
     }
 
-    // Patch manifest: add audit.jsonl to inventory, set policyMode, recompute contentDigest
-    const manifestPath = path.join(sessDir, 'archive-manifest.json');
-    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
-
-    if (opts.policyMode) {
-      manifest.policyMode = opts.policyMode;
-    }
-
+    // Add audit.jsonl to the manifest inventory, then re-seal canonically.
     if (opts.auditEvents && opts.auditEvents.length > 0) {
-      const auditFilePath = path.join(sessDir, 'audit.jsonl');
-      const auditBuffer = await fs.readFile(auditFilePath);
-      const auditDigest = crypto.createHash('sha256').update(auditBuffer).digest('hex');
-
+      const manifestPath = path.join(sessDir, 'archive-manifest.json');
+      const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
       if (!manifest.includedFiles.includes('audit.jsonl')) {
         manifest.includedFiles.push('audit.jsonl');
         manifest.includedFiles.sort();
       }
-      manifest.fileDigests['audit.jsonl'] = auditDigest;
+      await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
     }
 
-    // Recompute contentDigest from patched file digests
-    const digestValues = manifest.includedFiles
-      .map((f: string) => manifest.fileDigests[f])
-      .filter(Boolean)
-      .sort();
-    manifest.contentDigest = crypto
-      .createHash('sha256')
-      .update(digestValues.join(''))
-      .digest('hex');
-
-    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+    await resealManifest(sessDir);
 
     return { fingerprint, sessionId, sessDir, archivePath };
   }
@@ -518,25 +562,15 @@ describe('verifyArchive', () => {
     // Overwrite with raw malformed content (not valid JSONL)
     await fs.writeFile(path.join(sessDir, 'audit.jsonl'), 'NOT JSON{{{\nALSO BAD{{{', 'utf-8');
 
-    // Patch manifest to include the malformed audit.jsonl with correct digest
+    // Include the malformed audit.jsonl in the manifest, then re-seal canonically.
     const manifestPath = path.join(sessDir, 'archive-manifest.json');
     const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
-    const auditBuffer = await fs.readFile(path.join(sessDir, 'audit.jsonl'));
-    const auditDigest = crypto.createHash('sha256').update(auditBuffer).digest('hex');
     if (!manifest.includedFiles.includes('audit.jsonl')) {
       manifest.includedFiles.push('audit.jsonl');
       manifest.includedFiles.sort();
     }
-    manifest.fileDigests['audit.jsonl'] = auditDigest;
-    const digestValues = manifest.includedFiles
-      .map((f: string) => manifest.fileDigests[f])
-      .filter(Boolean)
-      .sort();
-    manifest.contentDigest = crypto
-      .createHash('sha256')
-      .update(digestValues.join(''))
-      .digest('hex');
-    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+    await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+    await resealManifest(sessDir);
 
     const result = await verifyArchive(fingerprint, sessionId);
 
@@ -565,25 +599,15 @@ describe('verifyArchive', () => {
     const sessDir = sessionDir(fingerprint, sessionId);
     await fs.writeFile(path.join(sessDir, 'audit.jsonl'), auditContent, 'utf-8');
 
-    // Patch manifest to include audit.jsonl with correct digest
+    // Include audit.jsonl in the manifest, then re-seal canonically.
     const manifestPath = path.join(sessDir, 'archive-manifest.json');
     const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
-    const auditBuffer = await fs.readFile(path.join(sessDir, 'audit.jsonl'));
-    const auditDigest = crypto.createHash('sha256').update(auditBuffer).digest('hex');
     if (!manifest.includedFiles.includes('audit.jsonl')) {
       manifest.includedFiles.push('audit.jsonl');
       manifest.includedFiles.sort();
     }
-    manifest.fileDigests['audit.jsonl'] = auditDigest;
-    const digestValues = manifest.includedFiles
-      .map((f: string) => manifest.fileDigests[f])
-      .filter(Boolean)
-      .sort();
-    manifest.contentDigest = crypto
-      .createHash('sha256')
-      .update(digestValues.join(''))
-      .digest('hex');
-    await fs.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf-8');
+    await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+    await resealManifest(sessDir);
 
     const result = await verifyArchive(fingerprint, sessionId);
 

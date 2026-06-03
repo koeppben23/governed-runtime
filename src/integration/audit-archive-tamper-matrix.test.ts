@@ -519,6 +519,94 @@ describe('audit/archive tamper matrix', () => {
     expect(verification.findings.some((f) => f.severity === 'error')).toBe(true);
   });
 
+  it.skipIf(!tarOk)(
+    'manifest policyMode flipped to weaken strict verification -> verify fail (#420)',
+    async () => {
+      const ids = await completeRegulatedSession();
+      const manifestPath = path.join(ids.sessDir, 'archive-manifest.json');
+      const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as Record<
+        string,
+        unknown
+      >;
+      // Attacker flips the unsigned mode field to disable strict verification.
+      // The integrity-covered authority (state.policySnapshot.mode) still says regulated.
+      expect(manifest.policyMode).toBe('regulated');
+      manifest.policyMode = 'team';
+      await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+
+      const logs: Array<{ level: string; service: string; extra?: Record<string, unknown> }> = [];
+      const logger: AdapterLogger = {
+        info: (service, _m, extra) => logs.push({ level: 'info', service, extra }),
+        warn: (service, _m, extra) => logs.push({ level: 'warn', service, extra }),
+        error: (service, _m, extra) => logs.push({ level: 'error', service, extra }),
+      };
+      const verification = await runWithAdapterLoggerAsync(logger, () =>
+        verifyArchive(ids.fingerprint, ctx.sessionID),
+      );
+
+      expect(verification.passed).toBe(false);
+      expect(
+        verification.findings.some(
+          (f) => f.code === 'manifest_policy_mode_mismatch' && f.severity === 'error',
+        ),
+      ).toBe(true);
+      expect(
+        logs.some(
+          (entry) =>
+            entry.level === 'error' &&
+            entry.service === 'archive' &&
+            entry.extra?.reason === 'manifest_policy_mode_mismatch' &&
+            entry.extra?.manifestMode === 'team' &&
+            entry.extra?.stateMode === 'regulated',
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it.skipIf(!tarOk)(
+    'audit trail tail truncation -> verify fail with explicit code (#420)',
+    async () => {
+      const ids = await completeRegulatedSession();
+      const lines = await readAuditLines(ids.sessDir);
+      expect(lines.length).toBeGreaterThan(1);
+      // Drop the final event(s): a prefix of a valid hash-chain is still chain-valid,
+      // so only a signed head+count anchor can expose the missing tail.
+      const truncated = lines.slice(0, lines.length - 1);
+      await fs.writeFile(
+        path.join(ids.sessDir, 'audit.jsonl'),
+        `${truncated.join('\n')}\n`,
+        'utf-8',
+      );
+
+      const logs: Array<{ level: string; service: string; extra?: Record<string, unknown> }> = [];
+      const logger: AdapterLogger = {
+        info: (service, _m, extra) => logs.push({ level: 'info', service, extra }),
+        warn: (service, _m, extra) => logs.push({ level: 'warn', service, extra }),
+        error: (service, _m, extra) => logs.push({ level: 'error', service, extra }),
+      };
+      const verification = await runWithAdapterLoggerAsync(logger, () =>
+        verifyArchive(ids.fingerprint, ctx.sessionID),
+      );
+
+      expect(verification.passed).toBe(false);
+      expect(
+        verification.findings.some(
+          (f) => f.code === 'audit_chain_truncated' && f.severity === 'error',
+        ),
+      ).toBe(true);
+      expect(
+        logs.some(
+          (entry) =>
+            entry.level === 'error' &&
+            entry.service === 'archive' &&
+            entry.extra?.reason === 'audit_chain_truncated' &&
+            entry.extra?.expectedCount === lines.length &&
+            entry.extra?.actualCount === truncated.length,
+        ),
+      ).toBe(true);
+    },
+  );
+
   it.skipIf(!tarOk)('evidence file tamper after archive -> verify fail', async () => {
     const ids = await completeRegulatedSession();
     await fs.appendFile(
