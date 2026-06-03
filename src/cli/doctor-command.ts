@@ -30,10 +30,12 @@ import {
   type DoctorCheck,
   type InstallScope,
   PACKAGE_VERSION,
+  SHIPPED_EXECUTABLE_CHECK,
   computeMandatesDigest,
   hasNonFlowGuardInstructions,
   parseJsonc,
   resolveOpencodeConfigPath,
+  resolvePackageRoot,
   resolveTarget,
   safeRead,
   sha256,
@@ -452,6 +454,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
     checks.push(...(await checkLastSessionHandshake(args.installScope)));
   }
   checks.push(...(await checkBrokenInstall(target)));
+  checks.push(...checkShippedExecutables());
   checks.push(...buildPlatformTrustReport(installPlatform, args.installScope, target));
   return checks;
 }
@@ -491,6 +494,131 @@ async function checkPlatformPluginArtifacts(
   }
 
   return checks;
+}
+
+/** Node shebang every shipped FlowGuard executable must begin with. */
+const EXPECTED_EXECUTABLE_SHEBANG = '#!/usr/bin/env node';
+
+/**
+ * Read the shipped-executable manifest (the `bin` map) from the FlowGuard
+ * package.json at `packageRoot`. The `bin` map is the single SSOT for shipped
+ * CLI/runtime executables — this is its only reader; doctor derives the validated
+ * surface from it rather than from a hand-maintained duplicate list.
+ *
+ * Returns the bin map, or `null` when the manifest is unreadable or its `bin`
+ * field is missing, empty, or not a string→string object. Callers MUST treat
+ * `null` as a fail-closed error: a broken package manifest must not pass
+ * diagnostics by silently validating zero executables.
+ */
+function readShippedExecutableManifest(packageRoot: string): Record<string, string> | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8'));
+  } catch {
+    return null;
+  }
+  const bin = (parsed as { bin?: unknown } | null)?.bin;
+  if (typeof bin !== 'object' || bin === null || Array.isArray(bin)) return null;
+  const entries = Object.entries(bin);
+  if (entries.length === 0) return null;
+  // All-or-error: a single non-string target means the bin SSOT is invalid, not
+  // partially valid. Filtering bad entries would silently validate an incomplete
+  // executable surface — a fail-closed violation.
+  if (!entries.every((entry): entry is [string, string] => typeof entry[1] === 'string')) {
+    return null;
+  }
+  return Object.fromEntries(entries);
+}
+
+/**
+ * Validate one shipped executable. It must exist, be a regular file, be
+ * non-empty, and begin with the Node shebang. Any deviation is a fail-closed
+ * doctor failure (`missing`/`error`), never silently downgraded.
+ *
+ * Shebang presence — not a POSIX exec bit — is the corruption signal: the exec
+ * bit is not cross-platform (Windows) and is not guaranteed by the installer's
+ * file writes, whereas the shebang is emitted into every shipped bin entry.
+ *
+ * The file is read in a single operation with no separate existence/stat
+ * pre-check: a check-then-read sequence is a time-of-check/time-of-use race
+ * (CodeQL js/file-system-race). Existence and file-type are derived from the
+ * read's own error codes (`ENOENT` → missing, `EISDIR` → not a regular file).
+ */
+function validateShippedExecutable(file: string): DoctorCheck {
+  let content: string;
+  try {
+    content = readFileSync(file, 'utf-8');
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT') {
+      return {
+        file,
+        status: 'missing',
+        detail: 'shipped executable not found',
+        check: SHIPPED_EXECUTABLE_CHECK,
+      };
+    }
+    if (code === 'EISDIR') {
+      return {
+        file,
+        status: 'error',
+        detail: 'shipped executable is not a regular file',
+        check: SHIPPED_EXECUTABLE_CHECK,
+      };
+    }
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      file,
+      status: 'error',
+      detail: `cannot read shipped executable: ${msg}`,
+      check: SHIPPED_EXECUTABLE_CHECK,
+    };
+  }
+  if (content.length === 0) {
+    return {
+      file,
+      status: 'error',
+      detail: 'shipped executable is empty',
+      check: SHIPPED_EXECUTABLE_CHECK,
+    };
+  }
+  const firstLine = content.split('\n', 1)[0] ?? '';
+  if (firstLine !== EXPECTED_EXECUTABLE_SHEBANG) {
+    return {
+      file,
+      status: 'error',
+      detail: 'shipped executable missing Node shebang (corrupt)',
+      check: SHIPPED_EXECUTABLE_CHECK,
+    };
+  }
+  return { file, status: 'ok', check: SHIPPED_EXECUTABLE_CHECK };
+}
+
+/**
+ * Validate the shipped `dist/` executable surface declared in package.json `bin`.
+ * The list is derived from that single SSOT, so adding a new bin entry is
+ * validated automatically without a parallel hand-maintained list (#423). A
+ * missing or invalid `bin` manifest fails closed with an explicit error check.
+ *
+ * `packageRoot` is injectable for tests; production resolves the running
+ * FlowGuard package root.
+ */
+export function checkShippedExecutables(packageRoot: string = resolvePackageRoot()): DoctorCheck[] {
+  const manifest = readShippedExecutableManifest(packageRoot);
+  if (manifest === null) {
+    return [
+      {
+        file: join(packageRoot, 'package.json'),
+        status: 'error',
+        detail:
+          'package.json bin map missing, empty, or not an object — cannot validate shipped executables',
+        check: SHIPPED_EXECUTABLE_CHECK,
+      },
+    ];
+  }
+  return Object.values(manifest).map((relativeTarget) =>
+    validateShippedExecutable(join(packageRoot, relativeTarget)),
+  );
 }
 
 /**

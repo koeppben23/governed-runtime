@@ -67,12 +67,34 @@ export interface DoctorCheck {
   file: string;
   status: DoctorStatus;
   detail?: string;
+  /**
+   * Stable check-category tag (e.g. {@link SHIPPED_EXECUTABLE_CHECK}) so the CLI
+   * boundary can emit structured diagnostics without parsing human-readable detail.
+   */
+  check?: string;
+}
+
+/** Check-category tag for shipped `dist/` executable validation (#423). */
+export const SHIPPED_EXECUTABLE_CHECK = 'shipped-executable';
+
+// ---- Package root ----
+
+/**
+ * Resolve the FlowGuard package root (where `package.json` and `VERSION` live).
+ *
+ * This module compiles to `dist/cli/install-types.js` (and runs from
+ * `src/cli/install-types.ts` under tests); both are two directories below the
+ * package root, so `'..','..'` resolves the root in either context. Single
+ * canonical root-resolution authority — do not duplicate this elsewhere.
+ */
+export function resolvePackageRoot(): string {
+  return join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 }
 
 // ---- Version ----
 
 function getPackageVersion(): string {
-  const versionFile = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'VERSION');
+  const versionFile = join(resolvePackageRoot(), 'VERSION');
   try {
     return readFileSync(versionFile, 'utf-8').trim();
   } catch {

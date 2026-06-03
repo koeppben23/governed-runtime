@@ -327,6 +327,22 @@ attestation authority.
 
 ### Fixed
 
+- **Issue #423:** `doctor` now validates the shipped `dist/` executable surface,
+  not just config files, so a missing or corrupt runtime binary no longer passes
+  diagnostics. The validated list is derived from the single `package.json` `bin`
+  SSOT (`flowguard`, `flowguard-mcp`, and the `flowguard-hook-*` binaries) — no
+  hand-maintained duplicate — so a newly added `bin` entry is checked
+  automatically. Each executable must exist, be a regular file, be non-empty, and
+  begin with the Node shebang (`#!/usr/bin/env node`); the shebang (not a POSIX
+  exec bit) is the cross-platform corruption signal. A missing or invalid `bin`
+  manifest itself fails closed with an explicit `error` check. The new
+  `checkShippedExecutables` validator stays pure (returns structured
+  `DoctorCheck[]` tagged `shipped-executable`); the CLI doctor closure — the only
+  logger writer — emits one `error` per failing executable with
+  `{ path, check, status }` (package-relative path, no env/secret values). Any
+  failure makes `doctor` exit non-zero. Root resolution is unified in a single
+  `resolvePackageRoot()` authority.
+
 - **Issue #419:** The strict review-acceptance gate no longer lets the
   `native_subagent_attested` path bypass the `PLUGIN_ENFORCEMENT_UNAVAILABLE`
   fail-closed deny. Native corroboration is read from `reviewer-captures.jsonl`,

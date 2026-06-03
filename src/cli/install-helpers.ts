@@ -37,6 +37,8 @@ export type {
 } from './install-types.js';
 export {
   PACKAGE_VERSION,
+  resolvePackageRoot,
+  SHIPPED_EXECUTABLE_CHECK,
   FLOWGUARD_OWNED_FILES,
   FLOWGUARD_TARBALL_PATTERN,
   FLOWGUARD_INSTRUCTION_ENTRIES,
