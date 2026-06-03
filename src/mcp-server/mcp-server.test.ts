@@ -58,48 +58,93 @@ describe('Schema Converter', () => {
 // --- Session Resolver Tests ---
 
 describe('Session Resolver', () => {
-  const originalEnv = process.env['FLOWGUARD_SESSION_DIR'];
+  const originalSessionDir = process.env['FLOWGUARD_SESSION_DIR'];
+  const originalProjectDir = process.env['FLOWGUARD_PROJECT_DIR'];
 
   afterEach(() => {
-    if (originalEnv !== undefined) {
-      process.env['FLOWGUARD_SESSION_DIR'] = originalEnv;
+    if (originalSessionDir !== undefined) {
+      process.env['FLOWGUARD_SESSION_DIR'] = originalSessionDir;
     } else {
       delete process.env['FLOWGUARD_SESSION_DIR'];
     }
+    if (originalProjectDir !== undefined) {
+      process.env['FLOWGUARD_PROJECT_DIR'] = originalProjectDir;
+    } else {
+      delete process.env['FLOWGUARD_PROJECT_DIR'];
+    }
   });
 
-  it('HAPPY: uses env var when set', () => {
+  beforeEach(() => {
+    // Each test asserts a specific resolution source; start from a clean slate
+    // so a leaked env var from the host shell cannot mask a fail-closed path.
+    delete process.env['FLOWGUARD_SESSION_DIR'];
+    delete process.env['FLOWGUARD_PROJECT_DIR'];
+  });
+
+  it('HAPPY: uses FLOWGUARD_SESSION_DIR when set', () => {
     process.env['FLOWGUARD_SESSION_DIR'] = '/custom/path';
     const ctx = resolveSessionContext();
     expect(ctx.directory).toContain('custom');
   });
 
   it('HAPPY: uses first root when provided', () => {
-    delete process.env['FLOWGUARD_SESSION_DIR'];
     const ctx = resolveSessionContext(['/project/root', '/other']);
     expect(ctx.directory).toContain('project');
   });
 
-  it('HAPPY: falls back to cwd when no env or roots', () => {
-    delete process.env['FLOWGUARD_SESSION_DIR'];
+  // #422 negative-first: no env source and no roots MUST fail closed —
+  // the prior cwd fallback was a silent guess that hid missing inputs.
+  it('BAD: throws SESSION_UNRESOLVABLE when no env and no roots', () => {
+    expect(() => resolveSessionContext()).toThrow();
+    try {
+      resolveSessionContext();
+      expect.unreachable('resolver must fail closed');
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe('SESSION_UNRESOLVABLE');
+    }
+  });
+
+  // #422 negative-first: an empty roots array is "no roots" — still fail closed.
+  it('CORNER: empty roots array throws SESSION_UNRESOLVABLE', () => {
+    expect(() => resolveSessionContext([])).toThrow();
+    try {
+      resolveSessionContext([]);
+      expect.unreachable('resolver must fail closed');
+    } catch (err) {
+      expect((err as { code?: string }).code).toBe('SESSION_UNRESOLVABLE');
+    }
+  });
+
+  // #422: wire the previously-dead FLOWGUARD_PROJECT_DIR contract as a real
+  // resolution source (host-advertised project dir, e.g. CLAUDE_PROJECT_DIR).
+  it('HAPPY: uses FLOWGUARD_PROJECT_DIR when set and no roots', () => {
+    process.env['FLOWGUARD_PROJECT_DIR'] = '/proj/dir';
     const ctx = resolveSessionContext();
-    expect(ctx.directory).toBe(process.cwd());
+    expect(ctx.directory).toContain('proj');
   });
 
-  it('CORNER: empty roots array falls back to cwd', () => {
-    delete process.env['FLOWGUARD_SESSION_DIR'];
-    const ctx = resolveSessionContext([]);
-    expect(ctx.directory).toBe(process.cwd());
+  it('CORNER: FLOWGUARD_PROJECT_DIR wins over roots[0]', () => {
+    process.env['FLOWGUARD_PROJECT_DIR'] = '/proj/dir';
+    const ctx = resolveSessionContext(['/roots/path']);
+    expect(ctx.directory).toContain('proj');
+    expect(ctx.directory).not.toContain('roots');
   });
 
-  it('HAPPY: env var takes priority over roots', () => {
+  it('HAPPY: FLOWGUARD_SESSION_DIR takes priority over roots', () => {
     process.env['FLOWGUARD_SESSION_DIR'] = '/env/path';
     const ctx = resolveSessionContext(['/roots/path']);
     expect(ctx.directory).toContain('env');
   });
 
+  it('CORNER: FLOWGUARD_SESSION_DIR wins over FLOWGUARD_PROJECT_DIR', () => {
+    process.env['FLOWGUARD_SESSION_DIR'] = '/session/path';
+    process.env['FLOWGUARD_PROJECT_DIR'] = '/proj/dir';
+    const ctx = resolveSessionContext();
+    expect(ctx.directory).toContain('session');
+    expect(ctx.directory).not.toContain('proj');
+  });
+
   it('HAPPY: preserves provided stable MCP session id', () => {
-    delete process.env['FLOWGUARD_SESSION_DIR'];
     const ctx = resolveSessionContext(['/project/root'], 'mcp-stable-session');
 
     expect(ctx.sessionId).toBe('mcp-stable-session');
@@ -174,6 +219,65 @@ describe('Tool Adapter Session Identity', () => {
     expect(parsed.governance).toBe(true);
     expect(parsed.denied).toBe(true);
     expect(parsed.code).toBe('PHASE_GATE_BLOCKED');
+  });
+
+  // #422 negative-first: a fail-closed session resolution (resolveContext
+  // throws SESSION_UNRESOLVABLE) must be surfaced as a governance denial, not
+  // leak out of the handler. Guards the tool-adapter wiring that moves
+  // resolveContext() inside the denial-mapping path.
+  it('resolver fail-closed maps to SESSION_UNRESOLVABLE governance denial', async () => {
+    let handler:
+      | ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown)
+      | null = null;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        return 'should-not-run';
+      },
+    };
+
+    const stderrWrites: string[] = [];
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    process.stderr.write = ((chunk: string | Uint8Array): boolean => {
+      stderrWrites.push(typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString());
+      return true;
+    }) as typeof process.stderr.write;
+
+    try {
+      registerAllTools(fakeServer, { test: tool }, () => {
+        const err = new Error('[SESSION_UNRESOLVABLE] no session source');
+        (err as unknown as Record<string, unknown>).code = 'SESSION_UNRESOLVABLE';
+        throw err;
+      });
+
+      const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
+      expect(result.isError).toBe(false);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.governance).toBe(true);
+      expect(parsed.denied).toBe(true);
+      expect(parsed.code).toBe('SESSION_UNRESOLVABLE');
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+
+    // Exactly one minimal structured diagnostic line, no paths/env/cwd values.
+    const diag = stderrWrites
+      .map((w) => w.trim())
+      .filter((w) => w.includes('mcp-session-resolver'));
+    expect(diag).toHaveLength(1);
+    const logged = JSON.parse(diag[0]!);
+    expect(logged).toEqual({
+      service: 'mcp-session-resolver',
+      level: 'error',
+      message: 'session resolution failed closed',
+      extra: { reason: 'missing_roots' },
+    });
   });
 
   it('execution error returns isError:true without governance field', async () => {

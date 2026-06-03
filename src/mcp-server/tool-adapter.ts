@@ -19,7 +19,7 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
 import type { ToolDefinition, ToolContext, ToolResult } from '../integration/tools/helpers.js';
 import { convertArgsToInputSchema } from './schema-converter.js';
-import type { McpSessionContext } from './session-resolver.js';
+import { SESSION_UNRESOLVABLE_CODE, type McpSessionContext } from './session-resolver.js';
 
 // --- Tool Registry ---
 
@@ -107,6 +107,26 @@ export function isGovernanceDenialCode(code: string): boolean {
   return GOVERNANCE_DENIAL_CODES.has(code);
 }
 
+/**
+ * Emit a minimal structured diagnostic for a fail-closed session resolution.
+ *
+ * The MCP server reserves stdout exclusively for JSON-RPC, so diagnostics go to
+ * stderr (the stdout guard routes non-protocol writes there anyway). The line is
+ * deliberately minimal: no filesystem paths, env values, or cwd — only the
+ * stable reason — so a missing-roots denial never leaks sensitive context.
+ * Logging never alters control flow.
+ */
+function logSessionResolutionFailedClosed(): void {
+  process.stderr.write(
+    JSON.stringify({
+      service: 'mcp-session-resolver',
+      level: 'error',
+      message: 'session resolution failed closed',
+      extra: { reason: 'missing_roots' },
+    }) + '\n',
+  );
+}
+
 // --- Arg Sanitization (Gap 1 Mitigation) ---
 
 /**
@@ -160,25 +180,28 @@ export function registerAllTools(
         inputSchema,
       },
       async (args: Record<string, unknown>, extra) => {
-        const sessionCtx = resolveContext();
-
         // Sanitize args: strip null values injected by some models (Gap 1 mitigation).
         const cleanArgs = sanitizeNullArgs(args);
 
-        // Build ToolContext compatible with FlowGuard tool execute() signature
-        const toolContext: ToolContext = {
-          sessionID: sessionCtx.sessionId,
-          messageID: `mcp-msg-${randomUUID()}`,
-          agent: 'mcp-client',
-          directory: sessionCtx.directory,
-          worktree: sessionCtx.worktree,
-          abort: extra.signal ?? new AbortController().signal,
-          metadata: () => {
-            /* MCP: metadata is embedded in text output */
-          },
-        };
-
         try {
+          // Resolve session context inside the denial-mapping path. A
+          // fail-closed resolution (SESSION_UNRESOLVABLE) must surface as a
+          // governance denial, never escape the handler uncaught.
+          const sessionCtx = resolveContext();
+
+          // Build ToolContext compatible with FlowGuard tool execute() signature
+          const toolContext: ToolContext = {
+            sessionID: sessionCtx.sessionId,
+            messageID: `mcp-msg-${randomUUID()}`,
+            agent: 'mcp-client',
+            directory: sessionCtx.directory,
+            worktree: sessionCtx.worktree,
+            abort: extra.signal ?? new AbortController().signal,
+            metadata: () => {
+              /* MCP: metadata is embedded in text output */
+            },
+          };
+
           const result = await toolDef.execute(cleanArgs, toolContext);
           return toMcpResult(result);
         } catch (err: unknown) {
@@ -186,6 +209,11 @@ export function registerAllTools(
 
           // Extract FlowGuard error code if available
           const code = extractErrorCode(err) ?? 'TOOL_EXECUTION_ERROR';
+
+          // Fail-closed session resolution: emit a minimal boundary diagnostic.
+          if (code === SESSION_UNRESOLVABLE_CODE) {
+            logSessionResolutionFailedClosed();
+          }
 
           // Governance denials are policy decisions, not execution errors.
           if (isGovernanceDenialCode(code)) {

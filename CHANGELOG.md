@@ -327,6 +327,24 @@ attestation authority.
 
 ### Fixed
 
+- **Issue #422:** The MCP session resolver no longer guesses `process.cwd()` when
+  no working directory is advertised. `resolveSessionContext`
+  (`src/mcp-server/session-resolver.ts`) now resolves strictly in order —
+  `FLOWGUARD_SESSION_DIR` → `FLOWGUARD_PROJECT_DIR` → first MCP root — and throws
+  `SESSION_UNRESOLVABLE` when none is present, matching its fail-closed
+  docstring. The previously-dead `FLOWGUARD_PROJECT_DIR` contract emitted by the
+  Claude Code MCP template is now a real resolution source (host-advertised,
+  not a `cwd` guess), so the Claude Code MCP path resolves without guessing. The
+  resolver stays the single project-/session-dir authority. The MCP tool adapter
+  (`src/mcp-server/tool-adapter.ts`) now resolves session context inside the
+  governance-denial path, so a fail-closed resolution surfaces as a
+  `SESSION_UNRESOLVABLE` denial (`isError: false`, `governance: true`) instead of
+  escaping the handler, and emits a single minimal stderr diagnostic
+  (`{ reason: "missing_roots" }`, no paths/env/cwd). **Behavior change:** headless
+  MCP callers that advertise neither an env source nor MCP roots (currently the
+  Codex MCP template) now fail closed and must set `FLOWGUARD_SESSION_DIR` or
+  `FLOWGUARD_PROJECT_DIR`.
+
 - **Issue #421:** `flowguard_abort_session` no longer overwrites non-`COMPLETE`
   terminal phases. The abort rail previously special-cased only
   `phase === "COMPLETE"` as idempotent, so aborting from `ARCH_COMPLETE` or

@@ -80,10 +80,11 @@ export function createMcpServer(): McpServer {
 
   // Register all 12 FlowGuard tools
   registerAllTools(server, FLOWGUARD_TOOLS, () => {
-    // Resolve session context fresh for each tool call.
-    // MCP roots are not available in the handler context,
-    // so we rely on env + cwd. Roots support via server.server.roots
-    // can be added when hosts advertise them.
+    // Resolve session context fresh for each tool call from host-advertised
+    // sources (FLOWGUARD_SESSION_DIR / FLOWGUARD_PROJECT_DIR env, or MCP roots).
+    // MCP roots/list is not wired here yet, so roots are passed as undefined and
+    // the env sources carry resolution. When no source is present the resolver
+    // fails closed (SESSION_UNRESOLVABLE) — never a cwd guess.
     return resolveSessionContext(undefined, sessionId);
   });
 
