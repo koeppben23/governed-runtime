@@ -454,6 +454,20 @@ describe('getSessionLockSignal (#429)', () => {
     expect(getSessionLockSignal(output)).toBe('contended');
   });
 
+  it('REGRESSION (#429): an error output with an UNRELATED code + lockContended:true is NOT "waited"', () => {
+    // A hydrate that waited for the lock but then failed for another reason must
+    // never be reported as a "waited success". Even if a stray lockContended
+    // field leaked onto an error output, the detector returns null (not
+    // 'waited'), so the plugin never logs a false "waited" success.
+    const output = JSON.stringify({
+      error: true,
+      code: 'SOME_OTHER_REASON',
+      message: 'unrelated failure',
+      lockContended: true,
+    });
+    expect(getSessionLockSignal(output)).toBeNull();
+  });
+
   it('CORNER: null for unparseable output (fail closed, no throw)', () => {
     expect(getSessionLockSignal('not json at all')).toBeNull();
   });

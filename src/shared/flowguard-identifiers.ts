@@ -41,6 +41,17 @@ export const REASON_SESSION_LOCK_CONTENDED = 'SESSION_LOCK_CONTENDED';
 export const LOCK_CONTENDED_OUTPUT_FIELD = 'lockContended';
 
 /**
+ * Diagnostic reason string for the SUCCESSFUL-but-waited hydrate case (#429).
+ *
+ * This is NOT a registered BLOCKED reason — it never appears as a `code:` on a
+ * tool result and is not part of the reason registry. It is emitted only in the
+ * plugin boundary's `log.warn` extra so an operator can distinguish a hydrate
+ * that succeeded after waiting for a concurrent lock holder from the fail-closed
+ * `SESSION_LOCK_CONTENDED` BLOCKED case (which keeps the registered reason).
+ */
+export const DIAGNOSTIC_SESSION_LOCK_WAITED = 'SESSION_LOCK_WAITED';
+
+/**
  * Review-acceptance path discriminator for the native_subagent_attested tier.
  *
  * Surfaced in blocked-result diagnostics so the plugin boundary can log a

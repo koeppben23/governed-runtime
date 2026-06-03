@@ -419,7 +419,7 @@ describe('integration/plugin', () => {
             service: 'hydrate',
             level: 'warn',
             message: 'session write lock contended: waited for concurrent holder',
-            extra: { sessionId: 's1' },
+            extra: { sessionId: 's1', reason: 'SESSION_LOCK_WAITED' },
           },
         });
       } finally {
@@ -458,6 +458,52 @@ describe('integration/plugin', () => {
 
         const lockLogs = logSpy.mock.calls.filter(([arg]) => arg?.body?.service === 'hydrate');
         expect(lockLogs).toHaveLength(0);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('emits NO "waited" warn when hydrate FAILED after waiting for the lock (#429)', async () => {
+      // Blocker regression: a hydrate that waited but then failed for an
+      // unrelated reason (error output) must never be logged as a "waited
+      // success". The boundary either emits the SESSION_LOCK_CONTENDED error log
+      // (registered block) or nothing — never the warn.
+      const ws = await createTestWorkspace();
+      try {
+        await writeRepoConfig(ws.tmpDir, {
+          ...DEFAULT_CONFIG,
+          logging: { ...DEFAULT_CONFIG.logging, mode: 'both' },
+        });
+
+        const logSpy = vi.fn().mockResolvedValue(undefined);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: { app: { log: logSpy } },
+          }),
+        );
+        const handler = hooks['tool.execute.after']!;
+
+        // An error output that (defensively) carries a stray lockContended:true.
+        await handler(
+          { tool: 'flowguard_hydrate', sessionID: 's1', callID: 'c1', args: {} },
+          {
+            title: 'hydrate',
+            output: JSON.stringify({
+              error: true,
+              code: 'SOME_OTHER_REASON',
+              message: 'unrelated failure',
+              lockContended: true,
+            }),
+            metadata: {},
+          },
+        );
+
+        const warnLogs = logSpy.mock.calls.filter(
+          ([arg]) => arg?.body?.service === 'hydrate' && arg?.body?.level === 'warn',
+        );
+        expect(warnLogs).toHaveLength(0);
       } finally {
         await ws.cleanup();
       }

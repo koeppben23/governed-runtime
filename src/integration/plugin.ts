@@ -51,6 +51,7 @@ import {
   REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
   REVIEW_ACCEPTANCE_PATH_NATIVE,
   REASON_SESSION_LOCK_CONTENDED,
+  DIAGNOSTIC_SESSION_LOCK_WAITED,
 } from '../shared/flowguard-identifiers.js';
 import {
   resolveSessionIdFromMetadata,
@@ -434,6 +435,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
           } else if (lockSignal === 'waited') {
             log.warn('hydrate', 'session write lock contended: waited for concurrent holder', {
               sessionId,
+              reason: DIAGNOSTIC_SESSION_LOCK_WAITED,
             });
           }
         } else if (toolName === 'task') {

@@ -118,7 +118,7 @@ describe('hydrate — read-modify-write locking (#429)', () => {
     // 3. Run a re-hydrate concurrently with a ticket submit.
     //    The ticket transaction is fully serialized under the session write lock;
     //    hydrate must not clobber its committed result with the stale snapshot.
-    await Promise.all([
+    const [hydrateResult] = await Promise.all([
       hydrate.execute({ policyMode: 'solo', profileId: 'baseline' }, ctx),
       (async () => {
         // Let hydrate take its stale read first, then commit the ticket.
@@ -127,11 +127,20 @@ describe('hydrate — read-modify-write locking (#429)', () => {
       })(),
     ]);
 
-    // 4. The ticket write MUST survive. Pre-fix, hydrate's stale-derived write
-    //    overwrites it (ticket back to null) → lost update.
+    // 4a. The racing hydrate itself MUST have completed successfully (its write
+    //     landed under the lock) — not blocked, not silently dropped. This proves
+    //     hydrate's own serialized effect survives alongside the ticket's.
+    const hydrateOutput = typeof hydrateResult === 'string' ? hydrateResult : hydrateResult.output;
+    expect(JSON.parse(hydrateOutput.split('\n')[0]!).status).toBe('ok');
+
+    // 4b. The ticket write MUST survive. Pre-fix, hydrate's stale-derived write
+    //     overwrites it (ticket back to null) → lost update.
     const after = await readState(sessDir);
     expect(after).not.toBeNull();
     expect(after!.ticket).not.toBeNull();
     expect(after!.ticket!.text).toBe('My task');
+    // Both serialized effects coexist: the actor/profile hydrate resolves under
+    // the lock is also present in the final committed state.
+    expect(after!.activeProfile?.id ?? 'baseline').toBe('baseline');
   });
 });

@@ -737,6 +737,11 @@ function injectLockContended(output: string): string {
   const head = idx >= 0 ? output.slice(0, idx) : output;
   const tail = idx >= 0 ? output.slice(idx) : '';
   const parsed = JSON.parse(head) as Record<string, unknown>;
+  // Faithful (#429): annotate ONLY a confirmed-success hydrate result. A
+  // blocked/error output (`error: true`, or one lacking the success marker
+  // `status: 'ok'`) MUST NOT carry lockContended — otherwise the plugin
+  // boundary would log a "waited success" for a hydrate that actually failed.
+  if (parsed.error === true || parsed.status !== 'ok') return output;
   parsed[LOCK_CONTENDED_OUTPUT_FIELD] = true;
   return JSON.stringify(parsed) + tail;
 }

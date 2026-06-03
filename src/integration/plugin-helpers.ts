@@ -256,8 +256,12 @@ export type SessionLockSignal = 'contended' | 'waited';
 export function getSessionLockSignal(rawOutput: unknown): SessionLockSignal | null {
   const parsed = parseToolResult(rawOutput);
   if (!parsed) return null;
-  if (parsed.error === true && parsed.code === REASON_SESSION_LOCK_CONTENDED) {
-    return 'contended';
+  // An error/blocked output is only a lock signal when it is the registered
+  // SESSION_LOCK_CONTENDED block; any other error is unrelated. Critically, an
+  // error output is NEVER reported as 'waited' even if it carries a stray
+  // lockContended field — 'waited' means a SUCCESSFUL hydrate that contended.
+  if (parsed.error === true) {
+    return parsed.code === REASON_SESSION_LOCK_CONTENDED ? 'contended' : null;
   }
   if (parsed[LOCK_CONTENDED_OUTPUT_FIELD] === true) {
     return 'waited';
