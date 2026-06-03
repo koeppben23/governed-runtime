@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { executeAbort, type AbortInput } from './abort.js';
-import { makeState, FIXED_TIME } from '../__fixtures__.js';
+import { makeState, makeProgressedState, FIXED_TIME } from '../__fixtures__.js';
 import type { RailContext } from './types.js';
 
 const ctx: RailContext = {
@@ -60,6 +60,27 @@ describe('abort rail', () => {
         expect(result.transitions).toHaveLength(0);
       }
     });
+
+    // #421: abort MUST NOT overwrite ANY terminal phase. ARCH_COMPLETE and
+    // REVIEW_COMPLETE are terminal too; the prior `phase === 'COMPLETE'` guard
+    // let them be overwritten to COMPLETE + error.ABORTED, corrupting terminal
+    // state. Abort on every terminal phase MUST be an idempotent no-op.
+    it.each(['ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const)(
+      '%s is terminal — abort is a no-op (no overwrite, no transition)',
+      (phase) => {
+        const state = makeProgressedState(phase);
+        const result = executeAbort(state, ABORT_INPUT, ctx);
+        expect(result.kind).toBe('ok');
+        if (result.kind === 'ok') {
+          // State must be returned unchanged: same phase, untouched error,
+          // and zero transitions — exactly the COMPLETE no-op path.
+          expect(result.state.phase).toBe(phase);
+          expect(result.state.error).toBe(state.error);
+          expect(result.state.transition).toBe(state.transition);
+          expect(result.transitions).toHaveLength(0);
+        }
+      },
+    );
   });
 
   // ── CORNER ─────────────────────────────────────────────────────────────

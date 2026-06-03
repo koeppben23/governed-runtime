@@ -278,7 +278,9 @@ Universal routing command. Inspects current phase and does the next appropriate 
 
 Emergency session termination. Bypasses the topology and directly sets phase
 to `COMPLETE` with `error.code = 'ABORTED'`. Irreversible. Allowed in any
-non-terminal phase. Aborted sessions remain identifiable post-mortem via
+non-terminal phase. Aborting from a terminal phase (`COMPLETE`,
+`ARCH_COMPLETE`, `REVIEW_COMPLETE`) is an idempotent no-op that preserves
+state. Aborted sessions remain identifiable post-mortem via
 `state.error.code === 'ABORTED'`.
 
 ## Operational Tools
