@@ -13,6 +13,8 @@ import { AUTO_ADVANCE_OVERFLOW_CODE } from '../rails/auto-advance-overflow.js';
 import {
   REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
   REVIEW_ACCEPTANCE_PATH_NATIVE,
+  REASON_SESSION_LOCK_CONTENDED,
+  LOCK_CONTENDED_OUTPUT_FIELD,
 } from '../shared/flowguard-identifiers.js';
 
 /**
@@ -233,4 +235,32 @@ export function getAutoAdvanceOverflow(
   const { phase, limit } = overflow as { phase?: unknown; limit?: unknown };
   if (typeof phase !== 'string' || typeof limit !== 'number') return null;
   return { phase, limit };
+}
+
+/**
+ * Session write-lock signal for the hydrate boundary (#429).
+ *
+ * - `'contended'` → hydrate FAILED CLOSED: the lock could not be acquired before
+ *   timeout (BLOCKED with `code === SESSION_LOCK_CONTENDED`). Operator-relevant,
+ *   logged at error severity.
+ * - `'waited'`    → hydrate SUCCEEDED but had to wait for a concurrent holder
+ *   first (success output carries `lockContended === true`). Logged at warn.
+ * - `null`        → no contention (uncontended success, or unrelated output).
+ *
+ * Detection is STRUCTURED (registered code + typed boolean field), never a
+ * message substring, so it cannot drift with copy changes. Fails closed on
+ * parse: malformed output yields `null` (no throw, no guess).
+ */
+export type SessionLockSignal = 'contended' | 'waited';
+
+export function getSessionLockSignal(rawOutput: unknown): SessionLockSignal | null {
+  const parsed = parseToolResult(rawOutput);
+  if (!parsed) return null;
+  if (parsed.error === true && parsed.code === REASON_SESSION_LOCK_CONTENDED) {
+    return 'contended';
+  }
+  if (parsed[LOCK_CONTENDED_OUTPUT_FIELD] === true) {
+    return 'waited';
+  }
+  return null;
 }

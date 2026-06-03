@@ -28,7 +28,7 @@ import { AUTO_ADVANCE_OVERFLOW_CODE } from '../../rails/auto-advance-overflow.js
 
 // Adapters
 import { readState, writeStateAlreadyLocked } from '../../adapters/persistence.js';
-import { withSessionWriteLock } from '../../adapters/persistence-lock.js';
+import { acquireSessionWriteLock, withSessionWriteLock } from '../../adapters/persistence-lock.js';
 
 // Workspace
 import {
@@ -340,6 +340,47 @@ export async function writeStateWithArtifacts(
       writeStateWithArtifactsAlreadyLocked(sessDir, nextState),
     );
   });
+}
+
+/** Context handed to a {@link withSessionWriteTransaction} callback. */
+export interface SessionWriteTransaction {
+  /**
+   * Whether the session write lock contended with a live holder before it
+   * could be acquired. `false` when acquired immediately (uncontended).
+   *
+   * Deterministic — derived from the lock acquisition path, not a timing
+   * heuristic — so callers can faithfully report contention without noise.
+   */
+  readonly waited: boolean;
+}
+
+/**
+ * Run a full read-modify-write transaction while holding the session write lock.
+ *
+ * Unlike {@link withMutableSessionTransaction}, this does NOT pre-read or
+ * require existing state via requireStateForMutation (which throws NO_SESSION
+ * when no state exists). The callback owns its entire read-modify-write and may
+ * tolerate an absent session — this is the create-or-update path used by
+ * hydrate, which bootstraps a brand-new session OR reloads an existing one.
+ *
+ * The session dir is registered in {@link lockedSessionDir} for the duration of
+ * the callback, so any nested {@link writeStateWithArtifacts} takes the
+ * already-locked path (no re-entrant lock acquisition, no deadlock).
+ *
+ * Fail-closed: if the lock cannot be acquired within the adapter timeout,
+ * {@link acquireSessionWriteLock} throws PersistenceError(LOCK_TIMEOUT); the
+ * caller is responsible for mapping that to an explicit BLOCKED result.
+ */
+export async function withSessionWriteTransaction<T>(
+  sessDir: string,
+  fn: (tx: SessionWriteTransaction) => Promise<T>,
+): Promise<T> {
+  const lock = await acquireSessionWriteLock(sessDir);
+  try {
+    return await lockedSessionDir.run(sessDir, () => fn({ waited: lock.waited }));
+  } finally {
+    await lock.release();
+  }
 }
 
 /**

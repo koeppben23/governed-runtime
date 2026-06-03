@@ -338,6 +338,131 @@ describe('integration/plugin', () => {
       }
     });
 
+    it('emits a boundary error log when hydrate is lock-contended/BLOCKED (#429)', async () => {
+      // The boundary error log is a REQUIRED behavior of #429: when hydrate fails
+      // closed because the session write lock could not be acquired, operators
+      // must be alerted. Assert the exact log.error shape: service 'hydrate',
+      // level 'error', and the { sessionId, reason } extra.
+      const ws = await createTestWorkspace();
+      try {
+        await writeRepoConfig(ws.tmpDir, {
+          ...DEFAULT_CONFIG,
+          logging: { ...DEFAULT_CONFIG.logging, mode: 'both' },
+        });
+
+        const logSpy = vi.fn().mockResolvedValue(undefined);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: { app: { log: logSpy } },
+          }),
+        );
+        const handler = hooks['tool.execute.after']!;
+
+        const blockedOutput = JSON.stringify({
+          error: true,
+          code: 'SESSION_LOCK_CONTENDED',
+          message: 'session write lock timeout',
+        });
+        await handler(
+          { tool: 'flowguard_hydrate', sessionID: 's1', callID: 'c1', args: {} },
+          { title: 'hydrate', output: blockedOutput, metadata: {} },
+        );
+
+        expect(logSpy).toHaveBeenCalledWith({
+          body: {
+            service: 'hydrate',
+            level: 'error',
+            message: 'session write lock contended: hydrate blocked',
+            extra: { sessionId: 's1', reason: 'SESSION_LOCK_CONTENDED' },
+          },
+        });
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('emits a boundary warn log when hydrate succeeded after waiting for the lock (#429)', async () => {
+      // When hydrate SUCCEEDS but had to wait for a concurrent lock holder, the
+      // success output carries lockContended:true and the boundary emits a warn
+      // (expected under concurrency, not an error). Assert the exact warn shape.
+      const ws = await createTestWorkspace();
+      try {
+        await writeRepoConfig(ws.tmpDir, {
+          ...DEFAULT_CONFIG,
+          logging: { ...DEFAULT_CONFIG.logging, mode: 'both' },
+        });
+
+        const logSpy = vi.fn().mockResolvedValue(undefined);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: { app: { log: logSpy } },
+          }),
+        );
+        const handler = hooks['tool.execute.after']!;
+
+        const waitedOutput = JSON.stringify({
+          ok: true,
+          ticket: { text: 'x' },
+          lockContended: true,
+        });
+        await handler(
+          { tool: 'flowguard_hydrate', sessionID: 's1', callID: 'c1', args: {} },
+          { title: 'hydrate', output: waitedOutput, metadata: {} },
+        );
+
+        expect(logSpy).toHaveBeenCalledWith({
+          body: {
+            service: 'hydrate',
+            level: 'warn',
+            message: 'session write lock contended: waited for concurrent holder',
+            extra: { sessionId: 's1' },
+          },
+        });
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('emits NO lock log for an uncontended hydrate success (#429)', async () => {
+      // Faithful emission: uncontended success (no lockContended field) must NOT
+      // produce any session-lock log line. Guards against noisy warnings.
+      const ws = await createTestWorkspace();
+      try {
+        await writeRepoConfig(ws.tmpDir, {
+          ...DEFAULT_CONFIG,
+          logging: { ...DEFAULT_CONFIG.logging, mode: 'both' },
+        });
+
+        const logSpy = vi.fn().mockResolvedValue(undefined);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: { app: { log: logSpy } },
+          }),
+        );
+        const handler = hooks['tool.execute.after']!;
+
+        await handler(
+          { tool: 'flowguard_hydrate', sessionID: 's1', callID: 'c1', args: {} },
+          {
+            title: 'hydrate',
+            output: JSON.stringify({ ok: true, ticket: { text: 'x' } }),
+            metadata: {},
+          },
+        );
+
+        const lockLogs = logSpy.mock.calls.filter(([arg]) => arg?.body?.service === 'hydrate');
+        expect(lockLogs).toHaveLength(0);
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
     it('multiple plugin initializations create independent instances', async () => {
       const hooks1 = await FlowGuardAuditPlugin(createMockInput({ worktree: '/wt1' }));
       const hooks2 = await FlowGuardAuditPlugin(createMockInput({ worktree: '/wt2' }));

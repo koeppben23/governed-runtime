@@ -87,6 +87,18 @@ async function releaseLock(lockPath: string, token: string): Promise<void> {
  */
 export interface SessionWriteLock {
   release: () => Promise<void>;
+  /**
+   * Whether acquisition had to wait for a concurrent holder.
+   *
+   * `false` when the lockfile was created on the first atomic attempt
+   * (uncontended). `true` when the poll loop was entered at least once
+   * because another live holder held the lock (real contention).
+   *
+   * This is a deterministic signal derived from the acquisition path — not a
+   * timing heuristic — so callers can faithfully distinguish "acquired
+   * immediately" from "waited" without producing noisy contention reports.
+   */
+  waited: boolean;
 }
 
 /**
@@ -100,7 +112,8 @@ export interface SessionWriteLock {
  *
  * @param sessionDir - Absolute path to the session directory.
  * @param timeoutMs - Lock acquisition timeout (default 10 seconds, min 100ms for tests).
- * @returns A lock handle with a token-protected {@code release()} method.
+ * @returns A lock handle with a token-protected {@code release()} method and a
+ *   {@code waited} flag indicating whether acquisition contended with a live holder.
  * @throws PersistenceError with code {@code LOCK_TIMEOUT} if the lock cannot be acquired.
  */
 export async function acquireSessionWriteLock(
@@ -112,11 +125,12 @@ export async function acquireSessionWriteLock(
   const token = crypto.randomUUID();
   const content = buildLockContent(token);
   const deadline = Date.now() + timeoutMs;
+  let waited = false;
 
   while (true) {
     try {
       await fs.writeFile(lockPath, content, { encoding: 'utf-8', flag: 'wx', mode: 0o600 });
-      return { release: () => releaseLock(lockPath, token) };
+      return { release: () => releaseLock(lockPath, token), waited };
     } catch (err) {
       if (!isEexist(err)) throw err;
     }
@@ -138,6 +152,9 @@ export async function acquireSessionWriteLock(
       }
       continue;
     }
+
+    // A live holder is blocking us; we are about to poll → real contention.
+    waited = true;
 
     if (Date.now() >= deadline) {
       let blockingPid: number | undefined;

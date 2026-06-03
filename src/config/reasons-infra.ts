@@ -384,4 +384,16 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
       'Re-hydrate the session if the state is irrecoverable',
     ],
   },
+
+  {
+    code: 'SESSION_LOCK_CONTENDED',
+    category: 'adapter',
+    messageTemplate:
+      'Could not acquire the session write lock — another operation is holding it: {message}',
+    recoverySteps: [
+      'Wait for the concurrent FlowGuard operation on this session to finish, then re-run /hydrate',
+      'If no other operation is running, a stale lock may remain (session-state.json.lock in the session directory)',
+      'Remove the stale lock file only after confirming no live process holds it, then re-run /hydrate',
+    ],
+  },
 ];

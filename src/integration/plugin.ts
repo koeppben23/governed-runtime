@@ -22,6 +22,7 @@ import {
   getToolOutput,
   isNativeEnforcementUnavailableDenial,
   getAutoAdvanceOverflow,
+  getSessionLockSignal,
 } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
@@ -49,6 +50,7 @@ import { handleHostTaskEvidence } from './plugin-task-evidence.js';
 import {
   REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
   REVIEW_ACCEPTANCE_PATH_NATIVE,
+  REASON_SESSION_LOCK_CONTENDED,
 } from '../shared/flowguard-identifiers.js';
 import {
   resolveSessionIdFromMetadata,
@@ -67,6 +69,7 @@ import {
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_REVIEW,
+  TOOL_FLOWGUARD_HYDRATE,
   isFlowGuardVerdictTool,
 } from './tool-names.js';
 import type { OrchestratorClient } from './review/orchestrator.js';
@@ -411,6 +414,26 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               sessionId,
               phase: overflow.phase,
               limit: overflow.limit,
+            });
+          }
+        } else if (toolName === TOOL_FLOWGUARD_HYDRATE) {
+          // #429: hydrate performs a full read-modify-write under one session
+          // write lock. The pure tool/adapter layers surface lock state via a
+          // structured result; the plugin boundary is the only reliable logger
+          // writer, so emit the diagnostic here.
+          //   - 'contended' → hydrate FAILED CLOSED (BLOCKED): could not acquire
+          //     the lock before timeout. Operator-relevant, hence error severity.
+          //   - 'waited'    → hydrate SUCCEEDED but had to wait for a concurrent
+          //     holder first. Expected under concurrency, hence warn severity.
+          const lockSignal = getSessionLockSignal(getToolOutput(hookOutput));
+          if (lockSignal === 'contended') {
+            log.error('hydrate', 'session write lock contended: hydrate blocked', {
+              sessionId,
+              reason: REASON_SESSION_LOCK_CONTENDED,
+            });
+          } else if (lockSignal === 'waited') {
+            log.warn('hydrate', 'session write lock contended: waited for concurrent holder', {
+              sessionId,
             });
           }
         } else if (toolName === 'task') {

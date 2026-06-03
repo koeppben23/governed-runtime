@@ -22,6 +22,7 @@ import {
   getToolCallID,
   isNativeEnforcementUnavailableDenial,
   getAutoAdvanceOverflow,
+  getSessionLockSignal,
 } from './plugin-helpers.js';
 import { formatBlocked, formatAutoAdvanceOverflow } from './tools/helpers.js';
 
@@ -406,5 +407,54 @@ describe('getAutoAdvanceOverflow (#428)', () => {
 
   it('CORNER: null for a successful (non-overflow) tool result', () => {
     expect(getAutoAdvanceOverflow('{"ok":true}')).toBeNull();
+  });
+});
+
+describe('getSessionLockSignal (#429)', () => {
+  it('GOOD: "contended" for a BLOCKED result with SESSION_LOCK_CONTENDED code', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'SESSION_LOCK_CONTENDED',
+      message: 'lock timeout',
+    });
+    expect(getSessionLockSignal(output)).toBe('contended');
+  });
+
+  it('GOOD: "waited" for a SUCCESS result carrying lockContended:true', () => {
+    const output = JSON.stringify({ ok: true, ticket: { text: 'x' }, lockContended: true });
+    expect(getSessionLockSignal(output)).toBe('waited');
+  });
+
+  it('BAD: detects via STRUCTURED code+field, NOT a message substring', () => {
+    // Message mentions the code text, but code differs and there is no
+    // structured lockContended field → must NOT be detected.
+    const output = JSON.stringify({
+      error: true,
+      code: 'SOME_OTHER_CODE',
+      message: 'a SESSION_LOCK_CONTENDED-like situation occurred',
+    });
+    expect(getSessionLockSignal(output)).toBeNull();
+  });
+
+  it('CORNER: null for an uncontended success (no lockContended field)', () => {
+    expect(getSessionLockSignal('{"ok":true,"ticket":{"text":"x"}}')).toBeNull();
+  });
+
+  it('CORNER: null when lockContended is present but not strictly true', () => {
+    expect(getSessionLockSignal('{"ok":true,"lockContended":false}')).toBeNull();
+    expect(getSessionLockSignal('{"ok":true,"lockContended":"true"}')).toBeNull();
+  });
+
+  it('CORNER: contended takes precedence — an error code is never "waited"', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'SESSION_LOCK_CONTENDED',
+      lockContended: true,
+    });
+    expect(getSessionLockSignal(output)).toBe('contended');
+  });
+
+  it('CORNER: null for unparseable output (fail closed, no throw)', () => {
+    expect(getSessionLockSignal('not json at all')).toBeNull();
   });
 });

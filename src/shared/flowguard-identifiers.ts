@@ -24,6 +24,23 @@ export const REASON_HOST_SUBAGENT_TASK_REQUIRED = 'HOST_SUBAGENT_TASK_REQUIRED';
 export const REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE = 'PLUGIN_ENFORCEMENT_UNAVAILABLE';
 
 /**
+ * Block code when the session write lock could not be acquired before timeout
+ * because a concurrent operation held it (#429). Hydrate maps a
+ * PersistenceError(LOCK_TIMEOUT) to this registered reason so contention fails
+ * closed as an explicit BLOCKED rather than the UNREGISTERED_REASON fallback.
+ */
+export const REASON_SESSION_LOCK_CONTENDED = 'SESSION_LOCK_CONTENDED';
+
+/**
+ * Structured field on a SUCCESSFUL hydrate result, set to `true` only when the
+ * session write lock had to wait for a concurrent holder before acquiring (#429).
+ *
+ * Emitted faithfully (real contention only) so the plugin boundary can warn
+ * without parsing human messages. Absent on uncontended acquires.
+ */
+export const LOCK_CONTENDED_OUTPUT_FIELD = 'lockContended';
+
+/**
  * Review-acceptance path discriminator for the native_subagent_attested tier.
  *
  * Surfaced in blocked-result diagnostics so the plugin boundary can log a

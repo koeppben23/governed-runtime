@@ -9,13 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #429 (lost-update fix — hydrate read-modify-write under one session
+  write lock):** `flowguard_hydrate` previously performed its read-modify-write
+  (read state → reconcile → write session pointer) **without** holding the
+  session write lock across the whole sequence, so a concurrent mutation (e.g. a
+  ticket submission) committed between hydrate's read and write was silently
+  clobbered — an empirically reproduced lost update. Hydrate now runs the entire
+  RMW — fresh `readState`, policy/discovery, `resolveActor`, `executeHydrate`,
+  reconcile, and `writeSessionPointer` — inside a single
+  `withSessionWriteTransaction(sessDir, fn)` (new null-tolerant helper in
+  `src/integration/tools/helpers.ts`) that acquires the canonical session write
+  lock (`acquireSessionWriteLock`, 10s timeout, fail-closed) and runs the
+  callback under the already-locked ALS context so the existing write path is
+  reused (no duplicate locking authority). Pure pre-lock work
+  (`getWorktree`/`initWorkspace`/`readConfig`) stays outside the lock. The lock
+  primitive now exposes a deterministic `waited: boolean`
+  (`SessionWriteLock.waited` in `src/adapters/persistence-lock.ts`): `false` on
+  uncontended `O_EXCL` acquire, `true` once the poll loop is entered. On a
+  **successful** hydrate that had to wait, the structured field
+  `lockContended: true` is added to the result (faithful — real contention
+  only); on lock-acquisition timeout the `PersistenceError(LOCK_TIMEOUT)` is
+  mapped to a registered `BLOCKED` reason `SESSION_LOCK_CONTENDED` (category
+  `adapter`) instead of the `UNREGISTERED_REASON` fallback. The audit plugin's
+  `tool.execute.after` hook detects this **structurally** (new
+  `getSessionLockSignal`: `code === 'SESSION_LOCK_CONTENDED'` → `'contended'`;
+  typed `lockContended === true` → `'waited'`; never a message substring) and is
+  the sole logger writer: `log.error` (`session write lock contended: hydrate
+blocked`) on contention, `log.warn` (`waited for concurrent holder`) on a
+  waited success, and **no** lock log on an uncontended success. Shared
+  identifiers (`REASON_SESSION_LOCK_CONTENDED`, `LOCK_CONTENDED_OUTPUT_FIELD`)
+  are single-SSOT in `src/shared/flowguard-identifiers.ts`. This converts a
+  silent lost update into a serialized, fail-closed operation that either
+  commits the full reconcile or returns an explicit `BLOCKED`.
+
 - **Issue #428 (internal BREAKING — `autoAdvance` return type):** `autoAdvance`
   now fails closed when the per-invocation transition budget
   (`MAX_AUTO_ADVANCE_STEPS = 10`, single SSOT in `src/rails/types.ts`) is
   exhausted, instead of returning a frozen-but-advanced state with an advisory
   diagnostic. The return type is now the discriminated union `AutoAdvanceResult`
   (`{ kind: 'advanced'; state; transitions }` | `{ kind: 'overflow'; phase;
-  limit }`); the `overflow` variant carries **no** state and **no** evalResult, so
+limit }`); the `overflow` variant carries **no** state and **no** evalResult, so
   a partially-advanced state is unrepresentable and can never be persisted. All
   eight rail call-sites map overflow to a `BLOCKED` rail result
   (`blockedFromOverflow`, reason code `AUTO_ADVANCE_OVERFLOW`, category `state`),
