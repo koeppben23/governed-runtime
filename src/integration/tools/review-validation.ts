@@ -27,7 +27,10 @@ import type {
   ReviewObligation,
   ReviewInvocationEvidence,
 } from '../../state/evidence.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import {
+  REVIEWER_SUBAGENT_TYPE,
+  REVIEW_ACCEPTANCE_PATH_NATIVE,
+} from '../../shared/flowguard-identifiers.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 
@@ -108,25 +111,20 @@ function allowsManualAttestedReviewWithoutPluginHandshake(
 }
 
 /**
- * native_subagent_attested: a strictly stronger form of manual_attested. It requires every
- * manual_attested check PLUS an independent FlowGuard host-captured corroboration record
- * (folded into the invocation evidence at construction time) proving the review tool was
- * invoked from inside a genuine `flowguard-reviewer` subagent. Failing any check does NOT
- * silently downgrade to manual_attested — a native-mode invocation must pass here or be
- * blocked (fail-closed). This path never permits host_task_required (excluded by the shared
- * policy predicate), so it can never weaken the host_task_required guarantee.
+ * Shared pre-acceptance gate: is first-party plugin enforcement unavailable for this
+ * submission? Enforcement is available only when the plugin actually handshook
+ * (`pluginHandshakeAt`) or when a policy-gated `manual_attested` invocation is permitted.
+ *
+ * native_subagent_attested corroboration lives in `reviewer-captures.jsonl`, which is
+ * append-only plaintext with no hash chain (agent-writable). It therefore does NOT
+ * establish enforcement availability: without a plugin handshake the native path fails
+ * closed exactly like solo / host_task_preferred, never accept (#419). This is the single
+ * canonical authority for the unavailable-enforcement deny — no per-path duplicate.
  */
-function allowsNativeSubagentAttestedReview(input: AttestedReviewCheckInput): boolean {
-  const { invocation } = input;
-  const checks = [
-    ...baseAgentAttestedChecks(input),
-    invocation.invocationMode === 'native_subagent_attested',
-    invocation.hostCapturedAgentType === REVIEWER_SUBAGENT_TYPE,
-    typeof invocation.hostCapturedAgentId === 'string' && invocation.hostCapturedAgentId.length > 0,
-    invocation.hostCaptureSource === 'subagent_stop_hook' ||
-      invocation.hostCaptureSource === 'post_tool_use_hook',
-  ];
-  return checks.every((check) => check === true);
+function pluginEnforcementUnavailableForReviewAcceptance(input: AttestedReviewCheckInput): boolean {
+  return (
+    !input.obligation.pluginHandshakeAt && !allowsManualAttestedReviewWithoutPluginHandshake(input)
+  );
 }
 
 // ─── Core Validation ──────────────────────────────────────────────────────────
@@ -261,15 +259,7 @@ export function validateReviewFindings(
     }
 
     if (
-      !obligation.pluginHandshakeAt &&
-      !allowsManualAttestedReviewWithoutPluginHandshake({
-        findings,
-        obligation,
-        invocation,
-        findingsHash: submittedFindingsHash,
-        ctx,
-      }) &&
-      !allowsNativeSubagentAttestedReview({
+      pluginEnforcementUnavailableForReviewAcceptance({
         findings,
         obligation,
         invocation,
@@ -281,6 +271,9 @@ export function validateReviewFindings(
         obligationType: ctx.obligationType,
         iteration: String(expectedIteration),
         planVersion: String(expectedPlanVersion),
+        ...(invocation.invocationMode === 'native_subagent_attested'
+          ? { deniedReviewPath: REVIEW_ACCEPTANCE_PATH_NATIVE }
+          : {}),
       });
     }
 

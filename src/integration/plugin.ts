@@ -19,6 +19,8 @@ import {
   buildEnforcementError,
   getToolArgs,
   getToolMetadata,
+  getToolOutput,
+  isNativeEnforcementUnavailableDenial,
 } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
@@ -43,6 +45,10 @@ import {
 } from './review/enforcement/enforcement.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
+import {
+  REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
+  REVIEW_ACCEPTANCE_PATH_NATIVE,
+} from '../shared/flowguard-identifiers.js';
 import {
   resolveSessionIdFromMetadata,
   injectSessionIdIntoOutput,
@@ -379,6 +385,18 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
             );
           } catch (err) {
             logError('enforcement tracking failed', err);
+          }
+
+          // #419: native_subagent_attested acceptance is denied when first-party
+          // plugin enforcement is unavailable. The pure validation layer surfaces
+          // this via structured blocked-result fields; the plugin boundary is the
+          // only logger writer, so emit the fail-closed diagnostic here.
+          if (isNativeEnforcementUnavailableDenial(getToolOutput(hookOutput))) {
+            log.warn('review', 'native review acceptance denied: plugin enforcement unavailable', {
+              path: REVIEW_ACCEPTANCE_PATH_NATIVE,
+              reason: REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
+              sessionId,
+            });
           }
         } else if (toolName === 'task') {
           const taskArgs = getToolArgs(input);

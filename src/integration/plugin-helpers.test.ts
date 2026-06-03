@@ -20,7 +20,9 @@ import {
   getToolArgs,
   getToolMetadata,
   getToolCallID,
+  isNativeEnforcementUnavailableDenial,
 } from './plugin-helpers.js';
+import { formatBlocked } from './tools/helpers.js';
 
 describe('parseToolResult', () => {
   it('GOOD: parses valid JSON string', () => {
@@ -322,5 +324,44 @@ describe('getToolCallID', () => {
 
   it('EDGE: returns empty string for empty object callID', () => {
     expect(getToolCallID({ callID: {} })).toBe('');
+  });
+});
+
+describe('isNativeEnforcementUnavailableDenial (#419)', () => {
+  it('GOOD: true for native-path PLUGIN_ENFORCEMENT_UNAVAILABLE denial', () => {
+    const output = formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      obligationType: 'plan',
+      iteration: '0',
+      planVersion: '1',
+      deniedReviewPath: 'native',
+    });
+    expect(isNativeEnforcementUnavailableDenial(output)).toBe(true);
+  });
+
+  it('BAD: false for enforcement-unavailable denial without native path (solo/host_task_preferred)', () => {
+    const output = formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      obligationType: 'plan',
+      iteration: '0',
+      planVersion: '1',
+    });
+    expect(isNativeEnforcementUnavailableDenial(output)).toBe(false);
+  });
+
+  it('BAD: false for a different blocked code even with a native marker', () => {
+    const output = formatBlocked('SUBAGENT_EVIDENCE_MISSING', { deniedReviewPath: 'native' });
+    expect(isNativeEnforcementUnavailableDenial(output)).toBe(false);
+  });
+
+  it('CORNER: false for an unrecognized deniedReviewPath value', () => {
+    const output = formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', { deniedReviewPath: 'manual' });
+    expect(isNativeEnforcementUnavailableDenial(output)).toBe(false);
+  });
+
+  it('CORNER: false for unparseable output', () => {
+    expect(isNativeEnforcementUnavailableDenial('not json at all')).toBe(false);
+  });
+
+  it('CORNER: false for a successful (non-blocked) tool result', () => {
+    expect(isNativeEnforcementUnavailableDenial('{"ok":true}')).toBe(false);
   });
 });

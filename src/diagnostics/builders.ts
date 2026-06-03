@@ -51,6 +51,9 @@ function enforcementUnavailable(detail: DiagnosticDetail): RuntimeDiagnostics {
       'Inspect session directory and session-state.json permissions.',
       'Re-run /hydrate after fixing workspace or session state issues.',
     ],
+    ...(optionalField(detail.deniedReviewPath)
+      ? { deniedReviewPath: detail.deniedReviewPath }
+      : {}),
   };
 }
 

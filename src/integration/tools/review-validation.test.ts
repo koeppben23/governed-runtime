@@ -919,7 +919,11 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
 
   // ── native_subagent_attested tier ────────────────────────────────────────
 
-  it('accepts native_subagent_attested evidence with valid host-captured corroboration', () => {
+  // Issue #419: native_subagent_attested corroboration is agent-writable plaintext
+  // (reviewer-captures.jsonl has no hash chain), so it cannot establish enforcement
+  // availability. Without a first-party plugin handshake the native path MUST fail
+  // closed exactly like solo / host_task_preferred, never accept.
+  it('denies native_subagent_attested evidence when plugin enforcement is unavailable', () => {
     const findings = strictFindings();
     const result = validateReviewFindings(
       findings,
@@ -932,7 +936,11 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       }),
     );
 
-    expect(result).toBeNull();
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('PLUGIN_ENFORCEMENT_UNAVAILABLE');
+    // Surfaces the native path structurally so the plugin boundary can log it (#419).
+    const parsed = JSON.parse(result!) as { diagnostics?: { deniedReviewPath?: string } };
+    expect(parsed.diagnostics?.deniedReviewPath).toBe('native');
   });
 
   it('rejects native_subagent_attested evidence missing hostCapturedAgentId', () => {
