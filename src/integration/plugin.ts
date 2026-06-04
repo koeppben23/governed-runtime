@@ -23,6 +23,7 @@ import {
   isNativeEnforcementUnavailableDenial,
   getAutoAdvanceOverflow,
   getSessionLockSignal,
+  getHostTaskFindingsRejection,
 } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
@@ -401,6 +402,19 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               path: REVIEW_ACCEPTANCE_PATH_NATIVE,
               reason: REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
               sessionId,
+            });
+          }
+
+          const hostTaskRejection = getHostTaskFindingsRejection(getToolOutput(hookOutput));
+          if (hostTaskRejection) {
+            log.warn('review', 'host-task findings rejected by shared guard', {
+              sessionId,
+              path: hostTaskRejection.path,
+              reason: hostTaskRejection.reason,
+              status: hostTaskRejection.status,
+              ...(hostTaskRejection.obligationId
+                ? { obligationId: hostTaskRejection.obligationId }
+                : {}),
             });
           }
 

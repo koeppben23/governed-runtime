@@ -338,6 +338,58 @@ describe('integration/plugin', () => {
       }
     });
 
+    it('emits a boundary warn log for host-task findings guard rejection (#424)', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        await writeRepoConfig(ws.tmpDir, {
+          ...DEFAULT_CONFIG,
+          logging: { ...DEFAULT_CONFIG.logging, mode: 'both' },
+        });
+
+        const logSpy = vi.fn().mockResolvedValue(undefined);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: { app: { log: logSpy } },
+          }),
+        );
+        const handler = hooks['tool.execute.after']!;
+
+        const blockedOutput = JSON.stringify({
+          error: true,
+          code: 'SUBAGENT_EVIDENCE_REUSED',
+          hostTaskFindingsRejection: {
+            path: 'host_task',
+            reason: 'SUBAGENT_EVIDENCE_REUSED',
+            status: 'consumed',
+            obligationId: '11111111-1111-4111-8111-111111111111',
+          },
+        });
+        await handler(
+          { tool: 'flowguard_plan', sessionID: 's1', callID: 'c1', args: {} },
+          { title: 'plan', output: blockedOutput, metadata: {} },
+        );
+
+        expect(logSpy).toHaveBeenCalledWith({
+          body: {
+            service: 'review',
+            level: 'warn',
+            message: 'host-task findings rejected by shared guard',
+            extra: {
+              sessionId: 's1',
+              path: 'host_task',
+              reason: 'SUBAGENT_EVIDENCE_REUSED',
+              status: 'consumed',
+              obligationId: '11111111-1111-4111-8111-111111111111',
+            },
+          },
+        });
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
     it('emits a boundary error log when hydrate is lock-contended/BLOCKED (#429)', async () => {
       // The boundary error log is a REQUIRED behavior of #429: when hydrate fails
       // closed because the session write lock could not be acquired, operators

@@ -391,12 +391,13 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
     // Resolve findings from evidence — NO agent reconstruction
     const resolved = resolveHostTaskFindings(assurance, obligation);
 
-    expect(resolved).not.toBeNull();
-    expect(resolved!.findings.overallVerdict).toBe('approve');
-    expect(resolved!.findings.iteration).toBe(0);
-    expect(resolved!.findings.planVersion).toBe(1);
-    expect(resolved!.findings.reviewMode).toBe('subagent');
-    expect(resolved!.invocationId).toBe(bindResult.evidence!.invocationId);
+    expect(resolved.kind).toBe('resolved');
+    if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(resolved.findings.overallVerdict).toBe('approve');
+    expect(resolved.findings.iteration).toBe(0);
+    expect(resolved.findings.planVersion).toBe(1);
+    expect(resolved.findings.reviewMode).toBe('subagent');
+    expect(resolved.invocationId).toBe(bindResult.evidence!.invocationId);
   });
 
   it('E2E: changes_requested verdict flows through evidence-resolve', () => {
@@ -438,8 +439,9 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
     );
 
     const resolved = resolveHostTaskFindings(assurance, obligation);
-    expect(resolved).not.toBeNull();
-    expect(resolved!.findings.overallVerdict).toBe('changes_requested');
+    expect(resolved.kind).toBe('resolved');
+    if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(resolved.findings.overallVerdict).toBe('changes_requested');
   });
 
   it('E2E: evidence with non-parseable reviewer output → no capturedRawFindings → resolve returns null', () => {
@@ -472,7 +474,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
       invocations: [],
     });
     const resolved = resolveHostTaskFindings(assurance, obligation);
-    expect(resolved).toBeNull();
+    expect(resolved.kind).toBe('not_found');
   });
 
   it('SMOKE: capturedRawFindings hash matches findingsHash in evidence (consistency)', () => {
@@ -511,9 +513,12 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
     const r1 = resolveHostTaskFindings(assurance, obligation);
     const r2 = resolveHostTaskFindings(assurance, obligation);
 
-    expect(r1).not.toBeNull();
-    expect(r2).not.toBeNull();
-    expect(r1!.findings.overallVerdict).toBe(r2!.findings.overallVerdict);
-    expect(r1!.invocationId).toBe(r2!.invocationId);
+    expect(r1.kind).toBe('resolved');
+    expect(r2.kind).toBe('resolved');
+    if (r1.kind !== 'resolved' || r2.kind !== 'resolved') {
+      throw new Error('expected resolved findings');
+    }
+    expect(r1.findings.overallVerdict).toBe(r2.findings.overallVerdict);
+    expect(r1.invocationId).toBe(r2.invocationId);
   });
 });

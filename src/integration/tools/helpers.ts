@@ -168,7 +168,11 @@ export function formatRailResult(result: RailResult): ToolResult {
  * Format a blocked error using the reason registry.
  * Used for inline blocked returns in tool logic (outside rail calls).
  */
-export function formatBlocked(code: string, vars?: Record<string, string>): string {
+export function formatBlocked(
+  code: string,
+  vars?: Record<string, string>,
+  extra?: Record<string, unknown>,
+): string {
   const info = defaultReasonRegistry.format(code, vars);
   const diagnostics = buildBlockedDiagnostics(info.code, vars);
   return JSON.stringify({
@@ -178,6 +182,7 @@ export function formatBlocked(code: string, vars?: Record<string, string>): stri
     recovery: info.recovery,
     quickFix: info.quickFix,
     ...(diagnostics ? { diagnostics } : {}),
+    ...(extra ?? {}),
   });
 }
 
