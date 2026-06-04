@@ -24,7 +24,12 @@ import {
   formatSubagentReviewNotInvoked,
   fingerprintReviewInput,
 } from './obligation.js';
-import type { StartedReviewResult, ReviewExecutionContext } from './types.js';
+import type {
+  NativeAttestationRejection,
+  NativeAttestationRejectionReason,
+  StartedReviewResult,
+  ReviewExecutionContext,
+} from './types.js';
 import type { ToolContext } from '../helpers.js';
 
 // ─── Invocation validation ───────────────────────────────────────────────────
@@ -93,9 +98,15 @@ export interface NativeAttestation {
   readonly hostCapturedAgentId?: string;
   readonly hostCapturedAgentType?: typeof REVIEWER_SUBAGENT_TYPE;
   readonly hostCaptureSource?: 'subagent_stop_hook' | 'post_tool_use_hook';
+  readonly rejection?: NativeAttestationRejection;
 }
 
-const MANUAL_ATTESTATION: NativeAttestation = { invocationMode: 'manual_attested' };
+function manualAttestation(
+  obligationId: string,
+  reason: NativeAttestationRejectionReason,
+): NativeAttestation {
+  return { invocationMode: 'manual_attested', rejection: { reason, obligationId } };
+}
 
 /**
  * Decide whether agent-submitted attested findings can be upgraded to
@@ -104,21 +115,24 @@ const MANUAL_ATTESTATION: NativeAttestation = { invocationMode: 'manual_attested
  * tool was invoked from inside a genuine `flowguard-reviewer` subagent AND bound
  * to this exact obligation.
  *
- * Fail-closed: any read error, missing capture, or unbound capture returns
- * `manual_attested` (no upgrade, never an error-open). Captures are read from this
- * session's own directory, so they cannot be replayed across sessions. SubagentStop
- * captures alone do NOT upgrade — they carry no obligation binding.
+ * Fail-closed: any read error, skipped capture line, missing capture, or unbound
+ * capture returns `manual_attested` with an explicit diagnostic (no upgrade, never
+ * an error-open). The capture must match this exact parent sessionId; SubagentStop
+ * captures alone do NOT upgrade because they carry no obligation binding.
  */
 export async function resolveNativeAttestation(input: {
   sessDir: string;
   obligationId: string;
+  sessionId: string;
 }): Promise<NativeAttestation> {
   let read: Awaited<ReturnType<typeof readReviewerCaptures>>;
   try {
     read = await readReviewerCaptures(input.sessDir);
   } catch {
-    return MANUAL_ATTESTATION;
+    return manualAttestation(input.obligationId, 'capture_read_failed');
   }
+  if (read.skipped > 0) return manualAttestation(input.obligationId, 'capture_lines_skipped');
+  if (read.captures.length === 0) return manualAttestation(input.obligationId, 'capture_missing');
   const bound = read.captures.find(
     (c) =>
       c.agentType === REVIEWER_SUBAGENT_TYPE &&
@@ -126,7 +140,10 @@ export async function resolveNativeAttestation(input: {
       c.reviewToolInvoked === true &&
       c.obligationId === input.obligationId,
   );
-  if (!bound) return MANUAL_ATTESTATION;
+  if (!bound) return manualAttestation(input.obligationId, 'capture_unbound');
+  if (bound.sessionId !== input.sessionId) {
+    return manualAttestation(input.obligationId, 'capture_session_mismatch');
+  }
   return {
     invocationMode: 'native_subagent_attested',
     hostCapturedAgentId: bound.agentId,
@@ -204,7 +221,11 @@ async function recordManualReviewInvocation(input: {
   findingsHash: string;
   assurance: ReturnType<typeof ensureReviewAssurance>;
   sessDir: string;
-}): Promise<{ result: StartedReviewResult; blocked?: string }> {
+}): Promise<{
+  result: StartedReviewResult;
+  blocked?: string;
+  nativeAttestationRejection?: NativeAttestationRejection;
+}> {
   const { result, obligation, exec, childSessionId, findingsHash, assurance, sessDir } = input;
   if (exec.policy === 'host_task_required') {
     return {
@@ -239,6 +260,7 @@ async function recordManualReviewInvocation(input: {
   const attestation = await resolveNativeAttestation({
     sessDir,
     obligationId: obligation.obligationId,
+    sessionId: exec.context.sessionID,
   });
   return {
     result: buildManualInvocationState({
@@ -251,6 +273,7 @@ async function recordManualReviewInvocation(input: {
       now: exec.now,
       attestation,
     }),
+    ...(attestation.rejection ? { nativeAttestationRejection: attestation.rejection } : {}),
   };
 }
 
@@ -259,7 +282,11 @@ export async function recordSubmittedReviewInvocation(
   obligation: ReviewObligation,
   exec: ReviewExecutionContext,
   sessDir: string,
-): Promise<{ result: StartedReviewResult; blocked?: string }> {
+): Promise<{
+  result: StartedReviewResult;
+  blocked?: string;
+  nativeAttestationRejection?: NativeAttestationRejection;
+}> {
   const findings = exec.args.reviewFindings as Record<string, unknown>;
   const childSessionId = String((findings.reviewedBy as Record<string, unknown>).sessionId ?? '');
   if (!childSessionId) {

@@ -45,8 +45,14 @@ import {
   archive,
 } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
-import { appendReviewerCapture } from '../adapters/persistence-reviewer-capture.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import {
+  appendReviewerCapture,
+  reviewerCapturePath,
+} from '../adapters/persistence-reviewer-capture.js';
+import {
+  NATIVE_ATTESTATION_REJECTION_FIELD,
+  REVIEWER_SUBAGENT_TYPE,
+} from '../shared/flowguard-identifiers.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import * as persistence from '../adapters/persistence.js';
 import {
@@ -1287,7 +1293,7 @@ describe('review (standalone flow)', () => {
     /**
      * Hydrate solo, create the review obligation, optionally inject a host
      * capture keyed by `bindObligationId`, then submit inline attested findings.
-     * Returns the recorded invocation evidence for the obligation.
+     * Returns the recorded invocation evidence and structured review output.
      */
     async function runWithCapture(
       inject: ((obligationId: string, sessDir: string) => Promise<void>) | null,
@@ -1323,10 +1329,13 @@ describe('review (standalone flow)', () => {
         (inv) => inv.obligationId === obligationId,
       );
       expect(invocation).toBeDefined();
-      return invocation!;
+      return { invocation: invocation!, output: second, obligationId };
     }
 
-    function postToolUseCapture(obligationId: string): Parameters<typeof appendReviewerCapture>[1] {
+    function postToolUseCapture(
+      obligationId: string,
+      overrides: Partial<Parameters<typeof appendReviewerCapture>[1]> = {},
+    ): Parameters<typeof appendReviewerCapture>[1] {
       return {
         capturedAt: '2026-01-01T00:00:00.000Z',
         source: 'post_tool_use_hook',
@@ -1336,47 +1345,97 @@ describe('review (standalone flow)', () => {
         toolName: 'mcp__flowguard__review',
         reviewToolInvoked: true,
         obligationId,
+        ...overrides,
       };
     }
 
     it('upgrades to native_subagent_attested with an obligation-bound host capture', async () => {
-      const invocation = await runWithCapture(async (obligationId, sessDir) => {
+      const { invocation, output } = await runWithCapture(async (obligationId, sessDir) => {
         await appendReviewerCapture(sessDir, postToolUseCapture(obligationId));
       });
       expect(invocation.invocationMode).toBe('native_subagent_attested');
       expect(invocation.hostCapturedAgentId).toBe('agent_native_e2e_001');
       expect(invocation.hostCapturedAgentType).toBe(REVIEWER_SUBAGENT_TYPE);
       expect(invocation.hostCaptureSource).toBe('post_tool_use_hook');
+      expect(output[NATIVE_ATTESTATION_REJECTION_FIELD]).toBeUndefined();
     });
 
     it('stays manual_attested without any host capture (fail-closed default)', async () => {
-      const invocation = await runWithCapture(null);
+      const { invocation, output, obligationId } = await runWithCapture(null);
       expect(invocation.invocationMode).toBe('manual_attested');
       expect(invocation.hostCapturedAgentId).toBeUndefined();
+      expect(output[NATIVE_ATTESTATION_REJECTION_FIELD]).toEqual({
+        reason: 'capture_missing',
+        obligationId,
+      });
     });
 
     it('stays manual_attested when capture is bound to a different obligation', async () => {
-      const invocation = await runWithCapture(async (_obligationId, sessDir) => {
-        await appendReviewerCapture(
-          sessDir,
-          postToolUseCapture('99999999-9999-4999-8999-999999999999'),
-        );
-      });
+      const { invocation, output, obligationId } = await runWithCapture(
+        async (_obligationId, sessDir) => {
+          await appendReviewerCapture(
+            sessDir,
+            postToolUseCapture('99999999-9999-4999-8999-999999999999'),
+          );
+        },
+      );
       expect(invocation.invocationMode).toBe('manual_attested');
+      expect(output[NATIVE_ATTESTATION_REJECTION_FIELD]).toEqual({
+        reason: 'capture_unbound',
+        obligationId,
+      });
     });
 
     it('stays manual_attested for a SubagentStop-source capture (no obligation binding)', async () => {
-      const invocation = await runWithCapture(async (_obligationId, sessDir) => {
-        await appendReviewerCapture(sessDir, {
-          capturedAt: '2026-01-01T00:00:00.000Z',
-          source: 'subagent_stop_hook',
-          sessionId: ctx.sessionID,
-          agentId: 'agent_native_e2e_002',
-          agentType: REVIEWER_SUBAGENT_TYPE,
-          reviewToolInvoked: false,
-        });
-      });
+      const { invocation, output, obligationId } = await runWithCapture(
+        async (_obligationId, sessDir) => {
+          await appendReviewerCapture(sessDir, {
+            capturedAt: '2026-01-01T00:00:00.000Z',
+            source: 'subagent_stop_hook',
+            sessionId: ctx.sessionID,
+            agentId: 'agent_native_e2e_002',
+            agentType: REVIEWER_SUBAGENT_TYPE,
+            reviewToolInvoked: false,
+          });
+        },
+      );
       expect(invocation.invocationMode).toBe('manual_attested');
+      expect(output[NATIVE_ATTESTATION_REJECTION_FIELD]).toEqual({
+        reason: 'capture_unbound',
+        obligationId,
+      });
+    });
+
+    it('stays manual_attested when bound capture belongs to another sessionId', async () => {
+      const { invocation, output, obligationId } = await runWithCapture(
+        async (obligationId, sessDir) => {
+          await appendReviewerCapture(
+            sessDir,
+            postToolUseCapture(obligationId, { sessionId: 'ses_other_parent' }),
+          );
+        },
+      );
+      expect(invocation.invocationMode).toBe('manual_attested');
+      expect(invocation.hostCapturedAgentId).toBeUndefined();
+      expect(output[NATIVE_ATTESTATION_REJECTION_FIELD]).toEqual({
+        reason: 'capture_session_mismatch',
+        obligationId,
+      });
+    });
+
+    it('stays manual_attested when reviewer capture read skips any line', async () => {
+      const { invocation, output, obligationId } = await runWithCapture(
+        async (obligationId, sessDir) => {
+          await appendReviewerCapture(sessDir, postToolUseCapture(obligationId));
+          await fs.appendFile(reviewerCapturePath(sessDir), '{not-json}\n', 'utf-8');
+        },
+      );
+      expect(invocation.invocationMode).toBe('manual_attested');
+      expect(invocation.hostCapturedAgentId).toBeUndefined();
+      expect(output[NATIVE_ATTESTATION_REJECTION_FIELD]).toEqual({
+        reason: 'capture_lines_skipped',
+        obligationId,
+      });
     });
   });
 });

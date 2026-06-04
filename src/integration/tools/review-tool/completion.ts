@@ -19,7 +19,13 @@ import { materializeReviewCardArtifact } from '../../../adapters/workspace/index
 import { writeReport, reportPath } from '../../../adapters/persistence.js';
 import { writeStateWithArtifacts, appendNextAction } from '../helpers.js';
 import { ensureReviewAssurance } from '../../review/assurance.js';
-import type { ReviewToolArgs, StartedReviewResult, ReviewReportResult } from './types.js';
+import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../../../shared/flowguard-identifiers.js';
+import type {
+  NativeAttestationRejection,
+  ReviewToolArgs,
+  StartedReviewResult,
+  ReviewReportResult,
+} from './types.js';
 
 // ─── Severity mapping ────────────────────────────────────────────────────────
 
@@ -242,13 +248,25 @@ function formatReviewCompletionResponse(input: {
   allTransitions: StartedReviewResult['transitions'];
   reviewCard: string;
   artifactWarning?: { code: string; message: string };
+  nativeAttestationRejection?: NativeAttestationRejection;
 }): string {
-  const { result, finalState, report, allTransitions, reviewCard, artifactWarning } = input;
+  const {
+    result,
+    finalState,
+    report,
+    allTransitions,
+    reviewCard,
+    artifactWarning,
+    nativeAttestationRejection,
+  } = input;
   return appendNextAction(
     JSON.stringify({
       reviewCard,
       phase: finalState.phase,
       ...(artifactWarning && { artifactWarning }),
+      ...(nativeAttestationRejection && {
+        [NATIVE_ATTESTATION_REJECTION_FIELD]: nativeAttestationRejection,
+      }),
       status: 'Review flow complete. Report generated.',
       overallStatus: report.overallStatus,
       policyMode: result.state.policySnapshot?.mode ?? 'unknown',
@@ -282,9 +300,18 @@ export async function buildReviewCompletionResponse(input: {
   report: ReviewReportResult;
   allTransitions: StartedReviewResult['transitions'];
   validatedReviewObligation: ReviewObligation | null;
+  nativeAttestationRejection?: NativeAttestationRejection;
 }): Promise<string> {
-  const { sessDir, args, result, finalState, report, allTransitions, validatedReviewObligation } =
-    input;
+  const {
+    sessDir,
+    args,
+    result,
+    finalState,
+    report,
+    allTransitions,
+    validatedReviewObligation,
+    nativeAttestationRejection,
+  } = input;
   const reviewCard = buildStandaloneReviewCard({
     args,
     result,
@@ -305,5 +332,6 @@ export async function buildReviewCompletionResponse(input: {
     allTransitions,
     reviewCard,
     artifactWarning,
+    nativeAttestationRejection,
   });
 }

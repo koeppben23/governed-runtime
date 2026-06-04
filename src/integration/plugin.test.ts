@@ -35,6 +35,7 @@ import {
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../shared/flowguard-identifiers.js';
 import { fileURLToPath } from 'node:url';
 
 const execFileAsync = promisify(execFile);
@@ -429,6 +430,53 @@ describe('integration/plugin', () => {
             extra: {
               sessionId: 's1',
               reason: 'reviewer_is_author',
+              obligationId: '11111111-1111-4111-8111-111111111111',
+            },
+          },
+        });
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
+    it('emits a boundary warn log for native attestation non-upgrade (#427)', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        await writeRepoConfig(ws.tmpDir, {
+          ...DEFAULT_CONFIG,
+          logging: { ...DEFAULT_CONFIG.logging, mode: 'both' },
+        });
+
+        const logSpy = vi.fn().mockResolvedValue(undefined);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({
+            worktree: ws.tmpDir,
+            directory: ws.tmpDir,
+            client: { app: { log: logSpy } },
+          }),
+        );
+        const handler = hooks['tool.execute.after']!;
+
+        const reviewOutput = JSON.stringify({
+          phase: 'REVIEW_COMPLETE',
+          [NATIVE_ATTESTATION_REJECTION_FIELD]: {
+            reason: 'capture_session_mismatch',
+            obligationId: '11111111-1111-4111-8111-111111111111',
+          },
+        });
+        await handler(
+          { tool: 'flowguard_review', sessionID: 's1', callID: 'c1', args: {} },
+          { title: 'review', output: reviewOutput, metadata: {} },
+        );
+
+        expect(logSpy).toHaveBeenCalledWith({
+          body: {
+            service: 'review',
+            level: 'warn',
+            message: 'native attestation not upgraded',
+            extra: {
+              sessionId: 's1',
+              reason: 'capture_session_mismatch',
               obligationId: '11111111-1111-4111-8111-111111111111',
             },
           },

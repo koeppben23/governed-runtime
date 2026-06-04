@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #427 (native attestation capture binding):** Native attestation upgrade
+  now fails closed when reviewer-capture reads skip any malformed line and binds
+  the accepted PostToolUse capture to the current parent `sessionId`. Skipped,
+  missing, unbound, read-failed, and session-mismatched capture states now surface
+  a structured `nativeAttestationRejection` diagnostic in successful review tool
+  output; the plugin boundary is the only logger writer and emits a structured
+  warn when native attestation is not upgraded. No new attestation authority was
+  introduced; `reviewer-captures.jsonl` remains corroboration evidence only.
+
 - **Issue #425 (review obligation four-eyes enforcement):** External transport
   review evidence now validates `ReviewFindings.reviewedBy.actorId` against the
   canonical session author `SessionState.initiatedByIdentity` before fulfilling a

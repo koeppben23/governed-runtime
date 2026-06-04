@@ -76,7 +76,14 @@ async function prepareReviewExecution(
   );
   if (recorded.blocked) return recorded.blocked;
   if (refInput) refInput = { ...refInput, skipExternalContentLoad: true };
-  return { result: recorded.result, refInput, validatedReviewObligation: resolved.obligation };
+  return {
+    result: recorded.result,
+    refInput,
+    validatedReviewObligation: resolved.obligation,
+    ...(recorded.nativeAttestationRejection
+      ? { nativeAttestationRejection: recorded.nativeAttestationRejection }
+      : {}),
+  };
 }
 
 // ─── Tool definition ─────────────────────────────────────────────────────────
@@ -145,6 +152,7 @@ async function persistCompletedReview(
       result,
       report: reviewResult,
       validatedReviewObligation: prepared.validatedReviewObligation,
+      nativeAttestationRejection: prepared.nativeAttestationRejection,
       finalState: completion.finalState,
       allTransitions: completion.allTransitions,
     });
