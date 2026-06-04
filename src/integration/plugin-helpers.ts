@@ -16,6 +16,7 @@ import {
   REASON_SESSION_LOCK_CONTENDED,
   LOCK_CONTENDED_OUTPUT_FIELD,
   HOST_TASK_FINDINGS_REJECTION_FIELD,
+  REVIEW_IDENTITY_REJECTION_FIELD,
 } from '../shared/flowguard-identifiers.js';
 
 /**
@@ -245,6 +246,29 @@ export function getHostTaskFindingsRejection(
     path,
     reason,
     status,
+    ...(typeof obligationId === 'string' ? { obligationId } : {}),
+  };
+}
+
+export interface ReviewIdentityRejectionLogContext {
+  readonly reason: 'reviewer_is_author' | 'reviewer_identity_uncomparable';
+  readonly obligationId?: string;
+}
+
+export function getReviewIdentityRejection(
+  rawOutput: unknown,
+): ReviewIdentityRejectionLogContext | null {
+  const parsed = parseToolResult(rawOutput);
+  if (!parsed) return null;
+  const rejection = parsed[REVIEW_IDENTITY_REJECTION_FIELD];
+  if (typeof rejection !== 'object' || rejection === null) return null;
+
+  const { reason, obligationId } = rejection as { reason?: unknown; obligationId?: unknown };
+  if (reason !== 'reviewer_is_author' && reason !== 'reviewer_identity_uncomparable') {
+    return null;
+  }
+  return {
+    reason,
     ...(typeof obligationId === 'string' ? { obligationId } : {}),
   };
 }

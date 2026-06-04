@@ -22,6 +22,7 @@ import {
   getToolCallID,
   isNativeEnforcementUnavailableDenial,
   getHostTaskFindingsRejection,
+  getReviewIdentityRejection,
   getAutoAdvanceOverflow,
   getSessionLockSignal,
 } from './plugin-helpers.js';
@@ -414,6 +415,33 @@ describe('getHostTaskFindingsRejection (#424)', () => {
 
   it('CORNER: returns null for unparseable output', () => {
     expect(getHostTaskFindingsRejection('not json at all')).toBeNull();
+  });
+});
+
+describe('getReviewIdentityRejection (#425)', () => {
+  it('GOOD: returns structured reviewer-author rejection context', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'FOUR_EYES_ACTOR_MATCH',
+      reviewIdentityRejection: {
+        reason: 'reviewer_is_author',
+        obligationId: '11111111-1111-4111-8111-111111111111',
+      },
+    });
+
+    expect(getReviewIdentityRejection(output)).toEqual({
+      reason: 'reviewer_is_author',
+      obligationId: '11111111-1111-4111-8111-111111111111',
+    });
+  });
+
+  it('BAD: ignores matching reason code without structured marker', () => {
+    const output = formatBlocked('FOUR_EYES_ACTOR_MATCH', { initiator: 'initiator-1' });
+    expect(getReviewIdentityRejection(output)).toBeNull();
+  });
+
+  it('CORNER: returns null for unparseable output', () => {
+    expect(getReviewIdentityRejection('not json at all')).toBeNull();
   });
 });
 

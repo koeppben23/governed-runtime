@@ -23,6 +23,7 @@ import {
 import { USER_GATES, TERMINAL } from '../../machine/topology.js';
 import type { MutableSession, ToolDefinition } from './helpers.js';
 import { bindExternalReviewEvidence } from '../review/transport-evidence.js';
+import { REVIEW_IDENTITY_REJECTION_FIELD } from '../../shared/flowguard-identifiers.js';
 
 const PHASE_GUIDANCE: Record<string, { status: string; command?: string; commands?: string[] }> = {
   TICKET: {
@@ -153,7 +154,7 @@ async function tryBindTransportEvidence(context: {
   );
   if (probeResult.status === 'none' || probeResult.status === 'already_bound') return probe;
   if (probeResult.status === 'invalid') {
-    return formatBlocked(probeResult.code, { reason: probeResult.reason });
+    return formatTransportEvidenceBlock(probeResult);
   }
 
   return withMutableSessionTransaction(context, async (session) => {
@@ -165,9 +166,31 @@ async function tryBindTransportEvidence(context: {
     );
     if (result.status === 'none' || result.status === 'already_bound') return session;
     if (result.status === 'invalid') {
-      return formatBlocked(result.code, { reason: result.reason });
+      return formatTransportEvidenceBlock(result);
     }
     await writeStateWithArtifacts(session.sessDir, result.state);
     return { ...session, state: result.state };
   });
+}
+
+function formatTransportEvidenceBlock(
+  result: Extract<Awaited<ReturnType<typeof bindExternalReviewEvidence>>, { status: 'invalid' }>,
+): string {
+  const vars = {
+    reason: result.reason,
+    ...(result.vars ?? {}),
+    ...(result.obligationId ? { obligationId: result.obligationId } : {}),
+  };
+  return formatBlocked(
+    result.code,
+    vars,
+    result.rejectionReason
+      ? {
+          [REVIEW_IDENTITY_REJECTION_FIELD]: {
+            reason: result.rejectionReason,
+            ...(result.obligationId ? { obligationId: result.obligationId } : {}),
+          },
+        }
+      : undefined,
+  );
 }
