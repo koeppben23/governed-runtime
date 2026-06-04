@@ -60,7 +60,8 @@ export async function appendReviewerCapture(
       }
     }
     const line = JSON.stringify(result.data) + '\n';
-    await durableAtomicWrite(filePath, existing + line);
+    const separator = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
+    await durableAtomicWrite(filePath, existing + separator + line);
   });
   return result.data;
 }

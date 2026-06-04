@@ -236,10 +236,6 @@ export async function durableAtomicWrite(filePath: string, content: string): Pro
     } catch {
       /* temp may not exist or may already have been renamed */
     }
-    getAdapterLogger().error('persistence', 'Durable atomic write failed', {
-      filePath,
-      error: err instanceof Error ? err.message : String(err),
-    });
     throw new PersistenceError(
       'WRITE_FAILED',
       `Durable atomic write failed for ${filePath}: ${err instanceof Error ? err.message : String(err)}`,

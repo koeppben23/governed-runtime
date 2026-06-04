@@ -96,6 +96,17 @@ describe('reviewer capture persistence', () => {
     expect(read.captures).toHaveLength(1);
   });
 
+  it('does not fuse a new capture into an unterminated malformed existing line', async () => {
+    await fs.writeFile(reviewerCapturePath(sessDir), '{not-json', 'utf-8');
+
+    await appendReviewerCapture(sessDir, capture());
+
+    const read = await readReviewerCaptures(sessDir);
+    expect(read.skipped).toBe(1);
+    expect(read.captures).toHaveLength(1);
+    expect(read.captures[0]!.agentId).toBe('agent_001');
+  });
+
   it('throws WRITE_FAILED instead of reporting success when append cannot read the target', async () => {
     await fs.mkdir(reviewerCapturePath(sessDir));
 
