@@ -52,6 +52,13 @@ export const LOCK_CONTENDED_OUTPUT_FIELD = 'lockContended';
 export const DIAGNOSTIC_SESSION_LOCK_WAITED = 'SESSION_LOCK_WAITED';
 
 /**
+ * Structured host-task findings rejection field on BLOCKED tool results (#424).
+ * The plugin boundary reads this marker to log host-task-only guard denials
+ * without coupling to validation internals or parsing human-readable messages.
+ */
+export const HOST_TASK_FINDINGS_REJECTION_FIELD = 'hostTaskFindingsRejection';
+
+/**
  * Review-acceptance path discriminator for the native_subagent_attested tier.
  *
  * Surfaced in blocked-result diagnostics so the plugin boundary can log a

@@ -30,6 +30,7 @@ import type {
 import {
   REVIEWER_SUBAGENT_TYPE,
   REVIEW_ACCEPTANCE_PATH_NATIVE,
+  HOST_TASK_FINDINGS_REJECTION_FIELD,
 } from '../../shared/flowguard-identifiers.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
@@ -84,8 +85,6 @@ export interface ReviewFindingsAcceptanceRejection {
 export type HostTaskFindingsAcceptanceRejection = ReviewFindingsAcceptanceRejection & {
   readonly path: 'host_task';
 };
-
-export const HOST_TASK_FINDINGS_REJECTION_FIELD = 'hostTaskFindingsRejection';
 
 /**
  * Shared evidence checks for any agent-submitted attested review (manual_attested and
@@ -186,22 +185,28 @@ function getReviewFindingsAcceptanceRejection(input: {
 }
 
 function formatAcceptanceRejection(rejection: ReviewFindingsAcceptanceRejection): string {
+  return formatBlocked(rejection.reason, acceptanceRejectionFormatVars(rejection));
+}
+
+function acceptanceRejectionFormatVars(
+  rejection: ReviewFindingsAcceptanceRejection,
+): Record<string, string> {
   if (rejection.reason === 'STRICT_REVIEW_ORCHESTRATION_FAILED') {
-    return formatBlocked(rejection.reason, {
+    return {
       code: rejection.blockedCode ?? 'UNKNOWN',
-    });
+    };
   }
 
   if (rejection.status === 'invocation_consumed') {
-    return formatBlocked(rejection.reason, {
+    return {
       invocationId: rejection.invocationId ?? 'unknown',
       consumedBy: rejection.consumedBy ?? 'unknown',
-    });
+    };
   }
 
-  return formatBlocked(rejection.reason, {
+  return {
     obligationId: rejection.obligationId ?? 'unknown',
-  });
+  };
 }
 
 function withHostTaskPath(
@@ -211,9 +216,7 @@ function withHostTaskPath(
 }
 
 function formatHostTaskAcceptanceRejection(rejection: HostTaskFindingsAcceptanceRejection): string {
-  const parsed = JSON.parse(formatAcceptanceRejection(rejection)) as Record<string, unknown>;
-  return JSON.stringify({
-    ...parsed,
+  return formatBlocked(rejection.reason, acceptanceRejectionFormatVars(rejection), {
     [HOST_TASK_FINDINGS_REJECTION_FIELD]: {
       path: rejection.path,
       reason: rejection.reason,
@@ -508,7 +511,6 @@ export function resolveHostTaskFindings(
   const matchingInvocations = assurance.invocations.filter(
     (inv) =>
       inv.obligationId === obligation.obligationId &&
-      (obligation.invocationId ? inv.invocationId === obligation.invocationId : true) &&
       inv.invocationMode === 'host_subagent_task' &&
       inv.hostVisible === true &&
       inv.capturedRawFindings != null,

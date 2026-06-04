@@ -1652,8 +1652,7 @@ describe('resolveHostTaskFindings', () => {
     expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
   });
 
-  it('EDGE: picks first unconsumed invocation when multiple exist', () => {
-    const secondInvocationId = '44444444-4444-4444-8444-444444444444';
+  it('EDGE: rejects the first matching consumed invocation when multiple exist', () => {
     const assurance = {
       obligations: [makeObligation()],
       invocations: [
@@ -1661,19 +1660,17 @@ describe('resolveHostTaskFindings', () => {
           consumedByObligationId: '99999999-9999-4999-8999-999999999999', // consumed
         }),
         makeHostTaskInvocation({
-          invocationId: secondInvocationId,
+          invocationId: '44444444-4444-4444-8444-444444444444',
           // unconsumed
         }),
       ],
     };
-    const result = resolveHostTaskFindings(
-      assurance,
-      makeObligation({ invocationId: secondInvocationId }),
-    );
+    const result = resolveHostTaskFindings(assurance, makeObligation());
 
-    expect(result.kind).toBe('resolved');
-    if (result.kind !== 'resolved') throw new Error('expected resolved findings');
-    expect(result.invocation.invocationId).toBe(secondInvocationId);
+    expect(result.kind).toBe('rejected');
+    if (result.kind !== 'rejected') throw new Error('expected rejected findings');
+    expect(result.rejection.reason).toBe('SUBAGENT_EVIDENCE_REUSED');
+    expect(result.rejection.status).toBe('invocation_consumed');
   });
 
   it('CORNER: extra unknown fields in capturedRawFindings are stripped by Zod parse', () => {

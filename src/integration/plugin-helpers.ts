@@ -15,8 +15,8 @@ import {
   REVIEW_ACCEPTANCE_PATH_NATIVE,
   REASON_SESSION_LOCK_CONTENDED,
   LOCK_CONTENDED_OUTPUT_FIELD,
+  HOST_TASK_FINDINGS_REJECTION_FIELD,
 } from '../shared/flowguard-identifiers.js';
-import { HOST_TASK_FINDINGS_REJECTION_FIELD } from './tools/review-validation.js';
 
 /**
  * Parse tool output JSON with fallback for NextAction footer lines.
