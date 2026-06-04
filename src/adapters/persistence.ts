@@ -196,6 +196,53 @@ export async function atomicWrite(filePath: string, content: string): Promise<vo
   }
 }
 
+async function fsyncParentDirectoryBestEffort(filePath: string): Promise<void> {
+  let handle: fs.FileHandle | null = null;
+  try {
+    handle = await fs.open(path.dirname(filePath), 'r');
+    await handle.sync();
+  } catch {
+    // Directory fsync is not uniformly supported across platforms/filesystems.
+  } finally {
+    if (handle) await handle.close().catch(() => {});
+  }
+}
+
+/**
+ * Write a file atomically and durably: temp file -> fsync -> rename.
+ *
+ * Exported for adapter-internal write paths that require crash durability in
+ * addition to atomic replacement. Does not acquire locks; callers that compose
+ * read-modify-write sequences must hold the relevant write lock.
+ */
+export async function durableAtomicWrite(filePath: string, content: string): Promise<void> {
+  const dir = path.dirname(filePath);
+  const base = path.basename(filePath);
+  const tempPath = path.join(dir, `.${base}.${crypto.randomUUID()}.tmp`);
+
+  try {
+    const handle = await fs.open(tempPath, 'wx', 0o600);
+    try {
+      await handle.writeFile(content, 'utf-8');
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await renameWithRetry(tempPath, filePath);
+    await fsyncParentDirectoryBestEffort(filePath);
+  } catch (err) {
+    try {
+      await fs.unlink(tempPath);
+    } catch {
+      /* temp may not exist or may already have been renamed */
+    }
+    throw new PersistenceError(
+      'WRITE_FAILED',
+      `Durable atomic write failed for ${filePath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
 // -- State Operations ---------------------------------------------------------
 
 /**

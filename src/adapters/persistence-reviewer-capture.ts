@@ -15,7 +15,8 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { ReviewerSubagentCapture } from '../state/evidence-reviewer-capture.js';
-import { ensureDir, PersistenceError, isEnoent } from './persistence.js';
+import { durableAtomicWrite, ensureDir, PersistenceError, isEnoent } from './persistence.js';
+import { withSessionWriteLock } from './persistence-lock.js';
 
 const REVIEWER_CAPTURE_FILE = 'reviewer-captures.jsonl';
 
@@ -44,9 +45,24 @@ export async function appendReviewerCapture(
     );
   }
 
-  await ensureDir(sessionDir);
-  const line = JSON.stringify(result.data) + '\n';
-  await fs.appendFile(reviewerCapturePath(sessionDir), line, { encoding: 'utf-8', mode: 0o600 });
+  await withSessionWriteLock(sessionDir, async () => {
+    await ensureDir(sessionDir);
+    const filePath = reviewerCapturePath(sessionDir);
+    let existing = '';
+    try {
+      existing = await fs.readFile(filePath, 'utf-8');
+    } catch (err: unknown) {
+      if (!isEnoent(err)) {
+        throw new PersistenceError(
+          'WRITE_FAILED',
+          `Failed to read existing reviewer captures before append: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    const line = JSON.stringify(result.data) + '\n';
+    const separator = existing.length > 0 && !existing.endsWith('\n') ? '\n' : '';
+    await durableAtomicWrite(filePath, existing + separator + line);
+  });
   return result.data;
 }
 

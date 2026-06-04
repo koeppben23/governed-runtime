@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #426 (reviewer-capture durable append):** Reviewer-capture JSONL writes
+  now run under the existing session write lock and use durable append-by-rewrite
+  (`read raw existing content -> append one JSONL line -> fsync temp file -> atomic
+rename`) instead of unlocked `appendFile`. Failed writes surface as explicit
+  persistence failures instead of silent capture success, malformed existing lines
+  are preserved byte-for-byte, and hook-boundary diagnostics use a stable
+  `capture_write_failed` reason without logging capture contents.
+
 - **Issue #427 (native attestation capture binding):** Native attestation upgrade
   now fails closed when reviewer-capture reads skip any malformed line and binds
   the accepted PostToolUse capture to the current parent `sessionId`. Skipped,
