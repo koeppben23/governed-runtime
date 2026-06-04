@@ -493,11 +493,12 @@ describe('BUG-20: attestation-free fallback binding', () => {
 
     const resolved = resolveHostTaskFindings(assurance, obligation);
 
-    expect(resolved).not.toBeNull();
-    expect(resolved!.findings.overallVerdict).toBe('approve');
-    expect(resolved!.findings.iteration).toBe(0);
-    expect(resolved!.findings.planVersion).toBe(1);
-    expect(resolved!.invocationId).toBe(bindResult.evidence!.invocationId);
+    expect(resolved.kind).toBe('resolved');
+    if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(resolved.findings.overallVerdict).toBe('approve');
+    expect(resolved.findings.iteration).toBe(0);
+    expect(resolved.findings.planVersion).toBe(1);
+    expect(resolved.invocationId).toBe(bindResult.evidence!.invocationId);
   });
 
   // ─── E2E ───────────────────────────────────────────────────────────────────
@@ -557,10 +558,11 @@ describe('BUG-20: attestation-free fallback binding', () => {
     );
     const resolved = resolveHostTaskFindings(assurance, obligation);
 
-    expect(resolved).not.toBeNull();
-    expect(resolved!.findings.overallVerdict).toBe('approve');
-    expect(resolved!.findings.majorRisks).toHaveLength(1);
-    expect(resolved!.findings.missingVerification).toContain('Unit tests for auth flow');
+    expect(resolved.kind).toBe('resolved');
+    if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(resolved.findings.overallVerdict).toBe('approve');
+    expect(resolved.findings.majorRisks).toHaveLength(1);
+    expect(resolved.findings.missingVerification).toContain('Unit tests for auth flow');
   });
 
   it('E2E: placeholder attestation from real log — "not_provided_in_prompt" triggers fallback', () => {
@@ -744,12 +746,13 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
 
     // THIS is what was broken before BUG-20b fix — safeParse rejected
     // because attestation.toolObligationId was not a UUID
-    expect(resolved).not.toBeNull();
-    expect(resolved!.findings.overallVerdict).toBe('approve');
-    expect(resolved!.findings.iteration).toBe(0);
-    expect(resolved!.findings.planVersion).toBe(1);
-    expect(resolved!.findings.attestation).toBeUndefined();
-    expect(resolved!.invocationId).toBe(bindResult.evidence!.invocationId);
+    expect(resolved.kind).toBe('resolved');
+    if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(resolved.findings.overallVerdict).toBe('approve');
+    expect(resolved.findings.iteration).toBe(0);
+    expect(resolved.findings.planVersion).toBe(1);
+    expect(resolved.findings.attestation).toBeUndefined();
+    expect(resolved.invocationId).toBe(bindResult.evidence!.invocationId);
   });
 
   it('HAPPY: changes_requested verdict flows through normalization + consumption', () => {
@@ -767,8 +770,9 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     );
 
     const resolved = resolveHostTaskFindings(assurance, obligation);
-    expect(resolved).not.toBeNull();
-    expect(resolved!.findings.overallVerdict).toBe('changes_requested');
+    expect(resolved.kind).toBe('resolved');
+    if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(resolved.findings.overallVerdict).toBe('changes_requested');
   });
 
   // ─── BAD ───────────────────────────────────────────────────────────────────
@@ -827,7 +831,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       ensureReviewAssurance({ obligations: [obligation], invocations: [] }),
       result.evidence!,
     );
-    expect(resolveHostTaskFindings(assurance, obligation)).not.toBeNull();
+    expect(resolveHostTaskFindings(assurance, obligation).kind).toBe('resolved');
   });
 
   it('EDGE: findings without attestation at all — no strip needed, passes through', () => {
@@ -866,8 +870,9 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       result.evidence!,
     );
     const resolved = resolveHostTaskFindings(assurance, obligation);
-    expect(resolved).not.toBeNull();
-    expect(resolved!.findings.overallVerdict).toBe('approve');
+    expect(resolved.kind).toBe('resolved');
+    if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(resolved.findings.overallVerdict).toBe('approve');
   });
 
   it('EDGE: all non-attestation fields preserved exactly after strip', () => {
@@ -933,7 +938,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       ensureReviewAssurance({ obligations: [obligation], invocations: [] }),
       result.evidence!,
     );
-    expect(resolveHostTaskFindings(assurance, obligation)).not.toBeNull();
+    expect(resolveHostTaskFindings(assurance, obligation).kind).toBe('resolved');
   });
 
   it('CORNER: attestation is null — treated as absent, no strip error', () => {
@@ -971,7 +976,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       ensureReviewAssurance({ obligations: [obligation], invocations: [] }),
       result.evidence!,
     );
-    expect(resolveHostTaskFindings(assurance, obligation)).not.toBeNull();
+    expect(resolveHostTaskFindings(assurance, obligation).kind).toBe('resolved');
   });
 
   // ─── REGRESSION ────────────────────────────────────────────────────────────
@@ -1141,12 +1146,13 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     const resolved = resolveHostTaskFindings(assurance, obligation);
 
     // Step 4: THIS was broken before BUG-20b — now it works
-    expect(resolved).not.toBeNull();
-    expect(resolved!.findings.overallVerdict).toBe('approve');
-    expect(resolved!.findings.majorRisks).toHaveLength(1);
-    expect(resolved!.findings.missingVerification).toContain('Integration test coverage');
-    expect(resolved!.findings.attestation).toBeUndefined();
-    expect(resolved!.invocationId).toBe(bindResult.evidence!.invocationId);
+    expect(resolved.kind).toBe('resolved');
+    if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(resolved.findings.overallVerdict).toBe('approve');
+    expect(resolved.findings.majorRisks).toHaveLength(1);
+    expect(resolved.findings.missingVerification).toContain('Integration test coverage');
+    expect(resolved.findings.attestation).toBeUndefined();
+    expect(resolved.invocationId).toBe(bindResult.evidence!.invocationId);
   });
 
   it('E2E: full chain — invalid attestation normalized, hash consistent, resolve succeeds', () => {
@@ -1168,13 +1174,14 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
 
     // Resolve
     const resolved = resolveHostTaskFindings(assurance, obligation);
-    expect(resolved).not.toBeNull();
-    expect(resolved!.findings.overallVerdict).toBe('approve');
+    expect(resolved.kind).toBe('resolved');
+    if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(resolved.findings.overallVerdict).toBe('approve');
 
     // Verify no attestation leaked
-    expect(resolved!.findings.attestation).toBeUndefined();
+    expect(resolved.findings.attestation).toBeUndefined();
 
     // Verify invocation identity
-    expect(resolved!.invocationId).toBe(bindResult.evidence!.invocationId);
+    expect(resolved.invocationId).toBe(bindResult.evidence!.invocationId);
   });
 });

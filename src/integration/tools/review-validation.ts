@@ -66,6 +66,29 @@ interface AttestedReviewCheckInput {
   readonly ctx: ReviewFindingsValidationContext;
 }
 
+type ReviewFindingsAcceptanceRejectionReason =
+  | 'STRICT_REVIEW_ORCHESTRATION_FAILED'
+  | 'SUBAGENT_EVIDENCE_REUSED';
+
+type ReviewFindingsAcceptanceRejectionStatus =
+  | ReviewObligation['status']
+  | 'invocation_consumed';
+
+export interface ReviewFindingsAcceptanceRejection {
+  readonly reason: ReviewFindingsAcceptanceRejectionReason;
+  readonly status: ReviewFindingsAcceptanceRejectionStatus;
+  readonly obligationId?: string;
+  readonly invocationId?: string;
+  readonly consumedBy?: string;
+  readonly blockedCode?: string | null;
+}
+
+export type HostTaskFindingsAcceptanceRejection = ReviewFindingsAcceptanceRejection & {
+  readonly path: 'host_task';
+};
+
+export const HOST_TASK_FINDINGS_REJECTION_FIELD = 'hostTaskFindingsRejection';
+
 /**
  * Shared evidence checks for any agent-submitted attested review (manual_attested and
  * its strict superset native_subagent_attested). Excludes the invocationMode check so
@@ -125,6 +148,79 @@ function pluginEnforcementUnavailableForReviewAcceptance(input: AttestedReviewCh
   return (
     !input.obligation.pluginHandshakeAt && !allowsManualAttestedReviewWithoutPluginHandshake(input)
   );
+}
+
+function getReviewFindingsAcceptanceRejection(input: {
+  readonly obligation: ReviewObligation;
+  readonly invocation?: ReviewInvocationEvidence;
+}): ReviewFindingsAcceptanceRejection | null {
+  const { obligation, invocation } = input;
+  if (obligation.status === 'blocked') {
+    return {
+      reason: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
+      status: 'blocked',
+      obligationId: obligation.obligationId,
+      blockedCode: obligation.blockedCode ?? 'UNKNOWN',
+    };
+  }
+
+  if (obligation.status === 'consumed' || obligation.consumedAt !== null) {
+    return {
+      reason: 'SUBAGENT_EVIDENCE_REUSED',
+      status: 'consumed',
+      obligationId: obligation.obligationId,
+    };
+  }
+
+  if (invocation?.consumedByObligationId !== null && invocation?.consumedByObligationId !== undefined) {
+    return {
+      reason: 'SUBAGENT_EVIDENCE_REUSED',
+      status: 'invocation_consumed',
+      invocationId: invocation.invocationId,
+      consumedBy: invocation.consumedByObligationId,
+    };
+  }
+
+  return null;
+}
+
+function formatAcceptanceRejection(rejection: ReviewFindingsAcceptanceRejection): string {
+  if (rejection.reason === 'STRICT_REVIEW_ORCHESTRATION_FAILED') {
+    return formatBlocked(rejection.reason, {
+      code: rejection.blockedCode ?? 'UNKNOWN',
+    });
+  }
+
+  if (rejection.status === 'invocation_consumed') {
+    return formatBlocked(rejection.reason, {
+      invocationId: rejection.invocationId ?? 'unknown',
+      consumedBy: rejection.consumedBy ?? 'unknown',
+    });
+  }
+
+  return formatBlocked(rejection.reason, {
+    obligationId: rejection.obligationId ?? 'unknown',
+  });
+}
+
+function withHostTaskPath(
+  rejection: ReviewFindingsAcceptanceRejection,
+): HostTaskFindingsAcceptanceRejection {
+  return { ...rejection, path: 'host_task' };
+}
+
+function formatHostTaskAcceptanceRejection(rejection: HostTaskFindingsAcceptanceRejection): string {
+  const parsed = JSON.parse(formatAcceptanceRejection(rejection)) as Record<string, unknown>;
+  return JSON.stringify({
+    ...parsed,
+    [HOST_TASK_FINDINGS_REJECTION_FIELD]: {
+      path: rejection.path,
+      reason: rejection.reason,
+      status: rejection.status,
+      ...(rejection.obligationId ? { obligationId: rejection.obligationId } : {}),
+      ...(rejection.invocationId ? { invocationId: rejection.invocationId } : {}),
+    },
+  });
 }
 
 // ─── Core Validation ──────────────────────────────────────────────────────────
@@ -206,16 +302,9 @@ export function validateReviewFindings(
       });
     }
 
-    if (obligation.status === 'blocked') {
-      return formatBlocked('STRICT_REVIEW_ORCHESTRATION_FAILED', {
-        code: obligation.blockedCode ?? 'UNKNOWN',
-      });
-    }
-
-    if (obligation.status === 'consumed' || obligation.consumedAt !== null) {
-      return formatBlocked('SUBAGENT_EVIDENCE_REUSED', {
-        obligationId: obligation.obligationId,
-      });
+    const obligationRejection = getReviewFindingsAcceptanceRejection({ obligation });
+    if (obligationRejection) {
+      return formatAcceptanceRejection(obligationRejection);
     }
 
     const submittedFindingsHash = hashFindings(findings);
@@ -240,11 +329,9 @@ export function validateReviewFindings(
       });
     }
 
-    if (invocation.consumedByObligationId) {
-      return formatBlocked('SUBAGENT_EVIDENCE_REUSED', {
-        invocationId: invocation.invocationId,
-        consumedBy: invocation.consumedByObligationId,
-      });
+    const invocationRejection = getReviewFindingsAcceptanceRejection({ obligation, invocation });
+    if (invocationRejection) {
+      return formatAcceptanceRejection(invocationRejection);
     }
 
     if (
@@ -379,10 +466,16 @@ export function requireReviewFindings(hasFindings: boolean): string | null {
 export interface ResolvedHostTaskFindings {
   /** Parsed ReviewFindings from the evidence's capturedRawFindings. */
   readonly findings: ReviewFindings;
-  /** InvocationId of the evidence record — used for direct obligation consumption
-   *  without hash comparison (avoids Zod parse / JSON.stringify key-order mismatches). */
+  /** Invocation evidence record used for direct obligation consumption. */
+  readonly invocation: ReviewInvocationEvidence;
+  /** InvocationId of the evidence record. */
   readonly invocationId: string;
 }
+
+export type HostTaskFindingsResolution =
+  | ({ readonly kind: 'resolved' } & ResolvedHostTaskFindings)
+  | { readonly kind: 'rejected'; readonly rejection: HostTaskFindingsAcceptanceRejection }
+  | { readonly kind: 'not_found' };
 
 /**
  * Resolve review findings from host-task invocation evidence.
@@ -403,28 +496,45 @@ export interface ResolvedHostTaskFindings {
 export function resolveHostTaskFindings(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation | null,
-): ResolvedHostTaskFindings | null {
-  if (!obligation || !assurance) return null;
+): HostTaskFindingsResolution {
+  if (!obligation || !assurance) return { kind: 'not_found' };
 
-  // Find the unconsumed host-task invocation with captured raw findings
-  const invocation = assurance.invocations.find(
+  const obligationRejection = getReviewFindingsAcceptanceRejection({ obligation });
+  if (obligationRejection) {
+    return { kind: 'rejected', rejection: withHostTaskPath(obligationRejection) };
+  }
+
+  const matchingInvocations = assurance.invocations.filter(
     (inv) =>
       inv.obligationId === obligation.obligationId &&
+      (obligation.invocationId
+        ? inv.invocationId === obligation.invocationId
+        : true) &&
       inv.invocationMode === 'host_subagent_task' &&
       inv.hostVisible === true &&
-      inv.capturedRawFindings != null &&
-      inv.consumedByObligationId === null,
+      inv.capturedRawFindings != null,
   );
+  for (const invocation of matchingInvocations) {
+    const invocationRejection = getReviewFindingsAcceptanceRejection({ obligation, invocation });
+    if (invocationRejection) {
+      return { kind: 'rejected', rejection: withHostTaskPath(invocationRejection) };
+    }
 
-  if (!invocation?.capturedRawFindings) return null;
+    // Parse through ReviewFindings schema for type safety and validation.
+    // safeParse: if the raw findings are malformed (missing required fields,
+    // invalid types), return not_found so the caller falls back to BLOCKED.
+    const parsed = ReviewFindingsSchema.safeParse(invocation.capturedRawFindings);
+    if (parsed.success) {
+      return {
+        kind: 'resolved',
+        findings: parsed.data,
+        invocation,
+        invocationId: invocation.invocationId,
+      };
+    }
+  }
 
-  // Parse through ReviewFindings schema for type safety and validation.
-  // safeParse: if the raw findings are malformed (missing required fields,
-  // invalid types), return null → caller falls back to BLOCKED.
-  const parsed = ReviewFindingsSchema.safeParse(invocation.capturedRawFindings);
-  if (!parsed.success) return null;
-
-  return { findings: parsed.data, invocationId: invocation.invocationId };
+  return { kind: 'not_found' };
 }
 
 // ─── Host Task Effective Findings Resolution ───────────────────────────────────
@@ -470,12 +580,16 @@ export function resolveHostTaskEffectiveFindings(
       void ctx.input.reviewFindings; // side-effect-free acknowledgement
     }
     const resolved = resolveHostTaskFindings(ctx.state.assurance, ctx.pendingObligation);
-    if (resolved) {
+    if (resolved.kind === 'resolved') {
       return {
         effectiveFindings: resolved.findings,
-        evidenceInvocationId: resolved.invocationId,
+        evidenceInvocationId: resolved.invocation.invocationId,
       };
-    } else if (ctx.input.reviewerUnavailable === true) {
+    }
+    if (resolved.kind === 'rejected') {
+      return { blocked: formatHostTaskAcceptanceRejection(resolved.rejection) };
+    }
+    if (ctx.input.reviewerUnavailable === true) {
       return {
         blocked: formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
           reason: 'reviewer unavailable; independent ReviewFindings remain required',

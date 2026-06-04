@@ -1470,12 +1470,13 @@ describe('resolveHostTaskFindings', () => {
     };
     const result = resolveHostTaskFindings(assurance, makeObligation());
 
-    expect(result).not.toBeNull();
-    expect(result!.findings.overallVerdict).toBe('approve');
-    expect(result!.findings.iteration).toBe(0);
-    expect(result!.findings.planVersion).toBe(1);
-    expect(result!.findings.reviewMode).toBe('subagent');
-    expect(result!.invocationId).toBe(INVOCATION_ID);
+    expect(result.kind).toBe('resolved');
+    if (result.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(result.findings.overallVerdict).toBe('approve');
+    expect(result.findings.iteration).toBe(0);
+    expect(result.findings.planVersion).toBe(1);
+    expect(result.findings.reviewMode).toBe('subagent');
+    expect(result.invocation.invocationId).toBe(INVOCATION_ID);
   });
 
   it('HAPPY: resolves changes_requested verdict from evidence', () => {
@@ -1492,14 +1493,15 @@ describe('resolveHostTaskFindings', () => {
     };
     const result = resolveHostTaskFindings(assurance, makeObligation());
 
-    expect(result).not.toBeNull();
-    expect(result!.findings.overallVerdict).toBe('changes_requested');
+    expect(result.kind).toBe('resolved');
+    if (result.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(result.findings.overallVerdict).toBe('changes_requested');
   });
 
   // ── Bad Path ────────────────────────────────────────────────────────────
 
   it('BAD: returns null when assurance is undefined', () => {
-    expect(resolveHostTaskFindings(undefined, makeObligation())).toBeNull();
+    expect(resolveHostTaskFindings(undefined, makeObligation()).kind).toBe('not_found');
   });
 
   it('BAD: returns null when obligation is null', () => {
@@ -1507,7 +1509,7 @@ describe('resolveHostTaskFindings', () => {
       obligations: [makeObligation()],
       invocations: [makeHostTaskInvocation()],
     };
-    expect(resolveHostTaskFindings(assurance, null)).toBeNull();
+    expect(resolveHostTaskFindings(assurance, null).kind).toBe('not_found');
   });
 
   it('BAD: returns null when no invocation exists for obligation', () => {
@@ -1515,7 +1517,7 @@ describe('resolveHostTaskFindings', () => {
       obligations: [makeObligation()],
       invocations: [], // no invocations
     };
-    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+    expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
   });
 
   it('BAD: returns null when invocation has no capturedRawFindings', () => {
@@ -1527,7 +1529,7 @@ describe('resolveHostTaskFindings', () => {
         }),
       ],
     };
-    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+    expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
   });
 
   it('BAD: returns null when capturedRawFindings fails Zod parse (missing required fields)', () => {
@@ -1540,7 +1542,58 @@ describe('resolveHostTaskFindings', () => {
         }),
       ],
     };
-    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+    expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
+  });
+
+  it('BAD: rejects host-task findings when obligation is blocked', () => {
+    const assurance = {
+      obligations: [
+        makeObligation({
+          status: 'blocked',
+          blockedCode: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
+        }),
+      ],
+      invocations: [makeHostTaskInvocation()],
+    };
+    const result = resolveHostTaskFindings(
+      assurance,
+      makeObligation({ status: 'blocked', blockedCode: 'STRICT_REVIEW_ORCHESTRATION_FAILED' }),
+    );
+
+    expect(result.kind).toBe('rejected');
+    if (result.kind !== 'rejected') throw new Error('expected rejected findings');
+    expect(result.rejection.reason).toBe('STRICT_REVIEW_ORCHESTRATION_FAILED');
+    expect(result.rejection.status).toBe('blocked');
+    expect(result.rejection.path).toBe('host_task');
+  });
+
+  it('BAD: rejects host-task findings when obligation status is consumed', () => {
+    const assurance = {
+      obligations: [makeObligation({ status: 'consumed' })],
+      invocations: [makeHostTaskInvocation()],
+    };
+    const result = resolveHostTaskFindings(assurance, makeObligation({ status: 'consumed' }));
+
+    expect(result.kind).toBe('rejected');
+    if (result.kind !== 'rejected') throw new Error('expected rejected findings');
+    expect(result.rejection.reason).toBe('SUBAGENT_EVIDENCE_REUSED');
+    expect(result.rejection.status).toBe('consumed');
+    expect(result.rejection.path).toBe('host_task');
+  });
+
+  it('BAD: rejects host-task findings when obligation has consumedAt', () => {
+    const consumedAt = new Date(Date.now() + 1).toISOString();
+    const assurance = {
+      obligations: [makeObligation({ consumedAt })],
+      invocations: [makeHostTaskInvocation()],
+    };
+    const result = resolveHostTaskFindings(assurance, makeObligation({ consumedAt }));
+
+    expect(result.kind).toBe('rejected');
+    if (result.kind !== 'rejected') throw new Error('expected rejected findings');
+    expect(result.rejection.reason).toBe('SUBAGENT_EVIDENCE_REUSED');
+    expect(result.rejection.status).toBe('consumed');
+    expect(result.rejection.path).toBe('host_task');
   });
 
   // ── Edge Cases ──────────────────────────────────────────────────────────
@@ -1554,7 +1607,12 @@ describe('resolveHostTaskFindings', () => {
         }),
       ],
     };
-    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+    const result = resolveHostTaskFindings(assurance, makeObligation());
+    expect(result.kind).toBe('rejected');
+    if (result.kind !== 'rejected') throw new Error('expected rejected findings');
+    expect(result.rejection.reason).toBe('SUBAGENT_EVIDENCE_REUSED');
+    expect(result.rejection.status).toBe('invocation_consumed');
+    expect(result.rejection.path).toBe('host_task');
   });
 
   it('EDGE: skips SDK invocations (only host_subagent_task)', () => {
@@ -1567,7 +1625,7 @@ describe('resolveHostTaskFindings', () => {
         }),
       ],
     };
-    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+    expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
   });
 
   it('EDGE: skips non-host-visible invocations', () => {
@@ -1579,7 +1637,7 @@ describe('resolveHostTaskFindings', () => {
         }),
       ],
     };
-    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+    expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
   });
 
   it('EDGE: skips invocations with mismatched obligationId', () => {
@@ -1591,7 +1649,7 @@ describe('resolveHostTaskFindings', () => {
         }),
       ],
     };
-    expect(resolveHostTaskFindings(assurance, makeObligation())).toBeNull();
+    expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
   });
 
   it('EDGE: picks first unconsumed invocation when multiple exist', () => {
@@ -1608,10 +1666,14 @@ describe('resolveHostTaskFindings', () => {
         }),
       ],
     };
-    const result = resolveHostTaskFindings(assurance, makeObligation());
+    const result = resolveHostTaskFindings(
+      assurance,
+      makeObligation({ invocationId: secondInvocationId }),
+    );
 
-    expect(result).not.toBeNull();
-    expect(result!.invocationId).toBe(secondInvocationId);
+    expect(result.kind).toBe('resolved');
+    if (result.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(result.invocation.invocationId).toBe(secondInvocationId);
   });
 
   it('CORNER: extra unknown fields in capturedRawFindings are stripped by Zod parse', () => {
@@ -1630,10 +1692,11 @@ describe('resolveHostTaskFindings', () => {
     };
     const result = resolveHostTaskFindings(assurance, makeObligation());
 
-    expect(result).not.toBeNull();
-    expect(result!.findings.overallVerdict).toBe('approve');
+    expect(result.kind).toBe('resolved');
+    if (result.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(result.findings.overallVerdict).toBe('approve');
     // Extra fields are stripped by Zod
-    expect((result!.findings as Record<string, unknown>).extraField).toBeUndefined();
+    expect((result.findings as Record<string, unknown>).extraField).toBeUndefined();
   });
 
   it('CORNER: findings with unable_to_review verdict still resolve (defense-in-depth at tool layer)', () => {
@@ -1652,7 +1715,8 @@ describe('resolveHostTaskFindings', () => {
     // that's the tool layer's defense-in-depth responsibility.
     const result = resolveHostTaskFindings(assurance, makeObligation());
 
-    expect(result).not.toBeNull();
-    expect(result!.findings.overallVerdict).toBe('unable_to_review');
+    expect(result.kind).toBe('resolved');
+    if (result.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(result.findings.overallVerdict).toBe('unable_to_review');
   });
 });

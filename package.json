@@ -43,6 +43,7 @@
     "check:esm": "node scripts/check-esm-imports.js",
     "check:actions-pinned": "node scripts/check-github-actions-pinned.js",
     "check": "tsc --noEmit",
+    "typecheck": "npm run check",
     "check:opencode-host": "node scripts/check-opencode-host-drift.mjs",
     "check:unused-dependencies": "knip --dependencies",
     "lint": "eslint \"src/**/*.ts\"",

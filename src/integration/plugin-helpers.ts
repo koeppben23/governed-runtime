@@ -16,6 +16,7 @@ import {
   REASON_SESSION_LOCK_CONTENDED,
   LOCK_CONTENDED_OUTPUT_FIELD,
 } from '../shared/flowguard-identifiers.js';
+import { HOST_TASK_FINDINGS_REJECTION_FIELD } from './tools/review-validation.js';
 
 /**
  * Parse tool output JSON with fallback for NextAction footer lines.
@@ -209,6 +210,43 @@ export function isNativeEnforcementUnavailableDenial(rawOutput: unknown): boolea
     (diagnostics as { deniedReviewPath?: unknown }).deniedReviewPath ===
     REVIEW_ACCEPTANCE_PATH_NATIVE
   );
+}
+
+export interface HostTaskFindingsRejectionLogContext {
+  readonly path: 'host_task';
+  readonly reason: string;
+  readonly status: string;
+  readonly obligationId?: string;
+}
+
+/**
+ * Detect a host-task findings rejection surfaced by the pure validation layer.
+ * Detection is structured-only so strict-path denials cannot be mislabeled as
+ * host-task denials by matching on shared reason codes.
+ */
+export function getHostTaskFindingsRejection(
+  rawOutput: unknown,
+): HostTaskFindingsRejectionLogContext | null {
+  const parsed = parseToolResult(rawOutput);
+  if (!parsed) return null;
+  const rejection = parsed[HOST_TASK_FINDINGS_REJECTION_FIELD];
+  if (typeof rejection !== 'object' || rejection === null) return null;
+
+  const { path, reason, status, obligationId } = rejection as {
+    path?: unknown;
+    reason?: unknown;
+    status?: unknown;
+    obligationId?: unknown;
+  };
+  if (path !== 'host_task' || typeof reason !== 'string' || typeof status !== 'string') {
+    return null;
+  }
+  return {
+    path,
+    reason,
+    status,
+    ...(typeof obligationId === 'string' ? { obligationId } : {}),
+  };
 }
 
 /**

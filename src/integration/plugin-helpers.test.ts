@@ -21,6 +21,7 @@ import {
   getToolMetadata,
   getToolCallID,
   isNativeEnforcementUnavailableDenial,
+  getHostTaskFindingsRejection,
   getAutoAdvanceOverflow,
   getSessionLockSignal,
 } from './plugin-helpers.js';
@@ -365,6 +366,54 @@ describe('isNativeEnforcementUnavailableDenial (#419)', () => {
 
   it('CORNER: false for a successful (non-blocked) tool result', () => {
     expect(isNativeEnforcementUnavailableDenial('{"ok":true}')).toBe(false);
+  });
+});
+
+describe('getHostTaskFindingsRejection (#424)', () => {
+  it('GOOD: returns structured host-task findings rejection context', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'SUBAGENT_EVIDENCE_REUSED',
+      hostTaskFindingsRejection: {
+        path: 'host_task',
+        reason: 'SUBAGENT_EVIDENCE_REUSED',
+        status: 'consumed',
+        obligationId: '11111111-1111-4111-8111-111111111111',
+      },
+    });
+
+    expect(getHostTaskFindingsRejection(output)).toEqual({
+      path: 'host_task',
+      reason: 'SUBAGENT_EVIDENCE_REUSED',
+      status: 'consumed',
+      obligationId: '11111111-1111-4111-8111-111111111111',
+    });
+  });
+
+  it('BAD: ignores strict-path blocks without host-task marker', () => {
+    const output = formatBlocked('SUBAGENT_EVIDENCE_REUSED', {
+      obligationId: '11111111-1111-4111-8111-111111111111',
+    });
+
+    expect(getHostTaskFindingsRejection(output)).toBeNull();
+  });
+
+  it('BAD: ignores rejection with non-host-task path', () => {
+    const output = JSON.stringify({
+      error: true,
+      code: 'SUBAGENT_EVIDENCE_REUSED',
+      hostTaskFindingsRejection: {
+        path: 'strict',
+        reason: 'SUBAGENT_EVIDENCE_REUSED',
+        status: 'consumed',
+      },
+    });
+
+    expect(getHostTaskFindingsRejection(output)).toBeNull();
+  });
+
+  it('CORNER: returns null for unparseable output', () => {
+    expect(getHostTaskFindingsRejection('not json at all')).toBeNull();
   });
 });
 

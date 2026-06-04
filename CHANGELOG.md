@@ -454,6 +454,22 @@ attestation authority.
   passed without a plugin handshake are now denied; solo / host_task_preferred
   behavior is unchanged.
 
+- **Issue #424:** Host-task findings resolution now uses the same canonical
+  review-findings acceptance guard as the strict path for blocked obligations,
+  consumed obligations, and consumed invocation evidence. `resolveHostTaskFindings`
+  now returns a structured result (`resolved` / `rejected` / `not_found`) so
+  guard rejections are explicit instead of collapsing into an ambiguous missing-
+  evidence result. Strict-path blocked output keeps its existing reason codes
+  and payloads, while host-task guard rejections surface a structured
+  `hostTaskFindingsRejection` marker. The plugin boundary (`tool.execute.after`),
+  still the only logger writer, emits a diagnostic `warn` with
+  `{ path: "host_task", reason, status, sessionId, obligationId? }` only when
+  that structured host-task marker is present. **Behavior change:** host-task
+  findings tied to blocked or consumed review evidence that could previously be
+  accepted now fail closed. Documentation update not needed: this is an internal
+  guard tightening; the runtime-facing behavior is covered by this changelog and
+  tests.
+
 - **Issue #422:** The MCP session resolver no longer guesses `process.cwd()` when
   no working directory is advertised. `resolveSessionContext`
   (`src/mcp-server/session-resolver.ts`) now resolves strictly in order —
