@@ -51,6 +51,20 @@ export function extractObligationId(toolInput: Record<string, unknown>): string 
   return undefined;
 }
 
+function captureWriteFailureDiagnostic(input: {
+  readonly source: ReviewerSubagentCapture['source'];
+  readonly obligationId?: string;
+  readonly error: unknown;
+}): string {
+  const detail = {
+    reason: 'capture_write_failed',
+    source: input.source,
+    ...(input.obligationId !== undefined ? { obligationId: input.obligationId } : {}),
+    error: input.error instanceof Error ? input.error.message : String(input.error),
+  };
+  return `WARN: reviewer capture write failed: ${JSON.stringify(detail)}`;
+}
+
 /**
  * Build and persist a reviewer capture record. Returns the persisted record, or null
  * when no capture should be written (non-reviewer agent) or a write error occurred.
@@ -91,7 +105,13 @@ export async function writeReviewerCapture(
     log(`reviewer capture persisted: ${input.source} agent=${input.agentId}`);
     return persisted;
   } catch (err) {
-    log(`WARN: reviewer capture write failed: ${err instanceof Error ? err.message : String(err)}`);
+    log(
+      captureWriteFailureDiagnostic({
+        source: input.source,
+        obligationId: input.obligationId,
+        error: err,
+      }),
+    );
     return null;
   }
 }
