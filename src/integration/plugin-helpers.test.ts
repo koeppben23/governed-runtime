@@ -23,10 +23,12 @@ import {
   isNativeEnforcementUnavailableDenial,
   getHostTaskFindingsRejection,
   getReviewIdentityRejection,
+  getNativeAttestationRejection,
   getAutoAdvanceOverflow,
   getSessionLockSignal,
 } from './plugin-helpers.js';
 import { formatBlocked, formatAutoAdvanceOverflow } from './tools/helpers.js';
+import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../shared/flowguard-identifiers.js';
 
 describe('parseToolResult', () => {
   it('GOOD: parses valid JSON string', () => {
@@ -442,6 +444,45 @@ describe('getReviewIdentityRejection (#425)', () => {
 
   it('CORNER: returns null for unparseable output', () => {
     expect(getReviewIdentityRejection('not json at all')).toBeNull();
+  });
+});
+
+describe('getNativeAttestationRejection (#427)', () => {
+  it('GOOD: returns structured native attestation rejection context', () => {
+    const output = JSON.stringify({
+      phase: 'REVIEW_COMPLETE',
+      [NATIVE_ATTESTATION_REJECTION_FIELD]: {
+        reason: 'capture_session_mismatch',
+        obligationId: '11111111-1111-4111-8111-111111111111',
+      },
+    });
+
+    expect(getNativeAttestationRejection(output)).toEqual({
+      reason: 'capture_session_mismatch',
+      obligationId: '11111111-1111-4111-8111-111111111111',
+    });
+  });
+
+  it('BAD: ignores matching text without structured marker', () => {
+    const output = JSON.stringify({
+      phase: 'REVIEW_COMPLETE',
+      message: 'native attestation not upgraded: capture_session_mismatch',
+    });
+
+    expect(getNativeAttestationRejection(output)).toBeNull();
+  });
+
+  it('CORNER: returns null for malformed marker', () => {
+    const output = JSON.stringify({
+      phase: 'REVIEW_COMPLETE',
+      [NATIVE_ATTESTATION_REJECTION_FIELD]: { reason: 42 },
+    });
+
+    expect(getNativeAttestationRejection(output)).toBeNull();
+  });
+
+  it('CORNER: returns null for unparseable output', () => {
+    expect(getNativeAttestationRejection('not json at all')).toBeNull();
   });
 });
 

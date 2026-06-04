@@ -66,6 +66,13 @@ export const HOST_TASK_FINDINGS_REJECTION_FIELD = 'hostTaskFindingsRejection';
 export const REVIEW_IDENTITY_REJECTION_FIELD = 'reviewIdentityRejection';
 
 /**
+ * Structured native-attestation non-upgrade field on successful review outputs (#427).
+ * The plugin boundary reads this marker to log skipped/unbound native capture
+ * denials without parsing human-readable messages or re-running attestation logic.
+ */
+export const NATIVE_ATTESTATION_REJECTION_FIELD = 'nativeAttestationRejection';
+
+/**
  * Review-acceptance path discriminator for the native_subagent_attested tier.
  *
  * Surfaced in blocked-result diagnostics so the plugin boundary can log a

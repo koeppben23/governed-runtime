@@ -20,10 +20,23 @@ export type ReviewExecutionContext = {
   policy: string;
 };
 
+export type NativeAttestationRejectionReason =
+  | 'capture_read_failed'
+  | 'capture_lines_skipped'
+  | 'capture_missing'
+  | 'capture_unbound'
+  | 'capture_session_mismatch';
+
+export type NativeAttestationRejection = {
+  reason: NativeAttestationRejectionReason;
+  obligationId: string;
+};
+
 export type ReviewPreparation = {
   result: StartedReviewResult;
   refInput?: ReviewReferenceInput;
   validatedReviewObligation: ReviewObligation | null;
+  nativeAttestationRejection?: NativeAttestationRejection;
 };
 
 export type ReviewReportResult = Exclude<

@@ -17,6 +17,7 @@ import {
   LOCK_CONTENDED_OUTPUT_FIELD,
   HOST_TASK_FINDINGS_REJECTION_FIELD,
   REVIEW_IDENTITY_REJECTION_FIELD,
+  NATIVE_ATTESTATION_REJECTION_FIELD,
 } from '../shared/flowguard-identifiers.js';
 
 /**
@@ -267,6 +268,27 @@ export function getReviewIdentityRejection(
   if (reason !== 'reviewer_is_author' && reason !== 'reviewer_identity_uncomparable') {
     return null;
   }
+  return {
+    reason,
+    ...(typeof obligationId === 'string' ? { obligationId } : {}),
+  };
+}
+
+export interface NativeAttestationRejectionLogContext {
+  readonly reason: string;
+  readonly obligationId?: string;
+}
+
+export function getNativeAttestationRejection(
+  rawOutput: unknown,
+): NativeAttestationRejectionLogContext | null {
+  const parsed = parseToolResult(rawOutput);
+  if (!parsed) return null;
+  const rejection = parsed[NATIVE_ATTESTATION_REJECTION_FIELD];
+  if (typeof rejection !== 'object' || rejection === null) return null;
+
+  const { reason, obligationId } = rejection as { reason?: unknown; obligationId?: unknown };
+  if (typeof reason !== 'string') return null;
   return {
     reason,
     ...(typeof obligationId === 'string' ? { obligationId } : {}),

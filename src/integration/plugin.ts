@@ -25,6 +25,7 @@ import {
   getSessionLockSignal,
   getHostTaskFindingsRejection,
   getReviewIdentityRejection,
+  getNativeAttestationRejection,
 } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
@@ -429,6 +430,21 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
                 ? { obligationId: identityRejection.obligationId }
                 : {}),
             });
+          }
+
+          if (toolName === TOOL_FLOWGUARD_REVIEW) {
+            const nativeAttestationRejection = getNativeAttestationRejection(
+              getToolOutput(hookOutput),
+            );
+            if (nativeAttestationRejection) {
+              log.warn('review', 'native attestation not upgraded', {
+                sessionId,
+                reason: nativeAttestationRejection.reason,
+                ...(nativeAttestationRejection.obligationId
+                  ? { obligationId: nativeAttestationRejection.obligationId }
+                  : {}),
+              });
+            }
           }
 
           // #428: auto-advance overflow is a fail-closed result (no partially-advanced
