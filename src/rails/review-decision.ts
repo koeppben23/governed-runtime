@@ -42,7 +42,7 @@ import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext, TransitionRecord } from './types.js';
 import { applyTransition } from './types.js';
 import { blocked } from '../config/reasons.js';
-import { isAssuranceAtLeast } from '../identity/actor-info.js';
+import { isAssuranceAtLeast, sameActorIdentity } from '../identity/actor-info.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -203,7 +203,7 @@ function enforceApprovalIdentity(
     }
 
     // P30: Four-eyes enforcement via structured identity
-    if (input.decisionIdentity.actorId === state.initiatedByIdentity.actorId) {
+    if (sameActorIdentity(input.decisionIdentity, state.initiatedByIdentity) === true) {
       return blocked('FOUR_EYES_ACTOR_MATCH', {
         initiator: state.initiatedByIdentity.actorId,
       });

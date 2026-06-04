@@ -11,8 +11,9 @@
 import { readdir, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
-import type { ReviewFindings, ReviewObligation } from '../../state/evidence.js';
+import type { DecisionIdentity, ReviewFindings, ReviewObligation } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
+import { compareActorIdentity } from '../../identity/actor-info.js';
 import {
   appendInvocationEvidence,
   buildInvocationEvidence,
@@ -35,7 +36,22 @@ export type TransportEvidenceBindResult =
       readonly state: SessionState;
       readonly obligation: ReviewObligation;
     }
-  | { readonly status: 'invalid'; readonly code: string; readonly reason: string };
+  | {
+      readonly status: 'invalid';
+      readonly code: string;
+      readonly reason: string;
+      readonly obligationId?: string;
+      readonly vars?: Record<string, string>;
+      readonly rejectionReason?: 'reviewer_is_author' | 'reviewer_identity_uncomparable';
+    };
+
+interface TransportEvidenceValidationError {
+  readonly code: string;
+  readonly reason: string;
+  readonly obligationId?: string;
+  readonly vars?: Record<string, string>;
+  readonly rejectionReason?: 'reviewer_is_author' | 'reviewer_identity_uncomparable';
+}
 
 function latestUnconsumedObligation(state: SessionState): ReviewObligation | null {
   const obligations = ensureReviewAssurance(state.reviewAssurance).obligations;
@@ -79,16 +95,54 @@ function extractFindings(raw: unknown): unknown {
 function validateAgainstObligation(
   findings: ReviewFindings,
   obligation: ReviewObligation,
-): string | null {
-  if (findings.iteration !== obligation.iteration) return 'REVIEW_ITERATION_MISMATCH';
-  if (findings.planVersion !== obligation.planVersion) return 'REVIEW_PLAN_VERSION_MISMATCH';
-  if (findings.reviewMode !== 'subagent') return 'REVIEW_MODE_SELF_NOT_ALLOWED';
-  if (findings.overallVerdict === 'unable_to_review') return 'SUBAGENT_UNABLE_TO_REVIEW';
-  return validateStrictAttestation(findings, {
+  initiatedByIdentity: DecisionIdentity | undefined,
+): TransportEvidenceValidationError | null {
+  if (findings.iteration !== obligation.iteration) {
+    return {
+      code: 'REVIEW_ITERATION_MISMATCH',
+      reason: 'obligation_binding_mismatch',
+      vars: { provided: String(findings.iteration), expected: String(obligation.iteration) },
+    };
+  }
+  if (findings.planVersion !== obligation.planVersion) {
+    return {
+      code: 'REVIEW_PLAN_VERSION_MISMATCH',
+      reason: 'obligation_binding_mismatch',
+      vars: { provided: String(findings.planVersion), expected: String(obligation.planVersion) },
+    };
+  }
+  if (findings.reviewMode !== 'subagent') {
+    return { code: 'REVIEW_MODE_SELF_NOT_ALLOWED', reason: 'review_mode_not_allowed' };
+  }
+  if (findings.overallVerdict === 'unable_to_review') {
+    return { code: 'SUBAGENT_UNABLE_TO_REVIEW', reason: 'reviewer_unable_to_review' };
+  }
+
+  const actorComparison = compareActorIdentity(initiatedByIdentity, findings.reviewedBy);
+  if (actorComparison === 'uncomparable') {
+    return {
+      code: 'DECISION_IDENTITY_REQUIRED',
+      reason: 'reviewer_identity_uncomparable',
+      obligationId: obligation.obligationId,
+      rejectionReason: 'reviewer_identity_uncomparable',
+    };
+  }
+  if (actorComparison === 'same') {
+    return {
+      code: 'FOUR_EYES_ACTOR_MATCH',
+      reason: 'reviewer_is_author',
+      obligationId: obligation.obligationId,
+      vars: { initiator: initiatedByIdentity?.actorId ?? 'unknown' },
+      rejectionReason: 'reviewer_is_author',
+    };
+  }
+
+  const attestationError = validateStrictAttestation(findings, {
     obligationId: obligation.obligationId,
     iteration: obligation.iteration,
     planVersion: obligation.planVersion,
   });
+  return attestationError ? { code: attestationError, reason: 'strict_attestation_invalid' } : null;
 }
 
 export async function bindExternalReviewEvidence(
@@ -126,12 +180,21 @@ export async function bindExternalReviewEvidence(
     }
 
     const findings = parsedFindings.data;
-    const validationCode = validateAgainstObligation(findings, obligation);
-    if (validationCode) {
+    const validationError = validateAgainstObligation(
+      findings,
+      obligation,
+      state.initiatedByIdentity,
+    );
+    if (validationError) {
       return {
         status: 'invalid',
-        code: validationCode,
-        reason: `transport ReviewFindings do not bind to active obligation ${obligation.obligationId}`,
+        code: validationError.code,
+        reason: validationError.reason,
+        ...(validationError.obligationId ? { obligationId: validationError.obligationId } : {}),
+        ...(validationError.vars ? { vars: validationError.vars } : {}),
+        ...(validationError.rejectionReason
+          ? { rejectionReason: validationError.rejectionReason }
+          : {}),
       };
     }
 

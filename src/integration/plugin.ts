@@ -24,6 +24,7 @@ import {
   getAutoAdvanceOverflow,
   getSessionLockSignal,
   getHostTaskFindingsRejection,
+  getReviewIdentityRejection,
 } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
@@ -71,6 +72,7 @@ import {
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_REVIEW,
+  TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_HYDRATE,
   isFlowGuardVerdictTool,
 } from './tool-names.js';
@@ -418,6 +420,17 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
             });
           }
 
+          const identityRejection = getReviewIdentityRejection(getToolOutput(hookOutput));
+          if (identityRejection) {
+            log.warn('review', 'self-review rejected', {
+              sessionId,
+              reason: identityRejection.reason,
+              ...(identityRejection.obligationId
+                ? { obligationId: identityRejection.obligationId }
+                : {}),
+            });
+          }
+
           // #428: auto-advance overflow is a fail-closed result (no partially-advanced
           // state was persisted). The pure rail/boundary layers surface it via a
           // structured result; the plugin boundary is the only reliable logger writer,
@@ -429,6 +442,17 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
               sessionId,
               phase: overflow.phase,
               limit: overflow.limit,
+            });
+          }
+        } else if (toolName === TOOL_FLOWGUARD_CONTINUE) {
+          const identityRejection = getReviewIdentityRejection(getToolOutput(hookOutput));
+          if (identityRejection) {
+            log.warn('review', 'self-review rejected', {
+              sessionId,
+              reason: identityRejection.reason,
+              ...(identityRejection.obligationId
+                ? { obligationId: identityRejection.obligationId }
+                : {}),
             });
           }
         } else if (toolName === TOOL_FLOWGUARD_HYDRATE) {

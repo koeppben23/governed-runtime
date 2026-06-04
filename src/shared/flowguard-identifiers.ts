@@ -59,6 +59,13 @@ export const DIAGNOSTIC_SESSION_LOCK_WAITED = 'SESSION_LOCK_WAITED';
 export const HOST_TASK_FINDINGS_REJECTION_FIELD = 'hostTaskFindingsRejection';
 
 /**
+ * Structured review identity rejection field on BLOCKED tool results (#425).
+ * The plugin boundary reads this marker to log reviewer-author denials without
+ * parsing human-readable messages or duplicating identity comparison logic.
+ */
+export const REVIEW_IDENTITY_REJECTION_FIELD = 'reviewIdentityRejection';
+
+/**
  * Review-acceptance path discriminator for the native_subagent_attested tier.
  *
  * Surfaced in blocked-result diagnostics so the plugin boundary can log a

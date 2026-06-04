@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #425 (review obligation four-eyes enforcement):** External transport
+  review evidence now validates `ReviewFindings.reviewedBy.actorId` against the
+  canonical session author `SessionState.initiatedByIdentity` before fulfilling a
+  review obligation. Reviewer-author actor equality is rejected with
+  `FOUR_EYES_ACTOR_MATCH`; missing or uncomparable actor identity fails closed
+  with `DECISION_IDENTITY_REQUIRED`. No `ReviewObligation.author` authority was
+  added. The rejection is surfaced through structured tool output and logged only
+  at the plugin boundary.
+
 - **Issue #429 (lost-update fix — hydrate read-modify-write under one session
   write lock):** `flowguard_hydrate` previously performed its read-modify-write
   (read state → reconcile → write session pointer) **without** holding the

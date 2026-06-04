@@ -55,3 +55,33 @@ export function compareActorAssurance(a: ActorAssurance | undefined, b: ActorAss
   const bOrdinal = ASSURANCE_ORDINAL[b];
   return aOrdinal - bOrdinal;
 }
+
+export interface ActorIdentityComparable {
+  readonly actorId?: string | null;
+}
+
+export type ActorIdentityComparison = 'same' | 'different' | 'uncomparable';
+
+export function normalizeActorId(actorId: string | null | undefined): string | null {
+  const normalized = actorId?.trim().toLowerCase();
+  return normalized ? normalized : null;
+}
+
+export function compareActorIdentity(
+  left: ActorIdentityComparable | null | undefined,
+  right: ActorIdentityComparable | null | undefined,
+): ActorIdentityComparison {
+  const leftActorId = normalizeActorId(left?.actorId);
+  const rightActorId = normalizeActorId(right?.actorId);
+  if (!leftActorId || !rightActorId) return 'uncomparable';
+  return leftActorId === rightActorId ? 'same' : 'different';
+}
+
+export function sameActorIdentity(
+  left: ActorIdentityComparable | null | undefined,
+  right: ActorIdentityComparable | null | undefined,
+): boolean | null {
+  const comparison = compareActorIdentity(left, right);
+  if (comparison === 'uncomparable') return null;
+  return comparison === 'same';
+}

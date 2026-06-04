@@ -497,6 +497,42 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'REVIEW_ITERATION_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Submitted review findings target iteration {provided}, but the active review obligation expects iteration {expected}.',
+    recoverySteps: [
+      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer for the active obligation`,
+      'Submit findings whose iteration matches the reviewObligationIteration from the current FlowGuard response',
+      'Do not reuse review findings from a previous iteration',
+    ],
+  },
+
+  {
+    code: 'REVIEW_PLAN_VERSION_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'Submitted review findings target plan version {provided}, but the active review obligation expects plan version {expected}.',
+    recoverySteps: [
+      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer for the active plan version`,
+      'Submit findings whose planVersion matches the reviewObligationPlanVersion from the current FlowGuard response',
+      'Do not reuse review findings from an older plan version',
+    ],
+  },
+
+  {
+    code: 'REVIEW_MODE_SELF_NOT_ALLOWED',
+    category: 'state',
+    messageTemplate:
+      'Review findings must come from the independent reviewer subagent; reviewMode=self is not accepted.',
+    recoverySteps: [
+      `Invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer subagent`,
+      'Submit only reviewFindings with reviewMode=subagent',
+      'Do not use self-review findings to satisfy an independent review obligation',
+    ],
+  },
+
+  {
     code: 'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
     category: 'state',
     messageTemplate:
