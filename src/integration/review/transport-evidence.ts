@@ -180,7 +180,11 @@ export async function bindExternalReviewEvidence(
     }
 
     const findings = parsedFindings.data;
-    const validationError = validateAgainstObligation(findings, obligation, state.initiatedByIdentity);
+    const validationError = validateAgainstObligation(
+      findings,
+      obligation,
+      state.initiatedByIdentity,
+    );
     if (validationError) {
       return {
         status: 'invalid',

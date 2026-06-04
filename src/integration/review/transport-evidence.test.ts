@@ -194,7 +194,9 @@ describe('external review transport evidence binding', () => {
     });
     await writeFile(
       join(sessDir, 'review-evidence', 'missing-reviewer-actor.json'),
-      JSON.stringify({ reviewFindings: findingsFor(obligation, { sessionId: 'reviewer-session' }) }),
+      JSON.stringify({
+        reviewFindings: findingsFor(obligation, { sessionId: 'reviewer-session' }),
+      }),
       'utf-8',
     );
     const state = makeState('PLAN', {
