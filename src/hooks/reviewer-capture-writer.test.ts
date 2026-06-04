@@ -16,7 +16,7 @@ describe('reviewer-capture-writer', () => {
     const logs: string[] = [];
 
     const result = await writeReviewerCapture(
-      '/tmp/session',
+      '/workspace/session',
       {
         source: 'post_tool_use_hook',
         sessionId: 'ses_parent',
