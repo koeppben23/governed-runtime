@@ -70,9 +70,7 @@ type ReviewFindingsAcceptanceRejectionReason =
   | 'STRICT_REVIEW_ORCHESTRATION_FAILED'
   | 'SUBAGENT_EVIDENCE_REUSED';
 
-type ReviewFindingsAcceptanceRejectionStatus =
-  | ReviewObligation['status']
-  | 'invocation_consumed';
+type ReviewFindingsAcceptanceRejectionStatus = ReviewObligation['status'] | 'invocation_consumed';
 
 export interface ReviewFindingsAcceptanceRejection {
   readonly reason: ReviewFindingsAcceptanceRejectionReason;
@@ -172,7 +170,10 @@ function getReviewFindingsAcceptanceRejection(input: {
     };
   }
 
-  if (invocation?.consumedByObligationId !== null && invocation?.consumedByObligationId !== undefined) {
+  if (
+    invocation?.consumedByObligationId !== null &&
+    invocation?.consumedByObligationId !== undefined
+  ) {
     return {
       reason: 'SUBAGENT_EVIDENCE_REUSED',
       status: 'invocation_consumed',
@@ -507,9 +508,7 @@ export function resolveHostTaskFindings(
   const matchingInvocations = assurance.invocations.filter(
     (inv) =>
       inv.obligationId === obligation.obligationId &&
-      (obligation.invocationId
-        ? inv.invocationId === obligation.invocationId
-        : true) &&
+      (obligation.invocationId ? inv.invocationId === obligation.invocationId : true) &&
       inv.invocationMode === 'host_subagent_task' &&
       inv.hostVisible === true &&
       inv.capturedRawFindings != null,
