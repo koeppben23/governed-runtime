@@ -102,6 +102,8 @@ function replaceVersion(content) {
   return content;
 }
 
+let hadError = false;
+
 for (const file of filesToUpdate) {
   const filePath = join(REPO_ROOT, file);
   try {
@@ -114,8 +116,14 @@ for (const file of filesToUpdate) {
       console.log(`${file} already up to date`);
     }
   } catch (e) {
+    hadError = true;
     console.error(`Error updating ${file}: ${e.message}`);
   }
 }
 
-console.log(`\nVersion ${version} synced across all documentation.`);
+if (hadError) {
+  console.error('\nDocumentation generation failed; see errors above.');
+  process.exitCode = 1;
+} else {
+  console.log(`\nVersion ${version} synced across all documentation.`);
+}
