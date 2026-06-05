@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #431 (docs generator fail-closed):** Documentation generation now
+  exits non-zero when any per-file update fails. The generator still emits
+  actionable `console.error` diagnostics for each failed file, but it no longer
+  prints the global success message on partial failure, so CI cannot silently
+  pass stale or broken generated docs.
+
 - **Issue #430 (MCP server version SSOT):** The MCP server now resolves its
   advertised server version through the shared runtime package-version authority
   that reads the canonical `VERSION` file. The hardcoded MCP SemVer literal was
