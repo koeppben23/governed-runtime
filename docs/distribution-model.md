@@ -238,13 +238,13 @@ or invoked.
 
 ## Integrity Verification
 
-| Check                 | Mechanism                          | Enforced By       |
-| --------------------- | ---------------------------------- | ----------------- |
+| Check                 | Mechanism                          | Enforced By         |
+| --------------------- | ---------------------------------- | ------------------- |
 | Artifact integrity    | SHA-256 checksum on Releases page  | FlowGuard installer |
-| Content digest        | SHA-256 in `flowguard-mandates.md` | FlowGuard runtime |
-| Dependency resolution | `file:` path validation            | npm               |
-| State integrity       | Zod schema validation              | FlowGuard runtime |
-| Audit chain integrity | SHA-256 hash chain                 | FlowGuard runtime |
+| Content digest        | SHA-256 in `flowguard-mandates.md` | FlowGuard runtime   |
+| Dependency resolution | `file:` path validation            | npm                 |
+| State integrity       | Zod schema validation              | FlowGuard runtime   |
+| Audit chain integrity | SHA-256 hash chain                 | FlowGuard runtime   |
 
 ---
 

@@ -155,7 +155,10 @@ export async function createMockTarball(
   await fs.writeFile(tarballPath, content);
   if (options.writeChecksum !== false) {
     const hash = createHash('sha256').update(content, 'utf-8').digest('hex');
-    await fs.writeFile(path.join(tmpDir, 'checksums.sha256'), `${hash}  ${path.basename(tarballPath)}\n`);
+    await fs.writeFile(
+      path.join(tmpDir, 'checksums.sha256'),
+      `${hash}  ${path.basename(tarballPath)}\n`,
+    );
   }
   return tarballPath;
 }

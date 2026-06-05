@@ -254,8 +254,8 @@ npm run flowguard:doctor
 | `--platform opencode\|claude-code\|codex`      | Select host integration target                                                     |
 | `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode (persisted to `flowguard.json`)                            |
 | `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz`                               |
-| `--checksums-file <path>`                       | Optional explicit checksum file. Defaults to `checksums.sha256` next to tarball    |
-| `--allow-unverified-tarball`                    | Explicit supply-chain opt-out; not recommended and logged                          |
+| `--checksums-file <path>`                      | Optional explicit checksum file. Defaults to `checksums.sha256` next to tarball    |
+| `--allow-unverified-tarball`                   | Explicit supply-chain opt-out; not recommended and logged                          |
 
 ## Malformed JSON Recovery
 

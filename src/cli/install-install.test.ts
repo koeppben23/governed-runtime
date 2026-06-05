@@ -1023,9 +1023,7 @@ describe('cli/install', () => {
         repoArgs({ coreTarball: tarball, allowUnverifiedTarball: true }),
       );
       expect(result.errors).toEqual([]);
-      expect(result.warnings).toContainEqual(
-        expect.stringContaining('--allow-unverified-tarball'),
-      );
+      expect(result.warnings).toContainEqual(expect.stringContaining('--allow-unverified-tarball'));
       expect(existsSync(path.join(tmpDir, '.opencode', MANDATES_FILENAME))).toBe(true);
     });
 
@@ -1066,7 +1064,8 @@ describe('cli/install', () => {
 
     it('logs error on verification failure', async () => {
       const tarball = await createMockTarball(VERSION, { writeChecksum: false });
-      const errors: Array<{ service: string; message: string; extra?: Record<string, unknown> }> = [];
+      const errors: Array<{ service: string; message: string; extra?: Record<string, unknown> }> =
+        [];
       const logger: AdapterLogger = {
         info: () => {},
         warn: () => {},
