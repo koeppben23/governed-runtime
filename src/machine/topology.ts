@@ -204,6 +204,20 @@ export const TERMINAL: ReadonlySet<Phase> = new Set<Phase>([
   'REVIEW_COMPLETE',
 ]);
 
+/**
+ * Single authority for terminal-phase membership over an arbitrary string.
+ *
+ * Accepts a free-form `string` (e.g. `AuditEvent.phase`, which may be `'unknown'`)
+ * and answers membership against {@link TERMINAL} WITHOUT asserting the input is
+ * a `Phase` — the set's element type is widened for the read-only `.has` query,
+ * so an arbitrary string is never unsafely narrowed into the `Phase` union.
+ * Consumers that already hold a typed `Phase` should use `TERMINAL.has(phase)`
+ * directly; this helper exists for the untyped-string boundary (audit reports).
+ */
+export function isTerminalPhase(value: string): boolean {
+  return (TERMINAL as ReadonlySet<string>).has(value);
+}
+
 // ─── Transition Resolution ────────────────────────────────────────────────────
 
 /**

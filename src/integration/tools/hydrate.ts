@@ -37,7 +37,7 @@ import { buildDiscoveryDriftStatus } from '../discovery-drift-status.js';
 import { reconcileDiscoveryHealthGate } from '../discovery-health-gate.js';
 import { auditDiscoveryHealthGateTransition } from '../discovery-health-audit.js';
 import type { DiscoveryDriftAssessment } from '../../state/schema.js';
-import { PolicyModeSchema } from '../../state/policy-mode.js';
+import { PolicyModeSchema, type PolicyMode } from '../../state/policy-mode.js';
 import type { RailResult } from '../../rails/types.js';
 
 // Adapters
@@ -88,7 +88,7 @@ function throwHydrateError(code: string, message: string): never {
 type ExistingHydrateState = Awaited<ReturnType<typeof readState>>;
 type HydrateConfig = Awaited<ReturnType<typeof readConfig>>;
 type HydratePolicyResolution = Awaited<ReturnType<typeof resolvePolicyForHydrate>>;
-type HydrateArgs = { policyMode?: string; profileId?: string; claimedTaskClass?: string };
+type HydrateArgs = { policyMode?: PolicyMode; profileId?: string; claimedTaskClass?: string };
 type HydrateWorkspace = Awaited<ReturnType<typeof initWorkspace>>;
 type HydratePolicyContext = Awaited<ReturnType<typeof resolveHydratePolicy>>;
 type ReadRepoFile = (relativePath: string) => Promise<string | undefined>;
@@ -192,9 +192,12 @@ function resolveExistingPolicyResolution(
   };
 }
 
-async function resolveNewPolicyResolution(config: HydrateConfig, args: { policyMode?: string }) {
+async function resolveNewPolicyResolution(
+  config: HydrateConfig,
+  args: { policyMode?: PolicyMode },
+) {
   return resolvePolicyForHydrate({
-    explicitMode: args.policyMode as 'solo' | 'team' | 'team-ci' | 'regulated' | undefined,
+    explicitMode: args.policyMode,
     repoMode: config.policy.defaultMode,
     defaultMode: 'solo',
     ciContext: detectCiContext(),
@@ -217,7 +220,7 @@ async function resolveNewPolicyResolution(config: HydrateConfig, args: { policyM
 async function resolveHydratePolicy(
   existing: ExistingHydrateState,
   config: HydrateConfig,
-  args: { policyMode?: string },
+  args: { policyMode?: PolicyMode },
 ) {
   const centralEvidenceForExisting = await resolveCentralEvidenceForExisting(existing);
   const existingWithCentralEvidence = mergeCentralEvidence(existing, centralEvidenceForExisting);
