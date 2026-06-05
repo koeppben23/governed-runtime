@@ -20,6 +20,7 @@ import { randomUUID } from 'node:crypto';
 import { registerAllTools, type FlowGuardToolRegistry } from './tool-adapter.js';
 import { resolveSessionContext } from './session-resolver.js';
 import { installStdoutGuard } from './stdout-guard.js';
+import { PACKAGE_VERSION } from '../shared/package-version.js';
 
 // --- Tool Imports ---
 
@@ -56,9 +57,6 @@ const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
 
 // --- Server Factory ---
 
-/** FlowGuard package version (injected at build time or read from package.json). */
-const SERVER_VERSION = '1.2.0-rc.3';
-
 /**
  * Create and configure the FlowGuard MCP server.
  *
@@ -69,7 +67,7 @@ export function createMcpServer(): McpServer {
   const server = new McpServer(
     {
       name: 'flowguard',
-      version: SERVER_VERSION,
+      version: PACKAGE_VERSION(),
     },
     {
       capabilities: {

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #430 (MCP server version SSOT):** The MCP server now resolves its
+  advertised server version through the shared runtime package-version authority
+  that reads the canonical `VERSION` file. The hardcoded MCP SemVer literal was
+  removed, CLI version helpers re-export the same shared authority, and missing
+  or unreadable `VERSION` fails explicitly instead of falling back to derived
+  package metadata.
+
 - **Issue #426 (reviewer-capture durable append):** Reviewer-capture JSONL writes
   now run under the existing session write lock and use durable append-by-rewrite
   (`read raw existing content -> append one JSONL line -> fsync temp file -> atomic

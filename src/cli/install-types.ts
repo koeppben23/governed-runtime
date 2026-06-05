@@ -5,10 +5,6 @@
  * @version v1
  */
 
-import { readFileSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
   COMMANDS,
   MANDATES_FILENAME,
@@ -20,6 +16,7 @@ import {
 export type { PolicyMode } from '../config/policy-types.js';
 import type { PolicyMode } from '../config/policy-types.js';
 import type { HostId } from '../shared/hosts.js';
+export { PACKAGE_VERSION, resolvePackageRoot } from '../shared/package-version.js';
 
 // ---- Types ----
 
@@ -76,40 +73,6 @@ export interface DoctorCheck {
 
 /** Check-category tag for shipped `dist/` executable validation (#423). */
 export const SHIPPED_EXECUTABLE_CHECK = 'shipped-executable';
-
-// ---- Package root ----
-
-/**
- * Resolve the FlowGuard package root (where `package.json` and `VERSION` live).
- *
- * This module compiles to `dist/cli/install-types.js` (and runs from
- * `src/cli/install-types.ts` under tests); both are two directories below the
- * package root, so `'..','..'` resolves the root in either context. Single
- * canonical root-resolution authority — do not duplicate this elsewhere.
- */
-export function resolvePackageRoot(): string {
-  return join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-}
-
-// ---- Version ----
-
-function getPackageVersion(): string {
-  const versionFile = join(resolvePackageRoot(), 'VERSION');
-  try {
-    return readFileSync(versionFile, 'utf-8').trim();
-  } catch {
-    getAdapterLogger().error('cli', 'VERSION file not found', { versionFile });
-    throw new Error(`VERSION file not found at ${versionFile}. Run from the project root.`);
-  }
-}
-
-let _cachedVersion: string | undefined;
-export function PACKAGE_VERSION(): string {
-  if (!_cachedVersion) {
-    _cachedVersion = getPackageVersion();
-  }
-  return _cachedVersion;
-}
 
 // ---- Constants ----
 
