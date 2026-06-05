@@ -92,6 +92,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   let force = false;
   let coreTarball: string | undefined;
   let checksumsFile: string | undefined;
+  let allowUnverifiedTarball = false;
   let logMode: 'file' | 'console' | 'file+console' | undefined;
   const deprecations: string[] = [];
 
@@ -168,6 +169,9 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
         }
         break;
       }
+      case '--allow-unverified-tarball':
+        allowUnverifiedTarball = true;
+        break;
       case '--log-mode': {
         const next = argv[i + 1];
         if (next && (next === 'file' || next === 'console' || next === 'file+console')) {
@@ -206,6 +210,10 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
     }
   }
 
+  if (checksumsFile && allowUnverifiedTarball) {
+    return null;
+  }
+
   return {
     args: {
       action,
@@ -215,6 +223,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
       force,
       coreTarball,
       checksumsFile,
+      allowUnverifiedTarball,
       logMode,
     },
     deprecations,
@@ -313,7 +322,9 @@ Options:
   --policy-mode    FlowGuard policy: solo (default), team, team-ci, regulated
   --force          Overwrite all managed artifacts
   --core-tarball   Path to flowguard-core-{version}.tgz (required for install)
-  --checksums-file Path to checksums.sha256 for opt-in tarball integrity verification
+  --checksums-file Path to checksums.sha256 (defaults to tarball-adjacent checksums.sha256)
+  --allow-unverified-tarball
+                   Supply-chain opt-out: install without tarball integrity verification (not recommended)
 
 Deprecated (still work):
   --global    → --install-scope global

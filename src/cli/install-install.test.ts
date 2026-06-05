@@ -9,6 +9,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
 import { install, uninstall, mergeReviewerTaskPermission } from './install.js';
 import {
   TOOL_WRAPPER,
@@ -257,8 +258,6 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball }));
       expect(result.errors).toEqual([]);
       expect(result.warnings).toEqual([
-        'Tarball integrity not verified. ' +
-          'Use --checksums-file ./checksums.sha256 for cryptographic verification.',
         'Restart OpenCode to activate FlowGuard (plugins are loaded once at startup).',
       ]);
 
@@ -954,12 +953,42 @@ describe('cli/install', () => {
       expect(existsSync(path.join(tmpDir, '.opencode', MANDATES_FILENAME))).toBe(true);
     });
 
+    it('HAPPY: install verifies adjacent checksums.sha256 by default', async () => {
+      const tarball = await createMockTarball();
+      const result = await install(repoArgs({ coreTarball: tarball }));
+
+      expect(result.errors).toEqual([]);
+      expect(existsSync(path.join(tmpDir, '.opencode', MANDATES_FILENAME))).toBe(true);
+    });
+
+    it('BAD: missing adjacent checksums.sha256 blocks install by default and writes no artifacts', async () => {
+      const tarball = await createMockTarball(VERSION, { writeChecksum: false });
+      const result = await install(repoArgs({ coreTarball: tarball }));
+
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]).toContain('Tarball integrity check failed');
+      expect(result.errors[0]).toContain('Cannot read checksums file');
+      expect(existsSync(path.join(tmpDir, '.opencode', MANDATES_FILENAME))).toBe(false);
+    });
+
     it('BAD: tampered tarball fails integrity check and writes no artifacts', async () => {
       const tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
       await fs.writeFile(tarballPath, 'tampered content');
       const expectedHash = sha256Hex('original content');
       const checksumsFile = await createChecksumsFile(path.basename(tarballPath), expectedHash);
       const result = await install(repoArgs({ coreTarball: tarballPath, checksumsFile }));
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(result.errors[0]).toContain('integrity check failed');
+      expect(result.errors[0]).toContain('SHA-256 mismatch');
+      expect(existsSync(path.join(tmpDir, '.opencode', MANDATES_FILENAME))).toBe(false);
+    });
+
+    it('BAD: tampered tarball with adjacent default checksum fails and writes no artifacts', async () => {
+      const tarballPath = await createMockTarball();
+      await fs.writeFile(tarballPath, 'tampered content');
+
+      const result = await install(repoArgs({ coreTarball: tarballPath }));
+
       expect(result.errors.length).toBeGreaterThan(0);
       expect(result.errors[0]).toContain('integrity check failed');
       expect(result.errors[0]).toContain('SHA-256 mismatch');
@@ -988,13 +1017,75 @@ describe('cli/install', () => {
       expect(result.errors[0]).toContain('not found');
     });
 
-    it('WARNING: install without --checksums-file warns about missing verification', async () => {
-      const tarball = await createMockTarball();
-      const result = await install(repoArgs({ coreTarball: tarball }));
-      expect(result.errors).toEqual([]);
-      expect(result.warnings).toContainEqual(
-        expect.stringContaining('Tarball integrity not verified'),
+    it('HAPPY: explicit unverified opt-out succeeds without checksum and warns', async () => {
+      const tarball = await createMockTarball(VERSION, { writeChecksum: false });
+      const result = await install(
+        repoArgs({ coreTarball: tarball, allowUnverifiedTarball: true }),
       );
+      expect(result.errors).toEqual([]);
+      expect(result.warnings).toContainEqual(expect.stringContaining('--allow-unverified-tarball'));
+      expect(existsSync(path.join(tmpDir, '.opencode', MANDATES_FILENAME))).toBe(true);
+    });
+
+    it('BAD: rejects explicit checksums file combined with unverified opt-out', async () => {
+      const tarball = await createMockTarball();
+      const result = await install(
+        repoArgs({
+          coreTarball: tarball,
+          checksumsFile: path.join(tmpDir, 'checksums.sha256'),
+          allowUnverifiedTarball: true,
+        }),
+      );
+
+      expect(result.errors).toContainEqual(expect.stringContaining('cannot be combined'));
+      expect(existsSync(path.join(tmpDir, '.opencode', MANDATES_FILENAME))).toBe(false);
+    });
+
+    it('logs warn on explicit unverified opt-out', async () => {
+      const tarball = await createMockTarball(VERSION, { writeChecksum: false });
+      const warnings: Array<{ service: string; message: string; extra?: Record<string, unknown> }> =
+        [];
+      const logger: AdapterLogger = {
+        info: () => {},
+        warn: (service, message, extra) => warnings.push({ service, message, extra }),
+        error: () => {},
+      };
+
+      await runWithAdapterLoggerAsync(logger, async () => {
+        await install(repoArgs({ coreTarball: tarball, allowUnverifiedTarball: true }));
+      });
+
+      expect(warnings).toContainEqual({
+        service: 'cli',
+        message: 'tarball verification explicitly skipped',
+        extra: { tarballPath: path.resolve(tarball), reason: 'explicit_opt_out' },
+      });
+    });
+
+    it('logs error on verification failure', async () => {
+      const tarball = await createMockTarball(VERSION, { writeChecksum: false });
+      const errors: Array<{ service: string; message: string; extra?: Record<string, unknown> }> =
+        [];
+      const logger: AdapterLogger = {
+        info: () => {},
+        warn: () => {},
+        error: (service, message, extra) => errors.push({ service, message, extra }),
+      };
+
+      await runWithAdapterLoggerAsync(logger, async () => {
+        await install(repoArgs({ coreTarball: tarball }));
+      });
+
+      expect(errors).toEqual([
+        expect.objectContaining({
+          service: 'cli',
+          message: 'tarball verification failed',
+          extra: expect.objectContaining({
+            tarballPath: path.resolve(tarball),
+            reason: expect.stringContaining('Cannot read checksums file'),
+          }),
+        }),
+      ]);
     });
   });
 

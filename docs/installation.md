@@ -15,19 +15,31 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 
 Download `flowguard-core-{version}.tgz` and `checksums.sha256` from the [Releases page](https://github.com/koeppben23/governed-runtime/releases).
 
-Verify the checksum manually:
+The installer verifies the tarball by default. Keep `checksums.sha256` next to
+the tarball, or pass its location with `--checksums-file`. Missing or mismatched
+checksum evidence blocks installation before any FlowGuard artifacts are written.
+
+You can also verify the checksum manually before install:
 
 ```bash
 sha256sum -c checksums.sha256
 ```
 
-For automated integrity verification during install, use the `--checksums-file` flag (opt-in, fail-closed — the installer stops before writing any files if the hash does not match):
+For automated integrity verification with an explicit checksum path, use the
+`--checksums-file` flag:
 
 ```bash
 npx --package ./flowguard-core-{version}.tgz flowguard install \
   --core-tarball ./flowguard-core-{version}.tgz \
   --checksums-file ./checksums.sha256
 ```
+
+If `--checksums-file` is omitted, FlowGuard uses `checksums.sha256` in the same
+directory as `flowguard-core-{version}.tgz`.
+
+The explicit supply-chain opt-out is `--allow-unverified-tarball`. It is not
+recommended; the installer warns and logs the opt-out. Use it only when an
+operator has verified the artifact through another controlled channel.
 
 ### 2. Initialize OpenCode Integration (Standard)
 
@@ -242,6 +254,8 @@ npm run flowguard:doctor
 | `--platform opencode\|claude-code\|codex`      | Select host integration target                                                     |
 | `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode (persisted to `flowguard.json`)                            |
 | `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz`                               |
+| `--checksums-file <path>`                      | Optional explicit checksum file. Defaults to `checksums.sha256` next to tarball    |
+| `--allow-unverified-tarball`                   | Explicit supply-chain opt-out; not recommended and logged                          |
 
 ## Malformed JSON Recovery
 
