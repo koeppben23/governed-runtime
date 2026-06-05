@@ -615,6 +615,45 @@ describe('JwtStaticTokenVerifier', () => {
     });
   });
 
+  // ── MUTATION KILL: algorithm mismatch message precision ───────────────────
+  describe('MUTATION: algorithm mismatch error message precision', () => {
+    it('algorithm mismatch error message includes BOTH algorithm names (direct path)', async () => {
+      const verifier = makeVerifier();
+      // Header claims ES256 but kid resolves to RS256 key → direct mismatch at L65
+      const header = { alg: 'ES256', kid: 'rsa-key-1', typ: 'JWT' };
+      const payload = validRsaPayload();
+      const token = signJwtNode(header, payload, RSA_PRIVATE_KEY);
+      await expect(verifier.verify(token)).rejects.toMatchObject({
+        code: 'IDP_ALGORITHM_NOT_ALLOWED',
+        message: expect.stringContaining('ES256'),
+      });
+      await expect(verifier.verify(token)).rejects.toMatchObject({
+        message: expect.stringContaining('RS256'),
+      });
+    });
+
+    it('algorithm mismatch includes "does not match" phrasing (not jose generic)', async () => {
+      const verifier = makeVerifier();
+      const header = { alg: 'ES256', kid: 'rsa-key-1', typ: 'JWT' };
+      const payload = validRsaPayload();
+      const token = signJwtNode(header, payload, RSA_PRIVATE_KEY);
+      await expect(verifier.verify(token)).rejects.toMatchObject({
+        message: expect.stringContaining('does not match'),
+      });
+    });
+
+    it('jose decode error (invalid base64url signature) maps to IDP_TOKEN_INVALID', async () => {
+      const verifier = makeVerifier();
+      const header = base64url({ alg: 'RS256', kid: 'rsa-key-1', typ: 'JWT' });
+      const payload = base64url(validRsaPayload());
+      // Characters not valid in base64url trigger jose JOSEError (decode failure)
+      const token = `${header}.${payload}.@@@not-base64url@@@`;
+      await expect(verifier.verify(token)).rejects.toMatchObject({
+        code: 'IDP_TOKEN_INVALID',
+      });
+    });
+  });
+
   // ── MUTATION KILL: NoCoverage and Survived paths ─────────────────────────
   /**
    * Equivalent/dead mutants documented here (cannot be killed):
@@ -624,6 +663,14 @@ describe('JwtStaticTokenVerifier', () => {
    *   parts[0] and parts[1] are always defined strings. The ?? '' never fires.
    * - if (err instanceof IdpError) throw err: jwtVerify only throws jose errors,
    *   never IdpError. Branch is dead defensive code.
+   * - validateTemporal expired/nbf branches: jose validates with clockTolerance
+   *   before our code runs. Dead defensive code (NoCoverage).
+   * - err.claim === 'nbf' in mapJoseError: only reachable when claim IS 'nbf'
+   *   (iss/aud handled above). Equivalent mutant.
+   * - value.trim() in extractClaim condition (L207): caller always guards with
+   *   !subject, so empty-string return is equivalent to null return.
+   * - ERR_JOSE_ALG_NOT_ALLOWED block: unreachable because L65 pre-check catches
+   *   algorithm mismatches before jose is called.
    */
   describe('MUTATION: extractClaim trim and audience fallback', () => {
     it('extractClaim returns trimmed subject (leading/trailing whitespace removed)', async () => {

@@ -20,8 +20,13 @@ import {
   onTaskToolAfter,
   enforceBeforeVerdict,
   enforceBeforeSubagentCall,
+  matchPendingReview,
 } from './enforcement.js';
-import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './types.js';
+import {
+  REVIEW_REQUIRED_PREFIX,
+  REVIEWER_SUBAGENT_TYPE,
+  MIN_SUBAGENT_PROMPT_LENGTH,
+} from './types.js';
 import {
   NOW,
   LATER,
@@ -1233,6 +1238,375 @@ describe('review-enforcement', () => {
       });
       // Unrelated tools bypass review enforcement (no obligation matching).
       expect(result.allowed).toBe(true);
+    });
+  });
+
+  // ─── MUTATION KILL: targeted gap coverage ───────────────────
+  describe('MUTATION: targeted gap coverage', () => {
+    // ── L122-126: CONTENT_ANALYSIS_REQUIRED path (NoCoverage) ──
+    it('CONTENT_ANALYSIS_REQUIRED from standalone review tool sets pending review', () => {
+      const state = createSessionState();
+      const output = JSON.stringify({
+        error: true,
+        code: 'CONTENT_ANALYSIS_REQUIRED',
+        requiredReviewAttestation: { required: true },
+      });
+      onFlowGuardToolAfter(state, 'flowguard_review', {}, output, NOW);
+
+      // Should have registered a pending review for the standalone review tool
+      expect(state.pendingReviews.has('flowguard_review')).toBe(true);
+      const pending = state.pendingReviews.get('flowguard_review')!;
+      expect(pending.subagentCalled).toBe(false);
+      expect(pending.tool).toBe('flowguard_review');
+    });
+
+    it('CONTENT_ANALYSIS_REQUIRED NOT triggered from non-standalone tools', () => {
+      const state = createSessionState();
+      const output = JSON.stringify({
+        error: true,
+        code: 'CONTENT_ANALYSIS_REQUIRED',
+        requiredReviewAttestation: { required: true },
+      });
+      // flowguard_plan is NOT the standalone review tool
+      onFlowGuardToolAfter(state, 'flowguard_plan', {}, output, NOW);
+      expect(state.pendingReviews.has('flowguard_review')).toBe(false);
+    });
+
+    it('CONTENT_ANALYSIS_REQUIRED requires error===true (not just code match)', () => {
+      const state = createSessionState();
+      const output = JSON.stringify({
+        error: false,
+        code: 'CONTENT_ANALYSIS_REQUIRED',
+        requiredReviewAttestation: { required: true },
+      });
+      onFlowGuardToolAfter(state, 'flowguard_review', {}, output, NOW);
+      // error is not true, so the pending review should NOT be set via this path
+      expect(state.pendingReviews.has('flowguard_review')).toBe(false);
+    });
+
+    it('CONTENT_ANALYSIS_REQUIRED requires requiredReviewAttestation to be truthy', () => {
+      const state = createSessionState();
+      const output = JSON.stringify({
+        error: true,
+        code: 'CONTENT_ANALYSIS_REQUIRED',
+        // no requiredReviewAttestation field
+      });
+      onFlowGuardToolAfter(state, 'flowguard_review', {}, output, NOW);
+      expect(state.pendingReviews.has('flowguard_review')).toBe(false);
+    });
+
+    // ── L156-157: enforceBeforeSubagentCall subagent type checks ──
+    it('enforceBeforeSubagentCall allows non-string subagent_type (no enforcement)', () => {
+      const state = createSessionState();
+      // Set up pending review to make enforcement active
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+      // Non-string subagent_type → not a reviewer → allowed
+      const result = enforceBeforeSubagentCall(state, { subagent_type: 123, prompt: '' });
+      expect(result.allowed).toBe(true);
+    });
+
+    it('enforceBeforeSubagentCall allows non-reviewer subagent_type', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+      const result = enforceBeforeSubagentCall(state, {
+        subagent_type: 'some-other-agent',
+        prompt: '',
+      });
+      expect(result.allowed).toBe(true);
+    });
+
+    // ── L162: filter already-called pending reviews ──
+    it('enforceBeforeSubagentCall ignores already-called pending reviews', () => {
+      const state = createSessionState();
+      // Register a pending review
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+      // Complete the subagent call (marks subagentCalled=true)
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
+        taskResultWithFindings('s1'),
+        LATER,
+      );
+      // Now the pending review is subagentCalled=true
+      // A new subagent call should see 0 uncalled pending → allowed (no enforcement)
+      const result = enforceBeforeSubagentCall(state, {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
+        prompt: 'x',
+      });
+      expect(result.allowed).toBe(true);
+    });
+
+    // ── L170: prompt length boundary (MIN_SUBAGENT_PROMPT_LENGTH) ──
+    it('enforceBeforeSubagentCall: prompt at exact MIN_SUBAGENT_PROMPT_LENGTH is allowed', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 0, planVersion: 1 }),
+        NOW,
+      );
+      // Prompt at exactly MIN_SUBAGENT_PROMPT_LENGTH with required context
+      const prompt = 'iteration=0, planVersion=1. ' + 'x'.repeat(MIN_SUBAGENT_PROMPT_LENGTH - 28);
+      expect(prompt.length).toBe(MIN_SUBAGENT_PROMPT_LENGTH);
+      const result = enforceBeforeSubagentCall(state, {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
+        prompt,
+      });
+      expect(result.allowed).toBe(true);
+    });
+
+    it('enforceBeforeSubagentCall: prompt at MIN_SUBAGENT_PROMPT_LENGTH - 1 is blocked', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+      const prompt = 'x'.repeat(MIN_SUBAGENT_PROMPT_LENGTH - 1);
+      const result = enforceBeforeSubagentCall(state, {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
+        prompt,
+      });
+      expect(result.allowed).toBe(false);
+      expect(result).toHaveProperty('code', 'SUBAGENT_PROMPT_EMPTY');
+    });
+
+    // ── L212-213: missing iteration/planVersion in prompt ──
+    it('enforceBeforeSubagentCall: prompt missing iteration produces MISSING_CONTEXT', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 5, planVersion: 3 }),
+        NOW,
+      );
+      // Long enough prompt but missing iteration=5
+      const prompt = 'Review this plan. planVersion=3. ' + 'x'.repeat(MIN_SUBAGENT_PROMPT_LENGTH);
+      const result = enforceBeforeSubagentCall(state, {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
+        prompt,
+      });
+      expect(result.allowed).toBe(false);
+      expect(result).toHaveProperty('code', 'SUBAGENT_PROMPT_MISSING_CONTEXT');
+      if (!result.allowed) {
+        expect(result.reason).toContain('iteration=5');
+      }
+    });
+
+    it('enforceBeforeSubagentCall: prompt missing planVersion produces MISSING_CONTEXT', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 2, planVersion: 7 }),
+        NOW,
+      );
+      // Has iteration but NOT planVersion
+      const prompt = 'Review this plan. iteration=2. ' + 'x'.repeat(MIN_SUBAGENT_PROMPT_LENGTH);
+      const result = enforceBeforeSubagentCall(state, {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
+        prompt,
+      });
+      expect(result.allowed).toBe(false);
+      expect(result).toHaveProperty('code', 'SUBAGENT_PROMPT_MISSING_CONTEXT');
+      if (!result.allowed) {
+        expect(result.reason).toContain('planVersion=7');
+      }
+    });
+
+    // ── L259: onTaskToolAfter ignores non-reviewer subagent type ──
+    it('onTaskToolAfter ignores non-reviewer subagent type (no state mutation)', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+      // Non-reviewer subagent type → no state change
+      onTaskToolAfter(
+        state,
+        { subagent_type: 'some-other-agent', prompt: 'review' },
+        taskResultWithFindings('s1'),
+        LATER,
+      );
+      const pending = state.pendingReviews.get('flowguard_plan')!;
+      expect(pending.subagentCalled).toBe(false);
+    });
+
+    it('onTaskToolAfter ignores non-string subagent type', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+      onTaskToolAfter(state, { subagent_type: 42, prompt: 'x' }, 'result', LATER);
+      const pending = state.pendingReviews.get('flowguard_plan')!;
+      expect(pending.subagentCalled).toBe(false);
+    });
+
+    // ── L302: matchPendingReview with 0 uncalled returns null ──
+    it('matchPendingReview returns null when all pending reviews already called', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+      // Complete the review (marks subagentCalled)
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
+        taskResultWithFindings('s1'),
+        LATER,
+      );
+      // Now matchPendingReview should return null (0 uncalled)
+      const result = matchPendingReview(state, {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
+        prompt: 'another review',
+      });
+      expect(result).toBeNull();
+    });
+
+    // ── L314: matchPendingReview planVersion matching ──
+    it('matchPendingReview rejects when planVersion expected but not in prompt', () => {
+      const state = createSessionState();
+      // Register TWO pending reviews to trigger multi-match path
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan v1' },
+        modeASubagentResponse({ iteration: 0, planVersion: 1 }),
+        NOW,
+      );
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_architecture',
+        { adrText: '## ADR' },
+        modeASubagentResponse({ iteration: 1, planVersion: 5 }),
+        LATER,
+      );
+      // Prompt has iteration=0 but WRONG planVersion → no match
+      const prompt = 'iteration=0 planVersion=99 ' + 'x'.repeat(MIN_SUBAGENT_PROMPT_LENGTH);
+      const result = matchPendingReview(state, {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
+        prompt,
+      });
+      expect(result).toBeNull();
+    });
+
+    // ── L360: obligations.length === 0 recovery path ──
+    it('enforceBeforeVerdict allows when sessionState has no obligations', () => {
+      const state = createSessionState();
+      // No pending review in enforcement state, but session state IS readable
+      const sessionState = { reviewAssurance: { obligations: [] } };
+      const result = enforceBeforeVerdict(
+        state,
+        'flowguard_plan',
+        { reviewVerdict: 'approve' },
+        sessionState as never,
+      );
+      expect(result.allowed).toBe(true);
+    });
+
+    it('enforceBeforeVerdict allows when sessionState obligations is null', () => {
+      const state = createSessionState();
+      const sessionState = { reviewAssurance: { obligations: null } };
+      const result = enforceBeforeVerdict(
+        state,
+        'flowguard_plan',
+        { reviewVerdict: 'approve' },
+        sessionState as never,
+      );
+      expect(result.allowed).toBe(true);
+    });
+
+    // ── L436+L442: Level 4 findings integrity specifics ──
+    it('L4: blocks when submitted verdict differs from captured (approve vs changes_requested)', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
+        taskResultWithFindings('s1', { verdict: 'changes_requested', blockingIssues: [] }),
+        LATER,
+      );
+      const result = enforceBeforeVerdict(state, 'flowguard_plan', {
+        reviewVerdict: 'approve',
+        reviewFindings: {
+          overallVerdict: 'approve', // MISMATCH: submitted approve but captured changes_requested
+          blockingIssues: [],
+          reviewedBy: { sessionId: 's1' },
+        },
+      });
+      expect(result.allowed).toBe(false);
+      expect(result).toHaveProperty('code', 'SUBAGENT_FINDINGS_VERDICT_MISMATCH');
+    });
+
+    it('L4: blocks when blocking issues count differs from captured', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
+        taskResultWithFindings('s1', {
+          verdict: 'changes_requested',
+          blockingIssues: [{ severity: 'critical', description: 'A' }],
+        }),
+        LATER,
+      );
+      // Submit with ZERO issues but captured had 1
+      const result = enforceBeforeVerdict(state, 'flowguard_plan', {
+        reviewVerdict: 'changes_requested',
+        reviewFindings: {
+          overallVerdict: 'changes_requested',
+          blockingIssues: [], // MISMATCH: 0 vs 1 captured
+          reviewedBy: { sessionId: 's1' },
+        },
+      });
+      expect(result.allowed).toBe(false);
+      expect(result).toHaveProperty('code', 'SUBAGENT_FINDINGS_ISSUES_MISMATCH');
     });
   });
 });

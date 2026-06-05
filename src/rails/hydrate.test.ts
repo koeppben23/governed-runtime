@@ -453,6 +453,133 @@ describe('hydrate rail unit tests', () => {
     });
   });
 
+  // ─── MUTATION KILL: applyHydrateOverrides conditional spread ────────────
+
+  describe('MUTATION: override conditional spread preserves base when undefined', () => {
+    it('identityProviderMode preserves base "optional" when override is undefined', () => {
+      const result = hydrateNew(minimalInput({ policy: {} }));
+      const state = expectOk(result);
+      expect(state.policySnapshot.identityProviderMode).toBe('optional');
+    });
+
+    it('minimumActorAssuranceForApproval preserves base "best_effort" when undefined', () => {
+      const result = hydrateNew(minimalInput({ policy: {} }));
+      const state = expectOk(result);
+      expect(state.policySnapshot.minimumActorAssuranceForApproval).toBe('best_effort');
+    });
+
+    it('enforceRiskClassification preserves base false when override is undefined', () => {
+      const result = hydrateNew(minimalInput({ policy: {} }));
+      const state = expectOk(result);
+      expect(state.policySnapshot.enforceRiskClassification).toBe(false);
+    });
+
+    it('allowRiskDowngradeOverride preserves base false when undefined', () => {
+      const result = hydrateNew(minimalInput({ policy: {} }));
+      const state = expectOk(result);
+      expect(state.policySnapshot.allowRiskDowngradeOverride).toBe(false);
+    });
+
+    it('allowReducedCeremony preserves base false when undefined', () => {
+      const result = hydrateNew(minimalInput({ policy: {} }));
+      const state = expectOk(result);
+      expect(state.policySnapshot.allowReducedCeremony).toBe(false);
+    });
+
+    it('allowRiskDowngradeOverride=true IS applied (kills ObjectLiteral mutant)', () => {
+      const result = hydrateNew(minimalInput({ policy: { allowRiskDowngradeOverride: true } }));
+      const state = expectOk(result);
+      expect(state.policySnapshot.allowRiskDowngradeOverride).toBe(true);
+    });
+
+    it('allowReducedCeremony=true IS applied (kills ObjectLiteral mutant)', () => {
+      const result = hydrateNew(minimalInput({ policy: { allowReducedCeremony: true } }));
+      const state = expectOk(result);
+      expect(state.policySnapshot.allowReducedCeremony).toBe(true);
+    });
+  });
+
+  // ─── MUTATION KILL: activeChecks empty array boundary ──────────────────
+
+  describe('MUTATION: activeChecks empty array vs undefined boundary', () => {
+    it('explicit empty activeChecks [] falls through to deriveFromCandidates', () => {
+      // With candidates provided, empty explicit array should use derived checks
+      const candidates = [
+        { kind: 'unit', path: '/test.ts', command: 'vitest run' },
+        { kind: 'lint', path: '/src', command: 'eslint .' },
+      ];
+      const result = hydrateNew(
+        minimalInput({
+          session: { verificationCandidates: candidates as never },
+          profile: { activeChecks: [] },
+        }),
+      );
+      const state = expectOk(result);
+      // Derived from candidates: unique kinds
+      expect(state.activeChecks).toEqual(['unit', 'lint']);
+    });
+
+    it('explicit non-empty activeChecks takes priority over candidates', () => {
+      const candidates = [{ kind: 'unit', path: '/test.ts', command: 'vitest run' }];
+      const result = hydrateNew(
+        minimalInput({
+          session: { verificationCandidates: candidates as never },
+          profile: { activeChecks: ['custom'] },
+        }),
+      );
+      const state = expectOk(result);
+      expect(state.activeChecks).toEqual(['custom']);
+    });
+  });
+
+  // ─── MUTATION KILL: deriveActiveChecksFromCandidates ────────────────────
+
+  describe('MUTATION: deriveActiveChecksFromCandidates', () => {
+    it('non-empty candidates produce non-empty activeChecks', () => {
+      const candidates = [
+        { kind: 'unit', path: '/test.ts', command: 'vitest run' },
+        { kind: 'e2e', path: '/e2e', command: 'playwright test' },
+      ];
+      const result = hydrateNew(
+        minimalInput({
+          session: { verificationCandidates: candidates as never },
+          profile: {},
+        }),
+      );
+      const state = expectOk(result);
+      expect(state.activeChecks.length).toBeGreaterThan(0);
+      expect(state.activeChecks).toContain('unit');
+      expect(state.activeChecks).toContain('e2e');
+    });
+
+    it('empty candidates array produces empty activeChecks', () => {
+      const result = hydrateNew(
+        minimalInput({
+          session: { verificationCandidates: [] },
+          profile: {},
+        }),
+      );
+      const state = expectOk(result);
+      expect(state.activeChecks).toEqual([]);
+    });
+
+    it('duplicate kinds are deduplicated (Set behavior)', () => {
+      const candidates = [
+        { kind: 'unit', path: '/a.test.ts', command: 'vitest run a' },
+        { kind: 'unit', path: '/b.test.ts', command: 'vitest run b' },
+        { kind: 'lint', path: '/src', command: 'eslint .' },
+      ];
+      const result = hydrateNew(
+        minimalInput({
+          session: { verificationCandidates: candidates as never },
+          profile: {},
+        }),
+      );
+      const state = expectOk(result);
+      expect(state.activeChecks).toEqual(['unit', 'lint']);
+    });
+  });
+
   // ─── discoverySummary Default ─────────────────────────────────────────
 
   describe('discoverySummary default', () => {
