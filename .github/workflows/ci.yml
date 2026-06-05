@@ -497,6 +497,7 @@ jobs:
           PKG_FILE=$(npm pack --silent)
           mkdir -p "$RUNNER_TEMP/flowguard-test"
           mv "$PKG_FILE" "$RUNNER_TEMP/flowguard-test/$PKG_FILE"
+          node -e "const { createHash } = require('node:crypto'); const { readFileSync, writeFileSync } = require('node:fs'); const { basename, dirname } = require('node:path'); const tarball = process.argv[1]; const sha = createHash('sha256').update(readFileSync(tarball)).digest('hex'); writeFileSync(dirname(tarball) + '/checksums.sha256', sha + '  ' + basename(tarball) + '\n');" "$RUNNER_TEMP/flowguard-test/$PKG_FILE"
           echo "path=$RUNNER_TEMP/flowguard-test/$PKG_FILE" >> "$GITHUB_OUTPUT"
 
       - name: Install FlowGuard (test install)
