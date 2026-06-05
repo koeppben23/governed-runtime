@@ -7,7 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -38,7 +38,7 @@ syncBuiltinESMExports();
     try {
       const result = spawnSync(
         process.execPath,
-        ['--import', preloadPath, 'scripts/generate-docs.js'],
+        ['--import', pathToFileURL(preloadPath).href, 'scripts/generate-docs.js'],
         {
           cwd: join(__dirname, '..', '..', '..'),
           encoding: 'utf-8',
