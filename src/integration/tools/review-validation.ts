@@ -100,12 +100,15 @@ function baseAgentAttestedChecks(input: AttestedReviewCheckInput): boolean[] {
   const policyAllowsManualAttested =
     ctx.reviewInvocationPolicy === 'sdk_allowed' ||
     ctx.reviewInvocationPolicy === 'host_task_preferred';
-  const obligationOpen = obligation.status !== 'blocked' && obligation.status !== 'consumed';
+  // #434 (M1): reuse the single canonical acceptance authority instead of
+  // re-deriving the blocked/consumed/consumedAt predicate inline. A null
+  // rejection means the obligation is open (not blocked, not consumed,
+  // consumedAt === null) — exactly what the strict path also requires.
+  const obligationAcceptable = getReviewFindingsAcceptanceRejection({ obligation }) === null;
   return [
     isExternalHost,
     policyAllowsManualAttested,
-    obligationOpen,
-    obligation.consumedAt === null,
+    obligationAcceptable,
     invocation.hostVisible === false,
     invocation.source === 'agent-submitted-attested',
     invocation.obligationId === obligation.obligationId,

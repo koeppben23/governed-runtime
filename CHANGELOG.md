@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #434 (structural anti-drift hardening — single canonical authority):**
+  Locked in the SSOT convergence of the audit-found defect class so a
+  parallel/competing implementation can no longer pass CI. Added four
+  architecture guard tests (`src/architecture/__tests__/*-ssot.test.ts`), each a
+  pure source-scan detector with a proving negative fixture and a small,
+  commented allowlist: (C1) audit event canonicalization may be defined only in
+  `audit/canonical-digest.ts` and no `audit/` module may hash a raw
+  `JSON.stringify`; (H1) the policy-mode vocabulary is defined only in
+  `state/policy-mode.ts` (with a CI-enforced sync test pinning the
+  architecturally-mandated `archive/types.ts` leaf duplicate to `POLICY_MODES`);
+  (H4) terminal-phase membership is decided only via the `TERMINAL` /
+  `isTerminalPhase` authority in `machine/topology.ts` — multi-terminal
+  disjunctions hard-fail and single-terminal literals are budgeted per file so a
+  new abort-like literal trips the guard; (M1) the blocked/consumed review
+  acceptance guard lives only in `getReviewFindingsAcceptanceRejection`.
+  Converged the remaining residual drift onto these authorities: typed
+  `hydrate` `policyMode` as `PolicyMode` (removed an inline literal-union cast),
+  and routed `baseAgentAttestedChecks` through the canonical acceptance
+  authority instead of re-deriving the blocked/consumed predicate inline. The
+  guards run under `npm test` and `npm run test:architecture`; no runtime
+  behavior or logging was added (enforcement is test-time only, rails stay pure).
+
+- **Issue #434 (behavior correction — audit compliance terminal check):** Fixed
+  a latent bug in `audit/summary.ts` `checkSessionTerminated`/
+  `checkNoUnresolvedErrors`: a literal `=== 'COMPLETE'` silently reported
+  architecture-flow (`ARCH_COMPLETE`) and review-flow (`REVIEW_COMPLETE`)
+  sessions as _not terminated_ (and their trailing errors as _unresolved_).
+  Both now use the single `isTerminalPhase(...)` authority, so all three
+  terminal phases are recognized. The ticket-flow-specific
+  `reachedComplete`/COMPLETE check (which pairs with the EVIDENCE_REVIEW gate)
+  is intentionally unchanged.
+
 - **Issue #432 (tarball verification default-on):** The installer now verifies
   `flowguard-core-{version}.tgz` by default using either `--checksums-file` or a
   tarball-adjacent `checksums.sha256`. Missing, unreadable, ambiguous, or

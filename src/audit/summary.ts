@@ -25,6 +25,7 @@ import {
   byKind,
 } from './query.js';
 import type { ChainVerification } from './integrity.js';
+import { isTerminalPhase } from '../machine/topology.js';
 
 // ─── Timeline Types ───────────────────────────────────────────────────────────
 
@@ -206,11 +207,11 @@ function checkSessionTerminated(filtered: AuditEvent[]): ComplianceCheck {
   const lastPhase = filtered.length > 0 ? filtered[filtered.length - 1]!.phase : 'unknown';
   return {
     name: 'session_terminated',
-    passed: hasCompletion || lastPhase === 'COMPLETE',
+    passed: hasCompletion || isTerminalPhase(lastPhase),
     detail: hasCompletion
       ? `Session terminated (${filtered.find((e) => e.event.startsWith('lifecycle:session_'))?.event ?? 'unknown'})`
-      : lastPhase === 'COMPLETE'
-        ? 'Session reached COMPLETE phase'
+      : isTerminalPhase(lastPhase)
+        ? `Session reached terminal phase ${lastPhase}`
         : `Session is in phase ${lastPhase} (not terminated)`,
   };
 }
@@ -220,7 +221,7 @@ function checkNoUnresolvedErrors(filtered: AuditEvent[]): ComplianceCheck {
   const errors = filterEvents(filtered, byKind('error'));
   const lastError = errors.length > 0 ? errors[errors.length - 1] : null;
   const lastPhase = filtered.length > 0 ? filtered[filtered.length - 1]!.phase : 'unknown';
-  const hasUnresolvedError = lastError !== null && lastPhase !== 'COMPLETE';
+  const hasUnresolvedError = lastError !== null && !isTerminalPhase(lastPhase);
   return {
     name: 'no_unresolved_errors',
     passed: !hasUnresolvedError,
