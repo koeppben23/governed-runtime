@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Issue #435 (property-based tamper-evidence invariant):** Added seeded
+  property tests proving the C1/C2 tamper guarantee generally rather than by
+  example: for any audit event and any single-field mutation at any nesting
+  depth (including array elements), chain verification (`verifyChain`, C1) fails
+  and the canonical event digest (`computeCanonicalEventDigest`, the stamped TSA
+  messageImprint, C2) changes; imprint-excluded fields are characterized as
+  digest-invariant; and deep object-key reorder (arrays preserved) is
+  canonicalization-stable. A single fast-check-free harness
+  (`src/audit/tamper-evidence-harness.ts`) delegates all hashing/serialization
+  to the production authorities (no duplicated hashing logic) and is shared by a
+  unit variant (`tamper-evidence.property.test.ts`, gates `npm test`) and a
+  deep-run fuzz variant (`tamper-evidence.fuzz.test.ts`, nightly
+  `test:fuzz:deep`). Note: full TSA token validation remains covered by the
+  archive tamper matrix; C2 here is asserted at the canonical-digest level
+  (messageImprint = canonical event digest). Test-only; no runtime change.
+
 ### Changed
 
 - **Issue #434 (structural anti-drift hardening — single canonical authority):**
