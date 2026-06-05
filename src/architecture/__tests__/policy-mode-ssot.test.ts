@@ -48,6 +48,31 @@ const MODE_LITERAL_UNION =
 /** A mode field typed as free-form string instead of the enum. */
 const MODE_AS_FREE_STRING = /\b(?:mode|requestedMode)\s*:\s*z\.string\(\)/;
 
+/**
+ * Mode literals as exact quoted tokens. The quotes are part of the token so
+ * `'team'` can never match inside `'team-ci'`.
+ */
+const MODE_LITERAL_TOKENS: readonly string[] = ["'solo'", "'team'", "'team-ci'", "'regulated'"];
+
+/**
+ * An inline `z.enum([...])` / `z.nativeEnum([...])` call body (may span lines).
+ * A second schema authority built from inline mode literals — e.g.
+ * `z.enum(['solo', 'team', 'team-ci', 'regulated'])` — reintroduces the H1
+ * drift class and must be flagged. A `z.enum(POLICY_MODES)` over the SSOT const
+ * carries no inline mode literals and is therefore not matched.
+ */
+const ENUM_CALL = /z\.(?:enum|nativeEnum)\(\s*\[[\s\S]*?\]\s*\)/g;
+
+/** Count of distinct mode literals present as exact quoted tokens in `text`. */
+function distinctModeTokens(text: string): number {
+  return MODE_LITERAL_TOKENS.filter((token) => text.includes(token)).length;
+}
+
+/** 1-based line number of a character offset within `content`. */
+function lineOfOffset(content: string, offset: number): number {
+  return content.slice(0, offset).split('\n').length;
+}
+
 interface SourceFile {
   readonly rel: string;
   readonly content: string;
@@ -98,6 +123,21 @@ function findPolicyModeViolations(files: readonly SourceFile[]): Violation[] {
         });
       }
     });
+
+    // Content-level scan: an inline z.enum/z.nativeEnum over the mode vocabulary
+    // (>=2 distinct mode literals) is a competing schema authority.
+    ENUM_CALL.lastIndex = 0;
+    let enumMatch: RegExpExecArray | null;
+    while ((enumMatch = ENUM_CALL.exec(f.content)) !== null) {
+      if (distinctModeTokens(enumMatch[0]) >= 2) {
+        out.push({
+          rel: f.rel,
+          line: lineOfOffset(f.content, enumMatch.index),
+          snippet: enumMatch[0].split('\n')[0]!.trim(),
+          rule: 'duplicate-mode-enum',
+        });
+      }
+    }
   }
   return out;
 }
@@ -136,6 +176,36 @@ describe('policy-mode SSOT (#434 H1 anti-drift)', () => {
       const violations = findPolicyModeViolations(fixture);
       expect(violations).toHaveLength(1);
       expect(violations[0]!.rule).toBe('mode-typed-as-free-string');
+    });
+
+    it('detects a duplicate z.enum policy-mode schema outside the authority', () => {
+      const fixture: SourceFile[] = [
+        {
+          rel: 'config/rogue.ts',
+          content: "const BadPolicyMode = z.enum(['solo', 'team', 'team-ci', 'regulated']);",
+        },
+      ];
+      const violations = findPolicyModeViolations(fixture);
+      expect(violations.some((v) => v.rule === 'duplicate-mode-enum')).toBe(true);
+    });
+
+    it('detects a multi-line duplicate z.enum policy-mode schema', () => {
+      const fixture: SourceFile[] = [
+        {
+          rel: 'config/rogue.ts',
+          content: "const Bad = z.enum([\n  'solo',\n  'team',\n  'regulated',\n]);",
+        },
+      ];
+      const violations = findPolicyModeViolations(fixture);
+      expect(violations.some((v) => v.rule === 'duplicate-mode-enum')).toBe(true);
+    });
+
+    it('does NOT flag an unrelated z.enum (e.g. claimedTaskClass)', () => {
+      const fixture: SourceFile[] = [
+        { rel: 'config/ok.ts', content: "const T = z.enum(['TRIVIAL', 'STANDARD', 'HIGH-RISK']);" },
+      ];
+      const violations = findPolicyModeViolations(fixture);
+      expect(violations).toHaveLength(0);
     });
   });
 });
