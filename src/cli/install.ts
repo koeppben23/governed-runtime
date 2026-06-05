@@ -357,7 +357,7 @@ function logShippedExecutableFailures(checks: DoctorCheck[], cliLog: FlowGuardLo
   for (const c of checks) {
     if (c.check === SHIPPED_EXECUTABLE_CHECK && c.status !== 'ok' && c.status !== 'warn') {
       cliLog.error('cli', 'shipped executable invalid', {
-        path: relative(packageRoot, c.file),
+        path: relative(packageRoot, c.file).replace(/\\/g, '/'),
         check: c.check,
         status: c.status,
       });
