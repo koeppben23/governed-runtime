@@ -33,6 +33,7 @@ export interface CliArgs {
   force: boolean;
   coreTarball?: string;
   checksumsFile?: string;
+  allowUnverifiedTarball?: boolean;
   logMode?: 'file' | 'console' | 'file+console';
 }
 

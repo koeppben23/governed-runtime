@@ -28,6 +28,9 @@ describe('cli/parseArgs', () => {
         policyMode: 'solo',
         force: false,
         coreTarball: undefined,
+        checksumsFile: undefined,
+        allowUnverifiedTarball: false,
+        logMode: undefined,
       });
       expect(result!.deprecations).toEqual([]);
     });
@@ -111,8 +114,31 @@ describe('cli/parseArgs', () => {
       expect(result!.args.checksumsFile).toBe('./checksums.sha256');
     });
 
+    it('parses --allow-unverified-tarball', () => {
+      const result = parseArgs([
+        'install',
+        '--core-tarball',
+        './flowguard-core-1.0.0.tgz',
+        '--allow-unverified-tarball',
+      ]);
+      expect(result).not.toBeNull();
+      expect(result!.args.allowUnverifiedTarball).toBe(true);
+    });
+
     it('rejects --checksums-file without value', () => {
       const result = parseArgs(['install', '--core-tarball', './x.tgz', '--checksums-file']);
+      expect(result).toBeNull();
+    });
+
+    it('rejects ambiguous checksum verification and opt-out flags', () => {
+      const result = parseArgs([
+        'install',
+        '--core-tarball',
+        './flowguard-core-1.0.0.tgz',
+        '--checksums-file',
+        './checksums.sha256',
+        '--allow-unverified-tarball',
+      ]);
       expect(result).toBeNull();
     });
 

@@ -119,8 +119,9 @@ See [docs/experimental-acp.md](./experimental-acp.md) for research findings.
 # Download from your approved release source
 #    (e.g., GitHub Releases, internal artifact store)
 
-# Verify checksum
-sha256sum flowguard-core-{version}.tgz
+# Verify checksum manually, or keep checksums.sha256 next to the tarball so
+# flowguard install verifies it by default.
+sha256sum -c checksums.sha256
 ```
 
 ### 2. Initialize OpenCode Integration (Standard)
@@ -131,6 +132,10 @@ The approved local tarball is the authoritative package source. No global instal
 npx --package ./flowguard-core-{version}.tgz flowguard install \
   --core-tarball ./flowguard-core-{version}.tgz
 ```
+
+By default the installer verifies the tarball against `checksums.sha256` in the
+same directory as the tarball. Use `--checksums-file <path>` for a non-adjacent
+checksum file. Missing or mismatched checksum evidence blocks installation.
 
 The installer:
 
@@ -187,6 +192,9 @@ npx --package ./flowguard-core-{version}.tgz flowguard install \
   --core-tarball ./flowguard-core-{version}.tgz --force
 ```
 
+Keep the matching release `checksums.sha256` next to the new tarball, or pass it
+with `--checksums-file <path>`.
+
 ### Rollback
 
 ```bash
@@ -194,6 +202,8 @@ npx --package ./flowguard-core-{version}.tgz flowguard install \
 npx --package ./flowguard-core-{old}.tgz flowguard install \
   --core-tarball ./flowguard-core-{old}.tgz --force
 ```
+
+Rollback requires the checksum evidence for the previous tarball as well.
 
 **Customer Responsibility:** Maintain archives of previous `flowguard-core-{version}.tgz` artifacts for rollback capability.
 
@@ -216,8 +226,8 @@ The uninstall command removes all FlowGuard-owned files from `~/.config/opencode
 
 FlowGuard is designed for air-gapped deployment:
 
-1. Download `flowguard-core-{version}.tgz` on a connected machine
-2. Transfer to air-gapped environment (USB, internal artifact store)
+1. Download `flowguard-core-{version}.tgz` and `checksums.sha256` on a connected machine
+2. Transfer both files to air-gapped environment (USB, internal artifact store)
 3. Install: `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz`
 
 No network access is required during installation or default runtime workflows
@@ -230,7 +240,7 @@ or invoked.
 
 | Check                 | Mechanism                          | Enforced By       |
 | --------------------- | ---------------------------------- | ----------------- |
-| Artifact integrity    | SHA-256 checksum on Releases page  | Operator          |
+| Artifact integrity    | SHA-256 checksum on Releases page  | FlowGuard installer |
 | Content digest        | SHA-256 in `flowguard-mandates.md` | FlowGuard runtime |
 | Dependency resolution | `file:` path validation            | npm               |
 | State integrity       | Zod schema validation              | FlowGuard runtime |

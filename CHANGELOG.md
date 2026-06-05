@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #432 (tarball verification default-on):** The installer now verifies
+  `flowguard-core-{version}.tgz` by default using either `--checksums-file` or a
+  tarball-adjacent `checksums.sha256`. Missing, unreadable, ambiguous, or
+  mismatched checksum evidence blocks installation before artifacts are written.
+  The only unverified path is the explicit supply-chain opt-out
+  `--allow-unverified-tarball`, which emits a warning and structured diagnostic.
+
 - **Issue #431 (docs generator fail-closed):** Documentation generation now
   exits non-zero when any per-file update fails. The generator still emits
   actionable `console.error` diagnostics for each failed file, but it no longer

@@ -30,8 +30,9 @@ FlowGuard uses a pre-built proprietary distribution model. Upgrades involve down
 # 1. Download new release artifact from your approved release source
 #    (e.g., GitHub Releases, internal artifact store)
 
-# 2. Verify checksum
-sha256sum flowguard-core-{new}.tgz
+# 2. Verify checksum manually, or keep checksums.sha256 next to the tarball so
+#    flowguard install verifies it by default
+sha256sum -c checksums.sha256
 
 # 3. Reinstall with new artifact
 flowguard install --core-tarball ./flowguard-core-{new}.tgz --force
@@ -47,6 +48,10 @@ flowguard doctor
 cd /path/to/repository
 flowguard install --core-tarball ./flowguard-core-{new}.tgz --install-scope repo --force
 ```
+
+If the checksum file is not adjacent to the tarball, pass it explicitly with
+`--checksums-file <path>`. Missing or mismatched checksum evidence blocks the
+upgrade before managed artifacts are written.
 
 ### What Gets Updated
 
@@ -132,6 +137,10 @@ flowguard install --core-tarball ./flowguard-core-{old}.tgz --force
 flowguard doctor
 ```
 
+Rollback requires checksum evidence for the previous tarball as well. Keep the
+matching `checksums.sha256` beside the rollback tarball or pass
+`--checksums-file <path>`.
+
 ### Rollback Verification
 
 ```bash
@@ -190,7 +199,7 @@ checksums:
 mkdir /tmp/flowguard-test
 cd /tmp/flowguard-test
 
-# 2. Install new version
+# 2. Install new version (with matching checksums.sha256 beside the tarball)
 flowguard install --core-tarball /path/to/new/flowguard-core-{new}.tgz
 
 # 3. Test installation

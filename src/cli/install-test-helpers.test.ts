@@ -10,6 +10,7 @@ import { beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { createHash } from 'node:crypto';
 import { readFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { CliArgs } from './install.js';
@@ -145,9 +146,17 @@ export function setupCliTestEnvironment(): void {
 // ─── Mock Tarball Helper ──────────────────────────────────────────────────────
 
 /** Create a mock tarball in the current tmpDir. */
-export async function createMockTarball(version = VERSION): Promise<string> {
+export async function createMockTarball(
+  version = VERSION,
+  options: { writeChecksum?: boolean } = {},
+): Promise<string> {
   const tarballPath = path.join(tmpDir, `flowguard-core-${version}.tgz`);
-  await fs.writeFile(tarballPath, 'mock tarball content');
+  const content = 'mock tarball content';
+  await fs.writeFile(tarballPath, content);
+  if (options.writeChecksum !== false) {
+    const hash = createHash('sha256').update(content, 'utf-8').digest('hex');
+    await fs.writeFile(path.join(tmpDir, 'checksums.sha256'), `${hash}  ${path.basename(tarballPath)}\n`);
+  }
   return tarballPath;
 }
 

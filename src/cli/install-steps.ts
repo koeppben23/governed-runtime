@@ -15,6 +15,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { globalConfigPath } from '../adapters/persistence.js';
 import { readConfig, writeGlobalConfig, writeRepoConfig } from '../adapters/persistence-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
+import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
   COMMANDS,
   MANDATES_FILENAME,
@@ -122,20 +123,33 @@ export async function validateTarball(ctx: InstallContext): Promise<ValidatedTar
     return null;
   }
 
-  if (args.checksumsFile) {
+  if (args.checksumsFile && args.allowUnverifiedTarball) {
+    ctx.errors.push(
+      'ERROR: --checksums-file cannot be combined with --allow-unverified-tarball. ' +
+        'Choose verified installation or the explicit unverified opt-out.',
+    );
+    return null;
+  }
+
+  if (args.allowUnverifiedTarball) {
+    ctx.warnings.push(
+      'Tarball integrity verification explicitly skipped via --allow-unverified-tarball. ' +
+        'This supply-chain opt-out is not recommended.',
+    );
+    getAdapterLogger().warn('cli', 'tarball verification explicitly skipped', {
+      tarballPath,
+      reason: 'explicit_opt_out',
+    });
+  } else {
+    const checksumsPath = args.checksumsFile ?? join(dirname(tarballPath), 'checksums.sha256');
     try {
-      await verifyTarballChecksum(tarballPath, args.checksumsFile);
+      await verifyTarballChecksum(tarballPath, checksumsPath);
     } catch (err) {
-      ctx.errors.push(
-        `ERROR: Tarball integrity check failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      const reason = err instanceof Error ? err.message : String(err);
+      getAdapterLogger().error('cli', 'tarball verification failed', { tarballPath, reason });
+      ctx.errors.push(`ERROR: Tarball integrity check failed: ${reason}`);
       return null;
     }
-  } else {
-    ctx.warnings.push(
-      'Tarball integrity not verified. ' +
-        'Use --checksums-file ./checksums.sha256 for cryptographic verification.',
-    );
   }
 
   return { valid: true, path: tarballPath, name: tarballName, version: tarballVersion };

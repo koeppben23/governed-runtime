@@ -91,6 +91,10 @@ npx --package ./flowguard-core-{version}.tgz flowguard doctor
 ```
 
 **Important:** The `--core-tarball` argument is required and must point to the locally available release artifact.
+Keep `checksums.sha256` in the same directory as the tarball. The installer
+verifies it by default and fails closed if the checksum file is missing or the
+hash does not match. Use `--checksums-file <path>` only when the checksum file is
+stored elsewhere.
 
 Expected `doctor` output:
 
@@ -144,7 +148,7 @@ network-dependent features are disabled.
 
 1. Download the new release tarball and checksums on the internet-connected machine.
 2. Transfer, verify, and install following Steps 2-5 above.
-3. Re-run `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz --force` to update all managed artifacts.
+3. Re-run `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz --force` with the matching `checksums.sha256` next to the tarball to update all managed artifacts.
 4. Re-run `npx --package ./flowguard-core-{version}.tgz flowguard doctor` to verify the upgrade.
 
 The `--force` flag ensures all thin wrappers and managed artifacts are overwritten with the new version.
@@ -165,7 +169,7 @@ Ensure you have downloaded `flowguard-core-{version}.tgz` and provide the correc
 
 ### `flowguard doctor` reports `MISSING` files
 
-Run `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz` (or with `--force` if upgrading). Doctor only checks — it does not create files.
+Run `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz` with the release `checksums.sha256` next to the tarball (or with `--force` if upgrading). Doctor only checks — it does not create files.
 
 ### `flowguard doctor` reports `VERSION` mismatch
 
