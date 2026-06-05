@@ -36,10 +36,14 @@ syncBuiltinESMExports();
     );
 
     try {
-      const result = spawnSync(process.execPath, ['--import', preloadPath, 'scripts/generate-docs.js'], {
-        cwd: join(__dirname, '..', '..', '..'),
-        encoding: 'utf-8',
-      });
+      const result = spawnSync(
+        process.execPath,
+        ['--import', preloadPath, 'scripts/generate-docs.js'],
+        {
+          cwd: join(__dirname, '..', '..', '..'),
+          encoding: 'utf-8',
+        },
+      );
 
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain('Error updating README.md: forced README failure');
