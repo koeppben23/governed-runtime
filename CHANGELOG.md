@@ -431,6 +431,23 @@ attestation authority.
 
 ### Added
 
+- **Issue #435 (property-based tamper-evidence invariant):** Added seeded
+  property tests proving the C1/C2 tamper guarantee generally rather than by
+  example: for any audit event and any single-field mutation at any nesting
+  depth (including array elements), chain verification (`verifyChain`, C1) fails
+  and the canonical event digest (`computeCanonicalEventDigest`, the stamped TSA
+  messageImprint, C2) changes; imprint-excluded fields are characterized as
+  digest-invariant; and deep object-key reorder (arrays preserved) is
+  canonicalization-stable. A single fast-check-free, test-only harness
+  (`src/audit/__tests__/tamper-evidence-harness.ts`, excluded from the build)
+  delegates all hashing/serialization to the production authorities (no
+  duplicated hashing logic) and is shared by a unit variant
+  (`tamper-evidence.property.test.ts`, gates `npm test`) and a deep-run fuzz
+  variant (`tamper-evidence.fuzz.test.ts`, nightly `test:fuzz:deep`). Note: full
+  TSA token validation remains covered by the archive tamper matrix; C2 here is
+  asserted at the canonical-digest level (messageImprint = canonical event
+  digest). Test-only; no runtime change.
+
 - **Issue #375:** Surface discovery health in `flowguard_status` and agent
   guidance. `discoveryHealth` is derived at status time from the persisted
   DiscoveryResult — never stored on SessionState. Includes collector health
