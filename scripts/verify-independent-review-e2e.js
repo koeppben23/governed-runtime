@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 const workspaceRoot = process.cwd();
 const tmpDir = mkdtempSync(path.join(tmpdir(), 'fg-independent-review-'));
@@ -215,6 +216,9 @@ async function verifyOpenCodeRuntimeE2E() {
       .filter(Boolean)
       .at(-1);
     if (!tarballName) throw new Error(`npm pack did not return a tarball name: ${packOutput}`);
+    const tarballPath = path.join(packDir, tarballName);
+    const sha256 = createHash('sha256').update(readFileSync(tarballPath)).digest('hex');
+    writeFileSync(path.join(packDir, 'checksums.sha256'), `${sha256}  ${tarballName}\n`);
 
     runRequired(
       process.execPath,
@@ -226,7 +230,7 @@ async function verifyOpenCodeRuntimeE2E() {
         '--policy-mode',
         'team-ci',
         '--core-tarball',
-        path.join(packDir, tarballName),
+        tarballPath,
         '--force',
       ],
       {
