@@ -1,12 +1,12 @@
 /**
- * @module audit/tamper-evidence-harness
+ * @module audit/__tests__/tamper-evidence-harness
  * @description Shared, deterministic harness for the audit tamper-evidence
- * property tests (#435). It is intentionally **fast-check-free** so it can be
- * compiled like any other module and imported by BOTH the unit property test
- * (`tamper-evidence.property.test.ts`, gates `npm test`) and the deep fuzz test
- * (`tamper-evidence.fuzz.test.ts`, nightly). fast-check wiring lives only in
- * those test files (fast-check is a devDependency and must not be compiled into
- * dist).
+ * property tests (#435). It is intentionally **fast-check-free** and lives under
+ * `__tests__/` (excluded from the build/dist via tsconfig + eslint test scope)
+ * so it is test-only code, never shipped, yet importable by BOTH the unit
+ * property test (`tamper-evidence.property.test.ts`, gates `npm test`) and the
+ * deep fuzz test (`tamper-evidence.fuzz.test.ts`, nightly). fast-check wiring
+ * lives only in those test files (fast-check is a devDependency).
  *
  * SSOT discipline: this harness performs NO hashing of its own. Every chain /
  * digest / serialization decision is delegated to the production authorities —
@@ -33,10 +33,10 @@ import {
   computeChainHash,
   type ChainedAuditEvent,
   type EventBody,
-} from './types.js';
-import { canonicalJsonStringify, computeCanonicalEventDigest } from './canonical-digest.js';
-import { verifyChain } from './integrity.js';
-import type { TimestampEvidence } from '../state/evidence.js';
+} from '../types.js';
+import { canonicalJsonStringify, computeCanonicalEventDigest } from '../canonical-digest.js';
+import { verifyChain } from '../integrity.js';
+import type { TimestampEvidence } from '../../state/evidence.js';
 
 /**
  * Test-side characterization of the production authority's excluded set

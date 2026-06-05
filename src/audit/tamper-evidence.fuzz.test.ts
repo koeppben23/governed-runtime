@@ -34,7 +34,7 @@ import {
   deepReorderKeys,
   type RichEventParams,
   type ChainedAuditEventForTest,
-} from './tamper-evidence-harness.js';
+} from './__tests__/tamper-evidence-harness.js';
 
 const FC_OPTIONS = {
   numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
@@ -76,6 +76,7 @@ describe('audit tamper-evidence property invariants — deep fuzz (#435)', () =>
       fc.property(paramsArb, fc.integer({ min: 0, max: 1_000_000 }), (params, selector) => {
         const event = buildRichEvent(params);
         const contentPaths = collectLeafPaths(event).filter((p) => !isExcludedPath(p));
+        expect(contentPaths.length).toBeGreaterThan(0);
         const path = pick(contentPaths, selector);
         expect(imprintDigest(mutateLeaf(event, path))).not.toBe(imprintDigest(event));
       }),
