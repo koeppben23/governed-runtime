@@ -286,4 +286,107 @@ describe('persistence-lock', () => {
       await lock.release();
     }
   });
+
+  // ─── MUTATION KILL: targeted gap coverage ─────────────────────────────
+  describe('MUTATION: targeted gap coverage', () => {
+    it('writeFile EACCES throws directly (not treated as EEXIST)', async () => {
+      const lockPath = sessionLockPath(sessionDir);
+      vi.mocked(fs.writeFile).mockImplementation(((file: Parameters<typeof fs.writeFile>[0]) => {
+        if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
+        return actualFs().writeFile(file, ...([] as never));
+      }) as typeof fs.writeFile);
+
+      // EACCES should propagate directly, not be treated as EEXIST
+      await expect(acquireSessionWriteLock(sessionDir, 1000)).rejects.toMatchObject({
+        code: 'EACCES',
+      });
+    });
+
+    it('disappeared lockfile during stale check is treated as stale (waited=false)', async () => {
+      const lockPath = sessionLockPath(sessionDir);
+      let writeAttempts = 0;
+
+      vi.mocked(fs.writeFile).mockImplementation(((
+        file: Parameters<typeof fs.writeFile>[0],
+        ...args: unknown[]
+      ) => {
+        if (String(file) === lockPath && writeAttempts === 0) {
+          writeAttempts += 1;
+          throw errno('EEXIST', 'lock already exists');
+        }
+        writeAttempts += 1;
+        return actualFs().writeFile(file, ...(args as []));
+      }) as typeof fs.writeFile);
+      vi.mocked(fs.readFile).mockImplementation(((
+        file: Parameters<typeof fs.readFile>[0],
+        ...args: unknown[]
+      ) => {
+        if (String(file) === lockPath) throw errno('ENOENT', 'lock disappeared');
+        return actualFs().readFile(file, ...(args as []));
+      }) as typeof fs.readFile);
+
+      const lock = await acquireSessionWriteLock(sessionDir, 1000);
+      // Key assertion: ENOENT during stale check = stale → no contention wait
+      expect(lock.waited).toBe(false);
+
+      restoreFsMocks();
+      await lock.release();
+    });
+
+    it('release propagates non-ENOENT errors from readFile', async () => {
+      const lockPath = sessionLockPath(sessionDir);
+      const lock = await acquireSessionWriteLock(sessionDir);
+
+      // Mock readFile in release to throw EACCES
+      vi.mocked(fs.readFile).mockImplementation(((file: Parameters<typeof fs.readFile>[0]) => {
+        if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
+        return actualFs().readFile(file, ...([] as never));
+      }) as typeof fs.readFile);
+
+      // Release should throw EACCES (not swallow it)
+      await expect(lock.release()).rejects.toMatchObject({ code: 'EACCES' });
+
+      restoreFsMocks();
+      await actualFs()
+        .unlink(lockPath)
+        .catch(() => {});
+    });
+
+    it('timeout error message omits PID when lockfile is unreadable at deadline', async () => {
+      const lockPath = sessionLockPath(sessionDir);
+      // Create a lock held by ourselves
+      const firstLock = await acquireSessionWriteLock(sessionDir);
+
+      // Mock readFile to throw in the timeout path (so blockingPid stays undefined)
+      vi.mocked(fs.readFile).mockImplementation(((file: Parameters<typeof fs.readFile>[0]) => {
+        if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
+        return actualFs().readFile(file, ...([] as never));
+      }) as typeof fs.readFile);
+
+      try {
+        await expect(acquireSessionWriteLock(sessionDir, 0)).rejects.toMatchObject({
+          code: 'LOCK_TIMEOUT',
+          message: expect.not.stringContaining('Blocking PID'),
+        });
+      } finally {
+        restoreFsMocks();
+        await firstLock.release();
+      }
+    });
+
+    it('timeout at exact deadline boundary triggers (>= not >)', async () => {
+      const lockPath = sessionLockPath(sessionDir);
+      await fs.writeFile(lockPath, `pid=${process.pid}\ntoken=blocking-token\n`);
+
+      // Timeout 0 means deadline = Date.now() at call time.
+      // After first EEXIST, Date.now() >= deadline → should throw immediately.
+      await expect(acquireSessionWriteLock(sessionDir, 0)).rejects.toMatchObject({
+        code: 'LOCK_TIMEOUT',
+      });
+
+      await actualFs()
+        .unlink(lockPath)
+        .catch(() => {});
+    });
+  });
 });
