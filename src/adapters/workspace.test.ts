@@ -407,15 +407,32 @@ describe('path resolution', () => {
   });
 
   it('workspacesHome respects OPENCODE_CONFIG_DIR', () => {
-    process.env.OPENCODE_CONFIG_DIR = '/custom/config';
-    const home = workspacesHome();
-    expect(home).toBe(path.join('/custom/config', 'workspaces'));
+    // Pure path resolution with an arbitrary (non-temp) config dir: opt out of
+    // the suite-global test-config guard, which otherwise (correctly) rejects
+    // non-temp dirs to prevent real-home writes.
+    const cleanup = withTestEnv({
+      OPENCODE_CONFIG_DIR: '/custom/config',
+      FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: undefined,
+    });
+    try {
+      expect(workspacesHome()).toBe(path.join('/custom/config', 'workspaces'));
+    } finally {
+      cleanup();
+    }
   });
 
   it('workspaceDir returns correct path', () => {
-    process.env.OPENCODE_CONFIG_DIR = '/cfg';
-    const dir = workspaceDir('a1b2c3d4e5f6a1b2c3d4e5f6');
-    expect(dir).toBe(path.join('/cfg', 'workspaces', 'a1b2c3d4e5f6a1b2c3d4e5f6'));
+    const cleanup = withTestEnv({
+      OPENCODE_CONFIG_DIR: '/cfg',
+      FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: undefined,
+    });
+    try {
+      expect(workspaceDir('a1b2c3d4e5f6a1b2c3d4e5f6')).toBe(
+        path.join('/cfg', 'workspaces', 'a1b2c3d4e5f6a1b2c3d4e5f6'),
+      );
+    } finally {
+      cleanup();
+    }
   });
 
   it('workspaceDir rejects invalid fingerprint', () => {
@@ -423,11 +440,17 @@ describe('path resolution', () => {
   });
 
   it('sessionDir returns correct nested path', () => {
-    process.env.OPENCODE_CONFIG_DIR = '/cfg';
-    const dir = sessionDir('a1b2c3d4e5f6a1b2c3d4e5f6', 'my-session-id');
-    expect(dir).toBe(
-      path.join('/cfg', 'workspaces', 'a1b2c3d4e5f6a1b2c3d4e5f6', 'sessions', 'my-session-id'),
-    );
+    const cleanup = withTestEnv({
+      OPENCODE_CONFIG_DIR: '/cfg',
+      FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: undefined,
+    });
+    try {
+      expect(sessionDir('a1b2c3d4e5f6a1b2c3d4e5f6', 'my-session-id')).toBe(
+        path.join('/cfg', 'workspaces', 'a1b2c3d4e5f6a1b2c3d4e5f6', 'sessions', 'my-session-id'),
+      );
+    } finally {
+      cleanup();
+    }
   });
 
   it('sessionDir rejects invalid fingerprint', () => {
