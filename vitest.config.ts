@@ -35,6 +35,7 @@ export default defineConfig({
       {
         test: {
           name: 'unit',
+          setupFiles: ['./vitest.setup.ts'],
           include: ['src/**/*.test.ts'],
           exclude: [
             'src/integration/**/*.test.ts',
@@ -73,6 +74,7 @@ export default defineConfig({
       {
         test: {
           name: 'integration',
+          setupFiles: ['./vitest.setup.ts'],
           include: ['src/integration/**/*.test.ts'],
           globals: false,
           restoreMocks: true,
@@ -100,6 +102,7 @@ export default defineConfig({
       {
         test: {
           name: 'smoke',
+          setupFiles: ['./vitest.setup.ts'],
           include: [
             'src/cli/install-verify.test.ts',
             'src/cli/claude-plugin-load.test.ts',
@@ -117,6 +120,7 @@ export default defineConfig({
       {
         test: {
           name: 'fuzz',
+          setupFiles: ['./vitest.setup.ts'],
           include: ['src/**/*.fuzz.test.ts'],
           globals: false,
           restoreMocks: true,

@@ -460,8 +460,13 @@ describe('archiveSession failure paths', () => {
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
     await writeState(sessDir, makeState('COMPLETE'));
 
-    // Set OPENCODE_CONFIG_DIR to a path that mkdir cannot create
-    const cleanup = withTestEnv({ OPENCODE_CONFIG_DIR: '/root/fail-permission-test' });
+    // Set OPENCODE_CONFIG_DIR to a path that mkdir cannot create. Opt out of
+    // the suite-global test-config guard so this exercises the archive
+    // permission-failure path (not the guard's non-temp rejection).
+    const cleanup = withTestEnv({
+      OPENCODE_CONFIG_DIR: '/root/fail-permission-test',
+      FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: undefined,
+    });
     try {
       await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
     } finally {

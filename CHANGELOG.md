@@ -524,6 +524,22 @@ attestation authority.
 
 ### Fixed
 
+- **Test isolation (workspace registry leak):** The test suite could write
+  FlowGuard session directories into the real `~/.config/opencode/workspaces/`.
+  Root cause: `workspacesHome()` falls back to the real config home when
+  `OPENCODE_CONFIG_DIR` is unset, and its fail-closed guard
+  (`FLOWGUARD_REQUIRE_TEST_CONFIG_DIR`) was only set by individual test
+  harnesses — so any test that persisted state without the harness (e.g.
+  `makeState()` + a real `writeState`/archive) leaked fixture workspaces
+  (`worktree: /tmp/test-repo`) into the developer's real config. Added a
+  suite-global `vitest.setup.ts` (wired into every project via `setupFiles`)
+  that activates the guard and points `OPENCODE_CONFIG_DIR` at an isolated OS
+  temp dir for every test file, making real-home writes impossible and turning
+  any regression into an immediate, localized throw. Updated four tests that
+  intentionally use non-temp config dirs for pure path/error logic to opt out of
+  the guard locally, and added `test-config-isolation.test.ts` proving the
+  isolation is active. Test-only; no runtime/product behavior changed.
+
 - **Issue #423:** `doctor` now validates the shipped `dist/` executable surface,
   not just config files, so a missing or corrupt runtime binary no longer passes
   diagnostics. The validated list is derived from the single `package.json` `bin`
