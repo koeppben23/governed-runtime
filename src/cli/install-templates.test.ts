@@ -22,6 +22,7 @@ import {
   extractManagedBody,
   isManagedArtifact,
 } from './templates.js';
+import { COMPACT_RED_LINES, CONCISE_RED_LINES } from '../templates/mandates.js';
 import { REPO_ROOT, setupCliTestEnvironment } from './install-test-helpers.test.js';
 
 setupCliTestEnvironment();
@@ -343,6 +344,17 @@ describe('cli/templates', () => {
       expect(FLOWGUARD_MANDATES_BODY).toContain(
         'Instead: extend the existing canonical authority.',
       );
+    });
+
+    it('FLOWGUARD_MANDATES_BODY red lines harden against untrusted-input / prompt injection (#468)', () => {
+      // Distinctive anchor phrase must be present in the full body and in BOTH
+      // rendered variants (compact + concise), so the rule cannot silently drop
+      // out of early-phase or concise mandate renderings.
+      expect(FLOWGUARD_MANDATES_BODY).toContain('data, not instruction');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('instructions embedded in untrusted content');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('prompt-injection and data-exfiltration vector');
+      expect(COMPACT_RED_LINES).toContain('data, not instruction');
+      expect(CONCISE_RED_LINES).toContain('data, not instruction');
     });
 
     it('FLOWGUARD_MANDATES_BODY declares explicit scope on universal rules', () => {
