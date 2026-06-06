@@ -22,12 +22,10 @@ export const LEGACY_INSTRUCTION_ENTRY = 'AGENTS.md';
  * The header (version + digest) is prepended at install time by
  * `buildMandatesContent()`.
  *
- * FLOWGUARD_MANDATES_BODY extends AGENTS.md with installed runtime mandate
- * sections. REVIEWER_AGENT contains reviewer-specific mandate sections.
- * The shared base sections
- * (## 1. Mission through ## 12. Extended Guidance) must remain aligned
- * with AGENTS.md. Changes to those shared sections in AGENTS.md
- * must be reflected here.
+ * FLOWGUARD_MANDATES_BODY is the canonical installed runtime mandate body.
+ * REVIEWER_AGENT contains reviewer-specific mandate sections. The repository
+ * root AGENTS.md is local contributor guidance only and must not be used as the
+ * source of installed mandate text.
  */
 export const FLOWGUARD_MANDATES_BODY = `\
 # FlowGuard Agent Rules
@@ -187,7 +185,7 @@ Review falsification-first:
 - Is logic in the correct layer and authority?
 - Can fallback hide failure?
 - Are negative tests meaningful and sufficient?
-- Is any claim unsupported by evidence?
+- Any unsupported claim or trust-boundary drift from docs/trust-boundaries.md?
 
 ## 11. High-Risk Extension
 
@@ -246,14 +244,11 @@ For deeper guidance, see the FlowGuard repository docs/ directory.
 
 ## Before Acting Rule
 
-Do not start editing immediately. First classify the task, identify authority and SSOT,
-read relevant artifacts, choose the smallest safe change, and determine verification level.
+Do not start editing immediately. Before acting, classify task, identify authority/SSOT, read artifacts, choose the smallest safe change, and determine verification.
 
 ## Before Completing Rule
 
-Before returning a final result, verify: output contract for the task class is satisfied,
-all evidence markers (ASSUMPTION, NOT_VERIFIED, BLOCKED) are set where needed, required
-verification for the task class has been run, and no SSOT drift was introduced.
+Before returning, verify: output contract; evidence markers (ASSUMPTION, NOT_VERIFIED, BLOCKED); required verification; no SSOT drift.
 
 ---
 

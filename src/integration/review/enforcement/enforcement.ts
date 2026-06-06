@@ -94,8 +94,7 @@ export function onFlowGuardToolAfter(
   // BUG-21: Use value-based checks — the `in` operator returns true for keys
   // with null values (LLMs may send explicit nulls for absent optional fields).
   const hasSelfReviewVerdict =
-    (typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0) ||
-    (typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0);
+    typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
   if (hasSelfReviewVerdict) {
     // Only clear if the call succeeded (no error in output)
     if (parsed.error !== true) {

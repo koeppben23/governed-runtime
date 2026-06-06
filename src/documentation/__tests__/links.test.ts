@@ -729,13 +729,30 @@ describe('docs/trust-boundaries.md', () => {
     it('should document boundary crossings', async () => {
       const content = await fs.readFile(TRUST_BOUNDARIES_PATH, 'utf-8');
       expect(content).toContain('Boundary Crossings');
-      expect(content).toContain('Filesystem Boundary');
+      expect(content).toContain('Filesystem Persistence Boundary');
     });
 
     it('should document threat model', async () => {
       const content = await fs.readFile(TRUST_BOUNDARIES_PATH, 'utf-8');
       expect(content).toContain('Threat Model');
       expect(content).toContain('Within Trust Boundary');
+    });
+
+    it('should document the mandatory review contract structure', async () => {
+      const content = await fs.readFile(TRUST_BOUNDARIES_PATH, 'utf-8');
+      for (const required of [
+        'Review Contract',
+        'Signed / integrity-covered',
+        'Mutable / diagnostic',
+        'Writer / authority',
+        'Attacker model',
+        'Fail-closed expectation',
+        'Required audit events',
+        'Required operational logs',
+        'Operational logs are diagnostic only',
+      ]) {
+        expect(content).toContain(required);
+      }
     });
   });
 

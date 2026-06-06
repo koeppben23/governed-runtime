@@ -43,9 +43,9 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('FLOWGUARD_MANDATES_BODY matches compiled output hash', () => {
-    // Refreshed for #265: mandates mirror policy-gated reduced ceremony rules.
+    // Refreshed for #437: mandates reference the canonical trust-boundary review contract.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      '4e7e33309242f1c0e0267dcc247d8f700a4c15cf9bfba15fe07a99734cf60c5b',
+      '53442bd5947cdae1711e1c51687dfba56f7fc91b81f024e1849fb852be831878',
     );
   });
 

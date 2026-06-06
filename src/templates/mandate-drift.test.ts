@@ -1,14 +1,8 @@
 /**
  * @module mandate-drift.test
- * @description Governance invariant: shared base sections between AGENTS.md and
- * FLOWGUARD_MANDATES_BODY must remain content-aligned. Reviewer-specific
- * extensions (Your Role, Review Criteria, etc.) live in REVIEWER_AGENT and
- * must NOT leak into AGENTS.md.
- *
- * P9b: AGENTS.md is the canonical developer rule source. FLOWGUARD_MANDATES_BODY
- * extends it with installed runtime mandate sections (11a, 11b) and a version
- * footer. REVIEWER_AGENT adds reviewer-specific sections. Shared base sections
- * (## 1 through ## 12) must not drift.
+ * @description Authority invariant: installed FlowGuard mandate text is owned by
+ * FLOWGUARD_MANDATES_BODY. The repository root AGENTS.md is local contributor
+ * guidance only and must not become the canonical source for installed mandates.
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE
  */
@@ -19,30 +13,15 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { FLOWGUARD_MANDATES_BODY, REVIEWER_AGENT } from './index.js';
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..');
 
 const AGENTS_MD = readFileSync(join(REPO_ROOT, 'AGENTS.md'), 'utf-8').replace(/\r\n/g, '\n');
 
-/**
- * Version footer appended to FLOWGUARD_MANDATES_BODY after the shared sections.
- * This is NOT part of AGENTS.md but is a runtime installation marker.
- */
 const VERSION_FOOTER = '\n\n---\n\n[End of v4 Agent Rules]';
-
-/**
- * Strip the version footer from mandates body for section comparison.
- */
 const MANDATES_BASE = FLOWGUARD_MANDATES_BODY.replace(VERSION_FOOTER, '');
 
-/**
- * Sections shared between AGENTS.md and FLOWGUARD_MANDATES_BODY.
- * Ordered as they appear. Every entry here must be present in BOTH documents
- * with identical content.
- */
-const SHARED_SECTIONS: readonly string[] = [
+const MANDATE_SECTIONS: readonly string[] = [
   '## 1. Mission',
   '## Red Lines',
   '## 2. Priority Ladder',
@@ -56,19 +35,14 @@ const SHARED_SECTIONS: readonly string[] = [
   '## 9. Implementation Checklist',
   '## 10. Review Checklist',
   '## 11. High-Risk Extension',
+  '## 11a. Tool Error Classification',
+  '## 11b. Rule Conflict Resolution',
+  '## Governance rules',
   '## 12. Extended Guidance',
   '## Before Acting Rule',
   '## Before Completing Rule',
 ];
 
-/** Runtime-only extensions in FLOWGUARD_MANDATES_BODY (not in AGENTS.md). */
-const MANDATES_EXTENSION_SECTIONS: readonly string[] = [
-  '## 11a. Tool Error Classification',
-  '## 11b. Rule Conflict Resolution',
-  '## Governance rules',
-];
-
-/** Reviewer-specific sections — belong in REVIEWER_AGENT, NOT in AGENTS.md. */
 const REVIEWER_ONLY_SECTIONS: readonly string[] = [
   '## Your Role',
   '## Review Approach',
@@ -79,118 +53,56 @@ const REVIEWER_ONLY_SECTIONS: readonly string[] = [
   '## Rules',
 ];
 
-/**
- * Extract the content of a ``##`` section from a markdown body.
- *
- * Finds the heading, then captures everything until the next ``##`` heading
- * (or EOF). ``###`` subsections within a ``##`` section are included.
- */
-function extractSection(body: string, heading: string): string {
-  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const pattern = new RegExp(`^${escaped}\\s*$`, 'm');
-  const match = body.match(pattern);
-  if (!match || match.index === undefined) {
-    throw new Error(`Section "${heading}" not found in body`);
-  }
-  const start = match.index;
-  const headingLen = match[0].length;
-  const afterHeading = body.slice(start + headingLen);
-  const nextHeading = afterHeading.match(/^## /m);
-  const end = nextHeading ? start + headingLen + nextHeading.index! : body.length;
-  return body.slice(start, end).trim();
-}
+describe('mandate authority guard', () => {
+  it('keeps installed mandates in FLOWGUARD_MANDATES_BODY', () => {
+    expect(FLOWGUARD_MANDATES_BODY).toContain('# FlowGuard Agent Rules');
+    expect(FLOWGUARD_MANDATES_BODY).toContain('You are operating under FlowGuard governance.');
+    expect(FLOWGUARD_MANDATES_BODY).toContain('[End of v4 Agent Rules]');
+  });
 
-// ── Tests ────────────────────────────────────────────────────────────────────
+  it('keeps all installed mandate sections ordered in FLOWGUARD_MANDATES_BODY', () => {
+    const positions = MANDATE_SECTIONS.map((section) => MANDATES_BASE.indexOf(section));
 
-describe('P9b: mandate drift guard', () => {
-  // ── HAPPY: shared base sections content-match ────────────────────────────
-
-  describe('HAPPY — shared base sections', () => {
-    for (const section of SHARED_SECTIONS) {
-      it(`"${section}" matches between AGENTS.md and FLOWGUARD_MANDATES_BODY`, () => {
-        const agents = extractSection(AGENTS_MD, section);
-        const mandates = extractSection(MANDATES_BASE, section);
-        expect(mandates).toBe(agents);
-      });
+    for (const [index, position] of positions.entries()) {
+      expect(position, `Expected mandate section "${MANDATE_SECTIONS[index]}"`).toBeGreaterThan(-1);
+      if (index > 0) {
+        expect(
+          position,
+          `Expected "${MANDATE_SECTIONS[index]}" after previous section`,
+        ).toBeGreaterThan(positions[index - 1]);
+      }
     }
   });
 
-  // ── HAPPY: mandates has runtime extensions (11a, 11b) ────────────────────
+  it('keeps root AGENTS.md local and non-governing for repository edits', () => {
+    expect(AGENTS_MD).toContain('Governed Runtime Contributor Notes');
+    expect(AGENTS_MD).toContain(
+      'Do not call FlowGuard workflow tools merely because this file exists.',
+    );
+    expect(AGENTS_MD).toContain('root `AGENTS.md` is local contributor guidance only');
+    expect(AGENTS_MD).not.toContain('You are operating under FlowGuard governance.');
+    expect(AGENTS_MD).not.toContain('Use only FlowGuard tools for state changes');
+    expect(AGENTS_MD).not.toContain('[End of v4 Agent Rules]');
+  });
 
-  it('FLOWGUARD_MANDATES_BODY contains runtime extension sections', () => {
-    for (const section of MANDATES_EXTENSION_SECTIONS) {
+  it('keeps reviewer-only sections out of root AGENTS.md and installed mandates', () => {
+    for (const section of REVIEWER_ONLY_SECTIONS) {
+      expect(AGENTS_MD.includes(section), `AGENTS.md must not contain "${section}"`).toBe(false);
       expect(
         FLOWGUARD_MANDATES_BODY.includes(section),
-        `Expected mandates to contain "${section}"`,
-      ).toBe(true);
+        `FLOWGUARD_MANDATES_BODY must not contain "${section}"`,
+      ).toBe(false);
+      expect(REVIEWER_AGENT.includes(section), `REVIEWER_AGENT must contain "${section}"`).toBe(
+        true,
+      );
     }
   });
 
-  // ── HAPPY: REVIEWER_AGENT contains reviewer-specific sections ─────────────
-
-  it('REVIEWER_AGENT contains reviewer-specific sections', () => {
-    for (const section of REVIEWER_ONLY_SECTIONS) {
-      expect(
-        REVIEWER_AGENT.includes(section),
-        `Expected REVIEWER_AGENT to contain "${section}"`,
-      ).toBe(true);
-    }
-  });
-
-  // ── BAD: reviewer sections must NOT leak into AGENTS.md ──────────────────
-
-  describe('BAD — reviewer section isolation', () => {
-    for (const section of REVIEWER_ONLY_SECTIONS) {
-      it(`AGENTS.md must NOT contain reviewer section "${section}"`, () => {
-        expect(
-          AGENTS_MD.includes(section),
-          `AGENTS.md must not contain reviewer section "${section}"`,
-        ).toBe(false);
-      });
-    }
-  });
-
-  // ── BAD: runtime extensions must NOT leak into AGENTS.md ─────────────────
-
-  describe('BAD — runtime extension isolation', () => {
-    for (const section of MANDATES_EXTENSION_SECTIONS) {
-      it(`AGENTS.md must NOT contain runtime extension "${section}"`, () => {
-        expect(
-          AGENTS_MD.includes(section),
-          `AGENTS.md must not contain runtime extension "${section}"`,
-        ).toBe(false);
-      });
-    }
-  });
-
-  // ── CORNER: section ordering is preserved ────────────────────────────────
-
-  it('shared sections appear in the same order in both documents', () => {
-    const agentsOrder = SHARED_SECTIONS.map((s) => AGENTS_MD.indexOf(s));
-    const mandatesOrder = SHARED_SECTIONS.map((s) => MANDATES_BASE.indexOf(s));
-    for (let i = 1; i < agentsOrder.length; i++) {
-      expect(
-        agentsOrder[i],
-        `AGENTS.md: "${SHARED_SECTIONS[i]}" must appear after "${SHARED_SECTIONS[i - 1]}"`,
-      ).toBeGreaterThan(agentsOrder[i - 1]);
-    }
-    for (let i = 1; i < mandatesOrder.length; i++) {
-      expect(
-        mandatesOrder[i],
-        `FLOWGUARD_MANDATES_BODY: "${SHARED_SECTIONS[i]}" must appear after "${SHARED_SECTIONS[i - 1]}"`,
-      ).toBeGreaterThan(mandatesOrder[i - 1]);
-    }
-  });
-
-  // ── EDGE: section count consistency ──────────────────────────────────────
-
-  it('AGENTS.md has exactly 16 base sections', () => {
+  it('does not require root AGENTS.md to mirror installed mandate sections', () => {
     const agentsH2 = AGENTS_MD.match(/^## /gm) ?? [];
-    expect(agentsH2.length).toBe(16);
-  });
-
-  it('FLOWGUARD_MANDATES_BODY has exactly 19 base sections (16 shared + 3 extensions)', () => {
     const mandatesH2 = MANDATES_BASE.match(/^## /gm) ?? [];
+
+    expect(agentsH2.length).toBeLessThan(mandatesH2.length);
     expect(mandatesH2.length).toBe(19);
   });
 });
