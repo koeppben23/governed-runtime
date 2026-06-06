@@ -51,25 +51,26 @@ describe('DEV_REPO_INVARIANTS', () => {
       expect(content).not.toContain('docs/agent-guidance/');
     });
 
-    it('AGENTS.md contains v3 core sections matching FLOWGUARD_MANDATES_BODY', async () => {
-      const agentsContent = await fs.readFile(path.join(REPO_ROOT, 'AGENTS.md'), 'utf-8');
-      expect(agentsContent).toContain('## 1. Mission');
-      expect(agentsContent).toContain('## 2. Priority Ladder');
-      expect(agentsContent).toContain('## 3. Task Class Router');
-      expect(agentsContent).toContain('## Red Lines');
-      expect(agentsContent).toContain('## 8. Output Contract');
-      expect(agentsContent).toContain('## 12. Extended Guidance');
+    it('FLOWGUARD_MANDATES_BODY contains installed v3 core sections', () => {
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 1. Mission');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 2. Priority Ladder');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 3. Task Class Router');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## Red Lines');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 8. Output Contract');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## 12. Extended Guidance');
     });
 
-    it('AGENTS.md is self-contained (no dead links)', async () => {
+    it('AGENTS.md documents local-only contributor scope', async () => {
       const content = await fs.readFile(path.join(REPO_ROOT, 'AGENTS.md'), 'utf-8');
-      expect(content).toContain('This document is self-contained');
+      expect(content).toContain('working in this repository is not itself a');
+      expect(content).toContain('root `AGENTS.md` is local contributor guidance only');
+      expect(content).not.toContain('You are operating under FlowGuard governance.');
     });
   });
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('opencode.jsonc has empty instructions array (dev repo uses AGENTS.md, not installer path)', async () => {
+    it('opencode.jsonc has empty instructions array (dev repo does not load installer mandates)', async () => {
       const content = await fs.readFile(path.join(REPO_ROOT, 'opencode.jsonc'), 'utf-8');
       const { parse } = await import('jsonc-parser');
       const parsed = parse(content, [], { allowTrailingComma: true });

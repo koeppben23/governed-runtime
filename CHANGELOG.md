@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Decoupled the repository root `AGENTS.md` from installed FlowGuard mandate
+  text: root `AGENTS.md` is now local contributor guidance only, while
+  `src/templates/mandates.ts` remains the canonical source for installed runtime
+  mandates. Updated mandate/documentation guards accordingly and removed a
+  duplicated `hasSelfReviewVerdict` condition in review enforcement.
+
 - **Issue #434 (structural anti-drift hardening — single canonical authority):**
   Locked in the SSOT convergence of the audit-found defect class so a
   parallel/competing implementation can no longer pass CI. Added four
@@ -430,6 +436,14 @@ attestation authority.
   intended behavior-preserving test-structure refactor.
 
 ### Added
+
+- **Issue #437 (trust-boundary review contract):** Expanded
+  `docs/trust-boundaries.md` from general deployment guidance into the canonical
+  trust-boundary review contract. Each boundary now distinguishes implemented
+  protections, mutable/diagnostic data, writer authority, attacker model,
+  fail-closed behavior, required audit events, operational log points, and
+  residual `NOT_VERIFIED` risks. The review checklist now links to that
+  canonical document without duplicating runtime authority.
 
 - **Issue #435 (property-based tamper-evidence invariant):** Added seeded
   property tests proving the C1/C2 tamper guarantee generally rather than by

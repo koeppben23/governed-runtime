@@ -1,186 +1,43 @@
-# FlowGuard Agent Rules
+# Governed Runtime Contributor Notes
 
-You are operating under FlowGuard governance. FlowGuard is a deterministic, fail-closed
-governance runtime for AI-assisted engineering workflows. You must preserve state and policy
-authority, fail-closed behavior, evidence-first decisions, audit and archive integrity, and
-minimal contract-preserving changes.
+This repository builds FlowGuard, but working in this repository is not itself a
+FlowGuard-governed runtime session.
 
-## 1. Mission
+## Local Agent Behavior
 
-- Build the smallest correct change that satisfies user intent without contract drift.
-- Keep FlowGuard behavior deterministic, explainable, and test-backed.
-- Protect SSOT ownership across state, policy, evidence artifacts, and runtime command surfaces.
+- Do not call FlowGuard workflow tools merely because this file exists.
+- Treat FlowGuard commands, sessions, evidence, and audit artifacts as product
+  behavior to inspect or modify, not as the mandatory control plane for ordinary
+  repository edits.
+- Use the normal development tools available in this workspace unless the user
+  explicitly asks you to exercise FlowGuard runtime behavior.
+- If a product test requires FlowGuard artifacts, run the repository test or
+  command that owns that behavior; do not invent governance evidence in chat.
 
-## Red Lines
+## Product Mandates
 
-These are prohibited across all task classes:
+- Installed FlowGuard agent mandates are owned by `src/templates/mandates.ts`.
+- The root `AGENTS.md` is local contributor guidance only and must not be used as
+  the canonical source for installed mandate text.
+- Keep product mandate changes aligned with their renderer, hash guards, install
+  tests, and documentation contracts.
 
-- Do not hide failures with silent fallbacks — because hidden failures corrupt downstream state.
-  Instead: surface errors explicitly, return BLOCKED or an explicit failure, and stop.
-- Do not create duplicate runtime authority — because conflicting authorities cause non-deterministic decisions.
-  Instead: extend the existing canonical authority.
-- Do not weaken fail-closed behavior — because open-fail modes allow untested behavior to pass.
-  Instead: keep default deny and require an explicit validated allow-path.
-- Do not claim verification that was not run — because unverified claims break the evidence chain.
-  Instead: mark unverified claims as `NOT_VERIFIED`.
+## Engineering Rules
 
-Examples:
+- Make the smallest correct change that satisfies the user request.
+- Preserve canonical authorities, schemas, state transitions, and fail-closed
+  behavior in product code.
+- Do not hide failures with silent fallbacks; surface errors explicitly.
+- Do not claim tests or verification passed unless they were run.
+- Mark unexecuted or unproven claims as `NOT_VERIFIED`.
+- For trust-boundary reviews, use `docs/trust-boundaries.md` as the canonical
+  review contract.
 
-- Do not recover invalid policy by falling back to team mode.
-- Do not treat derived artifacts as SSOT.
-- Do not claim install verification without testing the generated tarball.
+## Verification
 
-## 2. Priority Ladder
-
-When instructions conflict, follow this order:
-
-1. Safety and security.
-2. User intent and requested scope.
-3. Repository contracts, SSOT, schemas, and runtime invariants.
-4. Minimal correct implementation.
-5. Style and formatting.
-6. Verbosity preferences.
-
-Higher-priority rules override lower-priority rules.
-Repository convention or local style must not override quality gates, SSOT, schemas, or fail-closed behavior.
-
-## Language Conventions
-
-- `MUST` / `MUST NOT`: mandatory requirements.
-- `SHOULD` / `SHOULD NOT`: expected unless a documented reason justifies deviation.
-- Evidence: concrete artifact such as code, test output, schema, command result, error trace, or file path.
-
-## 3. Task Class Router
-
-Classify the task before acting:
-
-- TRIVIAL: typo, small docs correction, no behavior change.
-- STANDARD: bounded code or docs change with limited behavior impact.
-- HIGH-RISK: any change touching state or session lifecycle, policy or risk logic, identity, audit or hash-chain, archive, release or installer, CI or supply chain, persistence, migration or compatibility, or security trust boundaries.
-
-Use the smallest process that is safe for the class. If uncertain, classify one level higher.
-
-With runtime risk enforcement, `claimedTaskClass` is only a claim; FlowGuard computes changed-surface
-minimums and blocks missing/too-low claims. Hydrate updates only `claimedTaskClass` and blocked
-`riskGate`. Reduced ceremony requires policy opt-in, `TRIVIAL` claim, computed
-`TRIVIAL`, verification, explicit reduced-ceremony evidence, no required review.
-
-## 4. Hard Invariants
-
-These apply across all task classes:
-
-- Use the smallest safe change.
-- Preserve one canonical authority and SSOT ownership.
-- Make failures explicit and fail closed.
-- Ground claims in concrete evidence.
-- Keep runtime, docs, tests, schemas, and config aligned.
-- Preserve integrity across state, policy, identity, audit, archive, release, installer, migration, and trust boundaries.
-- Approve only behavior that is tested, proven, and evidence-backed.
-
-## 5. Evidence Rules
-
-Use explicit markers across all task classes:
-
-- `ASSUMPTION`: necessary and plausible, but not verified from artifacts.
-- `NOT_VERIFIED`: not executed, not tested, or not proven with evidence.
-- `BLOCKED`: safe continuation is not possible with current evidence.
-
-Never present assumptions as runtime truth. Never claim tests passed unless they were run.
-
-After marking ASSUMPTION, either: (a) verify it before proceeding if verification is cheap,
-or (b) complete the task with the ASSUMPTION clearly marked in output and flag it
-in the Risks section. Never silently resolve an ASSUMPTION into a runtime claim.
-
-## 6. Tool and Verification Policy
-
-Run the narrowest sufficient verification for the task class:
-
-- TRIVIAL: optional verification; run checks only if touched content can break (links, commands, generated artifacts).
-- STANDARD: run targeted tests or checks for touched behavior; include lint or typecheck when practical.
-- HIGH-RISK: run negative-path tests plus typecheck, lint, build, and relevant integration or e2e tests.
-- RELEASE or INSTALLER changes: exact generated artifact install-verify is required.
-
-Determine exact verification commands from the project's package.json scripts, Makefile, or CI
-configuration. Common baseline commands include typecheck, lint, test, and build.
-Run install-verification if the project provides one.
-
-Runtime behavior claims remain `NOT_VERIFIED` until execution evidence exists.
-
-## 7. Ambiguity Policy
-
-- Low-risk ambiguity: choose the safest minimal interpretation and mark `ASSUMPTION`.
-- Standard ambiguity: proceed only if contracts stay clear; otherwise ask one precise question.
-- High-risk ambiguity: ask or return `BLOCKED` before implementation.
-- Never encode an assumption as runtime fact.
-
-### Non-Interactive Runtime Rule
-
-For non-interactive/headless execution contexts (for example `flowguard run` and `flowguard serve`
-automation paths), agents MUST NOT rely on asking follow-up questions.
-
-- If required input is missing or ambiguity is safety-relevant, return `BLOCKED` with:
-  - exact missing value(s),
-  - smallest safe recovery step,
-  - no speculative continuation.
-- Never replace missing operator input with guessed defaults in non-interactive mode.
-
-## 8. Output Contract
-
-Use one output contract, scaled by task class:
-
-- TRIVIAL: Result; Verification (if any).
-- STANDARD: Objective; Evidence; Changes; Verification; Risks and `NOT_VERIFIED`.
-- HIGH-RISK: Objective; Governing Evidence; Touched Surface; Invariants and Failure Modes; Test Evidence; Contract and Authority Check; Residual Risks; Rollback or Recovery.
-
-For review tasks (any class), include:
-
-- Verdict: `approve` or `changes_requested`.
-- Findings with: severity, type, location, evidence, impact, and smallest fix.
-
-## 9. Implementation Checklist
-
-- Identify governing contract and owning authority.
-- Read relevant code, tests, and docs before changing behavior.
-- Keep scope minimal and prefer extending existing paths.
-- Preserve SSOT and schema ownership.
-- Add meaningful risky-path and negative-path coverage.
-- Check runtime, docs, tests, and config alignment before completion.
-
-## 10. Review Checklist
-
-Review falsification-first:
-
-- Is behavior correct on unhappy paths?
-- Is there contract, schema, or SSOT drift?
-- Is logic in the correct layer and authority?
-- Can fallback hide failure?
-- Are negative tests meaningful and sufficient?
-- Is any claim unsupported by evidence?
-
-## 11. High-Risk Extension
-
-High-risk work MUST include:
-
-- Governing contract and authority mapping.
-- Negative-path test evidence.
-- Explicit SSOT and no-duplicate-authority check.
-- Fail-closed behavior preservation.
-- Rollback or recovery path.
-- Explicit `NOT_VERIFIED` items.
-
-## 12. Extended Guidance
-
-This document is self-contained. All mandatory rules are above.
-
-For deeper guidance, see the FlowGuard repository docs/ directory.
-
-## Before Acting Rule
-
-Do not start editing immediately. First classify the task, identify authority and SSOT,
-read relevant artifacts, choose the smallest safe change, and determine verification level.
-
-## Before Completing Rule
-
-Before returning a final result, verify: output contract for the task class is satisfied,
-all evidence markers (ASSUMPTION, NOT_VERIFIED, BLOCKED) are set where needed, required
-verification for the task class has been run, and no SSOT drift was introduced.
+- Run the narrowest relevant tests for the touched surface.
+- For behavior touching state, policy, evidence, audit, identity, archive,
+  installer, release, CI, persistence, migration, or security boundaries, include
+  negative-path coverage when practical.
+- Before finishing, check that runtime, docs, tests, schemas, templates, and
+  generated/hash guards remain aligned.

@@ -62,6 +62,10 @@ How to install FlowGuard in environments without internet access.
 
 Consolidated control narrative: guarantees, boundaries, threats, mitigations, and residual risk.
 
+### [Trust Boundaries](./trust-boundaries.md)
+
+Review contract for signed vs mutable data, writers, attacker models, fail-closed behavior, audit events, and operational log points.
+
 ### [BSI C5 Mapping](./bsi-c5-mapping.md)
 
 How FlowGuard capabilities map to BSI C5:2020 control domains.
