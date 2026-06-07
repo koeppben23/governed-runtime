@@ -431,11 +431,9 @@ export function enforceBeforeVerdict(
   if (!isReviewableTool(toolName)) return { allowed: true };
 
   const reviewTool: ReviewableTool = toolName;
-  const selfReviewValue = args.reviewVerdict;
   const reviewVerdictValue = args.reviewVerdict;
   const hasSelfReviewVerdict =
-    (typeof selfReviewValue === 'string' && selfReviewValue.length > 0) ||
-    (typeof reviewVerdictValue === 'string' && reviewVerdictValue.length > 0);
+    typeof reviewVerdictValue === 'string' && reviewVerdictValue.length > 0;
   if (!hasSelfReviewVerdict) return { allowed: true };
 
   const pendingCheck = checkPendingReview(state, reviewTool, sessionState, strictEnforcement);
