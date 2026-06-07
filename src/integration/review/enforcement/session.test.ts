@@ -474,12 +474,12 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     expect(result.allowed).toBe(true);
   });
 
-  it('HAPPY: both verdict keys null → allowed (Mode A)', () => {
+  it('HAPPY: reviewVerdict=null is treated as Mode A → allowed', () => {
     const state = createSessionState();
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { planText: 'plan', reviewVerdict: null, reviewVerdict: null },
+      { planText: 'plan', reviewVerdict: null },
       { reviewAssurance: undefined },
       true,
     );
