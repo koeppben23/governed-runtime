@@ -68,24 +68,26 @@ export async function runStandardReviewPipeline(
         appendReviewAuditEvent(sessDir, sessionId, phase, event, detail),
       logError: (msg, err) => deps.log.warn('orchestrator', msg, { error: String(err) }),
     },
-    sessDir,
-    sessionId,
-    String(ctx.parsedOutput.phase ?? sessionState.phase),
-    (s, now2) =>
-      updateObligation(s, reviewCtx.obligationId, (item) => ({
-        ...item,
-        pluginHandshakeAt: now2,
-      })),
-    'review:obligation_created',
     {
-      obligationId: reviewCtx.obligationId,
-      obligationType,
-      iteration: reviewCtx.iteration,
-      planVersion: reviewCtx.planVersion,
-      criteriaVersion: reviewCtx.criteriaVersion,
-      mandateDigest: reviewCtx.mandateDigest,
+      sessDir,
+      sessionId,
+      phase: String(ctx.parsedOutput.phase ?? sessionState.phase),
+      stateMutation: (s, now2) =>
+        updateObligation(s, reviewCtx.obligationId, (item) => ({
+          ...item,
+          pluginHandshakeAt: now2,
+        })),
+      auditEventName: 'review:obligation_created',
+      auditDetail: {
+        obligationId: reviewCtx.obligationId,
+        obligationType,
+        iteration: reviewCtx.iteration,
+        planVersion: reviewCtx.planVersion,
+        criteriaVersion: reviewCtx.criteriaVersion,
+        mandateDigest: reviewCtx.mandateDigest,
+      },
+      auditFailureBehavior: strictEnforcement ? 'block' : 'warn',
     },
-    strictEnforcement ? 'block' : 'warn',
   );
 
   if (!assuranceResult.auditOk && assuranceResult.block) {
@@ -482,21 +484,23 @@ async function handleReviewerFailure(
           appendReviewAuditEvent(sessDir, sessionId, phase, event, detail),
         logError: (msg, err) => deps.log.warn('orchestrator', msg, { error: String(err) }),
       },
-      sessDir,
-      sessionId,
-      phase,
-      (s) =>
-        updateObligation(s, reviewCtx.obligationId, (item) => ({
-          ...item,
-          status: 'blocked' as const,
-          blockedCode: 'REVIEWER_INVOCATION_EXHAUSTED',
-        })),
-      'review:obligation_blocked',
       {
-        obligationId: reviewCtx.obligationId,
-        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        sessDir,
+        sessionId,
+        phase,
+        stateMutation: (s) =>
+          updateObligation(s, reviewCtx.obligationId, (item) => ({
+            ...item,
+            status: 'blocked' as const,
+            blockedCode: 'REVIEWER_INVOCATION_EXHAUSTED',
+          })),
+        auditEventName: 'review:obligation_blocked',
+        auditDetail: {
+          obligationId: reviewCtx.obligationId,
+          code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        },
+        auditFailureBehavior: 'warn',
       },
-      'warn',
     );
   }
 }

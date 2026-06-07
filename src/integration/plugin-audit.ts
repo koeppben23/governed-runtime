@@ -336,11 +336,14 @@ async function emitDecisionReceipt(params: DecisionReceiptParams): Promise<strin
 async function maybeCompleteAndArchive(
   deps: AuditDeps,
   ctx: AuditContext,
-  toolName: string,
-  sessionId: string,
-  state: SessionState | null,
-  recordTimestampFailure: (eventKind: string, error: string | undefined) => void,
+  opts: {
+    toolName: string;
+    sessionId: string;
+    state: SessionState | null;
+    recordTimestampFailure: (eventKind: string, error: string | undefined) => void;
+  },
 ): Promise<string> {
+  const { toolName, sessionId, state, recordTimestampFailure } = opts;
   let prevHash = ctx.prevHash;
   if (!ctx.transitions.some((t) => t.to === 'COMPLETE') || LIFECYCLE_TOOLS[toolName])
     return prevHash;
@@ -559,14 +562,12 @@ export async function runAudit(
     }
 
     // ── 5. Detect session completion + auto-archive ──────────────────────
-    ctx.prevHash = await maybeCompleteAndArchive(
-      deps,
-      ctx,
+    ctx.prevHash = await maybeCompleteAndArchive(deps, ctx, {
       toolName,
       sessionId,
       state,
       recordTimestampFailure,
-    );
+    });
 
     // ── 6. Emit error event ─────────────────────────────────────────────
     if (!ctx.success && ctx.errorMessage) {
