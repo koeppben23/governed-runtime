@@ -44,14 +44,21 @@ interface ResolvePluginSessionPolicyResult {
  *
  * Priority: state > config > solo
  */
-async function checkStateFileExists(sessDir: string, log?: ResolvePluginSessionPolicyOpts['log']): Promise<boolean> {
+async function checkStateFileExists(
+  sessDir: string,
+  log?: ResolvePluginSessionPolicyOpts['log'],
+): Promise<boolean> {
   try {
     await fs.access(sessDir + '/session-state.json');
     return true;
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== 'ENOENT' && code !== 'ENOTDIR') {
-      log?.warn('policy', 'Failed to access session state file', { sessionDir: sessDir, code, error: err instanceof Error ? err.message : String(err) });
+      log?.warn('policy', 'Failed to access session state file', {
+        sessionDir: sessDir,
+        code,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
     return false;
   }
@@ -77,12 +84,21 @@ export async function resolvePluginSessionPolicy(
 
   const state = await readState(sessDir);
   if (!state?.policySnapshot) {
-    const resolution = resolvePolicyWithContext(resolveRuntimePolicyMode({ configDefaultMode }), detectCiContext());
-    log?.debug('policy', 'resolved default policy', { requestedMode: resolution.requestedMode, effectiveMode: resolution.effectiveMode });
+    const resolution = resolvePolicyWithContext(
+      resolveRuntimePolicyMode({ configDefaultMode }),
+      detectCiContext(),
+    );
+    log?.debug('policy', 'resolved default policy', {
+      requestedMode: resolution.requestedMode,
+      effectiveMode: resolution.effectiveMode,
+    });
     return { policy: resolution.policy, state };
   }
 
   const policy = resolvePolicyFromSnapshot(state.policySnapshot);
-  log?.debug('policy', 'resolved session policy', { requestedMode: state.policySnapshot.requestedMode, effectiveMode: state.policySnapshot.mode });
+  log?.debug('policy', 'resolved session policy', {
+    requestedMode: state.policySnapshot.requestedMode,
+    effectiveMode: state.policySnapshot.mode,
+  });
   return { policy, state };
 }

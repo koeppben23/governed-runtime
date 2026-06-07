@@ -210,10 +210,7 @@ function resolvePolicySnapshot(p: HydratePolicyInput, ctx: RailContext, now: str
   });
 }
 
-function resolveProfile(
-  pr: HydrateProfileInput,
-  s: HydrateSessionInput,
-): { profile: FlowGuardProfile; activeChecks: string[]; activeProfile: ActiveProfile | null } {
+function resolveProfile(pr: HydrateProfileInput, s: HydrateSessionInput) {
   let profile: FlowGuardProfile | undefined;
   if (pr.profileId !== undefined) profile = defaultProfileRegistry.get(pr.profileId);
   else if (pr.repoSignals)
