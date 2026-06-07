@@ -92,6 +92,17 @@ function trackReviewRequired(
   });
 }
 
+function trackContentAnalysis(state: SessionEnforcementState, now: string): void {
+  state.pendingReviews.set(TOOL_FLOWGUARD_REVIEW, {
+    tool: TOOL_FLOWGUARD_REVIEW,
+    requestedAt: now,
+    subagentCalled: false,
+    subagentRecord: null,
+    contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
+    capturedFindings: null,
+  });
+}
+
 export function onFlowGuardToolAfter(
   state: SessionEnforcementState,
   toolName: string,
@@ -108,33 +119,19 @@ export function onFlowGuardToolAfter(
 
   const hasSelfReviewVerdict =
     typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
-  if (hasSelfReviewVerdict && parsed.error !== true) {
-    state.pendingReviews.delete(reviewTool);
-  }
+  if (hasSelfReviewVerdict && parsed.error !== true) state.pendingReviews.delete(reviewTool);
 
   const next = typeof parsed.next === 'string' ? parsed.next : '';
-  if (next.startsWith(REVIEW_REQUIRED_PREFIX)) {
-    trackReviewRequired(state, reviewTool, next, now);
-  }
+  if (next.startsWith(REVIEW_REQUIRED_PREFIX)) trackReviewRequired(state, reviewTool, next, now);
 
-  const requiredReviewAttestation = parsed.requiredReviewAttestation as
-    | Record<string, unknown>
-    | undefined;
+  const attestation = parsed.requiredReviewAttestation as Record<string, unknown> | undefined;
   if (
     parsed.error === true &&
     parsed.code === 'CONTENT_ANALYSIS_REQUIRED' &&
-    requiredReviewAttestation &&
+    attestation &&
     isStandaloneReviewTool
-  ) {
-    state.pendingReviews.set(TOOL_FLOWGUARD_REVIEW, {
-      tool: TOOL_FLOWGUARD_REVIEW,
-      requestedAt: now,
-      subagentCalled: false,
-      subagentRecord: null,
-      contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
-      capturedFindings: null,
-    });
-  }
+  )
+    trackContentAnalysis(state, now);
 }
 
 /**
@@ -150,6 +147,40 @@ export function onFlowGuardToolAfter(
  * @param taskArgs - Task tool call arguments
  * @returns Enforcement result
  */
+function checkReviewContext(
+  pendingReviews: PendingReview[],
+  prompt: string,
+  strictEnforcement: boolean,
+): { hasMatch: boolean; missingFields: string[]; blockReason?: EnforcementResult } {
+  const missingFields: string[] = [];
+  for (const pending of pendingReviews) {
+    if (!pending.contentMeta) {
+      if (strictEnforcement) {
+        return {
+          hasMatch: false,
+          missingFields,
+          blockReason: {
+            allowed: false,
+            code: 'SUBAGENT_CONTEXT_UNVERIFIABLE',
+            reason:
+              'Content meta extraction failed — cannot validate subagent context in strict mode. The FlowGuard tool response must include structured review obligation metadata.',
+          },
+        };
+      }
+      return { hasMatch: true, missingFields };
+    }
+    const { expectedIteration, expectedPlanVersion } = pending.contentMeta;
+    const hasIteration = promptContainsValue(prompt, 'iteration', expectedIteration);
+    const hasPlanVersion =
+      expectedPlanVersion === null || promptContainsValue(prompt, 'version', expectedPlanVersion);
+    if (hasIteration && hasPlanVersion) return { hasMatch: true, missingFields };
+    if (!hasIteration) missingFields.push(`iteration=${expectedIteration}`);
+    if (!hasPlanVersion && expectedPlanVersion !== null)
+      missingFields.push(`planVersion=${expectedPlanVersion}`);
+  }
+  return { hasMatch: false, missingFields };
+}
+
 export function enforceBeforeSubagentCall(
   state: SessionEnforcementState,
   taskArgs: Record<string, unknown>,
@@ -159,75 +190,26 @@ export function enforceBeforeSubagentCall(
   if (subagentType !== REVIEWER_SUBAGENT_TYPE) return { allowed: true };
 
   const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';
-
-  // Collect pending reviews that haven't had a subagent call yet
   const pendingReviews = [...state.pendingReviews.values()].filter((p) => !p.subagentCalled);
-  if (pendingReviews.length === 0) {
-    // No pending review — subagent call without prior FlowGuard tool signal.
-    // Allow: could be a legitimate retry or the first call in a new iteration.
-    return { allowed: true };
-  }
+  if (pendingReviews.length === 0) return { allowed: true };
 
-  // Check prompt is substantive (not empty/trivial)
   if (prompt.length < MIN_SUBAGENT_PROMPT_LENGTH) {
     return {
       allowed: false,
       code: 'SUBAGENT_PROMPT_EMPTY',
-      reason:
-        `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} is too short ` +
-        `(${prompt.length} chars, minimum ${MIN_SUBAGENT_PROMPT_LENGTH}). ` +
-        `Include the plan/implementation text, ticket text, iteration, and planVersion.`,
+      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} is too short (${prompt.length} chars, minimum ${MIN_SUBAGENT_PROMPT_LENGTH}). Include the plan/implementation text, ticket text, iteration, and planVersion.`,
     };
   }
 
-  // Check prompt contains expected context from at least one pending review
-  const missingFields: string[] = [];
-  let hasMatchingContext = false;
-
-  for (const pending of pendingReviews) {
-    if (!pending.contentMeta) {
-      // Content meta extraction failed — strict enforcement requires verifiable context
-      if (strictEnforcement) {
-        return {
-          allowed: false,
-          code: 'SUBAGENT_CONTEXT_UNVERIFIABLE',
-          reason:
-            'Content meta extraction failed — cannot validate subagent context in strict mode. ' +
-            'The FlowGuard tool response must include structured review obligation metadata.',
-        };
-      }
-      // Non-strict: allow with explicit degradation
-      hasMatchingContext = true;
-      break;
-    }
-
-    const { expectedIteration, expectedPlanVersion } = pending.contentMeta;
-    const hasIteration = promptContainsValue(prompt, 'iteration', expectedIteration);
-    const hasPlanVersion =
-      expectedPlanVersion === null || promptContainsValue(prompt, 'version', expectedPlanVersion);
-
-    if (hasIteration && hasPlanVersion) {
-      hasMatchingContext = true;
-      break;
-    }
-
-    if (!hasIteration) missingFields.push(`iteration=${expectedIteration}`);
-    if (!hasPlanVersion && expectedPlanVersion !== null) {
-      missingFields.push(`planVersion=${expectedPlanVersion}`);
-    }
-  }
-
-  if (!hasMatchingContext) {
+  const ctx = checkReviewContext(pendingReviews, prompt, strictEnforcement);
+  if (ctx.blockReason) return ctx.blockReason;
+  if (!ctx.hasMatch) {
     return {
       allowed: false,
       code: 'SUBAGENT_PROMPT_MISSING_CONTEXT',
-      reason:
-        `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} does not contain ` +
-        `the expected review context. Missing: ${[...new Set(missingFields)].join(', ')}. ` +
-        `Include the iteration and planVersion values from the FlowGuard tool response.`,
+      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} does not contain the expected review context. Missing: ${[...new Set(ctx.missingFields)].join(', ')}. Include the iteration and planVersion values from the FlowGuard tool response.`,
     };
   }
-
   return { allowed: true };
 }
 
@@ -365,22 +347,16 @@ function checkPendingReview(
   return { allowed: true };
 }
 
-function verifyFindingsIntegrity(
-  pending: {
-    subagentRecord?: { sessionId: string | null } | null;
-    capturedFindings?: { overallVerdict: string; blockingIssuesCount: number } | null;
-  },
-  reviewFindings: Record<string, unknown> | undefined,
+function checkSessionMismatch(
+  pending: { subagentRecord?: { sessionId: string | null } | null },
+  reviewFindings: Record<string, unknown>,
 ): EnforcementResult | null {
-  if (!reviewFindings || !pending.subagentRecord) return null;
-
   const reviewedBy = reviewFindings.reviewedBy as Record<string, unknown> | undefined;
   const submittedSessionId =
     typeof reviewedBy?.sessionId === 'string' ? reviewedBy.sessionId : null;
-
   if (
     submittedSessionId &&
-    pending.subagentRecord.sessionId !== null &&
+    pending.subagentRecord?.sessionId != null &&
     submittedSessionId !== pending.subagentRecord.sessionId
   ) {
     return {
@@ -389,35 +365,51 @@ function verifyFindingsIntegrity(
       reason: `FlowGuard enforcement: reviewFindings.reviewedBy.sessionId ("${submittedSessionId}") does not match the actual subagent session ("${pending.subagentRecord.sessionId}"). The findings must come from the ${REVIEWER_SUBAGENT_TYPE} subagent that was invoked.`,
     };
   }
+  return null;
+}
 
-  if (!pending.capturedFindings) return null;
-
+function checkFindingsMismatch(
+  pending: { capturedFindings?: { overallVerdict: string; blockingIssuesCount: number } | null },
+  reviewFindings: Record<string, unknown>,
+): EnforcementResult | null {
   const submittedVerdict =
     typeof reviewFindings.overallVerdict === 'string' ? reviewFindings.overallVerdict : null;
   const submittedBlockingIssues = Array.isArray(reviewFindings.blockingIssues)
     ? reviewFindings.blockingIssues
     : null;
 
-  if (submittedVerdict !== null && submittedVerdict !== pending.capturedFindings.overallVerdict) {
+  if (submittedVerdict !== null && submittedVerdict !== pending.capturedFindings!.overallVerdict) {
     return {
       allowed: false,
       code: 'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
-      reason: `FlowGuard enforcement: submitted reviewFindings.overallVerdict ("${submittedVerdict}") does not match the actual subagent verdict ("${pending.capturedFindings.overallVerdict}"). The findings must not be modified after the subagent produces them.`,
+      reason: `FlowGuard enforcement: submitted reviewFindings.overallVerdict ("${submittedVerdict}") does not match the actual subagent verdict ("${pending.capturedFindings!.overallVerdict}"). The findings must not be modified after the subagent produces them.`,
     };
   }
-
   if (
     submittedBlockingIssues !== null &&
-    submittedBlockingIssues.length !== pending.capturedFindings.blockingIssuesCount
+    submittedBlockingIssues.length !== pending.capturedFindings!.blockingIssuesCount
   ) {
     return {
       allowed: false,
       code: 'SUBAGENT_FINDINGS_ISSUES_MISMATCH',
-      reason: `FlowGuard enforcement: submitted reviewFindings.blockingIssues count (${submittedBlockingIssues.length}) does not match the actual subagent count (${pending.capturedFindings.blockingIssuesCount}). The findings must not be modified after the subagent produces them.`,
+      reason: `FlowGuard enforcement: submitted reviewFindings.blockingIssues count (${submittedBlockingIssues.length}) does not match the actual subagent count (${pending.capturedFindings!.blockingIssuesCount}). The findings must not be modified after the subagent produces them.`,
     };
   }
-
   return null;
+}
+
+function verifyFindingsIntegrity(
+  pending: {
+    subagentRecord?: { sessionId: string | null } | null;
+    capturedFindings?: { overallVerdict: string; blockingIssuesCount: number } | null;
+  },
+  reviewFindings: Record<string, unknown> | undefined,
+): EnforcementResult | null {
+  if (!reviewFindings || !pending.subagentRecord) return null;
+  const sessionIssue = checkSessionMismatch(pending, reviewFindings);
+  if (sessionIssue) return sessionIssue;
+  if (!pending.capturedFindings) return null;
+  return checkFindingsMismatch(pending, reviewFindings);
 }
 
 export function enforceBeforeVerdict(
