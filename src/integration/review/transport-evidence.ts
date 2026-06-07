@@ -150,9 +150,9 @@ async function processTransportFile(
   state: SessionState,
   obligation: ReturnType<typeof latestUnconsumedObligation> & {},
   assurance: ReturnType<typeof ensureReviewAssurance>,
-  parentSessionId: string,
-  now: string,
+  opts: { parentSessionId: string; now: string },
 ): Promise<TransportEvidenceBindResult> {
+  const { parentSessionId, now } = opts;
   let parsedJson: unknown;
   try {
     parsedJson = JSON.parse(file.content);
@@ -246,14 +246,10 @@ export async function bindExternalReviewEvidence(
   if (files.length === 0) return { status: 'none' };
   const assurance = ensureReviewAssurance(state.reviewAssurance);
   for (const file of files.reverse()) {
-    const result = await processTransportFile(
-      file,
-      state,
-      obligation,
-      assurance,
+    const result = await processTransportFile(file, state, obligation, assurance, {
       parentSessionId,
       now,
-    );
+    });
     if (result.status !== 'none') return result;
   }
   return { status: 'none' };
