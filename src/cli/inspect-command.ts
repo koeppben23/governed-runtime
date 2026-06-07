@@ -194,6 +194,120 @@ function exitWithError(message: string): number {
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
+async function listWorkspaceSessionsMode(fingerprint: string, sessions: string[]): Promise<number> {
+  if (sessions.length === 0) {
+    console.log('No sessions with audit trails found in this workspace.');
+    return 0;
+  }
+
+  const summaries: Array<{ sessionId: string; eventCount: number; phases: string; age: string }> =
+    [];
+  for (const sid of sessions) {
+    const summary = await readSessionSummary(fingerprint, sid);
+    summaries.push(summary);
+  }
+
+  console.log(formatSessionList(summaries));
+  return 0;
+}
+
+async function readSessionSummary(
+  fingerprint: string,
+  sid: string,
+): Promise<{ sessionId: string; eventCount: number; phases: string; age: string }> {
+  const sd = sessionDir(fingerprint, sid);
+  const trailPath = auditPath(sd);
+  let eventCount = 0;
+  let phases = '';
+  let lastTimestamp = '';
+
+  try {
+    const raw = await readFile(trailPath, 'utf-8');
+    const lines = raw.split('\n').filter((l) => l.trim());
+    eventCount = lines.length;
+
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        const rawLine = lines[i];
+        if (!rawLine) continue;
+        const evt = JSON.parse(rawLine) as Record<string, unknown> | null;
+        if (evt?.timestamp) {
+          lastTimestamp = String(evt.timestamp);
+          break;
+        }
+      } catch {
+        /* skip malformed */
+      }
+    }
+
+    const transEvents = lines
+      .map((l) => {
+        try {
+          return JSON.parse(l);
+        } catch {
+          return null;
+        }
+      })
+      .filter(
+        (e): e is Record<string, unknown> =>
+          e !== null &&
+          typeof (e as Record<string, unknown>).event === 'string' &&
+          ((e as Record<string, unknown>).event as string).startsWith('transition:'),
+      )
+      .map((e) => (e as Record<string, unknown>).phase)
+      .filter((p): p is string => typeof p === 'string');
+
+    const uniquePhases = [...new Set(transEvents)];
+    phases = uniquePhases.length > 0 ? uniquePhases.join('→') : '';
+  } catch {
+    eventCount = 0;
+  }
+
+  return {
+    sessionId: sid,
+    eventCount,
+    phases: phases.length > 30 ? phases.slice(0, 27) + '...' : phases,
+    age: lastTimestamp ? relativeAge(lastTimestamp) : 'unknown',
+  };
+}
+
+async function inspectSingleSessionMode(
+  fingerprint: string,
+  sessionId: string,
+  json: boolean,
+): Promise<number> {
+  const sd = sessionDir(fingerprint, sessionId);
+
+  let trailResult: Awaited<ReturnType<typeof readAuditTrail>>;
+  try {
+    trailResult = await readAuditTrail(sd);
+  } catch (err) {
+    return exitWithError(
+      `Cannot read audit trail: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  if (trailResult.events.length === 0) {
+    console.log('No audit events recorded for this session.');
+    return 1;
+  }
+
+  const chain = verifyChain(trailResult.events, { strict: true });
+  const summary = generateComplianceSummary(
+    trailResult.events,
+    sessionId,
+    chain,
+    new Date().toISOString(),
+  );
+
+  if (json) {
+    console.log(JSON.stringify(summary, null, 2));
+  } else {
+    console.log(formatComplianceReport(summary));
+  }
+  return summary.compliant ? 0 : 1;
+}
+
 export async function inspectMain(argv: string[]): Promise<number> {
   const parsed = parseInspectArgs(argv);
 
@@ -211,7 +325,6 @@ export async function inspectMain(argv: string[]): Promise<number> {
     return exitWithError('--json requires --session <id>');
   }
 
-  // Resolve workspace
   let fingerprint: string;
   try {
     fingerprint = await resolveWorkspace();
@@ -222,120 +335,13 @@ export async function inspectMain(argv: string[]): Promise<number> {
 
   const sessions = listWorkspaceSessions(fingerprint);
 
-  // -- List mode
   if (!sessionId) {
-    if (sessions.length === 0) {
-      console.log('No sessions with audit trails found in this workspace.');
-      return 0;
-    }
-
-    const summaries: Array<{ sessionId: string; eventCount: number; phases: string; age: string }> =
-      [];
-    for (const sid of sessions) {
-      const sd = sessionDir(fingerprint, sid);
-      const trailPath = auditPath(sd);
-      let eventCount = 0;
-      let phases = '';
-      let lastTimestamp = '';
-
-      try {
-        // Load trail for basic stats only — no chain verification in list mode
-        const raw = await readFile(trailPath, 'utf-8');
-        const lines = raw.split('\n').filter((l) => l.trim());
-        eventCount = lines.length;
-
-        for (let i = lines.length - 1; i >= 0; i--) {
-          try {
-            const rawLine = lines[i];
-            if (!rawLine) continue;
-            const evt = JSON.parse(rawLine) as Record<string, unknown> | null;
-            if (evt?.timestamp) {
-              lastTimestamp = String(evt.timestamp);
-              break;
-            }
-          } catch {
-            /* skip malformed line */
-          }
-        }
-
-        const transEvents = lines
-          .map((l) => {
-            try {
-              return JSON.parse(l);
-            } catch {
-              return null;
-            }
-          })
-          .filter(
-            (e): e is Record<string, unknown> =>
-              e !== null &&
-              typeof (e as Record<string, unknown>).event === 'string' &&
-              ((e as Record<string, unknown>).event as string).startsWith('transition:'),
-          )
-          .map(
-            (e) =>
-              // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
-              (e as Record<string, unknown>).phase,
-          )
-          .filter((p): p is string => typeof p === 'string');
-
-        const uniquePhases = [...new Set(transEvents)];
-        phases = uniquePhases.length > 0 ? uniquePhases.join('→') : '';
-      } catch {
-        eventCount = 0;
-      }
-
-      summaries.push({
-        sessionId: sid,
-        eventCount,
-        phases: phases.length > 30 ? phases.slice(0, 27) + '...' : phases,
-        age: lastTimestamp ? relativeAge(lastTimestamp) : 'unknown',
-      });
-    }
-
-    console.log(formatSessionList(summaries));
-    return 0;
+    return listWorkspaceSessionsMode(fingerprint, sessions);
   }
 
-  // -- Single-session mode
   if (!sessions.includes(sessionId)) {
     return exitWithError(`Session ${sessionId} not found in this workspace.`);
   }
 
-  const sd = sessionDir(fingerprint, sessionId);
-
-  let trailResult: Awaited<ReturnType<typeof readAuditTrail>>;
-  try {
-    trailResult = await readAuditTrail(sd);
-  } catch (err) {
-    return exitWithError(
-      `Cannot read audit trail: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  if (trailResult.events.length === 0) {
-    console.log('No audit events recorded for this session.');
-    return 1;
-  }
-
-  // Verify chain
-  const chain = verifyChain(trailResult.events, {
-    strict: true,
-  });
-
-  // Build compliance summary
-  const summary = generateComplianceSummary(
-    trailResult.events,
-    sessionId,
-    chain,
-    new Date().toISOString(),
-  );
-
-  if (json) {
-    console.log(JSON.stringify(summary, null, 2));
-  } else {
-    console.log(formatComplianceReport(summary));
-  }
-
-  return summary.compliant ? 0 : 1;
+  return inspectSingleSessionMode(fingerprint, sessionId, json);
 }

@@ -109,35 +109,17 @@ export async function mergePackageJson(filePath: string, version: string): Promi
   return { path: filePath, action: 'merged' };
 }
 
+function ensureNested(parent: Record<string, unknown>, key: string): Record<string, unknown> {
+  if (!parent[key] || typeof parent[key] !== 'object' || parent[key] === null) {
+    parent[key] = {};
+  }
+  return parent[key] as Record<string, unknown>;
+}
+
 export function mergeReviewerTaskPermission(parsed: Record<string, unknown>): void {
-  type AnyObj = Record<string, unknown>;
-
-  if (!parsed['agent'] || typeof parsed['agent'] !== 'object' || parsed['agent'] === null) {
-    parsed['agent'] = {};
-  }
-  const agent = parsed['agent'] as AnyObj;
-
-  if (!agent['build'] || typeof agent['build'] !== 'object' || agent['build'] === null) {
-    agent['build'] = {};
-  }
-  const build = agent['build'] as AnyObj;
-
-  if (
-    !build['permission'] ||
-    typeof build['permission'] !== 'object' ||
-    build['permission'] === null
-  ) {
-    build['permission'] = {};
-  }
-  const permission = build['permission'] as AnyObj;
-
-  if (
-    !permission['task'] ||
-    typeof permission['task'] !== 'object' ||
-    permission['task'] === null
-  ) {
-    permission['task'] = {};
-  }
+  const agent = ensureNested(parsed, 'agent');
+  const build = ensureNested(agent, 'build');
+  const permission = ensureNested(build, 'permission');
 
   permission['task'] = {
     '*': 'deny',
@@ -211,81 +193,104 @@ export async function mergeOpencodeJson(filePath: string, scope: InstallScope): 
   return { path: filePath, action: 'merged' };
 }
 
+function getTaskPermissions(parsed: Record<string, unknown>): Record<string, unknown> | null {
+  if (!parsed['agent'] || typeof parsed['agent'] !== 'object') return null;
+  const build = (parsed['agent'] as Record<string, unknown>)['build'];
+  if (!build || typeof build !== 'object') return null;
+  const permission = (build as Record<string, unknown>)['permission'];
+  if (!permission || typeof permission !== 'object') return null;
+  const task = (permission as Record<string, unknown>)['task'];
+  if (!task || typeof task !== 'object') return null;
+  return task as Record<string, unknown>;
+}
+
+function cleanupEmptyParents(
+  parsed: Record<string, unknown>,
+  agent: Record<string, unknown>,
+  build: Record<string, unknown>,
+  permission: Record<string, unknown>,
+): void {
+  if (Object.keys(permission).length === 0) delete build['permission'];
+  if (Object.keys(build).length === 0) delete agent['build'];
+  if (Object.keys(agent).length === 0) delete parsed['agent'];
+}
+
+function removeTaskHardening(parsed: Record<string, unknown>): boolean {
+  const task = getTaskPermissions(parsed);
+  if (!task) return false;
+  const agent = parsed['agent'] as Record<string, unknown>;
+  const build = agent['build'] as Record<string, unknown>;
+  const permission = build['permission'] as Record<string, unknown>;
+
+  let removed = false;
+  if (task[REVIEWER_SUBAGENT_TYPE] === 'allow') {
+    delete task[REVIEWER_SUBAGENT_TYPE];
+    removed = true;
+  }
+  if (task['*'] === 'deny' && Object.keys(task).filter((k) => k !== '*').length === 0) {
+    delete task['*'];
+    removed = true;
+  }
+  if (Object.keys(task).length === 0) delete permission['task'];
+  cleanupEmptyParents(parsed, agent, build, permission);
+  return removed;
+}
+
+async function removeFlowGuardOnly(
+  parsed: Record<string, unknown>,
+  scope: InstallScope,
+): Promise<{ removed: boolean }> {
+  const entry = mandatesInstructionEntry(scope);
+  const hasInstructions = Array.isArray(parsed['instructions']);
+  const before = hasInstructions ? (parsed['instructions'] as string[]) : [];
+  const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
+  const removedInstruction = after.length !== before.length;
+  const removedTaskHardening = removeTaskHardening(parsed);
+
+  if (hasInstructions) {
+    parsed['instructions'] = after;
+  }
+  return { removed: removedInstruction || removedTaskHardening };
+}
+
+async function removeFromDesktopOwned(
+  parsed: Record<string, unknown>,
+  instructions: string[],
+  scope: InstallScope,
+): Promise<{ removed: true; parsed: Record<string, unknown> } | { removed: false }> {
+  const entry = mandatesInstructionEntry(scope);
+  const after = instructions.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
+  if (after.length === instructions.length) return { removed: false };
+  if (Array.isArray(parsed['instructions']) || after.length > 0) {
+    parsed['instructions'] = after;
+  }
+  return { removed: true, parsed };
+}
+
 export async function removeFromOpencodeJson(
   filePath: string,
   scope: InstallScope,
 ): Promise<FileOp> {
   const existing = await safeRead(filePath);
-  if (!existing) {
-    return { path: filePath, action: 'not_found' };
-  }
+  if (!existing) return { path: filePath, action: 'not_found' };
 
   try {
     const parsed = parseJsonc(existing);
-
-    const existingInstructions = Array.isArray(parsed['instructions'])
+    const instructions = Array.isArray(parsed['instructions'])
       ? (parsed['instructions'] as string[])
       : [];
-    const hasDesktopInstructions = hasNonFlowGuardInstructions(existingInstructions);
-    const hasPluginField = 'plugin' in parsed;
 
-    if (hasDesktopInstructions || hasPluginField) {
-      const entry = mandatesInstructionEntry(scope);
-      const hadInstructions = Array.isArray(parsed['instructions']);
-      const before = existingInstructions;
-      const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
-      const removedInstruction = after.length !== before.length;
-
-      if (!removedInstruction) {
+    if (hasNonFlowGuardInstructions(instructions) || 'plugin' in parsed) {
+      const result = await removeFromDesktopOwned(parsed, instructions, scope);
+      if (!result.removed)
         return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
-      }
-
-      if (hadInstructions || after.length > 0) {
-        parsed['instructions'] = after;
-      }
-      await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+      await writeFile(filePath, JSON.stringify(result.parsed, null, 2) + '\n', 'utf-8');
       return { path: filePath, action: 'merged', reason: 'removed FlowGuard entries' };
     }
 
-    const entry = mandatesInstructionEntry(scope);
-    const hasInstructions = Array.isArray(parsed['instructions']);
-    const before = hasInstructions ? (parsed['instructions'] as string[]) : [];
-    const after = before.filter((i) => i !== entry && i !== LEGACY_INSTRUCTION_ENTRY);
-    const removedInstruction = after.length !== before.length;
-
-    let removedTaskHardening = false;
-    if (parsed['agent'] && typeof parsed['agent'] === 'object') {
-      const agent = parsed['agent'] as Record<string, unknown>;
-      if (agent['build'] && typeof agent['build'] === 'object') {
-        const build = agent['build'] as Record<string, unknown>;
-        if (build['permission'] && typeof build['permission'] === 'object') {
-          const permission = build['permission'] as Record<string, unknown>;
-          if (permission['task'] && typeof permission['task'] === 'object') {
-            const task = permission['task'] as Record<string, unknown>;
-            if (task[REVIEWER_SUBAGENT_TYPE] === 'allow') {
-              delete task[REVIEWER_SUBAGENT_TYPE];
-              removedTaskHardening = true;
-            }
-            if (task['*'] === 'deny' && Object.keys(task).filter((k) => k !== '*').length === 0) {
-              delete task['*'];
-              removedTaskHardening = true;
-            }
-            if (Object.keys(task).length === 0) delete permission['task'];
-          }
-          if (Object.keys(permission).length === 0) delete build['permission'];
-        }
-        if (Object.keys(build).length === 0) delete agent['build'];
-      }
-      if (Object.keys(agent).length === 0) delete parsed['agent'];
-    }
-
-    if (!removedInstruction && !removedTaskHardening) {
+    const { removed } = await removeFlowGuardOnly(parsed, scope);
+    if (!removed)
       return { path: filePath, action: 'skipped', reason: 'no FlowGuard entries found' };
-    }
-
-    if (hasInstructions) {
-      parsed['instructions'] = after;
-    }
     await writeFile(filePath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
     return { path: filePath, action: 'merged', reason: 'removed FlowGuard instruction entries' };
   } catch {

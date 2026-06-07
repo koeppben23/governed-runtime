@@ -36,6 +36,127 @@ function isFlowGuardVendorArtifact(entry: string): boolean {
   return FLOWGUARD_TARBALL_PATTERN.test(entry);
 }
 
+async function cleanupVendorDir(fullPath: string): Promise<FileOp[]> {
+  const ops: FileOp[] = [];
+  try {
+    if (existsSync(fullPath)) {
+      const entries = await readdir(fullPath);
+      let removedCount = 0;
+      for (const entry of entries) {
+        if (isFlowGuardVendorArtifact(entry)) {
+          await safeUnlink(join(fullPath, entry));
+          removedCount++;
+          ops.push({ path: join(fullPath, entry), action: 'removed' });
+        }
+      }
+      const remaining = await readdir(fullPath);
+      if (remaining.length === 0) {
+        await rm(fullPath, { recursive: true, force: true });
+        ops.push({ path: fullPath, action: 'removed', reason: 'empty vendor directory' });
+      } else if (removedCount === 0) {
+        ops.push({ path: fullPath, action: 'skipped', reason: 'no FlowGuard tarballs in vendor' });
+      }
+    } else {
+      ops.push({ path: fullPath, action: 'not_found' });
+    }
+  } catch {
+    ops.push({ path: fullPath, action: 'not_found' });
+  }
+  return ops;
+}
+
+async function removeMandateIfModified(fullPath: string, warnings: string[]): Promise<void> {
+  const content = await safeRead(fullPath);
+  if (content === null) return;
+  if (isManagedArtifact(content)) {
+    const fileDigest = extractManagedDigest(content);
+    const expectedDigest = computeMandatesDigest();
+    const fileBody = extractManagedBody(content);
+    const bodyModified = fileBody !== null && sha256(fileBody) !== expectedDigest;
+    if ((fileDigest && fileDigest !== expectedDigest) || bodyModified) {
+      warnings.push(`${MANDATES_FILENAME} was locally modified — removed anyway`);
+    }
+  } else {
+    warnings.push(`${MANDATES_FILENAME} has no managed header — removed anyway`);
+  }
+}
+
+async function removeManagedFiles(
+  target: string,
+  ops: FileOp[],
+  warnings: string[],
+): Promise<void> {
+  for (const relPath of FLOWGUARD_OWNED_FILES) {
+    const fullPath = join(target, relPath);
+
+    if (relPath === MANDATES_FILENAME) {
+      await removeMandateIfModified(fullPath, warnings);
+    }
+
+    if (relPath === 'vendor') {
+      ops.push(...(await cleanupVendorDir(fullPath)));
+      continue;
+    }
+
+    const removed = await safeUnlink(fullPath);
+    ops.push({ path: fullPath, action: removed ? 'removed' : 'not_found' });
+  }
+}
+
+async function cleanupPackageJson(target: string): Promise<FileOp[]> {
+  const pkgPath = join(target, 'package.json');
+  const pkgContent = await safeRead(pkgPath);
+  if (!pkgContent) return [];
+  try {
+    const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
+    const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
+    delete deps['@flowguard/core'];
+    delete deps['@opencode-ai/plugin'];
+
+    const hasScripts = parsed['scripts'] != null && Object.keys(parsed['scripts']).length > 0;
+    const hasDevDeps =
+      parsed['devDependencies'] != null && Object.keys(parsed['devDependencies']).length > 0;
+    const depsWithoutZod = Object.keys(deps).filter((k) => k !== 'zod');
+    const knownMetaKeys = new Set([
+      'name',
+      'version',
+      'private',
+      'type',
+      'dependencies',
+      'description',
+    ]);
+    const hasForeignFields = Object.keys(parsed).some((k) => !knownMetaKeys.has(k));
+
+    if (!hasScripts && !hasDevDeps && depsWithoutZod.length === 0 && !hasForeignFields) {
+      await safeUnlink(pkgPath);
+      return [{ path: pkgPath, action: 'removed', reason: 'no non-FlowGuard content' }];
+    }
+    parsed['dependencies'] = deps;
+    if (Object.keys(deps).length === 0) delete parsed['dependencies'];
+    await writeFile(pkgPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+    return [{ path: pkgPath, action: 'merged', reason: 'removed FlowGuard dependencies' }];
+  } catch {
+    return [{ path: pkgPath, action: 'skipped', reason: 'malformed JSON' }];
+  }
+}
+
+async function cleanupOpencodeConfig(args: CliArgs, target: string): Promise<FileOp[]> {
+  const installPlatform = args.installPlatform ?? 'opencode';
+  if (installPlatform === 'opencode') {
+    const opencodeJsonPath = resolveOpencodeConfigPath(args.installScope, target);
+    const ops = [await removeFromOpencodeJson(opencodeJsonPath, args.installScope)];
+    const parallelConfig = findParallelOpencodeConfig(opencodeJsonPath);
+    if (parallelConfig) {
+      ops.push(await removeFromOpencodeJson(parallelConfig, args.installScope));
+    }
+    return ops;
+  }
+  if (installPlatform === 'claude-code') {
+    return uninstallClaudeCodePlugin(target);
+  }
+  return uninstallCodexPlugin(args.installScope);
+}
+
 /**
  * Uninstall FlowGuard from the target directory.
  *
@@ -55,131 +176,10 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
   const warnings: string[] = [];
 
   try {
-    // Remove FlowGuard-owned files
-    for (const relPath of FLOWGUARD_OWNED_FILES) {
-      const fullPath = join(target, relPath);
+    await removeManagedFiles(target, ops, warnings);
+    ops.push(...(await cleanupPackageJson(target)));
+    ops.push(...(await cleanupOpencodeConfig(args, target)));
 
-      // For flowguard-mandates.md, check if modified before removing
-      if (relPath === MANDATES_FILENAME) {
-        const content = await safeRead(fullPath);
-        if (content !== null) {
-          if (isManagedArtifact(content)) {
-            const fileDigest = extractManagedDigest(content);
-            const expectedDigest = computeMandatesDigest();
-            const fileBody = extractManagedBody(content);
-            const bodyModified = fileBody !== null && sha256(fileBody) !== expectedDigest;
-            if ((fileDigest && fileDigest !== expectedDigest) || bodyModified) {
-              warnings.push(`${MANDATES_FILENAME} was locally modified — removed anyway`);
-            }
-          } else {
-            warnings.push(`${MANDATES_FILENAME} has no managed header — removed anyway`);
-          }
-        }
-      }
-
-      // Handle vendor directory specially (remove only FlowGuard tarballs)
-      if (relPath === 'vendor') {
-        try {
-          if (existsSync(fullPath)) {
-            const entries = await readdir(fullPath);
-            let removedCount = 0;
-            for (const entry of entries) {
-              if (isFlowGuardVendorArtifact(entry)) {
-                await safeUnlink(join(fullPath, entry));
-                removedCount++;
-                ops.push({ path: join(fullPath, entry), action: 'removed' });
-              }
-            }
-            // Remove vendor dir if empty after cleanup
-            const remaining = await readdir(fullPath);
-            if (remaining.length === 0) {
-              await rm(fullPath, { recursive: true, force: true });
-              ops.push({ path: fullPath, action: 'removed', reason: 'empty vendor directory' });
-            } else if (removedCount === 0) {
-              ops.push({
-                path: fullPath,
-                action: 'skipped',
-                reason: 'no FlowGuard tarballs in vendor',
-              });
-            }
-          } else {
-            ops.push({ path: fullPath, action: 'not_found' });
-          }
-          continue;
-        } catch {
-          ops.push({ path: fullPath, action: 'not_found' });
-          continue;
-        }
-      }
-
-      const removed = await safeUnlink(fullPath);
-      ops.push({
-        path: fullPath,
-        action: removed ? 'removed' : 'not_found',
-      });
-    }
-
-    // Remove @flowguard/core from package.json (or remove file entirely if FlowGuard-only)
-    const pkgPath = join(target, 'package.json');
-    const pkgContent = await safeRead(pkgPath);
-    if (pkgContent) {
-      try {
-        const parsed = JSON.parse(pkgContent) as Record<string, unknown>;
-        const deps = (parsed['dependencies'] ?? {}) as Record<string, string>;
-        delete deps['@flowguard/core'];
-        delete deps['@opencode-ai/plugin'];
-
-        const hasScripts = parsed['scripts'] != null && Object.keys(parsed['scripts']).length > 0;
-        const hasDevDeps =
-          parsed['devDependencies'] != null && Object.keys(parsed['devDependencies']).length > 0;
-        // Check remaining deps BEFORE removing zod — zod is only removed
-        // when the file is proven FlowGuard-only (no foreign content)
-        const depsWithoutZod = Object.keys(deps).filter((k) => k !== 'zod');
-        const knownMetaKeys = new Set([
-          'name',
-          'version',
-          'private',
-          'type',
-          'dependencies',
-          'description',
-        ]);
-        const hasForeignFields = Object.keys(parsed).some((k) => !knownMetaKeys.has(k));
-
-        if (!hasScripts && !hasDevDeps && depsWithoutZod.length === 0 && !hasForeignFields) {
-          // Proven FlowGuard-only minimal file — safe to remove entirely
-          await safeUnlink(pkgPath);
-          ops.push({ path: pkgPath, action: 'removed', reason: 'no non-FlowGuard content' });
-        } else {
-          // Foreign content exists — only remove FlowGuard deps, preserve zod
-          parsed['dependencies'] = deps;
-          if (Object.keys(deps).length === 0) delete parsed['dependencies'];
-          await writeFile(pkgPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
-          ops.push({ path: pkgPath, action: 'merged', reason: 'removed FlowGuard dependencies' });
-        }
-      } catch {
-        ops.push({ path: pkgPath, action: 'skipped', reason: 'malformed JSON' });
-      }
-    }
-
-    // Remove FlowGuard instruction entries from the active OpenCode config.
-    if (installPlatform === 'opencode') {
-      const opencodeJsonPath = resolveOpencodeConfigPath(args.installScope, target);
-      ops.push(await removeFromOpencodeJson(opencodeJsonPath, args.installScope));
-
-      // Also clean any parallel legacy config file (e.g. opencode.json if
-      // opencode.jsonc was preferred, or vice versa). This ensures no
-      // FlowGuard remnants are left in stale parallel files.
-      const parallelConfig = findParallelOpencodeConfig(opencodeJsonPath);
-      if (parallelConfig) {
-        ops.push(await removeFromOpencodeJson(parallelConfig, args.installScope));
-      }
-    } else if (installPlatform === 'claude-code') {
-      ops.push(...(await uninstallClaudeCodePlugin(target)));
-    } else if (installPlatform === 'codex') {
-      ops.push(...(await uninstallCodexPlugin(args.installScope)));
-    }
-
-    // Remove flowguard.json config file
     const cfgPath =
       installPlatform !== 'opencode'
         ? join(target, 'flowguard.json')
