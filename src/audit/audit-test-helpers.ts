@@ -53,7 +53,7 @@ export function buildChain(length: number): ChainedAuditEvent[] {
 }
 
 /** Build a realistic session event trail for summary/compliance tests. */
-export function buildSessionTrail(): AuditEvent[] {
+function buildEarlyTrailEvents(): AuditEvent[] {
   return [
     makeAuditEvent({
       event: 'lifecycle:session_created',
@@ -128,6 +128,11 @@ export function buildSessionTrail(): AuditEvent[] {
         chainIndex: -1,
       },
     }),
+  ];
+}
+
+function buildLateTrailEvents(): AuditEvent[] {
+  return [
     makeAuditEvent({
       event: 'transition:IMPL_COMPLETE',
       phase: 'IMPL_REVIEW',
@@ -175,4 +180,8 @@ export function buildSessionTrail(): AuditEvent[] {
       detail: { kind: 'lifecycle', action: 'session_completed', finalPhase: 'COMPLETE' },
     }),
   ];
+}
+
+export function buildSessionTrail(): AuditEvent[] {
+  return [...buildEarlyTrailEvents(), ...buildLateTrailEvents()];
 }
