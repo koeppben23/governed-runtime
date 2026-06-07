@@ -103,6 +103,23 @@ function trackContentAnalysis(state: SessionEnforcementState, now: string): void
   });
 }
 
+function handleContentAnalysisFlag(
+  state: SessionEnforcementState,
+  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+  toolName: string,
+  now: string,
+): void {
+  const attestation = parsed.requiredReviewAttestation as Record<string, unknown> | undefined;
+  if (
+    parsed.error === true &&
+    parsed.code === 'CONTENT_ANALYSIS_REQUIRED' &&
+    attestation &&
+    toolName === TOOL_FLOWGUARD_REVIEW
+  ) {
+    trackContentAnalysis(state, now);
+  }
+}
+
 export function onFlowGuardToolAfter(
   state: SessionEnforcementState,
   toolName: string,
@@ -110,8 +127,7 @@ export function onFlowGuardToolAfter(
   output: string,
   now: string,
 ): void {
-  const isStandaloneReviewTool = toolName === TOOL_FLOWGUARD_REVIEW;
-  if (!isReviewableTool(toolName) && !isStandaloneReviewTool) return;
+  if (!isReviewableTool(toolName) && toolName !== TOOL_FLOWGUARD_REVIEW) return;
 
   const reviewTool: PendingReviewTool = toolName;
   const parsed = parseToolResult(output);
@@ -124,14 +140,7 @@ export function onFlowGuardToolAfter(
   const next = typeof parsed.next === 'string' ? parsed.next : '';
   if (next.startsWith(REVIEW_REQUIRED_PREFIX)) trackReviewRequired(state, reviewTool, next, now);
 
-  const attestation = parsed.requiredReviewAttestation as Record<string, unknown> | undefined;
-  if (
-    parsed.error === true &&
-    parsed.code === 'CONTENT_ANALYSIS_REQUIRED' &&
-    attestation &&
-    isStandaloneReviewTool
-  )
-    trackContentAnalysis(state, now);
+  handleContentAnalysisFlag(state, parsed, toolName, now);
 }
 
 /**
