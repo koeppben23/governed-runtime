@@ -254,7 +254,7 @@ async function readSessionSummary(
           typeof (e as Record<string, unknown>).event === 'string' &&
           ((e as Record<string, unknown>).event as string).startsWith('transition:'),
       )
-      .map((e) => (e as Record<string, unknown>).phase)
+      .map((e) => e.phase)
       .filter((p): p is string => typeof p === 'string');
 
     const uniquePhases = [...new Set(transEvents)];

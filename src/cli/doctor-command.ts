@@ -134,7 +134,6 @@ async function checkWrapperFile(
 
 async function checkCommandFiles(target: string, checks: DoctorCheck[]): Promise<void> {
   for (const [name, expectedContent] of Object.entries(COMMANDS)) {
-    const cmdPath = join(target, 'commands', name);
     await checkWrapperFile(target, `commands/${name}`, expectedContent, checks);
   }
 }
