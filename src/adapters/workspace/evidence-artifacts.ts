@@ -524,24 +524,36 @@ function parseArtifactMeta(
   return parsed;
 }
 
+function isValidString(v: unknown): v is string {
+  return typeof v === 'string';
+}
+function isValidNumber(v: unknown): v is number {
+  return typeof v === 'number';
+}
+function isSha256Hex(v: unknown): boolean {
+  return typeof v === 'string' && /^[0-9a-f]{64}$/.test(v);
+}
+function isValidArtifactType(v: unknown): v is 'ticket' | 'plan' {
+  return v === 'ticket' || v === 'plan';
+}
+
 function isArtifactMeta(input: unknown): input is EvidenceArtifactMeta {
   if (!input || typeof input !== 'object') return false;
-  const candidate = input as Partial<EvidenceArtifactMeta>;
-  const isSha256Hex = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{64}$/.test(value);
+  const c = input as Partial<EvidenceArtifactMeta>;
   return (
-    typeof candidate.schemaVersion === 'string' &&
-    (candidate.artifactType === 'ticket' || candidate.artifactType === 'plan') &&
-    typeof candidate.version === 'number' &&
-    candidate.version > 0 &&
-    typeof candidate.sessionId === 'string' &&
-    typeof candidate.createdAt === 'string' &&
-    typeof candidate.phase === 'string' &&
-    isSha256Hex(candidate.sourceStateHash) &&
-    typeof candidate.contentHash === 'string' &&
-    candidate.contentHash.length > 0 &&
-    isSha256Hex(candidate.markdownHash) &&
-    candidate.derivedFrom === 'session-state.json' &&
-    typeof candidate.markdownPath === 'string'
+    isValidString(c.schemaVersion) &&
+    isValidArtifactType(c.artifactType) &&
+    isValidNumber(c.version) &&
+    c.version > 0 &&
+    isValidString(c.sessionId) &&
+    isValidString(c.createdAt) &&
+    isValidString(c.phase) &&
+    isSha256Hex(c.sourceStateHash) &&
+    isValidString(c.contentHash) &&
+    c.contentHash.length > 0 &&
+    isSha256Hex(c.markdownHash) &&
+    c.derivedFrom === 'session-state.json' &&
+    isValidString(c.markdownPath)
   );
 }
 
