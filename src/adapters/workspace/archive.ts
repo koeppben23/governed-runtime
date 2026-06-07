@@ -763,7 +763,7 @@ function verifyAuditCompleteness(
 }
 
 async function verifyTimestampChain(
-  events: Record<string, unknown>[],
+  events: Parameters<typeof verifyChain>[0],
   state: import('../../state/schema.js').SessionState | null,
   manifest: ArchiveManifest,
   findings: ArchiveFinding[],
