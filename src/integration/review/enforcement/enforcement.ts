@@ -365,6 +365,61 @@ function checkPendingReview(
   return { allowed: true };
 }
 
+function verifyFindingsIntegrity(
+  pending: {
+    subagentRecord?: { sessionId: string | null } | null;
+    capturedFindings?: { overallVerdict: string; blockingIssuesCount: number } | null;
+  },
+  reviewFindings: Record<string, unknown> | undefined,
+): EnforcementResult | null {
+  if (!reviewFindings || !pending.subagentRecord) return null;
+
+  const reviewedBy = reviewFindings.reviewedBy as Record<string, unknown> | undefined;
+  const submittedSessionId =
+    typeof reviewedBy?.sessionId === 'string' ? reviewedBy.sessionId : null;
+
+  if (
+    submittedSessionId &&
+    pending.subagentRecord.sessionId !== null &&
+    submittedSessionId !== pending.subagentRecord.sessionId
+  ) {
+    return {
+      allowed: false,
+      code: 'SUBAGENT_SESSION_MISMATCH',
+      reason: `FlowGuard enforcement: reviewFindings.reviewedBy.sessionId ("${submittedSessionId}") does not match the actual subagent session ("${pending.subagentRecord.sessionId}"). The findings must come from the ${REVIEWER_SUBAGENT_TYPE} subagent that was invoked.`,
+    };
+  }
+
+  if (!pending.capturedFindings) return null;
+
+  const submittedVerdict =
+    typeof reviewFindings.overallVerdict === 'string' ? reviewFindings.overallVerdict : null;
+  const submittedBlockingIssues = Array.isArray(reviewFindings.blockingIssues)
+    ? reviewFindings.blockingIssues
+    : null;
+
+  if (submittedVerdict !== null && submittedVerdict !== pending.capturedFindings.overallVerdict) {
+    return {
+      allowed: false,
+      code: 'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
+      reason: `FlowGuard enforcement: submitted reviewFindings.overallVerdict ("${submittedVerdict}") does not match the actual subagent verdict ("${pending.capturedFindings.overallVerdict}"). The findings must not be modified after the subagent produces them.`,
+    };
+  }
+
+  if (
+    submittedBlockingIssues !== null &&
+    submittedBlockingIssues.length !== pending.capturedFindings.blockingIssuesCount
+  ) {
+    return {
+      allowed: false,
+      code: 'SUBAGENT_FINDINGS_ISSUES_MISMATCH',
+      reason: `FlowGuard enforcement: submitted reviewFindings.blockingIssues count (${submittedBlockingIssues.length}) does not match the actual subagent count (${pending.capturedFindings.blockingIssuesCount}). The findings must not be modified after the subagent produces them.`,
+    };
+  }
+
+  return null;
+}
+
 export function enforceBeforeVerdict(
   state: SessionEnforcementState,
   toolName: string,
@@ -397,66 +452,11 @@ export function enforceBeforeVerdict(
   }
 
   // ── Level 2: Session ID match (strict when both IDs available) ─────────
-  const reviewFindings = args.reviewFindings as Record<string, unknown> | undefined;
-  if (reviewFindings && pending.subagentRecord) {
-    const reviewedBy = reviewFindings.reviewedBy as Record<string, unknown> | undefined;
-    const submittedSessionId =
-      typeof reviewedBy?.sessionId === 'string' ? reviewedBy.sessionId : null;
-
-    if (
-      submittedSessionId &&
-      pending.subagentRecord.sessionId !== null &&
-      submittedSessionId !== pending.subagentRecord.sessionId
-    ) {
-      return {
-        allowed: false,
-        code: 'SUBAGENT_SESSION_MISMATCH',
-        reason:
-          `FlowGuard enforcement: reviewFindings.reviewedBy.sessionId ` +
-          `("${submittedSessionId}") does not match the actual subagent session ` +
-          `("${pending.subagentRecord.sessionId}"). ` +
-          `The findings must come from the ${REVIEWER_SUBAGENT_TYPE} subagent that was invoked.`,
-      };
-    }
-  }
-
-  // ── Level 4: Findings integrity — submitted must match captured ────────
-  if (reviewFindings && pending.capturedFindings) {
-    const submittedVerdict =
-      typeof reviewFindings.overallVerdict === 'string' ? reviewFindings.overallVerdict : null;
-    const submittedBlockingIssues = Array.isArray(reviewFindings.blockingIssues)
-      ? reviewFindings.blockingIssues
-      : null;
-
-    // Verdict must match the actual subagent verdict
-    if (submittedVerdict !== null && submittedVerdict !== pending.capturedFindings.overallVerdict) {
-      return {
-        allowed: false,
-        code: 'SUBAGENT_FINDINGS_VERDICT_MISMATCH',
-        reason:
-          `FlowGuard enforcement: submitted reviewFindings.overallVerdict ` +
-          `("${submittedVerdict}") does not match the actual subagent verdict ` +
-          `("${pending.capturedFindings.overallVerdict}"). ` +
-          `The findings must not be modified after the subagent produces them.`,
-      };
-    }
-
-    // Blocking issues count must match
-    if (
-      submittedBlockingIssues !== null &&
-      submittedBlockingIssues.length !== pending.capturedFindings.blockingIssuesCount
-    ) {
-      return {
-        allowed: false,
-        code: 'SUBAGENT_FINDINGS_ISSUES_MISMATCH',
-        reason:
-          `FlowGuard enforcement: submitted reviewFindings.blockingIssues count ` +
-          `(${submittedBlockingIssues.length}) does not match the actual subagent count ` +
-          `(${pending.capturedFindings.blockingIssuesCount}). ` +
-          `The findings must not be modified after the subagent produces them.`,
-      };
-    }
-  }
+  const findingsCheck = verifyFindingsIntegrity(
+    pending,
+    args.reviewFindings as Record<string, unknown> | undefined,
+  );
+  if (findingsCheck) return findingsCheck;
 
   return { allowed: true };
 }
