@@ -16,6 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `COMPACT_RED_LINES` and `CONCISE_RED_LINES`. Semantic drift assertions guard
   all three mandate variants.
 
+- **Issue #470 (mandate section consolidation):** Tightened the installed mandate
+  body (`FLOWGUARD_MANDATES_BODY`) by consolidating overlapping sections: Hard
+  Invariants reduced from 7 to 4 bullets (redundancies already covered by Red
+  Lines), Before Acting / Before Completing / Rule Conflict Resolution turned
+  into concise pointer sections referencing the canonical authorities
+  (Implementation Checklist and Priority Ladder), and the Implementation
+  Checklist strengthened with classification and completion gates. All 19 H2
+  sections preserved; no normative rule removed. Semantic survival assertions
+  guard every core rule across the consolidation.
+
 - Decoupled the repository root `AGENTS.md` from installed FlowGuard mandate
   text: root `AGENTS.md` is now local contributor guidance only, while
   `src/templates/mandates.ts` remains the canonical source for installed runtime
