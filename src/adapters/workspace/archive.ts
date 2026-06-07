@@ -518,34 +518,24 @@ async function checkUnexpectedFiles(
   }
 }
 
-async function verifyArtifactBinding(
-  sessDir: string,
-  manifest: ArchiveManifest,
-  events: readonly Record<string, unknown>[],
-  findings: ArchiveFinding[],
-): Promise<void> {
-  const manifestArtifacts = manifest.includedFiles.filter((file) => file.startsWith('artifacts/'));
+function findBindingArtifacts(events: readonly Record<string, unknown>[]): unknown[] | undefined {
   const binding = [...events].reverse().find((event) => event.event === ARTIFACT_BINDING_EVENT);
   const detail = binding?.detail as Record<string, unknown> | undefined;
-  const artifacts = detail?.artifacts;
-  if (manifestArtifacts.length === 0 && !Array.isArray(artifacts)) return;
-  if (detail?.schemaVersion !== ARTIFACT_BINDING_SCHEMA_VERSION || !Array.isArray(artifacts)) {
-    findings.push({
-      code: 'artifact_binding_missing',
-      severity: 'error',
-      message:
-        'Archive contains evidence artifacts but no valid audit-chain artifact binding event',
-      file: 'audit.jsonl',
-    });
-    return;
-  }
+  if (
+    detail?.schemaVersion !== ARTIFACT_BINDING_SCHEMA_VERSION ||
+    !Array.isArray(detail?.artifacts)
+  )
+    return undefined;
+  return detail.artifacts as unknown[];
+}
 
-  const bound = new Map<string, ArtifactBindingEntry>();
-  for (const entry of artifacts) {
-    if (!isArtifactBindingEntry(entry)) continue;
-    bound.set(entry.path, entry);
-  }
-
+async function checkBoundArtifacts(
+  sessDir: string,
+  manifest: ArchiveManifest,
+  bound: Map<string, ArtifactBindingEntry>,
+  manifestArtifacts: string[],
+  findings: ArchiveFinding[],
+): Promise<void> {
   const manifestArtifactSet = new Set(manifestArtifacts);
   for (const entry of bound.values()) {
     if (!manifestArtifactSet.has(entry.path) || manifest.fileDigests[entry.path] === undefined) {
@@ -557,7 +547,6 @@ async function verifyArtifactBinding(
       });
     }
   }
-
   for (const relPath of manifestArtifacts) {
     const entry = bound.get(relPath);
     if (!entry) {
@@ -569,7 +558,6 @@ async function verifyArtifactBinding(
       });
       continue;
     }
-
     const content = await fs.readFile(path.join(sessDir, relPath));
     const actual = crypto.createHash('sha256').update(content).digest('hex');
     if (actual !== entry.sha256) {
@@ -589,6 +577,35 @@ async function verifyArtifactBinding(
       });
     }
   }
+}
+
+async function verifyArtifactBinding(
+  sessDir: string,
+  manifest: ArchiveManifest,
+  events: readonly Record<string, unknown>[],
+  findings: ArchiveFinding[],
+): Promise<void> {
+  const manifestArtifacts = manifest.includedFiles.filter((file) => file.startsWith('artifacts/'));
+  if (manifestArtifacts.length === 0) return;
+
+  const artifacts = findBindingArtifacts(events);
+  if (!artifacts) {
+    findings.push({
+      code: 'artifact_binding_missing',
+      severity: 'error',
+      message:
+        'Archive contains evidence artifacts but no valid audit-chain artifact binding event',
+      file: 'audit.jsonl',
+    });
+    return;
+  }
+
+  const bound = new Map<string, ArtifactBindingEntry>();
+  for (const entry of artifacts) {
+    if (isArtifactBindingEntry(entry)) bound.set(entry.path, entry);
+  }
+
+  await checkBoundArtifacts(sessDir, manifest, bound, manifestArtifacts, findings);
 }
 
 function isArtifactBindingEntry(value: unknown): value is ArtifactBindingEntry {
