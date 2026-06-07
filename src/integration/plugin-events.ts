@@ -71,69 +71,64 @@ const HANDLED_EVENT_TYPES = new Set(['session.error', 'session.delete']);
  *
  * Fail-safe: never throws. All errors are caught and logged.
  */
+function collectSupplementaryContext(
+  properties: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const KNOWN_KEYS = new Set(['sessionID', 'error', 'message', 'code', 'stack']);
+  const supplementary: Record<string, unknown> = {};
+  if (!properties) return supplementary;
+  for (const [key, value] of Object.entries(properties)) {
+    if (!KNOWN_KEYS.has(key)) supplementary[key] = value;
+  }
+  return supplementary;
+}
+
+function str(v: unknown): string {
+  return typeof v === 'string' ? v : '';
+}
+function strOr(v: unknown, fallback: string): string {
+  const s = str(v);
+  return s || fallback;
+}
+
+async function handleSessionError(deps: EventHandlerDeps, event: PluginEvent): Promise<void> {
+  const p = event.properties;
+  const sessionId = strOr(p?.sessionID, 'unknown');
+  const errorMessage = strOr(p?.error, strOr(p?.message, 'unspecified session error'));
+  const errorCode = str(p?.code) || undefined;
+  const errorStack = str(p?.stack) || undefined;
+  const supplementary = collectSupplementaryContext(p);
+  deps.log.error('event', 'session error received', {
+    sessionId,
+    error: errorMessage,
+    eventType: event.type,
+    ...(errorCode ? { errorCode } : {}),
+    ...(errorStack ? { errorStack } : {}),
+    ...(Object.keys(supplementary).length > 0 ? { supplementary } : {}),
+  });
+  await deps.emitSessionErrorAudit(sessionId, errorMessage, {
+    eventType: event.type,
+    ...(errorCode ? { errorCode } : {}),
+    ...(errorStack ? { errorStack } : {}),
+    ...(Object.keys(supplementary).length > 0 ? { supplementary } : {}),
+  });
+}
+
+async function handleSessionDelete(deps: EventHandlerDeps, event: PluginEvent): Promise<void> {
+  const sessionId =
+    typeof event.properties?.sessionID === 'string' ? event.properties.sessionID : undefined;
+  if (sessionId) {
+    deps.cleanupSession(sessionId);
+    deps.log.info('event', 'session cleanup completed', { sessionId });
+  }
+}
+
 export async function handleEvent(deps: EventHandlerDeps, event: PluginEvent): Promise<void> {
   if (!event || !event.type) return;
   if (!HANDLED_EVENT_TYPES.has(event.type)) return;
-
   try {
-    switch (event.type) {
-      case 'session.error': {
-        const properties = event.properties;
-        const sessionId =
-          typeof properties?.sessionID === 'string' ? properties.sessionID : 'unknown';
-        const errorMessage =
-          typeof properties?.error === 'string'
-            ? properties.error
-            : typeof properties?.message === 'string'
-              ? properties.message
-              : 'unspecified session error';
-
-        // Extract typed error context that would otherwise be silently lost.
-        const errorCode = typeof properties?.code === 'string' ? properties.code : undefined;
-        const errorStack = typeof properties?.stack === 'string' ? properties.stack : undefined;
-
-        // Collect all non-standard properties as supplementary context.
-        const KNOWN_KEYS = new Set(['sessionID', 'error', 'message', 'code', 'stack']);
-        const supplementary: Record<string, unknown> = {};
-        if (properties) {
-          for (const [key, value] of Object.entries(properties)) {
-            if (!KNOWN_KEYS.has(key)) {
-              supplementary[key] = value;
-            }
-          }
-        }
-        const hasSupplementary = Object.keys(supplementary).length > 0;
-
-        deps.log.error('event', 'session error received', {
-          sessionId,
-          error: errorMessage,
-          eventType: event.type,
-          ...(errorCode ? { errorCode } : {}),
-          ...(errorStack ? { errorStack } : {}),
-          ...(hasSupplementary ? { supplementary } : {}),
-        });
-
-        // Persist to audit trail (fail-safe: errors caught by outer try/catch).
-        await deps.emitSessionErrorAudit(sessionId, errorMessage, {
-          eventType: event.type,
-          ...(errorCode ? { errorCode } : {}),
-          ...(errorStack ? { errorStack } : {}),
-          ...(hasSupplementary ? { supplementary } : {}),
-        });
-        break;
-      }
-
-      case 'session.delete': {
-        const properties = event.properties;
-        const sessionId =
-          typeof properties?.sessionID === 'string' ? properties.sessionID : undefined;
-        if (sessionId) {
-          deps.cleanupSession(sessionId);
-          deps.log.info('event', 'session cleanup completed', { sessionId });
-        }
-        break;
-      }
-    }
+    if (event.type === 'session.error') await handleSessionError(deps, event);
+    else if (event.type === 'session.delete') await handleSessionDelete(deps, event);
   } catch (err) {
     deps.log.warn('event', 'event handler failed (non-blocking)', {
       eventType: event.type,

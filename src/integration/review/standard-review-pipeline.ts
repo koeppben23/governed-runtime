@@ -110,10 +110,8 @@ export async function runStandardReviewPipeline(
   });
 
   if (reviewerResult?.blocked) {
-    const code = reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED;
-    const reason = reviewerResult.reason ?? 'review invocation blocked by policy';
-    output.output = strictBlockedOutput(code, {
-      reason,
+    output.output = strictBlockedOutput(reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED, {
+      reason: reviewerResult.reason ?? 'review invocation blocked by policy',
       reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation ?? {}),
     });
     return;
