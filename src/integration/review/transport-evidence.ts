@@ -163,7 +163,6 @@ async function processTransportFile(
       reason: `review evidence transport file is not valid JSON: ${file.path}`,
     };
   }
-
   const parsedFindings = ReviewFindingsSchema.safeParse(extractFindings(parsedJson));
   if (!parsedFindings.success)
     return {
@@ -171,7 +170,6 @@ async function processTransportFile(
       code: 'REVIEW_TRANSPORT_EVIDENCE_INVALID',
       reason: `review evidence transport file does not contain valid ReviewFindings: ${file.path}`,
     };
-
   const findings = parsedFindings.data;
   const validationError = validateAgainstObligation(
     findings,
