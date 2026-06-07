@@ -164,57 +164,48 @@ export function decisionEvents(events: AuditEvent[]): AuditEvent[] {
  * Extract structured decision receipts from decision events.
  * Invalid/malformed decision event payloads are skipped.
  */
+function toDecisionReceipt(event: AuditEvent): DecisionReceipt | null {
+  const detail = event.detail;
+  const verdict = detail.verdict;
+  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return null;
+
+  const stringFields = [
+    'decisionId',
+    'gatePhase',
+    'rationale',
+    'decidedBy',
+    'decidedAt',
+    'fromPhase',
+    'toPhase',
+    'transitionEvent',
+    'policyMode',
+  ] as const;
+  if (stringFields.some((f) => typeof detail[f] !== 'string')) return null;
+  if (typeof detail.decisionSequence !== 'number') return null;
+
+  return {
+    decisionId: detail.decisionId as string,
+    decisionSequence: detail.decisionSequence,
+    gatePhase: detail.gatePhase as string,
+    verdict,
+    rationale: detail.rationale as string,
+    decidedBy: detail.decidedBy as string,
+    decidedAt: detail.decidedAt as string,
+    fromPhase: detail.fromPhase as string,
+    toPhase: detail.toPhase as string,
+    transitionEvent: detail.transitionEvent as string,
+    policyMode: detail.policyMode as string,
+    eventId: event.id,
+    sessionId: event.sessionId,
+    timestamp: event.timestamp,
+  };
+}
+
 export function decisionReceipts(events: AuditEvent[]): DecisionReceipt[] {
   const receipts: DecisionReceipt[] = [];
   for (const event of decisionEvents(events)) {
-    const detail = event.detail;
-    const verdict = detail.verdict;
-    const validVerdict =
-      verdict === 'approve' || verdict === 'changes_requested' || verdict === 'reject';
-    if (!validVerdict) continue;
-
-    const decisionId = detail.decisionId;
-    const decisionSequence = detail.decisionSequence;
-    const gatePhase = detail.gatePhase;
-    const rationale = detail.rationale;
-    const decidedBy = detail.decidedBy;
-    const decidedAt = detail.decidedAt;
-    const fromPhase = detail.fromPhase;
-    const toPhase = detail.toPhase;
-    const transitionEvent = detail.transitionEvent;
-    const policyMode = detail.policyMode;
-
-    if (
-      typeof decisionId !== 'string' ||
-      typeof decisionSequence !== 'number' ||
-      typeof gatePhase !== 'string' ||
-      typeof rationale !== 'string' ||
-      typeof decidedBy !== 'string' ||
-      typeof decidedAt !== 'string' ||
-      typeof fromPhase !== 'string' ||
-      typeof toPhase !== 'string' ||
-      typeof transitionEvent !== 'string' ||
-      typeof policyMode !== 'string'
-    ) {
-      continue;
-    }
-
-    receipts.push({
-      decisionId,
-      decisionSequence,
-      gatePhase,
-      verdict,
-      rationale,
-      decidedBy,
-      decidedAt,
-      fromPhase,
-      toPhase,
-      transitionEvent,
-      policyMode,
-      eventId: event.id,
-      sessionId: event.sessionId,
-      timestamp: event.timestamp,
-    });
+    const receipt = toDecisionReceipt(event);
+    if (receipt) receipts.push(receipt);
   }
   return receipts;
 }
