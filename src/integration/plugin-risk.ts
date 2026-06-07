@@ -243,6 +243,44 @@ export async function appendRiskDecisionAudit(
   );
 }
 
+function throwRiskBlocked(
+  decision: RiskClassificationDecision,
+  state: SessionState,
+  toolName: string,
+): never {
+  const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
+  const reason = decision.reason ?? 'Risk classification gate blocked this mutating tool.';
+  throw buildEnforcementError(code, reason, {
+    sessionId: state.binding.sessionId,
+    tool: toolName,
+    claimedTaskClass: decision.claimedTaskClass ?? 'missing',
+    minimumTaskClass: decision.minimumTaskClass,
+    touchedSurface: decision.touchedSurfaces[0] ?? 'none',
+    decisionId: decision.decisionId,
+  });
+}
+
+async function persistAndThrowRiskBlock(
+  sessDir: string,
+  state: SessionState,
+  decision: RiskClassificationDecision,
+  toolName: string,
+): Promise<never> {
+  const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
+  const reason = decision.reason ?? 'Risk classification gate blocked this mutating tool.';
+  if (state.riskGate?.status !== 'blocked') {
+    try {
+      await persistRiskDecisionBlock(sessDir, state, decision, code, reason);
+    } catch (err) {
+      throw buildEnforcementError(
+        'AUDIT_PERSISTENCE_FAILED',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+  throwRiskBlocked(decision, state, toolName);
+}
+
 export async function enforceRiskClassificationBefore(
   deps: RiskEnforcementDeps,
   sessDir: string,
@@ -273,11 +311,7 @@ export async function enforceRiskClassificationBefore(
         );
       }
     }
-    throw buildEnforcementError('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', reason, {
-      sessionId: state.binding.sessionId,
-      tool: toolName,
-      decisionId: decision.decisionId,
-    });
+    throwRiskBlocked(decision, state, toolName);
   }
   const decision = isRiskClassificationAllowed({
     state,
@@ -302,26 +336,33 @@ export async function enforceRiskClassificationBefore(
     }
     return;
   }
-  const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
-  const reason = decision.reason ?? 'Risk classification gate blocked this mutating tool.';
-  if (state.riskGate?.status !== 'blocked') {
-    try {
-      await persistRiskDecisionBlock(sessDir, state, decision, code, reason);
-    } catch (err) {
-      throw buildEnforcementError(
-        'AUDIT_PERSISTENCE_FAILED',
-        err instanceof Error ? err.message : String(err),
+  await persistAndThrowRiskBlock(sessDir, state, decision, toolName);
+}
+
+async function handleEvidenceUnavailableBash(
+  sessDir: string,
+  state: SessionState,
+  reason: string,
+  output: { output?: unknown },
+): Promise<void> {
+  const decision = evidenceUnavailableRiskDecision(state, reason);
+  try {
+    if (state.riskGate?.status !== 'blocked') {
+      await persistRiskDecisionBlock(
+        sessDir,
+        state,
+        decision,
+        'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+        reason,
       );
     }
+  } catch (persistErr) {
+    output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+      reason: persistErr instanceof Error ? persistErr.message : String(persistErr),
+    });
+    return;
   }
-  throw buildEnforcementError(code, reason, {
-    sessionId: state.binding.sessionId,
-    tool: toolName,
-    claimedTaskClass: decision.claimedTaskClass ?? 'missing',
-    minimumTaskClass: decision.minimumTaskClass,
-    touchedSurface: decision.touchedSurfaces[0] ?? 'none',
-    decisionId: decision.decisionId,
-  });
+  output.output = strictBlockedOutput('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', { reason });
 }
 
 export async function enforceRiskClassificationAfterBash(
@@ -345,25 +386,12 @@ export async function enforceRiskClassificationAfterBash(
   try {
     files = await currentChangedFilesForRisk(() => deps.getWorktreeRoot());
   } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    const decision = evidenceUnavailableRiskDecision(state, reason);
-    try {
-      if (state.riskGate?.status !== 'blocked') {
-        await persistRiskDecisionBlock(
-          sessDir,
-          state,
-          decision,
-          'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
-          reason,
-        );
-      }
-    } catch (persistErr) {
-      output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
-        reason: persistErr instanceof Error ? persistErr.message : String(persistErr),
-      });
-      return;
-    }
-    output.output = strictBlockedOutput('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', { reason });
+    await handleEvidenceUnavailableBash(
+      sessDir,
+      state,
+      err instanceof Error ? err.message : String(err),
+      output,
+    );
     return;
   }
   const decision = isRiskClassificationAllowed({
@@ -390,9 +418,8 @@ export async function enforceRiskClassificationAfterBash(
   const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
   const reason = decision.reason ?? 'Risk classification gate blocked after bash mutation.';
   try {
-    if (state.riskGate?.status !== 'blocked') {
+    if (state.riskGate?.status !== 'blocked')
       await persistRiskDecisionBlock(sessDir, state, decision, code, reason);
-    }
     output.output = strictBlockedOutput(code, {
       reason,
       sessionId,
