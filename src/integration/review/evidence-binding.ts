@@ -47,13 +47,26 @@ export function buildHostTaskEvidence(
   if ('bindOutcome' in obligationMatch) return obligationMatch;
   const matchedObligation = obligationMatch.obligation;
 
-  const fieldMismatch = checkBindingFieldMismatch(rawFindings, matchedObligation, attestation, attestationInfo);
+  const fieldMismatch = checkBindingFieldMismatch(
+    rawFindings,
+    matchedObligation,
+    attestation,
+    attestationInfo,
+  );
   if (fieldMismatch) return fieldMismatch;
 
-  const normalizedFindings = normalizeHostTaskFindings(rawFindings, attestationInfo.hasValidAttestation);
+  const normalizedFindings = normalizeHostTaskFindings(
+    rawFindings,
+    attestationInfo.hasValidAttestation,
+  );
 
   const findingsHash = hashFindings(normalizedFindings);
-  const duplicate = checkDuplicateHostTaskEvidence(invocations, matchedObligation, childSessionId, findingsHash);
+  const duplicate = checkDuplicateHostTaskEvidence(
+    invocations,
+    matchedObligation,
+    childSessionId,
+    findingsHash,
+  );
   if (duplicate) return duplicate;
 
   const promptHash = hashText(
@@ -87,13 +100,10 @@ export function buildHostTaskEvidence(
   };
 }
 
-type PendingReviewRecord = SessionEnforcementState['pendingReviews'] extends Map<unknown, infer V>
-  ? V
-  : never;
+type PendingReviewRecord =
+  SessionEnforcementState['pendingReviews'] extends Map<unknown, infer V> ? V : never;
 
-function latestBindableReviewRecord(
-  state: SessionEnforcementState,
-):
+function latestBindableReviewRecord(state: SessionEnforcementState):
   | {
       latest: PendingReviewRecord;
       childSessionId: string;
@@ -149,7 +159,10 @@ function resolveAttestationInfo(attestation: Record<string, unknown> | undefined
   const attestedObligationId =
     typeof attestation?.toolObligationId === 'string' ? attestation.toolObligationId : null;
   const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  return { attestedObligationId, hasValidAttestation: !!attestedObligationId && uuidRe.test(attestedObligationId) };
+  return {
+    attestedObligationId,
+    hasValidAttestation: !!attestedObligationId && uuidRe.test(attestedObligationId),
+  };
 }
 
 function matchBindableObligation(
@@ -158,7 +171,9 @@ function matchBindableObligation(
   attestationInfo: ReturnType<typeof resolveAttestationInfo>,
 ): { obligation: ReviewObligation } | HostTaskBindResult {
   const obligation = attestationInfo.hasValidAttestation
-    ? obligations.find((o) => isMatchingAttestedObligation(o, obligationType, attestationInfo.attestedObligationId))
+    ? obligations.find((o) =>
+        isMatchingAttestedObligation(o, obligationType, attestationInfo.attestedObligationId),
+      )
     : latestToolMatchedObligation(obligations, obligationType);
   return obligation
     ? { obligation }
@@ -183,7 +198,10 @@ function latestToolMatchedObligation(
   obligationType: ReviewObligation['obligationType'],
 ): ReviewObligation | undefined {
   return obligations
-    .filter((o) => o.obligationType === obligationType && o.status !== 'consumed' && o.consumedAt === null)
+    .filter(
+      (o) =>
+        o.obligationType === obligationType && o.status !== 'consumed' && o.consumedAt === null,
+    )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
 }
 
@@ -210,7 +228,12 @@ function checkBindingFieldMismatch(
   attestation: Record<string, unknown> | undefined,
   attestationInfo: ReturnType<typeof resolveAttestationInfo>,
 ): HostTaskBindResult | null {
-  const mismatchFields = bindingMismatchFields(rawFindings, obligation, attestation, attestationInfo.hasValidAttestation);
+  const mismatchFields = bindingMismatchFields(
+    rawFindings,
+    obligation,
+    attestation,
+    attestationInfo.hasValidAttestation,
+  );
   if (mismatchFields.length === 0) return null;
   return {
     evidence: null,

@@ -174,7 +174,10 @@ function mergeValidationResult(
   state: SessionState,
   validationResult: ValidationResult,
 ): ValidationResult[] {
-  return [...state.validation.filter((v) => v.checkId !== validationResult.checkId), validationResult];
+  return [
+    ...state.validation.filter((v) => v.checkId !== validationResult.checkId),
+    validationResult,
+  ];
 }
 
 function buildNextValidationState(
@@ -223,7 +226,10 @@ function formatRunCheckResponse(input: {
   );
 }
 
-function formatRunCheckStatus(kind: string, evidence: Awaited<ReturnType<typeof executeCheck>>): string {
+function formatRunCheckStatus(
+  kind: string,
+  evidence: Awaited<ReturnType<typeof executeCheck>>,
+): string {
   if (evidence.passed) return `Check '${kind}' passed.`;
   if (evidence.timedOut) return `Check '${kind}' timed out.`;
   return `Check '${kind}' failed (exit ${evidence.exitCode}).`;

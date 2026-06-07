@@ -324,10 +324,7 @@ function buildTamperedSignedData(
   });
 }
 
-function buildSignerInfo(
-  cert: Certificate,
-  signedAttrs: SignedAndUnsignedAttributes,
-): SignerInfo {
+function buildSignerInfo(cert: Certificate, signedAttrs: SignedAndUnsignedAttributes): SignerInfo {
   return new SignerInfo({
     version: 1,
     sid: new IssuerAndSerialNumber({ issuer: cert.issuer, serialNumber: cert.serialNumber }),

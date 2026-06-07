@@ -210,12 +210,17 @@ function parseAndValidateTransportFindings(
     obligation,
     state.initiatedByIdentity,
   );
-  return validationError ? transportValidationError(validationError) : { status: 'valid', findings: parsedFindings.data };
+  return validationError
+    ? transportValidationError(validationError)
+    : { status: 'valid', findings: parsedFindings.data };
 }
 
-function parseTransportJson(
-  file: { path: string; content: string },
-): { status: 'valid'; value: unknown } | Extract<TransportEvidenceBindResult, { status: 'invalid' }> {
+function parseTransportJson(file: {
+  path: string;
+  content: string;
+}):
+  | { status: 'valid'; value: unknown }
+  | Extract<TransportEvidenceBindResult, { status: 'invalid' }> {
   try {
     return { status: 'valid', value: JSON.parse(file.content) };
   } catch {
@@ -236,7 +241,9 @@ function transportValidationError(
     reason: validationError.reason,
     ...(validationError.obligationId ? { obligationId: validationError.obligationId } : {}),
     ...(validationError.vars ? { vars: validationError.vars } : {}),
-    ...(validationError.rejectionReason ? { rejectionReason: validationError.rejectionReason } : {}),
+    ...(validationError.rejectionReason
+      ? { rejectionReason: validationError.rejectionReason }
+      : {}),
   };
 }
 
@@ -253,7 +260,9 @@ function buildManualTransportInvocation(
     childSessionId: findings.reviewedBy.sessionId,
     invocationMode: 'manual_attested',
     hostVisible: false,
-    promptHash: hashText(`${obligation.obligationType}:${obligation.iteration}:${obligation.planVersion}`),
+    promptHash: hashText(
+      `${obligation.obligationType}:${obligation.iteration}:${obligation.planVersion}`,
+    ),
     findingsHash,
     invokedAt: findings.reviewedAt,
     fulfilledAt: opts.now,

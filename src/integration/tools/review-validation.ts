@@ -401,13 +401,15 @@ function validateStrictReviewAcceptance(
   binding: StrictReviewBinding,
 ): string | null {
   const { obligation, invocation, submittedFindingsHash } = binding;
-  if (pluginEnforcementUnavailableForReviewAcceptance({
-    findings,
-    obligation,
-    invocation,
-    findingsHash: submittedFindingsHash,
-    ctx,
-  })) {
+  if (
+    pluginEnforcementUnavailableForReviewAcceptance({
+      findings,
+      obligation,
+      invocation,
+      findingsHash: submittedFindingsHash,
+      ctx,
+    })
+  ) {
     return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
       obligationType: ctx.obligationType ?? 'review',
       iteration: String(ctx.expectedIteration),
@@ -476,7 +478,10 @@ function validateInvocationSessionId(
   findings: ReviewFindings,
   binding: StrictReviewBinding,
 ): string | null {
-  if (findings.reviewedBy.sessionId === binding.invocation.childSessionId || binding.isHostTaskMode) {
+  if (
+    findings.reviewedBy.sessionId === binding.invocation.childSessionId ||
+    binding.isHostTaskMode
+  ) {
     return null;
   }
   return formatBlocked('REVIEW_FINDINGS_SESSION_MISMATCH', {

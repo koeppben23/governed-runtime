@@ -154,10 +154,13 @@ async function handleStandardReviewerResult(
 ): Promise<void> {
   const { reviewerResult, obligationType, strictEnforcement } = opts;
   if (reviewerResult?.blocked) {
-    ctx.output.output = strictBlockedOutput(reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED, {
-      reason: reviewerResult.reason ?? 'review invocation blocked by policy',
-      reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation ?? {}),
-    });
+    ctx.output.output = strictBlockedOutput(
+      reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED,
+      {
+        reason: reviewerResult.reason ?? 'review invocation blocked by policy',
+        reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation ?? {}),
+      },
+    );
     return;
   }
   if (!reviewerResult) {

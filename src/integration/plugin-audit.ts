@@ -160,15 +160,15 @@ async function resolveAuditContext(
   };
 }
 
-function parseAuditOutput(output: unknown): Pick<
-  AuditContext,
-  'phase' | 'transitions' | 'success' | 'errorMessage' | 'parsed'
-> {
+function parseAuditOutput(
+  output: unknown,
+): Pick<AuditContext, 'phase' | 'transitions' | 'success' | 'errorMessage' | 'parsed'> {
   const parsed = parseToolResult(extractToolOutputValue(output));
   const metadataTransitions = extractMetadataTransitions(output);
   return {
     phase: typeof parsed?.phase === 'string' ? parsed.phase : 'unknown',
-    transitions: metadataTransitions.length > 0 ? metadataTransitions : extractParsedTransitions(parsed),
+    transitions:
+      metadataTransitions.length > 0 ? metadataTransitions : extractParsedTransitions(parsed),
     success: parsed?.error !== true,
     errorMessage: typeof parsed?.errorMessage === 'string' ? parsed.errorMessage : undefined,
     parsed,
@@ -191,7 +191,9 @@ function extractMetadataTransitions(output: unknown): AuditContext['transitions'
     : [];
 }
 
-function extractParsedTransitions(parsed: ReturnType<typeof parseToolResult>): AuditContext['transitions'] {
+function extractParsedTransitions(
+  parsed: ReturnType<typeof parseToolResult>,
+): AuditContext['transitions'] {
   const rawTransitions = (parsed?._audit as { transitions?: unknown } | undefined)?.transitions;
   return Array.isArray(rawTransitions) ? (rawTransitions as AuditContext['transitions']) : [];
 }
@@ -199,14 +201,16 @@ function extractParsedTransitions(parsed: ReturnType<typeof parseToolResult>): A
 function resolveTimestampAssurancePolicy(
   configured: TimestampAssurancePolicy | undefined,
 ): TimestampAssurancePolicy {
-  return configured ?? {
-    enabled: false,
-    mode: 'local_only' as const,
-    strict: false,
-    criticalEvents: [],
-    ntpDriftThresholdMs: 30000,
-    tsaTimeoutMs: 10000,
-  };
+  return (
+    configured ?? {
+      enabled: false,
+      mode: 'local_only' as const,
+      strict: false,
+      criticalEvents: [],
+      ntpDriftThresholdMs: 30000,
+      tsaTimeoutMs: 10000,
+    }
+  );
 }
 
 async function resolveAuditNtpResult(
@@ -273,7 +277,10 @@ function resolveDecisionReceiptFields(
   return {
     rationale: resolveDecisionRationale(parsedDecision, input, state),
     decidedBy: stringField(parsedDecision, 'decidedBy') ?? state?.reviewDecision?.decidedBy,
-    decidedAt: stringField(parsedDecision, 'decidedAt') ?? state?.reviewDecision?.decidedAt ?? fallbackDecidedAt,
+    decidedAt:
+      stringField(parsedDecision, 'decidedAt') ??
+      state?.reviewDecision?.decidedAt ??
+      fallbackDecidedAt,
   };
 }
 
@@ -308,7 +315,10 @@ async function emitDecisionReceiptActorMissing(
   prevHash: string,
 ): Promise<string> {
   const { deps, ctx, toolName, sessionId, recordTimestampFailure } = params;
-  deps.log.warn('audit', 'skipping decision receipt: missing decidedBy', { tool: toolName, sessionId });
+  deps.log.warn('audit', 'skipping decision receipt: missing decidedBy', {
+    tool: toolName,
+    sessionId,
+  });
   const body = buildErrorBody(
     sessionId,
     {
@@ -527,7 +537,15 @@ async function emitToolCallAudit(input: {
     prevHash: ctx.prevHash,
     actorInfo: state?.actorInfo,
   });
-  await emitAuditBodyWithEvidence({ deps, ctx, sessionId, body, eventKind: 'tool_call', localTimestamp: ctx.now, timestampTracker });
+  await emitAuditBodyWithEvidence({
+    deps,
+    ctx,
+    sessionId,
+    body,
+    eventKind: 'tool_call',
+    localTimestamp: ctx.now,
+    timestampTracker,
+  });
   deps.log.debug('audit', 'emitted tool_call event', { tool: toolName, phase: ctx.phase });
 }
 
@@ -549,7 +567,15 @@ async function emitTransitionAudits(input: {
       t.at,
       ctx.prevHash,
     );
-    await emitAuditBodyWithEvidence({ deps, ctx, sessionId, body, eventKind: 'transition', localTimestamp: t.at, timestampTracker });
+    await emitAuditBodyWithEvidence({
+      deps,
+      ctx,
+      sessionId,
+      body,
+      eventKind: 'transition',
+      localTimestamp: t.at,
+      timestampTracker,
+    });
   }
 }
 
@@ -574,7 +600,15 @@ async function emitLifecycleAudit(input: {
     prevHash: ctx.prevHash,
     actorInfo: state?.actorInfo,
   });
-  await emitAuditBodyWithEvidence({ deps, ctx, sessionId, body, eventKind: 'lifecycle', localTimestamp: ctx.now, timestampTracker });
+  await emitAuditBodyWithEvidence({
+    deps,
+    ctx,
+    sessionId,
+    body,
+    eventKind: 'lifecycle',
+    localTimestamp: ctx.now,
+    timestampTracker,
+  });
 }
 
 function buildLifecycleDetail(
@@ -582,10 +616,17 @@ function buildLifecycleDetail(
   lifecycleAction: string,
   state: SessionState | null,
   policy: { mode: string; requireHumanGates: boolean },
-): { action: 'session_created' | 'session_completed' | 'session_aborted'; finalPhase: Phase; reason?: string } {
+): {
+  action: 'session_created' | 'session_completed' | 'session_aborted';
+  finalPhase: Phase;
+  reason?: string;
+} {
   const finalPhase =
-    ctx.transitions.length > 0 ? ctx.transitions[ctx.transitions.length - 1]!.to : (ctx.phase as Phase);
-  const reason = lifecycleAction === 'session_created' ? buildLifecycleReason(ctx, state, policy) : undefined;
+    ctx.transitions.length > 0
+      ? ctx.transitions[ctx.transitions.length - 1]!.to
+      : (ctx.phase as Phase);
+  const reason =
+    lifecycleAction === 'session_created' ? buildLifecycleReason(ctx, state, policy) : undefined;
   return {
     action: lifecycleAction as 'session_created' | 'session_completed' | 'session_aborted',
     finalPhase,
@@ -598,9 +639,10 @@ function buildLifecycleReason(
   state: SessionState | null,
   policy: { mode: string; requireHumanGates: boolean },
 ): string {
-  const parsed = typeof ctx.parsed?.policyResolution === 'object'
-    ? (ctx.parsed.policyResolution as Record<string, unknown>)
-    : null;
+  const parsed =
+    typeof ctx.parsed?.policyResolution === 'object'
+      ? (ctx.parsed.policyResolution as Record<string, unknown>)
+      : null;
   return lifecycleReasonFields(parsed, state, policy)
     .map(([key, value]) => `${key}:${value}`)
     .join(';');
@@ -639,7 +681,10 @@ function lifecycleEffectiveMode(
   return String(parsed?.effectiveMode ?? state?.policySnapshot.mode ?? policy.mode);
 }
 
-function lifecycleSource(parsed: Record<string, unknown> | null, state: SessionState | null): string {
+function lifecycleSource(
+  parsed: Record<string, unknown> | null,
+  state: SessionState | null,
+): string {
   return String(parsed?.source ?? state?.policySnapshot.source ?? 'unknown');
 }
 
@@ -704,7 +749,15 @@ async function emitToolErrorAudit(input: {
     ctx.now,
     ctx.prevHash,
   );
-  await emitAuditBodyWithEvidence({ deps, ctx, sessionId, body, eventKind: 'error', localTimestamp: ctx.now, timestampTracker });
+  await emitAuditBodyWithEvidence({
+    deps,
+    ctx,
+    sessionId,
+    body,
+    eventKind: 'error',
+    localTimestamp: ctx.now,
+    timestampTracker,
+  });
 }
 
 async function finalizeStrictTimestampFailure(
@@ -726,7 +779,12 @@ async function finalizeStrictTimestampFailure(
       },
     });
   }
-  return { auditOk: false, block: true, code: 'TSA_TIMESTAMP_ASSURANCE_FAILED', reason: failure.reason };
+  return {
+    auditOk: false,
+    block: true,
+    code: 'TSA_TIMESTAMP_ASSURANCE_FAILED',
+    reason: failure.reason,
+  };
 }
 
 /**

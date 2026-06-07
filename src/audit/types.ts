@@ -313,7 +313,13 @@ export function createTransitionEvent(
 ): ChainedAuditEvent {
   const input = normalizeTransitionEventInput(args);
   return finalizeWithTimestampEvidence(
-    buildTransitionBody(input.sessionId, input.phase, input.detail, input.timestamp, input.prevHash),
+    buildTransitionBody(
+      input.sessionId,
+      input.phase,
+      input.detail,
+      input.timestamp,
+      input.prevHash,
+    ),
     input.prevHash,
     input.timestampEvidence,
   );

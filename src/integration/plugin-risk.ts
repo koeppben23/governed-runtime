@@ -425,7 +425,13 @@ async function appendAllowedRiskDecisionForBash(
   output: { output?: unknown },
 ): Promise<void> {
   try {
-    await appendRiskDecisionAudit(sessDir, state, decision, 'allowed', 'RISK_CLASSIFICATION_ALLOWED');
+    await appendRiskDecisionAudit(
+      sessDir,
+      state,
+      decision,
+      'allowed',
+      'RISK_CLASSIFICATION_ALLOWED',
+    );
   } catch (err) {
     output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
       reason: err instanceof Error ? err.message : String(err),

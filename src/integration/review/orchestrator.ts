@@ -251,15 +251,25 @@ export async function invokeReviewer(
   parentSessionId: string,
   options?: InvokeReviewerOptions,
 ): Promise<ReviewerResult | null> {
-  if (options?.reviewInvocationPolicy === 'host_task_required') return hostTaskRequiredBlockedResult();
+  if (options?.reviewInvocationPolicy === 'host_task_required')
+    return hostTaskRequiredBlockedResult();
 
   const invokeOptions = { ...DEFAULT_INVOKE_OPTIONS, ...options };
   const maxAttempts = invokeOptions.maxRetries + 1;
   const agent = await resolveReviewerAgent(client);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    if (attempt > 1) await invokeOptions._sleepFn(invokeOptions.baseDelayMs * Math.pow(2, attempt - 2));
-    const result = await invokeReviewerAttempt({ client, prompt, parentSessionId, agent, attempt, maxAttempts, options: invokeOptions });
+    if (attempt > 1)
+      await invokeOptions._sleepFn(invokeOptions.baseDelayMs * Math.pow(2, attempt - 2));
+    const result = await invokeReviewerAttempt({
+      client,
+      prompt,
+      parentSessionId,
+      agent,
+      attempt,
+      maxAttempts,
+      options: invokeOptions,
+    });
     if (result.kind === 'retry') continue;
     return result.result;
   }
@@ -355,7 +365,8 @@ function buildStructuredPromptBody(agent: string, prompt: string) {
     parts: [{ type: 'text' as const, text: prompt }],
     format: { type: 'json_schema' as const, schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
   };
-  if (agent === REVIEWER_AGENT_FALLBACK) (body as { system?: string }).system = REVIEWER_SYSTEM_DIRECTIVE;
+  if (agent === REVIEWER_AGENT_FALLBACK)
+    (body as { system?: string }).system = REVIEWER_SYSTEM_DIRECTIVE;
   return body;
 }
 
@@ -365,7 +376,8 @@ function handlePromptTransportFailure(
   hasData: boolean,
 ): InvokeAttemptResult {
   const { agent, attempt, maxAttempts, options } = input;
-  const errorObj = typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : null;
+  const errorObj =
+    typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : null;
   const isNonRetryable = errorObj?.isRetryable === false;
   options._onAttemptFailed({
     attempt,
@@ -382,13 +394,20 @@ async function handleInfoError(
   error: unknown,
 ): Promise<InvokeAttemptResult | null> {
   if (!error) return null;
-  const errorObj = typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : { value: error };
+  const errorObj =
+    typeof error === 'object' && error !== null
+      ? (error as Record<string, unknown>)
+      : { value: error };
   logInfoError(input, error, errorObj);
   const capabilityError = structuredOutputCapabilityError(errorObj);
   return capabilityError ? handleStructuredCapabilityError(input, error, capabilityError) : null;
 }
 
-function logInfoError(input: InvokeAttemptInput, error: unknown, errorObj: Record<string, unknown>): void {
+function logInfoError(
+  input: InvokeAttemptInput,
+  error: unknown,
+  errorObj: Record<string, unknown>,
+): void {
   input.options._onAttemptFailed({
     attempt: input.attempt,
     step: 'info_error',
@@ -415,7 +434,9 @@ function structuredOutputCapabilityError(errorObj: Record<string, unknown>): str
       : '';
   const lower = `${infoErrorMessage(errorObj) ?? ''} ${dataMessage}`.toLowerCase();
   const unsupported = lower.includes('does not support');
-  const structured = ['tool_choice', 'tools', 'function calling', 'structured output'].some((term) => lower.includes(term));
+  const structured = ['tool_choice', 'tools', 'function calling', 'structured output'].some(
+    (term) => lower.includes(term),
+  );
   return unsupported && structured ? lower.trim() : null;
 }
 
@@ -425,7 +446,8 @@ async function handleStructuredCapabilityError(
   capabilityError: string,
 ): Promise<InvokeAttemptResult> {
   logCapabilityError(input, error, capabilityError);
-  if (input.options.reviewOutputPolicy !== 'text_compat_allowed') return textCompatBlocked(input, error);
+  if (input.options.reviewOutputPolicy !== 'text_compat_allowed')
+    return textCompatBlocked(input, error);
   await showTextCompatToast(input.client);
   const retrySessionId = await createFormatFreeRetrySession(input, error);
   if (!retrySessionId) return { kind: 'done', result: null };
@@ -441,7 +463,11 @@ async function handleStructuredCapabilityError(
   return { kind: 'done', result };
 }
 
-function logCapabilityError(input: InvokeAttemptInput, error: unknown, capabilityError: string): void {
+function logCapabilityError(
+  input: InvokeAttemptInput,
+  error: unknown,
+  capabilityError: string,
+): void {
   input.options._onAttemptFailed({
     attempt: input.attempt,
     step: 'model_capability_incompatible',
@@ -476,7 +502,10 @@ function textCompatBlocked(input: InvokeAttemptInput, error: unknown): InvokeAtt
 async function showTextCompatToast(client: OrchestratorClient): Promise<void> {
   try {
     await client.tui?.showToast({
-      body: { message: 'FlowGuard Reviewer: using lower-assurance text compatibility mode', variant: 'info' },
+      body: {
+        message: 'FlowGuard Reviewer: using lower-assurance text compatibility mode',
+        variant: 'info',
+      },
     });
   } catch {
     /* TUI unavailable — ignore */
@@ -500,7 +529,9 @@ async function createFormatFreeRetrySession(
   return null;
 }
 
-function extractStructuredFindings(info: Record<string, unknown> | undefined): Record<string, unknown> | null {
+function extractStructuredFindings(
+  info: Record<string, unknown> | undefined,
+): Record<string, unknown> | null {
   const structuredRaw = info?.structured_output ?? info?.structured;
   return structuredRaw && typeof structuredRaw === 'object' && !Array.isArray(structuredRaw)
     ? (structuredRaw as Record<string, unknown>)
@@ -538,9 +569,11 @@ function noFindingsDetails(
 }
 
 function textPartsLength(parts: Array<{ type?: string; text?: string }> | undefined): number {
-  return parts
-    ?.filter((p) => p.type === 'text' && p.text)
-    .reduce((sum, p) => sum + (p.text?.length ?? 0), 0) ?? 0;
+  return (
+    parts
+      ?.filter((p) => p.type === 'text' && p.text)
+      .reduce((sum, p) => sum + (p.text?.length ?? 0), 0) ?? 0
+  );
 }
 
 function structuredReviewerResult(
@@ -675,7 +708,8 @@ export function extractReviewContext(
   const next = typeof toolOutput.next === 'string' ? toolOutput.next : '';
   const iteration = obligation.iteration ?? numberFromNext(next, 'iteration');
   const planVersion = obligation.planVersion ?? numberFromNext(next, 'planVersion');
-  if (!obligation.obligationId || !obligation.criteriaVersion || !obligation.mandateDigest) return null;
+  if (!obligation.obligationId || !obligation.criteriaVersion || !obligation.mandateDigest)
+    return null;
   if (iteration === null || planVersion === null) return null;
   if (!matchesPlanSelfReviewIteration(toolName, toolOutput, iteration)) return null;
   return {
@@ -711,16 +745,22 @@ function extractReviewObligationFields(
 ): ExtractedReviewObligationFields {
   const obligation = reviewObligationObject(toolOutput);
   return {
-    obligationId: stringValue(obligation?.obligationId) ?? stringValue(toolOutput.reviewObligationId),
+    obligationId:
+      stringValue(obligation?.obligationId) ?? stringValue(toolOutput.reviewObligationId),
     criteriaVersion:
       stringValue(obligation?.criteriaVersion) ?? stringValue(toolOutput.reviewCriteriaVersion),
-    mandateDigest: stringValue(obligation?.mandateDigest) ?? stringValue(toolOutput.reviewMandateDigest),
-    iteration: numberValue(obligation?.iteration) ?? numberValue(toolOutput.reviewObligationIteration),
-    planVersion: numberValue(obligation?.planVersion) ?? numberValue(toolOutput.reviewObligationPlanVersion),
+    mandateDigest:
+      stringValue(obligation?.mandateDigest) ?? stringValue(toolOutput.reviewMandateDigest),
+    iteration:
+      numberValue(obligation?.iteration) ?? numberValue(toolOutput.reviewObligationIteration),
+    planVersion:
+      numberValue(obligation?.planVersion) ?? numberValue(toolOutput.reviewObligationPlanVersion),
   };
 }
 
-function reviewObligationObject(toolOutput: Record<string, unknown>): Record<string, unknown> | null {
+function reviewObligationObject(
+  toolOutput: Record<string, unknown>,
+): Record<string, unknown> | null {
   const value = toolOutput.reviewObligation;
   return value && typeof value === 'object' && !Array.isArray(value)
     ? (value as Record<string, unknown>)
