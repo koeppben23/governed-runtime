@@ -156,7 +156,7 @@ export async function executeImplement(
     });
   }
 
-  let finalState: SessionState = {
+  const finalState: SessionState = {
     ...nextState,
     implementation: loop.artifact,
     implReview: buildImplReviewState(loop, ctx.now()),
