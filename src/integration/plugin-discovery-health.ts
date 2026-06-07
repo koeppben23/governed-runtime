@@ -117,6 +117,30 @@ export async function enforceDiscoveryHealthBefore(
  * Post-bash Discovery health guard. Writes a strict blocked output object onto
  * the tool result rather than throwing, mirroring the risk after-bash seam.
  */
+async function blockOnHealth(
+  sessDir: string,
+  state: SessionState,
+  decision: { code?: string; message?: string; driftStatus?: string },
+  sessionId: string,
+  output: { output?: unknown },
+): Promise<void> {
+  const code = decision.code ?? 'DISCOVERY_HEALTH_UNAVAILABLE';
+  const reason = decision.message ?? 'Discovery health gate blocked after bash mutation.';
+  try {
+    if (state.discoveryHealthGate?.status !== 'blocked')
+      await persistDiscoveryHealthBlock(sessDir, state, decision);
+    output.output = strictBlockedOutput(code, {
+      reason,
+      sessionId,
+      driftStatus: decision.driftStatus ?? '',
+    });
+  } catch (err) {
+    output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+      reason: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export async function enforceDiscoveryHealthAfterBash(
   deps: DiscoveryHealthEnforcementDeps,
   sessionId: string,
@@ -143,22 +167,5 @@ export async function enforceDiscoveryHealthAfterBash(
     cachedDrift: state.discoveryHealthGate?.lastDriftAssessment,
     existingGate: state.discoveryHealthGate,
   });
-  if (decision.allowed) return;
-
-  const code = decision.code ?? 'DISCOVERY_HEALTH_UNAVAILABLE';
-  const reason = decision.message ?? 'Discovery health gate blocked after bash mutation.';
-  try {
-    if (state.discoveryHealthGate?.status !== 'blocked') {
-      await persistDiscoveryHealthBlock(sessDir, state, decision);
-    }
-    output.output = strictBlockedOutput(code, {
-      reason,
-      sessionId,
-      driftStatus: decision.driftStatus ?? '',
-    });
-  } catch (err) {
-    output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
-      reason: err instanceof Error ? err.message : String(err),
-    });
-  }
+  if (!decision.allowed) await blockOnHealth(sessDir, state, decision, sessionId, output);
 }
