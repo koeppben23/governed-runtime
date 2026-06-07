@@ -175,7 +175,8 @@ function applyHydrateOverrides(base: FlowGuardPolicy, p: HydratePolicyInput): Fl
 function validateHydrateInput(s: HydrateSessionInput): RailBlocked | null {
   if (!s.sessionId.trim()) return blocked('MISSING_SESSION_ID');
   if (!s.worktree.trim()) return blocked('MISSING_WORKTREE');
-  if (!s.fingerprint || !FINGERPRINT_PATTERN.test(s.fingerprint)) return blocked('INVALID_FINGERPRINT');
+  if (!s.fingerprint || !FINGERPRINT_PATTERN.test(s.fingerprint))
+    return blocked('INVALID_FINGERPRINT');
   return null;
 }
 
@@ -191,6 +192,24 @@ function handleExistingState(
   return { kind: 'ok', state: nextState, evalResult: result, transitions: [] };
 }
 
+function resolvePolicySnapshot(p: HydratePolicyInput, ctx: RailContext, now: string) {
+  if (p.policyResolution) return freezePolicySnapshot(p.policyResolution, now, ctx.digest);
+  const basePolicy = getPolicyPreset(p.policyMode ?? 'solo');
+  const policy = applyHydrateOverrides(basePolicy, p);
+  return createPolicySnapshot(policy, now, ctx.digest, {
+    requestedMode: p.requestedPolicyMode ?? policy.mode,
+    source: p.policySource ?? 'default',
+    effectiveGateBehavior:
+      p.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
+    degradedReason: p.policyDegradedReason,
+    resolutionReason: p.policyResolutionReason,
+    centralMinimumMode: p.centralMinimumMode,
+    policyDigest: p.policyDigest,
+    policyVersion: p.policyVersion,
+    policyPathHint: p.policyPathHint,
+  });
+}
+
 function buildNewHydrateState(
   s: HydrateSessionInput,
   p: HydratePolicyInput,
@@ -201,7 +220,10 @@ function buildNewHydrateState(
   if (pr.profileId !== undefined) {
     profile = defaultProfileRegistry.get(pr.profileId);
   } else if (pr.repoSignals) {
-    profile = defaultProfileRegistry.detect({ repoSignals: pr.repoSignals, discovery: pr.discoveryResult });
+    profile = defaultProfileRegistry.detect({
+      repoSignals: pr.repoSignals,
+      discovery: pr.discoveryResult,
+    });
   }
   if (!profile) profile = defaultProfileRegistry.get('baseline');
 
@@ -210,39 +232,56 @@ function buildNewHydrateState(
       ? pr.activeChecks
       : deriveActiveChecksFromCandidates(s.verificationCandidates);
 
-  const activeProfile = profile ? { id: profile.id, name: profile.name, ruleContent: extractBaseInstructions(profile.instructions), ...(extractByPhaseInstructions(profile.instructions) ? { phaseRuleContent: extractByPhaseInstructions(profile.instructions) } : {}) } : null;
+  const activeProfile = profile
+    ? {
+        id: profile.id,
+        name: profile.name,
+        ruleContent: extractBaseInstructions(profile.instructions),
+        ...(extractByPhaseInstructions(profile.instructions)
+          ? { phaseRuleContent: extractByPhaseInstructions(profile.instructions) }
+          : {}),
+      }
+    : null;
 
   const now = ctx.now();
-  const snapshotWithContext = p.policyResolution
-    ? freezePolicySnapshot(p.policyResolution, now, ctx.digest)
-    : (() => {
-        const basePolicy = getPolicyPreset(p.policyMode ?? 'solo');
-        const policy = applyHydrateOverrides(basePolicy, p);
-        return createPolicySnapshot(policy, now, ctx.digest, {
-          requestedMode: p.requestedPolicyMode ?? policy.mode, source: p.policySource ?? 'default',
-          effectiveGateBehavior: p.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
-          degradedReason: p.policyDegradedReason, resolutionReason: p.policyResolutionReason,
-          centralMinimumMode: p.centralMinimumMode, policyDigest: p.policyDigest,
-          policyVersion: p.policyVersion, policyPathHint: p.policyPathHint,
-        });
-      })();
-
-  const binding: BindingInfo = { sessionId: s.sessionId, worktree: s.worktree, fingerprint: s.fingerprint, resolvedAt: now };
+  const snapshotWithContext = resolvePolicySnapshot(p, ctx, now);
+  const binding: BindingInfo = {
+    sessionId: s.sessionId,
+    worktree: s.worktree,
+    fingerprint: s.fingerprint,
+    resolvedAt: now,
+  };
 
   const newState: SessionState = {
-    id: crypto.randomUUID(), schemaVersion: 'v1', phase: 'READY',
+    id: crypto.randomUUID(),
+    schemaVersion: 'v1',
+    phase: 'READY',
     ...(s.claimedTaskClass ? { claimedTaskClass: s.claimedTaskClass } : {}),
     binding,
-    ticket: null, architecture: null, plan: null, selfReview: null, validation: [],
-    implementation: null, reducedCeremony: null, implReview: null, reviewDecision: null,
-    reviewReportPath: null, nextAdrNumber: 1,
-    activeProfile, activeChecks, policySnapshot: snapshotWithContext,
+    ticket: null,
+    architecture: null,
+    plan: null,
+    selfReview: null,
+    validation: [],
+    implementation: null,
+    reducedCeremony: null,
+    implReview: null,
+    reviewDecision: null,
+    reviewReportPath: null,
+    nextAdrNumber: 1,
+    activeProfile,
+    activeChecks,
+    policySnapshot: snapshotWithContext,
     initiatedBy: pr.initiatedBy ?? s.sessionId,
     ...(pr.initiatedByIdentity ? { initiatedByIdentity: pr.initiatedByIdentity } : {}),
     ...(pr.actorInfo ? { actorInfo: pr.actorInfo } : {}),
-    discoveryDigest: s.discoveryDigest ?? null, discoverySummary: s.discoverySummary ?? null,
-    detectedStack: s.detectedStack ?? null, verificationCandidates: s.verificationCandidates ?? [],
-    transition: null, error: null, createdAt: now,
+    discoveryDigest: s.discoveryDigest ?? null,
+    discoverySummary: s.discoverySummary ?? null,
+    detectedStack: s.detectedStack ?? null,
+    verificationCandidates: s.verificationCandidates ?? [],
+    transition: null,
+    error: null,
+    createdAt: now,
   };
 
   const result = evaluate(newState, ctx.policy);

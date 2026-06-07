@@ -64,7 +64,11 @@ function resolveMinAssurance(
   configMin?: string,
   requireVerified?: boolean,
 ): 'best_effort' | 'claim_validated' | 'idp_verified' {
-  if (configMin === 'best_effort' || configMin === 'claim_validated' || configMin === 'idp_verified')
+  if (
+    configMin === 'best_effort' ||
+    configMin === 'claim_validated' ||
+    configMin === 'idp_verified'
+  )
     return configMin;
   if (requireVerified === true) return 'claim_validated';
   return base.minimumActorAssuranceForApproval;
@@ -110,17 +114,29 @@ function applyConfigOverrides(
 ): FlowGuardPolicy {
   return {
     ...basePolicy,
-    maxSelfReviewIterations: opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
-    maxImplReviewIterations: opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
-    minimumActorAssuranceForApproval: resolveMinAssurance(basePolicy, opts.configMinimumActorAssuranceForApproval, opts.configRequireVerifiedActorsForApproval),
-    requireVerifiedActorsForApproval: opts.configRequireVerifiedActorsForApproval ?? basePolicy.requireVerifiedActorsForApproval,
+    maxSelfReviewIterations:
+      opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
+    maxImplReviewIterations:
+      opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
+    minimumActorAssuranceForApproval: resolveMinAssurance(
+      basePolicy,
+      opts.configMinimumActorAssuranceForApproval,
+      opts.configRequireVerifiedActorsForApproval,
+    ),
+    requireVerifiedActorsForApproval:
+      opts.configRequireVerifiedActorsForApproval ?? basePolicy.requireVerifiedActorsForApproval,
     identityProvider: opts.configIdentityProvider ?? basePolicy.identityProvider,
     identityProviderMode: opts.configIdentityProviderMode ?? basePolicy.identityProviderMode,
-    enforceRiskClassification: opts.configEnforceRiskClassification ?? basePolicy.enforceRiskClassification,
-    allowRiskDowngradeOverride: opts.configAllowRiskDowngradeOverride ?? basePolicy.allowRiskDowngradeOverride,
+    enforceRiskClassification:
+      opts.configEnforceRiskClassification ?? basePolicy.enforceRiskClassification,
+    allowRiskDowngradeOverride:
+      opts.configAllowRiskDowngradeOverride ?? basePolicy.allowRiskDowngradeOverride,
     allowReducedCeremony: opts.configAllowReducedCeremony ?? basePolicy.allowReducedCeremony,
     discoveryHealth: resolveDiscoveryHealth(basePolicy.discoveryHealth, opts.configDiscoveryHealth),
-    validationEvidence: resolveValidationEvidence(basePolicy.validationEvidence, opts.configValidationEvidence),
+    validationEvidence: resolveValidationEvidence(
+      basePolicy.validationEvidence,
+      opts.configValidationEvidence,
+    ),
   };
 }
 

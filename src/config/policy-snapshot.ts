@@ -107,8 +107,12 @@ function buildAuditSection(audit: AuditPolicy): PolicySnapshot['audit'] {
       strict: audit.timestampAssurance.strict,
       criticalEvents: [...audit.timestampAssurance.criticalEvents],
       ...(audit.timestampAssurance.tsaUrl ? { tsaUrl: audit.timestampAssurance.tsaUrl } : {}),
-      ...(audit.timestampAssurance.trustAnchors ? { trustAnchors: [...audit.timestampAssurance.trustAnchors] } : {}),
-      ...(audit.timestampAssurance.ntpServers ? { ntpServers: [...audit.timestampAssurance.ntpServers] } : {}),
+      ...(audit.timestampAssurance.trustAnchors
+        ? { trustAnchors: [...audit.timestampAssurance.trustAnchors] }
+        : {}),
+      ...(audit.timestampAssurance.ntpServers
+        ? { ntpServers: [...audit.timestampAssurance.ntpServers] }
+        : {}),
       ntpDriftThresholdMs: audit.timestampAssurance.ntpDriftThresholdMs,
       tsaTimeoutMs: audit.timestampAssurance.tsaTimeoutMs,
     },
@@ -139,10 +143,14 @@ export function createPolicySnapshot(
     resolvedAt,
     requestedMode: resolution?.requestedMode ?? policy.mode,
     ...(resolution?.source ? { source: resolution.source } : {}),
-    effectiveGateBehavior: resolution?.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
+    effectiveGateBehavior:
+      resolution?.effectiveGateBehavior ??
+      (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
     ...(resolution?.degradedReason ? { degradedReason: resolution.degradedReason } : {}),
     ...(resolution?.resolutionReason ? { resolutionReason: resolution.resolutionReason } : {}),
-    ...(resolution?.centralMinimumMode ? { centralMinimumMode: resolution.centralMinimumMode } : {}),
+    ...(resolution?.centralMinimumMode
+      ? { centralMinimumMode: resolution.centralMinimumMode }
+      : {}),
     ...(resolution?.policyDigest ? { policyDigest: resolution.policyDigest } : {}),
     ...(resolution?.policyVersion ? { policyVersion: resolution.policyVersion } : {}),
     ...(resolution?.policyPathHint ? { policyPathHint: resolution.policyPathHint } : {}),
@@ -162,8 +170,15 @@ export function createPolicySnapshot(
     enforceRiskClassification: policy.enforceRiskClassification,
     allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride,
     allowReducedCeremony: policy.allowReducedCeremony,
-    discoveryHealth: { enforcement: policy.discoveryHealth.enforcement, onDegraded: policy.discoveryHealth.onDegraded, onDrift: policy.discoveryHealth.onDrift },
-    validationEvidence: { enforcement: policy.validationEvidence.enforcement, allowNoCommands: policy.validationEvidence.allowNoCommands },
+    discoveryHealth: {
+      enforcement: policy.discoveryHealth.enforcement,
+      onDegraded: policy.discoveryHealth.onDegraded,
+      onDrift: policy.discoveryHealth.onDrift,
+    },
+    validationEvidence: {
+      enforcement: policy.validationEvidence.enforcement,
+      allowNoCommands: policy.validationEvidence.allowNoCommands,
+    },
   };
 }
 
@@ -799,10 +814,14 @@ function modeConsistentDefaults(mode: PolicyMode): {
   readonly discoveryHealth: DiscoveryHealthPolicy;
   readonly validationEvidence: ValidationEvidencePolicy;
 } {
-  const base = mode === 'solo' ? SOLO_DEFAULTS
-    : mode === 'regulated' ? REGULATED_DEFAULTS
-    : mode === 'team' ? TEAM_DEFAULTS
-    : TEAM_CI_DEFAULTS;
+  const base =
+    mode === 'solo'
+      ? SOLO_DEFAULTS
+      : mode === 'regulated'
+        ? REGULATED_DEFAULTS
+        : mode === 'team'
+          ? TEAM_DEFAULTS
+          : TEAM_CI_DEFAULTS;
   return {
     ...base,
     discoveryHealth: defaultDiscoveryHealthForMode(mode),
