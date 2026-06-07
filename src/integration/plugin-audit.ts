@@ -95,6 +95,58 @@ interface AuditContext {
 
 // ─── Extracted helpers ────────────────────────────────────────────────────────
 
+function resolveTransitionsFromOutput(
+  output: unknown,
+  phaseRef: { current: string },
+  successRef: { current: boolean },
+  errorMsgRef: { current: string | undefined },
+): AuditContext['transitions'] {
+  let transitions: AuditContext['transitions'] = [];
+  const metaTransitions =
+    typeof output === 'object' && output !== null
+      ? ((output as Record<string, unknown>).metadata as Record<string, unknown> | undefined)
+          ?.transitions
+      : undefined;
+  if (Array.isArray(metaTransitions)) transitions = metaTransitions as AuditContext['transitions'];
+  const parsed = parseToolResult(
+    typeof output === 'object' && output !== null && 'output' in output ? output.output : output,
+  );
+  if (parsed) {
+    phaseRef.current = typeof parsed.phase === 'string' ? parsed.phase : 'unknown';
+    successRef.current = parsed.error !== true;
+    errorMsgRef.current = typeof parsed.errorMessage === 'string' ? parsed.errorMessage : undefined;
+    if (transitions.length === 0) {
+      const rawTransitions = (parsed._audit as { transitions?: unknown } | undefined)?.transitions;
+      if (Array.isArray(rawTransitions))
+        transitions = rawTransitions as AuditContext['transitions'];
+    }
+  }
+  return transitions;
+}
+
+async function resolveTSA(
+  deps: AuditDeps,
+  policy: { audit: TimestampAssurancePolicy },
+): Promise<{ resolvedTsa: TimestampAssurancePolicy; ntpResult?: NtpCheckResult }> {
+  const resolvedTsa: TimestampAssurancePolicy = policy.audit.timestampAssurance ?? {
+    enabled: false,
+    mode: 'local_only' as const,
+    strict: false,
+    criticalEvents: [],
+    ntpDriftThresholdMs: 30000,
+    tsaTimeoutMs: 10000,
+  };
+  let ntpResult: NtpCheckResult | undefined;
+  if (resolvedTsa.enabled && resolvedTsa.mode !== 'local_only') {
+    ntpResult = await checkNtpClock(
+      resolvedTsa.ntpServers,
+      resolvedTsa.tsaTimeoutMs,
+      resolvedTsa.ntpDriftThresholdMs,
+    );
+  }
+  return { resolvedTsa, ntpResult };
+}
+
 async function resolveAuditContext(
   deps: AuditDeps,
   toolName: string,
@@ -133,55 +185,15 @@ async function resolveAuditContext(
   if (state?.archiveStatus) deps.invalidateChainState(sessionId);
   const prevHash = await deps.initChain(sessDir, sessionId);
 
-  let phase = 'unknown';
-  let transitions: AuditContext['transitions'] = [];
-  let success = true;
-  let errorMessage: string | undefined;
+  const phaseRef = { current: 'unknown' };
+  const successRef = { current: true };
+  const errorMsgRef = { current: undefined as string | undefined };
+  const transitions = resolveTransitionsFromOutput(output, phaseRef, successRef, errorMsgRef);
 
-  // FG-267: Read transitions from metadata channel first (new),
-  // then fall back to _audit.transitions from the parsed JSON (legacy).
-  const metaTransitions =
-    typeof output === 'object' && output !== null
-      ? ((output as Record<string, unknown>).metadata as Record<string, unknown> | undefined)
-          ?.transitions
-      : undefined;
-  if (Array.isArray(metaTransitions)) {
-    transitions = metaTransitions as AuditContext['transitions'];
-  }
-
-  const parsed = parseToolResult(
-    typeof output === 'object' && output !== null && 'output' in output ? output.output : output,
+  const { resolvedTsa, ntpResult } = await resolveTSA(
+    deps,
+    policy as { audit: TimestampAssurancePolicy },
   );
-  if (parsed) {
-    phase = typeof parsed.phase === 'string' ? parsed.phase : 'unknown';
-    success = parsed.error !== true;
-    errorMessage = typeof parsed.errorMessage === 'string' ? parsed.errorMessage : undefined;
-    // Metadata-first: only fall back to _audit if metadata didn't provide transitions
-    if (transitions.length === 0) {
-      const rawTransitions = (parsed._audit as { transitions?: unknown } | undefined)?.transitions;
-      if (Array.isArray(rawTransitions)) {
-        transitions = rawTransitions as AuditContext['transitions'];
-      }
-    }
-  }
-
-  const resolvedTsa: TimestampAssurancePolicy = policy.audit.timestampAssurance ?? {
-    enabled: false,
-    mode: 'local_only' as const,
-    strict: false,
-    criticalEvents: [],
-    ntpDriftThresholdMs: 30000,
-    tsaTimeoutMs: 10000,
-  };
-
-  let ntpResult: NtpCheckResult | undefined;
-  if (resolvedTsa.enabled && resolvedTsa.mode !== 'local_only') {
-    ntpResult = await checkNtpClock(
-      resolvedTsa.ntpServers,
-      resolvedTsa.tsaTimeoutMs,
-      resolvedTsa.ntpDriftThresholdMs,
-    );
-  }
 
   return {
     ctx: {
@@ -192,11 +204,11 @@ async function resolveAuditContext(
       actor,
       now,
       prevHash,
-      phase,
+      phase: phaseRef.current,
       transitions,
-      success,
-      errorMessage,
-      parsed,
+      success: successRef.current,
+      errorMessage: errorMsgRef.current,
+      parsed: null,
       timestampAssurance: resolvedTsa,
       ntpResult,
     },
