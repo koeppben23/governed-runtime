@@ -320,6 +320,20 @@ export function buildInvocationEvidence(input: {
     reviewOutputMode,
     structuredOutputUsed,
     reviewAssuranceLevel,
+    ...buildOptionalInvocationFields(input),
+  };
+}
+
+function buildOptionalInvocationFields(input: {
+  extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
+  modelCapabilityError?: string;
+  capturedVerdict?: string;
+  capturedRawFindings?: Record<string, unknown>;
+  hostCapturedAgentId?: string;
+  hostCapturedAgentType?: typeof REVIEWER_SUBAGENT_TYPE;
+  hostCaptureSource?: 'subagent_stop_hook' | 'post_tool_use_hook';
+}): Record<string, unknown> {
+  return {
     ...(input.extractionMethod ? { extractionMethod: input.extractionMethod } : {}),
     ...(input.modelCapabilityError ? { modelCapabilityError: input.modelCapabilityError } : {}),
     ...(input.capturedVerdict ? { capturedVerdict: input.capturedVerdict } : {}),
