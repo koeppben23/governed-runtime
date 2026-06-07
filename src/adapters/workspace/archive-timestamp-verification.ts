@@ -9,6 +9,11 @@ import type { SessionState } from '../../state/schema.js';
 import { PkijsTimestampVerifier } from '../../audit/rfc3161-pkijs-verifier.js';
 import { verifyTimestampTokensForEvents } from '../../audit/timestamp-token-verification.js';
 
+function eventHasTsaEvidence(event: AuditEvent): boolean {
+  const evidence = event.timestampEvidence as Record<string, unknown> | undefined;
+  return typeof evidence?.tsa === 'object' && evidence.tsa !== null;
+}
+
 export async function verifyArchiveTimestampTokens(input: {
   readonly events: readonly AuditEvent[];
   readonly state: SessionState | null;
@@ -17,18 +22,14 @@ export async function verifyArchiveTimestampTokens(input: {
 }): Promise<void> {
   const timestampPolicy = input.state?.policySnapshot.audit.timestampAssurance;
   const trustAnchors = timestampPolicy?.trustAnchors ?? [];
-  const hasTsaEvidence = input.events.some((event) => {
-    const evidence = event.timestampEvidence as Record<string, unknown> | undefined;
-    return typeof evidence?.tsa === 'object' && evidence.tsa !== null;
-  });
+  const severity: 'error' | 'warning' =
+    timestampPolicy?.strict || input.manifest.policyMode === 'regulated' ? 'error' : 'warning';
+
   if (trustAnchors.length === 0) {
-    if (hasTsaEvidence) {
+    if (input.events.some(eventHasTsaEvidence)) {
       input.findings.push({
         code: 'tsa_verification_failed',
-        severity:
-          timestampPolicy?.strict || input.manifest.policyMode === 'regulated'
-            ? 'error'
-            : 'warning',
+        severity,
         message: 'TSA evidence is present but no timestamp trust anchors are configured',
         file: 'audit.jsonl',
       });
@@ -45,8 +46,7 @@ export async function verifyArchiveTimestampTokens(input: {
   for (const finding of result.findings) {
     input.findings.push({
       code: 'tsa_verification_failed',
-      severity:
-        timestampPolicy?.strict || input.manifest.policyMode === 'regulated' ? 'error' : 'warning',
+      severity,
       message: `TSA token verification failed for audit event index ${finding.index}: ${finding.reason}`,
       file: 'audit.jsonl',
     });

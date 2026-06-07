@@ -48,7 +48,7 @@ export async function runStandardReviewPipeline(
   toolName: string,
   input: unknown,
 ): Promise<void> {
-  const { deps, sessionState, sessDir, reviewCtx, output, sessionId } = ctx;
+  const { deps, sessionState, output } = ctx;
 
   const obligationType = obligationTypeForTool(toolName);
   if (!obligationType) {
@@ -61,73 +61,113 @@ export async function runStandardReviewPipeline(
 
   const strictEnforcement = isStrictEnforcementEnabled(sessionState);
 
-  const assuranceResult = await recordAssuranceWithAudit(
+  const assuranceResult = await recordObligationHandshake(ctx, obligationType, strictEnforcement);
+
+  if (blockOnAuditFailure(ctx, assuranceResult)) return;
+
+  const prompt = await buildStandardPromptAndLog(ctx, toolName, input);
+  if (!prompt) return;
+
+  const reviewerResult = await spawnStandardReviewer(ctx, toolName, prompt);
+  await handleStandardReviewerResult(ctx, {
+    toolName,
+    reviewerResult,
+    prompt,
+    obligationType,
+    strictEnforcement,
+  });
+}
+
+async function recordObligationHandshake(
+  ctx: PipelineContext,
+  obligationType: ReviewObligationType,
+  strictEnforcement: boolean,
+): ReturnType<typeof recordAssuranceWithAudit> {
+  const { deps, sessionState, sessDir, reviewCtx, sessionId } = ctx;
+  return recordAssuranceWithAudit(
     {
       updateReviewAssurance: (sessDir, update) => deps.updateReviewAssurance(sessDir, update),
       appendReviewAuditEvent: (sessDir, sessionId, phase, event, detail) =>
         appendReviewAuditEvent(sessDir, sessionId, phase, event, detail),
       logError: (msg, err) => deps.log.warn('orchestrator', msg, { error: String(err) }),
     },
-    sessDir,
-    sessionId,
-    String(ctx.parsedOutput.phase ?? sessionState.phase),
-    (s, now2) =>
-      updateObligation(s, reviewCtx.obligationId, (item) => ({
-        ...item,
-        pluginHandshakeAt: now2,
-      })),
-    'review:obligation_created',
     {
-      obligationId: reviewCtx.obligationId,
-      obligationType,
-      iteration: reviewCtx.iteration,
-      planVersion: reviewCtx.planVersion,
-      criteriaVersion: reviewCtx.criteriaVersion,
-      mandateDigest: reviewCtx.mandateDigest,
+      sessDir,
+      sessionId,
+      phase: String(ctx.parsedOutput.phase ?? sessionState.phase),
+      stateMutation: (s, now2) =>
+        updateObligation(s, reviewCtx.obligationId, (item) => ({
+          ...item,
+          pluginHandshakeAt: now2,
+        })),
+      auditEventName: 'review:obligation_created',
+      auditDetail: {
+        obligationId: reviewCtx.obligationId,
+        obligationType,
+        iteration: reviewCtx.iteration,
+        planVersion: reviewCtx.planVersion,
+        criteriaVersion: reviewCtx.criteriaVersion,
+        mandateDigest: reviewCtx.mandateDigest,
+      },
+      auditFailureBehavior: strictEnforcement ? 'block' : 'warn',
     },
-    strictEnforcement ? 'block' : 'warn',
   );
+}
 
-  if (!assuranceResult.auditOk && assuranceResult.block) {
-    output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
-      reason: assuranceResult.reason ?? 'audit write failed',
-    });
-    return;
-  }
+function blockOnAuditFailure(
+  ctx: PipelineContext,
+  assuranceResult: Awaited<ReturnType<typeof recordAssuranceWithAudit>>,
+): boolean {
+  if (assuranceResult.auditOk || !assuranceResult.block) return false;
+  ctx.output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+    reason: assuranceResult.reason ?? 'audit write failed',
+  });
+  return true;
+}
 
-  const prompt = await buildStandardPromptAndLog(ctx, toolName, input);
-  if (!prompt) return;
-
-  const policies = getReviewerPolicies(sessionState);
-  const reviewerResult = await deps.adapter.spawnReviewer({
+async function spawnStandardReviewer(
+  ctx: PipelineContext,
+  toolName: string,
+  prompt: string,
+): ReturnType<PipelineContext['deps']['adapter']['spawnReviewer']> {
+  const policies = getReviewerPolicies(ctx.sessionState);
+  return ctx.deps.adapter.spawnReviewer({
     prompt,
-    parentSessionId: sessionId,
+    parentSessionId: ctx.sessionId,
     reviewOutputPolicy: policies.reviewOutputPolicy,
     reviewInvocationPolicy: policies.reviewInvocationPolicy,
-    onAttemptFailed: buildAttemptFailedLogger(deps, toolName, sessionId),
+    onAttemptFailed: buildAttemptFailedLogger(ctx.deps, toolName, ctx.sessionId),
   });
+}
 
+interface StandardReviewerResultOpts {
+  toolName: string;
+  reviewerResult: Awaited<ReturnType<PipelineContext['deps']['adapter']['spawnReviewer']>>;
+  prompt: string;
+  obligationType: ReviewObligationType;
+  strictEnforcement: boolean;
+}
+
+async function handleStandardReviewerResult(
+  ctx: PipelineContext,
+  opts: StandardReviewerResultOpts,
+): Promise<void> {
+  const { reviewerResult, obligationType, strictEnforcement } = opts;
   if (reviewerResult?.blocked) {
-    const code = reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED;
-    const reason = reviewerResult.reason ?? 'review invocation blocked by policy';
-    output.output = strictBlockedOutput(code, {
-      reason,
-      reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation ?? {}),
-    });
+    ctx.output.output = strictBlockedOutput(
+      reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED,
+      {
+        reason: reviewerResult.reason ?? 'review invocation blocked by policy',
+        reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation ?? {}),
+      },
+    );
     return;
   }
-
-  if (reviewerResult && !reviewerResult.blocked) {
-    await handleReviewerSuccess(ctx, {
-      toolName,
-      reviewerResult,
-      prompt,
-      obligationType,
-      strictEnforcement,
-    });
-  } else {
+  if (!reviewerResult) {
     await handleReviewerFailure(ctx, obligationType, strictEnforcement);
+    return;
   }
+  await handleReviewerSuccess(ctx, { ...opts, reviewerResult });
 }
 
 function buildToolArgsDiagnostics(
@@ -482,21 +522,23 @@ async function handleReviewerFailure(
           appendReviewAuditEvent(sessDir, sessionId, phase, event, detail),
         logError: (msg, err) => deps.log.warn('orchestrator', msg, { error: String(err) }),
       },
-      sessDir,
-      sessionId,
-      phase,
-      (s) =>
-        updateObligation(s, reviewCtx.obligationId, (item) => ({
-          ...item,
-          status: 'blocked' as const,
-          blockedCode: 'REVIEWER_INVOCATION_EXHAUSTED',
-        })),
-      'review:obligation_blocked',
       {
-        obligationId: reviewCtx.obligationId,
-        code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        sessDir,
+        sessionId,
+        phase,
+        stateMutation: (s) =>
+          updateObligation(s, reviewCtx.obligationId, (item) => ({
+            ...item,
+            status: 'blocked' as const,
+            blockedCode: 'REVIEWER_INVOCATION_EXHAUSTED',
+          })),
+        auditEventName: 'review:obligation_blocked',
+        auditDetail: {
+          obligationId: reviewCtx.obligationId,
+          code: 'REVIEWER_INVOCATION_EXHAUSTED',
+        },
+        auditFailureBehavior: 'warn',
       },
-      'warn',
     );
   }
 }

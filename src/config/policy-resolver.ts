@@ -59,6 +59,42 @@ interface RequestedPolicyContext {
   readonly policyWithOverrides: FlowGuardPolicy;
 }
 
+function resolveMinAssurance(
+  base: FlowGuardPolicy,
+  configMin?: string,
+  requireVerified?: boolean,
+): 'best_effort' | 'claim_validated' | 'idp_verified' {
+  if (
+    configMin === 'best_effort' ||
+    configMin === 'claim_validated' ||
+    configMin === 'idp_verified'
+  )
+    return configMin;
+  if (requireVerified === true) return 'claim_validated';
+  return base.minimumActorAssuranceForApproval;
+}
+
+function resolveDiscoveryHealth(
+  base: DiscoveryHealthPolicy,
+  override?: Partial<DiscoveryHealthPolicy>,
+): DiscoveryHealthPolicy {
+  return {
+    enforcement: override?.enforcement ?? base.enforcement,
+    onDegraded: override?.onDegraded ?? base.onDegraded,
+    onDrift: override?.onDrift ?? base.onDrift,
+  };
+}
+
+function resolveValidationEvidence(
+  base: ValidationEvidencePolicy,
+  override?: Partial<ValidationEvidencePolicy>,
+): ValidationEvidencePolicy {
+  return {
+    enforcement: override?.enforcement ?? base.enforcement,
+    allowNoCommands: override?.allowNoCommands ?? base.allowNoCommands,
+  };
+}
+
 /** Apply user-level config overrides (iteration limits, assurance, IdP) to a base policy. */
 function applyConfigOverrides(
   basePolicy: FlowGuardPolicy,
@@ -82,10 +118,11 @@ function applyConfigOverrides(
       opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
     maxImplReviewIterations:
       opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
-    minimumActorAssuranceForApproval:
-      opts.configMinimumActorAssuranceForApproval ??
-      (opts.configRequireVerifiedActorsForApproval === true ? 'claim_validated' : undefined) ??
-      basePolicy.minimumActorAssuranceForApproval,
+    minimumActorAssuranceForApproval: resolveMinAssurance(
+      basePolicy,
+      opts.configMinimumActorAssuranceForApproval,
+      opts.configRequireVerifiedActorsForApproval,
+    ),
     requireVerifiedActorsForApproval:
       opts.configRequireVerifiedActorsForApproval ?? basePolicy.requireVerifiedActorsForApproval,
     identityProvider: opts.configIdentityProvider ?? basePolicy.identityProvider,
@@ -95,19 +132,11 @@ function applyConfigOverrides(
     allowRiskDowngradeOverride:
       opts.configAllowRiskDowngradeOverride ?? basePolicy.allowRiskDowngradeOverride,
     allowReducedCeremony: opts.configAllowReducedCeremony ?? basePolicy.allowReducedCeremony,
-    discoveryHealth: {
-      enforcement:
-        opts.configDiscoveryHealth?.enforcement ?? basePolicy.discoveryHealth.enforcement,
-      onDegraded: opts.configDiscoveryHealth?.onDegraded ?? basePolicy.discoveryHealth.onDegraded,
-      onDrift: opts.configDiscoveryHealth?.onDrift ?? basePolicy.discoveryHealth.onDrift,
-    },
-    validationEvidence: {
-      enforcement:
-        opts.configValidationEvidence?.enforcement ?? basePolicy.validationEvidence.enforcement,
-      allowNoCommands:
-        opts.configValidationEvidence?.allowNoCommands ??
-        basePolicy.validationEvidence.allowNoCommands,
-    },
+    discoveryHealth: resolveDiscoveryHealth(basePolicy.discoveryHealth, opts.configDiscoveryHealth),
+    validationEvidence: resolveValidationEvidence(
+      basePolicy.validationEvidence,
+      opts.configValidationEvidence,
+    ),
   };
 }
 

@@ -251,271 +251,346 @@ export async function invokeReviewer(
   parentSessionId: string,
   options?: InvokeReviewerOptions,
 ): Promise<ReviewerResult | null> {
-  if (options?.reviewInvocationPolicy === 'host_task_required') {
-    return {
-      blocked: true,
-      code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
-      reason: `Policy requires a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool; SDK session invocation is disabled.`,
-      reviewInvocation: {
-        policy: 'host_task_required',
-        status: 'blocked_until_host_task',
-        code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
-        reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
-        invocationMode: 'host_subagent_task',
-        hostVisible: true,
-        recovery: [RECOVERY_HOST_SUBAGENT_TASK],
-      },
-    };
-  }
+  if (options?.reviewInvocationPolicy === 'host_task_required')
+    return hostTaskRequiredBlockedResult();
 
-  const {
-    maxRetries,
-    baseDelayMs,
-    reviewOutputPolicy,
-    _sleepFn: sleep,
-    _onAttemptFailed: onFailed,
-  } = {
-    ...DEFAULT_INVOKE_OPTIONS,
-    ...options,
-  };
-  const maxAttempts = maxRetries + 1;
-
+  const invokeOptions = { ...DEFAULT_INVOKE_OPTIONS, ...options };
+  const maxAttempts = invokeOptions.maxRetries + 1;
   const agent = await resolveReviewerAgent(client);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    if (attempt > 1) {
-      await sleep(baseDelayMs * Math.pow(2, attempt - 2));
-    }
-
-    const createResult = await client.session.create({
-      body: {
-        parentID: parentSessionId,
-        title: REVIEWER_SESSION_TITLE,
-      },
-    });
-
-    if (createResult.error || !createResult.data?.id) {
-      onFailed({
-        attempt,
-        step: 'session_create',
-        error: createResult.error,
-        details: { hasData: !!createResult.data },
-      });
-      if (attempt < maxAttempts) continue;
-      return null;
-    }
-
-    const childSessionId = createResult.data.id;
-
-    const body = {
+    if (attempt > 1)
+      await invokeOptions._sleepFn(invokeOptions.baseDelayMs * Math.pow(2, attempt - 2));
+    const result = await invokeReviewerAttempt({
+      client,
+      prompt,
+      parentSessionId,
       agent,
-      parts: [{ type: 'text' as const, text: prompt }],
-      format: { type: 'json_schema' as const, schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
-    };
-
-    if (agent === REVIEWER_AGENT_FALLBACK) {
-      (body as { system?: string }).system = REVIEWER_SYSTEM_DIRECTIVE;
-    }
-
-    const promptResult = await client.session.prompt({
-      path: { id: childSessionId },
-      body,
+      attempt,
+      maxAttempts,
+      options: invokeOptions,
     });
-
-    if (promptResult.error || !promptResult.data) {
-      const promptErrObj =
-        typeof promptResult.error === 'object' && promptResult.error !== null
-          ? (promptResult.error as Record<string, unknown>)
-          : null;
-      const isNonRetryable = promptErrObj?.isRetryable === false;
-
-      onFailed({
-        attempt,
-        step: 'session_prompt',
-        error: promptResult.error,
-        details: { hasData: !!promptResult.data, agent, hasFormat: true, isNonRetryable },
-      });
-
-      if (isNonRetryable) return null;
-      if (attempt < maxAttempts) continue;
-      return null;
-    }
-
-    const info = promptResult.data.info;
-
-    if (info?.error && info.error.name === 'StructuredOutputError') {
-      onFailed({
-        attempt,
-        step: 'structured_output_error',
-        error: info.error,
-        details: { agent, retries: info.error.data?.retries },
-      });
-      return null;
-    }
-
-    if (info?.error) {
-      const errorObj: Record<string, unknown> =
-        typeof info.error === 'object' && info.error !== null ? info.error : { value: info.error };
-      onFailed({
-        attempt,
-        step: 'info_error',
-        error: info.error,
-        details: {
-          agent,
-          errorName: typeof errorObj.name === 'string' ? errorObj.name : typeof info.error,
-          errorMessage:
-            typeof errorObj.message === 'string'
-              ? errorObj.message
-              : typeof errorObj.value === 'string'
-                ? errorObj.value
-                : undefined,
-        },
-      });
-
-      const errMsgRaw =
-        typeof errorObj.message === 'string'
-          ? errorObj.message
-          : typeof errorObj.value === 'string'
-            ? errorObj.value
-            : '';
-      const errDataMsg =
-        typeof errorObj.data === 'object' &&
-        errorObj.data !== null &&
-        typeof (errorObj.data as Record<string, unknown>).message === 'string'
-          ? ((errorObj.data as Record<string, unknown>).message as string)
-          : '';
-      const errMsgLower = `${errMsgRaw} ${errDataMsg}`.toLowerCase();
-
-      if (
-        errMsgLower.includes('does not support') &&
-        (errMsgLower.includes('tool_choice') ||
-          errMsgLower.includes('tools') ||
-          errMsgLower.includes('function calling') ||
-          errMsgLower.includes('structured output'))
-      ) {
-        const capabilityError = errMsgLower.trim();
-
-        onFailed({
-          attempt,
-          step: 'model_capability_incompatible',
-          error: info.error,
-          details: {
-            agent,
-            reason:
-              'Session model does not support structured output (tool_choice/function calling). ' +
-              (reviewOutputPolicy === 'text_compat_allowed'
-                ? 'Creating new child session for text compatibility retry.'
-                : 'Policy requires structured output.'),
-            detectedPattern: capabilityError,
-            reviewOutputPolicy,
-          },
-        });
-
-        if (reviewOutputPolicy !== 'text_compat_allowed') {
-          onFailed({
-            attempt,
-            step: 'text_compat_blocked_by_policy',
-            error: info.error,
-            details: {
-              agent,
-              reviewOutputPolicy,
-              recovery: `Configure the ${REVIEWER_SUBAGENT_TYPE} agent to use a structured-output-capable model.`,
-            },
-          });
-          return null;
-        }
-
-        try {
-          await client.tui?.showToast({
-            body: {
-              message: 'FlowGuard Reviewer: using lower-assurance text compatibility mode',
-              variant: 'info',
-            },
-          });
-        } catch {
-          /* TUI unavailable — ignore */
-        }
-
-        const retryCreateResult = await client.session.create({
-          body: {
-            parentID: parentSessionId,
-            title: REVIEWER_SESSION_TITLE + ' (format-free)',
-          },
-        });
-
-        if (retryCreateResult.error || !retryCreateResult.data?.id) {
-          onFailed({
-            attempt,
-            step: 'format_free_retry_session_create',
-            error: retryCreateResult.error,
-            details: { agent, originalSessionId: childSessionId },
-          });
-          return null;
-        }
-
-        const retrySessionId = retryCreateResult.data.id;
-
-        const result = await executeFormatFreePrompt({
-          client,
-          agent,
-          prompt,
-          sessionId: retrySessionId,
-          attempt,
-          modelCapabilityError: capabilityError,
-          onFailed,
-        });
-        if (result) return result;
-        return null;
-      }
-    }
-
-    let findings: Record<string, unknown> | null = null;
-
-    const structuredRaw = info?.structured_output ?? info?.structured;
-    if (structuredRaw && typeof structuredRaw === 'object' && !Array.isArray(structuredRaw)) {
-      findings = structuredRaw as Record<string, unknown>;
-    }
-
-    if (!findings) {
-      onFailed({
-        attempt,
-        step: 'no_findings',
-        details: {
-          agent,
-          hasInfo: !!info,
-          infoError: info?.error ?? null,
-          hasStructuredOutput: info ? 'structured_output' in info : false,
-          hasStructured: info ? 'structured' in info : false,
-          infoKeys: info ? Object.keys(info) : [],
-          partsCount: promptResult.data.parts?.length ?? 0,
-          textPartsLength:
-            promptResult.data.parts
-              ?.filter((p: { type?: string; text?: string }) => p.type === 'text' && p.text)
-              .reduce((sum: number, p: { text?: string }) => sum + (p.text?.length ?? 0), 0) ?? 0,
-        },
-      });
-      if (attempt < maxAttempts) continue;
-      return null;
-    }
-
-    const reviewedBy = findings.reviewedBy as Record<string, unknown> | undefined;
-    if (reviewedBy && typeof reviewedBy === 'object') {
-      reviewedBy.sessionId = childSessionId;
-    } else {
-      findings.reviewedBy = { sessionId: childSessionId };
-    }
-
-    return {
-      sessionId: childSessionId,
-      rawResponse: JSON.stringify(findings),
-      findings,
-      reviewOutputMode: 'structured_output',
-      structuredOutputUsed: true,
-      reviewAssuranceLevel: 'structured_high',
-    };
+    if (result.kind === 'retry') continue;
+    return result.result;
   }
 
   return null;
+}
+
+function hostTaskRequiredBlockedResult(): ReviewerBlockedResult {
+  return {
+    blocked: true,
+    code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
+    reason: `Policy requires a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool; SDK session invocation is disabled.`,
+    reviewInvocation: {
+      policy: 'host_task_required',
+      status: 'blocked_until_host_task',
+      code: REASON_HOST_SUBAGENT_TASK_REQUIRED,
+      reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      recovery: [RECOVERY_HOST_SUBAGENT_TASK],
+    },
+  };
+}
+
+type ResolvedInvokeOptions = Required<InvokeReviewerOptions>;
+
+interface InvokeAttemptInput {
+  readonly client: OrchestratorClient;
+  readonly prompt: string;
+  readonly parentSessionId: string;
+  readonly agent: string;
+  readonly attempt: number;
+  readonly maxAttempts: number;
+  readonly options: ResolvedInvokeOptions;
+}
+
+type InvokeAttemptResult = { kind: 'done'; result: ReviewerResult | null } | { kind: 'retry' };
+
+async function invokeReviewerAttempt(input: InvokeAttemptInput): Promise<InvokeAttemptResult> {
+  const { client, parentSessionId, attempt, maxAttempts, options } = input;
+  const createResult = await client.session.create({
+    body: { parentID: parentSessionId, title: REVIEWER_SESSION_TITLE },
+  });
+
+  if (createResult.error || !createResult.data?.id) {
+    options._onAttemptFailed({
+      attempt,
+      step: 'session_create',
+      error: createResult.error,
+      details: { hasData: !!createResult.data },
+    });
+    return attempt < maxAttempts ? { kind: 'retry' } : { kind: 'done', result: null };
+  }
+
+  return promptReviewerSession({ ...input, childSessionId: createResult.data.id });
+}
+
+async function promptReviewerSession(
+  input: InvokeAttemptInput & { childSessionId: string },
+): Promise<InvokeAttemptResult> {
+  const { client, prompt, agent, childSessionId, attempt, options } = input;
+  const promptResult = await client.session.prompt({
+    path: { id: childSessionId },
+    body: buildStructuredPromptBody(agent, prompt),
+  });
+
+  if (promptResult.error || !promptResult.data) {
+    return handlePromptTransportFailure(input, promptResult.error, !!promptResult.data);
+  }
+
+  const info = promptResult.data.info;
+  if (info?.error && info.error.name === 'StructuredOutputError') {
+    options._onAttemptFailed({
+      attempt,
+      step: 'structured_output_error',
+      error: info.error,
+      details: { agent, retries: info.error.data?.retries },
+    });
+    return { kind: 'done', result: null };
+  }
+
+  const capabilityResult = await handleInfoError(input, info?.error);
+  if (capabilityResult) return capabilityResult;
+
+  const findings = extractStructuredFindings(info);
+  if (!findings) return handleNoStructuredFindings(input, promptResult.data.parts, info);
+  return { kind: 'done', result: structuredReviewerResult(childSessionId, findings) };
+}
+
+function buildStructuredPromptBody(agent: string, prompt: string) {
+  const body = {
+    agent,
+    parts: [{ type: 'text' as const, text: prompt }],
+    format: { type: 'json_schema' as const, schema: REVIEW_FINDINGS_JSON_SCHEMA, retryCount: 1 },
+  };
+  if (agent === REVIEWER_AGENT_FALLBACK)
+    (body as { system?: string }).system = REVIEWER_SYSTEM_DIRECTIVE;
+  return body;
+}
+
+function handlePromptTransportFailure(
+  input: InvokeAttemptInput & { childSessionId: string },
+  error: unknown,
+  hasData: boolean,
+): InvokeAttemptResult {
+  const { agent, attempt, maxAttempts, options } = input;
+  const errorObj =
+    typeof error === 'object' && error !== null ? (error as Record<string, unknown>) : null;
+  const isNonRetryable = errorObj?.isRetryable === false;
+  options._onAttemptFailed({
+    attempt,
+    step: 'session_prompt',
+    error,
+    details: { hasData, agent, hasFormat: true, isNonRetryable },
+  });
+  if (isNonRetryable) return { kind: 'done', result: null };
+  return attempt < maxAttempts ? { kind: 'retry' } : { kind: 'done', result: null };
+}
+
+async function handleInfoError(
+  input: InvokeAttemptInput & { childSessionId: string },
+  error: unknown,
+): Promise<InvokeAttemptResult | null> {
+  if (!error) return null;
+  const errorObj =
+    typeof error === 'object' && error !== null
+      ? (error as Record<string, unknown>)
+      : { value: error };
+  logInfoError(input, error, errorObj);
+  const capabilityError = structuredOutputCapabilityError(errorObj);
+  return capabilityError ? handleStructuredCapabilityError(input, error, capabilityError) : null;
+}
+
+function logInfoError(
+  input: InvokeAttemptInput,
+  error: unknown,
+  errorObj: Record<string, unknown>,
+): void {
+  input.options._onAttemptFailed({
+    attempt: input.attempt,
+    step: 'info_error',
+    error,
+    details: {
+      agent: input.agent,
+      errorName: typeof errorObj.name === 'string' ? errorObj.name : typeof error,
+      errorMessage: infoErrorMessage(errorObj),
+    },
+  });
+}
+
+function infoErrorMessage(errorObj: Record<string, unknown>): string | undefined {
+  if (typeof errorObj.message === 'string') return errorObj.message;
+  return typeof errorObj.value === 'string' ? errorObj.value : undefined;
+}
+
+function structuredOutputCapabilityError(errorObj: Record<string, unknown>): string | null {
+  const dataMessage =
+    typeof errorObj.data === 'object' &&
+    errorObj.data !== null &&
+    typeof (errorObj.data as Record<string, unknown>).message === 'string'
+      ? ((errorObj.data as Record<string, unknown>).message as string)
+      : '';
+  const lower = `${infoErrorMessage(errorObj) ?? ''} ${dataMessage}`.toLowerCase();
+  const unsupported = lower.includes('does not support');
+  const structured = ['tool_choice', 'tools', 'function calling', 'structured output'].some(
+    (term) => lower.includes(term),
+  );
+  return unsupported && structured ? lower.trim() : null;
+}
+
+async function handleStructuredCapabilityError(
+  input: InvokeAttemptInput & { childSessionId: string },
+  error: unknown,
+  capabilityError: string,
+): Promise<InvokeAttemptResult> {
+  logCapabilityError(input, error, capabilityError);
+  if (input.options.reviewOutputPolicy !== 'text_compat_allowed')
+    return textCompatBlocked(input, error);
+  await showTextCompatToast(input.client);
+  const retrySessionId = await createFormatFreeRetrySession(input, error);
+  if (!retrySessionId) return { kind: 'done', result: null };
+  const result = await executeFormatFreePrompt({
+    client: input.client,
+    agent: input.agent,
+    prompt: input.prompt,
+    sessionId: retrySessionId,
+    attempt: input.attempt,
+    modelCapabilityError: capabilityError,
+    onFailed: input.options._onAttemptFailed,
+  });
+  return { kind: 'done', result };
+}
+
+function logCapabilityError(
+  input: InvokeAttemptInput,
+  error: unknown,
+  capabilityError: string,
+): void {
+  input.options._onAttemptFailed({
+    attempt: input.attempt,
+    step: 'model_capability_incompatible',
+    error,
+    details: {
+      agent: input.agent,
+      reason:
+        'Session model does not support structured output (tool_choice/function calling). ' +
+        (input.options.reviewOutputPolicy === 'text_compat_allowed'
+          ? 'Creating new child session for text compatibility retry.'
+          : 'Policy requires structured output.'),
+      detectedPattern: capabilityError,
+      reviewOutputPolicy: input.options.reviewOutputPolicy,
+    },
+  });
+}
+
+function textCompatBlocked(input: InvokeAttemptInput, error: unknown): InvokeAttemptResult {
+  input.options._onAttemptFailed({
+    attempt: input.attempt,
+    step: 'text_compat_blocked_by_policy',
+    error,
+    details: {
+      agent: input.agent,
+      reviewOutputPolicy: input.options.reviewOutputPolicy,
+      recovery: `Configure the ${REVIEWER_SUBAGENT_TYPE} agent to use a structured-output-capable model.`,
+    },
+  });
+  return { kind: 'done', result: null };
+}
+
+async function showTextCompatToast(client: OrchestratorClient): Promise<void> {
+  try {
+    await client.tui?.showToast({
+      body: {
+        message: 'FlowGuard Reviewer: using lower-assurance text compatibility mode',
+        variant: 'info',
+      },
+    });
+  } catch {
+    /* TUI unavailable — ignore */
+  }
+}
+
+async function createFormatFreeRetrySession(
+  input: InvokeAttemptInput & { childSessionId: string },
+  error: unknown,
+): Promise<string | null> {
+  const retryCreateResult = await input.client.session.create({
+    body: { parentID: input.parentSessionId, title: REVIEWER_SESSION_TITLE + ' (format-free)' },
+  });
+  if (!retryCreateResult.error && retryCreateResult.data?.id) return retryCreateResult.data.id;
+  input.options._onAttemptFailed({
+    attempt: input.attempt,
+    step: 'format_free_retry_session_create',
+    error: retryCreateResult.error ?? error,
+    details: { agent: input.agent, originalSessionId: input.childSessionId },
+  });
+  return null;
+}
+
+function extractStructuredFindings(
+  info: Record<string, unknown> | undefined,
+): Record<string, unknown> | null {
+  const structuredRaw = info?.structured_output ?? info?.structured;
+  return structuredRaw && typeof structuredRaw === 'object' && !Array.isArray(structuredRaw)
+    ? (structuredRaw as Record<string, unknown>)
+    : null;
+}
+
+function handleNoStructuredFindings(
+  input: InvokeAttemptInput,
+  parts: Array<{ type?: string; text?: string }> | undefined,
+  info: Record<string, unknown> | undefined,
+): InvokeAttemptResult {
+  input.options._onAttemptFailed({
+    attempt: input.attempt,
+    step: 'no_findings',
+    details: noFindingsDetails(input.agent, parts, info),
+  });
+  return input.attempt < input.maxAttempts ? { kind: 'retry' } : { kind: 'done', result: null };
+}
+
+function noFindingsDetails(
+  agent: string,
+  parts: Array<{ type?: string; text?: string }> | undefined,
+  info: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  return {
+    agent,
+    hasInfo: !!info,
+    infoError: info?.error ?? null,
+    hasStructuredOutput: info ? 'structured_output' in info : false,
+    hasStructured: info ? 'structured' in info : false,
+    infoKeys: info ? Object.keys(info) : [],
+    partsCount: parts?.length ?? 0,
+    textPartsLength: textPartsLength(parts),
+  };
+}
+
+function textPartsLength(parts: Array<{ type?: string; text?: string }> | undefined): number {
+  return (
+    parts
+      ?.filter((p) => p.type === 'text' && p.text)
+      .reduce((sum, p) => sum + (p.text?.length ?? 0), 0) ?? 0
+  );
+}
+
+function structuredReviewerResult(
+  childSessionId: string,
+  findings: Record<string, unknown>,
+): ReviewerSuccessResult {
+  const reviewedBy = findings.reviewedBy as Record<string, unknown> | undefined;
+  if (reviewedBy && typeof reviewedBy === 'object') reviewedBy.sessionId = childSessionId;
+  else findings.reviewedBy = { sessionId: childSessionId };
+  return {
+    sessionId: childSessionId,
+    rawResponse: JSON.stringify(findings),
+    findings,
+    reviewOutputMode: 'structured_output',
+    structuredOutputUsed: true,
+    reviewAssuranceLevel: 'structured_high',
+  };
 }
 
 // ─── Output Mutation ─────────────────────────────────────────────────────────
@@ -628,77 +703,89 @@ export function extractReviewContext(
   criteriaVersion: string;
   mandateDigest: string;
 } | null {
-  if (toolName === TOOL_FLOWGUARD_REVIEW) {
-    const att = toolOutput.requiredReviewAttestation as Record<string, unknown> | undefined;
-    if (!att) return null;
-    const obligationId = typeof att.toolObligationId === 'string' ? att.toolObligationId : '';
-    const mandateDigest = typeof att.mandateDigest === 'string' ? att.mandateDigest : '';
-    const criteriaVersion = typeof att.criteriaVersion === 'string' ? att.criteriaVersion : '';
-    if (!obligationId || !mandateDigest || !criteriaVersion) return null;
-    return {
-      iteration: 1,
-      planVersion: 1,
-      obligationId,
-      criteriaVersion,
-      mandateDigest,
-    };
-  }
-
-  const obl = toolOutput.reviewObligation as
-    | {
-        obligationId?: unknown;
-        obligationType?: unknown;
-        iteration?: unknown;
-        planVersion?: unknown;
-        criteriaVersion?: unknown;
-        mandateDigest?: unknown;
-      }
-    | undefined;
-
-  const obligationId =
-    (obl?.obligationId as string | undefined) ??
-    (typeof toolOutput.reviewObligationId === 'string' ? toolOutput.reviewObligationId : null);
-  const criteriaVersion =
-    (obl?.criteriaVersion as string | undefined) ??
-    (typeof toolOutput.reviewCriteriaVersion === 'string'
-      ? toolOutput.reviewCriteriaVersion
-      : null);
-  const mandateDigest =
-    (obl?.mandateDigest as string | undefined) ??
-    (typeof toolOutput.reviewMandateDigest === 'string' ? toolOutput.reviewMandateDigest : null);
-
-  let iteration: number | null =
-    (obl?.iteration as number | undefined) ??
-    (typeof toolOutput.reviewObligationIteration === 'number'
-      ? toolOutput.reviewObligationIteration
-      : null);
-  let planVersion: number | null =
-    (obl?.planVersion as number | undefined) ??
-    (typeof toolOutput.reviewObligationPlanVersion === 'number'
-      ? toolOutput.reviewObligationPlanVersion
-      : null);
-
+  if (toolName === TOOL_FLOWGUARD_REVIEW) return extractStandaloneReviewContext(toolOutput);
+  const obligation = extractReviewObligationFields(toolOutput);
   const next = typeof toolOutput.next === 'string' ? toolOutput.next : '';
+  const iteration = obligation.iteration ?? numberFromNext(next, 'iteration');
+  const planVersion = obligation.planVersion ?? numberFromNext(next, 'planVersion');
+  if (!obligation.obligationId || !obligation.criteriaVersion || !obligation.mandateDigest)
+    return null;
+  if (iteration === null || planVersion === null) return null;
+  if (!matchesPlanSelfReviewIteration(toolName, toolOutput, iteration)) return null;
+  return {
+    iteration,
+    planVersion,
+    obligationId: obligation.obligationId,
+    criteriaVersion: obligation.criteriaVersion,
+    mandateDigest: obligation.mandateDigest,
+  };
+}
 
-  if (iteration === null) {
-    const match = next.match(/iteration[=:\s]+(\d+)/i);
-    if (!match) return null;
-    iteration = parseInt(match[1]!, 10);
-  }
-  if (planVersion === null) {
-    const match = next.match(/planVersion[=:\s]+(\d+)/i);
-    if (!match) return null;
-    planVersion = parseInt(match[1]!, 10);
-  }
+interface ExtractedReviewObligationFields {
+  readonly obligationId: string | null;
+  readonly criteriaVersion: string | null;
+  readonly mandateDigest: string | null;
+  readonly iteration: number | null;
+  readonly planVersion: number | null;
+}
 
-  if (!obligationId || !criteriaVersion || !mandateDigest) return null;
+function extractStandaloneReviewContext(
+  toolOutput: Record<string, unknown>,
+): ReturnType<typeof extractReviewContext> {
+  const att = toolOutput.requiredReviewAttestation as Record<string, unknown> | undefined;
+  const obligationId = stringValue(att?.toolObligationId);
+  const mandateDigest = stringValue(att?.mandateDigest);
+  const criteriaVersion = stringValue(att?.criteriaVersion);
+  if (!obligationId || !mandateDigest || !criteriaVersion) return null;
+  return { iteration: 1, planVersion: 1, obligationId, criteriaVersion, mandateDigest };
+}
 
-  if (toolName === TOOL_FLOWGUARD_PLAN) {
-    const selfReviewIteration = toolOutput.selfReviewIteration;
-    if (typeof selfReviewIteration === 'number' && selfReviewIteration !== iteration) {
-      return null;
-    }
-  }
+function extractReviewObligationFields(
+  toolOutput: Record<string, unknown>,
+): ExtractedReviewObligationFields {
+  const obligation = reviewObligationObject(toolOutput);
+  return {
+    obligationId:
+      stringValue(obligation?.obligationId) ?? stringValue(toolOutput.reviewObligationId),
+    criteriaVersion:
+      stringValue(obligation?.criteriaVersion) ?? stringValue(toolOutput.reviewCriteriaVersion),
+    mandateDigest:
+      stringValue(obligation?.mandateDigest) ?? stringValue(toolOutput.reviewMandateDigest),
+    iteration:
+      numberValue(obligation?.iteration) ?? numberValue(toolOutput.reviewObligationIteration),
+    planVersion:
+      numberValue(obligation?.planVersion) ?? numberValue(toolOutput.reviewObligationPlanVersion),
+  };
+}
 
-  return { iteration, planVersion, obligationId, criteriaVersion, mandateDigest };
+function reviewObligationObject(
+  toolOutput: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const value = toolOutput.reviewObligation;
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function stringValue(value: unknown): string | null {
+  return typeof value === 'string' ? value : null;
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === 'number' ? value : null;
+}
+
+function numberFromNext(next: string, key: 'iteration' | 'planVersion'): number | null {
+  const match = next.match(new RegExp(`${key}[=:\\s]+(\\d+)`, 'i'));
+  return match ? parseInt(match[1]!, 10) : null;
+}
+
+function matchesPlanSelfReviewIteration(
+  toolName: string,
+  toolOutput: Record<string, unknown>,
+  iteration: number,
+): boolean {
+  if (toolName !== TOOL_FLOWGUARD_PLAN) return true;
+  const selfReviewIteration = toolOutput.selfReviewIteration;
+  return typeof selfReviewIteration !== 'number' || selfReviewIteration === iteration;
 }

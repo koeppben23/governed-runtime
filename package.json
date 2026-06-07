@@ -47,6 +47,7 @@
     "check:opencode-host": "node scripts/check-opencode-host-drift.mjs",
     "check:unused-dependencies": "knip --dependencies",
     "lint": "eslint \"src/**/*.ts\"",
+    "lint:strict": "eslint \"src/**/*.ts\" --max-warnings=0",
     "format": "prettier --write \"src/**/*.ts\" \"docs/**/*.md\" \"scripts/**/*.js\" \"*.json\" \".github/**/*.yml\"",
     "check:format": "prettier --check \"src/**/*.ts\" \"docs/**/*.md\" \"scripts/**/*.js\" \"*.json\" \".github/**/*.yml\"",
     "changelog": "conventional-changelog -p conventionalcommits -i CHANGELOG.md -s -r 0",

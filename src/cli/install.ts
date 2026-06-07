@@ -71,6 +71,168 @@ const VALID_ACTIONS: readonly CliAction[] = [
   'inspect',
 ] as const;
 
+interface ParseState {
+  installScope: InstallScope;
+  installPlatform: InstallPlatform;
+  policyMode: PolicyMode;
+  force: boolean;
+  coreTarball: string | undefined;
+  checksumsFile: string | undefined;
+  allowUnverifiedTarball: boolean;
+  logMode: 'file' | 'console' | 'file+console' | undefined;
+}
+
+function initialParseState(): ParseState {
+  return {
+    installScope: 'global',
+    installPlatform: 'opencode',
+    policyMode: 'solo',
+    force: false,
+    coreTarball: undefined,
+    checksumsFile: undefined,
+    allowUnverifiedTarball: false,
+    logMode: undefined,
+  };
+}
+
+function readNextValue(argv: string[], i: number): string | null {
+  const next = argv[i + 1];
+  return next ? next : null;
+}
+
+function isValidScope(value: string): value is InstallScope {
+  return VALID_SCOPES.includes(value as InstallScope);
+}
+function isValidPlatform(value: string): value is InstallPlatform {
+  return VALID_PLATFORMS.includes(value as InstallPlatform);
+}
+function isValidPolicyMode(value: string): value is PolicyMode {
+  return VALID_POLICY_MODES.includes(value as PolicyMode);
+}
+function isValidLogMode(value: string): value is 'file' | 'console' | 'file+console' {
+  return value === 'file' || value === 'console' || value === 'file+console';
+}
+
+function trySetInstallScope(st: ParseState, value: string | null): boolean {
+  if (value && isValidScope(value)) {
+    st.installScope = value;
+    return true;
+  }
+  return false;
+}
+function trySetPlatform(st: ParseState, value: string | null): boolean {
+  if (value && isValidPlatform(value)) {
+    st.installPlatform = value;
+    return true;
+  }
+  return false;
+}
+function trySetPolicyMode(st: ParseState, value: string | null): boolean {
+  if (value && isValidPolicyMode(value)) {
+    st.policyMode = value;
+    return true;
+  }
+  return false;
+}
+function trySetTarball(st: ParseState, value: string | null): boolean {
+  if (value) {
+    st.coreTarball = value;
+    return true;
+  }
+  return false;
+}
+function trySetChecksums(st: ParseState, value: string | null): boolean {
+  if (value) {
+    st.checksumsFile = value;
+    return true;
+  }
+  return false;
+}
+function trySetLogMode(st: ParseState, value: string | null): boolean {
+  if (value && isValidLogMode(value)) {
+    st.logMode = value;
+    return true;
+  }
+  return false;
+}
+function trySetDeprecatedMode(st: ParseState, deps: string[], value: string | null): boolean {
+  if (value && isValidPolicyMode(value)) {
+    st.policyMode = value;
+    deps.push('--mode is deprecated, use --policy-mode');
+    return true;
+  }
+  return false;
+}
+
+function handleValueFlag(
+  st: ParseState,
+  deps: string[],
+  flag: string,
+  value: string | null,
+): boolean {
+  switch (flag) {
+    case '--install-scope':
+      return trySetInstallScope(st, value);
+    case '--platform':
+    case '--host':
+      return trySetPlatform(st, value);
+    case '--policy-mode':
+      return trySetPolicyMode(st, value);
+    case '--core-tarball':
+      return trySetTarball(st, value);
+    case '--checksums-file':
+      return trySetChecksums(st, value);
+    case '--log-mode':
+      return trySetLogMode(st, value);
+    case '--mode':
+      return trySetDeprecatedMode(st, deps, value);
+  }
+  return false;
+}
+
+function parseOneArg(
+  st: ParseState,
+  deps: string[],
+  arg: string,
+  argv: string[],
+  i: number,
+): number {
+  const valueFlags = new Set([
+    '--install-scope',
+    '--platform',
+    '--host',
+    '--policy-mode',
+    '--core-tarball',
+    '--checksums-file',
+    '--log-mode',
+  ]);
+
+  if (valueFlags.has(arg) || arg === '--mode') {
+    const value = readNextValue(argv, i);
+    if (!handleValueFlag(st, deps, arg, value)) return -1;
+    return 2;
+  }
+
+  switch (arg) {
+    case '--force':
+      st.force = true;
+      return 1;
+    case '--allow-unverified-tarball':
+      st.allowUnverifiedTarball = true;
+      return 1;
+    case '--global':
+      st.installScope = 'global';
+      deps.push('--global is deprecated, use --install-scope global');
+      return 1;
+    case '--project':
+      st.installScope = 'repo';
+      deps.push('--project is deprecated, use --install-scope repo');
+      return 1;
+    default:
+      return -1;
+  }
+}
+
 /**
  * Parse CLI arguments from process.argv.
  *
@@ -86,145 +248,45 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
     return null;
   }
 
-  let installScope: InstallScope = 'global';
-  let installPlatform: InstallPlatform = 'opencode';
-  let policyMode: PolicyMode = 'solo';
-  let force = false;
-  let coreTarball: string | undefined;
-  let checksumsFile: string | undefined;
-  let allowUnverifiedTarball = false;
-  let logMode: 'file' | 'console' | 'file+console' | undefined;
-  const deprecations: string[] = [];
-
   if (action === 'run' || action === 'serve' || action === 'inspect') {
     return {
       args: {
         action,
-        installScope,
-        installPlatform,
-        policyMode,
-        force,
+        installScope: 'global',
+        installPlatform: 'opencode',
+        policyMode: 'solo',
+        force: false,
       },
-      deprecations,
+      deprecations: [],
     };
   }
 
-  for (let i = 1; i < argv.length; i++) {
+  const st = initialParseState();
+  const deprecations: string[] = [];
+
+  for (let i = 1; i < argv.length; ) {
     const arg = argv[i];
     if (arg === undefined) return null;
-
-    switch (arg) {
-      // ── New flags ──────────────────────────────────────────
-      case '--install-scope': {
-        const next = argv[i + 1];
-        if (next && VALID_SCOPES.includes(next as InstallScope)) {
-          installScope = next as InstallScope;
-          i++;
-        } else {
-          return null;
-        }
-        break;
-      }
-      case '--platform':
-      case '--host': {
-        const next = argv[i + 1];
-        if (next && VALID_PLATFORMS.includes(next as InstallPlatform)) {
-          installPlatform = next as InstallPlatform;
-          i++;
-        } else {
-          return null;
-        }
-        break;
-      }
-      case '--policy-mode': {
-        const next = argv[i + 1];
-        if (next && VALID_POLICY_MODES.includes(next as PolicyMode)) {
-          policyMode = next as PolicyMode;
-          i++;
-        } else {
-          return null;
-        }
-        break;
-      }
-      case '--force':
-        force = true;
-        break;
-      case '--core-tarball': {
-        const next = argv[i + 1];
-        if (next) {
-          coreTarball = next;
-          i++;
-        } else {
-          return null;
-        }
-        break;
-      }
-      case '--checksums-file': {
-        const next = argv[i + 1];
-        if (next) {
-          checksumsFile = next;
-          i++;
-        } else {
-          return null;
-        }
-        break;
-      }
-      case '--allow-unverified-tarball':
-        allowUnverifiedTarball = true;
-        break;
-      case '--log-mode': {
-        const next = argv[i + 1];
-        if (next && (next === 'file' || next === 'console' || next === 'file+console')) {
-          logMode = next;
-          i++;
-        } else {
-          return null;
-        }
-        break;
-      }
-
-      // ── Deprecated aliases ─────────────────────────────────
-      case '--global':
-        installScope = 'global';
-        deprecations.push('--global is deprecated, use --install-scope global');
-        break;
-      case '--project':
-        installScope = 'repo';
-        deprecations.push('--project is deprecated, use --install-scope repo');
-        break;
-      case '--mode': {
-        const next = argv[i + 1];
-        if (next && VALID_POLICY_MODES.includes(next as PolicyMode)) {
-          policyMode = next as PolicyMode;
-          deprecations.push('--mode is deprecated, use --policy-mode');
-          i++;
-        } else {
-          return null;
-        }
-        break;
-      }
-
-      default:
-        // Unknown argument
-        return null;
-    }
+    const advance = parseOneArg(st, deprecations, arg, argv, i);
+    if (advance < 0) return null;
+    i += advance;
   }
 
-  if (checksumsFile && allowUnverifiedTarball) {
+  if (st.checksumsFile && st.allowUnverifiedTarball) {
     return null;
   }
 
   return {
     args: {
       action,
-      installScope,
-      installPlatform,
-      policyMode,
-      force,
-      coreTarball,
-      checksumsFile,
-      allowUnverifiedTarball,
-      logMode,
+      installScope: st.installScope,
+      installPlatform: st.installPlatform,
+      policyMode: st.policyMode,
+      force: st.force,
+      coreTarball: st.coreTarball,
+      checksumsFile: st.checksumsFile,
+      allowUnverifiedTarball: st.allowUnverifiedTarball,
+      logMode: st.logMode,
     },
     deprecations,
   };
@@ -365,6 +427,48 @@ function logShippedExecutableFailures(checks: DoctorCheck[], cliLog: FlowGuardLo
   }
 }
 
+async function executeInstallAction(args: CliArgs, cliLog: FlowGuardLogger): Promise<number> {
+  const result = await install(args);
+  const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
+  console.log(`Installing FlowGuard to ${targetLabel}...`);
+  console.log(`  Install scope: ${args.installScope}`);
+  console.log(`  Platform: ${args.installPlatform ?? 'opencode'}`);
+  console.log(`  Policy mode: ${args.policyMode}`);
+  console.log('');
+  console.log(formatResult(result));
+  if (result.errors.length > 0) {
+    cliLog.warn('cli', 'install had errors', { errorCount: result.errors.length });
+    return 1;
+  }
+  cliLog.info('cli', 'install completed', { filesWritten: result.ops.length });
+  return 0;
+}
+
+async function executeUninstallAction(args: CliArgs, cliLog: FlowGuardLogger): Promise<number> {
+  const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
+  const result = await uninstall(args);
+  console.log(`Uninstalling FlowGuard from ${targetLabel}...`);
+  console.log('');
+  console.log(formatResult(result));
+  cliLog.info('cli', 'uninstall completed', { filesRemoved: result.ops.length });
+  return result.errors.length > 0 ? 1 : 0;
+}
+
+async function executeDoctorAction(args: CliArgs, cliLog: FlowGuardLogger): Promise<number> {
+  const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
+  const checks = await doctor(args);
+  console.log(`Checking FlowGuard installation at ${targetLabel}...`);
+  console.log('');
+  console.log(formatDoctor(checks));
+  const hasFailure = checks.some((c) => c.status !== 'ok' && c.status !== 'warn');
+  logShippedExecutableFailures(checks, cliLog);
+  cliLog.info('cli', 'doctor completed', {
+    totalChecks: checks.length,
+    hasFailure,
+  });
+  return hasFailure ? 1 : 0;
+}
+
 /**
  * CLI main entry point.
  * Only executes when this file is run directly (not when imported for testing).
@@ -398,47 +502,14 @@ export async function main(argv: string[]): Promise<number> {
 
   try {
     switch (args.action) {
-      case 'install': {
-        const result = await install(args);
-        const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
-        console.log(`Installing FlowGuard to ${targetLabel}...`);
-        console.log(`  Install scope: ${args.installScope}`);
-        console.log(`  Platform: ${args.installPlatform ?? 'opencode'}`);
-        console.log(`  Policy mode: ${args.policyMode}`);
-        console.log('');
-        console.log(formatResult(result));
-        if (result.errors.length > 0) {
-          cliLog.warn('cli', 'install had errors', { errorCount: result.errors.length });
-          return 1;
-        }
-        cliLog.info('cli', 'install completed', { filesWritten: result.ops.length });
-        return 0;
-      }
+      case 'install':
+        return executeInstallAction(args, cliLog);
 
-      case 'uninstall': {
-        const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
-        const result = await uninstall(args);
-        console.log(`Uninstalling FlowGuard from ${targetLabel}...`);
-        console.log('');
-        console.log(formatResult(result));
-        cliLog.info('cli', 'uninstall completed', { filesRemoved: result.ops.length });
-        return result.errors.length > 0 ? 1 : 0;
-      }
+      case 'uninstall':
+        return executeUninstallAction(args, cliLog);
 
-      case 'doctor': {
-        const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
-        const checks = await doctor(args);
-        console.log(`Checking FlowGuard installation at ${targetLabel}...`);
-        console.log('');
-        console.log(formatDoctor(checks));
-        const hasFailure = checks.some((c) => c.status !== 'ok' && c.status !== 'warn');
-        logShippedExecutableFailures(checks, cliLog);
-        cliLog.info('cli', 'doctor completed', {
-          totalChecks: checks.length,
-          hasFailure,
-        });
-        return hasFailure ? 1 : 0;
-      }
+      case 'doctor':
+        return executeDoctorAction(args, cliLog);
 
       case 'run': {
         const { runMain } = await import('./run.js');

@@ -44,63 +44,50 @@ interface ResolvePluginSessionPolicyResult {
  *
  * Priority: state > config > solo
  */
-export async function resolvePluginSessionPolicy(
-  opts: ResolvePluginSessionPolicyOpts,
-): Promise<ResolvePluginSessionPolicyResult> {
-  const { sessDir, configDefaultMode, log } = opts;
-
-  // Case 1: No sessDir → config > solo
-  if (!sessDir) {
-    const fallbackMode = resolveRuntimePolicyMode({
-      configDefaultMode,
-    });
-    const resolution = resolvePolicyWithContext(fallbackMode, detectCiContext());
-    return { policy: resolution.policy, state: null };
-  }
-
-  // Case 2: Check if state file exists BEFORE reading
-  // This distinguishes "missing state" from "corrupt state"
-  let stateFileExists: boolean;
+async function checkStateFileExists(
+  sessDir: string,
+  log?: ResolvePluginSessionPolicyOpts['log'],
+): Promise<boolean> {
   try {
     await fs.access(sessDir + '/session-state.json');
-    stateFileExists = true;
+    return true;
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT' || code === 'ENOTDIR') {
-      stateFileExists = false;
-    } else {
+    if (code !== 'ENOENT' && code !== 'ENOTDIR') {
       log?.warn('policy', 'Failed to access session state file', {
         sessionDir: sessDir,
         code,
         error: err instanceof Error ? err.message : String(err),
       });
-      stateFileExists = false;
     }
+    return false;
   }
+}
 
-  // Case 2a: State file missing → config > solo fallback
+function makeFallbackPolicy(configDefaultMode?: PolicyMode) {
+  const mode = resolveRuntimePolicyMode({ configDefaultMode });
+  return { policy: resolvePolicyWithContext(mode, detectCiContext()).policy };
+}
+
+export async function resolvePluginSessionPolicy(
+  opts: ResolvePluginSessionPolicyOpts,
+): Promise<ResolvePluginSessionPolicyResult> {
+  const { sessDir, configDefaultMode, log } = opts;
+
+  if (!sessDir) return { ...makeFallbackPolicy(configDefaultMode), state: null };
+
+  const stateFileExists = await checkStateFileExists(sessDir, log);
   if (!stateFileExists) {
     log?.debug('policy', 'no session state file, using config fallback');
-    const fallbackMode = resolveRuntimePolicyMode({ configDefaultMode });
-    const resolution = resolvePolicyWithContext(fallbackMode, detectCiContext());
-    return { policy: resolution.policy, state: null };
+    return { ...makeFallbackPolicy(configDefaultMode), state: null };
   }
 
-  // Case 2b: State file exists - try to read
-  // Any error here is a state integrity problem → fail closed
-  let state: SessionState | null;
-  try {
-    state = await readState(sessDir);
-  } catch (err) {
-    // Corrupt/unparseable state → fail closed, NOT fallback
-    log?.warn('policy', 'failed to read session state, failing closed');
-    throw err;
-  }
-
-  // Case 3: State exists but no policySnapshot → config > solo
+  const state = await readState(sessDir);
   if (!state?.policySnapshot) {
-    const fallbackMode = resolveRuntimePolicyMode({ configDefaultMode });
-    const resolution = resolvePolicyWithContext(fallbackMode, detectCiContext());
+    const resolution = resolvePolicyWithContext(
+      resolveRuntimePolicyMode({ configDefaultMode }),
+      detectCiContext(),
+    );
     log?.debug('policy', 'resolved default policy', {
       requestedMode: resolution.requestedMode,
       effectiveMode: resolution.effectiveMode,
@@ -108,7 +95,6 @@ export async function resolvePluginSessionPolicy(
     return { policy: resolution.policy, state };
   }
 
-  // Case 4: Valid policySnapshot → use authority (no fallback)
   const policy = resolvePolicyFromSnapshot(state.policySnapshot);
   log?.debug('policy', 'resolved session policy', {
     requestedMode: state.policySnapshot.requestedMode,

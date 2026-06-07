@@ -518,34 +518,24 @@ async function checkUnexpectedFiles(
   }
 }
 
-async function verifyArtifactBinding(
-  sessDir: string,
-  manifest: ArchiveManifest,
-  events: readonly Record<string, unknown>[],
-  findings: ArchiveFinding[],
-): Promise<void> {
-  const manifestArtifacts = manifest.includedFiles.filter((file) => file.startsWith('artifacts/'));
+function findBindingArtifacts(events: readonly Record<string, unknown>[]): unknown[] | undefined {
   const binding = [...events].reverse().find((event) => event.event === ARTIFACT_BINDING_EVENT);
   const detail = binding?.detail as Record<string, unknown> | undefined;
-  const artifacts = detail?.artifacts;
-  if (manifestArtifacts.length === 0 && !Array.isArray(artifacts)) return;
-  if (detail?.schemaVersion !== ARTIFACT_BINDING_SCHEMA_VERSION || !Array.isArray(artifacts)) {
-    findings.push({
-      code: 'artifact_binding_missing',
-      severity: 'error',
-      message:
-        'Archive contains evidence artifacts but no valid audit-chain artifact binding event',
-      file: 'audit.jsonl',
-    });
-    return;
-  }
+  if (
+    detail?.schemaVersion !== ARTIFACT_BINDING_SCHEMA_VERSION ||
+    !Array.isArray(detail?.artifacts)
+  )
+    return undefined;
+  return detail.artifacts as unknown[];
+}
 
-  const bound = new Map<string, ArtifactBindingEntry>();
-  for (const entry of artifacts) {
-    if (!isArtifactBindingEntry(entry)) continue;
-    bound.set(entry.path, entry);
-  }
-
+async function checkBoundArtifacts(
+  sessDir: string,
+  manifest: ArchiveManifest,
+  bound: Map<string, ArtifactBindingEntry>,
+  manifestArtifacts: string[],
+  findings: ArchiveFinding[],
+): Promise<void> {
   const manifestArtifactSet = new Set(manifestArtifacts);
   for (const entry of bound.values()) {
     if (!manifestArtifactSet.has(entry.path) || manifest.fileDigests[entry.path] === undefined) {
@@ -557,7 +547,6 @@ async function verifyArtifactBinding(
       });
     }
   }
-
   for (const relPath of manifestArtifacts) {
     const entry = bound.get(relPath);
     if (!entry) {
@@ -569,7 +558,6 @@ async function verifyArtifactBinding(
       });
       continue;
     }
-
     const content = await fs.readFile(path.join(sessDir, relPath));
     const actual = crypto.createHash('sha256').update(content).digest('hex');
     if (actual !== entry.sha256) {
@@ -589,6 +577,34 @@ async function verifyArtifactBinding(
       });
     }
   }
+}
+
+async function verifyArtifactBinding(
+  sessDir: string,
+  manifest: ArchiveManifest,
+  events: readonly Record<string, unknown>[],
+  findings: ArchiveFinding[],
+): Promise<void> {
+  const manifestArtifacts = manifest.includedFiles.filter((file) => file.startsWith('artifacts/'));
+  const artifacts = findBindingArtifacts(events);
+  if (manifestArtifacts.length === 0 && !artifacts) return;
+  if (!artifacts) {
+    findings.push({
+      code: 'artifact_binding_missing',
+      severity: 'error',
+      message:
+        'Archive contains evidence artifacts but no valid audit-chain artifact binding event',
+      file: 'audit.jsonl',
+    });
+    return;
+  }
+
+  const bound = new Map<string, ArtifactBindingEntry>();
+  for (const entry of artifacts) {
+    if (isArtifactBindingEntry(entry)) bound.set(entry.path, entry);
+  }
+
+  await checkBoundArtifacts(sessDir, manifest, bound, manifestArtifacts, findings);
 }
 
 function isArtifactBindingEntry(value: unknown): value is ArtifactBindingEntry {
@@ -762,6 +778,97 @@ function verifyAuditCompleteness(
   });
 }
 
+function addTimestampMismatchFindings(
+  chainResult: ReturnType<typeof verifyChain>,
+  fatal: boolean,
+  findings: ArchiveFinding[],
+): void {
+  if (
+    !chainResult.valid &&
+    !isCurrentChainIntegrityFailure(chainResult.reason) &&
+    !isAuditFormatFailure(chainResult.reason)
+  ) {
+    const code =
+      chainResult.reason === 'TSA_MESSAGE_IMPRINT_MISMATCH' ||
+      chainResult.reason === 'TOKEN_VERIFICATION_REQUIRED'
+        ? 'tsa_verification_failed'
+        : 'timestamp_unanchored';
+    findings.push({
+      code,
+      severity: fatal ? 'error' : 'warning',
+      message: `Timestamp verification failed (${chainResult.reason}): ${chainResult.totalEvents} total, ${chainResult.verifiedCount} verified`,
+      file: 'audit.jsonl',
+    });
+  }
+  if (chainResult.timestampMonotonicity && !chainResult.timestampMonotonicity.valid) {
+    findings.push({
+      code: 'timestamp_unanchored',
+      severity: fatal ? 'error' : 'warning',
+      message: `Timestamp monotonicity violation: ${chainResult.timestampMonotonicity.message}`,
+      file: 'audit.jsonl',
+    });
+  }
+}
+
+function addEvidenceGapFindings(
+  chainResult: ReturnType<typeof verifyChain>,
+  fatal: boolean,
+  findings: ArchiveFinding[],
+): void {
+  if (chainResult.missingTimestampEvidence.length > 0) {
+    findings.push({
+      code: 'timestamp_unanchored',
+      severity: fatal ? 'error' : 'warning',
+      message: `${chainResult.missingTimestampEvidence.length} critical event(s) lack timestamp assurance evidence (indices: ${chainResult.missingTimestampEvidence.join(', ')})`,
+      file: 'audit.jsonl',
+    });
+  }
+  if (chainResult.tsaImprintMismatches.length > 0) {
+    findings.push({
+      code: 'tsa_verification_failed',
+      severity: fatal ? 'error' : 'warning',
+      message: `${chainResult.tsaImprintMismatches.length} event(s) have TSA messageImprint mismatch (indices: ${chainResult.tsaImprintMismatches.join(', ')})`,
+      file: 'audit.jsonl',
+    });
+  }
+}
+
+function addTimestampFindings(
+  chainResult: ReturnType<typeof verifyChain>,
+  timestampFailuresAreFatal: boolean,
+  findings: ArchiveFinding[],
+): void {
+  if (!chainResult.valid && isCurrentChainIntegrityFailure(chainResult.reason)) {
+    findings.push({
+      code: 'audit_chain_invalid',
+      severity: 'error',
+      message: `Audit chain verification failed (${chainResult.reason}): ${chainResult.totalEvents} total, ${chainResult.verifiedCount} verified, ${chainResult.skippedCount} skipped`,
+      file: 'audit.jsonl',
+    });
+  }
+  addTimestampMismatchFindings(chainResult, timestampFailuresAreFatal, findings);
+  addEvidenceGapFindings(chainResult, timestampFailuresAreFatal, findings);
+}
+
+async function verifyTimestampChain(
+  events: Awaited<ReturnType<typeof readAuditTrail>>['events'],
+  state: import('../../state/schema.js').SessionState | null,
+  manifest: ArchiveManifest,
+  findings: ArchiveFinding[],
+  strict: boolean,
+): Promise<void> {
+  const timestampPolicy = state?.policySnapshot.audit.timestampAssurance;
+  const strictTimestamps = events.some(hasTimestampEvidence) || timestampPolicy?.enabled === true;
+  const timestampFailuresAreFatal = strict || timestampPolicy?.strict === true;
+  const chainResult = verifyChain(events, { strict, strictTimestamps });
+  logAuditChainVerificationFailure(chainResult);
+  addAuditFormatFindings(chainResult, findings);
+  addTimestampFindings(chainResult, timestampFailuresAreFatal, findings);
+
+  const { verifyArchiveTimestampTokens } = await import('./archive-timestamp-verification.js');
+  await verifyArchiveTimestampTokens({ events, state, manifest, findings });
+}
+
 async function verifyAuditChainIntegrity(
   sessDir: string,
   manifest: ArchiveManifest,
@@ -771,7 +878,6 @@ async function verifyAuditChainIntegrity(
 ): Promise<void> {
   try {
     const { events, skipped } = await readAuditTrail(sessDir);
-
     verifyAuditCompleteness(manifest, events, findings);
 
     if (strict && skipped > 0) {
@@ -786,78 +892,7 @@ async function verifyAuditChainIntegrity(
     await verifyArtifactBinding(sessDir, manifest, events, findings);
 
     if (events.length > 0) {
-      const timestampPolicy = state?.policySnapshot.audit.timestampAssurance;
-      const hasTsaEvidence = events.some(hasTimestampEvidence);
-      const strictTimestamps = hasTsaEvidence || timestampPolicy?.enabled === true;
-      const timestampFailuresAreFatal = strict || timestampPolicy?.strict === true;
-      const chainResult = verifyChain(events, { strict, strictTimestamps });
-      logAuditChainVerificationFailure(chainResult);
-      addAuditFormatFindings(chainResult, findings);
-      if (!chainResult.valid && isCurrentChainIntegrityFailure(chainResult.reason)) {
-        findings.push({
-          code: 'audit_chain_invalid',
-          severity: 'error',
-          message:
-            `Audit chain verification failed (${chainResult.reason}): ` +
-            `${chainResult.totalEvents} total, ${chainResult.verifiedCount} verified, ` +
-            `${chainResult.skippedCount} skipped`,
-          file: 'audit.jsonl',
-        });
-      }
-
-      if (
-        !chainResult.valid &&
-        !isCurrentChainIntegrityFailure(chainResult.reason) &&
-        !isAuditFormatFailure(chainResult.reason)
-      ) {
-        findings.push({
-          code:
-            chainResult.reason === 'TSA_MESSAGE_IMPRINT_MISMATCH' ||
-            chainResult.reason === 'TOKEN_VERIFICATION_REQUIRED'
-              ? 'tsa_verification_failed'
-              : 'timestamp_unanchored',
-          severity: timestampFailuresAreFatal ? 'error' : 'warning',
-          message:
-            `Timestamp verification failed (${chainResult.reason}): ` +
-            `${chainResult.totalEvents} total, ${chainResult.verifiedCount} verified`,
-          file: 'audit.jsonl',
-        });
-      }
-
-      if (chainResult.missingTimestampEvidence.length > 0) {
-        findings.push({
-          code: 'timestamp_unanchored',
-          severity: timestampFailuresAreFatal ? 'error' : 'warning',
-          message: `${chainResult.missingTimestampEvidence.length} critical event(s) lack timestamp assurance evidence (indices: ${chainResult.missingTimestampEvidence.join(', ')})`,
-          file: 'audit.jsonl',
-        });
-      }
-
-      if (chainResult.tsaImprintMismatches.length > 0) {
-        findings.push({
-          code: 'tsa_verification_failed',
-          severity: timestampFailuresAreFatal ? 'error' : 'warning',
-          message: `${chainResult.tsaImprintMismatches.length} event(s) have TSA messageImprint mismatch (indices: ${chainResult.tsaImprintMismatches.join(', ')})`,
-          file: 'audit.jsonl',
-        });
-      }
-
-      if (chainResult.timestampMonotonicity && !chainResult.timestampMonotonicity.valid) {
-        findings.push({
-          code: 'timestamp_unanchored',
-          severity: timestampFailuresAreFatal ? 'error' : 'warning',
-          message: `Timestamp monotonicity violation: ${chainResult.timestampMonotonicity.message}`,
-          file: 'audit.jsonl',
-        });
-      }
-
-      const { verifyArchiveTimestampTokens } = await import('./archive-timestamp-verification.js');
-      await verifyArchiveTimestampTokens({
-        events,
-        state,
-        manifest,
-        findings,
-      });
+      await verifyTimestampChain(events, state, manifest, findings, strict);
     }
   } catch (error) {
     if (strict) {

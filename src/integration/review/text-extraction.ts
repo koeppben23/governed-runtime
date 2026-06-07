@@ -25,62 +25,67 @@ export function extractJsonFromText(text: string): Record<string, unknown> | nul
   return extractJsonFromTextWithMethod(text)?.value ?? null;
 }
 
+function tryDirectParse(
+  trimmed: string,
+): { value: Record<string, unknown>; extractionMethod: 'direct_json' } | null {
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+      return { value: parsed, extractionMethod: 'direct_json' };
+  } catch {
+    /* not pure JSON */
+  }
+  return null;
+}
+
+function tryFenceParse(
+  trimmed: string,
+): { value: Record<string, unknown>; extractionMethod: 'json_fence' } | null {
+  const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
+  if (!fenceMatch) return null;
+  try {
+    const parsed = JSON.parse(fenceMatch[1]!.trim());
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+      return { value: parsed, extractionMethod: 'json_fence' };
+  } catch {
+    /* invalid */
+  }
+  return null;
+}
+
+function tryBraceParse(
+  trimmed: string,
+): { value: Record<string, unknown>; extractionMethod: 'outermost_braces' } | null {
+  const firstBrace = trimmed.indexOf('{');
+  if (firstBrace < 0) return null;
+  let depth = 0;
+  let lastBrace = -1;
+  for (let i = firstBrace; i < trimmed.length; i++) {
+    if (trimmed[i] === '{') depth++;
+    else if (trimmed[i] === '}') {
+      depth--;
+      if (depth === 0) {
+        lastBrace = i;
+        break;
+      }
+    }
+  }
+  if (lastBrace <= firstBrace) return null;
+  try {
+    const parsed = JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed))
+      return { value: parsed, extractionMethod: 'outermost_braces' };
+  } catch {
+    /* invalid */
+  }
+  return null;
+}
+
 export function extractJsonFromTextWithMethod(text: string): {
   value: Record<string, unknown>;
   extractionMethod: 'direct_json' | 'json_fence' | 'outermost_braces';
 } | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
-
-  // Strategy 1: direct parse
-  try {
-    const parsed = JSON.parse(trimmed);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return { value: parsed, extractionMethod: 'direct_json' };
-    }
-  } catch {
-    // not pure JSON — try next strategy
-  }
-
-  // Strategy 2: strip markdown fences
-  const fenceMatch = trimmed.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);
-  if (fenceMatch) {
-    try {
-      const parsed = JSON.parse(fenceMatch[1]!.trim());
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-        return { value: parsed, extractionMethod: 'json_fence' };
-      }
-    } catch {
-      // fence content not valid JSON
-    }
-  }
-
-  // Strategy 3: outermost brace extraction
-  const firstBrace = trimmed.indexOf('{');
-  if (firstBrace >= 0) {
-    let depth = 0;
-    let lastBrace = -1;
-    for (let i = firstBrace; i < trimmed.length; i++) {
-      if (trimmed[i] === '{') depth++;
-      else if (trimmed[i] === '}') {
-        depth--;
-        if (depth === 0) {
-          lastBrace = i;
-          break;
-        }
-      }
-    }
-    if (lastBrace > firstBrace) {
-      try {
-        const parsed = JSON.parse(trimmed.slice(firstBrace, lastBrace + 1));
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-          return { value: parsed, extractionMethod: 'outermost_braces' };
-        }
-      } catch {
-        // brace content not valid JSON
-      }
-    }
-  }
-
-  return null;
+  return tryDirectParse(trimmed) ?? tryFenceParse(trimmed) ?? tryBraceParse(trimmed);
 }

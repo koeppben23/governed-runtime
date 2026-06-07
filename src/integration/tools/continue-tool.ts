@@ -22,6 +22,7 @@ import {
 } from './helpers.js';
 import { USER_GATES, TERMINAL } from '../../machine/topology.js';
 import type { MutableSession, ToolDefinition } from './helpers.js';
+import type { SessionState } from '../../state/schema.js';
 import { bindExternalReviewEvidence } from '../review/transport-evidence.js';
 import { REVIEW_IDENTITY_REJECTION_FIELD } from '../../shared/flowguard-identifiers.js';
 
@@ -73,43 +74,12 @@ export const continue_cmd: ToolDefinition = {
     try {
       const mutableSession = await tryBindTransportEvidence(context);
       if (typeof mutableSession === 'string') return mutableSession;
-      const session = mutableSession ?? (await withReadOnlySession(context));
-      if (!session || !session.state) return formatBlocked('NO_SESSION');
-      const { state } = session;
+      const { state } = mutableSession ?? (await withReadOnlySession(context)) ?? {};
+      if (!state) return formatBlocked('NO_SESSION');
       const { phase } = state;
 
-      // User-gate phases require explicit human decision
-      if (USER_GATES.has(phase)) {
-        const guidance: Record<string, string[]> = {
-          PLAN_REVIEW: ['/approve', '/request-changes', '/reject'],
-          EVIDENCE_REVIEW: ['/approve', '/request-changes', '/reject'],
-          ARCH_REVIEW: ['/approve', '/request-changes', '/reject'],
-        };
-        return appendNextAction(
-          JSON.stringify({
-            phase,
-            status: `User gate active at ${phase}. A human decision is required.`,
-            next: guidance[phase]?.join(', ') ?? '/approve, /request-changes, /reject',
-            _continue: { action: 'manual_decision' },
-          }),
-          state,
-        );
-      }
-
-      // Terminal phases — workflow complete
-      if (TERMINAL.has(phase)) {
-        return appendNextAction(
-          JSON.stringify({
-            phase,
-            status: 'Workflow complete.',
-            next: '/export',
-            _continue: { action: 'terminal' },
-          }),
-          state,
-        );
-      }
-
-      // READY: ambiguous — block with options
+      if (USER_GATES.has(phase)) return formatUserGateGuidance(state);
+      if (TERMINAL.has(phase)) return formatTerminalGuidance(state);
       if (phase === 'READY') {
         return formatBlocked('CONTINUE_AMBIGUOUS', {
           phase,
@@ -119,18 +89,7 @@ export const continue_cmd: ToolDefinition = {
 
       // All other phases: lookup guidance
       const guidance = PHASE_GUIDANCE[phase];
-      if (guidance) {
-        return appendNextAction(
-          JSON.stringify({
-            phase,
-            status: guidance.status,
-            next: guidance.command ?? '',
-            commands: guidance.commands,
-            _continue: { action: 'deterministic' },
-          }),
-          state,
-        );
-      }
+      if (guidance) return formatDeterministicGuidance(state, guidance);
 
       // Unknown phase — fail closed
       return formatBlocked('CONTINUE_UNKNOWN_PHASE', { phase });
@@ -139,6 +98,51 @@ export const continue_cmd: ToolDefinition = {
     }
   },
 };
+
+function formatUserGateGuidance(state: SessionState): string {
+  const guidance: Record<string, string[]> = {
+    PLAN_REVIEW: ['/approve', '/request-changes', '/reject'],
+    EVIDENCE_REVIEW: ['/approve', '/request-changes', '/reject'],
+    ARCH_REVIEW: ['/approve', '/request-changes', '/reject'],
+  };
+  return appendNextAction(
+    JSON.stringify({
+      phase: state.phase,
+      status: `User gate active at ${state.phase}. A human decision is required.`,
+      next: guidance[state.phase]?.join(', ') ?? '/approve, /request-changes, /reject',
+      _continue: { action: 'manual_decision' },
+    }),
+    state,
+  );
+}
+
+function formatTerminalGuidance(state: SessionState): string {
+  return appendNextAction(
+    JSON.stringify({
+      phase: state.phase,
+      status: 'Workflow complete.',
+      next: '/export',
+      _continue: { action: 'terminal' },
+    }),
+    state,
+  );
+}
+
+function formatDeterministicGuidance(
+  state: SessionState,
+  guidance: { status: string; command?: string; commands?: string[] },
+): string {
+  return appendNextAction(
+    JSON.stringify({
+      phase: state.phase,
+      status: guidance.status,
+      next: guidance.command ?? '',
+      commands: guidance.commands,
+      _continue: { action: 'deterministic' },
+    }),
+    state,
+  );
+}
 
 async function tryBindTransportEvidence(context: {
   sessionID: string;

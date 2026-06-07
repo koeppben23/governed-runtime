@@ -96,6 +96,53 @@ function normalizeSelfReviewConfig(value: unknown): SelfReviewConfig {
  * @param resolvedAt - ISO-8601 timestamp when the policy was frozen.
  * @param digestFn - SHA-256 digest function (injected for testability).
  */
+function buildAuditSection(audit: AuditPolicy): PolicySnapshot['audit'] {
+  return {
+    emitTransitions: audit.emitTransitions,
+    emitToolCalls: audit.emitToolCalls,
+    enableChainHash: audit.enableChainHash,
+    timestampAssurance: {
+      enabled: audit.timestampAssurance.enabled,
+      mode: audit.timestampAssurance.mode,
+      strict: audit.timestampAssurance.strict,
+      criticalEvents: [...audit.timestampAssurance.criticalEvents],
+      ...(audit.timestampAssurance.tsaUrl ? { tsaUrl: audit.timestampAssurance.tsaUrl } : {}),
+      ...(audit.timestampAssurance.trustAnchors
+        ? { trustAnchors: [...audit.timestampAssurance.trustAnchors] }
+        : {}),
+      ...(audit.timestampAssurance.ntpServers
+        ? { ntpServers: [...audit.timestampAssurance.ntpServers] }
+        : {}),
+      ntpDriftThresholdMs: audit.timestampAssurance.ntpDriftThresholdMs,
+      tsaTimeoutMs: audit.timestampAssurance.tsaTimeoutMs,
+    },
+  };
+}
+
+function buildResolutionFields(
+  resolution: Parameters<typeof createPolicySnapshot>[3],
+  policy: FlowGuardPolicy,
+  fallbackGate: EffectiveGateBehavior,
+) {
+  if (!resolution) return { requestedMode: policy.mode };
+  const r = resolution;
+  return {
+    requestedMode: r.requestedMode ?? policy.mode,
+    effectiveGateBehavior: r.effectiveGateBehavior ?? fallbackGate,
+    ...(r.source ? { source: r.source } : ({} as Record<string, unknown>)),
+    ...(r.degradedReason ? { degradedReason: r.degradedReason } : ({} as Record<string, unknown>)),
+    ...(r.resolutionReason
+      ? { resolutionReason: r.resolutionReason }
+      : ({} as Record<string, unknown>)),
+    ...(r.centralMinimumMode
+      ? { centralMinimumMode: r.centralMinimumMode }
+      : ({} as Record<string, unknown>)),
+    ...(r.policyDigest ? { policyDigest: r.policyDigest } : ({} as Record<string, unknown>)),
+    ...(r.policyVersion ? { policyVersion: r.policyVersion } : ({} as Record<string, unknown>)),
+    ...(r.policyPathHint ? { policyPathHint: r.policyPathHint } : ({} as Record<string, unknown>)),
+  };
+}
+
 export function createPolicySnapshot(
   policy: FlowGuardPolicy,
   resolvedAt: string,
@@ -113,51 +160,23 @@ export function createPolicySnapshot(
   },
 ): PolicySnapshot {
   const canonical = JSON.stringify(policy, Object.keys(policy).sort());
+  const fallbackGate = policy.requireHumanGates
+    ? ('human_gated' as const)
+    : ('auto_approve' as const);
 
   return {
     mode: policy.mode,
     hash: digestFn(canonical),
     resolvedAt,
+    ...(buildResolutionFields(resolution, policy, fallbackGate) as Record<string, unknown>),
     requestedMode: resolution?.requestedMode ?? policy.mode,
-    ...(resolution?.source ? { source: resolution.source } : {}),
-    effectiveGateBehavior:
-      resolution?.effectiveGateBehavior ??
-      (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
-    ...(resolution?.degradedReason ? { degradedReason: resolution.degradedReason } : {}),
-    ...(resolution?.resolutionReason ? { resolutionReason: resolution.resolutionReason } : {}),
-    ...(resolution?.centralMinimumMode
-      ? { centralMinimumMode: resolution.centralMinimumMode }
-      : {}),
-    ...(resolution?.policyDigest ? { policyDigest: resolution.policyDigest } : {}),
-    ...(resolution?.policyVersion ? { policyVersion: resolution.policyVersion } : {}),
-    ...(resolution?.policyPathHint ? { policyPathHint: resolution.policyPathHint } : {}),
+    effectiveGateBehavior: resolution?.effectiveGateBehavior ?? fallbackGate,
     requireHumanGates: policy.requireHumanGates,
     maxSelfReviewIterations: policy.maxSelfReviewIterations,
     maxImplReviewIterations: policy.maxImplReviewIterations,
     allowSelfApproval: policy.allowSelfApproval,
     requireVerifiedActorsForApproval: policy.requireVerifiedActorsForApproval,
-    audit: {
-      emitTransitions: policy.audit.emitTransitions,
-      emitToolCalls: policy.audit.emitToolCalls,
-      enableChainHash: policy.audit.enableChainHash,
-      timestampAssurance: {
-        enabled: policy.audit.timestampAssurance.enabled,
-        mode: policy.audit.timestampAssurance.mode,
-        strict: policy.audit.timestampAssurance.strict,
-        criticalEvents: [...policy.audit.timestampAssurance.criticalEvents],
-        ...(policy.audit.timestampAssurance.tsaUrl
-          ? { tsaUrl: policy.audit.timestampAssurance.tsaUrl }
-          : {}),
-        ...(policy.audit.timestampAssurance.trustAnchors
-          ? { trustAnchors: [...policy.audit.timestampAssurance.trustAnchors] }
-          : {}),
-        ...(policy.audit.timestampAssurance.ntpServers
-          ? { ntpServers: [...policy.audit.timestampAssurance.ntpServers] }
-          : {}),
-        ntpDriftThresholdMs: policy.audit.timestampAssurance.ntpDriftThresholdMs,
-        tsaTimeoutMs: policy.audit.timestampAssurance.tsaTimeoutMs,
-      },
-    },
+    audit: buildAuditSection(policy.audit),
     actorClassification: { ...policy.actorClassification },
     minimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval,
     ...(policy.identityProvider ? { identityProvider: policy.identityProvider } : {}),
@@ -537,6 +556,44 @@ function normalizeActorClassification(
   return { value: {}, normalized: true };
 }
 
+const DEFAULT_AUDIT_VALUE = {
+  emitTransitions: true,
+  emitToolCalls: true,
+  enableChainHash: true,
+  timestampAssurance: {
+    enabled: false,
+    mode: 'local_only' as const,
+    strict: false,
+    criticalEvents: ['decision', 'lifecycle'],
+    ntpServers: ['pool.ntp.org'],
+    ntpDriftThresholdMs: 30000,
+    tsaTimeoutMs: 10000,
+  },
+};
+
+function buildTsaFromRaw(rawTsa: Record<string, unknown>) {
+  return {
+    enabled: typeof rawTsa.enabled === 'boolean' ? rawTsa.enabled : false,
+    mode: isValidTsAMode(rawTsa.mode)
+      ? (rawTsa.mode as 'local_only' | 'ntp_check' | 'tsa_critical')
+      : ('local_only' as const),
+    strict: typeof rawTsa.strict === 'boolean' ? rawTsa.strict : false,
+    criticalEvents: Array.isArray(rawTsa.criticalEvents)
+      ? rawTsa.criticalEvents.filter((e): e is string => typeof e === 'string')
+      : ['decision', 'lifecycle'],
+    tsaUrl: typeof rawTsa.tsaUrl === 'string' ? rawTsa.tsaUrl : undefined,
+    trustAnchors: Array.isArray(rawTsa.trustAnchors)
+      ? rawTsa.trustAnchors.filter((a): a is string => typeof a === 'string')
+      : undefined,
+    ntpServers: Array.isArray(rawTsa.ntpServers)
+      ? rawTsa.ntpServers.filter((s): s is string => typeof s === 'string')
+      : ['pool.ntp.org'],
+    ntpDriftThresholdMs:
+      typeof rawTsa.ntpDriftThresholdMs === 'number' ? rawTsa.ntpDriftThresholdMs : 30000,
+    tsaTimeoutMs: typeof rawTsa.tsaTimeoutMs === 'number' ? rawTsa.tsaTimeoutMs : 10000,
+  };
+}
+
 function normalizeAudit(s: Record<string, unknown>): NormalizedField<{
   emitTransitions: boolean;
   emitToolCalls: boolean;
@@ -554,60 +611,15 @@ function normalizeAudit(s: Record<string, unknown>): NormalizedField<{
   };
 }> {
   const raw = s.audit as Record<string, unknown> | null | undefined;
-  if (!raw || typeof raw !== 'object') {
-    return {
-      value: {
-        emitTransitions: true,
-        emitToolCalls: true,
-        enableChainHash: true,
-        timestampAssurance: {
-          enabled: false,
-          mode: 'local_only',
-          strict: false,
-          criticalEvents: ['decision', 'lifecycle'],
-          ntpServers: ['pool.ntp.org'],
-          ntpDriftThresholdMs: 30000,
-          tsaTimeoutMs: 10000,
-        },
-      },
-      normalized: true,
-    };
-  }
+  if (!raw || typeof raw !== 'object') return { value: DEFAULT_AUDIT_VALUE, normalized: true };
   const emitTransitions = typeof raw.emitTransitions === 'boolean' ? raw.emitTransitions : true;
   const emitToolCalls = typeof raw.emitToolCalls === 'boolean' ? raw.emitToolCalls : true;
   const enableChainHash = typeof raw.enableChainHash === 'boolean' ? raw.enableChainHash : true;
   const rawTsa = raw.timestampAssurance as Record<string, unknown> | null | undefined;
   const timestampAssurance =
     rawTsa && typeof rawTsa === 'object'
-      ? {
-          enabled: typeof rawTsa.enabled === 'boolean' ? rawTsa.enabled : false,
-          mode: isValidTsAMode(rawTsa.mode)
-            ? (rawTsa.mode as 'local_only' | 'ntp_check' | 'tsa_critical')
-            : 'local_only',
-          strict: typeof rawTsa.strict === 'boolean' ? rawTsa.strict : false,
-          criticalEvents: Array.isArray(rawTsa.criticalEvents)
-            ? rawTsa.criticalEvents.filter((e): e is string => typeof e === 'string')
-            : ['decision', 'lifecycle'],
-          tsaUrl: typeof rawTsa.tsaUrl === 'string' ? rawTsa.tsaUrl : undefined,
-          trustAnchors: Array.isArray(rawTsa.trustAnchors)
-            ? rawTsa.trustAnchors.filter((a): a is string => typeof a === 'string')
-            : undefined,
-          ntpServers: Array.isArray(rawTsa.ntpServers)
-            ? rawTsa.ntpServers.filter((s): s is string => typeof s === 'string')
-            : ['pool.ntp.org'],
-          ntpDriftThresholdMs:
-            typeof rawTsa.ntpDriftThresholdMs === 'number' ? rawTsa.ntpDriftThresholdMs : 30000,
-          tsaTimeoutMs: typeof rawTsa.tsaTimeoutMs === 'number' ? rawTsa.tsaTimeoutMs : 10000,
-        }
-      : {
-          enabled: false,
-          mode: 'local_only' as const,
-          strict: false,
-          criticalEvents: ['decision', 'lifecycle'],
-          ntpServers: ['pool.ntp.org'],
-          ntpDriftThresholdMs: 30000,
-          tsaTimeoutMs: 10000,
-        };
+      ? buildTsaFromRaw(rawTsa)
+      : { ...DEFAULT_AUDIT_VALUE.timestampAssurance };
   return {
     value: { emitTransitions, emitToolCalls, enableChainHash, timestampAssurance },
     normalized: false,
@@ -741,6 +753,62 @@ export function normalizePolicySnapshotWithMeta(
 }
 
 /** Mode-consistent safe defaults derived from policy presets. */
+const SOLO_DEFAULTS = {
+  requireHumanGates: false as const,
+  maxSelfReviewIterations: 2,
+  maxImplReviewIterations: 1,
+  allowSelfApproval: true as const,
+  minimumActorAssuranceForApproval: 'best_effort' as const,
+  effectiveGateBehavior: 'auto_approve' as const,
+  reviewOutputPolicy: 'text_compat_allowed' as const,
+  reviewInvocationPolicy: 'host_task_preferred' as const,
+  enforceRiskClassification: false as const,
+  allowRiskDowngradeOverride: false as const,
+  allowReducedCeremony: false as const,
+};
+
+const REGULATED_DEFAULTS = {
+  requireHumanGates: true as const,
+  maxSelfReviewIterations: 3,
+  maxImplReviewIterations: 3,
+  allowSelfApproval: false as const,
+  minimumActorAssuranceForApproval: 'claim_validated' as const,
+  effectiveGateBehavior: 'human_gated' as const,
+  reviewOutputPolicy: 'structured_required' as const,
+  reviewInvocationPolicy: 'host_task_required' as const,
+  enforceRiskClassification: true as const,
+  allowRiskDowngradeOverride: false as const,
+  allowReducedCeremony: false as const,
+};
+
+const TEAM_DEFAULTS = {
+  requireHumanGates: true as const,
+  maxSelfReviewIterations: 3,
+  maxImplReviewIterations: 3,
+  allowSelfApproval: true as const,
+  minimumActorAssuranceForApproval: 'best_effort' as const,
+  effectiveGateBehavior: 'human_gated' as const,
+  reviewOutputPolicy: 'text_compat_allowed' as const,
+  reviewInvocationPolicy: 'host_task_required' as const,
+  enforceRiskClassification: false as const,
+  allowRiskDowngradeOverride: false as const,
+  allowReducedCeremony: false as const,
+};
+
+const TEAM_CI_DEFAULTS = {
+  requireHumanGates: true as const,
+  maxSelfReviewIterations: 3,
+  maxImplReviewIterations: 3,
+  allowSelfApproval: true as const,
+  minimumActorAssuranceForApproval: 'best_effort' as const,
+  effectiveGateBehavior: 'human_gated' as const,
+  reviewOutputPolicy: 'structured_required' as const,
+  reviewInvocationPolicy: 'host_task_required' as const,
+  enforceRiskClassification: true as const,
+  allowRiskDowngradeOverride: false as const,
+  allowReducedCeremony: false as const,
+};
+
 function modeConsistentDefaults(mode: PolicyMode): {
   readonly requireHumanGates: boolean;
   readonly maxSelfReviewIterations: number;
@@ -756,72 +824,19 @@ function modeConsistentDefaults(mode: PolicyMode): {
   readonly discoveryHealth: DiscoveryHealthPolicy;
   readonly validationEvidence: ValidationEvidencePolicy;
 } {
-  switch (mode) {
-    case 'solo':
-      return {
-        requireHumanGates: false,
-        maxSelfReviewIterations: 2,
-        maxImplReviewIterations: 1,
-        allowSelfApproval: true,
-        minimumActorAssuranceForApproval: 'best_effort',
-        effectiveGateBehavior: 'auto_approve',
-        reviewOutputPolicy: 'text_compat_allowed',
-        reviewInvocationPolicy: 'host_task_preferred',
-        enforceRiskClassification: false,
-        allowRiskDowngradeOverride: false,
-        allowReducedCeremony: false,
-        discoveryHealth: defaultDiscoveryHealthForMode('solo'),
-        validationEvidence: defaultValidationEvidenceForMode('solo'),
-      };
-    case 'regulated':
-      return {
-        requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
-        allowSelfApproval: false,
-        minimumActorAssuranceForApproval: 'claim_validated',
-        effectiveGateBehavior: 'human_gated',
-        reviewOutputPolicy: 'structured_required',
-        reviewInvocationPolicy: 'host_task_required',
-        enforceRiskClassification: true,
-        allowRiskDowngradeOverride: false,
-        allowReducedCeremony: false,
-        discoveryHealth: defaultDiscoveryHealthForMode('regulated'),
-        validationEvidence: defaultValidationEvidenceForMode('regulated'),
-      };
-    case 'team':
-      return {
-        requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
-        allowSelfApproval: true,
-        minimumActorAssuranceForApproval: 'best_effort',
-        effectiveGateBehavior: 'human_gated',
-        reviewOutputPolicy: 'text_compat_allowed',
-        reviewInvocationPolicy: 'host_task_required',
-        enforceRiskClassification: false,
-        allowRiskDowngradeOverride: false,
-        allowReducedCeremony: false,
-        discoveryHealth: defaultDiscoveryHealthForMode('team'),
-        validationEvidence: defaultValidationEvidenceForMode('team'),
-      };
-    case 'team-ci':
-      return {
-        requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
-        allowSelfApproval: true,
-        minimumActorAssuranceForApproval: 'best_effort',
-        effectiveGateBehavior: 'human_gated',
-        reviewOutputPolicy: 'structured_required',
-        reviewInvocationPolicy: 'host_task_required',
-        enforceRiskClassification: true,
-        allowRiskDowngradeOverride: false,
-        allowReducedCeremony: false,
-        discoveryHealth: defaultDiscoveryHealthForMode('team-ci'),
-        validationEvidence: defaultValidationEvidenceForMode('team-ci'),
-      };
-  }
+  const base =
+    mode === 'solo'
+      ? SOLO_DEFAULTS
+      : mode === 'regulated'
+        ? REGULATED_DEFAULTS
+        : mode === 'team'
+          ? TEAM_DEFAULTS
+          : TEAM_CI_DEFAULTS;
+  return {
+    ...base,
+    discoveryHealth: defaultDiscoveryHealthForMode(mode),
+    validationEvidence: defaultValidationEvidenceForMode(mode),
+  };
 }
 
 // ─── Snapshot → Runtime Policy ────────────────────────────────────────────────

@@ -284,22 +284,62 @@ export function buildTransitionBody(
 }
 
 /**
+ * Input object for createTransitionEvent.
+ */
+export interface TransitionEventInput {
+  readonly sessionId: string;
+  readonly phase: Phase;
+  readonly detail: Omit<TransitionDetail, 'kind'>;
+  readonly timestamp: string;
+  readonly prevHash: string;
+  readonly timestampEvidence?: TimestampEvidence;
+}
+
+/**
  * Create a transition audit event.
  * One event per state machine transition. autoAdvance may produce multiple.
  */
 export function createTransitionEvent(
-  sessionId: string,
-  phase: Phase,
-  detail: Omit<TransitionDetail, 'kind'>,
-  timestamp: string,
-  prevHash: string,
-  timestampEvidence?: TimestampEvidence,
+  ...args:
+    | [input: TransitionEventInput]
+    | [
+        sessionId: string,
+        phase: Phase,
+        detail: Omit<TransitionDetail, 'kind'>,
+        timestamp: string,
+        prevHash: string,
+        timestampEvidence?: TimestampEvidence,
+      ]
 ): ChainedAuditEvent {
+  const input = normalizeTransitionEventInput(args);
   return finalizeWithTimestampEvidence(
-    buildTransitionBody(sessionId, phase, detail, timestamp, prevHash),
-    prevHash,
-    timestampEvidence,
+    buildTransitionBody(
+      input.sessionId,
+      input.phase,
+      input.detail,
+      input.timestamp,
+      input.prevHash,
+    ),
+    input.prevHash,
+    input.timestampEvidence,
   );
+}
+
+function normalizeTransitionEventInput(
+  args:
+    | [input: TransitionEventInput]
+    | [
+        sessionId: string,
+        phase: Phase,
+        detail: Omit<TransitionDetail, 'kind'>,
+        timestamp: string,
+        prevHash: string,
+        timestampEvidence?: TimestampEvidence,
+      ],
+): TransitionEventInput {
+  if (args.length === 1) return args[0];
+  const [sessionId, phase, detail, timestamp, prevHash, timestampEvidence] = args;
+  return { sessionId, phase, detail, timestamp, prevHash, timestampEvidence };
 }
 
 /**

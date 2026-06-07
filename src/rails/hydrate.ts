@@ -38,7 +38,7 @@ import type { DetectedStack } from '../discovery/types.js';
 import type { VerificationCandidates } from '../discovery/types.js';
 import type { IdpConfig, IdentityProviderMode } from '../identity/types.js';
 import { evaluate } from '../machine/evaluate.js';
-import type { RailResult, RailContext } from './types.js';
+import type { RailResult, RailBlocked, RailContext } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { defaultProfileRegistry } from '../config/profile.js';
 import type { FlowGuardProfile, RepoSignals } from '../config/profile.js';
@@ -172,66 +172,58 @@ function applyHydrateOverrides(base: FlowGuardPolicy, p: HydratePolicyInput): Fl
   };
 }
 
-export function executeHydrate(
-  existingState: SessionState | null,
-  input: HydrateInput,
+function validateHydrateInput(s: HydrateSessionInput): RailBlocked | null {
+  if (!s.sessionId.trim()) return blocked('MISSING_SESSION_ID');
+  if (!s.worktree.trim()) return blocked('MISSING_WORKTREE');
+  if (!s.fingerprint || !FINGERPRINT_PATTERN.test(s.fingerprint))
+    return blocked('INVALID_FINGERPRINT');
+  return null;
+}
+
+function handleExistingState(
+  existingState: SessionState,
+  s: HydrateSessionInput,
   ctx: RailContext,
 ): RailResult {
-  const { session: s, policy: p, profile: pr } = input;
-  const sessionId = s.sessionId;
-  const worktree = s.worktree;
-  const fingerprint = s.fingerprint;
+  const nextState = s.claimedTaskClass
+    ? { ...existingState, claimedTaskClass: s.claimedTaskClass }
+    : existingState;
+  const result = evaluate(nextState, ctx.policy);
+  return { kind: 'ok', state: nextState, evalResult: result, transitions: [] };
+}
 
-  // 1. Validate input
-  if (!sessionId.trim()) {
-    return blocked('MISSING_SESSION_ID');
-  }
-  if (!worktree.trim()) {
-    return blocked('MISSING_WORKTREE');
-  }
-  if (!fingerprint || !FINGERPRINT_PATTERN.test(fingerprint)) {
-    return blocked('INVALID_FINGERPRINT');
-  }
+function resolvePolicySnapshot(p: HydratePolicyInput, ctx: RailContext, now: string) {
+  if (p.policyResolution) return freezePolicySnapshot(p.policyResolution, now, ctx.digest);
+  const basePolicy = getPolicyPreset(p.policyMode ?? 'solo');
+  const policy = applyHydrateOverrides(basePolicy, p);
+  return createPolicySnapshot(policy, now, ctx.digest, {
+    requestedMode: p.requestedPolicyMode ?? policy.mode,
+    source: p.policySource ?? 'default',
+    effectiveGateBehavior:
+      p.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
+    degradedReason: p.policyDegradedReason,
+    resolutionReason: p.policyResolutionReason,
+    centralMinimumMode: p.centralMinimumMode,
+    policyDigest: p.policyDigest,
+    policyVersion: p.policyVersion,
+    policyPathHint: p.policyPathHint,
+  });
+}
 
-  // 2. Idempotent: if state exists, return it unchanged
-  if (existingState !== null) {
-    const nextState = s.claimedTaskClass
-      ? {
-          ...existingState,
-          claimedTaskClass: s.claimedTaskClass,
-        }
-      : existingState;
-    const result = evaluate(nextState, ctx.policy);
-    return { kind: 'ok', state: nextState, evalResult: result, transitions: [] };
-  }
-
-  // 3. Resolve profile → activeChecks + activeProfile
+function resolveProfile(pr: HydrateProfileInput, s: HydrateSessionInput) {
   let profile: FlowGuardProfile | undefined;
-
-  // P31: explicit > config > detected > baseline
-  // profileId === undefined → auto-detect
-  // profileId set (including "baseline") → explicit profile
-  if (pr.profileId !== undefined) {
-    profile = defaultProfileRegistry.get(pr.profileId);
-  } else if (pr.repoSignals) {
+  if (pr.profileId !== undefined) profile = defaultProfileRegistry.get(pr.profileId);
+  else if (pr.repoSignals)
     profile = defaultProfileRegistry.detect({
       repoSignals: pr.repoSignals,
       discovery: pr.discoveryResult,
     });
-  }
+  if (!profile) profile = defaultProfileRegistry.get('baseline')!;
 
-  if (!profile) {
-    profile = defaultProfileRegistry.get('baseline');
-  }
-
-  // Derive activeChecks: explicit non-empty override > verificationCandidates-derived > empty
-  // rollback_safety is no longer a gate check — it's a review criterion.
-  // Note: empty array from profile means "derive from candidates" (not "no checks").
   const activeChecks =
     pr.activeChecks && pr.activeChecks.length > 0
       ? pr.activeChecks
-      : deriveActiveChecksFromCandidates(input.session.verificationCandidates);
-
+      : deriveActiveChecksFromCandidates(s.verificationCandidates);
   const activeProfile = profile
     ? {
         id: profile.id,
@@ -242,47 +234,32 @@ export function executeHydrate(
           : {}),
       }
     : null;
+  return { profile, activeChecks, activeProfile };
+}
 
-  // 4. Resolve policy → immutable snapshot
+function buildNewHydrateState(
+  s: HydrateSessionInput,
+  p: HydratePolicyInput,
+  pr: HydrateProfileInput,
+  ctx: RailContext,
+): RailResult {
+  const { activeChecks, activeProfile } = resolveProfile(pr, s);
+
   const now = ctx.now();
-  const snapshotWithContext = p.policyResolution
-    ? freezePolicySnapshot(p.policyResolution, now, ctx.digest)
-    : (() => {
-        const policyMode = p.policyMode ?? 'solo';
-        const basePolicy = getPolicyPreset(policyMode);
-        const policy = applyHydrateOverrides(basePolicy, p);
-        return createPolicySnapshot(policy, now, ctx.digest, {
-          requestedMode: p.requestedPolicyMode ?? policy.mode,
-          source: p.policySource ?? 'default',
-          effectiveGateBehavior:
-            p.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
-          degradedReason: p.policyDegradedReason,
-          resolutionReason: p.policyResolutionReason,
-          centralMinimumMode: p.centralMinimumMode,
-          policyDigest: p.policyDigest,
-          policyVersion: p.policyVersion,
-          policyPathHint: p.policyPathHint,
-        });
-      })();
-
-  // 5. Create binding
+  const snapshotWithContext = resolvePolicySnapshot(p, ctx, now);
   const binding: BindingInfo = {
-    sessionId: sessionId,
-    worktree: worktree,
-    fingerprint: fingerprint,
+    sessionId: s.sessionId,
+    worktree: s.worktree,
+    fingerprint: s.fingerprint,
     resolvedAt: now,
   };
 
-  // 6. Create new state
   const newState: SessionState = {
     id: crypto.randomUUID(),
     schemaVersion: 'v1',
     phase: 'READY',
     ...(s.claimedTaskClass ? { claimedTaskClass: s.claimedTaskClass } : {}),
-
     binding,
-
-    // All evidence slots start empty
     ticket: null,
     architecture: null,
     plan: null,
@@ -294,31 +271,35 @@ export function executeHydrate(
     reviewDecision: null,
     reviewReportPath: null,
     nextAdrNumber: 1,
-
-    // Configuration
     activeProfile,
     activeChecks,
     policySnapshot: snapshotWithContext,
-    initiatedBy: pr.initiatedBy ?? sessionId,
+    initiatedBy: pr.initiatedBy ?? s.sessionId,
     ...(pr.initiatedByIdentity ? { initiatedByIdentity: pr.initiatedByIdentity } : {}),
     ...(pr.actorInfo ? { actorInfo: pr.actorInfo } : {}),
-
-    // Discovery
     discoveryDigest: s.discoveryDigest ?? null,
     discoverySummary: s.discoverySummary ?? null,
     detectedStack: s.detectedStack ?? null,
     verificationCandidates: s.verificationCandidates ?? [],
-
-    // Metadata
     transition: null,
     error: null,
     createdAt: now,
   };
 
-  // 7. Evaluate (will be "pending" at READY — waiting for flow selection)
   const result = evaluate(newState, ctx.policy);
-
   return { kind: 'ok', state: newState, evalResult: result, transitions: [] };
+}
+
+export function executeHydrate(
+  existingState: SessionState | null,
+  input: HydrateInput,
+  ctx: RailContext,
+): RailResult {
+  const { session: s, policy: p, profile: pr } = input;
+  const validationBlock = validateHydrateInput(s);
+  if (validationBlock) return validationBlock;
+  if (existingState !== null) return handleExistingState(existingState, s, ctx);
+  return buildNewHydrateState(s, p, pr, ctx);
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

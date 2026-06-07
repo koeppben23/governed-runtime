@@ -409,57 +409,52 @@ export async function fulfillStrictReviewObligation(
  * tools without those hooks, so tests that drive unrelated lifecycle behavior
  * use this helper to satisfy the same strict obligation contract.
  */
-export async function withStrictReviewFindings(sessDir: string, args: unknown): Promise<unknown> {
-  if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
-  const record = args as Record<string, unknown>;
-  if (record.reviewFindings) return args;
-
-  const verdict =
-    typeof record.reviewVerdict === 'string' && record.reviewVerdict.length > 0
-      ? record.reviewVerdict
-      : undefined;
-  if (verdict !== 'approve' && verdict !== 'changes_requested') return args;
-
-  const state = await readState(sessDir);
-  if (!state) return args;
-
-  // P35: Determine obligation type from pending obligations now that all
-  // reviewable tools share the `reviewVerdict` parameter (was selfReviewVerdict
-  // for plan/architecture, reviewVerdict for implement).
-  const allObligations = state.reviewAssurance?.obligations ?? [];
-  const findPending = (type: ReviewObligationType) =>
+function findPendingObligation(
+  allObligations: Array<{
+    obligationType: string;
+    status?: string;
+    consumedAt?: unknown;
+    iteration: number;
+    planVersion: number;
+  }>,
+): { obligationType: string; obligation: { iteration: number; planVersion: number } } | null {
+  const findPending = (type: string) =>
     [...allObligations]
       .reverse()
       .find(
         (item) =>
           item.obligationType === type && item.status !== 'consumed' && item.consumedAt == null,
       );
+  const pending = findPending('architecture') ?? findPending('implement') ?? findPending('plan');
+  if (!pending) return null;
+  return { obligationType: pending.obligationType, obligation: pending };
+}
 
-  let obligationType: ReviewObligationType;
-  let obligation;
+function isValidVerdict(v: unknown): boolean {
+  return typeof v === 'string' && v.length > 0 && (v === 'approve' || v === 'changes_requested');
+}
 
-  const archPending = findPending('architecture');
-  const planPending = findPending('plan');
-  const implPending = findPending('implement');
+export async function withStrictReviewFindings(sessDir: string, args: unknown): Promise<unknown> {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return args;
+  const record = args as Record<string, unknown>;
+  if (record.reviewFindings) return args;
+  if (!isValidVerdict(record.reviewVerdict)) return args;
+  const verdict = String(record.reviewVerdict);
 
-  if (archPending) {
-    obligationType = 'architecture';
-    obligation = archPending;
-  } else if (implPending) {
-    obligationType = 'implement';
-    obligation = implPending;
-  } else if (planPending) {
-    obligationType = 'plan';
-    obligation = planPending;
-  } else {
-    return args;
-  }
+  const state = await readState(sessDir);
+  if (!state) return args;
+
+  const allObligations = state.reviewAssurance?.obligations ?? [];
+  const pending = findPendingObligation(allObligations);
+  if (!pending) return args;
 
   const reviewFindings = await fulfillStrictReviewObligation(sessDir, {
-    obligationType,
-    iteration: obligation.iteration,
-    planVersion: obligation.planVersion,
-    overallVerdict: verdict,
+    obligationType: pending.obligationType as Parameters<
+      typeof fulfillStrictReviewObligation
+    >[1]['obligationType'],
+    iteration: pending.obligation.iteration,
+    planVersion: pending.obligation.planVersion,
+    overallVerdict: verdict as 'approve' | 'changes_requested',
   });
 
   return { ...record, reviewFindings };

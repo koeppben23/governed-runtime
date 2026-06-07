@@ -320,23 +320,20 @@ function checkChainIntegrity(chainVerification: ChainVerification): ComplianceCh
 /**
  * Generate a human-readable one-line description for an audit event.
  */
+const EVENT_DESCRIBERS: Record<string, (event: AuditEvent, detail: string) => string> = {
+  transition: (event, detail) =>
+    `State transition: ${event.detail?.from ?? '?'} → ${event.detail?.to ?? '?'} via ${detail}`,
+  tool_call: (event, detail) =>
+    `Tool call: ${detail} (${event.detail?.success ? 'success' : 'failed'})`,
+  error: (event, detail) =>
+    `Error: ${event.detail?.code ?? detail} — ${event.detail?.message ?? 'no message'}`,
+  lifecycle: (_event, detail) => `Lifecycle: ${detail.replace(/_/g, ' ')}`,
+};
+
 function describeEvent(event: AuditEvent): string {
   const parts = event.event.split(':');
   const kind = parts[0];
-  const detail = parts.slice(1).join(':');
-
   if (kind === undefined) return event.event;
-
-  switch (kind) {
-    case 'transition':
-      return `State transition: ${event.detail?.from ?? '?'} → ${event.detail?.to ?? '?'} via ${detail}`;
-    case 'tool_call':
-      return `Tool call: ${detail} (${event.detail?.success ? 'success' : 'failed'})`;
-    case 'error':
-      return `Error: ${event.detail?.code ?? detail} — ${event.detail?.message ?? 'no message'}`;
-    case 'lifecycle':
-      return `Lifecycle: ${detail.replace(/_/g, ' ')}`;
-    default:
-      return event.event;
-  }
+  const detail = parts.slice(1).join(':');
+  return EVENT_DESCRIBERS[kind]?.(event, detail) ?? event.event;
 }

@@ -57,43 +57,29 @@ function resolveRelativePath(filePath: string, getWorktreeRoot: () => string | u
  *
  * @internal
  */
-export function extractPathsFromPatch(diff: string): string[] {
-  const paths = new Set<string>();
-
-  // Guard against excessive input that could cause ReDoS.
-  if (diff.length > 1024 * 1024) return [];
-
-  const headerPattern = /^(?:---|\+\+\+)[ \t]+(?:[ab]\/)?([^\n\r]+)$/gm;
+function collectPathsFromPattern(
+  diff: string,
+  pattern: RegExp,
+  groupIndexes: number[],
+  paths: Set<string>,
+): void {
   let match: RegExpExecArray | null;
-
-  while ((match = headerPattern.exec(diff)) !== null) {
-    const filePath = (match[1] ?? '').trim();
-    if (filePath && filePath !== '/dev/null' && filePath !== 'dev/null') {
-      // Normalize slashes for platform-independent output.
-      paths.add(filePath.replace(/\\/g, '/'));
-    }
-  }
-
-  // 2. Binary file diffs: "Binary files a/<path> and b/<path> differ"
-  const binaryPattern = /^Binary files a\/(.+?) and b\/\1 differ$/gm;
-  while ((match = binaryPattern.exec(diff)) !== null) {
-    const filePath = (match[1] ?? '').trim();
-    if (filePath && filePath !== '/dev/null' && filePath !== 'dev/null') {
-      paths.add(filePath.replace(/\\/g, '/'));
-    }
-  }
-
-  // 3. diff --git headers: "diff --git a/<path> b/<path>"
-  const gitHeaderPattern = /^diff --git a\/(.+?) b\/(.+)$/gm;
-  while ((match = gitHeaderPattern.exec(diff)) !== null) {
-    for (let i = 1; i <= 2; i++) {
-      const filePath = (match[i] ?? '').trim();
+  while ((match = pattern.exec(diff)) !== null) {
+    for (const idx of groupIndexes) {
+      const filePath = (match[idx] ?? '').trim();
       if (filePath && filePath !== '/dev/null' && filePath !== 'dev/null') {
         paths.add(filePath.replace(/\\/g, '/'));
       }
     }
   }
+}
 
+export function extractPathsFromPatch(diff: string): string[] {
+  if (diff.length > 1024 * 1024) return [];
+  const paths = new Set<string>();
+  collectPathsFromPattern(diff, /^(?:---|\+\+\+)[ \t]+(?:[ab]\/)?([^\n\r]+)$/gm, [1], paths);
+  collectPathsFromPattern(diff, /^Binary files a\/(.+?) and b\/\1 differ$/gm, [1], paths);
+  collectPathsFromPattern(diff, /^diff --git a\/(.+?) b\/(.+)$/gm, [1, 2], paths);
   return [...paths];
 }
 
@@ -130,60 +116,30 @@ export function extractPathsFromBashCommand(cmd: string): string[] {
     if (target) paths.add(target);
   }
 
-  // 3. rm targets: rm [-rf] <files...>
-  const rmPattern = /\brm\s+(?:-[rRfiv]+\s+)*([^\n;&|]+)/g;
-  while ((match = rmPattern.exec(cmd)) !== null) {
-    const argStr = (match[1] ?? '').trim();
-    for (const arg of splitUnquotedArgs(argStr)) {
-      if (!arg.startsWith('-')) paths.add(arg);
-    }
-  }
-
-  // 4. mv/cp targets: mv/cp <src...> <dest>
-  const mvCpPattern = /\b(?:mv|cp)\s+(?:-[a-zA-Z]+\s+)*([^\n;&|]+)/g;
-  while ((match = mvCpPattern.exec(cmd)) !== null) {
-    const argStr = (match[1] ?? '').trim();
-    const args = splitUnquotedArgs(argStr);
-    // All paths are potentially affected (source and destination)
-    for (const arg of args) {
-      if (!arg.startsWith('-')) paths.add(arg);
-    }
-  }
-
-  // 5. sed -i: sed -i[suffix] <expr> <file...>
-  //     Combined flags (e.g. -ni, -Ei) and flags before/after the -i token.
-  //     alt 1: flags-before (no i) + -i[suffix] + flags-after (no i)  e.g. "-n -i.bak -r"
-  //     alt 2: one token with i embedded                                e.g. "-ni", "-Ei"
-  //     shared tail: extra flags after either alt                       e.g. "-ni -r"
-  const sedPattern =
-    /\bsed\s+(?:(?:-[^i\s]+\s+)*-i[^\s]*(?:\s+-[^i\s]+)*|-[a-zA-Z]*i[^\s]*)(?:\s+-[^i\s]+)*\s+(?:'[^']*'|"[^"]*"|[^\s]+)\s+([^\n;&|]+)/g;
-  while ((match = sedPattern.exec(cmd)) !== null) {
-    const argStr = (match[1] ?? '').trim();
-    for (const arg of splitUnquotedArgs(argStr)) {
-      if (!arg.startsWith('-')) paths.add(arg);
-    }
-  }
-
-  // 6. chmod: chmod <mode> <file...>
-  const chmodPattern =
-    /\bchmod\s+(?:-[Rfvch]\s+)*(?:[0-7]{3,4}|[ugoa]?[+\-=/][rwxXst]+)\s+([^\n;&|]+)/g;
-  while ((match = chmodPattern.exec(cmd)) !== null) {
-    const argStr = (match[1] ?? '').trim();
-    for (const arg of splitUnquotedArgs(argStr)) {
-      if (!arg.startsWith('-')) paths.add(arg);
-    }
-  }
-
-  // 7. git checkout -- <file...>
-  const gitCheckoutPattern = /\bgit\s+checkout\s+(?:[^\s]+\s+)?--\s+([^\s;&|]+)/g;
-  while ((match = gitCheckoutPattern.exec(cmd)) !== null) {
-    const argStr = (match[1] ?? '').trim();
-    for (const arg of splitUnquotedArgs(argStr)) {
-      if (!arg.startsWith('-')) paths.add(arg);
-    }
-  }
+  collectArgsToPaths(cmd, /\brm\s+(?:-[rRfiv]+\s+)*([^\n;&|]+)/g, paths);
+  collectArgsToPaths(cmd, /\b(?:mv|cp)\s+(?:-[a-zA-Z]+\s+)*([^\n;&|]+)/g, paths);
+  collectArgsToPaths(
+    cmd,
+    /\bsed\s+(?:(?:-[^i\s]+\s+)*-i[^\s]*(?:\s+-[^i\s]+)*|-[a-zA-Z]*i[^\s]*)(?:\s+-[^i\s]+)*\s+(?:'[^']*'|"[^"]*"|[^\s]+)\s+([^\n;&|]+)/g,
+    paths,
+  );
+  collectArgsToPaths(
+    cmd,
+    /\bchmod\s+(?:-[Rfvch]\s+)*(?:[0-7]{3,4}|[ugoa]?[+\-=/][rwxXst]+)\s+([^\n;&|]+)/g,
+    paths,
+  );
+  collectArgsToPaths(cmd, /\bgit\s+checkout\s+(?:[^\s]+\s+)?--\s+([^\s;&|]+)/g, paths);
 
   return [...paths].map((p) => p.replace(/\\/g, '/'));
+}
+
+function collectArgsToPaths(cmd: string, pattern: RegExp, paths: Set<string>): void {
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(cmd)) !== null) {
+    for (const arg of splitUnquotedArgs((match[1] ?? '').trim())) {
+      if (!arg.startsWith('-')) paths.add(arg);
+    }
+  }
 }
 
 /**
@@ -287,6 +243,44 @@ export async function appendRiskDecisionAudit(
   );
 }
 
+function throwRiskBlocked(
+  decision: RiskClassificationDecision,
+  state: SessionState,
+  toolName: string,
+): never {
+  const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
+  const reason = decision.reason ?? 'Risk classification gate blocked this mutating tool.';
+  throw buildEnforcementError(code, reason, {
+    sessionId: state.binding.sessionId,
+    tool: toolName,
+    claimedTaskClass: decision.claimedTaskClass ?? 'missing',
+    minimumTaskClass: decision.minimumTaskClass,
+    touchedSurface: decision.touchedSurfaces[0] ?? 'none',
+    decisionId: decision.decisionId,
+  });
+}
+
+async function persistAndThrowRiskBlock(
+  sessDir: string,
+  state: SessionState,
+  decision: RiskClassificationDecision,
+  toolName: string,
+): Promise<never> {
+  const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
+  const reason = decision.reason ?? 'Risk classification gate blocked this mutating tool.';
+  if (state.riskGate?.status !== 'blocked') {
+    try {
+      await persistRiskDecisionBlock(sessDir, state, decision, code, reason);
+    } catch (err) {
+      throw buildEnforcementError(
+        'AUDIT_PERSISTENCE_FAILED',
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+  throwRiskBlocked(decision, state, toolName);
+}
+
 export async function enforceRiskClassificationBefore(
   deps: RiskEnforcementDeps,
   sessDir: string,
@@ -317,11 +311,7 @@ export async function enforceRiskClassificationBefore(
         );
       }
     }
-    throw buildEnforcementError('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', reason, {
-      sessionId: state.binding.sessionId,
-      tool: toolName,
-      decisionId: decision.decisionId,
-    });
+    throwRiskBlocked(decision, state, toolName);
   }
   const decision = isRiskClassificationAllowed({
     state,
@@ -346,26 +336,33 @@ export async function enforceRiskClassificationBefore(
     }
     return;
   }
-  const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
-  const reason = decision.reason ?? 'Risk classification gate blocked this mutating tool.';
-  if (state.riskGate?.status !== 'blocked') {
-    try {
-      await persistRiskDecisionBlock(sessDir, state, decision, code, reason);
-    } catch (err) {
-      throw buildEnforcementError(
-        'AUDIT_PERSISTENCE_FAILED',
-        err instanceof Error ? err.message : String(err),
+  await persistAndThrowRiskBlock(sessDir, state, decision, toolName);
+}
+
+async function handleEvidenceUnavailableBash(
+  sessDir: string,
+  state: SessionState,
+  reason: string,
+  output: { output?: unknown },
+): Promise<void> {
+  const decision = evidenceUnavailableRiskDecision(state, reason);
+  try {
+    if (state.riskGate?.status !== 'blocked') {
+      await persistRiskDecisionBlock(
+        sessDir,
+        state,
+        decision,
+        'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+        reason,
       );
     }
+  } catch (persistErr) {
+    output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+      reason: persistErr instanceof Error ? persistErr.message : String(persistErr),
+    });
+    return;
   }
-  throw buildEnforcementError(code, reason, {
-    sessionId: state.binding.sessionId,
-    tool: toolName,
-    claimedTaskClass: decision.claimedTaskClass ?? 'missing',
-    minimumTaskClass: decision.minimumTaskClass,
-    touchedSurface: decision.touchedSurfaces[0] ?? 'none',
-    decisionId: decision.decisionId,
-  });
+  output.output = strictBlockedOutput('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', { reason });
 }
 
 export async function enforceRiskClassificationAfterBash(
@@ -375,68 +372,85 @@ export async function enforceRiskClassificationAfterBash(
 ): Promise<void> {
   const sessDir = deps.getSessionDir(sessionId);
   if (!sessDir || !existsSync(sessDir)) return;
-  let state: SessionState | null;
-  try {
-    state = await readState(sessDir);
-  } catch (err) {
-    output.output = strictBlockedOutput('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {
-      reason: err instanceof Error ? err.message : String(err),
-    });
-    return;
-  }
+  const state = await readRiskStateForBash(sessDir, output);
   if (!state || state.policySnapshot.enforceRiskClassification !== true) return;
-  let files: string[];
-  try {
-    files = await currentChangedFilesForRisk(() => deps.getWorktreeRoot());
-  } catch (err) {
-    const reason = err instanceof Error ? err.message : String(err);
-    const decision = evidenceUnavailableRiskDecision(state, reason);
-    try {
-      if (state.riskGate?.status !== 'blocked') {
-        await persistRiskDecisionBlock(
-          sessDir,
-          state,
-          decision,
-          'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
-          reason,
-        );
-      }
-    } catch (persistErr) {
-      output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
-        reason: persistErr instanceof Error ? persistErr.message : String(persistErr),
-      });
-      return;
-    }
-    output.output = strictBlockedOutput('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', { reason });
-    return;
-  }
+  const files = await readRiskChangedFilesForBash(deps, sessDir, state, output);
+  if (!files) return;
   const decision = isRiskClassificationAllowed({
     state,
     changedFiles: files,
     now: new Date().toISOString(),
   });
-  if (decision.allowed) {
-    try {
-      await appendRiskDecisionAudit(
-        sessDir,
-        state,
-        decision,
-        'allowed',
-        'RISK_CLASSIFICATION_ALLOWED',
-      );
-    } catch (err) {
-      output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
-        reason: err instanceof Error ? err.message : String(err),
-      });
-    }
-    return;
+  if (decision.allowed) return appendAllowedRiskDecisionForBash(sessDir, state, decision, output);
+  await blockRiskDecisionAfterBash(sessDir, state, decision, sessionId, output);
+}
+
+async function readRiskStateForBash(
+  sessDir: string,
+  output: { output?: unknown },
+): Promise<SessionState | null> {
+  try {
+    return await readState(sessDir);
+  } catch (err) {
+    output.output = strictBlockedOutput('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {
+      reason: err instanceof Error ? err.message : String(err),
+    });
+    return null;
   }
+}
+
+async function readRiskChangedFilesForBash(
+  deps: RiskEnforcementDeps,
+  sessDir: string,
+  state: SessionState,
+  output: { output?: unknown },
+): Promise<string[] | null> {
+  try {
+    return await currentChangedFilesForRisk(() => deps.getWorktreeRoot());
+  } catch (err) {
+    await handleEvidenceUnavailableBash(
+      sessDir,
+      state,
+      err instanceof Error ? err.message : String(err),
+      output,
+    );
+    return null;
+  }
+}
+
+async function appendAllowedRiskDecisionForBash(
+  sessDir: string,
+  state: SessionState,
+  decision: ReturnType<typeof isRiskClassificationAllowed>,
+  output: { output?: unknown },
+): Promise<void> {
+  try {
+    await appendRiskDecisionAudit(
+      sessDir,
+      state,
+      decision,
+      'allowed',
+      'RISK_CLASSIFICATION_ALLOWED',
+    );
+  } catch (err) {
+    output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+      reason: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+async function blockRiskDecisionAfterBash(
+  sessDir: string,
+  state: SessionState,
+  decision: ReturnType<typeof isRiskClassificationAllowed>,
+  sessionId: string,
+  output: { output?: unknown },
+): Promise<void> {
   const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
   const reason = decision.reason ?? 'Risk classification gate blocked after bash mutation.';
   try {
-    if (state.riskGate?.status !== 'blocked') {
+    if (state.riskGate?.status !== 'blocked')
       await persistRiskDecisionBlock(sessDir, state, decision, code, reason);
-    }
     output.output = strictBlockedOutput(code, {
       reason,
       sessionId,

@@ -170,6 +170,21 @@ interface AttrLike {
   values: ReadonlyArray<asn1js.BaseBlock<asn1js.ValueBlock>>;
 }
 
+function extractSingleValueBytes(first: AttrLike['values'][number]): Uint8Array | undefined {
+  if (first instanceof asn1js.ObjectIdentifier) return new Uint8Array(first.toBER(false));
+  if (first instanceof asn1js.OctetString) return new Uint8Array(octetStringBytes(first));
+  const vb = first.valueBlock as {
+    valueHexView?: Uint8Array;
+    value?: unknown;
+    toBER?: () => ArrayBuffer;
+  };
+  if (vb.valueHexView?.byteLength) return new Uint8Array(vb.valueHexView);
+  const inner = vb.value as { valueHexView?: Uint8Array } | undefined;
+  if (inner?.valueHexView?.byteLength) return new Uint8Array(inner.valueHexView);
+  const raw = vb.toBER?.();
+  return raw ? new Uint8Array(raw) : undefined;
+}
+
 function extractAttributeValue(
   attrs: ReadonlyArray<AttrLike>,
   oid: string,
@@ -178,18 +193,8 @@ function extractAttributeValue(
     if (attr.type !== oid) continue;
     const first = attr.values[0];
     if (!first) continue;
-    if (first instanceof asn1js.ObjectIdentifier) return new Uint8Array(first.toBER(false));
-    if (first instanceof asn1js.OctetString) return new Uint8Array(octetStringBytes(first));
-    const vb = first.valueBlock as {
-      valueHexView?: Uint8Array;
-      value?: unknown;
-      toBER?: () => ArrayBuffer;
-    };
-    if (vb.valueHexView?.byteLength) return new Uint8Array(vb.valueHexView);
-    const inner = vb.value as { valueHexView?: Uint8Array } | undefined;
-    if (inner?.valueHexView?.byteLength) return new Uint8Array(inner.valueHexView);
-    const raw = vb.toBER?.();
-    if (raw) return new Uint8Array(raw);
+    const bytes = extractSingleValueBytes(first);
+    if (bytes) return bytes;
   }
   return undefined;
 }

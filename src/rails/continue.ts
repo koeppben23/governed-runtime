@@ -91,20 +91,35 @@ function isRailBlocked(x: SessionState | RailBlocked): x is RailBlocked {
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
+async function doPhaseWork(
+  state: SessionState,
+  ctx: RailContext,
+  executors: ContinueExecutors,
+): Promise<RailResult | SessionState> {
+  let workState: SessionState | RailBlocked = state;
+  if (state.phase === 'VALIDATION') {
+    const evidence = evaluateValidationEvidence(state);
+    if (evidence.blocked && evidence.code !== null) return blocked(evidence.code);
+    workState = await runValidationChecks(workState, ctx, executors);
+  } else if (state.phase === 'PLAN') {
+    workState = await runOneSelfReviewIteration(workState, ctx, executors);
+  } else if (state.phase === 'IMPL_REVIEW') {
+    workState = await runOneImplReviewIteration(workState, ctx, executors);
+  } else if (state.phase === 'ARCHITECTURE') {
+    workState = await runOneArchitectureReviewIteration(workState, ctx, executors);
+  }
+  if (isRailBlocked(workState)) return workState;
+  return workState;
+}
+
 export async function executeContinue(
   state: SessionState,
   ctx: RailContext,
   executors: ContinueExecutors,
 ): Promise<RailResult> {
-  // 1. Admissibility
   if (!isCommandAllowed(state.phase, Command.CONTINUE)) {
-    return blocked('COMMAND_NOT_ALLOWED', {
-      command: '/continue',
-      phase: state.phase,
-    });
+    return blocked('COMMAND_NOT_ALLOWED', { command: '/continue', phase: state.phase });
   }
-
-  // 2. Quick exits for user gates and terminal
   if (TERMINAL.has(state.phase)) {
     return { kind: 'ok', state, evalResult: { kind: 'terminal' }, transitions: [] };
   }
@@ -121,54 +136,27 @@ export async function executeContinue(
     };
   }
 
-  // 3. Phase-specific work
-  // P1.3 slice 4b: each review-loop helper may return a RailBlocked
-  // result (when the reviewer subagent emits unable_to_review). On
-  // BLOCKED, short-circuit auto-advance and return the block directly.
-  let workState: SessionState | RailBlocked = state;
+  const workState = await doPhaseWork(state, ctx, executors);
+  if ('kind' in workState) return workState;
 
-  if (state.phase === 'VALIDATION') {
-    // #400: fail-closed when policy requires validation evidence but no active
-    // checks exist. Surface the explicit, case-distinguished reason from the
-    // single authority rather than letting autoAdvance silently stall in
-    // EvalPending. Off/advisory and the allowNoCommands exception fall through.
-    const evidence = evaluateValidationEvidence(state);
-    if (evidence.blocked && evidence.code !== null) {
-      return blocked(evidence.code);
-    }
-    workState = await runValidationChecks(workState, ctx, executors);
-  } else if (state.phase === 'PLAN') {
-    workState = await runOneSelfReviewIteration(workState, ctx, executors);
-  } else if (state.phase === 'IMPL_REVIEW') {
-    workState = await runOneImplReviewIteration(workState, ctx, executors);
-  } else if (state.phase === 'ARCHITECTURE') {
-    workState = await runOneArchitectureReviewIteration(workState, ctx, executors);
-  }
-
-  // P1.3 slice 4b: short-circuit on BLOCKED. The helper has already
-  // formatted the SUBAGENT_UNABLE_TO_REVIEW reason; do not auto-advance.
-  if (isRailBlocked(workState)) {
-    return workState;
-  }
-
-  // 4. Auto-advance (policy-aware)
   const evalFn = createPolicyEvalFn(ctx);
   const advanced = autoAdvance(workState, evalFn, ctx);
-  if (advanced.kind === 'overflow') {
-    return blockedFromOverflow(advanced);
-  }
-  const { state: advancedState, evalResult: result, transitions } = advanced;
+  if (advanced.kind === 'overflow') return blockedFromOverflow(advanced);
 
-  // Finalize ADR status on architecture flow completion (solo auto-approve)
   const finalState =
-    advancedState.phase === 'ARCH_COMPLETE' && advancedState.architecture
+    advanced.state.phase === 'ARCH_COMPLETE' && advanced.state.architecture
       ? {
-          ...advancedState,
-          architecture: { ...advancedState.architecture, status: 'accepted' as const },
+          ...advanced.state,
+          architecture: { ...advanced.state.architecture, status: 'accepted' as const },
         }
-      : advancedState;
+      : advanced.state;
 
-  return { kind: 'ok', state: finalState, evalResult: result, transitions };
+  return {
+    kind: 'ok',
+    state: finalState,
+    evalResult: advanced.evalResult,
+    transitions: advanced.transitions,
+  };
 }
 
 // ─── Phase-Specific Handlers ──────────────────────────────────────────────────

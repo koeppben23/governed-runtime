@@ -192,13 +192,15 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
           appendReviewAuditEvent(sessDir, sessionId, phase, event, detail2),
         logError: (msg, err) => getAdapterLogger().error('workspace', msg, { error: String(err) }),
       },
-      ctx.sessDir,
-      ctx.sessionId,
-      ctx.phase,
-      (s) => blockObligation(s, obligationId, code),
-      'review:obligation_blocked',
-      { obligationId, code },
-      'block',
+      {
+        sessDir: ctx.sessDir,
+        sessionId: ctx.sessionId,
+        phase: ctx.phase,
+        stateMutation: (s) => blockObligation(s, obligationId, code),
+        auditEventName: 'review:obligation_blocked',
+        auditDetail: { obligationId, code },
+        auditFailureBehavior: 'block',
+      },
     );
 
     if (!result.auditOk && result.block) {

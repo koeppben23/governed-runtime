@@ -128,7 +128,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
       - name: Lint
-        run: npm run lint
+        run: npm run lint:strict
         env:
           FORCE_COLOR: 0
 

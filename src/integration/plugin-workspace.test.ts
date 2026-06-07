@@ -192,16 +192,15 @@ describe('recordAssuranceWithAudit', () => {
     const updateReviewAssurance = vi.fn();
     const appendReviewAuditEvent = vi.fn();
     const deps = mockAssuranceDeps({ updateReviewAssurance, appendReviewAuditEvent });
-    const result = await recordAssuranceWithAudit(
-      deps,
-      '/tmp/sess',
-      's1',
-      'PLAN',
-      () => ({ phase: 'PLAN' }) as never,
-      'review:obligation_blocked',
-      { code: 'X' },
-      'block',
-    );
+    const result = await recordAssuranceWithAudit(deps, {
+      sessDir: '/tmp/sess',
+      sessionId: 's1',
+      phase: 'PLAN',
+      stateMutation: () => ({ phase: 'PLAN' }) as never,
+      auditEventName: 'review:obligation_blocked',
+      auditDetail: { code: 'X' },
+      auditFailureBehavior: 'block',
+    });
     expect(result.auditOk).toBe(true);
     expect(updateReviewAssurance).toHaveBeenCalled();
     expect(appendReviewAuditEvent).toHaveBeenCalled();
@@ -215,16 +214,15 @@ describe('recordAssuranceWithAudit', () => {
     const deps = mockAssuranceDeps({
       appendReviewAuditEvent: vi.fn().mockRejectedValue(new Error('ENOSPC')),
     });
-    const result = await recordAssuranceWithAudit(
-      deps,
-      '/tmp/sess',
-      's1',
-      'PLAN',
-      () => ({ phase: 'PLAN' }) as never,
-      'review:obligation_blocked',
-      { code: 'X' },
-      'block',
-    );
+    const result = await recordAssuranceWithAudit(deps, {
+      sessDir: '/tmp/sess',
+      sessionId: 's1',
+      phase: 'PLAN',
+      stateMutation: () => ({ phase: 'PLAN' }) as never,
+      auditEventName: 'review:obligation_blocked',
+      auditDetail: { code: 'X' },
+      auditFailureBehavior: 'block',
+    });
     expect(result.auditOk).toBe(false);
     expect(result.block).toBe(true);
     expect(result.code).toBe('AUDIT_PERSISTENCE_FAILED');
@@ -237,16 +235,15 @@ describe('recordAssuranceWithAudit', () => {
     const deps = mockAssuranceDeps({
       appendReviewAuditEvent: vi.fn().mockRejectedValue(new Error('ENOSPC')),
     });
-    const result = await recordAssuranceWithAudit(
-      deps,
-      '/tmp/sess',
-      's1',
-      'PLAN',
-      () => ({ phase: 'PLAN' }) as never,
-      'review:obligation_blocked',
-      { code: 'X' },
-      'warn',
-    );
+    const result = await recordAssuranceWithAudit(deps, {
+      sessDir: '/tmp/sess',
+      sessionId: 's1',
+      phase: 'PLAN',
+      stateMutation: () => ({ phase: 'PLAN' }) as never,
+      auditEventName: 'review:obligation_blocked',
+      auditDetail: { code: 'X' },
+      auditFailureBehavior: 'warn',
+    });
     expect(result.auditOk).toBe(false);
     expect(result.block).toBeUndefined();
     expect(deps.logError).toHaveBeenCalled();
@@ -258,16 +255,15 @@ describe('recordAssuranceWithAudit', () => {
       updateReviewAssurance: vi.fn().mockRejectedValue(new Error('LOCK_TIMEOUT')),
     });
     await expect(
-      recordAssuranceWithAudit(
-        deps,
-        '/tmp/sess',
-        's1',
-        'PLAN',
-        () => ({ phase: 'PLAN' }) as never,
-        'review:obligation_blocked',
-        { code: 'X' },
-        'block',
-      ),
+      recordAssuranceWithAudit(deps, {
+        sessDir: '/tmp/sess',
+        sessionId: 's1',
+        phase: 'PLAN',
+        stateMutation: () => ({ phase: 'PLAN' }) as never,
+        auditEventName: 'review:obligation_blocked',
+        auditDetail: { code: 'X' },
+        auditFailureBehavior: 'block',
+      }),
     ).rejects.toThrow('LOCK_TIMEOUT');
     // Audit must NOT be called when state fails
     expect(deps.appendReviewAuditEvent).not.toHaveBeenCalled();

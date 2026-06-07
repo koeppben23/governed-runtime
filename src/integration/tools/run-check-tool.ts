@@ -20,7 +20,7 @@
  * @version v1
  */
 
-import type { ToolDefinition } from './helpers.js';
+import type { MutableSession, ToolContext, ToolDefinition, ToolResult } from './helpers.js';
 import {
   withMutableSessionTransaction,
   formatBlocked,
@@ -37,7 +37,10 @@ import type { SessionState } from '../../state/schema.js';
 import { evaluate } from '../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 import { evaluateValidationEvidence } from '../../machine/validation-evidence.js';
-import { VerificationCandidateKindSchema } from '../../state/discovery-schemas.js';
+import {
+  VerificationCandidateKindSchema,
+  type VerificationCandidateKind,
+} from '../../state/discovery-schemas.js';
 
 // Rail helpers
 import { autoAdvance } from '../../rails/types.js';
@@ -67,130 +70,167 @@ export const run_check: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      return await withMutableSessionTransaction(context, async ({ sessDir, state, ctx }) => {
-        // Phase admissibility
-        if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
-          return formatBlocked('COMMAND_NOT_ALLOWED', {
-            command: '/run_check',
-            phase: state.phase,
-          });
-        }
-
-        if (state.activeChecks.length === 0) {
-          // #400: under policy-gated validation-evidence enforcement, an empty
-          // active-check list is not a clean vacuous pass. Surface the explicit,
-          // case-distinguished reason from the single authority instead of the
-          // bare NO_ACTIVE_CHECKS. The candidate-only command resolution below is
-          // unchanged — this only governs progression admissibility.
-          const evidence = evaluateValidationEvidence(state);
-          if (evidence.blocked && evidence.code !== null) {
-            return formatBlocked(evidence.code);
-          }
-          return formatBlocked('NO_ACTIVE_CHECKS');
-        }
-
-        // Resolve the command for this kind from verificationCandidates
-        const candidates = state.verificationCandidates ?? [];
-        const candidate = candidates.find((c) => c.kind === args.kind);
-
-        if (!candidate) {
-          return formatBlocked('CHECK_KIND_NOT_AVAILABLE', {
-            kind: args.kind,
-            available: candidates.map((c) => c.kind).join(', ') || 'none',
-          });
-        }
-
-        // Verify the kind maps to an active check
-        const checkId = args.kind; // kind IS the checkId in the new model
-        if (!state.activeChecks.includes(checkId)) {
-          return formatBlocked('CHECK_NOT_ACTIVE', {
-            checkId,
-            activeChecks: state.activeChecks.join(', '),
-          });
-        }
-
-        // Execute the command
-        const worktree = getWorktree(context);
-        const evidence = await executeCheck({
-          kind: args.kind,
-          command: candidate.command,
-          cwd: worktree,
-        });
-        const derivedRepairGuidance = evidence.passed ? undefined : deriveRepairGuidance(evidence);
-
-        // Build the validation result
-        const validationResult: ValidationResult = {
-          checkId,
-          passed: evidence.passed,
-          detail: evidence.timedOut
-            ? `Timed out after ${evidence.executionMs}ms`
-            : evidence.passed
-              ? `Passed (exit 0, ${evidence.executionMs}ms)`
-              : `Failed (exit ${evidence.exitCode}, ${evidence.executionMs}ms)`,
-          executedAt: evidence.startedAt,
-          kind: evidence.kind,
-          command: evidence.command,
-          exitCode: evidence.exitCode,
-          executionMs: evidence.executionMs,
-          outputDigest: evidence.outputDigest,
-          timedOut: evidence.timedOut,
-          derivedRepairGuidance,
-        };
-
-        // Merge into existing validation results (replace if same checkId exists)
-        const existingResults = state.validation.filter((v) => v.checkId !== checkId);
-        const allResults = [...existingResults, validationResult];
-
-        // Check if all active checks now pass
-        const passedIds = new Set(allResults.filter((v) => v.passed).map((v) => v.checkId));
-        const allPassed = state.activeChecks.every((id) => passedIds.has(id));
-
-        const nextState: SessionState = {
-          ...state,
-          validation: allResults,
-          error: null,
-          ...(allPassed ? {} : { selfReview: null, reviewDecision: null }),
-        };
-
-        // Evaluate + autoAdvance (ALL_PASSED → IMPLEMENTATION, CHECK_FAILED → PLAN)
-        const evalFn = (s: SessionState) => evaluate(s, ctx.policy);
-        const advanced = autoAdvance(nextState, evalFn, ctx);
-        // #428: fail closed on overflow BEFORE persisting — an overflow carries
-        // no advanced state, so we must not write a partially-advanced session.
-        if (advanced.kind === 'overflow') {
-          return formatAutoAdvanceOverflow(advanced);
-        }
-        const { state: finalState, evalResult: ev, transitions } = advanced;
-        await writeStateWithArtifactsAlreadyLocked(sessDir, finalState);
-
-        // Build response with execution evidence
-        return appendNextAction(
-          JSON.stringify({
-            phase: finalState.phase,
-            status: evidence.passed
-              ? `Check '${args.kind}' passed.`
-              : evidence.timedOut
-                ? `Check '${args.kind}' timed out.`
-                : `Check '${args.kind}' failed (exit ${evidence.exitCode}).`,
-            evidence: {
-              kind: evidence.kind,
-              command: evidence.command,
-              exitCode: evidence.exitCode,
-              passed: evidence.passed,
-              executionMs: evidence.executionMs,
-              outputDigest: evidence.outputDigest,
-              timedOut: evidence.timedOut,
-            },
-            derivedRepairGuidance,
-            remainingChecks: state.activeChecks.filter((id) => !passedIds.has(id)),
-            next: formatEval(ev),
-            _audit: { transitions },
-          }),
-          finalState,
-        );
-      });
+      return await withMutableSessionTransaction(context, (session) =>
+        executeRunCheckTransaction(args.kind as VerificationCandidateKind, context, session),
+      );
     } catch (err) {
       return formatError(err);
     }
   },
 };
+
+async function executeRunCheckTransaction(
+  kind: VerificationCandidateKind,
+  context: ToolContext,
+  session: MutableSession,
+): Promise<ToolResult> {
+  const guard = validateRunCheckRequest(kind, session.state);
+  if (typeof guard === 'string') return guard;
+
+  const evidence = await executeCheck({
+    kind,
+    command: guard.candidate.command,
+    cwd: getWorktree(context),
+  });
+  const derivedRepairGuidance = evidence.passed ? undefined : deriveRepairGuidance(evidence);
+  const validationResult = buildValidationResult(guard.checkId, evidence, derivedRepairGuidance);
+  const allResults = mergeValidationResult(session.state, validationResult);
+  const passedIds = new Set(allResults.filter((v) => v.passed).map((v) => v.checkId));
+  const nextState = buildNextValidationState(session.state, allResults, passedIds);
+  const advanced = autoAdvance(nextState, (s) => evaluate(s, session.ctx.policy), session.ctx);
+  if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
+  await writeStateWithArtifactsAlreadyLocked(session.sessDir, advanced.state);
+  return formatRunCheckResponse({
+    kind,
+    evidence,
+    derivedRepairGuidance,
+    originalState: session.state,
+    passedIds,
+    advanced,
+  });
+}
+
+function validateRunCheckRequest(
+  kind: VerificationCandidateKind,
+  state: SessionState,
+): string | { checkId: string; candidate: { kind: VerificationCandidateKind; command: string } } {
+  if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
+    return formatBlocked('COMMAND_NOT_ALLOWED', { command: '/run_check', phase: state.phase });
+  }
+  const activeChecksBlock = blockWhenNoActiveChecks(state);
+  if (activeChecksBlock) return activeChecksBlock;
+  const candidates = state.verificationCandidates ?? [];
+  const candidate = candidates.find((c) => c.kind === kind);
+  if (!candidate) {
+    return formatBlocked('CHECK_KIND_NOT_AVAILABLE', {
+      kind,
+      available: candidates.map((c) => c.kind).join(', ') || 'none',
+    });
+  }
+  if (!state.activeChecks.includes(kind)) {
+    return formatBlocked('CHECK_NOT_ACTIVE', {
+      checkId: kind,
+      activeChecks: state.activeChecks.join(', '),
+    });
+  }
+  return { checkId: kind, candidate };
+}
+
+function blockWhenNoActiveChecks(state: SessionState): string | null {
+  if (state.activeChecks.length > 0) return null;
+  const evidence = evaluateValidationEvidence(state);
+  return evidence.blocked && evidence.code !== null
+    ? formatBlocked(evidence.code)
+    : formatBlocked('NO_ACTIVE_CHECKS');
+}
+
+function buildValidationResult(
+  checkId: string,
+  evidence: Awaited<ReturnType<typeof executeCheck>>,
+  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined,
+): ValidationResult {
+  return {
+    checkId,
+    passed: evidence.passed,
+    detail: formatValidationDetail(evidence),
+    executedAt: evidence.startedAt,
+    kind: evidence.kind,
+    command: evidence.command,
+    exitCode: evidence.exitCode,
+    executionMs: evidence.executionMs,
+    outputDigest: evidence.outputDigest,
+    timedOut: evidence.timedOut,
+    derivedRepairGuidance,
+  };
+}
+
+function formatValidationDetail(evidence: Awaited<ReturnType<typeof executeCheck>>): string {
+  if (evidence.timedOut) return `Timed out after ${evidence.executionMs}ms`;
+  if (evidence.passed) return `Passed (exit 0, ${evidence.executionMs}ms)`;
+  return `Failed (exit ${evidence.exitCode}, ${evidence.executionMs}ms)`;
+}
+
+function mergeValidationResult(
+  state: SessionState,
+  validationResult: ValidationResult,
+): ValidationResult[] {
+  return [
+    ...state.validation.filter((v) => v.checkId !== validationResult.checkId),
+    validationResult,
+  ];
+}
+
+function buildNextValidationState(
+  state: SessionState,
+  validation: ValidationResult[],
+  passedIds: Set<string>,
+): SessionState {
+  const allPassed = state.activeChecks.every((id) => passedIds.has(id));
+  return {
+    ...state,
+    validation,
+    error: null,
+    ...(allPassed ? {} : { selfReview: null, reviewDecision: null }),
+  };
+}
+
+function formatRunCheckResponse(input: {
+  kind: string;
+  evidence: Awaited<ReturnType<typeof executeCheck>>;
+  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
+  originalState: SessionState;
+  passedIds: Set<string>;
+  advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
+}): ToolResult {
+  const { kind, evidence, derivedRepairGuidance, originalState, passedIds, advanced } = input;
+  const { state: finalState, evalResult: ev, transitions } = advanced;
+  return appendNextAction(
+    JSON.stringify({
+      phase: finalState.phase,
+      status: formatRunCheckStatus(kind, evidence),
+      evidence: {
+        kind: evidence.kind,
+        command: evidence.command,
+        exitCode: evidence.exitCode,
+        passed: evidence.passed,
+        executionMs: evidence.executionMs,
+        outputDigest: evidence.outputDigest,
+        timedOut: evidence.timedOut,
+      },
+      derivedRepairGuidance,
+      remainingChecks: originalState.activeChecks.filter((id) => !passedIds.has(id)),
+      next: formatEval(ev),
+      _audit: { transitions },
+    }),
+    finalState,
+  );
+}
+
+function formatRunCheckStatus(
+  kind: string,
+  evidence: Awaited<ReturnType<typeof executeCheck>>,
+): string {
+  if (evidence.passed) return `Check '${kind}' passed.`;
+  if (evidence.timedOut) return `Check '${kind}' timed out.`;
+  return `Check '${kind}' failed (exit ${evidence.exitCode}).`;
+}

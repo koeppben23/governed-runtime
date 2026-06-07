@@ -234,41 +234,26 @@ const SLOT_ARTIFACT_KIND: Readonly<Record<string, string>> = {
  * - validation: all active checks must pass (not just "some results exist")
  * - evidenceReviewDecision: COMPLETE phase with no error
  */
+const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phaseOrd: number) => boolean> = {
+  ticket: (s) => s.ticket !== null,
+  architecture: (s) => s.architecture !== null,
+  plan: (s) => s.plan !== null,
+  selfReview: (s) => s.selfReview !== null,
+  planReviewDecision: (_s, phaseOrd) => phaseOrd >= PHASE_ORDER['VALIDATION'],
+  validation: (s) =>
+    s.validation.length > 0 &&
+    s.activeChecks.length > 0 &&
+    s.activeChecks.every((id) => s.validation.some((v) => v.checkId === id && v.passed)),
+  implementation: (s) => s.implementation !== null,
+  implReview: (s) => s.implReview !== null,
+  evidenceReviewDecision: (s) => s.phase === 'COMPLETE' && s.error === null,
+  archReviewDecision: (s) => s.phase === 'ARCH_COMPLETE' && s.error === null,
+};
+
 function isSlotPresent(state: SessionState, slot: string): boolean {
   const phaseOrd = PHASE_ORDER[state.phase];
-
-  switch (slot) {
-    case 'ticket':
-      return state.ticket !== null;
-    case 'architecture':
-      return state.architecture !== null;
-    case 'plan':
-      return state.plan !== null;
-    case 'selfReview':
-      return state.selfReview !== null;
-    case 'planReviewDecision':
-      // Topology invariant: if we reached VALIDATION or beyond,
-      // PLAN_REVIEW was passed with APPROVE. No other path exists.
-      return phaseOrd >= PHASE_ORDER['VALIDATION'];
-    case 'validation':
-      return (
-        state.validation.length > 0 &&
-        state.activeChecks.length > 0 &&
-        state.activeChecks.every((id) => state.validation.some((v) => v.checkId === id && v.passed))
-      );
-    case 'implementation':
-      return state.implementation !== null;
-    case 'implReview':
-      return state.implReview !== null;
-    case 'evidenceReviewDecision':
-      // Topology invariant: COMPLETE with no error means EVIDENCE_REVIEW → APPROVE.
-      return state.phase === 'COMPLETE' && state.error === null;
-    case 'archReviewDecision':
-      // Topology invariant: ARCH_COMPLETE means ARCH_REVIEW → APPROVE.
-      return state.phase === 'ARCH_COMPLETE' && state.error === null;
-    default:
-      return false;
-  }
+  const fn = SLOT_PRESENT_CHECKS[slot];
+  return fn ? fn(state, phaseOrd) : false;
 }
 
 /**
@@ -282,61 +267,60 @@ function isSlotFailed(state: SessionState, slot: string): boolean {
   return false;
 }
 
+const SLOT_DETAIL_FNS: Record<
+  string,
+  (state: SessionState, phaseOrd: number) => string | undefined
+> = {
+  ticket: (s) =>
+    s.ticket ? `source: ${s.ticket.source}, digest: ${s.ticket.digest.slice(0, 12)}...` : undefined,
+  architecture: (s) =>
+    s.architecture
+      ? `${s.architecture.id}: ${s.architecture.title}, status: ${s.architecture.status}`
+      : undefined,
+  plan: (s) =>
+    s.plan
+      ? `v${s.plan.history.length + 1}, digest: ${s.plan.current.digest.slice(0, 12)}...`
+      : undefined,
+  selfReview: (s) =>
+    s.selfReview
+      ? `iteration ${s.selfReview.iteration}/${s.selfReview.maxIterations}, verdict: ${s.selfReview.verdict}`
+      : undefined,
+  planReviewDecision: (_s, phaseOrd) =>
+    phaseOrd >= PHASE_ORDER['VALIDATION'] ? 'Approved (verified by topology invariant)' : undefined,
+  validation: (s) => {
+    if (s.validation.length === 0) return undefined;
+    const passed = s.validation.filter((v) => v.passed).length;
+    const total = s.validation.length;
+    const failedIds = s.validation.filter((v) => !v.passed).map((v) => v.checkId);
+    return failedIds.length > 0
+      ? `${passed}/${total} passed, failed: ${failedIds.join(', ')}`
+      : `${passed}/${total} passed`;
+  },
+  implementation: (s) =>
+    s.implementation
+      ? `${s.implementation.changedFiles.length} files changed, digest: ${s.implementation.digest.slice(0, 12)}...`
+      : undefined,
+  implReview: (s) =>
+    s.implReview
+      ? `iteration ${s.implReview.iteration}/${s.implReview.maxIterations}, verdict: ${s.implReview.verdict}`
+      : undefined,
+  evidenceReviewDecision: (s) =>
+    s.phase === 'COMPLETE' && s.error === null
+      ? 'Approved (verified by topology invariant)'
+      : s.error
+        ? `Session has error: ${s.error.code}`
+        : undefined,
+  archReviewDecision: (s) =>
+    s.phase === 'ARCH_COMPLETE' && s.error === null
+      ? 'Approved (verified by topology invariant)'
+      : undefined,
+};
+
 /** Get a human-readable detail string for a slot. */
 function getSlotDetail(state: SessionState, slot: string): string | undefined {
-  switch (slot) {
-    case 'ticket':
-      return state.ticket
-        ? `source: ${state.ticket.source}, digest: ${state.ticket.digest.slice(0, 12)}...`
-        : undefined;
-    case 'architecture':
-      return state.architecture
-        ? `${state.architecture.id}: ${state.architecture.title}, status: ${state.architecture.status}`
-        : undefined;
-    case 'plan':
-      return state.plan
-        ? `v${state.plan.history.length + 1}, digest: ${state.plan.current.digest.slice(0, 12)}...`
-        : undefined;
-    case 'selfReview':
-      return state.selfReview
-        ? `iteration ${state.selfReview.iteration}/${state.selfReview.maxIterations}, verdict: ${state.selfReview.verdict}`
-        : undefined;
-    case 'planReviewDecision': {
-      const phaseOrd = PHASE_ORDER[state.phase];
-      return phaseOrd >= PHASE_ORDER['VALIDATION']
-        ? 'Approved (verified by topology invariant)'
-        : undefined;
-    }
-    case 'validation': {
-      if (state.validation.length === 0) return undefined;
-      const passed = state.validation.filter((v) => v.passed).length;
-      const total = state.validation.length;
-      const failedIds = state.validation.filter((v) => !v.passed).map((v) => v.checkId);
-      return failedIds.length > 0
-        ? `${passed}/${total} passed, failed: ${failedIds.join(', ')}`
-        : `${passed}/${total} passed`;
-    }
-    case 'implementation':
-      return state.implementation
-        ? `${state.implementation.changedFiles.length} files changed, digest: ${state.implementation.digest.slice(0, 12)}...`
-        : undefined;
-    case 'implReview':
-      return state.implReview
-        ? `iteration ${state.implReview.iteration}/${state.implReview.maxIterations}, verdict: ${state.implReview.verdict}`
-        : undefined;
-    case 'evidenceReviewDecision':
-      return state.phase === 'COMPLETE' && state.error === null
-        ? 'Approved (verified by topology invariant)'
-        : state.error
-          ? `Session has error: ${state.error.code}`
-          : undefined;
-    case 'archReviewDecision':
-      return state.phase === 'ARCH_COMPLETE' && state.error === null
-        ? 'Approved (verified by topology invariant)'
-        : undefined;
-    default:
-      return undefined;
-  }
+  const phaseOrd = PHASE_ORDER[state.phase];
+  const fn = SLOT_DETAIL_FNS[slot];
+  return fn ? fn(state, phaseOrd) : undefined;
 }
 
 // ─── Flow Detection ───────────────────────────────────────────────────────────
@@ -390,115 +374,91 @@ const ARCH_SLOT_LABELS: Readonly<Record<string, string>> = {
  * @param state - Current session state.
  * @returns Structured completeness report.
  */
-export function evaluateCompleteness(state: SessionState): CompletenessReport {
-  // Determine which flow we're in and get appropriate slots
-  const isArchFlow = ARCHITECTURE_FLOW_PHASES.has(state.phase);
-  const isReviewFlow = REVIEW_FLOW_PHASES.has(state.phase);
+function determineSlotStatus(
+  isRequired: boolean,
+  failed: boolean,
+  present: boolean,
+): EvidenceSlotStatus['status'] {
+  if (!isRequired) return 'not_yet_required';
+  if (failed) return 'failed';
+  if (present) return 'complete';
+  return 'missing';
+}
 
-  let slots: EvidenceSlotStatus[];
+function buildSlotEntry(
+  state: SessionState,
+  slot: string,
+  isRequired: boolean,
+  label: string,
+): EvidenceSlotStatus {
+  return {
+    slot,
+    label,
+    required: isRequired,
+    present: isSlotPresent(state, slot),
+    status: determineSlotStatus(isRequired, isSlotFailed(state, slot), isSlotPresent(state, slot)),
+    detail: getSlotDetail(state, slot),
+    artifactKind: SLOT_ARTIFACT_KIND[slot],
+  };
+}
 
-  if (isArchFlow) {
-    // Architecture flow: evaluate architecture-specific slots
-    const currentOrd = ARCH_PHASE_ORDER[state.phase] ?? -1;
-    slots = ARCH_SLOTS.map((slot) => {
-      const requiredFromOrd = ARCH_SLOT_REQUIRED_FROM[slot] ?? 99;
-      const isRequired = currentOrd >= requiredFromOrd;
-      const present = isSlotPresent(state, slot);
-      const failed = isSlotFailed(state, slot);
-
-      let status: EvidenceSlotStatus['status'];
-      if (!isRequired) {
-        status = 'not_yet_required';
-      } else if (failed) {
-        status = 'failed';
-      } else if (present) {
-        status = 'complete';
-      } else {
-        status = 'missing';
-      }
-
-      return {
-        slot,
-        label: ARCH_SLOT_LABELS[slot] ?? slot,
-        required: isRequired,
-        present,
-        status,
-        detail: getSlotDetail(state, slot),
-        artifactKind: SLOT_ARTIFACT_KIND[slot],
-      };
-    });
-  } else if (isReviewFlow) {
-    // Review flow: no evidence slots required (report is standalone artifact)
-    slots = [];
-  } else {
-    // Ticket flow (including READY): evaluate standard slots
-    const currentPhaseOrd = PHASE_ORDER[state.phase];
-    slots = ALL_SLOTS.map((slot) => {
-      const requiredFromOrd = SLOT_REQUIRED_FROM[slot] ?? 99;
-      const isRequired = currentPhaseOrd >= requiredFromOrd;
-      const present = isSlotPresent(state, slot);
-      const failed = isSlotFailed(state, slot);
-
-      let status: EvidenceSlotStatus['status'];
-      if (!isRequired) {
-        status = 'not_yet_required';
-      } else if (failed) {
-        status = 'failed';
-      } else if (present) {
-        status = 'complete';
-      } else {
-        status = 'missing';
-      }
-
-      return {
-        slot,
-        label: SLOT_LABELS[slot] ?? slot,
-        required: isRequired,
-        present,
-        status,
-        detail: getSlotDetail(state, slot),
-        artifactKind: SLOT_ARTIFACT_KIND[slot],
-      };
-    });
-  }
-
-  // ── Evaluate four-eyes principle ───────────────────────────
+function evaluateFourEyes(state: SessionState): FourEyesStatus {
   const fourEyesRequired = state.policySnapshot?.allowSelfApproval === false;
   const decidedBy = state.reviewDecision?.decidedBy ?? null;
   const fourEyesSatisfied =
     !fourEyesRequired || (decidedBy !== null && decidedBy !== state.initiatedBy);
-
-  let fourEyesDetail: string;
-  if (!fourEyesRequired) {
-    fourEyesDetail = 'Four-eyes not required by policy';
-  } else if (decidedBy === null) {
-    fourEyesDetail = 'Four-eyes pending: no review decision recorded yet';
-  } else if (fourEyesSatisfied) {
-    fourEyesDetail = `Four-eyes satisfied: initiator=${state.initiatedBy}, reviewer=${decidedBy}`;
-  } else {
-    fourEyesDetail = `Four-eyes VIOLATED: initiator and reviewer are the same person (${state.initiatedBy})`;
-  }
-
-  const fourEyes: FourEyesStatus = {
+  let detail: string;
+  if (!fourEyesRequired) detail = 'Four-eyes not required by policy';
+  else if (decidedBy === null) detail = 'Four-eyes pending: no review decision recorded yet';
+  else if (fourEyesSatisfied)
+    detail = `Four-eyes satisfied: initiator=${state.initiatedBy}, reviewer=${decidedBy}`;
+  else
+    detail = `Four-eyes VIOLATED: initiator and reviewer are the same person (${state.initiatedBy})`;
+  return {
     required: fourEyesRequired,
     satisfied: fourEyesSatisfied,
     initiatedBy: state.initiatedBy,
     decidedBy,
-    detail: fourEyesDetail,
+    detail,
   };
+}
 
-  // ── Summary counts ─────────────────────────────────────────
+export function evaluateCompleteness(state: SessionState): CompletenessReport {
+  const isArchFlow = ARCHITECTURE_FLOW_PHASES.has(state.phase);
+  const isReviewFlow = REVIEW_FLOW_PHASES.has(state.phase);
+  let slots: EvidenceSlotStatus[];
+
+  if (isArchFlow) {
+    const currentOrd = ARCH_PHASE_ORDER[state.phase] ?? -1;
+    slots = ARCH_SLOTS.map((slot) =>
+      buildSlotEntry(
+        state,
+        slot,
+        currentOrd >= (ARCH_SLOT_REQUIRED_FROM[slot] ?? 99),
+        ARCH_SLOT_LABELS[slot] ?? slot,
+      ),
+    );
+  } else if (isReviewFlow) {
+    slots = [];
+  } else {
+    const currentPhaseOrd = PHASE_ORDER[state.phase];
+    slots = ALL_SLOTS.map((slot) =>
+      buildSlotEntry(
+        state,
+        slot,
+        currentPhaseOrd >= (SLOT_REQUIRED_FROM[slot] ?? 99),
+        SLOT_LABELS[slot] ?? slot,
+      ),
+    );
+  }
+
+  const fourEyes = evaluateFourEyes(state);
   const complete = slots.filter((s) => s.status === 'complete').length;
   const missing = slots.filter((s) => s.status === 'missing').length;
   const notYetRequired = slots.filter((s) => s.status === 'not_yet_required').length;
   const failed = slots.filter((s) => s.status === 'failed').length;
-
   const overallComplete =
-    missing === 0 &&
-    failed === 0 &&
-    fourEyesSatisfied &&
-    // READY is the routing phase — no flow selected, so never "complete"
-    state.phase !== 'READY';
+    missing === 0 && failed === 0 && fourEyes.satisfied && state.phase !== 'READY';
 
   return {
     sessionId: state.id,
@@ -507,12 +467,6 @@ export function evaluateCompleteness(state: SessionState): CompletenessReport {
     overallComplete,
     slots,
     fourEyes,
-    summary: {
-      total: ALL_SLOTS.length,
-      complete,
-      missing,
-      notYetRequired,
-      failed,
-    },
+    summary: { total: ALL_SLOTS.length, complete, missing, notYetRequired, failed },
   };
 }

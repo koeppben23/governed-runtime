@@ -428,14 +428,25 @@ export interface AssuranceAuditDeps {
  */
 export async function recordAssuranceWithAudit(
   deps: AssuranceAuditDeps,
-  sessDir: string,
-  sessionId: string,
-  phase: string,
-  stateMutation: (state: SessionState, now: string) => SessionState,
-  auditEventName: string,
-  auditDetail: Record<string, unknown>,
-  auditFailureBehavior: 'block' | 'warn',
+  opts: {
+    sessDir: string;
+    sessionId: string;
+    phase: string;
+    stateMutation: (state: SessionState, now: string) => SessionState;
+    auditEventName: string;
+    auditDetail: Record<string, unknown>;
+    auditFailureBehavior: 'block' | 'warn';
+  },
 ): Promise<{ auditOk: boolean; block?: boolean; code?: string; reason?: string }> {
+  const {
+    sessDir,
+    sessionId,
+    phase,
+    stateMutation,
+    auditEventName,
+    auditDetail,
+    auditFailureBehavior,
+  } = opts;
   await deps.updateReviewAssurance(sessDir, stateMutation);
 
   try {

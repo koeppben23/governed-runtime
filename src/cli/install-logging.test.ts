@@ -14,14 +14,24 @@ import { getAdapterLogger, resetAdapterLogger } from '../logging/adapter-logger.
 import { withTestEnv } from '../integration/test-helpers.js';
 
 describe('CLI structured logging', () => {
+  let originalCwd: string;
+
   beforeEach(() => {
+    originalCwd = process.cwd();
     resetAdapterLogger();
   });
 
   afterEach(() => {
+    process.chdir(originalCwd);
     resetAdapterLogger();
     vi.restoreAllMocks();
   });
+
+  async function createTempRepo(prefix: string): Promise<string> {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+    await fs.mkdir(path.join(tmpDir, '.git'));
+    return tmpDir;
+  }
 
   describe('HAPPY', () => {
     it('--log-mode flag is parsed', () => {
@@ -37,12 +47,12 @@ describe('CLI structured logging', () => {
 
   describe('SMOKE', () => {
     it('doctor with --log-mode=console writes structured logs to stderr', async () => {
-      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-cli-log-'));
+      const tmpDir = await createTempRepo('fg-cli-log-');
       const restoreEnv = withTestEnv({
         OPENCODE_CONFIG_DIR: tmpDir,
         FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
       });
-      await fs.mkdir(path.join(tmpDir, '.git'));
+      process.chdir(tmpDir);
 
       const captured: string[] = [];
       const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
@@ -67,12 +77,12 @@ describe('CLI structured logging', () => {
     });
 
     it('--log-mode=file does NOT write to stderr', async () => {
-      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-cli-file-'));
+      const tmpDir = await createTempRepo('fg-cli-file-');
       const restoreEnv = withTestEnv({
         OPENCODE_CONFIG_DIR: tmpDir,
         FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
       });
-      await fs.mkdir(path.join(tmpDir, '.git'));
+      process.chdir(tmpDir);
 
       const capturedAll: string[] = [];
       vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
@@ -149,12 +159,12 @@ describe('CLI structured logging', () => {
     });
 
     it('adapter logger is reset after CLI main() completes', async () => {
-      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-cli-cln-'));
+      const tmpDir = await createTempRepo('fg-cli-cln-');
       const restoreEnv = withTestEnv({
         OPENCODE_CONFIG_DIR: tmpDir,
         FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
       });
-      await fs.mkdir(path.join(tmpDir, '.git'));
+      process.chdir(tmpDir);
       vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       vi.spyOn(process.stdout, 'write').mockReturnValue(true);
 

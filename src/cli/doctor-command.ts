@@ -74,97 +74,82 @@ async function checkedRead(filePath: string, checks: DoctorCheck[]): Promise<str
 }
 
 /** Check managed artifacts: mandates.md, tool wrapper, plugin wrapper, commands. */
-async function checkManagedArtifacts(target: string): Promise<DoctorCheck[]> {
-  const checks: DoctorCheck[] = [];
-
-  // 1. flowguard-mandates.md (digest verification)
+async function checkMandatesDigest(target: string, checks: DoctorCheck[]): Promise<void> {
   const mandatesPath = join(target, MANDATES_FILENAME);
   const mandatesContent = await checkedRead(mandatesPath, checks);
-  if (!mandatesContent) {
-    // checkedRead already pushed missing or error
-  } else if (!isManagedArtifact(mandatesContent)) {
+  if (!mandatesContent) return;
+  if (!isManagedArtifact(mandatesContent)) {
     checks.push({ file: mandatesPath, status: 'unmanaged', detail: 'no managed-artifact header' });
-  } else {
-    const fileDigest = extractManagedDigest(mandatesContent);
-    const expectedDigest = computeMandatesDigest();
-    const fileVersion = extractManagedVersion(mandatesContent);
-    const fileBody = extractManagedBody(mandatesContent);
-
-    if (!fileDigest) {
-      checks.push({
-        file: mandatesPath,
-        status: 'error',
-        detail: 'managed header found but no digest',
-      });
-    } else if (fileDigest !== expectedDigest) {
-      checks.push({
-        file: mandatesPath,
-        status: 'modified',
-        detail: 'content-digest mismatch — file was locally edited',
-      });
-    } else if (fileBody !== null && sha256(fileBody) !== fileDigest) {
-      checks.push({
-        file: mandatesPath,
-        status: 'modified',
-        detail: 'content-digest mismatch — file body was locally edited',
-      });
-    } else if (fileVersion !== PACKAGE_VERSION()) {
-      checks.push({
-        file: mandatesPath,
-        status: 'version_mismatch',
-        detail: `header v${fileVersion} != installed v${PACKAGE_VERSION()}`,
-      });
-    } else {
-      checks.push({ file: mandatesPath, status: 'ok' });
-    }
+    return;
   }
+  const fileDigest = extractManagedDigest(mandatesContent);
+  const expectedDigest = computeMandatesDigest();
+  const fileVersion = extractManagedVersion(mandatesContent);
+  const fileBody = extractManagedBody(mandatesContent);
 
-  // 2. Tool wrapper
-  const toolPath = join(target, 'tools', 'flowguard.ts');
-  const toolContent = await checkedRead(toolPath, checks);
-  if (!toolContent) {
-    // checkedRead already pushed missing or error
-  } else if (toolContent.trim() !== TOOL_WRAPPER.trim()) {
-    checks.push({ file: toolPath, status: 'modified', detail: 'content differs from template' });
+  if (!fileDigest) {
+    checks.push({
+      file: mandatesPath,
+      status: 'error',
+      detail: 'managed header found but no digest',
+    });
+  } else if (fileDigest !== expectedDigest) {
+    checks.push({
+      file: mandatesPath,
+      status: 'modified',
+      detail: 'content-digest mismatch — file was locally edited',
+    });
+  } else if (fileBody !== null && sha256(fileBody) !== fileDigest) {
+    checks.push({
+      file: mandatesPath,
+      status: 'modified',
+      detail: 'content-digest mismatch — file body was locally edited',
+    });
+  } else if (fileVersion !== PACKAGE_VERSION()) {
+    checks.push({
+      file: mandatesPath,
+      status: 'version_mismatch',
+      detail: `header v${fileVersion} != installed v${PACKAGE_VERSION()}`,
+    });
   } else {
-    checks.push({ file: toolPath, status: 'ok' });
+    checks.push({ file: mandatesPath, status: 'ok' });
   }
+}
 
-  // 3. Plugin wrapper
-  const pluginPath = join(target, 'plugins', 'flowguard-audit.ts');
-  const pluginContent = await checkedRead(pluginPath, checks);
-  if (!pluginContent) {
-    // checkedRead already pushed missing or error
-  } else if (pluginContent.trim() !== PLUGIN_WRAPPER.trim()) {
-    checks.push({ file: pluginPath, status: 'modified', detail: 'content differs from template' });
+async function checkWrapperFile(
+  target: string,
+  subPath: string,
+  expected: string,
+  checks: DoctorCheck[],
+): Promise<void> {
+  const filePath = join(target, subPath);
+  const content = await checkedRead(filePath, checks);
+  if (!content) return;
+  if (content.trim() !== expected.trim()) {
+    checks.push({ file: filePath, status: 'modified', detail: 'content differs from template' });
   } else {
-    checks.push({ file: pluginPath, status: 'ok' });
+    checks.push({ file: filePath, status: 'ok' });
   }
+}
 
-  // 4. Command files
+async function checkCommandFiles(target: string, checks: DoctorCheck[]): Promise<void> {
   for (const [name, expectedContent] of Object.entries(COMMANDS)) {
-    const cmdPath = join(target, 'commands', name);
-    const cmdContent = await checkedRead(cmdPath, checks);
-    if (!cmdContent) {
-      // checkedRead already pushed missing or error
-    } else if (cmdContent.trim() !== expectedContent.trim()) {
-      checks.push({ file: cmdPath, status: 'modified', detail: 'content differs from template' });
-    } else {
-      checks.push({ file: cmdPath, status: 'ok' });
-    }
+    await checkWrapperFile(target, `commands/${name}`, expectedContent, checks);
   }
+}
 
-  // 5. Reviewer agent definition (warn, not error — system degrades gracefully)
+async function checkReviewerAgent(target: string, checks: DoctorCheck[]): Promise<void> {
   const agentPath = join(target, 'agents', REVIEWER_AGENT_FILENAME);
   const agentContent = await checkedRead(agentPath, checks);
   if (!agentContent) {
-    // checkedRead pushed missing or error — override 'missing' to 'warn'
     const last = checks[checks.length - 1];
     if (last && last.file === agentPath && last.status === 'missing') {
       last.status = 'warn';
       last.detail = 'reviewer agent not installed — run flowguard install --force to restore';
     }
-  } else if (!agentContent.startsWith('---')) {
+    return;
+  }
+  if (!agentContent.startsWith('---')) {
     checks.push({
       file: agentPath,
       status: 'warn',
@@ -173,7 +158,15 @@ async function checkManagedArtifacts(target: string): Promise<DoctorCheck[]> {
   } else {
     checks.push({ file: agentPath, status: 'ok' });
   }
+}
 
+async function checkManagedArtifacts(target: string): Promise<DoctorCheck[]> {
+  const checks: DoctorCheck[] = [];
+  await checkMandatesDigest(target, checks);
+  await checkWrapperFile(target, 'tools/flowguard.ts', TOOL_WRAPPER, checks);
+  await checkWrapperFile(target, 'plugins/flowguard-audit.ts', PLUGIN_WRAPPER, checks);
+  await checkCommandFiles(target, checks);
+  await checkReviewerAgent(target, checks);
   return checks;
 }
 
@@ -233,7 +226,6 @@ async function checkOpencodeInstructions(
   scope: InstallScope,
 ): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
-
   const opencodeJsonPath = resolveOpencodeConfigPath(scope, target);
   const opencodeContent = await checkedRead(opencodeJsonPath, checks);
   if (!opencodeContent) return checks;
@@ -252,7 +244,6 @@ async function checkOpencodeInstructions(
         detail: `instructions array does not contain "${entry}"`,
       });
     }
-
     if (instructions.includes(LEGACY_INSTRUCTION_ENTRY)) {
       checks.push({
         file: opencodeJsonPath,
@@ -270,32 +261,39 @@ async function checkOpencodeInstructions(
       checks.push({ file: opencodeJsonPath, status: 'ok' });
     }
 
-    // #107: Detect desktop-owned config without task hardening
-    // Desktop-owned = has plugin field OR has non-FlowGuard instructions (mirrors installer logic)
-    const hasPluginField = Object.prototype.hasOwnProperty.call(parsed, 'plugin');
-    const hasDesktopInstructions = hasNonFlowGuardInstructions(instructions);
-    if (hasPluginField || hasDesktopInstructions) {
-      const agent = parsed['agent'] as Record<string, unknown> | undefined;
-      const buildPerms = (agent?.['build'] as Record<string, unknown> | undefined)?.[
-        'permission'
-      ] as Record<string, unknown> | undefined;
-      const taskPerms = buildPerms?.['task'] as Record<string, unknown> | undefined;
-      const hasTaskHardening =
-        taskPerms?.['*'] === 'deny' && taskPerms?.[REVIEWER_SUBAGENT_TYPE] === 'allow';
-      if (!hasTaskHardening) {
-        checks.push({
-          file: opencodeJsonPath,
-          status: 'warn',
-          detail:
-            'desktop-owned OpenCode config does not include FlowGuard reviewer task hardening; installer does not modify task permissions for desktop-owned configs',
-        });
-      }
-    }
+    checkDesktopTaskHardening(parsed, instructions, opencodeJsonPath, checks);
   } catch {
     checks.push({ file: opencodeJsonPath, status: 'error', detail: 'malformed JSON' });
   }
 
   return checks;
+}
+
+function checkDesktopTaskHardening(
+  parsed: Record<string, unknown>,
+  instructions: string[],
+  path: string,
+  checks: DoctorCheck[],
+): void {
+  const hasPluginField = Object.prototype.hasOwnProperty.call(parsed, 'plugin');
+  const hasDesktopInstructions = hasNonFlowGuardInstructions(instructions);
+  if (!hasPluginField && !hasDesktopInstructions) return;
+
+  const agent = parsed['agent'] as Record<string, unknown> | undefined;
+  const buildPerms = (agent?.['build'] as Record<string, unknown> | undefined)?.['permission'] as
+    | Record<string, unknown>
+    | undefined;
+  const taskPerms = buildPerms?.['task'] as Record<string, unknown> | undefined;
+  const hasTaskHardening =
+    taskPerms?.['*'] === 'deny' && taskPerms?.[REVIEWER_SUBAGENT_TYPE] === 'allow';
+  if (!hasTaskHardening) {
+    checks.push({
+      file: path,
+      status: 'warn',
+      detail:
+        'desktop-owned OpenCode config does not include FlowGuard reviewer task hardening; installer does not modify task permissions for desktop-owned configs',
+    });
+  }
 }
 
 /** Check FlowGuard config (flat path). Scope-aware: checks only the relevant config for the scope. */
@@ -679,10 +677,53 @@ export async function checkPluginActivation(target: string): Promise<DoctorCheck
   return checks;
 }
 
+async function checkObligationHandshake(
+  pointer: { sessionId: string; worktree: string },
+  pointerPath: string,
+  checks: DoctorCheck[],
+): Promise<void> {
+  const { computeFingerprint } = await import('../adapters/workspace/fingerprint.js');
+  const { sessionDir } = await import('../adapters/workspace/init.js');
+  const fp = await computeFingerprint(pointer.worktree);
+  const sessDir = sessionDir(fp.fingerprint, pointer.sessionId);
+
+  if (!existsSync(join(sessDir, 'session-state.json'))) {
+    checks.push({
+      file: pointerPath,
+      status: 'warn',
+      detail: 'Session state file not found — cannot verify handshake',
+    });
+    return;
+  }
+
+  const stateRaw = readFileSync(join(sessDir, 'session-state.json'), 'utf-8');
+  const state = JSON.parse(stateRaw) as Record<string, unknown>;
+  const assurance = state.reviewAssurance as
+    | { obligations?: Array<{ status?: string; pluginHandshakeAt?: unknown }> }
+    | undefined;
+
+  const pendingObligation = assurance?.obligations?.find((o) => o.status === 'pending');
+  if (!pendingObligation) return;
+
+  if (pendingObligation.pluginHandshakeAt == null) {
+    checks.push({
+      file: pointerPath,
+      status: 'error',
+      detail:
+        'Pending review obligation without plugin handshake — plugin enforcement hooks are not active. Restart OpenCode and verify flowguard-audit plugin loads.',
+    });
+  } else {
+    checks.push({
+      file: pointerPath,
+      status: 'ok',
+      detail: 'Last session plugin handshake present',
+    });
+  }
+}
+
 /** Check if the last session has a pending review obligation without plugin handshake. */
 export async function checkLastSessionHandshake(scope: InstallScope): Promise<DoctorCheck[]> {
   const checks: DoctorCheck[] = [];
-  // Session pointer lives in the global config dir only — not relevant for repo-scope doctor.
   if (scope !== 'global') return checks;
 
   const pointerPath = join(
@@ -701,49 +742,14 @@ export async function checkLastSessionHandshake(scope: InstallScope): Promise<Do
       });
       return checks;
     }
-
-    const { computeFingerprint } = await import('../adapters/workspace/fingerprint.js');
-    const { sessionDir } = await import('../adapters/workspace/init.js');
-    const fp = await computeFingerprint(pointer.worktree);
-    const sessDir = sessionDir(fp.fingerprint, pointer.sessionId);
-
-    if (!existsSync(join(sessDir, 'session-state.json'))) {
-      checks.push({
-        file: pointerPath,
-        status: 'warn',
-        detail: 'Session state file not found — cannot verify handshake',
-      });
-      return checks;
-    }
-
-    const stateRaw = readFileSync(join(sessDir, 'session-state.json'), 'utf-8');
-    const state = JSON.parse(stateRaw) as Record<string, unknown>;
-    const assurance = state.reviewAssurance as
-      | { obligations?: Array<{ status?: string; pluginHandshakeAt?: unknown }> }
-      | undefined;
-
-    const pendingObligation = assurance?.obligations?.find((o) => o.status === 'pending');
-    if (!pendingObligation) return checks;
-
-    if (pendingObligation.pluginHandshakeAt == null) {
-      checks.push({
-        file: pointerPath,
-        status: 'error',
-        detail:
-          'Pending review obligation without plugin handshake — plugin enforcement hooks are not active. Restart OpenCode and verify flowguard-audit plugin loads.',
-      });
-    } else {
-      checks.push({
-        file: pointerPath,
-        status: 'ok',
-        detail: 'Last session plugin handshake present',
-      });
-    }
+    await checkObligationHandshake(
+      pointer as { sessionId: string; worktree: string },
+      pointerPath,
+      checks,
+    );
   } catch (err) {
     const code = (err as NodeJS.ErrnoException)?.code;
-    if (code === 'ENOENT') {
-      // Session pointer file doesn't exist — normal, no report
-    } else {
+    if (code !== 'ENOENT') {
       checks.push({
         file: pointerPath,
         status: 'warn',

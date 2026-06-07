@@ -38,6 +38,53 @@ export interface CompactionDeps {
  *
  * @returns Context string to append to compaction summary, or null if unavailable.
  */
+function buildCompactionLines(
+  state: {
+    phase: string;
+    id?: string;
+    ticket?: { text?: string } | null;
+    plan?: { current?: { body?: string } } | null;
+    policySnapshot?: { mode?: string } | null;
+    reviewAssurance?: { obligations?: Array<{ status?: string }> } | null;
+  },
+  sessionId: string,
+  pendingObligations: Array<{ status?: string }>,
+): string[] {
+  const phaseLabel = PHASE_LABELS[state.phase as keyof typeof PHASE_LABELS] ?? state.phase;
+  const mode = state.policySnapshot?.mode ?? 'unknown';
+  const lines: string[] = [
+    '## FlowGuard Governance State (preserved across compaction)',
+    '',
+    `- **Phase**: ${phaseLabel} (${state.phase})`,
+    `- **Policy mode**: ${mode}`,
+    `- **Session ID**: ${state.id ?? sessionId}`,
+  ];
+
+  if (state.ticket?.text)
+    lines.push(
+      `- **Ticket**: ${state.ticket.text.length > 200 ? state.ticket.text.slice(0, 200) + '...' : state.ticket.text}`,
+    );
+  if (pendingObligations.length > 0) {
+    lines.push(`- **Pending review obligations**: ${pendingObligations.length}`);
+    lines.push('  - WARNING: Do not skip pending reviews. Use FlowGuard tools to complete them.');
+  }
+  if (state.plan?.current?.body)
+    lines.push('- **Plan**: Active (approved plan exists in session state)');
+  appendMandatesSummary(lines, state.phase);
+  lines.push(
+    '',
+    'Use `/status` or `flowguard_status` to get full current state and phase-relevant mandates.',
+    'Full mandates render fallback is prompt-safety only; it does not authorize mutating runtime behavior.',
+  );
+  return lines;
+}
+
+function appendMandatesSummary(lines: string[], phase: string): void {
+  const mandatesSummary = renderCompactionMandatesSummary(phase);
+  if (mandatesSummary)
+    lines.push('', '## FlowGuard Diagnostic Mandates Summary', '', mandatesSummary);
+}
+
 export async function buildCompactionContext(
   deps: CompactionDeps,
   sessionId: string,
@@ -49,55 +96,11 @@ export async function buildCompactionContext(
     const state = await readState(sessDir);
     if (!state) return null;
 
-    const phaseLabel = PHASE_LABELS[state.phase] ?? state.phase;
-    const mode = state.policySnapshot?.mode ?? 'unknown';
     const obligations = state.reviewAssurance?.obligations ?? [];
     const pendingObligations = obligations.filter(
       (o: { status?: string }) => o.status === 'pending',
     );
-
-    const lines: string[] = [
-      '## FlowGuard Governance State (preserved across compaction)',
-      '',
-      `- **Phase**: ${phaseLabel} (${state.phase})`,
-      `- **Policy mode**: ${mode}`,
-      `- **Session ID**: ${state.id ?? sessionId}`,
-    ];
-
-    if (state.ticket?.text) {
-      const ticketPreview =
-        state.ticket.text.length > 200
-          ? state.ticket.text.slice(0, 200) + '...'
-          : state.ticket.text;
-      lines.push(`- **Ticket**: ${ticketPreview}`);
-    }
-
-    if (pendingObligations.length > 0) {
-      lines.push(`- **Pending review obligations**: ${pendingObligations.length}`);
-      lines.push('  - WARNING: Do not skip pending reviews. Use FlowGuard tools to complete them.');
-    }
-
-    if (state.plan?.current?.body) {
-      lines.push('- **Plan**: Active (approved plan exists in session state)');
-    }
-
-    const mandatesSummary = renderCompactionMandatesSummary(state.phase);
-    if (mandatesSummary) {
-      lines.push('');
-      lines.push('## FlowGuard Diagnostic Mandates Summary');
-      lines.push('');
-      lines.push(mandatesSummary);
-    }
-
-    lines.push('');
-    lines.push(
-      'Use `/status` or `flowguard_status` to get full current state and phase-relevant mandates.',
-    );
-    lines.push(
-      'Full mandates render fallback is prompt-safety only; it does not authorize mutating runtime behavior.',
-    );
-
-    return lines.join('\n');
+    return buildCompactionLines(state, sessionId, pendingObligations).join('\n');
   } catch (err) {
     deps.log.warn('compaction', 'failed to build compaction context', {
       sessionId,

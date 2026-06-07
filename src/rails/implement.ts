@@ -62,59 +62,31 @@ export interface ImplExecutors {
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
-export async function executeImplement(
+async function collectAndAdvance(
   state: SessionState,
+  work: { ticket: TicketEvidence; plan: PlanRecord },
   ctx: RailContext,
   executors: ImplExecutors,
-): Promise<RailResult> {
-  // 1. Admissibility
-  if (!isCommandAllowed(state.phase, Command.IMPLEMENT)) {
-    return blocked('COMMAND_NOT_ALLOWED', {
-      command: '/implement',
-      phase: state.phase,
-    });
-  }
-
-  // 2. Preconditions
-  if (!state.ticket) {
-    return blocked('TICKET_REQUIRED', { action: 'implementation' });
-  }
-  if (!state.plan) {
-    return blocked('PLAN_REQUIRED', { action: 'implementation' });
-  }
-  if (
-    state.activeChecks.length > 0 &&
-    !state.activeChecks.every((id) => state.validation.some((v) => v.checkId === id && v.passed))
-  ) {
-    return blocked('VALIDATION_INCOMPLETE');
-  }
-
-  // Policy-aware eval closure
-  const evalFn = createPolicyEvalFn(ctx);
-
-  // 3. Execute implementation
-  const { changedFiles, domainFiles } = await executors.execute(state.ticket, state.plan);
-
-  // 4. Create evidence
+  evalFn: ReturnType<typeof createPolicyEvalFn>,
+): Promise<{
+  currentImpl: ImplEvidence;
+  nextState: SessionState;
+  transitions: TransitionRecord[];
+}> {
+  const { changedFiles, domainFiles } = await executors.execute(work.ticket, work.plan);
   const currentImpl: ImplEvidence = {
     changedFiles,
     domainFiles,
     digest: ctx.digest(changedFiles.sort().join('\n')),
     executedAt: ctx.now(),
   };
-
-  // 5. Record in state and clear old review
   let nextState: SessionState = {
     ...state,
     implementation: currentImpl,
     implReview: null,
     error: null,
   };
-
-  // Track all transitions for audit
   const allTransitions: TransitionRecord[] = [];
-
-  // 6. Auto-advance to IMPL_REVIEW
   const evalAfterImpl = evalFn(nextState);
   if (evalAfterImpl.kind === 'transition') {
     const at = ctx.now();
@@ -132,49 +104,69 @@ export async function executeImplement(
       at,
     );
   }
+  return { currentImpl, nextState, transitions: allTransitions };
+}
 
-  // 7. Impl review loop (auto-advance, digest-stop)
-  // maxIterations from policy (SOLO=1, TEAM/REGULATED=3)
-  const maxIterations = ctx.policy?.maxImplReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS;
-
-  if (nextState.phase === 'IMPL_REVIEW') {
-    const plan = state.plan;
-    const loop = await runConvergenceLoop(currentImpl, maxIterations, async (impl, iter) => {
-      const review = await executors.reviewAndRevise(impl, plan, iter);
-      return { verdict: review.verdict, updated: review.updatedImpl };
-    });
-
-    // P1.3 slice 4b: route reviewer tool-failure to BLOCKED.
-    // See plan.ts for the parallel pattern. Both rails use the same
-    // SUBAGENT_UNABLE_TO_REVIEW reason; recovery is a fresh /implement.
-    if (loop.kind === 'blocked') {
-      return blocked('SUBAGENT_UNABLE_TO_REVIEW', {
-        obligationId: 'impl-review',
-        reason: `reviewer subagent declared the implementation unreviewable at iteration ${loop.iteration}`,
-      });
-    }
-
-    nextState = {
-      ...nextState,
-      implementation: loop.artifact,
-      implReview: buildImplReviewState(loop, ctx.now()),
-    };
-
-    // 8. Auto-advance from IMPL_REVIEW (→ EVIDENCE_REVIEW if converged) — policy-aware
-    const advanced = autoAdvance(nextState, evalFn, ctx);
-    if (advanced.kind === 'overflow') {
-      return blockedFromOverflow(advanced);
-    }
-    const { state: finalState, evalResult: result, transitions } = advanced;
-    return {
-      kind: 'ok',
-      state: finalState,
-      evalResult: result,
-      transitions: [...allTransitions, ...transitions],
-    };
+export async function executeImplement(
+  state: SessionState,
+  ctx: RailContext,
+  executors: ImplExecutors,
+): Promise<RailResult> {
+  if (!isCommandAllowed(state.phase, Command.IMPLEMENT)) {
+    return blocked('COMMAND_NOT_ALLOWED', { command: '/implement', phase: state.phase });
+  }
+  if (!state.ticket) return blocked('TICKET_REQUIRED', { action: 'implementation' });
+  if (!state.plan) return blocked('PLAN_REQUIRED', { action: 'implementation' });
+  if (
+    state.activeChecks.length > 0 &&
+    !state.activeChecks.every((id) => state.validation.some((v) => v.checkId === id && v.passed))
+  ) {
+    return blocked('VALIDATION_INCOMPLETE');
   }
 
-  // Fallback: didn't reach IMPL_REVIEW (ERROR event kept us in IMPLEMENTATION)
-  const result = evalFn(nextState);
-  return { kind: 'ok', state: nextState, evalResult: result, transitions: allTransitions };
+  const evalFn = createPolicyEvalFn(ctx);
+  const {
+    currentImpl,
+    nextState,
+    transitions: allTransitions,
+  } = await collectAndAdvance(
+    state,
+    { ticket: state.ticket, plan: state.plan },
+    ctx,
+    executors,
+    evalFn,
+  );
+
+  const maxIterations = ctx.policy?.maxImplReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS;
+  if (nextState.phase !== 'IMPL_REVIEW') {
+    const result = evalFn(nextState);
+    return { kind: 'ok', state: nextState, evalResult: result, transitions: allTransitions };
+  }
+
+  const plan = state.plan;
+  const loop = await runConvergenceLoop(currentImpl, maxIterations, async (impl, iter) => {
+    const review = await executors.reviewAndRevise(impl, plan, iter);
+    return { verdict: review.verdict, updated: review.updatedImpl };
+  });
+
+  if (loop.kind === 'blocked') {
+    return blocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId: 'impl-review',
+      reason: `reviewer subagent declared the implementation unreviewable at iteration ${loop.iteration}`,
+    });
+  }
+
+  const finalState: SessionState = {
+    ...nextState,
+    implementation: loop.artifact,
+    implReview: buildImplReviewState(loop, ctx.now()),
+  };
+  const advanced = autoAdvance(finalState, evalFn, ctx);
+  if (advanced.kind === 'overflow') return blockedFromOverflow(advanced);
+  return {
+    kind: 'ok',
+    state: advanced.state,
+    evalResult: advanced.evalResult,
+    transitions: [...allTransitions, ...advanced.transitions],
+  };
 }
