@@ -145,47 +145,6 @@ function validateAgainstObligation(
   return attestationError ? { code: attestationError, reason: 'strict_attestation_invalid' } : null;
 }
 
-async function processTransportFile(
-  file: { path: string; content: string },
-  state: SessionState,
-  obligation: ReturnType<typeof latestUnconsumedObligation> & {},
-  assurance: ReturnType<typeof ensureReviewAssurance>,
-  parentSessionId: string,
-  now: string,
-): Promise<TransportEvidenceBindResult> {
-  let parsedJson: unknown;
-  try { parsedJson = JSON.parse(file.content); }
-  catch { return { status: 'invalid', code: 'REVIEW_TRANSPORT_EVIDENCE_INVALID', reason: `review evidence transport file is not valid JSON: ${file.path}` }; }
-
-  const parsedFindings = ReviewFindingsSchema.safeParse(extractFindings(parsedJson));
-  if (!parsedFindings.success) return { status: 'invalid', code: 'REVIEW_TRANSPORT_EVIDENCE_INVALID', reason: `review evidence transport file does not contain valid ReviewFindings: ${file.path}` };
-
-  const findings = parsedFindings.data;
-  const validationError = validateAgainstObligation(findings, obligation, state.initiatedByIdentity);
-  if (validationError) {
-    return { status: 'invalid', code: validationError.code, reason: validationError.reason, ...(validationError.obligationId ? { obligationId: validationError.obligationId } : {}), ...(validationError.vars ? { vars: validationError.vars } : {}), ...(validationError.rejectionReason ? { rejectionReason: validationError.rejectionReason } : {}) };
-  }
-
-  if (state.policySnapshot?.reviewInvocationPolicy === 'host_task_required') {
-    return { status: 'invalid', code: 'HOST_SUBAGENT_TASK_REQUIRED', reason: 'host_task_required policy requires host-visible reviewer evidence; manual_attested transport evidence is not sufficient' };
-  }
-
-  const findingsHash = hashFindings(findings);
-  const existing = assurance.invocations.find((item) => item.obligationId === obligation.obligationId && item.findingsHash === findingsHash);
-  if (existing) return { status: 'already_bound', state, obligation };
-
-  const invocation = buildInvocationEvidence({
-    obligationId: obligation.obligationId, obligationType: obligation.obligationType,
-    parentSessionId, childSessionId: findings.reviewedBy.sessionId,
-    invocationMode: 'manual_attested', hostVisible: false,
-    promptHash: hashText(`${obligation.obligationType}:${obligation.iteration}:${obligation.planVersion}`),
-    findingsHash, invokedAt: findings.reviewedAt, fulfilledAt: now,
-    source: 'agent-submitted-attested', capturedVerdict: findings.overallVerdict, capturedRawFindings: findings,
-  });
-  const fulfilled = fulfillObligation(assurance, obligation.obligationId, invocation.invocationId, now);
-  return { status: 'bound', obligation, state: { ...state, reviewAssurance: appendInvocationEvidence(fulfilled, invocation) } };
-}
-
 export async function bindExternalReviewEvidence(
   sessDir: string,
   state: SessionState,
@@ -200,8 +159,91 @@ export async function bindExternalReviewEvidence(
 
   const assurance = ensureReviewAssurance(state.reviewAssurance);
   for (const file of files.reverse()) {
-    const result = await processTransportFile(file, state, obligation, assurance, parentSessionId, now);
-    if (result.status !== 'none') return result;
+    let parsedJson: unknown;
+    try {
+      parsedJson = JSON.parse(file.content);
+    } catch {
+      return {
+        status: 'invalid',
+        code: 'REVIEW_TRANSPORT_EVIDENCE_INVALID',
+        reason: `review evidence transport file is not valid JSON: ${file.path}`,
+      };
+    }
+
+    const parsedFindings = ReviewFindingsSchema.safeParse(extractFindings(parsedJson));
+    if (!parsedFindings.success) {
+      return {
+        status: 'invalid',
+        code: 'REVIEW_TRANSPORT_EVIDENCE_INVALID',
+        reason: `review evidence transport file does not contain valid ReviewFindings: ${file.path}`,
+      };
+    }
+
+    const findings = parsedFindings.data;
+    const validationError = validateAgainstObligation(
+      findings,
+      obligation,
+      state.initiatedByIdentity,
+    );
+    if (validationError) {
+      return {
+        status: 'invalid',
+        code: validationError.code,
+        reason: validationError.reason,
+        ...(validationError.obligationId ? { obligationId: validationError.obligationId } : {}),
+        ...(validationError.vars ? { vars: validationError.vars } : {}),
+        ...(validationError.rejectionReason
+          ? { rejectionReason: validationError.rejectionReason }
+          : {}),
+      };
+    }
+
+    if (state.policySnapshot?.reviewInvocationPolicy === 'host_task_required') {
+      return {
+        status: 'invalid',
+        code: 'HOST_SUBAGENT_TASK_REQUIRED',
+        reason:
+          'host_task_required policy requires host-visible reviewer evidence; manual_attested transport evidence is not sufficient',
+      };
+    }
+
+    const findingsHash = hashFindings(findings);
+    const existing = assurance.invocations.find(
+      (item) => item.obligationId === obligation.obligationId && item.findingsHash === findingsHash,
+    );
+    if (existing) return { status: 'already_bound', state, obligation };
+
+    const invocation = buildInvocationEvidence({
+      obligationId: obligation.obligationId,
+      obligationType: obligation.obligationType,
+      parentSessionId,
+      childSessionId: findings.reviewedBy.sessionId,
+      invocationMode: 'manual_attested',
+      hostVisible: false,
+      promptHash: hashText(
+        `${obligation.obligationType}:${obligation.iteration}:${obligation.planVersion}`,
+      ),
+      findingsHash,
+      invokedAt: findings.reviewedAt,
+      fulfilledAt: now,
+      source: 'agent-submitted-attested',
+      capturedVerdict: findings.overallVerdict,
+      capturedRawFindings: findings,
+    });
+    const fulfilled = fulfillObligation(
+      assurance,
+      obligation.obligationId,
+      invocation.invocationId,
+      now,
+    );
+    return {
+      status: 'bound',
+      obligation,
+      state: {
+        ...state,
+        reviewAssurance: appendInvocationEvidence(fulfilled, invocation),
+      },
+    };
   }
 
   return { status: 'none' };

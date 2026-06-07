@@ -53,27 +53,126 @@ export function buildChain(length: number): ChainedAuditEvent[] {
 }
 
 /** Build a realistic session event trail for summary/compliance tests. */
-function buildEarlyTrailEvents(): AuditEvent[] {
-  return [
-    makeAuditEvent({ event: 'lifecycle:session_created', phase: 'TICKET', timestamp: TS1, actor: 'system', detail: { kind: 'lifecycle', action: 'session_created', finalPhase: 'TICKET' } }),
-    makeAuditEvent({ event: 'tool_call:flowguard_ticket', phase: 'TICKET', timestamp: TS1, actor: 'user', detail: { kind: 'tool_call', tool: 'flowguard_ticket', success: true, transitionCount: 1 } }),
-    makeAuditEvent({ event: 'transition:TICKET_SET', phase: 'PLAN', timestamp: TS1, detail: { kind: 'transition', from: 'TICKET', to: 'PLAN', event: 'TICKET_SET', autoAdvanced: false, chainIndex: -1 } }),
-    makeAuditEvent({ event: 'transition:PLAN_READY', phase: 'PLAN', timestamp: TS2, detail: { kind: 'transition', from: 'PLAN', to: 'PLAN_REVIEW', event: 'PLAN_READY', autoAdvanced: true, chainIndex: 0 } }),
-    makeAuditEvent({ event: 'transition:APPROVE', phase: 'VALIDATION', timestamp: TS2, detail: { kind: 'transition', from: 'PLAN_REVIEW', to: 'VALIDATION', event: 'APPROVE', autoAdvanced: false, chainIndex: -1 } }),
-    makeAuditEvent({ event: 'tool_call:flowguard_run_check', phase: 'VALIDATION', timestamp: TS2, actor: 'machine', detail: { kind: 'tool_call', tool: 'flowguard_run_check', success: true, transitionCount: 1 } }),
-    makeAuditEvent({ event: 'transition:ALL_PASSED', phase: 'IMPLEMENTATION', timestamp: TS2, detail: { kind: 'transition', from: 'VALIDATION', to: 'IMPLEMENTATION', event: 'ALL_PASSED', autoAdvanced: false, chainIndex: -1 } }),
-  ];
-}
-
-function buildLateTrailEvents(): AuditEvent[] {
-  return [
-    makeAuditEvent({ event: 'transition:IMPL_COMPLETE', phase: 'IMPL_REVIEW', timestamp: TS3, detail: { kind: 'transition', from: 'IMPLEMENTATION', to: 'IMPL_REVIEW', event: 'IMPL_COMPLETE', autoAdvanced: false, chainIndex: -1 } }),
-    makeAuditEvent({ event: 'transition:REVIEW_CONVERGED', phase: 'EVIDENCE_REVIEW', timestamp: TS3, detail: { kind: 'transition', from: 'IMPL_REVIEW', to: 'EVIDENCE_REVIEW', event: 'REVIEW_CONVERGED', autoAdvanced: false, chainIndex: -1 } }),
-    makeAuditEvent({ event: 'transition:APPROVE', phase: 'COMPLETE', timestamp: TS3, detail: { kind: 'transition', from: 'EVIDENCE_REVIEW', to: 'COMPLETE', event: 'APPROVE', autoAdvanced: false, chainIndex: -1 } }),
-    makeAuditEvent({ event: 'lifecycle:session_completed', phase: 'COMPLETE', timestamp: TS3, actor: 'system', detail: { kind: 'lifecycle', action: 'session_completed', finalPhase: 'COMPLETE' } }),
-  ];
-}
-
 export function buildSessionTrail(): AuditEvent[] {
-  return [...buildEarlyTrailEvents(), ...buildLateTrailEvents()];
+  return [
+    makeAuditEvent({
+      event: 'lifecycle:session_created',
+      phase: 'TICKET',
+      timestamp: TS1,
+      actor: 'system',
+      detail: { kind: 'lifecycle', action: 'session_created', finalPhase: 'TICKET' },
+    }),
+    makeAuditEvent({
+      event: 'tool_call:flowguard_ticket',
+      phase: 'TICKET',
+      timestamp: TS1,
+      actor: 'user',
+      detail: { kind: 'tool_call', tool: 'flowguard_ticket', success: true, transitionCount: 1 },
+    }),
+    makeAuditEvent({
+      event: 'transition:TICKET_SET',
+      phase: 'PLAN',
+      timestamp: TS1,
+      detail: {
+        kind: 'transition',
+        from: 'TICKET',
+        to: 'PLAN',
+        event: 'TICKET_SET',
+        autoAdvanced: false,
+        chainIndex: -1,
+      },
+    }),
+    makeAuditEvent({
+      event: 'transition:PLAN_READY',
+      phase: 'PLAN',
+      timestamp: TS2,
+      detail: {
+        kind: 'transition',
+        from: 'PLAN',
+        to: 'PLAN_REVIEW',
+        event: 'PLAN_READY',
+        autoAdvanced: true,
+        chainIndex: 0,
+      },
+    }),
+    makeAuditEvent({
+      event: 'transition:APPROVE',
+      phase: 'VALIDATION',
+      timestamp: TS2,
+      detail: {
+        kind: 'transition',
+        from: 'PLAN_REVIEW',
+        to: 'VALIDATION',
+        event: 'APPROVE',
+        autoAdvanced: false,
+        chainIndex: -1,
+      },
+    }),
+    makeAuditEvent({
+      event: 'tool_call:flowguard_run_check',
+      phase: 'VALIDATION',
+      timestamp: TS2,
+      actor: 'machine',
+      detail: { kind: 'tool_call', tool: 'flowguard_run_check', success: true, transitionCount: 1 },
+    }),
+    makeAuditEvent({
+      event: 'transition:ALL_PASSED',
+      phase: 'IMPLEMENTATION',
+      timestamp: TS2,
+      detail: {
+        kind: 'transition',
+        from: 'VALIDATION',
+        to: 'IMPLEMENTATION',
+        event: 'ALL_PASSED',
+        autoAdvanced: false,
+        chainIndex: -1,
+      },
+    }),
+    makeAuditEvent({
+      event: 'transition:IMPL_COMPLETE',
+      phase: 'IMPL_REVIEW',
+      timestamp: TS3,
+      detail: {
+        kind: 'transition',
+        from: 'IMPLEMENTATION',
+        to: 'IMPL_REVIEW',
+        event: 'IMPL_COMPLETE',
+        autoAdvanced: false,
+        chainIndex: -1,
+      },
+    }),
+    makeAuditEvent({
+      event: 'transition:REVIEW_CONVERGED',
+      phase: 'EVIDENCE_REVIEW',
+      timestamp: TS3,
+      detail: {
+        kind: 'transition',
+        from: 'IMPL_REVIEW',
+        to: 'EVIDENCE_REVIEW',
+        event: 'REVIEW_CONVERGED',
+        autoAdvanced: false,
+        chainIndex: -1,
+      },
+    }),
+    makeAuditEvent({
+      event: 'transition:APPROVE',
+      phase: 'COMPLETE',
+      timestamp: TS3,
+      detail: {
+        kind: 'transition',
+        from: 'EVIDENCE_REVIEW',
+        to: 'COMPLETE',
+        event: 'APPROVE',
+        autoAdvanced: false,
+        chainIndex: -1,
+      },
+    }),
+    makeAuditEvent({
+      event: 'lifecycle:session_completed',
+      phase: 'COMPLETE',
+      timestamp: TS3,
+      actor: 'system',
+      detail: { kind: 'lifecycle', action: 'session_completed', finalPhase: 'COMPLETE' },
+    }),
+  ];
 }
