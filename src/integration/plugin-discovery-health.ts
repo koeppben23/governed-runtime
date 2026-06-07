@@ -120,7 +120,7 @@ export async function enforceDiscoveryHealthBefore(
 async function blockOnHealth(
   sessDir: string,
   state: SessionState,
-  decision: { code?: string; message?: string; driftStatus?: string },
+  decision: ReturnType<typeof isDiscoveryHealthAllowed>,
   sessionId: string,
   output: { output?: unknown },
 ): Promise<void> {
