@@ -586,9 +586,8 @@ async function verifyArtifactBinding(
   findings: ArchiveFinding[],
 ): Promise<void> {
   const manifestArtifacts = manifest.includedFiles.filter((file) => file.startsWith('artifacts/'));
-  if (manifestArtifacts.length === 0) return;
-
   const artifacts = findBindingArtifacts(events);
+  if (manifestArtifacts.length === 0 && !artifacts) return;
   if (!artifacts) {
     findings.push({
       code: 'artifact_binding_missing',
