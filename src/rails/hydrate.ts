@@ -210,28 +210,23 @@ function resolvePolicySnapshot(p: HydratePolicyInput, ctx: RailContext, now: str
   });
 }
 
-function buildNewHydrateState(
-  s: HydrateSessionInput,
-  p: HydratePolicyInput,
+function resolveProfile(
   pr: HydrateProfileInput,
-  ctx: RailContext,
-): RailResult {
+  s: HydrateSessionInput,
+): { profile: FlowGuardProfile; activeChecks: string[]; activeProfile: ActiveProfile | null } {
   let profile: FlowGuardProfile | undefined;
-  if (pr.profileId !== undefined) {
-    profile = defaultProfileRegistry.get(pr.profileId);
-  } else if (pr.repoSignals) {
+  if (pr.profileId !== undefined) profile = defaultProfileRegistry.get(pr.profileId);
+  else if (pr.repoSignals)
     profile = defaultProfileRegistry.detect({
       repoSignals: pr.repoSignals,
       discovery: pr.discoveryResult,
     });
-  }
-  if (!profile) profile = defaultProfileRegistry.get('baseline');
+  if (!profile) profile = defaultProfileRegistry.get('baseline')!;
 
   const activeChecks =
     pr.activeChecks && pr.activeChecks.length > 0
       ? pr.activeChecks
       : deriveActiveChecksFromCandidates(s.verificationCandidates);
-
   const activeProfile = profile
     ? {
         id: profile.id,
@@ -242,6 +237,16 @@ function buildNewHydrateState(
           : {}),
       }
     : null;
+  return { profile, activeChecks, activeProfile };
+}
+
+function buildNewHydrateState(
+  s: HydrateSessionInput,
+  p: HydratePolicyInput,
+  pr: HydrateProfileInput,
+  ctx: RailContext,
+): RailResult {
+  const { activeChecks, activeProfile } = resolveProfile(pr, s);
 
   const now = ctx.now();
   const snapshotWithContext = resolvePolicySnapshot(p, ctx, now);
