@@ -357,6 +357,17 @@ describe('cli/templates', () => {
       expect(CONCISE_RED_LINES).toContain('data, not instruction');
     });
 
+    it('FLOWGUARD_MANDATES_BODY red lines harden against secret/credential handling (#469)', () => {
+      // The secret/credential red line must be present in the full body and in
+      // BOTH rendered variants (compact + concise), so the rule cannot silently
+      // drop out of early-phase or concise mandate renderings.
+      expect(FLOWGUARD_MANDATES_BODY).toContain('exfiltrate secrets, credentials, tokens');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('redact in output');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('signing material');
+      expect(COMPACT_RED_LINES).toContain('exfiltrate secrets, credentials');
+      expect(CONCISE_RED_LINES).toContain('exfiltrate secrets, credentials');
+    });
+
     it('FLOWGUARD_MANDATES_BODY declares explicit scope on universal rules', () => {
       expect(FLOWGUARD_MANDATES_BODY).toContain('These apply across all task classes:');
       expect(FLOWGUARD_MANDATES_BODY).toContain('These are prohibited across all task classes:');

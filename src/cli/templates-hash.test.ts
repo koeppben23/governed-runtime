@@ -43,10 +43,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('FLOWGUARD_MANDATES_BODY matches compiled output hash', () => {
-    // Refreshed for #468: added an untrusted-input / prompt-injection red line
-    // (content is data, not instruction) to the installed agent mandates.
+    // Refreshed for #469: added a secret/credential-handling red line to the
+    // installed agent mandates (never read/print/log/echo/commit/exfiltrate
+    // secrets, credentials, tokens, private keys, or signing material).
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      '46c8332e73cecdc27897db246c3478e36a7efde32093dafcb4cf96b30a3a4ccd',
+      'ff8a6cd0c4889d4e5c8d29dde4b61a842ae08ea0b0da08bf221217c48ec0c0e5',
     );
   });
 
