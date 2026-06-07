@@ -94,25 +94,11 @@ export const continue_cmd: ToolDefinition = {
         );
       }
 
-      // Terminal phases — workflow complete
       if (TERMINAL.has(phase)) {
-        return appendNextAction(
-          JSON.stringify({
-            phase,
-            status: 'Workflow complete.',
-            next: '/export',
-            _continue: { action: 'terminal' },
-          }),
-          state,
-        );
+        return appendNextAction(JSON.stringify({ phase, status: 'Workflow complete.', next: '/export', _continue: { action: 'terminal' } }), state);
       }
-
-      // READY: ambiguous — block with options
       if (phase === 'READY') {
-        return formatBlocked('CONTINUE_AMBIGUOUS', {
-          phase,
-          reason: 'Multiple flows available from READY. Choose one explicitly.',
-        });
+        return formatBlocked('CONTINUE_AMBIGUOUS', { phase, reason: 'Multiple flows available from READY. Choose one explicitly.' });
       }
 
       // All other phases: lookup guidance
