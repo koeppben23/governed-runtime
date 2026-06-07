@@ -62,6 +62,43 @@ const PHASE_GUIDANCE: Record<string, { status: string; command?: string; command
   },
 };
 
+function handleEarlyContinue(phase: string, state: SessionState): string | null {
+  if (USER_GATES.has(phase)) {
+    const guidance: Record<string, string[]> = {
+      PLAN_REVIEW: ['/approve', '/request-changes', '/reject'],
+      EVIDENCE_REVIEW: ['/approve', '/request-changes', '/reject'],
+      ARCH_REVIEW: ['/approve', '/request-changes', '/reject'],
+    };
+    return appendNextAction(
+      JSON.stringify({
+        phase,
+        status: `User gate active at ${phase}. A human decision is required.`,
+        next: guidance[phase]?.join(', ') ?? '/approve, /request-changes, /reject',
+        _continue: { action: 'manual_decision' },
+      }),
+      state,
+    );
+  }
+  if (TERMINAL.has(phase)) {
+    return appendNextAction(
+      JSON.stringify({
+        phase,
+        status: 'Workflow complete.',
+        next: '/export',
+        _continue: { action: 'terminal' },
+      }),
+      state,
+    );
+  }
+  if (phase === 'READY') {
+    return formatBlocked('CONTINUE_AMBIGUOUS', {
+      phase,
+      reason: 'Multiple flows available from READY. Choose one explicitly.',
+    });
+  }
+  return null;
+}
+
 export const continue_cmd: ToolDefinition = {
   description:
     'Deterministic phase dispatcher. Returns guidance on which command to execute next ' +
@@ -77,43 +114,8 @@ export const continue_cmd: ToolDefinition = {
       if (!state) return formatBlocked('NO_SESSION');
       const { phase } = state;
 
-      if (USER_GATES.has(phase)) {
-        const guidance: Record<string, string[]> = {
-          PLAN_REVIEW: ['/approve', '/request-changes', '/reject'],
-          EVIDENCE_REVIEW: ['/approve', '/request-changes', '/reject'],
-          ARCH_REVIEW: ['/approve', '/request-changes', '/reject'],
-        };
-        return appendNextAction(
-          JSON.stringify({
-            phase,
-            status: `User gate active at ${phase}. A human decision is required.`,
-            next: guidance[phase]?.join(', ') ?? '/approve, /request-changes, /reject',
-            _continue: { action: 'manual_decision' },
-          }),
-          state,
-        );
-      }
-
-      // Terminal phases — workflow complete
-      if (TERMINAL.has(phase)) {
-        return appendNextAction(
-          JSON.stringify({
-            phase,
-            status: 'Workflow complete.',
-            next: '/export',
-            _continue: { action: 'terminal' },
-          }),
-          state,
-        );
-      }
-
-      // READY: ambiguous — block with options
-      if (phase === 'READY') {
-        return formatBlocked('CONTINUE_AMBIGUOUS', {
-          phase,
-          reason: 'Multiple flows available from READY. Choose one explicitly.',
-        });
-      }
+      const early = handleEarlyContinue(phase, state);
+      if (early) return early;
 
       // All other phases: lookup guidance
       const guidance = PHASE_GUIDANCE[phase];
