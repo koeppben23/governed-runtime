@@ -22,7 +22,12 @@ import {
   extractManagedBody,
   isManagedArtifact,
 } from './templates.js';
-import { COMPACT_RED_LINES, CONCISE_RED_LINES } from '../templates/mandates.js';
+import {
+  COMPACT_RED_LINES,
+  CONCISE_RED_LINES,
+  COMPACT_COMMAND_EXECUTION,
+  CONCISE_COMMAND_EXECUTION,
+} from '../templates/mandates.js';
 import { REPO_ROOT, setupCliTestEnvironment } from './install-test-helpers.test.js';
 
 setupCliTestEnvironment();
@@ -407,6 +412,27 @@ describe('cli/templates', () => {
           `Normative phrase missing after consolidation: "${phrase}"`,
         ).toContain(phrase);
       }
+    });
+
+    it('host output convention is decoupled from universal governance rules (#471)', () => {
+      // The "Next action:" line must be scoped as a host/profile convention,
+      // not a universal governance rule. Universal governance rules (3 bullets)
+      // must remain unchanged in meaning.
+      expect(FLOWGUARD_MANDATES_BODY).toContain(
+        'Universal governance rules for every FlowGuard command',
+      );
+      expect(FLOWGUARD_MANDATES_BODY).toContain('Use only FlowGuard tools for state changes');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('Complete this command fully, then stop');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('respond without calling FlowGuard tools');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('Host/profile output convention');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('For the OpenCode profile');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('end every response with exactly one');
+      expect(FLOWGUARD_MANDATES_BODY).toContain(
+        'unless the active host/profile specifies a different output convention',
+      );
+      expect(COMPACT_COMMAND_EXECUTION).toContain('Host convention:');
+      expect(CONCISE_COMMAND_EXECUTION).toContain('Host convention:');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('## Governance rules');
     });
 
     it('FLOWGUARD_MANDATES_BODY declares explicit scope on universal rules', () => {
