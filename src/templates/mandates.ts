@@ -104,10 +104,7 @@ minimums and blocks missing/too-low claims. Hydrate updates only \`claimedTaskCl
 
 These apply across all task classes:
 
-- Use the smallest safe change.
 - Preserve one canonical authority and SSOT ownership.
-- Make failures explicit and fail closed.
-- Ground claims in concrete evidence.
 - Keep runtime, docs, tests, schemas, and config aligned.
 - Preserve integrity across state, policy, identity, audit, archive, release, installer, migration, and trust boundaries.
 - Approve only behavior that is tested, proven, and evidence-backed.
@@ -174,12 +171,13 @@ For review tasks (any class), include:
 
 ## 9. Implementation Checklist
 
+- Classify the task (TRIVIAL / STANDARD / HIGH-RISK) per ## 3. Task Class Router.
 - Identify governing contract and owning authority.
 - Read relevant code, tests, and docs before changing behavior.
 - Keep scope minimal and prefer extending existing paths.
 - Preserve SSOT and schema ownership.
 - Add meaningful risky-path and negative-path coverage.
-- Check runtime, docs, tests, and config alignment before completion.
+- Verify output contract, evidence markers (ASSUMPTION, NOT_VERIFIED, BLOCKED), required verification, and no SSOT drift before returning.
 
 ## 10. Review Checklist
 
@@ -221,16 +219,7 @@ or nonconforming FlowGuard tool response.
 
 ## 11b. Rule Conflict Resolution
 
-Instruction priority is:
-
-1. Universal FlowGuard mandates
-2. Slash-command rules
-3. Stack/profile rules
-4. Local style preferences
-
-Profile rules may narrow the solution space inside universal mandates.
-They must never override universal mandates, repository contracts, SSOT,
-schemas, runtime invariants, or fail-closed behavior.
+Universal FlowGuard mandates outrank slash-command, profile, and local style rules. Profile rules may narrow the solution space but must never override repository contracts, SSOT, schemas, runtime invariants, or fail-closed behavior. See ## 2. Priority Ladder for the full priority order.
 
 ## Governance rules
 
@@ -249,11 +238,11 @@ For deeper guidance, see the FlowGuard repository docs/ directory.
 
 ## Before Acting Rule
 
-Do not start editing immediately. Before acting, classify task, identify authority/SSOT, read artifacts, choose the smallest safe change, and determine verification.
+Before acting: classify the task, identify authority and SSOT, and read relevant artifacts. See ## 9. Implementation Checklist.
 
 ## Before Completing Rule
 
-Before returning, verify: output contract; evidence markers (ASSUMPTION, NOT_VERIFIED, BLOCKED); required verification; no SSOT drift.
+Before returning: verify the output contract, evidence markers (ASSUMPTION, NOT_VERIFIED, BLOCKED), required verification, and no SSOT drift. See ## 9. Implementation Checklist.
 
 ---
 

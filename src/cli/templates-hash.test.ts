@@ -43,11 +43,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('FLOWGUARD_MANDATES_BODY matches compiled output hash', () => {
-    // Refreshed for #469: added a secret/credential-handling red line to the
-    // installed agent mandates (never read/print/log/echo/commit/exfiltrate
-    // secrets, credentials, tokens, private keys, or signing material).
+    // Refreshed for #470: consolidated overlapping sections (tightened Hard
+    // Invariants, turned Before Acting/Completing/11b into pointer sections,
+    // strengthened Implementation Checklist with classification/completion gates).
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      'ff8a6cd0c4889d4e5c8d29dde4b61a842ae08ea0b0da08bf221217c48ec0c0e5',
+      '7b6625da8a1151b694019a27c7ebd27582b5903195f57d9de333ad95eb53c676',
     );
   });
 
