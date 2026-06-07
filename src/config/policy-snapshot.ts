@@ -96,6 +96,25 @@ function normalizeSelfReviewConfig(value: unknown): SelfReviewConfig {
  * @param resolvedAt - ISO-8601 timestamp when the policy was frozen.
  * @param digestFn - SHA-256 digest function (injected for testability).
  */
+function buildAuditSection(audit: AuditPolicy): PolicySnapshot['audit'] {
+  return {
+    emitTransitions: audit.emitTransitions,
+    emitToolCalls: audit.emitToolCalls,
+    enableChainHash: audit.enableChainHash,
+    timestampAssurance: {
+      enabled: audit.timestampAssurance.enabled,
+      mode: audit.timestampAssurance.mode,
+      strict: audit.timestampAssurance.strict,
+      criticalEvents: [...audit.timestampAssurance.criticalEvents],
+      ...(audit.timestampAssurance.tsaUrl ? { tsaUrl: audit.timestampAssurance.tsaUrl } : {}),
+      ...(audit.timestampAssurance.trustAnchors ? { trustAnchors: [...audit.timestampAssurance.trustAnchors] } : {}),
+      ...(audit.timestampAssurance.ntpServers ? { ntpServers: [...audit.timestampAssurance.ntpServers] } : {}),
+      ntpDriftThresholdMs: audit.timestampAssurance.ntpDriftThresholdMs,
+      tsaTimeoutMs: audit.timestampAssurance.tsaTimeoutMs,
+    },
+  };
+}
+
 export function createPolicySnapshot(
   policy: FlowGuardPolicy,
   resolvedAt: string,
@@ -120,14 +139,10 @@ export function createPolicySnapshot(
     resolvedAt,
     requestedMode: resolution?.requestedMode ?? policy.mode,
     ...(resolution?.source ? { source: resolution.source } : {}),
-    effectiveGateBehavior:
-      resolution?.effectiveGateBehavior ??
-      (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
+    effectiveGateBehavior: resolution?.effectiveGateBehavior ?? (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
     ...(resolution?.degradedReason ? { degradedReason: resolution.degradedReason } : {}),
     ...(resolution?.resolutionReason ? { resolutionReason: resolution.resolutionReason } : {}),
-    ...(resolution?.centralMinimumMode
-      ? { centralMinimumMode: resolution.centralMinimumMode }
-      : {}),
+    ...(resolution?.centralMinimumMode ? { centralMinimumMode: resolution.centralMinimumMode } : {}),
     ...(resolution?.policyDigest ? { policyDigest: resolution.policyDigest } : {}),
     ...(resolution?.policyVersion ? { policyVersion: resolution.policyVersion } : {}),
     ...(resolution?.policyPathHint ? { policyPathHint: resolution.policyPathHint } : {}),
@@ -136,28 +151,7 @@ export function createPolicySnapshot(
     maxImplReviewIterations: policy.maxImplReviewIterations,
     allowSelfApproval: policy.allowSelfApproval,
     requireVerifiedActorsForApproval: policy.requireVerifiedActorsForApproval,
-    audit: {
-      emitTransitions: policy.audit.emitTransitions,
-      emitToolCalls: policy.audit.emitToolCalls,
-      enableChainHash: policy.audit.enableChainHash,
-      timestampAssurance: {
-        enabled: policy.audit.timestampAssurance.enabled,
-        mode: policy.audit.timestampAssurance.mode,
-        strict: policy.audit.timestampAssurance.strict,
-        criticalEvents: [...policy.audit.timestampAssurance.criticalEvents],
-        ...(policy.audit.timestampAssurance.tsaUrl
-          ? { tsaUrl: policy.audit.timestampAssurance.tsaUrl }
-          : {}),
-        ...(policy.audit.timestampAssurance.trustAnchors
-          ? { trustAnchors: [...policy.audit.timestampAssurance.trustAnchors] }
-          : {}),
-        ...(policy.audit.timestampAssurance.ntpServers
-          ? { ntpServers: [...policy.audit.timestampAssurance.ntpServers] }
-          : {}),
-        ntpDriftThresholdMs: policy.audit.timestampAssurance.ntpDriftThresholdMs,
-        tsaTimeoutMs: policy.audit.timestampAssurance.tsaTimeoutMs,
-      },
-    },
+    audit: buildAuditSection(policy.audit),
     actorClassification: { ...policy.actorClassification },
     minimumActorAssuranceForApproval: policy.minimumActorAssuranceForApproval,
     ...(policy.identityProvider ? { identityProvider: policy.identityProvider } : {}),
@@ -168,15 +162,8 @@ export function createPolicySnapshot(
     enforceRiskClassification: policy.enforceRiskClassification,
     allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride,
     allowReducedCeremony: policy.allowReducedCeremony,
-    discoveryHealth: {
-      enforcement: policy.discoveryHealth.enforcement,
-      onDegraded: policy.discoveryHealth.onDegraded,
-      onDrift: policy.discoveryHealth.onDrift,
-    },
-    validationEvidence: {
-      enforcement: policy.validationEvidence.enforcement,
-      allowNoCommands: policy.validationEvidence.allowNoCommands,
-    },
+    discoveryHealth: { enforcement: policy.discoveryHealth.enforcement, onDegraded: policy.discoveryHealth.onDegraded, onDrift: policy.discoveryHealth.onDrift },
+    validationEvidence: { enforcement: policy.validationEvidence.enforcement, allowNoCommands: policy.validationEvidence.allowNoCommands },
   };
 }
 
@@ -741,6 +728,62 @@ export function normalizePolicySnapshotWithMeta(
 }
 
 /** Mode-consistent safe defaults derived from policy presets. */
+const SOLO_DEFAULTS = {
+  requireHumanGates: false as const,
+  maxSelfReviewIterations: 2,
+  maxImplReviewIterations: 1,
+  allowSelfApproval: true as const,
+  minimumActorAssuranceForApproval: 'best_effort' as const,
+  effectiveGateBehavior: 'auto_approve' as const,
+  reviewOutputPolicy: 'text_compat_allowed' as const,
+  reviewInvocationPolicy: 'host_task_preferred' as const,
+  enforceRiskClassification: false as const,
+  allowRiskDowngradeOverride: false as const,
+  allowReducedCeremony: false as const,
+};
+
+const REGULATED_DEFAULTS = {
+  requireHumanGates: true as const,
+  maxSelfReviewIterations: 3,
+  maxImplReviewIterations: 3,
+  allowSelfApproval: false as const,
+  minimumActorAssuranceForApproval: 'claim_validated' as const,
+  effectiveGateBehavior: 'human_gated' as const,
+  reviewOutputPolicy: 'structured_required' as const,
+  reviewInvocationPolicy: 'host_task_required' as const,
+  enforceRiskClassification: true as const,
+  allowRiskDowngradeOverride: false as const,
+  allowReducedCeremony: false as const,
+};
+
+const TEAM_DEFAULTS = {
+  requireHumanGates: true as const,
+  maxSelfReviewIterations: 3,
+  maxImplReviewIterations: 3,
+  allowSelfApproval: true as const,
+  minimumActorAssuranceForApproval: 'best_effort' as const,
+  effectiveGateBehavior: 'human_gated' as const,
+  reviewOutputPolicy: 'text_compat_allowed' as const,
+  reviewInvocationPolicy: 'host_task_required' as const,
+  enforceRiskClassification: false as const,
+  allowRiskDowngradeOverride: false as const,
+  allowReducedCeremony: false as const,
+};
+
+const TEAM_CI_DEFAULTS = {
+  requireHumanGates: true as const,
+  maxSelfReviewIterations: 3,
+  maxImplReviewIterations: 3,
+  allowSelfApproval: true as const,
+  minimumActorAssuranceForApproval: 'best_effort' as const,
+  effectiveGateBehavior: 'human_gated' as const,
+  reviewOutputPolicy: 'structured_required' as const,
+  reviewInvocationPolicy: 'host_task_required' as const,
+  enforceRiskClassification: true as const,
+  allowRiskDowngradeOverride: false as const,
+  allowReducedCeremony: false as const,
+};
+
 function modeConsistentDefaults(mode: PolicyMode): {
   readonly requireHumanGates: boolean;
   readonly maxSelfReviewIterations: number;
@@ -756,72 +799,15 @@ function modeConsistentDefaults(mode: PolicyMode): {
   readonly discoveryHealth: DiscoveryHealthPolicy;
   readonly validationEvidence: ValidationEvidencePolicy;
 } {
-  switch (mode) {
-    case 'solo':
-      return {
-        requireHumanGates: false,
-        maxSelfReviewIterations: 2,
-        maxImplReviewIterations: 1,
-        allowSelfApproval: true,
-        minimumActorAssuranceForApproval: 'best_effort',
-        effectiveGateBehavior: 'auto_approve',
-        reviewOutputPolicy: 'text_compat_allowed',
-        reviewInvocationPolicy: 'host_task_preferred',
-        enforceRiskClassification: false,
-        allowRiskDowngradeOverride: false,
-        allowReducedCeremony: false,
-        discoveryHealth: defaultDiscoveryHealthForMode('solo'),
-        validationEvidence: defaultValidationEvidenceForMode('solo'),
-      };
-    case 'regulated':
-      return {
-        requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
-        allowSelfApproval: false,
-        minimumActorAssuranceForApproval: 'claim_validated',
-        effectiveGateBehavior: 'human_gated',
-        reviewOutputPolicy: 'structured_required',
-        reviewInvocationPolicy: 'host_task_required',
-        enforceRiskClassification: true,
-        allowRiskDowngradeOverride: false,
-        allowReducedCeremony: false,
-        discoveryHealth: defaultDiscoveryHealthForMode('regulated'),
-        validationEvidence: defaultValidationEvidenceForMode('regulated'),
-      };
-    case 'team':
-      return {
-        requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
-        allowSelfApproval: true,
-        minimumActorAssuranceForApproval: 'best_effort',
-        effectiveGateBehavior: 'human_gated',
-        reviewOutputPolicy: 'text_compat_allowed',
-        reviewInvocationPolicy: 'host_task_required',
-        enforceRiskClassification: false,
-        allowRiskDowngradeOverride: false,
-        allowReducedCeremony: false,
-        discoveryHealth: defaultDiscoveryHealthForMode('team'),
-        validationEvidence: defaultValidationEvidenceForMode('team'),
-      };
-    case 'team-ci':
-      return {
-        requireHumanGates: true,
-        maxSelfReviewIterations: 3,
-        maxImplReviewIterations: 3,
-        allowSelfApproval: true,
-        minimumActorAssuranceForApproval: 'best_effort',
-        effectiveGateBehavior: 'human_gated',
-        reviewOutputPolicy: 'structured_required',
-        reviewInvocationPolicy: 'host_task_required',
-        enforceRiskClassification: true,
-        allowRiskDowngradeOverride: false,
-        allowReducedCeremony: false,
-        discoveryHealth: defaultDiscoveryHealthForMode('team-ci'),
-        validationEvidence: defaultValidationEvidenceForMode('team-ci'),
-      };
-  }
+  const base = mode === 'solo' ? SOLO_DEFAULTS
+    : mode === 'regulated' ? REGULATED_DEFAULTS
+    : mode === 'team' ? TEAM_DEFAULTS
+    : TEAM_CI_DEFAULTS;
+  return {
+    ...base,
+    discoveryHealth: defaultDiscoveryHealthForMode(mode),
+    validationEvidence: defaultValidationEvidenceForMode(mode),
+  };
 }
 
 // ─── Snapshot → Runtime Policy ────────────────────────────────────────────────

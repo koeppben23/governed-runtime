@@ -177,65 +177,47 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
  *
  * @returns RailBlocked if enforcement fails, null if approval may proceed.
  */
+function verifyFourEyes(
+  state: SessionState,
+  input: ReviewDecisionInput,
+): RailBlocked | null {
+  if (!state.initiatedByIdentity) return blocked('DECISION_IDENTITY_REQUIRED');
+  if (!input.decisionIdentity) return blocked('DECISION_IDENTITY_REQUIRED');
+  if (state.initiatedByIdentity.actorSource === 'unknown')
+    return blocked('REGULATED_ACTOR_UNKNOWN', { role: 'initiator' });
+  if (input.decisionIdentity.actorSource === 'unknown')
+    return blocked('REGULATED_ACTOR_UNKNOWN', { role: 'reviewer' });
+  if (sameActorIdentity(input.decisionIdentity, state.initiatedByIdentity) === true)
+    return blocked('FOUR_EYES_ACTOR_MATCH', { initiator: state.initiatedByIdentity.actorId });
+  return null;
+}
+
+function verifyAssuranceThreshold(
+  input: ReviewDecisionInput,
+  ctx: RailContext,
+): RailBlocked | null {
+  const requireVerified = ctx.policy?.requireVerifiedActorsForApproval;
+  const minimumAssurance = ctx.policy?.minimumActorAssuranceForApproval;
+  if (requireVerified) {
+    if (input.decisionIdentity?.actorAssurance !== 'claim_validated' && input.decisionIdentity?.actorAssurance !== 'idp_verified')
+      return blocked('ACTOR_ASSURANCE_INSUFFICIENT', { minimum: 'claim_validated', current: input.decisionIdentity?.actorAssurance ?? 'best_effort' });
+  } else if (minimumAssurance === 'claim_validated' || minimumAssurance === 'idp_verified') {
+    if (!isAssuranceAtLeast(input.decisionIdentity?.actorAssurance, minimumAssurance))
+      return blocked('ACTOR_ASSURANCE_INSUFFICIENT', { minimum: minimumAssurance, current: input.decisionIdentity?.actorAssurance ?? 'best_effort' });
+  }
+  return null;
+}
+
 function enforceApprovalIdentity(
   state: SessionState,
   input: ReviewDecisionInput,
   ctx: RailContext,
 ): RailBlocked | null {
   if (ctx.policy?.allowSelfApproval === false) {
-    // P30: Require structured initiator identity (fail-closed on legacy sessions)
-    if (!state.initiatedByIdentity) {
-      return blocked('DECISION_IDENTITY_REQUIRED');
-    }
-
-    // P30: Require structured decision identity (fail-closed on legacy decisions)
-    if (!input.decisionIdentity) {
-      return blocked('DECISION_IDENTITY_REQUIRED');
-    }
-
-    // P30: Block unknown source actors
-    if (state.initiatedByIdentity.actorSource === 'unknown') {
-      return blocked('REGULATED_ACTOR_UNKNOWN', { role: 'initiator' });
-    }
-
-    if (input.decisionIdentity.actorSource === 'unknown') {
-      return blocked('REGULATED_ACTOR_UNKNOWN', { role: 'reviewer' });
-    }
-
-    // P30: Four-eyes enforcement via structured identity
-    if (sameActorIdentity(input.decisionIdentity, state.initiatedByIdentity) === true) {
-      return blocked('FOUR_EYES_ACTOR_MATCH', {
-        initiator: state.initiatedByIdentity.actorId,
-      });
-    }
+    const block = verifyFourEyes(state, input);
+    if (block) return block;
   }
-
-  // P34: Assurance threshold enforcement.
-  // Only blocks if a stricter-than-default threshold is configured.
-  const minimumAssurance = ctx.policy?.minimumActorAssuranceForApproval;
-  const requireVerified = ctx.policy?.requireVerifiedActorsForApproval;
-  if (requireVerified) {
-    // P33 legacy: requireVerifiedActorsForApproval: true → equivalent to 'claim_validated'
-    if (
-      input.decisionIdentity?.actorAssurance !== 'claim_validated' &&
-      input.decisionIdentity?.actorAssurance !== 'idp_verified'
-    ) {
-      return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
-        minimum: 'claim_validated',
-        current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
-      });
-    }
-  } else if (minimumAssurance === 'claim_validated' || minimumAssurance === 'idp_verified') {
-    // P34: Explicit threshold stricter than default — uses canonical ordinal from actor-info
-    if (!isAssuranceAtLeast(input.decisionIdentity?.actorAssurance, minimumAssurance)) {
-      return blocked('ACTOR_ASSURANCE_INSUFFICIENT', {
-        minimum: minimumAssurance,
-        current: input.decisionIdentity?.actorAssurance ?? 'best_effort',
-      });
-    }
-  }
-
-  return null;
+  return verifyAssuranceThreshold(input, ctx);
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
