@@ -214,158 +214,147 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     return { strictEnforcement, sessionState };
   }
 
-  // ── Hook handlers ──────────────────────────────────────────────────────
-  return {
-    'tool.execute.before': async (input: unknown, output: unknown) => {
-      return runWithAdapterLoggerAsync(adapterLog, async () => {
-        const hookInput = input as ToolHookBeforeInput;
-        const hookOutput = output as ToolHookBeforeOutput;
-        const toolName: string = hookInput?.tool ?? '';
-        const sessionId: string = hookInput?.sessionID ?? 'unknown';
-        currentSessionId = sessionId;
-        const args = hookOutput?.args ?? {};
+  async function toolBefore(input: unknown, output: unknown): Promise<void> {
+    return runWithAdapterLoggerAsync(adapterLog, async () => {
+      const toolName: string = (input as ToolHookBeforeInput)?.tool ?? '';
+      const sessionId: string = (input as ToolHookBeforeInput)?.sessionID ?? 'unknown';
+      currentSessionId = sessionId;
+      const args = (output as ToolHookBeforeOutput)?.args ?? {};
+      log.info('hook', 'tool.execute.before', { tool: toolName, sessionId });
+      await enforceBeforeRules(toolName, sessionId, args);
+    });
+  }
 
-        log.info('hook', 'tool.execute.before', { tool: toolName, sessionId });
-
-        if (toolName === 'task') {
-          const st = typeof args.subagent_type === 'string' ? args.subagent_type : '';
-          if (st === REVIEWER_SUBAGENT_TYPE) {
-            const eState = ws.getEnforcementState(sessionId);
-            const { strictEnforcement } = await resolveEnforcement(sessionId, 'subagent');
-            const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
-            if (!result.allowed) {
-              log.warn('enforcement', 'blocked subagent call', {
-                tool: toolName,
-                sessionId,
-                code: result.code,
-              });
-              throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
-            }
-          } else if (st !== '') {
-            log.warn('enforcement', 'blocked unauthorized subagent type', {
-              tool: toolName,
-              subagentType: st,
-              sessionId,
-            });
-            throw buildEnforcementError(
-              'SUBAGENT_TYPE_UNAUTHORIZED',
-              `Subagent type '${st}' is not authorized by FlowGuard governance. ` +
-                `Only '${REVIEWER_SUBAGENT_TYPE}' is allowed.`,
-            );
-          }
-          return;
-        }
-
-        if (isMutatingHostTool(toolName)) {
-          const sessDir = ws.getSessionDir(sessionId);
-          if (!sessDir) return;
-
-          if (!existsSync(sessDir)) {
-            throw buildEnforcementError(
-              'SESSION_DIR_NOT_FOUND',
-              `FlowGuard session directory expected at "${sessDir}" but not found on disk. ` +
-                `Run /hydrate to initialize the session.`,
-              { sessionId, tool: toolName, sessDir, stateReadable: 'false' },
-            );
-          }
-
-          let state: SessionState | null;
-          try {
-            state = await readState(sessDir);
-          } catch (err) {
-            log.warn('enforcement', 'Failed to read session state for phase gate check', {
-              sessionId,
-              tool: toolName,
-              error: err instanceof Error ? err.message : String(err),
-            });
-            throw buildEnforcementError(
-              'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-              `Cannot verify host tool phase gate — session state exists at ` +
-                `"${sessDir}" but is unreadable ` +
-                `(${err instanceof Error ? err.message : String(err)}). ` +
-                `Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
-              {
-                sessionId,
-                tool: toolName,
-                stateFile: `${sessDir}/session-state.json`,
-                stateReadable: 'false',
-                error: err instanceof Error ? err.message : String(err),
-              },
-            );
-          }
-
-          if (!state) {
-            log.warn('enforcement', 'Session directory exists but no state file for phase gate', {
-              sessionId,
-              tool: toolName,
-              sessDir,
-            });
-            throw buildEnforcementError(
-              'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-              `Cannot verify host tool phase gate — session directory exists at ` +
-                `"${sessDir}" but contains no state file. ` +
-                `Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
-              {
-                sessionId,
-                tool: toolName,
-                stateFile: `${sessDir}/session-state.json`,
-                stateReadable: 'false',
-              },
-            );
-          }
-
-          if (state.error) {
-            throw buildEnforcementError(state.error.code, state.error.message, {
-              sessionId,
-              tool: toolName,
-              recoveryHint: state.error.recoveryHint,
-              occurredAt: state.error.occurredAt,
-            });
-          }
-
-          const gateResult = isHostToolAllowedInPhase(toolName, state.phase);
-          if (!gateResult.allowed) {
-            log.warn('enforcement', 'blocked host tool in investigation-only phase', {
-              tool: toolName,
-              sessionId,
-              phase: state.phase,
-              code: gateResult.code,
-            });
-            throw buildEnforcementError(gateResult.code!, gateResult.reason!, {
-              sessionId,
-              tool: toolName,
-              phase: state.phase,
-            });
-          }
-
-          await enforceRiskBefore(riskDeps, sessDir, state, toolName, args);
-          await enforceDiscoveryHealthBefore(discoveryHealthDeps, sessDir, state, toolName);
-        }
-
-        if (!isFlowGuardVerdictTool(toolName)) return;
-
-        for (const key of Object.keys(args)) {
-          if (args[key] === null) {
-            delete args[key];
-          }
-        }
-
+  async function enforceBeforeRules(
+    toolName: string,
+    sessionId: string,
+    args: Record<string, unknown>,
+  ): Promise<void> {
+    if (toolName === 'task') {
+      const st = typeof args.subagent_type === 'string' ? args.subagent_type : '';
+      if (st === REVIEWER_SUBAGENT_TYPE) {
         const eState = ws.getEnforcementState(sessionId);
-        const { strictEnforcement: strict, sessionState } = await resolveEnforcement(
-          sessionId,
-          'verdict',
-        );
-        const result = enforceBeforeVerdict(eState, toolName, args, sessionState, strict);
+        const { strictEnforcement } = await resolveEnforcement(sessionId, 'subagent');
+        const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
         if (!result.allowed) {
-          log.warn('enforcement', 'blocked verdict submission', {
+          log.warn('enforcement', 'blocked subagent call', {
             tool: toolName,
             sessionId,
             code: result.code,
           });
           throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
         }
+      } else if (st !== '') {
+        log.warn('enforcement', 'blocked unauthorized subagent type', {
+          tool: toolName,
+          subagentType: st,
+          sessionId,
+        });
+        throw buildEnforcementError(
+          'SUBAGENT_TYPE_UNAUTHORIZED',
+          `Subagent type '${st}' is not authorized by FlowGuard governance. Only '${REVIEWER_SUBAGENT_TYPE}' is allowed.`,
+        );
+      }
+      return;
+    }
+    await enforceMutatingToolCheck(toolName, sessionId, args);
+    await enforceVerdictCheck(toolName, sessionId, args);
+  }
+
+  async function enforceMutatingToolCheck(
+    toolName: string,
+    sessionId: string,
+    args: Record<string, unknown>,
+  ): Promise<void> {
+    if (!isMutatingHostTool(toolName)) return;
+    const sessDir = ws.getSessionDir(sessionId);
+    if (!sessDir) return;
+    if (!existsSync(sessDir))
+      throw buildEnforcementError(
+        'SESSION_DIR_NOT_FOUND',
+        `FlowGuard session directory expected at "${sessDir}" but not found on disk. Run /hydrate to initialize the session.`,
+        { sessionId, tool: toolName, sessDir, stateReadable: 'false' },
+      );
+    let state: SessionState | null;
+    try {
+      state = await readState(sessDir);
+    } catch (err) {
+      throw buildEnforcementError(
+        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+        `Cannot verify host tool phase gate — session state exists at "${sessDir}" but is unreadable (${err instanceof Error ? err.message : String(err)}). Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
+        {
+          sessionId,
+          tool: toolName,
+          stateFile: `${sessDir}/session-state.json`,
+          stateReadable: 'false',
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
+    }
+    if (!state)
+      throw buildEnforcementError(
+        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+        `Cannot verify host tool phase gate — session directory exists at "${sessDir}" but contains no state file. Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
+        {
+          sessionId,
+          tool: toolName,
+          stateFile: `${sessDir}/session-state.json`,
+          stateReadable: 'false',
+        },
+      );
+    if (state.error)
+      throw buildEnforcementError(state.error.code, state.error.message, {
+        sessionId,
+        tool: toolName,
+        recoveryHint: state.error.recoveryHint,
+        occurredAt: state.error.occurredAt,
       });
-    },
+    const gateResult = isHostToolAllowedInPhase(toolName, state.phase);
+    if (!gateResult.allowed) {
+      log.warn('enforcement', 'blocked host tool in investigation-only phase', {
+        tool: toolName,
+        sessionId,
+        phase: state.phase,
+        code: gateResult.code,
+      });
+      throw buildEnforcementError(gateResult.code!, gateResult.reason!, {
+        sessionId,
+        tool: toolName,
+        phase: state.phase,
+      });
+    }
+    await enforceRiskBefore(riskDeps, sessDir, state, toolName, args);
+    await enforceDiscoveryHealthBefore(discoveryHealthDeps, sessDir, state, toolName);
+  }
+
+  async function enforceVerdictCheck(
+    toolName: string,
+    sessionId: string,
+    args: Record<string, unknown>,
+  ): Promise<void> {
+    if (!isFlowGuardVerdictTool(toolName)) return;
+    for (const key of Object.keys(args)) {
+      if (args[key] === null) delete args[key];
+    }
+    const eState = ws.getEnforcementState(sessionId);
+    const { strictEnforcement: strict, sessionState } = await resolveEnforcement(
+      sessionId,
+      'verdict',
+    );
+    const result = enforceBeforeVerdict(eState, toolName, args, sessionState, strict);
+    if (!result.allowed) {
+      log.warn('enforcement', 'blocked verdict submission', {
+        tool: toolName,
+        sessionId,
+        code: result.code,
+      });
+      throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
+    }
+  }
+
+  // ── Hook handlers ──────────────────────────────────────────────────────
+  return {
+    'tool.execute.before': toolBefore,
 
     'tool.execute.after': async (input: unknown, output: unknown) => {
       return runWithAdapterLoggerAsync(adapterLog, async () => {

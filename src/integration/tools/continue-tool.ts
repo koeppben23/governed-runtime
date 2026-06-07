@@ -73,12 +73,10 @@ export const continue_cmd: ToolDefinition = {
     try {
       const mutableSession = await tryBindTransportEvidence(context);
       if (typeof mutableSession === 'string') return mutableSession;
-      const session = mutableSession ?? (await withReadOnlySession(context));
-      if (!session || !session.state) return formatBlocked('NO_SESSION');
-      const { state } = session;
+      const { state } = mutableSession ?? (await withReadOnlySession(context)) ?? {};
+      if (!state) return formatBlocked('NO_SESSION');
       const { phase } = state;
 
-      // User-gate phases require explicit human decision
       if (USER_GATES.has(phase)) {
         const guidance: Record<string, string[]> = {
           PLAN_REVIEW: ['/approve', '/request-changes', '/reject'],
