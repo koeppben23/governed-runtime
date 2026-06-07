@@ -119,6 +119,30 @@ function buildAuditSection(audit: AuditPolicy): PolicySnapshot['audit'] {
   };
 }
 
+function buildResolutionFields(
+  resolution: Parameters<typeof createPolicySnapshot>[3],
+  policy: FlowGuardPolicy,
+  fallbackGate: EffectiveGateBehavior,
+) {
+  if (!resolution) return { requestedMode: policy.mode };
+  const r = resolution;
+  return {
+    requestedMode: r.requestedMode ?? policy.mode,
+    effectiveGateBehavior: r.effectiveGateBehavior ?? fallbackGate,
+    ...(r.source ? { source: r.source } : ({} as Record<string, unknown>)),
+    ...(r.degradedReason ? { degradedReason: r.degradedReason } : ({} as Record<string, unknown>)),
+    ...(r.resolutionReason
+      ? { resolutionReason: r.resolutionReason }
+      : ({} as Record<string, unknown>)),
+    ...(r.centralMinimumMode
+      ? { centralMinimumMode: r.centralMinimumMode }
+      : ({} as Record<string, unknown>)),
+    ...(r.policyDigest ? { policyDigest: r.policyDigest } : ({} as Record<string, unknown>)),
+    ...(r.policyVersion ? { policyVersion: r.policyVersion } : ({} as Record<string, unknown>)),
+    ...(r.policyPathHint ? { policyPathHint: r.policyPathHint } : ({} as Record<string, unknown>)),
+  };
+}
+
 export function createPolicySnapshot(
   policy: FlowGuardPolicy,
   resolvedAt: string,
@@ -136,24 +160,17 @@ export function createPolicySnapshot(
   },
 ): PolicySnapshot {
   const canonical = JSON.stringify(policy, Object.keys(policy).sort());
+  const fallbackGate = policy.requireHumanGates
+    ? ('human_gated' as const)
+    : ('auto_approve' as const);
 
   return {
     mode: policy.mode,
     hash: digestFn(canonical),
     resolvedAt,
+    ...(buildResolutionFields(resolution, policy, fallbackGate) as Record<string, unknown>),
     requestedMode: resolution?.requestedMode ?? policy.mode,
-    ...(resolution?.source ? { source: resolution.source } : {}),
-    effectiveGateBehavior:
-      resolution?.effectiveGateBehavior ??
-      (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
-    ...(resolution?.degradedReason ? { degradedReason: resolution.degradedReason } : {}),
-    ...(resolution?.resolutionReason ? { resolutionReason: resolution.resolutionReason } : {}),
-    ...(resolution?.centralMinimumMode
-      ? { centralMinimumMode: resolution.centralMinimumMode }
-      : {}),
-    ...(resolution?.policyDigest ? { policyDigest: resolution.policyDigest } : {}),
-    ...(resolution?.policyVersion ? { policyVersion: resolution.policyVersion } : {}),
-    ...(resolution?.policyPathHint ? { policyPathHint: resolution.policyPathHint } : {}),
+    effectiveGateBehavior: resolution?.effectiveGateBehavior ?? fallbackGate,
     requireHumanGates: policy.requireHumanGates,
     maxSelfReviewIterations: policy.maxSelfReviewIterations,
     maxImplReviewIterations: policy.maxImplReviewIterations,
@@ -539,6 +556,44 @@ function normalizeActorClassification(
   return { value: {}, normalized: true };
 }
 
+const DEFAULT_AUDIT_VALUE = {
+  emitTransitions: true,
+  emitToolCalls: true,
+  enableChainHash: true,
+  timestampAssurance: {
+    enabled: false,
+    mode: 'local_only' as const,
+    strict: false,
+    criticalEvents: ['decision', 'lifecycle'],
+    ntpServers: ['pool.ntp.org'],
+    ntpDriftThresholdMs: 30000,
+    tsaTimeoutMs: 10000,
+  },
+};
+
+function buildTsaFromRaw(rawTsa: Record<string, unknown>) {
+  return {
+    enabled: typeof rawTsa.enabled === 'boolean' ? rawTsa.enabled : false,
+    mode: isValidTsAMode(rawTsa.mode)
+      ? (rawTsa.mode as 'local_only' | 'ntp_check' | 'tsa_critical')
+      : ('local_only' as const),
+    strict: typeof rawTsa.strict === 'boolean' ? rawTsa.strict : false,
+    criticalEvents: Array.isArray(rawTsa.criticalEvents)
+      ? rawTsa.criticalEvents.filter((e): e is string => typeof e === 'string')
+      : ['decision', 'lifecycle'],
+    tsaUrl: typeof rawTsa.tsaUrl === 'string' ? rawTsa.tsaUrl : undefined,
+    trustAnchors: Array.isArray(rawTsa.trustAnchors)
+      ? rawTsa.trustAnchors.filter((a): a is string => typeof a === 'string')
+      : undefined,
+    ntpServers: Array.isArray(rawTsa.ntpServers)
+      ? rawTsa.ntpServers.filter((s): s is string => typeof s === 'string')
+      : ['pool.ntp.org'],
+    ntpDriftThresholdMs:
+      typeof rawTsa.ntpDriftThresholdMs === 'number' ? rawTsa.ntpDriftThresholdMs : 30000,
+    tsaTimeoutMs: typeof rawTsa.tsaTimeoutMs === 'number' ? rawTsa.tsaTimeoutMs : 10000,
+  };
+}
+
 function normalizeAudit(s: Record<string, unknown>): NormalizedField<{
   emitTransitions: boolean;
   emitToolCalls: boolean;
@@ -556,60 +611,15 @@ function normalizeAudit(s: Record<string, unknown>): NormalizedField<{
   };
 }> {
   const raw = s.audit as Record<string, unknown> | null | undefined;
-  if (!raw || typeof raw !== 'object') {
-    return {
-      value: {
-        emitTransitions: true,
-        emitToolCalls: true,
-        enableChainHash: true,
-        timestampAssurance: {
-          enabled: false,
-          mode: 'local_only',
-          strict: false,
-          criticalEvents: ['decision', 'lifecycle'],
-          ntpServers: ['pool.ntp.org'],
-          ntpDriftThresholdMs: 30000,
-          tsaTimeoutMs: 10000,
-        },
-      },
-      normalized: true,
-    };
-  }
+  if (!raw || typeof raw !== 'object') return { value: DEFAULT_AUDIT_VALUE, normalized: true };
   const emitTransitions = typeof raw.emitTransitions === 'boolean' ? raw.emitTransitions : true;
   const emitToolCalls = typeof raw.emitToolCalls === 'boolean' ? raw.emitToolCalls : true;
   const enableChainHash = typeof raw.enableChainHash === 'boolean' ? raw.enableChainHash : true;
   const rawTsa = raw.timestampAssurance as Record<string, unknown> | null | undefined;
   const timestampAssurance =
     rawTsa && typeof rawTsa === 'object'
-      ? {
-          enabled: typeof rawTsa.enabled === 'boolean' ? rawTsa.enabled : false,
-          mode: isValidTsAMode(rawTsa.mode)
-            ? (rawTsa.mode as 'local_only' | 'ntp_check' | 'tsa_critical')
-            : 'local_only',
-          strict: typeof rawTsa.strict === 'boolean' ? rawTsa.strict : false,
-          criticalEvents: Array.isArray(rawTsa.criticalEvents)
-            ? rawTsa.criticalEvents.filter((e): e is string => typeof e === 'string')
-            : ['decision', 'lifecycle'],
-          tsaUrl: typeof rawTsa.tsaUrl === 'string' ? rawTsa.tsaUrl : undefined,
-          trustAnchors: Array.isArray(rawTsa.trustAnchors)
-            ? rawTsa.trustAnchors.filter((a): a is string => typeof a === 'string')
-            : undefined,
-          ntpServers: Array.isArray(rawTsa.ntpServers)
-            ? rawTsa.ntpServers.filter((s): s is string => typeof s === 'string')
-            : ['pool.ntp.org'],
-          ntpDriftThresholdMs:
-            typeof rawTsa.ntpDriftThresholdMs === 'number' ? rawTsa.ntpDriftThresholdMs : 30000,
-          tsaTimeoutMs: typeof rawTsa.tsaTimeoutMs === 'number' ? rawTsa.tsaTimeoutMs : 10000,
-        }
-      : {
-          enabled: false,
-          mode: 'local_only' as const,
-          strict: false,
-          criticalEvents: ['decision', 'lifecycle'],
-          ntpServers: ['pool.ntp.org'],
-          ntpDriftThresholdMs: 30000,
-          tsaTimeoutMs: 10000,
-        };
+      ? buildTsaFromRaw(rawTsa)
+      : { ...DEFAULT_AUDIT_VALUE.timestampAssurance };
   return {
     value: { emitTransitions, emitToolCalls, enableChainHash, timestampAssurance },
     normalized: false,
