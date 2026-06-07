@@ -43,11 +43,10 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   });
 
   it('FLOWGUARD_MANDATES_BODY matches compiled output hash', () => {
-    // Refreshed for #470: consolidated overlapping sections (tightened Hard
-    // Invariants, turned Before Acting/Completing/11b into pointer sections,
-    // strengthened Implementation Checklist with classification/completion gates).
+    // Refreshed for #471: decoupled host-specific output rules (Next action: line)
+    // from universal governance rules — scoped as OpenCode host/profile convention.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      '7b6625da8a1151b694019a27c7ebd27582b5903195f57d9de333ad95eb53c676',
+      '208fb5cfdfeab7612f6a40b3dab9a6faad8fdb9edc80a4c5ddf02ccc49e16d30',
     );
   });
 
@@ -85,9 +84,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for Item 2: plan/implement/architecture review templates now
     // capture Discovery context, pass it to the reviewer subagent, and require
     // NOT_VERIFIED correlation (parity with /review). Changes the COMMANDS hash.
+    // Refreshed for #471: COMPACT_COMMAND_EXECUTION / CONCISE_COMMAND_EXECUTION
+    // updated with host/profile output convention scope.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '50dc4ea66b241fa74ef4f55db49b584ee2b621ae587d8514cf583d08dc4329e7',
+      'b3a7c90fea4ab6343d09a748e10e5fc45afb77bb253f8b4f666ea64dbad9540a',
     );
   });
 

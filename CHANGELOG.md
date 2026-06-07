@@ -26,6 +26,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sections preserved; no normative rule removed. Semantic survival assertions
   guard every core rule across the consolidation.
 
+- **Issue #471 (decouple host-specific output rules):** Scoped the "Next action:"
+  line as a host/profile output convention within `## Governance rules` rather
+  than a universal governance mandate. The universal rules (FlowGuard tools
+  only, one command then stop, explicit commands only) remain unchanged in
+  meaning. Compact and concise mirrors synchronized with host-profile scope
+  (`Host convention: ... (OpenCode profile)`). No new H2 section, no
+  renderer/runtime change, all 25 command templates remain stable.
+
 - Decoupled the repository root `AGENTS.md` from installed FlowGuard mandate
   text: root `AGENTS.md` is now local contributor guidance only, while
   `src/templates/mandates.ts` remains the canonical source for installed runtime

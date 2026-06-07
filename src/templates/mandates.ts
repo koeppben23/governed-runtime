@@ -223,12 +223,15 @@ Universal FlowGuard mandates outrank slash-command, profile, and local style rul
 
 ## Governance rules
 
-These rules apply to every FlowGuard command:
+Universal governance rules for every FlowGuard command:
 
 - Use only FlowGuard tools for state changes (shell commands and file edits bypass governance and break audit integrity).
 - Complete this command fully, then stop — the user invokes the next command explicitly.
 - Only an explicit FlowGuard command triggers workflow actions. Free-text like "go", "weiter", or "proceed" is conversation — respond without calling FlowGuard tools.
-- End every response with exactly one \`Next action:\` line.
+
+Host/profile output convention:
+
+- For the OpenCode profile, end every response with exactly one \`Next action:\` line unless the active host/profile specifies a different output convention.
 
 ## 12. Extended Guidance
 
@@ -290,7 +293,7 @@ export const COMPACT_COMMAND_EXECUTION = `## Governance rules
 - Use only FlowGuard tools for state changes.
 - Complete this command fully, then stop.
 - Only explicit FlowGuard commands trigger workflow actions.
-- End every response with exactly one \`Next action:\` line.`;
+- Host convention: end every response with exactly one \`Next action:\` line (OpenCode profile).`;
 
 // ---------------------------------------------------------------------------
 // Concise section text constants — extracted from conciseSectionForPhase
@@ -374,7 +377,7 @@ export const CONCISE_COMMAND_EXECUTION = `## Governance rules
 - Use only FlowGuard tools for state changes.
 - Complete the current command fully, then stop.
 - Only explicit FlowGuard commands trigger workflow actions.
-- End every response with exactly one \`Next action:\` line.`;
+- Host convention: end every response with exactly one \`Next action:\` line (OpenCode profile).`;
 
 export const CONCISE_EXTENDED_GUIDANCE = `## 12. Extended Guidance
 
