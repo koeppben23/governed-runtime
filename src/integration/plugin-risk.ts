@@ -57,43 +57,29 @@ function resolveRelativePath(filePath: string, getWorktreeRoot: () => string | u
  *
  * @internal
  */
-export function extractPathsFromPatch(diff: string): string[] {
-  const paths = new Set<string>();
-
-  // Guard against excessive input that could cause ReDoS.
-  if (diff.length > 1024 * 1024) return [];
-
-  const headerPattern = /^(?:---|\+\+\+)[ \t]+(?:[ab]\/)?([^\n\r]+)$/gm;
+function collectPathsFromPattern(
+  diff: string,
+  pattern: RegExp,
+  groupIndexes: number[],
+  paths: Set<string>,
+): void {
   let match: RegExpExecArray | null;
-
-  while ((match = headerPattern.exec(diff)) !== null) {
-    const filePath = (match[1] ?? '').trim();
-    if (filePath && filePath !== '/dev/null' && filePath !== 'dev/null') {
-      // Normalize slashes for platform-independent output.
-      paths.add(filePath.replace(/\\/g, '/'));
-    }
-  }
-
-  // 2. Binary file diffs: "Binary files a/<path> and b/<path> differ"
-  const binaryPattern = /^Binary files a\/(.+?) and b\/\1 differ$/gm;
-  while ((match = binaryPattern.exec(diff)) !== null) {
-    const filePath = (match[1] ?? '').trim();
-    if (filePath && filePath !== '/dev/null' && filePath !== 'dev/null') {
-      paths.add(filePath.replace(/\\/g, '/'));
-    }
-  }
-
-  // 3. diff --git headers: "diff --git a/<path> b/<path>"
-  const gitHeaderPattern = /^diff --git a\/(.+?) b\/(.+)$/gm;
-  while ((match = gitHeaderPattern.exec(diff)) !== null) {
-    for (let i = 1; i <= 2; i++) {
-      const filePath = (match[i] ?? '').trim();
+  while ((match = pattern.exec(diff)) !== null) {
+    for (const idx of groupIndexes) {
+      const filePath = (match[idx] ?? '').trim();
       if (filePath && filePath !== '/dev/null' && filePath !== 'dev/null') {
         paths.add(filePath.replace(/\\/g, '/'));
       }
     }
   }
+}
 
+export function extractPathsFromPatch(diff: string): string[] {
+  if (diff.length > 1024 * 1024) return [];
+  const paths = new Set<string>();
+  collectPathsFromPattern(diff, /^(?:---|\+\+\+)[ \t]+(?:[ab]\/)?([^\n\r]+)$/gm, [1], paths);
+  collectPathsFromPattern(diff, /^Binary files a\/(.+?) and b\/\1 differ$/gm, [1], paths);
+  collectPathsFromPattern(diff, /^diff --git a\/(.+?) b\/(.+)$/gm, [1, 2], paths);
   return [...paths];
 }
 
@@ -130,60 +116,30 @@ export function extractPathsFromBashCommand(cmd: string): string[] {
     if (target) paths.add(target);
   }
 
-  // 3. rm targets: rm [-rf] <files...>
-  const rmPattern = /\brm\s+(?:-[rRfiv]+\s+)*([^\n;&|]+)/g;
-  while ((match = rmPattern.exec(cmd)) !== null) {
-    const argStr = (match[1] ?? '').trim();
-    for (const arg of splitUnquotedArgs(argStr)) {
-      if (!arg.startsWith('-')) paths.add(arg);
-    }
-  }
-
-  // 4. mv/cp targets: mv/cp <src...> <dest>
-  const mvCpPattern = /\b(?:mv|cp)\s+(?:-[a-zA-Z]+\s+)*([^\n;&|]+)/g;
-  while ((match = mvCpPattern.exec(cmd)) !== null) {
-    const argStr = (match[1] ?? '').trim();
-    const args = splitUnquotedArgs(argStr);
-    // All paths are potentially affected (source and destination)
-    for (const arg of args) {
-      if (!arg.startsWith('-')) paths.add(arg);
-    }
-  }
-
-  // 5. sed -i: sed -i[suffix] <expr> <file...>
-  //     Combined flags (e.g. -ni, -Ei) and flags before/after the -i token.
-  //     alt 1: flags-before (no i) + -i[suffix] + flags-after (no i)  e.g. "-n -i.bak -r"
-  //     alt 2: one token with i embedded                                e.g. "-ni", "-Ei"
-  //     shared tail: extra flags after either alt                       e.g. "-ni -r"
-  const sedPattern =
-    /\bsed\s+(?:(?:-[^i\s]+\s+)*-i[^\s]*(?:\s+-[^i\s]+)*|-[a-zA-Z]*i[^\s]*)(?:\s+-[^i\s]+)*\s+(?:'[^']*'|"[^"]*"|[^\s]+)\s+([^\n;&|]+)/g;
-  while ((match = sedPattern.exec(cmd)) !== null) {
-    const argStr = (match[1] ?? '').trim();
-    for (const arg of splitUnquotedArgs(argStr)) {
-      if (!arg.startsWith('-')) paths.add(arg);
-    }
-  }
-
-  // 6. chmod: chmod <mode> <file...>
-  const chmodPattern =
-    /\bchmod\s+(?:-[Rfvch]\s+)*(?:[0-7]{3,4}|[ugoa]?[+\-=/][rwxXst]+)\s+([^\n;&|]+)/g;
-  while ((match = chmodPattern.exec(cmd)) !== null) {
-    const argStr = (match[1] ?? '').trim();
-    for (const arg of splitUnquotedArgs(argStr)) {
-      if (!arg.startsWith('-')) paths.add(arg);
-    }
-  }
-
-  // 7. git checkout -- <file...>
-  const gitCheckoutPattern = /\bgit\s+checkout\s+(?:[^\s]+\s+)?--\s+([^\s;&|]+)/g;
-  while ((match = gitCheckoutPattern.exec(cmd)) !== null) {
-    const argStr = (match[1] ?? '').trim();
-    for (const arg of splitUnquotedArgs(argStr)) {
-      if (!arg.startsWith('-')) paths.add(arg);
-    }
-  }
+  collectArgsToPaths(cmd, /\brm\s+(?:-[rRfiv]+\s+)*([^\n;&|]+)/g, paths);
+  collectArgsToPaths(cmd, /\b(?:mv|cp)\s+(?:-[a-zA-Z]+\s+)*([^\n;&|]+)/g, paths);
+  collectArgsToPaths(
+    cmd,
+    /\bsed\s+(?:(?:-[^i\s]+\s+)*-i[^\s]*(?:\s+-[^i\s]+)*|-[a-zA-Z]*i[^\s]*)(?:\s+-[^i\s]+)*\s+(?:'[^']*'|"[^"]*"|[^\s]+)\s+([^\n;&|]+)/g,
+    paths,
+  );
+  collectArgsToPaths(
+    cmd,
+    /\bchmod\s+(?:-[Rfvch]\s+)*(?:[0-7]{3,4}|[ugoa]?[+\-=/][rwxXst]+)\s+([^\n;&|]+)/g,
+    paths,
+  );
+  collectArgsToPaths(cmd, /\bgit\s+checkout\s+(?:[^\s]+\s+)?--\s+([^\s;&|]+)/g, paths);
 
   return [...paths].map((p) => p.replace(/\\/g, '/'));
+}
+
+function collectArgsToPaths(cmd: string, pattern: RegExp, paths: Set<string>): void {
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(cmd)) !== null) {
+    for (const arg of splitUnquotedArgs((match[1] ?? '').trim())) {
+      if (!arg.startsWith('-')) paths.add(arg);
+    }
+  }
 }
 
 /**
