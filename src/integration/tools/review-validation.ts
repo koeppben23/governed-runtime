@@ -288,165 +288,238 @@ export function validateReviewFindings(
     });
   }
 
-  if (ctx.strictEnforcement) {
-    if (!ctx.assurance || !ctx.obligationType) {
-      return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-        required: 'strict review assurance state',
-      });
-    }
+  if (ctx.strictEnforcement) return validateStrictReviewFindings(findings, ctx);
 
-    const obligation = findLatestObligation(
-      ctx.assurance.obligations,
-      ctx.obligationType,
-      expectedIteration,
-      expectedPlanVersion,
-    );
-    if (!obligation) {
-      return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-        obligationType: ctx.obligationType,
-        iteration: String(expectedIteration),
-        planVersion: String(expectedPlanVersion),
-      });
-    }
+  return null;
+}
 
-    const obligationRejection = getReviewFindingsAcceptanceRejection({ obligation });
-    if (obligationRejection) {
-      return formatAcceptanceRejection(obligationRejection);
-    }
+interface StrictReviewBinding {
+  readonly obligation: ReviewObligation;
+  readonly invocation: ReviewInvocationEvidence;
+  readonly submittedFindingsHash: string;
+  readonly isHostTaskMode: boolean;
+}
 
-    const submittedFindingsHash = hashFindings(findings);
-    const isHostTaskMode = ctx.reviewInvocationPolicy === 'host_task_required';
+function validateStrictReviewFindings(
+  findings: ReviewFindings,
+  ctx: ReviewFindingsValidationContext,
+): string | null {
+  const binding = resolveStrictReviewBinding(findings, ctx);
+  if (typeof binding === 'string') return binding;
+  return (
+    validateStrictReviewRejections(binding) ??
+    validateStrictReviewIdentity(findings, ctx, binding) ??
+    validateStrictReviewAcceptance(findings, ctx, binding) ??
+    validateStrictReviewAttestation(findings, ctx, binding.obligation) ??
+    validateStrictReviewInvocationBinding(findings, ctx, binding)
+  );
+}
 
-    // BUG-15 fix: For host_task_required, the plugin holds first-party evidence
-    // from the host-visible Task hook. The agent reconstructs findings from text
-    // output, which produces a different JSON.stringify key order and Zod-stripped
-    // fields. Match by obligationId + invocationMode instead of requiring findingsHash.
-    const invocation = ctx.assurance.invocations.find((item) =>
-      obligation.invocationId
-        ? item.invocationId === obligation.invocationId
-        : item.obligationId === obligation.obligationId &&
-          (isHostTaskMode
-            ? item.invocationMode === 'host_subagent_task'
-            : item.childSessionId === findings.reviewedBy.sessionId &&
-              item.findingsHash === submittedFindingsHash),
-    );
-    if (!invocation) {
-      return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
-        obligationId: obligation.obligationId,
-      });
-    }
-
-    const invocationRejection = getReviewFindingsAcceptanceRejection({ obligation, invocation });
-    if (invocationRejection) {
-      return formatAcceptanceRejection(invocationRejection);
-    }
-
-    if (
-      (invocation.invocationMode === 'manual_attested' ||
-        invocation.invocationMode === 'native_subagent_attested') &&
-      (invocation.childSessionId === ctx.reviewParentSessionId ||
-        findings.reviewedBy.sessionId === ctx.reviewParentSessionId)
-    ) {
-      return formatBlocked('REVIEW_SELF_APPROVAL_DENIED', {
-        obligationId: obligation.obligationId,
-      });
-    }
-
-    if (
-      pluginEnforcementUnavailableForReviewAcceptance({
-        findings,
-        obligation,
-        invocation,
-        findingsHash: submittedFindingsHash,
-        ctx,
-      })
-    ) {
-      return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
-        obligationType: ctx.obligationType,
-        iteration: String(expectedIteration),
-        planVersion: String(expectedPlanVersion),
-        ...(invocation.invocationMode === 'native_subagent_attested'
-          ? { deniedReviewPath: REVIEW_ACCEPTANCE_PATH_NATIVE }
-          : {}),
-      });
-    }
-
-    if (
-      obligation.status !== 'fulfilled' &&
-      !(
-        ctx.reviewInvocationPolicy === 'host_task_required' &&
-        obligation.status === 'pending' &&
-        invocation.obligationId === obligation.obligationId &&
-        invocation.invocationMode === 'host_subagent_task' &&
-        invocation.hostVisible === true
-      )
-    ) {
-      return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
-        obligationId: obligation.obligationId,
-      });
-    }
-
-    const attestationError = validateStrictAttestation(findings, {
-      obligationId: obligation.obligationId,
-      iteration: expectedIteration,
-      planVersion: expectedPlanVersion,
+function resolveStrictReviewBinding(
+  findings: ReviewFindings,
+  ctx: ReviewFindingsValidationContext,
+): StrictReviewBinding | string {
+  if (!ctx.assurance || !ctx.obligationType) {
+    return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      required: 'strict review assurance state',
     });
-    if (attestationError) {
-      return formatBlocked(attestationError, {
-        obligationId: obligation.obligationId,
-      });
-    }
+  }
+  const obligation = findLatestObligation(
+    ctx.assurance.obligations,
+    ctx.obligationType,
+    ctx.expectedIteration,
+    ctx.expectedPlanVersion,
+  );
+  if (!obligation) return missingStrictObligation(ctx);
+  const submittedFindingsHash = hashFindings(findings);
+  const isHostTaskMode = ctx.reviewInvocationPolicy === 'host_task_required';
+  const invocation = findStrictInvocation(ctx, obligation, findings, submittedFindingsHash);
+  if (!invocation) {
+    return formatBlocked('SUBAGENT_EVIDENCE_MISSING', { obligationId: obligation.obligationId });
+  }
+  return { obligation, invocation, submittedFindingsHash, isHostTaskMode };
+}
 
-    if (invocation.obligationId !== obligation.obligationId) {
-      return formatBlocked('SUBAGENT_MANDATE_MISMATCH', {
-        obligationId: obligation.obligationId,
-      });
-    }
+function missingStrictObligation(ctx: ReviewFindingsValidationContext): string {
+  return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+    obligationType: ctx.obligationType ?? 'review',
+    iteration: String(ctx.expectedIteration),
+    planVersion: String(ctx.expectedPlanVersion),
+  });
+}
 
-    if (findings.reviewedBy.sessionId !== invocation.childSessionId) {
-      if (!isHostTaskMode) {
-        return formatBlocked('REVIEW_FINDINGS_SESSION_MISMATCH', {
-          provided: findings.reviewedBy.sessionId,
-          expected: invocation.childSessionId,
-        });
-      }
-      // Host-task mode: sessionId verified at evidence-creation time (plugin hook).
-      // Agent reconstruction from text output may differ; skip hard block.
-    }
+function findStrictInvocation(
+  ctx: ReviewFindingsValidationContext,
+  obligation: ReviewObligation,
+  findings: ReviewFindings,
+  submittedFindingsHash: string,
+): ReviewInvocationEvidence | undefined {
+  const isHostTaskMode = ctx.reviewInvocationPolicy === 'host_task_required';
+  return ctx.assurance?.invocations.find((item) =>
+    obligation.invocationId
+      ? item.invocationId === obligation.invocationId
+      : item.obligationId === obligation.obligationId &&
+        (isHostTaskMode
+          ? item.invocationMode === 'host_subagent_task'
+          : item.childSessionId === findings.reviewedBy.sessionId &&
+            item.findingsHash === submittedFindingsHash),
+  );
+}
 
-    if (isHostTaskMode && invocation.capturedVerdict) {
-      // Host-task mode: plugin captured the authoritative verdict from the
-      // reviewer's actual output. Verify the agent's submitted verdict matches
-      // the first-party evidence instead of comparing full-content hashes.
-      const submittedVerdict = (findings as { overallVerdict?: string }).overallVerdict;
-      if (submittedVerdict !== invocation.capturedVerdict) {
-        return formatBlocked('REVIEW_FINDINGS_HASH_MISMATCH', {
-          obligationId: obligation.obligationId,
-        });
-      }
-    } else if (submittedFindingsHash !== invocation.findingsHash) {
-      return formatBlocked('REVIEW_FINDINGS_HASH_MISMATCH', {
-        obligationId: obligation.obligationId,
-      });
-    }
+function validateStrictReviewRejections(binding: StrictReviewBinding): string | null {
+  const obligationRejection = getReviewFindingsAcceptanceRejection({
+    obligation: binding.obligation,
+  });
+  if (obligationRejection) return formatAcceptanceRejection(obligationRejection);
+  const invocationRejection = getReviewFindingsAcceptanceRejection({
+    obligation: binding.obligation,
+    invocation: binding.invocation,
+  });
+  return invocationRejection ? formatAcceptanceRejection(invocationRejection) : null;
+}
 
-    if (
-      ctx.reviewInvocationPolicy === 'host_task_required' &&
-      (invocation.invocationMode !== 'host_subagent_task' ||
-        invocation.hostVisible !== true ||
-        invocation.agentType !== REVIEWER_SUBAGENT_TYPE ||
-        invocation.parentSessionId !== ctx.reviewParentSessionId ||
-        invocation.criteriaVersion !== obligation.criteriaVersion ||
-        invocation.mandateDigest !== obligation.mandateDigest)
-    ) {
-      return formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
+function validateStrictReviewIdentity(
+  findings: ReviewFindings,
+  ctx: ReviewFindingsValidationContext,
+  binding: StrictReviewBinding,
+): string | null {
+  const { obligation, invocation } = binding;
+  const attestedMode =
+    invocation.invocationMode === 'manual_attested' ||
+    invocation.invocationMode === 'native_subagent_attested';
+  const selfSession =
+    invocation.childSessionId === ctx.reviewParentSessionId ||
+    findings.reviewedBy.sessionId === ctx.reviewParentSessionId;
+  return attestedMode && selfSession
+    ? formatBlocked('REVIEW_SELF_APPROVAL_DENIED', { obligationId: obligation.obligationId })
+    : null;
+}
+
+function validateStrictReviewAcceptance(
+  findings: ReviewFindings,
+  ctx: ReviewFindingsValidationContext,
+  binding: StrictReviewBinding,
+): string | null {
+  const { obligation, invocation, submittedFindingsHash } = binding;
+  if (pluginEnforcementUnavailableForReviewAcceptance({
+    findings,
+    obligation,
+    invocation,
+    findingsHash: submittedFindingsHash,
+    ctx,
+  })) {
+    return formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      obligationType: ctx.obligationType ?? 'review',
+      iteration: String(ctx.expectedIteration),
+      planVersion: String(ctx.expectedPlanVersion),
+      ...(invocation.invocationMode === 'native_subagent_attested'
+        ? { deniedReviewPath: REVIEW_ACCEPTANCE_PATH_NATIVE }
+        : {}),
+    });
+  }
+  return isStrictObligationConsumable(ctx, binding)
+    ? null
+    : formatBlocked('SUBAGENT_EVIDENCE_MISSING', { obligationId: obligation.obligationId });
+}
+
+function isStrictObligationConsumable(
+  ctx: ReviewFindingsValidationContext,
+  binding: StrictReviewBinding,
+): boolean {
+  const { obligation, invocation } = binding;
+  return (
+    obligation.status === 'fulfilled' ||
+    (ctx.reviewInvocationPolicy === 'host_task_required' &&
+      obligation.status === 'pending' &&
+      invocation.obligationId === obligation.obligationId &&
+      invocation.invocationMode === 'host_subagent_task' &&
+      invocation.hostVisible === true)
+  );
+}
+
+function validateStrictReviewAttestation(
+  findings: ReviewFindings,
+  ctx: ReviewFindingsValidationContext,
+  obligation: ReviewObligation,
+): string | null {
+  const attestationError = validateStrictAttestation(findings, {
+    obligationId: obligation.obligationId,
+    iteration: ctx.expectedIteration,
+    planVersion: ctx.expectedPlanVersion,
+  });
+  return attestationError
+    ? formatBlocked(attestationError, { obligationId: obligation.obligationId })
+    : null;
+}
+
+function validateStrictReviewInvocationBinding(
+  findings: ReviewFindings,
+  ctx: ReviewFindingsValidationContext,
+  binding: StrictReviewBinding,
+): string | null {
+  return (
+    validateInvocationObligationId(binding) ??
+    validateInvocationSessionId(findings, binding) ??
+    validateInvocationFindingsHash(findings, binding) ??
+    validateHostTaskInvocationContract(ctx, binding)
+  );
+}
+
+function validateInvocationObligationId(binding: StrictReviewBinding): string | null {
+  const { obligation, invocation } = binding;
+  return invocation.obligationId !== obligation.obligationId
+    ? formatBlocked('SUBAGENT_MANDATE_MISMATCH', { obligationId: obligation.obligationId })
+    : null;
+}
+
+function validateInvocationSessionId(
+  findings: ReviewFindings,
+  binding: StrictReviewBinding,
+): string | null {
+  if (findings.reviewedBy.sessionId === binding.invocation.childSessionId || binding.isHostTaskMode) {
+    return null;
+  }
+  return formatBlocked('REVIEW_FINDINGS_SESSION_MISMATCH', {
+    provided: findings.reviewedBy.sessionId,
+    expected: binding.invocation.childSessionId,
+  });
+}
+
+function validateInvocationFindingsHash(
+  findings: ReviewFindings,
+  binding: StrictReviewBinding,
+): string | null {
+  const { obligation, invocation, submittedFindingsHash, isHostTaskMode } = binding;
+  if (isHostTaskMode && invocation.capturedVerdict) {
+    const submittedVerdict = (findings as { overallVerdict?: string }).overallVerdict;
+    return submittedVerdict === invocation.capturedVerdict
+      ? null
+      : formatBlocked('REVIEW_FINDINGS_HASH_MISMATCH', { obligationId: obligation.obligationId });
+  }
+  return submittedFindingsHash === invocation.findingsHash
+    ? null
+    : formatBlocked('REVIEW_FINDINGS_HASH_MISMATCH', { obligationId: obligation.obligationId });
+}
+
+function validateHostTaskInvocationContract(
+  ctx: ReviewFindingsValidationContext,
+  binding: StrictReviewBinding,
+): string | null {
+  const { obligation, invocation } = binding;
+  if (ctx.reviewInvocationPolicy !== 'host_task_required') return null;
+  const valid =
+    invocation.invocationMode === 'host_subagent_task' &&
+    invocation.hostVisible === true &&
+    invocation.agentType === REVIEWER_SUBAGENT_TYPE &&
+    invocation.parentSessionId === ctx.reviewParentSessionId &&
+    invocation.criteriaVersion === obligation.criteriaVersion &&
+    invocation.mandateDigest === obligation.mandateDigest;
+  return valid
+    ? null
+    : formatBlocked('SUBAGENT_EVIDENCE_MISSING', {
         obligationId: obligation.obligationId,
         reason: `expected host-visible ${REVIEWER_SUBAGENT_TYPE} Task evidence bound to the active session, mandate, criteria, child session, and findings hash`,
       });
-    }
-  }
-
-  return null;
 }
 
 /**

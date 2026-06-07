@@ -155,32 +155,8 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     worktree: candidateWorktree ?? '',
   });
 
-  const orchestratorDeps: OrchestratorDeps = {
-    resolveFingerprint: ws.resolveFingerprint,
-    getSessionDir: ws.getSessionDir,
-    updateReviewAssurance: ws.updateReviewAssurance,
-    blockReviewOutcome: ws.blockReviewOutcome,
-    getEnforcementState: ws.getEnforcementState,
-    log,
-    client: typedClient,
-    adapter,
-  };
-
-  const auditDeps: AuditDeps = {
-    resolveFingerprint: ws.resolveFingerprint,
-    getSessionDir: ws.getSessionDir,
-    resolveSessionPolicy,
-    initChain: ws.initChain,
-    invalidateChainState: ws.invalidateChainState,
-    appendAndTrack: ws.appendAndTrack,
-    nextDecisionSequence: ws.nextDecisionSequence,
-    log,
-    logError,
-    cachedFingerprint: ws.cachedFingerprint,
-    mode: config.policy.defaultMode ?? 'solo',
-    tsaProvider: new HttpTimestampAuthorityProvider(),
-    timestampVerifier: new PkijsTimestampVerifier(),
-  };
+  const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient, adapter);
+  const auditDeps = createAuditDeps(ws, log, logError, config.policy.defaultMode, resolveSessionPolicy);
 
   const riskDeps: RiskEnforcementDeps = {
     getSessionDir: ws.getSessionDir,
@@ -192,391 +168,459 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     getWorkspaceDir: () => ws.cachedWsDir,
   };
 
-  async function resolveEnforcement(
-    sessionId: string,
-    context: 'subagent' | 'verdict',
-  ): Promise<{ strictEnforcement: boolean; sessionState: SessionState | null }> {
-    let sessionState: SessionState | null = null;
-    let strictEnforcement = true;
-    try {
-      const sessDir = ws.getSessionDir(sessionId);
-      if (sessDir) {
-        sessionState = await readState(sessDir);
-        if (sessionState) {
-          strictEnforcement = sessionState.policySnapshot?.selfReview?.strictEnforcement === true;
-        }
-      }
-    } catch {
-      log.warn('enforcement', `Failed to read session state for ${context} enforcement check`, {
-        sessionId,
-      });
-    }
-    return { strictEnforcement, sessionState };
-  }
-
-  async function toolBefore(input: unknown, output: unknown): Promise<void> {
-    return runWithAdapterLoggerAsync(adapterLog, async () => {
-      const toolName: string = (input as ToolHookBeforeInput)?.tool ?? '';
-      const sessionId: string = (input as ToolHookBeforeInput)?.sessionID ?? 'unknown';
+  return createFlowGuardPluginHooks({
+    ws,
+    log,
+    adapterLog,
+    riskDeps,
+    discoveryHealthDeps,
+    orchestratorDeps,
+    auditDeps,
+    setCurrentSessionId: (sessionId) => {
       currentSessionId = sessionId;
-      const args = (output as ToolHookBeforeOutput)?.args ?? {};
-      log.info('hook', 'tool.execute.before', { tool: toolName, sessionId });
-      await enforceBeforeRules(toolName, sessionId, args);
+    },
+    logError,
+  });
+};
+
+type PluginLogger = Awaited<ReturnType<typeof createPluginLogger>>['log'];
+type PluginWorkspaceRuntime = ReturnType<typeof createWorkspace>;
+type AdapterLoggerRuntime = Parameters<typeof runWithAdapterLoggerAsync>[0];
+
+function createOrchestratorDeps(
+  ws: PluginWorkspaceRuntime,
+  log: PluginLogger,
+  client: OrchestratorClient,
+  adapter: OrchestratorDeps['adapter'],
+): OrchestratorDeps {
+  return {
+    resolveFingerprint: ws.resolveFingerprint,
+    getSessionDir: ws.getSessionDir,
+    updateReviewAssurance: ws.updateReviewAssurance,
+    blockReviewOutcome: ws.blockReviewOutcome,
+    getEnforcementState: ws.getEnforcementState,
+    log,
+    client,
+    adapter,
+  };
+}
+
+function createAuditDeps(
+  ws: PluginWorkspaceRuntime,
+  log: PluginLogger,
+  logError: (message: string, err: unknown) => void,
+  defaultMode: string | undefined,
+  resolveSessionPolicy: AuditDeps['resolveSessionPolicy'],
+): AuditDeps {
+  return {
+    resolveFingerprint: ws.resolveFingerprint,
+    getSessionDir: ws.getSessionDir,
+    resolveSessionPolicy,
+    initChain: ws.initChain,
+    invalidateChainState: ws.invalidateChainState,
+    appendAndTrack: ws.appendAndTrack,
+    nextDecisionSequence: ws.nextDecisionSequence,
+    log,
+    logError,
+    cachedFingerprint: ws.cachedFingerprint,
+    mode: defaultMode ?? 'solo',
+    tsaProvider: new HttpTimestampAuthorityProvider(),
+    timestampVerifier: new PkijsTimestampVerifier(),
+  };
+}
+
+interface FlowGuardPluginRuntime {
+  readonly ws: PluginWorkspaceRuntime;
+  readonly log: PluginLogger;
+  readonly adapterLog: AdapterLoggerRuntime;
+  readonly riskDeps: RiskEnforcementDeps;
+  readonly discoveryHealthDeps: DiscoveryHealthEnforcementDeps;
+  readonly orchestratorDeps: OrchestratorDeps;
+  readonly auditDeps: AuditDeps;
+  readonly setCurrentSessionId: (sessionId: string) => void;
+  readonly logError: (message: string, err: unknown) => void;
+}
+
+function createFlowGuardPluginHooks(runtime: FlowGuardPluginRuntime): Awaited<ReturnType<Plugin>> {
+  return {
+    'tool.execute.before': (input: unknown, output: unknown) => toolBefore(runtime, input, output),
+    'tool.execute.after': (input: unknown, output: unknown) => toolAfter(runtime, input, output),
+    event: ({ event }) => handlePluginEvent(runtime, event),
+    'experimental.session.compacting': (input, output) => handleCompaction(runtime, input, output),
+  };
+}
+
+async function resolveEnforcement(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  context: 'subagent' | 'verdict',
+): Promise<{ strictEnforcement: boolean; sessionState: SessionState | null }> {
+  try {
+    const sessDir = runtime.ws.getSessionDir(sessionId);
+    const sessionState = sessDir ? await readState(sessDir) : null;
+    return {
+      sessionState,
+      strictEnforcement: sessionState?.policySnapshot?.selfReview?.strictEnforcement === true,
+    };
+  } catch {
+    runtime.log.warn('enforcement', `Failed to read session state for ${context} enforcement check`, {
+      sessionId,
+    });
+    return { strictEnforcement: true, sessionState: null };
+  }
+}
+
+async function toolBefore(
+  runtime: FlowGuardPluginRuntime,
+  input: unknown,
+  output: unknown,
+): Promise<void> {
+  return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
+    const toolName = (input as ToolHookBeforeInput)?.tool ?? '';
+    const sessionId = (input as ToolHookBeforeInput)?.sessionID ?? 'unknown';
+    runtime.setCurrentSessionId(sessionId);
+    const args = (output as ToolHookBeforeOutput)?.args ?? {};
+    runtime.log.info('hook', 'tool.execute.before', { tool: toolName, sessionId });
+    await enforceBeforeRules(runtime, toolName, sessionId, args);
+  });
+}
+
+async function enforceBeforeRules(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<void> {
+  if (toolName === 'task') {
+    await enforceTaskBefore(runtime, toolName, sessionId, args);
+    return;
+  }
+  await enforceMutatingToolCheck(runtime, toolName, sessionId, args);
+  await enforceVerdictCheck(runtime, toolName, sessionId, args);
+}
+
+async function enforceTaskBefore(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<void> {
+  const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
+  if (subagentType === REVIEWER_SUBAGENT_TYPE) {
+    const eState = runtime.ws.getEnforcementState(sessionId);
+    const { strictEnforcement } = await resolveEnforcement(runtime, sessionId, 'subagent');
+    const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
+    if (result.allowed) return;
+    runtime.log.warn('enforcement', 'blocked subagent call', { tool: toolName, sessionId, code: result.code });
+    throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
+  }
+  if (subagentType === '') return;
+  runtime.log.warn('enforcement', 'blocked unauthorized subagent type', {
+    tool: toolName,
+    subagentType,
+    sessionId,
+  });
+  throw buildEnforcementError(
+    'SUBAGENT_TYPE_UNAUTHORIZED',
+    `Subagent type '${subagentType}' is not authorized by FlowGuard governance. Only '${REVIEWER_SUBAGENT_TYPE}' is allowed.`,
+  );
+}
+
+async function enforceMutatingToolCheck(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<void> {
+  if (!isMutatingHostTool(toolName)) return;
+  const sessDir = runtime.ws.getSessionDir(sessionId);
+  if (!sessDir) return;
+  const state = await readRequiredHostToolState(sessDir, sessionId, toolName);
+  if (state.error) {
+    throw buildEnforcementError(state.error.code, state.error.message, {
+      sessionId,
+      tool: toolName,
+      recoveryHint: state.error.recoveryHint,
+      occurredAt: state.error.occurredAt,
     });
   }
+  enforceHostToolPhase(runtime, toolName, sessionId, state);
+  await enforceRiskBefore(runtime.riskDeps, sessDir, state, toolName, args);
+  await enforceDiscoveryHealthBefore(runtime.discoveryHealthDeps, sessDir, state, toolName);
+}
 
-  async function enforceBeforeRules(
-    toolName: string,
-    sessionId: string,
-    args: Record<string, unknown>,
-  ): Promise<void> {
-    if (toolName === 'task') {
-      const st = typeof args.subagent_type === 'string' ? args.subagent_type : '';
-      if (st === REVIEWER_SUBAGENT_TYPE) {
-        const eState = ws.getEnforcementState(sessionId);
-        const { strictEnforcement } = await resolveEnforcement(sessionId, 'subagent');
-        const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
-        if (!result.allowed) {
-          log.warn('enforcement', 'blocked subagent call', {
-            tool: toolName,
-            sessionId,
-            code: result.code,
-          });
-          throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
-        }
-      } else if (st !== '') {
-        log.warn('enforcement', 'blocked unauthorized subagent type', {
-          tool: toolName,
-          subagentType: st,
-          sessionId,
-        });
-        throw buildEnforcementError(
-          'SUBAGENT_TYPE_UNAUTHORIZED',
-          `Subagent type '${st}' is not authorized by FlowGuard governance. Only '${REVIEWER_SUBAGENT_TYPE}' is allowed.`,
-        );
-      }
-      return;
-    }
-    await enforceMutatingToolCheck(toolName, sessionId, args);
-    await enforceVerdictCheck(toolName, sessionId, args);
-  }
-
-  async function enforceMutatingToolCheck(
-    toolName: string,
-    sessionId: string,
-    args: Record<string, unknown>,
-  ): Promise<void> {
-    if (!isMutatingHostTool(toolName)) return;
-    const sessDir = ws.getSessionDir(sessionId);
-    if (!sessDir) return;
-    if (!existsSync(sessDir))
-      throw buildEnforcementError(
-        'SESSION_DIR_NOT_FOUND',
-        `FlowGuard session directory expected at "${sessDir}" but not found on disk. Run /hydrate to initialize the session.`,
-        { sessionId, tool: toolName, sessDir, stateReadable: 'false' },
-      );
-    let state: SessionState | null;
-    try {
-      state = await readState(sessDir);
-    } catch (err) {
-      throw buildEnforcementError(
-        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-        `Cannot verify host tool phase gate — session state exists at "${sessDir}" but is unreadable (${err instanceof Error ? err.message : String(err)}). Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
-        {
-          sessionId,
-          tool: toolName,
-          stateFile: `${sessDir}/session-state.json`,
-          stateReadable: 'false',
-          error: err instanceof Error ? err.message : String(err),
-        },
-      );
-    }
-    if (!state)
-      throw buildEnforcementError(
-        'PLUGIN_ENFORCEMENT_UNAVAILABLE',
-        `Cannot verify host tool phase gate — session directory exists at "${sessDir}" but contains no state file. Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
-        {
-          sessionId,
-          tool: toolName,
-          stateFile: `${sessDir}/session-state.json`,
-          stateReadable: 'false',
-        },
-      );
-    if (state.error)
-      throw buildEnforcementError(state.error.code, state.error.message, {
-        sessionId,
-        tool: toolName,
-        recoveryHint: state.error.recoveryHint,
-        occurredAt: state.error.occurredAt,
-      });
-    const gateResult = isHostToolAllowedInPhase(toolName, state.phase);
-    if (!gateResult.allowed) {
-      log.warn('enforcement', 'blocked host tool in investigation-only phase', {
-        tool: toolName,
-        sessionId,
-        phase: state.phase,
-        code: gateResult.code,
-      });
-      throw buildEnforcementError(gateResult.code!, gateResult.reason!, {
-        sessionId,
-        tool: toolName,
-        phase: state.phase,
-      });
-    }
-    await enforceRiskBefore(riskDeps, sessDir, state, toolName, args);
-    await enforceDiscoveryHealthBefore(discoveryHealthDeps, sessDir, state, toolName);
-  }
-
-  async function enforceVerdictCheck(
-    toolName: string,
-    sessionId: string,
-    args: Record<string, unknown>,
-  ): Promise<void> {
-    if (!isFlowGuardVerdictTool(toolName)) return;
-    for (const key of Object.keys(args)) {
-      if (args[key] === null) delete args[key];
-    }
-    const eState = ws.getEnforcementState(sessionId);
-    const { strictEnforcement: strict, sessionState } = await resolveEnforcement(
-      sessionId,
-      'verdict',
+async function readRequiredHostToolState(
+  sessDir: string,
+  sessionId: string,
+  toolName: string,
+): Promise<SessionState> {
+  if (!existsSync(sessDir)) {
+    throw buildEnforcementError(
+      'SESSION_DIR_NOT_FOUND',
+      `FlowGuard session directory expected at "${sessDir}" but not found on disk. Run /hydrate to initialize the session.`,
+      { sessionId, tool: toolName, sessDir, stateReadable: 'false' },
     );
-    const result = enforceBeforeVerdict(eState, toolName, args, sessionState, strict);
-    if (!result.allowed) {
-      log.warn('enforcement', 'blocked verdict submission', {
-        tool: toolName,
-        sessionId,
-        code: result.code,
-      });
-      throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
-    }
   }
+  try {
+    const state = await readState(sessDir);
+    if (state) return state;
+  } catch (err) {
+    throw unreadableStateError(sessDir, sessionId, toolName, err);
+  }
+  throw missingStateError(sessDir, sessionId, toolName);
+}
 
-  // ── Hook handlers ──────────────────────────────────────────────────────
-  return {
-    'tool.execute.before': toolBefore,
+function unreadableStateError(sessDir: string, sessionId: string, toolName: string, err: unknown): Error {
+  return buildEnforcementError(
+    'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+    `Cannot verify host tool phase gate — session state exists at "${sessDir}" but is unreadable (${err instanceof Error ? err.message : String(err)}). Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
+    {
+      sessionId,
+      tool: toolName,
+      stateFile: `${sessDir}/session-state.json`,
+      stateReadable: 'false',
+      error: err instanceof Error ? err.message : String(err),
+    },
+  );
+}
 
-    'tool.execute.after': async (input: unknown, output: unknown) => {
-      return runWithAdapterLoggerAsync(adapterLog, async () => {
-        const hookInput = input as ToolHookAfterInput;
-        const hookOutput = output as ToolHookAfterOutput;
-        const toolName: string = hookInput?.tool ?? '';
-        const sessionId: string = hookInput?.sessionID ?? 'unknown';
-        currentSessionId = sessionId;
-        const now = new Date().toISOString();
+function missingStateError(sessDir: string, sessionId: string, toolName: string): Error {
+  return buildEnforcementError(
+    'PLUGIN_ENFORCEMENT_UNAVAILABLE',
+    `Cannot verify host tool phase gate — session directory exists at "${sessDir}" but contains no state file. Run FlowGuard doctor, re-hydrate the session, or restore a valid session state.`,
+    { sessionId, tool: toolName, stateFile: `${sessDir}/session-state.json`, stateReadable: 'false' },
+  );
+}
 
-        log.info('hook', 'tool.execute.after', { tool: toolName, sessionId });
+function enforceHostToolPhase(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  sessionId: string,
+  state: SessionState,
+): void {
+  const gateResult = isHostToolAllowedInPhase(toolName, state.phase);
+  if (gateResult.allowed) return;
+  runtime.log.warn('enforcement', 'blocked host tool in investigation-only phase', {
+    tool: toolName,
+    sessionId,
+    phase: state.phase,
+    code: gateResult.code,
+  });
+  throw buildEnforcementError(gateResult.code!, gateResult.reason!, { sessionId, tool: toolName, phase: state.phase });
+}
 
-        if (
-          toolName === TOOL_FLOWGUARD_PLAN ||
-          toolName === TOOL_FLOWGUARD_IMPLEMENT ||
-          toolName === TOOL_FLOWGUARD_ARCHITECTURE ||
-          toolName === TOOL_FLOWGUARD_REVIEW
-        ) {
-          try {
-            trackFlowGuardEnforcement(
-              ws.getEnforcementState(sessionId),
-              toolName,
-              input,
-              output,
-              now,
-            );
-          } catch (err) {
-            logError('enforcement tracking failed', err);
-          }
+async function enforceVerdictCheck(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  sessionId: string,
+  args: Record<string, unknown>,
+): Promise<void> {
+  if (!isFlowGuardVerdictTool(toolName)) return;
+  for (const key of Object.keys(args)) if (args[key] === null) delete args[key];
+  const eState = runtime.ws.getEnforcementState(sessionId);
+  const { strictEnforcement, sessionState } = await resolveEnforcement(runtime, sessionId, 'verdict');
+  const result = enforceBeforeVerdict(eState, toolName, args, sessionState, strictEnforcement);
+  if (result.allowed) return;
+  runtime.log.warn('enforcement', 'blocked verdict submission', { tool: toolName, sessionId, code: result.code });
+  throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
+}
 
-          // #419: native_subagent_attested acceptance is denied when first-party
-          // plugin enforcement is unavailable. The pure validation layer surfaces
-          // this via structured blocked-result fields; the plugin boundary is the
-          // only logger writer, so emit the fail-closed diagnostic here.
-          if (isNativeEnforcementUnavailableDenial(getToolOutput(hookOutput))) {
-            log.warn('review', 'native review acceptance denied: plugin enforcement unavailable', {
-              path: REVIEW_ACCEPTANCE_PATH_NATIVE,
-              reason: REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
-              sessionId,
-            });
-          }
+async function toolAfter(
+  runtime: FlowGuardPluginRuntime,
+  input: unknown,
+  output: unknown,
+): Promise<void> {
+  return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
+    const hookInput = input as ToolHookAfterInput;
+    const hookOutput = output as ToolHookAfterOutput;
+    const toolName = hookInput?.tool ?? '';
+    const sessionId = hookInput?.sessionID ?? 'unknown';
+    const now = new Date().toISOString();
+    runtime.setCurrentSessionId(sessionId);
+    runtime.log.info('hook', 'tool.execute.after', { tool: toolName, sessionId });
+    await handleAfterDiagnostics(runtime, { toolName, sessionId, input, hookInput, hookOutput, now });
+    await handleBashAfter(runtime, toolName, sessionId, hookOutput);
+    await runOrchestrator(runtime.orchestratorDeps, { toolName, input, output: hookOutput, sessionId, now });
+    await runFlowGuardAuditAfter({ runtime, toolName, input, output, sessionId, hookOutput });
+  });
+}
 
-          const hostTaskRejection = getHostTaskFindingsRejection(getToolOutput(hookOutput));
-          if (hostTaskRejection) {
-            log.warn('review', 'host-task findings rejected by shared guard', {
-              sessionId,
-              path: hostTaskRejection.path,
-              reason: hostTaskRejection.reason,
-              status: hostTaskRejection.status,
-              ...(hostTaskRejection.obligationId
-                ? { obligationId: hostTaskRejection.obligationId }
-                : {}),
-            });
-          }
+interface AfterHookContext {
+  readonly toolName: string;
+  readonly sessionId: string;
+  readonly input: unknown;
+  readonly hookInput: ToolHookAfterInput;
+  readonly hookOutput: ToolHookAfterOutput;
+  readonly now: string;
+}
 
-          const identityRejection = getReviewIdentityRejection(getToolOutput(hookOutput));
-          if (identityRejection) {
-            log.warn('review', 'self-review rejected', {
-              sessionId,
-              reason: identityRejection.reason,
-              ...(identityRejection.obligationId
-                ? { obligationId: identityRejection.obligationId }
-                : {}),
-            });
-          }
+async function handleAfterDiagnostics(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): Promise<void> {
+  if (isReviewableFlowGuardTool(ctx.toolName)) {
+    handleReviewableAfter(runtime, ctx);
+    return;
+  }
+  if (ctx.toolName === TOOL_FLOWGUARD_CONTINUE) logIdentityRejection(runtime, ctx.sessionId, ctx.hookOutput);
+  if (ctx.toolName === TOOL_FLOWGUARD_HYDRATE) logHydrateLockSignal(runtime, ctx.sessionId, ctx.hookOutput);
+  if (ctx.toolName === 'task') await handleTaskAfter(runtime, ctx);
+}
 
-          if (toolName === TOOL_FLOWGUARD_REVIEW) {
-            const nativeAttestationRejection = getNativeAttestationRejection(
-              getToolOutput(hookOutput),
-            );
-            if (nativeAttestationRejection) {
-              log.warn('review', 'native attestation not upgraded', {
-                sessionId,
-                reason: nativeAttestationRejection.reason,
-                ...(nativeAttestationRejection.obligationId
-                  ? { obligationId: nativeAttestationRejection.obligationId }
-                  : {}),
-              });
-            }
-          }
+function isReviewableFlowGuardTool(toolName: string): boolean {
+  return [TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT, TOOL_FLOWGUARD_ARCHITECTURE, TOOL_FLOWGUARD_REVIEW].includes(toolName);
+}
 
-          // #428: auto-advance overflow is a fail-closed result (no partially-advanced
-          // state was persisted). The pure rail/boundary layers surface it via a
-          // structured result; the plugin boundary is the only reliable logger writer,
-          // so emit the diagnostic here. A non-terminating topology is an operator-level
-          // defect, hence error severity.
-          const overflow = getAutoAdvanceOverflow(getToolOutput(hookOutput));
-          if (overflow) {
-            log.error('autoAdvance', 'auto-advance overflow: topology may be non-terminating', {
-              sessionId,
-              phase: overflow.phase,
-              limit: overflow.limit,
-            });
-          }
-        } else if (toolName === TOOL_FLOWGUARD_CONTINUE) {
-          const identityRejection = getReviewIdentityRejection(getToolOutput(hookOutput));
-          if (identityRejection) {
-            log.warn('review', 'self-review rejected', {
-              sessionId,
-              reason: identityRejection.reason,
-              ...(identityRejection.obligationId
-                ? { obligationId: identityRejection.obligationId }
-                : {}),
-            });
-          }
-        } else if (toolName === TOOL_FLOWGUARD_HYDRATE) {
-          // #429: hydrate performs a full read-modify-write under one session
-          // write lock. The pure tool/adapter layers surface lock state via a
-          // structured result; the plugin boundary is the only reliable logger
-          // writer, so emit the diagnostic here.
-          //   - 'contended' → hydrate FAILED CLOSED (BLOCKED): could not acquire
-          //     the lock before timeout. Operator-relevant, hence error severity.
-          //   - 'waited'    → hydrate SUCCEEDED but had to wait for a concurrent
-          //     holder first. Expected under concurrency, hence warn severity.
-          const lockSignal = getSessionLockSignal(getToolOutput(hookOutput));
-          if (lockSignal === 'contended') {
-            log.error('hydrate', 'session write lock contended: hydrate blocked', {
-              sessionId,
-              reason: REASON_SESSION_LOCK_CONTENDED,
-            });
-          } else if (lockSignal === 'waited') {
-            log.warn('hydrate', 'session write lock contended: waited for concurrent holder', {
-              sessionId,
-              reason: DIAGNOSTIC_SESSION_LOCK_WAITED,
-            });
-          }
-        } else if (toolName === 'task') {
-          const taskArgs = getToolArgs(input);
-          let resolvedChildSessionId: string | null = null;
-          if (taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE) {
-            const metadata = getToolMetadata(hookOutput);
-            const callID = hookInput.callID ?? '';
-            resolvedChildSessionId = resolveSessionIdFromMetadata(metadata);
-            if (!resolvedChildSessionId && callID) {
-              resolvedChildSessionId = `derived:call:${callID}`;
-            }
-            if (resolvedChildSessionId) {
-              hookOutput.output = injectSessionIdIntoOutput(
-                hookOutput.output,
-                resolvedChildSessionId,
-              );
-            }
-          }
+function handleReviewableAfter(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): void {
+  try {
+    trackFlowGuardEnforcement(runtime.ws.getEnforcementState(ctx.sessionId), ctx.toolName, ctx.input, ctx.hookOutput, ctx.now);
+  } catch (err) {
+    runtime.logError('enforcement tracking failed', err);
+  }
+  logNativeEnforcementDenial(runtime, ctx.sessionId, ctx.hookOutput);
+  logHostTaskRejection(runtime, ctx.sessionId, ctx.hookOutput);
+  logIdentityRejection(runtime, ctx.sessionId, ctx.hookOutput);
+  if (ctx.toolName === TOOL_FLOWGUARD_REVIEW) logNativeAttestationRejection(runtime, ctx.sessionId, ctx.hookOutput);
+  logAutoAdvanceOverflow(runtime, ctx.sessionId, ctx.hookOutput);
+}
 
-          try {
-            trackTaskEnforcement(ws.getEnforcementState(sessionId), input, hookOutput, now);
-          } catch (err) {
-            logError('enforcement tracking failed', err);
-          }
+function logNativeEnforcementDenial(runtime: FlowGuardPluginRuntime, sessionId: string, hookOutput: ToolHookAfterOutput): void {
+  if (!isNativeEnforcementUnavailableDenial(getToolOutput(hookOutput))) return;
+  runtime.log.warn('review', 'native review acceptance denied: plugin enforcement unavailable', {
+    path: REVIEW_ACCEPTANCE_PATH_NATIVE,
+    reason: REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE,
+    sessionId,
+  });
+}
 
-          if (taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE) {
-            await handleHostTaskEvidence(
-              { ws, log, logError },
-              sessionId,
-              resolvedChildSessionId,
-              now,
-              hookOutput,
-            );
-          }
-        }
+function logHostTaskRejection(runtime: FlowGuardPluginRuntime, sessionId: string, hookOutput: ToolHookAfterOutput): void {
+  const rejection = getHostTaskFindingsRejection(getToolOutput(hookOutput));
+  if (!rejection) return;
+  runtime.log.warn('review', 'host-task findings rejected by shared guard', {
+    sessionId,
+    path: rejection.path,
+    reason: rejection.reason,
+    status: rejection.status,
+    ...(rejection.obligationId ? { obligationId: rejection.obligationId } : {}),
+  });
+}
 
-        if (toolName === 'bash') {
-          await enforceRiskAfterBash(riskDeps, sessionId, hookOutput);
-          await enforceDiscoveryHealthAfterBash(discoveryHealthDeps, sessionId, hookOutput);
-        }
+function logIdentityRejection(runtime: FlowGuardPluginRuntime, sessionId: string, hookOutput: ToolHookAfterOutput): void {
+  const rejection = getReviewIdentityRejection(getToolOutput(hookOutput));
+  if (!rejection) return;
+  runtime.log.warn('review', 'self-review rejected', {
+    sessionId,
+    reason: rejection.reason,
+    ...(rejection.obligationId ? { obligationId: rejection.obligationId } : {}),
+  });
+}
 
-        await runOrchestrator(orchestratorDeps, {
-          toolName,
-          input,
-          output: hookOutput,
-          sessionId,
-          now,
+function logNativeAttestationRejection(runtime: FlowGuardPluginRuntime, sessionId: string, hookOutput: ToolHookAfterOutput): void {
+  const rejection = getNativeAttestationRejection(getToolOutput(hookOutput));
+  if (!rejection) return;
+  runtime.log.warn('review', 'native attestation not upgraded', {
+    sessionId,
+    reason: rejection.reason,
+    ...(rejection.obligationId ? { obligationId: rejection.obligationId } : {}),
+  });
+}
+
+function logAutoAdvanceOverflow(runtime: FlowGuardPluginRuntime, sessionId: string, hookOutput: ToolHookAfterOutput): void {
+  const overflow = getAutoAdvanceOverflow(getToolOutput(hookOutput));
+  if (!overflow) return;
+  runtime.log.error('autoAdvance', 'auto-advance overflow: topology may be non-terminating', {
+    sessionId,
+    phase: overflow.phase,
+    limit: overflow.limit,
+  });
+}
+
+function logHydrateLockSignal(runtime: FlowGuardPluginRuntime, sessionId: string, hookOutput: ToolHookAfterOutput): void {
+  const lockSignal = getSessionLockSignal(getToolOutput(hookOutput));
+  if (lockSignal === 'contended') {
+    runtime.log.error('hydrate', 'session write lock contended: hydrate blocked', { sessionId, reason: REASON_SESSION_LOCK_CONTENDED });
+  } else if (lockSignal === 'waited') {
+    runtime.log.warn('hydrate', 'session write lock contended: waited for concurrent holder', { sessionId, reason: DIAGNOSTIC_SESSION_LOCK_WAITED });
+  }
+}
+
+async function handleTaskAfter(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): Promise<void> {
+  const taskArgs = getToolArgs(ctx.input);
+  const resolvedChildSessionId = resolveReviewerTaskSessionId(ctx.hookInput, ctx.hookOutput, taskArgs);
+  if (resolvedChildSessionId) ctx.hookOutput.output = injectSessionIdIntoOutput(ctx.hookOutput.output, resolvedChildSessionId);
+  try {
+    trackTaskEnforcement(runtime.ws.getEnforcementState(ctx.sessionId), ctx.input, ctx.hookOutput, ctx.now);
+  } catch (err) {
+    runtime.logError('enforcement tracking failed', err);
+  }
+  if (taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE) {
+    await handleHostTaskEvidence({ ws: runtime.ws, log: runtime.log, logError: runtime.logError }, ctx.sessionId, resolvedChildSessionId, ctx.now, ctx.hookOutput);
+  }
+}
+
+function resolveReviewerTaskSessionId(
+  hookInput: ToolHookAfterInput,
+  hookOutput: ToolHookAfterOutput,
+  taskArgs: Record<string, unknown>,
+): string | null {
+  if (taskArgs.subagent_type !== REVIEWER_SUBAGENT_TYPE) return null;
+  const metadata = getToolMetadata(hookOutput);
+  const resolved = resolveSessionIdFromMetadata(metadata);
+  return resolved ?? (hookInput.callID ? `derived:call:${hookInput.callID}` : null);
+}
+
+async function handleBashAfter(runtime: FlowGuardPluginRuntime, toolName: string, sessionId: string, hookOutput: ToolHookAfterOutput): Promise<void> {
+  if (toolName !== 'bash') return;
+  await enforceRiskAfterBash(runtime.riskDeps, sessionId, hookOutput);
+  await enforceDiscoveryHealthAfterBash(runtime.discoveryHealthDeps, sessionId, hookOutput);
+}
+
+async function runFlowGuardAuditAfter(args: {
+  runtime: FlowGuardPluginRuntime;
+  toolName: string;
+  input: unknown;
+  output: unknown;
+  sessionId: string;
+  hookOutput: ToolHookAfterOutput;
+}): Promise<void> {
+  const { runtime, toolName, input, output, sessionId, hookOutput } = args;
+  if (!toolName.startsWith(FG_PREFIX)) return;
+  await runtime.ws.runSerializedForSession(sessionId, async () => {
+    const auditResult = await runAuditModule(runtime.auditDeps, toolName, input, output, sessionId);
+    if (auditResult?.block) {
+      hookOutput.output = strictBlockedOutput(auditResult.code!, {
+        reason: auditResult.reason ?? 'audit persistence failed',
+      });
+    }
+  });
+}
+
+async function handlePluginEvent(runtime: FlowGuardPluginRuntime, event: unknown): Promise<void> {
+  return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
+    const eventDeps: EventHandlerDeps = {
+      log: runtime.log,
+      cleanupSession: (sessionId: string) => runtime.ws.invalidateChainState(sessionId),
+      async emitSessionErrorAudit(sessionId, errorMessage, detail) {
+        const sessDir = runtime.ws.getSessionDir(sessionId);
+        if (!sessDir) return;
+        await appendReviewAuditEvent(sessDir, sessionId, 'unknown', 'error:SESSION_ERROR', {
+          code: 'SESSION_ERROR',
+          message: errorMessage,
+          ...detail,
         });
+      },
+    };
+    await handleEvent(eventDeps, event as Parameters<typeof handleEvent>[1]);
+  });
+}
 
-        if (!toolName.startsWith(FG_PREFIX)) return;
-
-        await ws.runSerializedForSession(sessionId, async () => {
-          const auditResult = await runAuditModule(auditDeps, toolName, input, output, sessionId);
-          if (auditResult?.block) {
-            hookOutput.output = strictBlockedOutput(auditResult.code!, {
-              reason: auditResult.reason ?? 'audit persistence failed',
-            });
-          }
-        });
-      });
-    },
-
-    event: async ({ event }) => {
-      return runWithAdapterLoggerAsync(adapterLog, async () => {
-        const eventDeps: EventHandlerDeps = {
-          log,
-          cleanupSession: (sessionId: string) => {
-            ws.invalidateChainState(sessionId);
-          },
-          async emitSessionErrorAudit(sessionId, errorMessage, detail) {
-            const sessDir = ws.getSessionDir(sessionId);
-            if (!sessDir) return;
-            await appendReviewAuditEvent(sessDir, sessionId, 'unknown', 'error:SESSION_ERROR', {
-              code: 'SESSION_ERROR',
-              message: errorMessage,
-              ...detail,
-            });
-          },
-        };
-        await handleEvent(eventDeps, event);
-      });
-    },
-
-    'experimental.session.compacting': async (input, output) => {
-      return runWithAdapterLoggerAsync(adapterLog, async () => {
-        const sessionId = input.sessionID ?? '';
-        if (!sessionId) return;
-
-        const compactionDeps: CompactionDeps = {
-          getSessionDir: ws.getSessionDir,
-          log,
-        };
-        const context = await buildCompactionContext(compactionDeps, sessionId);
-        if (context) {
-          output.context.push(context);
-        }
-      });
-    },
-  };
-};
+async function handleCompaction(
+  runtime: FlowGuardPluginRuntime,
+  input: { sessionID?: string },
+  output: { context: string[] },
+): Promise<void> {
+  return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
+    const sessionId = input.sessionID ?? '';
+    if (!sessionId) return;
+    const compactionDeps: CompactionDeps = { getSessionDir: runtime.ws.getSessionDir, log: runtime.log };
+    const context = await buildCompactionContext(compactionDeps, sessionId);
+    if (context) output.context.push(context);
+  });
+}

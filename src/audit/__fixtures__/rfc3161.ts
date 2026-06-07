@@ -267,112 +267,104 @@ export async function makeRfc3161TamperedFixture(
 ): Promise<{ tokenDerBase64: string; trustAnchorPem: string }> {
   const signer = await makeCertificateQuick('FlowGuard Test TSA');
   const tstInfoDer = await buildTstInfoDer();
+  const signedAttrsAttr = await buildTamperedSignedAttributes(kind, tstInfoDer);
+  const signedData = buildTamperedSignedData(kind, signer.cert, tstInfoDer, signedAttrsAttr);
 
-  let signedAttrsAttr: SignedAndUnsignedAttributes | undefined;
-  if (kind !== 'no_signer_info') {
-    const engine = getCrypto(true);
-    const digest = await engine.digest({ name: 'SHA-256' }, new Uint8Array(tstInfoDer));
-
-    if (kind === 'wrong_content_type_in_signed_attrs') {
-      signedAttrsAttr = new SignedAndUnsignedAttributes({
-        type: 0,
-        attributes: [
-          new Attribute({
-            type: OID_CONTENT_TYPE,
-            values: [asn1Oid('1.2.840.113549.1.7.2')],
-          }),
-          new Attribute({
-            type: OID_MESSAGE_DIGEST,
-            values: [new asn1js.OctetString({ valueHex: digest })],
-          }),
-        ],
-      });
-    } else if (kind === 'digest_mismatch_in_signed_attrs') {
-      const wrongDigest = new Uint8Array(32);
-      wrongDigest.fill(0xaa);
-      signedAttrsAttr = new SignedAndUnsignedAttributes({
-        type: 0,
-        attributes: [
-          new Attribute({
-            type: OID_CONTENT_TYPE,
-            values: [asn1Oid(OID_TST_INFO)],
-          }),
-          new Attribute({
-            type: OID_MESSAGE_DIGEST,
-            values: [new asn1js.OctetString({ valueHex: wrongDigest.buffer })],
-          }),
-        ],
-      });
-    } else {
-      signedAttrsAttr = new SignedAndUnsignedAttributes({
-        type: 0,
-        attributes: [
-          new Attribute({
-            type: OID_CONTENT_TYPE,
-            values: [asn1Oid(OID_TST_INFO)],
-          }),
-          new Attribute({
-            type: OID_MESSAGE_DIGEST,
-            values: [new asn1js.OctetString({ valueHex: digest })],
-          }),
-        ],
-      });
-    }
-  }
-
-  const signedData = new SignedData({
-    version: 3,
-    encapContentInfo: new EncapsulatedContentInfo({
-      eContentType: kind === 'wrong_econtent_type' ? '1.2.840.113549.1.7.2' : OID_TST_INFO,
-      eContent: new asn1js.OctetString({ valueHex: tstInfoDer }),
-    }),
-    signerInfos: signedAttrsAttr
-      ? [
-          new SignerInfo({
-            version: 1,
-            sid: new IssuerAndSerialNumber({
-              issuer: signer.cert.issuer,
-              serialNumber: signer.cert.serialNumber,
-            }),
-            signedAttrs: signedAttrsAttr,
-          }),
-        ]
-      : [],
-    certificates: kind === 'no_certificate' ? undefined : [signer.cert],
-  });
-
-  if (signedAttrsAttr) {
-    await signedData.sign(signer.privateKey, 0, 'SHA-256');
-  }
-
-  if (kind === 'tampered_signature') {
-    const si = signedData.signerInfos[0];
-    const sigHex = si?.signature?.valueBlock?.valueHexView;
-    if (si && sigHex) {
-      const tampered = new Uint8Array(sigHex);
-      tampered[tampered.length - 1]! ^= 0xff;
-      si.signature.valueBlock.valueHex = tampered.buffer;
-    }
-  }
-
-  if (kind === 'tampered_tst_info') {
-    signedData.encapContentInfo.eContent = new asn1js.OctetString({
-      valueHex: await buildTstInfoDer({ genTime: new Date('2026-01-01T00:00:01.000Z') }),
-    });
-  }
-
-  if (kind === 'wrong_signer_sid') {
-    const si = signedData.signerInfos[0];
-    if (si) {
-      si.sid = new IssuerAndSerialNumber({
-        issuer: signer.cert.issuer,
-        serialNumber: new asn1js.Integer({ value: 999999 }),
-      }).toSchema();
-    }
-  }
+  if (signedAttrsAttr) await signedData.sign(signer.privateKey, 0, 'SHA-256');
+  await applyTamperedTokenKind(kind, signedData, signer.cert);
 
   return {
     tokenDerBase64: wrapContentInfo(signedData),
     trustAnchorPem: signer.pem,
   };
+}
+
+async function buildTamperedSignedAttributes(
+  kind: TamperedTokenKind,
+  tstInfoDer: ArrayBuffer,
+): Promise<SignedAndUnsignedAttributes | undefined> {
+  if (kind === 'no_signer_info') return undefined;
+  const engine = getCrypto(true);
+  const digest = await engine.digest({ name: 'SHA-256' }, new Uint8Array(tstInfoDer));
+  const contentType =
+    kind === 'wrong_content_type_in_signed_attrs' ? '1.2.840.113549.1.7.2' : OID_TST_INFO;
+  const messageDigest = kind === 'digest_mismatch_in_signed_attrs' ? wrongDigestBuffer() : digest;
+  return new SignedAndUnsignedAttributes({
+    type: 0,
+    attributes: [
+      new Attribute({ type: OID_CONTENT_TYPE, values: [asn1Oid(contentType)] }),
+      new Attribute({
+        type: OID_MESSAGE_DIGEST,
+        values: [new asn1js.OctetString({ valueHex: messageDigest })],
+      }),
+    ],
+  });
+}
+
+function wrongDigestBuffer(): ArrayBuffer {
+  const wrongDigest = new Uint8Array(32);
+  wrongDigest.fill(0xaa);
+  return wrongDigest.buffer;
+}
+
+function buildTamperedSignedData(
+  kind: TamperedTokenKind,
+  cert: Certificate,
+  tstInfoDer: ArrayBuffer,
+  signedAttrsAttr: SignedAndUnsignedAttributes | undefined,
+): SignedData {
+  return new SignedData({
+    version: 3,
+    encapContentInfo: new EncapsulatedContentInfo({
+      eContentType: kind === 'wrong_econtent_type' ? '1.2.840.113549.1.7.2' : OID_TST_INFO,
+      eContent: new asn1js.OctetString({ valueHex: tstInfoDer }),
+    }),
+    signerInfos: signedAttrsAttr ? [buildSignerInfo(cert, signedAttrsAttr)] : [],
+    certificates: kind === 'no_certificate' ? undefined : [cert],
+  });
+}
+
+function buildSignerInfo(
+  cert: Certificate,
+  signedAttrs: SignedAndUnsignedAttributes,
+): SignerInfo {
+  return new SignerInfo({
+    version: 1,
+    sid: new IssuerAndSerialNumber({ issuer: cert.issuer, serialNumber: cert.serialNumber }),
+    signedAttrs,
+  });
+}
+
+async function applyTamperedTokenKind(
+  kind: TamperedTokenKind,
+  signedData: SignedData,
+  signerCert: Certificate,
+): Promise<void> {
+  if (kind === 'tampered_signature') tamperSignature(signedData);
+  if (kind === 'tampered_tst_info') await tamperTstInfo(signedData);
+  if (kind === 'wrong_signer_sid') tamperSignerSid(signedData, signerCert);
+}
+
+function tamperSignature(signedData: SignedData): void {
+  const si = signedData.signerInfos[0];
+  const sigHex = si?.signature?.valueBlock?.valueHexView;
+  if (!si || !sigHex) return;
+  const tampered = new Uint8Array(sigHex);
+  tampered[tampered.length - 1]! ^= 0xff;
+  si.signature.valueBlock.valueHex = tampered.buffer;
+}
+
+async function tamperTstInfo(signedData: SignedData): Promise<void> {
+  signedData.encapContentInfo.eContent = new asn1js.OctetString({
+    valueHex: await buildTstInfoDer({ genTime: new Date('2026-01-01T00:00:01.000Z') }),
+  });
+}
+
+function tamperSignerSid(signedData: SignedData, signerCert: Certificate): void {
+  const si = signedData.signerInfos[0];
+  if (!si) return;
+  si.sid = new IssuerAndSerialNumber({
+    issuer: signerCert.issuer,
+    serialNumber: new asn1js.Integer({ value: 999999 }),
+  }).toSchema();
 }

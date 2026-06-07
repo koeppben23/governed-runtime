@@ -372,19 +372,41 @@ export async function enforceRiskClassificationAfterBash(
 ): Promise<void> {
   const sessDir = deps.getSessionDir(sessionId);
   if (!sessDir || !existsSync(sessDir)) return;
-  let state: SessionState | null;
+  const state = await readRiskStateForBash(sessDir, output);
+  if (!state || state.policySnapshot.enforceRiskClassification !== true) return;
+  const files = await readRiskChangedFilesForBash(deps, sessDir, state, output);
+  if (!files) return;
+  const decision = isRiskClassificationAllowed({
+    state,
+    changedFiles: files,
+    now: new Date().toISOString(),
+  });
+  if (decision.allowed) return appendAllowedRiskDecisionForBash(sessDir, state, decision, output);
+  await blockRiskDecisionAfterBash(sessDir, state, decision, sessionId, output);
+}
+
+async function readRiskStateForBash(
+  sessDir: string,
+  output: { output?: unknown },
+): Promise<SessionState | null> {
   try {
-    state = await readState(sessDir);
+    return await readState(sessDir);
   } catch (err) {
     output.output = strictBlockedOutput('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {
       reason: err instanceof Error ? err.message : String(err),
     });
-    return;
+    return null;
   }
-  if (!state || state.policySnapshot.enforceRiskClassification !== true) return;
-  let files: string[];
+}
+
+async function readRiskChangedFilesForBash(
+  deps: RiskEnforcementDeps,
+  sessDir: string,
+  state: SessionState,
+  output: { output?: unknown },
+): Promise<string[] | null> {
   try {
-    files = await currentChangedFilesForRisk(() => deps.getWorktreeRoot());
+    return await currentChangedFilesForRisk(() => deps.getWorktreeRoot());
   } catch (err) {
     await handleEvidenceUnavailableBash(
       sessDir,
@@ -392,29 +414,32 @@ export async function enforceRiskClassificationAfterBash(
       err instanceof Error ? err.message : String(err),
       output,
     );
-    return;
+    return null;
   }
-  const decision = isRiskClassificationAllowed({
-    state,
-    changedFiles: files,
-    now: new Date().toISOString(),
-  });
-  if (decision.allowed) {
-    try {
-      await appendRiskDecisionAudit(
-        sessDir,
-        state,
-        decision,
-        'allowed',
-        'RISK_CLASSIFICATION_ALLOWED',
-      );
-    } catch (err) {
-      output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
-        reason: err instanceof Error ? err.message : String(err),
-      });
-    }
-    return;
+}
+
+async function appendAllowedRiskDecisionForBash(
+  sessDir: string,
+  state: SessionState,
+  decision: ReturnType<typeof isRiskClassificationAllowed>,
+  output: { output?: unknown },
+): Promise<void> {
+  try {
+    await appendRiskDecisionAudit(sessDir, state, decision, 'allowed', 'RISK_CLASSIFICATION_ALLOWED');
+  } catch (err) {
+    output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+      reason: err instanceof Error ? err.message : String(err),
+    });
   }
+}
+
+async function blockRiskDecisionAfterBash(
+  sessDir: string,
+  state: SessionState,
+  decision: ReturnType<typeof isRiskClassificationAllowed>,
+  sessionId: string,
+  output: { output?: unknown },
+): Promise<void> {
   const code = decision.code ?? 'RISK_CLASSIFICATION_MISMATCH';
   const reason = decision.reason ?? 'Risk classification gate blocked after bash mutation.';
   try {

@@ -15,6 +15,8 @@ import { strictBlockedOutput } from './plugin-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 
 import type { PluginWorkspace } from './plugin-workspace.js';
+import type { SessionState } from '../state/schema.js';
+import type { HostTaskBindResult } from './review/enforcement/types.js';
 
 interface HostTaskEvidenceDeps {
   ws: PluginWorkspace;
@@ -63,47 +65,7 @@ export async function handleHostTaskEvidence(
 
     const eState = deps.ws.getEnforcementState(sessionId);
     const bindResult = buildHostTaskEvidence(eState, sessionId, obligations, invocations, now);
-    const evidence = bindResult.evidence;
-
-    if (evidence) {
-      deps.log.info('host-task', 'evidence created', {
-        sessionId,
-        bindOutcome: bindResult.bindOutcome,
-        invocationId: evidence.invocationId,
-        obligationId: evidence.obligationId,
-        childSessionId: evidence.childSessionId,
-        findingsHash: evidence.findingsHash,
-      });
-      await deps.ws.updateReviewAssurance(sessDir, (s) => {
-        return {
-          ...s,
-          reviewAssurance: appendInvocationEvidence(
-            ensureReviewAssurance(s.reviewAssurance),
-            evidence,
-          ),
-        };
-      });
-    } else if (policy === 'host_task_required') {
-      deps.log.warn('host-task', 'output blocked — no bindable evidence', {
-        sessionId,
-        policy,
-        bindOutcome: bindResult.bindOutcome,
-        ...bindResult.diagnostic,
-      });
-      hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
-        reason: `${REVIEWER_SUBAGENT_TYPE} Task call did not produce bindable host-task evidence`,
-        policy,
-        policyMode: policy,
-        bindOutcome: bindResult.bindOutcome,
-        reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
-      });
-    } else {
-      deps.log.warn('host-task', 'bind failed', {
-        sessionId,
-        bindOutcome: bindResult.bindOutcome,
-        ...bindResult.diagnostic,
-      });
-    }
+    await applyHostTaskBindResult({ deps, sessDir, sessionId, policy, bindResult, hookOutput });
   } catch (err) {
     deps.logError('host task evidence creation failed', err);
     hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
@@ -113,4 +75,72 @@ export async function handleHostTaskEvidence(
       reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
     });
   }
+}
+
+async function applyHostTaskBindResult(input: {
+  deps: HostTaskEvidenceDeps;
+  sessDir: string;
+  sessionId: string;
+  policy: string;
+  bindResult: HostTaskBindResult;
+  hookOutput: { output?: string };
+}): Promise<void> {
+  const { deps, sessDir, sessionId, policy, bindResult, hookOutput } = input;
+  if (bindResult.evidence) {
+    await persistHostTaskEvidence(deps, sessDir, sessionId, bindResult);
+    return;
+  }
+  if (policy === 'host_task_required') {
+    blockRequiredHostTaskEvidence(deps, sessionId, policy, bindResult, hookOutput);
+    return;
+  }
+  deps.log.warn('host-task', 'bind failed', {
+    sessionId,
+    bindOutcome: bindResult.bindOutcome,
+    ...bindResult.diagnostic,
+  });
+}
+
+async function persistHostTaskEvidence(
+  deps: HostTaskEvidenceDeps,
+  sessDir: string,
+  sessionId: string,
+  bindResult: HostTaskBindResult,
+): Promise<void> {
+  const evidence = bindResult.evidence;
+  if (!evidence) return;
+  deps.log.info('host-task', 'evidence created', {
+    sessionId,
+    bindOutcome: bindResult.bindOutcome,
+    invocationId: evidence.invocationId,
+    obligationId: evidence.obligationId,
+    childSessionId: evidence.childSessionId,
+    findingsHash: evidence.findingsHash,
+  });
+  await deps.ws.updateReviewAssurance(sessDir, (s: SessionState) => ({
+    ...s,
+    reviewAssurance: appendInvocationEvidence(ensureReviewAssurance(s.reviewAssurance), evidence),
+  }));
+}
+
+function blockRequiredHostTaskEvidence(
+  deps: HostTaskEvidenceDeps,
+  sessionId: string,
+  policy: string,
+  bindResult: HostTaskBindResult,
+  hookOutput: { output?: string },
+): void {
+  deps.log.warn('host-task', 'output blocked — no bindable evidence', {
+    sessionId,
+    policy,
+    bindOutcome: bindResult.bindOutcome,
+    ...bindResult.diagnostic,
+  });
+  hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
+    reason: `${REVIEWER_SUBAGENT_TYPE} Task call did not produce bindable host-task evidence`,
+    policy,
+    policyMode: policy,
+    bindOutcome: bindResult.bindOutcome,
+    reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+  });
 }

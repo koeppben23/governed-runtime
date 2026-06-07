@@ -58,146 +58,160 @@ export async function resolveTimestampEvidence(
   input: TimestampResolutionInput,
 ): Promise<TimestampResolutionResult> {
   const policy = input.policy;
-  const now = input.localTimestamp;
-  const eventKind = input.eventKind;
 
   if (!policy.enabled || policy.mode === 'local_only') {
-    return {
-      evidence: {
-        status: 'local',
-        source: 'local_clock',
-        resolvedAt: now,
-      },
-    };
+    return localTimestampResult(input.localTimestamp);
   }
 
-  const ntp = input.ntpResult;
-
   if (policy.mode === 'ntp_check') {
-    return {
-      evidence: {
-        status: 'ntp_checked',
-        source: ntp && !ntp.error ? 'ntp' : 'local_clock',
-        ntp:
-          ntp && !ntp.error
-            ? { offsetMs: ntp.offsetMs, server: ntp.server, driftWarned: ntp.driftWarned }
-            : undefined,
-        warning: ntp?.error,
-        resolvedAt: now,
-      },
-    };
+    return ntpTimestampResult(input.ntpResult, input.localTimestamp);
   }
 
   if (policy.mode === 'tsa_critical') {
-    const ntpEvidence =
-      ntp && !ntp.error
-        ? { offsetMs: ntp.offsetMs, server: ntp.server, driftWarned: ntp.driftWarned }
-        : undefined;
-
-    if (!isCriticalEvent(eventKind, policy)) {
-      return {
-        evidence: {
-          status: 'ntp_checked',
-          source: ntp && !ntp.error ? 'ntp' : 'local_clock',
-          ntp: ntpEvidence,
-          warning: ntp?.error,
-          resolvedAt: now,
-        },
-      };
-    }
-
-    if (!input.tsaProvider) {
-      const warnMsg = 'TSA provider unavailable for tsa_critical mode';
-      return {
-        evidence: {
-          status: 'tsa_failed',
-          source: 'local_clock',
-          ntp: ntpEvidence,
-          warning: [warnMsg, ntp?.error].filter(Boolean).join('; ') || warnMsg,
-          resolvedAt: now,
-        },
-        error: warnMsg,
-      };
-    }
-
-    try {
-      const tsaResponse = await input.tsaProvider.requestTimestamp({
-        digest: canonicalDigestToUint8Array(input.canonicalEventDigest),
-        digestAlgorithm: 'sha256',
-        tsaUrl: policy.tsaUrl ?? '',
-        timeoutMs: policy.tsaTimeoutMs ?? DEFAULT_TIMESTAMP_ASSURANCE.tsaTimeoutMs,
-      });
-
-      const verification = input.tsaVerifier
-        ? await input.tsaVerifier.verifyToken({
-            tokenDerBase64: tsaResponse.tokenDerBase64,
-            expectedDigest: canonicalDigestToUint8Array(input.canonicalEventDigest),
-            digestAlgorithm: 'sha256',
-            trustAnchors: [...(policy.trustAnchors ?? [])],
-          })
-        : undefined;
-
-      if (verification?.status === 'invalid') {
-        const reason = verification.reason ?? 'invalid_timestamp_token';
-        return {
-          evidence: {
-            status: 'tsa_stamped',
-            source: 'tsa',
-            ntp: ntpEvidence,
-            tsa: {
-              tokenDerBase64: tsaResponse.tokenDerBase64,
-              receivedAt: tsaResponse.receivedAt,
-              messageImprint: input.canonicalEventDigest,
-              digestAlgorithm: 'sha256',
-              verificationStatus: 'invalid',
-              verificationReason: reason,
-            },
-            warning: [reason, ntp?.error].filter(Boolean).join('; '),
-            resolvedAt: now,
-          },
-          error: reason,
-        };
-      }
-
-      return {
-        evidence: {
-          status: 'tsa_stamped',
-          source: 'tsa',
-          ntp: ntpEvidence,
-          tsa: {
-            tokenDerBase64: tsaResponse.tokenDerBase64,
-            receivedAt: tsaResponse.receivedAt,
-            messageImprint: input.canonicalEventDigest,
-            digestAlgorithm: 'sha256',
-            verificationStatus: verification?.status ?? 'unchecked',
-            policyOid: verification?.policyOid,
-            serialNumber: verification?.serialNumber,
-            tsaTimestamp: verification?.tsaTimestamp,
-            signerSubject: verification?.signerSubject,
-          },
-          warning: ntp?.error,
-          resolvedAt: now,
-        },
-      };
-    } catch {
-      return {
-        evidence: {
-          status: 'tsa_failed',
-          source: 'local_clock',
-          ntp: ntpEvidence,
-          warning: `TSA unreachable: ${input.policy.tsaUrl ?? 'unconfigured'}${ntp?.error ? '; NTP: ' + ntp.error : ''}`,
-          resolvedAt: now,
-        },
-        error: 'TSA request failed',
-      };
-    }
+    return resolveTsaCriticalTimestamp(input);
   }
 
+  return localTimestampResult(input.localTimestamp);
+}
+
+function localTimestampResult(resolvedAt: string): TimestampResolutionResult {
+  return { evidence: { status: 'local', source: 'local_clock', resolvedAt } };
+}
+
+function ntpEvidence(ntp: NtpCheckResult | undefined): TimestampEvidence['ntp'] {
+  return ntp && !ntp.error
+    ? { offsetMs: ntp.offsetMs, server: ntp.server, driftWarned: ntp.driftWarned }
+    : undefined;
+}
+
+function ntpTimestampResult(
+  ntp: NtpCheckResult | undefined,
+  resolvedAt: string,
+): TimestampResolutionResult {
   return {
     evidence: {
-      status: 'local',
-      source: 'local_clock',
-      resolvedAt: now,
+      status: 'ntp_checked',
+      source: ntp && !ntp.error ? 'ntp' : 'local_clock',
+      ntp: ntpEvidence(ntp),
+      warning: ntp?.error,
+      resolvedAt,
     },
+  };
+}
+
+async function resolveTsaCriticalTimestamp(
+  input: TimestampResolutionInput,
+): Promise<TimestampResolutionResult> {
+  if (!isCriticalEvent(input.eventKind, input.policy)) {
+    return ntpTimestampResult(input.ntpResult, input.localTimestamp);
+  }
+  if (!input.tsaProvider) return tsaProviderUnavailableResult(input);
+  try {
+    const tsaResponse = await requestTimestamp(input);
+    const verification = await verifyTimestampResponse(input, tsaResponse.tokenDerBase64);
+    return verification?.status === 'invalid'
+      ? invalidTsaResult(input, tsaResponse, verification.reason ?? 'invalid_timestamp_token')
+      : stampedTsaResult(input, tsaResponse, verification);
+  } catch {
+    return tsaRequestFailedResult(input);
+  }
+}
+
+function tsaProviderUnavailableResult(input: TimestampResolutionInput): TimestampResolutionResult {
+  const warnMsg = 'TSA provider unavailable for tsa_critical mode';
+  return {
+    evidence: {
+      status: 'tsa_failed',
+      source: 'local_clock',
+      ntp: ntpEvidence(input.ntpResult),
+      warning: [warnMsg, input.ntpResult?.error].filter(Boolean).join('; ') || warnMsg,
+      resolvedAt: input.localTimestamp,
+    },
+    error: warnMsg,
+  };
+}
+
+async function requestTimestamp(input: TimestampResolutionInput) {
+  return input.tsaProvider!.requestTimestamp({
+    digest: canonicalDigestToUint8Array(input.canonicalEventDigest),
+    digestAlgorithm: 'sha256',
+    tsaUrl: input.policy.tsaUrl ?? '',
+    timeoutMs: input.policy.tsaTimeoutMs ?? DEFAULT_TIMESTAMP_ASSURANCE.tsaTimeoutMs,
+  });
+}
+
+async function verifyTimestampResponse(input: TimestampResolutionInput, tokenDerBase64: string) {
+  return input.tsaVerifier
+    ? input.tsaVerifier.verifyToken({
+        tokenDerBase64,
+        expectedDigest: canonicalDigestToUint8Array(input.canonicalEventDigest),
+        digestAlgorithm: 'sha256',
+        trustAnchors: [...(input.policy.trustAnchors ?? [])],
+      })
+    : undefined;
+}
+
+function invalidTsaResult(
+  input: TimestampResolutionInput,
+  tsaResponse: Awaited<ReturnType<TimestampAuthorityProvider['requestTimestamp']>>,
+  reason: string,
+): TimestampResolutionResult {
+  return {
+    evidence: {
+      status: 'tsa_stamped',
+      source: 'tsa',
+      ntp: ntpEvidence(input.ntpResult),
+      tsa: {
+        tokenDerBase64: tsaResponse.tokenDerBase64,
+        receivedAt: tsaResponse.receivedAt,
+        messageImprint: input.canonicalEventDigest,
+        digestAlgorithm: 'sha256',
+        verificationStatus: 'invalid',
+        verificationReason: reason,
+      },
+      warning: [reason, input.ntpResult?.error].filter(Boolean).join('; '),
+      resolvedAt: input.localTimestamp,
+    },
+    error: reason,
+  };
+}
+
+function stampedTsaResult(
+  input: TimestampResolutionInput,
+  tsaResponse: Awaited<ReturnType<TimestampAuthorityProvider['requestTimestamp']>>,
+  verification: Awaited<ReturnType<TimestampVerifier['verifyToken']>> | undefined,
+): TimestampResolutionResult {
+  return {
+    evidence: {
+      status: 'tsa_stamped',
+      source: 'tsa',
+      ntp: ntpEvidence(input.ntpResult),
+      tsa: {
+        tokenDerBase64: tsaResponse.tokenDerBase64,
+        receivedAt: tsaResponse.receivedAt,
+        messageImprint: input.canonicalEventDigest,
+        digestAlgorithm: 'sha256',
+        verificationStatus: verification?.status ?? 'unchecked',
+        policyOid: verification?.policyOid,
+        serialNumber: verification?.serialNumber,
+        tsaTimestamp: verification?.tsaTimestamp,
+        signerSubject: verification?.signerSubject,
+      },
+      warning: input.ntpResult?.error,
+      resolvedAt: input.localTimestamp,
+    },
+  };
+}
+
+function tsaRequestFailedResult(input: TimestampResolutionInput): TimestampResolutionResult {
+  return {
+    evidence: {
+      status: 'tsa_failed',
+      source: 'local_clock',
+      ntp: ntpEvidence(input.ntpResult),
+      warning: `TSA unreachable: ${input.policy.tsaUrl ?? 'unconfigured'}${input.ntpResult?.error ? '; NTP: ' + input.ntpResult.error : ''}`,
+      resolvedAt: input.localTimestamp,
+    },
+    error: 'TSA request failed',
   };
 }

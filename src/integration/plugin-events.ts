@@ -92,26 +92,43 @@ function strOr(v: unknown, fallback: string): string {
 }
 
 async function handleSessionError(deps: EventHandlerDeps, event: PluginEvent): Promise<void> {
-  const p = event.properties;
-  const sessionId = strOr(p?.sessionID, 'unknown');
-  const errorMessage = strOr(p?.error, strOr(p?.message, 'unspecified session error'));
-  const errorCode = str(p?.code) || undefined;
-  const errorStack = str(p?.stack) || undefined;
-  const supplementary = collectSupplementaryContext(p);
-  deps.log.error('event', 'session error received', {
+  const details = buildSessionErrorDetails(event);
+  deps.log.error('event', 'session error received', details.logDetail);
+  await deps.emitSessionErrorAudit(details.sessionId, details.errorMessage, details.auditDetail);
+}
+
+function buildSessionErrorDetails(event: PluginEvent): {
+  sessionId: string;
+  errorMessage: string;
+  logDetail: Record<string, unknown>;
+  auditDetail: Record<string, unknown>;
+} {
+  const properties = event.properties;
+  const sessionId = strOr(properties?.sessionID, 'unknown');
+  const errorMessage = strOr(
+    properties?.error,
+    strOr(properties?.message, 'unspecified session error'),
+  );
+  const optionalDetails = buildOptionalErrorDetails(properties);
+  return {
     sessionId,
-    error: errorMessage,
-    eventType: event.type,
-    ...(errorCode ? { errorCode } : {}),
-    ...(errorStack ? { errorStack } : {}),
-    ...(Object.keys(supplementary).length > 0 ? { supplementary } : {}),
-  });
-  await deps.emitSessionErrorAudit(sessionId, errorMessage, {
-    eventType: event.type,
-    ...(errorCode ? { errorCode } : {}),
-    ...(errorStack ? { errorStack } : {}),
-    ...(Object.keys(supplementary).length > 0 ? { supplementary } : {}),
-  });
+    errorMessage,
+    logDetail: { sessionId, error: errorMessage, eventType: event.type, ...optionalDetails },
+    auditDetail: { eventType: event.type, ...optionalDetails },
+  };
+}
+
+function buildOptionalErrorDetails(
+  properties: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const detail: Record<string, unknown> = {};
+  const errorCode = str(properties?.code);
+  const errorStack = str(properties?.stack);
+  const supplementary = collectSupplementaryContext(properties);
+  if (errorCode) detail.errorCode = errorCode;
+  if (errorStack) detail.errorStack = errorStack;
+  if (Object.keys(supplementary).length > 0) detail.supplementary = supplementary;
+  return detail;
 }
 
 async function handleSessionDelete(deps: EventHandlerDeps, event: PluginEvent): Promise<void> {

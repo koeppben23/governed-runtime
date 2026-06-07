@@ -153,40 +153,8 @@ async function processTransportFile(
   opts: { parentSessionId: string; now: string },
 ): Promise<TransportEvidenceBindResult> {
   const { parentSessionId, now } = opts;
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(file.content);
-  } catch {
-    return {
-      status: 'invalid',
-      code: 'REVIEW_TRANSPORT_EVIDENCE_INVALID',
-      reason: `review evidence transport file is not valid JSON: ${file.path}`,
-    };
-  }
-  const parsedFindings = ReviewFindingsSchema.safeParse(extractFindings(parsedJson));
-  if (!parsedFindings.success)
-    return {
-      status: 'invalid',
-      code: 'REVIEW_TRANSPORT_EVIDENCE_INVALID',
-      reason: `review evidence transport file does not contain valid ReviewFindings: ${file.path}`,
-    };
-  const findings = parsedFindings.data;
-  const validationError = validateAgainstObligation(
-    findings,
-    obligation,
-    state.initiatedByIdentity,
-  );
-  if (validationError)
-    return {
-      status: 'invalid',
-      code: validationError.code,
-      reason: validationError.reason,
-      ...(validationError.obligationId ? { obligationId: validationError.obligationId } : {}),
-      ...(validationError.vars ? { vars: validationError.vars } : {}),
-      ...(validationError.rejectionReason
-        ? { rejectionReason: validationError.rejectionReason }
-        : {}),
-    };
+  const parsed = parseAndValidateTransportFindings(file, state, obligation);
+  if (parsed.status === 'invalid') return parsed;
 
   if (state.policySnapshot?.reviewInvocationPolicy === 'host_task_required')
     return {
@@ -196,28 +164,16 @@ async function processTransportFile(
         'host_task_required policy requires host-visible reviewer evidence; manual_attested transport evidence is not sufficient',
     };
 
+  const findings = parsed.findings;
   const findingsHash = hashFindings(findings);
   const existing = assurance.invocations.find(
     (item) => item.obligationId === obligation.obligationId && item.findingsHash === findingsHash,
   );
   if (existing) return { status: 'already_bound', state, obligation };
 
-  const invocation = buildInvocationEvidence({
-    obligationId: obligation.obligationId,
-    obligationType: obligation.obligationType,
+  const invocation = buildManualTransportInvocation(obligation, findings, findingsHash, {
     parentSessionId,
-    childSessionId: findings.reviewedBy.sessionId,
-    invocationMode: 'manual_attested',
-    hostVisible: false,
-    promptHash: hashText(
-      `${obligation.obligationType}:${obligation.iteration}:${obligation.planVersion}`,
-    ),
-    findingsHash,
-    invokedAt: findings.reviewedAt,
-    fulfilledAt: now,
-    source: 'agent-submitted-attested',
-    capturedVerdict: findings.overallVerdict,
-    capturedRawFindings: findings,
+    now,
   });
   const fulfilled = fulfillObligation(
     assurance,
@@ -230,6 +186,81 @@ async function processTransportFile(
     obligation,
     state: { ...state, reviewAssurance: appendInvocationEvidence(fulfilled, invocation) },
   };
+}
+
+function parseAndValidateTransportFindings(
+  file: { path: string; content: string },
+  state: SessionState,
+  obligation: ReturnType<typeof latestUnconsumedObligation> & {},
+):
+  | { status: 'valid'; findings: ReturnType<typeof ReviewFindingsSchema.parse> }
+  | Extract<TransportEvidenceBindResult, { status: 'invalid' }> {
+  const parsedJson = parseTransportJson(file);
+  if (parsedJson.status === 'invalid') return parsedJson;
+  const parsedFindings = ReviewFindingsSchema.safeParse(extractFindings(parsedJson.value));
+  if (!parsedFindings.success) {
+    return {
+      status: 'invalid',
+      code: 'REVIEW_TRANSPORT_EVIDENCE_INVALID',
+      reason: `review evidence transport file does not contain valid ReviewFindings: ${file.path}`,
+    };
+  }
+  const validationError = validateAgainstObligation(
+    parsedFindings.data,
+    obligation,
+    state.initiatedByIdentity,
+  );
+  return validationError ? transportValidationError(validationError) : { status: 'valid', findings: parsedFindings.data };
+}
+
+function parseTransportJson(
+  file: { path: string; content: string },
+): { status: 'valid'; value: unknown } | Extract<TransportEvidenceBindResult, { status: 'invalid' }> {
+  try {
+    return { status: 'valid', value: JSON.parse(file.content) };
+  } catch {
+    return {
+      status: 'invalid',
+      code: 'REVIEW_TRANSPORT_EVIDENCE_INVALID',
+      reason: `review evidence transport file is not valid JSON: ${file.path}`,
+    };
+  }
+}
+
+function transportValidationError(
+  validationError: NonNullable<ReturnType<typeof validateAgainstObligation>>,
+): Extract<TransportEvidenceBindResult, { status: 'invalid' }> {
+  return {
+    status: 'invalid',
+    code: validationError.code,
+    reason: validationError.reason,
+    ...(validationError.obligationId ? { obligationId: validationError.obligationId } : {}),
+    ...(validationError.vars ? { vars: validationError.vars } : {}),
+    ...(validationError.rejectionReason ? { rejectionReason: validationError.rejectionReason } : {}),
+  };
+}
+
+function buildManualTransportInvocation(
+  obligation: ReturnType<typeof latestUnconsumedObligation> & {},
+  findings: ReturnType<typeof ReviewFindingsSchema.parse>,
+  findingsHash: string,
+  opts: { parentSessionId: string; now: string },
+): ReturnType<typeof buildInvocationEvidence> {
+  return buildInvocationEvidence({
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    parentSessionId: opts.parentSessionId,
+    childSessionId: findings.reviewedBy.sessionId,
+    invocationMode: 'manual_attested',
+    hostVisible: false,
+    promptHash: hashText(`${obligation.obligationType}:${obligation.iteration}:${obligation.planVersion}`),
+    findingsHash,
+    invokedAt: findings.reviewedAt,
+    fulfilledAt: opts.now,
+    source: 'agent-submitted-attested',
+    capturedVerdict: findings.overallVerdict,
+    capturedRawFindings: findings,
+  });
 }
 
 export async function bindExternalReviewEvidence(

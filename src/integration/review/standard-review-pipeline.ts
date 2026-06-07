@@ -48,7 +48,7 @@ export async function runStandardReviewPipeline(
   toolName: string,
   input: unknown,
 ): Promise<void> {
-  const { deps, sessionState, sessDir, reviewCtx, output, sessionId } = ctx;
+  const { deps, sessionState, output } = ctx;
 
   const obligationType = obligationTypeForTool(toolName);
   if (!obligationType) {
@@ -61,7 +61,30 @@ export async function runStandardReviewPipeline(
 
   const strictEnforcement = isStrictEnforcementEnabled(sessionState);
 
-  const assuranceResult = await recordAssuranceWithAudit(
+  const assuranceResult = await recordObligationHandshake(ctx, obligationType, strictEnforcement);
+
+  if (blockOnAuditFailure(ctx, assuranceResult)) return;
+
+  const prompt = await buildStandardPromptAndLog(ctx, toolName, input);
+  if (!prompt) return;
+
+  const reviewerResult = await spawnStandardReviewer(ctx, toolName, prompt);
+  await handleStandardReviewerResult(ctx, {
+    toolName,
+    reviewerResult,
+    prompt,
+    obligationType,
+    strictEnforcement,
+  });
+}
+
+async function recordObligationHandshake(
+  ctx: PipelineContext,
+  obligationType: ReviewObligationType,
+  strictEnforcement: boolean,
+): ReturnType<typeof recordAssuranceWithAudit> {
+  const { deps, sessionState, sessDir, reviewCtx, sessionId } = ctx;
+  return recordAssuranceWithAudit(
     {
       updateReviewAssurance: (sessDir, update) => deps.updateReviewAssurance(sessDir, update),
       appendReviewAuditEvent: (sessDir, sessionId, phase, event, detail) =>
@@ -89,45 +112,59 @@ export async function runStandardReviewPipeline(
       auditFailureBehavior: strictEnforcement ? 'block' : 'warn',
     },
   );
+}
 
-  if (!assuranceResult.auditOk && assuranceResult.block) {
-    output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
-      reason: assuranceResult.reason ?? 'audit write failed',
-    });
-    return;
-  }
+function blockOnAuditFailure(
+  ctx: PipelineContext,
+  assuranceResult: Awaited<ReturnType<typeof recordAssuranceWithAudit>>,
+): boolean {
+  if (assuranceResult.auditOk || !assuranceResult.block) return false;
+  ctx.output.output = strictBlockedOutput('AUDIT_PERSISTENCE_FAILED', {
+    reason: assuranceResult.reason ?? 'audit write failed',
+  });
+  return true;
+}
 
-  const prompt = await buildStandardPromptAndLog(ctx, toolName, input);
-  if (!prompt) return;
-
-  const policies = getReviewerPolicies(sessionState);
-  const reviewerResult = await deps.adapter.spawnReviewer({
+async function spawnStandardReviewer(
+  ctx: PipelineContext,
+  toolName: string,
+  prompt: string,
+): ReturnType<PipelineContext['deps']['adapter']['spawnReviewer']> {
+  const policies = getReviewerPolicies(ctx.sessionState);
+  return ctx.deps.adapter.spawnReviewer({
     prompt,
-    parentSessionId: sessionId,
+    parentSessionId: ctx.sessionId,
     reviewOutputPolicy: policies.reviewOutputPolicy,
     reviewInvocationPolicy: policies.reviewInvocationPolicy,
-    onAttemptFailed: buildAttemptFailedLogger(deps, toolName, sessionId),
+    onAttemptFailed: buildAttemptFailedLogger(ctx.deps, toolName, ctx.sessionId),
   });
+}
 
+interface StandardReviewerResultOpts {
+  toolName: string;
+  reviewerResult: Awaited<ReturnType<PipelineContext['deps']['adapter']['spawnReviewer']>>;
+  prompt: string;
+  obligationType: ReviewObligationType;
+  strictEnforcement: boolean;
+}
+
+async function handleStandardReviewerResult(
+  ctx: PipelineContext,
+  opts: StandardReviewerResultOpts,
+): Promise<void> {
+  const { reviewerResult, obligationType, strictEnforcement } = opts;
   if (reviewerResult?.blocked) {
-    output.output = strictBlockedOutput(reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED, {
+    ctx.output.output = strictBlockedOutput(reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED, {
       reason: reviewerResult.reason ?? 'review invocation blocked by policy',
       reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation ?? {}),
     });
     return;
   }
-
-  if (reviewerResult && !reviewerResult.blocked) {
-    await handleReviewerSuccess(ctx, {
-      toolName,
-      reviewerResult,
-      prompt,
-      obligationType,
-      strictEnforcement,
-    });
-  } else {
+  if (!reviewerResult) {
     await handleReviewerFailure(ctx, obligationType, strictEnforcement);
+    return;
   }
+  await handleReviewerSuccess(ctx, { ...opts, reviewerResult });
 }
 
 function buildToolArgsDiagnostics(
