@@ -763,7 +763,7 @@ function verifyAuditCompleteness(
 }
 
 async function verifyTimestampChain(
-  events: any,
+  events: Awaited<ReturnType<typeof readAuditTrail>>['events'],
   state: import('../../state/schema.js').SessionState | null,
   manifest: ArchiveManifest,
   findings: ArchiveFinding[],

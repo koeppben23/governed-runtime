@@ -439,15 +439,13 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
   const record = args as Record<string, unknown>;
   if (record.reviewFindings) return args;
   if (!isValidVerdict(record.reviewVerdict)) return args;
-  const verdict = record.reviewVerdict as 'approve' | 'changes_requested';
+  const verdict = String(record.reviewVerdict);
 
   const state = await readState(sessDir);
   if (!state) return args;
 
   const allObligations = state.reviewAssurance?.obligations ?? [];
-  const pending = findPendingObligation(
-    allObligations as Parameters<typeof findPendingObligation>[0],
-  );
+  const pending = findPendingObligation(allObligations);
   if (!pending) return args;
 
   const reviewFindings = await fulfillStrictReviewObligation(sessDir, {
@@ -456,7 +454,7 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
     >[1]['obligationType'],
     iteration: pending.obligation.iteration,
     planVersion: pending.obligation.planVersion,
-    overallVerdict: verdict,
+    overallVerdict: verdict as 'approve' | 'changes_requested',
   });
 
   return { ...record, reviewFindings };
