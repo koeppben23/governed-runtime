@@ -64,8 +64,7 @@ export interface ImplExecutors {
 
 async function collectAndAdvance(
   state: SessionState,
-  ticket: TicketEvidence,
-  plan: PlanRecord,
+  work: { ticket: TicketEvidence; plan: PlanRecord },
   ctx: RailContext,
   executors: ImplExecutors,
   evalFn: ReturnType<typeof createPolicyEvalFn>,
@@ -74,7 +73,7 @@ async function collectAndAdvance(
   nextState: SessionState;
   transitions: TransitionRecord[];
 }> {
-  const { changedFiles, domainFiles } = await executors.execute(ticket, plan);
+  const { changedFiles, domainFiles } = await executors.execute(work.ticket, work.plan);
   const currentImpl: ImplEvidence = {
     changedFiles,
     domainFiles,
@@ -130,7 +129,13 @@ export async function executeImplement(
     currentImpl,
     nextState,
     transitions: allTransitions,
-  } = await collectAndAdvance(state, state.ticket, state.plan, ctx, executors, evalFn);
+  } = await collectAndAdvance(
+    state,
+    { ticket: state.ticket, plan: state.plan },
+    ctx,
+    executors,
+    evalFn,
+  );
 
   const maxIterations = ctx.policy?.maxImplReviewIterations ?? DEFAULT_MAX_REVIEW_ITERATIONS;
   if (nextState.phase !== 'IMPL_REVIEW') {

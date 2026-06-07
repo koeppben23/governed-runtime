@@ -76,6 +76,22 @@ export function createSessionState(): SessionEnforcementState {
  * @param output - Raw tool output string
  * @param now - ISO 8601 timestamp
  */
+function trackReviewRequired(
+  state: SessionEnforcementState,
+  reviewTool: PendingReviewTool,
+  next: string,
+  now: string,
+): void {
+  state.pendingReviews.set(reviewTool, {
+    tool: reviewTool,
+    requestedAt: now,
+    subagentCalled: false,
+    subagentRecord: null,
+    contentMeta: extractContentMeta(next),
+    capturedFindings: null,
+  });
+}
+
 export function onFlowGuardToolAfter(
   state: SessionEnforcementState,
   toolName: string,
@@ -90,28 +106,15 @@ export function onFlowGuardToolAfter(
   const parsed = parseToolResult(output);
   if (!parsed) return;
 
-  // Mode B: agent is submitting a verdict → clear pending review on success.
-  // BUG-21: Use value-based checks — the `in` operator returns true for keys
-  // with null values (LLMs may send explicit nulls for absent optional fields).
   const hasSelfReviewVerdict =
     typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
-  if (hasSelfReviewVerdict) {
-    // Only clear if the call succeeded (no error in output)
-    if (parsed.error !== true) {
-      state.pendingReviews.delete(reviewTool);
-    }
+  if (hasSelfReviewVerdict && parsed.error !== true) {
+    state.pendingReviews.delete(reviewTool);
   }
 
   const next = typeof parsed.next === 'string' ? parsed.next : '';
   if (next.startsWith(REVIEW_REQUIRED_PREFIX)) {
-    state.pendingReviews.set(reviewTool, {
-      tool: reviewTool,
-      requestedAt: now,
-      subagentCalled: false,
-      subagentRecord: null,
-      contentMeta: extractContentMeta(next),
-      capturedFindings: null,
-    });
+    trackReviewRequired(state, reviewTool, next, now);
   }
 
   const requiredReviewAttestation = parsed.requiredReviewAttestation as
@@ -327,6 +330,41 @@ export function matchPendingReview(
  * - Level 2: Session ID match — when both actual and submitted IDs are available
  * - Level 4: Findings integrity — submitted must match captured
  */
+function checkPendingReview(
+  state: SessionEnforcementState,
+  reviewTool: ReviewableTool,
+  sessionState: { reviewAssurance?: SessionState['reviewAssurance'] | null } | null | undefined,
+  strictEnforcement: boolean,
+): EnforcementResult | null {
+  const pending = state.pendingReviews.get(reviewTool);
+  if (pending) return null;
+
+  if (sessionState) {
+    const obligations = sessionState.reviewAssurance?.obligations;
+    if (!obligations || obligations.length === 0) return { allowed: true };
+    const pendingObligation = obligations.find(
+      (o) => o.status === 'pending' && o.obligationType === obligationTypeForTool(reviewTool),
+    );
+    if (pendingObligation) {
+      return {
+        allowed: false,
+        code: 'SUBAGENT_REVIEW_NOT_INVOKED',
+        reason: `FlowGuard enforcement: recovered from session state — obligation ${pendingObligation.obligationId} is pending but no subagent call was recorded in the transient enforcement state. A ${REVIEWER_SUBAGENT_TYPE} subagent call via the Task tool is required to fulfill this P35 obligation.`,
+      };
+    }
+    return { allowed: true };
+  }
+  if (strictEnforcement) {
+    return {
+      allowed: false,
+      code: 'REVIEW_ASSURANCE_STATE_UNAVAILABLE',
+      reason:
+        'Cannot verify review obligation fulfillment in strict mode — enforcement state is unavailable and session state cannot be read. Re-hydrate the session or run /continue before submitting a verdict.',
+    };
+  }
+  return { allowed: true };
+}
+
 export function enforceBeforeVerdict(
   state: SessionEnforcementState,
   toolName: string,
@@ -334,15 +372,9 @@ export function enforceBeforeVerdict(
   sessionState?: { reviewAssurance?: SessionState['reviewAssurance'] | null } | null,
   strictEnforcement = false,
 ): EnforcementResult {
-  if (!isReviewableTool(toolName)) {
-    return { allowed: true };
-  }
+  if (!isReviewableTool(toolName)) return { allowed: true };
 
   const reviewTool: ReviewableTool = toolName;
-
-  // Only enforce on Mode B calls (verdict submission).
-  // BUG-21: Use value-based checks — the `in` operator returns true for keys
-  // with null values (DeepSeek R1 sends explicit nulls for optional fields).
   const selfReviewValue = args.reviewVerdict;
   const reviewVerdictValue = args.reviewVerdict;
   const hasSelfReviewVerdict =
@@ -350,58 +382,17 @@ export function enforceBeforeVerdict(
     (typeof reviewVerdictValue === 'string' && reviewVerdictValue.length > 0);
   if (!hasSelfReviewVerdict) return { allowed: true };
 
-  // Check if there's a pending review for this tool
-  const pending = state.pendingReviews.get(reviewTool);
-  if (!pending) {
-    // BUG-21 Fix B: Separate "state is readable" from "has obligations".
-    if (sessionState) {
-      const obligations = sessionState.reviewAssurance?.obligations;
-      if (!obligations || obligations.length === 0) {
-        // Session state is readable but no review obligations exist yet — allowed
-        return { allowed: true };
-      }
-      // P35 Recovery: Reconstruct from session-state.json when transient cache miss
-      const pendingObligation = obligations.find(
-        (o) => o.status === 'pending' && o.obligationType === obligationTypeForTool(reviewTool),
-      );
-      if (pendingObligation) {
-        return {
-          allowed: false,
-          code: 'SUBAGENT_REVIEW_NOT_INVOKED',
-          reason:
-            `FlowGuard enforcement: recovered from session state — obligation ` +
-            `${pendingObligation.obligationId} is pending but no subagent call was recorded ` +
-            `in the transient enforcement state. A ${REVIEWER_SUBAGENT_TYPE} subagent call via the ` +
-            `Task tool is required to fulfill this P35 obligation.`,
-        };
-      }
-      // No pending obligations — genuinely no requirement
-      return { allowed: true };
-    }
-    // Session state is unreadable (null/undefined) → fail-closed in strict mode
-    if (strictEnforcement) {
-      return {
-        allowed: false,
-        code: 'REVIEW_ASSURANCE_STATE_UNAVAILABLE',
-        reason:
-          'Cannot verify review obligation fulfillment in strict mode — ' +
-          'enforcement state is unavailable and session state cannot be read. ' +
-          'Re-hydrate the session or run /continue before submitting a verdict.',
-      };
-    }
-    return { allowed: true };
-  }
+  const pendingCheck = checkPendingReview(state, reviewTool, sessionState, strictEnforcement);
+  if (pendingCheck) return pendingCheck;
 
-  // ── Level 1: Binary gate — subagent must have been called ──────────────
+  const pending = state.pendingReviews.get(reviewTool);
+  if (!pending) return { allowed: true };
+
   if (!pending.subagentCalled) {
     return {
       allowed: false,
       code: 'SUBAGENT_REVIEW_NOT_INVOKED',
-      reason:
-        `FlowGuard enforcement: ${reviewTool} signaled INDEPENDENT_REVIEW_REQUIRED ` +
-        `but no Task call to ${REVIEWER_SUBAGENT_TYPE} was detected. ` +
-        `You MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool before ` +
-        `submitting a self-review verdict.`,
+      reason: `FlowGuard enforcement: ${reviewTool} signaled INDEPENDENT_REVIEW_REQUIRED but no Task call to ${REVIEWER_SUBAGENT_TYPE} was detected. You MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool before submitting a self-review verdict.`,
     };
   }
 
