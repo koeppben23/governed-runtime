@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #469 (secret/credential-handling red line):** Added a new red line to
+  the installed FlowGuard agent mandates (`FLOWGUARD_MANDATES_BODY`) requiring
+  agents to never read, print, log, echo, commit, or exfiltrate secrets,
+  credentials, tokens, private keys, or signing material. Mirrors were added to
+  `COMPACT_RED_LINES` and `CONCISE_RED_LINES`. Semantic drift assertions guard
+  all three mandate variants.
+
 - Decoupled the repository root `AGENTS.md` from installed FlowGuard mandate
   text: root `AGENTS.md` is now local contributor guidance only, while
   `src/templates/mandates.ts` remains the canonical source for installed runtime
