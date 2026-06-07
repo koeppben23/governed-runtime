@@ -95,10 +95,21 @@ export const continue_cmd: ToolDefinition = {
       }
 
       if (TERMINAL.has(phase)) {
-        return appendNextAction(JSON.stringify({ phase, status: 'Workflow complete.', next: '/export', _continue: { action: 'terminal' } }), state);
+        return appendNextAction(
+          JSON.stringify({
+            phase,
+            status: 'Workflow complete.',
+            next: '/export',
+            _continue: { action: 'terminal' },
+          }),
+          state,
+        );
       }
       if (phase === 'READY') {
-        return formatBlocked('CONTINUE_AMBIGUOUS', { phase, reason: 'Multiple flows available from READY. Choose one explicitly.' });
+        return formatBlocked('CONTINUE_AMBIGUOUS', {
+          phase,
+          reason: 'Multiple flows available from READY. Choose one explicitly.',
+        });
       }
 
       // All other phases: lookup guidance
