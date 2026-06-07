@@ -540,22 +540,30 @@ function isValidArtifactType(v: unknown): v is 'ticket' | 'plan' {
 function isArtifactMeta(input: unknown): input is EvidenceArtifactMeta {
   if (!input || typeof input !== 'object') return false;
   const c = input as Partial<EvidenceArtifactMeta>;
-  const checks: boolean[] = [
-    isValidString(c.schemaVersion),
-    isValidArtifactType(c.artifactType),
-    isValidNumber(c.version),
-    c.version > 0,
-    isValidString(c.sessionId),
-    isValidString(c.createdAt),
-    isValidString(c.phase),
-    isSha256Hex(c.sourceStateHash),
-    isValidString(c.contentHash),
-    c.contentHash.length > 0,
-    isSha256Hex(c.markdownHash),
-    c.derivedFrom === 'session-state.json',
-    isValidString(c.markdownPath),
-  ];
-  return checks.every(Boolean);
+  return checkBaseArtifactFields(c) && checkHashAndDerivedFields(c);
+}
+
+function checkBaseArtifactFields(c: Partial<EvidenceArtifactMeta>): boolean {
+  return (
+    isValidString(c.schemaVersion) &&
+    isValidArtifactType(c.artifactType) &&
+    isValidNumber(c.version) &&
+    c.version > 0 &&
+    isValidString(c.sessionId) &&
+    isValidString(c.createdAt) &&
+    isValidString(c.phase)
+  );
+}
+
+function checkHashAndDerivedFields(c: Partial<EvidenceArtifactMeta>): boolean {
+  return (
+    isSha256Hex(c.sourceStateHash) &&
+    isValidString(c.contentHash) &&
+    c.contentHash.length > 0 &&
+    isSha256Hex(c.markdownHash) &&
+    c.derivedFrom === 'session-state.json' &&
+    isValidString(c.markdownPath)
+  );
 }
 
 function artifactFile(
