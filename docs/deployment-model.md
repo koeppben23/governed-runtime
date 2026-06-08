@@ -37,8 +37,10 @@ FlowGuard is installed system-wide in `~/.config/opencode/`:
 ```
 ~/.config/opencode/
 ├── flowguard-mandates.md   # Managed mandates with content digest
-├── opencode.json           # OpenCode configuration
+├── opencode.json           # OpenCode configuration (jsonc preferred when present)
 ├── package.json            # With file:-based @flowguard/core dependency
+├── agents/
+│   └── flowguard-reviewer.md   # Independent-review subagent prompt
 ├── plugins/
 │   └── flowguard-audit.ts  # Audit plugin
 ├── tools/
@@ -89,12 +91,12 @@ repository/
 
 ### Runtime Characteristics
 
-| Characteristic | Description                                                                                                                            |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| **Memory**     | Minimal (state machine is pure, no heavy computation)                                                                                  |
-| **CPU**        | Negligible (evaluation is sub-millisecond)                                                                                             |
-| **Disk I/O**   | On state read/write only                                                                                                               |
-| **Network**    | None required for default workflows; `/review url=...`, remote JWKS, and Claude HTTP hook mode are explicit network-dependent surfaces |
+| Characteristic | Description                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Memory**     | Minimal (state machine is pure, no heavy computation)                                                                                                                                                                                                                                                                                                                             |
+| **CPU**        | Negligible (evaluation is sub-millisecond)                                                                                                                                                                                                                                                                                                                                        |
+| **Disk I/O**   | On state read/write only                                                                                                                                                                                                                                                                                                                                                          |
+| **Network**    | None required for default workflows. Explicit network-dependent surfaces (must each be disabled for true air-gapped operation): `/review url=...`, remote JWKS via `policy.identityProvider.jwksUri`, Claude Code HTTP hook mode (`flowguard-hook-server`), RFC 3161 TSA via `policy.audit.timestampAssurance.tsaUrl`, NTP drift via `policy.audit.timestampAssurance.ntpServers` |
 
 ---
 

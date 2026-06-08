@@ -127,8 +127,8 @@ The reviewer subagent returns one of three `overallVerdict` values:
 
 `unable_to_review` is enforced fail-closed at every layer:
 
-- **Tool layer (`review-validation.ts`):** rejects findings.overallVerdict='unable_to_review' regardless of the submitted reviewer verdict.
-- **Orchestrator (`plugin-orchestrator.ts`):** when the deterministic invocation receives `unable_to_review`, it routes BLOCKED instead of completing the review.
+- **Tool layer (`src/integration/tools/review-validation.ts`):** rejects `findings.overallVerdict='unable_to_review'` regardless of the submitted reviewer verdict.
+- **Orchestrator (`src/integration/review/orchestrator.ts`):** when the deterministic invocation receives `unable_to_review`, it routes BLOCKED instead of completing the review.
 - **Convergence guard (`isConverged`):** returns `false` for `unable_to_review`, preventing any loop convergence path.
 - **Rails layer:** plan/implement/continue rails translate `unable_to_review` into a `BlockedResult` discriminated-union variant.
 
@@ -138,17 +138,17 @@ Recovery: revise the artifact substantially (e.g., new `flowguard_plan({ planTex
 
 FlowGuard enforces the subagent requirement at three layers:
 
-**Layer 1 — Structural validation (`review-validation.ts`):**
+**Layer 1 — Structural validation (`src/integration/tools/review-validation.ts`):**
 
 - When the agent tries to approve without `reviewFindings` → BLOCKED
 - Self-review findings are rejected → BLOCKED
 - Plan-version binding, iteration binding, and mandatory-findings checks
 
-**Layer 2 — Deterministic invocation (`review-orchestrator.ts` via `plugin.ts`):**
+**Layer 2 — Deterministic invocation (`src/integration/review/orchestrator.ts` via `src/integration/plugin.ts`):**
 
 The plugin programmatically invokes the reviewer subagent via the OpenCode SDK client when it detects `INDEPENDENT_REVIEW_REQUIRED` in a tool response. This ensures invocation happens by code, not by LLM decision.
 
-**Layer 3 — Plugin-level enforcement (`review-enforcement.ts` via `plugin.ts`):**
+**Layer 3 — Plugin-level enforcement (`src/integration/review/enforcement/enforcement.ts` via `src/integration/plugin.ts`):**
 
 The structural validation layer cannot detect whether the primary agent actually called the flowguard-reviewer subagent — it only validates the shape of the submitted findings. A compliant-looking `ReviewFindings` object could be fabricated without ever invoking the subagent, the prompt could be empty/garbage, or the agent could modify the subagent's findings before submitting them.
 
@@ -286,7 +286,7 @@ Independent subagent review is the default FlowGuard policy configuration:
 > reviewer agent MUST emit a complete attestation block; missing fields
 > fail closed at SDK structured-output validation time, before the
 > findings ever reach plugin enforcement. `validateStrictAttestation`
-> in `review-assurance.ts` is the second-line runtime check.
+> in `src/integration/review/assurance.ts` is the second-line runtime check.
 
 ---
 
@@ -294,7 +294,7 @@ Independent subagent review is the default FlowGuard policy configuration:
 
 All validation is fail-closed. Invalid findings return BLOCKED.
 
-**Structural validation (`review-validation.ts`):**
+**Structural validation (`src/integration/tools/review-validation.ts`):**
 
 | Rule                 | Condition                            | BLOCKED Code                         |
 | -------------------- | ------------------------------------ | ------------------------------------ |
@@ -311,7 +311,7 @@ All validation is fail-closed. Invalid findings return BLOCKED.
 
 Validation logic is implemented once in `src/integration/tools/review-validation.ts` and shared by `/plan`, `/architecture`, `/implement`, and `/review` tools. The `obligationType` discriminator (`'plan' | 'architecture' | 'implement' | 'review'`) selects per-obligation criteria. Plan, architecture, and implementation reviews bind iteration/version fields; standalone `/review` additionally binds the obligation to the concrete review input fingerprint and `toolObligationId`.
 
-**Plugin-level enforcement (`review-enforcement.ts`):**
+**Plugin-level enforcement (`src/integration/review/enforcement/enforcement.ts`):**
 
 | Level   | Rule               | Condition                                                                                   | BLOCKED Code                         | Hook Point                |
 | ------- | ------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------- |
@@ -323,7 +323,7 @@ Validation logic is implemented once in `src/integration/tools/review-validation
 | L4      | Issues integrity   | Submitted `blockingIssues` count differs from actual subagent count                         | `SUBAGENT_FINDINGS_ISSUES_MISMATCH`  | before FG Mode B          |
 | L4/Tool | Reviewability      | Submitted `overallVerdict='unable_to_review'` (reviewer declared the artifact unreviewable) | `SUBAGENT_UNABLE_TO_REVIEW`          | tool layer + orchestrator |
 
-Enforcement logic is implemented in `src/integration/review-enforcement.ts` and integrated via `tool.execute.before/after` hooks in `src/integration/plugin.ts`.
+Enforcement logic is implemented in `src/integration/review/enforcement/enforcement.ts` (with supporting modules under `src/integration/review/enforcement/`) and integrated via `tool.execute.before/after` hooks in `src/integration/plugin.ts`.
 
 ---
 

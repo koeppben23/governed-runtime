@@ -247,6 +247,34 @@ Controls whether IdP verification failure blocks session creation:
 - `optional`: IdP verification errors degrade to next identity source (claim/env/git/unknown)
 - `required`: IdP verification must succeed (fail-closed on missing/invalid token or key mismatch)
 
+### policy.minimumActorAssuranceForApproval
+
+**Type:** `enum`
+**Values:** `best_effort`, `claim_validated`, `idp_verified`
+**Default:** `best_effort` for solo / team / team-ci; **`claim_validated`** for regulated
+
+Minimum required actor assurance for `approve` verdicts at user gates. The
+approver's resolved assurance tier must be `>=` this value, otherwise
+`/review-decision approve` is rejected with `ACTOR_ASSURANCE_INSUFFICIENT`.
+
+### policy.requireVerifiedActorsForApproval
+
+**Type:** `boolean`
+**Default:** `false`
+
+Legacy precedence flag. When `true`, the approver is required to be at
+assurance `claim_validated` or higher (the same effect as
+`minimumActorAssuranceForApproval: 'claim_validated'`).
+
+> **Precedence:** `requireVerifiedActorsForApproval` is evaluated **first**.
+> When it is `true`, the runtime ignores `minimumActorAssuranceForApproval`
+> for the decision rail and uses the legacy gate. Operators relaxing the
+> stricter legacy gate by setting `minimumActorAssuranceForApproval` to a
+> lower tier MUST also set `requireVerifiedActorsForApproval: false` —
+> otherwise the legacy gate keeps winning. See
+> `src/rails/review-decision.ts` (`verifyAssuranceThreshold`) and
+> `docs/actor-assurance-architecture.md`.
+
 ### policy.maxImplReviewIterations
 
 **Type:** `number` (1-20)
@@ -470,32 +498,25 @@ When an explicit override lists a kind not present in
 
 Applies only to new sessions. Existing sessions retain their snapshot value.
 
-### profile.overrides
-
-**Type:** `object` (map of profile ID → override config)
-Custom profile configurations:
-
-```json
-{
-  "profile": {
-    "overrides": {
-      "typescript": {
-        "activeChecks": ["test", "lint"]
-      }
-    }
-  }
-}
-```
+> **No per-profile config overrides.** Earlier drafts mentioned a
+> `profile.overrides.<id>.activeChecks` override map. That field is **not**
+> declared in `FlowGuardConfigSchema` (`src/config/flowguard-config.ts`) and
+> is silently ignored by Zod. Customize the active set via `profile.activeChecks`
+> (global override) or by registering a custom profile (see
+> `docs/profiles.md#custom-profiles`).
 
 ## Environment Variables
 
 | Variable                    | Description                                                                                    | Default              |
 | --------------------------- | ---------------------------------------------------------------------------------------------- | -------------------- |
 | `OPENCODE_CONFIG_DIR`       | Config root                                                                                    | `~/.config/opencode` |
-| `FLOWGUARD_LOG_LEVEL`       | Log level                                                                                      | `info`               |
 | `FLOWGUARD_POLICY_PATH`     | Optional central policy file path (`schemaVersion: "v1"`, `minimumMode`)                       | unset                |
 | `FLOWGUARD_REVIEWER_MODEL`  | Operative reviewer model id pinned into the reviewer agent frontmatter at install time         | unset (host default) |
 | `FLOWGUARD_REVIEWER_EFFORT` | Operative reviewer reasoning-effort pinned into the reviewer agent frontmatter at install time | unset (host default) |
+
+Log level is sourced exclusively from `config.logging.level` (see the
+**logging** section above). There is no `FLOWGUARD_LOG_LEVEL` env override at
+runtime; setting it has no effect.
 
 ### Reviewer Transport Tuning (operative layer)
 

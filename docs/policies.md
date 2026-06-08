@@ -132,15 +132,15 @@ Resolution contract:
 
 ## Policy Comparison
 
-| Setting                   | Solo     | Team    | Team-CI             | Regulated       |
-| ------------------------- | -------- | ------- | ------------------- | --------------- |
-| Human gates               | 0        | 3       | 0 (CI only; else 3) | 3               |
-| Four-eyes required        | No       | No      | No                  | **Yes**         |
-| Self-approval             | Allowed  | Allowed | Allowed             | **Not Allowed** |
-| Audit trail               | Optional | **Yes** | **Yes**             | **Mandatory**   |
-| Hash chain                | No       | **Yes** | **Yes**             | **Yes**         |
-| Subagent review           | **Yes**  | **Yes** | **Yes**             | **Yes**         |
-| Strict review enforcement | **Yes**  | **Yes** | **Yes**             | **Yes**         |
+| Setting                                | Solo    | Team    | Team-CI             | Regulated       |
+| -------------------------------------- | ------- | ------- | ------------------- | --------------- |
+| Human gates                            | 0       | 3       | 0 (CI only; else 3) | 3               |
+| Four-eyes required                     | No      | No      | No                  | **Yes**         |
+| Self-approval                          | Allowed | Allowed | Allowed             | **Not Allowed** |
+| Audit trail (transitions + tool calls) | **Yes** | **Yes** | **Yes**             | **Yes**         |
+| Audit chain hash                       | No      | **Yes** | **Yes**             | **Yes**         |
+| Subagent review                        | **Yes** | **Yes** | **Yes**             | **Yes**         |
+| Strict review enforcement              | **Yes** | **Yes** | **Yes**             | **Yes**         |
 
 **Human gates list (where applicable):** `PLAN_REVIEW`, `EVIDENCE_REVIEW`,
 `ARCH_REVIEW`. `IMPL_REVIEW` is an independent-review gate (subagent-driven), not

@@ -144,11 +144,11 @@ matching `checksums.sha256` beside the rollback tarball or pass
 ### Rollback Verification
 
 ```bash
-# Check version
-flowguard --version
+# Verify installation (also reports the installed version in its banner)
+flowguard doctor --install-scope global
 
-# Verify installation
-flowguard doctor
+# Or read the shipped VERSION file directly
+cat "$(npm root -g)/@flowguard/core/VERSION"
 ```
 
 ---
@@ -212,11 +212,11 @@ cd /tmp && rm -rf flowguard-test
 ### Post-Upgrade Verification
 
 ```bash
-# 1. Verify CLI version
-flowguard --version
+# 1. Verify installation (the doctor banner reports the installed version)
+flowguard doctor --install-scope global
 
-# 2. Verify installation
-flowguard doctor
+# 2. (Optional) Read the shipped VERSION file directly
+cat "$(npm root -g)/@flowguard/core/VERSION"
 ```
 
 ---

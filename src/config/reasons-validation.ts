@@ -651,7 +651,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
       'Policy requires validation evidence before progressing past VALIDATION, but no Discovery-derived verification commands are active. VALIDATION must not pass vacuously under this policy.',
     recoverySteps: [
       'Re-run discovery and flowguard_hydrate so repo-native verification commands are detected',
-      'Execute the discovered checks with flowguard_run_check, then submit results with flowguard_validate',
+      'Execute the discovered checks with flowguard_run_check (the runtime-executed verification tool that records pass/fail evidence)',
       'If this repository genuinely has no verification commands, set validationEvidence.allowNoCommands=true in policy with explicit governance approval (the only sanctioned exception)',
     ],
   },

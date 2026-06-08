@@ -208,16 +208,16 @@ if (decisionIdentity.actorAssurance < policy.minimumActorAssuranceForApproval) {
 
 All three tiers share a common fail-closed guarantee:
 
-| Scenario                                   | Behavior                                                        |
-| ------------------------------------------ | --------------------------------------------------------------- |
-| Claim file missing when path is configured | **BLOCK** — `ACTOR_CLAIM_MISSING`                               |
-| Claim file unreadable                      | **BLOCK** — `ACTOR_CLAIM_UNREADABLE`                            |
-| Claim JSON invalid                         | **BLOCK** — `ACTOR_CLAIM_INVALID`                               |
-| Claim expired                              | **BLOCK** — `ACTOR_CLAIM_EXPIRED`                               |
-| Claim issuedAt in future                   | **BLOCK** — `ACTOR_CLAIM_INVALID`                               |
-| No IdP config, no claim, no env/git        | `unknown` + `best_effort` — allowed at non-regulated gates only |
-| Assurance below policy threshold           | **BLOCK** — `ACTOR_ASSURANCE_INSUFFICIENT`                      |
-| IdP token invalid/missing                  | **BLOCK** — `IDP_IDENTITY_INVALID`                              |
+| Scenario                                   | Behavior                                                                                                                                                                                                           |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Claim file missing when path is configured | **BLOCK** — `ACTOR_CLAIM_MISSING`                                                                                                                                                                                  |
+| Claim file unreadable                      | **BLOCK** — `ACTOR_CLAIM_UNREADABLE`                                                                                                                                                                               |
+| Claim JSON invalid                         | **BLOCK** — `ACTOR_CLAIM_INVALID`                                                                                                                                                                                  |
+| Claim expired                              | **BLOCK** — `ACTOR_CLAIM_EXPIRED`                                                                                                                                                                                  |
+| Claim issuedAt in future                   | **BLOCK** — `ACTOR_CLAIM_INVALID`                                                                                                                                                                                  |
+| No IdP config, no claim, no env/git        | `unknown` + `best_effort` — allowed at non-regulated gates only                                                                                                                                                    |
+| Assurance below policy threshold           | **BLOCK** — `ACTOR_ASSURANCE_INSUFFICIENT`                                                                                                                                                                         |
+| IdP token invalid/missing                  | **BLOCK** — `IDP_TOKEN_INVALID` / `IDP_TOKEN_MISSING` (or a more specific `IDP_*` code from `src/identity/errors.ts`, e.g. `IDP_SIGNATURE_INVALID`, `IDP_EXPIRED`, `IDP_ISSUER_MISMATCH`, `IDP_AUDIENCE_MISMATCH`) |
 
 There is **no fallback** from higher to lower tiers when the configured path is active. If `FLOWGUARD_ACTOR_CLAIMS_PATH` is set, its failure is fatal. Only absence of the path triggers fallback to env/git.
 
@@ -305,11 +305,11 @@ Evaluates whether the actor's `assurance` tier satisfies the policy requirement.
 | `requireVerifiedActorsForApproval: false` (default) | `minimumActorAssuranceForApproval: 'best_effort'`                       |
 | `requireVerifiedActorsForApproval: true`            | `minimumActorAssuranceForApproval: 'claim_validated'`                   |
 
-### 10.3 Backward Compatibility
+### 10.3 Backward Compatibility & Precedence
 
-- Original sessions loaded after upgrade: `actorAssurance: 'verified'` is accepted and treated as `claim_validated` (coercive parse in Zod schema).
-- Policy field: `requireVerifiedActorsForApproval` is ignored if `minimumActorAssuranceForApproval` is set. If only the old field is present and the new is absent, the old field is translated at resolution time.
-- This provides a safe migration window without breaking existing sessions or configs.
+- Original sessions loaded after upgrade: `actorAssurance: 'verified'` is accepted and treated as `claim_validated` (coercive parse in `src/state/evidence-assurance-internal.ts`).
+- Policy precedence (current runtime behavior, see `verifyAssuranceThreshold` in `src/rails/review-decision.ts`): `requireVerifiedActorsForApproval` is evaluated **first**. When it is `true`, the runtime requires `claim_validated` or higher and **does not consult** `minimumActorAssuranceForApproval`. The newer field is used only when the legacy flag is `false`/absent.
+- This provides a safe migration window without breaking existing sessions or configs, but operators relaxing the legacy gate by setting `minimumActorAssuranceForApproval` to a lower tier MUST also flip `requireVerifiedActorsForApproval` to `false` — otherwise the stricter legacy gate keeps winning silently.
 
 ---
 
