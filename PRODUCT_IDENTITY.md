@@ -295,11 +295,11 @@ FlowGuard uses **Option A1: Pre-built proprietary GitHub Release distribution** 
 
 ### OpenCode Integration
 
-- **11 Custom Tools** (`integration/tools/`) — bridge between LLM and state machine, installed as thin wrappers
-- **11 Command Prompts** (`.opencode/commands/*.md`) — LLM-agnostic instructions with behavioral guards
-- **1 Review Agent** (`.opencode/agents/flowguard-reviewer.md`) — hidden subagent for independent adversarial review (deployed when `selfReview.subagentEnabled`)
-- **1 Audit Plugin** (`integration/plugin.ts`) — automatic event recording via `tool.execute.after` hook
-- **`flowguard-mandates.md`** — managed artifact with SHA-256 content-digest, loaded via `instructions` in `opencode.json`
+- **12 Custom Tools** (`src/integration/tools/`) — bridge between LLM and state machine, installed as thin wrappers. The canonical list lives in `src/integration/tool-names.ts` (`TOOL_FLOWGUARD_*` constants).
+- **20 Command Prompts** (`.opencode/commands/*.md`) — 12 canonical + 8 product-alias commands. Templates are in `src/templates/commands/`.
+- **1 Review Agent** (`.opencode/agents/flowguard-reviewer.md`) — hidden subagent for independent adversarial review (deployed when `selfReview.subagentEnabled`). The agent body is rendered programmatically from `src/templates/mandates.ts` at install time; there is no static asset of this name in the source tree.
+- **1 Audit Plugin** (`src/integration/plugin.ts`) — automatic event recording via `tool.execute.after` hook
+- **`flowguard-mandates.md`** — managed artifact with SHA-256 content-digest, loaded via `instructions` in `opencode.json` (or `opencode.jsonc` when present)
 - **Profile Rules** — tech-stack-specific guidance delivered via tool returns, not file-based instructions
 
 ---
@@ -385,24 +385,24 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Distribution:** Pre-built proprietary release artifact (`flowguard-core-{version}.tgz`) via GitHub Releases
 - **Release Integrity:** SHA-256 checksums + CycloneDX SBOM + GitHub provenance attestation
 - **Phase Count:** 14 explicit workflow phases across 3 flows
-- **Workflow Commands:** 10 (hydrate, ticket, plan, continue, implement, review-decision, validate, architecture, review, abort)
-- **CLI Commands:** 5 (install, uninstall, doctor, run, serve)
-- **Operational Tools:** 1 (archive — session export with integrity verification)
-- **Custom Tools:** 11 OpenCode tool exports
+- **Workflow Commands:** 12 installed core slash commands (hydrate, ticket, plan, continue, implement, review-decision, validate, architecture, review, abort, status, archive). The machine-driven set lives in `src/machine/commands.ts`; the installed `.md` templates and their alias overlay live in `src/templates/commands/`.
+- **CLI Commands:** 6 (install, uninstall, doctor, run, serve, inspect)
+- **Operational Tools:** 2 user-facing read/export tools (`flowguard_status`, `flowguard_archive`)
+- **Custom Tools:** 12 OpenCode tool exports (see `src/integration/tool-names.ts`)
 - **Audit Events:** 5 structured kinds (transition, tool_call, error, lifecycle, decision)
-- **Actor Assurance:** Three-tier source-labeled attribution (`env`/`git`/`claim`/`oidc` for source; `best_effort`/`claim_validated`/`idp_verified` for assurance), immutable per session; Solo, Team, and Team-CI default to `best_effort`, while Regulated defaults to `claim_validated`; enforcement at `/review-decision` only (Option B), `/hydrate` is diagnostic
+- **Actor Assurance:** Three-tier source-labeled attribution (source labels `env` / `git` / `claim` / `oidc` / `unknown`; assurance tiers `best_effort` / `claim_validated` / `idp_verified`), immutable per session; Solo, Team, and Team-CI default to `best_effort`, while Regulated defaults to `claim_validated`; enforcement at `/review-decision` only (Option B), `/hydrate` is diagnostic. The `oidc` source label is historical — it covers any IdP-verified actor (static-key or JWKS-backed); no OIDC discovery is implemented.
 - **Self-Review Iterations:** SOLO: 2 | TEAM/TEAM-CI/REGULATED: 3
 - **Impl-Review Iterations:** SOLO: 1 | TEAM/TEAM-CI/REGULATED: 3
 - **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)
 - **Central Policy Source:** Optional explicit central minimum via `FLOWGUARD_POLICY_PATH` (file-based, fail-closed when configured)
-- **Built-in Profiles:** 4 (Baseline, Java/Spring Boot, Angular/Nx, TypeScript/Node.js)
+- **Built-in Profiles:** 4 (`baseline`, `typescript`, `backend-java`, `frontend-angular` — IDs as declared in `src/config/profile.ts`)
 - **Discovery Collectors:** 6 (repo-metadata, stack-detection, topology, surface-detection, code-surface-analysis, domain-signals)
-- **Archive Verification Checks:** 11 finding codes (including audit chain integrity)
-- **Reason Codes:** 30+ with recovery guidance
-- **Evidence Types:** 17 Zod schemas + 21 Discovery schemas
+- **Archive Verification:** Enumerated finding codes in `src/archive/types.ts`; emitted by `verifyArchive()` in `src/adapters/workspace/archive.ts`
+- **Reason Codes:** 30+ with recovery guidance (canonical registry in `src/config/reasons.ts` and `src/config/reasons-*.ts`)
+- **Evidence Types:** Zod-validated schemas across `src/state/evidence-*.ts` plus discovery schemas under `src/discovery/` and `src/state/discovery-schemas.ts`
 - **Framework Mappings:** 5 (BSI C5, MaRisk, BAIT, DORA, GoBD)
-- **Test Coverage:** Comprehensive test suite with mandatory 80% global coverage gate
-- **Mutation Testing:** StrykerJS (v9.6.1) on 12 security-critical files across machine, rails, audit, config, and identity paths; CI enforces an 85% break threshold
+- **Test Coverage:** Unit project enforces 80% (branches/lines/functions/statements); integration project enforces 70% (see `vitest.config.ts`)
+- **Mutation Testing:** StrykerJS (v9.6.1) on 23 security-critical files spanning adapters, audit, config, hooks, identity, integration (incl. review enforcement and orchestrator), machine, and rails; CI enforces an 80% break threshold (see `stryker.conf.json`)
 - **API Reference:** TypeDoc-generated at [koeppben23.github.io/governed-runtime](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)
 - **Self-Hosted:** Runs locally — offline-capable / local-first by default; network-dependent features (remote JWKS, `/review url=...`, TSA timestamping) are opt-in and documented
 

@@ -67,6 +67,9 @@ graph TD
     Install["install"]
     Doctor["doctor"]
     Uninstall["uninstall"]
+    Run["run"]
+    Serve["serve"]
+    Inspect["inspect"]
   end
 
   %% ── OpenCode ↔ FlowGuard Integration Boundary ──

@@ -130,9 +130,17 @@ This writes FlowGuard artifacts to `.opencode/` within the repository.
 
 FlowGuard's default workflows are offline-capable when the installer uses only
 locally provided artifacts and network-dependent features are not configured or
-invoked. Do not use `/review url=...`, remote JWKS via `jwksUri`, or Claude Code
-HTTP hook mode in environments where outbound access or local listeners are
-prohibited.
+invoked. The following surfaces perform outbound network I/O and **must be
+left disabled (or explicitly pinned to an internal mirror) in environments
+where outbound access or local listeners are prohibited**:
+
+| Surface               | Trigger                                                                          | Avoidance / mitigation                                                                                                             |
+| --------------------- | -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `/review url=...`     | Operator passes a URL to `/review`                                               | Do not pass `url=...`; use `text=...`, `prNumber=`, or `branch=` with locally-resolved content.                                    |
+| Remote JWKS           | `policy.identityProvider.mode = 'jwks'` with a `jwksUri`                         | Use `mode: 'static'` with pre-staged signing keys, or point `jwksUri` at an internal mirror reachable from the air-gapped network. |
+| Claude Code HTTP hook | `flowguard-hook-server` started for the Claude Code host integration             | Use the OpenCode plugin path instead; or run the HTTP hook only when its localhost listener is acceptable.                         |
+| RFC 3161 TSA          | `policy.audit.timestampAssurance.mode = 'tsa_critical'` with `tsaUrl` set        | Keep the default `mode: 'local_only'`, or set `tsaUrl` to an internal RFC 3161 timestamp authority and pin its `trustAnchors`.     |
+| NTP drift checks      | `policy.audit.timestampAssurance.mode = 'ntp_check'` with `ntpServers` reachable | Keep the default `mode: 'local_only'`, or point `ntpServers` at an internal NTP source.                                            |
 
 ```bash
 # Verify local installation and configuration
@@ -192,10 +200,16 @@ chmod 755 ~/.config/opencode/
 ## Security Considerations
 
 - **Always verify checksums** before and after transfer. The checksums file uses SHA-256.
-- **Minimal attack surface**: FlowGuard has 1 runtime dependency (`zod` — a schema validation library) that is automatically installed by the FlowGuard installer.
+- **Minimal attack surface**: FlowGuard ships with seven runtime dependencies
+  (`@modelcontextprotocol/sdk`, `@opentelemetry/api`, `asn1js`, `jose`,
+  `jsonc-parser`, `pkijs`, `zod`). All are well-known, narrowly-scoped
+  packages; FlowGuard does not bundle a utility belt (no lodash, axios, etc.).
+  The three `@opentelemetry/*` SDK packages listed as `optionalDependencies`
+  are skipped automatically when the installer cannot resolve them, so
+  air-gapped installs do not require an internet connection to npm.
 - **Offline-first**: FlowGuard requires no outbound network calls for default
-  workflows after installation when network-dependent features are not configured
-  or invoked.
+  workflows after installation when the optional surfaces above are not
+  configured or invoked.
 
 ---
 

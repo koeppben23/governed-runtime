@@ -164,7 +164,7 @@ Expected output:
   ... (20 command files total — 12 canonical + 8 product aliases)
   [ok] ~/.config/opencode/commands/archive.md
   [ok] ~/.config/opencode/package.json
-  [ok] ~/.config/opencode/opencode.jsonc
+  [ok] ~/.config/opencode/opencode.json (or opencode.jsonc when present)
   [ok] flowguard.json — config valid (defaults only)
 
   N/N checks passed
@@ -198,7 +198,7 @@ Expected global installation location:
 ```
 ~/.config/opencode/
   flowguard.json
-  opencode.jsonc
+  opencode.json            # default; opencode.jsonc is preferred when both exist
   plugins/flowguard-audit.ts
   commands/
   agents/
@@ -206,6 +206,11 @@ Expected global installation location:
   vendor/
   node_modules/
 ```
+
+The OpenCode config loader resolves `opencode.jsonc` first and falls back to
+`opencode.json`. Fresh installs write `opencode.json`; pre-existing
+`opencode.jsonc` files are preserved and used in place. Either filename is a
+valid passing state for `flowguard doctor`.
 
 If plugin review orchestration fails after installation, run:
 
@@ -330,20 +335,20 @@ see `docs/commands.md` for the full mapping.
 
 These are the underlying tool names that FlowGuard installs into OpenCode:
 
-| Tool Name                 | Purpose                     |
-| ------------------------- | --------------------------- |
-| `flowguard_status`        | Check session state         |
-| `flowguard_hydrate`       | Session bootstrap           |
-| `flowguard_ticket`        | Task recording              |
-| `flowguard_plan`          | Plan generation             |
-| `flowguard_decision`      | Record review verdict       |
-| `flowguard_validate`      | Validation runner           |
-| `flowguard_implement`     | Plan executor               |
-| `flowguard_review`        | Generate compliance report  |
-| `flowguard_architecture`  | ADR authoring + review loop |
-| `flowguard_abort_session` | Session termination         |
-| `flowguard_archive`       | Session archival            |
-| `flowguard_continue`      | Deterministic next-action   |
+| Tool Name                 | Purpose                                                                                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flowguard_status`        | Check session state                                                                                                                                   |
+| `flowguard_hydrate`       | Session bootstrap                                                                                                                                     |
+| `flowguard_ticket`        | Task recording                                                                                                                                        |
+| `flowguard_plan`          | Plan generation                                                                                                                                       |
+| `flowguard_decision`      | Record review verdict                                                                                                                                 |
+| `flowguard_run_check`     | Validation runner (executes the discovered verification commands and records pass/fail evidence; bound to `/validate` and the `/check` product alias) |
+| `flowguard_implement`     | Plan executor                                                                                                                                         |
+| `flowguard_review`        | Generate compliance report                                                                                                                            |
+| `flowguard_architecture`  | ADR authoring + review loop                                                                                                                           |
+| `flowguard_abort_session` | Session termination                                                                                                                                   |
+| `flowguard_archive`       | Session archival                                                                                                                                      |
+| `flowguard_continue`      | Deterministic next-action                                                                                                                             |
 
 ## Uninstall
 

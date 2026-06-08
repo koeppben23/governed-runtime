@@ -212,8 +212,10 @@ real, registered reason.
 
 Archive **runtime** errors are surfaced via tool BLOCKED responses; archive
 **verification** findings are reported by `verifyArchive()` per
-[`docs/archive.md`](./archive.md#verification-finding-codes) (11 finding codes
-covering manifest, hash chain, and per-artifact integrity).
+[`docs/archive.md`](./archive.md#verification-finding-codes). The canonical
+enum of finding codes lives in `src/archive/types.ts` and covers manifest,
+hash chain, content/file digest, archive checksum sidecar, TSA timestamp,
+and per-artifact evidence binding integrity.
 
 ## Complete Registered Code Index
 

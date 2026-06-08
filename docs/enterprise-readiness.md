@@ -13,9 +13,17 @@ or full policy-control-plane platform.
 
 FlowGuard governs host-assisted workflow behavior inside a local workspace/session.
 It is filesystem-first and offline-capable by default; optional network-dependent
-surfaces are limited to documented operator-selected features such as `/review
-url=...` HTTPS content loading, remote JWKS refresh, and Claude Code HTTP hook
-mode's localhost listener.
+surfaces are limited to documented operator-selected features and must each be
+disabled for true air-gapped operation:
+
+- `/review url=...` HTTPS content loading.
+- Remote JWKS refresh via `policy.identityProvider.mode = 'jwks'` with `jwksUri`.
+- Claude Code HTTP hook mode (`flowguard-hook-server`), bound to a localhost
+  listener.
+- RFC 3161 TSA requests via `policy.audit.timestampAssurance.mode = 'tsa_critical'`
+  with `tsaUrl`.
+- NTP drift checks via `policy.audit.timestampAssurance.mode = 'ntp_check'`
+  with `ntpServers`.
 
 FlowGuard does:
 
@@ -74,7 +82,7 @@ In regulated mode, FlowGuard currently guarantees:
 - Regulated archive lifecycle is explicit (`pending` -> `created` -> `verified` or `failed`).
 - Terminal `session_completed` lifecycle event is written before archive generation so the
   archive contains completion evidence.
-- Audit events include source-labeled actor attribution (`env`, `git`, `claim`, `oidc`, `unknown`).
+- Audit events include source-labeled actor attribution (`env`, `git`, `claim`, `oidc`, `unknown`). The `oidc` source covers any IdP-verified actor (static-key, locally pinned JWKS, or remote JWKS via `jwksUri`); the label is historical — no OIDC discovery is implemented (see scope boundary below).
 - Actor assurance tiers: `best_effort` (env/git/unknown), `claim_validated` (validated claim file), `idp_verified` (IdP token verification via static keys, local pinned JWKS, or remote JWKS with TTL cache and fail-closed refresh).
 - Scope boundary: no OIDC discovery and no stale-on-error/last-known-good JWKS fallback.
 - `identityProviderMode: 'required'` blocks fail-closed on IdP configuration/token/verification errors.
@@ -117,8 +125,10 @@ admin/root compromise can still alter files.
 - Central policy is local-bundle based (`FLOWGUARD_POLICY_PATH`) only; no remote admin control plane.
 - Local filesystem or host compromise can alter state, audit, or archive artifacts.
 - Claim-validated actor identities are local trusted-claim files, not enterprise IAM authentication.
-- Network-dependent features (`/review url=...`, remote JWKS, Claude Code HTTP hook mode)
-  require deployment-specific network controls and risk acceptance.
+- Network-dependent features (`/review url=...`, remote JWKS via `jwksUri`,
+  Claude Code HTTP hook mode, RFC 3161 TSA via `tsaUrl`, NTP drift checks via
+  `ntpServers`) require deployment-specific network controls and risk
+  acceptance.
 - Archive and audit controls are evidence-oriented, not immutable external storage.
 - FlowGuard does not replace CI controls, human review, change-management, or deployment
   approvals.
