@@ -9,12 +9,12 @@ command's policy/profile selection, and audit evidence) is the value in the
 first column. The display name is the second column and is not accepted as
 an id.
 
-| Profile id          | Display Name        | Description                          |
-| ------------------- | ------------------- | ------------------------------------ |
-| `baseline`          | Baseline            | Universal rules for all projects     |
-| `typescript`        | TypeScript / Node.js| TS-specific validation               |
-| `backend-java`      | Java / Spring Boot  | Java enterprise rules                |
-| `frontend-angular`  | Angular / Nx        | Angular-specific guidelines          |
+| Profile id         | Display Name         | Description                      |
+| ------------------ | -------------------- | -------------------------------- |
+| `baseline`         | Baseline             | Universal rules for all projects |
+| `typescript`       | TypeScript / Node.js | TS-specific validation           |
+| `backend-java`     | Java / Spring Boot   | Java enterprise rules            |
+| `frontend-angular` | Angular / Nx         | Angular-specific guidelines      |
 
 Unknown ids in `config.profile.defaultId` are rejected fail-closed with
 `INVALID_PROFILE`. Use the id, not the display name.

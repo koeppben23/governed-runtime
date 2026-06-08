@@ -32,25 +32,25 @@ Relevance levels:
 
 ## Domain Mapping Summary
 
-| C5 Domain | Name                                 | Relevance      | FlowGuard Contribution                                                            |
-| --------- | ------------------------------------ | -------------- | --------------------------------------------------------------------------------- |
-| OIS       | Organisation of Information Security | Partial        | Policy-bound execution model                                                      |
-| SP        | Security Policies                    | Partial        | Enforceable policy modes with fail-closed semantics                               |
-| HR        | Human Resources                      | Not Applicable | —                                                                                 |
-| AM        | Asset Management                     | Partial        | Release artifact checksums, SBOM, narrow supply chain                             |
-| PS        | Physical Security                    | Not Applicable | —                                                                                 |
-| RB        | Operational Procedures               | **Direct**     | 14-phase governed workflow, evidence gates, audit trail                           |
-| IDM       | Identity and Access Management       | **Direct**     | Four-eyes principle, role separation (initiator vs. reviewer)                     |
-| CRY       | Cryptography and Key Management      | Partial        | SHA-256 hash chain, checksums on release artifacts                                |
-| KOS       | Communications Security              | Not Applicable | No network communication (self-hosted)                                            |
-| PI        | Portability and Interoperability     | Partial        | Structured session archives with integrity verification                           |
-| DEV       | Procurement and Development          | **Direct**     | Structured development workflow with validation gates                             |
+| C5 Domain | Name                                 | Relevance      | FlowGuard Contribution                                                                     |
+| --------- | ------------------------------------ | -------------- | ------------------------------------------------------------------------------------------ |
+| OIS       | Organisation of Information Security | Partial        | Policy-bound execution model                                                               |
+| SP        | Security Policies                    | Partial        | Enforceable policy modes with fail-closed semantics                                        |
+| HR        | Human Resources                      | Not Applicable | —                                                                                          |
+| AM        | Asset Management                     | Partial        | Release artifact checksums, SBOM, narrow supply chain                                      |
+| PS        | Physical Security                    | Not Applicable | —                                                                                          |
+| RB        | Operational Procedures               | **Direct**     | 14-phase governed workflow, evidence gates, audit trail                                    |
+| IDM       | Identity and Access Management       | **Direct**     | Four-eyes principle, role separation (initiator vs. reviewer)                              |
+| CRY       | Cryptography and Key Management      | Partial        | SHA-256 hash chain, checksums on release artifacts                                         |
+| KOS       | Communications Security              | Not Applicable | No network communication (self-hosted)                                                     |
+| PI        | Portability and Interoperability     | Partial        | Structured session archives with integrity verification                                    |
+| DEV       | Procurement and Development          | **Direct**     | Structured development workflow with validation gates                                      |
 | DLL       | Supplier Management                  | Partial        | Seven runtime dependencies (all narrowly-scoped, well-known libraries); offline-resolvable |
-| SIM       | Security Incident Management         | Not Applicable | —                                                                                 |
-| BCM       | Business Continuity Management       | Not Applicable | —                                                                                 |
-| COM       | Compliance                           | **Direct**     | Evidence completeness matrix, compliance reports, session archives                |
-| INQ       | Handling of Investigation Requests   | Not Applicable | —                                                                                 |
-| PSS       | Product Security                     | Partial        | Fail-closed enforcement, reason-coded blocking                                    |
+| SIM       | Security Incident Management         | Not Applicable | —                                                                                          |
+| BCM       | Business Continuity Management       | Not Applicable | —                                                                                          |
+| COM       | Compliance                           | **Direct**     | Evidence completeness matrix, compliance reports, session archives                         |
+| INQ       | Handling of Investigation Requests   | Not Applicable | —                                                                                          |
+| PSS       | Product Security                     | Partial        | Fail-closed enforcement, reason-coded blocking                                             |
 
 ---
 
@@ -115,7 +115,7 @@ The IDM domain covers identity management, access control, and separation of dut
 - Initiator and reviewer identities are tracked in session state and audit trail
 - 2 mandatory human gates (PLAN_REVIEW, EVIDENCE_REVIEW) in the ticket flow plus 1 (ARCH_REVIEW)
   in the architecture flow under Team and Regulated modes — `USER_GATES = {PLAN_REVIEW,
-  EVIDENCE_REVIEW, ARCH_REVIEW}` in `src/machine/topology.ts`
+EVIDENCE_REVIEW, ARCH_REVIEW}` in `src/machine/topology.ts`
 - `FOUR_EYES_ACTOR_MATCH`, `REGULATED_ACTOR_UNKNOWN`, and `DECISION_IDENTITY_REQUIRED` reason codes block non-compliant approvals
 
 **Policy Enforcement:**
@@ -275,14 +275,14 @@ FlowGuard applies defensive design principles to its own operation.
 
 The following C5:2020 domains address concerns outside FlowGuard's scope. FlowGuard neither provides nor claims to provide capabilities in these areas.
 
-| Domain                                   | Reason                                                                                                                                                                                  |
-| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| HR — Human Resources                     | FlowGuard is a software tool, not an HR process.                                                                                                                                        |
-| PS — Physical Security                   | FlowGuard runs locally on developer machines. Physical security is an infrastructure concern.                                                                                           |
+| Domain                                   | Reason                                                                                                                                                                                                                                                                                        |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| HR — Human Resources                     | FlowGuard is a software tool, not an HR process.                                                                                                                                                                                                                                              |
+| PS — Physical Security                   | FlowGuard runs locally on developer machines. Physical security is an infrastructure concern.                                                                                                                                                                                                 |
 | KOS — Communications Security            | FlowGuard is filesystem-first and offline-capable by default. Optional network-dependent surfaces (`/review url=...`, remote JWKS via `jwksUri`, Claude Code HTTP hook mode, RFC 3161 TSA via `tsaUrl`, NTP drift checks via `ntpServers`) each require deployment-specific network controls. |
-| SIM — Security Incident Management       | FlowGuard does not include incident detection or response capabilities.                                                                                                                 |
-| BCM — Business Continuity Management     | FlowGuard is a development tool, not a business continuity system.                                                                                                                      |
-| INQ — Handling of Investigation Requests | This is an organizational and legal concern, not a tool capability.                                                                                                                     |
+| SIM — Security Incident Management       | FlowGuard does not include incident detection or response capabilities.                                                                                                                                                                                                                       |
+| BCM — Business Continuity Management     | FlowGuard is a development tool, not a business continuity system.                                                                                                                                                                                                                            |
+| INQ — Handling of Investigation Requests | This is an organizational and legal concern, not a tool capability.                                                                                                                                                                                                                           |
 
 ---
 
@@ -290,16 +290,16 @@ The following C5:2020 domains address concerns outside FlowGuard's scope. FlowGu
 
 The following FlowGuard artifacts provide verifiable evidence for the mappings above.
 
-| Artifact                        | Location                                                          | Supports                                             |
-| ------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------- |
-| State machine topology          | `src/machine/topology.ts`                                         | RB (change management), DEV (structured workflow)    |
-| Evidence completeness matrix    | `src/audit/completeness.ts`                                       | COM (evidence management)                            |
-| Audit trail types and integrity | `src/audit/types.ts`, `src/audit/integrity.ts`                    | RB (logging), CRY (hash chain)                       |
-| Policy presets and resolution   | `src/config/policy-presets.ts`, `src/config/policy-resolver.ts`   | IDM (separation of duties), OIS (policy enforcement) |
-| Review decision logic           | `src/rails/review-decision.ts`                                    | IDM (four-eyes principle)                            |
+| Artifact                        | Location                                                                                           | Supports                                             |
+| ------------------------------- | -------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| State machine topology          | `src/machine/topology.ts`                                                                          | RB (change management), DEV (structured workflow)    |
+| Evidence completeness matrix    | `src/audit/completeness.ts`                                                                        | COM (evidence management)                            |
+| Audit trail types and integrity | `src/audit/types.ts`, `src/audit/integrity.ts`                                                     | RB (logging), CRY (hash chain)                       |
+| Policy presets and resolution   | `src/config/policy-presets.ts`, `src/config/policy-resolver.ts`                                    | IDM (separation of duties), OIS (policy enforcement) |
+| Review decision logic           | `src/rails/review-decision.ts`                                                                     | IDM (four-eyes principle)                            |
 | Archive verification            | `src/adapters/workspace/archive.ts` (`verifyArchive`); finding-code enum in `src/archive/types.ts` | COM (audit support), PI (portability)                |
-| Release workflow                | `.github/workflows/release.yml` (tarball, checksums, SBOM, SLSA attestation) | AM (checksums + SBOM), DLL (supply chain)            |
-| Security policy                 | `SECURITY.md`                                                     | PSS (vulnerability management)                       |
+| Release workflow                | `.github/workflows/release.yml` (tarball, checksums, SBOM, SLSA attestation)                       | AM (checksums + SBOM), DLL (supply chain)            |
+| Security policy                 | `SECURITY.md`                                                                                      | PSS (vulnerability management)                       |
 
 ---
 

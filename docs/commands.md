@@ -15,11 +15,11 @@ The `/<command>` syntax invokes the corresponding `flowguard_<tool-name>` tool i
 
 **Naming exceptions** (slash command and tool name differ):
 
-| Slash command            | Tool binding             | Reason                                              |
-| ------------------------ | ------------------------ | --------------------------------------------------- |
-| `/review-decision`       | `flowguard_decision`     | Tool kept short; verdict-routing is the surface     |
-| `/abort`                 | `flowguard_abort_session`| Tool name disambiguates `abort` from `serve`/`run`  |
-| `/validate`, `/check`    | `flowguard_run_check`    | The tool runs verification checks; `/validate` and the `/check` product alias both bind to it |
+| Slash command         | Tool binding              | Reason                                                                                        |
+| --------------------- | ------------------------- | --------------------------------------------------------------------------------------------- |
+| `/review-decision`    | `flowguard_decision`      | Tool kept short; verdict-routing is the surface                                               |
+| `/abort`              | `flowguard_abort_session` | Tool name disambiguates `abort` from `serve`/`run`                                            |
+| `/validate`, `/check` | `flowguard_run_check`     | The tool runs verification checks; `/validate` and the `/check` product alias both bind to it |
 
 For all other commands, slash and tool names match `1:1` (`/hydrate` →
 `flowguard_hydrate`, `/architecture` → `flowguard_architecture`, etc.).

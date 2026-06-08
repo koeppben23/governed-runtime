@@ -36,22 +36,22 @@ Release publication is tag-driven (`v*`). If no release tag has been published y
 
 The `flowguard-core-{version}.tgz` contains:
 
-| Component       | Description                                                          |
-| --------------- | -------------------------------------------------------------------- |
+| Component       | Description                                                           |
+| --------------- | --------------------------------------------------------------------- |
 | **CLI**         | `flowguard` command (install, uninstall, doctor, run, serve, inspect) |
-| **Core**        | State machine, rails, adapters, audit, config                        |
-| **Integration** | OpenCode tools, plugin, command prompts                              |
-| **Templates**   | Package.json, opencode.jsonc, mandates                               |
+| **Core**        | State machine, rails, adapters, audit, config                         |
+| **Integration** | OpenCode tools, plugin, command prompts                               |
+| **Templates**   | Package.json, opencode.jsonc, mandates                                |
 
 Each tagged release on GitHub Releases additionally publishes the following
 companion artifacts alongside the tarball:
 
-| Companion artifact      | Purpose                                                               |
-| ----------------------- | --------------------------------------------------------------------- |
-| `checksums.sha256`      | SHA-256 of `flowguard-core-{version}.tgz`; consumed by `flowguard install` |
-| `sbom.cdx.json`         | CycloneDX 1.6 SBOM enumerating runtime dependencies                   |
-| Build provenance        | SLSA-style provenance attestation via `actions/attest-build-provenance` |
-| `LICENSE`               | Plain-text copy of the FlowGuard license accompanying the release     |
+| Companion artifact | Purpose                                                                    |
+| ------------------ | -------------------------------------------------------------------------- |
+| `checksums.sha256` | SHA-256 of `flowguard-core-{version}.tgz`; consumed by `flowguard install` |
+| `sbom.cdx.json`    | CycloneDX 1.6 SBOM enumerating runtime dependencies                        |
+| Build provenance   | SLSA-style provenance attestation via `actions/attest-build-provenance`    |
+| `LICENSE`          | Plain-text copy of the FlowGuard license accompanying the release          |
 
 ---
 
@@ -256,15 +256,15 @@ or invoked.
 
 ## Integrity Verification
 
-| Check                 | Mechanism                                       | Enforced By               |
-| --------------------- | ----------------------------------------------- | ------------------------- |
-| Artifact integrity    | SHA-256 checksum in `checksums.sha256`          | FlowGuard installer       |
-| Supply chain transparency | CycloneDX 1.6 SBOM (`sbom.cdx.json`)        | Released alongside `.tgz` |
-| Build provenance      | SLSA-style attestation via `actions/attest-build-provenance` | Released alongside `.tgz` (verifiable with `gh attestation verify`) |
-| Content digest        | SHA-256 in `flowguard-mandates.md`              | FlowGuard runtime         |
-| Dependency resolution | `file:` path validation                         | npm                       |
-| State integrity       | Zod schema validation                           | FlowGuard runtime         |
-| Audit chain integrity | SHA-256 hash chain                              | FlowGuard runtime         |
+| Check                     | Mechanism                                                    | Enforced By                                                         |
+| ------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------- |
+| Artifact integrity        | SHA-256 checksum in `checksums.sha256`                       | FlowGuard installer                                                 |
+| Supply chain transparency | CycloneDX 1.6 SBOM (`sbom.cdx.json`)                         | Released alongside `.tgz`                                           |
+| Build provenance          | SLSA-style attestation via `actions/attest-build-provenance` | Released alongside `.tgz` (verifiable with `gh attestation verify`) |
+| Content digest            | SHA-256 in `flowguard-mandates.md`                           | FlowGuard runtime                                                   |
+| Dependency resolution     | `file:` path validation                                      | npm                                                                 |
+| State integrity           | Zod schema validation                                        | FlowGuard runtime                                                   |
+| Audit chain integrity     | SHA-256 hash chain                                           | FlowGuard runtime                                                   |
 
 ---
 

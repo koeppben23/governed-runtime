@@ -44,18 +44,18 @@ your repository:
                 └── artifacts/             ← evidence artifacts
 ```
 
-The repository-local `.opencode/` directory only contains *installed* files
+The repository-local `.opencode/` directory only contains _installed_ files
 (mandates, plugin, tools, agents, commands, `flowguard.json`) — it does not
 contain session state.
 
-| Path                                                                  | Recommended Permissions | Notes                                                              |
-| --------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------ |
-| `~/.config/opencode/`                                                 | 700 (owner only)        | OpenCode user-config root; contains installed assets and workspaces |
-| `~/.config/opencode/workspaces/`                                      | 700 (owner only)        | Contains all session directories                                   |
-| `~/.config/opencode/workspaces/*/sessions/*/session-state.json`       | 600 (owner read/write)  | Canonical session state SSOT — fail-closed on corruption           |
-| `~/.config/opencode/workspaces/*/sessions/*/audit.jsonl`              | 600 (owner read/write)  | Hash-chained audit trail; append-only by convention                |
-| `~/.config/opencode/workspaces/*/sessions/*/review-report.json`       | 600 (owner read/write)  | Raw review-report (excluded from exports by default)               |
-| Repo-local `.opencode/` (when `--install-scope repo`)                 | 700 (owner only)        | Installed assets only — does NOT contain session state             |
+| Path                                                            | Recommended Permissions | Notes                                                               |
+| --------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------- |
+| `~/.config/opencode/`                                           | 700 (owner only)        | OpenCode user-config root; contains installed assets and workspaces |
+| `~/.config/opencode/workspaces/`                                | 700 (owner only)        | Contains all session directories                                    |
+| `~/.config/opencode/workspaces/*/sessions/*/session-state.json` | 600 (owner read/write)  | Canonical session state SSOT — fail-closed on corruption            |
+| `~/.config/opencode/workspaces/*/sessions/*/audit.jsonl`        | 600 (owner read/write)  | Hash-chained audit trail; append-only by convention                 |
+| `~/.config/opencode/workspaces/*/sessions/*/review-report.json` | 600 (owner read/write)  | Raw review-report (excluded from exports by default)                |
+| Repo-local `.opencode/` (when `--install-scope repo`)           | 700 (owner only)        | Installed assets only — does NOT contain session state              |
 
 **Customer Responsibility:**
 
@@ -343,13 +343,13 @@ FlowGuard resolves actor identity at hydrate time for audit attribution. The `ac
 
 ### Resolution Priority
 
-| Source    | Assurance         | Description                                                                               |
-| --------- | ----------------- | ----------------------------------------------------------------------------------------- |
-| `env`     | `best_effort`     | `FLOWGUARD_ACTOR_ID` env var — operator-provided, not verified                            |
-| `git`     | `best_effort`     | `git config user.name` — git-derived, not verified                                        |
-| `claim`   | `claim_validated` | `FLOWGUARD_ACTOR_CLAIMS_PATH` — schema + expiry validated                                 |
+| Source    | Assurance         | Description                                                                                                                                                                                                        |
+| --------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `env`     | `best_effort`     | `FLOWGUARD_ACTOR_ID` env var — operator-provided, not verified                                                                                                                                                     |
+| `git`     | `best_effort`     | `git config user.name` — git-derived, not verified                                                                                                                                                                 |
+| `claim`   | `claim_validated` | `FLOWGUARD_ACTOR_CLAIMS_PATH` — schema + expiry validated                                                                                                                                                          |
 | `oidc`    | `idp_verified`    | IdP token via static keys, local pinned JWKS, or remote JWKS — cryptographically verified. The `oidc` label is historical: no OIDC discovery is implemented; the runtime accepts only pre-pinned signing material. |
-| `unknown` | `best_effort`     | No identity available                                                                     |
+| `unknown` | `best_effort`     | No identity available                                                                                                                                                                                              |
 
 ### IdP Trust Modes
 

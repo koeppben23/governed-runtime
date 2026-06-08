@@ -344,14 +344,14 @@ fully air-gapped images.
 
 ### Environment Variables
 
-| Variable                       | Default                     | Description                                                                                          |
-| ------------------------------ | --------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `FLOWGUARD_VERSION`            | (required if no tarball)    | Release tag to install (e.g. `1.2.0-rc.3`)                                                           |
-| `FLOWGUARD_TARBALL`            | (unset)                     | Local path or URL to a pre-staged tarball; overrides `FLOWGUARD_VERSION`                             |
-| `FLOWGUARD_REPO`               | `koeppben23/governed-runtime` | GitHub repo to download from                                                                       |
-| `FLOWGUARD_DIR`                | `/usr/local/lib/flowguard`  | Installation directory                                                                               |
-| `FLOWGUARD_BIN`                | `/usr/local/bin`            | Binary symlink location                                                                              |
-| `FLOWGUARD_SKIP_INSTALL_HOST`  | `0`                         | If `1`, skip `flowguard install --host codex` (use when host config is mounted from outside)         |
+| Variable                      | Default                       | Description                                                                                  |
+| ----------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------- |
+| `FLOWGUARD_VERSION`           | (required if no tarball)      | Release tag to install (e.g. `1.2.0-rc.3`)                                                   |
+| `FLOWGUARD_TARBALL`           | (unset)                       | Local path or URL to a pre-staged tarball; overrides `FLOWGUARD_VERSION`                     |
+| `FLOWGUARD_REPO`              | `koeppben23/governed-runtime` | GitHub repo to download from                                                                 |
+| `FLOWGUARD_DIR`               | `/usr/local/lib/flowguard`    | Installation directory                                                                       |
+| `FLOWGUARD_BIN`               | `/usr/local/bin`              | Binary symlink location                                                                      |
+| `FLOWGUARD_SKIP_INSTALL_HOST` | `0`                           | If `1`, skip `flowguard install --host codex` (use when host config is mounted from outside) |
 
 ### Requirements
 
@@ -377,11 +377,11 @@ cat .codex/mcp.json
 
 ## Environment Variables (All Platforms)
 
-| Variable                | Default     | Description                                                                                  |
-| ----------------------- | ----------- | -------------------------------------------------------------------------------------------- |
-| `FLOWGUARD_HOOK_PORT`   | `18462`     | HTTP hook server port (Claude Code)                                                          |
-| `FLOWGUARD_HOOK_HOST`   | `127.0.0.1` | HTTP hook server bind address                                                                |
-| `FLOWGUARD_SESSION_DIR` | (none)      | Explicit session directory override; consumed by both hook scripts and the MCP session resolver |
+| Variable                | Default     | Description                                                                                           |
+| ----------------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
+| `FLOWGUARD_HOOK_PORT`   | `18462`     | HTTP hook server port (Claude Code)                                                                   |
+| `FLOWGUARD_HOOK_HOST`   | `127.0.0.1` | HTTP hook server bind address                                                                         |
+| `FLOWGUARD_SESSION_DIR` | (none)      | Explicit session directory override; consumed by both hook scripts and the MCP session resolver       |
 | `FLOWGUARD_PROJECT_DIR` | (none)      | Host-advertised project dir for MCP (Claude Code MCP template sets this from `${CLAUDE_PROJECT_DIR}`) |
 
 > **MCP session resolution is fail-closed.** The MCP server resolves the

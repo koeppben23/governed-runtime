@@ -208,15 +208,15 @@ if (decisionIdentity.actorAssurance < policy.minimumActorAssuranceForApproval) {
 
 All three tiers share a common fail-closed guarantee:
 
-| Scenario                                   | Behavior                                                        |
-| ------------------------------------------ | --------------------------------------------------------------- |
-| Claim file missing when path is configured | **BLOCK** — `ACTOR_CLAIM_MISSING`                               |
-| Claim file unreadable                      | **BLOCK** — `ACTOR_CLAIM_UNREADABLE`                            |
-| Claim JSON invalid                         | **BLOCK** — `ACTOR_CLAIM_INVALID`                               |
-| Claim expired                              | **BLOCK** — `ACTOR_CLAIM_EXPIRED`                               |
-| Claim issuedAt in future                   | **BLOCK** — `ACTOR_CLAIM_INVALID`                               |
-| No IdP config, no claim, no env/git        | `unknown` + `best_effort` — allowed at non-regulated gates only |
-| Assurance below policy threshold           | **BLOCK** — `ACTOR_ASSURANCE_INSUFFICIENT`                      |
+| Scenario                                   | Behavior                                                                                                                                                                                                           |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Claim file missing when path is configured | **BLOCK** — `ACTOR_CLAIM_MISSING`                                                                                                                                                                                  |
+| Claim file unreadable                      | **BLOCK** — `ACTOR_CLAIM_UNREADABLE`                                                                                                                                                                               |
+| Claim JSON invalid                         | **BLOCK** — `ACTOR_CLAIM_INVALID`                                                                                                                                                                                  |
+| Claim expired                              | **BLOCK** — `ACTOR_CLAIM_EXPIRED`                                                                                                                                                                                  |
+| Claim issuedAt in future                   | **BLOCK** — `ACTOR_CLAIM_INVALID`                                                                                                                                                                                  |
+| No IdP config, no claim, no env/git        | `unknown` + `best_effort` — allowed at non-regulated gates only                                                                                                                                                    |
+| Assurance below policy threshold           | **BLOCK** — `ACTOR_ASSURANCE_INSUFFICIENT`                                                                                                                                                                         |
 | IdP token invalid/missing                  | **BLOCK** — `IDP_TOKEN_INVALID` / `IDP_TOKEN_MISSING` (or a more specific `IDP_*` code from `src/identity/errors.ts`, e.g. `IDP_SIGNATURE_INVALID`, `IDP_EXPIRED`, `IDP_ISSUER_MISMATCH`, `IDP_AUDIENCE_MISMATCH`) |
 
 There is **no fallback** from higher to lower tiers when the configured path is active. If `FLOWGUARD_ACTOR_CLAIMS_PATH` is set, its failure is fatal. Only absence of the path triggers fallback to env/git.

@@ -335,20 +335,20 @@ see `docs/commands.md` for the full mapping.
 
 These are the underlying tool names that FlowGuard installs into OpenCode:
 
-| Tool Name                 | Purpose                     |
-| ------------------------- | --------------------------- |
-| `flowguard_status`        | Check session state         |
-| `flowguard_hydrate`       | Session bootstrap           |
-| `flowguard_ticket`        | Task recording              |
-| `flowguard_plan`          | Plan generation             |
-| `flowguard_decision`      | Record review verdict       |
+| Tool Name                 | Purpose                                                                                                                                               |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flowguard_status`        | Check session state                                                                                                                                   |
+| `flowguard_hydrate`       | Session bootstrap                                                                                                                                     |
+| `flowguard_ticket`        | Task recording                                                                                                                                        |
+| `flowguard_plan`          | Plan generation                                                                                                                                       |
+| `flowguard_decision`      | Record review verdict                                                                                                                                 |
 | `flowguard_run_check`     | Validation runner (executes the discovered verification commands and records pass/fail evidence; bound to `/validate` and the `/check` product alias) |
-| `flowguard_implement`     | Plan executor               |
-| `flowguard_review`        | Generate compliance report  |
-| `flowguard_architecture`  | ADR authoring + review loop |
-| `flowguard_abort_session` | Session termination         |
-| `flowguard_archive`       | Session archival            |
-| `flowguard_continue`      | Deterministic next-action   |
+| `flowguard_implement`     | Plan executor                                                                                                                                         |
+| `flowguard_review`        | Generate compliance report                                                                                                                            |
+| `flowguard_architecture`  | ADR authoring + review loop                                                                                                                           |
+| `flowguard_abort_session` | Session termination                                                                                                                                   |
+| `flowguard_archive`       | Session archival                                                                                                                                      |
+| `flowguard_continue`      | Deterministic next-action                                                                                                                             |
 
 ## Uninstall
 

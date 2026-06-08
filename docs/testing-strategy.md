@@ -116,13 +116,13 @@ runs apply a per-environment multiplier (`CI_MULTIPLIER` for compute,
 `PERF_BUDGET_FACTOR` for I/O-bound paths) to reduce flakiness on shared
 runners. Representative budgets at local-development baseline:
 
-| Operation                          | Local budget (see `src/test-policy.ts`)             |
-| ---------------------------------- | --------------------------------------------------- |
-| `evaluate()` call (`evaluateSingleMs`) | 1.5 ms × `CI_MULTIPLIER`                        |
-| Guard predicate (`guardPredicateMs`)   | 3 ms × `CI_MULTIPLIER` × `PERF_BUDGET_FACTOR`   |
-| State serialize/deserialize        | ~5 ms (see `serializeRoundtripMs`)                  |
-| State I/O round-trip               | ~50 ms (see `stateIoRoundtripMs`)                   |
-| Audit chain verify (1000 events)   | ~100 ms (see `auditChainVerifyMs`)                  |
+| Operation                              | Local budget (see `src/test-policy.ts`)       |
+| -------------------------------------- | --------------------------------------------- |
+| `evaluate()` call (`evaluateSingleMs`) | 1.5 ms × `CI_MULTIPLIER`                      |
+| Guard predicate (`guardPredicateMs`)   | 3 ms × `CI_MULTIPLIER` × `PERF_BUDGET_FACTOR` |
+| State serialize/deserialize            | ~5 ms (see `serializeRoundtripMs`)            |
+| State I/O round-trip                   | ~50 ms (see `stateIoRoundtripMs`)             |
+| Audit chain verify (1000 events)       | ~100 ms (see `auditChainVerifyMs`)            |
 
 `initWorkspace()` and `runDiscovery()` do not have declared budgets in
 `PERF_BUDGETS` at this revision; treat their cost as advisory rather than
@@ -139,17 +139,17 @@ detect semantic errors, not just that code is executed (coverage alone cannot pr
 23 files are mutated, covering the fail-closed governance core
 (see `stryker.conf.json` for the canonical list):
 
-| Area                                                                 | Files | Representative score |
-| -------------------------------------------------------------------- | ----- | -------------------- |
-| Adapters (`persistence`, `persistence-lock`, `host-adapter`)          | 3     | (see latest report)  |
-| Audit (`integrity`, `completeness`)                                  | 2     | (see latest report)  |
-| Config (`policy`, `reasons`)                                          | 2     | (see latest report)  |
-| Hooks (`shared/obligation-tracker`, `shared/phase-gate`)              | 2     | (see latest report)  |
-| Identity (`token-verifier`)                                           | 1     | (see latest report)  |
-| Integration (`command-aliases`, `tool-classification`, `review/enforcement/enforcement`, `review/orchestrator`) | 4 | (see latest report) |
-| Machine (`commands`, `evaluate`, `guards`, `next-action`)             | 4     | (see latest report)  |
-| Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`) | 5  | (see latest report)  |
-| **Total**                                                            | **23** | uploaded as `reports/mutation/` |
+| Area                                                                                                            | Files  | Representative score            |
+| --------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------- |
+| Adapters (`persistence`, `persistence-lock`, `host-adapter`)                                                    | 3      | (see latest report)             |
+| Audit (`integrity`, `completeness`)                                                                             | 2      | (see latest report)             |
+| Config (`policy`, `reasons`)                                                                                    | 2      | (see latest report)             |
+| Hooks (`shared/obligation-tracker`, `shared/phase-gate`)                                                        | 2      | (see latest report)             |
+| Identity (`token-verifier`)                                                                                     | 1      | (see latest report)             |
+| Integration (`command-aliases`, `tool-classification`, `review/enforcement/enforcement`, `review/orchestrator`) | 4      | (see latest report)             |
+| Machine (`commands`, `evaluate`, `guards`, `next-action`)                                                       | 4      | (see latest report)             |
+| Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`)                                        | 5      | (see latest report)             |
+| **Total**                                                                                                       | **23** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.

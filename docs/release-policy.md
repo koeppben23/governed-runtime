@@ -91,21 +91,21 @@ new patch/prerelease tag from the corrected `main` commit.
 
 ### Artifact Contents
 
-| Component       | Description                                                          |
-| --------------- | -------------------------------------------------------------------- |
-| **CLI**         | `flowguard` command (install, uninstall, doctor, run, serve, inspect)|
-| **Core**        | State machine, rails, adapters, audit                                |
-| **Integration** | OpenCode tools, plugin, commands                                     |
-| **Templates**   | Package.json, opencode.json templates                                |
+| Component       | Description                                                           |
+| --------------- | --------------------------------------------------------------------- |
+| **CLI**         | `flowguard` command (install, uninstall, doctor, run, serve, inspect) |
+| **Core**        | State machine, rails, adapters, audit                                 |
+| **Integration** | OpenCode tools, plugin, commands                                      |
+| **Templates**   | Package.json, opencode.json templates                                 |
 
 ### Integrity Verification
 
-| Check                      | Mechanism                                                                       |
-| -------------------------- | ------------------------------------------------------------------------------- |
-| **Artifact integrity**     | SHA-256 checksum in `checksums.sha256`                                          |
-| **Supply chain transparency** | CycloneDX 1.6 SBOM (`sbom.cdx.json`)                                         |
-| **Build provenance**       | SLSA-style attestation (verifiable with `gh attestation verify`)                |
-| **Content integrity**      | SHA-256 content digest in `flowguard-mandates.md`                               |
+| Check                         | Mechanism                                                        |
+| ----------------------------- | ---------------------------------------------------------------- |
+| **Artifact integrity**        | SHA-256 checksum in `checksums.sha256`                           |
+| **Supply chain transparency** | CycloneDX 1.6 SBOM (`sbom.cdx.json`)                             |
+| **Build provenance**          | SLSA-style attestation (verifiable with `gh attestation verify`) |
+| **Content integrity**         | SHA-256 content digest in `flowguard-mandates.md`                |
 
 ---
 
@@ -115,13 +115,13 @@ new patch/prerelease tag from the corrected `main` commit.
 
 All FlowGuard releases are distributed via GitHub Releases (or an approved internal mirror):
 
-| Asset                              | Purpose                                                              |
-| ---------------------------------- | -------------------------------------------------------------------- |
-| `flowguard-core-{version}.tgz`     | Pre-built npm package                                                |
-| `checksums.sha256`                 | Checksum file for verification (consumed by `flowguard install`)     |
-| `sbom.cdx.json`                    | CycloneDX 1.6 software bill of materials                             |
-| Build provenance attestation       | SLSA-style provenance (verifiable with `gh attestation verify`)      |
-| `LICENSE`                          | Plain-text copy of the FlowGuard license                             |
+| Asset                          | Purpose                                                          |
+| ------------------------------ | ---------------------------------------------------------------- |
+| `flowguard-core-{version}.tgz` | Pre-built npm package                                            |
+| `checksums.sha256`             | Checksum file for verification (consumed by `flowguard install`) |
+| `sbom.cdx.json`                | CycloneDX 1.6 software bill of materials                         |
+| Build provenance attestation   | SLSA-style provenance (verifiable with `gh attestation verify`)  |
+| `LICENSE`                      | Plain-text copy of the FlowGuard license                         |
 
 ### Release Announcements
 

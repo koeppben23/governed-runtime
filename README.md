@@ -166,9 +166,9 @@ subagent attestation, and the `/review` evidence model.
 
 ## Product Documentation
 
-| Document                                     | Audience         | Notes                                                                                                                      |
-| -------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| [PRODUCT_IDENTITY.md](./PRODUCT_IDENTITY.md) | Product overview | Architecture, capabilities, limitations                                                                                    |
+| Document                                     | Audience         | Notes                                                                                                                                                                                              |
+| -------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [PRODUCT_IDENTITY.md](./PRODUCT_IDENTITY.md) | Product overview | Architecture, capabilities, limitations                                                                                                                                                            |
 | [AGENTS.md](./AGENTS.md)                     | Development repo | Local contributor notes for this repository. NOT the source of installed mandates — end users receive `flowguard-mandates.md`, which is rendered from `src/templates/mandates.ts` at install time. |
 
 ---

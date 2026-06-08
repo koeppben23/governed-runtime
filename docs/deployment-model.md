@@ -91,11 +91,11 @@ repository/
 
 ### Runtime Characteristics
 
-| Characteristic | Description                                                                                                                            |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| **Memory**     | Minimal (state machine is pure, no heavy computation)                                                                                  |
-| **CPU**        | Negligible (evaluation is sub-millisecond)                                                                                             |
-| **Disk I/O**   | On state read/write only                                                                                                               |
+| Characteristic | Description                                                                                                                                                                                                                                                                                                                                                                       |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Memory**     | Minimal (state machine is pure, no heavy computation)                                                                                                                                                                                                                                                                                                                             |
+| **CPU**        | Negligible (evaluation is sub-millisecond)                                                                                                                                                                                                                                                                                                                                        |
+| **Disk I/O**   | On state read/write only                                                                                                                                                                                                                                                                                                                                                          |
 | **Network**    | None required for default workflows. Explicit network-dependent surfaces (must each be disabled for true air-gapped operation): `/review url=...`, remote JWKS via `policy.identityProvider.jwksUri`, Claude Code HTTP hook mode (`flowguard-hook-server`), RFC 3161 TSA via `policy.audit.timestampAssurance.tsaUrl`, NTP drift via `policy.audit.timestampAssurance.ntpServers` |
 
 ---

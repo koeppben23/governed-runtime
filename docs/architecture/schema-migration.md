@@ -36,20 +36,20 @@ change lands.
 
 ### 2.1 Schema Version Points (12 unique version constants)
 
-| Schema                              | File                                            | Lock Mechanism                                                |
-| ----------------------------------- | ----------------------------------------------- | ------------------------------------------------------------- |
-| `SessionState.schemaVersion`        | `src/state/schema.ts` (line ~255)               | `z.literal('v1')`                                             |
-| `FlowGuardConfig.schemaVersion`     | `src/config/flowguard-config.ts` (line ~32)     | `z.literal('v1')`                                             |
-| `PolicySnapshot` (embedded)         | `src/state/evidence-policy.ts` (`PolicySnapshotSchema`, line ~36) | Inherited from SessionState                |
-| `CentralPolicyBundle.schemaVersion` | `src/config/policy-types.ts` (line ~340)        | Frozen literal                                                |
-| `ActorClaim.schemaVersion`          | `src/adapters/actor.ts` (line ~49)              | `z.literal('v1')`                                             |
-| `DiscoveryResult`                   | `src/discovery/types.ts` (line ~83)             | `DISCOVERY_SCHEMA_VERSION = 'discovery.v1'`                   |
-| `ProfileResolution`                 | `src/discovery/types.ts` (line ~84)             | `PROFILE_RESOLUTION_SCHEMA_VERSION = 'profile-resolution.v1'` |
-| `ArchiveManifest`                   | `src/archive/types.ts` (line ~33)               | `ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v2'`     |
-| `WorkspacePointer`                  | `src/adapters/workspace/types.ts` (line ~26)    | `WORKSPACE_SCHEMA_VERSION = 'v1'`                             |
-| `ReviewReport`                      | `src/shared/flowguard-identifiers.ts` (`REVIEW_REPORT_SCHEMA_ID`) | `flowguard-review-report.v1`                |
-| `EvidenceArtifact`                  | `src/adapters/workspace/evidence-artifacts.ts` (line ~24) | `flowguard-evidence-artifact.v1`                    |
-| `MADR Artifact`                     | `src/integration/artifacts/madr-writer.ts` (line ~22) | `madr-artifact.v1`                                      |
+| Schema                              | File                                                              | Lock Mechanism                                                |
+| ----------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------- |
+| `SessionState.schemaVersion`        | `src/state/schema.ts` (line ~255)                                 | `z.literal('v1')`                                             |
+| `FlowGuardConfig.schemaVersion`     | `src/config/flowguard-config.ts` (line ~32)                       | `z.literal('v1')`                                             |
+| `PolicySnapshot` (embedded)         | `src/state/evidence-policy.ts` (`PolicySnapshotSchema`, line ~36) | Inherited from SessionState                                   |
+| `CentralPolicyBundle.schemaVersion` | `src/config/policy-types.ts` (line ~340)                          | Frozen literal                                                |
+| `ActorClaim.schemaVersion`          | `src/adapters/actor.ts` (line ~49)                                | `z.literal('v1')`                                             |
+| `DiscoveryResult`                   | `src/discovery/types.ts` (line ~83)                               | `DISCOVERY_SCHEMA_VERSION = 'discovery.v1'`                   |
+| `ProfileResolution`                 | `src/discovery/types.ts` (line ~84)                               | `PROFILE_RESOLUTION_SCHEMA_VERSION = 'profile-resolution.v1'` |
+| `ArchiveManifest`                   | `src/archive/types.ts` (line ~33)                                 | `ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v2'`     |
+| `WorkspacePointer`                  | `src/adapters/workspace/types.ts` (line ~26)                      | `WORKSPACE_SCHEMA_VERSION = 'v1'`                             |
+| `ReviewReport`                      | `src/shared/flowguard-identifiers.ts` (`REVIEW_REPORT_SCHEMA_ID`) | `flowguard-review-report.v1`                                  |
+| `EvidenceArtifact`                  | `src/adapters/workspace/evidence-artifacts.ts` (line ~24)         | `flowguard-evidence-artifact.v1`                              |
+| `MADR Artifact`                     | `src/integration/artifacts/madr-writer.ts` (line ~22)             | `madr-artifact.v1`                                            |
 
 Line numbers are approximate (kept narrow for stability); use grep to locate
 the current definition if a citation looks stale.
