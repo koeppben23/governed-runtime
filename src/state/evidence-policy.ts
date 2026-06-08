@@ -72,15 +72,29 @@ export const PolicySnapshotSchema = z
     allowSelfApproval: z.boolean(),
     /**
      * P34: Minimum required actor assurance for regulated approval decisions.
-     * Supersedes requireVerifiedActorsForApproval at session resolution time.
-     * 'best_effort' | 'claim_validated' | 'idp_verified'
+     * Newer field added alongside requireVerifiedActorsForApproval.
+     *
+     * Resolution precedence (see verifyAssuranceThreshold in
+     * src/rails/review-decision.ts):
+     *   1. requireVerifiedActorsForApproval (P33, legacy) — if `true`, the
+     *      approver must be at assurance `claim_validated` or higher and this
+     *      field is the gate; minimumActorAssuranceForApproval is then ignored.
+     *   2. minimumActorAssuranceForApproval (P34, current) — used only when
+     *      requireVerifiedActorsForApproval is `false`/unset.
+     *
+     * Operators relaxing requireVerifiedActorsForApproval=true by setting
+     * minimumActorAssuranceForApproval to a lower tier MUST also flip
+     * requireVerifiedActorsForApproval to `false`, otherwise the stricter
+     * legacy gate keeps winning.
      */
     minimumActorAssuranceForApproval: z
       .enum(['best_effort', 'claim_validated', 'idp_verified'])
       .default('best_effort'),
     /**
-     * P33 (deprecated): Whether regulated approvals require verified actor identity.
-     * Preserved for backward compat with existing sessions. Prefer minimumActorAssuranceForApproval.
+     * P33 (legacy, still authoritative when set true): Whether regulated
+     * approvals require verified actor identity (claim_validated or higher).
+     * Checked BEFORE minimumActorAssuranceForApproval; when `true`, takes
+     * precedence and minimumActorAssuranceForApproval is not consulted.
      */
     requireVerifiedActorsForApproval: z.boolean().default(false),
     /**

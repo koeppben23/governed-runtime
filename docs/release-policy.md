@@ -81,26 +81,31 @@ new patch/prerelease tag from the corrected `main` commit.
 
 ### Artifact Creation
 
-1. Build: TypeScript compiled to JavaScript
-2. Package: `npm pack` creates `.tgz` artifact
-3. Sign: SHA-256 checksum generated
-4. Publish: Artifact uploaded to GitHub Releases
+1. Build: TypeScript compiled to JavaScript (`npm run build`)
+2. Package: `npm pack` creates the `flowguard-core-{version}.tgz` artifact
+3. Hash: `sha256sum` produces `checksums.sha256`
+4. SBOM: CycloneDX 1.6 SBOM (`sbom.cdx.json`) generated via `@cyclonedx/cyclonedx-npm`
+5. Provenance: SLSA-style build provenance attestation produced via `actions/attest-build-provenance`
+6. License: `LICENSE` published alongside the tarball
+7. Publish: Tarball + companion artifacts uploaded to GitHub Releases via `gh release create --verify-tag`
 
 ### Artifact Contents
 
-| Component       | Description                           |
-| --------------- | ------------------------------------- |
-| **CLI**         | `flowguard` command                   |
-| **Core**        | State machine, rails, adapters, audit |
-| **Integration** | OpenCode tools, plugin, commands      |
-| **Templates**   | Package.json, opencode.json templates |
+| Component       | Description                                                          |
+| --------------- | -------------------------------------------------------------------- |
+| **CLI**         | `flowguard` command (install, uninstall, doctor, run, serve, inspect)|
+| **Core**        | State machine, rails, adapters, audit                                |
+| **Integration** | OpenCode tools, plugin, commands                                     |
+| **Templates**   | Package.json, opencode.json templates                                |
 
 ### Integrity Verification
 
-| Check                  | Mechanism                                         |
-| ---------------------- | ------------------------------------------------- |
-| **Artifact integrity** | SHA-256 checksum published on Releases page       |
-| **Content integrity**  | SHA-256 content digest in `flowguard-mandates.md` |
+| Check                      | Mechanism                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------- |
+| **Artifact integrity**     | SHA-256 checksum in `checksums.sha256`                                          |
+| **Supply chain transparency** | CycloneDX 1.6 SBOM (`sbom.cdx.json`)                                         |
+| **Build provenance**       | SLSA-style attestation (verifiable with `gh attestation verify`)                |
+| **Content integrity**      | SHA-256 content digest in `flowguard-mandates.md`                               |
 
 ---
 
@@ -110,10 +115,13 @@ new patch/prerelease tag from the corrected `main` commit.
 
 All FlowGuard releases are distributed via GitHub Releases (or an approved internal mirror):
 
-| Asset                          | Purpose                        |
-| ------------------------------ | ------------------------------ |
-| `flowguard-core-{version}.tgz` | Pre-built npm package          |
-| `checksums.sha256`             | Checksum file for verification |
+| Asset                              | Purpose                                                              |
+| ---------------------------------- | -------------------------------------------------------------------- |
+| `flowguard-core-{version}.tgz`     | Pre-built npm package                                                |
+| `checksums.sha256`                 | Checksum file for verification (consumed by `flowguard install`)     |
+| `sbom.cdx.json`                    | CycloneDX 1.6 software bill of materials                             |
+| Build provenance attestation       | SLSA-style provenance (verifiable with `gh attestation verify`)      |
+| `LICENSE`                          | Plain-text copy of the FlowGuard license                             |
 
 ### Release Announcements
 
@@ -173,17 +181,22 @@ Organizations should maintain:
 
 ### Recommended Archive
 
+Sample layout — replace the placeholder versions with the actual releases
+your organization needs to retain:
+
 ```
 /artifact-store/
-├── flowguard-core-1.2.0   (current)
-├── flowguard-core-1.2.0        (previous)
-├── flowguard-core-1.2.0        (rollback)
-├── checksums.sha256
+├── flowguard-core-1.2.0-rc.3.tgz   # current
+├── flowguard-core-1.2.0-rc.3.tgz   # previous
+├── flowguard-core-1.1.x.tgz        # rollback candidate
+├── checksums.sha256                # release-versioned (one per release)
+├── sbom.cdx.json                   # release-versioned
 └── release-notes/
-    ├── v1.2.0.md
-    ├── v1.1.0.md
-    └── v1.0.0.md
+    └── <created from GitHub Releases as needed>
 ```
+
+Release-note files (`v1.2.0-rc.3.md`, etc.) are not shipped inside the repo;
+download them from the GitHub Releases page or auto-fill from `CHANGELOG.md`.
 
 ---
 

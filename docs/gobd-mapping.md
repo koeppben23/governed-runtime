@@ -212,9 +212,9 @@ GoBD § 145 (AO) and § 146 (HGB) define retention periods.
 #### What FlowGuard Contributes
 
 - Archive includes complete session state
-- Retention can be based on session metadata
+- Retention metadata is present so customer storage can apply organization-defined retention periods
 - SHA-256 hashes for integrity verification
-- 10-year retention alignment through archives
+- Tamper-evidence building blocks (hash chain, optional TSA anchoring) suitable for organization-owned long-retention policies. FlowGuard itself does not enforce a fixed retention duration in code.
 
 Retention periods are organization-owned and must be enforced in customer storage/archiving operations; see `docs/data-classification.md` for the operational retention matrix.
 

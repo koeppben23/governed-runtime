@@ -36,12 +36,22 @@ Release publication is tag-driven (`v*`). If no release tag has been published y
 
 The `flowguard-core-{version}.tgz` contains:
 
-| Component       | Description                                                  |
-| --------------- | ------------------------------------------------------------ |
-| **CLI**         | `flowguard` command (install, uninstall, doctor, run, serve) |
-| **Core**        | State machine, rails, adapters, audit, config                |
-| **Integration** | OpenCode tools, plugin, command prompts                      |
-| **Templates**   | Package.json, opencode.jsonc, mandates                       |
+| Component       | Description                                                          |
+| --------------- | -------------------------------------------------------------------- |
+| **CLI**         | `flowguard` command (install, uninstall, doctor, run, serve, inspect) |
+| **Core**        | State machine, rails, adapters, audit, config                        |
+| **Integration** | OpenCode tools, plugin, command prompts                              |
+| **Templates**   | Package.json, opencode.jsonc, mandates                               |
+
+Each tagged release on GitHub Releases additionally publishes the following
+companion artifacts alongside the tarball:
+
+| Companion artifact      | Purpose                                                               |
+| ----------------------- | --------------------------------------------------------------------- |
+| `checksums.sha256`      | SHA-256 of `flowguard-core-{version}.tgz`; consumed by `flowguard install` |
+| `sbom.cdx.json`         | CycloneDX 1.6 SBOM enumerating runtime dependencies                   |
+| Build provenance        | SLSA-style provenance attestation via `actions/attest-build-provenance` |
+| `LICENSE`               | Plain-text copy of the FlowGuard license accompanying the release     |
 
 ---
 
@@ -172,10 +182,18 @@ FlowGuard uses `file:`-based npm dependencies for offline resolution:
 ### Offline-Capable Runtime
 
 After installation, FlowGuard's package dependencies resolve from the local
-`vendor/` directory and the default workflow is offline-capable. Outbound runtime
-network access occurs only when an operator explicitly invokes or configures a
-network-dependent feature, such as `/review url=...` HTTPS content loading or
-remote JWKS refresh via `identityProvider.mode=jwks` with `jwksUri`.
+`vendor/` directory and the default workflow is offline-capable. Outbound
+runtime network access only occurs when an operator explicitly invokes or
+configures one of the following network-dependent surfaces:
+
+- `/review url=...` — HTTPS content loading for content-aware review.
+- `policy.identityProvider.mode = 'jwks'` with `jwksUri` — remote JWKS refresh.
+- `policy.audit.timestampAssurance.mode = 'tsa_critical'` with `tsaUrl` — RFC
+  3161 timestamp authority requests on critical audit events.
+- `policy.audit.timestampAssurance.mode = 'ntp_check'` with `ntpServers` —
+  NTP drift checks against the configured servers.
+- Claude Code HTTP hook mode (`flowguard-hook-server`) — bound to `127.0.0.1`
+  by default but still starts a local listener.
 
 ---
 
@@ -238,13 +256,15 @@ or invoked.
 
 ## Integrity Verification
 
-| Check                 | Mechanism                          | Enforced By         |
-| --------------------- | ---------------------------------- | ------------------- |
-| Artifact integrity    | SHA-256 checksum on Releases page  | FlowGuard installer |
-| Content digest        | SHA-256 in `flowguard-mandates.md` | FlowGuard runtime   |
-| Dependency resolution | `file:` path validation            | npm                 |
-| State integrity       | Zod schema validation              | FlowGuard runtime   |
-| Audit chain integrity | SHA-256 hash chain                 | FlowGuard runtime   |
+| Check                 | Mechanism                                       | Enforced By               |
+| --------------------- | ----------------------------------------------- | ------------------------- |
+| Artifact integrity    | SHA-256 checksum in `checksums.sha256`          | FlowGuard installer       |
+| Supply chain transparency | CycloneDX 1.6 SBOM (`sbom.cdx.json`)        | Released alongside `.tgz` |
+| Build provenance      | SLSA-style attestation via `actions/attest-build-provenance` | Released alongside `.tgz` (verifiable with `gh attestation verify`) |
+| Content digest        | SHA-256 in `flowguard-mandates.md`              | FlowGuard runtime         |
+| Dependency resolution | `file:` path validation                         | npm                       |
+| State integrity       | Zod schema validation                           | FlowGuard runtime         |
+| Audit chain integrity | SHA-256 hash chain                              | FlowGuard runtime         |
 
 ---
 

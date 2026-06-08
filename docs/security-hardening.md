@@ -26,12 +26,36 @@ controls for optional network-dependent features.
 
 ### Filesystem Permissions
 
-| Path                    | Recommended Permissions | Notes                  |
-| ----------------------- | ----------------------- | ---------------------- |
-| `~/.config/opencode/`   | 700 (owner only)        | Contains session state |
-| `.opencode/`            | 700 (owner only)        | Project-scoped install |
-| `.opencode/audit.jsonl` | 600 (owner read/write)  | Audit trail            |
-| `.opencode/state.json`  | 600 (owner read/write)  | Session state          |
+FlowGuard's runtime workspaces live under the OpenCode user-config root
+(`~/.config/opencode/` on Linux/macOS, `%USERPROFILE%\.config\opencode\` on
+Windows). Session-scoped state, audit, and review-report files are written
+under the workspace fingerprint directory, NOT directly under `.opencode/` in
+your repository:
+
+```
+~/.config/opencode/
+└── workspaces/
+    └── <workspace-fingerprint>/
+        └── sessions/
+            └── <sessionId>/
+                ├── session-state.json     ← canonical state SSOT
+                ├── audit.jsonl            ← hash-chained audit trail
+                ├── review-report.json     ← raw review report (when present)
+                └── artifacts/             ← evidence artifacts
+```
+
+The repository-local `.opencode/` directory only contains *installed* files
+(mandates, plugin, tools, agents, commands, `flowguard.json`) — it does not
+contain session state.
+
+| Path                                                                  | Recommended Permissions | Notes                                                              |
+| --------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------ |
+| `~/.config/opencode/`                                                 | 700 (owner only)        | OpenCode user-config root; contains installed assets and workspaces |
+| `~/.config/opencode/workspaces/`                                      | 700 (owner only)        | Contains all session directories                                   |
+| `~/.config/opencode/workspaces/*/sessions/*/session-state.json`       | 600 (owner read/write)  | Canonical session state SSOT — fail-closed on corruption           |
+| `~/.config/opencode/workspaces/*/sessions/*/audit.jsonl`              | 600 (owner read/write)  | Hash-chained audit trail; append-only by convention                |
+| `~/.config/opencode/workspaces/*/sessions/*/review-report.json`       | 600 (owner read/write)  | Raw review-report (excluded from exports by default)               |
+| Repo-local `.opencode/` (when `--install-scope repo`)                 | 700 (owner only)        | Installed assets only — does NOT contain session state             |
 
 **Customer Responsibility:**
 
@@ -117,20 +141,29 @@ be updated through reviewed dependency PRs instead of mutable workflow execution
 
 ### Offline-Capable Default
 
-FlowGuard runs offline by default. Network-dependent surfaces are explicit:
-`/review url=...` performs HTTPS content loading when invoked, remote JWKS uses
-HTTPS when `identityProvider.mode = jwks` with `jwksUri` is configured, and
-Claude Code HTTP hook mode starts a localhost listener when selected. Remote JWKS
-fetch failures are fail-closed in `identityProviderMode: required`.
+FlowGuard runs offline by default. Network-dependent surfaces are explicit and
+must each be disabled (or explicitly pinned) for true offline operation:
 
-For `/review url=...`, FlowGuard validates the URL scheme and resolved DNS targets
-before calling native `fetch`. DNS failures, empty answers, malformed addresses,
-private/reserved A or AAAA records, and mixed public/private DNS answers are blocked
-fail-closed, and redirects are disabled. This is a DNS-preflight SSRF mitigation,
-not a complete network sandbox: DNS rebinding or time-of-check/time-of-use changes
-between validation and the HTTPS connection remain residual risks. Use firewall,
-proxy, or sandbox egress controls for deployments that require complete outbound
-network containment.
+- `/review url=...` — HTTPS content loading when invoked.
+- `policy.identityProvider.mode = 'jwks'` with `jwksUri` — HTTPS JWKS refresh
+  (`IDP_JWKS_FETCH_FAILED` is fail-closed under `identityProviderMode: required`).
+- Claude Code HTTP hook mode (`flowguard-hook-server`) — starts a localhost
+  listener bound to `127.0.0.1` by default.
+- `policy.audit.timestampAssurance.mode = 'tsa_critical'` with `tsaUrl` — RFC
+  3161 timestamp authority requests on every critical audit event.
+- `policy.audit.timestampAssurance.mode = 'ntp_check'` with `ntpServers` —
+  NTP drift checks against the configured servers.
+
+For `/review url=...`, FlowGuard validates the URL scheme and resolved DNS
+targets before calling native `fetch` via the DNS-preflight SSRF mitigation
+implemented in `src/adapters/dns-resolution.ts` and `src/adapters/ip-validation.ts`.
+DNS failures, empty answers, malformed addresses, private/reserved A or AAAA
+records, and mixed public/private DNS answers are blocked fail-closed, and
+redirects are disabled. This is a DNS-preflight SSRF mitigation, not a complete
+network sandbox: DNS rebinding or time-of-check/time-of-use changes between
+validation and the HTTPS connection remain residual risks. Use firewall,
+proxy, or sandbox egress controls for deployments that require complete
+outbound network containment.
 
 **Verification:**
 
@@ -315,7 +348,7 @@ FlowGuard resolves actor identity at hydrate time for audit attribution. The `ac
 | `env`     | `best_effort`     | `FLOWGUARD_ACTOR_ID` env var — operator-provided, not verified                            |
 | `git`     | `best_effort`     | `git config user.name` — git-derived, not verified                                        |
 | `claim`   | `claim_validated` | `FLOWGUARD_ACTOR_CLAIMS_PATH` — schema + expiry validated                                 |
-| `oidc`    | `idp_verified`    | IdP token via static keys, local pinned JWKS, or remote JWKS — cryptographically verified |
+| `oidc`    | `idp_verified`    | IdP token via static keys, local pinned JWKS, or remote JWKS — cryptographically verified. The `oidc` label is historical: no OIDC discovery is implemented; the runtime accepts only pre-pinned signing material. |
 | `unknown` | `best_effort`     | No identity available                                                                     |
 
 ### IdP Trust Modes
@@ -325,7 +358,12 @@ FlowGuard resolves actor identity at hydrate time for audit attribution. The `ac
 - `mode: 'jwks'` with HTTPS `jwksUri` + `cacheTtlSeconds` (TTL cache)
 - JWT verification path uses `jose` `jwtVerify`; key resolution remains FlowGuard-owned (no `createRemoteJWKSet` in verifier path)
 
-Current token-expiry compatibility behavior: `exp` is recommended but not strictly required. If `exp` is missing, FlowGuard derives a bounded default `expiresAt` value in verified-token metadata. For high-assurance deployments, require `exp` in IdP-issued tokens by policy/process.
+JWT `exp` enforcement: `exp` is **hard-required** by the verifier
+(`src/identity/token-verifier.ts`). Tokens missing the `exp` claim fail closed
+with `IDP_TOKEN_INVALID` (`"IdP token missing required exp claim"`); the
+runtime does NOT derive a bounded default expiry. Operators do not need an
+out-of-band policy gate to enforce expiry — it is enforced at the runtime
+verification path.
 
 This implementation explicitly excludes OIDC discovery and stale/last-known-good JWKS fallback.
 

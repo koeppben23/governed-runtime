@@ -135,7 +135,12 @@ DORA requires managing third-party ICT risk (Art. 25-27).
 
 - Evidence of change intent and approval (useful for third-party verification)
 - Audit trail of decisions
-- Configuration for vendor dependencies (FlowGuard uses minimal supply chain: Zod only)
+- Narrow runtime dependency surface: FlowGuard ships with seven well-known,
+  narrowly-scoped runtime libraries (`@modelcontextprotocol/sdk`,
+  `@opentelemetry/api`, `asn1js`, `jose`, `jsonc-parser`, `pkijs`, `zod`).
+  See `package.json`. A CycloneDX 1.6 SBOM (`sbom.cdx.json`) and a SLSA-style
+  build provenance attestation are published per release for third-party ICT
+  risk evidence.
 
 #### Organization Must Provide
 

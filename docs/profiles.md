@@ -4,12 +4,20 @@ Profiles define validation rules and guidelines for different tech stacks.
 
 ## Built-in Profiles
 
-| Profile    | Language/Framework | Description                      |
-| ---------- | ------------------ | -------------------------------- |
-| Baseline   | Any                | Universal rules for all projects |
-| TypeScript | TypeScript/Node.js | TS-specific validation           |
-| Java       | Java/Spring Boot   | Java enterprise rules            |
-| Angular    | Angular/Nx         | Angular-specific guidelines      |
+The runtime `id` (used in `config.profile.defaultId`, the `/hydrate` slash
+command's policy/profile selection, and audit evidence) is the value in the
+first column. The display name is the second column and is not accepted as
+an id.
+
+| Profile id          | Display Name        | Description                          |
+| ------------------- | ------------------- | ------------------------------------ |
+| `baseline`          | Baseline            | Universal rules for all projects     |
+| `typescript`        | TypeScript / Node.js| TS-specific validation               |
+| `backend-java`      | Java / Spring Boot  | Java enterprise rules                |
+| `frontend-angular`  | Angular / Nx        | Angular-specific guidelines          |
+
+Unknown ids in `config.profile.defaultId` are rejected fail-closed with
+`INVALID_PROFILE`. Use the id, not the display name.
 
 ## Profile Detection
 
@@ -106,15 +114,20 @@ Extends Baseline with Angular-specific rules:
 
 ## Custom Profiles
 
-### Creating a Profile
+### Defining a Profile
+
+Custom profiles are plain TypeScript objects shaped like the built-in profiles
+(see `src/config/profile.ts` for the `ProfileDefinition` type). FlowGuard does
+not export a `defineProfile()` factory wrapper; construct the object directly
+and let TypeScript infer the structural type. The `@flowguard/core` package is
+available after installation (see docs/installation.md):
 
 ```typescript
-// Available after installation (see docs/installation.md)
-import { defineProfile } from '@flowguard/core';
+import type { ProfileDefinition } from '@flowguard/core';
 
-export const myProfile = defineProfile({
+export const myProfile: ProfileDefinition = {
   id: 'my-profile',
-  name: 'My Custom Profile',
+  displayName: 'My Custom Profile',
   signals: {
     language: ['typescript', 'javascript'],
     framework: ['express'],
@@ -126,14 +139,22 @@ export const myProfile = defineProfile({
       IMPLEMENTATION: 'Use dependency injection...',
     },
   },
-});
+};
 ```
 
 ### Registering a Profile
 
-```typescript
-// Available after installation (see docs/installation.md)
-import { profileRegistry } from '@flowguard/core';
+Register against the shared `defaultProfileRegistry` singleton (also exported
+from `@flowguard/core` — available after installation, see
+docs/installation.md), or instantiate your own `ProfileRegistry` for tests:
 
-profileRegistry.register(myProfile);
+```typescript
+import { defaultProfileRegistry, ProfileRegistry } from '@flowguard/core';
+
+// Production: register on the default registry.
+defaultProfileRegistry.register(myProfile);
+
+// Tests: an isolated registry avoids leaking custom profiles between cases.
+const testRegistry = new ProfileRegistry();
+testRegistry.register(myProfile);
 ```

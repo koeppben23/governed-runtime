@@ -42,7 +42,7 @@ Open a [GitHub Issue](https://github.com/koeppben23/governed-runtime/issues).
 
 Include:
 
-- FlowGuard version (`flowguard --version` or check `VERSION` file)
+- FlowGuard version (`flowguard doctor --install-scope global` reports the installed version, or read the shipped `VERSION` file)
 - Node.js version (`node --version`)
 - Operating system
 - Steps to reproduce

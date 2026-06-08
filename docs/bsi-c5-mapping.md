@@ -37,7 +37,7 @@ Relevance levels:
 | OIS       | Organisation of Information Security | Partial        | Policy-bound execution model                                                      |
 | SP        | Security Policies                    | Partial        | Enforceable policy modes with fail-closed semantics                               |
 | HR        | Human Resources                      | Not Applicable | —                                                                                 |
-| AM        | Asset Management                     | Partial        | Release artifact checksums, minimal supply chain                                  |
+| AM        | Asset Management                     | Partial        | Release artifact checksums, SBOM, narrow supply chain                             |
 | PS        | Physical Security                    | Not Applicable | —                                                                                 |
 | RB        | Operational Procedures               | **Direct**     | 14-phase governed workflow, evidence gates, audit trail                           |
 | IDM       | Identity and Access Management       | **Direct**     | Four-eyes principle, role separation (initiator vs. reviewer)                     |
@@ -45,7 +45,7 @@ Relevance levels:
 | KOS       | Communications Security              | Not Applicable | No network communication (self-hosted)                                            |
 | PI        | Portability and Interoperability     | Partial        | Structured session archives with integrity verification                           |
 | DEV       | Procurement and Development          | **Direct**     | Structured development workflow with validation gates                             |
-| DLL       | Supplier Management                  | Partial        | Minimal supply chain (1 runtime dependency: zod), offline-resolvable dependencies |
+| DLL       | Supplier Management                  | Partial        | Seven runtime dependencies (all narrowly-scoped, well-known libraries); offline-resolvable |
 | SIM       | Security Incident Management         | Not Applicable | —                                                                                 |
 | BCM       | Business Continuity Management       | Not Applicable | —                                                                                 |
 | COM       | Compliance                           | **Direct**     | Evidence completeness matrix, compliance reports, session archives                |
@@ -107,11 +107,15 @@ The IDM domain covers identity management, access control, and separation of dut
 
 **Separation of Duties:**
 
-- Three policy modes with escalating enforcement: Solo, Team, Regulated
+- Four policy modes with escalating enforcement: Solo, Team, Team-CI, Regulated. Team-CI defaults
+  `validationEvidence.enforcement` and `discoveryHealth.enforcement` to `required` even though
+  it auto-approves user gates in CI context, so CI-only runs cannot bypass evidence gates.
 - **Regulated mode** enforces the four-eyes principle on `approve`: the reviewer must differ from the session initiator
 - Regulated approval requires known, explicit initiator/reviewer identities
 - Initiator and reviewer identities are tracked in session state and audit trail
-- 2 mandatory human gates (PLAN_REVIEW, EVIDENCE_REVIEW) in Team and Regulated modes
+- 2 mandatory human gates (PLAN_REVIEW, EVIDENCE_REVIEW) in the ticket flow plus 1 (ARCH_REVIEW)
+  in the architecture flow under Team and Regulated modes — `USER_GATES = {PLAN_REVIEW,
+  EVIDENCE_REVIEW, ARCH_REVIEW}` in `src/machine/topology.ts`
 - `FOUR_EYES_ACTOR_MATCH`, `REGULATED_ACTOR_UNKNOWN`, and `DECISION_IDENTITY_REQUIRED` reason codes block non-compliant approvals
 
 **Policy Enforcement:**
@@ -178,10 +182,10 @@ The COM domain covers compliance documentation, evidence retention, and audit su
 **Evidence Management:**
 
 - Evidence completeness matrix: deterministic per-slot evaluation of all evidence requirements
-- 17 Zod-validated evidence schemas ensuring structural correctness
-- Compliance summary generation: automated 7-check compliance assessment from session audit trail
+- Zod-validated evidence schemas (defined across `src/state/evidence-*.ts`) ensure structural correctness
+- Compliance summary generation: automated compliance assessment from session audit trail (see `src/audit/summary.ts`)
 - Session archives: `.tar.gz` with structured manifest, file inventory, per-file SHA-256 digests, and content digest
-- 10-check archive verification (`verifyArchive()`) validates manifest presence, file completeness, digest integrity
+- Archive verification (`verifyArchive()` in `src/adapters/workspace/archive.ts`) validates manifest presence, file completeness, digest integrity, audit chain, archive checksum sidecar, TSA timestamps (when enabled), and per-artifact evidence binding. The enum of finding codes is in `src/archive/types.ts`.
 
 **Audit Support:**
 
@@ -226,7 +230,7 @@ FlowGuard enforces its own policy rules deterministically, but organizational se
 
 FlowGuard provides release artifact integrity verification and minimal supply chain.
 
-- **FlowGuard provides:** SHA-256 checksums on release artifacts, release artifact integrity verification, minimal supply chain surface (1 runtime dependency: `zod`).
+- **FlowGuard provides:** SHA-256 checksums on release artifacts, CycloneDX 1.6 SBOM (`sbom.cdx.json`) published per release, release artifact integrity verification, narrow runtime dependency surface (seven well-known packages: `@modelcontextprotocol/sdk`, `@opentelemetry/api`, `asn1js`, `jose`, `jsonc-parser`, `pkijs`, `zod` — see `package.json`).
 - **Organization must provide:** Asset inventory management, asset classification, data handling policies, media handling and disposal.
 
 ### CRY — Cryptography and Key Management
@@ -253,7 +257,7 @@ FlowGuard session data is structured and exportable, supporting data portability
 
 FlowGuard's minimal dependency footprint reduces supply chain risk.
 
-- **FlowGuard provides:** 1 runtime dependency (`zod`), offline-resolvable dependencies via local vendor directory, pre-built release artifact distributed via GitHub Releases.
+- **FlowGuard provides:** Seven runtime dependencies — all narrowly-scoped, well-known libraries (`@modelcontextprotocol/sdk`, `@opentelemetry/api`, `asn1js`, `jose`, `jsonc-parser`, `pkijs`, `zod`); three additional OpenTelemetry SDK packages are listed as `optionalDependencies` and are not required for default operation. Dependencies are offline-resolvable via the local vendor directory, and the pre-built release artifact is distributed via GitHub Releases with a CycloneDX 1.6 SBOM and SLSA-style build provenance attestation.
 - **Organization must provide:** Supplier evaluation and selection processes, supplier monitoring, contractual security requirements, supply chain risk management.
 
 ### PSS — Product Security
@@ -275,7 +279,7 @@ The following C5:2020 domains address concerns outside FlowGuard's scope. FlowGu
 | ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | HR — Human Resources                     | FlowGuard is a software tool, not an HR process.                                                                                                                                        |
 | PS — Physical Security                   | FlowGuard runs locally on developer machines. Physical security is an infrastructure concern.                                                                                           |
-| KOS — Communications Security            | FlowGuard is filesystem-first and offline-capable by default, but optional `/review` URL fetching, remote JWKS, and Claude HTTP hook mode require deployment-specific network controls. |
+| KOS — Communications Security            | FlowGuard is filesystem-first and offline-capable by default. Optional network-dependent surfaces (`/review url=...`, remote JWKS via `jwksUri`, Claude Code HTTP hook mode, RFC 3161 TSA via `tsaUrl`, NTP drift checks via `ntpServers`) each require deployment-specific network controls. |
 | SIM — Security Incident Management       | FlowGuard does not include incident detection or response capabilities.                                                                                                                 |
 | BCM — Business Continuity Management     | FlowGuard is a development tool, not a business continuity system.                                                                                                                      |
 | INQ — Handling of Investigation Requests | This is an organizational and legal concern, not a tool capability.                                                                                                                     |
@@ -286,16 +290,16 @@ The following C5:2020 domains address concerns outside FlowGuard's scope. FlowGu
 
 The following FlowGuard artifacts provide verifiable evidence for the mappings above.
 
-| Artifact                        | Location                                       | Supports                                             |
-| ------------------------------- | ---------------------------------------------- | ---------------------------------------------------- |
-| State machine topology          | `src/machine/topology.ts`                      | RB (change management), DEV (structured workflow)    |
-| Evidence completeness matrix    | `src/audit/completeness.ts`                    | COM (evidence management)                            |
-| Audit trail types and integrity | `src/audit/types.ts`, `src/audit/integrity.ts` | RB (logging), CRY (hash chain)                       |
-| Policy configuration            | `src/config/policy.ts`                         | IDM (separation of duties), OIS (policy enforcement) |
-| Review decision logic           | `src/rails/review-decision.ts`                 | IDM (four-eyes principle)                            |
-| Archive verification            | `src/archive/types.ts`                         | COM (audit support), PI (portability)                |
-| Release workflow                | `.github/workflows/release.yml`                | AM (checksums), DLL (supply chain)                   |
-| Security policy                 | `SECURITY.md`                                  | PSS (vulnerability management)                       |
+| Artifact                        | Location                                                          | Supports                                             |
+| ------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------- |
+| State machine topology          | `src/machine/topology.ts`                                         | RB (change management), DEV (structured workflow)    |
+| Evidence completeness matrix    | `src/audit/completeness.ts`                                       | COM (evidence management)                            |
+| Audit trail types and integrity | `src/audit/types.ts`, `src/audit/integrity.ts`                    | RB (logging), CRY (hash chain)                       |
+| Policy presets and resolution   | `src/config/policy-presets.ts`, `src/config/policy-resolver.ts`   | IDM (separation of duties), OIS (policy enforcement) |
+| Review decision logic           | `src/rails/review-decision.ts`                                    | IDM (four-eyes principle)                            |
+| Archive verification            | `src/adapters/workspace/archive.ts` (`verifyArchive`); finding-code enum in `src/archive/types.ts` | COM (audit support), PI (portability)                |
+| Release workflow                | `.github/workflows/release.yml` (tarball, checksums, SBOM, SLSA attestation) | AM (checksums + SBOM), DLL (supply chain)            |
+| Security policy                 | `SECURITY.md`                                                     | PSS (vulnerability management)                       |
 
 ---
 

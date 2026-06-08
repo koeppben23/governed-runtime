@@ -54,6 +54,21 @@ From `.github/workflows/ci.yml`:
 
 `install-verify (...)` and `install (...)` are distinct required jobs and must both stay aligned with CI truth.
 
+## Non-blocking CI Jobs
+
+The following jobs exist in `.github/workflows/ci.yml` but are intentionally
+**not** added to the required-check list. They run on every PR and surface as
+warnings rather than gates:
+
+| Job                    | Why non-blocking                                                                                   |
+| ---------------------- | -------------------------------------------------------------------------------------------------- |
+| `sdk-baseline`         | Snapshot comparison against upstream SDK/host baselines; drift is informational and acted on via a separate update workflow (`scripts/check-opencode-host-drift.mjs`). |
+| `unused-dependencies`  | `knip --dependencies`; a false positive should not block a release. Review the diff manually.      |
+| `fuzz`                 | `fast-check` property tests with a fixed seed (~100 iterations). Deep fuzzing runs on the nightly schedule (`fuzz-nightly.yml`); regressions block via the nightly cadence, not the PR. |
+
+If any of these is promoted to merge-blocking, move it to the required list
+above in the same PR that flips the branch-protection setting.
+
 ## Source of Truth
 
 - Workflow file: `.github/workflows/ci.yml`

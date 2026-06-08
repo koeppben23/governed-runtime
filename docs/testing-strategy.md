@@ -58,10 +58,15 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 12 security-critical
-files across machine, rails, audit, config, and identity paths. It uploads a mutation
-report artifact (`reports/mutation/`) and is blocking with the `break: 85` threshold
-enforced by `stryker.conf.json`.
+The `mutation` job runs StrykerJS mutation testing against 23 security-critical
+files spanning adapters (persistence + persistence-lock + host-adapter), audit
+(integrity + completeness), config (reasons + policy), hooks (shared
+obligation-tracker + phase-gate), identity (token-verifier), integration
+(command-aliases, tool-classification, review enforcement, review
+orchestrator), machine (commands, evaluate, guards, next-action), and rails
+(architecture, hydrate, review, review-decision, ticket). It uploads a
+mutation report artifact (`reports/mutation/`) and is blocking with the
+`break: 80` threshold enforced by `stryker.conf.json`.
 
 ## Test Organization by Layer
 
@@ -106,19 +111,22 @@ npm run test:watch
 
 ## Performance Budget Reference
 
-Key thresholds from `src/test-policy.ts`:
+Authoritative values are in `src/test-policy.ts` (constant `PERF_BUDGETS`). CI
+runs apply a per-environment multiplier (`CI_MULTIPLIER` for compute,
+`PERF_BUDGET_FACTOR` for I/O-bound paths) to reduce flakiness on shared
+runners. Representative budgets at local-development baseline:
 
-| Operation                          | Budget                      |
-| ---------------------------------- | --------------------------- |
-| `evaluate()` call                  | < 1 ms                      |
-| Guard predicate                    | < 2 ms                      |
-| State serialize/deserialize        | < 5 ms                      |
-| State I/O round-trip               | < 50 ms                     |
-| `initWorkspace()`                  | < 50 ms (150 ms on Windows) |
-| `runDiscovery()` (typical project) | < 100 ms                    |
-| Audit chain verify (1000 events)   | < 100 ms                    |
+| Operation                          | Local budget (see `src/test-policy.ts`)             |
+| ---------------------------------- | --------------------------------------------------- |
+| `evaluate()` call (`evaluateSingleMs`) | 1.5 ms × `CI_MULTIPLIER`                        |
+| Guard predicate (`guardPredicateMs`)   | 3 ms × `CI_MULTIPLIER` × `PERF_BUDGET_FACTOR`   |
+| State serialize/deserialize        | ~5 ms (see `serializeRoundtripMs`)                  |
+| State I/O round-trip               | ~50 ms (see `stateIoRoundtripMs`)                   |
+| Audit chain verify (1000 events)   | ~100 ms (see `auditChainVerifyMs`)                  |
 
-CI runs apply multipliers to these budgets to reduce flakiness on shared runners.
+`initWorkspace()` and `runDiscovery()` do not have declared budgets in
+`PERF_BUDGETS` at this revision; treat their cost as advisory rather than
+gated.
 
 ## Mutation Testing
 
@@ -128,22 +136,29 @@ detect semantic errors, not just that code is executed (coverage alone cannot pr
 
 ### Scope
 
-Twelve files are mutated, covering the fail-closed governance core:
+23 files are mutated, covering the fail-closed governance core
+(see `stryker.conf.json` for the canonical list):
 
-| Area                                             | Files  |  Score   |
-| ------------------------------------------------ | ------ | :------: |
-| Machine (guards, evaluate, commands)             | 3      |  98.77%  |
-| Rails (hydrate, review-decision, review, ticket) | 4      |  94.59%  |
-| Audit (integrity, completeness)                  | 2      |  95.19%  |
-| Config (reasons, policy)                         | 2      |  71.81%  |
-| Identity (token-verifier)                        | 1      |  81.40%  |
-| **Overall**                                      | **12** | **~89%** |
+| Area                                                                 | Files | Representative score |
+| -------------------------------------------------------------------- | ----- | -------------------- |
+| Adapters (`persistence`, `persistence-lock`, `host-adapter`)          | 3     | (see latest report)  |
+| Audit (`integrity`, `completeness`)                                  | 2     | (see latest report)  |
+| Config (`policy`, `reasons`)                                          | 2     | (see latest report)  |
+| Hooks (`shared/obligation-tracker`, `shared/phase-gate`)              | 2     | (see latest report)  |
+| Identity (`token-verifier`)                                           | 1     | (see latest report)  |
+| Integration (`command-aliases`, `tool-classification`, `review/enforcement/enforcement`, `review/orchestrator`) | 4 | (see latest report) |
+| Machine (`commands`, `evaluate`, `guards`, `next-action`)             | 4     | (see latest report)  |
+| Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`) | 5  | (see latest report)  |
+| **Total**                                                            | **23** | uploaded as `reports/mutation/` |
+
+Per-file mutation scores are produced fresh in CI; consult the latest
+`reports/mutation/` artifact for current numbers.
 
 ### CI Enforcement
 
-The `mutation` CI job is blocking. A mutation score below the configured `break: 85`
-threshold fails the job. Survivor analysis remains part of normal security-critical
-test maintenance.
+The `mutation` CI job is blocking. A mutation score below the configured
+`break: 80` threshold (`stryker.conf.json`) fails the job. Survivor analysis
+remains part of normal security-critical test maintenance.
 
 ### Interpreting Results
 

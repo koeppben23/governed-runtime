@@ -1,8 +1,16 @@
 # Agent Guidance Eval Suite
 
-Use these scenarios to evaluate whether `AGENTS.md` v3 yields correct cross-LLM behavior.
+Use these scenarios to evaluate whether the installed FlowGuard mandates
+(canonical body in `src/templates/mandates.ts`, currently v4 — see the
+`[End of v4 Agent Rules]` trailer) yield correct cross-LLM behavior. The
+root `AGENTS.md` is contributor guidance only and is **not** the source of
+mandates installed into hosts (see `AGENTS.md` notes).
 
 This suite follows public prompt guidance from OpenAI and Anthropic: clear instruction hierarchy, concise constraints, explicit routing, and eval-driven iteration.
+
+> **Runner status.** The scenarios below are a manual rubric checklist —
+> there is no automated eval harness in this repository at the moment.
+> Treat results as advisory, not as CI gates.
 
 References:
 

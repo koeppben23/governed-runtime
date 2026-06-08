@@ -52,7 +52,7 @@ Expected global installation location:
 ```
 ~/.config/opencode/
   flowguard.json
-  opencode.json
+  opencode.json            # default; opencode.jsonc is preferred when present
   plugins/flowguard-audit.ts
   commands/
   agents/
@@ -169,7 +169,7 @@ subagent attestation, and the `/review` evidence model.
 | Document                                     | Audience         | Notes                                                                                                                      |
 | -------------------------------------------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | [PRODUCT_IDENTITY.md](./PRODUCT_IDENTITY.md) | Product overview | Architecture, capabilities, limitations                                                                                    |
-| [AGENTS.md](./AGENTS.md)                     | Development repo | FlowGuard mandates used by this repo's AI assistants. End users receive `flowguard-mandates.md` via the installer instead. |
+| [AGENTS.md](./AGENTS.md)                     | Development repo | Local contributor notes for this repository. NOT the source of installed mandates — end users receive `flowguard-mandates.md`, which is rendered from `src/templates/mandates.ts` at install time. |
 
 ---
 
@@ -259,7 +259,7 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
 | Snapshot-based authoritative resolution | `resolvePolicyFromSnapshot(snapshot)`               |
 | Hydrate lifecycle (full pipeline)       | `resolvePolicyForHydrate(opts)`                     |
 
-> `resolvePolicy()` was removed in v1.3.0. Use `getPolicyPreset()` for the
+> `resolvePolicy()` was removed in v1.2.0. Use `getPolicyPreset()` for the
 > same behavior, or the context/snapshot-aware APIs for authoritative resolution.
 
 ---

@@ -137,8 +137,8 @@ Resolution contract:
 | Human gates               | 0        | 3       | 0 (CI only; else 3) | 3               |
 | Four-eyes required        | No       | No      | No                  | **Yes**         |
 | Self-approval             | Allowed  | Allowed | Allowed             | **Not Allowed** |
-| Audit trail               | Optional | **Yes** | **Yes**             | **Mandatory**   |
-| Hash chain                | No       | **Yes** | **Yes**             | **Yes**         |
+| Audit trail (transitions + tool calls) | **Yes** | **Yes** | **Yes** | **Yes** |
+| Audit chain hash          | No       | **Yes** | **Yes**             | **Yes**         |
 | Subagent review           | **Yes**  | **Yes** | **Yes**             | **Yes**         |
 | Strict review enforcement | **Yes**  | **Yes** | **Yes**             | **Yes**         |
 

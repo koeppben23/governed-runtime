@@ -1,9 +1,17 @@
 # Schema Migration Architecture
 
-**Status:** Design Proposal  
-**Version:** v1  
-**Author:** FlowGuard Core Team  
+**Status:** Design Proposal — Infrastructure not yet implemented
+**Version:** v1
+**Author:** FlowGuard Core Team
 **Governance:** Long-term schema evolution contract for audit archive integrity.
+
+> **Forward-looking content notice.** Sections 3–7 describe a planned design,
+> not current code. References below to `src/state/migration.ts`,
+> `SESSION_MIGRATIONS`, `migrateToCurrent()`, and the
+> `SESSION_MIGRATION_MISSING` reason code describe deliverables of the
+> proposed Phase 1 implementation. They do not exist in `src/` today; the
+> current state continues to be the hard-locked `z.literal('v1')` model
+> described in Section 2.
 
 ## 1. Problem Statement
 
@@ -18,7 +26,7 @@ There is no migration infrastructure:
 - No version registry
 - No migration transform pipeline
 - No backward-compatibility dispatch on `schemaVersion`
-- Break-glass tests explicitly reject `v2` (`state.test.ts:241`)
+- Break-glass tests explicitly reject `v2` (`state.test.ts`)
 
 The first breaking schema change will corrupt existing sessions, audit archives,
 and workspace state unless a migration path is designed and implemented before that
@@ -26,29 +34,32 @@ change lands.
 
 ## 2. Current State
 
-### 2.1 Schema Version Points (10 unique version constants)
+### 2.1 Schema Version Points (12 unique version constants)
 
-| Schema                              | File                                          | Lock Mechanism                                                |
-| ----------------------------------- | --------------------------------------------- | ------------------------------------------------------------- |
-| `SessionState.schemaVersion`        | `state/schema.ts:164`                         | `z.literal('v1')`                                             |
-| `FlowGuardConfig.schemaVersion`     | `config/flowguard-config.ts:26`               | `z.literal('v1')`                                             |
-| `PolicySnapshot` (embedded)         | `state/evidence.ts:449`                       | Inherited from SessionState                                   |
-| `CentralPolicyBundle.schemaVersion` | `config/policy.ts:187`                        | `readonly schemaVersion: 'v1'`                                |
-| `ActorClaim.schemaVersion`          | `adapters/actor.ts:46`                        | `z.literal('v1')`                                             |
-| `DiscoveryResult`                   | `discovery/types.ts:22`                       | `DISCOVERY_SCHEMA_VERSION = 'discovery.v1'`                   |
-| `ProfileResolution`                 | `discovery/types.ts:23`                       | `PROFILE_RESOLUTION_SCHEMA_VERSION = 'profile-resolution.v1'` |
-| `ArchiveManifest`                   | `archive/types.ts:23`                         | `ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v1'`     |
-| `WorkspacePointer`                  | `adapters/workspace/types.ts:26`              | `WORKSPACE_SCHEMA_VERSION = 'v1'`                             |
-| `ReviewReport`                      | `state/evidence.ts:628`                       | `flowguard-review-report.v1`                                  |
-| `EvidenceArtifact`                  | `adapters/workspace/evidence-artifacts.ts:17` | `flowguard-evidence-artifact.v1`                              |
-| `MADR Artifact`                     | `integration/artifacts/madr-writer.ts:22`     | `madr-artifact.v1`                                            |
+| Schema                              | File                                            | Lock Mechanism                                                |
+| ----------------------------------- | ----------------------------------------------- | ------------------------------------------------------------- |
+| `SessionState.schemaVersion`        | `src/state/schema.ts` (line ~255)               | `z.literal('v1')`                                             |
+| `FlowGuardConfig.schemaVersion`     | `src/config/flowguard-config.ts` (line ~32)     | `z.literal('v1')`                                             |
+| `PolicySnapshot` (embedded)         | `src/state/evidence-policy.ts` (`PolicySnapshotSchema`, line ~36) | Inherited from SessionState                |
+| `CentralPolicyBundle.schemaVersion` | `src/config/policy-types.ts` (line ~340)        | Frozen literal                                                |
+| `ActorClaim.schemaVersion`          | `src/adapters/actor.ts` (line ~49)              | `z.literal('v1')`                                             |
+| `DiscoveryResult`                   | `src/discovery/types.ts` (line ~83)             | `DISCOVERY_SCHEMA_VERSION = 'discovery.v1'`                   |
+| `ProfileResolution`                 | `src/discovery/types.ts` (line ~84)             | `PROFILE_RESOLUTION_SCHEMA_VERSION = 'profile-resolution.v1'` |
+| `ArchiveManifest`                   | `src/archive/types.ts` (line ~33)               | `ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v2'`     |
+| `WorkspacePointer`                  | `src/adapters/workspace/types.ts` (line ~26)    | `WORKSPACE_SCHEMA_VERSION = 'v1'`                             |
+| `ReviewReport`                      | `src/shared/flowguard-identifiers.ts` (`REVIEW_REPORT_SCHEMA_ID`) | `flowguard-review-report.v1`                |
+| `EvidenceArtifact`                  | `src/adapters/workspace/evidence-artifacts.ts` (line ~24) | `flowguard-evidence-artifact.v1`                    |
+| `MADR Artifact`                     | `src/integration/artifacts/madr-writer.ts` (line ~22) | `madr-artifact.v1`                                      |
+
+Line numbers are approximate (kept narrow for stability); use grep to locate
+the current definition if a citation looks stale.
 
 ### 2.2 Existing Backward-Compat Mechanisms
 
 **Only one exists** — field-level coercive transform for actor assurance:
 
 ```typescript
-// state/evidence.ts:17-24
+// src/state/evidence-assurance-internal.ts (around line 21)
 function coerceAssurance(
   raw: unknown,
 ): 'best_effort' | 'claim_validated' | 'idp_verified' {
@@ -289,10 +300,11 @@ with new schemas.
 
 - `src/state/schema.ts` — SessionState Zod schema
 - `src/config/flowguard-config.ts` — FlowGuardConfig Zod schema
-- `src/state/evidence.ts` — PolicySnapshot schema + coerceAssurance example
+- `src/state/evidence-policy.ts` — PolicySnapshot schema
+- `src/state/evidence-assurance-internal.ts` — `coerceAssurance` example
 - `src/audit/integrity.ts` — Audit chain integrity (legacy tolerance comment)
-- `docs/configuration.md:246-252` — Config immutability note
-- `docs/actor-assurance-architecture.md:288-312` — actor assurance field migration example
+- `docs/configuration.md` § "Existing Sessions and Snapshot Authority" — Config immutability note
+- `docs/actor-assurance-architecture.md` — actor assurance field migration example
 
 ## 8. Decision Log
 

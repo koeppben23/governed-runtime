@@ -6,18 +6,20 @@ FlowGuard distinguishes between **Workflow Commands** (drive session state) and 
 
 FlowGuard uses a two-level command surface:
 
-| Level           | Syntax              | Example                                 | Purpose                |
-| --------------- | ------------------- | --------------------------------------- | ---------------------- |
-| **User-facing** | `/command`          | `/hydrate`, `/ticket`                   | OpenCode chat commands |
-| **Internal**    | `flowguard_command` | `flowguard_hydrate`, `flowguard_ticket` | OpenCode tool bindings |
+| Level           | Syntax                  | Example                                 | Purpose                |
+| --------------- | ----------------------- | --------------------------------------- | ---------------------- |
+| **User-facing** | `/<command>`            | `/hydrate`, `/ticket`                   | OpenCode chat commands |
+| **Internal**    | `flowguard_<tool-name>` | `flowguard_hydrate`, `flowguard_ticket` | OpenCode tool bindings |
 
-The `/command` syntax invokes the corresponding `flowguard_command` tool internally.
+The `/<command>` syntax invokes the corresponding `flowguard_<tool-name>` tool internally.
 
 **Naming exceptions** (slash command and tool name differ):
 
-| Slash command      | Tool binding         | Reason                                          |
-| ------------------ | -------------------- | ----------------------------------------------- |
-| `/review-decision` | `flowguard_decision` | Tool kept short; verdict-routing is the surface |
+| Slash command            | Tool binding             | Reason                                              |
+| ------------------------ | ------------------------ | --------------------------------------------------- |
+| `/review-decision`       | `flowguard_decision`     | Tool kept short; verdict-routing is the surface     |
+| `/abort`                 | `flowguard_abort_session`| Tool name disambiguates `abort` from `serve`/`run`  |
+| `/validate`, `/check`    | `flowguard_run_check`    | The tool runs verification checks; `/validate` and the `/check` product alias both bind to it |
 
 For all other commands, slash and tool names match `1:1` (`/hydrate` →
 `flowguard_hydrate`, `/architecture` → `flowguard_architecture`, etc.).
@@ -182,7 +184,9 @@ registered as `flowguard_decision`.
 
 **Four-eyes (regulated mode):** `approve` requires reviewer identity different
 from session initiator, and both identities must be known. Same-actor approve
-returns BLOCKED `FOUR_EYES_VIOLATION`.
+returns BLOCKED `FOUR_EYES_ACTOR_MATCH`. (Related regulated-mode blockers when
+identities are missing or unknown: `DECISION_IDENTITY_REQUIRED`,
+`REGULATED_ACTOR_UNKNOWN`.)
 
 **Actor assurance gate (any mode with `policy.minimumActorAssuranceForApproval`
 set above the default `best_effort`):** the approver's resolved assurance tier
@@ -211,10 +215,15 @@ Execute the implementation plan.
 
 1. LLM implements using OpenCode tools
 2. Changed files recorded via git
-3. Independent implementation review loop
+3. Independent implementation review loop (`IMPLEMENTATION` → `IMPL_REVIEW` →
+   `REVIEW_MET` convergence; bounded by `maxImplReviewIterations`)
 4. Advances to EVIDENCE_REVIEW
 
 **Allowed in:** IMPLEMENTATION
+
+The convergence event fired by the machine is `REVIEW_MET`; the human-visible
+verdict surface is still `approve` / `changes_requested`. See
+`docs/phases.md#review-loop` for the loop semantics.
 
 ### /architecture
 
@@ -278,18 +287,23 @@ Universal routing command. Inspects current phase and does the next appropriate 
 
 Emergency session termination. Bypasses the topology and directly sets phase
 to `COMPLETE` with `error.code = 'ABORTED'`. Irreversible. Allowed in any
-non-terminal phase. Aborting from a terminal phase (`COMPLETE`,
-`ARCH_COMPLETE`, `REVIEW_COMPLETE`) is an idempotent no-op that preserves
-state. Aborted sessions remain identifiable post-mortem via
-`state.error.code === 'ABORTED'`.
+non-terminal phase, **including the architecture and review flows**: aborted
+sessions always land in `COMPLETE`, not `ARCH_COMPLETE` or `REVIEW_COMPLETE`.
+Compliance consumers filtering for the natural terminal of each flow should
+therefore include `phase === 'COMPLETE' && error?.code === 'ABORTED'` as a
+distinct case. Aborting from a terminal phase (`COMPLETE`, `ARCH_COMPLETE`,
+`REVIEW_COMPLETE`) is an idempotent no-op that preserves state. Aborted
+sessions remain identifiable post-mortem via `state.error.code === 'ABORTED'`.
 
 ## Operational Tools
 
 These tools operate on session artifacts but don't drive workflow.
 
-### flowguard_status (internal)
+### flowguard_status
 
-Read-only status tool used by `/status` and other slash commands to inspect session state.
+Read-only status tool used by `/status` and other slash commands to inspect
+session state. Exported as a top-level OpenCode tool — operators and scripts
+may invoke it directly with the same fail-closed semantics as `/status`.
 
 In addition to phase and evidence summary, status now surfaces:
 
@@ -316,7 +330,13 @@ If `includeRaw=true`, raw artifacts are included and manifest risk flag `raw_exp
 
 External references recorded via `/ticket` are part of authoritative runtime state and remain raw in `session-state.json` (not redacted). References in `review-report.*.json` are redacted in redacted export artifacts.
 
-**Verification:** `verifyArchive()` validates integrity (11 finding codes, including audit chain verification).
+**Verification:** `verifyArchive()` (defined in
+`src/adapters/workspace/archive.ts`) validates integrity. Possible finding
+codes are enumerated in `docs/archive.md#verification-finding-codes` and the
+source enum in `src/archive/types.ts` (`AUDIT_CHAIN_*`, `MANIFEST_*`,
+`FILE_DIGEST_*`, `CONTENT_DIGEST_*`, `ARCHIVE_CHECKSUM_*`,
+`TIMESTAMP_UNANCHORED`, `TSA_VERIFICATION_FAILED`, plus per-artifact binding
+codes).
 
 **Regulated mode:** In regulated mode, clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) triggers
 synchronous archive creation + verification. The `archiveStatus` field on session state tracks the lifecycle
