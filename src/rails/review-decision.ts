@@ -42,7 +42,7 @@ import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext, TransitionRecord } from './types.js';
 import { applyTransition } from './types.js';
 import { blocked } from '../config/reasons.js';
-import { isAssuranceAtLeast, sameActorIdentity } from '../identity/actor-info.js';
+import { compareActorIdentity, isAssuranceAtLeast } from '../identity/actor-info.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -184,8 +184,10 @@ function verifyFourEyes(state: SessionState, input: ReviewDecisionInput): RailBl
     return blocked('REGULATED_ACTOR_UNKNOWN', { role: 'initiator' });
   if (input.decisionIdentity.actorSource === 'unknown')
     return blocked('REGULATED_ACTOR_UNKNOWN', { role: 'reviewer' });
-  if (sameActorIdentity(input.decisionIdentity, state.initiatedByIdentity) === true)
+  const actorComparison = compareActorIdentity(input.decisionIdentity, state.initiatedByIdentity);
+  if (actorComparison === 'same')
     return blocked('FOUR_EYES_ACTOR_MATCH', { initiator: state.initiatedByIdentity.actorId });
+  if (actorComparison === 'uncomparable') return blocked('DECISION_IDENTITY_REQUIRED');
   return null;
 }
 

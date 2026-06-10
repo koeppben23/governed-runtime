@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #486 (regulated four-eyes identity fail-closed):** Regulated approval
+  now uses the canonical actor identity comparator for explicit `same`,
+  `different`, and `uncomparable` outcomes. Uncomparable identities, including
+  whitespace-only actor IDs, fail closed with `DECISION_IDENTITY_REQUIRED`, while
+  same-actor approvals continue to return `FOUR_EYES_ACTOR_MATCH`. Actor ID
+  comparison now applies NFC normalization before lowercasing, and audit
+  completeness four-eyes reporting uses the same canonical comparison semantics.
+
 - **Issue #469 (secret/credential-handling red line):** Added a new red line to
   the installed FlowGuard agent mandates (`FLOWGUARD_MANDATES_BODY`) requiring
   agents to never read, print, log, echo, commit, or exfiltrate secrets,

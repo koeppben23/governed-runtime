@@ -7,7 +7,14 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { isAssuranceAtLeast, compareActorAssurance, ASSURANCE_TIERS } from './actor-info.js';
+import {
+  ASSURANCE_TIERS,
+  compareActorAssurance,
+  compareActorIdentity,
+  isAssuranceAtLeast,
+  normalizeActorId,
+  sameActorIdentity,
+} from './actor-info.js';
 
 describe('ASSURANCE_TIERS', () => {
   it('has three tiers in ascending order', () => {
@@ -92,5 +99,28 @@ describe('compareActorAssurance', () => {
 
   it('undefined is below all tiers', () => {
     expect(compareActorAssurance(undefined, 'best_effort')).toBeLessThan(0);
+  });
+});
+
+describe('actor-info identity comparison', () => {
+  it('normalizes whitespace and case', () => {
+    expect(normalizeActorId('  Alice.Example  ')).toBe('alice.example');
+  });
+
+  it('treats NFC and NFD canonically equivalent actor IDs as the same actor', () => {
+    expect(compareActorIdentity({ actorId: 'café' }, { actorId: 'cafe\u0301' })).toBe('same');
+    expect(sameActorIdentity({ actorId: 'café' }, { actorId: 'cafe\u0301' })).toBe(true);
+  });
+
+  it('returns uncomparable when an actor ID is blank after trimming', () => {
+    expect(normalizeActorId('   ')).toBeNull();
+    expect(compareActorIdentity({ actorId: 'alice' }, { actorId: '   ' })).toBe('uncomparable');
+    expect(sameActorIdentity({ actorId: 'alice' }, { actorId: '   ' })).toBeNull();
+  });
+
+  it('pins dotted-I lowercasing without adding broader confusable folding', () => {
+    // NFC is intentional for #486: canonical equivalence, not NFKC/confusable policy.
+    expect(normalizeActorId('\u0130')).toBe('i\u0307');
+    expect(compareActorIdentity({ actorId: '\u0130' }, { actorId: 'i' })).toBe('different');
   });
 });

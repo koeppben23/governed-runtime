@@ -63,7 +63,8 @@ export interface ActorIdentityComparable {
 export type ActorIdentityComparison = 'same' | 'different' | 'uncomparable';
 
 export function normalizeActorId(actorId: string | null | undefined): string | null {
-  const normalized = actorId?.trim().toLowerCase();
+  // NFC intentionally covers canonical equivalence without broad confusable folding.
+  const normalized = actorId?.trim().normalize('NFC').toLowerCase();
   return normalized ? normalized : null;
 }
 
