@@ -158,11 +158,23 @@ describe('review rail', () => {
           allowSelfApproval: false,
         },
         initiatedBy: 'alice',
+        initiatedByIdentity: {
+          actorId: 'alice',
+          actorEmail: null,
+          actorSource: 'claim',
+          actorAssurance: 'claim_validated',
+        },
         reviewDecision: {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
           decidedBy: 'alice',
+          decisionIdentity: {
+            actorId: 'alice',
+            actorEmail: null,
+            actorSource: 'claim',
+            actorAssurance: 'claim_validated',
+          },
         },
       });
       const report = await executeReview(state, NOW);
@@ -624,9 +636,21 @@ describe('review rail', () => {
         ...state,
         policySnapshot: { ...state.policySnapshot, allowSelfApproval: false },
         initiatedBy: 'same-person',
+        initiatedByIdentity: {
+          actorId: 'same-person',
+          actorEmail: null,
+          actorSource: 'claim',
+          actorAssurance: 'claim_validated',
+        },
         reviewDecision: {
           ...state.reviewDecision!,
           decidedBy: 'same-person', // same as initiator
+          decisionIdentity: {
+            actorId: 'same-person',
+            actorEmail: null,
+            actorSource: 'claim',
+            actorAssurance: 'claim_validated',
+          },
         },
       };
       const report = await executeReview(stateViolated, NOW);

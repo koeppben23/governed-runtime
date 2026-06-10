@@ -40,6 +40,8 @@
  */
 
 import { z } from 'zod';
+import { compareActorIdentity } from '../identity/actor-info.js';
+import type { ActorIdentityComparison } from '../identity/actor-info.js';
 import type { SessionState, Phase } from '../state/schema.js';
 
 // ─── Zod Schemas for ReviewReport ────────────────────────────────────
@@ -402,24 +404,43 @@ function buildSlotEntry(
   };
 }
 
+function compareReviewActors(
+  state: SessionState,
+  decidedBy: string | null,
+): ActorIdentityComparison {
+  if (decidedBy === null) return 'uncomparable';
+  const initiatorIdentity = state.initiatedByIdentity ?? { actorId: state.initiatedBy };
+  const reviewerIdentity =
+    state.reviewDecision?.decisionIdentity ?? (decidedBy !== null ? { actorId: decidedBy } : null);
+  return compareActorIdentity(initiatorIdentity, reviewerIdentity);
+}
+
+function getFourEyesDetail(
+  state: SessionState,
+  decidedBy: string | null,
+  actorComparison: ActorIdentityComparison,
+  fourEyesRequired: boolean,
+): string {
+  if (!fourEyesRequired) return 'Four-eyes not required by policy';
+  if (decidedBy === null) return 'Four-eyes pending: no review decision recorded yet';
+  if (actorComparison === 'different')
+    return `Four-eyes satisfied: initiator=${state.initiatedBy}, reviewer=${decidedBy}`;
+  if (actorComparison === 'uncomparable')
+    return 'Four-eyes pending: initiator and reviewer identities are not comparable';
+  return `Four-eyes VIOLATED: initiator and reviewer are the same person (${state.initiatedBy})`;
+}
+
 function evaluateFourEyes(state: SessionState): FourEyesStatus {
   const fourEyesRequired = state.policySnapshot?.allowSelfApproval === false;
   const decidedBy = state.reviewDecision?.decidedBy ?? null;
-  const fourEyesSatisfied =
-    !fourEyesRequired || (decidedBy !== null && decidedBy !== state.initiatedBy);
-  let detail: string;
-  if (!fourEyesRequired) detail = 'Four-eyes not required by policy';
-  else if (decidedBy === null) detail = 'Four-eyes pending: no review decision recorded yet';
-  else if (fourEyesSatisfied)
-    detail = `Four-eyes satisfied: initiator=${state.initiatedBy}, reviewer=${decidedBy}`;
-  else
-    detail = `Four-eyes VIOLATED: initiator and reviewer are the same person (${state.initiatedBy})`;
+  const actorComparison = compareReviewActors(state, decidedBy);
+  const fourEyesSatisfied = !fourEyesRequired || actorComparison === 'different';
   return {
     required: fourEyesRequired,
     satisfied: fourEyesSatisfied,
     initiatedBy: state.initiatedBy,
     decidedBy,
-    detail,
+    detail: getFourEyesDetail(state, decidedBy, actorComparison, fourEyesRequired),
   };
 }
 

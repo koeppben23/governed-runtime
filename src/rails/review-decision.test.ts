@@ -324,6 +324,83 @@ describe('review-decision rail', () => {
     }
   });
 
+  it('regulated approve blocks uncomparable reviewer identity with DECISION_IDENTITY_REQUIRED', () => {
+    const state = makeState('PLAN_REVIEW', {
+      initiatedByIdentity: initiatorIdentity,
+    });
+    const result = executeReviewDecision(
+      state,
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decidedBy: 'reviewer-1',
+        decisionIdentity: { ...reviewerIdentity, actorId: '   ' },
+      },
+      { ...baseCtx, policy: { allowSelfApproval: false } },
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.code).toBe('DECISION_IDENTITY_REQUIRED');
+    }
+  });
+
+  it('regulated approve blocks uncomparable initiator identity with DECISION_IDENTITY_REQUIRED', () => {
+    const state = makeState('PLAN_REVIEW', {
+      initiatedByIdentity: { ...initiatorIdentity, actorId: '   ' },
+    });
+    const result = executeReviewDecision(
+      state,
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decidedBy: 'reviewer-1',
+        decisionIdentity: reviewerIdentity,
+      },
+      { ...baseCtx, policy: { allowSelfApproval: false } },
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.code).toBe('DECISION_IDENTITY_REQUIRED');
+    }
+  });
+
+  it('regulated approve blocks NFC/NFD equivalent actor IDs with FOUR_EYES_ACTOR_MATCH', () => {
+    const state = makeState('PLAN_REVIEW', {
+      initiatedByIdentity: { ...initiatorIdentity, actorId: 'café' },
+    });
+    const result = executeReviewDecision(
+      state,
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decidedBy: 'cafe\u0301',
+        decisionIdentity: { ...reviewerIdentity, actorId: 'cafe\u0301' },
+      },
+      { ...baseCtx, policy: { allowSelfApproval: false } },
+    );
+    expect(result.kind).toBe('blocked');
+    if (result.kind === 'blocked') {
+      expect(result.code).toBe('FOUR_EYES_ACTOR_MATCH');
+    }
+  });
+
+  it('regulated approve allows valid comparable different identities', () => {
+    const state = makeState('PLAN_REVIEW', {
+      initiatedByIdentity: initiatorIdentity,
+    });
+    const result = executeReviewDecision(
+      state,
+      {
+        verdict: 'approve',
+        rationale: 'ok',
+        decidedBy: 'reviewer-1',
+        decisionIdentity: reviewerIdentity,
+      },
+      { ...baseCtx, policy: { allowSelfApproval: false } },
+    );
+    expect(result.kind).toBe('ok');
+  });
+
   it('ACTOR_ASSURANCE_INSUFFICIENT reason includes minimum and current levels', () => {
     const state = makeState('PLAN_REVIEW', {
       initiatedByIdentity: initiatorIdentity,

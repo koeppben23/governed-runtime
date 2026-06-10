@@ -73,6 +73,16 @@ describe('evidence-identity', () => {
       ).toThrow();
     });
 
+    it('DecisionIdentity rejects whitespace-only actorId', () => {
+      expect(() =>
+        DecisionIdentity.parse({
+          actorId: '   ',
+          actorEmail: null,
+          actorSource: 'env',
+        }),
+      ).toThrow();
+    });
+
     it('DecisionIdentity rejects invalid actorSource', () => {
       expect(() =>
         DecisionIdentity.parse({

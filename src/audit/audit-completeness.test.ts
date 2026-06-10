@@ -96,11 +96,23 @@ describe('audit completeness', () => {
           allowSelfApproval: false,
         },
         initiatedBy: 'alice',
+        initiatedByIdentity: {
+          actorId: 'alice',
+          actorEmail: null,
+          actorSource: 'claim',
+          actorAssurance: 'claim_validated',
+        },
         reviewDecision: {
           verdict: 'approve',
           rationale: 'LGTM',
           decidedAt: FIXED_TIME,
           decidedBy: 'alice', // Same as initiatedBy
+          decisionIdentity: {
+            actorId: 'alice',
+            actorEmail: null,
+            actorSource: 'claim',
+            actorAssurance: 'claim_validated',
+          },
         },
       });
       const report = evaluateCompleteness(state);
@@ -118,6 +130,93 @@ describe('audit completeness', () => {
           allowSelfApproval: false,
         },
         initiatedBy: 'alice',
+        reviewDecision: {
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedAt: FIXED_TIME,
+          decidedBy: 'bob',
+        },
+      });
+      const report = evaluateCompleteness(state);
+      expect(report.fourEyes.required).toBe(true);
+      expect(report.fourEyes.satisfied).toBe(true);
+      expect(report.fourEyes.detail).toContain('satisfied');
+    });
+
+    it('four-eyes violated when structured identities match despite different legacy strings', () => {
+      const state = makeState('COMPLETE', {
+        ...makeProgressedState('COMPLETE'),
+        policySnapshot: {
+          ...makeProgressedState('COMPLETE').policySnapshot!,
+          allowSelfApproval: false,
+        },
+        initiatedBy: 'legacy-initiator',
+        initiatedByIdentity: {
+          actorId: 'alice',
+          actorEmail: null,
+          actorSource: 'claim',
+          actorAssurance: 'claim_validated',
+        },
+        reviewDecision: {
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedAt: FIXED_TIME,
+          decidedBy: 'legacy-reviewer',
+          decisionIdentity: {
+            actorId: 'ALICE',
+            actorEmail: null,
+            actorSource: 'claim',
+            actorAssurance: 'claim_validated',
+          },
+        },
+      });
+      const report = evaluateCompleteness(state);
+      expect(report.fourEyes.required).toBe(true);
+      expect(report.fourEyes.satisfied).toBe(false);
+      expect(report.fourEyes.detail).toContain('VIOLATED');
+    });
+
+    it('four-eyes is not satisfied when structured identities are uncomparable', () => {
+      const state = makeState('COMPLETE', {
+        ...makeProgressedState('COMPLETE'),
+        policySnapshot: {
+          ...makeProgressedState('COMPLETE').policySnapshot!,
+          allowSelfApproval: false,
+        },
+        initiatedByIdentity: {
+          actorId: '   ',
+          actorEmail: null,
+          actorSource: 'claim',
+          actorAssurance: 'claim_validated',
+        },
+        reviewDecision: {
+          verdict: 'approve',
+          rationale: 'LGTM',
+          decidedAt: FIXED_TIME,
+          decidedBy: 'bob',
+          decisionIdentity: {
+            actorId: 'bob',
+            actorEmail: null,
+            actorSource: 'claim',
+            actorAssurance: 'claim_validated',
+          },
+        },
+      });
+      const report = evaluateCompleteness(state);
+      expect(report.fourEyes.required).toBe(true);
+      expect(report.fourEyes.satisfied).toBe(false);
+      expect(report.fourEyes.detail).toContain('not comparable');
+    });
+
+    it('four-eyes uses legacy actor strings when structured identities are absent', () => {
+      const state = makeState('COMPLETE', {
+        ...makeProgressedState('COMPLETE'),
+        policySnapshot: {
+          ...makeProgressedState('COMPLETE').policySnapshot!,
+          allowSelfApproval: false,
+        },
+        initiatedBy: 'alice',
+        initiatedByIdentity: undefined,
         reviewDecision: {
           verdict: 'approve',
           rationale: 'LGTM',

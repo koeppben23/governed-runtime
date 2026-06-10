@@ -21,7 +21,12 @@ import { assuranceSchema } from './evidence-assurance-internal.js';
  */
 export const DecisionIdentity = z
   .object({
-    actorId: z.string().min(1),
+    actorId: z
+      .string()
+      .min(1)
+      .refine((value) => value.trim().length > 0, {
+        message: 'actorId must not be blank',
+      }),
     actorEmail: z.string().nullable(),
     actorDisplayName: z.string().nullable().optional(),
     actorSource: z.enum(['env', 'git', 'claim', 'oidc', 'unknown']),
