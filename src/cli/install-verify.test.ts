@@ -75,6 +75,17 @@ function assertSuccess(
   );
 }
 
+async function installTarballForInspection(prefix: string): Promise<string> {
+  const p = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
+  await fs.writeFile(
+    path.join(p, 'package.json'),
+    JSON.stringify({ name: 'test', type: 'module' }),
+  );
+  const args = ['install', '--ignore-scripts', '--no-audit', '--no-fund', tarballPath];
+  assertSuccess(runFile('npm', args, p), commandForLog('npm', args));
+  return p;
+}
+
 describe('install-verify', () => {
   beforeAll(async () => {
     tmpDir = await createTmpDir();
@@ -97,23 +108,37 @@ describe('install-verify', () => {
 
   describe('Tarball', () => {
     it('package.json has @opentelemetry/api in dependencies', async () => {
-      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-pkg-'));
-      execFileSync('tar', ['-xzf', tarballPath, '-C', tmp]);
-      const pkg = JSON.parse(await fs.readFile(path.join(tmp, 'package', 'package.json'), 'utf-8'));
-      expect(pkg.dependencies['@opentelemetry/api']).toBeDefined();
-      expect(pkg.dependencies['@opentelemetry/api']).toMatch(/^\^1\./);
-      await fs.rm(tmp, { recursive: true, force: true });
+      const tmp = await installTarballForInspection('gov-pkg-');
+      try {
+        const pkg = JSON.parse(
+          await fs.readFile(
+            path.join(tmp, 'node_modules', '@flowguard', 'core', 'package.json'),
+            'utf-8',
+          ),
+        );
+        expect(pkg.dependencies['@opentelemetry/api']).toBeDefined();
+        expect(pkg.dependencies['@opentelemetry/api']).toMatch(/^\^1\./);
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true });
+      }
     });
 
     it('package.json has OTEL SDK packages in optionalDependencies', async () => {
-      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-pkg-'));
-      execFileSync('tar', ['-xzf', tarballPath, '-C', tmp]);
-      const pkg = JSON.parse(await fs.readFile(path.join(tmp, 'package', 'package.json'), 'utf-8'));
-      expect(pkg.optionalDependencies).toBeDefined();
-      expect(pkg.optionalDependencies['@opentelemetry/sdk-node']).toBeDefined();
-      expect(pkg.optionalDependencies['@opentelemetry/exporter-trace-otlp-http']).toBeDefined();
-      expect(pkg.optionalDependencies['@opentelemetry/auto-instrumentations-node']).toBeDefined();
-      await fs.rm(tmp, { recursive: true, force: true });
+      const tmp = await installTarballForInspection('gov-pkg-');
+      try {
+        const pkg = JSON.parse(
+          await fs.readFile(
+            path.join(tmp, 'node_modules', '@flowguard', 'core', 'package.json'),
+            'utf-8',
+          ),
+        );
+        expect(pkg.optionalDependencies).toBeDefined();
+        expect(pkg.optionalDependencies['@opentelemetry/sdk-node']).toBeDefined();
+        expect(pkg.optionalDependencies['@opentelemetry/exporter-trace-otlp-http']).toBeDefined();
+        expect(pkg.optionalDependencies['@opentelemetry/auto-instrumentations-node']).toBeDefined();
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true });
+      }
     });
 
     it('installs with --omit=optional without crashing', async () => {
@@ -227,11 +252,15 @@ describe('install-verify', () => {
     }, 480000);
 
     it('has expected files in tarball', async () => {
-      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-list-'));
-      execFileSync('tar', ['-xzf', tarballPath, '-C', tmp]);
-      const files = await fs.readdir(path.join(tmp, 'package', 'dist'));
-      expect(files.length).toBeGreaterThan(10);
-      await fs.rm(tmp, { recursive: true, force: true });
+      const tmp = await installTarballForInspection('gov-list-');
+      try {
+        const files = await fs.readdir(
+          path.join(tmp, 'node_modules', '@flowguard', 'core', 'dist'),
+        );
+        expect(files.length).toBeGreaterThan(10);
+      } finally {
+        await fs.rm(tmp, { recursive: true, force: true });
+      }
     });
 
     it('checksums.sha256 matches tarball (integrity smoke)', async () => {
