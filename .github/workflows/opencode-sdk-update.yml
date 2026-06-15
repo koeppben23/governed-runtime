@@ -139,37 +139,67 @@ jobs:
         run: git push --force-with-lease origin "flowguard/opencode-${{ steps.resolve.outputs.target_sdk }}-host-${{ steps.resolve.outputs.target_host }}"
       - name: Create or update pull request
         if: steps.resolve.outputs.needs_update == 'true'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
         env:
-          GH_TOKEN: ${{ github.token }}
           BRANCH: flowguard/opencode-${{ steps.resolve.outputs.target_sdk }}-host-${{ steps.resolve.outputs.target_host }}
           TARGET_SDK: ${{ steps.resolve.outputs.target_sdk }}
           TARGET_HOST: ${{ steps.resolve.outputs.target_host }}
           CURRENT_SDK: ${{ steps.resolve.outputs.current_sdk }}
           CURRENT_HOST: ${{ steps.resolve.outputs.current_host }}
-        run: |
-          cat > /tmp/opencode-sdk-pr-body.md <<EOF
-          Updates OpenCode compatibility baselines and verifies both SDK and Desktop/host surfaces.
+        with:
+          script: |
+            const branch = process.env.BRANCH;
+            const currentSdk = process.env.CURRENT_SDK;
+            const currentHost = process.env.CURRENT_HOST;
+            const targetSdk = process.env.TARGET_SDK;
+            const targetHost = process.env.TARGET_HOST;
 
-          Versions:
-          - @opencode-ai/plugin: $CURRENT_SDK -> $TARGET_SDK
-          - opencode-ai host/Desktop: $CURRENT_HOST -> $TARGET_HOST
+            const title = 'chore(deps-dev): update opencode sdk and host baselines';
+            const body = [
+              'Updates OpenCode compatibility baselines and verifies both SDK and Desktop/host surfaces.',
+              '',
+              'Versions:',
+              `- @opencode-ai/plugin: ${currentSdk} -> ${targetSdk}`,
+              `- opencode-ai host/Desktop: ${currentHost} -> ${targetHost}`,
+              '',
+              'Verification in workflow:',
+              '- npm run check',
+              '- node scripts/sdk-type-snapshot.mjs --platform opencode',
+              '- npm run test:sdk-contract:all',
+              '- npm run test:integration',
+              '- npm run lint',
+              '- npm run build',
+              '- npm run test:smoke with RUN_OPENCODE_ACP_TESTS=1',
+              '- npm run test:independent-review-e2e',
+            ].join('\n');
 
-          Verification in workflow:
-          - npm run check
-          - node scripts/sdk-type-snapshot.mjs --platform opencode
-          - npm run test:sdk-contract:all
-          - npm run test:integration
-          - npm run lint
-          - npm run build
-          - npm run test:smoke with RUN_OPENCODE_ACP_TESTS=1
-          - npm run test:independent-review-e2e
-          EOF
-          EXISTING=$(gh pr list --head "$BRANCH" --json number --jq '.[0].number')
-          if [ -n "$EXISTING" ]; then
-            gh pr edit "$EXISTING" --title "chore(deps-dev): update opencode sdk and host baselines" --body-file /tmp/opencode-sdk-pr-body.md
-          else
-            gh pr create --head "$BRANCH" --base main --title "chore(deps-dev): update opencode sdk and host baselines" --body-file /tmp/opencode-sdk-pr-body.md
-          fi
+            const { data: existing } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              head: `${context.repo.owner}:${branch}`,
+              state: 'open',
+            });
+
+            if (existing.length > 0) {
+              await github.rest.pulls.update({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: existing[0].number,
+                title,
+                body,
+              });
+              core.info(`Updated existing PR #${existing[0].number}`);
+            } else {
+              const { data: pr } = await github.rest.pulls.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head: branch,
+                base: 'main',
+                title,
+                body,
+              });
+              core.info(`Created PR #${pr.number}: ${pr.html_url}`);
+            }
       - name: Create issue on failure
         if: failure() && steps.resolve.outputs.needs_update == 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
