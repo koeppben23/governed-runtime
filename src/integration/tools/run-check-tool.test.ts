@@ -511,17 +511,34 @@ describe('CONCURRENCY', () => {
 // ─── STALE STATE — Revalidation Under Lock (#504) ─────────────────────────────
 
 describe('STALE_STATE', () => {
-  it('does not persist result when session advanced during check execution', async () => {
+  it('does not persist result when session advances between check execution and lock persistence (race)', async () => {
     await driveToValidation();
 
     const sd = await getSessDir();
     const stateBefore = await readState(sd);
 
-    // Advance session to COMPLETE before calling run_check.
-    // Phase A validates against fresh state and should block immediately.
-    await writeState(sd, {
-      ...stateBefore!,
-      phase: 'COMPLETE' as const,
+    // Hook into executeCheck: after Phase A validates but before it returns,
+    // mutate state to simulate a concurrent tool call advancing the session.
+    // Phase A sees VALIDATION, Phase B runs the check, Phase C re-reads
+    // fresh state under lock and must block stale persistence.
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      // Simulate a concurrent command advancing the session past VALIDATION
+      await writeState(sd, {
+        ...(await readState(sd))!,
+        phase: 'COMPLETE' as const,
+      });
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
     });
 
     const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx)) as Record<
@@ -529,24 +546,42 @@ describe('STALE_STATE', () => {
       unknown
     >;
     expect(result.error).toBe(true);
+    // Phase C re-reads under lock, sees COMPLETE, blocks with COMMAND_NOT_ALLOWED
     expect(result.code).toBe('COMMAND_NOT_ALLOWED');
 
-    // Verify state was NOT corrupted (no validation result persisted)
+    // Sanity: state was NOT corrupted — no validation result persisted
     const afterState = await readState(sd);
     expect(afterState!.phase).toBe('COMPLETE');
     expect(afterState!.validation.length).toBe(0);
+
+    // Restore state so beforeEach teardown can clean up
+    await writeState(sd, stateBefore!);
   });
 
-  it('does not persist stale result when check removed from activeChecks', async () => {
+  it('does not persist result when activeChecks cleared during check execution (race)', async () => {
     await driveToValidation();
 
     const sd = await getSessDir();
     const stateBefore = await readState(sd);
 
-    // Remove 'typecheck' from activeChecks
-    await writeState(sd, {
-      ...stateBefore!,
-      activeChecks: [],
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      // Simulate activeChecks being cleared mid-flight
+      await writeState(sd, {
+        ...(await readState(sd))!,
+        activeChecks: [],
+      });
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
     });
 
     const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx)) as Record<
@@ -554,10 +589,12 @@ describe('STALE_STATE', () => {
       unknown
     >;
     expect(result.error).toBe(true);
+    // Phase C re-reads under lock, sees empty activeChecks, blocks
     expect(result.code).toBe('NO_ACTIVE_CHECKS');
 
-    // Verify no validation result persisted
     const afterState = await readState(sd);
     expect(afterState!.validation.length).toBe(0);
+
+    await writeState(sd, stateBefore!);
   });
 });
