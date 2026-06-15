@@ -21,6 +21,7 @@ import {
   parseToolResult,
   withStrictReviewFindings,
   GIT_MOCK_DEFAULTS,
+  isBlockedResult,
   type TestToolContext,
   type TestWorkspace,
 } from '../test-helpers.js';
@@ -31,6 +32,8 @@ import {
   sessionDir as resolveSessionDir,
 } from '../../adapters/workspace/index.js';
 import { executeCheck } from '../../verification/executor.js';
+import { PersistenceError } from '../../adapters/persistence.js';
+import { withSessionWriteLockRetry } from '../../adapters/lock-retry.js';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -74,6 +77,17 @@ vi.mock('../../verification/executor', () => ({
       startedAt: '2026-01-01T00:00:00.000Z',
     })),
 }));
+
+vi.mock('../../adapters/lock-retry.js', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../../adapters/lock-retry.js')>();
+  return {
+    ...original,
+    withSessionWriteLockRetry: vi.fn(
+      (...args: Parameters<typeof original.withSessionWriteLockRetry>) =>
+        original.withSessionWriteLockRetry(...args),
+    ),
+  };
+});
 
 // ─── Setup ───────────────────────────────────────────────────────────────────
 
@@ -411,5 +425,176 @@ describe('EDGE', () => {
       const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
       expect(result.remainingChecks).toEqual([]);
     }
+  });
+});
+
+// ─── CONCURRENCY — Lock Contention & Retry (#504) ─────────────────────────────
+
+describe('CONCURRENCY', () => {
+  it('LOCK_TIMEOUT_EXHAUSTED: returns BLOCKED after all retries fail', async () => {
+    await driveToValidation();
+
+    const exhaustedError = new PersistenceError(
+      'LOCK_TIMEOUT_EXHAUSTED',
+      'Could not acquire session write lock after 4 attempts (10000ms timeout per attempt, 100/200/400ms delays). Last error: test contention',
+    );
+    vi.mocked(withSessionWriteLockRetry).mockRejectedValueOnce(exhaustedError);
+
+    const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
+    const result = parseToolResult(raw) as Record<string, unknown>;
+
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('LOCK_TIMEOUT_EXHAUSTED');
+    expect(result.message).toContain('validation_result_persistence');
+    expect(result.message).toContain('3 retries');
+
+    vi.mocked(withSessionWriteLockRetry).mockRestore();
+  });
+
+  it('parallel checks: all results persisted despite real lock contention (#504)', async () => {
+    await driveToValidation();
+
+    const sd = await getSessDir();
+    const s = await readState(sd);
+    await writeState(sd, {
+      ...s!,
+      activeChecks: ['typecheck', 'lint', 'test', 'build'],
+      verificationCandidates: [
+        ...(s!.verificationCandidates ?? []),
+        {
+          kind: 'lint',
+          command: 'npm run lint',
+          source: 'discovery' as const,
+          confidence: 'high' as const,
+          reason: 'test',
+        },
+        {
+          kind: 'test',
+          command: 'npm test',
+          source: 'discovery' as const,
+          confidence: 'high' as const,
+          reason: 'test',
+        },
+        {
+          kind: 'build',
+          command: 'npm run build',
+          source: 'discovery' as const,
+          confidence: 'high' as const,
+          reason: 'test',
+        },
+      ],
+    });
+
+    // Execute 4 checks in parallel — each check runs outside the lock,
+    // only the persist step contends. With retry, all should succeed.
+    const results = await Promise.all([
+      run_check.execute({ kind: 'typecheck' }, ctx),
+      run_check.execute({ kind: 'lint' }, ctx),
+      run_check.execute({ kind: 'test' }, ctx),
+      run_check.execute({ kind: 'build' }, ctx),
+    ]);
+
+    const parsedResults = results.map((r) => parseToolResult(r) as Record<string, unknown>);
+    const errors = parsedResults.filter((r) => r.error);
+    if (errors.length > 0) {
+      console.error('Parallel check errors:', JSON.stringify(errors, null, 2));
+    }
+    expect(errors.length).toBe(0);
+
+    const finalState = await readState(sd);
+    expect(finalState!.validation.length).toBe(4);
+    expect(finalState!.validation.every((v) => v.passed)).toBe(true);
+    expect(finalState!.phase).toBe('IMPLEMENTATION');
+  });
+});
+
+// ─── STALE STATE — Revalidation Under Lock (#504) ─────────────────────────────
+
+describe('STALE_STATE', () => {
+  it('does not persist result when session advances between check execution and lock persistence (race)', async () => {
+    await driveToValidation();
+
+    const sd = await getSessDir();
+    const stateBefore = await readState(sd);
+
+    // Hook into executeCheck: after Phase A validates but before it returns,
+    // mutate state to simulate a concurrent tool call advancing the session.
+    // Phase A sees VALIDATION, Phase B runs the check, Phase C re-reads
+    // fresh state under lock and must block stale persistence.
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      // Simulate a concurrent command advancing the session past VALIDATION
+      await writeState(sd, {
+        ...(await readState(sd))!,
+        phase: 'COMPLETE' as const,
+      });
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx)) as Record<
+      string,
+      unknown
+    >;
+    expect(result.error).toBe(true);
+    // Phase C re-reads under lock, sees COMPLETE, blocks with COMMAND_NOT_ALLOWED
+    expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+
+    // Sanity: state was NOT corrupted — no validation result persisted
+    const afterState = await readState(sd);
+    expect(afterState!.phase).toBe('COMPLETE');
+    expect(afterState!.validation.length).toBe(0);
+
+    // Restore state so beforeEach teardown can clean up
+    await writeState(sd, stateBefore!);
+  });
+
+  it('does not persist result when activeChecks cleared during check execution (race)', async () => {
+    await driveToValidation();
+
+    const sd = await getSessDir();
+    const stateBefore = await readState(sd);
+
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      // Simulate activeChecks being cleared mid-flight
+      await writeState(sd, {
+        ...(await readState(sd))!,
+        activeChecks: [],
+      });
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx)) as Record<
+      string,
+      unknown
+    >;
+    expect(result.error).toBe(true);
+    // Phase C re-reads under lock, sees empty activeChecks, blocks
+    expect(result.code).toBe('NO_ACTIVE_CHECKS');
+
+    const afterState = await readState(sd);
+    expect(afterState!.validation.length).toBe(0);
+
+    await writeState(sd, stateBefore!);
   });
 });

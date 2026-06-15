@@ -100,6 +100,11 @@ export interface StatusProjection {
   };
   /** Review loop progress during review phases (null when not in a review phase). */
   reviewLoop: ReviewLoopProgress | null;
+  /**
+   * Active check IDs that have not yet been validated.
+   * Populated only during VALIDATION phase. Absent otherwise.
+   */
+  remainingChecks?: string[];
 }
 
 /**
@@ -247,6 +252,10 @@ export function buildStatusProjection(
       failed: completeness.summary.failed,
     },
     reviewLoop: getReviewLoopProgress(state),
+    remainingChecks:
+      state.phase === 'VALIDATION' && state.activeChecks.length > 0
+        ? state.activeChecks.filter((id) => !state.validation.some((v) => v.checkId === id))
+        : undefined,
   };
 }
 
