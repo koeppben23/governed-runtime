@@ -198,10 +198,10 @@ export async function atomicWrite(filePath: string, content: string): Promise<vo
   }
 }
 
-async function fsyncParentDirectoryBestEffort(filePath: string): Promise<void> {
+async function fsyncParentDirectoryBestEffort(dirPath: string): Promise<void> {
   let handle: fs.FileHandle | null = null;
   try {
-    handle = await fs.open(path.dirname(filePath), 'r');
+    handle = await fs.open(dirPath, 'r');
     await handle.sync();
   } catch {
     // Directory fsync is not uniformly supported across platforms/filesystems.
@@ -231,7 +231,7 @@ export async function durableAtomicWrite(filePath: string, content: string): Pro
       await handle.close();
     }
     await renameWithRetry(tempPath, filePath);
-    await fsyncParentDirectoryBestEffort(filePath);
+    await fsyncParentDirectoryBestEffort(dir);
   } catch (err) {
     try {
       await fs.unlink(tempPath);
