@@ -50,7 +50,6 @@
  */
 
 import * as fs from 'node:fs/promises';
-import { openSync, fsyncSync, closeSync } from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as crypto from 'node:crypto';
@@ -199,19 +198,6 @@ export async function atomicWrite(filePath: string, content: string): Promise<vo
   }
 }
 
-async function fsyncParentDirectoryBestEffort(dirPath: string): Promise<void> {
-  try {
-    const fd = openSync(path.resolve(dirPath), 'r');
-    try {
-      fsyncSync(fd);
-    } finally {
-      closeSync(fd);
-    }
-  } catch {
-    // Directory fsync is not uniformly supported across platforms/filesystems.
-  }
-}
-
 /**
  * Write a file atomically and durably: temp file -> fsync -> rename.
  *
@@ -233,7 +219,6 @@ export async function durableAtomicWrite(filePath: string, content: string): Pro
       await handle.close();
     }
     await renameWithRetry(tempPath, filePath);
-    await fsyncParentDirectoryBestEffort(dir);
   } catch (err) {
     try {
       await fs.unlink(tempPath);
