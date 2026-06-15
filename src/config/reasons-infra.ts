@@ -396,4 +396,16 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
       'Remove the stale lock file only after confirming no live process holds it, then re-run /hydrate',
     ],
   },
+
+  {
+    code: 'LOCK_TIMEOUT_EXHAUSTED',
+    category: 'adapter',
+    messageTemplate:
+      'Could not acquire session write lock for {operation} after {retries} retries: {message}',
+    recoverySteps: [
+      'Retry the interrupted FlowGuard command',
+      'Run /status --why-blocked to inspect session state',
+      'If persistent, inspect session directory for stale lock diagnostics',
+    ],
+  },
 ];

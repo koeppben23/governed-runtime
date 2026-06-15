@@ -130,6 +130,7 @@ real, registered reason.
 | `SCHEMA_VALIDATION_FAILED`       | Persisted session state failed schema check                                                | Restore from archive — pre-1.0 sessions are not supported                                                                                                            |
 | `SESSION_ERROR`                  | Session error received from host runtime                                                   | Check OpenCode logs for root cause; start a new session                                                                                                              |
 | `SESSION_LOCK_CONTENDED`         | Session write lock could not be acquired (a concurrent operation held it past the timeout) | Wait for the concurrent FlowGuard operation to finish and re-run `/hydrate`; remove a stale `session-state.json.lock` only after confirming no live process holds it |
+| `LOCK_TIMEOUT_EXHAUSTED`         | Session write lock retries exhausted after all attempts                                    | Retry `/check` for the same check kind; run `/status --why-blocked` to inspect session state; if persistent, check session directory for stale lock diagnostics      |
 | `REVIEWER_INVOCATION_EXHAUSTED`  | All reviewer subagent retry attempts failed                                                | Re-run the tool command to create a fresh obligation; check that the reviewer model supports structured output                                                       |
 | `TSA_TIMESTAMP_ASSURANCE_FAILED` | Timestamp authority assurance failed                                                       | Check TSA endpoint availability, trust anchors, and timestamp policy configuration                                                                                   |
 
@@ -285,6 +286,7 @@ INVALID_PLAN_TOOL_SEQUENCE
 INVALID_PROFILE
 INVALID_TRANSITION
 INVALID_VERDICT
+LOCK_TIMEOUT_EXHAUSTED
 MISSING_ADR_SECTIONS
 MISSING_CHECKS
 MISSING_SESSION_ID

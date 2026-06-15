@@ -104,7 +104,8 @@ export type PersistenceErrorCode =
   | 'WRITE_FAILED'
   | 'PARSE_FAILED'
   | 'SCHEMA_VALIDATION_FAILED'
-  | 'LOCK_TIMEOUT';
+  | 'LOCK_TIMEOUT'
+  | 'LOCK_TIMEOUT_EXHAUSTED';
 
 /**
  * Typed persistence error.
@@ -114,6 +115,7 @@ export type PersistenceErrorCode =
  * - SCHEMA_VALIDATION_FAILED: JSON parsed but Zod validation rejected it
  * - WRITE_FAILED: filesystem write error
  * - LOCK_TIMEOUT: session-state write lock could not be acquired within timeout
+ * - LOCK_TIMEOUT_EXHAUSTED: session write lock retries exhausted (#504)
  */
 export class PersistenceError extends Error {
   readonly code: PersistenceErrorCode;

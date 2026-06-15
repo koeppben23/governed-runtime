@@ -8,21 +8,24 @@
  * Flow:
  * 1. Agent calls flowguard_run_check with { kind } (the verification kind to run)
  * 2. FlowGuard looks up the command from session's verificationCandidates
- * 3. FlowGuard executes the command as a subprocess
- * 4. Evidence (exitCode, outputDigest, executionMs) is recorded in state
+ * 3. FlowGuard executes the command as a subprocess (OUTSIDE the session write lock)
+ * 4. Evidence (exitCode, outputDigest, executionMs) is recorded in state under lock
+ *    with exponential-backoff retry on transient lock contention (#504)
  * 5. When all activeChecks pass → advance to IMPLEMENTATION
  *
  * Design:
  * - Single check per call (allows agent to observe results between checks)
  * - Commands come ONLY from verificationCandidates (never from agent input)
  * - Agent cannot fabricate pass/fail — only runtime evidence is accepted
+ * - Check execution is decoupled from state persistence so slow subprocesses
+ *   (e.g. build) do not starve concurrent checks of the session write lock
  *
- * @version v1
+ * @version v2 (#504 — separate check execution from lock acquisition)
  */
 
-import type { MutableSession, ToolContext, ToolDefinition, ToolResult } from './helpers.js';
+import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
 import {
-  withMutableSessionTransaction,
+  withReadOnlySession,
   formatBlocked,
   formatError,
   formatEval,
@@ -30,6 +33,9 @@ import {
   appendNextAction,
   getWorktree,
   writeStateWithArtifactsAlreadyLocked,
+  requireStateForMutation,
+  resolvePolicyFromState,
+  createPolicyContext,
 } from './helpers.js';
 
 // State & Machine
@@ -52,6 +58,15 @@ import { deriveRepairGuidance } from '../../verification/repair-guidance.js';
 // Evidence types
 import type { ValidationResult } from '../../state/evidence-validation.js';
 
+// Adapter — lock retry
+import { withSessionWriteLockRetry, PersistenceError } from '../../adapters/lock-retry.js';
+
+// Identifiers
+import { REASON_LOCK_TIMEOUT_EXHAUSTED } from '../../shared/flowguard-identifiers.js';
+
+// Logging
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_run_check — Execute Verification Command with Evidence
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -70,45 +85,131 @@ export const run_check: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      return await withMutableSessionTransaction(context, (session) =>
-        executeRunCheckTransaction(args.kind as VerificationCandidateKind, context, session),
-      );
+      return await executeRunCheckPhased(args.kind as VerificationCandidateKind, context);
     } catch (err) {
+      if (err instanceof PersistenceError && err.code === 'LOCK_TIMEOUT_EXHAUSTED') {
+        return formatBlocked(REASON_LOCK_TIMEOUT_EXHAUSTED, {
+          operation: 'validation_result_persistence',
+          retries: '3',
+          message: err.message,
+        });
+      }
       return formatError(err);
     }
   },
 };
 
-async function executeRunCheckTransaction(
+// ─── Phased Execution ─────────────────────────────────────────────────────────
+
+/**
+ * Execute run_check in three phases:
+ *
+ * A. Validate request (read state, no lock)
+ * B. Execute check (subprocess, NO lock — prevents slow checks from starving
+ *    concurrent run_check calls)
+ * C. Persist result under lock with retry (revalidate fresh state under lock,
+ *    merge evidence, auto-advance, atomic write)
+ */
+async function executeRunCheckPhased(
   kind: VerificationCandidateKind,
   context: ToolContext,
-  session: MutableSession,
 ): Promise<ToolResult> {
-  const guard = validateRunCheckRequest(kind, session.state);
+  // ── Phase A: Validate request (read-only, no lock) ──
+  const { sessDir, state } = await withReadOnlySession(context);
+  if (!state) {
+    throw Object.assign(new Error('No FlowGuard session found — run /hydrate first.'), {
+      code: 'NO_SESSION',
+    });
+  }
+
+  const guard = validateRunCheckRequest(kind, state);
   if (typeof guard === 'string') return guard;
 
+  // ── Phase B: Execute check (NO lock — subprocess runs independently) ──
   const evidence = await executeCheck({
     kind,
     command: guard.candidate.command,
     cwd: getWorktree(context),
   });
   const derivedRepairGuidance = evidence.passed ? undefined : deriveRepairGuidance(evidence);
-  const validationResult = buildValidationResult(guard.checkId, evidence, derivedRepairGuidance);
-  const allResults = mergeValidationResult(session.state, validationResult);
-  const passedIds = new Set(allResults.filter((v) => v.passed).map((v) => v.checkId));
-  const nextState = buildNextValidationState(session.state, allResults, passedIds);
-  const advanced = autoAdvance(nextState, (s) => evaluate(s, session.ctx.policy), session.ctx);
-  if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
-  await writeStateWithArtifactsAlreadyLocked(session.sessDir, advanced.state);
-  return formatRunCheckResponse({
+
+  // ── Phase C: Persist with lock retry ──
+  return persistCheckResultWithRetry({
     kind,
     evidence,
     derivedRepairGuidance,
-    originalState: session.state,
-    passedIds,
-    advanced,
+    sessDir,
+    sessionId: context.sessionID,
   });
 }
+
+// ─── Lock-Retry Persistence ───────────────────────────────────────────────────
+
+interface PersistCheckInput {
+  kind: VerificationCandidateKind;
+  evidence: Awaited<ReturnType<typeof executeCheck>>;
+  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
+  sessDir: string;
+  sessionId: string;
+}
+
+async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<ToolResult> {
+  const { kind, evidence, derivedRepairGuidance, sessDir, sessionId } = input;
+  const logger = getAdapterLogger();
+
+  return withSessionWriteLockRetry(
+    sessDir,
+    async () => {
+      // Re-read fresh state under lock and revalidate
+      const freshState = await requireStateForMutation(sessDir);
+      const freshPolicy = resolvePolicyFromState(freshState);
+      const railCtx = createPolicyContext(freshPolicy);
+
+      const reGuard = validateRunCheckRequest(kind, freshState);
+      if (typeof reGuard === 'string') {
+        // State changed under us — phase advanced or check removed.
+        // Return blocked rather than persisting stale result.
+        return reGuard;
+      }
+
+      const validationResult = buildValidationResult(
+        reGuard.checkId,
+        evidence,
+        derivedRepairGuidance,
+      );
+      const allResults = mergeValidationResult(freshState, validationResult);
+      const passedIds = new Set(allResults.filter((v) => v.passed).map((v) => v.checkId));
+      const nextState = buildNextValidationState(freshState, allResults, passedIds);
+      const advanced = autoAdvance(nextState, (s) => evaluate(s, railCtx.policy), railCtx);
+      if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
+
+      await writeStateWithArtifactsAlreadyLocked(sessDir, advanced.state);
+
+      return formatRunCheckResponse({
+        kind,
+        evidence,
+        derivedRepairGuidance,
+        originalState: freshState,
+        passedIds,
+        advanced,
+      });
+    },
+    {
+      delaysMs: [100, 200, 400],
+      onRetry: (attempt, delayMs, err) => {
+        logger.warn('flowguard_run_check', 'Lock contention — retrying persistence', {
+          sessionId,
+          checkId: kind,
+          attempt,
+          delayMs,
+          lockError: err.message,
+        });
+      },
+    },
+  );
+}
+
+// ─── Request Validation ───────────────────────────────────────────────────────
 
 function validateRunCheckRequest(
   kind: VerificationCandidateKind,
@@ -144,9 +245,13 @@ function blockWhenNoActiveChecks(state: SessionState): string | null {
     : formatBlocked('NO_ACTIVE_CHECKS');
 }
 
+// ─── Result Construction ──────────────────────────────────────────────────────
+
+type CheckEvidence = Awaited<ReturnType<typeof executeCheck>>;
+
 function buildValidationResult(
   checkId: string,
-  evidence: Awaited<ReturnType<typeof executeCheck>>,
+  evidence: CheckEvidence,
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined,
 ): ValidationResult {
   return {
@@ -164,7 +269,7 @@ function buildValidationResult(
   };
 }
 
-function formatValidationDetail(evidence: Awaited<ReturnType<typeof executeCheck>>): string {
+function formatValidationDetail(evidence: CheckEvidence): string {
   if (evidence.timedOut) return `Timed out after ${evidence.executionMs}ms`;
   if (evidence.passed) return `Passed (exit 0, ${evidence.executionMs}ms)`;
   return `Failed (exit ${evidence.exitCode}, ${evidence.executionMs}ms)`;
@@ -194,9 +299,11 @@ function buildNextValidationState(
   };
 }
 
+// ─── Response Formatting ──────────────────────────────────────────────────────
+
 function formatRunCheckResponse(input: {
   kind: string;
-  evidence: Awaited<ReturnType<typeof executeCheck>>;
+  evidence: CheckEvidence;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
   originalState: SessionState;
   passedIds: Set<string>;
@@ -226,10 +333,7 @@ function formatRunCheckResponse(input: {
   );
 }
 
-function formatRunCheckStatus(
-  kind: string,
-  evidence: Awaited<ReturnType<typeof executeCheck>>,
-): string {
+function formatRunCheckStatus(kind: string, evidence: CheckEvidence): string {
   if (evidence.passed) return `Check '${kind}' passed.`;
   if (evidence.timedOut) return `Check '${kind}' timed out.`;
   return `Check '${kind}' failed (exit ${evidence.exitCode}).`;

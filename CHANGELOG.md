@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Issue #504 (LOCK_TIMEOUT discarded successful check results):**
+  `flowguard_run_check` now executes verification commands outside the session
+  write lock so slow subprocesses (e.g. build) do not starve concurrent checks.
+  Check execution (Phase B) runs without holding any lock; only the result
+  persistence (Phase C) acquires the lock. On transient `LOCK_TIMEOUT` during
+  persistence, retries with exponential backoff (100ms, 200ms, 400ms delays,
+  1 initial attempt + 3 retries = 4 total attempts). After retries exhausted,
+  `LOCK_TIMEOUT_EXHAUSTED` is emitted as a blocked reason with recovery
+  guidance. Under lock, fresh state is re-read and revalidated (phase, active
+  checks) to prevent stale-result persistence. `flowguard_status` now surfaces
+  `remainingChecks` during VALIDATION phase.
+
 - **Issue #486 (regulated four-eyes identity fail-closed):** Regulated approval
   now uses the canonical actor identity comparator for explicit `same`,
   `different`, and `uncomparable` outcomes. Uncomparable identities, including

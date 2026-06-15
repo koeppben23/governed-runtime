@@ -376,6 +376,7 @@ function buildFullStatusResponse(input: FullStatusInput): string {
       status: projection,
       phase: state.phase,
       sessionId: state.id,
+      remainingChecks: projection.remainingChecks,
       policyMode: state.policySnapshot?.mode ?? 'unknown',
       discoveryHealth: discoveryHealth ?? null,
       discoveryHealthGate: buildDiscoveryHealthGateStatus(state),

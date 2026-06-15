@@ -32,6 +32,14 @@ export const REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE = 'PLUGIN_ENFORCEMENT_UNAVAIL
 export const REASON_SESSION_LOCK_CONTENDED = 'SESSION_LOCK_CONTENDED';
 
 /**
+ * Block code when session write lock retries are exhausted during check result
+ * persistence (#504). Run-check-tool maps a PersistenceError(LOCK_TIMEOUT_EXHAUSTED)
+ * to this registered reason so exhaustion fails closed as an explicit BLOCKED
+ * rather than the UNREGISTERED_REASON fallback.
+ */
+export const REASON_LOCK_TIMEOUT_EXHAUSTED = 'LOCK_TIMEOUT_EXHAUSTED';
+
+/**
  * Structured field on a SUCCESSFUL hydrate result, set to `true` only when the
  * session write lock had to wait for a concurrent holder before acquiring (#429).
  *
