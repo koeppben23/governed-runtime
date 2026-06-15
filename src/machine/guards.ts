@@ -125,8 +125,8 @@ export const allValidationsPassed: GuardFn = (s) => {
   return s.activeChecks.every((checkId) => passedIds.has(checkId));
 };
 
-/** At least one validation check was executed and not all passed. */
-export const checkFailed: GuardFn = (s) => s.validation.length > 0 && !allValidationsPassed(s);
+/** At least one validation check has an explicit failure (passed: false). */
+export const checkFailed: GuardFn = (s) => s.validation.some((v) => !v.passed);
 
 /** Implementation evidence is present. */
 export const implComplete: GuardFn = (s) => s.implementation !== null;

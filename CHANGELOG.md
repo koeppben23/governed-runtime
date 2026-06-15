@@ -757,6 +757,8 @@ attestation authority.
 
 - **Issue #269:** Add timestamp assurance evidence layer for audit trails. Introduces structured `timestampEvidence` on audit events with configurable assurance modes (`local_only`, `ntp_check`, `tsa_critical`) via `audit.timestampAssurance` policy. Includes NTP clock drift validation (`checkNtpClock`) wired into the audit emission path, a TSA provider/verifier interface with mock implementations, canonical event digest computation for TSA anchoring, and extended `verifyChain()` with strict timestamp checks (monotonicity, imprint matching, evidence presence). Archive verification emits `timestamp_unanchored` and `tsa_verification_failed` findings. All presets start with `timestampAssurance.enabled: false` (fully backward-compatible). Slice 1: strict mode is inert, mock TSA only; real pkijs-based TSA verification deferred to follow-up ticket. No BAIT/GoBD compliance claims are made — this provides timestamp assurance evidence suitable for regulated audit evaluation when configured with trusted TSA and strict policy.
 
+- **Issue #502:** Fixed validation routing so partially completed successful checks stay pending instead of triggering `CHECK_FAILED`. The `checkFailed` guard now tests for explicit `passed: false` results rather than the absence of all-passed, eliminating the false `VALIDATION → CHECK_FAILED → PLAN` loop after successful check execution.
+
 ## [1.2.0-rc.3] - 2026-05-14
 
 ### Changed

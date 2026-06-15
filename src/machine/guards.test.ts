@@ -371,6 +371,40 @@ describe('guards', () => {
       });
       expect(selfReviewPending(archState)).toBe(true);
     });
+
+    // #502: checkFailed must not fire on partially-completed successful checks
+    it('checkFailed returns false when all executed checks passed but others are pending (#502)', () => {
+      const state = makeState('VALIDATION', {
+        activeChecks: ['test', 'lint'],
+        validation: [{ checkId: 'test', passed: true, detail: 'ok', executedAt: FIXED_TIME }],
+      });
+      expect(checkFailed(state)).toBe(false);
+    });
+
+    // #502: semantic guard — partial success is pending, not failed
+    it('partial check pass: allValidationsPassed === false AND checkFailed === false (#502)', () => {
+      const state = makeState('VALIDATION', {
+        activeChecks: ['test', 'lint'],
+        validation: [{ checkId: 'test', passed: true, detail: 'ok', executedAt: FIXED_TIME }],
+      });
+      expect(allValidationsPassed(state)).toBe(false);
+      expect(checkFailed(state)).toBe(false);
+    });
+
+    // #502 regression: checkFailed still fires on actual failure
+    it('checkFailed returns true when at least one executed check failed (#502 regression)', () => {
+      const state = makeState('VALIDATION', {
+        activeChecks: ['test', 'lint'],
+        validation: [{ checkId: 'test', passed: false, detail: 'fail', executedAt: FIXED_TIME }],
+      });
+      expect(checkFailed(state)).toBe(true);
+    });
+
+    // #502: checkFailed returns false when all checks passed (ALL_PASSED handles this)
+    it('checkFailed returns false when all activeChecks passed (#502)', () => {
+      const state = makeState('VALIDATION', { activeChecks: [], validation: VALIDATION_PASSED });
+      expect(checkFailed(state)).toBe(false);
+    });
   });
 
   // ─── EDGE ──────────────────────────────────────────────────
