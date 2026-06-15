@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
 import type { EvalResult } from '../machine/evaluate.js';
 import {
+  FIXED_TIME,
   makeState,
   makeProgressedState,
   TICKET,
@@ -333,6 +334,19 @@ describe('evaluate', () => {
       expect(result.kind).toBe('pending');
       if (result.kind === 'pending') {
         expect(result.phase).toBe('READY');
+      }
+    });
+
+    // #502: partially-completed successful checks stay pending, not CHECK_FAILED
+    it('VALIDATION with only some checks passed → pending, not CHECK_FAILED (#502)', () => {
+      const state = makeState('VALIDATION', {
+        activeChecks: ['test', 'lint'],
+        validation: [{ checkId: 'test', passed: true, detail: 'ok', executedAt: FIXED_TIME }],
+      });
+      const result = evaluate(state);
+      expect(result.kind).toBe('pending');
+      if (result.kind === 'pending') {
+        expect(result.phase).toBe('VALIDATION');
       }
     });
   });
