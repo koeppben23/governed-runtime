@@ -16,7 +16,7 @@ import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const VERSION = (await fs.readFile(path.join(REPO_ROOT, 'VERSION'), 'utf-8')).trim();
-const NPM_BIN = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const NPM_CLI = process.env.npm_execpath;
 
 let tmpDir: string;
 let tarballPath: string;
@@ -61,6 +61,13 @@ function commandForLog(command: string, args: readonly string[]): string {
   return [command, ...args].join(' ');
 }
 
+function npmArgs(args: readonly string[]): string[] {
+  if (!NPM_CLI) {
+    throw new Error('npm_execpath is required to run install verification tests');
+  }
+  return [NPM_CLI, ...args];
+}
+
 function assertSuccess(
   result: { stdout: string; stderr: string; code: number },
   command: string,
@@ -83,7 +90,7 @@ async function installTarballForInspection(prefix: string): Promise<string> {
     JSON.stringify({ name: 'test', type: 'module' }),
   );
   const args = ['install', '--ignore-scripts', '--no-audit', '--no-fund', tarballPath];
-  assertSuccess(runFile(NPM_BIN, args, p), commandForLog(NPM_BIN, args));
+  assertSuccess(runFile(process.execPath, npmArgs(args), p), commandForLog('npm', args));
   return p;
 }
 
@@ -96,7 +103,7 @@ describe('install-verify', () => {
     } else {
       // Pack new tarball (default behavior)
       tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
-      execFileSync(NPM_BIN, ['pack', '--pack-destination', tmpDir], {
+      execFileSync(process.execPath, npmArgs(['pack', '--pack-destination', tmpDir]), {
         cwd: REPO_ROOT,
         encoding: 'utf-8',
       });
@@ -150,8 +157,8 @@ describe('install-verify', () => {
         JSON.stringify({ name: 'test', type: 'module' }),
       );
       const args = ['install', '--omit=optional', '--no-audit', '--no-fund', tarballPath];
-      const res = runFile(NPM_BIN, args, p);
-      assertSuccess(res, commandForLog(NPM_BIN, args));
+      const res = runFile(process.execPath, npmArgs(args), p);
+      assertSuccess(res, commandForLog('npm', args));
     }, 240000);
 
     it('imports core module with --omit=optional', async () => {
@@ -162,8 +169,8 @@ describe('install-verify', () => {
         JSON.stringify({ name: 'test', type: 'module' }),
       );
       const installArgs = ['install', '--omit=optional', '--no-audit', '--no-fund', tarballPath];
-      const install = runFile(NPM_BIN, installArgs, p);
-      assertSuccess(install, commandForLog(NPM_BIN, installArgs));
+      const install = runFile(process.execPath, npmArgs(installArgs), p);
+      assertSuccess(install, commandForLog('npm', installArgs));
       const res = runFile(
         'node',
         [
@@ -183,8 +190,8 @@ describe('install-verify', () => {
         JSON.stringify({ name: 'test', type: 'module' }),
       );
       const args = ['install', '--no-audit', '--no-fund', tarballPath];
-      const res = runFile(NPM_BIN, args, p);
-      assertSuccess(res, commandForLog(NPM_BIN, args));
+      const res = runFile(process.execPath, npmArgs(args), p);
+      assertSuccess(res, commandForLog('npm', args));
     }, 480000);
 
     it('can import @flowguard/core after install', async () => {
@@ -195,8 +202,8 @@ describe('install-verify', () => {
         JSON.stringify({ name: 'test', type: 'module' }),
       );
       const installArgs = ['install', '--no-audit', '--no-fund', tarballPath];
-      const install = runFile(NPM_BIN, installArgs, p);
-      assertSuccess(install, commandForLog(NPM_BIN, installArgs));
+      const install = runFile(process.execPath, npmArgs(installArgs), p);
+      assertSuccess(install, commandForLog('npm', installArgs));
       const res = runFile(
         'node',
         [
@@ -216,7 +223,10 @@ describe('install-verify', () => {
         JSON.stringify({ name: 'test', type: 'module' }),
       );
       const installArgs = ['install', '--no-audit', '--no-fund', tarballPath];
-      assertSuccess(runFile(NPM_BIN, installArgs, p), commandForLog(NPM_BIN, installArgs));
+      assertSuccess(
+        runFile(process.execPath, npmArgs(installArgs), p),
+        commandForLog('npm', installArgs),
+      );
 
       const res = runFile(
         'node',
@@ -238,7 +248,10 @@ describe('install-verify', () => {
         JSON.stringify({ name: 'test', type: 'module' }),
       );
       const installArgs = ['install', '--no-audit', '--no-fund', tarballPath];
-      assertSuccess(runFile(NPM_BIN, installArgs, p), commandForLog(NPM_BIN, installArgs));
+      assertSuccess(
+        runFile(process.execPath, npmArgs(installArgs), p),
+        commandForLog('npm', installArgs),
+      );
 
       const res = runFile(
         'node',
