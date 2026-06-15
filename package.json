@@ -80,6 +80,7 @@
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",
     "mutation": "node scripts/stryker-patch.js && stryker run",
+    "pack:checksums": "node scripts/pack-with-checksums.js",
     "release:prepare": "node scripts/prepare-release.js",
     "setup-hooks": "node scripts/setup-git-hooks.js",
     "prepare": "npm run setup-hooks",
