@@ -180,10 +180,12 @@ cd ~/work/governed-runtime
 npm ci
 npm run build
 
-TARBALL="$(npm pack --silent | tail -n 1)"
+npm run pack:checksums
+TARBALL="flowguard-core-$(node -p 'require("./package.json").version').tgz"
 
 npx --yes --package "./$TARBALL" flowguard install \
   --core-tarball "./$TARBALL" \
+  --checksums-file ./checksums.sha256 \
   --install-scope global \
   --force
 

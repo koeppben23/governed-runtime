@@ -99,6 +99,7 @@ intentionally summarized here; use the linked issues for implementation scope.
 | C7   | MEDIUM      | Open            | OpenCode JSON template rendering should avoid fragile string injection.                                        |
 | C8   | MEDIUM      | Open            | Claude Code plugin install hint should respect force/overwrite semantics.                                      |
 | C11  | MEDIUM      | Open            | Serve port allocation has a TOCTOU gap.                                                                        |
+| C14  | MEDIUM      | Tracked         | Repo-local tarball install flow must generate checksum evidence required by default-on verification. #494      |
 | I1   | MEDIUM-HIGH | Open            | Tool-result footer attachment needs mutation hardening.                                                        |
 | I2   | MEDIUM      | Open            | Verdict enforcement should avoid mutating caller arguments.                                                    |
 | I3   | MEDIUM      | Open            | Strict enforcement with null session state needs explicit handling.                                            |

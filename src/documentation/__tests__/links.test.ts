@@ -27,6 +27,8 @@ const PRODUCT_IDENTITY_PATH = path.join(PROJECT_ROOT, 'PRODUCT_IDENTITY.md');
 const DISTRIBUTION_MODEL_PATH = path.join(PROJECT_ROOT, 'docs/distribution-model.md');
 const DELIVERY_SCOPE_PATH = path.join(PROJECT_ROOT, 'docs/delivery-scope.md');
 const SUPPORT_MODEL_PATH = path.join(PROJECT_ROOT, 'docs/support-model.md');
+const PACKAGE_JSON_PATH = path.join(PROJECT_ROOT, 'package.json');
+const PACK_WITH_CHECKSUMS_PATH = path.join(PROJECT_ROOT, 'scripts/pack-with-checksums.js');
 
 interface Link {
   target: string;
@@ -89,9 +91,27 @@ describe('Documentation Links', () => {
       expect(content).toContain('./docs/commands.md');
     });
 
+    it('documents checksum generation for dogfood source installs', async () => {
+      const content = await fs.readFile(README_PATH, 'utf-8');
+      const localSection = content.split('### Developer / Dogfood Install from Source')[1] ?? '';
+      expect(localSection).toContain('npm run pack:checksums');
+      expect(localSection).toContain('--checksums-file ./checksums.sha256');
+      expect(localSection).not.toContain('TARBALL="$(npm pack --silent | tail -n 1)"');
+    });
+
     it('should have link to PRODUCT_IDENTITY.md', async () => {
       const content = await fs.readFile(README_PATH, 'utf-8');
       expect(content).toContain('./PRODUCT_IDENTITY.md');
+    });
+  });
+
+  describe('repo-local pack checksum workflow', () => {
+    it('provides the pack:checksums npm script used by docs', async () => {
+      const packageJson = JSON.parse(await fs.readFile(PACKAGE_JSON_PATH, 'utf-8')) as {
+        scripts?: Record<string, string>;
+      };
+      expect(packageJson.scripts?.['pack:checksums']).toBe('node scripts/pack-with-checksums.js');
+      await expect(fs.access(PACK_WITH_CHECKSUMS_PATH)).resolves.not.toThrow();
     });
   });
 
@@ -131,6 +151,14 @@ describe('Documentation Links', () => {
       expect(content).toContain('/hydrate');
       expect(content).toContain('/ticket');
       expect(content).toContain('/plan');
+    });
+
+    it('documents checksum generation for local source checkout installs', async () => {
+      const content = await fs.readFile(INSTALLATION_PATH, 'utf-8');
+      const localSection = content.split('## Install from Local Source Checkout')[1] ?? '';
+      expect(localSection).toContain('npm run pack:checksums');
+      expect(localSection).toContain('--checksums-file ./checksums.sha256');
+      expect(localSection).not.toContain('TARBALL="$(npm pack --silent | tail -n 1)"');
     });
   });
 
