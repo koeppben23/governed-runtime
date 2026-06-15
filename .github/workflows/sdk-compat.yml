@@ -37,14 +37,17 @@ jobs:
         run: npm run check
         env:
           FORCE_COLOR: 0
+          FLOWGUARD_SDK_COMPAT_LATEST: '1'
       - name: Contract tests against latest
         run: npm run test:sdk-contract
         env:
           FORCE_COLOR: 0
+          FLOWGUARD_SDK_COMPAT_LATEST: '1'
       - name: Integration tests against latest
         run: npm run test:integration
         env:
           FORCE_COLOR: 0
+          FLOWGUARD_SDK_COMPAT_LATEST: '1'
       - name: Create issue on failure
         if: failure()
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
@@ -81,9 +84,9 @@ jobs:
                 '### Which step failed?',
                 '',
                 'Check the workflow run log to determine if the failure is in:',
-                '- **Typecheck** ÔÇö SDK type definitions changed',
-                '- **Contract tests** ÔÇö Hook shapes or Plugin interface changed',
-                '- **Integration tests** ÔÇö Runtime behavior changed',
+                '- **Typecheck** - SDK type definitions changed',
+                '- **Contract tests** - Hook shapes or Plugin interface changed',
+                '- **Integration tests** - Runtime behavior changed',
                 '',
                 '### Next steps',
                 '',

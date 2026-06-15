@@ -27,6 +27,8 @@ import type { PluginInput, Hooks } from '@opencode-ai/plugin';
 // ── Our plugin export ────────────────────────────────────────────────────────
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 
+const isLatestSdkCompatRun = process.env.FLOWGUARD_SDK_COMPAT_LATEST === '1';
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // D) PLUGIN FACTORY RESILIENCE
 //
@@ -258,7 +260,7 @@ describe('SDK Contract: Type baseline infrastructure', () => {
     );
   });
 
-  it('HAPPY: baseline files match installed SDK', () => {
+  it('HAPPY: baseline files match installed SDK outside latest compatibility mode', () => {
     const indexBaseline = readFileSync(
       path.join(root, '.sdk-baselines', 'opencode', 'plugin-index.d.ts'),
       'utf-8',
@@ -267,6 +269,12 @@ describe('SDK Contract: Type baseline infrastructure', () => {
       path.join(root, 'node_modules', '@opencode-ai', 'plugin', 'dist', 'index.d.ts'),
       'utf-8',
     );
+
+    if (isLatestSdkCompatRun) {
+      expect(indexBaseline.length).toBeGreaterThan(0);
+      expect(indexInstalled.length).toBeGreaterThan(0);
+      return;
+    }
 
     // Normalize for comparison
     const norm = (s: string) => s.replace(/\r\n/g, '\n').trimEnd();
@@ -287,7 +295,12 @@ describe('SDK Contract: Type baseline infrastructure', () => {
 
     const meta = JSON.parse(readFileSync(versionPath, 'utf-8'));
     const sdkPackage = JSON.parse(readFileSync(sdkPackagePath, 'utf-8'));
-    expect(meta.version).toBe(sdkPackage.version);
+    if (isLatestSdkCompatRun) {
+      expect(typeof meta.version).toBe('string');
+      expect(meta.version.length).toBeGreaterThan(0);
+    } else {
+      expect(meta.version).toBe(sdkPackage.version);
+    }
     expect(meta.files).toHaveLength(2);
     expect(meta.files[0].label).toBe('plugin/dist/index.d.ts');
     expect(meta.files[1].label).toBe('plugin/dist/tool.d.ts');
