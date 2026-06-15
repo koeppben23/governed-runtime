@@ -11,7 +11,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { execSync, execFileSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -34,9 +34,13 @@ async function cleanTmpDir(dir: string): Promise<void> {
   }
 }
 
-function run(cmd: string, cwd: string): { stdout: string; stderr: string; code: number } {
+function runFile(
+  command: string,
+  args: readonly string[],
+  cwd: string,
+): { stdout: string; stderr: string; code: number } {
   try {
-    const stdout = execSync(cmd, {
+    const stdout = execFileSync(command, args, {
       cwd,
       encoding: 'utf8',
       timeout: 420000,
@@ -50,6 +54,10 @@ function run(cmd: string, cwd: string): { stdout: string; stderr: string; code: 
     const code = typeof e.status === 'number' ? e.status : 1;
     return { stdout, stderr, code };
   }
+}
+
+function commandForLog(command: string, args: readonly string[]): string {
+  return [command, ...args].join(' ');
 }
 
 function assertSuccess(
@@ -76,8 +84,7 @@ describe('install-verify', () => {
     } else {
       // Pack new tarball (default behavior)
       tarballPath = path.join(tmpDir, `flowguard-core-${VERSION}.tgz`);
-      // Use execSync with shell for cross-platform npm availability
-      execSync('npm pack --pack-destination "' + tmpDir + '"', {
+      execFileSync('npm', ['pack', '--pack-destination', tmpDir], {
         cwd: REPO_ROOT,
         encoding: 'utf-8',
       });
@@ -91,7 +98,7 @@ describe('install-verify', () => {
   describe('Tarball', () => {
     it('package.json has @opentelemetry/api in dependencies', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-pkg-'));
-      execSync('tar -xzf "' + tarballPath + '" -C ' + tmp);
+      execFileSync('tar', ['-xzf', tarballPath, '-C', tmp]);
       const pkg = JSON.parse(await fs.readFile(path.join(tmp, 'package', 'package.json'), 'utf-8'));
       expect(pkg.dependencies['@opentelemetry/api']).toBeDefined();
       expect(pkg.dependencies['@opentelemetry/api']).toMatch(/^\^1\./);
@@ -100,7 +107,7 @@ describe('install-verify', () => {
 
     it('package.json has OTEL SDK packages in optionalDependencies', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-pkg-'));
-      execSync('tar -xzf "' + tarballPath + '" -C ' + tmp);
+      execFileSync('tar', ['-xzf', tarballPath, '-C', tmp]);
       const pkg = JSON.parse(await fs.readFile(path.join(tmp, 'package', 'package.json'), 'utf-8'));
       expect(pkg.optionalDependencies).toBeDefined();
       expect(pkg.optionalDependencies['@opentelemetry/sdk-node']).toBeDefined();
@@ -116,10 +123,9 @@ describe('install-verify', () => {
         path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-      // Install without optional dependencies
-      const command = `npm install --omit=optional --no-audit --no-fund "${tarballPath}"`;
-      const res = run(command, p);
-      assertSuccess(res, command);
+      const args = ['install', '--omit=optional', '--no-audit', '--no-fund', tarballPath];
+      const res = runFile('npm', args, p);
+      assertSuccess(res, commandForLog('npm', args));
     }, 240000);
 
     it('imports core module with --omit=optional', async () => {
@@ -129,13 +135,15 @@ describe('install-verify', () => {
         path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-      // First install without optional
-      const installCmd = `npm install --omit=optional --no-audit --no-fund "${tarballPath}"`;
-      const install = run(installCmd, p);
-      assertSuccess(install, installCmd);
-      // Then import - should not crash even without optional OTEL packages
-      const res = run(
-        `node -e "import('@flowguard/core').then(m => console.log('ok')).catch(e => { console.error(e.message); process.exit(1); })"`,
+      const installArgs = ['install', '--omit=optional', '--no-audit', '--no-fund', tarballPath];
+      const install = runFile('npm', installArgs, p);
+      assertSuccess(install, commandForLog('npm', installArgs));
+      const res = runFile(
+        'node',
+        [
+          '-e',
+          "import('@flowguard/core').then(m => console.log('ok')).catch(e => { console.error(e.message); process.exit(1); })",
+        ],
         p,
       );
       expect(res.code).toBe(0);
@@ -148,9 +156,9 @@ describe('install-verify', () => {
         path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-      const command = `npm install --no-audit --no-fund "${tarballPath}"`;
-      const res = run(command, p);
-      assertSuccess(res, command);
+      const args = ['install', '--no-audit', '--no-fund', tarballPath];
+      const res = runFile('npm', args, p);
+      assertSuccess(res, commandForLog('npm', args));
     }, 480000);
 
     it('can import @flowguard/core after install', async () => {
@@ -160,11 +168,15 @@ describe('install-verify', () => {
         path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-      const installCommand = `npm install --no-audit --no-fund "${tarballPath}"`;
-      const install = run(installCommand, p);
-      assertSuccess(install, installCommand);
-      const res = run(
-        `node -e "import('@flowguard/core').then(() => console.log('ok')).catch(e => { console.error(e.message); process.exit(1); })"`,
+      const installArgs = ['install', '--no-audit', '--no-fund', tarballPath];
+      const install = runFile('npm', installArgs, p);
+      assertSuccess(install, commandForLog('npm', installArgs));
+      const res = runFile(
+        'node',
+        [
+          '-e',
+          "import('@flowguard/core').then(() => console.log('ok')).catch(e => { console.error(e.message); process.exit(1); })",
+        ],
         p,
       );
       expect(res.code).toBe(0);
@@ -177,11 +189,16 @@ describe('install-verify', () => {
         path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-      const installCmd = `npm install --no-audit --no-fund "${tarballPath}"`;
-      assertSuccess(run(installCmd, p), installCmd);
+      const installArgs = ['install', '--no-audit', '--no-fund', tarballPath];
+      assertSuccess(runFile('npm', installArgs, p), commandForLog('npm', installArgs));
 
-      const res = run(
-        `node --input-type=module -e "import('@flowguard/core/testing').then(m => { if (typeof m.createTestContext !== 'function') { console.error('createTestContext not found'); process.exit(1); } console.log('ok'); }).catch(e => { console.error(e.message); process.exit(1); })"`,
+      const res = runFile(
+        'node',
+        [
+          '--input-type=module',
+          '-e',
+          "import('@flowguard/core/testing').then(m => { if (typeof m.createTestContext !== 'function') { console.error('createTestContext not found'); process.exit(1); } console.log('ok'); }).catch(e => { console.error(e.message); process.exit(1); })",
+        ],
         p,
       );
       expect(res.code).toBe(0);
@@ -194,11 +211,16 @@ describe('install-verify', () => {
         path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-      const installCmd = `npm install --no-audit --no-fund "${tarballPath}"`;
-      assertSuccess(run(installCmd, p), installCmd);
+      const installArgs = ['install', '--no-audit', '--no-fund', tarballPath];
+      assertSuccess(runFile('npm', installArgs, p), commandForLog('npm', installArgs));
 
-      const res = run(
-        `node --input-type=module -e "import('@flowguard/core').then(m => { if (typeof m.createTestContext !== 'undefined') { console.error('createTestContext leaked'); process.exit(1); } if (typeof m.plan !== 'undefined') { console.error('plan leaked'); process.exit(1); } if (typeof m.FlowGuardAuditPlugin !== 'undefined') { console.error('FlowGuardAuditPlugin leaked'); process.exit(1); } if (typeof m.resolvePolicy !== 'undefined') { console.error('resolvePolicy leaked'); process.exit(1); } if (typeof m.getPolicyPreset !== 'function') { console.error('getPolicyPreset missing'); process.exit(1); } console.log('ok'); }).catch(e => { console.error(e.message); process.exit(1); })"`,
+      const res = runFile(
+        'node',
+        [
+          '--input-type=module',
+          '-e',
+          "import('@flowguard/core').then(m => { if (typeof m.createTestContext !== 'undefined') { console.error('createTestContext leaked'); process.exit(1); } if (typeof m.plan !== 'undefined') { console.error('plan leaked'); process.exit(1); } if (typeof m.FlowGuardAuditPlugin !== 'undefined') { console.error('FlowGuardAuditPlugin leaked'); process.exit(1); } if (typeof m.resolvePolicy !== 'undefined') { console.error('resolvePolicy leaked'); process.exit(1); } if (typeof m.getPolicyPreset !== 'function') { console.error('getPolicyPreset missing'); process.exit(1); } console.log('ok'); }).catch(e => { console.error(e.message); process.exit(1); })",
+        ],
         p,
       );
       expect(res.code).toBe(0);
@@ -206,7 +228,7 @@ describe('install-verify', () => {
 
     it('has expected files in tarball', async () => {
       const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-list-'));
-      execSync('tar -xzf "' + tarballPath + '" -C ' + tmp);
+      execFileSync('tar', ['-xzf', tarballPath, '-C', tmp]);
       const files = await fs.readdir(path.join(tmp, 'package', 'dist'));
       expect(files.length).toBeGreaterThan(10);
       await fs.rm(tmp, { recursive: true, force: true });
