@@ -13,6 +13,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { gunzipSync } from 'node:zlib';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const VERSION = (await fs.readFile(path.join(REPO_ROOT, 'VERSION'), 'utf-8')).trim();
@@ -20,6 +21,11 @@ const NPM_CLI = process.env.npm_execpath;
 
 let tmpDir: string;
 let tarballPath: string;
+let packedPackageJson: {
+  dependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+};
+let packedFiles: string[];
 
 const providedTarball = process.env.FLOWGUARD_TARBALL;
 
@@ -83,15 +89,46 @@ function assertSuccess(
   );
 }
 
-async function installTarballForInspection(prefix: string): Promise<string> {
-  const p = await fs.mkdtemp(path.join(os.tmpdir(), prefix));
-  await fs.writeFile(
-    path.join(p, 'package.json'),
-    JSON.stringify({ name: 'test', type: 'module' }),
-  );
-  const args = ['install', '--ignore-scripts', '--no-audit', '--no-fund', tarballPath];
-  assertSuccess(runFile(process.execPath, npmArgs(args), p), commandForLog('npm', args));
-  return p;
+function parseTarEntries(buffer: Buffer): Map<string, Buffer> {
+  const entries = new Map<string, Buffer>();
+  let offset = 0;
+  while (offset + 512 <= buffer.length) {
+    const header = buffer.subarray(offset, offset + 512);
+    if (header.every((byte) => byte === 0)) {
+      break;
+    }
+
+    const rawName = header.toString('utf8', 0, 100).replace(/\0.*$/, '');
+    const rawPrefix = header.toString('utf8', 345, 500).replace(/\0.*$/, '');
+    const name = rawPrefix ? `${rawPrefix}/${rawName}` : rawName;
+    const sizeText = header.toString('utf8', 124, 136).replace(/\0.*$/, '').trim();
+    const size = Number.parseInt(sizeText || '0', 8);
+    const dataStart = offset + 512;
+    const dataEnd = dataStart + size;
+    entries.set(name, buffer.subarray(dataStart, dataEnd));
+    offset = dataStart + Math.ceil(size / 512) * 512;
+  }
+  return entries;
+}
+
+async function readPackedTarball(): Promise<{
+  packageJson: {
+    dependencies?: Record<string, string>;
+    optionalDependencies?: Record<string, string>;
+  };
+  files: string[];
+}> {
+  const tarball = gunzipSync(await fs.readFile(tarballPath));
+  const entries = parseTarEntries(tarball);
+  const packageJson = entries.get('package/package.json');
+  if (!packageJson) {
+    throw new Error('Packed tarball is missing package/package.json');
+  }
+
+  return {
+    packageJson: JSON.parse(packageJson.toString('utf8')),
+    files: [...entries.keys()],
+  };
 }
 
 describe('install-verify', () => {
@@ -108,6 +145,9 @@ describe('install-verify', () => {
         encoding: 'utf-8',
       });
     }
+    const tarball = await readPackedTarball();
+    packedPackageJson = tarball.packageJson;
+    packedFiles = tarball.files;
   });
 
   afterAll(async () => {
@@ -116,37 +156,19 @@ describe('install-verify', () => {
 
   describe('Tarball', () => {
     it('package.json has @opentelemetry/api in dependencies', async () => {
-      const tmp = await installTarballForInspection('gov-pkg-');
-      try {
-        const pkg = JSON.parse(
-          await fs.readFile(
-            path.join(tmp, 'node_modules', '@flowguard', 'core', 'package.json'),
-            'utf-8',
-          ),
-        );
-        expect(pkg.dependencies['@opentelemetry/api']).toBeDefined();
-        expect(pkg.dependencies['@opentelemetry/api']).toMatch(/^\^1\./);
-      } finally {
-        await fs.rm(tmp, { recursive: true, force: true });
-      }
+      expect(packedPackageJson.dependencies?.['@opentelemetry/api']).toBeDefined();
+      expect(packedPackageJson.dependencies?.['@opentelemetry/api']).toMatch(/^\^1\./);
     });
 
     it('package.json has OTEL SDK packages in optionalDependencies', async () => {
-      const tmp = await installTarballForInspection('gov-pkg-');
-      try {
-        const pkg = JSON.parse(
-          await fs.readFile(
-            path.join(tmp, 'node_modules', '@flowguard', 'core', 'package.json'),
-            'utf-8',
-          ),
-        );
-        expect(pkg.optionalDependencies).toBeDefined();
-        expect(pkg.optionalDependencies['@opentelemetry/sdk-node']).toBeDefined();
-        expect(pkg.optionalDependencies['@opentelemetry/exporter-trace-otlp-http']).toBeDefined();
-        expect(pkg.optionalDependencies['@opentelemetry/auto-instrumentations-node']).toBeDefined();
-      } finally {
-        await fs.rm(tmp, { recursive: true, force: true });
-      }
+      expect(packedPackageJson.optionalDependencies).toBeDefined();
+      expect(packedPackageJson.optionalDependencies?.['@opentelemetry/sdk-node']).toBeDefined();
+      expect(
+        packedPackageJson.optionalDependencies?.['@opentelemetry/exporter-trace-otlp-http'],
+      ).toBeDefined();
+      expect(
+        packedPackageJson.optionalDependencies?.['@opentelemetry/auto-instrumentations-node'],
+      ).toBeDefined();
     });
 
     it('installs with --omit=optional without crashing', async () => {
@@ -266,15 +288,8 @@ describe('install-verify', () => {
     }, 480000);
 
     it('has expected files in tarball', async () => {
-      const tmp = await installTarballForInspection('gov-list-');
-      try {
-        const files = await fs.readdir(
-          path.join(tmp, 'node_modules', '@flowguard', 'core', 'dist'),
-        );
-        expect(files.length).toBeGreaterThan(10);
-      } finally {
-        await fs.rm(tmp, { recursive: true, force: true });
-      }
+      const distFiles = packedFiles.filter((file) => file.startsWith('package/dist/'));
+      expect(distFiles.length).toBeGreaterThan(10);
     });
 
     it('checksums.sha256 matches tarball (integrity smoke)', async () => {
