@@ -201,11 +201,11 @@ export async function atomicWrite(filePath: string, content: string): Promise<vo
 
 async function fsyncParentDirectoryBestEffort(dirPath: string): Promise<void> {
   try {
-    const fd = fs.openSync(path.resolve(dirPath), 'r');
+    const fd = openSync(path.resolve(dirPath), 'r');
     try {
-      fs.fsyncSync(fd);
+      fsyncSync(fd);
     } finally {
-      fs.closeSync(fd);
+      closeSync(fd);
     }
   } catch {
     // Directory fsync is not uniformly supported across platforms/filesystems.
