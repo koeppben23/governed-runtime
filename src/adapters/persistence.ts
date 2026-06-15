@@ -199,9 +199,10 @@ export async function atomicWrite(filePath: string, content: string): Promise<vo
 }
 
 async function fsyncParentDirectoryBestEffort(dirPath: string): Promise<void> {
+  const resolved = path.resolve(dirPath);
   let handle: fs.FileHandle | null = null;
   try {
-    handle = await fs.open(dirPath, 'r');
+    handle = await fs.open(resolved, 'r');
     await handle.sync();
   } catch {
     // Directory fsync is not uniformly supported across platforms/filesystems.
