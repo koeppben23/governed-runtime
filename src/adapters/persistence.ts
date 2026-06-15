@@ -50,6 +50,7 @@
  */
 
 import * as fs from 'node:fs/promises';
+import { openSync, fsyncSync, closeSync } from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as crypto from 'node:crypto';
@@ -199,15 +200,15 @@ export async function atomicWrite(filePath: string, content: string): Promise<vo
 }
 
 async function fsyncParentDirectoryBestEffort(dirPath: string): Promise<void> {
-  const resolved = path.resolve(dirPath);
-  let handle: fs.FileHandle | null = null;
   try {
-    handle = await fs.open(resolved, 'r');
-    await handle.sync();
+    const fd = fs.openSync(path.resolve(dirPath), 'r');
+    try {
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
   } catch {
     // Directory fsync is not uniformly supported across platforms/filesystems.
-  } finally {
-    if (handle) await handle.close().catch(() => {});
   }
 }
 
