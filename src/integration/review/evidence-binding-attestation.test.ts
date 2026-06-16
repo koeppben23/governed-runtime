@@ -409,10 +409,13 @@ describe('BUG-20: attestation-free fallback binding', () => {
     expect(result.diagnostic).toHaveProperty('bindingMode', 'attestation');
   });
 
-  it('REGRESSION: field_mismatch checks include mandateDigest/criteriaVersion ONLY with valid attestation', () => {
-    // With valid attestation: all fields checked
+  it('REGRESSION: diverging mandateDigest with valid attestation binds host-authoritatively (not fatal)', () => {
+    // Host-authoritative binding: the obligation is the authority for host constants,
+    // so a divergence between the reviewer-echoed value and the obligation is surfaced
+    // as hostConstantDivergence — never a fatal field_mismatch (parity with the
+    // attestation-free path below, which also never treats host constants as fatal).
     const { state, obligation } = setupFullCycle();
-    const mismatchedObligation = pendingObligation({
+    const divergentObligation = pendingObligation({
       obligationId: obligation.obligationId,
       iteration: 0,
       planVersion: 1,
@@ -422,13 +425,15 @@ describe('BUG-20: attestation-free fallback binding', () => {
     const resultWithAttestation = buildHostTaskEvidence(
       state,
       SESSION_ID,
-      [mismatchedObligation],
+      [divergentObligation],
       [],
       LATER,
     );
-    expect(resultWithAttestation.bindOutcome).toBe('field_mismatch');
-    expect(resultWithAttestation.diagnostic.mismatchFields).toContain('mandateDigest');
+    expect(resultWithAttestation.bindOutcome).toBe('bound');
+    expect(resultWithAttestation.diagnostic.hostConstantDivergence).toContain('mandateDigest');
     expect(resultWithAttestation.diagnostic).toHaveProperty('bindingMode', 'attestation');
+    const fields = (resultWithAttestation.diagnostic.mismatchFields as string[] | undefined) ?? [];
+    expect(fields).not.toContain('mandateDigest');
   });
 
   it('REGRESSION: field_mismatch for mandateDigest NOT triggered without attestation', () => {

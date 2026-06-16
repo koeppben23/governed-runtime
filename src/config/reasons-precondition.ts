@@ -132,7 +132,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Reviewer subagent is unavailable and strict enforcement requires host-visible review. {{reason}}',
     recoverySteps: [
       '{{recovery}}',
-      'Alternatively, set selfReview.strictEnforcement to false in policy to allow self-review fallback',
+      `Ensure the ${REVIEWER_SUBAGENT_TYPE} subagent is installed and reachable, then re-run the review. Independent review cannot be replaced by self-review or by disabling strict enforcement`,
     ],
   },
 

@@ -290,21 +290,37 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       expect(result.evidence!.obligationType).toBe('implement');
     });
 
-    it('field_mismatch — mandateDigest mismatch reported in diagnostic', () => {
-      const { state, obligation } = setupFullCycle();
-
-      const mismatchedObligation = pendingObligation({
-        obligationId: obligation.obligationId,
-        iteration: 0,
-        planVersion: 1,
-        mandateDigest: 'wrong-mandate-digest',
+    it('host-authoritative — confabulated mandateDigest binds, surfaced as divergence', () => {
+      // Real reviewer behavior: the LLM was given the obligation UUID but not the
+      // 64-hex mandateDigest, so it confabulated one. The obligation itself is correct.
+      const { state, obligation } = setupFullCycle({
+        attestationMandateDigest: '2a768e45-aef2-4951-b5aa-f178c78afcab',
       });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [mismatchedObligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
 
-      expect(result.evidence).toBeNull();
-      expect(result.bindOutcome).toBe('field_mismatch');
-      expect(result.diagnostic.mismatchFields).toContain('mandateDigest');
+      // Binds host-authoritatively instead of fatally rejecting on the echoed constant.
+      expect(result.bindOutcome).toBe('bound');
+      expect(result.evidence).not.toBeNull();
+      expect(result.diagnostic.hostConstantDivergence).toContain('mandateDigest');
+
+      // Persisted evidence carries the host-authoritative digest, not the confabulation.
+      const att = result.evidence!.capturedRawFindings?.attestation as Record<string, unknown>;
+      expect(att.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
+      expect(att.criteriaVersion).toBe(REVIEW_CRITERIA_VERSION);
+    });
+
+    it('host-authoritative — confabulated criteriaVersion binds, surfaced as divergence', () => {
+      const { state, obligation } = setupFullCycle({
+        attestationCriteriaVersion: 'plan-review-v1',
+      });
+
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+
+      expect(result.bindOutcome).toBe('bound');
+      expect(result.diagnostic.hostConstantDivergence).toContain('criteriaVersion');
+      const att = result.evidence!.capturedRawFindings?.attestation as Record<string, unknown>;
+      expect(att.criteriaVersion).toBe(REVIEW_CRITERIA_VERSION);
     });
 
     it('empty enforcement state — no_matched_record with zero counts', () => {
@@ -362,10 +378,10 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       }
     });
 
-    it('field_mismatch with multiple fields reports all mismatches', () => {
+    it('field_mismatch reports all cycle-binding mismatches; host constants are not fatal', () => {
       const { state, obligation } = setupFullCycle();
 
-      // Mismatch iteration, planVersion, criteriaVersion
+      // Mismatch iteration + planVersion (fatal) plus criteriaVersion (host constant).
       const mismatchedObligation = pendingObligation({
         obligationId: obligation.obligationId,
         iteration: 99,
@@ -379,7 +395,9 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       const fields = result.diagnostic.mismatchFields as string[];
       expect(fields).toContain('iteration');
       expect(fields).toContain('planVersion');
-      expect(fields).toContain('criteriaVersion');
+      // Host-only constants are never fatal binding fields.
+      expect(fields).not.toContain('criteriaVersion');
+      expect(fields).not.toContain('mandateDigest');
     });
 
     it('no_obligation_type — unsupported tool in pending review', () => {
@@ -485,6 +503,32 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       expect(result.bindOutcome).toBe('bound');
       expect(result.evidence).not.toBeNull();
       expect(result.evidence!.obligationType).toBe('implement');
+    });
+
+    it('confabulated reviewer attestation still resolves through the consume path', () => {
+      // Reproduces the real run: the reviewer copied the obligation UUID into
+      // mandateDigest and invented criteriaVersion. Binding must succeed AND the
+      // bound evidence must resolve cleanly through resolveHostTaskFindings.
+      const { state, obligation } = setupFullCycle({
+        attestationMandateDigest: '2a768e45-aef2-4951-b5aa-f178c78afcab',
+        attestationCriteriaVersion: 'plan-review-v1',
+      });
+
+      const bind = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      expect(bind.bindOutcome).toBe('bound');
+      expect(bind.diagnostic.hostConstantDivergence).toEqual(
+        expect.arrayContaining(['mandateDigest', 'criteriaVersion']),
+      );
+
+      const assurance = appendInvocationEvidence(ensureReviewAssurance(undefined), bind.evidence!);
+      const resolved = resolveHostTaskFindings(assurance, obligation);
+
+      expect(resolved.kind).toBe('resolved');
+      if (resolved.kind === 'resolved') {
+        expect(resolved.findings.overallVerdict).toBe('accept');
+        expect(resolved.findings.attestation?.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
+        expect(resolved.findings.attestation?.criteriaVersion).toBe(REVIEW_CRITERIA_VERSION);
+      }
     });
   });
 });
