@@ -86,7 +86,9 @@ function initialParseState(): ParseState {
   return {
     installScope: 'global',
     installPlatform: 'opencode',
-    policyMode: 'solo',
+    // Fail-closed default: a fresh install is human-gated (team) unless the
+    // operator passes --policy-mode solo|team-ci for auto-approve behavior.
+    policyMode: 'team',
     force: false,
     coreTarball: undefined,
     checksumsFile: undefined,
@@ -254,7 +256,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
         action,
         installScope: 'global',
         installPlatform: 'opencode',
-        policyMode: 'solo',
+        policyMode: 'team',
         force: false,
       },
       deprecations: [],

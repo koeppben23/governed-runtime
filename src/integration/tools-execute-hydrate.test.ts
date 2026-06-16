@@ -761,9 +761,9 @@ describe('hydrate', () => {
       expect(resolution.effectiveMode).toBe('solo');
     });
 
-    it('hydrate falls back to solo when config has no defaultMode', async () => {
+    it('hydrate falls back to team (human-gated) when config has no defaultMode', async () => {
       // Config has no defaultMode set — remove repo config so DEFAULT_CONFIG is used.
-      // DEFAULT_CONFIG has no defaultMode → hydrate defaults to 'solo'.
+      // DEFAULT_CONFIG has no defaultMode → hydrate defaults to fail-closed 'team'.
       try {
         await import('node:fs/promises').then((fs) =>
           fs.rm(path.join(ws.tmpDir, '.opencode', 'flowguard.json'), { force: true }),
@@ -782,8 +782,8 @@ describe('hydrate', () => {
 
       expect(result.phase).toBe('READY');
       const resolution = result.policyResolution as Record<string, unknown>;
-      expect(resolution.requestedMode).toBe('solo');
-      expect(resolution.effectiveMode).toBe('solo');
+      expect(resolution.requestedMode).toBe('team');
+      expect(resolution.effectiveMode).toBe('team');
     });
 
     it('config team default produces human-gated policy', async () => {

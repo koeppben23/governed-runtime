@@ -1,6 +1,9 @@
 # Policies
 
 FlowGuard supports four policy modes that determine the level of enforcement.
+The built-in default is **Team** (human-gated, fail-closed): a session with no
+explicit mode and no configured `policy.defaultMode` requires a human decision
+at the review gates. Choose `solo` or `team-ci` explicitly for auto-approve.
 
 ## Policy Modes
 
@@ -13,7 +16,7 @@ FlowGuard supports four policy modes that determine the level of enforcement.
 
 ## Solo Mode
 
-Default mode for personal projects.
+Opt-in mode for personal projects (choose `solo` explicitly; the built-in default is Team).
 
 **Characteristics:**
 

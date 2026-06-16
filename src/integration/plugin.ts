@@ -229,7 +229,7 @@ function createAuditDeps(
     log,
     logError,
     cachedFingerprint: ws.cachedFingerprint,
-    mode: defaultMode ?? 'solo',
+    mode: defaultMode ?? 'team',
     tsaProvider: new HttpTimestampAuthorityProvider(),
     timestampVerifier: new PkijsTimestampVerifier(),
   };

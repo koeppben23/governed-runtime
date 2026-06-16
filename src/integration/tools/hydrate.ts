@@ -199,7 +199,12 @@ async function resolveNewPolicyResolution(
   return resolvePolicyForHydrate({
     explicitMode: args.policyMode,
     repoMode: config.policy.defaultMode,
-    defaultMode: 'solo',
+    // Fail-closed default: a session with no explicit mode and no repo config
+    // is human-gated (team), so the plan/evidence gates require an explicit
+    // human decision rather than auto-approving. This aligns the hydrate tool
+    // with the runtime fallback in resolveRuntimePolicyMode (also `team`).
+    // Auto-approve modes (solo / team-ci) must be chosen explicitly.
+    defaultMode: 'team',
     ciContext: detectCiContext(),
     centralPolicyPath: process.env.FLOWGUARD_POLICY_PATH,
     digestFn: digestText,
@@ -907,8 +912,9 @@ export const hydrate: ToolDefinition = {
   args: {
     policyMode: PolicyModeSchema.optional().describe(
       'FlowGuard policy mode. When omitted, reads from repo config ' +
-        "(policy.defaultMode), then falls back to 'solo'. " +
-        "Priority: explicit arg > config > 'solo'.",
+        "(policy.defaultMode), then falls back to 'team' (human-gated). " +
+        "Priority: explicit arg > config > 'team'. " +
+        'Choose solo or team-ci explicitly for auto-approve behavior.',
     ),
     profileId: z
       .string()

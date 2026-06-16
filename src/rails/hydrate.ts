@@ -194,6 +194,11 @@ function handleExistingState(
 
 function resolvePolicySnapshot(p: HydratePolicyInput, ctx: RailContext, now: string) {
   if (p.policyResolution) return freezePolicySnapshot(p.policyResolution, now, ctx.digest);
+  // NOTE: this preset fallback is only reached by callers that build a
+  // HydratePolicyInput WITHOUT a resolved policyResolution (rail-level tests /
+  // defensive callers). The production tool path always sets policyResolution
+  // and takes the early return above. The user-facing default for /start is
+  // resolved one layer up (resolveNewPolicyResolution → defaultMode: 'team').
   const basePolicy = getPolicyPreset(p.policyMode ?? 'solo');
   const policy = applyHydrateOverrides(basePolicy, p);
   return createPolicySnapshot(policy, now, ctx.digest, {
