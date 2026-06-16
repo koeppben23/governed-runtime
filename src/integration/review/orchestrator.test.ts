@@ -49,7 +49,7 @@ function validFindings(overrides: Record<string, unknown> = {}): string {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'subagent',
-    overallVerdict: 'approve',
+    overallVerdict: 'accept',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -602,7 +602,7 @@ describe('invokeReviewer', () => {
     expect(result).not.toBeNull();
     expect(result!.sessionId).toBe('child-session-1');
     expect(result!.findings).not.toBeNull();
-    expect(result!.findings!.overallVerdict).toBe('approve');
+    expect(result!.findings!.overallVerdict).toBe('accept');
 
     // Verify SDK calls
     expect(client.session.create).toHaveBeenCalledWith({
@@ -814,7 +814,7 @@ describe('buildMutatedOutput', () => {
     // Findings should be injected
     expect(parsed.pluginReviewFindings).toBeDefined();
     const findings = parsed.pluginReviewFindings as Record<string, unknown>;
-    expect(findings.overallVerdict).toBe('approve');
+    expect(findings.overallVerdict).toBe('accept');
 
     // Session ID should be injected
     expect(parsed._pluginReviewSessionId).toBe('child-session-1');

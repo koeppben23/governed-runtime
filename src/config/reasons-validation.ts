@@ -185,6 +185,18 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'HUMAN_DECISION_REQUIRED',
+    category: 'admissibility',
+    messageTemplate:
+      'Human-gated policies require an explicit user decision from a host command boundary ({reason}).',
+    recoverySteps: [
+      'Present the reviewCard verbatim to the user',
+      'Ask the user to run /review-decision approve, /request-changes, or /reject',
+      "Do not decide on the user's behalf and do not call flowguard_decision from a model-only tool call",
+    ],
+  },
+
+  {
     code: 'INVALID_TRANSITION',
     category: 'input',
     messageTemplate: 'Event {event} is not valid in phase {phase}',

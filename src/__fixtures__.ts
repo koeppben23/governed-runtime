@@ -147,7 +147,7 @@ export const SELF_REVIEW_CONVERGED: SelfReviewLoop = {
   prevDigest: null,
   currDigest: 'digest-of-plan',
   revisionDelta: 'none',
-  verdict: 'approve',
+  verdict: 'accept',
 };
 
 export const SELF_REVIEW_PENDING: SelfReviewLoop = {
@@ -226,7 +226,7 @@ export const IMPL_REVIEW_CONVERGED: ImplReviewResult = {
   prevDigest: null,
   currDigest: 'digest-of-impl',
   revisionDelta: 'none',
-  verdict: 'approve',
+  verdict: 'accept',
   executedAt: FIXED_TIME,
 };
 

@@ -117,7 +117,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       const taskResultNoSession = JSON.stringify({
         iteration: 0,
         planVersion: 1,
-        overallVerdict: 'approve',
+        overallVerdict: 'accept',
         blockingIssues: [],
         majorRisks: [],
         missingVerification: [],
@@ -155,7 +155,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       const taskResultNoAttestation = JSON.stringify({
         iteration: 0,
         planVersion: 1,
-        overallVerdict: 'approve',
+        overallVerdict: 'accept',
         blockingIssues: [],
         majorRisks: [],
         missingVerification: [],
@@ -395,10 +395,10 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         subagentRecord: { sessionId: CHILD_SESSION_ID, completedAt: LATER },
         contentMeta: null,
         capturedFindings: {
-          overallVerdict: 'approve',
+          overallVerdict: 'accept',
           blockingIssuesCount: 0,
           sessionId: CHILD_SESSION_ID,
-          rawFindings: { overallVerdict: 'approve' },
+          rawFindings: { overallVerdict: 'accept' },
         },
       });
 
@@ -501,7 +501,7 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
     obligationId: string,
     opts: { iteration?: number; planVersion?: number; verdict?: string } = {},
   ): string {
-    const { iteration = 0, planVersion = 1, verdict = 'approve' } = opts;
+    const { iteration = 0, planVersion = 1, verdict = 'accept' } = opts;
     return JSON.stringify({
       iteration,
       planVersion,

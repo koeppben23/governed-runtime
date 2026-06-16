@@ -471,13 +471,14 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
 
 export const plan: ToolDefinition = {
   description:
-    'Submit a plan OR record an independent review verdict. Two modes:\n' +
+    'Submit a plan OR record an independent reviewer verdict. Two modes:\n' +
     'Mode A (submit plan): provide planText. Records the plan and starts the independent review loop.\n' +
-    "Mode B (review verdict): provide reviewVerdict ('approve' or 'changes_requested') with reviewFindings. " +
-    "If 'changes_requested', also provide revised planText.\n" +
+    "Mode B (reviewer verdict): provide reviewVerdict ('accept' or 'changes_requested'). " +
+    'In host-task mode the plugin resolves the reviewer findings automatically — submit the verdict only. ' +
+    "In SDK mode pass the reviewer's exact reviewFindings. If 'changes_requested', also provide revised planText.\n" +
     'The independent review loop runs up to maxIterations (from policy). ' +
-    'On convergence, auto-advances to PLAN_REVIEW.\n' +
-    'Optionally accepts reviewFindings from an independent review agent.',
+    'On convergence it advances to the PLAN_REVIEW user gate; it does NOT approve the plan. ' +
+    'Only the user approves via flowguard_decision (/review-decision).',
   args: {
     planText: z
       .string()
@@ -487,23 +488,27 @@ export const plan: ToolDefinition = {
           "and when reviewVerdict is 'changes_requested' (revised plan).",
       ),
     reviewVerdict: z
-      .enum(['approve', 'changes_requested'])
+      .enum(['accept', 'changes_requested'])
       .optional()
       .describe(
-        'Independent review verdict. Omit for initial plan submission. ' +
-          "'approve' = plan is good, advance. " +
-          "'changes_requested' = plan needs revision, provide updated planText.",
+        "The INDEPENDENT REVIEWER's verdict on the plan — NOT user approval. " +
+          'Omit for initial plan submission. ' +
+          "'accept' = the reviewer accepts the plan; the loop converges and advances to the " +
+          'PLAN_REVIEW user gate (the user still approves via /review-decision). ' +
+          "'changes_requested' = the plan needs revision; provide updated planText.",
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(
-      'Structured review findings from independent review. ' +
-        'Required when reviewVerdict is "approve" and subagentEnabled=true.',
+      "The reviewer's structured findings. SDK mode only — pass the reviewer output verbatim. " +
+        'In host-task mode do NOT submit reviewFindings: the plugin resolves them from captured ' +
+        'evidence, and hand-edited or mismatched findings are rejected.',
     ),
     reviewerUnavailable: z
       .boolean()
       .optional()
       .describe(
-        'Set to true when the reviewer subagent cannot be invoked (Task tool fails, ' +
-          'agent unavailable). Allows self-review fallback in host_task_required mode.',
+        'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
+          'unavailable). This is a fail-closed signal: FlowGuard blocks with SUBAGENT_UNABLE_TO_REVIEW ' +
+          'and recovery guidance. It never enables self-review and never approves the plan.',
       ),
   },
   async execute(args, context) {

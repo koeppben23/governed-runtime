@@ -23,7 +23,7 @@ function findingsFor(
     iteration: obligation.iteration,
     planVersion: obligation.planVersion,
     reviewMode: 'subagent' as const,
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],

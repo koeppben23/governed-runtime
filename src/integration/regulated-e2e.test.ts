@@ -30,6 +30,7 @@ import {
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -88,6 +89,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  clearUserDecisionIntents();
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -106,6 +108,7 @@ async function callOk(
   args: unknown,
 ): Promise<Record<string, unknown>> {
   const finalArgs = await withStrictReviewFindings(await sessDir(), args);
+  recordDecisionIntentForTool(tool, finalArgs);
   const result = parseToolResult(await tool.execute(finalArgs, ctx));
   if (result.error) {
     throw new Error(`Tool returned error: ${result.code} - ${result.message}`);
@@ -117,10 +120,25 @@ async function callBlocked(
   tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
   args: unknown,
 ): Promise<Record<string, unknown>> {
+  recordDecisionIntentForTool(tool, args);
   const result = parseToolResult(await tool.execute(args, ctx));
   expect(result.error).toBe(true);
   expect(result.code).toBeDefined();
   return result;
+}
+
+function recordDecisionIntentForTool(
+  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
+  args: unknown,
+): void {
+  if (tool !== decision || typeof args !== 'object' || args === null) return;
+  const verdict = (args as { verdict?: unknown }).verdict;
+  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
+  recordUserDecisionIntent({
+    sessionId: ctx.sessionID,
+    command: '/review-decision',
+    expectedVerdict: verdict,
+  });
 }
 
 async function phase(): Promise<string> {
@@ -137,7 +155,7 @@ async function bootstrapRegulatedPlanReview(): Promise<void> {
   await callOk(ticket, { text: 'Regulated task', source: 'user' });
   await callOk(plan, { planText: '## Plan\nImplement the task with tests.' });
   for (let i = 0; i < 4 && (await phase()) !== 'PLAN_REVIEW'; i++) {
-    await callOk(plan, { reviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'accept' });
   }
   expect(await phase()).toBe('PLAN_REVIEW');
 }
@@ -167,7 +185,7 @@ async function driveToEvidenceReview(): Promise<void> {
   }
   await callOk(implement, {});
   for (let i = 0; i < 8 && (await phase()) !== 'EVIDENCE_REVIEW'; i++) {
-    await callOk(implement, { reviewVerdict: 'approve' });
+    await callOk(implement, { reviewVerdict: 'accept' });
   }
   expect(await phase()).toBe('EVIDENCE_REVIEW');
 }

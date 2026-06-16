@@ -16,6 +16,7 @@
 import type { ReviewFindings } from '../../state/evidence.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { formatBlocked } from './helpers.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import {
   findLatestObligation,
   hashFindings,
@@ -257,7 +258,7 @@ export function validateReviewFindings(
   //   unable_to_review to BLOCKED before the tool ever sees the findings.
   // - In non-strict / submit-driven flows, a caller passing such findings
   //   would otherwise cause rails to advance state on a 2-valued
-  //   reviewVerdict ('approve' or 'changes_requested') while the
+  //   reviewVerdict ('accept' or 'changes_requested') while the
   //   findings declare the verdict unreviewable — a fabrication-of-
   //   convergence bypass.
   // Per Decision C (obligation IS consumed via SUBAGENT_UNABLE_TO_REVIEW)
@@ -659,7 +660,22 @@ export function resolveHostTaskEffectiveFindings(
 
   if (isHostTaskMode) {
     if (ctx.input.reviewFindings) {
-      void ctx.input.reviewFindings; // side-effect-free acknowledgement
+      // Diagnostic for error analysis: in host-task mode the agent must submit
+      // the verdict ONLY — findings are resolved from captured invocation
+      // evidence below. Submitting (and especially hand-editing) reviewFindings
+      // here is the leading cause of SUBAGENT_SESSION_MISMATCH / hash-mismatch
+      // confusion. The submitted findings are intentionally ignored; surface the
+      // misuse so it can be diagnosed from logs.
+      getAdapterLogger().warn(
+        'flowguard_review',
+        'reviewFindings submitted in host-task mode are ignored; verdict-only is expected',
+        {
+          sessionId: ctx.state.sessionId,
+          obligationType: ctx.expected.obligationType,
+          iteration: ctx.expected.iteration,
+          planVersion: ctx.expected.planVersion,
+        },
+      );
     }
     const resolved = resolveHostTaskFindings(ctx.state.assurance, ctx.pendingObligation);
     if (resolved.kind === 'resolved') {

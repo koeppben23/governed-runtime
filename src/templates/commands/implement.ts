@@ -82,13 +82,13 @@ Happy path:
 1. \`flowguard_status\` → phase: IMPLEMENTATION, plan approved
 2. (execute plan steps: read/write/edit/bash)
 3. \`flowguard_implement({})\` → records evidence, returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-4. \`flowguard_implement({ reviewVerdict: "approve" })\` → EVIDENCE_REVIEW
+4. \`flowguard_implement({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the implementation)
 
 Revision path (when review returns changes_requested):
 1. \`flowguard_implement({ reviewVerdict: "changes_requested" })\`
 2. (fix code based on blockingIssues)
 3. \`flowguard_implement({})\` → re-records evidence, new review starts
-4. \`flowguard_implement({ reviewVerdict: "approve" })\` → EVIDENCE_REVIEW
+4. \`flowguard_implement({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER decides via /review-decision)
 
 ${GOVERNANCE_RULES}
 ## Presentation

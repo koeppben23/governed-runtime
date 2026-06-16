@@ -57,6 +57,7 @@ import {
 } from '../__fixtures__.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -164,6 +165,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  clearUserDecisionIntents();
   // Reset workspace mock once-queues to prevent cross-test leaks.
   // vi.clearAllMocks() only clears calls/results, NOT mockResolvedValueOnce
   // queues. If a P26 test fails before consuming its once-mocks, the stale
@@ -218,7 +220,34 @@ async function executeWithStrictReview(
   args: unknown,
 ): Promise<string> {
   const finalArgs = await withStrictReviewFindings(await currentSessDir(), args);
+  recordDecisionIntentForTool(tool, finalArgs);
   return tool.execute(finalArgs, ctx);
+}
+
+async function executeDecision(args: {
+  verdict: 'approve' | 'changes_requested' | 'reject';
+  rationale: string;
+}): Promise<string> {
+  recordUserDecisionIntent({
+    sessionId: ctx.sessionID,
+    command: '/review-decision',
+    expectedVerdict: args.verdict,
+  });
+  return decision.execute(args, ctx);
+}
+
+function recordDecisionIntentForTool(
+  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
+  args: unknown,
+): void {
+  if (tool !== decision || typeof args !== 'object' || args === null) return;
+  const verdict = (args as { verdict?: unknown }).verdict;
+  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
+  recordUserDecisionIntent({
+    sessionId: ctx.sessionID,
+    command: '/review-decision',
+    expectedVerdict: verdict,
+  });
 }
 
 // =============================================================================
@@ -302,7 +331,7 @@ describe('P26: regulated archive completion', () => {
         verifiedAt: new Date().toISOString(),
       });
 
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       // Response must surface archiveStatus — agent/user must see clean completion
@@ -319,7 +348,7 @@ describe('P26: regulated archive completion', () => {
       const sessDir = await reachRegulatedEvidenceReview();
       vi.mocked(wsMock.archiveSession).mockRejectedValueOnce(new Error('tar command failed'));
 
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       // Response must surface failure — agent/user must NOT see clean completion
@@ -346,7 +375,7 @@ describe('P26: regulated archive completion', () => {
         verifiedAt: new Date().toISOString(),
       });
 
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       // Response must surface failure — agent/user must NOT see clean completion
@@ -367,9 +396,9 @@ describe('P26: regulated archive completion', () => {
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));
         if (s.phase === 'PLAN_REVIEW') break;
-        await executeWithStrictReview(plan, { reviewVerdict: 'approve' });
+        await executeWithStrictReview(plan, { reviewVerdict: 'accept' });
       }
-      await decision.execute({ verdict: 'approve', rationale: 'OK' }, ctx);
+      await executeDecision({ verdict: 'approve', rationale: 'OK' });
       // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
       {
         const sd = await currentSessDir();
@@ -384,9 +413,9 @@ describe('P26: regulated archive completion', () => {
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));
         if (s.phase === 'EVIDENCE_REVIEW') break;
-        await executeWithStrictReview(implement, { reviewVerdict: 'approve' });
+        await executeWithStrictReview(implement, { reviewVerdict: 'accept' });
       }
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       // Non-regulated: response must NOT include archiveStatus
@@ -405,7 +434,7 @@ describe('P26: regulated archive completion', () => {
       // Solo auto-approves at gates — simple workflow
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
-      await executeWithStrictReview(plan, { reviewVerdict: 'approve' });
+      await executeWithStrictReview(plan, { reviewVerdict: 'accept' });
       // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
       {
         const sessDir = await currentSessDir();
@@ -417,7 +446,7 @@ describe('P26: regulated archive completion', () => {
         }
       }
       await implement.execute({}, ctx);
-      await executeWithStrictReview(implement, { reviewVerdict: 'approve' });
+      await executeWithStrictReview(implement, { reviewVerdict: 'accept' });
 
       // Verify we're at COMPLETE (solo auto-approves EVIDENCE_REVIEW)
       const s = parseToolResult(await status.execute({}, ctx));
@@ -470,7 +499,7 @@ describe('P26: regulated archive completion', () => {
       vi.mocked(wsMock.archiveSession).mockResolvedValueOnce('/fake/archive.tar.gz');
       vi.mocked(wsMock.verifyArchive).mockRejectedValueOnce(new Error('Verification I/O error'));
 
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       // Response must surface failure — fail-closed on verify exception
@@ -486,7 +515,7 @@ describe('P26: regulated archive completion', () => {
       const sessDir = await reachRegulatedEvidenceReview();
       vi.mocked(wsMock.archiveSession).mockRejectedValueOnce(new Error('tar failed'));
 
-      await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
 
       const finalState = await readState(sessDir);
       expect(finalState).not.toBeNull();
@@ -526,7 +555,7 @@ describe('P26: regulated archive completion', () => {
         verifiedAt: new Date().toISOString(),
       });
 
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
 
@@ -554,7 +583,7 @@ describe('P26: regulated archive completion', () => {
         verifiedAt: new Date().toISOString(),
       });
 
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       expect(result.archiveStatus).toBe('verified');
@@ -583,7 +612,7 @@ describe('P26: regulated archive completion', () => {
       // archiveSession/verifyArchive are NOT mocked here — they must not be
       // reached when audit emission fails (fail-closed short-circuit).
 
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
       const result = parseToolResult(raw);
       expect(result.phase).toBe('COMPLETE');
       // Must be failed — audit append failure blocks verified archive
@@ -604,7 +633,7 @@ describe('P26: regulated archive completion', () => {
         .mockRejectedValueOnce(new Error('Disk full'));
       const archiveSpy = vi.mocked(wsMock.archiveSession);
 
-      await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
+      await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
 
       // archiveSession must NOT have been called — audit failure short-circuits
       expect(archiveSpy).not.toHaveBeenCalled();

@@ -43,7 +43,7 @@ function validFindings(): Record<string, unknown> {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'subagent',
-    overallVerdict: 'approve',
+    overallVerdict: 'accept',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -137,7 +137,7 @@ describe('invokeReviewer — retry logic', () => {
 
       expect(result).not.toBeNull();
       expect(result!.sessionId).toBe('child-session-1');
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      expect(result!.findings!.overallVerdict).toBe('accept');
       expect(client.session.create).toHaveBeenCalledTimes(1);
       expect(client.session.prompt).toHaveBeenCalledTimes(1);
       expect(mockSleep).not.toHaveBeenCalled();
@@ -157,7 +157,7 @@ describe('invokeReviewer — retry logic', () => {
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
       expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      expect(result!.findings!.overallVerdict).toBe('accept');
       expect(client.session.create).toHaveBeenCalledTimes(2);
       expect(mockSleep).toHaveBeenCalledTimes(1);
     });
@@ -214,7 +214,7 @@ describe('invokeReviewer — retry logic', () => {
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
       expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      expect(result!.findings!.overallVerdict).toBe('accept');
     });
   });
 
@@ -396,7 +396,7 @@ describe('invokeReviewer — retry logic', () => {
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
       expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      expect(result!.findings!.overallVerdict).toBe('accept');
     });
 
     it('StructuredOutputError on second attempt after transient failure returns null immediately', async () => {
@@ -536,7 +536,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
 
       expect(result).not.toBeNull();
       expect(result!.sessionId).toBe('retry-session-1');
-      expect(result!.findings.overallVerdict).toBe('approve');
+      expect(result!.findings.overallVerdict).toBe('accept');
       expect(result!.findings.reviewMode).toBe('subagent');
       expect(result!.reviewOutputMode).toBe('text_compat');
       expect(result!.structuredOutputUsed).toBe(false);
@@ -596,7 +596,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result!.findings.overallVerdict).toBe('approve');
+      expect(result!.findings.overallVerdict).toBe('accept');
     });
 
     it('T13: parses JSON via brace-extraction when text has preamble', async () => {
@@ -619,7 +619,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result!.findings.overallVerdict).toBe('approve');
+      expect(result!.findings.overallVerdict).toBe('accept');
       expect(result!.findings.blockingIssues).toEqual([]);
     });
 
@@ -699,7 +699,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result!.findings.overallVerdict).toBe('approve');
+      expect(result!.findings.overallVerdict).toBe('accept');
     });
   });
 
@@ -1003,7 +1003,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
 
       expect(result).not.toBeNull();
       const parsed = JSON.parse(result!.rawResponse);
-      expect(parsed.overallVerdict).toBe('approve');
+      expect(parsed.overallVerdict).toBe('accept');
       expect(parsed.reviewedBy.sessionId).toBe('retry-session-1');
     });
   });
@@ -1103,7 +1103,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
 
       expect(result).not.toBeNull();
-      expect(result!.findings.overallVerdict).toBe('approve');
+      expect(result!.findings.overallVerdict).toBe('accept');
       expect(diagnostics.some((d) => d.step === 'model_capability_incompatible')).toBe(true);
     });
 

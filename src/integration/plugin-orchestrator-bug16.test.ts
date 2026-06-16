@@ -240,6 +240,11 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     expect(parsed.next).toContain('iteration=0');
     expect(parsed.next).toContain('planVersion=5');
     expect(parsed.next).toContain('Policy prefers');
+    // Host-task contract (review-verdict disambiguation): verdict-only, and never
+    // the dangerous "self-review fallback" / "submit the exact ReviewFindings" wording.
+    expect(parsed.next).toContain('submit ONLY the verdict');
+    expect(parsed.next).not.toMatch(/proceeds with self-review/i);
+    expect(parsed.next).not.toMatch(/submit the exact ReviewFindings returned/i);
   });
 
   it('SMOKE: reviewer subagent instruction present (BUG-18)', async () => {
@@ -286,7 +291,7 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     expect(client.session.create).not.toHaveBeenCalled();
   });
 
-  it('BUG-19: next field includes reviewerUnavailable fallback instruction', async () => {
+  it('BUG-19: next field includes a fail-closed reviewerUnavailable fallback instruction', async () => {
     const state = buildState();
     const stateRef = { current: state };
     vi.mocked(readState).mockResolvedValue(stateRef.current);
@@ -305,6 +310,10 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     const parsed = JSON.parse(output.output);
     expect(parsed.next).toContain('FALLBACK');
     expect(parsed.next).toContain('reviewerUnavailable: true');
-    expect(parsed.next).toContain('self-review assurance');
+    // Fail-closed semantics (review-verdict disambiguation): the fallback never
+    // approves and never substitutes self-review.
+    expect(parsed.next).toContain('REVIEWER_UNAVAILABLE_STRICT');
+    expect(parsed.next).toContain('never approves');
+    expect(parsed.next).not.toMatch(/self-review assurance/i);
   });
 });

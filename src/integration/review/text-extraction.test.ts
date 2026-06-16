@@ -31,9 +31,9 @@ describe('extractJsonFromText', () => {
     });
 
     it('extracts outermost braces from prose', () => {
-      const text = 'The findings are: {"overallVerdict": "approve"} as shown.';
+      const text = 'The findings are: {"overallVerdict": "accept"} as shown.';
       const result = extractJsonFromText(text);
-      expect(result).toEqual({ overallVerdict: 'approve' });
+      expect(result).toEqual({ overallVerdict: 'accept' });
     });
   });
 

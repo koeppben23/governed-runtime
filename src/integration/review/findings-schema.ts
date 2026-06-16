@@ -21,7 +21,7 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
     iteration: { type: 'integer', minimum: 0 },
     planVersion: { type: 'integer', minimum: 1 },
     reviewMode: { type: 'string', const: 'subagent' },
-    overallVerdict: { type: 'string', enum: ['approve', 'changes_requested', 'unable_to_review'] },
+    overallVerdict: { type: 'string', enum: ['accept', 'changes_requested', 'unable_to_review'] },
     blockingIssues: {
       type: 'array',
       items: {

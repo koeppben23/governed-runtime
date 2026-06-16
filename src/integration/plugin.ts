@@ -62,11 +62,13 @@ import {
 } from './review/enforcement/extraction.js';
 
 import type {
+  CommandHookBeforeInput,
   ToolHookBeforeInput,
   ToolHookBeforeOutput,
   ToolHookAfterInput,
   ToolHookAfterOutput,
 } from './types.js';
+import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
 
 import {
   TOOL_FLOWGUARD_PLAN,
@@ -249,11 +251,43 @@ interface FlowGuardPluginRuntime {
 
 function createFlowGuardPluginHooks(runtime: FlowGuardPluginRuntime): Awaited<ReturnType<Plugin>> {
   return {
+    'command.execute.before': (input: unknown, output: unknown) =>
+      commandBefore(runtime, input, output),
     'tool.execute.before': (input: unknown, output: unknown) => toolBefore(runtime, input, output),
     'tool.execute.after': (input: unknown, output: unknown) => toolAfter(runtime, input, output),
     event: ({ event }) => handlePluginEvent(runtime, event),
     'experimental.session.compacting': (input, output) => handleCompaction(runtime, input, output),
   };
+}
+
+async function commandBefore(
+  runtime: FlowGuardPluginRuntime,
+  input: unknown,
+  _output: unknown,
+): Promise<void> {
+  return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
+    const hookInput = input as CommandHookBeforeInput;
+    const rawSessionId = hookInput?.sessionID;
+    if (!rawSessionId) {
+      runtime.log.warn('decision', 'command.execute.before missing sessionID');
+      return;
+    }
+
+    const intent = recordUserDecisionIntentFromCommand({
+      sessionId: rawSessionId,
+      command: hookInput?.command ?? '',
+      arguments: hookInput?.arguments ?? '',
+    });
+    if (!intent) return;
+
+    runtime.setCurrentSessionId(rawSessionId);
+    runtime.log.info('decision', 'recorded user decision command intent', {
+      sessionId: rawSessionId,
+      command: intent.command,
+      expectedVerdict: intent.expectedVerdict,
+      expiresAt: intent.expiresAt,
+    });
+  });
 }
 
 async function resolveEnforcement(

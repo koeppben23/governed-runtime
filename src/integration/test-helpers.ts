@@ -320,7 +320,7 @@ export async function fulfillStrictReviewObligation(
     obligationType: ReviewObligationType;
     iteration: number;
     planVersion: number;
-    overallVerdict?: 'approve' | 'changes_requested';
+    overallVerdict?: 'accept' | 'changes_requested';
     childSessionId?: string;
   },
 ): Promise<ReviewFindings> {
@@ -340,7 +340,7 @@ export async function fulfillStrictReviewObligation(
     iteration: input.iteration,
     planVersion: input.planVersion,
     reviewMode: 'subagent',
-    overallVerdict: input.overallVerdict ?? 'approve',
+    overallVerdict: input.overallVerdict ?? 'accept',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -431,7 +431,7 @@ function findPendingObligation(
 }
 
 function isValidVerdict(v: unknown): boolean {
-  return typeof v === 'string' && v.length > 0 && (v === 'approve' || v === 'changes_requested');
+  return typeof v === 'string' && v.length > 0 && (v === 'accept' || v === 'changes_requested');
 }
 
 export async function withStrictReviewFindings(sessDir: string, args: unknown): Promise<unknown> {
@@ -454,7 +454,7 @@ export async function withStrictReviewFindings(sessDir: string, args: unknown): 
     >[1]['obligationType'],
     iteration: pending.obligation.iteration,
     planVersion: pending.obligation.planVersion,
-    overallVerdict: verdict as 'approve' | 'changes_requested',
+    overallVerdict: verdict as 'accept' | 'changes_requested',
   });
 
   return { ...record, reviewFindings };

@@ -42,7 +42,7 @@
  *   -> Returns "review needed" with policy-conditional next-action
  *
  * Step 3: LLM calls flowguard-reviewer subagent via Task tool
- * Step 4: LLM calls flowguard_implement({ reviewVerdict: "approve", reviewFindings })
+ * Step 4: LLM calls flowguard_implement({ reviewVerdict: "accept", reviewFindings })
  *   -> Tool records review iteration, checks convergence
  *   -> On convergence: auto-advance to EVIDENCE_REVIEW
  *
@@ -120,7 +120,7 @@ function nextImplementationReviewIteration(state: SessionState): number {
 }
 
 type ImplementArgs = {
-  reviewVerdict?: 'approve' | 'changes_requested';
+  reviewVerdict?: 'accept' | 'changes_requested';
   reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
 };
@@ -583,13 +583,13 @@ async function handleApprovedReview(input: {
   const response: Record<string, unknown> = {
     phase: finalState.phase,
     implReviewIteration: input.iteration,
-    next: input.runtime.args.reviewVerdict === 'approve' ? formatEval(ev) : undefined,
+    next: input.runtime.args.reviewVerdict === 'accept' ? formatEval(ev) : undefined,
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
 
-  if (input.runtime.args.reviewVerdict === 'approve') {
-    response.status = `Implementation review converged at iteration ${input.iteration}. Approved.`;
+  if (input.runtime.args.reviewVerdict === 'accept') {
+    response.status = `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`;
   } else {
     response.status = `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
   }
@@ -722,30 +722,34 @@ export const implement: ToolDefinition = {
     'Record implementation evidence OR submit implementation review verdict. Two modes:\n' +
     'Mode A (record impl): no reviewVerdict. Auto-detects changed files via git. ' +
     'Use AFTER making code changes with read/write/bash tools.\n' +
-    "Mode B (review verdict): provide reviewVerdict ('approve' or 'changes_requested'). " +
+    "Mode B (review verdict): provide reviewVerdict ('accept' or 'changes_requested'). " +
     'Use at IMPL_REVIEW after reviewing the implementation.\n' +
     'Review loop runs up to maxIterations (from policy). ' +
     'On convergence, auto-advances to EVIDENCE_REVIEW.\n' +
     'Optionally accepts reviewFindings from an independent review agent.',
   args: {
     reviewVerdict: z
-      .enum(['approve', 'changes_requested'])
+      .enum(['accept', 'changes_requested'])
       .optional()
       .describe(
-        'Implementation review verdict. Omit to record implementation evidence. ' +
-          "'approve' = implementation is correct. " +
-          "'changes_requested' = implementation needs revision.",
+        "The INDEPENDENT REVIEWER's verdict on the implementation — NOT user approval. " +
+          'Omit to record implementation evidence. ' +
+          "'accept' = the reviewer accepts the implementation; the loop converges and advances " +
+          'to the EVIDENCE_REVIEW user gate (the user still approves via /review-decision). ' +
+          "'changes_requested' = the implementation needs revision.",
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(
-      'Structured review findings from independent review. ' +
-        'Required when reviewVerdict is "approve" and subagentEnabled=true.',
+      "The reviewer's structured findings. SDK mode only — pass the reviewer output verbatim. " +
+        'In host-task mode do NOT submit reviewFindings: the plugin resolves them from captured ' +
+        'evidence, and hand-edited or mismatched findings are rejected.',
     ),
     reviewerUnavailable: z
       .boolean()
       .optional()
       .describe(
-        'Set to true when the reviewer subagent cannot be invoked (Task tool fails, ' +
-          'agent unavailable). Allows self-review fallback in host_task_required mode.',
+        'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
+          'unavailable). This is a fail-closed signal: FlowGuard blocks with SUBAGENT_UNABLE_TO_REVIEW ' +
+          'and recovery guidance. It never enables self-review and never approves the implementation.',
       ),
   },
   async execute(args, context) {

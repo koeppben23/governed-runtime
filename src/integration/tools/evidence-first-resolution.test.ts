@@ -148,14 +148,14 @@ function makeFindings(
   overrides: Partial<{
     iteration: number;
     planVersion: number;
-    overallVerdict: 'approve' | 'changes_requested';
+    overallVerdict: 'accept' | 'changes_requested';
   }> = {},
 ) {
   return {
     iteration: overrides.iteration ?? 0,
     planVersion: overrides.planVersion ?? 1,
     reviewMode: 'subagent' as const,
-    overallVerdict: overrides.overallVerdict ?? 'approve',
+    overallVerdict: overrides.overallVerdict ?? 'accept',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -171,7 +171,7 @@ function makeStrictFindings(
   overrides: Partial<{
     iteration: number;
     planVersion: number;
-    overallVerdict: 'approve' | 'changes_requested';
+    overallVerdict: 'accept' | 'changes_requested';
   }> = {},
 ) {
   return {
@@ -211,7 +211,7 @@ function manualAttestedInvocation(input: {
   };
 }
 
-function planStateWithEvidence(verdict: 'approve' | 'changes_requested' = 'approve') {
+function planStateWithEvidence(verdict: 'accept' | 'changes_requested' = 'accept') {
   const rawFindings: Record<string, unknown> = {
     iteration: 0,
     planVersion: 1,
@@ -288,7 +288,7 @@ function planStateWithEvidence(verdict: 'approve' | 'changes_requested' = 'appro
   });
 }
 
-function implStateWithEvidence(verdict: 'approve' | 'changes_requested' = 'approve') {
+function implStateWithEvidence(verdict: 'accept' | 'changes_requested' = 'accept') {
   const rawFindings: Record<string, unknown> = {
     iteration: 1,
     planVersion: 1,
@@ -388,7 +388,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
   });
 
   it('HAPPY: host_task_required + evidence available → succeeds (no reviewFindings needed)', async () => {
-    mocks.state = planStateWithEvidence('approve');
+    mocks.state = planStateWithEvidence('accept');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
       maxSelfReviewIterations: 3,
@@ -403,14 +403,14 @@ describe('BUG-17: plan evidence-first resolution', () => {
     });
 
     const { plan } = await import('./plan.js');
-    const res = await plan.execute({ reviewVerdict: 'approve' }, {} as never);
+    const res = await plan.execute({ reviewVerdict: 'accept' }, {} as never);
     const parsed = JSON.parse(String(res));
     // Evidence-resolved findings used — no BLOCKED
     expect(parsed.error).toBeUndefined();
   });
 
   it('FAIL-CLOSED: auto-advance overflow returns blocked and persists NO state (#428)', async () => {
-    mocks.state = planStateWithEvidence('approve');
+    mocks.state = planStateWithEvidence('accept');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
       maxSelfReviewIterations: 3,
@@ -427,7 +427,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
     });
 
     const { plan } = await import('./plan.js');
-    const res = await plan.execute({ reviewVerdict: 'approve' }, {} as never);
+    const res = await plan.execute({ reviewVerdict: 'accept' }, {} as never);
     const parsed = JSON.parse(String(res));
 
     // 1. Surfaces the structured fail-closed overflow result.
@@ -480,7 +480,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
     });
 
     const { plan } = await import('./plan.js');
-    const res = await plan.execute({ reviewVerdict: 'approve' }, {} as never);
+    const res = await plan.execute({ reviewVerdict: 'accept' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -489,7 +489,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
   it('EDGE: host_task_required + agent submits INVALID reviewFindings → still succeeds (ignored)', async () => {
     // BUG-17: In host_task mode, agent-submitted findings are completely ignored.
     // Even findings with wrong iteration/planVersion don't block because evidence is SSOT.
-    mocks.state = planStateWithEvidence('approve');
+    mocks.state = planStateWithEvidence('accept');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
       maxSelfReviewIterations: 3,
@@ -506,20 +506,20 @@ describe('BUG-17: plan evidence-first resolution', () => {
     const { plan } = await import('./plan.js');
     const res = await plan.execute(
       {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
         // Agent submits WRONG iteration — would normally be BLOCKED, but BUG-17 ignores
         reviewFindings: makeFindings({ iteration: 999, overallVerdict: 'changes_requested' }),
       },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
-    // Succeeds because evidence 'approve' matches reviewVerdict 'approve'
+    // Succeeds because evidence 'accept' matches reviewVerdict 'accept'
     expect(parsed.error).toBeUndefined();
   });
 
   it('REGRESSION: sdk_allowed + no reviewFindings → BLOCKED (requires agent submission)', async () => {
     // In non-host_task mode, evidence is NOT auto-resolved — agent must submit findings
-    mocks.state = planStateWithEvidence('approve');
+    mocks.state = planStateWithEvidence('accept');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
       maxSelfReviewIterations: 3,
@@ -528,7 +528,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
     });
 
     const { plan } = await import('./plan.js');
-    const res = await plan.execute({ reviewVerdict: 'approve' }, {} as never);
+    const res = await plan.execute({ reviewVerdict: 'accept' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -593,7 +593,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
 
     const { plan } = await import('./plan.js');
     const res = await plan.execute(
-      { reviewVerdict: 'approve', reviewFindings: findings },
+      { reviewVerdict: 'accept', reviewFindings: findings },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
@@ -620,7 +620,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
   });
 
   it('HAPPY: host_task_required + evidence available → succeeds', async () => {
-    mocks.state = implStateWithEvidence('approve');
+    mocks.state = implStateWithEvidence('accept');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
       maxSelfReviewIterations: 3,
@@ -635,7 +635,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
     });
 
     const { implement } = await import('./implement.js');
-    const res = await implement.execute({ reviewVerdict: 'approve' }, {} as never);
+    const res = await implement.execute({ reviewVerdict: 'accept' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBeUndefined();
   });
@@ -679,14 +679,14 @@ describe('BUG-17: implement evidence-first resolution', () => {
     });
 
     const { implement } = await import('./implement.js');
-    const res = await implement.execute({ reviewVerdict: 'approve' }, {} as never);
+    const res = await implement.execute({ reviewVerdict: 'accept' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
   });
 
   it('EDGE: host_task_required + agent submits INVALID reviewFindings → still succeeds (ignored)', async () => {
-    mocks.state = implStateWithEvidence('approve');
+    mocks.state = implStateWithEvidence('accept');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
       maxSelfReviewIterations: 3,
@@ -703,19 +703,19 @@ describe('BUG-17: implement evidence-first resolution', () => {
     const { implement } = await import('./implement.js');
     const res = await implement.execute(
       {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
         // Agent submits WRONG iteration — ignored in host_task mode
         reviewFindings: makeFindings({ iteration: 999, overallVerdict: 'changes_requested' }),
       },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
-    // Evidence 'approve' matches reviewVerdict 'approve' → succeeds
+    // Evidence 'accept' matches reviewVerdict 'accept' → succeeds
     expect(parsed.error).toBeUndefined();
   });
 
   it('REGRESSION: sdk_allowed + no reviewFindings → BLOCKED', async () => {
-    mocks.state = implStateWithEvidence('approve');
+    mocks.state = implStateWithEvidence('accept');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
       maxSelfReviewIterations: 3,
@@ -724,7 +724,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
     });
 
     const { implement } = await import('./implement.js');
-    const res = await implement.execute({ reviewVerdict: 'approve' }, {} as never);
+    const res = await implement.execute({ reviewVerdict: 'accept' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -784,7 +784,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
 
     const { implement } = await import('./implement.js');
     const res = await implement.execute(
-      { reviewVerdict: 'approve', reviewFindings: findings },
+      { reviewVerdict: 'accept', reviewFindings: findings },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
@@ -909,7 +909,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
     });
     const { plan } = await import('./plan.js');
     const res = await plan.execute(
-      { reviewVerdict: 'approve', reviewerUnavailable: true },
+      { reviewVerdict: 'accept', reviewerUnavailable: true },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
@@ -927,7 +927,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
     });
     const { implement } = await import('./implement.js');
     const res = await implement.execute(
-      { reviewVerdict: 'approve', reviewerUnavailable: true },
+      { reviewVerdict: 'accept', reviewerUnavailable: true },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
@@ -946,7 +946,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
 
     const { plan } = await import('./plan.js');
     const res = await plan.execute(
-      { reviewVerdict: 'approve', reviewerUnavailable: true },
+      { reviewVerdict: 'accept', reviewerUnavailable: true },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
@@ -975,7 +975,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
     }));
 
     const { plan } = await import('./plan.js');
-    await plan.execute({ reviewVerdict: 'approve', reviewerUnavailable: true }, {} as never);
+    await plan.execute({ reviewVerdict: 'accept', reviewerUnavailable: true }, {} as never);
 
     const ps = persistedState as { plan?: { reviewFindings?: Array<{ reviewMode: string }> } };
     expect(ps).toBeNull();
@@ -992,7 +992,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
 
     const { implement } = await import('./implement.js');
     const res = await implement.execute(
-      { reviewVerdict: 'approve', reviewerUnavailable: true },
+      { reviewVerdict: 'accept', reviewerUnavailable: true },
       {} as never,
     );
     const parsed = JSON.parse(String(res));
@@ -1011,7 +1011,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
 
     const { plan } = await import('./plan.js');
     const res = await plan.execute(
-      { reviewVerdict: 'approve', reviewerUnavailable: false },
+      { reviewVerdict: 'accept', reviewerUnavailable: false },
       {} as never,
     );
     const parsed = JSON.parse(String(res));

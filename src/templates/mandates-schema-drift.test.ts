@@ -49,7 +49,7 @@ describe('REVIEWER_AGENT template: schema integrity (B1)', () => {
     // accept. If a future edit drops one, the reviewer subagent and the
     // runtime would disagree on what verdicts are emittable.
     expect(REVIEWER_AGENT).toMatch(
-      /"overallVerdict":\s*"approve"\s*\|\s*"changes_requested"\s*\|\s*"unable_to_review"/,
+      /"overallVerdict":\s*"accept"\s*\|\s*"changes_requested"\s*\|\s*"unable_to_review"/,
     );
   });
 

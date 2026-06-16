@@ -66,7 +66,7 @@ export function taskResultWithAttestation(
     childSessionId = CHILD_SESSION_ID,
     iteration = 0,
     planVersion = 1,
-    verdict = 'approve',
+    verdict = 'accept',
   } = opts;
   return JSON.stringify({
     iteration,

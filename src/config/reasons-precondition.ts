@@ -174,8 +174,8 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Plan approval included planText. Approval and plan submission must be separate calls; planText is for initial submissions and revisions only.',
     recoverySteps: [
-      'For host_task_required approval: call flowguard_plan({ reviewVerdict: "approve" }) after reviewer evidence is captured',
-      'For SDK/manual-attested approval: call flowguard_plan({ reviewVerdict: "approve", reviewFindings }) with the exact reviewer output',
+      'For host_task_required approval: call flowguard_plan({ reviewVerdict: "accept" }) after reviewer evidence is captured',
+      'For SDK/manual-attested approval: call flowguard_plan({ reviewVerdict: "accept", reviewFindings }) with the exact reviewer output',
       'Include planText only when reviewVerdict is "changes_requested" (revised plan)',
     ],
     quickFixCommand: '/plan',
@@ -201,7 +201,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Review findings were submitted without a verdict. Include reviewVerdict alongside reviewFindings.',
     recoverySteps: [
       'Include reviewVerdict alongside reviewFindings',
-      'Call flowguard_plan({ reviewVerdict: "approve"|"changes_requested", reviewFindings })',
+      'Call flowguard_plan({ reviewVerdict: "accept"|"changes_requested", reviewFindings })',
     ],
     quickFixCommand: '/plan',
   },
@@ -276,7 +276,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'The ADR review loop is already active. Submit a review verdict to continue it, not a new ADR.',
     recoverySteps: [
       'The review loop is active — send reviewVerdict to continue it',
-      'Call flowguard_architecture({ reviewVerdict: "approve"|"changes_requested" })',
+      'Call flowguard_architecture({ reviewVerdict: "accept"|"changes_requested" })',
     ],
     quickFixCommand: '/architecture',
   },

@@ -46,6 +46,7 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -106,6 +107,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  clearUserDecisionIntents();
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -127,12 +129,40 @@ async function callOk(
   context: TestToolContext = ctx,
 ) {
   const finalArgs = await withStrictReviewFindings(await getSessDir(context), args);
+  recordDecisionIntentForTool(tool, finalArgs, context);
   const raw = await tool.execute(finalArgs, context);
   const result = parseToolResult(raw);
   if (result.error) {
     throw new Error(`Tool returned error: ${result.code} — ${result.message}`);
   }
   return result;
+}
+
+async function executeDecision(args: {
+  verdict: 'approve' | 'changes_requested' | 'reject';
+  rationale: string;
+}): Promise<string> {
+  recordUserDecisionIntent({
+    sessionId: ctx.sessionID,
+    command: '/review-decision',
+    expectedVerdict: args.verdict,
+  });
+  return decision.execute(args, ctx);
+}
+
+function recordDecisionIntentForTool(
+  tool: { execute: (args: unknown, ctx: TestToolContext) => Promise<string> },
+  args: unknown,
+  context: TestToolContext = ctx,
+): void {
+  if (tool !== decision || typeof args !== 'object' || args === null) return;
+  const verdict = (args as { verdict?: unknown }).verdict;
+  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
+  recordUserDecisionIntent({
+    sessionId: context.sessionID,
+    command: '/review-decision',
+    expectedVerdict: verdict,
+  });
 }
 
 async function getSessDir(context: TestToolContext = ctx): Promise<string> {
@@ -151,7 +181,7 @@ async function driveToComplete(context: TestToolContext = ctx): Promise<string> 
     } else if (lastPhase === 'TICKET') {
       await callOk(plan, { planText: '## Plan\nTest' }, context);
     } else if (lastPhase === 'PLAN') {
-      await callOk(plan, { reviewVerdict: 'approve' }, context);
+      await callOk(plan, { reviewVerdict: 'accept' }, context);
     } else if (lastPhase === 'VALIDATION') {
       // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
       const sd = await getSessDir(context);
@@ -167,7 +197,7 @@ async function driveToComplete(context: TestToolContext = ctx): Promise<string> 
       for (let j = 0; j < 8; j++) {
         const r = parseToolResult(await status.execute({}, context));
         if (r.phase === 'EVIDENCE_REVIEW') break;
-        await callOk(implement, { reviewVerdict: 'approve' }, context);
+        await callOk(implement, { reviewVerdict: 'accept' }, context);
       }
     } else if (lastPhase === 'EVIDENCE_REVIEW') {
       await callOk(decision, { verdict: 'approve', rationale: 'OK' }, context);
@@ -210,7 +240,7 @@ describe('HAPPY: status JSON shape is stable', () => {
     await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
     await callOk(ticket, { text: 'Team status test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { reviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'accept' });
     const result = parseToolResult(await status.execute({}, ctx));
 
     expect(result.phase).toBe('PLAN_REVIEW');
@@ -223,7 +253,7 @@ describe('HAPPY: status JSON shape is stable', () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Complete test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { reviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'accept' });
     // Pass validation: discovery detects TypeScript → activeChecks=['typecheck']
     {
       const sd = await getSessDir();
@@ -268,9 +298,9 @@ describe('HAPPY: blocked/error output has stable structure', () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     await callOk(ticket, { text: 'Four eyes test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { reviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'accept' });
     const result = parseToolResult(
-      await decision.execute({ verdict: 'approve', rationale: 'Same actor' }, ctx),
+      await executeDecision({ verdict: 'approve', rationale: 'Same actor' }),
     );
 
     expect(result.error).toBe(true);
@@ -281,7 +311,7 @@ describe('HAPPY: blocked/error output has stable structure', () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { reviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'accept' });
     // Pass validation via run_check (discovery detects TypeScript → activeChecks=['typecheck'])
     const sd = await getSessDir();
     const st = await readState(sd);
@@ -372,10 +402,10 @@ describe('HAPPY: reason codes are stable', () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     await callOk(ticket, { text: 'Four CLI test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { reviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'accept' });
 
     const result = parseToolResult(
-      await decision.execute({ verdict: 'approve', rationale: 'Same actor' }, ctx),
+      await executeDecision({ verdict: 'approve', rationale: 'Same actor' }),
     );
     expect(result.error).toBe(true);
     expect(result.code).toBe('FOUR_EYES_ACTOR_MATCH');
@@ -385,13 +415,13 @@ describe('HAPPY: reason codes are stable', () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     await callOk(ticket, { text: 'Identity CLI test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { reviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'accept' });
     const sessDir = await getSessDir();
     const state = await readState(sessDir);
     await writeState(sessDir, { ...state!, initiatedByIdentity: undefined });
 
     const result = parseToolResult(
-      await decision.execute({ verdict: 'approve', rationale: 'Legacy identity' }, ctx),
+      await executeDecision({ verdict: 'approve', rationale: 'Legacy identity' }),
     );
     expect(result.error).toBe(true);
     expect(result.code).toBe('DECISION_IDENTITY_REQUIRED');
@@ -401,7 +431,7 @@ describe('HAPPY: reason codes are stable', () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     await callOk(ticket, { text: 'Unknown actor test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { reviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'accept' });
     vi.mocked(actorMock.resolveActor).mockResolvedValue({
       id: 'unknown-cli',
       email: null,
@@ -411,7 +441,7 @@ describe('HAPPY: reason codes are stable', () => {
     });
 
     const result = parseToolResult(
-      await decision.execute({ verdict: 'approve', rationale: 'Unknown actor' }, ctx),
+      await executeDecision({ verdict: 'approve', rationale: 'Unknown actor' }),
     );
     expect(result.error).toBe(true);
     expect(result.code).toBe('REGULATED_ACTOR_UNKNOWN');
@@ -445,7 +475,7 @@ describe('BAD: invalid input returns structured error', () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { reviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'accept' });
     const raw = await decision.execute({ verdict: 'approve', rationale: 'Ok' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error === true || result.phase !== undefined).toBe(true);
@@ -482,7 +512,7 @@ describe('CORNER: CLI edge cases', () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Enum test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
-    await callOk(plan, { reviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'accept' });
     const raw = await decision.execute({ verdict: 'approve', rationale: 'Ok' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error === true || result.phase !== undefined).toBe(true);

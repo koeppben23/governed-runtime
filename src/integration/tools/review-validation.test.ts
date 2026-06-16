@@ -28,7 +28,7 @@ function makeFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'subagent',
-    overallVerdict: 'approve',
+    overallVerdict: 'accept',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -470,7 +470,7 @@ describe('validateReviewFindings', () => {
       // The new gate must NOT capture the normal path. With approve,
       // validation proceeds to existing rules; on a fully-valid
       // findings + ctx the result is null (validation pass).
-      const findings = makeFindings({ overallVerdict: 'approve' });
+      const findings = makeFindings({ overallVerdict: 'accept' });
       const result = validateReviewFindings(findings, makeCtx());
       expect(result).toBeNull();
     });
@@ -486,7 +486,7 @@ describe('validateReviewFindings', () => {
   // ─── F13: architecture obligationType (slice 3) ──────────────
   describe('F13 architecture obligationType', () => {
     it("accepts obligationType: 'architecture' (non-strict path)", () => {
-      const findings = makeFindings({ overallVerdict: 'approve' });
+      const findings = makeFindings({ overallVerdict: 'accept' });
       const result = validateReviewFindings(
         findings,
         makeCtx({
@@ -687,7 +687,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       invocationMode: 'host_subagent_task',
       hostVisible: true,
       parentSessionId: 'ses_parent',
-      capturedVerdict: 'approve',
+      capturedVerdict: 'accept',
     };
 
     const result = validateReviewFindings(
@@ -1084,7 +1084,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       hostVisible: true,
       parentSessionId: 'ses_parent',
       findingsHash: hashFindings(findings),
-      capturedVerdict: 'approve',
+      capturedVerdict: 'accept',
     };
 
     const result = validateReviewFindings(
@@ -1103,7 +1103,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
 
   it('host_task_required rejects when submitted verdict differs from capturedVerdict (BUG-15: verdict tamper)', () => {
     const storedFindings = strictFindings({ overallVerdict: 'changes_requested' });
-    const submittedFindings = strictFindings({ overallVerdict: 'approve' }); // tampered verdict
+    const submittedFindings = strictFindings({ overallVerdict: 'accept' }); // tampered verdict
     const assurance = strictAssuranceFixture(storedFindings);
     assurance.obligations[0] = {
       ...assurance.obligations[0]!,
@@ -1142,9 +1142,9 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
     // This is THE BUG-15 scenario: agent reconstructs findings JSON with
     // different key order / Zod-stripped fields, causing hash mismatch.
     // With capturedVerdict, verdict match suffices.
-    const storedFindings = strictFindings({ overallVerdict: 'approve' });
+    const storedFindings = strictFindings({ overallVerdict: 'accept' });
     const submittedFindings = strictFindings({
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       // Different majorRisks array → different hash, same verdict
       majorRisks: [{ severity: 'major', category: 'risk', message: 'agent-reconstructed' }],
     });
@@ -1162,7 +1162,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       hostVisible: true,
       parentSessionId: 'ses_parent',
       findingsHash: hashFindings(storedFindings),
-      capturedVerdict: 'approve',
+      capturedVerdict: 'accept',
     };
 
     // Verify hashes actually differ (precondition for this test)
@@ -1236,7 +1236,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       parentSessionId: 'ses_parent',
       childSessionId: 'ses_real_child', // different from agent's reconstruction
       findingsHash: 'does-not-matter-for-host-task',
-      capturedVerdict: 'approve',
+      capturedVerdict: 'accept',
     };
 
     const result = validateReviewFindings(
@@ -1409,7 +1409,7 @@ describe('resolveHostTaskFindings', () => {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'subagent',
-    overallVerdict: 'approve',
+    overallVerdict: 'accept',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -1455,7 +1455,7 @@ describe('resolveHostTaskFindings', () => {
       invokedAt: now,
       fulfilledAt: now,
       consumedByObligationId: null,
-      capturedVerdict: 'approve',
+      capturedVerdict: 'accept',
       capturedRawFindings: validRawFindings,
       ...overrides,
     };
@@ -1472,7 +1472,7 @@ describe('resolveHostTaskFindings', () => {
 
     expect(result.kind).toBe('resolved');
     if (result.kind !== 'resolved') throw new Error('expected resolved findings');
-    expect(result.findings.overallVerdict).toBe('approve');
+    expect(result.findings.overallVerdict).toBe('accept');
     expect(result.findings.iteration).toBe(0);
     expect(result.findings.planVersion).toBe(1);
     expect(result.findings.reviewMode).toBe('subagent');
@@ -1533,7 +1533,7 @@ describe('resolveHostTaskFindings', () => {
   });
 
   it('BAD: returns null when capturedRawFindings fails Zod parse (missing required fields)', () => {
-    const invalidRaw = { overallVerdict: 'approve' }; // missing required fields
+    const invalidRaw = { overallVerdict: 'accept' }; // missing required fields
     const assurance = {
       obligations: [makeObligation()],
       invocations: [
@@ -1691,7 +1691,7 @@ describe('resolveHostTaskFindings', () => {
 
     expect(result.kind).toBe('resolved');
     if (result.kind !== 'resolved') throw new Error('expected resolved findings');
-    expect(result.findings.overallVerdict).toBe('approve');
+    expect(result.findings.overallVerdict).toBe('accept');
     // Extra fields are stripped by Zod
     expect((result.findings as Record<string, unknown>).extraField).toBeUndefined();
   });

@@ -60,6 +60,12 @@ import {
 } from '../__fixtures__.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
+import {
+  clearUserDecisionIntents,
+  recordUserDecisionIntent,
+  recordUserDecisionIntentFromCommand,
+} from './user-decision-intent.js';
+import type { ReviewVerdict } from '../state/evidence.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -176,6 +182,7 @@ afterEach(async () => {
       assurance: 'best_effort' as const,
     });
   cleanupEnv();
+  clearUserDecisionIntents();
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -209,9 +216,23 @@ async function currentSessionDir(): Promise<string> {
   return resolveSessionDir(fp.fingerprint, ctx.sessionID);
 }
 
+function recordUserDecision(verdict: ReviewVerdict): void {
+  const command =
+    verdict === 'approve'
+      ? '/approve'
+      : verdict === 'changes_requested'
+        ? '/request-changes'
+        : '/reject';
+  recordUserDecisionIntent({
+    sessionId: ctx.sessionID,
+    command,
+    expectedVerdict: verdict,
+  });
+}
+
 async function fulfillPlanReview(
   iteration = 0,
-  overallVerdict: 'approve' | 'changes_requested' = 'approve',
+  overallVerdict: 'accept' | 'changes_requested' = 'accept',
 ) {
   return fulfillStrictReviewObligation(await currentSessionDir(), {
     obligationType: 'plan',
@@ -226,7 +247,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'subagent' as const,
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -240,7 +261,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'self' as unknown as 'subagent',
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -254,8 +275,8 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
     expect(result.selfReviewIteration).toBe(1);
@@ -266,7 +287,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const raw = await plan.execute(
-      { reviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
+      { reviewVerdict: 'accept', reviewFindings: validReviewFindingsSelf },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -306,8 +327,8 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
 
     const { computeFingerprint, sessionDir: resolveSessionDir } =
       await import('../adapters/workspace/index.js');
@@ -325,8 +346,8 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
 
     const { computeFingerprint, sessionDir: resolveSessionDir } =
       await import('../adapters/workspace/index.js');
@@ -345,8 +366,8 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
     expect(result.selfReviewIteration).toBe(1);
@@ -356,8 +377,8 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
 
     expect(result.error).toBeUndefined();
@@ -371,7 +392,7 @@ describe('P34a: Policy-Driven Branches', () => {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'subagent' as const,
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -385,7 +406,7 @@ describe('P34a: Policy-Driven Branches', () => {
     iteration: 1,
     planVersion: 1,
     reviewMode: 'subagent' as const,
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -399,7 +420,7 @@ describe('P34a: Policy-Driven Branches', () => {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'self' as unknown as 'subagent',
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -428,8 +449,8 @@ describe('P34a: Policy-Driven Branches', () => {
     });
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
     expect(result.selfReviewIteration).toBe(1);
@@ -455,7 +476,7 @@ describe('P34a: Policy-Driven Branches', () => {
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const raw = await plan.execute(
-      { reviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
+      { reviewVerdict: 'accept', reviewFindings: validReviewFindingsSelf },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -483,7 +504,7 @@ describe('P34a: Policy-Driven Branches', () => {
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const raw = await plan.execute(
-      { reviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
+      { reviewVerdict: 'accept', reviewFindings: validReviewFindingsSelf },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -510,7 +531,7 @@ describe('P34a: Policy-Driven Branches', () => {
     });
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const raw = await plan.execute({ reviewVerdict: 'approve' }, ctx);
+    const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBe(true);
     expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -538,8 +559,8 @@ describe('P34a: Policy-Driven Branches', () => {
     expect(state.policySnapshot?.selfReview?.subagentEnabled).toBe(true);
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
   });
@@ -559,14 +580,15 @@ describe('decision', () => {
     for (let i = 0; i < 5; i++) {
       const s = parseToolResult(await status.execute({}, ctx));
       if (s.phase === 'PLAN_REVIEW') break;
-      const reviewFindings = await fulfillPlanReview(i, 'approve');
-      await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+      const reviewFindings = await fulfillPlanReview(i, 'accept');
+      await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     }
   }
 
   describe('HAPPY', () => {
     it('approve at PLAN_REVIEW advances to VALIDATION', async () => {
       await reachPlanReview();
+      recordUserDecision('approve');
       const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
@@ -592,6 +614,7 @@ describe('decision', () => {
 
     it('fail-closes when derived plan artifacts are missing', async () => {
       await reachPlanReview();
+      recordUserDecision('approve');
 
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -608,6 +631,7 @@ describe('decision', () => {
     it('maps actor claim expiration to structured decision errors', async () => {
       const { ActorClaimError } = actorMock;
       await reachPlanReview();
+      recordUserDecision('approve');
       vi.mocked(actorMock.resolveActor).mockRejectedValueOnce(
         new ActorClaimError('ACTOR_CLAIM_EXPIRED', 'claim expired'),
       );
@@ -620,8 +644,46 @@ describe('decision', () => {
   });
 
   describe('CORNER', () => {
+    it('blocks model-origin decision in human-gated team mode', async () => {
+      await reachPlanReview();
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('HUMAN_DECISION_REQUIRED');
+    });
+
+    it('blocks mismatched user-command intent verdict', async () => {
+      await reachPlanReview();
+      recordUserDecision('approve');
+      const raw = await decision.execute(
+        { verdict: 'changes_requested', rationale: 'Actually revise' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('HUMAN_DECISION_REQUIRED');
+    });
+
+    it('consumes user-command intent once', async () => {
+      await reachPlanReview();
+      recordUserDecision('approve');
+      const first = parseToolResult(
+        await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx),
+      );
+      expect(first.error).toBeUndefined();
+
+      const state = await readState(await currentSessionDir());
+      await writeState(await currentSessionDir(), { ...state!, phase: 'PLAN_REVIEW' });
+      const second = parseToolResult(
+        await decision.execute({ verdict: 'approve', rationale: 'Replay' }, ctx),
+      );
+      expect(second.error).toBe(true);
+      expect(second.code).toBe('HUMAN_DECISION_REQUIRED');
+    });
+
     it('reject at PLAN_REVIEW returns to TICKET', async () => {
       await reachPlanReview();
+      recordUserDecision('reject');
       const raw = await decision.execute({ verdict: 'reject', rationale: 'Need rethink' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
@@ -630,6 +692,7 @@ describe('decision', () => {
 
     it('changes_requested at PLAN_REVIEW returns to PLAN', async () => {
       await reachPlanReview();
+      recordUserDecision('changes_requested');
       const raw = await decision.execute(
         { verdict: 'changes_requested', rationale: 'More detail needed' },
         ctx,
@@ -637,6 +700,24 @@ describe('decision', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('PLAN');
+    });
+
+    it('accepts decision after command.execute.before records a host-command intent', async () => {
+      await reachPlanReview();
+      // Simulate OpenCode command.execute.before hook firing for /approve.
+      // This is the only origin the decision tool trusts in human-gated modes.
+      recordUserDecisionIntentFromCommand({
+        sessionId: ctx.sessionID,
+        command: '/approve',
+        arguments: '',
+      });
+      const raw = await decision.execute(
+        { verdict: 'approve', rationale: 'User approved via /approve' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('VALIDATION');
     });
 
     it('config verified-actor requirement blocks approve for best_effort reviewer', async () => {
@@ -654,6 +735,7 @@ describe('decision', () => {
       });
 
       await reachPlanReview();
+      recordUserDecision('approve');
       const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);

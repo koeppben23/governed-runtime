@@ -49,7 +49,7 @@ describe('invokeReviewer — agent resolution integration', () => {
 
       expect(result).not.toBeNull();
       expect(result!.sessionId).toBe('child-session-1');
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      expect(result!.findings!.overallVerdict).toBe('accept');
     });
 
     it('probes only once across multiple invocations', async () => {
@@ -96,7 +96,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
 
       expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      expect(result!.findings!.overallVerdict).toBe('accept');
     });
   });
 
@@ -261,7 +261,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       const result = await invokeReviewer(client, realPrompt, 'sess-e2e-2', { _sleepFn: NO_SLEEP });
 
       expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      expect(result!.findings!.overallVerdict).toBe('accept');
 
       const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
       expect(call.body.agent).toBe('general');
@@ -374,7 +374,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
       expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      expect(result!.findings!.overallVerdict).toBe('accept');
       expect(result!.findings!.reviewMode).toBe('subagent');
     });
 
@@ -392,11 +392,11 @@ describe('invokeReviewer — agent resolution integration', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
       expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      expect(result!.findings!.overallVerdict).toBe('accept');
     });
 
     it('prefers info.structured_output over info.structured when both present', async () => {
-      const canonicalFindings = validFindings({ overallVerdict: 'approve' });
+      const canonicalFindings = validFindings({ overallVerdict: 'accept' });
       const aliasFallback = validFindings({ overallVerdict: 'changes_requested' });
       const client = makeClient({
         agents: [{ id: 'flowguard-reviewer' }],
@@ -411,7 +411,7 @@ describe('invokeReviewer — agent resolution integration', () => {
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
       expect(result).not.toBeNull();
       // Must use the canonical docs field (structured_output), not the server alias
-      expect(result!.findings!.overallVerdict).toBe('approve');
+      expect(result!.findings!.overallVerdict).toBe('accept');
     });
 
     it('returns null when both structured and structured_output are absent (fail-closed)', async () => {

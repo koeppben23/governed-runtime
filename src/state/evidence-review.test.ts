@@ -106,7 +106,7 @@ describe('evidence-review', () => {
         iteration: 1,
         planVersion: 1,
         reviewMode: 'subagent' as const,
-        overallVerdict: 'approve' as const,
+        overallVerdict: 'accept' as const,
         blockingIssues: [],
         majorRisks: [],
         missingVerification: [],

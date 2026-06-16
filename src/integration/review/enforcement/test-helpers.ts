@@ -65,7 +65,7 @@ export function taskResultWithFindings(
     blockingIssues?: unknown[];
   } = {},
 ): string {
-  const { verdict = 'approve', blockingIssues = [] } = opts;
+  const { verdict = 'accept', blockingIssues = [] } = opts;
   return JSON.stringify({
     iteration: 0,
     planVersion: 1,

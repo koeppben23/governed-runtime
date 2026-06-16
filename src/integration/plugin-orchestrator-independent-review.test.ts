@@ -60,7 +60,7 @@ function buildFindings() {
     iteration: 1,
     planVersion: 1,
     reviewMode: 'subagent',
-    overallVerdict: 'approve',
+    overallVerdict: 'accept',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -284,7 +284,7 @@ describe('runReviewOrchestration strict independent review with footer output', 
         reviewOutputMode: 'structured_output',
         structuredOutputUsed: true,
         reviewAssuranceLevel: 'structured_high',
-        capturedVerdict: 'approve',
+        capturedVerdict: 'accept',
       });
       expect(invocation?.invocationId).toBe(obligation?.invocationId);
 
@@ -339,13 +339,13 @@ describe('runReviewOrchestration strict independent review with footer output', 
       expect(pendingReview).toMatchObject({
         subagentCalled: true,
         subagentRecord: { sessionId: CHILD_SESSION_ID, completedAt: NOW },
-        capturedFindings: { overallVerdict: 'approve', sessionId: CHILD_SESSION_ID },
+        capturedFindings: { overallVerdict: 'accept', sessionId: CHILD_SESSION_ID },
       });
 
       const parsed = JSON.parse(output.output) as Record<string, unknown>;
       expect(parsed.next).toEqual(expect.stringContaining('INDEPENDENT_REVIEW_COMPLETED'));
       expect(parsed.pluginReviewFindings).toMatchObject({
-        overallVerdict: 'approve',
+        overallVerdict: 'accept',
         reviewedBy: { sessionId: CHILD_SESSION_ID },
         attestation: {
           toolObligationId: OBLIGATION_ID,

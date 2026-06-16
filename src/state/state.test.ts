@@ -255,7 +255,7 @@ describe('state schemas', () => {
           prevDigest: null,
           currDigest: 'abc',
           revisionDelta: 'none',
-          verdict: 'approve',
+          verdict: 'accept',
         }),
       ).toThrow();
     });
@@ -268,7 +268,7 @@ describe('state schemas', () => {
           prevDigest: null,
           currDigest: 'abc',
           revisionDelta: 'none',
-          verdict: 'approve',
+          verdict: 'accept',
         }),
       ).toThrow();
     });
@@ -408,8 +408,8 @@ describe('state schemas', () => {
       expect(RevisionDelta.options).toEqual(['none', 'minor', 'major']);
     });
 
-    it('LoopVerdict has 3 values: approve, changes_requested, unable_to_review (no reject)', () => {
-      expect(LoopVerdict.options).toEqual(['approve', 'changes_requested', 'unable_to_review']);
+    it('LoopVerdict has 3 values: accept, changes_requested, unable_to_review (no reject)', () => {
+      expect(LoopVerdict.options).toEqual(['accept', 'changes_requested', 'unable_to_review']);
     });
 
     it('LoopVerdict rejects unknown values', () => {
@@ -451,7 +451,7 @@ describe('state schemas', () => {
         iteration: 1,
         planVersion: 1,
         reviewMode: 'subagent' as const,
-        overallVerdict: 'approve' as const,
+        overallVerdict: 'accept' as const,
         blockingIssues: [],
         majorRisks: [],
         missingVerification: [],

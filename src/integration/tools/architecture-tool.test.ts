@@ -111,13 +111,13 @@ describe('integration/tools/architecture (wrapper)', () => {
     overrides: Partial<{
       iteration: number;
       planVersion: number;
-      overallVerdict: 'approve' | 'changes_requested';
+      overallVerdict: 'accept' | 'changes_requested';
     }> = {},
   ) => ({
     iteration: overrides.iteration ?? 1,
     planVersion: overrides.planVersion ?? 1,
     reviewMode: 'subagent' as const,
-    overallVerdict: overrides.overallVerdict ?? 'approve',
+    overallVerdict: overrides.overallVerdict ?? 'accept',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -211,7 +211,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       {
         title: 'ADR',
         adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
       },
       {} as never,
     );
@@ -251,7 +251,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.isCommandAllowed.mockReturnValue(false);
     const { architecture } = await import('./architecture.js');
-    const res = await architecture.execute({ reviewVerdict: 'approve' }, {} as never);
+    const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
     expect(JSON.parse(String(res)).code).toBe('COMMAND_NOT_ALLOWED');
   });
 
@@ -269,7 +269,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     const { architecture } = await import('./architecture.js');
-    const res = await architecture.execute({ reviewVerdict: 'approve' }, {} as never);
+    const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
     expect(JSON.parse(String(res)).code).toBe('ARCHITECTURE_REVIEW_LOOP_REQUIRED');
   });
 
@@ -286,7 +286,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     const { architecture } = await import('./architecture.js');
-    const res = await architecture.execute({ reviewVerdict: 'approve' }, {} as never);
+    const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
     expect(JSON.parse(String(res)).code).toBe('NO_ARCHITECTURE');
   });
 
@@ -424,8 +424,8 @@ describe('integration/tools/architecture (wrapper)', () => {
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute(
       {
-        reviewVerdict: 'approve',
-        reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'approve' }),
+        reviewVerdict: 'accept',
+        reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'accept' }),
       },
       {} as never,
     );
@@ -567,7 +567,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       iteration: 1,
       planVersion: 1,
       reviewMode: 'subagent' as const,
-      overallVerdict: 'approve' as const,
+      overallVerdict: 'accept' as const,
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -693,7 +693,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     const { architecture } = await import('./architecture.js');
-    const res = await architecture.execute({ reviewVerdict: 'approve' }, {} as never);
+    const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
     expect(JSON.parse(String(res)).code).toBe('REVIEW_FINDINGS_REQUIRED');
   });
 
@@ -743,10 +743,10 @@ describe('integration/tools/architecture (wrapper)', () => {
       evalResult: { kind: 'pending' },
       transitions: [],
     }));
-    const newFinding = makeFindings({ iteration: 1, overallVerdict: 'approve' });
+    const newFinding = makeFindings({ iteration: 1, overallVerdict: 'accept' });
     const { architecture } = await import('./architecture.js');
     await architecture.execute(
-      { reviewVerdict: 'approve', reviewFindings: newFinding },
+      { reviewVerdict: 'accept', reviewFindings: newFinding },
       {} as never,
     );
     const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {
@@ -756,7 +756,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(writtenState.architecture?.reviewFindings?.[0]?.overallVerdict).toBe(
       'changes_requested',
     );
-    expect(writtenState.architecture?.reviewFindings?.[1]?.overallVerdict).toBe('approve');
+    expect(writtenState.architecture?.reviewFindings?.[1]?.overallVerdict).toBe('accept');
   });
 
   it('routes overallVerdict=unable_to_review to BLOCKED in Mode B (slice 7c, P1.3 parity)', async () => {
@@ -791,7 +791,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     };
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute(
-      { reviewVerdict: 'approve', reviewFindings: findings },
+      { reviewVerdict: 'accept', reviewFindings: findings },
       {} as never,
     );
     expect(JSON.parse(String(res)).code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
@@ -865,7 +865,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute(
       {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
         reviewFindings: {
           iteration: 1,
           planVersion: 1,
@@ -900,7 +900,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent',
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -910,7 +910,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       reviewedAt: now,
     };
 
-    function stateWithEvidence(verdict: 'approve' | 'changes_requested' = 'approve') {
+    function stateWithEvidence(verdict: 'accept' | 'changes_requested' = 'accept') {
       const rawFindings = { ...validRawFindings, overallVerdict: verdict };
       return makeState('ARCHITECTURE', {
         architecture: {
@@ -972,9 +972,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       });
     }
 
-    function strictArchitectureFindings(
-      overallVerdict: 'approve' | 'changes_requested' = 'approve',
-    ) {
+    function strictArchitectureFindings(overallVerdict: 'accept' | 'changes_requested' = 'accept') {
       return {
         ...validRawFindings,
         overallVerdict,
@@ -990,7 +988,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     }
 
     function stateWithManualAttestedEvidence() {
-      const findings = strictArchitectureFindings('approve');
+      const findings = strictArchitectureFindings('accept');
       return makeState('ARCHITECTURE', {
         architecture: {
           id: 'ADR-001',
@@ -1051,7 +1049,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     }
 
     it('HAPPY: host_task_required + no reviewFindings + evidence available → succeeds', async () => {
-      mocks.state = stateWithEvidence('approve');
+      mocks.state = stateWithEvidence('accept');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
         maxSelfReviewIterations: 3,
@@ -1066,7 +1064,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       });
 
       const { architecture } = await import('./architecture.js');
-      const res = await architecture.execute({ reviewVerdict: 'approve' }, {} as never);
+      const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
       const parsed = JSON.parse(String(res));
       // Should NOT be blocked — evidence-resolved findings used
       expect(parsed.error).toBeUndefined();
@@ -1105,7 +1103,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       });
 
       const { architecture } = await import('./architecture.js');
-      const res = await architecture.execute({ reviewVerdict: 'approve' }, {} as never);
+      const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
       const parsed = JSON.parse(String(res));
       expect(parsed.error).toBe(true);
       expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -1123,7 +1121,7 @@ describe('integration/tools/architecture (wrapper)', () => {
 
       const { architecture } = await import('./architecture.js');
       const res = await architecture.execute(
-        { reviewVerdict: 'approve' }, // mismatch
+        { reviewVerdict: 'accept' }, // mismatch
         {} as never,
       );
       const parsed = JSON.parse(String(res));
@@ -1132,7 +1130,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     });
 
     it('EDGE: non-host_task + no reviewFindings → BLOCKED (unchanged behavior)', async () => {
-      mocks.state = stateWithEvidence('approve');
+      mocks.state = stateWithEvidence('accept');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
         maxSelfReviewIterations: 3,
@@ -1141,14 +1139,14 @@ describe('integration/tools/architecture (wrapper)', () => {
       });
 
       const { architecture } = await import('./architecture.js');
-      const res = await architecture.execute({ reviewVerdict: 'approve' }, {} as never);
+      const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
       const parsed = JSON.parse(String(res));
       expect(parsed.error).toBe(true);
       expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
     });
 
     it('EDGE: host_task_required + agent submits reviewFindings → ignored, evidence used (BUG-17)', async () => {
-      mocks.state = stateWithEvidence('approve');
+      mocks.state = stateWithEvidence('accept');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
         maxSelfReviewIterations: 3,
@@ -1165,8 +1163,8 @@ describe('integration/tools/architecture (wrapper)', () => {
       const { architecture } = await import('./architecture.js');
       const res = await architecture.execute(
         {
-          reviewVerdict: 'approve',
-          reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'approve' }),
+          reviewVerdict: 'accept',
+          reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'accept' }),
         },
         {} as never,
       );
@@ -1179,7 +1177,7 @@ describe('integration/tools/architecture (wrapper)', () => {
       // BUG-17: In host_task_required mode, agent-submitted reviewFindings are
       // completely ignored. Even invalid/mismatched findings don't cause a BLOCKED
       // because evidence is resolved from plugin instead.
-      mocks.state = stateWithEvidence('approve');
+      mocks.state = stateWithEvidence('accept');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
         maxSelfReviewIterations: 3,
@@ -1196,20 +1194,20 @@ describe('integration/tools/architecture (wrapper)', () => {
       const { architecture } = await import('./architecture.js');
       const res = await architecture.execute(
         {
-          reviewVerdict: 'approve',
+          reviewVerdict: 'accept',
           // Agent submits WRONG iteration — would normally be blocked, but BUG-17 ignores it
           reviewFindings: makeFindings({ iteration: 999, overallVerdict: 'changes_requested' }),
         },
         {} as never,
       );
       const parsed = JSON.parse(String(res));
-      // Still succeeds — evidence 'approve' matches reviewVerdict 'approve'
+      // Still succeeds — evidence 'accept' matches reviewVerdict 'accept'
       expect(parsed.error).toBeUndefined();
     });
 
     it('REGRESSION: sdk_allowed + agent submits reviewFindings → validates (non-host_task path)', async () => {
       // BUG-17 regression guard: non-host_task modes still validate agent findings
-      mocks.state = stateWithEvidence('approve');
+      mocks.state = stateWithEvidence('accept');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
         maxSelfReviewIterations: 3,
@@ -1226,8 +1224,8 @@ describe('integration/tools/architecture (wrapper)', () => {
       const { architecture } = await import('./architecture.js');
       const res = await architecture.execute(
         {
-          reviewVerdict: 'approve',
-          reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'approve' }),
+          reviewVerdict: 'accept',
+          reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'accept' }),
         },
         {} as never,
       );
@@ -1254,7 +1252,7 @@ describe('integration/tools/architecture (wrapper)', () => {
 
       const { architecture } = await import('./architecture.js');
       const res = await architecture.execute(
-        { reviewVerdict: 'approve', reviewFindings: strictArchitectureFindings('approve') },
+        { reviewVerdict: 'accept', reviewFindings: strictArchitectureFindings('accept') },
         {} as never,
       );
       const parsed = JSON.parse(String(res));

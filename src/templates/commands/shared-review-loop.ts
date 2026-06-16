@@ -72,18 +72,19 @@ export interface ReviewLoopParams {
  * no multi-sentence paragraphs with embedded conditionals.
  */
 export function SHARED_REVIEW_LOOP(p: ReviewLoopParams): string {
-  return `   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED":
+  return `   - \`reviewVerdict\` records the INDEPENDENT REVIEWER's result, never your own approval. On convergence it only advances to the human review gate, where the USER approves the ${p.artifactName} via /review-decision. \`flowguard_decision\` is the only user approval.
+   - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED":
        1. Read \`overallVerdict\` from \`pluginReviewFindings\` in the response.
        2. host_task_required mode: findings are resolved from plugin evidence automatically — submit only the verdict without \`reviewFindings\`.
        3. SDK mode: pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`.
-       4. "approve": Call \`${p.toolName}({ reviewVerdict: "approve" })\` (or with \`reviewFindings\` in SDK mode).
+       4. "accept": Call \`${p.toolName}({ reviewVerdict: "accept" })\` (or with \`reviewFindings\` in SDK mode). This is the reviewer's acceptance, not user approval.
        5. "changes_requested": Revise the ${p.artifactName} to address blocking issues, then call \`${p.toolName}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\` (or with \`reviewFindings\` in SDK mode).${p.changesRequestedExtra}
        6. "unable_to_review": The reviewer declared the ${p.artifactName} unreviewable (${p.unableDescription}). The tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same ${p.artifactName} — that obligation is consumed. Report the reviewer's findings to the user, then either ${p.unableRecoveryA} OR ${p.unableRecoveryB}.
    - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED":
        1. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool${p.subagentExtra}. Pass the compact Discovery context captured in Phase 1 (health, drift, detectedStack, verificationCandidates, risk surfaces), and instruct the subagent to check Discovery health and drift BEFORE any repo-dependent quality claim and to mark Discovery-dependent claims NOT_VERIFIED when they cannot be correlated to local repository Discovery.
        2. Submit the verdict. In host_task_required mode, plugin evidence is resolved automatically — do not submit \`reviewFindings\`.
        3. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance.
-        4. **FALLBACK**: If the Task tool cannot spawn the reviewer (error, agent unavailable${p.fallbackExtra}), do not invent ReviewFindings and do not approve. In strict host-task mode, report the reviewer transport failure and stop; if policy explicitly permits a diagnostic unavailable marker, submit \`${p.toolName}({ reviewVerdict: "approve", reviewerUnavailable: true })\` only after the real spawn failure so FlowGuard can fail closed with recovery guidance.
+        4. **FALLBACK**: If the Task tool cannot spawn the reviewer (error, agent unavailable${p.fallbackExtra}), do NOT invent ReviewFindings and do NOT approve. Report the real reviewer transport failure to the user and stop — independent review is mandatory and cannot be self-substituted. \`reviewerUnavailable: true\` is a fail-closed signal only: FlowGuard blocks with \`REVIEWER_UNAVAILABLE_STRICT\` and recovery guidance; it never approves and never enables self-review.
    - If review converged: Report the result per the Presentation section below.
    - If another iteration is needed: Repeat from step ${p.repeatStep} ${p.iterationNote}.
    - If the tool returns BLOCKED with code \`SUBAGENT_UNABLE_TO_REVIEW\`: Stop the review loop. Treat the obligation as consumed (no retry). Surface the recovery steps from the reason payload.

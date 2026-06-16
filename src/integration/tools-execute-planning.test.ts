@@ -60,6 +60,8 @@ import {
 } from '../__fixtures__.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import type { ReviewVerdict } from '../state/evidence.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -165,6 +167,7 @@ afterEach(async () => {
       assurance: 'best_effort' as const,
     });
   cleanupEnv();
+  clearUserDecisionIntents();
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -185,6 +188,20 @@ async function hydrateSession(
   return parseToolResult(raw);
 }
 
+function recordUserDecision(verdict: ReviewVerdict): void {
+  const command =
+    verdict === 'approve'
+      ? '/approve'
+      : verdict === 'changes_requested'
+        ? '/request-changes'
+        : '/reject';
+  recordUserDecisionIntent({
+    sessionId: ctx.sessionID,
+    command,
+    expectedVerdict: verdict,
+  });
+}
+
 /** Hydrate + ticket. Convenience for tests that need to start from PLAN phase. */
 async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> {
   await hydrateSession();
@@ -200,7 +217,7 @@ async function currentSessionDir(): Promise<string> {
 
 async function fulfillPlanReview(
   iteration = 0,
-  overallVerdict: 'approve' | 'changes_requested' = 'approve',
+  overallVerdict: 'accept' | 'changes_requested' = 'accept',
 ) {
   return fulfillStrictReviewObligation(await currentSessionDir(), {
     obligationType: 'plan',
@@ -212,7 +229,7 @@ async function fulfillPlanReview(
 
 async function fulfillArchitectureReview(
   iteration = 0,
-  overallVerdict: 'approve' | 'changes_requested' = 'approve',
+  overallVerdict: 'accept' | 'changes_requested' = 'accept',
 ) {
   return fulfillStrictReviewObligation(await currentSessionDir(), {
     obligationType: 'architecture',
@@ -397,7 +414,7 @@ describe('plan', () => {
     iteration: 1,
     planVersion: 1,
     reviewMode: 'subagent' as const,
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -411,7 +428,7 @@ describe('plan', () => {
     iteration: 1,
     planVersion: 1,
     reviewMode: 'self' as unknown as 'subagent',
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -434,8 +451,8 @@ describe('plan', () => {
     it('Mode B: approve converges after mandatory subagent review', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-      const reviewFindings = await fulfillPlanReview(0, 'approve');
-      const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'accept');
+      const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       // In solo mode, max iterations is 1, so should converge
@@ -516,7 +533,7 @@ describe('plan', () => {
 
     it('normalizes mixed first-call planText + reviewVerdict into initial plan submission', async () => {
       await hydrateAndTicket();
-      const raw = await plan.execute({ planText: '## Plan', reviewVerdict: 'approve' }, ctx);
+      const raw = await plan.execute({ planText: '## Plan', reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).not.toBe(true);
       expect(result.status).toContain('Plan submitted');
@@ -528,7 +545,7 @@ describe('plan', () => {
       const raw = await plan.execute(
         {
           planText: '## Plan',
-          reviewVerdict: 'approve',
+          reviewVerdict: 'accept',
           reviewFindings: modeBSubagentFindings,
           reviewerUnavailable: true,
         },
@@ -575,7 +592,7 @@ describe('plan', () => {
     it('blocks verdict before any plan exists with PLAN_SUBMISSION_REQUIRED', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
-        { reviewVerdict: 'approve', reviewFindings: modeBSubagentFindings },
+        { reviewVerdict: 'accept', reviewFindings: modeBSubagentFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -618,16 +635,13 @@ describe('plan', () => {
     it('blocks approval mixed with planText after the plan review loop has started', async () => {
       await setupMidLoopPlan();
 
-      const raw = await plan.execute(
-        { planText: '## Revised Plan', reviewVerdict: 'approve' },
-        ctx,
-      );
+      const raw = await plan.execute({ planText: '## Revised Plan', reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
 
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_APPROVE_WITH_TEXT');
       expect(result.recovery).toContain(
-        'For host_task_required approval: call flowguard_plan({ reviewVerdict: "approve" }) after reviewer evidence is captured',
+        'For host_task_required approval: call flowguard_plan({ reviewVerdict: "accept" }) after reviewer evidence is captured',
       );
       await expectStateStillInPlan();
     });
@@ -670,12 +684,13 @@ describe('plan', () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
       await plan.execute({ planText: '## Plan' }, ctx);
-      const reviewFindings = await fulfillPlanReview(0, 'approve');
+      const reviewFindings = await fulfillPlanReview(0, 'accept');
 
-      const reviewRaw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+      const reviewRaw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
       const reviewResult = parseToolResult(reviewRaw);
       expect(reviewResult.phase).toBe('PLAN_REVIEW');
 
+      recordUserDecision('changes_requested');
       const decisionRaw = await decision.execute(
         { verdict: 'changes_requested', rationale: 'Needs more detail' },
         ctx,
@@ -742,6 +757,7 @@ describe('plan', () => {
       // State on disk truly sits at the human gate.
       const state = await readState(await currentSessionDir());
       expect(state!.phase).toBe('PLAN_REVIEW');
+      expect(state!.reviewDecision).toBeNull();
     });
 
     it('TEAM: human approve advances the force-converged plan to VALIDATION', async () => {
@@ -749,6 +765,7 @@ describe('plan', () => {
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
 
+      recordUserDecision('approve');
       const decisionResult = parseToolResult(
         await decision.execute(
           { verdict: 'approve', rationale: 'Acceptable despite open findings' },
@@ -765,6 +782,7 @@ describe('plan', () => {
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
 
+      recordUserDecision('changes_requested');
       const decisionResult = parseToolResult(
         await decision.execute(
           { verdict: 'changes_requested', rationale: 'Address the open findings' },
@@ -783,6 +801,7 @@ describe('plan', () => {
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
 
+      recordUserDecision('reject');
       const decisionResult = parseToolResult(
         await decision.execute({ verdict: 'reject', rationale: 'Wrong approach entirely' }, ctx),
       );
@@ -873,10 +892,10 @@ describe('plan', () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan' }, ctx);
 
-      const reviewFindings = await fulfillPlanReview(0, 'approve');
+      const reviewFindings = await fulfillPlanReview(0, 'accept');
       const raw = await plan.execute(
         {
-          reviewVerdict: 'approve',
+          reviewVerdict: 'accept',
           reviewFindings: {
             ...reviewFindings,
             blockingIssues: [
@@ -902,7 +921,7 @@ describe('plan', () => {
       const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
       const raw = await plan.execute(
         {
-          reviewVerdict: 'approve',
+          reviewVerdict: 'accept',
           reviewFindings,
         },
         ctx,
@@ -926,7 +945,7 @@ describe('plan', () => {
         selfReview: null,
       });
 
-      const raw = await plan.execute({ reviewVerdict: 'approve' }, ctx);
+      const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_REVIEW_LOOP_REQUIRED');
@@ -946,7 +965,7 @@ describe('plan', () => {
         plan: null,
       });
 
-      const raw = await plan.execute({ reviewVerdict: 'approve' }, ctx);
+      const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_SUBMISSION_REQUIRED');
@@ -958,8 +977,8 @@ describe('plan', () => {
       const planText =
         '## Plan\n\n### Objective\nImplement payment validation.\n\n### Approach\nUse a validation pipeline.\n\n### Steps\n1. Add `validate.ts`.\n2. Add tests.\n\n### Files to Modify\n- `src/payments/validate.ts`\n\n### Edge Cases\n1. Empty input.\n\n### Validation Criteria\n1. `npm test` passes.\n\n### Verification Plan\n1. `npm test` — Source: package.json:scripts.test';
       await plan.execute({ planText }, ctx);
-      const reviewFindings = await fulfillPlanReview(0, 'approve');
-      const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'accept');
+      const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
       const result = parseToolResult(raw);
 
       expect(result.error).toBeUndefined();
@@ -974,8 +993,8 @@ describe('plan', () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix auth', source: 'user' }, ctx);
       await plan.execute({ planText: '## Plan\n1. Fix auth\n2. Add tests' }, ctx);
-      const reviewFindings = await fulfillPlanReview(0, 'approve');
-      const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'accept');
+      const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
       const result = parseToolResult(raw);
 
       expect(result.error).toBeUndefined();
@@ -987,8 +1006,8 @@ describe('plan', () => {
     it('non-PLAN_REVIEW convergence (solo auto-advance) does not include reviewCard', async () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-      const reviewFindings = await fulfillPlanReview(0, 'approve');
-      const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'accept');
+      const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
       const result = parseToolResult(raw);
 
       // Solo auto-advances through VALIDATION; if phase is not PLAN_REVIEW, no card
@@ -1008,7 +1027,7 @@ describe('plan', () => {
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
       // fulfillPlanReview installs a valid attestation; mutate the verdict.
-      const baseFindings = await fulfillPlanReview(0, 'approve');
+      const baseFindings = await fulfillPlanReview(0, 'accept');
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
       const raw = await plan.execute(
@@ -1026,11 +1045,11 @@ describe('plan', () => {
       // an unreviewable finding can be coerced into convergence.
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
-      const baseFindings = await fulfillPlanReview(0, 'approve');
+      const baseFindings = await fulfillPlanReview(0, 'accept');
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
       const raw = await plan.execute(
-        { reviewVerdict: 'approve', reviewFindings: unableFindings },
+        { reviewVerdict: 'accept', reviewFindings: unableFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -1043,11 +1062,11 @@ describe('plan', () => {
       // tool stack (not only via the unit-level validation test).
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-      const baseFindings = await fulfillPlanReview(0, 'approve');
+      const baseFindings = await fulfillPlanReview(0, 'accept');
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
       const raw = await plan.execute(
-        { reviewVerdict: 'approve', reviewFindings: unableFindings },
+        { reviewVerdict: 'accept', reviewFindings: unableFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -1076,7 +1095,7 @@ describe('plan', () => {
       // are evaluated.
       await hydrateSession({ policyMode: 'solo' });
       await architecture.execute({ title: 'PostgreSQL', adrText }, ctx);
-      const baseFindings = await fulfillArchitectureReview(0, 'approve');
+      const baseFindings = await fulfillArchitectureReview(0, 'accept');
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
       const raw = await architecture.execute(
@@ -1095,11 +1114,11 @@ describe('plan', () => {
       // architecture convergence.
       await hydrateSession({ policyMode: 'solo' });
       await architecture.execute({ title: 'PostgreSQL', adrText }, ctx);
-      const baseFindings = await fulfillArchitectureReview(0, 'approve');
+      const baseFindings = await fulfillArchitectureReview(0, 'accept');
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
       const raw = await architecture.execute(
-        { reviewVerdict: 'approve', reviewFindings: unableFindings },
+        { reviewVerdict: 'accept', reviewFindings: unableFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -1112,11 +1131,11 @@ describe('plan', () => {
       // architecture tool stack, parity with the plan version above.
       await hydrateSession({ policyMode: 'solo' });
       await architecture.execute({ title: 'PostgreSQL', adrText }, ctx);
-      const baseFindings = await fulfillArchitectureReview(0, 'approve');
+      const baseFindings = await fulfillArchitectureReview(0, 'accept');
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
       const raw = await architecture.execute(
-        { reviewVerdict: 'approve', reviewFindings: unableFindings },
+        { reviewVerdict: 'accept', reviewFindings: unableFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -1135,11 +1154,11 @@ describe('plan', () => {
       // validateReviewFindings to prevent cross-iteration replay.
       await hydrateSession({ policyMode: 'solo' });
       await architecture.execute({ title: 'PostgreSQL', adrText }, ctx);
-      const baseFindings = await fulfillArchitectureReview(0, 'approve');
+      const baseFindings = await fulfillArchitectureReview(0, 'accept');
       const driftFindings = { ...baseFindings, planVersion: 2 };
 
       const raw = await architecture.execute(
-        { reviewVerdict: 'approve', reviewFindings: driftFindings },
+        { reviewVerdict: 'accept', reviewFindings: driftFindings },
         ctx,
       );
       const result = parseToolResult(raw);

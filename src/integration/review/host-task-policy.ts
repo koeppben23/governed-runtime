@@ -32,8 +32,11 @@ function buildHostTaskPolicyOutput(
   if (childSessionId) {
     result.next =
       `${REVIEW_COMPLETED_PREFIX}: Host evidence verified via Task tool subagent call ` +
-      `(session ${childSessionId}). Submit the verdict with the exact ReviewFindings from ` +
-      `the subagent response.`;
+      `(session ${childSessionId}). Submit ONLY the verdict (reviewVerdict) matching the ` +
+      `reviewer's overallVerdict — the captured reviewer evidence is resolved automatically. ` +
+      `Do NOT submit, copy, or alter reviewFindings (session-mismatched or hand-edited findings ` +
+      `are rejected). For 'changes_requested', also submit the revised artifact. The reviewer ` +
+      `verdict is NOT user approval; it only advances to the human review gate.`;
     result.reviewInvocation = {
       policy,
       status: 'host_task_evidence_verified',
@@ -67,12 +70,16 @@ function buildHostTaskBlockedOutput(
   result.next =
     `INDEPENDENT_REVIEW_REQUIRED: ${policy === 'host_task_required' ? 'Policy requires' : 'Policy prefers'} ` +
     `a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool. ` +
-    `Call the Task tool with subagent_type="${REVIEWER_SUBAGENT_TYPE}" and submit the exact ` +
-    `ReviewFindings returned by that subagent.` +
+    `Call the Task tool with subagent_type="${REVIEWER_SUBAGENT_TYPE}".` +
     (contextSuffix ? ` Context: ${contextSuffix}.` : '') +
     ` The reviewer subagent must NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, flowguard_architecture) in its own session.` +
+    ` When it returns, submit ONLY the verdict (reviewVerdict) matching the reviewer's overallVerdict — ` +
+    `the captured evidence is resolved automatically; do NOT submit, copy, or alter reviewFindings. ` +
+    `reviewVerdict is the reviewer's result, NOT user approval, and only advances to the human review gate.` +
     ` FALLBACK: If the Task tool cannot spawn the reviewer (error, unavailable agent, or missing infrastructure), ` +
-    `submit your reviewVerdict directly with reviewerUnavailable: true. This proceeds with self-review assurance.`;
+    `do NOT approve and do NOT invent findings — report the transport failure and stop; independent review is ` +
+    `mandatory and cannot be self-substituted. Setting reviewerUnavailable: true fails closed ` +
+    `(REVIEWER_UNAVAILABLE_STRICT) with recovery guidance; it never approves or enables self-review.`;
   result.reviewInvocation = {
     policy,
     status: policy === 'host_task_required' ? 'blocked_until_host_task' : 'host_task_requested',

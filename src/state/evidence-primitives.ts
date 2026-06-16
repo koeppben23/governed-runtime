@@ -41,7 +41,10 @@ export type RevisionDelta = z.infer<typeof RevisionDelta>;
  * Plan/implementation review loop verdict — emitted by the reviewer subagent.
  *
  * Three values:
- * - `approve`: the artifact is correct; iteration may converge.
+ * - `accept`: the INDEPENDENT REVIEWER accepts the artifact; the loop may
+ *   converge. This is the reviewer's verdict, NOT user approval — convergence
+ *   only advances to the human review gate, where the user decides via
+ *   `ReviewVerdict` (`approve` / `changes_requested` / `reject`).
  * - `changes_requested`: the artifact needs revision; the reviewer documents
  *   blocking issues. The submitter then revises and resubmits.
  * - `unable_to_review`: the reviewer cannot honestly evaluate due to a
@@ -53,10 +56,12 @@ export type RevisionDelta = z.infer<typeof RevisionDelta>;
  *   converged); recovery is via fresh /plan or /implement submit (resets
  *   iteration to 0).
  *
- * Note: `reject` is intentionally absent here — that is a human-only action
- * at User Gates, captured by `ReviewVerdict` above.
+ * Note: `approve` and `reject` are intentionally absent here — those are the
+ * human user-gate verdicts captured by `ReviewVerdict` above. The reviewer's
+ * acceptance is deliberately a distinct token (`accept`) so it can never be
+ * mistaken for a user approval.
  */
-export const LoopVerdict = z.enum(['approve', 'changes_requested', 'unable_to_review']);
+export const LoopVerdict = z.enum(['accept', 'changes_requested', 'unable_to_review']);
 export type LoopVerdict = z.infer<typeof LoopVerdict>;
 
 /** Independent review obligation type. */

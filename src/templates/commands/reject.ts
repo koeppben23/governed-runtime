@@ -24,6 +24,7 @@ Rejection reason: $ARGUMENTS
 ## Rules
 
 - Always use "reject" as the verdict for this command.
+- Only run this command when the user explicitly invoked /reject. Do not reject on the user's behalf.
 - If blocked: report the reason and stop (never work around a blocked decision).
 ${GOVERNANCE_RULES}
 ## Done-when

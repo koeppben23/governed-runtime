@@ -24,6 +24,7 @@ Decision context: $ARGUMENTS
 ## Rules
 
 - Always use "approve" as the verdict for this command.
+- Only run this command when the user explicitly invoked /approve. Do not infer approval from chat context or review findings.
 - The approval target is determined by the current phase — flowguard_decision handles routing deterministically.
 - If blocked: report the reason and stop (never work around a blocked decision).
 ${GOVERNANCE_RULES}

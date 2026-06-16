@@ -201,7 +201,7 @@ async function setupImplementDeadState(blockedCount = 1): Promise<void> {
       prevDigest: null,
       currDigest: 'test-digest',
       revisionDelta: 'none',
-      verdict: 'approve',
+      verdict: 'accept',
     },
     implementation: {
       changedFiles: ['src/test.ts'],

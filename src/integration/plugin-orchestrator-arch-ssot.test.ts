@@ -56,7 +56,7 @@ function buildFindings() {
     iteration: 1,
     planVersion: 1,
     reviewMode: 'subagent',
-    overallVerdict: 'approve',
+    overallVerdict: 'accept',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],

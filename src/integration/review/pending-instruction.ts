@@ -118,12 +118,20 @@ export function buildPendingReviewInstruction(
     };
   }
 
+  // Default = host_task_sync (host-orchestrated): the plugin captures the
+  // reviewer's findings as invocation evidence and resolves them automatically.
+  // The agent must submit ONLY the verdict; submitting, copying, or altering
+  // reviewFindings here causes a session/hash mismatch rejection. The review
+  // verdict is the independent reviewer's result, NEVER a user approval.
   return {
     reviewInvocation: { ...base, status: 'pending_review' },
     next:
       `INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, you MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool. ` +
       `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes the ${input.subjectLabel}, ` +
       `iteration=${input.iteration}, and planVersion=${input.planVersion}. ` +
-      'Parse the JSON ReviewFindings from the subagent response and submit the exact reviewFindings object.',
+      'After the reviewer returns, submit ONLY the verdict via reviewVerdict; the plugin resolves the reviewer findings from captured evidence automatically. ' +
+      'Do NOT submit, copy, or alter reviewFindings in host-task mode — hand-edited or mismatched findings are rejected (SUBAGENT_SESSION_MISMATCH / findings hash mismatch). ' +
+      'reviewVerdict records the independent reviewer result; it is NOT user approval and only advances to the human review gate. ' +
+      'Only the user approves the presented artifact via flowguard_decision (/review-decision).',
   };
 }

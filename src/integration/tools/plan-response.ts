@@ -267,7 +267,7 @@ export async function persistPlanReview(
   }
   const { state: finalState, evalResult: ev, transitions } = advanced;
   const iteration = scope.state.selfReview!.iteration + 1;
-  const approvedConverged = revision.revisionDelta === 'none' && revision.verdict === 'approve';
+  const approvedConverged = revision.revisionDelta === 'none' && revision.verdict === 'accept';
   const maxReached = iteration >= scope.maxSelfReviewIterations;
 
   // Force-convergence: the review loop exhausted its iteration budget without

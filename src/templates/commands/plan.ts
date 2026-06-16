@@ -43,7 +43,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 Payload contract for \`flowguard_plan\`:
 - Initial submission: call exactly \`flowguard_plan({ planText })\`. Do not include \`reviewVerdict\`, \`reviewFindings\`, or \`reviewerUnavailable\`.
-- Approval after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "approve" })\`; SDK/manual-attested modes include the exact reviewer output as \`reviewFindings\`.
+- Record the reviewer verdict after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict })\` (verdict only — the plugin resolves the reviewer findings from captured evidence; do NOT submit or alter \`reviewFindings\`); SDK/manual-attested modes also include the reviewer's exact \`reviewFindings\`. \`reviewVerdict: "accept"\` is the reviewer's acceptance, NOT user approval.
 - Revision after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <complete revised plan> })\`; SDK/manual-attested modes also include the exact reviewer output as \`reviewFindings\`.
 - Never submit placeholder, diagnostic, or manually fabricated \`reviewFindings\`.
 - Set \`reviewerUnavailable: true\` only after an actual Task/subagent spawn failure; never set it preemptively.
@@ -88,19 +88,19 @@ ${SHARED_REVIEW_LOOP({
 Happy path:
 1. \`flowguard_status\` → phase: TICKET, ticket present
 2. \`flowguard_plan({ planText })\` → returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-3. \`flowguard_plan({ reviewVerdict: "approve" })\` → PLAN_REVIEW
+3. \`flowguard_plan({ reviewVerdict: "accept" })\` → PLAN_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the plan)
 
 Revision path (when review returns changes_requested):
 1. \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <revised> })\`
 2. → new review starts, returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-3. \`flowguard_plan({ reviewVerdict: "approve" })\` → PLAN_REVIEW
+3. \`flowguard_plan({ reviewVerdict: "accept" })\` → PLAN_REVIEW (user gate — the USER decides via /review-decision)
 
 ${GOVERNANCE_RULES}
 ## Presentation
 
 - If the response contains a \`reviewCard\` field, display its markdown verbatim — never summarize, truncate, or omit it.
 - The reviewCard contains the formatted plan review with findings, verdict, and next actions.
-- This is mandatory output: the user relies on it to make their review decision.
+- This is mandatory output: the user relies on it to make their review decision. When phase is \`PLAN_REVIEW\`, stop after presenting the reviewCard. Do not call \`flowguard_decision\`, \`/approve\`, \`/request-changes\`, or \`/reject\` yourself; only the user's next explicit command may decide the gate.
 
 ## Done-when
 
@@ -110,5 +110,5 @@ ${GOVERNANCE_RULES}
 ${DISCOVERY_REVIEW_DONE_WHEN}
 - If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
 - Phase has advanced to PLAN_REVIEW.
-- Response ends with \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
+- Response ends with \`Next action: user must run /review-decision approve, /request-changes, or /reject.\`
 `;

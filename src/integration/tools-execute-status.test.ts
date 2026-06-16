@@ -750,7 +750,7 @@ describe('status', () => {
         await withStrictReviewFindings(sd, { planText: '## Plan\nTest plan' }),
         ctx,
       );
-      await plan.execute(await withStrictReviewFindings(sd, { reviewVerdict: 'approve' }), ctx);
+      await plan.execute(await withStrictReviewFindings(sd, { reviewVerdict: 'accept' }), ctx);
 
       // Mock a failing check
       vi.mocked(executorMock.executeCheck).mockResolvedValueOnce({

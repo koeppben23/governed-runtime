@@ -19,7 +19,7 @@ function makeReview(overrides: Record<string, unknown> = {}): Record<string, unk
     prevDigest: 'prev',
     currDigest: 'curr',
     revisionDelta: 'major',
-    verdict: 'approve',
+    verdict: 'accept',
     ...overrides,
   };
 }
@@ -90,13 +90,13 @@ describe('getReviewLoopProgress', () => {
           prevDigest: 'p',
           currDigest: 'c',
           revisionDelta: 'none',
-          verdict: 'approve',
+          verdict: 'accept',
         },
       });
       const p = getReviewLoopProgress(state)!;
       expect(p.iteration).toBe(1);
       expect(p.maxIterations).toBe(5);
-      expect(p.previousVerdict).toBe('approve');
+      expect(p.previousVerdict).toBe('accept');
       expect(p.converged).toBe(true);
       expect(p.outstandingIssues).toBeUndefined();
     });
@@ -184,7 +184,7 @@ describe('getReviewLoopProgress', () => {
           prevDigest: 'p',
           currDigest: 'c',
           revisionDelta: 'none',
-          verdict: 'approve',
+          verdict: 'accept',
         },
       });
       expect(getReviewLoopProgress(state)).toBeNull();
@@ -198,7 +198,7 @@ describe('getReviewLoopProgress', () => {
           prevDigest: 'p',
           currDigest: 'c',
           revisionDelta: 'none',
-          verdict: 'approve',
+          verdict: 'accept',
         },
       });
       expect(getReviewLoopProgress(state)).toBeNull();
@@ -323,7 +323,7 @@ describe('getReviewLoopProgress', () => {
           prevDigest: 'p',
           currDigest: 'c',
           revisionDelta: 'none',
-          verdict: 'approve',
+          verdict: 'accept',
         },
       });
       expect(getReviewLoopProgress(state)!.outstandingIssues).toBeUndefined();

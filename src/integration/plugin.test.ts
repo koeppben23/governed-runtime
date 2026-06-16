@@ -37,6 +37,7 @@ import {
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../shared/flowguard-identifiers.js';
 import { fileURLToPath } from 'node:url';
+import { clearUserDecisionIntents, consumeUserDecisionIntent } from './user-decision-intent.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -169,6 +170,58 @@ describe('integration/plugin', () => {
       expect(typeof hooks['tool.execute.after']).toBe('function');
     });
 
+    it('command.execute.before records a one-shot user decision intent', async () => {
+      clearUserDecisionIntents();
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
+      const handler = hooks['command.execute.before'];
+      expect(typeof handler).toBe('function');
+
+      await handler!(
+        { command: '/approve', sessionID: 'ses-user-command', arguments: '' },
+        { parts: [] },
+      );
+
+      expect(
+        consumeUserDecisionIntent({
+          sessionId: 'ses-user-command',
+          verdict: 'approve',
+        }),
+      ).toMatchObject({ ok: true });
+      expect(
+        consumeUserDecisionIntent({
+          sessionId: 'ses-user-command',
+          verdict: 'approve',
+        }),
+      ).toEqual({ ok: false, reason: 'missing' });
+    });
+
+    it('command.execute.before ignores ambiguous review-decision commands', async () => {
+      clearUserDecisionIntents();
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
+
+      await hooks['command.execute.before']!(
+        { command: '/review-decision', sessionID: 'ses-ambiguous', arguments: '' },
+        { parts: [] },
+      );
+
+      expect(
+        consumeUserDecisionIntent({
+          sessionId: 'ses-ambiguous',
+          verdict: 'approve',
+        }),
+      ).toEqual({ ok: false, reason: 'missing' });
+    });
+
+    it('command.execute.before does not record an intent when sessionID is missing', async () => {
+      clearUserDecisionIntents();
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
+
+      // Should not throw — missing sessionID means the hook bails with a warn log
+      await expect(
+        hooks['command.execute.before']!({ command: '/approve', arguments: '' }, { parts: [] }),
+      ).resolves.toBeUndefined();
+    });
+
     it('barrel re-exports FlowGuardAuditPlugin', () => {
       expect(barrel.FlowGuardAuditPlugin).toBe(FlowGuardAuditPlugin);
     });
@@ -233,10 +286,11 @@ describe('integration/plugin', () => {
       expect(hooks).toBeDefined();
     });
 
-    it('returns all expected hooks (tool + event + compaction)', async () => {
+    it('returns all expected hooks (command + tool + event + compaction)', async () => {
       const hooks = await FlowGuardAuditPlugin(createMockInput());
       const keys = Object.keys(hooks).sort();
       expect(keys).toEqual([
+        'command.execute.before',
         'event',
         'experimental.session.compacting',
         'tool.execute.after',
@@ -907,7 +961,7 @@ describe('integration/plugin', () => {
           iteration: 0,
           planVersion: 1,
           reviewMode: 'subagent',
-          overallVerdict: 'approve',
+          overallVerdict: 'accept',
           blockingIssues: [],
           majorRisks: [],
           missingVerification: [],
@@ -965,7 +1019,7 @@ describe('integration/plugin', () => {
           iteration: 0,
           planVersion: 1,
           reviewMode: 'self',
-          overallVerdict: 'approve',
+          overallVerdict: 'accept',
           blockingIssues: [],
           majorRisks: [],
           missingVerification: [],
@@ -1034,7 +1088,7 @@ describe('integration/plugin', () => {
           iteration: 0,
           planVersion: 1,
           reviewMode: 'subagent',
-          overallVerdict: 'approve',
+          overallVerdict: 'accept',
           blockingIssues: [],
           majorRisks: [],
           missingVerification: [],

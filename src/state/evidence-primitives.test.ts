@@ -43,10 +43,10 @@ describe('evidence-primitives', () => {
     });
 
     it('LoopVerdict parses all 3 verdicts (no reject)', () => {
-      expect(LoopVerdict.parse('approve')).toBe('approve');
+      expect(LoopVerdict.parse('accept')).toBe('accept');
       expect(LoopVerdict.parse('changes_requested')).toBe('changes_requested');
       expect(LoopVerdict.parse('unable_to_review')).toBe('unable_to_review');
-      expect(LoopVerdict.options).toEqual(['approve', 'changes_requested', 'unable_to_review']);
+      expect(LoopVerdict.options).toEqual(['accept', 'changes_requested', 'unable_to_review']);
     });
 
     it('ReviewObligationType parses all 4 obligation types', () => {

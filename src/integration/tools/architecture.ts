@@ -9,7 +9,7 @@
  *
  * Step 2: LLM reviews ADR critically, calls flowguard_architecture({
  *   reviewVerdict: "changes_requested", adrText: "revised..."
- * }) OR flowguard_architecture({ reviewVerdict: "approve" })
+ * }) OR flowguard_architecture({ reviewVerdict: "accept" })
  *   -> Tool records iteration, checks convergence
  *
  * Repeat Step 2 until converged or max iterations (from policy).
@@ -504,7 +504,7 @@ async function handleAdrReview(
 async function persistAndFormatReviewResult(input: ReviewResultContext): Promise<string> {
   const iteration = input.session.state.selfReview!.iteration + 1;
   const verdict = input.args.reviewVerdict as LoopVerdict;
-  const approvedConverged = input.revision.revisionDelta === 'none' && verdict === 'approve';
+  const approvedConverged = input.revision.revisionDelta === 'none' && verdict === 'accept';
   const maxReached = iteration >= input.session.policy.maxSelfReviewIterations;
 
   // Force-convergence: the review loop exhausted its iteration budget without
@@ -679,7 +679,7 @@ export const architecture: ToolDefinition = {
   description:
     'Submit an Architecture Decision Record (ADR) OR record a self-review verdict. Two modes:\n' +
     'Mode A (submit ADR): provide title and adrText. ADR ID is auto-generated. Records the ADR and starts the review flow.\n' +
-    "Mode B (review verdict): provide reviewVerdict ('approve' or 'changes_requested'). " +
+    "Mode B (review verdict): provide reviewVerdict ('accept' or 'changes_requested'). " +
     "If 'changes_requested', also provide revised adrText.\n" +
     'When subagentEnabled=true (the default for all built-in policies), the review is performed ' +
     `by the ${REVIEWER_SUBAGENT_TYPE} subagent and the verdict submission MUST include reviewFindings ` +
@@ -702,24 +702,27 @@ export const architecture: ToolDefinition = {
           "Required for Mode A and when reviewVerdict is 'changes_requested'.",
       ),
     reviewVerdict: z
-      .enum(['approve', 'changes_requested'])
+      .enum(['accept', 'changes_requested'])
       .optional()
       .describe(
-        'Review verdict. Omit for initial ADR submission. ' +
-          "'approve' = ADR is good, advance. " +
-          "'changes_requested' = ADR needs revision, provide updated adrText.",
+        "The INDEPENDENT REVIEWER's verdict on the ADR — NOT user approval. " +
+          'Omit for initial ADR submission. ' +
+          "'accept' = the reviewer accepts the ADR; the loop converges and advances to the " +
+          'ARCH_REVIEW user gate (the user still approves via /review-decision). ' +
+          "'changes_requested' = the ADR needs revision; provide updated adrText.",
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(
-      `Structured findings from the ${REVIEWER_SUBAGENT_TYPE} subagent. ` +
-        'Required when reviewVerdict is "approve" and subagentEnabled=true. ' +
-        'Use exactly the JSON object the subagent returned — do not modify it.',
+      `The ${REVIEWER_SUBAGENT_TYPE} subagent's structured findings. SDK mode only — pass the ` +
+        'reviewer output verbatim. In host-task mode do NOT submit reviewFindings: the plugin ' +
+        'resolves them from captured evidence, and hand-edited or mismatched findings are rejected.',
     ),
     reviewerUnavailable: z
       .boolean()
       .optional()
       .describe(
-        'Set to true when the reviewer subagent cannot be invoked (Task tool fails, ' +
-          'agent unavailable). Allows self-review fallback in host_task_required mode.',
+        'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
+          'unavailable). This is a fail-closed signal: FlowGuard blocks with SUBAGENT_UNABLE_TO_REVIEW ' +
+          'and recovery guidance. It never enables self-review and never approves the ADR.',
       ),
   },
   async execute(args, context) {

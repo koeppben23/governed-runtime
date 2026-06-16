@@ -133,7 +133,7 @@ async function driveToValidation(): Promise<void> {
   await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
   await callOk(ticket, { text: 'Test task', source: 'user' });
   await callOk(plan, { planText: '## Plan\nTest plan' });
-  await callOk(plan, { reviewVerdict: 'approve' });
+  await callOk(plan, { reviewVerdict: 'accept' });
   // Now should be in VALIDATION phase
 }
 

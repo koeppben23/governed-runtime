@@ -47,6 +47,7 @@ import {
   sessionDir as resolveSessionDir,
   workspaceDir as resolveWorkspaceDir,
 } from '../adapters/workspace/index.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -115,6 +116,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  clearUserDecisionIntents();
   vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
     id: 'test-operator',
     email: 'test@flowguard.dev',
@@ -133,12 +135,28 @@ async function callOk(
   context: TestToolContext = ctx,
 ): Promise<Record<string, unknown>> {
   const finalArgs = await withStrictReviewFindings(await getSessDir(context), args);
+  recordDecisionIntentForTool(tool, finalArgs, context);
   const raw = await tool.execute(finalArgs, context);
   const result = parseToolResult(raw);
   if (result.error) {
     throw new Error(`Tool returned error: ${result.code} — ${result.message}`);
   }
   return result;
+}
+
+function recordDecisionIntentForTool(
+  tool: { execute: (args: unknown, ctx: TestToolContext) => Promise<string> },
+  args: unknown,
+  context: TestToolContext = ctx,
+): void {
+  if (tool !== decision || typeof args !== 'object' || args === null) return;
+  const verdict = (args as { verdict?: unknown }).verdict;
+  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
+  recordUserDecisionIntent({
+    sessionId: context.sessionID,
+    command: '/review-decision',
+    expectedVerdict: verdict,
+  });
 }
 
 /** Get current phase from status tool. */
@@ -230,7 +248,7 @@ describe('e2e-workflow', () => {
 
       // 4. Plan (Mode B: approve self-review)
       // Solo: maxSelfReviewIterations=1, so first approve should converge
-      await callOk(plan, { reviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'accept' });
       // Solo: auto-approves PLAN_REVIEW → VALIDATION (discovery detects TypeScript → activeChecks=['typecheck'])
       const afterPlan = await getPhase();
       expect(afterPlan).toBe('VALIDATION');
@@ -243,7 +261,7 @@ describe('e2e-workflow', () => {
       await callOk(implement, {});
 
       // 7. Implement (Mode B: approve review)
-      await callOk(implement, { reviewVerdict: 'approve' });
+      await callOk(implement, { reviewVerdict: 'accept' });
       // Solo: auto-approves EVIDENCE_REVIEW → COMPLETE
       const finalPhase = await getPhase();
       expect(finalPhase).toBe('COMPLETE');
@@ -274,7 +292,7 @@ describe('e2e-workflow', () => {
       for (let i = 0; i < 5; i++) {
         const phase = await getPhase();
         if (phase === 'PLAN_REVIEW') break;
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
@@ -292,7 +310,7 @@ describe('e2e-workflow', () => {
       for (let i = 0; i < 5; i++) {
         const phase = await getPhase();
         if (phase === 'EVIDENCE_REVIEW') break;
-        await callOk(implement, { reviewVerdict: 'approve' });
+        await callOk(implement, { reviewVerdict: 'accept' });
       }
       expect(await getPhase()).toBe('EVIDENCE_REVIEW');
 
@@ -311,7 +329,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Plan' });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
@@ -331,7 +349,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Original Plan' });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
       }
 
       await callOk(decision, { verdict: 'changes_requested', rationale: 'More detail' });
@@ -355,7 +373,7 @@ describe('e2e-workflow', () => {
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Task', source: 'user' });
       await callOk(plan, { planText: '## Plan' });
-      await callOk(plan, { reviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'accept' });
       // With verificationCandidates, activeChecks is not empty → stops at VALIDATION
       expect(await getPhase()).toBe('VALIDATION');
 
@@ -385,7 +403,7 @@ describe('e2e-workflow', () => {
       const stateAfterReplan = await readState(await getSessDir());
       expect(stateAfterReplan!.validation).toHaveLength(0);
 
-      await callOk(plan, { reviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'accept' });
       // In solo, may stop at PLAN_REVIEW (user gate) — need to advance
       const phaseAfterReplan = await getPhase();
       if (phaseAfterReplan === 'PLAN_REVIEW') {
@@ -402,7 +420,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Plan' });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'OK' });
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
@@ -410,7 +428,7 @@ describe('e2e-workflow', () => {
       await callOk(implement, {});
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
-        await callOk(implement, { reviewVerdict: 'approve' });
+        await callOk(implement, { reviewVerdict: 'accept' });
       }
       expect(await getPhase()).toBe('EVIDENCE_REVIEW');
 
@@ -429,7 +447,7 @@ describe('e2e-workflow', () => {
       await callOk(implement, {});
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
-        await callOk(implement, { reviewVerdict: 'approve' });
+        await callOk(implement, { reviewVerdict: 'accept' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'Good now' });
       expect(await getPhase()).toBe('COMPLETE');
@@ -442,7 +460,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Original Plan' });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'OK' });
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
@@ -450,7 +468,7 @@ describe('e2e-workflow', () => {
       await callOk(implement, {});
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
-        await callOk(implement, { reviewVerdict: 'approve' });
+        await callOk(implement, { reviewVerdict: 'accept' });
       }
       expect(await getPhase()).toBe('EVIDENCE_REVIEW');
 
@@ -494,11 +512,11 @@ describe('e2e-workflow', () => {
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Task', source: 'user' });
       await callOk(plan, { planText: '## Plan' });
-      await callOk(plan, { reviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'accept' });
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
       await passValidation();
       await callOk(implement, {});
-      await callOk(implement, { reviewVerdict: 'approve' });
+      await callOk(implement, { reviewVerdict: 'accept' });
       expect(await getPhase()).toBe('COMPLETE');
 
       // Archive
@@ -521,7 +539,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Plan' });
       phases.push(await getPhase()); // After plan submit
 
-      await callOk(plan, { reviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'accept' });
       phases.push(await getPhase()); // After self-review converge (solo auto-approve → VALIDATION)
 
       // Pass validation (discovery detects TypeScript → activeChecks=['typecheck'])
@@ -531,7 +549,7 @@ describe('e2e-workflow', () => {
       await callOk(implement, {});
       phases.push(await getPhase()); // After impl record
 
-      await callOk(implement, { reviewVerdict: 'approve' });
+      await callOk(implement, { reviewVerdict: 'accept' });
       phases.push(await getPhase()); // COMPLETE
 
       // Verify progression
@@ -586,7 +604,7 @@ describe('e2e-workflow', () => {
 
         await callOk(ticket, { text: 'CI-degrade task', source: 'user' });
         await callOk(plan, { planText: '## Plan\nHuman gate expected' });
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
         expect(await getPhase()).toBe('PLAN_REVIEW');
       } finally {
         cleanup();
@@ -606,7 +624,7 @@ describe('e2e-workflow', () => {
 
         await callOk(ticket, { text: 'CI auto gate', source: 'user' });
         await callOk(plan, { planText: '## Plan\nAuto gate expected' });
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
         expect(await getPhase()).toBe('VALIDATION');
       } finally {
         cleanup();
@@ -664,11 +682,11 @@ describe('e2e-workflow', () => {
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Local repo task', source: 'user' });
       await callOk(plan, { planText: '## Local Plan' });
-      await callOk(plan, { reviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'accept' });
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
       await passValidation();
       await callOk(implement, {});
-      await callOk(implement, { reviewVerdict: 'approve' });
+      await callOk(implement, { reviewVerdict: 'accept' });
       expect(await getPhase()).toBe('COMPLETE');
 
       // Verify fingerprint is path-based
@@ -681,11 +699,11 @@ describe('e2e-workflow', () => {
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Audit test', source: 'user' });
       await callOk(plan, { planText: '## Plan' });
-      await callOk(plan, { reviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'accept' });
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
       await passValidation();
       await callOk(implement, {});
-      await callOk(implement, { reviewVerdict: 'approve' });
+      await callOk(implement, { reviewVerdict: 'accept' });
       expect(await getPhase()).toBe('COMPLETE');
 
       // Read and verify audit trail
@@ -718,7 +736,7 @@ describe('e2e-workflow', () => {
       // Now approve the revised plan
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
@@ -734,7 +752,7 @@ describe('e2e-workflow', () => {
       await callOk(implement, {});
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
-        await callOk(implement, { reviewVerdict: 'approve' });
+        await callOk(implement, { reviewVerdict: 'accept' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'Ship it' });
       expect(await getPhase()).toBe('COMPLETE');
@@ -765,7 +783,7 @@ describe('e2e-workflow', () => {
       expect(await getPhase()).toBe('ARCHITECTURE');
 
       // 3. Self-review: approve (solo: maxSelfReviewIterations=1, so converges immediately)
-      await callOk(architecture, { reviewVerdict: 'approve' });
+      await callOk(architecture, { reviewVerdict: 'accept' });
       // Solo auto-approves ARCH_REVIEW → ARCH_COMPLETE
       expect(await getPhase()).toBe('ARCH_COMPLETE');
 
@@ -789,14 +807,14 @@ describe('e2e-workflow', () => {
       const adrText =
         '## Context\nAuth model.\n\n## Decision\nUse OAuth2.\n\n## Consequences\nNeed IdP integration.';
       await callOk(architecture, { title: 'OAuth2 for auth', adrText });
-      await callOk(architecture, { reviewVerdict: 'approve' });
+      await callOk(architecture, { reviewVerdict: 'accept' });
 
       const result = parseToolResult(await status.execute({}, ctx));
       expect(result.latestArchitectureReview).toBeDefined();
       expect(result.latestArchitectureReview).not.toBeNull();
       const arch = result.latestArchitectureReview as Record<string, unknown>;
       expect(arch.reviewMode).toBe('subagent');
-      expect(arch.overallVerdict).toBe('approve');
+      expect(arch.overallVerdict).toBe('accept');
       expect(typeof arch.iteration).toBe('number');
       expect(typeof arch.reviewedAt).toBe('string');
       expect(arch.blockingIssueCount).toBe(0);
@@ -815,7 +833,7 @@ describe('e2e-workflow', () => {
       // 3. Self-review loop to ARCH_REVIEW
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'ARCH_REVIEW') break;
-        await callOk(architecture, { reviewVerdict: 'approve' });
+        await callOk(architecture, { reviewVerdict: 'accept' });
       }
       expect(await getPhase()).toBe('ARCH_REVIEW');
 
@@ -836,7 +854,7 @@ describe('e2e-workflow', () => {
       await callOk(architecture, { title: 'ELK for logging', adrText });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'ARCH_REVIEW') break;
-        await callOk(architecture, { reviewVerdict: 'approve' });
+        await callOk(architecture, { reviewVerdict: 'accept' });
       }
       expect(await getPhase()).toBe('ARCH_REVIEW');
 
@@ -858,7 +876,7 @@ describe('e2e-workflow', () => {
       await callOk(architecture, { title: 'REST APIs', adrText });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'ARCH_REVIEW') break;
-        await callOk(architecture, { reviewVerdict: 'approve' });
+        await callOk(architecture, { reviewVerdict: 'accept' });
       }
       expect(await getPhase()).toBe('ARCH_REVIEW');
 
@@ -872,7 +890,7 @@ describe('e2e-workflow', () => {
       await callOk(architecture, { title: 'REST APIs', adrText: revisedAdr });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'ARCH_REVIEW') break;
-        await callOk(architecture, { reviewVerdict: 'approve' });
+        await callOk(architecture, { reviewVerdict: 'accept' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'Better now' });
       expect(await getPhase()).toBe('ARCH_COMPLETE');
@@ -890,11 +908,16 @@ describe('e2e-workflow', () => {
       // Drive self-review to convergence
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
       // Attempt self-approval — MUST be blocked
+      recordDecisionIntentForTool(
+        decision,
+        { verdict: 'approve', rationale: 'I approve my own work' },
+        ctx,
+      );
       const raw = await decision.execute(
         { verdict: 'approve', rationale: 'I approve my own work' },
         ctx,
@@ -921,11 +944,16 @@ describe('e2e-workflow', () => {
       // Drive to PLAN_REVIEW
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
       // changes_requested by same actor is allowed for safe intervention
+      recordDecisionIntentForTool(
+        decision,
+        { verdict: 'changes_requested', rationale: 'Needs more detail' },
+        ctx,
+      );
       const crRaw = await decision.execute(
         { verdict: 'changes_requested', rationale: 'Needs more detail' },
         ctx,
@@ -942,10 +970,11 @@ describe('e2e-workflow', () => {
 
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
+      recordDecisionIntentForTool(decision, { verdict: 'reject', rationale: 'Start over' }, ctx);
       const rejRaw = await decision.execute({ verdict: 'reject', rationale: 'Start over' }, ctx);
       const rejResult = parseToolResult(rejRaw);
       expect(rejResult.error).toBeUndefined();
@@ -965,7 +994,7 @@ describe('e2e-workflow', () => {
 
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
       }
 
       vi.mocked(actorMock.resolveActor).mockResolvedValueOnce({
@@ -973,6 +1002,7 @@ describe('e2e-workflow', () => {
         email: null,
         source: 'unknown',
       });
+      recordDecisionIntentForTool(decision, { verdict: 'approve', rationale: 'LGTM' }, ctx);
       const raw = await decision.execute({ verdict: 'approve', rationale: 'LGTM' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
@@ -986,7 +1016,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Bad Plan' });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'OK' });
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
@@ -994,7 +1024,7 @@ describe('e2e-workflow', () => {
       await callOk(implement, {});
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
-        await callOk(implement, { reviewVerdict: 'approve' });
+        await callOk(implement, { reviewVerdict: 'accept' });
       }
 
       // Reject at EVIDENCE_REVIEW — back to TICKET
@@ -1006,7 +1036,7 @@ describe('e2e-workflow', () => {
       await callOk(plan, { planText: '## Better Plan' });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
-        await callOk(plan, { reviewVerdict: 'approve' });
+        await callOk(plan, { reviewVerdict: 'accept' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'Good' });
       // VALIDATION: pass checks again
@@ -1014,7 +1044,7 @@ describe('e2e-workflow', () => {
       await callOk(implement, {});
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
-        await callOk(implement, { reviewVerdict: 'approve' });
+        await callOk(implement, { reviewVerdict: 'accept' });
       }
       await callOk(decision, { verdict: 'approve', rationale: 'Ship it' });
       expect(await getPhase()).toBe('COMPLETE');
@@ -1035,11 +1065,11 @@ describe('e2e-workflow', () => {
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Perf test', source: 'user' });
       await callOk(plan, { planText: '## Plan\nSimple implementation' });
-      await callOk(plan, { reviewVerdict: 'approve' });
+      await callOk(plan, { reviewVerdict: 'accept' });
       // Pass validation
       await passValidation();
       await callOk(implement, {});
-      await callOk(implement, { reviewVerdict: 'approve' });
+      await callOk(implement, { reviewVerdict: 'accept' });
       expect(await getPhase()).toBe('COMPLETE');
       const elapsed = Date.now() - start;
       expect(elapsed).toBeLessThan(5000);
@@ -1052,11 +1082,11 @@ describe('e2e-workflow', () => {
         await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' }, ic);
         await callOk(ticket, { text: `Task ${i}`, source: 'user' }, ic);
         await callOk(plan, { planText: '## Plan' }, ic);
-        await callOk(plan, { reviewVerdict: 'approve' }, ic);
+        await callOk(plan, { reviewVerdict: 'accept' }, ic);
         // Pass validation
         await passValidation(ic);
         await callOk(implement, {}, ic);
-        await callOk(implement, { reviewVerdict: 'approve' }, ic);
+        await callOk(implement, { reviewVerdict: 'accept' }, ic);
         expect(await getPhase(ic)).toBe('COMPLETE');
       }
       const elapsed = Date.now() - start;

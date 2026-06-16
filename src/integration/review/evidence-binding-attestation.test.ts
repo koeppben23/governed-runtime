@@ -76,7 +76,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
       childSessionId = CHILD_SESSION_ID,
       iteration = 0,
       planVersion = 1,
-      verdict = 'approve',
+      verdict = 'accept',
     } = opts;
     return JSON.stringify({
       iteration,
@@ -107,7 +107,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
       childSessionId = CHILD_SESSION_ID,
       iteration = 0,
       planVersion = 1,
-      verdict = 'approve',
+      verdict = 'accept',
     } = opts;
     return JSON.stringify({
       iteration,
@@ -141,7 +141,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
       usePlaceholder?: boolean;
     } = {},
   ) {
-    const { iteration = 0, planVersion = 1, verdict = 'approve', usePlaceholder = false } = opts;
+    const { iteration = 0, planVersion = 1, verdict = 'accept', usePlaceholder = false } = opts;
 
     const state = createSessionState();
     onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(iteration, planVersion), NOW);
@@ -325,7 +325,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent',
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -365,7 +365,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent',
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -495,7 +495,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
 
     expect(resolved.kind).toBe('resolved');
     if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
-    expect(resolved.findings.overallVerdict).toBe('approve');
+    expect(resolved.findings.overallVerdict).toBe('accept');
     expect(resolved.findings.iteration).toBe(0);
     expect(resolved.findings.planVersion).toBe(1);
     expect(resolved.invocationId).toBe(bindResult.evidence!.invocationId);
@@ -521,7 +521,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent',
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       blockingIssues: [],
       majorRisks: [
         { severity: 'major', category: 'risk', message: 'No error handling for network failures' },
@@ -549,7 +549,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
     expect(bindResult.evidence!.capturedRawFindings).toBeDefined();
     expect(
       (bindResult.evidence!.capturedRawFindings as Record<string, unknown>).overallVerdict,
-    ).toBe('approve');
+    ).toBe('accept');
 
     // Step 4: Resolve findings from evidence (what plan.ts:380 does)
     const assurance = appendInvocationEvidence(
@@ -560,7 +560,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
 
     expect(resolved.kind).toBe('resolved');
     if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
-    expect(resolved.findings.overallVerdict).toBe('approve');
+    expect(resolved.findings.overallVerdict).toBe('accept');
     expect(resolved.findings.majorRisks).toHaveLength(1);
     expect(resolved.findings.missingVerification).toContain('Unit tests for auth flow');
   });
@@ -579,7 +579,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent',
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -653,7 +653,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       childSessionId = CHILD_SESSION_ID,
       iteration = 0,
       planVersion = 1,
-      verdict = 'approve',
+      verdict = 'accept',
       toolObligationId = 'review-obligation-fg-rel-030',
     } = opts;
     return JSON.stringify({
@@ -688,7 +688,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       toolObligationId?: string;
     } = {},
   ) {
-    const { iteration = 0, planVersion = 1, verdict = 'approve', toolObligationId } = opts;
+    const { iteration = 0, planVersion = 1, verdict = 'accept', toolObligationId } = opts;
 
     const state = createSessionState();
     onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(iteration, planVersion), NOW);
@@ -725,7 +725,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     const stored = result.evidence!.capturedRawFindings as Record<string, unknown>;
     expect(stored).toBeDefined();
     expect(stored.attestation).toBeUndefined();
-    expect(stored.overallVerdict).toBe('approve');
+    expect(stored.overallVerdict).toBe('accept');
     expect(stored.iteration).toBe(0);
     expect(stored.planVersion).toBe(1);
   });
@@ -748,7 +748,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     // because attestation.toolObligationId was not a UUID
     expect(resolved.kind).toBe('resolved');
     if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
-    expect(resolved.findings.overallVerdict).toBe('approve');
+    expect(resolved.findings.overallVerdict).toBe('accept');
     expect(resolved.findings.iteration).toBe(0);
     expect(resolved.findings.planVersion).toBe(1);
     expect(resolved.findings.attestation).toBeUndefined();
@@ -844,7 +844,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent',
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -872,7 +872,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     const resolved = resolveHostTaskFindings(assurance, obligation);
     expect(resolved.kind).toBe('resolved');
     if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
-    expect(resolved.findings.overallVerdict).toBe('approve');
+    expect(resolved.findings.overallVerdict).toBe('accept');
   });
 
   it('EDGE: all non-attestation fields preserved exactly after strip', () => {
@@ -885,7 +885,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     expect(stored.iteration).toBe(0);
     expect(stored.planVersion).toBe(1);
     expect(stored.reviewMode).toBe('subagent');
-    expect(stored.overallVerdict).toBe('approve');
+    expect(stored.overallVerdict).toBe('accept');
     expect(stored.blockingIssues).toEqual([]);
     expect(stored.majorRisks).toEqual([]);
     expect(stored.missingVerification).toEqual([]);
@@ -908,7 +908,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent',
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -950,7 +950,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent',
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -1099,7 +1099,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent',
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       blockingIssues: [],
       majorRisks: [
         { severity: 'minor', category: 'quality', message: 'Consider adding more tests' },
@@ -1135,7 +1135,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     // Step 2: Verify attestation stripped
     const stored = bindResult.evidence!.capturedRawFindings as Record<string, unknown>;
     expect(stored.attestation).toBeUndefined();
-    expect(stored.overallVerdict).toBe('approve');
+    expect(stored.overallVerdict).toBe('accept');
 
     // Step 3: Persist + resolve (simulate what plan.ts:380 does)
     const assurance = appendInvocationEvidence(
@@ -1148,7 +1148,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     // Step 4: THIS was broken before BUG-20b — now it works
     expect(resolved.kind).toBe('resolved');
     if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
-    expect(resolved.findings.overallVerdict).toBe('approve');
+    expect(resolved.findings.overallVerdict).toBe('accept');
     expect(resolved.findings.majorRisks).toHaveLength(1);
     expect(resolved.findings.missingVerification).toContain('Integration test coverage');
     expect(resolved.findings.attestation).toBeUndefined();
@@ -1156,7 +1156,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
   });
 
   it('E2E: full chain — invalid attestation normalized, hash consistent, resolve succeeds', () => {
-    const { state, obligation } = setupInvalidAttestationCycle({ verdict: 'approve' });
+    const { state, obligation } = setupInvalidAttestationCycle({ verdict: 'accept' });
 
     // Bind
     const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
@@ -1176,7 +1176,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     const resolved = resolveHostTaskFindings(assurance, obligation);
     expect(resolved.kind).toBe('resolved');
     if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
-    expect(resolved.findings.overallVerdict).toBe('approve');
+    expect(resolved.findings.overallVerdict).toBe('accept');
 
     // Verify no attestation leaked
     expect(resolved.findings.attestation).toBeUndefined();
