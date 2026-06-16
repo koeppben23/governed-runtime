@@ -101,10 +101,10 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // (NOT user approval), require verdict-only in host-task mode, and remove the
     // self-review fallback wording.
     // Refreshed for review-verdict accept-token: command templates now use
-    // reviewVerdict "accept" (reviewer) instead of "approve".
+    // overallVerdict/reviewVerdict "accept" (reviewer) instead of "approve".
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '53f69b885630cbfb0e8f5756e20cc8a9ed96efbe01bbbcc2e5f541b919254816',
+      '344894c0b39952571d18fee434956143bb4ec00ce7241fc081e3bd7f3930d101',
     );
   });
 

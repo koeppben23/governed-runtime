@@ -473,7 +473,7 @@ export const plan: ToolDefinition = {
   description:
     'Submit a plan OR record an independent reviewer verdict. Two modes:\n' +
     'Mode A (submit plan): provide planText. Records the plan and starts the independent review loop.\n' +
-    "Mode B (reviewer verdict): provide reviewVerdict ('approve' or 'changes_requested'). " +
+    "Mode B (reviewer verdict): provide reviewVerdict ('accept' or 'changes_requested'). " +
     'In host-task mode the plugin resolves the reviewer findings automatically — submit the verdict only. ' +
     "In SDK mode pass the reviewer's exact reviewFindings. If 'changes_requested', also provide revised planText.\n" +
     'The independent review loop runs up to maxIterations (from policy). ' +

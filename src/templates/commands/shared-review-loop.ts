@@ -77,7 +77,7 @@ export function SHARED_REVIEW_LOOP(p: ReviewLoopParams): string {
        1. Read \`overallVerdict\` from \`pluginReviewFindings\` in the response.
        2. host_task_required mode: findings are resolved from plugin evidence automatically — submit only the verdict without \`reviewFindings\`.
        3. SDK mode: pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`.
-       4. "approve": Call \`${p.toolName}({ reviewVerdict: "accept" })\` (or with \`reviewFindings\` in SDK mode).
+       4. "accept": Call \`${p.toolName}({ reviewVerdict: "accept" })\` (or with \`reviewFindings\` in SDK mode). This is the reviewer's acceptance, not user approval.
        5. "changes_requested": Revise the ${p.artifactName} to address blocking issues, then call \`${p.toolName}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\` (or with \`reviewFindings\` in SDK mode).${p.changesRequestedExtra}
        6. "unable_to_review": The reviewer declared the ${p.artifactName} unreviewable (${p.unableDescription}). The tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same ${p.artifactName} — that obligation is consumed. Report the reviewer's findings to the user, then either ${p.unableRecoveryA} OR ${p.unableRecoveryB}.
    - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED":

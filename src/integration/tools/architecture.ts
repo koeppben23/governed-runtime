@@ -679,7 +679,7 @@ export const architecture: ToolDefinition = {
   description:
     'Submit an Architecture Decision Record (ADR) OR record a self-review verdict. Two modes:\n' +
     'Mode A (submit ADR): provide title and adrText. ADR ID is auto-generated. Records the ADR and starts the review flow.\n' +
-    "Mode B (review verdict): provide reviewVerdict ('approve' or 'changes_requested'). " +
+    "Mode B (review verdict): provide reviewVerdict ('accept' or 'changes_requested'). " +
     "If 'changes_requested', also provide revised adrText.\n" +
     'When subagentEnabled=true (the default for all built-in policies), the review is performed ' +
     `by the ${REVIEWER_SUBAGENT_TYPE} subagent and the verdict submission MUST include reviewFindings ` +

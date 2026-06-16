@@ -722,7 +722,7 @@ export const implement: ToolDefinition = {
     'Record implementation evidence OR submit implementation review verdict. Two modes:\n' +
     'Mode A (record impl): no reviewVerdict. Auto-detects changed files via git. ' +
     'Use AFTER making code changes with read/write/bash tools.\n' +
-    "Mode B (review verdict): provide reviewVerdict ('approve' or 'changes_requested'). " +
+    "Mode B (review verdict): provide reviewVerdict ('accept' or 'changes_requested'). " +
     'Use at IMPL_REVIEW after reviewing the implementation.\n' +
     'Review loop runs up to maxIterations (from policy). ' +
     'On convergence, auto-advances to EVIDENCE_REVIEW.\n' +
