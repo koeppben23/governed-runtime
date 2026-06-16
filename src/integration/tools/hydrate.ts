@@ -689,6 +689,10 @@ async function formatNewSessionResponse(
     discoverySummary: discovery.discoverySummary ?? null,
     claimedTaskClass: state.claimedTaskClass ?? null,
     policyResolution: formatPolicyResolution(policyResolution),
+    gateNotice: buildGateNotice(
+      policyResolution.effectiveGateBehavior,
+      policyResolution.effectiveMode,
+    ),
   };
   return appendNextAction(JSON.stringify(response), state);
 }
@@ -720,7 +724,15 @@ async function formatHydrateResult(
   if (result.kind === 'ok' && !existing) {
     return formatNewSessionResponse(sessDir, result, discovery, policyResolution);
   }
-  return persistAndFormat(sessDir, result);
+  const formatted = await persistAndFormat(sessDir, result);
+  if (result.kind !== 'ok') return formatted;
+  // Existing-session reload: surface the auto-approve notice from the persisted
+  // snapshot so a reloaded solo/team-ci session is just as visible as a new one.
+  const notice = buildGateNotice(
+    result.state.policySnapshot.effectiveGateBehavior,
+    result.state.policySnapshot.mode,
+  );
+  return withGateNotice(formatted, notice);
 }
 
 /**
@@ -752,6 +764,44 @@ function injectLockContended(output: string): string {
   if (parsed.error === true || parsed.status !== 'ok') return output;
   parsed[LOCK_CONTENDED_OUTPUT_FIELD] = true;
   return JSON.stringify(parsed) + tail;
+}
+
+/**
+ * Build a human-readable notice when review gates auto-approve (no human gate).
+ *
+ * Surfaced verbatim by /start so a session never silently runs in an
+ * auto-approve mode (solo, or team-ci with CI context). Returns null for
+ * human-gated sessions. Pure — derived only from the resolved gate behavior.
+ */
+function buildGateNotice(
+  gateBehavior: string | undefined,
+  mode: string | undefined,
+): string | null {
+  if (gateBehavior !== 'auto_approve') return null;
+  return (
+    `Auto-approve is active (mode: ${mode ?? 'unknown'}). ` +
+    'Plan and evidence review gates advance WITHOUT a human decision. ' +
+    'Use team or regulated for human-gated approval.'
+  );
+}
+
+/** Inject a non-null gateNotice into the JSON head of a hydrate output. */
+function injectGateNotice(output: string, notice: string | null): string {
+  if (!notice) return output;
+  const idx = output.indexOf('\n');
+  const head = idx >= 0 ? output.slice(0, idx) : output;
+  const tail = idx >= 0 ? output.slice(idx) : '';
+  const parsed = JSON.parse(head) as Record<string, unknown>;
+  if (parsed.error === true) return output;
+  parsed.gateNotice = notice;
+  return JSON.stringify(parsed) + tail;
+}
+
+/** Annotate a hydrate ToolResult with gateNotice (string or object form). */
+function withGateNotice(result: ToolResult, notice: string | null): ToolResult {
+  if (!notice) return result;
+  if (typeof result === 'string') return injectGateNotice(result, notice);
+  return { ...result, output: injectGateNotice(result.output, notice) };
 }
 
 /**
