@@ -60,6 +60,10 @@ export function taskResultWithAttestation(
     iteration?: number;
     planVersion?: number;
     verdict?: string;
+    /** Override the reviewer-echoed attestation constants to simulate confabulation. */
+    attestationMandateDigest?: string;
+    attestationCriteriaVersion?: string;
+    attestationReviewedBy?: string;
   } = {},
 ): string {
   const {
@@ -67,6 +71,9 @@ export function taskResultWithAttestation(
     iteration = 0,
     planVersion = 1,
     verdict = 'accept',
+    attestationMandateDigest = REVIEW_MANDATE_DIGEST,
+    attestationCriteriaVersion = REVIEW_CRITERIA_VERSION,
+    attestationReviewedBy = REVIEWER_SUBAGENT_TYPE,
   } = opts;
   return JSON.stringify({
     iteration,
@@ -82,11 +89,11 @@ export function taskResultWithAttestation(
     reviewedAt: NOW,
     attestation: {
       toolObligationId: obligationId,
-      mandateDigest: REVIEW_MANDATE_DIGEST,
-      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      mandateDigest: attestationMandateDigest,
+      criteriaVersion: attestationCriteriaVersion,
       iteration,
       planVersion,
-      reviewedBy: REVIEWER_SUBAGENT_TYPE,
+      reviewedBy: attestationReviewedBy,
     },
   });
 }
@@ -112,6 +119,10 @@ export function setupFullCycle(
     childSessionId?: string;
     iteration?: number;
     planVersion?: number;
+    /** Override reviewer-echoed attestation constants to simulate confabulation. */
+    attestationMandateDigest?: string;
+    attestationCriteriaVersion?: string;
+    attestationReviewedBy?: string;
   } = {},
 ) {
   const {
@@ -119,6 +130,9 @@ export function setupFullCycle(
     childSessionId = CHILD_SESSION_ID,
     iteration = 0,
     planVersion = 1,
+    attestationMandateDigest,
+    attestationCriteriaVersion,
+    attestationReviewedBy,
   } = opts;
 
   const state = createSessionState();
@@ -135,6 +149,9 @@ export function setupFullCycle(
     childSessionId,
     iteration,
     planVersion,
+    ...(attestationMandateDigest !== undefined ? { attestationMandateDigest } : {}),
+    ...(attestationCriteriaVersion !== undefined ? { attestationCriteriaVersion } : {}),
+    ...(attestationReviewedBy !== undefined ? { attestationReviewedBy } : {}),
   });
 
   // Step 2: Task call — onTaskToolAfter records subagent call

@@ -47,16 +47,21 @@ export function buildHostTaskEvidence(
   if ('bindOutcome' in obligationMatch) return obligationMatch;
   const matchedObligation = obligationMatch.obligation;
 
-  const fieldMismatch = checkBindingFieldMismatch(
-    rawFindings,
-    matchedObligation,
-    attestation,
-    attestationInfo,
-  );
+  // Cycle-binding fields (iteration/planVersion) are reviewer-reliable and stay fatal.
+  const fieldMismatch = checkBindingFieldMismatch(rawFindings, matchedObligation, attestationInfo);
   if (fieldMismatch) return fieldMismatch;
+
+  // Host-only constants (mandateDigest/criteriaVersion/reviewedBy) are installed-mandate
+  // values the host already owns; they are NOT reviewer-chosen. The LLM reviewer cannot
+  // reliably echo a 64-hex digest it was never given and tends to confabulate it, so we
+  // bind host-authoritatively and overwrite them — mirroring how reviewedBy.sessionId is
+  // overwritten in orchestrator.structuredReviewerResult. Divergence is surfaced for
+  // diagnostics rather than fatally rejected.
+  const hostConstantDivergence = hostConstantDivergentFields(matchedObligation, attestation);
 
   const normalizedFindings = normalizeHostTaskFindings(
     rawFindings,
+    matchedObligation,
     attestationInfo.hasValidAttestation,
   );
 
@@ -96,6 +101,7 @@ export function buildHostTaskEvidence(
       childSessionId,
       findingsHash,
       bindingMode: attestationInfo.hasValidAttestation ? 'attestation' : 'tool_fallback',
+      ...(hostConstantDivergence.length > 0 ? { hostConstantDivergence } : {}),
     },
   };
 }
@@ -225,15 +231,9 @@ function noMatchingObligation(
 function checkBindingFieldMismatch(
   rawFindings: Record<string, unknown>,
   obligation: ReviewObligation,
-  attestation: Record<string, unknown> | undefined,
   attestationInfo: ReturnType<typeof resolveAttestationInfo>,
 ): HostTaskBindResult | null {
-  const mismatchFields = bindingMismatchFields(
-    rawFindings,
-    obligation,
-    attestation,
-    attestationInfo.hasValidAttestation,
-  );
+  const mismatchFields = bindingMismatchFields(rawFindings, obligation);
   if (mismatchFields.length === 0) return null;
   return {
     evidence: null,
@@ -246,29 +246,63 @@ function checkBindingFieldMismatch(
   };
 }
 
+/**
+ * Fatal binding fields. Only the cycle-binding fields (iteration/planVersion) are checked:
+ * they prove which review cycle the reviewer addressed and the reviewer echoes them
+ * reliably. Host-only constants are handled separately and host-authoritatively (see
+ * {@link hostConstantDivergentFields}).
+ */
 function bindingMismatchFields(
   rawFindings: Record<string, unknown>,
   obligation: ReviewObligation,
-  attestation: Record<string, unknown> | undefined,
-  hasValidAttestation: boolean,
 ): string[] {
   const fields: string[] = [];
   if (rawFindings.iteration !== obligation.iteration) fields.push('iteration');
   if (rawFindings.planVersion !== obligation.planVersion) fields.push('planVersion');
-  if (!hasValidAttestation) return fields;
-  if (attestation?.mandateDigest !== obligation.mandateDigest) fields.push('mandateDigest');
-  if (attestation?.criteriaVersion !== obligation.criteriaVersion) fields.push('criteriaVersion');
-  if (attestation?.reviewedBy !== REVIEWER_SUBAGENT_TYPE) fields.push('reviewedBy');
+  return fields;
+}
+
+/**
+ * Host-only attestation constants the reviewer is asked to echo but does not choose.
+ * In host-task capture mode these are authoritative on the host (installed-mandate
+ * digest, criteria version, reviewer identity) and are enforced by install-time hash
+ * guards — not by the reviewer's echo. A divergence means the reviewer confabulated a
+ * value it was never given; it is advisory (diagnostics only), never fatal.
+ */
+function hostConstantDivergentFields(
+  obligation: ReviewObligation,
+  attestation: Record<string, unknown> | undefined,
+): string[] {
+  if (!attestation) return [];
+  const fields: string[] = [];
+  if (attestation.mandateDigest !== obligation.mandateDigest) fields.push('mandateDigest');
+  if (attestation.criteriaVersion !== obligation.criteriaVersion) fields.push('criteriaVersion');
+  if (attestation.reviewedBy !== REVIEWER_SUBAGENT_TYPE) fields.push('reviewedBy');
   return fields;
 }
 
 function normalizeHostTaskFindings(
   rawFindings: Record<string, unknown>,
+  obligation: ReviewObligation,
   hasValidAttestation: boolean,
 ): Record<string, unknown> {
-  if (hasValidAttestation) return rawFindings;
-  const { attestation: _, ...rest } = rawFindings;
-  return rest;
+  if (!hasValidAttestation) {
+    const { attestation: _omit, ...rest } = rawFindings;
+    return rest;
+  }
+  // Overwrite reviewer-echoed host constants with the obligation's canonical values so
+  // persisted evidence is truthful rather than confabulated. The reviewer-reliable
+  // binding anchors (toolObligationId, iteration, planVersion) are preserved as-is.
+  const attestation = (rawFindings.attestation ?? {}) as Record<string, unknown>;
+  return {
+    ...rawFindings,
+    attestation: {
+      ...attestation,
+      mandateDigest: obligation.mandateDigest,
+      criteriaVersion: obligation.criteriaVersion,
+      reviewedBy: REVIEWER_SUBAGENT_TYPE,
+    },
+  };
 }
 
 function checkDuplicateHostTaskEvidence(
