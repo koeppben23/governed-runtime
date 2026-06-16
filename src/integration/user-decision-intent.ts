@@ -11,7 +11,7 @@ export interface UserDecisionIntent {
   readonly consumed: false;
 }
 
-export type UserDecisionIntentRejection = 'missing' | 'expired' | 'verdict_mismatch' | 'consumed';
+export type UserDecisionIntentRejection = 'missing' | 'expired' | 'verdict_mismatch';
 
 export type UserDecisionIntentConsumeResult =
   | { readonly ok: true; readonly intent: UserDecisionIntent }

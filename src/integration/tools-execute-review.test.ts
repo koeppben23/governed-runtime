@@ -60,7 +60,11 @@ import {
 } from '../__fixtures__.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
-import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import {
+  clearUserDecisionIntents,
+  recordUserDecisionIntent,
+  recordUserDecisionIntentFromCommand,
+} from './user-decision-intent.js';
 import type { ReviewVerdict } from '../state/evidence.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
@@ -696,6 +700,24 @@ describe('decision', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('PLAN');
+    });
+
+    it('accepts decision after command.execute.before records a host-command intent', async () => {
+      await reachPlanReview();
+      // Simulate OpenCode command.execute.before hook firing for /approve.
+      // This is the only origin the decision tool trusts in human-gated modes.
+      recordUserDecisionIntentFromCommand({
+        sessionId: ctx.sessionID,
+        command: '/approve',
+        arguments: '',
+      });
+      const raw = await decision.execute(
+        { verdict: 'approve', rationale: 'User approved via /approve' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('VALIDATION');
     });
 
     it('config verified-actor requirement blocks approve for best_effort reviewer', async () => {

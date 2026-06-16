@@ -267,17 +267,22 @@ async function commandBefore(
 ): Promise<void> {
   return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
     const hookInput = input as CommandHookBeforeInput;
-    const sessionId = hookInput?.sessionID ?? 'unknown';
-    runtime.setCurrentSessionId(sessionId);
+    const rawSessionId = hookInput?.sessionID;
+    if (!rawSessionId) {
+      runtime.log.warn('decision', 'command.execute.before missing sessionID');
+      return;
+    }
 
     const intent = recordUserDecisionIntentFromCommand({
-      sessionId,
+      sessionId: rawSessionId,
       command: hookInput?.command ?? '',
       arguments: hookInput?.arguments ?? '',
     });
     if (!intent) return;
+
+    runtime.setCurrentSessionId(rawSessionId);
     runtime.log.info('decision', 'recorded user decision command intent', {
-      sessionId,
+      sessionId: rawSessionId,
       command: intent.command,
       expectedVerdict: intent.expectedVerdict,
       expiresAt: intent.expiresAt,

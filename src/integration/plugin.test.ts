@@ -212,6 +212,16 @@ describe('integration/plugin', () => {
       ).toEqual({ ok: false, reason: 'missing' });
     });
 
+    it('command.execute.before does not record an intent when sessionID is missing', async () => {
+      clearUserDecisionIntents();
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
+
+      // Should not throw — missing sessionID means the hook bails with a warn log
+      await expect(
+        hooks['command.execute.before']!({ command: '/approve', arguments: '' }, { parts: [] }),
+      ).resolves.toBeUndefined();
+    });
+
     it('barrel re-exports FlowGuardAuditPlugin', () => {
       expect(barrel.FlowGuardAuditPlugin).toBe(FlowGuardAuditPlugin);
     });
