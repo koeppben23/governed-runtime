@@ -762,6 +762,50 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     expect(result.allowed).toBe(true);
   });
 
+  it('E2E SMOKE: mid-loop mixed approval payload passes enforcement after reviewer evidence so plan tool can hardblock it', () => {
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review iteration=0 planVersion=1' },
+      taskResultWithFindings('ses_review', { verdict: 'approve' }),
+      LATER,
+    );
+
+    const result = enforceBeforeVerdict(
+      state,
+      'flowguard_plan',
+      { planText: '## Revised Plan', reviewVerdict: 'approve' },
+      { reviewAssurance: { obligations: [], invocations: [] } },
+      true,
+    );
+    expect(result.allowed).toBe(true);
+  });
+
+  it('E2E SMOKE: mid-loop planText plus reviewFindings remains a tool-layer shape concern', () => {
+    const state = createSessionState();
+    const result = enforceBeforeVerdict(
+      state,
+      'flowguard_plan',
+      { planText: '## Revised Plan', reviewFindings: {} },
+      { reviewAssurance: { obligations: [], invocations: [] } },
+      true,
+    );
+    expect(result.allowed).toBe(true);
+  });
+
+  it('E2E SMOKE: mid-loop planText plus reviewerUnavailable remains a tool-layer shape concern', () => {
+    const state = createSessionState();
+    const result = enforceBeforeVerdict(
+      state,
+      'flowguard_plan',
+      { planText: '## Revised Plan', reviewerUnavailable: true },
+      { reviewAssurance: { obligations: [], invocations: [] } },
+      true,
+    );
+    expect(result.allowed).toBe(true);
+  });
+
   it('E2E: verdict after reviewer completes with null reviewFindings → enforcement passes (Levels 2/4 skipped)', () => {
     const state = createSessionState();
     onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeASubagentResponse(), NOW);

@@ -601,6 +601,95 @@ describe('plan', () => {
     });
   });
 
+  describe('Mode-A hardblocks mid-loop', () => {
+    async function setupMidLoopPlan(): Promise<void> {
+      await hydrateAndTicket();
+      const raw = await plan.execute({ planText: '## Plan' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.phase).toBe('PLAN');
+    }
+
+    async function expectStateStillInPlan(): Promise<void> {
+      const state = await readState(await currentSessionDir());
+      expect(state!.phase).toBe('PLAN');
+      expect(state!.plan).not.toBeNull();
+    }
+
+    it('blocks approval mixed with planText after the plan review loop has started', async () => {
+      await setupMidLoopPlan();
+
+      const raw = await plan.execute(
+        { planText: '## Revised Plan', reviewVerdict: 'approve' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('PLAN_APPROVE_WITH_TEXT');
+      expect(result.recovery).toContain(
+        'For host_task_required approval: call flowguard_plan({ reviewVerdict: "approve" }) after reviewer evidence is captured',
+      );
+      await expectStateStillInPlan();
+    });
+
+    it('blocks reviewFindings mixed into a plan-only resubmission after review starts', async () => {
+      await setupMidLoopPlan();
+
+      const raw = await plan.execute(
+        { planText: '## Revised Plan', reviewFindings: modeBSubagentFindings },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('PLAN_SUBMISSION_MIXED_INPUTS');
+      expect(result.recovery).toContain('Submit the plan with flowguard_plan({ planText }) only');
+      await expectStateStillInPlan();
+    });
+
+    it('blocks reviewerUnavailable mixed into a plan-only resubmission after review starts', async () => {
+      await setupMidLoopPlan();
+
+      const raw = await plan.execute(
+        { planText: '## Revised Plan', reviewerUnavailable: true },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+      expect(result.recovery).toContain(
+        'Do not include reviewVerdict, reviewFindings, or reviewerUnavailable in the plan submission call',
+      );
+      await expectStateStillInPlan();
+    });
+  });
+
+  describe('Plan revision invariants', () => {
+    it('keeps plan evidence when PLAN_REVIEW changes_requested returns to PLAN', async () => {
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+      await plan.execute({ planText: '## Plan' }, ctx);
+      const reviewFindings = await fulfillPlanReview(0, 'approve');
+
+      const reviewRaw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+      const reviewResult = parseToolResult(reviewRaw);
+      expect(reviewResult.phase).toBe('PLAN_REVIEW');
+
+      const decisionRaw = await decision.execute(
+        { verdict: 'changes_requested', rationale: 'Needs more detail' },
+        ctx,
+      );
+      const decisionResult = parseToolResult(decisionRaw);
+      expect(decisionResult.error).not.toBe(true);
+
+      const state = await readState(await currentSessionDir());
+      expect(state!.phase).toBe('PLAN');
+      expect(state!.plan).not.toBeNull();
+      expect(state!.selfReview).toBeNull();
+    });
+  });
+
   describe('CORNER', () => {
     it('Mode B changes_requested requires revised planText', async () => {
       await hydrateAndTicket();
