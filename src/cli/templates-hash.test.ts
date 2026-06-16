@@ -104,9 +104,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // overallVerdict/reviewVerdict "accept" (reviewer) instead of "approve".
     // Refreshed for host-confirmed user decisions: plan/decision commands now
     // require explicit user slash-command origin at human review gates.
+    // Refreshed for conditional Done-when: plan/implement Done-when now scope the
+    // /review-decision next action to the converged path and require a blocked path
+    // to surface the FlowGuard blocker instead of a premature review-decision prompt.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'c372f703a47b7f3c63254379e8fce231822d868c713a0c21aeb9ace3d4ec06ca',
+      'b1842fac2da02cdea2b76fd6fc1a7e7d1d862cec804517ce415ca43f7ed38056',
     );
   });
 

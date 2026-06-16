@@ -109,6 +109,6 @@ ${GOVERNANCE_RULES}
 - Independent review loop has converged (approved or max 3 iterations).
 ${DISCOVERY_REVIEW_DONE_WHEN}
 - If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
-- Phase has advanced to PLAN_REVIEW.
-- Response ends with \`Next action: user must run /review-decision approve, /request-changes, or /reject.\`
+- On the converged path: phase has advanced to PLAN_REVIEW and the response ends with \`Next action: user must run /review-decision approve, /request-changes, or /reject.\`
+- On a blocked path (review not converged, reviewer unavailable, or a FlowGuard error code): no \`/review-decision\` next action is emitted; the response surfaces the FlowGuard blocker and its recovery instead.
 `;
