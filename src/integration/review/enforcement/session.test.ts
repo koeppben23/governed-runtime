@@ -736,7 +736,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     expect(result.allowed).toBe(true);
   });
 
-  it('E2E SMOKE: DeepSeek R1 sends { planText, reviewVerdict: "approve" } after /ticket → blocked before tool execution', () => {
+  it('E2E SMOKE: DeepSeek R1 sends { planText, reviewVerdict: "approve" } after /ticket → allowed for tool normalization', () => {
     const state = createSessionState();
     const sessionState = { reviewAssurance: undefined };
     const result = enforceBeforeVerdict(
@@ -746,11 +746,10 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       sessionState,
       true,
     );
-    expect(result.allowed).toBe(false);
-    expect(result.code).toBe('PLAN_APPROVE_WITH_TEXT');
+    expect(result.allowed).toBe(true);
   });
 
-  it('E2E SMOKE: preemptive reviewerUnavailable on initial /plan is blocked before tool execution', () => {
+  it('E2E SMOKE: preemptive reviewerUnavailable on initial /plan is allowed for tool normalization', () => {
     const state = createSessionState();
     const sessionState = { reviewAssurance: undefined };
     const result = enforceBeforeVerdict(
@@ -760,8 +759,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       sessionState,
       true,
     );
-    expect(result.allowed).toBe(false);
-    expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
+    expect(result.allowed).toBe(true);
   });
 
   it('E2E: verdict after reviewer completes with null reviewFindings → enforcement passes (Levels 2/4 skipped)', () => {

@@ -159,6 +159,12 @@ function validatePlanRequest(scope: PlanExecutionScope): string | null {
   return validateInitialPlanFindings(scope);
 }
 
+function normalizeInitialPlanSubmissionArgs(args: PlanArgs, state: SessionState): PlanArgs {
+  const hasPlanText = typeof args.planText === 'string' && args.planText.trim().length > 0;
+  if (!hasPlanText || state.plan || state.phase !== 'TICKET') return args;
+  return { planText: args.planText };
+}
+
 function validatePlanInputShape(
   args: PlanArgs,
   input: PlanInputFlags,
@@ -503,7 +509,10 @@ export const plan: ToolDefinition = {
   async execute(args, context) {
     try {
       return await withMutableSessionTransaction(context, async (mutableSession) => {
-        const typedArgs = args as PlanArgs;
+        const typedArgs = normalizeInitialPlanSubmissionArgs(
+          args as PlanArgs,
+          mutableSession.state,
+        );
         const scope: PlanExecutionScope = {
           ...mutableSession,
           args: typedArgs,
