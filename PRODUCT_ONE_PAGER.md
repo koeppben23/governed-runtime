@@ -99,5 +99,5 @@ FlowGuard is a host-aware governance runtime. It runs locally within the selecte
 
 For technical evaluation or pilot discussions, contact the FlowGuard project owner.
 
-**Current snapshot: 1.2.0-rc.3**
+**Current snapshot: 1.2.0-tp.1**
 **API Reference:** [TypeDoc-generated](https://koeppben23.github.io/governed-runtime/) (GitHub Pages)

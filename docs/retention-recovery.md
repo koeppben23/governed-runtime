@@ -229,5 +229,5 @@ archive.
 
 ---
 
-FlowGuard Version: 1.2.0-rc.3
+FlowGuard Version: 1.2.0-tp.1
 _Last Updated: 2026-04-15_
