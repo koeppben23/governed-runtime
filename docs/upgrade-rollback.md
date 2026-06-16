@@ -252,5 +252,5 @@ Sessions in progress are stored as files in `.opencode/`. Upgrading FlowGuard re
 
 ---
 
-FlowGuard Version: 1.2.0-rc.3
+FlowGuard Version: 1.2.0-tp.1
 _Last Updated: 2026-04-15_

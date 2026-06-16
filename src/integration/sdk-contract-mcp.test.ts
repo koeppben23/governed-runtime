@@ -63,7 +63,7 @@ describe('SDK Contract: MCP tool registry', () => {
       expect(version.platform).toBe('mcp');
       expect((version as Record<string, Record<string, unknown>>).server.name).toBe('flowguard');
       expect((version as Record<string, Record<string, unknown>>).server.version).toBe(
-        '1.2.0-rc.3',
+        '1.2.0-tp.1',
       );
     });
 
