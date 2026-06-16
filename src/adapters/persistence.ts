@@ -198,18 +198,6 @@ export async function atomicWrite(filePath: string, content: string): Promise<vo
   }
 }
 
-async function fsyncParentDirectoryBestEffort(filePath: string): Promise<void> {
-  let handle: fs.FileHandle | null = null;
-  try {
-    handle = await fs.open(path.dirname(filePath), 'r');
-    await handle.sync();
-  } catch {
-    // Directory fsync is not uniformly supported across platforms/filesystems.
-  } finally {
-    if (handle) await handle.close().catch(() => {});
-  }
-}
-
 /**
  * Write a file atomically and durably: temp file -> fsync -> rename.
  *
@@ -231,7 +219,6 @@ export async function durableAtomicWrite(filePath: string, content: string): Pro
       await handle.close();
     }
     await renameWithRetry(tempPath, filePath);
-    await fsyncParentDirectoryBestEffort(filePath);
   } catch (err) {
     try {
       await fs.unlink(tempPath);
