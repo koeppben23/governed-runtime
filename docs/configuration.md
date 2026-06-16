@@ -97,7 +97,7 @@ This prevents accidental exposure of tokens, claim data, or provider endpoints i
 
 **Type:** `enum`
 **Values:** `solo`, `team`, `team-ci`, `regulated`
-**Default:** `solo`
+**Default:** `team`
 
 Sets the default policy mode for new sessions when `/hydrate` is called without an explicit `policyMode` argument.
 
@@ -105,7 +105,7 @@ Sets the default policy mode for new sessions when `/hydrate` is called without 
 
 1. Explicit `/hydrate` tool argument (`policyMode`)
 2. `flowguard.json` → `policy.defaultMode`
-3. Built-in default: `solo`
+3. Built-in default: `team` (fail-closed / human-gated)
 
 **Central minimum policy (optional):**
 
@@ -324,8 +324,8 @@ Different runtime contexts resolve policy defaults independently:
 
 | Context          | Priority Chain                                        | Final Fallback |
 | ---------------- | ----------------------------------------------------- | -------------- |
-| `/hydrate` tool  | explicit > central > config.defaultMode > `solo`      | `solo`         |
-| Plugin / runtime | state snapshot > `config.policy.defaultMode` > `solo` | `solo`         |
+| `/hydrate` tool  | explicit > central > config.defaultMode > `team`      | `team`         |
+| Plugin / runtime | state snapshot > `config.policy.defaultMode` > `team` | `team`         |
 | Install CLI      | `--policy-mode` writes `config.policy.defaultMode`    | —              |
 
 **Runtime policy mode unification**
@@ -333,10 +333,11 @@ Different runtime contexts resolve policy defaults independently:
 All runtime surfaces (plugin, status, etc.) use the same fallback priority:
 
 ```
-state.policySnapshot.mode → config.policy.defaultMode → solo
+state.policySnapshot.mode → config.policy.defaultMode → team
 ```
 
-This unified fallback replaces the previous plugin-specific `team` fallback.
+The built-in fallback is `team` (human-gated) so that an unconfigured session
+fails closed rather than silently auto-approving.
 
 ### Existing Sessions and Snapshot Authority
 

@@ -88,9 +88,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // updated with host/profile output convention scope.
     // Refreshed for #507: /plan documents strict payload sequencing and
     // reviewerUnavailable fail-closed recovery semantics.
+    // Refreshed for gate-notice: /start now surfaces policyResolution.effectiveMode
+    // and displays the hydrate `gateNotice` verbatim so auto-approve modes are visible.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '6b931d5cf15acf01d372cde8ca7a6d9f080d286159418bc3ec5fa8f46adbe9a6',
+      'bf9110e9f9c7ef63dec3843659330b20dcb79f12b2455ef0882c8c49a22005cd',
     );
   });
 

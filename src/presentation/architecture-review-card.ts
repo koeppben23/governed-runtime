@@ -58,6 +58,12 @@ export interface ArchitectureReviewCardInput {
   };
   /** True when the ADR has been approved (ARCH_COMPLETE). */
   isApproved: boolean;
+  /**
+   * True when the independent review loop force-converged at the iteration
+   * limit WITHOUT an approving verdict. Renders a prominent warning so the
+   * human reviewer does not mistake the gate for a reviewer-approved ADR.
+   */
+  forcedConvergence?: boolean;
 }
 
 // ─── Card Builder ────────────────────────────────────────────────────────────
@@ -100,6 +106,16 @@ export function buildArchitectureReviewCard(input: ArchitectureReviewCardInput):
   if (adrTitle) lines.push(`> **ADR:** ${adrTitle}`);
   lines.push(`> **Status:** ${phaseLabel}`);
   lines.push(`> **Verdict:** ${verdict}`);
+  // Force-convergence warning: the loop hit its iteration budget without the
+  // reviewer approving. Surface this unmistakably at the human gate.
+  if (input.forcedConvergence && !isApproved) {
+    lines.push('>');
+    lines.push('> **Reviewer did NOT approve this ADR.**');
+    lines.push(
+      '> The independent review reached its iteration limit without convergence ' +
+        '(last verdict: changes_requested). Review the outstanding findings carefully before approving.',
+    );
+  }
   lines.push('');
 
   // ── Metadata ────────────────────────────────────────────────────

@@ -25,7 +25,7 @@ describe('cli/parseArgs', () => {
         action: 'install',
         installScope: 'global',
         installPlatform: 'opencode',
-        policyMode: 'solo',
+        policyMode: 'team',
         force: false,
         coreTarball: undefined,
         checksumsFile: undefined,
@@ -284,10 +284,10 @@ describe('cli/parseArgs', () => {
       }
     });
 
-    it('--force without --policy-mode still defaults to solo', () => {
+    it('--force without --policy-mode defaults to team (human-gated)', () => {
       const result = parseArgs(['install', '--force']);
       expect(result).not.toBeNull();
-      expect(result!.args.policyMode).toBe('solo');
+      expect(result!.args.policyMode).toBe('team');
       expect(result!.args.force).toBe(true);
     });
 

@@ -82,6 +82,12 @@ export type ConvergedPlanReviewInput = {
   transitions: unknown;
   revision: PlanRevisionResult;
   iteration: number;
+  /**
+   * True when convergence was forced by reaching the iteration limit without
+   * an approving verdict (last verdict was changes_requested). Drives honest,
+   * non-"approved" messaging and the review-card warning banner.
+   */
+  forcedConvergence?: boolean;
 };
 
 export function planInputFlags(args: PlanArgs): PlanInputFlags {

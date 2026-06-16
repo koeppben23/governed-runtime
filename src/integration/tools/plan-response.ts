@@ -15,7 +15,6 @@ import type {
 } from './plan-types.js';
 import {
   formatEval,
-  formatBlocked,
   formatAutoAdvanceOverflow,
   appendNextAction,
   writeStateWithArtifacts,
@@ -29,6 +28,7 @@ import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js
 import { resolveNextAction } from '../../machine/next-action.js';
 import { evaluate } from '../../machine/evaluate.js';
 import { autoAdvance } from '../../rails/types.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import {
   reviewObligationResponseFields,
   createReviewObligation,
@@ -124,10 +124,12 @@ export function latestPlanReviewSummary(
 }
 
 export function convergedPlanResponse(input: ConvergedPlanReviewInput): Record<string, unknown> {
-  const { finalState, ev, transitions, revision, iteration } = input;
+  const { scope, finalState, ev, transitions, revision, iteration, forcedConvergence } = input;
   return {
     phase: finalState.phase,
-    status: `Independent review converged at iteration ${iteration}. Workflow advanced to ${finalState.phase}.`,
+    status: forcedConvergence
+      ? `Independent review reached the iteration limit (${iteration}/${scope.maxSelfReviewIterations}) without reviewer approval (last verdict: ${revision.verdict}). Workflow advanced to ${finalState.phase}.`
+      : `Independent review converged at iteration ${iteration}. Workflow advanced to ${finalState.phase}.`,
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
     next: formatEval(ev),
@@ -138,7 +140,7 @@ export function convergedPlanResponse(input: ConvergedPlanReviewInput): Record<s
 export async function convergedPlanReviewCardResponse(
   input: ConvergedPlanReviewInput,
 ): Promise<Record<string, unknown>> {
-  const { scope, finalState, ev, transitions, revision, iteration } = input;
+  const { scope, finalState, ev, transitions, revision, iteration, forcedConvergence } = input;
   const nextAction = resolveNextAction(finalState.phase, finalState);
   const productNext = buildProductNextAction(nextAction, finalState.phase);
   const reviewCard = buildPlanReviewCard({
@@ -149,6 +151,7 @@ export async function convergedPlanReviewCardResponse(
     planVersion: revision.history.length + 1,
     policyMode: finalState.policySnapshot?.mode,
     taskTitle: firstLine(finalState.ticket?.text),
+    forcedConvergence,
   });
   const artifactErr = await materializeReviewCardArtifact(
     scope.sessDir,
@@ -159,7 +162,9 @@ export async function convergedPlanReviewCardResponse(
   );
   const response: Record<string, unknown> = {
     phase: finalState.phase,
-    status: `Independent review converged at iteration ${iteration}. Plan ready for approval.`,
+    status: forcedConvergence
+      ? `Independent review reached the iteration limit (${iteration}/${scope.maxSelfReviewIterations}) without reviewer approval (last verdict: ${revision.verdict}). Your decision is required.`
+      : `Independent review converged at iteration ${iteration}. Plan ready for approval.`,
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
     reviewCard,
@@ -265,16 +270,41 @@ export async function persistPlanReview(
   const approvedConverged = revision.revisionDelta === 'none' && revision.verdict === 'approve';
   const maxReached = iteration >= scope.maxSelfReviewIterations;
 
-  if (maxReached && !approvedConverged) {
-    await writeStateWithArtifacts(scope.sessDir, finalState);
-    return formatBlocked('MAX_REVIEW_ITERATIONS_REACHED', {
-      iteration: String(iteration),
-      maxIterations: String(scope.maxSelfReviewIterations),
-      lastVerdict: revision.verdict,
-    });
+  // Force-convergence: the review loop exhausted its iteration budget without
+  // an approving verdict. Parity with the implementation-review flow
+  // (implement.ts handleApprovedReview): NEVER block here. Route through the
+  // converged path so human-gated modes stop at PLAN_REVIEW for the human to
+  // decide, and auto-approve modes continue with an honest, audit-visible
+  // status. The previous hard block stranded the session at PLAN_REVIEW while
+  // its recovery told the user to run /plan — which is inadmissible at that
+  // phase — leaving the flow wedged.
+  const forcedConvergence = maxReached && !approvedConverged;
+
+  if (forcedConvergence) {
+    getAdapterLogger().warn(
+      'flowguard_plan',
+      'Plan review force-converged at iteration limit without reviewer approval',
+      {
+        sessionId: scope.context.sessionID,
+        iteration,
+        maxIterations: scope.maxSelfReviewIterations,
+        lastVerdict: revision.verdict,
+        phase: finalState.phase,
+        planDigest: revision.currentPlan.digest,
+      },
+    );
   }
-  if (approvedConverged) {
-    return persistConvergedPlanReview({ scope, finalState, ev, transitions, revision, iteration });
+
+  if (approvedConverged || forcedConvergence) {
+    return persistConvergedPlanReview({
+      scope,
+      finalState,
+      ev,
+      transitions,
+      revision,
+      iteration,
+      forcedConvergence,
+    });
   }
   return persistNonConvergedPlanReview(scope, finalState, transitions, revision, iteration);
 }

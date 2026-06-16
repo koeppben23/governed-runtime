@@ -477,4 +477,31 @@ describe('buildPlanReviewCard', () => {
       expect(card).toContain('Run /approve.');
     });
   });
+
+  describe('forced convergence', () => {
+    it('renders a "reviewer did NOT approve" warning when forceConverged', () => {
+      const card = buildPlanReviewCard({
+        planText: 'Plan.',
+        phase: 'PLAN_REVIEW',
+        phaseLabel: 'Ready for plan approval',
+        productNextAction,
+        forcedConvergence: true,
+      });
+
+      expect(card).toContain('Reviewer did NOT approve this plan.');
+      expect(card).toContain('iteration limit');
+    });
+
+    it('omits the warning on normal (reviewer-approved) convergence', () => {
+      const card = buildPlanReviewCard({
+        planText: 'Plan.',
+        phase: 'PLAN_REVIEW',
+        phaseLabel: 'Ready for plan approval',
+        productNextAction,
+        forcedConvergence: false,
+      });
+
+      expect(card).not.toContain('Reviewer did NOT approve');
+    });
+  });
 });

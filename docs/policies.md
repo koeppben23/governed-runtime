@@ -1,26 +1,30 @@
 # Policies
 
 FlowGuard supports four policy modes that determine the level of enforcement.
+The built-in default is **Team** (human-gated, fail-closed): a session with no
+explicit mode and no configured `policy.defaultMode` requires a human decision
+at the review gates. Choose `solo` or `team-ci` explicitly for auto-approve.
 
 ## Policy Modes
 
 | Mode      | Human Gates | Four-Eyes    | Self-Approval   |
 | --------- | ----------- | ------------ | --------------- |
 | Solo      | 0           | No           | Allowed         |
-| Team      | 3           | Optional     | Allowed         |
-| Team-CI   | 0 (CI only) | Optional     | Allowed         |
+| Team      | 3           | No           | Allowed         |
+| Team-CI   | 0 (CI only) | No           | Allowed         |
 | Regulated | 3           | **Required** | **Not Allowed** |
 
 ## Solo Mode
 
-Default mode for personal projects.
+Opt-in mode for personal projects (choose `solo` explicitly; the built-in default is Team).
 
 **Characteristics:**
 
-- No mandatory human gates
+- No mandatory human gates (all gates auto-approve)
 - AI drives the entire workflow
 - Self-approval allowed
-- Fast iteration
+- 2 plan / 1 impl review iterations; reviewer invocation preferred (host Task or SDK/manual evidence)
+- No audit chain hash
 
 **When to use:**
 
@@ -35,9 +39,9 @@ For team projects with optional human oversight.
 **Characteristics:**
 
 - 3 mandatory human gates (PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW)
-- Four-eyes optional (can be same person)
+- Four-eyes not enforced (the approver may be the session initiator)
 - Self-approval allowed
-- Review documentation required
+- 3 plan / 3 impl review iterations; reviewer invocation required (host Task)
 - Hash chain enabled
 
 Note: `IMPL_REVIEW` is **not** a human gate. It is an independent-review gate that
@@ -132,19 +136,34 @@ Resolution contract:
 
 ## Policy Comparison
 
-| Setting                                | Solo    | Team    | Team-CI             | Regulated       |
-| -------------------------------------- | ------- | ------- | ------------------- | --------------- |
-| Human gates                            | 0       | 3       | 0 (CI only; else 3) | 3               |
-| Four-eyes required                     | No      | No      | No                  | **Yes**         |
-| Self-approval                          | Allowed | Allowed | Allowed             | **Not Allowed** |
-| Audit trail (transitions + tool calls) | **Yes** | **Yes** | **Yes**             | **Yes**         |
-| Audit chain hash                       | No      | **Yes** | **Yes**             | **Yes**         |
-| Subagent review                        | **Yes** | **Yes** | **Yes**             | **Yes**         |
-| Strict review enforcement              | **Yes** | **Yes** | **Yes**             | **Yes**         |
+| Setting                                | Solo      | Team     | Team-CI             | Regulated       |
+| -------------------------------------- | --------- | -------- | ------------------- | --------------- |
+| Human gates                            | 0         | 3        | 0 (CI only; else 3) | 3               |
+| Four-eyes required                     | No        | No       | No                  | **Yes**         |
+| Self-approval                          | Allowed   | Allowed  | Allowed             | **Not Allowed** |
+| Plan review iterations (max)           | 2         | 3        | 3                   | 3               |
+| Impl review iterations (max)           | 1         | 3        | 3                   | 3               |
+| Reviewer invocation                    | preferred | required | required            | required        |
+| Decision actor classification          | system    | human    | system              | human           |
+| Audit trail (transitions + tool calls) | **Yes**   | **Yes**  | **Yes**             | **Yes**         |
+| Audit chain hash                       | No        | **Yes**  | **Yes**             | **Yes**         |
+| Subagent review                        | **Yes**   | **Yes**  | **Yes**             | **Yes**         |
+| Strict review enforcement              | **Yes**   | **Yes**  | **Yes**             | **Yes**         |
 
 **Human gates list (where applicable):** `PLAN_REVIEW`, `EVIDENCE_REVIEW`,
 `ARCH_REVIEW`. `IMPL_REVIEW` is an independent-review gate (subagent-driven), not
 a human gate.
+
+**Reviewer invocation** (`reviewInvocationPolicy`): `required` =
+`host_task_required` — the `flowguard-reviewer` subagent MUST be invoked via the
+host Task tool. `preferred` = `host_task_preferred` — the host Task subagent is
+preferred, but obligation-bound reviewer evidence may also be supplied via
+SDK/manual attestation. Either way self-review is never accepted as evidence.
+
+**Decision actor classification** (`actorClassification.flowguard_decision`):
+how a `/review-decision` is labelled in the audit trail — `human` in team/regulated
+(an explicit human decision is expected), `system` in solo/team-ci (gates
+auto-approve, so the decision is machine-attributed).
 
 **Subagent review:** All four modes ship with `selfReview.subagentEnabled = true`,
 `selfReview.fallbackToSelf = false`, `selfReview.strictEnforcement = true` as the

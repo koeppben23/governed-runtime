@@ -235,11 +235,11 @@ All side effects (persistence, git, LLM calls) live in the adapter layer, inject
 
 ### Solo
 
-For individual engineers who want structured execution and complete work records without human approval gates. All gates auto-approve. **Default mode.**
+For individual engineers who want structured execution and complete work records without human approval gates. All gates auto-approve. Opt-in: choose `solo` explicitly (the built-in default is Team).
 
 ### Team
 
-For engineering teams needing repeatable planning, review visibility, and shared execution discipline. Human gates active, self-approval allowed.
+For engineering teams needing repeatable planning, review visibility, and shared execution discipline. Human gates active, self-approval allowed. **Default mode** (fail-closed: a session with no explicit mode is human-gated).
 
 ### Team-CI
 
@@ -393,7 +393,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Actor Assurance:** Three-tier source-labeled attribution (source labels `env` / `git` / `claim` / `oidc` / `unknown`; assurance tiers `best_effort` / `claim_validated` / `idp_verified`), immutable per session; Solo, Team, and Team-CI default to `best_effort`, while Regulated defaults to `claim_validated`; enforcement at `/review-decision` only (Option B), `/hydrate` is diagnostic. The `oidc` source label is historical — it covers any IdP-verified actor (static-key or JWKS-backed); no OIDC discovery is implemented.
 - **Self-Review Iterations:** SOLO: 2 | TEAM/TEAM-CI/REGULATED: 3
 - **Impl-Review Iterations:** SOLO: 1 | TEAM/TEAM-CI/REGULATED: 3
-- **Policy Modes:** 4 (Solo [default], Team, Team-CI, Regulated)
+- **Policy Modes:** 4 (Solo, Team [default], Team-CI, Regulated)
 - **Central Policy Source:** Optional explicit central minimum via `FLOWGUARD_POLICY_PATH` (file-based, fail-closed when configured)
 - **Built-in Profiles:** 4 (`baseline`, `typescript`, `backend-java`, `frontend-angular` — IDs as declared in `src/config/profile.ts`)
 - **Discovery Collectors:** 6 (repo-metadata, stack-detection, topology, surface-detection, code-surface-analysis, domain-signals)

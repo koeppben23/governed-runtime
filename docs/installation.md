@@ -259,7 +259,7 @@ npm run flowguard:doctor
 | `--install-scope repo`                         | Install to `.opencode/` (committed to repo)                                        |
 | `--host opencode\|claude-code\|codex`          | Host alias for `--platform` during install; runtime host for `flowguard run/serve` |
 | `--platform opencode\|claude-code\|codex`      | Select host integration target                                                     |
-| `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode (persisted to `flowguard.json`)                            |
+| `--policy-mode solo\|team\|team-ci\|regulated` | Set default policy mode (persisted to `flowguard.json`); defaults to `team`        |
 | `--core-tarball <path>`                        | **Required.** Path to `flowguard-core-{version}.tgz`                               |
 | `--checksums-file <path>`                      | Optional explicit checksum file. Defaults to `checksums.sha256` next to tarball    |
 | `--allow-unverified-tarball`                   | Explicit supply-chain opt-out; not recommended and logged                          |

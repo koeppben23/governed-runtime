@@ -440,6 +440,121 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(writtenState.architecture?.status).toBe('accepted');
   });
 
+  it('force-converges to the human gate (ARCH_REVIEW) instead of blocking at the iteration limit', async () => {
+    mocks.state = makeState('ARCHITECTURE', {
+      architecture: {
+        id: 'ADR-001',
+        title: 'ADR',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        digest: 'digest-adr',
+        status: 'proposed',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      // iteration 2 + this review → 3 == maxSelfReviewIterations: force-convergence.
+      selfReview: {
+        iteration: 2,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: 'digest-adr',
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+    });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.autoAdvance.mockReturnValue({
+      kind: 'advanced',
+      state: makeState('ARCH_REVIEW', {
+        architecture: {
+          id: 'ADR-001',
+          title: 'ADR',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          digest: 'digest-adr',
+          status: 'proposed',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      }),
+      evalResult: { kind: 'waiting' },
+      transitions: [],
+    });
+    const { architecture } = await import('./architecture.js');
+    const parsed = JSON.parse(
+      String(
+        await architecture.execute(
+          {
+            reviewVerdict: 'changes_requested',
+            adrText: '## Context\nA3\n\n## Decision\nB\n\n## Consequences\nC',
+            reviewFindings: makeFindings({ iteration: 2, overallVerdict: 'changes_requested' }),
+          },
+          {} as never,
+        ),
+      ),
+    );
+
+    expect(parsed.error).not.toBe(true);
+    expect(parsed.code).toBeUndefined();
+    expect(parsed.phase).toBe('ARCH_REVIEW');
+    expect(parsed.status).toContain('iteration limit');
+    expect(parsed.status).toContain('without reviewer approval');
+    expect(parsed.status).toContain('Your decision is required');
+    expect(parsed.reviewCard).toContain('Reviewer did NOT approve');
+  });
+
+  it('force-convergence auto-finalizes the ADR in auto-approve modes (ARCH_COMPLETE)', async () => {
+    mocks.state = makeState('ARCHITECTURE', {
+      architecture: {
+        id: 'ADR-001',
+        title: 'ADR',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        digest: 'digest-adr',
+        status: 'proposed',
+        createdAt: '2026-01-01T00:00:00.000Z',
+      },
+      selfReview: {
+        iteration: 2,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: 'digest-adr',
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+    });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.autoAdvance.mockReturnValue({
+      kind: 'advanced',
+      state: makeState('ARCH_COMPLETE', {
+        architecture: {
+          id: 'ADR-001',
+          title: 'ADR',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          digest: 'digest-adr',
+          status: 'proposed',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      }),
+      evalResult: { kind: 'terminal' },
+      transitions: [],
+    });
+    const { architecture } = await import('./architecture.js');
+    const parsed = JSON.parse(
+      String(
+        await architecture.execute(
+          {
+            reviewVerdict: 'changes_requested',
+            adrText: '## Context\nA3\n\n## Decision\nB\n\n## Consequences\nC',
+            reviewFindings: makeFindings({ iteration: 2, overallVerdict: 'changes_requested' }),
+          },
+          {} as never,
+        ),
+      ),
+    );
+
+    expect(parsed.error).not.toBe(true);
+    expect(parsed.code).toBeUndefined();
+    expect(parsed.phase).toBe('ARCH_COMPLETE');
+    expect(parsed.status).toContain('without reviewer approval');
+    expect(parsed.status).toContain('ADR auto-finalized');
+  });
+
   it('accepts the F13 reviewFindings arg (slice 7a additive surface)', async () => {
     // F13 slice 7a adds reviewFindings as an optional arg on the architecture
     // tool, mirroring plan/implement. In slice 7a the arg is wired into the

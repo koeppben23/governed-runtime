@@ -161,13 +161,13 @@ describe('integration/tools', () => {
       });
     }
 
-    it("hydrate policyMode describes config fallback to 'solo'", () => {
+    it("hydrate policyMode describes config fallback to 'team'", () => {
       const h = TOOLS.hydrate as Record<string, unknown>;
       const args = h.args as Record<string, unknown>;
       const policyMode = args.policyMode as Record<string, unknown>;
       // policyMode is optional — resolved via config fallback chain, not Zod default.
-      // The description should mention the fallback to 'solo'.
-      expect(h.description).toContain('solo');
+      // The description should mention the fail-closed fallback to 'team'.
+      expect(h.description).toContain('team');
     });
   });
 

@@ -283,6 +283,58 @@ describe('hydrate', () => {
       }
     });
 
+    it('surfaces a gateNotice for solo (auto-approve visible)', async () => {
+      const result = await hydrateSession({ policyMode: 'solo' });
+      expect(result.gateNotice).toContain('Auto-approve is active');
+      expect(result.gateNotice).toContain('solo');
+      expect(result.gateNotice).toContain('WITHOUT a human decision');
+    });
+
+    it('omits the gateNotice (null) for human-gated team', async () => {
+      const result = await hydrateSession({ policyMode: 'team' });
+      expect(result.gateNotice).toBeNull();
+    });
+
+    it('surfaces a gateNotice for team-ci when CI context is present', async () => {
+      const cleanup = withTestEnv({ CI: 'true' });
+      try {
+        const result = await hydrateSession({ policyMode: 'team-ci' });
+        expect(result.gateNotice).toContain('Auto-approve is active');
+        expect(result.gateNotice).toContain('team-ci');
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('omits the gateNotice when team-ci degrades to human-gated team', async () => {
+      const cleanup = withTestEnv({
+        CI: undefined,
+        GITHUB_ACTIONS: undefined,
+        GITLAB_CI: undefined,
+        BUILDKITE: undefined,
+        JENKINS_URL: undefined,
+        TF_BUILD: undefined,
+        TEAMCITY_VERSION: undefined,
+        CIRCLECI: undefined,
+        DRONE: undefined,
+        BITBUCKET_BUILD_NUMBER: undefined,
+        BUILDKITE_BUILD_ID: undefined,
+      });
+      try {
+        const result = await hydrateSession({ policyMode: 'team-ci' });
+        expect(result.gateNotice).toBeNull();
+      } finally {
+        cleanup();
+      }
+    });
+
+    it('surfaces the gateNotice on an existing-session reload (solo)', async () => {
+      await hydrateSession({ policyMode: 'solo' });
+      const reloaded = await hydrateSession({ policyMode: 'solo' });
+      expect(reloaded.gateNotice).toContain('Auto-approve is active');
+      expect(reloaded.gateNotice).toContain('solo');
+    });
+
     it('persists state to session directory on disk', async () => {
       await hydrateSession();
       // Resolve the session dir and verify the file exists
@@ -761,9 +813,9 @@ describe('hydrate', () => {
       expect(resolution.effectiveMode).toBe('solo');
     });
 
-    it('hydrate falls back to solo when config has no defaultMode', async () => {
+    it('hydrate falls back to team (human-gated) when config has no defaultMode', async () => {
       // Config has no defaultMode set — remove repo config so DEFAULT_CONFIG is used.
-      // DEFAULT_CONFIG has no defaultMode → hydrate defaults to 'solo'.
+      // DEFAULT_CONFIG has no defaultMode → hydrate defaults to fail-closed 'team'.
       try {
         await import('node:fs/promises').then((fs) =>
           fs.rm(path.join(ws.tmpDir, '.opencode', 'flowguard.json'), { force: true }),
@@ -782,8 +834,8 @@ describe('hydrate', () => {
 
       expect(result.phase).toBe('READY');
       const resolution = result.policyResolution as Record<string, unknown>;
-      expect(resolution.requestedMode).toBe('solo');
-      expect(resolution.effectiveMode).toBe('solo');
+      expect(resolution.requestedMode).toBe('team');
+      expect(resolution.effectiveMode).toBe('team');
     });
 
     it('config team default produces human-gated policy', async () => {
