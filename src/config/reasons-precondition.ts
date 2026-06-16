@@ -150,7 +150,8 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Invalid flowguard_plan call sequence: plan submission and review verdict inputs must be separate calls.',
     recoverySteps: [
       'Submit the plan first with flowguard_plan({ planText }) only',
-      'Do not include reviewVerdict or reviewFindings in the plan submission call',
+      'Do not include reviewVerdict, reviewFindings, or reviewerUnavailable in the plan submission call',
+      'Read the tool response next field before constructing the review verdict call',
     ],
     quickFixCommand: '/plan',
   },
@@ -171,9 +172,10 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'PLAN_APPROVE_WITH_TEXT',
     category: 'precondition',
     messageTemplate:
-      'Plan approval included planText. For approval, send only the verdict and findings — planText is for revisions.',
+      'Plan approval included planText. Approval and plan submission must be separate calls; planText is for initial submissions and revisions only.',
     recoverySteps: [
-      'For approval: call flowguard_plan({ reviewVerdict: "approve", reviewFindings })',
+      'For host_task_required approval: call flowguard_plan({ reviewVerdict: "approve" }) after reviewer evidence is captured',
+      'For SDK/manual-attested approval: call flowguard_plan({ reviewVerdict: "approve", reviewFindings }) with the exact reviewer output',
       'Include planText only when reviewVerdict is "changes_requested" (revised plan)',
     ],
     quickFixCommand: '/plan',
@@ -185,8 +187,9 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'The plan review loop is already active. Submit a review verdict to continue it, not a new plan.',
     recoverySteps: [
-      'The review loop is active — send reviewVerdict + reviewFindings to continue it',
-      'Call flowguard_plan({ reviewVerdict: "approve"|"changes_requested", reviewFindings })',
+      'The review loop is active — submit a reviewVerdict to continue it',
+      'In host_task_required mode, submit only reviewVerdict after reviewer evidence is captured',
+      'In SDK/manual-attested mode, include the exact reviewer output as reviewFindings',
     ],
     quickFixCommand: '/plan',
   },

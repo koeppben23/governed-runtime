@@ -514,26 +514,50 @@ describe('plan', () => {
       expect(result.code).toBe('NO_SESSION');
     });
 
-    it('blocks mixed first-call planText + reviewVerdict with PLAN_APPROVE_WITH_TEXT', async () => {
+    it('normalizes mixed first-call planText + reviewVerdict into initial plan submission', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute({ planText: '## Plan', reviewVerdict: 'approve' }, ctx);
       const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('PLAN_APPROVE_WITH_TEXT');
-      expect(result.recovery).toContain(
-        'For approval: call flowguard_plan({ reviewVerdict: "approve", reviewFindings })',
-      );
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('Plan submitted');
+      expect(result.selfReviewIteration).toBe(0);
     });
 
-    it('blocks first-call planText + reviewFindings with PLAN_SUBMISSION_MIXED_INPUTS', async () => {
+    it('normalizes incident payload and discards approval, fabricated findings, and unavailable marker', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute(
+        {
+          planText: '## Plan',
+          reviewVerdict: 'approve',
+          reviewFindings: modeBSubagentFindings,
+          reviewerUnavailable: true,
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('Plan submitted');
+      expect(result.latestReview).toBeUndefined();
+    });
+
+    it('normalizes first-call planText + reviewFindings into initial plan submission', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
         { planText: '## Plan', reviewFindings: modeBSubagentFindings },
         ctx,
       );
       const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('PLAN_SUBMISSION_MIXED_INPUTS');
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('Plan submitted');
+      expect(result.latestReview).toBeUndefined();
+    });
+
+    it('normalizes initial plan submission with preemptive reviewerUnavailable', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute({ planText: '## Plan', reviewerUnavailable: true }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('Plan submitted');
     });
 
     it('blocks plan-only resubmission while review loop is active', async () => {
@@ -560,7 +584,7 @@ describe('plan', () => {
       expect(result.recovery).toContain('Call flowguard_plan with planText first');
     });
 
-    it('blocks changes_requested revised plan before review loop with PLAN_SUBMISSION_REQUIRED', async () => {
+    it('normalizes changes_requested revised plan before review loop into initial plan submission', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
         {
@@ -571,8 +595,9 @@ describe('plan', () => {
         ctx,
       );
       const result = parseToolResult(raw);
-      expect(result.error).toBe(true);
-      expect(result.code).toBe('PLAN_SUBMISSION_REQUIRED');
+      expect(result.error).not.toBe(true);
+      expect(result.status).toContain('Plan submitted');
+      expect(result.latestReview).toBeUndefined();
     });
   });
 

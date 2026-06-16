@@ -41,6 +41,14 @@ ${DISCOVERY_REVIEW_CAPTURE}
 4. Call \`flowguard_plan({ planText })\` with only planText set to the full plan markdown.
 5. Read the response. The \`next\` field contains the review workflow instructions.
 
+Payload contract for \`flowguard_plan\`:
+- Initial submission: call exactly \`flowguard_plan({ planText })\`. Do not include \`reviewVerdict\`, \`reviewFindings\`, or \`reviewerUnavailable\`.
+- Approval after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "approve" })\`; SDK/manual-attested modes include the exact reviewer output as \`reviewFindings\`.
+- Revision after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <complete revised plan> })\`; SDK/manual-attested modes also include the exact reviewer output as \`reviewFindings\`.
+- Never submit placeholder, diagnostic, or manually fabricated \`reviewFindings\`.
+- Set \`reviewerUnavailable: true\` only after an actual Task/subagent spawn failure; never set it preemptively.
+- After every FlowGuard call, stop and interpret \`phase\`, \`next\`, \`reviewInvocation\`, and any error code before constructing the next payload.
+
 ### Phase 3: Review Loop
 
 6. Follow the \`next\` field instructions exactly:

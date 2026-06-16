@@ -86,9 +86,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // NOT_VERIFIED correlation (parity with /review). Changes the COMMANDS hash.
     // Refreshed for #471: COMPACT_COMMAND_EXECUTION / CONCISE_COMMAND_EXECUTION
     // updated with host/profile output convention scope.
+    // Refreshed for #507: /plan documents strict payload sequencing and
+    // reviewerUnavailable fail-closed recovery semantics.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'b3a7c90fea4ab6343d09a748e10e5fc45afb77bb253f8b4f666ea64dbad9540a',
+      '6b931d5cf15acf01d372cde8ca7a6d9f080d286159418bc3ec5fa8f46adbe9a6',
     );
   });
 

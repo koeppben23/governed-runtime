@@ -736,15 +736,26 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     expect(result.allowed).toBe(true);
   });
 
-  it('E2E SMOKE: DeepSeek R1 sends { planText, reviewVerdict: "approve" } after /ticket → allowed (proceeds to tool for PLAN_APPROVE_WITH_TEXT)', () => {
+  it('E2E SMOKE: DeepSeek R1 sends { planText, reviewVerdict: "approve" } after /ticket → allowed for tool normalization', () => {
     const state = createSessionState();
     const sessionState = { reviewAssurance: undefined };
-    // This should NOT be blocked by enforcement — the PLAN_APPROVE_WITH_TEXT
-    // error comes from the tool's own mode detection, not from enforcement.
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
       { planText: 'My plan', reviewVerdict: 'approve', reviewFindings: {} },
+      sessionState,
+      true,
+    );
+    expect(result.allowed).toBe(true);
+  });
+
+  it('E2E SMOKE: preemptive reviewerUnavailable on initial /plan is allowed for tool normalization', () => {
+    const state = createSessionState();
+    const sessionState = { reviewAssurance: undefined };
+    const result = enforceBeforeVerdict(
+      state,
+      'flowguard_plan',
+      { planText: 'My plan', reviewerUnavailable: true },
       sessionState,
       true,
     );
