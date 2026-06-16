@@ -690,6 +690,124 @@ describe('plan', () => {
     });
   });
 
+  describe('Force-convergence at iteration limit', () => {
+    // Drive the independent review loop to its iteration budget with
+    // changes_requested verdicts only (reviewer never approves). Returns the
+    // parsed result of the final, force-converging review call.
+    //
+    // Obligation bookkeeping: review #k consumes obligation (iteration k-1,
+    // planVersion k) — see buildPlanSubmissionState / persistNonConvergedPlanReview.
+    async function exhaustPlanReviews(maxIterations: number): Promise<Record<string, unknown>> {
+      await plan.execute({ planText: '## Plan v0' }, ctx);
+      const sessDir = await currentSessionDir();
+      let last: Record<string, unknown> = {};
+      for (let k = 1; k <= maxIterations; k++) {
+        const findings = await fulfillStrictReviewObligation(sessDir, {
+          obligationType: 'plan',
+          iteration: k - 1,
+          planVersion: k,
+          overallVerdict: 'changes_requested',
+        });
+        const raw = await plan.execute(
+          {
+            reviewVerdict: 'changes_requested',
+            planText: `## Revised plan ${k}`,
+            reviewFindings: findings,
+          },
+          ctx,
+        );
+        last = parseToolResult(raw);
+      }
+      return last;
+    }
+
+    it('TEAM: presents the plan at the human gate instead of blocking (#508 regression)', async () => {
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
+
+      // TEAM maxSelfReviewIterations = 3 (SOLO=2) — see config/policy-presets.
+      const result = await exhaustPlanReviews(3);
+
+      // Never a block — the old MAX_REVIEW_ITERATIONS_REACHED hard block wedged
+      // the session at PLAN_REVIEW with an inadmissible "/plan" recovery.
+      expect(result.error).not.toBe(true);
+      expect(result.code).toBeUndefined();
+      // Force-converged to the human gate; the human decides.
+      expect(result.phase).toBe('PLAN_REVIEW');
+      expect(result.selfReviewIteration).toBe(3);
+      expect(typeof result.reviewCard).toBe('string');
+      expect(result.reviewCard).toContain('Reviewer did NOT approve');
+      expect(result.status).toContain('iteration limit');
+      expect(result.status).toContain('without reviewer approval');
+      // State on disk truly sits at the human gate.
+      const state = await readState(await currentSessionDir());
+      expect(state!.phase).toBe('PLAN_REVIEW');
+    });
+
+    it('TEAM: human approve advances the force-converged plan to VALIDATION', async () => {
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
+      await exhaustPlanReviews(3);
+
+      const decisionResult = parseToolResult(
+        await decision.execute(
+          { verdict: 'approve', rationale: 'Acceptable despite open findings' },
+          ctx,
+        ),
+      );
+      expect(decisionResult.error).not.toBe(true);
+      const state = await readState(await currentSessionDir());
+      expect(state!.phase).toBe('VALIDATION');
+    });
+
+    it('TEAM: human changes_requested sends the force-converged plan back to PLAN', async () => {
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
+      await exhaustPlanReviews(3);
+
+      const decisionResult = parseToolResult(
+        await decision.execute(
+          { verdict: 'changes_requested', rationale: 'Address the open findings' },
+          ctx,
+        ),
+      );
+      expect(decisionResult.error).not.toBe(true);
+      const state = await readState(await currentSessionDir());
+      expect(state!.phase).toBe('PLAN');
+      expect(state!.plan).not.toBeNull();
+      expect(state!.selfReview).toBeNull();
+    });
+
+    it('TEAM: human reject returns the force-converged plan to TICKET', async () => {
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
+      await exhaustPlanReviews(3);
+
+      const decisionResult = parseToolResult(
+        await decision.execute({ verdict: 'reject', rationale: 'Wrong approach entirely' }, ctx),
+      );
+      expect(decisionResult.error).not.toBe(true);
+      const state = await readState(await currentSessionDir());
+      expect(state!.phase).toBe('TICKET');
+    });
+
+    it('SOLO: force-convergence runs through without blocking (no inadmissible recovery)', async () => {
+      await hydrateSession({ policyMode: 'solo' });
+      await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
+
+      // SOLO maxSelfReviewIterations = 2 — see config/policy-presets.
+      const result = await exhaustPlanReviews(2);
+
+      expect(result.error).not.toBe(true);
+      expect(result.code).toBeUndefined();
+      // SOLO auto-approves the user gate by design → flow continues past PLAN_REVIEW.
+      expect(result.phase).not.toBe('PLAN_REVIEW');
+      expect(result.phase).not.toBe('PLAN');
+      expect(result.status).toContain('iteration limit');
+      expect(result.status).toContain('without reviewer approval');
+    });
+  });
+
   describe('CORNER', () => {
     it('Mode B changes_requested requires revised planText', async () => {
       await hydrateAndTicket();

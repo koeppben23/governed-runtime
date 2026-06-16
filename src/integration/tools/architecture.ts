@@ -80,6 +80,7 @@ import {
 } from '../../presentation/index.js';
 import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js';
 import { resolveNextAction } from '../../machine/next-action.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_architecture — Submit ADR OR Self-Review Verdict (Multi-Mode)
@@ -127,6 +128,12 @@ type ReviewResultContext = {
   revision: AdrRevision;
   advanced: AdvancedArchitectureState;
   iteration: number;
+  /**
+   * True when convergence was forced by reaching the iteration limit without
+   * an approving verdict (last verdict was changes_requested). Drives honest,
+   * non-"approved" messaging and the review-card warning banner.
+   */
+  forcedConvergence?: boolean;
 };
 
 function hasText(value: unknown): value is string {
@@ -499,31 +506,51 @@ async function persistAndFormatReviewResult(input: ReviewResultContext): Promise
   const verdict = input.args.reviewVerdict as LoopVerdict;
   const approvedConverged = input.revision.revisionDelta === 'none' && verdict === 'approve';
   const maxReached = iteration >= input.session.policy.maxSelfReviewIterations;
-  const context = { ...input, iteration };
 
-  if (maxReached && !approvedConverged) {
-    await writeStateWithArtifacts(input.session.sessDir, input.advanced.state);
-    return formatBlocked('MAX_REVIEW_ITERATIONS_REACHED', {
-      iteration: String(iteration),
-      maxIterations: String(input.session.policy.maxSelfReviewIterations),
-      lastVerdict: verdict,
-    });
+  // Force-convergence: the review loop exhausted its iteration budget without
+  // an approving verdict. Parity with the plan and implementation review flows:
+  // NEVER block here. Route through the converged path so human-gated modes
+  // stop at ARCH_REVIEW for the human to decide, and auto-approve modes finalize
+  // with an honest, audit-visible status. The previous hard block stranded the
+  // session at ARCH_REVIEW while its recovery told the user to run a command
+  // inadmissible at that phase.
+  const forcedConvergence = maxReached && !approvedConverged;
+  const context = { ...input, iteration, forcedConvergence };
+
+  if (forcedConvergence) {
+    getAdapterLogger().warn(
+      'flowguard_architecture',
+      'ADR review force-converged at iteration limit without reviewer approval',
+      {
+        sessDir: input.session.sessDir,
+        iteration,
+        maxIterations: input.session.policy.maxSelfReviewIterations,
+        lastVerdict: verdict,
+        phase: input.advanced.state.phase,
+        adrDigest: input.revision.currentAdr.digest,
+      },
+    );
   }
-  if (approvedConverged) {
+
+  if (approvedConverged || forcedConvergence) {
     return persistAndFormatConvergedReview(context);
   }
   return persistAndFormatNonConvergedReview(context, verdict);
 }
 
 async function persistAndFormatConvergedReview(input: ReviewResultContext): Promise<string> {
-  const { args, session, review, revision, advanced, iteration } = input;
+  const { args, session, review, revision, advanced, iteration, forcedConvergence } = input;
   await writeStateWithArtifacts(session.sessDir, advanced.state);
   const isComplete = advanced.state.phase === 'ARCH_COMPLETE';
+  const reviewLabel = review.subagentEnabled ? 'Independent review' : 'ADR self-review';
+  const status = forcedConvergence
+    ? `${reviewLabel} reached the iteration limit (${iteration}/${session.policy.maxSelfReviewIterations}) ` +
+      `without reviewer approval (last verdict: ${args.reviewVerdict}). ` +
+      `${isComplete ? 'ADR auto-finalized.' : 'Your decision is required.'}`
+    : `${reviewLabel} converged at iteration ${iteration}. ADR ${isComplete ? 'approved' : 'ready for approval'}.`;
   const resp: Record<string, unknown> = {
     phase: advanced.state.phase,
-    status: review.subagentEnabled
-      ? `Independent review converged at iteration ${iteration}. ADR ${isComplete ? 'approved' : 'ready for approval'}.`
-      : `ADR self-review converged at iteration ${iteration}. ADR ${isComplete ? 'approved' : 'ready for approval'}.`,
+    status,
     adrId: revision.currentAdr.id,
     adrDigest: revision.currentAdr.digest,
     selfReviewIteration: iteration,
@@ -539,6 +566,7 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
     finalState: advanced.state,
     iteration,
     isComplete,
+    forcedConvergence: forcedConvergence ?? false,
   });
   return appendNextAction(JSON.stringify(resp), advanced.state);
 }
@@ -569,6 +597,7 @@ async function attachReviewCard(input: {
   finalState: SessionState;
   iteration: number;
   isComplete: boolean;
+  forcedConvergence: boolean;
 }): Promise<void> {
   const { resp, reviewFindings, session, revision, finalState, iteration, isComplete } = input;
   const nextAction = resolveNextAction(finalState.phase, finalState);
@@ -589,6 +618,7 @@ async function attachReviewCard(input: {
     unknowns: reviewFindings?.unknowns,
     productNextAction: productNext,
     isApproved: isComplete,
+    forcedConvergence: input.forcedConvergence,
   });
   const artifactErr = await materializeReviewCardArtifact(
     session.sessDir,

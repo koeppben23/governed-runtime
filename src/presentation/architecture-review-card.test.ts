@@ -87,4 +87,24 @@ describe('buildArchitectureReviewCard', () => {
     const card = buildArchitectureReviewCard(baseInput);
     expect(card).not.toContain('## Reviewer Findings');
   });
+
+  it('renders a "reviewer did NOT approve" warning when forceConverged at the gate', () => {
+    const card = buildArchitectureReviewCard({
+      ...baseInput,
+      forcedConvergence: true,
+    });
+    expect(card).toContain('Reviewer did NOT approve this ADR.');
+    expect(card).toContain('iteration limit');
+  });
+
+  it('suppresses the forced-convergence warning once the ADR is approved', () => {
+    const card = buildArchitectureReviewCard({
+      ...baseInput,
+      phase: 'ARCH_COMPLETE',
+      phaseLabel: 'Architecture complete',
+      isApproved: true,
+      forcedConvergence: true,
+    });
+    expect(card).not.toContain('Reviewer did NOT approve');
+  });
 });

@@ -35,6 +35,12 @@ export interface PlanReviewCardInput {
   policyMode?: string;
   /** Ticket / task title. Omitted when absent. */
   taskTitle?: string;
+  /**
+   * True when the independent review loop force-converged at the iteration
+   * limit WITHOUT an approving verdict. Renders a prominent warning so the
+   * human reviewer does not mistake the gate for a reviewer-approved plan.
+   */
+  forcedConvergence?: boolean;
 }
 
 // ─── Card Builder ────────────────────────────────────────────────────────────
@@ -71,6 +77,19 @@ export function buildPlanReviewCard(input: PlanReviewCardInput): string {
   }
   if (taskTitle) {
     header.push(`> **Task:** ${taskTitle}`);
+  }
+
+  // ── Section 2b: Force-convergence warning ──────────────────────────
+  // The loop hit its iteration budget without the reviewer approving. Surface
+  // this unmistakably — the human gate must be a deliberate decision, never a
+  // rubber-stamp of an unreviewed plan.
+  if (input.forcedConvergence) {
+    header.push('>');
+    header.push('> **Reviewer did NOT approve this plan.**');
+    header.push(
+      '> The independent review reached its iteration limit without convergence ' +
+        '(last verdict: changes_requested). Review the outstanding findings carefully before approving.',
+    );
   }
 
   // ── Section 3: Plan Body ───────────────────────────────────────────

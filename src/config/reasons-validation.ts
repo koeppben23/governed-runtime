@@ -593,6 +593,13 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    // RETAINED, NO LONGER EMITTED. The plan and architecture review loops used
+    // to hard-block here when the iteration budget was exhausted without an
+    // approving verdict. That stranded human-gated sessions at the review gate
+    // with an inadmissible "/plan" recovery. They now force-converge to the
+    // review gate (human decides) or finalize in auto-approve modes — parity
+    // with the implementation-review flow. This reason is kept for registry and
+    // changelog stability; reintroduce an emitter only with a coherent recovery.
     code: 'MAX_REVIEW_ITERATIONS_REACHED',
     category: 'state',
     messageTemplate:
