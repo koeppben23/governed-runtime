@@ -29,6 +29,18 @@
 
 // ─── Before-Hook Types ────────────────────────────────────────────────────────
 
+/** Input parameter for `command.execute.before` hooks. */
+export interface CommandHookBeforeInput {
+  readonly command: string;
+  readonly sessionID: string;
+  readonly arguments: string;
+}
+
+/** Output parameter for `command.execute.before` hooks. */
+export interface CommandHookBeforeOutput {
+  parts: unknown[];
+}
+
 /**
  * Input parameter for `tool.execute.before` hooks.
  *

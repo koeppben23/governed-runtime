@@ -60,6 +60,8 @@ import {
 } from '../__fixtures__.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import type { ReviewVerdict } from '../state/evidence.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -165,6 +167,7 @@ afterEach(async () => {
       assurance: 'best_effort' as const,
     });
   cleanupEnv();
+  clearUserDecisionIntents();
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -183,6 +186,20 @@ async function hydrateSession(
   }
   const raw = await hydrate.execute(args, ctx);
   return parseToolResult(raw);
+}
+
+function recordUserDecision(verdict: ReviewVerdict): void {
+  const command =
+    verdict === 'approve'
+      ? '/approve'
+      : verdict === 'changes_requested'
+        ? '/request-changes'
+        : '/reject';
+  recordUserDecisionIntent({
+    sessionId: ctx.sessionID,
+    command,
+    expectedVerdict: verdict,
+  });
 }
 
 /** Hydrate + ticket. Convenience for tests that need to start from PLAN phase. */
@@ -673,6 +690,7 @@ describe('plan', () => {
       const reviewResult = parseToolResult(reviewRaw);
       expect(reviewResult.phase).toBe('PLAN_REVIEW');
 
+      recordUserDecision('changes_requested');
       const decisionRaw = await decision.execute(
         { verdict: 'changes_requested', rationale: 'Needs more detail' },
         ctx,
@@ -739,6 +757,7 @@ describe('plan', () => {
       // State on disk truly sits at the human gate.
       const state = await readState(await currentSessionDir());
       expect(state!.phase).toBe('PLAN_REVIEW');
+      expect(state!.reviewDecision).toBeNull();
     });
 
     it('TEAM: human approve advances the force-converged plan to VALIDATION', async () => {
@@ -746,6 +765,7 @@ describe('plan', () => {
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
 
+      recordUserDecision('approve');
       const decisionResult = parseToolResult(
         await decision.execute(
           { verdict: 'approve', rationale: 'Acceptable despite open findings' },
@@ -762,6 +782,7 @@ describe('plan', () => {
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
 
+      recordUserDecision('changes_requested');
       const decisionResult = parseToolResult(
         await decision.execute(
           { verdict: 'changes_requested', rationale: 'Address the open findings' },
@@ -780,6 +801,7 @@ describe('plan', () => {
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await exhaustPlanReviews(3);
 
+      recordUserDecision('reject');
       const decisionResult = parseToolResult(
         await decision.execute({ verdict: 'reject', rationale: 'Wrong approach entirely' }, ctx),
       );

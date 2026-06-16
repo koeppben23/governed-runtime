@@ -102,9 +102,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // self-review fallback wording.
     // Refreshed for review-verdict accept-token: command templates now use
     // overallVerdict/reviewVerdict "accept" (reviewer) instead of "approve".
+    // Refreshed for host-confirmed user decisions: plan/decision commands now
+    // require explicit user slash-command origin at human review gates.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '344894c0b39952571d18fee434956143bb4ec00ce7241fc081e3bd7f3930d101',
+      'fe008144b76af49b859fbe32654b2a753b1589939bd9f23d1d7068d6e5da13b0',
     );
   });
 

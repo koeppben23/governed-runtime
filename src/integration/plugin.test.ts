@@ -37,6 +37,7 @@ import {
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../shared/flowguard-identifiers.js';
 import { fileURLToPath } from 'node:url';
+import { clearUserDecisionIntents, consumeUserDecisionIntent } from './user-decision-intent.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -169,6 +170,48 @@ describe('integration/plugin', () => {
       expect(typeof hooks['tool.execute.after']).toBe('function');
     });
 
+    it('command.execute.before records a one-shot user decision intent', async () => {
+      clearUserDecisionIntents();
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
+      const handler = hooks['command.execute.before'];
+      expect(typeof handler).toBe('function');
+
+      await handler!(
+        { command: '/approve', sessionID: 'ses-user-command', arguments: '' },
+        { parts: [] },
+      );
+
+      expect(
+        consumeUserDecisionIntent({
+          sessionId: 'ses-user-command',
+          verdict: 'approve',
+        }),
+      ).toMatchObject({ ok: true });
+      expect(
+        consumeUserDecisionIntent({
+          sessionId: 'ses-user-command',
+          verdict: 'approve',
+        }),
+      ).toEqual({ ok: false, reason: 'missing' });
+    });
+
+    it('command.execute.before ignores ambiguous review-decision commands', async () => {
+      clearUserDecisionIntents();
+      const hooks = await FlowGuardAuditPlugin(createMockInput());
+
+      await hooks['command.execute.before']!(
+        { command: '/review-decision', sessionID: 'ses-ambiguous', arguments: '' },
+        { parts: [] },
+      );
+
+      expect(
+        consumeUserDecisionIntent({
+          sessionId: 'ses-ambiguous',
+          verdict: 'approve',
+        }),
+      ).toEqual({ ok: false, reason: 'missing' });
+    });
+
     it('barrel re-exports FlowGuardAuditPlugin', () => {
       expect(barrel.FlowGuardAuditPlugin).toBe(FlowGuardAuditPlugin);
     });
@@ -233,10 +276,11 @@ describe('integration/plugin', () => {
       expect(hooks).toBeDefined();
     });
 
-    it('returns all expected hooks (tool + event + compaction)', async () => {
+    it('returns all expected hooks (command + tool + event + compaction)', async () => {
       const hooks = await FlowGuardAuditPlugin(createMockInput());
       const keys = Object.keys(hooks).sort();
       expect(keys).toEqual([
+        'command.execute.before',
         'event',
         'experimental.session.compacting',
         'tool.execute.after',

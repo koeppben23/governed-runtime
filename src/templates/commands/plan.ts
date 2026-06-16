@@ -101,6 +101,7 @@ ${GOVERNANCE_RULES}
 - If the response contains a \`reviewCard\` field, display its markdown verbatim — never summarize, truncate, or omit it.
 - The reviewCard contains the formatted plan review with findings, verdict, and next actions.
 - This is mandatory output: the user relies on it to make their review decision.
+- When phase is \`PLAN_REVIEW\`, stop after presenting the reviewCard. Do not call \`flowguard_decision\`, \`/approve\`, \`/request-changes\`, or \`/reject\` yourself; only the user's next explicit command may decide the gate.
 
 ## Done-when
 
@@ -110,5 +111,5 @@ ${GOVERNANCE_RULES}
 ${DISCOVERY_REVIEW_DONE_WHEN}
 - If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
 - Phase has advanced to PLAN_REVIEW.
-- Response ends with \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
+- Response ends with \`Next action: user must run /review-decision approve, /request-changes, or /reject.\`
 `;

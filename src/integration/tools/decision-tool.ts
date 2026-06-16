@@ -23,6 +23,7 @@ import {
   formatError,
   persistAndFormat,
 } from './helpers.js';
+import type { ReviewVerdict } from '../../state/evidence.js';
 
 // Rails
 import { executeReviewDecision } from '../../rails/review-decision.js';
@@ -33,10 +34,27 @@ import { ActorIdentityError } from '../../adapters/actor.js';
 
 // Finalization service
 import { finalizeDecision } from '../services/decision-finalization.js';
+import { consumeUserDecisionIntent } from '../user-decision-intent.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_decision — Human Verdict at User Gates
 // ═══════════════════════════════════════════════════════════════════════════════
+
+function requireHumanDecisionIntent(input: {
+  readonly sessionId: string;
+  readonly verdict: ReviewVerdict;
+  readonly requireHumanGates: boolean;
+}): string | null {
+  if (!input.requireHumanGates) return null;
+  const consumed = consumeUserDecisionIntent({
+    sessionId: input.sessionId,
+    verdict: input.verdict,
+  });
+  if (consumed.ok) return null;
+  return formatBlocked('HUMAN_DECISION_REQUIRED', {
+    reason: consumed.reason,
+  });
+}
 
 export const decision: ToolDefinition = {
   description:
@@ -57,6 +75,13 @@ export const decision: ToolDefinition = {
   async execute(args, context) {
     try {
       const probe = await withMutableSession(context);
+      const humanOriginBlocked = requireHumanDecisionIntent({
+        sessionId: context.sessionID,
+        verdict: args.verdict,
+        requireHumanGates: probe.policy.requireHumanGates === true,
+      });
+      if (humanOriginBlocked) return humanOriginBlocked;
+
       const actorInfo = await resolveActorForPolicy(
         context.worktree || context.directory,
         probe.policy,

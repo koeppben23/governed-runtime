@@ -60,6 +60,8 @@ import {
 } from '../__fixtures__.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import type { ReviewVerdict } from '../state/evidence.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -176,6 +178,7 @@ afterEach(async () => {
       assurance: 'best_effort' as const,
     });
   cleanupEnv();
+  clearUserDecisionIntents();
   vi.clearAllMocks();
   await ws.cleanup();
 });
@@ -207,6 +210,20 @@ async function currentSessionDir(): Promise<string> {
     await import('../adapters/workspace/index.js');
   const fp = await computeFingerprint(ws.tmpDir);
   return resolveSessionDir(fp.fingerprint, ctx.sessionID);
+}
+
+function recordUserDecision(verdict: ReviewVerdict): void {
+  const command =
+    verdict === 'approve'
+      ? '/approve'
+      : verdict === 'changes_requested'
+        ? '/request-changes'
+        : '/reject';
+  recordUserDecisionIntent({
+    sessionId: ctx.sessionID,
+    command,
+    expectedVerdict: verdict,
+  });
 }
 
 async function fulfillPlanReview(
@@ -567,6 +584,7 @@ describe('decision', () => {
   describe('HAPPY', () => {
     it('approve at PLAN_REVIEW advances to VALIDATION', async () => {
       await reachPlanReview();
+      recordUserDecision('approve');
       const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
@@ -592,6 +610,7 @@ describe('decision', () => {
 
     it('fail-closes when derived plan artifacts are missing', async () => {
       await reachPlanReview();
+      recordUserDecision('approve');
 
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -608,6 +627,7 @@ describe('decision', () => {
     it('maps actor claim expiration to structured decision errors', async () => {
       const { ActorClaimError } = actorMock;
       await reachPlanReview();
+      recordUserDecision('approve');
       vi.mocked(actorMock.resolveActor).mockRejectedValueOnce(
         new ActorClaimError('ACTOR_CLAIM_EXPIRED', 'claim expired'),
       );
@@ -620,8 +640,46 @@ describe('decision', () => {
   });
 
   describe('CORNER', () => {
+    it('blocks model-origin decision in human-gated team mode', async () => {
+      await reachPlanReview();
+      const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('HUMAN_DECISION_REQUIRED');
+    });
+
+    it('blocks mismatched user-command intent verdict', async () => {
+      await reachPlanReview();
+      recordUserDecision('approve');
+      const raw = await decision.execute(
+        { verdict: 'changes_requested', rationale: 'Actually revise' },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('HUMAN_DECISION_REQUIRED');
+    });
+
+    it('consumes user-command intent once', async () => {
+      await reachPlanReview();
+      recordUserDecision('approve');
+      const first = parseToolResult(
+        await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx),
+      );
+      expect(first.error).toBeUndefined();
+
+      const state = await readState(await currentSessionDir());
+      await writeState(await currentSessionDir(), { ...state!, phase: 'PLAN_REVIEW' });
+      const second = parseToolResult(
+        await decision.execute({ verdict: 'approve', rationale: 'Replay' }, ctx),
+      );
+      expect(second.error).toBe(true);
+      expect(second.code).toBe('HUMAN_DECISION_REQUIRED');
+    });
+
     it('reject at PLAN_REVIEW returns to TICKET', async () => {
       await reachPlanReview();
+      recordUserDecision('reject');
       const raw = await decision.execute({ verdict: 'reject', rationale: 'Need rethink' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
@@ -630,6 +688,7 @@ describe('decision', () => {
 
     it('changes_requested at PLAN_REVIEW returns to PLAN', async () => {
       await reachPlanReview();
+      recordUserDecision('changes_requested');
       const raw = await decision.execute(
         { verdict: 'changes_requested', rationale: 'More detail needed' },
         ctx,
@@ -654,6 +713,7 @@ describe('decision', () => {
       });
 
       await reachPlanReview();
+      recordUserDecision('approve');
       const raw = await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
