@@ -686,7 +686,7 @@ describe('plugin bootstrap fail-closed', () => {
         // Use a verdict tool with a reviewVerdict so enforceBeforeVerdict
         // reaches the sessionState null path (instead of short-circuiting).
         const input = { tool: 'flowguard_plan', sessionID, callID: 'c1' };
-        const output = { args: { reviewVerdict: 'approve' } };
+        const output = { args: { reviewVerdict: 'accept' } };
 
         // strictEnforcement=true + sessionState=null → controlled block
         await expect(beforeHook(input, output)).rejects.toThrow(

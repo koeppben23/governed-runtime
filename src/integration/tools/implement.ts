@@ -42,7 +42,7 @@
  *   -> Returns "review needed" with policy-conditional next-action
  *
  * Step 3: LLM calls flowguard-reviewer subagent via Task tool
- * Step 4: LLM calls flowguard_implement({ reviewVerdict: "approve", reviewFindings })
+ * Step 4: LLM calls flowguard_implement({ reviewVerdict: "accept", reviewFindings })
  *   -> Tool records review iteration, checks convergence
  *   -> On convergence: auto-advance to EVIDENCE_REVIEW
  *
@@ -120,7 +120,7 @@ function nextImplementationReviewIteration(state: SessionState): number {
 }
 
 type ImplementArgs = {
-  reviewVerdict?: 'approve' | 'changes_requested';
+  reviewVerdict?: 'accept' | 'changes_requested';
   reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
 };
@@ -583,13 +583,13 @@ async function handleApprovedReview(input: {
   const response: Record<string, unknown> = {
     phase: finalState.phase,
     implReviewIteration: input.iteration,
-    next: input.runtime.args.reviewVerdict === 'approve' ? formatEval(ev) : undefined,
+    next: input.runtime.args.reviewVerdict === 'accept' ? formatEval(ev) : undefined,
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
 
-  if (input.runtime.args.reviewVerdict === 'approve') {
-    response.status = `Implementation review converged at iteration ${input.iteration}. Approved.`;
+  if (input.runtime.args.reviewVerdict === 'accept') {
+    response.status = `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`;
   } else {
     response.status = `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
   }
@@ -729,13 +729,13 @@ export const implement: ToolDefinition = {
     'Optionally accepts reviewFindings from an independent review agent.',
   args: {
     reviewVerdict: z
-      .enum(['approve', 'changes_requested'])
+      .enum(['accept', 'changes_requested'])
       .optional()
       .describe(
         "The INDEPENDENT REVIEWER's verdict on the implementation — NOT user approval. " +
           'Omit to record implementation evidence. ' +
-          "'approve' = the reviewer accepts the implementation; the loop converges and advances " +
-          'to the EVIDENCE_REVIEW user gate (the user still decides via /review-decision). ' +
+          "'accept' = the reviewer accepts the implementation; the loop converges and advances " +
+          'to the EVIDENCE_REVIEW user gate (the user still approves via /review-decision). ' +
           "'changes_requested' = the implementation needs revision.",
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(

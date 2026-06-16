@@ -15,7 +15,7 @@
     },
     "reviewVerdict": {
       "type": "string",
-      "enum": ["approve", "changes_requested"],
+      "enum": ["accept", "changes_requested"],
       "description": "Review verdict. Omit for initial ADR submission."
     },
     "reviewFindings": {

@@ -211,7 +211,7 @@ async function currentSessionDir(): Promise<string> {
 
 async function fulfillPlanReview(
   iteration = 0,
-  overallVerdict: 'approve' | 'changes_requested' = 'approve',
+  overallVerdict: 'accept' | 'changes_requested' = 'accept',
 ) {
   return fulfillStrictReviewObligation(await currentSessionDir(), {
     obligationType: 'plan',
@@ -226,7 +226,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'subagent' as const,
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -240,7 +240,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'self' as unknown as 'subagent',
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -254,8 +254,8 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
     expect(result.selfReviewIteration).toBe(1);
@@ -266,7 +266,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const raw = await plan.execute(
-      { reviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
+      { reviewVerdict: 'accept', reviewFindings: validReviewFindingsSelf },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -306,8 +306,8 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
 
     const { computeFingerprint, sessionDir: resolveSessionDir } =
       await import('../adapters/workspace/index.js');
@@ -325,8 +325,8 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
 
     const { computeFingerprint, sessionDir: resolveSessionDir } =
       await import('../adapters/workspace/index.js');
@@ -345,8 +345,8 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
     expect(result.selfReviewIteration).toBe(1);
@@ -356,8 +356,8 @@ describe('P34a: Agent-Orchestrated Review', () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
 
     expect(result.error).toBeUndefined();
@@ -371,7 +371,7 @@ describe('P34a: Policy-Driven Branches', () => {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'subagent' as const,
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -385,7 +385,7 @@ describe('P34a: Policy-Driven Branches', () => {
     iteration: 1,
     planVersion: 1,
     reviewMode: 'subagent' as const,
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -399,7 +399,7 @@ describe('P34a: Policy-Driven Branches', () => {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'self' as unknown as 'subagent',
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -428,8 +428,8 @@ describe('P34a: Policy-Driven Branches', () => {
     });
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
     expect(result.selfReviewIteration).toBe(1);
@@ -455,7 +455,7 @@ describe('P34a: Policy-Driven Branches', () => {
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const raw = await plan.execute(
-      { reviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
+      { reviewVerdict: 'accept', reviewFindings: validReviewFindingsSelf },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -483,7 +483,7 @@ describe('P34a: Policy-Driven Branches', () => {
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const raw = await plan.execute(
-      { reviewVerdict: 'approve', reviewFindings: validReviewFindingsSelf },
+      { reviewVerdict: 'accept', reviewFindings: validReviewFindingsSelf },
       ctx,
     );
     const result = parseToolResult(raw);
@@ -510,7 +510,7 @@ describe('P34a: Policy-Driven Branches', () => {
     });
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const raw = await plan.execute({ reviewVerdict: 'approve' }, ctx);
+    const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBe(true);
     expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -538,8 +538,8 @@ describe('P34a: Policy-Driven Branches', () => {
     expect(state.policySnapshot?.selfReview?.subagentEnabled).toBe(true);
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
-    const reviewFindings = await fulfillPlanReview(0, 'approve');
-    const raw = await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillPlanReview(0, 'accept');
+    const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBeUndefined();
   });
@@ -559,8 +559,8 @@ describe('decision', () => {
     for (let i = 0; i < 5; i++) {
       const s = parseToolResult(await status.execute({}, ctx));
       if (s.phase === 'PLAN_REVIEW') break;
-      const reviewFindings = await fulfillPlanReview(i, 'approve');
-      await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+      const reviewFindings = await fulfillPlanReview(i, 'accept');
+      await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     }
   }
 

@@ -193,7 +193,7 @@ function claudeReviewLoop(tool: string, artifact: string): string {
 
 FlowGuard drives this loop. Read the \`next\` field of every tool response and follow it exactly. Never infer review state, verdicts, or policy yourself.
 
-- When \`next\` starts with \`INDEPENDENT_REVIEW_COMPLETED\`: read \`overallVerdict\` from \`pluginReviewFindings\`. For "approve", call \`${tool}({ reviewVerdict: "approve" })\`. For "changes_requested", revise the ${artifact} to resolve every blocking issue, then resubmit the verdict exactly as \`next\` instructs.
+- When \`next\` starts with \`INDEPENDENT_REVIEW_COMPLETED\`: read \`overallVerdict\` from \`pluginReviewFindings\`. For "approve", call \`${tool}({ reviewVerdict: "accept" })\`. For "changes_requested", revise the ${artifact} to resolve every blocking issue, then resubmit the verdict exactly as \`next\` instructs.
 - When \`next\` starts with \`INDEPENDENT_REVIEW_REQUIRED\`:
   1. Delegate to the \`flowguard-reviewer\` subagent (for example: "Use the flowguard-reviewer subagent to independently review this ${artifact}."). The subagent runs in its own context and already has the \`mcp__flowguard__flowguard_review\` tool.
   2. Give the reviewer the ${artifact} text, the ticket text, the \`requiredReviewAttestation\` values (\`toolObligationId\`, \`iteration\`, \`planVersion\`, \`mandateDigest\`, \`criteriaVersion\`), and the captured Discovery context. Instruct it to check Discovery health and drift before any repo-dependent claim and to mark uncorrelated claims \`NOT_VERIFIED\`.

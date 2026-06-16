@@ -367,7 +367,7 @@ describe('P26: regulated archive completion', () => {
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));
         if (s.phase === 'PLAN_REVIEW') break;
-        await executeWithStrictReview(plan, { reviewVerdict: 'approve' });
+        await executeWithStrictReview(plan, { reviewVerdict: 'accept' });
       }
       await decision.execute({ verdict: 'approve', rationale: 'OK' }, ctx);
       // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
@@ -384,7 +384,7 @@ describe('P26: regulated archive completion', () => {
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));
         if (s.phase === 'EVIDENCE_REVIEW') break;
-        await executeWithStrictReview(implement, { reviewVerdict: 'approve' });
+        await executeWithStrictReview(implement, { reviewVerdict: 'accept' });
       }
       const raw = await decision.execute({ verdict: 'approve', rationale: 'Ship it' }, ctx);
       const result = parseToolResult(raw);
@@ -405,7 +405,7 @@ describe('P26: regulated archive completion', () => {
       // Solo auto-approves at gates — simple workflow
       await hydrateAndTicket();
       await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
-      await executeWithStrictReview(plan, { reviewVerdict: 'approve' });
+      await executeWithStrictReview(plan, { reviewVerdict: 'accept' });
       // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
       {
         const sessDir = await currentSessDir();
@@ -417,7 +417,7 @@ describe('P26: regulated archive completion', () => {
         }
       }
       await implement.execute({}, ctx);
-      await executeWithStrictReview(implement, { reviewVerdict: 'approve' });
+      await executeWithStrictReview(implement, { reviewVerdict: 'accept' });
 
       // Verify we're at COMPLETE (solo auto-approves EVIDENCE_REVIEW)
       const s = parseToolResult(await status.execute({}, ctx));

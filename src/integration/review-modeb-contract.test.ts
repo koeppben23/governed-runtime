@@ -59,7 +59,7 @@ function findings(oblId: string, iteration = 0, planVersion = 1): ReviewFindings
     iteration,
     planVersion,
     reviewMode: 'subagent' as const,
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -216,7 +216,7 @@ describe('plan / architecture Mode-B review contract', () => {
         await writeStateWithArtifacts(session.sessDir, state);
 
         const result = await plan.execute(
-          { reviewVerdict: 'approve', reviewFindings: f },
+          { reviewVerdict: 'accept', reviewFindings: f },
           session.toolContext,
         );
         expect(typeof result).toBe('string');
@@ -257,7 +257,7 @@ describe('plan / architecture Mode-B review contract', () => {
         await writeStateWithArtifacts(session.sessDir, state);
 
         const result = await architecture.execute(
-          { reviewVerdict: 'approve', reviewFindings: f },
+          { reviewVerdict: 'accept', reviewFindings: f },
           session.toolContext,
         );
         expect(typeof result).toBe('string');

@@ -56,7 +56,7 @@ Your response must conform to this JSON schema. When structured output is active
   "iteration": <number>,
   "planVersion": <number>,
   "reviewMode": "subagent",
-  "overallVerdict": "approve" | "changes_requested" | "unable_to_review",
+  "overallVerdict": "accept" | "changes_requested" | "unable_to_review",
   "blockingIssues": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific problem>", "location": "<file path, section, or line>" }],
   "majorRisks": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific risk>", "location": "<where it manifests>" }],
   "missingVerification": ["<specific check not run or not provable>"],
@@ -70,11 +70,11 @@ Your response must conform to this JSON schema. When structured output is active
 ## Rules
 
 - overallVerdict MUST be "changes_requested" if blockingIssues contains critical or major severity.
-- overallVerdict MAY be "approve" only if blockingIssues is empty or minor only.
+- overallVerdict MAY be "accept" only if blockingIssues is empty or minor only.
 - overallVerdict MAY be "unable_to_review" only under the validity conditions above.
 - Do NOT use "unable_to_review" to avoid producing substantive findings.
 - Do NOT invent findings; every finding must be backed by evidence.
-- Do NOT approve without reading the actual artifact.
+- Do NOT accept the artifact without reading it. "accept" is the reviewer's verdict, not a user approval.
 - reviewMode MUST always be "subagent".
   - iteration and planVersion are provided in your task prompt. Use exactly those values.
 `;
@@ -108,7 +108,7 @@ flowguard_decision is not independent review evidence. A review-evidence file is
   "iteration": <number>,
   "planVersion": <number>,
   "reviewMode": "subagent",
-  "overallVerdict": "approve" | "changes_requested" | "unable_to_review",
+  "overallVerdict": "accept" | "changes_requested" | "unable_to_review",
   "blockingIssues": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific problem>", "location": "<file path, section, or line>" }],
   "majorRisks": [{ "severity": "critical" | "major" | "minor", "category": "completeness" | "correctness" | "feasibility" | "risk" | "quality", "message": "<specific risk>", "location": "<where it manifests>" }],
   "missingVerification": ["<specific check not run or not provable>"],

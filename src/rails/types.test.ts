@@ -184,11 +184,11 @@ describe('rails/types', () => {
     it('runConvergenceLoop converges on first iteration when approved+none', async () => {
       const initial = { digest: 'd1', value: 'original' };
       const result = await runConvergenceLoop(initial, 3, async () => {
-        return { verdict: 'approve' as const };
+        return { verdict: 'accept' as const };
       });
       expect(result.iteration).toBe(1);
       expect(result.revisionDelta).toBe('none');
-      expect(result.verdict).toBe('approve');
+      expect(result.verdict).toBe('accept');
       expect(result.artifact).toBe(initial);
     });
 
@@ -224,7 +224,7 @@ describe('rails/types', () => {
       const current = { digest: 'd1' };
       const result = await runSingleIteration(current, 0, 3, async () => {
         called++;
-        return { verdict: 'approve' as const };
+        return { verdict: 'accept' as const };
       });
       expect(called).toBe(1);
       expect(result.iteration).toBe(1);
@@ -239,7 +239,7 @@ describe('rails/types', () => {
             updated: { digest: `d${iter}` },
           };
         }
-        return { verdict: 'approve' as const };
+        return { verdict: 'accept' as const };
       });
       // Last iteration should have prevDigest from previous iteration
       expect(result.prevDigest).toBeDefined();
@@ -334,12 +334,12 @@ describe('rails/types', () => {
       // convergence. Approve+none must still produce ConvergedResult.
       const initial = { digest: 'd0' };
       const result = await runConvergenceLoop(initial, 3, async () => {
-        return { verdict: 'approve' as const };
+        return { verdict: 'accept' as const };
       });
       expect(result.kind).toBe('converged');
       if (result.kind !== 'converged') throw new Error('expected converged');
       expect(result.artifact).toBe(initial);
-      expect(result.verdict).toBe('approve');
+      expect(result.verdict).toBe('accept');
     });
   });
 

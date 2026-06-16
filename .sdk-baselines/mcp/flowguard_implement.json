@@ -7,7 +7,7 @@
   "properties": {
     "reviewVerdict": {
       "type": "string",
-      "enum": ["approve", "changes_requested"],
+      "enum": ["accept", "changes_requested"],
       "description": "Implementation review verdict. Omit to record implementation evidence."
     },
     "reviewFindings": {

@@ -86,10 +86,10 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     expect(missing).toEqual([]);
   });
 
-  it('GOOD: overallVerdict enum matches LoopVerdict (approve | changes_requested | unable_to_review)', () => {
+  it('GOOD: overallVerdict enum matches LoopVerdict (accept | changes_requested | unable_to_review)', () => {
     const props = jsonSchemaProperties();
     const verdict = props.overallVerdict as JsonSchemaProperty;
-    expect(verdict.enum).toEqual(['approve', 'changes_requested', 'unable_to_review']);
+    expect(verdict.enum).toEqual(['accept', 'changes_requested', 'unable_to_review']);
   });
 
   it('GOOD: reviewMode is locked to const "subagent"', () => {
@@ -204,7 +204,7 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
       iteration: 1,
       planVersion: 1,
       reviewMode: 'subagent' as const,
-      overallVerdict: 'approve' as const,
+      overallVerdict: 'accept' as const,
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -236,7 +236,7 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
       iteration: 1,
       planVersion: 1,
       reviewMode: 'subagent' as const,
-      overallVerdict: 'approve' as const,
+      overallVerdict: 'accept' as const,
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],

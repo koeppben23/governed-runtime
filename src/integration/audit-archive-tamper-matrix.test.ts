@@ -115,7 +115,7 @@ async function completeRegulatedSession(): Promise<{
   await callOk(plan, { planText: '## Plan\n1. Build\n2. Verify' });
 
   for (let i = 0; i < 4 && (await currentPhase()) !== 'PLAN_REVIEW'; i++) {
-    await callOk(plan, { reviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'accept' });
   }
 
   vi.mocked(actorMock.resolveActor).mockResolvedValue({
@@ -140,7 +140,7 @@ async function completeRegulatedSession(): Promise<{
 
   await callOk(implement, {});
   for (let i = 0; i < 8 && (await currentPhase()) !== 'EVIDENCE_REVIEW'; i++) {
-    await callOk(implement, { reviewVerdict: 'approve' });
+    await callOk(implement, { reviewVerdict: 'accept' });
   }
 
   await callOk(decision, { verdict: 'approve', rationale: 'evidence approved' });

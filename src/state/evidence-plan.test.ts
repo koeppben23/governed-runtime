@@ -45,7 +45,7 @@ describe('evidence-plan', () => {
         prevDigest: null,
         currDigest: 'digest-of-plan',
         revisionDelta: 'none' as const,
-        verdict: 'approve' as const,
+        verdict: 'accept' as const,
       };
       expect(SelfReviewLoop.parse(loop)).toEqual(loop);
     });
@@ -83,7 +83,7 @@ describe('evidence-plan', () => {
           prevDigest: null,
           currDigest: 'abc',
           revisionDelta: 'none',
-          verdict: 'approve',
+          verdict: 'accept',
         }),
       ).toThrow();
     });
@@ -96,7 +96,7 @@ describe('evidence-plan', () => {
           prevDigest: null,
           currDigest: 'abc',
           revisionDelta: 'none',
-          verdict: 'approve',
+          verdict: 'accept',
         }),
       ).toThrow();
     });
@@ -130,7 +130,7 @@ describe('evidence-plan', () => {
         prevDigest: null,
         currDigest: 'abc',
         revisionDelta: 'none',
-        verdict: 'approve',
+        verdict: 'accept',
       };
       expect(SelfReviewLoop.parse(loop)).toEqual(loop);
     });

@@ -156,7 +156,7 @@ describe('SDK Contract: MCP tool registry', () => {
     it('flowguard_plan reviewVerdict enum has 2 values', () => {
       const schema = loadSchema('flowguard_plan.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.reviewVerdict.enum).toEqual(['approve', 'changes_requested']);
+      expect(props.reviewVerdict.enum).toEqual(['accept', 'changes_requested']);
     });
   });
 

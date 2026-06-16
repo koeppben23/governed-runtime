@@ -9,7 +9,7 @@
  *
  * Step 2: LLM reviews ADR critically, calls flowguard_architecture({
  *   reviewVerdict: "changes_requested", adrText: "revised..."
- * }) OR flowguard_architecture({ reviewVerdict: "approve" })
+ * }) OR flowguard_architecture({ reviewVerdict: "accept" })
  *   -> Tool records iteration, checks convergence
  *
  * Repeat Step 2 until converged or max iterations (from policy).
@@ -504,7 +504,7 @@ async function handleAdrReview(
 async function persistAndFormatReviewResult(input: ReviewResultContext): Promise<string> {
   const iteration = input.session.state.selfReview!.iteration + 1;
   const verdict = input.args.reviewVerdict as LoopVerdict;
-  const approvedConverged = input.revision.revisionDelta === 'none' && verdict === 'approve';
+  const approvedConverged = input.revision.revisionDelta === 'none' && verdict === 'accept';
   const maxReached = iteration >= input.session.policy.maxSelfReviewIterations;
 
   // Force-convergence: the review loop exhausted its iteration budget without
@@ -702,13 +702,13 @@ export const architecture: ToolDefinition = {
           "Required for Mode A and when reviewVerdict is 'changes_requested'.",
       ),
     reviewVerdict: z
-      .enum(['approve', 'changes_requested'])
+      .enum(['accept', 'changes_requested'])
       .optional()
       .describe(
         "The INDEPENDENT REVIEWER's verdict on the ADR — NOT user approval. " +
           'Omit for initial ADR submission. ' +
-          "'approve' = the reviewer accepts the ADR; the loop converges and advances to the " +
-          'ARCH_REVIEW user gate (the user still decides via /review-decision). ' +
+          "'accept' = the reviewer accepts the ADR; the loop converges and advances to the " +
+          'ARCH_REVIEW user gate (the user still approves via /review-decision). ' +
           "'changes_requested' = the ADR needs revision; provide updated adrText.",
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(

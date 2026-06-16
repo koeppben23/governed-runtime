@@ -159,13 +159,13 @@ describe('review-enforcement extraction helpers', () => {
     it('extracts from clean JSON', () => {
       const findings = extractCapturedFindings(
         JSON.stringify({
-          overallVerdict: 'approve',
+          overallVerdict: 'accept',
           blockingIssues: [],
           reviewedBy: { sessionId: 's1' },
         }),
       );
       expect(findings).not.toBeNull();
-      expect(findings!.overallVerdict).toBe('approve');
+      expect(findings!.overallVerdict).toBe('accept');
       expect(findings!.blockingIssuesCount).toBe(0);
       expect(findings!.sessionId).toBe('s1');
     });

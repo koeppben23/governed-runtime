@@ -50,7 +50,7 @@ describe('buildHostTaskEvidence — capturedVerdict (BUG-15)', () => {
 
     expect(result.bindOutcome).toBe('bound');
     expect(result.evidence).not.toBeNull();
-    expect(result.evidence!.capturedVerdict).toBe('approve');
+    expect(result.evidence!.capturedVerdict).toBe('accept');
   });
 
   it('HAPPY: capturedVerdict=changes_requested flows through', () => {
@@ -101,8 +101,8 @@ describe('buildHostTaskEvidence — capturedVerdict (BUG-15)', () => {
     const obligation2 = pendingObligation({ obligationId: obligation.obligationId });
     const r2 = buildHostTaskEvidence(state, SESSION_ID, [obligation2], [], LATER);
 
-    expect(r1.evidence!.capturedVerdict).toBe('approve');
-    expect(r2.evidence!.capturedVerdict).toBe('approve');
+    expect(r1.evidence!.capturedVerdict).toBe('accept');
+    expect(r2.evidence!.capturedVerdict).toBe('accept');
     expect(r1.evidence!.capturedVerdict).toBe(r2.evidence!.capturedVerdict);
   });
 });
@@ -236,7 +236,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent' as const,
-      overallVerdict: 'approve' as const, // TAMPERED!
+      overallVerdict: 'accept' as const, // TAMPERED!
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -276,7 +276,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
 
     const obligation = pendingObligation();
     const reviewerOutput = taskResultWithAttestation(obligation.obligationId, {
-      verdict: 'approve',
+      verdict: 'accept',
     });
     onTaskToolAfter(
       state,
@@ -286,7 +286,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
     );
 
     const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
-    expect(bindResult.evidence!.capturedVerdict).toBe('approve');
+    expect(bindResult.evidence!.capturedVerdict).toBe('accept');
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({
@@ -309,7 +309,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent' as const,
-      overallVerdict: 'approve' as const,
+      overallVerdict: 'accept' as const,
       blockingIssues: [],
       majorRisks: [{ severity: 'major' as const, category: 'risk', message: 'agent added this' }],
       missingVerification: [],
@@ -358,7 +358,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
     expect(result.bindOutcome).toBe('bound');
     expect(result.evidence).not.toBeNull();
     expect(result.evidence!.capturedRawFindings).toBeDefined();
-    expect(result.evidence!.capturedRawFindings!.overallVerdict).toBe('approve');
+    expect(result.evidence!.capturedRawFindings!.overallVerdict).toBe('accept');
     expect(result.evidence!.capturedRawFindings!.iteration).toBe(0);
     expect(result.evidence!.capturedRawFindings!.planVersion).toBe(1);
     expect(result.evidence!.capturedRawFindings!.reviewMode).toBe('subagent');
@@ -393,7 +393,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
     expect(resolved.kind).toBe('resolved');
     if (resolved.kind !== 'resolved') throw new Error('expected resolved findings');
-    expect(resolved.findings.overallVerdict).toBe('approve');
+    expect(resolved.findings.overallVerdict).toBe('accept');
     expect(resolved.findings.iteration).toBe(0);
     expect(resolved.findings.planVersion).toBe(1);
     expect(resolved.findings.reviewMode).toBe('subagent');

@@ -11,7 +11,7 @@
     },
     "reviewVerdict": {
       "type": "string",
-      "enum": ["approve", "changes_requested"],
+      "enum": ["accept", "changes_requested"],
       "description": "Independent review verdict. Omit for initial plan submission."
     },
     "reviewFindings": {

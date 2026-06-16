@@ -107,7 +107,7 @@ describe('guards', () => {
 
     it('isConverged returns true on digest-stop (none + approve)', () => {
       expect(
-        isConverged({ iteration: 1, maxIterations: 3, revisionDelta: 'none', verdict: 'approve' }),
+        isConverged({ iteration: 1, maxIterations: 3, revisionDelta: 'none', verdict: 'accept' }),
       ).toBe(true);
     });
 
@@ -135,7 +135,7 @@ describe('guards', () => {
 
     it('isConverged returns false on approve + major (still changing)', () => {
       expect(
-        isConverged({ iteration: 1, maxIterations: 3, revisionDelta: 'major', verdict: 'approve' }),
+        isConverged({ iteration: 1, maxIterations: 3, revisionDelta: 'major', verdict: 'accept' }),
       ).toBe(false);
     });
 
@@ -191,7 +191,7 @@ describe('guards', () => {
     });
 
     it('isConverged returns false on unable_to_review with revisionDelta=none (CORNER: digest-stop disjunct)', () => {
-      // The (revisionDelta === "none" AND verdict === "approve") disjunct
+      // The (revisionDelta === "none" AND verdict === "accept") disjunct
       // already excludes this verdict via the verdict equality check.
       // This test pins the behavior so that future refactors of the
       // digest-stop predicate cannot accidentally drop the verdict guard.

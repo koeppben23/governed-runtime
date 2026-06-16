@@ -74,7 +74,7 @@ function f(oblId: string, iter = 0, pv = 1): ReviewFindings {
     iteration: iter,
     planVersion: pv,
     reviewMode: 'subagent' as const,
-    overallVerdict: 'approve' as const,
+    overallVerdict: 'accept' as const,
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -243,7 +243,7 @@ describe('FlowGuard tool-level E2E', () => {
         const o1 = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
         const b = await architecture.execute(
           {
-            reviewVerdict: 'approve',
+            reviewVerdict: 'accept',
             reviewFindings: f(o1.obligationId, o1.iteration, o1.planVersion),
           },
           s.tc,
@@ -270,7 +270,7 @@ describe('FlowGuard tool-level E2E', () => {
         const o1 = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
         const b = await plan.execute(
           {
-            reviewVerdict: 'approve',
+            reviewVerdict: 'accept',
             reviewFindings: f(o1.obligationId, o1.iteration, o1.planVersion),
           },
           s.tc,
@@ -309,7 +309,7 @@ describe('FlowGuard tool-level E2E', () => {
         const o1 = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
         const b = await implement.execute(
           {
-            reviewVerdict: 'approve',
+            reviewVerdict: 'accept',
             reviewFindings: f(o1.obligationId, o1.iteration, o1.planVersion),
           },
           s.tc,
@@ -339,7 +339,7 @@ describe('FlowGuard tool-level E2E', () => {
         const po = st!.reviewAssurance!.obligations.find((o) => o.obligationId === pid)!;
         const r2 = await plan.execute(
           {
-            reviewVerdict: 'approve',
+            reviewVerdict: 'accept',
             reviewFindings: f(po.obligationId, po.iteration, po.planVersion),
           },
           s.tc,
@@ -409,7 +409,7 @@ describe('FlowGuard tool-level E2E', () => {
         const io = st!.reviewAssurance!.obligations.find((o) => o.obligationId === iid)!;
         const r4 = await implement.execute(
           {
-            reviewVerdict: 'approve',
+            reviewVerdict: 'accept',
             reviewFindings: f(io.obligationId, io.iteration, io.planVersion),
           },
           s.tc,

@@ -70,7 +70,7 @@ describe('taskResultWithAttestation', () => {
       const json = taskResultWithAttestation('obl-42');
       const parsed = JSON.parse(json);
 
-      expect(parsed.overallVerdict).toBe('approve');
+      expect(parsed.overallVerdict).toBe('accept');
       expect(parsed.reviewMode).toBe('subagent');
       expect(parsed.attestation.toolObligationId).toBe('obl-42');
       expect(parsed.attestation.reviewedBy).toBe(REVIEWER_SUBAGENT_TYPE);

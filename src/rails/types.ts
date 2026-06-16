@@ -398,7 +398,7 @@ export async function runConvergenceLoop<T extends { readonly digest: string }>(
     revisionDelta = processed.revisionDelta;
     current = processed.artifact;
 
-    if (revisionDelta === 'none' && verdict === 'approve') break;
+    if (revisionDelta === 'none' && verdict === 'accept') break;
   }
 
   return {

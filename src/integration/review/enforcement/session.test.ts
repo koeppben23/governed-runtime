@@ -107,17 +107,17 @@ describe('resolveSessionIdFromMetadata (BUG-14)', () => {
 describe('injectSessionIdIntoOutput (BUG-14)', () => {
   it('HAPPY: injects into clean JSON with existing reviewedBy object', () => {
     const input = JSON.stringify({
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       reviewedBy: { sessionId: 'unknown' },
     });
     const result = injectSessionIdIntoOutput(input, 'ses_real_123');
     const parsed = JSON.parse(result);
     expect(parsed.reviewedBy.sessionId).toBe('ses_real_123');
-    expect(parsed.overallVerdict).toBe('approve');
+    expect(parsed.overallVerdict).toBe('accept');
   });
 
   it('HAPPY: injects into clean JSON with missing reviewedBy', () => {
-    const input = JSON.stringify({ overallVerdict: 'approve' });
+    const input = JSON.stringify({ overallVerdict: 'accept' });
     const result = injectSessionIdIntoOutput(input, 'ses_injected');
     const parsed = JSON.parse(result);
     expect(parsed.reviewedBy).toEqual({ sessionId: 'ses_injected' });
@@ -125,7 +125,7 @@ describe('injectSessionIdIntoOutput (BUG-14)', () => {
 
   it('HAPPY: injects into clean JSON with string reviewedBy (replaced with object)', () => {
     const input = JSON.stringify({
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       reviewedBy: 'flowguard-reviewer',
     });
     const result = injectSessionIdIntoOutput(input, 'ses_obj');
@@ -153,7 +153,7 @@ describe('injectSessionIdIntoOutput (BUG-14)', () => {
 
   it('HAPPY: injects synthetic derived:call: ID', () => {
     const input = JSON.stringify({
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       reviewedBy: { sessionId: '' },
     });
     const result = injectSessionIdIntoOutput(input, 'derived:call:abc123');
@@ -181,7 +181,7 @@ describe('injectSessionIdIntoOutput (BUG-14)', () => {
 
   it('CORNER: preserves other reviewedBy fields', () => {
     const input = JSON.stringify({
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       reviewedBy: { sessionId: 'old', actorId: 'user@example.com', actorSource: 'git' },
     });
     const result = injectSessionIdIntoOutput(input, 'ses_new');
@@ -193,7 +193,7 @@ describe('injectSessionIdIntoOutput (BUG-14)', () => {
 
   it('CORNER: handles reviewedBy as array (replaced with object)', () => {
     const input = JSON.stringify({
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       reviewedBy: ['invalid', 'array'],
     });
     const result = injectSessionIdIntoOutput(input, 'ses_fix');
@@ -203,7 +203,7 @@ describe('injectSessionIdIntoOutput (BUG-14)', () => {
 
   it('CORNER: handles reviewedBy as null (replaced with object)', () => {
     const input = JSON.stringify({
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       reviewedBy: null,
     });
     const result = injectSessionIdIntoOutput(input, 'ses_null_fix');
@@ -213,7 +213,7 @@ describe('injectSessionIdIntoOutput (BUG-14)', () => {
 
   it('EDGE: handles JSON with escaped quotes', () => {
     const input = JSON.stringify({
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       reviewedBy: { sessionId: 'old' },
       notes: 'The code says "hello" and it\'s fine',
     });
@@ -234,7 +234,7 @@ describe('injectSessionIdIntoOutput (BUG-14)', () => {
 
   it('SMOKE: round-trip — inject then extract matches', () => {
     const input = JSON.stringify({
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       reviewedBy: { sessionId: 'unknown' },
       blockingIssues: [],
     });
@@ -251,13 +251,13 @@ describe('injectSessionIdIntoOutput (BUG-14)', () => {
 
 describe('onTaskToolAfter tiered session ID resolution (BUG-14)', () => {
   const REVIEW_FINDINGS_JSON = JSON.stringify({
-    overallVerdict: 'approve',
+    overallVerdict: 'accept',
     reviewedBy: { sessionId: 'text_ses_id' },
     blockingIssues: [],
   });
 
   const REVIEW_FINDINGS_NO_SESSION = JSON.stringify({
-    overallVerdict: 'approve',
+    overallVerdict: 'accept',
     reviewedBy: {},
     blockingIssues: [],
   });
@@ -409,7 +409,7 @@ describe('onTaskToolAfter tiered session ID resolution (BUG-14)', () => {
 
     // Step 2: Task call with metadata
     const findings = JSON.stringify({
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       reviewedBy: { sessionId: 'will_be_overridden' },
       blockingIssues: [],
     });
@@ -427,7 +427,7 @@ describe('onTaskToolAfter tiered session ID resolution (BUG-14)', () => {
     expect(pending!.subagentRecord).not.toBeNull();
     expect(pending!.subagentRecord!.sessionId).toBe('ses_e2e_real');
     expect(pending!.capturedFindings).not.toBeNull();
-    expect(pending!.capturedFindings!.overallVerdict).toBe('approve');
+    expect(pending!.capturedFindings!.overallVerdict).toBe('accept');
   });
 });
 
@@ -541,14 +541,14 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     onTaskToolAfter(
       state,
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review iteration=0 planVersion=1' },
-      JSON.stringify({ overallVerdict: 'approve', blockingIssues: [] }),
+      JSON.stringify({ overallVerdict: 'accept', blockingIssues: [] }),
       LATER,
     );
 
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { reviewVerdict: 'approve' },
+      { reviewVerdict: 'accept' },
       {
         reviewAssurance: { obligations: [], invocations: [] },
       },
@@ -564,7 +564,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { reviewVerdict: 'approve' },
+      { reviewVerdict: 'accept' },
       {
         reviewAssurance: { obligations: [], invocations: [] },
       },
@@ -580,7 +580,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { reviewVerdict: 'approve' },
+      { reviewVerdict: 'accept' },
       { reviewAssurance: undefined },
       true, // strict
     );
@@ -592,7 +592,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { reviewVerdict: 'approve' },
+      { reviewVerdict: 'accept' },
       { reviewAssurance: null },
       true,
     );
@@ -604,7 +604,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { reviewVerdict: 'approve' },
+      { reviewVerdict: 'accept' },
       { reviewAssurance: { obligations: [], invocations: [] } },
       true,
     );
@@ -616,7 +616,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { reviewVerdict: 'approve' },
+      { reviewVerdict: 'accept' },
       null,
       true,
     );
@@ -629,7 +629,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { reviewVerdict: 'approve' },
+      { reviewVerdict: 'accept' },
       undefined,
       true,
     );
@@ -642,7 +642,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { reviewVerdict: 'approve' },
+      { reviewVerdict: 'accept' },
       null,
       false,
     );
@@ -676,7 +676,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { reviewVerdict: 'approve' },
+      { reviewVerdict: 'accept' },
       sessionState,
       true,
     );
@@ -712,7 +712,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { reviewVerdict: 'approve' },
+      { reviewVerdict: 'accept' },
       sessionState,
       true,
     );
@@ -736,13 +736,13 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     expect(result.allowed).toBe(true);
   });
 
-  it('E2E SMOKE: DeepSeek R1 sends { planText, reviewVerdict: "approve" } after /ticket → allowed for tool normalization', () => {
+  it('E2E SMOKE: DeepSeek R1 sends { planText, reviewVerdict: "accept" } after /ticket → allowed for tool normalization', () => {
     const state = createSessionState();
     const sessionState = { reviewAssurance: undefined };
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { planText: 'My plan', reviewVerdict: 'approve', reviewFindings: {} },
+      { planText: 'My plan', reviewVerdict: 'accept', reviewFindings: {} },
       sessionState,
       true,
     );
@@ -775,7 +775,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { planText: '## Revised Plan', reviewVerdict: 'approve' },
+      { planText: '## Revised Plan', reviewVerdict: 'accept' },
       { reviewAssurance: { obligations: [], invocations: [] } },
       true,
     );
@@ -812,7 +812,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     onTaskToolAfter(
       state,
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review iteration=0 planVersion=1' },
-      JSON.stringify({ overallVerdict: 'approve', blockingIssues: [] }),
+      JSON.stringify({ overallVerdict: 'accept', blockingIssues: [] }),
       LATER,
     );
 
@@ -822,7 +822,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
     const result = enforceBeforeVerdict(
       state,
       'flowguard_plan',
-      { reviewVerdict: 'approve', reviewFindings: null },
+      { reviewVerdict: 'accept', reviewFindings: null },
       { reviewAssurance: { obligations: [], invocations: [] } },
     );
     expect(result.allowed).toBe(true);
@@ -872,7 +872,7 @@ describe('BUG-21: null-verdict tolerance (onFlowGuardToolAfter)', () => {
       status: 'Verdict recorded.',
       next: 'Proceed to implementation.',
     });
-    onFlowGuardToolAfter(state, 'flowguard_plan', { reviewVerdict: 'approve' }, modeBOutput, LATER);
+    onFlowGuardToolAfter(state, 'flowguard_plan', { reviewVerdict: 'accept' }, modeBOutput, LATER);
     expect(state.pendingReviews.has('flowguard_plan')).toBe(false);
   });
 
@@ -885,7 +885,7 @@ describe('BUG-21: null-verdict tolerance (onFlowGuardToolAfter)', () => {
       code: 'PLAN_APPROVE_WITH_TEXT',
       next: 'Fix your call.',
     });
-    onFlowGuardToolAfter(state, 'flowguard_plan', { reviewVerdict: 'approve' }, errorOutput, LATER);
+    onFlowGuardToolAfter(state, 'flowguard_plan', { reviewVerdict: 'accept' }, errorOutput, LATER);
     // Not cleared because output had error=true
     expect(state.pendingReviews.has('flowguard_plan')).toBe(true);
   });
@@ -928,14 +928,14 @@ describe('BUG-21: null-verdict tolerance (onFlowGuardToolAfter)', () => {
     onTaskToolAfter(
       state,
       { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review iteration=0 planVersion=1' },
-      JSON.stringify({ overallVerdict: 'approve', blockingIssues: [] }),
+      JSON.stringify({ overallVerdict: 'accept', blockingIssues: [] }),
       LATER,
     );
     expect(state.pendingReviews.get('flowguard_plan')!.subagentCalled).toBe(true);
 
     // Step 3: Mode B with real verdict
     const modeBOutput = JSON.stringify({ phase: 'PLAN_REVIEW', status: 'approved' });
-    onFlowGuardToolAfter(state, 'flowguard_plan', { reviewVerdict: 'approve' }, modeBOutput, LATER);
+    onFlowGuardToolAfter(state, 'flowguard_plan', { reviewVerdict: 'accept' }, modeBOutput, LATER);
     expect(state.pendingReviews.has('flowguard_plan')).toBe(false);
   });
 });

@@ -219,7 +219,7 @@ async function currentSessionDir(): Promise<string> {
 
 async function fulfillPlanReview(
   iteration = 0,
-  overallVerdict: 'approve' | 'changes_requested' = 'approve',
+  overallVerdict: 'accept' | 'changes_requested' = 'accept',
 ) {
   return fulfillStrictReviewObligation(await currentSessionDir(), {
     obligationType: 'plan',
@@ -260,7 +260,7 @@ describe('review (standalone flow)', () => {
   // callers that need the real obligation UUID should create an obligation first
   // and pass the returned UUID to this helper.
   function buildAnalysisFindings(
-    overallVerdict: 'approve' | 'changes_requested',
+    overallVerdict: 'accept' | 'changes_requested',
     toolObligationId?: string,
   ) {
     const blockingIssues =
@@ -317,7 +317,7 @@ describe('review (standalone flow)', () => {
   // Returns the parseToolResult from the second (successful) /review call.
   async function submitContentReview(
     contentArg: Record<string, unknown>,
-    overallVerdict: 'approve' | 'changes_requested' = 'approve',
+    overallVerdict: 'accept' | 'changes_requested' = 'accept',
     findingOverrides?: Partial<Record<string, unknown>>,
   ) {
     const uuid = await obtainObligationUuid(contentArg);
@@ -820,7 +820,7 @@ describe('review (standalone flow)', () => {
           iteration: 1,
           planVersion: 1,
           reviewMode: 'subagent' as const,
-          overallVerdict: 'approve' as const,
+          overallVerdict: 'accept' as const,
           blockingIssues: [],
           majorRisks: [],
           missingVerification: [],
@@ -869,7 +869,7 @@ describe('review (standalone flow)', () => {
           iteration: 1,
           planVersion: 1,
           reviewMode: 'subagent' as const,
-          overallVerdict: 'approve' as const,
+          overallVerdict: 'accept' as const,
           blockingIssues: [],
           majorRisks: [],
           missingVerification: [],

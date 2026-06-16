@@ -26,7 +26,7 @@ describe('evidence-impl', () => {
         prevDigest: null,
         currDigest: 'sha256-abc',
         revisionDelta: 'none' as const,
-        verdict: 'approve' as const,
+        verdict: 'accept' as const,
         executedAt: FIXED_TIME,
       };
       expect(ImplReviewResult.parse(result)).toEqual(result);
@@ -76,7 +76,7 @@ describe('evidence-impl', () => {
           prevDigest: null,
           currDigest: 'abc',
           revisionDelta: 'none',
-          verdict: 'approve',
+          verdict: 'accept',
           executedAt: FIXED_TIME,
         }),
       ).toThrow();
@@ -90,7 +90,7 @@ describe('evidence-impl', () => {
           prevDigest: null,
           currDigest: 'abc',
           revisionDelta: 'none',
-          verdict: 'approve',
+          verdict: 'accept',
           executedAt: FIXED_TIME,
         }),
       ).toThrow();

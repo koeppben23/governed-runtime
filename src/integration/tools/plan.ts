@@ -488,13 +488,13 @@ export const plan: ToolDefinition = {
           "and when reviewVerdict is 'changes_requested' (revised plan).",
       ),
     reviewVerdict: z
-      .enum(['approve', 'changes_requested'])
+      .enum(['accept', 'changes_requested'])
       .optional()
       .describe(
         "The INDEPENDENT REVIEWER's verdict on the plan — NOT user approval. " +
           'Omit for initial plan submission. ' +
-          "'approve' = the reviewer accepts the plan; the loop converges and advances to the " +
-          'PLAN_REVIEW user gate (the user still decides via /review-decision). ' +
+          "'accept' = the reviewer accepts the plan; the loop converges and advances to the " +
+          'PLAN_REVIEW user gate (the user still approves via /review-decision). ' +
           "'changes_requested' = the plan needs revision; provide updated planText.",
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(

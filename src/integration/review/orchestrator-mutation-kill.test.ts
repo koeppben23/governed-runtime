@@ -49,7 +49,7 @@ function validFindings(overrides: Record<string, unknown> = {}): string {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'subagent',
-    overallVerdict: 'approve',
+    overallVerdict: 'accept',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],

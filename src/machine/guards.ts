@@ -79,7 +79,7 @@ export function isConverged(review: {
   if (review.verdict === 'unable_to_review') return false;
   return (
     review.iteration >= review.maxIterations ||
-    (review.revisionDelta === 'none' && review.verdict === 'approve')
+    (review.revisionDelta === 'none' && review.verdict === 'accept')
   );
 }
 

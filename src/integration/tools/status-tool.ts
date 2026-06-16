@@ -133,7 +133,7 @@ function selfReviewConverged(state: SessionState): boolean | null {
   if (!state.selfReview) return null;
   return (
     state.selfReview.iteration >= state.selfReview.maxIterations ||
-    (state.selfReview.revisionDelta === 'none' && state.selfReview.verdict === 'approve')
+    (state.selfReview.revisionDelta === 'none' && state.selfReview.verdict === 'accept')
   );
 }
 
@@ -141,7 +141,7 @@ function implReviewConverged(state: SessionState): boolean | null {
   if (!state.implReview) return null;
   return (
     state.implReview.iteration >= state.implReview.maxIterations ||
-    (state.implReview.revisionDelta === 'none' && state.implReview.verdict === 'approve')
+    (state.implReview.revisionDelta === 'none' && state.implReview.verdict === 'accept')
   );
 }
 

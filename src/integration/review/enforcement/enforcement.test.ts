@@ -76,9 +76,9 @@ describe('review-enforcement', () => {
 
       // L1+L2+L4: verdict with matching findings → allowed
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
         reviewFindings: {
-          overallVerdict: 'approve',
+          overallVerdict: 'accept',
           blockingIssues: [],
           reviewedBy: { sessionId: 'sub-session-1' },
         },
@@ -113,9 +113,9 @@ describe('review-enforcement', () => {
       );
 
       const result = enforceBeforeVerdict(state, 'flowguard_implement', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
         reviewFindings: {
-          overallVerdict: 'approve',
+          overallVerdict: 'accept',
           blockingIssues: [],
           reviewedBy: { sessionId: 'sub-session-2' },
         },
@@ -136,7 +136,7 @@ describe('review-enforcement', () => {
       );
 
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
       });
 
       expect(result.allowed).toBe(true);
@@ -164,7 +164,7 @@ describe('review-enforcement', () => {
       onFlowGuardToolAfter(
         state,
         'flowguard_plan',
-        { reviewVerdict: 'approve', reviewFindings: {} },
+        { reviewVerdict: 'accept', reviewFindings: {} },
         modeBSuccessResponse(),
         LATER,
       );
@@ -198,7 +198,7 @@ describe('review-enforcement', () => {
       );
 
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
         reviewFindings: {
           reviewMode: 'subagent',
           reviewedBy: { sessionId: 'fabricated-id' },
@@ -268,9 +268,9 @@ describe('review-enforcement', () => {
       );
 
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
         reviewFindings: {
-          overallVerdict: 'approve',
+          overallVerdict: 'accept',
           blockingIssues: [],
           reviewedBy: { sessionId: 'tampered-session-456' },
         },
@@ -401,9 +401,9 @@ describe('review-enforcement', () => {
 
       // Agent submits approve instead
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
         reviewFindings: {
-          overallVerdict: 'approve',
+          overallVerdict: 'accept',
           blockingIssues: [],
           reviewedBy: { sessionId: 's1' },
         },
@@ -468,15 +468,15 @@ describe('review-enforcement', () => {
       onTaskToolAfter(
         state,
         { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
-        taskResultWithFindings('s1', { verdict: 'approve', blockingIssues: [] }),
+        taskResultWithFindings('s1', { verdict: 'accept', blockingIssues: [] }),
         LATER,
       );
 
       // Agent adds phantom blocking issues
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
         reviewFindings: {
-          overallVerdict: 'approve',
+          overallVerdict: 'accept',
           blockingIssues: [{ severity: 'critical', description: 'Phantom issue' }],
           reviewedBy: { sessionId: 's1' },
         },
@@ -769,7 +769,7 @@ describe('review-enforcement', () => {
       const state = createSessionState();
 
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
       });
 
       expect(result.allowed).toBe(true);
@@ -795,9 +795,9 @@ describe('review-enforcement', () => {
 
       // No sessionId in submitted findings → L2 skipped
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
         reviewFindings: {
-          overallVerdict: 'approve',
+          overallVerdict: 'accept',
           blockingIssues: [],
           reviewedBy: {},
         },
@@ -830,7 +830,7 @@ describe('review-enforcement', () => {
 
       // Verdict with any sessionId → L2 skipped (actual is null)
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
         reviewFindings: {
           reviewedBy: { sessionId: 'any-id' },
         },
@@ -973,9 +973,9 @@ describe('review-enforcement', () => {
 
       // L4 skipped, L1 passes (subagent was called), L2 skipped (null sessionId)
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
         reviewFindings: {
-          overallVerdict: 'approve',
+          overallVerdict: 'accept',
           blockingIssues: [],
           reviewedBy: { sessionId: 'some-id' },
         },
@@ -1133,7 +1133,7 @@ describe('review-enforcement', () => {
 
       // Iteration 2: verdict WITHOUT subagent → blocked
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
       });
       expect(result.allowed).toBe(false);
       expect(result).toHaveProperty('code', 'SUBAGENT_REVIEW_NOT_INVOKED');
@@ -1150,7 +1150,7 @@ describe('review-enforcement', () => {
       );
 
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
       });
 
       expect(result.allowed).toBe(false);
@@ -1234,7 +1234,7 @@ describe('review-enforcement', () => {
     it('enforceBeforeVerdict still rejects unrelated tools (negative)', () => {
       const state = createSessionState();
       const result = enforceBeforeVerdict(state, 'flowguard_status', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
       });
       // Unrelated tools bypass review enforcement (no obligation matching).
       expect(result.allowed).toBe(true);
@@ -1532,7 +1532,7 @@ describe('review-enforcement', () => {
       const result = enforceBeforeVerdict(
         state,
         'flowguard_plan',
-        { reviewVerdict: 'approve' },
+        { reviewVerdict: 'accept' },
         sessionState as never,
       );
       expect(result.allowed).toBe(true);
@@ -1544,7 +1544,7 @@ describe('review-enforcement', () => {
       const result = enforceBeforeVerdict(
         state,
         'flowguard_plan',
-        { reviewVerdict: 'approve' },
+        { reviewVerdict: 'accept' },
         sessionState as never,
       );
       expect(result.allowed).toBe(true);
@@ -1567,9 +1567,9 @@ describe('review-enforcement', () => {
         LATER,
       );
       const result = enforceBeforeVerdict(state, 'flowguard_plan', {
-        reviewVerdict: 'approve',
+        reviewVerdict: 'accept',
         reviewFindings: {
-          overallVerdict: 'approve', // MISMATCH: submitted approve but captured changes_requested
+          overallVerdict: 'accept', // MISMATCH: submitted approve but captured changes_requested
           blockingIssues: [],
           reviewedBy: { sessionId: 's1' },
         },

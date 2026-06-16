@@ -137,7 +137,7 @@ async function bootstrapRegulatedPlanReview(): Promise<void> {
   await callOk(ticket, { text: 'Regulated task', source: 'user' });
   await callOk(plan, { planText: '## Plan\nImplement the task with tests.' });
   for (let i = 0; i < 4 && (await phase()) !== 'PLAN_REVIEW'; i++) {
-    await callOk(plan, { reviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'accept' });
   }
   expect(await phase()).toBe('PLAN_REVIEW');
 }
@@ -167,7 +167,7 @@ async function driveToEvidenceReview(): Promise<void> {
   }
   await callOk(implement, {});
   for (let i = 0; i < 8 && (await phase()) !== 'EVIDENCE_REVIEW'; i++) {
-    await callOk(implement, { reviewVerdict: 'approve' });
+    await callOk(implement, { reviewVerdict: 'accept' });
   }
   expect(await phase()).toBe('EVIDENCE_REVIEW');
 }

@@ -15,7 +15,7 @@ import type { MutableSession, ToolContext } from './helpers.js';
 
 export type PlanArgs = {
   planText?: string;
-  reviewVerdict?: 'approve' | 'changes_requested';
+  reviewVerdict?: 'accept' | 'changes_requested';
   reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
 };

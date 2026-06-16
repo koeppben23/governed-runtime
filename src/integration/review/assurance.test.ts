@@ -68,7 +68,7 @@ function makeFindings(overrides?: Partial<ReviewFindings>): ReviewFindings {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'subagent',
-    overallVerdict: 'approve',
+    overallVerdict: 'accept',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -422,9 +422,9 @@ describe('integration/review-assurance', () => {
         findingsHash: hashText('findings'),
         invokedAt: NOW,
         fulfilledAt: NOW,
-        capturedVerdict: 'approve',
+        capturedVerdict: 'accept',
       });
-      expect(result.capturedVerdict).toBe('approve');
+      expect(result.capturedVerdict).toBe('accept');
     });
 
     it('HAPPY: includes capturedVerdict=changes_requested', () => {
@@ -465,10 +465,10 @@ describe('integration/review-assurance', () => {
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
-        capturedVerdict: 'approve',
+        capturedVerdict: 'accept',
       });
       const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
-      expect(parsed.capturedVerdict).toBe('approve');
+      expect(parsed.capturedVerdict).toBe('accept');
     });
 
     it('EDGE: Zod parse accepts evidence without capturedVerdict (backward compat)', () => {
@@ -496,7 +496,7 @@ describe('integration/review-assurance', () => {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent',
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -517,7 +517,7 @@ describe('integration/review-assurance', () => {
         promptHash: hashText('prompt'),
         findingsHash: hashFindings(sampleRawFindings),
         invokedAt: NOW,
-        capturedVerdict: 'approve',
+        capturedVerdict: 'accept',
         capturedRawFindings: sampleRawFindings,
       });
       expect(result.capturedRawFindings).toEqual(sampleRawFindings);
@@ -549,12 +549,12 @@ describe('integration/review-assurance', () => {
         promptHash: hashText('prompt'),
         findingsHash: hashFindings(sampleRawFindings),
         invokedAt: NOW,
-        capturedVerdict: 'approve',
+        capturedVerdict: 'accept',
         capturedRawFindings: sampleRawFindings,
       });
       const parsed = ReviewInvocationEvidenceSchema.parse(evidence);
       expect(parsed.capturedRawFindings).toBeDefined();
-      expect(parsed.capturedRawFindings!.overallVerdict).toBe('approve');
+      expect(parsed.capturedRawFindings!.overallVerdict).toBe('accept');
       expect(parsed.capturedRawFindings!.iteration).toBe(0);
     });
 

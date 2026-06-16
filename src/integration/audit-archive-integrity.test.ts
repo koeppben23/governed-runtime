@@ -163,7 +163,7 @@ async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDi
   await callOk(ticket, { text: 'Archive integrity task', source: 'user' });
   await callOk(plan, { planText: '## Plan\nBuild and verify.' });
   for (let i = 0; i < 4 && (await phase()) !== 'PLAN_REVIEW'; i++) {
-    await callOk(plan, { reviewVerdict: 'approve' });
+    await callOk(plan, { reviewVerdict: 'accept' });
   }
   vi.mocked(actorMock.resolveActor).mockResolvedValue({
     id: 'archive-reviewer',
@@ -185,7 +185,7 @@ async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDi
   }
   await callOk(implement, {});
   for (let i = 0; i < 8 && (await phase()) !== 'EVIDENCE_REVIEW'; i++) {
-    await callOk(implement, { reviewVerdict: 'approve' });
+    await callOk(implement, { reviewVerdict: 'accept' });
   }
   await callOk(decision, { verdict: 'approve', rationale: 'Evidence approved' });
   expect(await phase()).toBe('COMPLETE');

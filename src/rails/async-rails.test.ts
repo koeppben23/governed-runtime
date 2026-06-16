@@ -27,7 +27,7 @@ const ctx = createTestContext();
 describe('plan rail', () => {
   const planExecutors = {
     generate: async () => '## Generated Plan\n1. Fix bug\n2. Add tests',
-    selfReview: async () => ({ verdict: 'approve' as const }),
+    selfReview: async () => ({ verdict: 'accept' as const }),
   };
 
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -40,7 +40,7 @@ describe('plan rail', () => {
         expect(result.state.plan).not.toBeNull();
         expect(result.state.plan!.current.body).toContain('Generated Plan');
         expect(result.state.selfReview).not.toBeNull();
-        expect(result.state.selfReview!.verdict).toBe('approve');
+        expect(result.state.selfReview!.verdict).toBe('accept');
         // Auto-advances through PLAN to PLAN_REVIEW
         expect(result.state.phase).toBe('PLAN_REVIEW');
       }
@@ -77,7 +77,7 @@ describe('plan rail', () => {
       const state = makeState('TICKET', { ticket: TICKET });
       const result = await executePlan(state, { text: '' }, ctx, {
         generate: async () => '',
-        selfReview: async () => ({ verdict: 'approve' as const }),
+        selfReview: async () => ({ verdict: 'accept' as const }),
       });
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') expect(result.code).toBe('EMPTY_PLAN');
@@ -103,7 +103,7 @@ describe('plan rail', () => {
               revisedBody: '## Revised\nBetter plan',
             };
           }
-          return { verdict: 'approve' as const };
+          return { verdict: 'accept' as const };
         },
       };
       const state = makeState('TICKET', { ticket: TICKET });
@@ -274,7 +274,7 @@ describe('implement rail', () => {
       changedFiles: ['src/auth.ts'],
       domainFiles: ['src/auth.ts'],
     }),
-    reviewAndRevise: async () => ({ verdict: 'approve' as const }),
+    reviewAndRevise: async () => ({ verdict: 'accept' as const }),
   };
 
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -375,9 +375,9 @@ describe('continue rail', () => {
       outputDigest: 'a'.repeat(64),
       timedOut: false,
     }),
-    selfReview: async () => ({ verdict: 'approve' as const }),
-    implReview: async () => ({ verdict: 'approve' as const }),
-    architectureReview: async () => ({ verdict: 'approve' as const }),
+    selfReview: async () => ({ verdict: 'accept' as const }),
+    implReview: async () => ({ verdict: 'accept' as const }),
+    architectureReview: async () => ({ verdict: 'accept' as const }),
   };
 
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -519,7 +519,7 @@ describe('continue rail', () => {
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') {
         // approve + no change → converged → ARCH_REVIEW
-        expect(result.state.selfReview!.verdict).toBe('approve');
+        expect(result.state.selfReview!.verdict).toBe('accept');
         expect(result.state.phase).toBe('ARCH_REVIEW');
       }
     });

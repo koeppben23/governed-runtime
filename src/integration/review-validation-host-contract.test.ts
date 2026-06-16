@@ -84,7 +84,7 @@ function makeFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'subagent',
-    overallVerdict: 'approve',
+    overallVerdict: 'accept',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -177,7 +177,7 @@ function pluginHandshakeAssurance(
         invokedAt: NOW,
         fulfilledAt: NOW,
         consumedByObligationId: null,
-        capturedVerdict: 'approve',
+        capturedVerdict: 'accept',
       },
     ],
   };

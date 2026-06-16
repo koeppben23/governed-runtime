@@ -60,7 +60,7 @@ function buildFindings(overrides: Record<string, unknown> = {}): Record<string, 
     iteration: 1,
     planVersion: 1,
     reviewMode: 'subagent',
-    overallVerdict: 'approve',
+    overallVerdict: 'accept',
     blockingIssues: [],
     majorRisks: [],
     missingVerification: [],
@@ -406,7 +406,7 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(parsed.code).toBe('CONTENT_ANALYSIS_REQUIRED');
     expect(String(parsed.next)).toContain('PLUGIN_REVIEW_COMPLETED');
     expect(parsed.pluginReviewFindings).toMatchObject({
-      overallVerdict: 'approve',
+      overallVerdict: 'accept',
       reviewedBy: { sessionId: CHILD_SESSION_ID },
       attestation: {
         toolObligationId: OBLIGATION_ID,

@@ -45,8 +45,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
   it('FLOWGUARD_MANDATES_BODY matches compiled output hash', () => {
     // Refreshed for #471: decoupled host-specific output rules (Next action: line)
     // from universal governance rules — scoped as OpenCode host/profile convention.
+    // Refreshed for review-verdict disambiguation: the reviewer verdict token was
+    // renamed 'approve' -> 'accept' (LoopVerdict), so the build-agent mandate's
+    // review-verdict line changed.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      '208fb5cfdfeab7612f6a40b3dab9a6faad8fdb9edc80a4c5ddf02ccc49e16d30',
+      'aede72b6f9c10ef7452fa6ee995b190c871005ba6177076132b696902726325b',
     );
   });
 
@@ -54,11 +57,14 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for #245: multi-platform review orchestration added native
     // Claude/Codex reviewer renderers without changing the OpenCode reviewer
     // prompt structure. The JSON Output Format schema block remains closed.
+    // Refreshed for review-verdict disambiguation: the reviewer output verdict
+    // token was renamed 'approve' -> 'accept' (overallVerdict) to separate the
+    // reviewer's acceptance from the user-gate approval.
     // This changes the runtime REVIEW_MANDATE_DIGEST.
     // Existing sessions with obligations bound to the previous digest must be
     // re-hydrated or re-created.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'd30de30986a088760ee0178db067ae4b05edba7d238d21c632a09b23345ea142',
+      'a8f088a19b7fe9698e5de5c381765805d41e76d31f45b1b09635843791b92899',
     );
   });
 
@@ -94,9 +100,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // shared-review-loop now state reviewVerdict is the independent reviewer's result
     // (NOT user approval), require verdict-only in host-task mode, and remove the
     // self-review fallback wording.
+    // Refreshed for review-verdict accept-token: command templates now use
+    // reviewVerdict "accept" (reviewer) instead of "approve".
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'e864cfeec48d9a05edcb71aa2cf85c7296682e901d54aff4cf1264b3d21b5e33',
+      '53f69b885630cbfb0e8f5756e20cc8a9ed96efbe01bbbcc2e5f541b919254816',
     );
   });
 

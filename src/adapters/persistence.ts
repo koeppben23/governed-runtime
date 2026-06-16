@@ -244,6 +244,88 @@ export async function durableAtomicWrite(filePath: string, content: string): Pro
  * Note: Zod parse creates a new object (deep copy). The caller gets a fresh
  * reference, never a shared mutable object.
  */
+/**
+ * Backward-compat migration: the independent-reviewer loop verdict was renamed
+ * `'approve'` -> `'accept'` (LoopVerdict) to disambiguate it from the user-gate
+ * `ReviewVerdict 'approve'`. Map legacy persisted reviewer verdicts so existing
+ * sessions written before the rename stay readable under the new schema.
+ *
+ * STRICTLY path-scoped to reviewer-loop slots (selfReview/implReview verdicts,
+ * reviewFindings[].overallVerdict, and captured invocation evidence). It NEVER
+ * touches the user-gate `reviewDecision.verdict` or audit decision verdicts,
+ * which legitimately remain `'approve'`. Mutates the freshly-parsed (local) JSON
+ * in place and reports whether any value was migrated.
+ */
+function migrateLegacyReviewerVerdicts(json: unknown): boolean {
+  if (!json || typeof json !== 'object') return false;
+  const acc = { migrated: false };
+  const s = json as Record<string, unknown>;
+  mapVerdictField(s.selfReview, acc);
+  mapVerdictField(s.implReview, acc);
+  mapFindingsArray(findingsOf(s.plan), acc);
+  mapFindingsArray(findingsOf(s.architecture), acc);
+  mapFindingsArray(s.implReviewFindings, acc);
+  migrateAssuranceVerdicts(s.reviewAssurance, acc);
+  return acc.migrated;
+}
+
+function isLegacyApprove(v: unknown): boolean {
+  return v === 'approve';
+}
+
+function findingsOf(node: unknown): unknown {
+  return node && typeof node === 'object'
+    ? (node as Record<string, unknown>).reviewFindings
+    : undefined;
+}
+
+function mapVerdictField(node: unknown, acc: { migrated: boolean }): void {
+  if (node && typeof node === 'object') {
+    const o = node as Record<string, unknown>;
+    if (isLegacyApprove(o.verdict)) {
+      o.verdict = 'accept';
+      acc.migrated = true;
+    }
+  }
+}
+
+function mapFindingsArray(arr: unknown, acc: { migrated: boolean }): void {
+  if (!Array.isArray(arr)) return;
+  for (const f of arr) {
+    if (
+      f &&
+      typeof f === 'object' &&
+      isLegacyApprove((f as Record<string, unknown>).overallVerdict)
+    ) {
+      (f as Record<string, unknown>).overallVerdict = 'accept';
+      acc.migrated = true;
+    }
+  }
+}
+
+function migrateAssuranceVerdicts(node: unknown, acc: { migrated: boolean }): void {
+  if (!node || typeof node !== 'object') return;
+  const invocations = (node as Record<string, unknown>).invocations;
+  if (!Array.isArray(invocations)) return;
+  for (const inv of invocations) {
+    if (!inv || typeof inv !== 'object') continue;
+    const o = inv as Record<string, unknown>;
+    if (isLegacyApprove(o.capturedVerdict)) {
+      o.capturedVerdict = 'accept';
+      acc.migrated = true;
+    }
+    const raw = o.capturedRawFindings;
+    if (
+      raw &&
+      typeof raw === 'object' &&
+      isLegacyApprove((raw as Record<string, unknown>).overallVerdict)
+    ) {
+      (raw as Record<string, unknown>).overallVerdict = 'accept';
+      acc.migrated = true;
+    }
+  }
+}
+
 export async function readState(sessionDir: string): Promise<SessionState | null> {
   const filePath = statePath(sessionDir);
 
@@ -267,6 +349,15 @@ export async function readState(sessionDir: string): Promise<SessionState | null
     json = JSON.parse(raw);
   } catch {
     throw new PersistenceError('PARSE_FAILED', `State file is not valid JSON: ${filePath}`);
+  }
+
+  const migrated = migrateLegacyReviewerVerdicts(json);
+  if (migrated) {
+    getAdapterLogger().warn(
+      'persistence',
+      "Migrated legacy reviewer verdict 'approve' -> 'accept' on read",
+      { filePath },
+    );
   }
 
   const result = SessionState.safeParse(json);

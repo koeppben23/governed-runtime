@@ -253,7 +253,7 @@ async function currentSessionDir(): Promise<string> {
 async function fulfillReview(
   obligationType: 'plan' | 'implement',
   iteration: number,
-  overallVerdict: 'approve' | 'changes_requested' = 'approve',
+  overallVerdict: 'accept' | 'changes_requested' = 'accept',
 ) {
   return fulfillStrictReviewObligation(await currentSessionDir(), {
     obligationType,
@@ -268,8 +268,8 @@ describe('implement', () => {
   async function reachImplementation(): Promise<void> {
     await hydrateAndTicket();
     await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
-    const planReviewFindings = await fulfillReview('plan', 0, 'approve');
-    await plan.execute({ reviewVerdict: 'approve', reviewFindings: planReviewFindings }, ctx);
+    const planReviewFindings = await fulfillReview('plan', 0, 'accept');
+    await plan.execute({ reviewVerdict: 'accept', reviewFindings: planReviewFindings }, ctx);
     // Solo: PLAN_REVIEW auto-approves → VALIDATION
     // Discovery detects TypeScript → activeChecks=['typecheck'] → run check to advance
     const sessDir = await currentSessionDir();
@@ -294,8 +294,8 @@ describe('implement', () => {
     it('Mode B: approve review converges in solo', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
-      const reviewFindings = await fulfillReview('implement', 1, 'approve');
-      const raw = await implement.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+      const reviewFindings = await fulfillReview('implement', 1, 'accept');
+      const raw = await implement.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(
@@ -404,7 +404,7 @@ describe('implement', () => {
 
     it('Mode B blocks with IMPLEMENTATION_EVIDENCE_REQUIRED before evidence is recorded', async () => {
       await reachImplementation();
-      const raw = await implement.execute({ reviewVerdict: 'approve' }, ctx);
+      const raw = await implement.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_REQUIRED');
@@ -424,7 +424,7 @@ describe('implement', () => {
         implementation: null,
       });
 
-      const raw = await implement.execute({ reviewVerdict: 'approve' }, ctx);
+      const raw = await implement.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_REQUIRED');
@@ -436,7 +436,7 @@ describe('implement', () => {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent' as const,
-      overallVerdict: 'approve' as const,
+      overallVerdict: 'accept' as const,
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -450,7 +450,7 @@ describe('implement', () => {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'self' as unknown as 'subagent',
-      overallVerdict: 'approve' as const,
+      overallVerdict: 'accept' as const,
       blockingIssues: [],
       majorRisks: [],
       missingVerification: [],
@@ -485,8 +485,8 @@ describe('implement', () => {
     it('reviewMode=subagent accepted by mandatory default in Mode B', async () => {
       await reachImplementation();
       await enterImplReview();
-      const reviewFindings = await fulfillReview('implement', 1, 'approve');
-      const raw = await implement.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+      const reviewFindings = await fulfillReview('implement', 1, 'accept');
+      const raw = await implement.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.latestImplementationReview.reviewMode).toBe('subagent');
@@ -497,7 +497,7 @@ describe('implement', () => {
       await enterImplReview();
       const raw = await implement.execute(
         {
-          reviewVerdict: 'approve',
+          reviewVerdict: 'accept',
           reviewFindings: { ...validReviewFindingsSelf, iteration: 1 },
         },
         ctx,
@@ -535,8 +535,8 @@ describe('implement', () => {
       await reachImplementation();
       await setSelfReviewPolicy(true, false);
       await enterImplReview();
-      const reviewFindings = await fulfillReview('implement', 1, 'approve');
-      const raw = await implement.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+      const reviewFindings = await fulfillReview('implement', 1, 'accept');
+      const raw = await implement.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.latestImplementationReview).toBeTruthy();
@@ -549,7 +549,7 @@ describe('implement', () => {
       await enterImplReview();
       const raw = await implement.execute(
         {
-          reviewVerdict: 'approve',
+          reviewVerdict: 'accept',
           reviewFindings: { ...validReviewFindingsSelf, iteration: 1 },
         },
         ctx,
@@ -565,7 +565,7 @@ describe('implement', () => {
       await enterImplReview();
       const raw = await implement.execute(
         {
-          reviewVerdict: 'approve',
+          reviewVerdict: 'accept',
           reviewFindings: { ...validReviewFindingsSelf, iteration: 1 },
         },
         ctx,
@@ -578,7 +578,7 @@ describe('implement', () => {
     it('Mode B: missing mandatory reviewer findings blocks approve', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
-      const raw = await implement.execute({ reviewVerdict: 'approve' }, ctx);
+      const raw = await implement.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -633,7 +633,7 @@ describe('implement', () => {
 
       const changesRequestedFindings = await fulfillReview('implement', 1, 'changes_requested');
       const raw = await implement.execute(
-        { reviewVerdict: 'approve', reviewFindings: changesRequestedFindings },
+        { reviewVerdict: 'accept', reviewFindings: changesRequestedFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -685,9 +685,9 @@ describe('implement', () => {
       expect(afterRecordState?.implReview).toBeNull();
       expect(afterRecordState?.implReviewFindings).toHaveLength(1);
 
-      const secondReviewFindings = await fulfillReview('implement', 2, 'approve');
+      const secondReviewFindings = await fulfillReview('implement', 2, 'accept');
       const approveRaw = await implement.execute(
-        { reviewVerdict: 'approve', reviewFindings: secondReviewFindings },
+        { reviewVerdict: 'accept', reviewFindings: secondReviewFindings },
         ctx,
       );
       const approveResult = parseToolResult(approveRaw);
@@ -701,7 +701,7 @@ describe('implement', () => {
       await setSelfReviewPolicy(true, false);
       await implement.execute({}, ctx);
 
-      const raw = await implement.execute({ reviewVerdict: 'approve' }, ctx);
+      const raw = await implement.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -712,9 +712,9 @@ describe('implement', () => {
       await setSelfReviewPolicy(true, false);
 
       await enterImplReview();
-      const modeBFindings = await fulfillReview('implement', 1, 'approve');
+      const modeBFindings = await fulfillReview('implement', 1, 'accept');
       const raw = await implement.execute(
-        { reviewVerdict: 'approve', reviewFindings: modeBFindings },
+        { reviewVerdict: 'accept', reviewFindings: modeBFindings },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -728,11 +728,11 @@ describe('implement', () => {
     it('blocks tampered implementation review findings that do not match evidence', async () => {
       await reachImplementation();
       await enterImplReview();
-      const reviewFindings = await fulfillReview('implement', 1, 'approve');
+      const reviewFindings = await fulfillReview('implement', 1, 'accept');
 
       const raw = await implement.execute(
         {
-          reviewVerdict: 'approve',
+          reviewVerdict: 'accept',
           reviewFindings: {
             ...reviewFindings,
             missingVerification: ['tampered verification gap'],
@@ -748,8 +748,8 @@ describe('implement', () => {
     it('persists implReviewFindings in state', async () => {
       await reachImplementation();
       await enterImplReview();
-      const reviewFindings = await fulfillReview('implement', 1, 'approve');
-      await implement.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+      const reviewFindings = await fulfillReview('implement', 1, 'accept');
+      await implement.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
 
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -764,8 +764,8 @@ describe('implement', () => {
     it('latestImplementationReview appears in status', async () => {
       await reachImplementation();
       await enterImplReview();
-      const reviewFindings = await fulfillReview('implement', 1, 'approve');
-      await implement.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+      const reviewFindings = await fulfillReview('implement', 1, 'accept');
+      await implement.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
 
       const raw = await status.execute({}, ctx);
       const result = parseToolResult(raw);
@@ -782,7 +782,7 @@ describe('implement', () => {
         // obligation, mutated finding verdict, full tool-layer pipeline.
         await reachImplementation();
         await enterImplReview();
-        const baseFindings = await fulfillReview('implement', 1, 'approve');
+        const baseFindings = await fulfillReview('implement', 1, 'accept');
         const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
         const raw = await implement.execute(
@@ -798,11 +798,11 @@ describe('implement', () => {
         // unable_to_review must override any submitted reviewVerdict.
         await reachImplementation();
         await enterImplReview();
-        const baseFindings = await fulfillReview('implement', 1, 'approve');
+        const baseFindings = await fulfillReview('implement', 1, 'accept');
         const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
         const raw = await implement.execute(
-          { reviewVerdict: 'approve', reviewFindings: unableFindings },
+          { reviewVerdict: 'accept', reviewFindings: unableFindings },
           ctx,
         );
         const result = parseToolResult(raw);
@@ -855,8 +855,8 @@ describe('run_check', () => {
   async function reachValidation(): Promise<void> {
     await hydrateAndTicket();
     await plan.execute({ planText: '## Plan' }, ctx);
-    const reviewFindings = await fulfillReview('plan', 0, 'approve');
-    await plan.execute({ reviewVerdict: 'approve', reviewFindings }, ctx);
+    const reviewFindings = await fulfillReview('plan', 0, 'accept');
+    await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     // Solo: auto-advances PLAN_REVIEW → VALIDATION
     // (Discovery detects TypeScript → activeChecks=['typecheck'])
   }
@@ -1005,7 +1005,7 @@ describe('review', () => {
         iteration: 1,
         planVersion: 1,
         reviewMode: 'subagent' as const,
-        overallVerdict: 'approve' as const,
+        overallVerdict: 'accept' as const,
         blockingIssues: [],
         majorRisks: [
           {
