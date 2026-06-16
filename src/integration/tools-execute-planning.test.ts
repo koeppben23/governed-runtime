@@ -521,8 +521,24 @@ describe('plan', () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_APPROVE_WITH_TEXT');
       expect(result.recovery).toContain(
-        'For approval: call flowguard_plan({ reviewVerdict: "approve", reviewFindings })',
+        'For host_task_required approval: call flowguard_plan({ reviewVerdict: "approve" }) after reviewer evidence is captured',
       );
+    });
+
+    it('blocks incident payload combining plan submission, approval, and fabricated findings', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute(
+        {
+          planText: '## Plan',
+          reviewVerdict: 'approve',
+          reviewFindings: modeBSubagentFindings,
+          reviewerUnavailable: true,
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('PLAN_APPROVE_WITH_TEXT');
     });
 
     it('blocks first-call planText + reviewFindings with PLAN_SUBMISSION_MIXED_INPUTS', async () => {
@@ -534,6 +550,14 @@ describe('plan', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_SUBMISSION_MIXED_INPUTS');
+    });
+
+    it('blocks initial plan submission with preemptive reviewerUnavailable', async () => {
+      await hydrateAndTicket();
+      const raw = await plan.execute({ planText: '## Plan', reviewerUnavailable: true }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INVALID_PLAN_TOOL_SEQUENCE');
     });
 
     it('blocks plan-only resubmission while review loop is active', async () => {

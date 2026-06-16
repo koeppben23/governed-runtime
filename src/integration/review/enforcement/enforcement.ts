@@ -51,6 +51,7 @@ import {
   type ReviewableTool,
 } from '../obligation-tools.js';
 import { parseToolResult } from '../../plugin-helpers.js';
+import { classifyPlanCall, planInputFlags } from '../../tools/plan-types.js';
 
 // ─── State factory ───────────────────────────────────────────────────────────
 
@@ -429,6 +430,18 @@ export function enforceBeforeVerdict(
   strictEnforcement = false,
 ): EnforcementResult {
   if (!isReviewableTool(toolName)) return { allowed: true };
+
+  if (toolName === 'flowguard_plan') {
+    const mode = classifyPlanCall(args, planInputFlags(args));
+    if (mode.kind === 'invalid') {
+      return {
+        allowed: false,
+        code: mode.code,
+        reason:
+          'FlowGuard enforcement: invalid flowguard_plan payload shape. Plan submission, review approval, and review revision are separate calls; read the previous tool response next field before submitting the next payload.',
+      };
+    }
+  }
 
   const reviewTool: ReviewableTool = toolName;
   const reviewVerdictValue = args.reviewVerdict;

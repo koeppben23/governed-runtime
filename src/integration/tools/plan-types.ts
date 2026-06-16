@@ -26,8 +26,23 @@ export type PlanInputFlags = {
   hasPlanText: boolean;
   hasVerdict: boolean;
   hasFindings: boolean;
+  hasReviewerUnavailable: boolean;
   isInitialSubmission: boolean;
 };
+
+export type PlanCallMode =
+  | { kind: 'initial_submission' }
+  | { kind: 'approval' }
+  | { kind: 'revision' }
+  | {
+      kind: 'invalid';
+      code:
+        | 'INVALID_PLAN_TOOL_SEQUENCE'
+        | 'PLAN_APPROVE_WITH_TEXT'
+        | 'PLAN_SUBMISSION_MIXED_INPUTS';
+    };
+
+type InvalidPlanCallCode = Extract<PlanCallMode, { kind: 'invalid' }>['code'];
 
 export type PlanReviewPolicy = {
   subagentEnabled: boolean;
@@ -73,12 +88,34 @@ export function planInputFlags(args: PlanArgs): PlanInputFlags {
   const hasPlanText = typeof args.planText === 'string' && args.planText.trim().length > 0;
   const hasVerdict = typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
   const hasFindings = args.reviewFindings != null && typeof args.reviewFindings === 'object';
+  const hasReviewerUnavailable = args.reviewerUnavailable === true;
   return {
     hasPlanText,
     hasVerdict,
     hasFindings,
+    hasReviewerUnavailable,
     isInitialSubmission: !hasVerdict,
   };
+}
+
+export function classifyPlanCall(args: PlanArgs, input = planInputFlags(args)): PlanCallMode {
+  const invalidCode = [
+    [
+      input.hasPlanText && input.hasVerdict && args.reviewVerdict !== 'changes_requested',
+      'PLAN_APPROVE_WITH_TEXT',
+    ],
+    [input.hasPlanText && input.hasFindings && !input.hasVerdict, 'PLAN_SUBMISSION_MIXED_INPUTS'],
+    [
+      input.hasPlanText && input.hasReviewerUnavailable && !input.hasVerdict,
+      'INVALID_PLAN_TOOL_SEQUENCE',
+    ],
+  ] satisfies readonly [boolean, InvalidPlanCallCode][];
+  const matchedInvalidCode = invalidCode.find(([matches]) => matches)?.[1];
+
+  if (matchedInvalidCode) return { kind: 'invalid', code: matchedInvalidCode };
+  if (!input.hasVerdict) return { kind: 'initial_submission' };
+  if (args.reviewVerdict === 'changes_requested') return { kind: 'revision' };
+  return { kind: 'approval' };
 }
 
 export function planReviewPolicy(scope: MutablePlanSession): PlanReviewPolicy {

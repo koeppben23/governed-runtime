@@ -86,7 +86,7 @@ export type {
   PlanSubmissionResponseInput,
   ConvergedPlanReviewInput,
 } from './plan-types.js';
-export { planInputFlags, planReviewPolicy } from './plan-types.js';
+export { classifyPlanCall, planInputFlags, planReviewPolicy } from './plan-types.js';
 export {
   firstLine,
   buildPlanSubmissionResponse,
@@ -110,7 +110,7 @@ import type {
 
 // ---- internal helpers ----
 
-import { planInputFlags, planReviewPolicy } from './plan-types.js';
+import { classifyPlanCall, planInputFlags, planReviewPolicy } from './plan-types.js';
 import {
   buildPlanSubmissionResponse as buildSubmissionResponse,
   persistPlanReview as persistReview,
@@ -168,12 +168,8 @@ function validatePlanInputShape(
 }
 
 function validateSubmissionInputShape(args: PlanArgs, input: PlanInputFlags): string | null {
-  if (input.hasPlanText && input.hasFindings && !input.hasVerdict) {
-    return formatBlocked('PLAN_SUBMISSION_MIXED_INPUTS');
-  }
-  if (input.hasPlanText && input.hasVerdict && args.reviewVerdict !== 'changes_requested') {
-    return formatBlocked('PLAN_APPROVE_WITH_TEXT');
-  }
+  const mode = classifyPlanCall(args, input);
+  if (mode.kind === 'invalid') return formatBlocked(mode.code);
   return null;
 }
 
