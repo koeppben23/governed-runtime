@@ -705,21 +705,24 @@ export const architecture: ToolDefinition = {
       .enum(['approve', 'changes_requested'])
       .optional()
       .describe(
-        'Review verdict. Omit for initial ADR submission. ' +
-          "'approve' = ADR is good, advance. " +
-          "'changes_requested' = ADR needs revision, provide updated adrText.",
+        "The INDEPENDENT REVIEWER's verdict on the ADR — NOT user approval. " +
+          'Omit for initial ADR submission. ' +
+          "'approve' = the reviewer accepts the ADR; the loop converges and advances to the " +
+          'ARCH_REVIEW user gate (the user still decides via /review-decision). ' +
+          "'changes_requested' = the ADR needs revision; provide updated adrText.",
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(
-      `Structured findings from the ${REVIEWER_SUBAGENT_TYPE} subagent. ` +
-        'Required when reviewVerdict is "approve" and subagentEnabled=true. ' +
-        'Use exactly the JSON object the subagent returned — do not modify it.',
+      `The ${REVIEWER_SUBAGENT_TYPE} subagent's structured findings. SDK mode only — pass the ` +
+        'reviewer output verbatim. In host-task mode do NOT submit reviewFindings: the plugin ' +
+        'resolves them from captured evidence, and hand-edited or mismatched findings are rejected.',
     ),
     reviewerUnavailable: z
       .boolean()
       .optional()
       .describe(
-        'Set to true when the reviewer subagent cannot be invoked (Task tool fails, ' +
-          'agent unavailable). Allows self-review fallback in host_task_required mode.',
+        'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
+          'unavailable). This is a fail-closed signal: FlowGuard blocks with SUBAGENT_UNABLE_TO_REVIEW ' +
+          'and recovery guidance. It never enables self-review and never approves the ADR.',
       ),
   },
   async execute(args, context) {

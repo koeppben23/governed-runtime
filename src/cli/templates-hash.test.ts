@@ -90,9 +90,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // reviewerUnavailable fail-closed recovery semantics.
     // Refreshed for gate-notice: /start now surfaces policyResolution.effectiveMode
     // and displays the hydrate `gateNotice` verbatim so auto-approve modes are visible.
+    // Refreshed for review-verdict disambiguation: plan/architecture/implement +
+    // shared-review-loop now state reviewVerdict is the independent reviewer's result
+    // (NOT user approval), require verdict-only in host-task mode, and remove the
+    // self-review fallback wording.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'bf9110e9f9c7ef63dec3843659330b20dcb79f12b2455ef0882c8c49a22005cd',
+      'e864cfeec48d9a05edcb71aa2cf85c7296682e901d54aff4cf1264b3d21b5e33',
     );
   });
 

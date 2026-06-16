@@ -43,7 +43,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 Payload contract for \`flowguard_plan\`:
 - Initial submission: call exactly \`flowguard_plan({ planText })\`. Do not include \`reviewVerdict\`, \`reviewFindings\`, or \`reviewerUnavailable\`.
-- Approval after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "approve" })\`; SDK/manual-attested modes include the exact reviewer output as \`reviewFindings\`.
+- Record the reviewer verdict after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict })\` (verdict only — the plugin resolves the reviewer findings from captured evidence; do NOT submit or alter \`reviewFindings\`); SDK/manual-attested modes also include the reviewer's exact \`reviewFindings\`. \`reviewVerdict: "approve"\` is the reviewer's acceptance, NOT user approval.
 - Revision after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <complete revised plan> })\`; SDK/manual-attested modes also include the exact reviewer output as \`reviewFindings\`.
 - Never submit placeholder, diagnostic, or manually fabricated \`reviewFindings\`.
 - Set \`reviewerUnavailable: true\` only after an actual Task/subagent spawn failure; never set it preemptively.
@@ -88,12 +88,12 @@ ${SHARED_REVIEW_LOOP({
 Happy path:
 1. \`flowguard_status\` → phase: TICKET, ticket present
 2. \`flowguard_plan({ planText })\` → returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-3. \`flowguard_plan({ reviewVerdict: "approve" })\` → PLAN_REVIEW
+3. \`flowguard_plan({ reviewVerdict: "approve" })\` → PLAN_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the plan)
 
 Revision path (when review returns changes_requested):
 1. \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <revised> })\`
 2. → new review starts, returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-3. \`flowguard_plan({ reviewVerdict: "approve" })\` → PLAN_REVIEW
+3. \`flowguard_plan({ reviewVerdict: "approve" })\` → PLAN_REVIEW (user gate — the USER decides via /review-decision)
 
 ${GOVERNANCE_RULES}
 ## Presentation

@@ -732,20 +732,24 @@ export const implement: ToolDefinition = {
       .enum(['approve', 'changes_requested'])
       .optional()
       .describe(
-        'Implementation review verdict. Omit to record implementation evidence. ' +
-          "'approve' = implementation is correct. " +
-          "'changes_requested' = implementation needs revision.",
+        "The INDEPENDENT REVIEWER's verdict on the implementation — NOT user approval. " +
+          'Omit to record implementation evidence. ' +
+          "'approve' = the reviewer accepts the implementation; the loop converges and advances " +
+          'to the EVIDENCE_REVIEW user gate (the user still decides via /review-decision). ' +
+          "'changes_requested' = the implementation needs revision.",
       ),
     reviewFindings: ReviewFindingsSchema.optional().describe(
-      'Structured review findings from independent review. ' +
-        'Required when reviewVerdict is "approve" and subagentEnabled=true.',
+      "The reviewer's structured findings. SDK mode only — pass the reviewer output verbatim. " +
+        'In host-task mode do NOT submit reviewFindings: the plugin resolves them from captured ' +
+        'evidence, and hand-edited or mismatched findings are rejected.',
     ),
     reviewerUnavailable: z
       .boolean()
       .optional()
       .describe(
-        'Set to true when the reviewer subagent cannot be invoked (Task tool fails, ' +
-          'agent unavailable). Allows self-review fallback in host_task_required mode.',
+        'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
+          'unavailable). This is a fail-closed signal: FlowGuard blocks with SUBAGENT_UNABLE_TO_REVIEW ' +
+          'and recovery guidance. It never enables self-review and never approves the implementation.',
       ),
   },
   async execute(args, context) {
