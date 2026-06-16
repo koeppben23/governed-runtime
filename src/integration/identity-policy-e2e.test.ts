@@ -34,6 +34,7 @@ import {
 } from './test-helpers.js';
 import { hydrate, ticket, plan, decision, status } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -123,6 +124,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  clearUserDecisionIntents();
   const wsSpy = await import('../adapters/workspace/index.js');
   vi.mocked(wsSpy.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
   vi.mocked(wsSpy.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
@@ -168,6 +170,18 @@ async function resolveSessionDirFor(sessionId: string): Promise<string> {
   const { computeFingerprint, sessionDir } = await import('../adapters/workspace/index.js');
   const fp = await computeFingerprint(ws.tmpDir);
   return sessionDir(fp.fingerprint, sessionId);
+}
+
+async function executeDecision(args: {
+  verdict: 'approve' | 'changes_requested' | 'reject';
+  rationale: string;
+}): Promise<string> {
+  recordUserDecisionIntent({
+    sessionId: ctx.sessionID,
+    command: '/review-decision',
+    expectedVerdict: args.verdict,
+  });
+  return decision.execute(args, ctx);
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────────
@@ -412,7 +426,7 @@ describe('identity-policy-e2e', () => {
       });
 
       // Actor mock default is best_effort — should be blocked
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Approve plan' }, ctx);
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'Approve plan' });
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
@@ -454,7 +468,7 @@ describe('identity-policy-e2e', () => {
         assurance: 'claim_validated' as const,
       });
 
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Approve plan' }, ctx);
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'Approve plan' });
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
@@ -494,7 +508,7 @@ describe('identity-policy-e2e', () => {
         assurance: 'idp_verified' as const,
       });
 
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Approve plan' }, ctx);
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'Approve plan' });
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('VALIDATION');
@@ -540,7 +554,7 @@ describe('identity-policy-e2e', () => {
       expect(reread!.policySnapshot.minimumActorAssuranceForApproval).toBe('idp_verified');
 
       // Decision with best_effort actor → should be BLOCKED by snapshot, not by team defaults
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Approve plan' }, ctx);
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'Approve plan' });
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
@@ -580,7 +594,7 @@ describe('identity-policy-e2e', () => {
         ),
       );
 
-      const raw = await decision.execute({ verdict: 'approve', rationale: 'Approve plan' }, ctx);
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'Approve plan' });
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('ACTOR_IDP_MODE_REQUIRED');
@@ -664,10 +678,7 @@ describe('identity-policy-e2e', () => {
         actorOriginal.resolveActor as unknown as typeof actorMock.resolveActor,
       );
 
-      const raw = await decision.execute(
-        { verdict: 'approve', rationale: 'runtime idp test' },
-        ctx,
-      );
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'runtime idp test' });
       const result = parseToolResult(raw);
       expect(isBlockedResult(result)).toBe(true);
       expect(result.code).toBe('ACTOR_IDP_MODE_REQUIRED');
@@ -750,10 +761,7 @@ describe('identity-policy-e2e', () => {
       );
 
       // 7. Decision should block — idpMode=required, idpConfig set, but no token
-      const raw = await decision.execute(
-        { verdict: 'approve', rationale: 'e2e enforcement test' },
-        ctx,
-      );
+      const raw = await executeDecision({ verdict: 'approve', rationale: 'e2e enforcement test' });
       const result = parseToolResult(raw);
       expect(isBlockedResult(result)).toBe(true);
       expect(result.code).toBe('ACTOR_IDP_MODE_REQUIRED');

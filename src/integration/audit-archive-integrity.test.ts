@@ -32,6 +32,7 @@ import {
   computeFingerprint,
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -116,6 +117,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  clearUserDecisionIntents();
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -135,11 +137,26 @@ async function callOk(
 ): Promise<Record<string, unknown>> {
   const { sessDir } = await workspaceIds();
   const finalArgs = await withStrictReviewFindings(sessDir, args);
+  recordDecisionIntentForTool(tool, finalArgs);
   const result = parseToolResult(await tool.execute(finalArgs, ctx));
   if (result.error) {
     throw new Error(`Tool returned error: ${result.code} - ${result.message}`);
   }
   return result;
+}
+
+function recordDecisionIntentForTool(
+  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
+  args: unknown,
+): void {
+  if (tool !== decision || typeof args !== 'object' || args === null) return;
+  const verdict = (args as { verdict?: unknown }).verdict;
+  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
+  recordUserDecisionIntent({
+    sessionId: ctx.sessionID,
+    command: '/review-decision',
+    expectedVerdict: verdict,
+  });
 }
 
 async function phase(): Promise<string> {

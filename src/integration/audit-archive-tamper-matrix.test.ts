@@ -20,6 +20,7 @@ import { verifyChain } from '../audit/integrity.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { computeChainHash, type ChainedAuditEvent } from '../audit/types.js';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -76,11 +77,26 @@ async function callOk(
 ): Promise<Record<string, unknown>> {
   const { sessDir } = await getSessionPaths();
   const finalArgs = await withStrictReviewFindings(sessDir, args);
+  recordDecisionIntentForTool(tool, finalArgs);
   const result = parseToolResult(await tool.execute(finalArgs, ctx));
   if (result.error) {
     throw new Error(`Tool returned error: ${result.code} - ${result.message}`);
   }
   return result;
+}
+
+function recordDecisionIntentForTool(
+  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
+  args: unknown,
+): void {
+  if (tool !== decision || typeof args !== 'object' || args === null) return;
+  const verdict = (args as { verdict?: unknown }).verdict;
+  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
+  recordUserDecisionIntent({
+    sessionId: ctx.sessionID,
+    command: '/review-decision',
+    expectedVerdict: verdict,
+  });
 }
 
 async function currentPhase(): Promise<string> {
@@ -168,6 +184,7 @@ describe('audit/archive tamper matrix', () => {
   });
 
   afterEach(async () => {
+    clearUserDecisionIntents();
     vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
       id: 'initiator',
       email: 'initiator@example.com',

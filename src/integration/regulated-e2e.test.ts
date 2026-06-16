@@ -30,6 +30,7 @@ import {
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -88,6 +89,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  clearUserDecisionIntents();
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -106,6 +108,7 @@ async function callOk(
   args: unknown,
 ): Promise<Record<string, unknown>> {
   const finalArgs = await withStrictReviewFindings(await sessDir(), args);
+  recordDecisionIntentForTool(tool, finalArgs);
   const result = parseToolResult(await tool.execute(finalArgs, ctx));
   if (result.error) {
     throw new Error(`Tool returned error: ${result.code} - ${result.message}`);
@@ -117,10 +120,25 @@ async function callBlocked(
   tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
   args: unknown,
 ): Promise<Record<string, unknown>> {
+  recordDecisionIntentForTool(tool, args);
   const result = parseToolResult(await tool.execute(args, ctx));
   expect(result.error).toBe(true);
   expect(result.code).toBeDefined();
   return result;
+}
+
+function recordDecisionIntentForTool(
+  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
+  args: unknown,
+): void {
+  if (tool !== decision || typeof args !== 'object' || args === null) return;
+  const verdict = (args as { verdict?: unknown }).verdict;
+  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
+  recordUserDecisionIntent({
+    sessionId: ctx.sessionID,
+    command: '/review-decision',
+    expectedVerdict: verdict,
+  });
 }
 
 async function phase(): Promise<string> {

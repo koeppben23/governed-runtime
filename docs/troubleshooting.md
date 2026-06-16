@@ -190,11 +190,12 @@ real, registered reason.
 
 ### Identity & Approvals
 
-| Code                           | Description                                                             | Solution                                                                                                           |
-| ------------------------------ | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `ACTOR_ASSURANCE_INSUFFICIENT` | Approver assurance below `policy.minimumActorAssuranceForApproval`      | Set `FLOWGUARD_ACTOR_CLAIMS_PATH` to a valid claim file or configure an identity provider (see `docs/policies.md`) |
-| `ACTOR_IDP_MODE_REQUIRED`      | `policy.identityProviderMode=required` but actor cannot be IdP-verified | Provide a valid `FLOWGUARD_ACTOR_TOKEN_PATH`                                                                       |
-| `FOUR_EYES_ACTOR_MATCH`        | Same actor initiated and approved (regulated mode forbids this)         | A different verified actor must approve                                                                            |
+| Code                           | Description                                                             | Solution                                                                                                              |
+| ------------------------------ | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `ACTOR_ASSURANCE_INSUFFICIENT` | Approver assurance below `policy.minimumActorAssuranceForApproval`      | Set `FLOWGUARD_ACTOR_CLAIMS_PATH` to a valid claim file or configure an identity provider (see `docs/policies.md`)    |
+| `ACTOR_IDP_MODE_REQUIRED`      | `policy.identityProviderMode=required` but actor cannot be IdP-verified | Provide a valid `FLOWGUARD_ACTOR_TOKEN_PATH`                                                                          |
+| `FOUR_EYES_ACTOR_MATCH`        | Same actor initiated and approved (regulated mode forbids this)         | A different verified actor must approve                                                                               |
+| `HUMAN_DECISION_REQUIRED`      | Human-gated policies require an explicit host-command user decision     | Present the review card verbatim and ask the user to run `/review-decision approve`, `/request-changes`, or `/reject` |
 
 ### Configuration & Central Policy
 
@@ -274,6 +275,7 @@ GIT_NOT_FOUND
 HOST_SUBAGENT_TASK_REQUIRED
 HOST_TOOL_PHASE_DENIED
 HOST_TOOL_UNKNOWN_DENIED
+HUMAN_DECISION_REQUIRED
 HYDRATE_DISCOVERY_CONTRACT_FAILED
 IMPLEMENTATION_EVIDENCE_EMPTY
 IMPLEMENTATION_EVIDENCE_REQUIRED

@@ -106,7 +106,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // require explicit user slash-command origin at human review gates.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'fe008144b76af49b859fbe32654b2a753b1589939bd9f23d1d7068d6e5da13b0',
+      'c372f703a47b7f3c63254379e8fce231822d868c713a0c21aeb9ace3d4ec06ca',
     );
   });
 

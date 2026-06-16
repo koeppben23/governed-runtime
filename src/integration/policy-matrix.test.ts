@@ -32,6 +32,7 @@ import {
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
 type Mode = 'solo' | 'team' | 'team-ci' | 'regulated';
 type CellResult = { allowed: boolean; code?: string; phase?: string; detail?: string };
@@ -91,6 +92,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  clearUserDecisionIntents();
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -119,6 +121,7 @@ async function callOk(
   ctx: TestToolContext,
 ): Promise<Record<string, unknown>> {
   const finalArgs = await withStrictReviewFindings(await sessionDir(ctx), args);
+  recordDecisionIntentForTool(tool, finalArgs, ctx);
   const result = parseToolResult(await tool.execute(finalArgs, ctx));
   if (result.error) {
     throw new Error(`Tool returned error: ${result.code} - ${result.message}`);
@@ -131,6 +134,7 @@ async function callResult(
   args: unknown,
   ctx: TestToolContext,
 ): Promise<CellResult> {
+  recordDecisionIntentForTool(tool, args, ctx);
   const result = parseToolResult(await tool.execute(args, ctx));
   return {
     allowed: result.error !== true,
@@ -138,6 +142,21 @@ async function callResult(
     phase: result.phase as string | undefined,
     detail: (result.message ?? result.status) as string | undefined,
   };
+}
+
+function recordDecisionIntentForTool(
+  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
+  args: unknown,
+  ctx: TestToolContext,
+): void {
+  if (tool !== decision || typeof args !== 'object' || args === null) return;
+  const verdict = (args as { verdict?: unknown }).verdict;
+  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
+  recordUserDecisionIntent({
+    sessionId: ctx.sessionID,
+    command: '/review-decision',
+    expectedVerdict: verdict,
+  });
 }
 
 async function currentPhase(ctx: TestToolContext): Promise<string> {

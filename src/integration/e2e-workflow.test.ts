@@ -47,6 +47,7 @@ import {
   sessionDir as resolveSessionDir,
   workspaceDir as resolveWorkspaceDir,
 } from '../adapters/workspace/index.js';
+import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -115,6 +116,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  clearUserDecisionIntents();
   vi.mocked(actorMock.resolveActor).mockReset().mockResolvedValue({
     id: 'test-operator',
     email: 'test@flowguard.dev',
@@ -133,12 +135,28 @@ async function callOk(
   context: TestToolContext = ctx,
 ): Promise<Record<string, unknown>> {
   const finalArgs = await withStrictReviewFindings(await getSessDir(context), args);
+  recordDecisionIntentForTool(tool, finalArgs, context);
   const raw = await tool.execute(finalArgs, context);
   const result = parseToolResult(raw);
   if (result.error) {
     throw new Error(`Tool returned error: ${result.code} — ${result.message}`);
   }
   return result;
+}
+
+function recordDecisionIntentForTool(
+  tool: { execute: (args: unknown, ctx: TestToolContext) => Promise<string> },
+  args: unknown,
+  context: TestToolContext = ctx,
+): void {
+  if (tool !== decision || typeof args !== 'object' || args === null) return;
+  const verdict = (args as { verdict?: unknown }).verdict;
+  if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
+  recordUserDecisionIntent({
+    sessionId: context.sessionID,
+    command: '/review-decision',
+    expectedVerdict: verdict,
+  });
 }
 
 /** Get current phase from status tool. */
@@ -895,6 +913,11 @@ describe('e2e-workflow', () => {
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
       // Attempt self-approval — MUST be blocked
+      recordDecisionIntentForTool(
+        decision,
+        { verdict: 'approve', rationale: 'I approve my own work' },
+        ctx,
+      );
       const raw = await decision.execute(
         { verdict: 'approve', rationale: 'I approve my own work' },
         ctx,
@@ -926,6 +949,11 @@ describe('e2e-workflow', () => {
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
       // changes_requested by same actor is allowed for safe intervention
+      recordDecisionIntentForTool(
+        decision,
+        { verdict: 'changes_requested', rationale: 'Needs more detail' },
+        ctx,
+      );
       const crRaw = await decision.execute(
         { verdict: 'changes_requested', rationale: 'Needs more detail' },
         ctx,
@@ -946,6 +974,7 @@ describe('e2e-workflow', () => {
       }
       expect(await getPhase()).toBe('PLAN_REVIEW');
 
+      recordDecisionIntentForTool(decision, { verdict: 'reject', rationale: 'Start over' }, ctx);
       const rejRaw = await decision.execute({ verdict: 'reject', rationale: 'Start over' }, ctx);
       const rejResult = parseToolResult(rejRaw);
       expect(rejResult.error).toBeUndefined();
@@ -973,6 +1002,7 @@ describe('e2e-workflow', () => {
         email: null,
         source: 'unknown',
       });
+      recordDecisionIntentForTool(decision, { verdict: 'approve', rationale: 'LGTM' }, ctx);
       const raw = await decision.execute({ verdict: 'approve', rationale: 'LGTM' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
