@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { existsSync } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -230,9 +231,7 @@ describe('install-verify', () => {
     }, 240000);
 
     it('tarball is installed in shared node_modules', () => {
-      expect(fs.existsSync(path.join(installedDir, 'node_modules', '@flowguard', 'core'))).toBe(
-        true,
-      );
+      expect(existsSync(path.join(installedDir, 'node_modules', '@flowguard', 'core'))).toBe(true);
     });
 
     it('can import @flowguard/core after install', async () => {
