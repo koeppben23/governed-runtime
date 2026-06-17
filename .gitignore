@@ -39,3 +39,4 @@ reports/mutation/
 
 # fast-check fuzz testing counterexamples
 .fast-check-*
+coverage-report.json

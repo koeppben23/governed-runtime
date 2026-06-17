@@ -35,6 +35,10 @@ import {
 
 // ─── Review Content Pipeline ─────────────────────────────────────────────────
 
+function countFindings(findings: unknown): number {
+  return Array.isArray(findings) ? findings.length : Object.keys(findings ?? {}).length;
+}
+
 async function loadContentForReview(
   ctx: PipelineContext,
   input: unknown,
@@ -103,6 +107,7 @@ export async function runReviewContentPipeline(
   input: unknown,
 ): Promise<void> {
   const { deps, sessionState, reviewCtx, output, sessionId } = ctx;
+  deps.log.info('review', 'content_review_started', { sessionId });
   const strictEnforcement = isStrictEnforcementEnabled(sessionState);
 
   const content = await loadContentForReview(ctx, input, strictEnforcement);
@@ -139,6 +144,7 @@ export async function runReviewContentPipeline(
   if (reviewerResult?.blocked) {
     const code = reviewerResult.code ?? REASON_HOST_SUBAGENT_TASK_REQUIRED;
     const reason = reviewerResult.reason ?? 'review invocation blocked by policy';
+    deps.log.warn('review', 'content_review_blocked', { sessionId, code });
     output.output = strictBlockedOutput(code, {
       reason,
       reviewInvocation: JSON.stringify(reviewerResult.reviewInvocation ?? {}),
@@ -157,6 +163,10 @@ export async function runReviewContentPipeline(
   }
 
   await validateContentFindings(ctx, reviewerResult, prompt, strictEnforcement);
+  deps.log.info('review', 'content_review_completed', {
+    sessionId,
+    findingCount: countFindings(reviewerResult.findings),
+  });
 }
 
 function extractContentRefInput(input: unknown): {

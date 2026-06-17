@@ -88,6 +88,11 @@ export const run_check: ToolDefinition = {
       return await executeRunCheckPhased(args.kind as VerificationCandidateKind, context);
     } catch (err) {
       if (err instanceof PersistenceError && err.code === 'LOCK_TIMEOUT_EXHAUSTED') {
+        getAdapterLogger().error('tool', 'lock_exhausted', {
+          sessionId: context.sessionID,
+          checkId: args.kind,
+          errorCode: 'LOCK_TIMEOUT_EXHAUSTED',
+        });
         return formatBlocked(REASON_LOCK_TIMEOUT_EXHAUSTED, {
           operation: 'validation_result_persistence',
           retries: '3',
@@ -184,6 +189,11 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
 
       await writeStateWithArtifactsAlreadyLocked(sessDir, advanced.state);
+      logger.info('tool', 'check_persisted', {
+        sessionId,
+        checkId: kind,
+        passed: evidence.passed,
+      });
 
       return formatRunCheckResponse({
         kind,

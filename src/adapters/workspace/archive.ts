@@ -175,6 +175,8 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
 
   await writeArchiveChecksum(archivePath, checksumPath, state);
 
+  getAdapterLogger().info('archive', 'archive_created', { sessionId: validSessionId });
+
   return archivePath;
 }
 
@@ -1032,7 +1034,13 @@ async function verifyArchiveImpl(
   await checkUnexpectedFiles(sessDir, manifest, findings);
   await verifyArchiveIntegrity({ sessDir, fingerprint, validSessionId }, manifest, findings, state);
 
-  return buildVerificationResult(findings, manifest);
+  const result = buildVerificationResult(findings, manifest);
+  getAdapterLogger().info('archive', 'archive_verified', {
+    sessionId: validSessionId,
+    passed: result.passed,
+    findingCount: result.findings.length,
+  });
+  return result;
 }
 
 // -- Internals ----------------------------------------------------------------
