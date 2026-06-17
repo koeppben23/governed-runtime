@@ -208,6 +208,32 @@ export function extractSubagentSessionId(taskResult: string): string | null {
   return null;
 }
 
+/**
+ * Canonical three-tier reviewer child-session-id resolution (BUG-14).
+ *
+ * Single source of truth so that the id injected into the reviewer output,
+ * the id logged, and the id persisted as invocation evidence all agree.
+ *
+ * Tier 1: hook metadata (authoritative from the task tool runtime).
+ * Tier 2: text-extracted `reviewedBy.sessionId` from the reviewer output.
+ * Tier 3: synthetic `derived:call:${callID}` — unique per invocation, but NOT a
+ *         real session id (the reviewer cannot know its own session). Callers that
+ *         care about a verified session should check the `derived:call:` prefix.
+ *
+ * Returns null only when all three tiers are unavailable.
+ */
+export function resolveSubagentSessionId(
+  metadata: Record<string, unknown> | undefined,
+  taskResult: string,
+  callID: string | null | undefined,
+): string | null {
+  const fromMetadata = resolveSessionIdFromMetadata(metadata);
+  if (fromMetadata) return fromMetadata;
+  const fromText = extractSubagentSessionId(taskResult);
+  if (fromText) return fromText;
+  return callID ? `derived:call:${callID}` : null;
+}
+
 function extractSessionIdFromObject(obj: Record<string, unknown>): string | null {
   const reviewedBy = obj.reviewedBy as Record<string, unknown> | undefined;
   if (typeof reviewedBy?.sessionId === 'string') {

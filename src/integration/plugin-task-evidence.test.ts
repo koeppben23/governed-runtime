@@ -157,6 +157,50 @@ describe('handleHostTaskEvidence', () => {
       expect(mockBuildHostTaskEvidence).toHaveBeenCalledTimes(1);
       expect(ws.updateReviewAssurance).toHaveBeenCalledTimes(1);
     });
+
+    it('A (hardening): warns when bound child session id is synthetic (derived:call:)', async () => {
+      mockReadState.mockResolvedValue(makeStateInfo('host_task_required'));
+      mockBuildHostTaskEvidence.mockReturnValue({
+        evidence: { ...SAMPLE_EVIDENCE, childSessionId: 'derived:call:call_99' },
+        bindOutcome: 'matched',
+        diagnostic: {},
+      });
+      const ws = mockWs();
+      const log = mockLog();
+
+      await handleHostTaskEvidence(
+        { ws, log, logError: vi.fn() },
+        SESSION_ID,
+        'derived:call:call_99',
+        now,
+        hookOutput,
+      );
+
+      // Still binds (not fatal) — host observed the reviewer Task.
+      expect(ws.updateReviewAssurance).toHaveBeenCalledTimes(1);
+      expect(hookOutput.output).toBeUndefined();
+      // But the unverified synthetic session identity is surfaced.
+      const synthetic = log.warn.mock.calls.find((c) => /synthetic/i.test(String(c[1])));
+      expect(synthetic).toBeDefined();
+      expect(synthetic?.[2]).toMatchObject({ childSessionId: 'derived:call:call_99' });
+    });
+
+    it('A (hardening): does NOT warn synthetic for a real child session id', async () => {
+      mockReadState.mockResolvedValue(makeStateInfo('host_task_required'));
+      const ws = mockWs();
+      const log = mockLog();
+
+      await handleHostTaskEvidence(
+        { ws, log, logError: vi.fn() },
+        SESSION_ID,
+        'child-1',
+        now,
+        hookOutput,
+      );
+
+      const synthetic = log.warn.mock.calls.find((c) => /synthetic/i.test(String(c[1])));
+      expect(synthetic).toBeUndefined();
+    });
   });
 
   describe('CORNER', () => {

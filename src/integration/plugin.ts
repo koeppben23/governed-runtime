@@ -26,6 +26,7 @@ import {
   getToolArgs,
   getToolMetadata,
   getToolOutput,
+  getToolCallID,
   isNativeEnforcementUnavailableDenial,
   getAutoAdvanceOverflow,
   getSessionLockSignal,
@@ -63,7 +64,7 @@ import {
   DIAGNOSTIC_SESSION_LOCK_WAITED,
 } from '../shared/flowguard-identifiers.js';
 import {
-  resolveSessionIdFromMetadata,
+  resolveSubagentSessionId,
   injectSessionIdIntoOutput,
 } from './review/enforcement/extraction.js';
 
@@ -775,9 +776,13 @@ function resolveReviewerTaskSessionId(
   taskArgs: Record<string, unknown>,
 ): string | null {
   if (taskArgs.subagent_type !== REVIEWER_SUBAGENT_TYPE) return null;
-  const metadata = getToolMetadata(hookOutput);
-  const resolved = resolveSessionIdFromMetadata(metadata);
-  return resolved ?? (hookInput.callID ? `derived:call:${hookInput.callID}` : null);
+  // Canonical three-tier resolution shared with onTaskToolAfter so the id injected
+  // into the reviewer output matches the id persisted as invocation evidence.
+  return resolveSubagentSessionId(
+    getToolMetadata(hookOutput),
+    getToolOutput(hookOutput),
+    getToolCallID(hookInput),
+  );
 }
 
 async function handleBashAfter(

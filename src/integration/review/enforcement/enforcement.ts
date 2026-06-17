@@ -39,8 +39,7 @@ import {
 import {
   extractContentMeta,
   extractCapturedFindings,
-  extractSubagentSessionId,
-  resolveSessionIdFromMetadata,
+  resolveSubagentSessionId,
   promptContainsValue,
 } from './extraction.js';
 
@@ -252,13 +251,9 @@ export function onTaskToolAfter(
   const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
   if (subagentType !== REVIEWER_SUBAGENT_TYPE) return;
 
-  // Tiered session ID resolution (BUG-14 fix):
-  // Tier 1: Hook metadata — authoritative from task tool runtime
-  let sessionId = resolveSessionIdFromMetadata(context?.metadata);
-  // Tier 2: Text extraction — parse from reviewer's JSON output
-  if (!sessionId) sessionId = extractSubagentSessionId(taskResult);
-  // Tier 3: Synthetic from callID — guaranteed unique for deduplication
-  if (!sessionId && context?.callID) sessionId = `derived:call:${context.callID}`;
+  // Canonical three-tier session ID resolution (BUG-14), shared with the
+  // output-injection path so injected/logged/persisted ids agree.
+  const sessionId = resolveSubagentSessionId(context?.metadata, taskResult, context?.callID);
 
   // Capture actual findings from the subagent response
   const capturedFindings = extractCapturedFindings(taskResult);

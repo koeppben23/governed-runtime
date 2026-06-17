@@ -109,6 +109,21 @@ async function persistHostTaskEvidence(
 ): Promise<void> {
   const evidence = bindResult.evidence;
   if (!evidence) return;
+  if (evidence.childSessionId.startsWith('derived:call:')) {
+    // The reviewer's real session id could not be resolved from host metadata or
+    // reviewer output; evidence is bound on a synthetic per-call id. The host still
+    // observed the flowguard-reviewer Task itself, so this is not fatal — but the
+    // session identity is unverified and must be visible for audit/diagnostics.
+    deps.log.warn(
+      'host-task',
+      'reviewer child session id is synthetic (no host session metadata); evidence bound on a derived id',
+      {
+        sessionId,
+        obligationId: evidence.obligationId,
+        childSessionId: evidence.childSessionId,
+      },
+    );
+  }
   const divergence = bindResult.diagnostic?.hostConstantDivergence;
   if (Array.isArray(divergence) && divergence.length > 0) {
     deps.log.warn(
