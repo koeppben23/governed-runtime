@@ -17,14 +17,27 @@ function captureLogger(): {
   log: FlowGuardLogger;
   entries: { level: string; service: string; message: string; extra?: Record<string, unknown> }[];
 } {
-  const entries: { level: string; service: string; message: string; extra?: Record<string, unknown> }[] = [];
+  const entries: {
+    level: string;
+    service: string;
+    message: string;
+    extra?: Record<string, unknown>;
+  }[] = [];
   return {
     entries,
     log: {
-      debug(svc, msg, ext) { entries.push({ level: 'debug', service: svc, message: msg, extra: ext }); },
-      info(svc, msg, ext) { entries.push({ level: 'info', service: svc, message: msg, extra: ext }); },
-      warn(svc, msg, ext) { entries.push({ level: 'warn', service: svc, message: msg, extra: ext }); },
-      error(svc, msg, ext) { entries.push({ level: 'error', service: svc, message: msg, extra: ext }); },
+      debug(svc, msg, ext) {
+        entries.push({ level: 'debug', service: svc, message: msg, extra: ext });
+      },
+      info(svc, msg, ext) {
+        entries.push({ level: 'info', service: svc, message: msg, extra: ext });
+      },
+      warn(svc, msg, ext) {
+        entries.push({ level: 'warn', service: svc, message: msg, extra: ext });
+      },
+      error(svc, msg, ext) {
+        entries.push({ level: 'error', service: svc, message: msg, extra: ext });
+      },
     },
   };
 }
@@ -37,7 +50,13 @@ describe('log-sanitization', () => {
   describe('HAPPY — formatBlocked does not leak args', () => {
     it('logs only code, no vars content', async () => {
       const { log, entries } = captureLogger();
-      setAdapterLogger({ debug: () => {}, info: () => {}, warn: log.warn, error: log.error, warnOnce: log.warn });
+      setAdapterLogger({
+        debug: () => {},
+        info: () => {},
+        warn: log.warn,
+        error: log.error,
+        warnOnce: log.warn,
+      });
       const { formatBlocked } = await import('../../integration/tools/helpers.js');
 
       formatBlocked('TICKET_REQUIRED', { action: '/some/internal/path' });
@@ -51,7 +70,13 @@ describe('log-sanitization', () => {
   describe('HAPPY — tool_blocked extra is code-only', () => {
     it('formatRailResult extra contains code but not reason text', async () => {
       const { log, entries } = captureLogger();
-      setAdapterLogger({ debug: () => {}, info: () => {}, warn: log.warn, error: log.error, warnOnce: log.warn });
+      setAdapterLogger({
+        debug: () => {},
+        info: () => {},
+        warn: log.warn,
+        error: log.error,
+        warnOnce: log.warn,
+      });
       const { formatRailResult } = await import('../../integration/tools/helpers.js');
 
       formatRailResult({
@@ -67,7 +92,13 @@ describe('log-sanitization', () => {
 
     it('overflowLimit is a number, not a message', async () => {
       const { log, entries } = captureLogger();
-      setAdapterLogger({ debug: () => {}, info: () => {}, warn: log.warn, error: log.error, warnOnce: log.warn });
+      setAdapterLogger({
+        debug: () => {},
+        info: () => {},
+        warn: log.warn,
+        error: log.error,
+        warnOnce: log.warn,
+      });
       const { formatRailResult } = await import('../../integration/tools/helpers.js');
 
       formatRailResult({

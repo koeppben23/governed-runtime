@@ -28,7 +28,9 @@ describe('mcp-logger-factory', () => {
       expect(() => logger.debug('mcp', 'debug message')).not.toThrow();
       expect(() => logger.info('mcp', 'server_created', { version: '1.0.0' })).not.toThrow();
       expect(() => logger.warn('mcp', 'tool_denied', { code: 'TEST' })).not.toThrow();
-      expect(() => logger.error('mcp', 'transport_error', { errorName: 'TestError' })).not.toThrow();
+      expect(() =>
+        logger.error('mcp', 'transport_error', { errorName: 'TestError' }),
+      ).not.toThrow();
     });
   });
 

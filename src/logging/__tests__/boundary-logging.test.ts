@@ -20,25 +20,50 @@ vi.mock('../../adapters/persistence.js', () => ({
   readState: vi.fn(),
   writeState: vi.fn().mockResolvedValue(undefined),
   writeStateAlreadyLocked: vi.fn().mockResolvedValue(undefined),
-  PersistenceError: class extends Error { readonly code: string; constructor(code: string, msg: string) { super(msg); this.code = code; } },
+  PersistenceError: class extends Error {
+    readonly code: string;
+    constructor(code: string, msg: string) {
+      super(msg);
+      this.code = code;
+    }
+  },
 }));
 
 vi.mock('../../adapters/persistence-lock.js', () => ({
-  acquireSessionWriteLock: vi.fn().mockResolvedValue({ release: vi.fn().mockResolvedValue(undefined), waited: false }),
-  withSessionWriteLock: vi.fn().mockImplementation(async (_sessDir: string, fn: (lock: unknown) => Promise<unknown>) => fn({ release: vi.fn(), waited: false })),
+  acquireSessionWriteLock: vi
+    .fn()
+    .mockResolvedValue({ release: vi.fn().mockResolvedValue(undefined), waited: false }),
+  withSessionWriteLock: vi
+    .fn()
+    .mockImplementation(async (_sessDir: string, fn: (lock: unknown) => Promise<unknown>) =>
+      fn({ release: vi.fn(), waited: false }),
+    ),
 }));
 
 function captureLogger(): {
   log: FlowGuardLogger;
   entries: { level: string; service: string; message: string; extra?: Record<string, unknown> }[];
 } {
-  const entries: { level: string; service: string; message: string; extra?: Record<string, unknown> }[] = [];
+  const entries: {
+    level: string;
+    service: string;
+    message: string;
+    extra?: Record<string, unknown>;
+  }[] = [];
   return {
     log: {
-      debug(svc, msg, ext) { entries.push({ level: 'debug', service: svc, message: msg, extra: ext }); },
-      info(svc, msg, ext) { entries.push({ level: 'info', service: svc, message: msg, extra: ext }); },
-      warn(svc, msg, ext) { entries.push({ level: 'warn', service: svc, message: msg, extra: ext }); },
-      error(svc, msg, ext) { entries.push({ level: 'error', service: svc, message: msg, extra: ext }); },
+      debug(svc, msg, ext) {
+        entries.push({ level: 'debug', service: svc, message: msg, extra: ext });
+      },
+      info(svc, msg, ext) {
+        entries.push({ level: 'info', service: svc, message: msg, extra: ext });
+      },
+      warn(svc, msg, ext) {
+        entries.push({ level: 'warn', service: svc, message: msg, extra: ext });
+      },
+      error(svc, msg, ext) {
+        entries.push({ level: 'error', service: svc, message: msg, extra: ext });
+      },
     },
     entries,
   };
@@ -52,7 +77,13 @@ describe('boundary-logging', () => {
   describe('HAPPY — formatRailResult blocked emits warn', () => {
     it('logs warn on blocked rail result and returns unchanged output', async () => {
       const { log, entries } = captureLogger();
-      setAdapterLogger({ debug: () => {}, info: () => {}, warn: log.warn, error: log.error, warnOnce: log.warn });
+      setAdapterLogger({
+        debug: () => {},
+        info: () => {},
+        warn: log.warn,
+        error: log.error,
+        warnOnce: log.warn,
+      });
       const { formatRailResult } = await import('../../integration/tools/helpers.js');
 
       const result = formatRailResult({
@@ -74,7 +105,13 @@ describe('boundary-logging', () => {
 
     it('includes overflowLimit when overflow is present', async () => {
       const { log, entries } = captureLogger();
-      setAdapterLogger({ debug: () => {}, info: () => {}, warn: log.warn, error: log.error, warnOnce: log.warn });
+      setAdapterLogger({
+        debug: () => {},
+        info: () => {},
+        warn: log.warn,
+        error: log.error,
+        warnOnce: log.warn,
+      });
       const { formatRailResult } = await import('../../integration/tools/helpers.js');
 
       formatRailResult({
@@ -94,7 +131,13 @@ describe('boundary-logging', () => {
   describe('HAPPY — formatBlocked emits warn', () => {
     it('logs warn with code', async () => {
       const { log, entries } = captureLogger();
-      setAdapterLogger({ debug: () => {}, info: () => {}, warn: log.warn, error: log.error, warnOnce: log.warn });
+      setAdapterLogger({
+        debug: () => {},
+        info: () => {},
+        warn: log.warn,
+        error: log.error,
+        warnOnce: log.warn,
+      });
       const { formatBlocked } = await import('../../integration/tools/helpers.js');
 
       const result = formatBlocked('TICKET_REQUIRED');

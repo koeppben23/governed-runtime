@@ -206,7 +206,10 @@ export function registerAllTools(
             },
           };
 
-          mcpLogger.info('mcp', 'tool_invoked', { tool: mcpName, sessionId: toolContext.sessionID });
+          mcpLogger.info('mcp', 'tool_invoked', {
+            tool: mcpName,
+            sessionId: toolContext.sessionID,
+          });
 
           const result = await toolDef.execute(cleanArgs, toolContext);
           return toMcpResult(result);
@@ -223,7 +226,11 @@ export function registerAllTools(
 
           // Governance denials are policy decisions, not execution errors.
           if (isGovernanceDenialCode(code)) {
-            mcpLogger.warn('mcp', 'tool_denied', { tool: mcpName, code, ...(sessionId ? { sessionId } : {}) });
+            mcpLogger.warn('mcp', 'tool_denied', {
+              tool: mcpName,
+              code,
+              ...(sessionId ? { sessionId } : {}),
+            });
             return toMcpDenial(code, message);
           }
           return toMcpError(code, message);

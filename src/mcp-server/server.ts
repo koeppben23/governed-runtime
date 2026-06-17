@@ -108,7 +108,9 @@ export async function startMcpServer(): Promise<void> {
   const server = createMcpServer();
   const transport = new StdioServerTransport();
   transport.onerror = (err) => {
-    mcpLogger.error('mcp', 'transport_error', { errorName: err instanceof Error ? err.name : typeof err });
+    mcpLogger.error('mcp', 'transport_error', {
+      errorName: err instanceof Error ? err.name : typeof err,
+    });
   };
   await server.connect(transport);
 
