@@ -20,6 +20,7 @@ import { randomUUID } from 'node:crypto';
 import type { ToolDefinition, ToolContext, ToolResult } from '../integration/tools/helpers.js';
 import { convertArgsToInputSchema } from './schema-converter.js';
 import { SESSION_UNRESOLVABLE_CODE, type McpSessionContext } from './session-resolver.js';
+import { mcpLogger } from './mcp-logger.js';
 
 // --- Tool Registry ---
 
@@ -183,12 +184,14 @@ export function registerAllTools(
       async (args: Record<string, unknown>, extra) => {
         // Sanitize args: strip null values injected by some models (Gap 1 mitigation).
         const cleanArgs = sanitizeNullArgs(args);
+        let sessionId: string | undefined;
 
         try {
           // Resolve session context inside the denial-mapping path. A
           // fail-closed resolution (SESSION_UNRESOLVABLE) must surface as a
           // governance denial, never escape the handler uncaught.
           const sessionCtx = resolveContext();
+          sessionId = sessionCtx.sessionId;
 
           // Build ToolContext compatible with FlowGuard tool execute() signature
           const toolContext: ToolContext = {
@@ -202,6 +205,8 @@ export function registerAllTools(
               /* MCP: metadata is embedded in text output */
             },
           };
+
+          mcpLogger.info('mcp', 'tool_invoked', { tool: mcpName, sessionId: toolContext.sessionID });
 
           const result = await toolDef.execute(cleanArgs, toolContext);
           return toMcpResult(result);
@@ -218,6 +223,7 @@ export function registerAllTools(
 
           // Governance denials are policy decisions, not execution errors.
           if (isGovernanceDenialCode(code)) {
+            mcpLogger.warn('mcp', 'tool_denied', { tool: mcpName, code, ...(sessionId ? { sessionId } : {}) });
             return toMcpDenial(code, message);
           }
           return toMcpError(code, message);

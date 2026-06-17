@@ -47,6 +47,7 @@ import { defaultReasonRegistry } from '../../config/reasons.js';
 import { createRailContext } from '../../adapters/context.js';
 import { buildBlockedDiagnostics } from '../../diagnostics/index.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
 const lockedSessionDir = new AsyncLocalStorage<string>();
 
@@ -121,6 +122,10 @@ export function formatEval(ev: EvalResult): string {
 /** Format a RailResult for LLM consumption. Audit transitions in metadata channel. */
 export function formatRailResult(result: RailResult): ToolResult {
   if (result.kind === 'blocked') {
+    getAdapterLogger().warn('machine', 'tool_blocked', {
+      code: result.code,
+      ...(result.overflow ? { overflowLimit: result.overflow.limit } : {}),
+    });
     const diagnostics = buildBlockedDiagnostics(result.code, {
       reason: result.reason,
     });
@@ -173,6 +178,7 @@ export function formatBlocked(
   vars?: Record<string, string>,
   extra?: Record<string, unknown>,
 ): string {
+  getAdapterLogger().warn('machine', 'tool_blocked', { code });
   const info = defaultReasonRegistry.format(code, vars);
   const diagnostics = buildBlockedDiagnostics(info.code, vars);
   return JSON.stringify({
@@ -427,6 +433,14 @@ export function createPolicyContext(policy: FlowGuardPolicy): RailContext {
  */
 export async function persistAndFormat(sessDir: string, result: RailResult): Promise<ToolResult> {
   if (result.kind === 'ok') {
+    if (result.transitions.length > 0) {
+      getAdapterLogger().info('machine', 'transitions_applied', {
+        sessionId: result.state.binding.sessionId,
+        stateId: result.state.id,
+        path: result.transitions.map((t) => `${t.from}\u2192${t.to}`),
+        count: result.transitions.length,
+      });
+    }
     await writeStateWithArtifacts(sessDir, result.state);
   }
   return formatRailResult(result);

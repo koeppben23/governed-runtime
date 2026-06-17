@@ -8,9 +8,14 @@
  * - createNoopLogger(): Silent logger for tests and contexts without a client
  *
  * Architecture:
- * - The Plugin is the ONLY OpenCode logger writer (via client.app.log)
- * - Tools do NOT log — they return results; the plugin logs around them
- * - Rails are pure — no logger, no side effects
+ * - Plugin hooks remain the invocation logging authority (tool.execute.before/after).
+ * - Tool/boundary layers may emit diagnostic logs for domain decisions that hooks
+ *   cannot observe: blocked reasons, lock retry/exhaustion, check persistence,
+ *   human decision origin, review pipeline outcomes, transition tracking, and
+ *   archive/policy boundary events.
+ * - Rails are pure — no logger, no side effects.
+ * - MCP server uses the same FlowGuardLogger interface with a stderr console sink
+ *   because it runs outside the plugin ALS scope.
  *
  * The logger is injected into the plugin closure at init time.
  * Level filtering happens here; the sinks receive structured log entries
@@ -24,7 +29,7 @@
  * FlowGuard operational logs are diagnostic only. They are not audit evidence
  * and are not part of the governance SSOT. Audit/Archive remain separate.
  *
- * @version v2
+ * @version v3
  */
 
 import type { LogLevel } from '../config/flowguard-config.js';

@@ -23,6 +23,7 @@ import {
   formatError,
   persistAndFormat,
 } from './helpers.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import type { ReviewVerdict } from '../../state/evidence.js';
 
 // Rails
@@ -80,7 +81,13 @@ export const decision: ToolDefinition = {
         verdict: args.verdict,
         requireHumanGates: probe.policy.requireHumanGates === true,
       });
-      if (humanOriginBlocked) return humanOriginBlocked;
+      if (humanOriginBlocked) {
+        getAdapterLogger().warn('tool', 'decision_origin_missing', {
+          sessionId: context.sessionID,
+          code: 'HUMAN_DECISION_REQUIRED',
+        });
+        return humanOriginBlocked;
+      }
 
       const actorInfo = await resolveActorForPolicy(
         context.worktree || context.directory,
@@ -121,7 +128,14 @@ export const decision: ToolDefinition = {
             result,
           });
 
-          return await persistAndFormat(sessDir, finalResult);
+          const persisted = await persistAndFormat(sessDir, finalResult);
+          if (finalResult.kind === 'ok') {
+            getAdapterLogger().info('tool', 'decision_persisted', {
+              sessionId: context.sessionID,
+              verdict: args.verdict,
+            });
+          }
+          return persisted;
         },
       );
     } catch (err) {

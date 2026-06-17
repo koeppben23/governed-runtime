@@ -21,6 +21,7 @@ import { registerAllTools, type FlowGuardToolRegistry } from './tool-adapter.js'
 import { resolveSessionContext } from './session-resolver.js';
 import { installStdoutGuard } from './stdout-guard.js';
 import { PACKAGE_VERSION } from '../shared/package-version.js';
+import { mcpLogger } from './mcp-logger.js';
 
 // --- Tool Imports ---
 
@@ -63,6 +64,7 @@ const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
  * Does NOT start the transport - call `start()` on the returned object.
  */
 export function createMcpServer(): McpServer {
+  mcpLogger.info('mcp', 'server_created', { version: PACKAGE_VERSION() });
   const sessionId = `mcp-${randomUUID()}`;
   const server = new McpServer(
     {
@@ -105,6 +107,9 @@ export async function startMcpServer(): Promise<void> {
 
   const server = createMcpServer();
   const transport = new StdioServerTransport();
+  transport.onerror = (err) => {
+    mcpLogger.error('mcp', 'transport_error', { errorName: err instanceof Error ? err.name : typeof err });
+  };
   await server.connect(transport);
 
   // The server runs until the transport is closed by the host.

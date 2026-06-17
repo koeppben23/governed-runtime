@@ -46,6 +46,7 @@ import {
   REASON_SESSION_LOCK_CONTENDED,
   LOCK_CONTENDED_OUTPUT_FIELD,
 } from '../../shared/flowguard-identifiers.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { listRepoSignals } from '../../adapters/git.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import {
@@ -827,6 +828,12 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<Tool
   return withSessionWriteTransaction(workspace.sessionDir, async ({ waited }) => {
     const existing = await readState(workspace.sessionDir);
     const policyContext = await resolveHydratePolicy(existing, config, args);
+    getAdapterLogger().info('policy', 'policy_resolved', {
+      sessionId: context.sessionID,
+      mode: policyContext.policy.mode,
+      effectiveMode: policyContext.policyResolution.effectiveMode,
+      source: policyContext.policyResolution.effectiveSource,
+    });
     const discovery = await resolveDiscoveryHydration({
       existing,
       worktree,
