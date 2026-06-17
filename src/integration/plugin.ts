@@ -351,7 +351,9 @@ function getToolTraceId(
   input: unknown,
   phase: 'before' | 'after',
 ): string {
-  const hookInput = input as Partial<ToolHookBeforeInput & ToolHookAfterInput>;
+  const hookInput = isRecord(input)
+    ? (input as Partial<ToolHookBeforeInput & ToolHookAfterInput>)
+    : {};
   if (typeof hookInput.callID === 'string' && hookInput.callID.length > 0) {
     return hookInput.callID;
   }
@@ -369,6 +371,10 @@ function getToolTraceId(
   if (runtime.toolTraceIds.size >= TRACE_REGISTRY_LIMIT) runtime.toolTraceIds.clear();
   runtime.toolTraceIds.set(key, traceId);
   return traceId;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
 }
 
 function fallbackToolTraceKey(
