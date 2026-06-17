@@ -12,6 +12,10 @@ import {
   resetAdapterLogger,
   runWithAdapterLogger,
   runWithAdapterLoggerAsync,
+  runWithTraceContext,
+  runWithTraceContextAsync,
+  getTraceContext,
+  getLogTraceFields,
   toAdapterLogger,
   type AdapterLogger,
 } from './adapter-logger.js';
@@ -194,6 +198,60 @@ describe('AdapterLogger — ALS-scoped DI', () => {
       adapter.warn('x', 'w');
       adapter.error('x', 'e');
       expect(calls).toEqual(['i:hi', 'w:w', 'e:e']);
+    });
+  });
+
+  describe('trace context', () => {
+    it('returns undefined outside a trace scope', () => {
+      expect(getTraceContext()).toBeUndefined();
+      expect(getLogTraceFields()).toEqual({});
+    });
+
+    it('propagates trace fields through sync scopes', () => {
+      runWithTraceContext('trace-sync', () => {
+        expect(getTraceContext()).toMatchObject({ traceId: 'trace-sync' });
+        expect(getLogTraceFields()).toMatchObject({ traceId: 'trace-sync' });
+        expect(typeof getLogTraceFields().durationMs).toBe('number');
+        expect(getLogTraceFields().durationMs).toBeGreaterThanOrEqual(0);
+      });
+      expect(getTraceContext()).toBeUndefined();
+    });
+
+    it('propagates trace fields through async scopes', async () => {
+      await runWithTraceContextAsync('trace-async', async () => {
+        await Promise.resolve();
+        expect(getTraceContext()).toMatchObject({ traceId: 'trace-async' });
+        const fields = getLogTraceFields();
+        expect(fields.traceId).toBe('trace-async');
+        expect(typeof fields.durationMs).toBe('number');
+        expect(fields.durationMs).toBeGreaterThanOrEqual(0);
+      });
+      expect(getTraceContext()).toBeUndefined();
+    });
+
+    it('isolates parallel trace scopes', async () => {
+      const seen: string[] = [];
+      await Promise.all([
+        runWithTraceContextAsync('trace-a', async () => {
+          await Promise.resolve();
+          seen.push(getTraceContext()?.traceId ?? 'missing-a');
+        }),
+        runWithTraceContextAsync('trace-b', async () => {
+          await Promise.resolve();
+          seen.push(getTraceContext()?.traceId ?? 'missing-b');
+        }),
+      ]);
+      expect(seen.sort()).toEqual(['trace-a', 'trace-b']);
+    });
+
+    it('restores outer trace scope after nested scope exits', () => {
+      runWithTraceContext('outer-trace', () => {
+        expect(getTraceContext()?.traceId).toBe('outer-trace');
+        runWithTraceContext('inner-trace', () => {
+          expect(getTraceContext()?.traceId).toBe('inner-trace');
+        });
+        expect(getTraceContext()?.traceId).toBe('outer-trace');
+      });
     });
   });
 
