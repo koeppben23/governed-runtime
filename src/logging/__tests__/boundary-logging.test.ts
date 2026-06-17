@@ -13,8 +13,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import type { FlowGuardLogger } from '../logger.js';
-import { setAdapterLogger, resetAdapterLogger } from '../adapter-logger.js';
+import { setAdapterLogger, resetAdapterLogger, type AdapterLogger } from '../adapter-logger.js';
 
 vi.mock('../../adapters/persistence.js', () => ({
   readState: vi.fn(),
@@ -41,7 +40,7 @@ vi.mock('../../adapters/persistence-lock.js', () => ({
 }));
 
 function captureLogger(): {
-  log: FlowGuardLogger;
+  log: AdapterLogger;
   entries: { level: string; service: string; message: string; extra?: Record<string, unknown> }[];
 } {
   const entries: {
@@ -52,9 +51,6 @@ function captureLogger(): {
   }[] = [];
   return {
     log: {
-      debug(svc, msg, ext) {
-        entries.push({ level: 'debug', service: svc, message: msg, extra: ext });
-      },
       info(svc, msg, ext) {
         entries.push({ level: 'info', service: svc, message: msg, extra: ext });
       },
@@ -64,6 +60,7 @@ function captureLogger(): {
       error(svc, msg, ext) {
         entries.push({ level: 'error', service: svc, message: msg, extra: ext });
       },
+      warnOnce: () => {},
     },
     entries,
   };
@@ -77,13 +74,7 @@ describe('boundary-logging', () => {
   describe('HAPPY — formatRailResult blocked emits warn', () => {
     it('logs warn on blocked rail result and returns unchanged output', async () => {
       const { log, entries } = captureLogger();
-      setAdapterLogger({
-        debug: () => {},
-        info: () => {},
-        warn: log.warn,
-        error: log.error,
-        warnOnce: log.warn,
-      });
+      setAdapterLogger(log);
       const { formatRailResult } = await import('../../integration/tools/helpers.js');
 
       const result = formatRailResult({
@@ -105,13 +96,7 @@ describe('boundary-logging', () => {
 
     it('includes overflowLimit when overflow is present', async () => {
       const { log, entries } = captureLogger();
-      setAdapterLogger({
-        debug: () => {},
-        info: () => {},
-        warn: log.warn,
-        error: log.error,
-        warnOnce: log.warn,
-      });
+      setAdapterLogger(log);
       const { formatRailResult } = await import('../../integration/tools/helpers.js');
 
       formatRailResult({
@@ -131,13 +116,7 @@ describe('boundary-logging', () => {
   describe('HAPPY — formatBlocked emits warn', () => {
     it('logs warn with code', async () => {
       const { log, entries } = captureLogger();
-      setAdapterLogger({
-        debug: () => {},
-        info: () => {},
-        warn: log.warn,
-        error: log.error,
-        warnOnce: log.warn,
-      });
+      setAdapterLogger(log);
       const { formatBlocked } = await import('../../integration/tools/helpers.js');
 
       const result = formatBlocked('TICKET_REQUIRED');

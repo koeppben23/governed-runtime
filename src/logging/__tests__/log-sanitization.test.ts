@@ -10,11 +10,10 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import type { FlowGuardLogger } from '../logger.js';
-import { setAdapterLogger, resetAdapterLogger } from '../adapter-logger.js';
+import { setAdapterLogger, resetAdapterLogger, type AdapterLogger } from '../adapter-logger.js';
 
 function captureLogger(): {
-  log: FlowGuardLogger;
+  log: AdapterLogger;
   entries: { level: string; service: string; message: string; extra?: Record<string, unknown> }[];
 } {
   const entries: {
@@ -26,9 +25,6 @@ function captureLogger(): {
   return {
     entries,
     log: {
-      debug(svc, msg, ext) {
-        entries.push({ level: 'debug', service: svc, message: msg, extra: ext });
-      },
       info(svc, msg, ext) {
         entries.push({ level: 'info', service: svc, message: msg, extra: ext });
       },
@@ -38,6 +34,7 @@ function captureLogger(): {
       error(svc, msg, ext) {
         entries.push({ level: 'error', service: svc, message: msg, extra: ext });
       },
+      warnOnce: () => {},
     },
   };
 }
@@ -50,13 +47,7 @@ describe('log-sanitization', () => {
   describe('HAPPY — formatBlocked does not leak args', () => {
     it('logs only code, no vars content', async () => {
       const { log, entries } = captureLogger();
-      setAdapterLogger({
-        debug: () => {},
-        info: () => {},
-        warn: log.warn,
-        error: log.error,
-        warnOnce: log.warn,
-      });
+      setAdapterLogger(log);
       const { formatBlocked } = await import('../../integration/tools/helpers.js');
 
       formatBlocked('TICKET_REQUIRED', { action: '/some/internal/path' });
@@ -70,13 +61,7 @@ describe('log-sanitization', () => {
   describe('HAPPY — tool_blocked extra is code-only', () => {
     it('formatRailResult extra contains code but not reason text', async () => {
       const { log, entries } = captureLogger();
-      setAdapterLogger({
-        debug: () => {},
-        info: () => {},
-        warn: log.warn,
-        error: log.error,
-        warnOnce: log.warn,
-      });
+      setAdapterLogger(log);
       const { formatRailResult } = await import('../../integration/tools/helpers.js');
 
       formatRailResult({
@@ -92,13 +77,7 @@ describe('log-sanitization', () => {
 
     it('overflowLimit is a number, not a message', async () => {
       const { log, entries } = captureLogger();
-      setAdapterLogger({
-        debug: () => {},
-        info: () => {},
-        warn: log.warn,
-        error: log.error,
-        warnOnce: log.warn,
-      });
+      setAdapterLogger(log);
       const { formatRailResult } = await import('../../integration/tools/helpers.js');
 
       formatRailResult({

@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { createLogger, createNoopLogger, type FlowGuardLogger } from '../logger.js';
+import { createLogger, createNoopLogger } from '../logger.js';
 import { createConsoleSink } from '../console-sink.js';
 
 describe('mcp-logger-factory', () => {
