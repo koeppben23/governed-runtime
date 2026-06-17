@@ -18,6 +18,7 @@ import {
 import { readState } from '../../adapters/persistence.js';
 import { TERMINAL } from '../../machine/topology.js';
 import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js';
+import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 
 export const archive: ToolDefinition = {
   description:
@@ -55,6 +56,12 @@ export const archive: ToolDefinition = {
       }
       const archivedState = { ...state, archiveStatus };
       await writeStateWithArtifacts(sessDir, archivedState);
+      getAdapterLogger().info('machine', 'session_archived', {
+        sessionId: context.sessionID,
+        phase: archivedState.phase,
+        archiveStatus,
+        ...getLogTraceFields(),
+      });
 
       return appendNextAction(
         JSON.stringify({

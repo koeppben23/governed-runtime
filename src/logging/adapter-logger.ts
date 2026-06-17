@@ -34,6 +34,13 @@ export interface AdapterLogger {
 
 const _store = new AsyncLocalStorage<AdapterLogger>();
 
+export interface TraceContext {
+  readonly traceId: string;
+  readonly startedAtMs: number;
+}
+
+const _traceStore = new AsyncLocalStorage<TraceContext>();
+
 const _noop: AdapterLogger = {
   info: () => {},
   warn: () => {},
@@ -82,6 +89,34 @@ export async function runWithAdapterLoggerAsync<T>(
   fn: () => Promise<T>,
 ): Promise<T> {
   return _store.run(_wrapWithWarnOnce(log, new Map()), () => fn());
+}
+
+/** Execute a synchronous function with trace metadata scoped to the current async context. */
+export function runWithTraceContext<T>(traceId: string, fn: () => T): T {
+  return _traceStore.run({ traceId, startedAtMs: Date.now() }, fn);
+}
+
+/** Execute an async function with trace metadata scoped to the current async context. */
+export async function runWithTraceContextAsync<T>(
+  traceId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  return _traceStore.run({ traceId, startedAtMs: Date.now() }, () => fn());
+}
+
+/** Return the current trace context, if the caller is inside a trace scope. */
+export function getTraceContext(): TraceContext | undefined {
+  return _traceStore.getStore();
+}
+
+/** Fields safe to spread into structured diagnostic log extras. */
+export function getLogTraceFields(): { traceId?: string; durationMs?: number } {
+  const trace = getTraceContext();
+  if (!trace) return {};
+  return {
+    traceId: trace.traceId,
+    durationMs: Math.max(0, Date.now() - trace.startedAtMs),
+  };
 }
 
 // ─── Legacy API (test/CLI only — not for plugin use) ──────────────────────────

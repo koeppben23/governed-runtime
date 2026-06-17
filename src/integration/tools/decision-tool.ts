@@ -23,7 +23,7 @@ import {
   formatError,
   persistAndFormat,
 } from './helpers.js';
-import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import type { ReviewVerdict } from '../../state/evidence.js';
 
 // Rails
@@ -85,6 +85,7 @@ export const decision: ToolDefinition = {
         getAdapterLogger().warn('tool', 'decision_origin_missing', {
           sessionId: context.sessionID,
           code: 'HUMAN_DECISION_REQUIRED',
+          ...getLogTraceFields(),
         });
         return humanOriginBlocked;
       }
@@ -133,6 +134,7 @@ export const decision: ToolDefinition = {
             getAdapterLogger().info('tool', 'decision_persisted', {
               sessionId: context.sessionID,
               verdict: args.verdict,
+              ...getLogTraceFields(),
             });
           }
           return persisted;

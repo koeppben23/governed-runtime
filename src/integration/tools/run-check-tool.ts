@@ -65,7 +65,10 @@ import { withSessionWriteLockRetry, PersistenceError } from '../../adapters/lock
 import { REASON_LOCK_TIMEOUT_EXHAUSTED } from '../../shared/flowguard-identifiers.js';
 
 // Logging
-import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
+
+const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
+const RUN_CHECK_RETRIES = RUN_CHECK_RETRY_DELAYS_MS.length;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_run_check — Execute Verification Command with Evidence
@@ -92,10 +95,13 @@ export const run_check: ToolDefinition = {
           sessionId: context.sessionID,
           checkId: args.kind,
           errorCode: 'LOCK_TIMEOUT_EXHAUSTED',
+          causedBy: 'validation result persistence could not acquire session write lock',
+          retries: RUN_CHECK_RETRIES,
+          ...getLogTraceFields(),
         });
         return formatBlocked(REASON_LOCK_TIMEOUT_EXHAUSTED, {
           operation: 'validation_result_persistence',
-          retries: '3',
+          retries: String(RUN_CHECK_RETRIES),
           message: err.message,
         });
       }
@@ -193,6 +199,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         sessionId,
         checkId: kind,
         passed: evidence.passed,
+        ...getLogTraceFields(),
       });
 
       return formatRunCheckResponse({
@@ -205,14 +212,25 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       });
     },
     {
-      delaysMs: [100, 200, 400],
+      delaysMs: [...RUN_CHECK_RETRY_DELAYS_MS],
       onRetry: (attempt, delayMs, err) => {
+        if (attempt !== 1 && attempt !== RUN_CHECK_RETRIES) return;
         logger.warn('flowguard_run_check', 'Lock contention — retrying persistence', {
           sessionId,
           checkId: kind,
           attempt,
           delayMs,
-          lockError: err.message,
+          retries: RUN_CHECK_RETRIES,
+          errorCode: err.code,
+          causedBy: 'session_write_lock_contention',
+          ...getLogTraceFields(),
+        });
+        logger.warn('tool', 'lock_health', {
+          sessionId,
+          checkId: kind,
+          lockContended: true,
+          retries: RUN_CHECK_RETRIES,
+          ...getLogTraceFields(),
         });
       },
     },

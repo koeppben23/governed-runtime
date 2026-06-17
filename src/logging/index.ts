@@ -21,6 +21,11 @@ export {
   resetAdapterLogger,
   runWithAdapterLogger,
   runWithAdapterLoggerAsync,
+  runWithTraceContext,
+  runWithTraceContextAsync,
+  getTraceContext,
+  getLogTraceFields,
   toAdapterLogger,
   type AdapterLogger,
+  type TraceContext,
 } from './adapter-logger.js';

@@ -21,6 +21,12 @@ import type { ToolDefinition, ToolContext, ToolResult } from '../integration/too
 import { convertArgsToInputSchema } from './schema-converter.js';
 import { SESSION_UNRESOLVABLE_CODE, type McpSessionContext } from './session-resolver.js';
 import { mcpLogger } from './mcp-logger.js';
+import {
+  getLogTraceFields,
+  runWithAdapterLoggerAsync,
+  runWithTraceContextAsync,
+  toAdapterLogger,
+} from '../logging/adapter-logger.js';
 
 // --- Tool Registry ---
 
@@ -182,59 +188,66 @@ export function registerAllTools(
         inputSchema,
       },
       async (args: Record<string, unknown>, extra) => {
-        // Sanitize args: strip null values injected by some models (Gap 1 mitigation).
-        const cleanArgs = sanitizeNullArgs(args);
-        let sessionId: string | undefined;
+        const traceId = `mcp-${randomUUID()}`;
+        return runWithTraceContextAsync(traceId, async () => {
+          // Sanitize args: strip null values injected by some models (Gap 1 mitigation).
+          const cleanArgs = sanitizeNullArgs(args);
+          let sessionId: string | undefined;
 
-        try {
-          // Resolve session context inside the denial-mapping path. A
-          // fail-closed resolution (SESSION_UNRESOLVABLE) must surface as a
-          // governance denial, never escape the handler uncaught.
-          const sessionCtx = resolveContext();
-          sessionId = sessionCtx.sessionId;
+          try {
+            // Resolve session context inside the denial-mapping path. A
+            // fail-closed resolution (SESSION_UNRESOLVABLE) must surface as a
+            // governance denial, never escape the handler uncaught.
+            const sessionCtx = resolveContext();
+            sessionId = sessionCtx.sessionId;
 
-          // Build ToolContext compatible with FlowGuard tool execute() signature
-          const toolContext: ToolContext = {
-            sessionID: sessionCtx.sessionId,
-            messageID: `mcp-msg-${randomUUID()}`,
-            agent: 'mcp-client',
-            directory: sessionCtx.directory,
-            worktree: sessionCtx.worktree,
-            abort: extra.signal ?? new AbortController().signal,
-            metadata: () => {
-              /* MCP: metadata is embedded in text output */
-            },
-          };
+            // Build ToolContext compatible with FlowGuard tool execute() signature
+            const toolContext: ToolContext = {
+              sessionID: sessionCtx.sessionId,
+              messageID: `mcp-msg-${randomUUID()}`,
+              agent: 'mcp-client',
+              directory: sessionCtx.directory,
+              worktree: sessionCtx.worktree,
+              abort: extra.signal ?? new AbortController().signal,
+              metadata: () => {
+                /* MCP: metadata is embedded in text output */
+              },
+            };
 
-          mcpLogger.info('mcp', 'tool_invoked', {
-            tool: mcpName,
-            sessionId: toolContext.sessionID,
-          });
-
-          const result = await toolDef.execute(cleanArgs, toolContext);
-          return toMcpResult(result);
-        } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-
-          // Extract FlowGuard error code if available
-          const code = extractErrorCode(err) ?? 'TOOL_EXECUTION_ERROR';
-
-          // Fail-closed session resolution: emit a minimal boundary diagnostic.
-          if (code === SESSION_UNRESOLVABLE_CODE) {
-            logSessionResolutionFailedClosed();
-          }
-
-          // Governance denials are policy decisions, not execution errors.
-          if (isGovernanceDenialCode(code)) {
-            mcpLogger.warn('mcp', 'tool_denied', {
+            mcpLogger.info('mcp', 'tool_invoked', {
               tool: mcpName,
-              code,
-              ...(sessionId ? { sessionId } : {}),
+              sessionId: toolContext.sessionID,
+              ...getLogTraceFields(),
             });
-            return toMcpDenial(code, message);
+
+            const result = await runWithAdapterLoggerAsync(toAdapterLogger(mcpLogger), () =>
+              toolDef.execute(cleanArgs, toolContext),
+            );
+            return toMcpResult(result);
+          } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : String(err);
+
+            // Extract FlowGuard error code if available
+            const code = extractErrorCode(err) ?? 'TOOL_EXECUTION_ERROR';
+
+            // Fail-closed session resolution: emit a minimal boundary diagnostic.
+            if (code === SESSION_UNRESOLVABLE_CODE) {
+              logSessionResolutionFailedClosed();
+            }
+
+            // Governance denials are policy decisions, not execution errors.
+            if (isGovernanceDenialCode(code)) {
+              mcpLogger.warn('mcp', 'tool_denied', {
+                tool: mcpName,
+                code,
+                ...(sessionId ? { sessionId } : {}),
+                ...getLogTraceFields(),
+              });
+              return toMcpDenial(code, message);
+            }
+            return toMcpError(code, message);
           }
-          return toMcpError(code, message);
-        }
+        });
       },
     );
   }

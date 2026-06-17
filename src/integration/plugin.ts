@@ -10,10 +10,16 @@
 
 import { existsSync, statSync } from 'node:fs';
 import * as path from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { Plugin } from '@opencode-ai/plugin';
 import { readState } from '../adapters/persistence.js';
 import { createPluginLogger } from './plugin-logging.js';
-import { toAdapterLogger, runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
+import {
+  toAdapterLogger,
+  runWithAdapterLoggerAsync,
+  runWithTraceContextAsync,
+  getLogTraceFields,
+} from '../logging/adapter-logger.js';
 import {
   strictBlockedOutput,
   buildEnforcementError,
@@ -94,6 +100,7 @@ import {
 } from './plugin-discovery-health.js';
 
 const FG_PREFIX = 'flowguard_';
+const TRACE_REGISTRY_LIMIT = 1000;
 
 export function isUsableWorktree(worktree: string | undefined): boolean {
   if (!worktree) return false;
@@ -158,6 +165,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   });
 
   const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient, adapter);
+  const toolTraceIds = new Map<string, string>();
   const auditDeps = createAuditDeps(
     ws,
     log,
@@ -184,6 +192,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     discoveryHealthDeps,
     orchestratorDeps,
     auditDeps,
+    toolTraceIds,
     setCurrentSessionId: (sessionId) => {
       currentSessionId = sessionId;
     },
@@ -245,6 +254,7 @@ interface FlowGuardPluginRuntime {
   readonly discoveryHealthDeps: DiscoveryHealthEnforcementDeps;
   readonly orchestratorDeps: OrchestratorDeps;
   readonly auditDeps: AuditDeps;
+  readonly toolTraceIds: Map<string, string>;
   readonly setCurrentSessionId: (sessionId: string) => void;
   readonly logError: (message: string, err: unknown) => void;
 }
@@ -322,11 +332,56 @@ async function toolBefore(
   return runWithAdapterLoggerAsync(runtime.adapterLog, async () => {
     const toolName = (input as ToolHookBeforeInput)?.tool ?? '';
     const sessionId = (input as ToolHookBeforeInput)?.sessionID ?? 'unknown';
-    runtime.setCurrentSessionId(sessionId);
-    const args = (output as ToolHookBeforeOutput)?.args ?? {};
-    runtime.log.info('hook', 'tool.execute.before', { tool: toolName, sessionId });
-    await enforceBeforeRules(runtime, toolName, sessionId, args);
+    const traceId = getToolTraceId(runtime, input, 'before');
+    return runWithTraceContextAsync(traceId, async () => {
+      runtime.setCurrentSessionId(sessionId);
+      const args = (output as ToolHookBeforeOutput)?.args ?? {};
+      runtime.log.info('hook', 'tool.execute.before', {
+        tool: toolName,
+        sessionId,
+        ...getLogTraceFields(),
+      });
+      await enforceBeforeRules(runtime, toolName, sessionId, args);
+    });
   });
+}
+
+function getToolTraceId(
+  runtime: FlowGuardPluginRuntime,
+  input: unknown,
+  phase: 'before' | 'after',
+): string {
+  const hookInput = isRecord(input)
+    ? (input as Partial<ToolHookBeforeInput & ToolHookAfterInput>)
+    : {};
+  if (typeof hookInput.callID === 'string' && hookInput.callID.length > 0) {
+    return hookInput.callID;
+  }
+
+  const key = fallbackToolTraceKey(hookInput);
+  if (!key) return randomUUID();
+
+  if (phase === 'after') {
+    const existing = runtime.toolTraceIds.get(key);
+    if (existing) runtime.toolTraceIds.delete(key);
+    return existing ?? randomUUID();
+  }
+
+  const traceId = randomUUID();
+  if (runtime.toolTraceIds.size >= TRACE_REGISTRY_LIMIT) runtime.toolTraceIds.clear();
+  runtime.toolTraceIds.set(key, traceId);
+  return traceId;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function fallbackToolTraceKey(
+  input: Partial<ToolHookBeforeInput & ToolHookAfterInput>,
+): string | null {
+  if (typeof input.sessionID !== 'string' || typeof input.tool !== 'string') return null;
+  return `${input.sessionID}:${input.tool}`;
 }
 
 async function enforceBeforeRules(
@@ -505,26 +560,33 @@ async function toolAfter(
     const hookOutput = output as ToolHookAfterOutput;
     const toolName = hookInput?.tool ?? '';
     const sessionId = hookInput?.sessionID ?? 'unknown';
-    const now = new Date().toISOString();
-    runtime.setCurrentSessionId(sessionId);
-    runtime.log.info('hook', 'tool.execute.after', { tool: toolName, sessionId });
-    await handleAfterDiagnostics(runtime, {
-      toolName,
-      sessionId,
-      input,
-      hookInput,
-      hookOutput,
-      now,
+    const traceId = getToolTraceId(runtime, input, 'after');
+    return runWithTraceContextAsync(traceId, async () => {
+      const now = new Date().toISOString();
+      runtime.setCurrentSessionId(sessionId);
+      runtime.log.info('hook', 'tool.execute.after', {
+        tool: toolName,
+        sessionId,
+        ...getLogTraceFields(),
+      });
+      await handleAfterDiagnostics(runtime, {
+        toolName,
+        sessionId,
+        input,
+        hookInput,
+        hookOutput,
+        now,
+      });
+      await handleBashAfter(runtime, toolName, sessionId, hookOutput);
+      await runOrchestrator(runtime.orchestratorDeps, {
+        toolName,
+        input,
+        output: hookOutput,
+        sessionId,
+        now,
+      });
+      await runFlowGuardAuditAfter({ runtime, toolName, input, output, sessionId, hookOutput });
     });
-    await handleBashAfter(runtime, toolName, sessionId, hookOutput);
-    await runOrchestrator(runtime.orchestratorDeps, {
-      toolName,
-      input,
-      output: hookOutput,
-      sessionId,
-      now,
-    });
-    await runFlowGuardAuditAfter({ runtime, toolName, input, output, sessionId, hookOutput });
   });
 }
 
