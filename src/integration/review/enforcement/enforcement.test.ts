@@ -280,6 +280,56 @@ describe('review-enforcement', () => {
       expect(result).toHaveProperty('code', 'SUBAGENT_SESSION_MISMATCH');
     });
 
+    // ── Level 2: host_task ignores agent-submitted findings ───
+    it('L2: host_task mode does NOT block on mismatched submitted findings session', () => {
+      // Regression: in host_task_required mode the findings are host-captured and
+      // bound; the agent cannot know the real child session id, and the tool layer
+      // ignores submitted findings. A (disobedient) findings payload with a
+      // non-matching reviewedBy.sessionId must NOT hard-block the verdict.
+      const state = createSessionState();
+
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
+        taskResultWithFindings('real-session-123'),
+        LATER,
+      );
+
+      const submitted = {
+        reviewVerdict: 'accept',
+        reviewFindings: {
+          overallVerdict: 'accept',
+          blockingIssues: [],
+          reviewedBy: { sessionId: 'reviewer-self-reported-999' },
+        },
+      };
+
+      // Non-host_task (default policy): still strictly rejected.
+      const sdk = enforceBeforeVerdict(state, 'flowguard_plan', { ...submitted });
+      expect(sdk.allowed).toBe(false);
+      expect(sdk).toHaveProperty('code', 'SUBAGENT_SESSION_MISMATCH');
+
+      // host_task_required (derived from policySnapshot): integrity of submitted
+      // findings is skipped → allowed.
+      const hostTask = enforceBeforeVerdict(
+        state,
+        'flowguard_plan',
+        { ...submitted },
+        {
+          policySnapshot: { reviewInvocationPolicy: 'host_task_required' },
+        },
+      );
+      expect(hostTask.allowed).toBe(true);
+    });
+
     // ── Level 3: Prompt Integrity ────────────────────────────
     it('L3: blocks subagent call with empty prompt', () => {
       const state = createSessionState();

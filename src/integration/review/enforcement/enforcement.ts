@@ -39,8 +39,7 @@ import {
 import {
   extractContentMeta,
   extractCapturedFindings,
-  extractSubagentSessionId,
-  resolveSessionIdFromMetadata,
+  resolveSubagentSessionId,
   promptContainsValue,
 } from './extraction.js';
 
@@ -252,13 +251,9 @@ export function onTaskToolAfter(
   const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
   if (subagentType !== REVIEWER_SUBAGENT_TYPE) return;
 
-  // Tiered session ID resolution (BUG-14 fix):
-  // Tier 1: Hook metadata — authoritative from task tool runtime
-  let sessionId = resolveSessionIdFromMetadata(context?.metadata);
-  // Tier 2: Text extraction — parse from reviewer's JSON output
-  if (!sessionId) sessionId = extractSubagentSessionId(taskResult);
-  // Tier 3: Synthetic from callID — guaranteed unique for deduplication
-  if (!sessionId && context?.callID) sessionId = `derived:call:${context.callID}`;
+  // Canonical three-tier session ID resolution (BUG-14), shared with the
+  // output-injection path so injected/logged/persisted ids agree.
+  const sessionId = resolveSubagentSessionId(context?.metadata, taskResult, context?.callID);
 
   // Capture actual findings from the subagent response
   const capturedFindings = extractCapturedFindings(taskResult);
@@ -320,6 +315,10 @@ export function matchPendingReview(
  * - Level 1: Binary gate — subagent must have been called
  * - Level 2: Session ID match — when both actual and submitted IDs are available
  * - Level 4: Findings integrity — submitted must match captured
+ *
+ * Level 2/4 apply only to agent-attested findings (SDK / manual_attested). In
+ * host_task_required mode findings are host-captured and agent-submitted findings
+ * are ignored, so those checks are skipped (see enforceBeforeVerdict).
  */
 function checkPendingReview(
   state: SessionEnforcementState,
@@ -425,7 +424,10 @@ export function enforceBeforeVerdict(
   state: SessionEnforcementState,
   toolName: string,
   args: Record<string, unknown>,
-  sessionState?: { reviewAssurance?: SessionState['reviewAssurance'] | null } | null,
+  sessionState?: {
+    reviewAssurance?: SessionState['reviewAssurance'] | null;
+    policySnapshot?: { reviewInvocationPolicy?: string } | null;
+  } | null,
   strictEnforcement = false,
 ): EnforcementResult {
   if (!isReviewableTool(toolName)) return { allowed: true };
@@ -450,7 +452,19 @@ export function enforceBeforeVerdict(
     };
   }
 
-  // ── Level 2: Session ID match (strict when both IDs available) ─────────
+  // ── Level 2/4: AGENT-submitted findings integrity ──────────────────────
+  // In host_task_required mode the findings are host-captured and bound, and the
+  // tool layer (resolveHostTaskEffectiveFindings) ignores any agent-submitted
+  // reviewFindings — verdict-only is expected. The agent cannot know the real
+  // child session id, so enforcing reviewedBy.sessionId against it here is both
+  // impossible to satisfy and meaningless: host capture is the integrity source,
+  // and the verdict is still verified against captured evidence downstream. Skip
+  // the agent-findings integrity checks so a (disobedient but harmless) findings
+  // payload does not hard-block the verdict with SUBAGENT_SESSION_MISMATCH.
+  const hostTaskMode =
+    sessionState?.policySnapshot?.reviewInvocationPolicy === 'host_task_required';
+  if (hostTaskMode) return { allowed: true };
+
   const findingsCheck = verifyFindingsIntegrity(
     pending,
     args.reviewFindings as Record<string, unknown> | undefined,

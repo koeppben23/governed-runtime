@@ -17,6 +17,7 @@ import {
 import {
   extractCapturedFindings,
   resolveSessionIdFromMetadata,
+  resolveSubagentSessionId,
   injectSessionIdIntoOutput,
 } from './extraction.js';
 import {
@@ -25,6 +26,31 @@ import {
   type SessionEnforcementState,
 } from './types.js';
 import { NOW, LATER, modeASubagentResponse, taskResultWithFindings } from './test-helpers.js';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// B (hardening): canonical 3-tier resolveSubagentSessionId — single source of truth
+// shared by the output-injection path and the persisted-evidence path.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('resolveSubagentSessionId (unified 3-tier)', () => {
+  it('Tier 1: metadata wins over text and callID', () => {
+    const text = JSON.stringify({ reviewedBy: { sessionId: 'ses_text' } });
+    expect(resolveSubagentSessionId({ sessionID: 'ses_meta' }, text, 'call_1')).toBe('ses_meta');
+  });
+
+  it('Tier 2: text-extracted sessionId when metadata absent', () => {
+    const text = JSON.stringify({ reviewedBy: { sessionId: 'ses_text' } });
+    expect(resolveSubagentSessionId(undefined, text, 'call_1')).toBe('ses_text');
+  });
+
+  it('Tier 3: synthetic derived:call when metadata and text absent', () => {
+    expect(resolveSubagentSessionId({}, 'not json', 'call_1')).toBe('derived:call:call_1');
+  });
+
+  it('null when all tiers unavailable (no metadata, no text, no callID)', () => {
+    expect(resolveSubagentSessionId(undefined, 'not json', undefined)).toBeNull();
+  });
+});
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // BUG-14: resolveSessionIdFromMetadata

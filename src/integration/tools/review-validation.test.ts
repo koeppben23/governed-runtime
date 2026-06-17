@@ -7,6 +7,11 @@ import {
 } from './review-validation.js';
 import type { ReviewFindings } from '../../state/evidence.js';
 import {
+  setAdapterLogger,
+  resetAdapterLogger,
+  type AdapterLogger,
+} from '../../logging/adapter-logger.js';
+import {
   hashFindings,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -1543,6 +1548,51 @@ describe('resolveHostTaskFindings', () => {
       ],
     };
     expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
+  });
+
+  it('D (hardening): logs a distinct warn when captured findings are present but unparseable', () => {
+    const warnCalls: Array<{ service: string; message: string; extra?: Record<string, unknown> }> =
+      [];
+    const spy: AdapterLogger = {
+      info: () => {},
+      warn: (service, message, extra) => warnCalls.push({ service, message, extra }),
+      error: () => {},
+    };
+    setAdapterLogger(spy);
+    try {
+      const invalidRaw = { overallVerdict: 'accept' }; // present but malformed
+      const assurance = {
+        obligations: [makeObligation()],
+        invocations: [makeHostTaskInvocation({ capturedRawFindings: invalidRaw })],
+      };
+
+      const result = resolveHostTaskFindings(assurance, makeObligation());
+
+      // Still fail-closed (not_found), but the garbled capture is now observable.
+      expect(result.kind).toBe('not_found');
+      const unparseable = warnCalls.find((c) => /unparseable/i.test(c.message));
+      expect(unparseable).toBeDefined();
+      expect(unparseable?.extra).toMatchObject({ invocationId: INVOCATION_ID });
+    } finally {
+      resetAdapterLogger();
+    }
+  });
+
+  it('D (hardening): does NOT warn unparseable when there is simply no evidence', () => {
+    const warnCalls: string[] = [];
+    const spy: AdapterLogger = {
+      info: () => {},
+      warn: (_service, message) => warnCalls.push(message),
+      error: () => {},
+    };
+    setAdapterLogger(spy);
+    try {
+      const assurance = { obligations: [makeObligation()], invocations: [] };
+      expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
+      expect(warnCalls.find((m) => /unparseable/i.test(m))).toBeUndefined();
+    } finally {
+      resetAdapterLogger();
+    }
   });
 
   it('BAD: rejects host-task findings when obligation is blocked', () => {

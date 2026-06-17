@@ -615,6 +615,19 @@ export function resolveHostTaskFindings(
         invocationId: invocation.invocationId,
       };
     }
+    // Diagnostic for error analysis: captured findings are PRESENT (filter above
+    // requires capturedRawFindings != null) but FAIL schema validation. Without
+    // this, a garbled host capture is indistinguishable from "no evidence at all"
+    // (both degrade to not_found -> REVIEW_FINDINGS_REQUIRED). Surface it.
+    getAdapterLogger().warn(
+      'flowguard_review',
+      'host-task captured findings present but unparseable; treated as not_found',
+      {
+        obligationId: obligation.obligationId,
+        invocationId: invocation.invocationId,
+        issues: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, 8),
+      },
+    );
   }
 
   return { kind: 'not_found' };
