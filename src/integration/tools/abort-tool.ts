@@ -13,7 +13,7 @@ import type { ToolDefinition } from './helpers.js';
 import { withMutableSessionTransaction, persistAndFormat } from './helpers.js';
 import { executeAbort } from '../../rails/abort.js';
 import { TERMINAL } from '../../machine/topology.js';
-import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { safeExecute } from './ticket-tool.js';
 
 // ─── flowguard_abort_session ─────────────────────────────────────────────────
@@ -42,6 +42,7 @@ export const abort_session: ToolDefinition = {
               sessionId: context.sessionID,
               phase: state.phase,
               reason: 'abort_on_terminal',
+              ...getLogTraceFields(),
             });
           }
           const result = executeAbort(

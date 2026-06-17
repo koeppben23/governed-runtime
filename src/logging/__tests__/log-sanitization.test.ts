@@ -10,7 +10,12 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { setAdapterLogger, resetAdapterLogger, type AdapterLogger } from '../adapter-logger.js';
+import {
+  setAdapterLogger,
+  resetAdapterLogger,
+  runWithTraceContext,
+  type AdapterLogger,
+} from '../adapter-logger.js';
 
 function captureLogger(): {
   log: AdapterLogger;
@@ -54,6 +59,23 @@ describe('log-sanitization', () => {
 
       expect(entries).toHaveLength(1);
       expect(entries[0]!.extra).toEqual({ code: 'TICKET_REQUIRED' });
+      expect(JSON.stringify(entries[0]!.extra)).not.toContain('/some/internal/path');
+    });
+
+    it('keeps traceId and durationMs as safe structured fields', async () => {
+      const { log, entries } = captureLogger();
+      setAdapterLogger(log);
+      const { formatBlocked } = await import('../../integration/tools/helpers.js');
+
+      runWithTraceContext('11111111-1111-4111-8111-111111111111', () => {
+        formatBlocked('TICKET_REQUIRED', { action: '/some/internal/path' });
+      });
+
+      expect(entries[0]!.extra).toMatchObject({
+        code: 'TICKET_REQUIRED',
+        traceId: '11111111-1111-4111-8111-111111111111',
+      });
+      expect(typeof entries[0]!.extra!.durationMs).toBe('number');
       expect(JSON.stringify(entries[0]!.extra)).not.toContain('/some/internal/path');
     });
   });

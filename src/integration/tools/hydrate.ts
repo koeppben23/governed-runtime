@@ -46,7 +46,7 @@ import {
   REASON_SESSION_LOCK_CONTENDED,
   LOCK_CONTENDED_OUTPUT_FIELD,
 } from '../../shared/flowguard-identifiers.js';
-import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { listRepoSignals } from '../../adapters/git.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import {
@@ -833,6 +833,7 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<Tool
       mode: policyContext.policy.mode,
       effectiveMode: policyContext.policyResolution.effectiveMode,
       source: policyContext.policyResolution.effectiveSource,
+      ...getLogTraceFields(),
     });
     const discovery = await resolveDiscoveryHydration({
       existing,
@@ -876,6 +877,14 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<Tool
       discovery,
       policyContext.policyResolution,
     );
+    if (result.kind === 'ok') {
+      getAdapterLogger().info('machine', 'session_hydrated', {
+        sessionId: context.sessionID,
+        phase: result.state.phase,
+        mode: result.state.policySnapshot.mode,
+        ...getLogTraceFields(),
+      });
+    }
     return withLockContended(formatted, waited);
   });
 }

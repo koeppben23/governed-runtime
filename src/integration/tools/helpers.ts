@@ -21,6 +21,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { SessionState } from '../../state/schema.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import { resolveNextAction } from '../../machine/next-action.js';
+import { TERMINAL } from '../../machine/topology.js';
 
 // Rail helpers
 import type { RailResult, RailContext, AutoAdvanceOverflow } from '../../rails/types.js';
@@ -47,7 +48,7 @@ import { defaultReasonRegistry } from '../../config/reasons.js';
 import { createRailContext } from '../../adapters/context.js';
 import { buildBlockedDiagnostics } from '../../diagnostics/index.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
-import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 
 const lockedSessionDir = new AsyncLocalStorage<string>();
 
@@ -125,6 +126,7 @@ export function formatRailResult(result: RailResult): ToolResult {
     getAdapterLogger().warn('machine', 'tool_blocked', {
       code: result.code,
       ...(result.overflow ? { overflowLimit: result.overflow.limit } : {}),
+      ...getLogTraceFields(),
     });
     const diagnostics = buildBlockedDiagnostics(result.code, {
       reason: result.reason,
@@ -178,7 +180,7 @@ export function formatBlocked(
   vars?: Record<string, string>,
   extra?: Record<string, unknown>,
 ): string {
-  getAdapterLogger().warn('machine', 'tool_blocked', { code });
+  getAdapterLogger().warn('machine', 'tool_blocked', { code, ...getLogTraceFields() });
   const info = defaultReasonRegistry.format(code, vars);
   const diagnostics = buildBlockedDiagnostics(info.code, vars);
   return JSON.stringify({
@@ -439,11 +441,43 @@ export async function persistAndFormat(sessDir: string, result: RailResult): Pro
         stateId: result.state.id,
         path: result.transitions.map((t) => `${t.from}\u2192${t.to}`),
         count: result.transitions.length,
+        ...getLogTraceFields(),
       });
     }
     await writeStateWithArtifacts(sessDir, result.state);
+    logPersistedLifecycle(result);
   }
   return formatRailResult(result);
+}
+
+function logPersistedLifecycle(result: Extract<RailResult, { kind: 'ok' }>): void {
+  if (result.transitions.length === 0) return;
+  const sessionId = result.state.binding.sessionId;
+  const phase = result.state.phase;
+  const log = getAdapterLogger();
+
+  if (isPersistedAbort(result)) {
+    log.info('machine', 'session_aborted', {
+      sessionId,
+      phase,
+      ...getLogTraceFields(),
+    });
+    return;
+  }
+
+  if (TERMINAL.has(phase)) {
+    log.info('machine', 'session_completed', {
+      sessionId,
+      phase,
+      ...getLogTraceFields(),
+    });
+  }
+}
+
+function isPersistedAbort(result: Extract<RailResult, { kind: 'ok' }>): boolean {
+  return (
+    result.state.error?.code === 'ABORTED' && result.transitions.some((t) => t.event === 'ABORT')
+  );
 }
 
 /**
