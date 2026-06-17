@@ -137,6 +137,9 @@ function captureLogger(): {
       error(service, message, extra) {
         entries.push({ level: 'error', service, message, extra });
       },
+      warnOnce(service, message, extra) {
+        entries.push({ level: 'warn', service, message, extra });
+      },
     },
   };
 }
@@ -522,8 +525,14 @@ describe('CONCURRENCY', () => {
     );
     expect(retryLogs.map((entry) => entry.extra?.attempt)).toEqual([1, 3]);
     for (const entry of retryLogs) {
-      expect(entry.extra).toMatchObject({ retries: 3, traceId: 'trace-retry' });
+      expect(entry.extra).toMatchObject({
+        retries: 3,
+        traceId: 'trace-retry',
+        errorCode: 'LOCK_TIMEOUT',
+        causedBy: 'session_write_lock_contention',
+      });
       expect(typeof entry.extra!.durationMs).toBe('number');
+      expect(JSON.stringify(entry.extra)).not.toContain('test contention');
     }
 
     const healthLogs = entries.filter((entry) => entry.message === 'lock_health');

@@ -221,7 +221,8 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
           attempt,
           delayMs,
           retries: RUN_CHECK_RETRIES,
-          lockError: err.message,
+          errorCode: err.code,
+          causedBy: 'session_write_lock_contention',
           ...getLogTraceFields(),
         });
         logger.warn('tool', 'lock_health', {
