@@ -320,6 +320,10 @@ export function matchPendingReview(
  * - Level 1: Binary gate — subagent must have been called
  * - Level 2: Session ID match — when both actual and submitted IDs are available
  * - Level 4: Findings integrity — submitted must match captured
+ *
+ * Level 2/4 apply only to agent-attested findings (SDK / manual_attested). In
+ * host_task_required mode findings are host-captured and agent-submitted findings
+ * are ignored, so those checks are skipped (see enforceBeforeVerdict).
  */
 function checkPendingReview(
   state: SessionEnforcementState,
@@ -425,7 +429,10 @@ export function enforceBeforeVerdict(
   state: SessionEnforcementState,
   toolName: string,
   args: Record<string, unknown>,
-  sessionState?: { reviewAssurance?: SessionState['reviewAssurance'] | null } | null,
+  sessionState?: {
+    reviewAssurance?: SessionState['reviewAssurance'] | null;
+    policySnapshot?: { reviewInvocationPolicy?: string } | null;
+  } | null,
   strictEnforcement = false,
 ): EnforcementResult {
   if (!isReviewableTool(toolName)) return { allowed: true };
@@ -450,7 +457,19 @@ export function enforceBeforeVerdict(
     };
   }
 
-  // ── Level 2: Session ID match (strict when both IDs available) ─────────
+  // ── Level 2/4: AGENT-submitted findings integrity ──────────────────────
+  // In host_task_required mode the findings are host-captured and bound, and the
+  // tool layer (resolveHostTaskEffectiveFindings) ignores any agent-submitted
+  // reviewFindings — verdict-only is expected. The agent cannot know the real
+  // child session id, so enforcing reviewedBy.sessionId against it here is both
+  // impossible to satisfy and meaningless: host capture is the integrity source,
+  // and the verdict is still verified against captured evidence downstream. Skip
+  // the agent-findings integrity checks so a (disobedient but harmless) findings
+  // payload does not hard-block the verdict with SUBAGENT_SESSION_MISMATCH.
+  const hostTaskMode =
+    sessionState?.policySnapshot?.reviewInvocationPolicy === 'host_task_required';
+  if (hostTaskMode) return { allowed: true };
+
   const findingsCheck = verifyFindingsIntegrity(
     pending,
     args.reviewFindings as Record<string, unknown> | undefined,
