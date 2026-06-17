@@ -503,13 +503,15 @@ describe('CONCURRENCY', () => {
     const { log, entries } = captureLogger();
     setAdapterLogger(log);
 
-    vi.mocked(withSessionWriteLockRetry).mockImplementationOnce(async (_sessDir, operation, opts) => {
-      const err = new PersistenceError('LOCK_TIMEOUT', 'test contention');
-      opts?.onRetry?.(1, 100, err);
-      opts?.onRetry?.(2, 200, err);
-      opts?.onRetry?.(3, 400, err);
-      return operation({ release: vi.fn().mockResolvedValue(undefined), waited: true });
-    });
+    vi.mocked(withSessionWriteLockRetry).mockImplementationOnce(
+      async (_sessDir, operation, opts) => {
+        const err = new PersistenceError('LOCK_TIMEOUT', 'test contention');
+        opts?.onRetry?.(1, 100, err);
+        opts?.onRetry?.(2, 200, err);
+        opts?.onRetry?.(3, 400, err);
+        return operation({ release: vi.fn().mockResolvedValue(undefined), waited: true });
+      },
+    );
 
     await runWithTraceContextAsync('trace-retry', () =>
       run_check.execute({ kind: 'typecheck' }, ctx),
