@@ -23,6 +23,7 @@ import { installStdoutGuard } from './stdout-guard.js';
 import { registerAllTools, isGovernanceDenialCode } from './tool-adapter.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext, ToolDefinition } from '../integration/tools/helpers.js';
+import { getAdapterLogger, getLogTraceFields } from '../logging/adapter-logger.js';
 import { z } from 'zod';
 
 // --- Schema Converter Tests ---
@@ -186,6 +187,40 @@ describe('Tool Adapter Session Identity', () => {
       'mcp-stable-session',
     ]);
     expect(contexts[0]?.messageID).not.toBe(contexts[1]?.messageID);
+  });
+
+  it('HAPPY: MCP tool execution provides adapter logger and trace context', async () => {
+    let handler:
+      | ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown)
+      | null = null;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const observed: Record<string, unknown>[] = [];
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        getAdapterLogger().info('test', 'inside_mcp_tool', getLogTraceFields());
+        observed.push(getLogTraceFields());
+        return 'ok';
+      },
+    };
+
+    registerAllTools(fakeServer, { test: tool }, () => ({
+      sessionId: 'mcp-session',
+      directory: '/tmp/project',
+      worktree: '/tmp/project',
+    }));
+
+    expect(handler).not.toBeNull();
+    await handler!({}, {});
+
+    expect(observed).toHaveLength(1);
+    expect(observed[0]!.traceId).toMatch(/^mcp-/);
+    expect(typeof observed[0]!.durationMs).toBe('number');
   });
 
   it('governance denial returns isError:false with governance:true in content', async () => {
