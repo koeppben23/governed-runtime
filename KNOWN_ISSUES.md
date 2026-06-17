@@ -21,29 +21,33 @@ intentionally summarized here; use the linked issues for implementation scope.
 
 ## Fixed
 
-| ID  | Severity | Status | Tracking   | Summary                                                                        |
-| --- | -------- | ------ | ---------- | ------------------------------------------------------------------------------ |
+| ID  | Severity | Status | Tracking | Summary                                                                        |
+| --- | -------- | ------ | -------- | ------------------------------------------------------------------------------ |
 | G1  | HIGH     | Fixed  | #486, #488 | Regulated four-eyes approval now fails closed for uncomparable identities.     |
 | G2  | MEDIUM   | Fixed  | #486, #488 | Audit/completeness four-eyes reporting now uses canonical identity comparison. |
 | G24 | MEDIUM   | Fixed  | #486, #488 | Actor ID comparison now applies deterministic Unicode canonical normalization. |
 | G25 | MEDIUM   | Fixed  | #486, #488 | Dotted-I/casing behavior is pinned by tests without adding confusable policy.  |
+| AC1 | HIGH     | Fixed  | #416       | Audit chain hashing uses recursive canonical JSON serializer; nested content bound to chainHash. |
+| H4  | HIGH     | Fixed  | #129       | Hook audit-write failures surfaced via `recordAssuranceWithAudit()` instead of silent downgrade. |
+| AR1 | HIGH     | Fixed  | #420       | Archive manifest v2 folds `auditChainHead`, `auditEventCount`, and metadata into `contentDigest`. |
+| G10 | LOW      | Fixed  | #428       | Auto-advance overflow now fail-closed (`AutoAdvanceResult` discriminated union). |
+| G5  | LOW      | Fixed  | #418       | Policy mode is a closed enum; near-miss strings can no longer silently disable enforcement. |
 
 ## Priority Work Packages
 
 | Package | Priority | Status          | Findings                                       | Summary                                                                                |
 | ------- | -------- | --------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------- |
 | A       | P1       | Partially Fixed | G1, G2, G24, G25, G26                          | Four-eyes and identity normalization/reporting. G1/G2/G24/G25 fixed; G26 remains open. |
-| B       | P1       | Tracked         | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2            | Hash-chain, canonical digest, TSA, and NTP hardening.                                  |
-| C       | P1       | Tracked         | AR1, AR2, AUD2                                 | Archive integrity and audit write-lock recovery.                                       |
+| B       | P1       | Partially Fixed | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2            | Hash-chain, canonical digest, TSA, and NTP hardening. AC1 fixed; AC2–AC5, TSA1–TSA2 remain open. |
+| C       | P1       | Partially Fixed | AR1, AR2, AUD2                                 | Archive integrity and audit write-lock recovery. AR1 fixed; AR2, AUD2 remain open.   |
 | D       | P1       | Tracked         | R1, R2, R3, R4, R5, AC3                        | Secret-leak, redaction, logging, telemetry boundaries.                                 |
-| E       | P1       | Tracked         | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening.                      |
+| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H4 fixed; H1–H2, C1–C5, M1–M3, I4 remain open. |
 | F       | P2       | Tracked         | G3, G7, G9, G15, AC6, AC7, G12, G13            | State-machine correctness and audit completeness.                                      |
 
 ## Open High-Priority Findings
 
 | ID   | Severity | Status | Summary                                                                                    |
 | ---- | -------- | ------ | ------------------------------------------------------------------------------------------ |
-| AC1  | HIGH     | Open   | Canonical digest handling for special object/value types needs hardening.                  |
 | AC2  | HIGH     | Open   | Timestamp verification must not trust downgraded status when stronger evidence is present. |
 | AC3  | HIGH     | Open   | Audit argument summarization can expose scalar secrets and needs redaction hardening.      |
 | AC4  | HIGH     | Open   | NTP offset/delay calculation needs RFC-aligned correction.                                 |
@@ -52,7 +56,6 @@ intentionally summarized here; use the linked issues for implementation scope.
 | H1   | HIGH     | Open   | HTTP hook server needs an explicit trust/auth/origin boundary.                             |
 | H2   | HIGH     | Open   | Command hook and HTTP hook obligation enforcement must be aligned.                         |
 | H3   | HIGH     | Open   | Session ID validation needs Windows/reserved-name hardening.                               |
-| H4   | HIGH     | Open   | Hook audit-write failures must not be silently downgraded.                                 |
 | M1   | HIGH     | Open   | MCP tool execution needs timeout/rate-limit hardening.                                     |
 | M2   | HIGH     | Open   | MCP session/project directory environment inputs need validation.                          |
 | M3   | HIGH     | Open   | MCP client-facing errors need sanitization.                                                |
@@ -66,7 +69,6 @@ intentionally summarized here; use the linked issues for implementation scope.
 | R2   | HIGH     | Open   | Archive export must respect redaction mode for audit/state/raw artifacts.                  |
 | R3   | HIGH     | Open   | Logging redaction should not default-allow unknown identity metadata.                      |
 | R4   | HIGH     | Open   | Telemetry error/status export needs scrubbing.                                             |
-| AR1  | HIGH     | Open   | Archive verification must require digests for every included manifest file.                |
 | AUD2 | HIGH     | Open   | Audit write lock needs stale-lock recovery.                                                |
 
 ## Medium-Priority Findings
@@ -125,9 +127,7 @@ intentionally summarized here; use the linked issues for implementation scope.
 | AC13 | LOW        | Open         | Empty audit query combinator semantics need documentation/tests.                  |
 | AC14 | LOW        | Open         | Audit summary should not count non-approve exits as honored review.               |
 | AC15 | LOW        | Open         | Hex parsing can be hardened defensively.                                          |
-| G5   | LOW        | Open         | Policy degradation surfacing could be stronger.                                   |
 | G8   | LOW        | Open         | ABORT topology representation needs consistency review.                           |
-| G10  | LOW        | Open         | Auto-advance overflow diagnostics can lose context.                               |
 | G11  | LOW        | Open         | Transition application clears error diagnostics unconditionally.                  |
 | G14  | LOW        | Open         | ADR status transition invariants need hardening.                                  |
 | G16  | LOW        | Open         | Implement entry should defensively re-check validation evidence.                  |
