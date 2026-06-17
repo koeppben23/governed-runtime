@@ -21,6 +21,7 @@ const NPM_CLI = process.env.npm_execpath;
 
 let tmpDir: string;
 let tarballPath: string;
+let installedDir: string;
 let packedPackageJson: {
   dependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
@@ -148,7 +149,17 @@ describe('install-verify', () => {
     const tarball = await readPackedTarball();
     packedPackageJson = tarball.packageJson;
     packedFiles = tarball.files;
-  });
+
+    installedDir = path.join(tmpDir, 'installed');
+    await fs.mkdir(installedDir, { recursive: true });
+    await fs.writeFile(
+      path.join(installedDir, 'package.json'),
+      JSON.stringify({ private: true, type: 'module' }),
+    );
+    const installArgs = ['install', '--prefer-offline', '--no-audit', '--no-fund', tarballPath];
+    const installRes = runFile(process.execPath, npmArgs(installArgs), installedDir);
+    assertSuccess(installRes, commandForLog('npm', installArgs));
+  }, 480_000);
 
   afterAll(async () => {
     await cleanTmpDir(tmpDir);
@@ -178,7 +189,14 @@ describe('install-verify', () => {
         path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-      const args = ['install', '--omit=optional', '--no-audit', '--no-fund', tarballPath];
+      const args = [
+        'install',
+        '--prefer-offline',
+        '--omit=optional',
+        '--no-audit',
+        '--no-fund',
+        tarballPath,
+      ];
       const res = runFile(process.execPath, npmArgs(args), p);
       assertSuccess(res, commandForLog('npm', args));
     }, 240000);
@@ -190,7 +208,14 @@ describe('install-verify', () => {
         path.join(p, 'package.json'),
         JSON.stringify({ name: 'test', type: 'module' }),
       );
-      const installArgs = ['install', '--omit=optional', '--no-audit', '--no-fund', tarballPath];
+      const installArgs = [
+        'install',
+        '--prefer-offline',
+        '--omit=optional',
+        '--no-audit',
+        '--no-fund',
+        tarballPath,
+      ];
       const install = runFile(process.execPath, npmArgs(installArgs), p);
       assertSuccess(install, commandForLog('npm', installArgs));
       const res = runFile(
@@ -204,52 +229,25 @@ describe('install-verify', () => {
       expect(res.code).toBe(0);
     }, 240000);
 
-    it('tarball can be installed in fresh project', async () => {
-      const p = path.join(tmpDir, 'install-test');
-      await fs.mkdir(p, { recursive: true });
-      await fs.writeFile(
-        path.join(p, 'package.json'),
-        JSON.stringify({ name: 'test', type: 'module' }),
+    it('tarball is installed in shared node_modules', () => {
+      expect(fs.existsSync(path.join(installedDir, 'node_modules', '@flowguard', 'core'))).toBe(
+        true,
       );
-      const args = ['install', '--no-audit', '--no-fund', tarballPath];
-      const res = runFile(process.execPath, npmArgs(args), p);
-      assertSuccess(res, commandForLog('npm', args));
-    }, 480000);
+    });
 
     it('can import @flowguard/core after install', async () => {
-      const p = path.join(tmpDir, 'import-test');
-      await fs.mkdir(p, { recursive: true });
-      await fs.writeFile(
-        path.join(p, 'package.json'),
-        JSON.stringify({ name: 'test', type: 'module' }),
-      );
-      const installArgs = ['install', '--no-audit', '--no-fund', tarballPath];
-      const install = runFile(process.execPath, npmArgs(installArgs), p);
-      assertSuccess(install, commandForLog('npm', installArgs));
       const res = runFile(
         'node',
         [
           '-e',
           "import('@flowguard/core').then(() => console.log('ok')).catch(e => { console.error(e.message); process.exit(1); })",
         ],
-        p,
+        installedDir,
       );
       expect(res.code).toBe(0);
-    }, 240000);
+    }, 30_000);
 
     it('@flowguard/core/testing exports createTestContext', async () => {
-      const p = path.join(tmpDir, 'api-smoke-testing');
-      await fs.mkdir(p, { recursive: true });
-      await fs.writeFile(
-        path.join(p, 'package.json'),
-        JSON.stringify({ name: 'test', type: 'module' }),
-      );
-      const installArgs = ['install', '--no-audit', '--no-fund', tarballPath];
-      assertSuccess(
-        runFile(process.execPath, npmArgs(installArgs), p),
-        commandForLog('npm', installArgs),
-      );
-
       const res = runFile(
         'node',
         [
@@ -257,24 +255,12 @@ describe('install-verify', () => {
           '-e',
           "import('@flowguard/core/testing').then(m => { if (typeof m.createTestContext !== 'function') { console.error('createTestContext not found'); process.exit(1); } console.log('ok'); }).catch(e => { console.error(e.message); process.exit(1); })",
         ],
-        p,
+        installedDir,
       );
       expect(res.code).toBe(0);
-    }, 480000);
+    }, 30_000);
 
     it('@flowguard/core excludes integration and testing exports', async () => {
-      const p = path.join(tmpDir, 'api-smoke-core');
-      await fs.mkdir(p, { recursive: true });
-      await fs.writeFile(
-        path.join(p, 'package.json'),
-        JSON.stringify({ name: 'test', type: 'module' }),
-      );
-      const installArgs = ['install', '--no-audit', '--no-fund', tarballPath];
-      assertSuccess(
-        runFile(process.execPath, npmArgs(installArgs), p),
-        commandForLog('npm', installArgs),
-      );
-
       const res = runFile(
         'node',
         [
@@ -282,10 +268,10 @@ describe('install-verify', () => {
           '-e',
           "import('@flowguard/core').then(m => { if (typeof m.createTestContext !== 'undefined') { console.error('createTestContext leaked'); process.exit(1); } if (typeof m.plan !== 'undefined') { console.error('plan leaked'); process.exit(1); } if (typeof m.FlowGuardAuditPlugin !== 'undefined') { console.error('FlowGuardAuditPlugin leaked'); process.exit(1); } if (typeof m.resolvePolicy !== 'undefined') { console.error('resolvePolicy leaked'); process.exit(1); } if (typeof m.getPolicyPreset !== 'function') { console.error('getPolicyPreset missing'); process.exit(1); } console.log('ok'); }).catch(e => { console.error(e.message); process.exit(1); })",
         ],
-        p,
+        installedDir,
       );
       expect(res.code).toBe(0);
-    }, 480000);
+    }, 30_000);
 
     it('has expected files in tarball', async () => {
       const distFiles = packedFiles.filter((file) => file.startsWith('package/dist/'));
