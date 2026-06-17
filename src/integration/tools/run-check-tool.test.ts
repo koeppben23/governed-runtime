@@ -34,6 +34,12 @@ import {
 import { executeCheck } from '../../verification/executor.js';
 import { PersistenceError } from '../../adapters/persistence.js';
 import { withSessionWriteLockRetry } from '../../adapters/lock-retry.js';
+import {
+  resetAdapterLogger,
+  runWithTraceContextAsync,
+  setAdapterLogger,
+  type AdapterLogger,
+} from '../../logging/adapter-logger.js';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -105,8 +111,35 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  resetAdapterLogger();
   await ws.cleanup();
 });
+
+function captureLogger(): {
+  log: AdapterLogger;
+  entries: { level: string; service: string; message: string; extra?: Record<string, unknown> }[];
+} {
+  const entries: {
+    level: string;
+    service: string;
+    message: string;
+    extra?: Record<string, unknown>;
+  }[] = [];
+  return {
+    entries,
+    log: {
+      info(service, message, extra) {
+        entries.push({ level: 'info', service, message, extra });
+      },
+      warn(service, message, extra) {
+        entries.push({ level: 'warn', service, message, extra });
+      },
+      error(service, message, extra) {
+        entries.push({ level: 'error', service, message, extra });
+      },
+    },
+  };
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -433,6 +466,8 @@ describe('EDGE', () => {
 describe('CONCURRENCY', () => {
   it('LOCK_TIMEOUT_EXHAUSTED: returns BLOCKED after all retries fail', async () => {
     await driveToValidation();
+    const { log, entries } = captureLogger();
+    setAdapterLogger(log);
 
     const exhaustedError = new PersistenceError(
       'LOCK_TIMEOUT_EXHAUSTED',
@@ -440,13 +475,57 @@ describe('CONCURRENCY', () => {
     );
     vi.mocked(withSessionWriteLockRetry).mockRejectedValueOnce(exhaustedError);
 
-    const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
+    const raw = await runWithTraceContextAsync('trace-run-check', () =>
+      run_check.execute({ kind: 'typecheck' }, ctx),
+    );
     const result = parseToolResult(raw) as Record<string, unknown>;
 
     expect(result.error).toBe(true);
     expect(result.code).toBe('LOCK_TIMEOUT_EXHAUSTED');
     expect(result.message).toContain('validation_result_persistence');
     expect(result.message).toContain('3 retries');
+    const exhausted = entries.find((entry) => entry.message === 'lock_exhausted');
+    expect(exhausted?.extra).toMatchObject({
+      sessionId: ctx.sessionID,
+      checkId: 'typecheck',
+      errorCode: 'LOCK_TIMEOUT_EXHAUSTED',
+      causedBy: 'validation result persistence could not acquire session write lock',
+      retries: 3,
+      traceId: 'trace-run-check',
+    });
+    expect(typeof exhausted?.extra?.durationMs).toBe('number');
+
+    vi.mocked(withSessionWriteLockRetry).mockRestore();
+  });
+
+  it('rate-limits lock retry diagnostics to first and final retry markers', async () => {
+    await driveToValidation();
+    const { log, entries } = captureLogger();
+    setAdapterLogger(log);
+
+    vi.mocked(withSessionWriteLockRetry).mockImplementationOnce(async (_sessDir, operation, opts) => {
+      const err = new PersistenceError('LOCK_TIMEOUT', 'test contention');
+      opts?.onRetry?.(1, 100, err);
+      opts?.onRetry?.(2, 200, err);
+      opts?.onRetry?.(3, 400, err);
+      return operation({ release: vi.fn().mockResolvedValue(undefined), waited: true });
+    });
+
+    await runWithTraceContextAsync('trace-retry', () =>
+      run_check.execute({ kind: 'typecheck' }, ctx),
+    );
+
+    const retryLogs = entries.filter(
+      (entry) => entry.service === 'flowguard_run_check' && entry.level === 'warn',
+    );
+    expect(retryLogs.map((entry) => entry.extra?.attempt)).toEqual([1, 3]);
+    for (const entry of retryLogs) {
+      expect(entry.extra).toMatchObject({ retries: 3, traceId: 'trace-retry' });
+      expect(typeof entry.extra!.durationMs).toBe('number');
+    }
+
+    const healthLogs = entries.filter((entry) => entry.message === 'lock_health');
+    expect(healthLogs.map((entry) => entry.extra?.checkId)).toEqual(['typecheck', 'typecheck']);
 
     vi.mocked(withSessionWriteLockRetry).mockRestore();
   });
