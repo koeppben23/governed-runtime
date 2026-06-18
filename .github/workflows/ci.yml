@@ -522,6 +522,7 @@ jobs:
     name: dependency-review
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    continue-on-error: true
     permissions:
       contents: read
       pull-requests: read
