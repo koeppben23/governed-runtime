@@ -70,6 +70,11 @@ if [[ "$MODE" == "install" && ! -f "$TARBALL" ]]; then
     exit 1
 fi
 
+# Resolve tarball to absolute path before cd, so relative paths survive the cd into TARGET_DIR
+if [[ "$MODE" == "install" ]]; then
+    TARBALL="$(cd "$(dirname "$TARBALL")" && pwd)/$(basename "$TARBALL")"
+fi
+
 # ─── Prepare ──────────────────────────────────────────────────────────────────
 
 echo "=== FlowGuard Demo Setup ==="
@@ -122,8 +127,39 @@ if [[ "$MODE" == "install" ]]; then
         --force
 
     echo ""
-    echo "--- FlowGuard install result ---"
-    ls opencode.json .opencode/agents/ 2>/dev/null || true
+    echo "--- Verifying FlowGuard install ---"
+    # Fail closed: the demo must not proceed to `opencode serve` on a broken
+    # install. Assert the artifacts the OpenCode installer writes for repo scope.
+    install_ok=1
+
+    if [[ -f opencode.json || -f opencode.jsonc ]]; then
+        echo "  ok: opencode config present"
+    else
+        echo "  MISSING: opencode.json / opencode.jsonc" >&2
+        install_ok=0
+    fi
+
+    if [[ -f .opencode/agents/flowguard-reviewer.md ]]; then
+        echo "  ok: .opencode/agents/flowguard-reviewer.md"
+    else
+        echo "  MISSING: .opencode/agents/flowguard-reviewer.md" >&2
+        install_ok=0
+    fi
+
+    if [[ -d .opencode/commands ]]; then
+        echo "  ok: .opencode/commands/ ($(ls .opencode/commands 2>/dev/null | wc -l | tr -d ' ') commands)"
+    else
+        echo "  MISSING: .opencode/commands/ (FlowGuard slash commands)" >&2
+        install_ok=0
+    fi
+
+    if [[ "$install_ok" -ne 1 ]]; then
+        echo "" >&2
+        echo "Error: FlowGuard install verification failed. Do not start the demo." >&2
+        echo "Check the 'flowguard install' output above and the tarball path." >&2
+        exit 1
+    fi
+    echo "--- FlowGuard install verified ---"
 fi
 
 # ─── Done ─────────────────────────────────────────────────────────────────────
@@ -141,8 +177,8 @@ echo "Next steps:"
 echo "  cd $TARGET_DIR"
 echo "  ./mvnw test           # Verify: 16 tests, 0 failures, 1 skipped"
 if [[ "$MODE" == "prepare-only" ]]; then
-    echo "  # Install FlowGuard and start OpenCode:"
+    echo "  # Install FlowGuard and start OpenCode Desktop:"
     echo "  npx --package <tarball> flowguard install --install-scope repo --policy-mode team --core-tarball <tarball> --force"
 fi
-echo "  opencode serve --hostname 127.0.0.1 --port 4096"
+echo "  # Open $TARGET_DIR in OpenCode Desktop"
 echo "  # Then follow DEMO_SCRIPT.md"

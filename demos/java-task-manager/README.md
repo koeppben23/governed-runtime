@@ -38,8 +38,7 @@ npx --package /path/to/flowguard-core-*.tgz flowguard install \
 # Observe: 16 tests, 0 failures, 1 skipped.
 # The skipped test is @Disabled because it exposes the bug.
 
-# Start OpenCode
-opencode serve --hostname 127.0.0.1 --port 4096
+# Open the workspace in OpenCode Desktop
 
 # Follow DEMO_SCRIPT.md step by step
 ```
@@ -57,10 +56,10 @@ A regression test for this case exists in `TaskControllerTest` but is annotated
 
 After a successful FlowGuard session, two files are changed:
 
-| File | Change |
-|------|--------|
-| `src/main/java/com/example/taskmanager/service/TaskService.java` | Add null-check in `updateTask()`, throw `TaskNotFoundException` |
-| `src/test/java/com/example/taskmanager/controller/TaskControllerTest.java` | Remove `@Disabled` from `update_taskNotFound_returns404()` |
+| File                                                                       | Change                                                          |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| `src/main/java/com/example/taskmanager/service/TaskService.java`           | Add null-check in `updateTask()`, throw `TaskNotFoundException` |
+| `src/test/java/com/example/taskmanager/controller/TaskControllerTest.java` | Remove `@Disabled` from `update_taskNotFound_returns404()`      |
 
 All 16 tests pass (the previously skipped test is now enabled and green).
 
@@ -72,6 +71,7 @@ demos/java-task-manager/
 ├── DEMO_SCRIPT.md         ← Live presentation script with talking points
 ├── RESET.md               ← How to reset for a fresh demo
 ├── run-demo-setup.sh      ← Prepare or prepare+install the demo project
+├── FALLBACK.md            ← Pre-recorded fallback strategy for live presentations
 ├── review-fixtures/       ← Files copied by setup to create the optional /review branch
 └── seed/                  ← The buggy starting state (a standalone Maven project)
     ├── .gitignore

@@ -114,7 +114,7 @@ class TaskControllerTest {
      * To reproduce manually: remove @Disabled and run ./mvnw test.
      */
     @Test
-    @Disabled("TODO FLOWGUARD DEMO: enable this regression test while fixing TaskService.updateTask; currently exposes 500 instead of expected 404")
+    @Disabled("Regression: PUT /tasks/{id} returns HTTP 500 on missing ID instead of 404 — re-enable when TaskService.updateTask null-check is applied")
     void update_taskNotFound_returns404() throws Exception {
         String body = objectMapper.writeValueAsString(Map.of(
             "title", "Will not work",
