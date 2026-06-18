@@ -522,7 +522,6 @@ jobs:
     name: dependency-review
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
-    continue-on-error: true
     permissions:
       contents: read
       pull-requests: read
@@ -532,6 +531,7 @@ jobs:
 
       - name: Dependency review
         uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # actions/dependency-review-action v4.9.0
+        continue-on-error: true
 
   install:
     name: install (${{ matrix.os }})
