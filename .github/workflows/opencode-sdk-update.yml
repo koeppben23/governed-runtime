@@ -76,7 +76,7 @@ jobs:
         run: npm run update:opencode-sdk -- "${{ steps.resolve.outputs.target_sdk }}" "${{ steps.resolve.outputs.target_host }}"
       - name: Install OpenCode host/Desktop target
         if: steps.resolve.outputs.needs_update == 'true'
-        run: npm install -g "opencode-ai@${{ steps.resolve.outputs.target_host }}"
+        run: npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@${{ steps.resolve.outputs.target_host }}"
       - name: Verify OpenCode host/Desktop availability
         if: steps.resolve.outputs.needs_update == 'true'
         run: |

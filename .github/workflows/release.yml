@@ -5,6 +5,10 @@ on:
     tags:
       - 'v*'
 
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 permissions:
   contents: write
   id-token: write
@@ -49,7 +53,7 @@ jobs:
           FORCE_COLOR: 0
 
       - name: Run tests
-        run: npm test -- --exclude 'src/cli/install-verify.test.ts' --exclude 'src/cli/cli-contract-smoke.test.ts'
+        run: npm test
         env:
           FORCE_COLOR: 0
 
@@ -162,7 +166,7 @@ jobs:
 
       - name: Generate SBOM (CycloneDX)
         run: |
-          npx --yes @cyclonedx/cyclonedx-npm@4.1.1 \
+          npm exec --package @cyclonedx/cyclonedx-npm@4.1.1 -- cyclonedx-npm \
             --spec-version 1.6 \
             --output-format JSON \
             --output-reproducible \
