@@ -10,6 +10,7 @@ const outputFile = path.join(tmpDir, 'vitest-independent-review.json');
 
 const testFiles = [
   'src/integration/plugin.test.ts',
+  'src/integration/independent-review-e2e.test.ts',
   'src/integration/tools-execute-session.test.ts',
   'src/integration/tools-execute-planning.test.ts',
   'src/integration/tools-execute-review.test.ts',
@@ -25,6 +26,10 @@ const mustPassTestTitles = [
   'blocks when strict attestation is missing',
   'blocks when strict obligation is blocked',
   'Mode B changes_requested keeps selfReviewIteration aligned with next iteration metadata',
+  // Host-task verdict runtime path through the real plugin hooks (gap closer):
+  'captures + binds reviewer evidence through the real Task after-hook',
+  'REGRESSION: verdict with a mismatched submitted-findings session is NOT blocked',
+  'REGRESSION: confabulated reviewer attestation still binds host-authoritatively',
 ];
 
 const testTitleFilter = mustPassTestTitles
