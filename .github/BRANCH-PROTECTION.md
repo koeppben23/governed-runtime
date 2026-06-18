@@ -20,59 +20,77 @@ This document defines the merge-blocking settings for the `main` branch.
 
 ## Required Status Checks (merge-blocking)
 
-Only real CI job names are allowed in this list. Configure the following check names exactly:
+Only real CI job names are allowed in this list. Configure the following check
+names exactly (grouped by the workflow that produces them):
 
 From `.github/workflows/conventional-commits.yml`:
 
-1. `Validate Commit Messages`
+- `Validate Commit Messages`
 
 From `.github/workflows/ci.yml`:
 
-2. `unit`
-3. `test`
-4. `integration`
-5. `architecture`
-6. `typecheck`
-7. `lint`
-8. `format`
-9. `actions-pinning`
-10. `build`
-11. `install-verify (ubuntu-latest)`
-12. `install-verify (macos-latest)`
-13. `install-verify (windows-latest)`
-14. `smoke`
-15. `independent-review-e2e`
-16. `audit`
-17. `mutation`
-18. `actionlint`
-19. `secrets-scan`
-20. `codeql-sast`
-21. `security-policy`
-22. `install (ubuntu-latest)`
-23. `install (macos-latest)`
-24. `install (windows-latest)`
+- `unit`
+- `test`
+- `integration`
+- `architecture`
+- `typecheck`
+- `lint`
+- `format`
+- `actions-pinning`
+- `build`
+- `install-verify (ubuntu-latest)`
+- `install-verify (macos-latest)`
+- `install-verify (windows-latest)`
+- `smoke`
+- `independent-review-e2e`
+- `actionlint`
+- `secrets-scan`
+- `security-policy`
+- `dependency-review`
+- `install (ubuntu-latest)`
+- `install (macos-latest)`
+- `install (windows-latest)`
 
-`install-verify (...)` and `install (...)` are distinct required jobs and must both stay aligned with CI truth.
+From `.github/workflows/security.yml`:
+
+- `audit`
+- `codeql-sast`
+
+`install-verify (...)` and `install (...)` are distinct required jobs and must
+both stay aligned with CI truth.
+
+> Live-setting changes required when this PR merges (admin action):
+>
+> - **Remove `mutation`** from the required list — it no longer runs on PRs (see
+>   below). If left required, every PR stays blocked on a never-reported check.
+> - **Add `dependency-review`** — configured with `fail-on-severity: high` and
+>   `continue-on-error: true`. The check runs but is non-blocking until
+>   [Dependency Graph](https://github.com/koeppben23/governed-runtime/settings/security_analysis)
+>   is enabled for the repository (required by the action). After enabling,
+>   remove `continue-on-error: true` and add it to the required list.
+> - `audit` and `codeql-sast` keep the same check names (now produced by
+>   `security.yml`); no name change is needed.
 
 ## Non-blocking CI Jobs
 
-The following jobs exist in `.github/workflows/ci.yml` but are intentionally
-**not** added to the required-check list. They run on every PR and surface as
-warnings rather than gates:
+The following jobs run but are intentionally **not** required:
 
-| Job                   | Why non-blocking                                                                                                                                                                        |
-| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sdk-baseline`        | Snapshot comparison against upstream SDK/host baselines; drift is informational and acted on via a separate update workflow (`scripts/check-opencode-host-drift.mjs`).                  |
-| `unused-dependencies` | `knip --dependencies`; a false positive should not block a release. Review the diff manually.                                                                                           |
-| `fuzz`                | `fast-check` property tests with a fixed seed (~100 iterations). Deep fuzzing runs on the nightly schedule (`fuzz-nightly.yml`); regressions block via the nightly cadence, not the PR. |
+| Job                   | Why non-blocking                                                                                                                                                                                                                                                                                      |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sdk-baseline`        | Snapshot comparison against upstream SDK/host baselines; drift is informational and acted on via a separate update workflow (`scripts/check-opencode-host-drift.mjs`).                                                                                                                                |
+| `unused-dependencies` | `knip --dependencies`; a false positive should not block a release. Review the diff manually.                                                                                                                                                                                                         |
+| `fuzz`                | `fast-check` property tests with a fixed seed (~100 iterations). Deep fuzzing runs on the nightly schedule (`fuzz-nightly.yml`); regressions block via the nightly cadence, not the PR.                                                                                                               |
+| `mutation`            | Stryker runs on the nightly/release cadence (`mutation.yml`), not per-PR. A reliable per-PR incremental gate is not achievable with the current perTest + vitest-runner setup (see the workflow rationale); it is therefore not a required check.                                                     |
+| `dependency-review`   | `fail-on-severity: high` is configured; runs as advisory (`continue-on-error: true`) because [Dependency Graph](https://github.com/koeppben23/governed-runtime/settings/security_analysis) is not yet enabled for this repository. Will become a required check after the repo setting is toggled on. |
 
 If any of these is promoted to merge-blocking, move it to the required list
 above in the same PR that flips the branch-protection setting.
 
 ## Source of Truth
 
-- Workflow file: `.github/workflows/ci.yml`
-- Commit title check workflow: `.github/workflows/conventional-commits.yml`
+- CI workflow: `.github/workflows/ci.yml`
+- Security workflow: `.github/workflows/security.yml`
+- Commit title check: `.github/workflows/conventional-commits.yml`
 
 If CI job names change, update this file and the branch protection required-check list together.
 

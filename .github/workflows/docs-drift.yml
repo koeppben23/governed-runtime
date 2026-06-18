@@ -2,7 +2,7 @@ name: OpenCode Docs Drift
 
 on:
   schedule:
-    - cron: '0 7 * * 1' # Mondays 07:00 UTC
+    - cron: '0 8 * * 1' # Mondays 08:00 UTC (staggered after opencode-sdk-update)
   workflow_dispatch:
 
 permissions:
@@ -16,6 +16,7 @@ jobs:
   check:
     name: docs-drift
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       issues: write
@@ -48,7 +49,7 @@ jobs:
             await github.rest.issues.create({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              title: 'OpenCode docs changed ÔÇö review integration impact',
+              title: 'OpenCode docs changed - review integration impact',
               labels: ['sdk-drift', 'docs', 'automated'],
               body: [
                 '## Docs Drift Detected',
