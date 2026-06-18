@@ -63,7 +63,11 @@ both stay aligned with CI truth.
 >
 > - **Remove `mutation`** from the required list — it no longer runs on PRs (see
 >   below). If left required, every PR stays blocked on a never-reported check.
-> - **Add `dependency-review`** — it is now a blocking check (high+ severity).
+> - **Add `dependency-review`** — configured with `fail-on-severity: high` and
+>   `continue-on-error: true`. The check runs but is non-blocking until
+>   [Dependency Graph](https://github.com/koeppben23/governed-runtime/settings/security_analysis)
+>   is enabled for the repository (required by the action). After enabling,
+>   remove `continue-on-error: true` and add it to the required list.
 > - `audit` and `codeql-sast` keep the same check names (now produced by
 >   `security.yml`); no name change is needed.
 
@@ -71,12 +75,13 @@ both stay aligned with CI truth.
 
 The following jobs run but are intentionally **not** required:
 
-| Job                   | Why non-blocking                                                                                                                                                                                                                                  |
-| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sdk-baseline`        | Snapshot comparison against upstream SDK/host baselines; drift is informational and acted on via a separate update workflow (`scripts/check-opencode-host-drift.mjs`).                                                                            |
-| `unused-dependencies` | `knip --dependencies`; a false positive should not block a release. Review the diff manually.                                                                                                                                                     |
-| `fuzz`                | `fast-check` property tests with a fixed seed (~100 iterations). Deep fuzzing runs on the nightly schedule (`fuzz-nightly.yml`); regressions block via the nightly cadence, not the PR.                                                           |
-| `mutation`            | Stryker runs on the nightly/release cadence (`mutation.yml`), not per-PR. A reliable per-PR incremental gate is not achievable with the current perTest + vitest-runner setup (see the workflow rationale); it is therefore not a required check. |
+| Job                   | Why non-blocking                                                                                                                                                                                                                                                                                      |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sdk-baseline`        | Snapshot comparison against upstream SDK/host baselines; drift is informational and acted on via a separate update workflow (`scripts/check-opencode-host-drift.mjs`).                                                                                                                                |
+| `unused-dependencies` | `knip --dependencies`; a false positive should not block a release. Review the diff manually.                                                                                                                                                                                                         |
+| `fuzz`                | `fast-check` property tests with a fixed seed (~100 iterations). Deep fuzzing runs on the nightly schedule (`fuzz-nightly.yml`); regressions block via the nightly cadence, not the PR.                                                                                                               |
+| `mutation`            | Stryker runs on the nightly/release cadence (`mutation.yml`), not per-PR. A reliable per-PR incremental gate is not achievable with the current perTest + vitest-runner setup (see the workflow rationale); it is therefore not a required check.                                                     |
+| `dependency-review`   | `fail-on-severity: high` is configured; runs as advisory (`continue-on-error: true`) because [Dependency Graph](https://github.com/koeppben23/governed-runtime/settings/security_analysis) is not yet enabled for this repository. Will become a required check after the repo setting is toggled on. |
 
 If any of these is promoted to merge-blocking, move it to the required list
 above in the same PR that flips the branch-protection setting.
