@@ -15,6 +15,7 @@ jobs:
   unit:
     name: unit
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: read
       issues: write
@@ -87,6 +88,7 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # actions/checkout v6.0.3
@@ -106,6 +108,7 @@ jobs:
   integration:
     name: integration
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: typecheck
     steps:
       - name: Checkout
@@ -126,6 +129,7 @@ jobs:
   architecture:
     name: architecture
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # actions/checkout v6.0.3
@@ -145,6 +149,7 @@ jobs:
   typecheck:
     name: typecheck
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # actions/checkout v6.0.3
@@ -276,6 +281,7 @@ jobs:
   build:
     name: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # actions/checkout v6.0.3
@@ -487,6 +493,7 @@ jobs:
   install:
     name: install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
