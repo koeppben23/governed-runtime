@@ -27,7 +27,11 @@ export default defineConfig({
         'src/**/__tests__/**',
         'src/**/__fixtures__*',
         'src/test-policy.ts',
-        'src/integration/**/*.ts',
+        // Test infrastructure (helpers/fixtures), not product code.
+        'src/integration/test-helpers.ts',
+        'src/integration/*-test-helpers.ts',
+        'src/integration/*-helpers.ts',
+        // Thin SDK hook entrypoints (glue; exercised only via the real host runtime).
         'src/hooks/post-tool-use.ts',
         'src/hooks/pre-tool-use.ts',
         'src/hooks/session-start.ts',
@@ -62,19 +66,6 @@ export default defineConfig({
           globals: false,
           restoreMocks: true,
           testTimeout: 15_000,
-            coverage: {
-              provider: 'v8',
-              include: ['src/**/*.ts'],
-              exclude: [
-                'src/**/*.test.ts',
-                'src/**/__tests__/**',
-                'src/**/__fixtures__*',
-                'src/test-policy.ts',
-                'src/integration/**/*.ts',
-              ],
-              reporter: ['text', 'json-summary', 'html'],
-              reportsDirectory: 'coverage/unit',
-            },
         },
       },
       {
@@ -85,18 +76,6 @@ export default defineConfig({
           globals: false,
           restoreMocks: true,
           testTimeout: 60_000,
-          coverage: {
-            provider: 'v8',
-            include: ['src/integration/**/*.ts'],
-            exclude: [
-              'src/integration/**/*.test.ts',
-              'src/integration/test-helpers.ts',
-              'src/integration/*-test-helpers.ts',
-              'src/integration/*-helpers.ts',
-            ],
-            reporter: ['text', 'json-summary', 'html'],
-            reportsDirectory: 'coverage/integration',
-          },
         },
       },
       {

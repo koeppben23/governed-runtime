@@ -137,6 +137,20 @@ export const PERF_BUDGETS = {
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
 /**
+ * Whether PERF budgets are enforced this run.
+ *
+ * Default: enforced. The non-coverage `test`/`integration` jobs enforce budgets
+ * (with CI multipliers, see PERF_BUDGETS). Coverage runs set `FLOWGUARD_PERF=0`
+ * because v8 instrumentation inflates timings far beyond any reasonable budget
+ * AND v8 skips writing the report when any test fails. When disabled, benchmark
+ * helpers still execute the function once (so the code path is covered) but
+ * report 0ms so the call-site budget assertion passes without measuring.
+ */
+export const PERF_ENABLED = process.env.FLOWGUARD_PERF !== '0';
+
+const ZERO_BENCH = { p99Ms: 0, p95Ms: 0, medianMs: 0, meanMs: 0 } as const;
+
+/**
  * Measure execution time of a synchronous function.
  * Returns elapsed time in milliseconds (high-resolution).
  */
@@ -163,12 +177,19 @@ export async function measureAsync<T>(
 /**
  * Run a function N times and return the p99 execution time.
  * First `warmup` iterations are discarded.
+ *
+ * When PERF enforcement is disabled (coverage runs), the function is executed
+ * once (for coverage) and a zero result is returned so budget assertions pass.
  */
 export function benchmarkSync<T>(
   fn: () => T,
   iterations: number = 100,
   warmup: number = 10,
 ): { p99Ms: number; p95Ms: number; medianMs: number; meanMs: number } {
+  if (!PERF_ENABLED) {
+    fn();
+    return { ...ZERO_BENCH };
+  }
   const times: number[] = [];
 
   // Warmup (discard results)
@@ -197,12 +218,19 @@ export function benchmarkSync<T>(
 /**
  * Run an async function N times and return p95/p99 execution time.
  * First `warmup` iterations are discarded.
+ *
+ * When PERF enforcement is disabled (coverage runs), the function is executed
+ * once (for coverage) and a zero result is returned so budget assertions pass.
  */
 export async function benchmarkAsync<T>(
   fn: () => Promise<T>,
   iterations: number = 20,
   warmup: number = 3,
 ): Promise<{ p99Ms: number; p95Ms: number; medianMs: number; meanMs: number }> {
+  if (!PERF_ENABLED) {
+    await fn();
+    return { ...ZERO_BENCH };
+  }
   const times: number[] = [];
 
   for (let i = 0; i < warmup; i++) {

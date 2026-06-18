@@ -27,6 +27,7 @@ import {
   type TestWorkspace,
   withTestEnv,
 } from './test-helpers.js';
+import { PERF_ENABLED } from '../test-policy.js';
 import {
   status,
   hydrate,
@@ -372,7 +373,7 @@ describe('cross-cutting', () => {
   });
 
   describe('PERF', () => {
-    it('50x status calls complete in reasonable time', async () => {
+    it.skipIf(!PERF_ENABLED)('50x status calls complete in reasonable time', async () => {
       await hydrateSession();
       const start = performance.now();
       for (let i = 0; i < 50; i++) {

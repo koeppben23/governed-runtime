@@ -26,6 +26,7 @@ import {
   GIT_MOCK_DEFAULTS,
   type TestWorkspace,
 } from './test-helpers.js';
+import { PERF_ENABLED } from '../test-policy.js';
 import { FlowGuardAuditPlugin } from './plugin.js';
 import { writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
@@ -901,7 +902,7 @@ describe('plugin-integration', () => {
 
   // ─── PERF ──────────────────────────────────────────────────
 
-  describe('PERF', () => {
+  describe.skipIf(!PERF_ENABLED)('PERF', () => {
     it('1000 non-mutating non-FlowGuard tool calls complete in < 50ms', async () => {
       const start = performance.now();
       for (let i = 0; i < 1000; i++) {
