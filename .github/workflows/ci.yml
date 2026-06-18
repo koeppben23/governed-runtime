@@ -3,6 +3,11 @@ name: CI
 on:
   pull_request:
 
+permissions:
+  actions: read
+  contents: read
+  pull-requests: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -33,6 +38,48 @@ jobs:
           name: coverage-report
           path: coverage/
           retention-days: 1
+
+      - name: Comment coverage summary
+        if: github.event_name == 'pull_request' && always()
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const candidates = [
+              'coverage/unit/coverage-summary.json',
+              'coverage/coverage-summary.json',
+            ];
+            const summaryPath = candidates.find((file) => fs.existsSync(file));
+            if (!summaryPath) {
+              core.warning('No coverage-summary.json found; skipping PR coverage comment.');
+              return;
+            }
+
+            const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')).total;
+            const rows = ['lines', 'branches', 'functions', 'statements'].map((key) => {
+              const item = summary[key];
+              return `| ${key} | ${item.pct}% | ${item.covered}/${item.total} |`;
+            });
+            const marker = '<!-- flowguard-coverage-summary -->';
+            const body = [
+              marker,
+              '## Coverage Summary',
+              '',
+              '| Metric | Coverage | Covered/Total |',
+              '| --- | ---: | ---: |',
+              ...rows,
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
+            const existing = comments.data.find((comment) => comment.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
 
   test:
     name: test
@@ -303,7 +350,9 @@ jobs:
           FORCE_COLOR: 0
 
       - name: Install OpenCode CLI
-        run: npm install -g opencode-ai
+        run: |
+          OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
+          npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
 
       - name: Verify OpenCode CLI availability
         run: |
@@ -344,7 +393,9 @@ jobs:
         run: npm run build
 
       - name: Install OpenCode CLI
-        run: npm install -g opencode-ai
+        run: |
+          OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
+          npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
 
       - name: Verify OpenCode CLI availability
         run: |
@@ -519,3 +570,68 @@ jobs:
       - name: Verify CLI doctor
         shell: bash
         run: node dist/cli/install.js doctor --install-scope repo
+
+  ci-runtime-report:
+    name: ci-runtime-report
+    runs-on: ubuntu-latest
+    if: always()
+    continue-on-error: true
+    needs:
+      - unit
+      - test
+      - integration
+      - architecture
+      - typecheck
+      - sdk-baseline
+      - lint
+      - unused-dependencies
+      - format
+      - fuzz
+      - actions-pinning
+      - build
+      - install-verify
+      - smoke
+      - independent-review-e2e
+      - audit
+      - actionlint
+      - secrets-scan
+      - codeql
+      - security-policy
+      - dependency-review
+      - install
+    steps:
+      - name: Summarize job runtimes
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner,
+              repo,
+              run_id: context.runId,
+              per_page: 100,
+            });
+            const rows = jobs
+              .filter((job) => job.name !== 'ci-runtime-report')
+              .map((job) => {
+                const started = job.started_at ? Date.parse(job.started_at) : NaN;
+                const completed = job.completed_at ? Date.parse(job.completed_at) : NaN;
+                const seconds = Number.isFinite(started) && Number.isFinite(completed)
+                  ? Math.max(0, Math.round((completed - started) / 1000))
+                  : null;
+                return { name: job.name, conclusion: job.conclusion ?? job.status, seconds };
+              })
+              .sort((a, b) => (b.seconds ?? -1) - (a.seconds ?? -1));
+
+            const totalSeconds = rows.reduce((sum, row) => sum + (row.seconds ?? 0), 0);
+            const table = rows.map((row) => {
+              const duration = row.seconds === null ? 'n/a' : `${Math.floor(row.seconds / 60)}m ${row.seconds % 60}s`;
+              return `| ${row.name} | ${row.conclusion} | ${duration} |`;
+            });
+            await core.summary
+              .addHeading('CI Runtime Budget')
+              .addRaw(`Total job runtime (sum, not wall-clock): ${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s\n\n`)
+              .addRaw('| Job | Conclusion | Duration |\n')
+              .addRaw('| --- | --- | ---: |\n')
+              .addRaw(`${table.join('\n')}\n`)
+              .write();
