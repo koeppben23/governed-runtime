@@ -1,5 +1,15 @@
 name: Mutation Testing
 
+# Scope: scheduled (weekly) + release branches + manual dispatch — NOT a PR gate.
+#
+# A per-PR mutation gate was evaluated and rejected: Stryker 9 has no git-since
+# mode, and restricting `--mutate` to changed files produces unreliable results
+# with this repo's `perTest` coverageAnalysis + vitest-runner patch (spurious
+# test-runner errors and artificially low scores). The supported `--incremental`
+# cache mode still pays a full cold run and needs cross-run cache plumbing. Until
+# that is solved, mutation testing runs on the nightly/release cadence and is
+# intentionally NOT a required PR check (see .github/BRANCH-PROTECTION.md).
+
 on:
   schedule:
     - cron: '0 2 * * 1' # Mondays 02:00 UTC
