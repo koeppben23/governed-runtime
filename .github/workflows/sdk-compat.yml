@@ -32,6 +32,7 @@ jobs:
         id: install-latest
         run: |
           npm install --no-save --prefer-offline --no-audit --no-fund @opencode-ai/plugin@latest
+          git diff --exit-code package.json package-lock.json
           INSTALLED=$(node -e "console.log(require('./node_modules/@opencode-ai/plugin/package.json').version)")
           echo "sdk_version=$INSTALLED" >> "$GITHUB_OUTPUT"
           echo "Installed @opencode-ai/plugin@$INSTALLED"
