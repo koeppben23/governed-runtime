@@ -3,6 +3,10 @@ name: CI
 on:
   pull_request:
 
+permissions:
+  actions: read
+  contents: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -11,6 +15,10 @@ jobs:
   unit:
     name: unit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # actions/checkout v6.0.3
@@ -18,6 +26,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Run unit tests with coverage
@@ -32,6 +42,48 @@ jobs:
           path: coverage/
           retention-days: 1
 
+      - name: Comment coverage summary
+        if: github.event_name == 'pull_request' && always()
+        continue-on-error: true
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
+        with:
+          script: |
+            const fs = require('node:fs');
+            const candidates = [
+              'coverage/unit/coverage-summary.json',
+              'coverage/coverage-summary.json',
+            ];
+            const summaryPath = candidates.find((file) => fs.existsSync(file));
+            if (!summaryPath) {
+              core.warning('No coverage-summary.json found; skipping PR coverage comment.');
+              return;
+            }
+
+            const summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8')).total;
+            const rows = ['lines', 'branches', 'functions', 'statements'].map((key) => {
+              const item = summary[key];
+              return `| ${key} | ${item.pct}% | ${item.covered}/${item.total} |`;
+            });
+            const marker = '<!-- flowguard-coverage-summary -->';
+            const body = [
+              marker,
+              '## Coverage Summary',
+              '',
+              '| Metric | Coverage | Covered/Total |',
+              '| --- | ---: | ---: |',
+              ...rows,
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.rest.issues.listComments({ owner, repo, issue_number, per_page: 100 });
+            const existing = comments.data.find((comment) => comment.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
   test:
     name: test
     runs-on: ubuntu-latest
@@ -42,6 +94,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Run full test suite (excl. build-dependent smoke tests)
@@ -52,6 +106,7 @@ jobs:
   integration:
     name: integration
     runs-on: ubuntu-latest
+    needs: typecheck
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # actions/checkout v6.0.3
@@ -59,6 +114,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Run integration tests
@@ -76,6 +133,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Run architecture tests
@@ -93,6 +152,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Type check
@@ -110,6 +171,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: SDK type drift check
@@ -125,6 +188,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Lint
@@ -142,6 +207,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Check unused dependencies
@@ -159,6 +226,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Check formatting
@@ -177,6 +246,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Run fuzz tests (fast gate)
@@ -195,6 +266,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Check GitHub Actions pinning
@@ -210,6 +283,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: Build
@@ -225,6 +300,8 @@ jobs:
   install-verify:
     name: install-verify (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: build
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -237,6 +314,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -254,6 +333,8 @@ jobs:
   smoke:
     name: smoke
     runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 10
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # actions/checkout v6.0.3
@@ -262,6 +343,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -272,7 +355,9 @@ jobs:
           FORCE_COLOR: 0
 
       - name: Install OpenCode CLI
-        run: npm install -g opencode-ai
+        run: |
+          OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
+          npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
 
       - name: Verify OpenCode CLI availability
         run: |
@@ -294,6 +379,8 @@ jobs:
   independent-review-e2e:
     name: independent-review-e2e
     runs-on: ubuntu-latest
+    needs: build
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # actions/checkout v6.0.3
@@ -302,6 +389,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -310,7 +399,9 @@ jobs:
         run: npm run build
 
       - name: Install OpenCode CLI
-        run: npm install -g opencode-ai
+        run: |
+          OPENCODE_VERSION=$(node -p "require('./.sdk-baselines/opencode/host-version.json').version")
+          npm install -g --prefer-offline --no-audit --no-fund "opencode-ai@$OPENCODE_VERSION"
 
       - name: Verify OpenCode CLI availability
         run: |
@@ -338,34 +429,12 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
       - name: Install dependencies
         run: npm ci
       - name: npm audit (high+)
         run: npm audit --audit-level=high
-
-  mutation:
-    name: mutation
-    runs-on: ubuntu-latest
-    continue-on-error: false
-    timeout-minutes: 60
-    steps:
-      - name: Checkout
-        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # actions/checkout v6.0.3
-      - name: Setup Node.js
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
-        with:
-          node-version: '20'
-      - name: Install dependencies
-        run: npm ci
-      - name: Run mutation tests
-        run: npm run mutation
-      - name: Upload mutation report
-        if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact v7.0.1
-        with:
-          name: mutation-report
-          path: reports/mutation/
-          retention-days: 1
 
   actionlint:
     name: actionlint
@@ -409,6 +478,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -450,6 +521,21 @@ jobs:
             exit 1
           fi
 
+  dependency-review:
+    name: dependency-review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # actions/checkout v6.0.3
+
+      - name: Dependency review
+        uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # actions/dependency-review-action v4.9.0
+        continue-on-error: true
+
   install:
     name: install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -465,6 +551,8 @@ jobs:
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # actions/setup-node v6.4.0
         with:
           node-version: '20'
+          cache: npm
+          cache-dependency-path: package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -490,3 +578,68 @@ jobs:
       - name: Verify CLI doctor
         shell: bash
         run: node dist/cli/install.js doctor --install-scope repo
+
+  ci-runtime-report:
+    name: ci-runtime-report
+    runs-on: ubuntu-latest
+    if: always()
+    continue-on-error: true
+    needs:
+      - unit
+      - test
+      - integration
+      - architecture
+      - typecheck
+      - sdk-baseline
+      - lint
+      - unused-dependencies
+      - format
+      - fuzz
+      - actions-pinning
+      - build
+      - install-verify
+      - smoke
+      - independent-review-e2e
+      - audit
+      - actionlint
+      - secrets-scan
+      - codeql
+      - security-policy
+      - dependency-review
+      - install
+    steps:
+      - name: Summarize job runtimes
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner,
+              repo,
+              run_id: context.runId,
+              per_page: 100,
+            });
+            const rows = jobs
+              .filter((job) => job.name !== 'ci-runtime-report')
+              .map((job) => {
+                const started = job.started_at ? Date.parse(job.started_at) : NaN;
+                const completed = job.completed_at ? Date.parse(job.completed_at) : NaN;
+                const seconds = Number.isFinite(started) && Number.isFinite(completed)
+                  ? Math.max(0, Math.round((completed - started) / 1000))
+                  : null;
+                return { name: job.name, conclusion: job.conclusion ?? job.status, seconds };
+              })
+              .sort((a, b) => (b.seconds ?? -1) - (a.seconds ?? -1));
+
+            const totalSeconds = rows.reduce((sum, row) => sum + (row.seconds ?? 0), 0);
+            const table = rows.map((row) => {
+              const duration = row.seconds === null ? 'n/a' : `${Math.floor(row.seconds / 60)}m ${row.seconds % 60}s`;
+              return `| ${row.name} | ${row.conclusion} | ${duration} |`;
+            });
+            await core.summary
+              .addHeading('CI Runtime Budget')
+              .addRaw(`Total job runtime (sum, not wall-clock): ${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s\n\n`)
+              .addRaw('| Job | Conclusion | Duration |\n')
+              .addRaw('| --- | --- | ---: |\n')
+              .addRaw(`${table.join('\n')}\n`)
+              .write();

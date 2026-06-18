@@ -4,7 +4,7 @@
  * activeChecks fallback, phaseRuleContent, defaults via ?? operators.
  */
 import { describe, it, expect } from 'vitest';
-import { executeHydrate, type HydrateInput } from './hydrate.js';
+import { executeHydrate, applyHydrateOverrides, type HydrateInput } from './hydrate.js';
 import type { RailContext } from './types.js';
 import {
   FIXED_TIME,
@@ -245,6 +245,18 @@ describe('hydrate rail unit tests', () => {
       const result = hydrateNew(minimalInput({ policy: { identityProvider: idpConfig } }));
       const state = expectOk(result);
       expect(state.policySnapshot.identityProvider).toEqual(idpConfig);
+    });
+
+    it('preserves base identityProvider when override does not set it', () => {
+      const idpConfig = {
+        issuer: 'https://base-idp.example.com',
+        audience: ['base-app'],
+        jwksSource: { type: 'local' as const, keys: [] },
+        claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+      };
+      const basePolicy = { ...getPolicyPreset('solo'), identityProvider: idpConfig };
+      const result = applyHydrateOverrides(basePolicy, {});
+      expect(result.identityProvider).toEqual(idpConfig);
     });
   });
 
@@ -550,6 +562,17 @@ describe('hydrate rail unit tests', () => {
       expect(state.activeChecks.length).toBeGreaterThan(0);
       expect(state.activeChecks).toContain('unit');
       expect(state.activeChecks).toContain('e2e');
+    });
+
+    it('undefined candidates produces empty activeChecks', () => {
+      const result = hydrateNew(
+        minimalInput({
+          session: { verificationCandidates: undefined },
+          profile: {},
+        }),
+      );
+      const state = expectOk(result);
+      expect(state.activeChecks).toEqual([]);
     });
 
     it('empty candidates array produces empty activeChecks', () => {

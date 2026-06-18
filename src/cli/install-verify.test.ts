@@ -133,6 +133,27 @@ async function readPackedTarball(): Promise<{
   };
 }
 
+async function writeFreshPackageProject(dir: string): Promise<void> {
+  await fs.mkdir(dir, { recursive: true });
+  await fs.writeFile(
+    path.join(dir, 'package.json'),
+    JSON.stringify({ private: true, type: 'module' }),
+  );
+}
+
+function installTarball(cwd: string, extraArgs: readonly string[] = []): void {
+  const installArgs = [
+    'install',
+    '--prefer-offline',
+    ...extraArgs,
+    '--no-audit',
+    '--no-fund',
+    tarballPath,
+  ];
+  const installRes = runFile(process.execPath, npmArgs(installArgs), cwd);
+  assertSuccess(installRes, commandForLog('npm', installArgs));
+}
+
 describe('install-verify', () => {
   beforeAll(async () => {
     tmpDir = await createTmpDir();
@@ -151,15 +172,11 @@ describe('install-verify', () => {
     packedPackageJson = tarball.packageJson;
     packedFiles = tarball.files;
 
+    // Standard install is the expensive smoke path. Keep it single-shot and
+    // reuse the project for import/export assertions to avoid Windows timeouts.
     installedDir = path.join(tmpDir, 'installed');
-    await fs.mkdir(installedDir, { recursive: true });
-    await fs.writeFile(
-      path.join(installedDir, 'package.json'),
-      JSON.stringify({ private: true, type: 'module' }),
-    );
-    const installArgs = ['install', '--prefer-offline', '--no-audit', '--no-fund', tarballPath];
-    const installRes = runFile(process.execPath, npmArgs(installArgs), installedDir);
-    assertSuccess(installRes, commandForLog('npm', installArgs));
+    await writeFreshPackageProject(installedDir);
+    installTarball(installedDir);
   }, 480_000);
 
   afterAll(async () => {
@@ -185,40 +202,14 @@ describe('install-verify', () => {
 
     it('installs with --omit=optional without crashing', async () => {
       const p = path.join(tmpDir, 'omit-optional-test');
-      await fs.mkdir(p, { recursive: true });
-      await fs.writeFile(
-        path.join(p, 'package.json'),
-        JSON.stringify({ name: 'test', type: 'module' }),
-      );
-      const args = [
-        'install',
-        '--prefer-offline',
-        '--omit=optional',
-        '--no-audit',
-        '--no-fund',
-        tarballPath,
-      ];
-      const res = runFile(process.execPath, npmArgs(args), p);
-      assertSuccess(res, commandForLog('npm', args));
+      await writeFreshPackageProject(p);
+      installTarball(p, ['--omit=optional']);
     }, 240000);
 
     it('imports core module with --omit=optional', async () => {
       const p = path.join(tmpDir, 'omit-optional-import-test');
-      await fs.mkdir(p, { recursive: true });
-      await fs.writeFile(
-        path.join(p, 'package.json'),
-        JSON.stringify({ name: 'test', type: 'module' }),
-      );
-      const installArgs = [
-        'install',
-        '--prefer-offline',
-        '--omit=optional',
-        '--no-audit',
-        '--no-fund',
-        tarballPath,
-      ];
-      const install = runFile(process.execPath, npmArgs(installArgs), p);
-      assertSuccess(install, commandForLog('npm', installArgs));
+      await writeFreshPackageProject(p);
+      installTarball(p, ['--omit=optional']);
       const res = runFile(
         'node',
         [

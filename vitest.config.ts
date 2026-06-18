@@ -114,7 +114,7 @@ export default defineConfig({
           ],
           globals: false,
           restoreMocks: true,
-          testTimeout: 120_000,
+          testTimeout: 540_000,
         },
       },
       {

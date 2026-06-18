@@ -141,7 +141,10 @@ export interface HydrateInput {
  * Centralizes the field-by-field override mapping. When a new governance
  * field is added to FlowGuardPolicy, it only needs to be added here.
  */
-function applyHydrateOverrides(base: FlowGuardPolicy, p: HydratePolicyInput): FlowGuardPolicy {
+export function applyHydrateOverrides(
+  base: FlowGuardPolicy,
+  p: HydratePolicyInput,
+): FlowGuardPolicy {
   return {
     ...base,
     ...(p.maxSelfReviewIterations !== undefined

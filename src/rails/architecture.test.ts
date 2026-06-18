@@ -105,6 +105,8 @@ describe('executeArchitecture', () => {
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
         expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+        expect(result.reason).toContain('/architecture');
+        expect(result.reason).toContain('TICKET');
       }
     });
 

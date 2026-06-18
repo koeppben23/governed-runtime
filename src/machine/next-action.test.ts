@@ -93,6 +93,49 @@ describe('resolveNextAction', () => {
       expectAction(action, ACTION_CODES.RUN_CONTINUE, ['/continue']);
     });
 
+    it('VALIDATION (blocked evidence, trustworthy discovery) → VALIDATION_EVIDENCE_REQUIRED', () => {
+      const state = makeState('VALIDATION', {
+        validation: [],
+        activeChecks: [],
+        policySnapshot: {
+          ...makeState('VALIDATION').policySnapshot,
+          validationEvidence: { enforcement: 'required', allowNoCommands: false },
+          discoveryHealth: { enforcement: 'required', onDegraded: 'block', onDrift: 'block' },
+        },
+        discoverySummary: {
+          lastRun: '2026-01-01T00:00:00.000Z',
+          repoRoot: '/tmp',
+          stackId: 'node',
+          profileId: 'baseline',
+        },
+        discoveryDigest: { totalFiles: 0, checksumsExist: false, profileVersion: 1 },
+        discoveryHealthGate: {
+          status: 'clear',
+          lastDriftAssessment: 'clean',
+          lastCheckedAt: '2026-01-01T00:00:00.000Z',
+        },
+      });
+      const action = resolveNextAction('VALIDATION', state);
+      expect(action.code).toBe(ACTION_CODES.VALIDATION_EVIDENCE_REQUIRED);
+      expect(action.commands).toContain('/hydrate');
+    });
+
+    it('VALIDATION (blocked evidence, untrustworthy discovery) → VALIDATION_EVIDENCE_UNVERIFIED', () => {
+      const state = makeState('VALIDATION', {
+        validation: [],
+        activeChecks: [],
+        policySnapshot: {
+          ...makeState('VALIDATION').policySnapshot,
+          validationEvidence: { enforcement: 'required', allowNoCommands: false },
+        },
+        discoverySummary: null,
+        discoveryDigest: null,
+      });
+      const action = resolveNextAction('VALIDATION', state);
+      expect(action.code).toBe(ACTION_CODES.VALIDATION_EVIDENCE_UNVERIFIED);
+      expect(action.commands).toContain('/hydrate');
+    });
+
     it('IMPLEMENTATION (no impl) → RUN_IMPLEMENT', () => {
       const state = makeState('IMPLEMENTATION');
       const action = resolveNextAction('IMPLEMENTATION', state);
