@@ -103,7 +103,11 @@ function prepareHostTaskVerdictReview(
   if (!hasReviewContentInput(exec.args)) return null;
 
   const fingerprint = fingerprintReviewInput(exec.args);
-  const obligation = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
+  const obligation = findLatestPendingReviewObligation(
+    state.reviewAssurance,
+    'review',
+    fingerprint,
+  );
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
 
   if (resolved.kind !== 'resolved') {
