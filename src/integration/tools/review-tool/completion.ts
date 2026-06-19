@@ -76,11 +76,15 @@ export function mapReviewFindingsToReport(reviewFindings: Record<string, unknown
     }));
 }
 
-export function buildReviewExecutors(args: ReviewToolArgs): ReviewExecutors {
+export function buildReviewExecutors(
+  args: ReviewToolArgs,
+  effectiveReviewFindings?: Record<string, unknown>,
+): ReviewExecutors {
   return {
     analyze: async () => {
-      if (!args.reviewFindings) return [];
-      return mapReviewFindingsToReport(args.reviewFindings);
+      const findings = effectiveReviewFindings ?? args.reviewFindings;
+      if (!findings) return [];
+      return mapReviewFindingsToReport(findings);
     },
   };
 }

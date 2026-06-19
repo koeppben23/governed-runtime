@@ -29,7 +29,14 @@ import {
   type TestWorkspace,
   withTestEnv,
 } from './test-helpers.js';
-import { REVIEW_MANDATE_DIGEST, REVIEW_CRITERIA_VERSION } from './review/assurance.js';
+import {
+  REVIEW_MANDATE_DIGEST,
+  REVIEW_CRITERIA_VERSION,
+  appendInvocationEvidence,
+  buildInvocationEvidence,
+  ensureReviewAssurance,
+  hashFindings,
+} from './review/assurance.js';
 import { ReviewAttestation, ReviewInvocationEvidence } from '../state/evidence.js';
 import { findLatestPendingReviewObligation } from './review/assurance.js';
 import {
@@ -132,6 +139,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
 
 // Lazy import for per-test overrides
 const gitMock = await import('../adapters/git.js');
+const ghMock = await import('../adapters/gh-cli.js');
 const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
 
@@ -300,6 +308,37 @@ describe('review (standalone flow)', () => {
     };
   }
 
+  async function bindHostTaskReviewEvidence(
+    obligationId: string,
+    findings = buildAnalysisFindings('accept', obligationId),
+  ) {
+    const sessDir = await currentSessionDir();
+    const state = await readState(sessDir);
+    const invocation = buildInvocationEvidence({
+      obligationId,
+      obligationType: 'review',
+      parentSessionId: ctx.sessionID,
+      childSessionId: 'ses_review_child_host_task',
+      invocationMode: 'host_subagent_task',
+      hostVisible: true,
+      promptHash: 'host-task-review-prompt',
+      findingsHash: hashFindings(findings),
+      invokedAt: '2026-01-01T00:00:00.000Z',
+      fulfilledAt: '2026-01-01T00:00:00.000Z',
+      source: 'host-orchestrated',
+      capturedVerdict: findings.overallVerdict,
+      capturedRawFindings: findings,
+    });
+    await writeState(sessDir, {
+      ...state,
+      reviewAssurance: appendInvocationEvidence(
+        ensureReviewAssurance(state.reviewAssurance),
+        invocation,
+      ),
+    });
+    return invocation;
+  }
+
   // Helper: Create a review obligation and return its UUID by calling /review
   // without findings first. Hydrates a fresh READY session internally.
   async function obtainObligationUuid(contentArg: Record<string, unknown>): Promise<string> {
@@ -344,6 +383,57 @@ describe('review (standalone flow)', () => {
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
       expect(result.inputOrigin).toBe('branch');
+    });
+
+    it('host_task_required branch review completes with host evidence and verdict only', async () => {
+      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
+      const first = parseToolResult(
+        await review.execute({ branch: 'feature-auth', inputOrigin: 'branch' }, ctx),
+      );
+      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+      const obligationId = (first.requiredReviewAttestation as Record<string, string>)
+        .toolObligationId;
+      await bindHostTaskReviewEvidence(obligationId);
+
+      vi.mocked(ghMock.loadBranchDiff).mockImplementationOnce(() => {
+        throw new Error('branch diff should not be reloaded after host evidence is bound');
+      });
+
+      const result = parseToolResult(
+        await review.execute(
+          { branch: 'feature-auth', inputOrigin: 'branch', reviewVerdict: 'accept' },
+          ctx,
+        ),
+      );
+
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.reviewCard).toContain('host_subagent_task');
+      expect(result.reviewCard).toContain('ses_review_child_host_task');
+    });
+
+    it('host_task_required verdict-only review blocks verdict tampering', async () => {
+      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
+      const first = parseToolResult(
+        await review.execute({ text: 'manual diff', inputOrigin: 'manual_text' }, ctx),
+      );
+      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+      const obligationId = (first.requiredReviewAttestation as Record<string, string>)
+        .toolObligationId;
+      await bindHostTaskReviewEvidence(
+        obligationId,
+        buildAnalysisFindings('changes_requested', obligationId),
+      );
+
+      const result = parseToolResult(
+        await review.execute(
+          { text: 'manual diff', inputOrigin: 'manual_text', reviewVerdict: 'accept' },
+          ctx,
+        ),
+      );
+
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
     });
 
     it('content-aware review with URL succeeds with reviewFindings', async () => {
