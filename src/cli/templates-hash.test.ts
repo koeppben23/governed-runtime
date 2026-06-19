@@ -107,9 +107,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for conditional Done-when: plan/implement Done-when now scope the
     // /review-decision next action to the converged path and require a blocked path
     // to surface the FlowGuard blocker instead of a premature review-decision prompt.
+    // Refreshed for standalone /review host-task flow: /review now treats
+    // HOST_SUBAGENT_TASK_REQUIRED as an intermediate state and documents local
+    // branch diff fallback when no remote/PR is available.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'b1842fac2da02cdea2b76fd6fc1a7e7d1d862cec804517ce415ca43f7ed38056',
+      '34043e39fad06c259e7dad05a60bb7c5a87f9e8671c7f4ec5cf1dc45c7fca408',
     );
   });
 

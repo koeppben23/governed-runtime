@@ -16,6 +16,7 @@ import {
   formatRailResult,
   formatError,
   formatAutoAdvanceOverflow,
+  formatBlocked,
 } from '../helpers.js';
 import { startReviewFlow, executeReview } from '../../../rails/review.js';
 import {
@@ -31,10 +32,14 @@ import type { ReviewToolArgs } from './types.js';
 import {
   buildReviewReferenceInput,
   ensureMissingAnalysisObligation,
+  fingerprintReviewInput,
+  hasReviewContentInput,
   resolveSubmittedReviewObligation,
   validateSubmittedReviewFindings,
   consumeValidatedReviewObligation,
 } from './obligation.js';
+import { findLatestPendingReviewObligation } from '../../review/assurance.js';
+import { resolveHostTaskFindings } from '../review-validation.js';
 import { recordSubmittedReviewInvocation } from './invocation.js';
 import {
   buildReviewExecutors,
@@ -51,6 +56,9 @@ async function prepareReviewExecution(
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
 ): Promise<ReviewPreparation | string> {
+  const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec);
+  if (hostTaskVerdict) return hostTaskVerdict;
+
   const missingAnalysis = await ensureMissingAnalysisObligation(
     sessDir,
     state,
@@ -83,6 +91,62 @@ async function prepareReviewExecution(
     ...(recorded.nativeAttestationRejection
       ? { nativeAttestationRejection: recorded.nativeAttestationRejection }
       : {}),
+  };
+}
+
+function prepareHostTaskVerdictReview(
+  state: SessionState,
+  result: StartedReviewResult,
+  exec: ReviewExecutionContext,
+): ReviewPreparation | string | null {
+  if (exec.policy !== 'host_task_required' || exec.args.reviewVerdict === undefined) return null;
+  if (!hasReviewContentInput(exec.args)) return null;
+
+  const fingerprint = fingerprintReviewInput(exec.args);
+  const obligation = findLatestPendingReviewObligation(
+    state.reviewAssurance,
+    'review',
+    fingerprint,
+  );
+  const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
+
+  if (resolved.kind !== 'resolved') {
+    return formatBlocked(
+      'HOST_SUBAGENT_TASK_REQUIRED',
+      { reviewerSubagentType: REVIEWER_SUBAGENT_TYPE },
+      {
+        reason:
+          resolved.kind === 'rejected'
+            ? 'host-task reviewer evidence exists but is not acceptable for the active review obligation'
+            : 'host-task reviewer evidence is required before submitting reviewVerdict',
+        policy: exec.policy,
+        policyMode: exec.policy,
+        bindOutcome: resolved.kind,
+        reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+      },
+    );
+  }
+
+  if (resolved.findings.overallVerdict === 'unable_to_review') {
+    return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId: resolved.invocation.obligationId,
+    });
+  }
+
+  if (exec.args.reviewVerdict !== resolved.findings.overallVerdict) {
+    return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
+      provided: exec.args.reviewVerdict,
+      expected: resolved.findings.overallVerdict,
+    });
+  }
+
+  const refInput = buildReviewReferenceInput(exec.args);
+  return {
+    result,
+    refInput: refInput ? { ...refInput, skipExternalContentLoad: true } : undefined,
+    validatedReviewObligation: obligation,
+    effectiveReviewFindings: resolved.findings,
+    evidenceInvocationId: resolved.invocationId,
   };
 }
 
@@ -141,6 +205,7 @@ async function persistCompletedReview(
       prepared.validatedReviewObligation,
       args,
       now,
+      prepared.evidenceInvocationId,
     );
     const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);
     if (completion.kind === 'overflow') {
@@ -188,9 +253,16 @@ export const review: ToolDefinition = {
       .describe('GitHub PR number to load via gh CLI and analyze during /review.'),
     branch: z.string().optional().describe('Git branch name to load via gh CLI and analyze.'),
     url: z.string().url().optional().describe('URL to fetch and analyze during /review.'),
+    reviewVerdict: z
+      .enum(['accept', 'changes_requested'])
+      .optional()
+      .describe(
+        `Reviewer verdict returned by ${REVIEWER_SUBAGENT_TYPE}. In host-task mode, ` +
+          'submit this after host-visible reviewer evidence has been bound; do not copy reviewFindings.',
+      ),
     reviewFindings: ReviewFindings.optional().describe(
       `Complete findings from ${REVIEWER_SUBAGENT_TYPE} subagent analysis. ` +
-        'Required when content-aware fields (text/prNumber/branch/url) are provided. ' +
+        'Required for SDK/manual content-aware review submissions; ignored in host-task verdict mode. ' +
         'Must include reviewMode="subagent", reviewedBy, and valid attestation with ' +
         'mandateDigest and criteriaVersion.',
     ),
@@ -204,7 +276,7 @@ export const review: ToolDefinition = {
       const reviewResult = await executeReview(
         prepared.result.state,
         prepared.now,
-        buildReviewExecutors(args),
+        buildReviewExecutors(args, prepared.effectiveReviewFindings),
         prepared.refInput,
       );
       return await persistCompletedReview(args, context, reviewResult, prepared.now);

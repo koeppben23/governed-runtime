@@ -76,11 +76,15 @@ export function mapReviewFindingsToReport(reviewFindings: Record<string, unknown
     }));
 }
 
-export function buildReviewExecutors(args: ReviewToolArgs): ReviewExecutors {
+export function buildReviewExecutors(
+  args: ReviewToolArgs,
+  effectiveReviewFindings?: Record<string, unknown>,
+): ReviewExecutors {
   return {
     analyze: async () => {
-      if (!args.reviewFindings) return [];
-      return mapReviewFindingsToReport(args.reviewFindings);
+      const findings = effectiveReviewFindings ?? args.reviewFindings;
+      if (!findings) return [];
+      return mapReviewFindingsToReport(findings);
     },
   };
 }
@@ -126,7 +130,12 @@ export async function persistReviewCompletion(
     return { kind: 'overflow', overflow: advanced };
   }
   const { state: finalState, transitions: advanceTransitions } = advanced;
-  await writeReport(sessDir, report);
+  const finalReport = {
+    ...report,
+    phase: finalState.phase,
+    completeness: { ...report.completeness, phase: finalState.phase },
+  };
+  await writeReport(sessDir, finalReport);
   await writeStateWithArtifacts(sessDir, finalState);
   return {
     kind: 'ok',

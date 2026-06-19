@@ -347,7 +347,14 @@ function loadPrContent(prNumber: number): { content: string } | RailBlocked {
 }
 
 function loadBranchContent(branch: string): { content: string } | RailBlocked {
-  return loadContentViaGh(() => loadBranchDiff(branch), `Failed to load branch '${branch}'`);
+  try {
+    return { content: loadBranchDiff(branch) };
+  } catch (err) {
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason: `Failed to load local branch '${branch}': ${err instanceof Error ? err.message : String(err)}`,
+    });
+  }
 }
 
 async function loadUrlContent(

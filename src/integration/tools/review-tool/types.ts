@@ -36,6 +36,8 @@ export type ReviewPreparation = {
   result: StartedReviewResult;
   refInput?: ReviewReferenceInput;
   validatedReviewObligation: ReviewObligation | null;
+  effectiveReviewFindings?: ReviewFindings;
+  evidenceInvocationId?: string;
   nativeAttestationRejection?: NativeAttestationRejection;
 };
 
@@ -51,5 +53,6 @@ export type ReviewToolArgs = {
   prNumber?: number;
   branch?: string;
   url?: string;
+  reviewVerdict?: 'accept' | 'changes_requested';
   reviewFindings?: ReviewFindings;
 };

@@ -275,6 +275,7 @@ export function consumeValidatedReviewObligation(
   obligation: ReviewObligation | null,
   args: ReviewToolArgs,
   now: string,
+  acceptedInvocationId?: string | null,
 ): StartedReviewResult {
   if (!obligation) return result;
   return {
@@ -285,11 +286,12 @@ export function consumeValidatedReviewObligation(
         ensureReviewAssurance(result.state.reviewAssurance),
         obligation,
         now,
-        findAcceptedInvocationForFindings(
-          result.state.reviewAssurance,
-          obligation,
-          args.reviewFindings,
-        )?.invocationId,
+        acceptedInvocationId ??
+          findAcceptedInvocationForFindings(
+            result.state.reviewAssurance,
+            obligation,
+            args.reviewFindings,
+          )?.invocationId,
       ),
     },
   };
