@@ -63,7 +63,7 @@ ls -la /tmp/flowguard-java-demo/.flowguard/sessions/archive/
 
 | Application                       | Purpose                                  |
 | --------------------------------- | ---------------------------------------- |
-| OpenCode Desktop                                     | Live session                             |
+| OpenCode Desktop                  | Live session                             |
 | Terminal                          | `./mvnw test`, `git diff`, `ls archive/` |
 | `DEMO_SCRIPT.md` (open in editor) | Spickzettel                              |
 
