@@ -130,7 +130,12 @@ export async function persistReviewCompletion(
     return { kind: 'overflow', overflow: advanced };
   }
   const { state: finalState, transitions: advanceTransitions } = advanced;
-  await writeReport(sessDir, report);
+  const finalReport = {
+    ...report,
+    phase: finalState.phase,
+    completeness: { ...report.completeness, phase: finalState.phase },
+  };
+  await writeReport(sessDir, finalReport);
   await writeStateWithArtifacts(sessDir, finalState);
   return {
     kind: 'ok',

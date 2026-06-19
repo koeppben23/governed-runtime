@@ -29,7 +29,7 @@ Start the compliance review flow for the current FlowGuard session.
 2. **External Reference Resolution** (PR URLs, branches, commits, URLs, manual text):
     If the user provides a reference:
     - **PR number**: Load PR diff via \`webfetch\` or \`gh pr view <number> --json diff\`. Add ExternalReference with type \`"pr"\`, set \`inputOrigin: "pr"\`.
-    - **Branch name**: Load branch diff via \`gh pr diff <branch>\`. Add ExternalReference with type \`"branch"\`, source \`"local"\`, set \`inputOrigin: "branch"\`.
+    - **Branch name**: Prefer local branch diff via \`git diff <base>...<branch>\` when no remote/PR is available; otherwise PR/branch diff via \`gh\` is acceptable. Add ExternalReference with type \`"branch"\`, source \`"local"\`, set \`inputOrigin: "branch"\`.
     - **URL**: Fetch content via \`webfetch\`. Set \`inputOrigin: "external_reference"\`.
     - **Manual text**: Use the supplied text directly. Set \`inputOrigin: "manual_text"\`.
     - **Commit SHA**: Add ExternalReference with type \`"commit"\`, source \`"local"\`, set \`inputOrigin: "external_reference"\`.
@@ -48,7 +48,7 @@ Start the compliance review flow for the current FlowGuard session.
     If the blocked response contains \`pluginReviewFindings\`, use those findings
     directly — the FlowGuard orchestration plugin has already invoked the
     \`${REVIEWER_SUBAGENT_TYPE}\` subagent for you and injected the results.
-    If the response contains \`CONTENT_ANALYSIS_REQUIRED\` with \`requiredReviewAttestation\`
+    If the response contains \`HOST_SUBAGENT_TASK_REQUIRED\`, \`CONTENT_ANALYSIS_REQUIRED\`, or host-task instructions with \`requiredReviewAttestation\`
     and NO \`pluginReviewFindings\`, manually call the \`${REVIEWER_SUBAGENT_TYPE}\` subagent
     via Task tool:
     - Use \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`
@@ -83,6 +83,8 @@ Start the compliance review flow for the current FlowGuard session.
       (\`"accept"\` or \`"changes_requested"\`) matching the reviewer's \`overallVerdict\`.
       Do NOT submit, copy, or alter \`reviewFindings\`; FlowGuard resolves the captured
       ReviewInvocationEvidence automatically.
+      \`HOST_SUBAGENT_TASK_REQUIRED\` is an expected intermediate state in this mode, not
+      a terminal failure and not a reason to tell the user to restart the flow.
     - If the response contains \`pluginReviewFindings\` or the active mode accepts SDK/manual
       findings, call \`flowguard_review\` with the same content fields plus
       \`reviewFindings\` set to the complete ReviewFindings object as-is — no mapping, no array.

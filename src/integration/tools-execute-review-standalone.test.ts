@@ -1229,6 +1229,11 @@ describe('review (standalone flow)', () => {
         expect(cardFile).toBeDefined();
         const content = await fs.readFile(`${artifactsDir}/${cardFile}`, 'utf-8');
         expect(content).toContain('# FlowGuard Review Report');
+
+        const reportRaw = await fs.readFile(`${sessDir}/review-report.json`, 'utf-8');
+        const report = JSON.parse(reportRaw) as Record<string, unknown>;
+        expect(report.phase).toBe('REVIEW_COMPLETE');
+        expect((report.completeness as Record<string, unknown>).phase).toBe('REVIEW_COMPLETE');
       });
 
       it('blocks manual /review attestation when snapshot misses reviewInvocationPolicy (fail-closed)', async () => {

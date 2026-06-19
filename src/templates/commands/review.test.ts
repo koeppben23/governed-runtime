@@ -77,4 +77,17 @@ describe('templates/commands/review (#401 Discovery context)', () => {
       );
     });
   });
+
+  describe('HAPPY — host-task continuation', () => {
+    it('treats HOST_SUBAGENT_TASK_REQUIRED as an intermediate host-task step', () => {
+      expect(REVIEW_COMMAND).toContain('HOST_SUBAGENT_TASK_REQUIRED');
+      expect(REVIEW_COMMAND).toContain('expected intermediate state');
+      expect(REVIEW_COMMAND).toMatch(/not\s+a terminal failure/);
+    });
+
+    it('documents local branch diff fallback when no remote PR is available', () => {
+      expect(REVIEW_COMMAND).toContain('git diff <base>...<branch>');
+      expect(REVIEW_COMMAND).toContain('when no remote/PR is available');
+    });
+  });
 });
