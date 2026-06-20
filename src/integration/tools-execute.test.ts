@@ -9,7 +9,6 @@
  *   - tools-execute-planning.test.ts   (plan)
  *   - tools-execute-review.test.ts    (P34a review, policy, decision)
  *   - tools-execute-p26.test.ts       (P26 regulated archive)
- *   - tools-execute-execution.test.ts (implement, validate, review, abort)
  *   - tools-execute-implement.test.ts    (implement)
  *   - tools-execute-run-check.test.ts    (run_check / validation)
  *   - tools-execute-review-flow.test.ts  (review flow)
