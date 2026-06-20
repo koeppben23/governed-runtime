@@ -17,7 +17,9 @@ const testFiles = [
   'src/integration/tools-execute-p26.test.ts',
   'src/integration/tools-execute-execution.test.ts',
   'src/integration/tools-execute-archive.test.ts',
-  'src/integration/tools/review-validation.test.ts',
+  'src/integration/tools/review-validation-findings.test.ts',
+  'src/integration/tools/review-validation-anti-forgery.test.ts',
+  'src/integration/tools/review-validation-host-task.test.ts',
 ];
 
 const mustPassTestTitles = [
