@@ -10,6 +10,10 @@
  *   - tools-execute-review.test.ts    (P34a review, policy, decision)
  *   - tools-execute-p26.test.ts       (P26 regulated archive)
  *   - tools-execute-execution.test.ts (implement, validate, review, abort)
+ *   - tools-execute-implement.test.ts    (implement)
+ *   - tools-execute-run-check.test.ts    (run_check / validation)
+ *   - tools-execute-review-flow.test.ts  (review flow)
+ *   - tools-execute-abort-session.test.ts (abort_session)
  *   - tools-execute-archive.test.ts   (archive, cross-cutting)
  */
 
@@ -27,7 +31,10 @@ const SPLIT_FILES = [
   'tools-execute-planning.test.ts',
   'tools-execute-review.test.ts',
   'tools-execute-p26.test.ts',
-  'tools-execute-execution.test.ts',
+  'tools-execute-implement.test.ts',
+  'tools-execute-run-check.test.ts',
+  'tools-execute-review-flow.test.ts',
+  'tools-execute-abort-session.test.ts',
   'tools-execute-archive.test.ts',
 ];
 
