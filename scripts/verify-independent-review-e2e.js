@@ -13,6 +13,7 @@ const testFiles = [
   'src/integration/independent-review-e2e.test.ts',
   'src/integration/tools-execute-session.test.ts',
   'src/integration/tools-execute-planning.test.ts',
+  'src/integration/tools-execute-ticket.test.ts',
   'src/integration/tools-execute-review.test.ts',
   'src/integration/tools-execute-p26.test.ts',
   'src/integration/tools-execute-execution.test.ts',
