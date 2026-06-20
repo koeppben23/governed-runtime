@@ -1,0 +1,651 @@
+/**
+ * @module workspace/archive-verify-chain
+ * @description Audit-chain, timestamp, content-digest, and archive-checksum
+ *              verification.
+ *
+ * Owns verifyArchive — the single public entry point for archive verification.
+ * Delegates file-inventory checks to archive-verify-manifest.ts. Owns
+ * buildVerificationResult as the single aggregation point for all findings
+ * (manifest + chain + content).
+ *
+ * @version v1
+ */
+
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
+import * as crypto from 'node:crypto';
+import { readState } from '../persistence.js';
+import { readAuditTrail } from '../persistence-audit.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import {
+  verifyChain,
+  getLastChainHash,
+  type ChainVerification,
+  type ChainVerificationReason,
+} from '../../audit/integrity.js';
+import {
+  type ArchiveManifest,
+  type ArchiveVerification,
+  type ArchiveFinding,
+} from '../../archive/types.js';
+import { computeArchiveContentDigest } from '../../archive/content-digest.js';
+import { isPolicyMode } from '../../state/policy-mode.js';
+import { validateFingerprint, validateSessionId } from './types.js';
+import { workspacesHome, sessionDir } from './init.js';
+import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
+import {
+  loadArchiveManifest,
+  verifyManifestFiles,
+  checkUnexpectedFiles,
+} from './archive-verify-manifest.js';
+import { fileExists } from './archive-files.js';
+import {
+  type ArtifactBindingEntry,
+  ARTIFACT_BINDING_EVENT,
+  ARTIFACT_BINDING_SCHEMA_VERSION,
+} from './archive.js';
+
+// Timestamp token verification is lazy-imported to avoid requiring optional
+// 'asn1js'/'pkijs' packages at module load time. Only needed during archive verification.
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+/**
+ * Fail-closed default: when the governed policy mode cannot be resolved from
+ * integrity-covered state, verification runs strict. A resolvable non-regulated
+ * mode is never escalated.
+ */
+const STRICT_WHEN_MODE_UNRESOLVED = true;
+
+/** Hex prefix length for logging chain-head fingerprints (never the full hash material). */
+const AUDIT_HEAD_LOG_PREFIX_LENGTH = 16;
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Verify an archived session's integrity.
+ *
+ * Checks:
+ * 1. Archive manifest exists and is valid
+ * 2. All files listed in manifest exist in session dir
+ * 3. No unexpected files in session dir (not in manifest)
+ * 4. File digests match
+ * 5. Content digest matches
+ * 6. Archive .sha256 sidecar matches (if available)
+ * 7. Discovery snapshots present (if state has discoveryDigest)
+ * 8. Session state file present
+ * 9. Audit chain integrity (strict in regulated mode, legacy-tolerant otherwise)
+ *
+ * @param fingerprint - Workspace fingerprint.
+ * @param sessionId - Session ID to verify.
+ * @returns Structured verification result with findings.
+ */
+export async function verifyArchive(
+  fingerprint: string,
+  sessionId: string,
+): Promise<ArchiveVerification> {
+  return withSpan(
+    'archive.verify',
+    async () => {
+      addFingerprint(fingerprint);
+      addSessionId(sessionId);
+      return verifyArchiveImpl(fingerprint, sessionId);
+    },
+    { 'flowguard.fingerprint': fingerprint, 'flowguard.session_id': sessionId },
+  );
+}
+
+// ─── Artifact Binding ─────────────────────────────────────────────────────────
+
+function findBindingArtifacts(events: readonly Record<string, unknown>[]): unknown[] | undefined {
+  const binding = [...events].reverse().find((event) => event.event === ARTIFACT_BINDING_EVENT);
+  const detail = binding?.detail as Record<string, unknown> | undefined;
+  if (
+    detail?.schemaVersion !== ARTIFACT_BINDING_SCHEMA_VERSION ||
+    !Array.isArray(detail?.artifacts)
+  )
+    return undefined;
+  return detail.artifacts as unknown[];
+}
+
+async function checkBoundArtifacts(
+  sessDir: string,
+  manifest: ArchiveManifest,
+  bound: Map<string, ArtifactBindingEntry>,
+  manifestArtifacts: string[],
+  findings: ArchiveFinding[],
+): Promise<void> {
+  const manifestArtifactSet = new Set(manifestArtifacts);
+  for (const entry of bound.values()) {
+    if (!manifestArtifactSet.has(entry.path) || manifest.fileDigests[entry.path] === undefined) {
+      findings.push({
+        code: 'artifact_binding_mismatch',
+        severity: 'error',
+        message: `Audit-bound evidence artifact is missing from archive manifest: ${entry.path}`,
+        file: entry.path,
+      });
+    }
+  }
+  for (const relPath of manifestArtifacts) {
+    const entry = bound.get(relPath);
+    if (!entry) {
+      findings.push({
+        code: 'artifact_binding_missing',
+        severity: 'error',
+        message: `Evidence artifact is not bound into audit chain: ${relPath}`,
+        file: relPath,
+      });
+      continue;
+    }
+    const content = await fs.readFile(path.join(sessDir, relPath));
+    const actual = crypto.createHash('sha256').update(content).digest('hex');
+    if (actual !== entry.sha256) {
+      findings.push({
+        code: 'artifact_binding_mismatch',
+        severity: 'error',
+        message: `Evidence artifact hash does not match audit binding: ${relPath}`,
+        file: relPath,
+      });
+    }
+    if (manifest.fileDigests[relPath] !== entry.sha256) {
+      findings.push({
+        code: 'artifact_binding_mismatch',
+        severity: 'error',
+        message: `Archive manifest digest is not consistent with audit binding: ${relPath}`,
+        file: relPath,
+      });
+    }
+  }
+}
+
+async function verifyArtifactBinding(
+  sessDir: string,
+  manifest: ArchiveManifest,
+  events: readonly Record<string, unknown>[],
+  findings: ArchiveFinding[],
+): Promise<void> {
+  const manifestArtifacts = manifest.includedFiles.filter((file) => file.startsWith('artifacts/'));
+  const artifacts = findBindingArtifacts(events);
+  if (manifestArtifacts.length === 0 && !artifacts) return;
+  if (!artifacts) {
+    findings.push({
+      code: 'artifact_binding_missing',
+      severity: 'error',
+      message:
+        'Archive contains evidence artifacts but no valid audit-chain artifact binding event',
+      file: 'audit.jsonl',
+    });
+    return;
+  }
+
+  const bound = new Map<string, ArtifactBindingEntry>();
+  for (const entry of artifacts) {
+    if (isArtifactBindingEntry(entry)) bound.set(entry.path, entry);
+  }
+
+  await checkBoundArtifacts(sessDir, manifest, bound, manifestArtifacts, findings);
+}
+
+function isArtifactBindingEntry(value: unknown): value is ArtifactBindingEntry {
+  if (!value || typeof value !== 'object') return false;
+  const entry = value as Record<string, unknown>;
+  return (
+    typeof entry.path === 'string' &&
+    entry.path.startsWith('artifacts/') &&
+    typeof entry.sha256 === 'string' &&
+    /^[a-f0-9]{64}$/.test(entry.sha256) &&
+    (entry.artifactType === null || typeof entry.artifactType === 'string')
+  );
+}
+
+// ─── Audit Chain Predicates ────────────────────────────────────────────────────
+
+function hasTimestampEvidence(event: Record<string, unknown>): boolean {
+  const evidence = event.timestampEvidence;
+  return typeof evidence === 'object' && evidence !== null;
+}
+
+function isCurrentChainIntegrityFailure(reason: ChainVerificationReason | null): boolean {
+  return reason === 'CHAIN_BREAK' || reason === 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE';
+}
+
+function isAuditFormatFailure(reason: ChainVerificationReason | null): boolean {
+  return (
+    reason === 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2' ||
+    reason === 'UNSUPPORTED_AUDIT_FORMAT_VERSION'
+  );
+}
+
+// ─── Audit Chain Logging & Findings ───────────────────────────────────────────
+
+function logAuditChainVerificationFailure(chainResult: ChainVerification): void {
+  if (chainResult.valid) return;
+
+  if (chainResult.reason === 'TSA_MESSAGE_IMPRINT_MISMATCH') {
+    const mismatchIndex = chainResult.tsaImprintMismatches[0];
+    getAdapterLogger().error('archive', 'TSA timestamp verification failed', {
+      eventId:
+        typeof mismatchIndex === 'number' ? chainResult.results[mismatchIndex]?.eventId : null,
+      reason: 'tsa_imprint_mismatch',
+    });
+    return;
+  }
+
+  if (chainResult.reason === 'TOKEN_VERIFICATION_REQUIRED') {
+    const tokenIndex = chainResult.tokenVerificationRequired[0];
+    getAdapterLogger().error('archive', 'TSA token verification required', {
+      eventId: typeof tokenIndex === 'number' ? chainResult.results[tokenIndex]?.eventId : null,
+      reason: 'token_verification_required',
+    });
+    return;
+  }
+
+  if (!chainResult.firstBreak) return;
+
+  const logExtra: Record<string, unknown> = {
+    eventId: chainResult.firstBreak.eventId,
+    reason: chainResult.reason,
+  };
+  if (chainResult.firstBreak.expectedChainHash) {
+    logExtra.expectedChainHash = chainResult.firstBreak.expectedChainHash;
+  }
+  if (chainResult.firstBreak.actualChainHash) {
+    logExtra.actualChainHash = chainResult.firstBreak.actualChainHash;
+  }
+
+  const log = getAdapterLogger();
+  if (chainResult.reason === 'CHAIN_BREAK') {
+    log.error('archive', 'Audit chain verification failed', logExtra);
+    return;
+  }
+  log.warn('archive', 'Audit chain format is not verifiable with current v2 verifier', logExtra);
+}
+
+function addAuditFormatFindings(chainResult: ChainVerification, findings: ArchiveFinding[]): void {
+  if (chainResult.reason === 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2') {
+    findings.push({
+      code: 'audit_chain_legacy_format',
+      severity: 'error',
+      message:
+        'Audit chain uses a legacy/pre-v2 hash format and is not verifiable under the recursive v2 tamper-evidence guarantee; migrate or re-seal before treating it as current-format evidence',
+      file: 'audit.jsonl',
+    });
+  }
+  if (chainResult.reason === 'UNSUPPORTED_AUDIT_FORMAT_VERSION') {
+    findings.push({
+      code: 'audit_chain_unsupported_format',
+      severity: 'error',
+      message:
+        'Audit chain declares an unsupported auditFormatVersion and cannot be verified by this runtime',
+      file: 'audit.jsonl',
+    });
+  }
+}
+
+// ─── Policy Mode ──────────────────────────────────────────────────────────────
+
+/**
+ * Resolve whether verification runs in strict mode.
+ *
+ * SSOT: strict is derived from the integrity-covered `state.policySnapshot.mode`,
+ * NOT from the mutable, unsigned `manifest.policyMode`. Fail-closed: when the mode
+ * cannot be safely resolved to a known PolicyMode (missing/invalid state), strict
+ * is assumed. A resolvable non-regulated mode is NOT escalated.
+ */
+function resolveStrictMode(state: import('../../state/schema.js').SessionState | null): boolean {
+  const mode = state?.policySnapshot?.mode;
+  if (!isPolicyMode(mode)) {
+    return STRICT_WHEN_MODE_UNRESOLVED;
+  }
+  return mode === 'regulated';
+}
+
+/**
+ * Cross-check the unsigned manifest.policyMode against the integrity-covered
+ * state mode. A mismatch is a tamper signal (e.g. flipping regulated→team to
+ * weaken verification) and fails closed. Skipped when state is unresolvable —
+ * that is already surfaced by state_missing/state_invalid.
+ */
+function verifyManifestPolicyMode(
+  manifest: ArchiveManifest,
+  state: import('../../state/schema.js').SessionState | null,
+  findings: ArchiveFinding[],
+): void {
+  const stateMode = state?.policySnapshot?.mode;
+  if (!isPolicyMode(stateMode)) return;
+  if (manifest.policyMode === stateMode) return;
+
+  getAdapterLogger().error('archive', 'Manifest policy mode does not match governed state', {
+    reason: 'manifest_policy_mode_mismatch',
+    manifestMode: manifest.policyMode,
+    stateMode,
+  });
+  findings.push({
+    code: 'manifest_policy_mode_mismatch',
+    severity: 'error',
+    message: `Manifest policyMode '${manifest.policyMode}' does not match governed state mode '${stateMode}'`,
+    file: 'archive-manifest.json',
+  });
+}
+
+// ─── Audit Completeness ───────────────────────────────────────────────────────
+
+/**
+ * Verify the audit tail anchor (head + count) against the manifest.
+ *
+ * A truncated trail is still a valid hash-chain prefix, so chain verification
+ * alone cannot detect a missing tail. The manifest anchor makes truncation
+ * explicit (defense-in-depth above file_digest_mismatch).
+ */
+function verifyAuditCompleteness(
+  manifest: ArchiveManifest,
+  events: readonly Record<string, unknown>[],
+  findings: ArchiveFinding[],
+): void {
+  const actualCount = events.length;
+  const actualHead = getLastChainHash([...events]);
+  if (actualCount === manifest.auditEventCount && actualHead === manifest.auditChainHead) {
+    return;
+  }
+
+  getAdapterLogger().error('archive', 'Audit trail completeness anchor mismatch', {
+    reason: 'audit_chain_truncated',
+    expectedCount: manifest.auditEventCount,
+    actualCount,
+    expectedHead: manifest.auditChainHead.slice(0, AUDIT_HEAD_LOG_PREFIX_LENGTH),
+    actualHead: actualHead.slice(0, AUDIT_HEAD_LOG_PREFIX_LENGTH),
+  });
+  findings.push({
+    code: 'audit_chain_truncated',
+    severity: 'error',
+    message:
+      `Audit trail does not match manifest anchor: expected ${manifest.auditEventCount} event(s), ` +
+      `found ${actualCount}`,
+    file: 'audit.jsonl',
+  });
+}
+
+// ─── Timestamp Findings ───────────────────────────────────────────────────────
+
+function addTimestampMismatchFindings(
+  chainResult: ReturnType<typeof verifyChain>,
+  fatal: boolean,
+  findings: ArchiveFinding[],
+): void {
+  if (
+    !chainResult.valid &&
+    !isCurrentChainIntegrityFailure(chainResult.reason) &&
+    !isAuditFormatFailure(chainResult.reason)
+  ) {
+    const code =
+      chainResult.reason === 'TSA_MESSAGE_IMPRINT_MISMATCH' ||
+      chainResult.reason === 'TOKEN_VERIFICATION_REQUIRED'
+        ? 'tsa_verification_failed'
+        : 'timestamp_unanchored';
+    findings.push({
+      code,
+      severity: fatal ? 'error' : 'warning',
+      message: `Timestamp verification failed (${chainResult.reason}): ${chainResult.totalEvents} total, ${chainResult.verifiedCount} verified`,
+      file: 'audit.jsonl',
+    });
+  }
+  if (chainResult.timestampMonotonicity && !chainResult.timestampMonotonicity.valid) {
+    findings.push({
+      code: 'timestamp_unanchored',
+      severity: fatal ? 'error' : 'warning',
+      message: `Timestamp monotonicity violation: ${chainResult.timestampMonotonicity.message}`,
+      file: 'audit.jsonl',
+    });
+  }
+}
+
+function addEvidenceGapFindings(
+  chainResult: ReturnType<typeof verifyChain>,
+  fatal: boolean,
+  findings: ArchiveFinding[],
+): void {
+  if (chainResult.missingTimestampEvidence.length > 0) {
+    findings.push({
+      code: 'timestamp_unanchored',
+      severity: fatal ? 'error' : 'warning',
+      message: `${chainResult.missingTimestampEvidence.length} critical event(s) lack timestamp assurance evidence (indices: ${chainResult.missingTimestampEvidence.join(', ')})`,
+      file: 'audit.jsonl',
+    });
+  }
+  if (chainResult.tsaImprintMismatches.length > 0) {
+    findings.push({
+      code: 'tsa_verification_failed',
+      severity: fatal ? 'error' : 'warning',
+      message: `${chainResult.tsaImprintMismatches.length} event(s) have TSA messageImprint mismatch (indices: ${chainResult.tsaImprintMismatches.join(', ')})`,
+      file: 'audit.jsonl',
+    });
+  }
+}
+
+function addTimestampFindings(
+  chainResult: ReturnType<typeof verifyChain>,
+  timestampFailuresAreFatal: boolean,
+  findings: ArchiveFinding[],
+): void {
+  if (!chainResult.valid && isCurrentChainIntegrityFailure(chainResult.reason)) {
+    findings.push({
+      code: 'audit_chain_invalid',
+      severity: 'error',
+      message: `Audit chain verification failed (${chainResult.reason}): ${chainResult.totalEvents} total, ${chainResult.verifiedCount} verified, ${chainResult.skippedCount} skipped`,
+      file: 'audit.jsonl',
+    });
+  }
+  addTimestampMismatchFindings(chainResult, timestampFailuresAreFatal, findings);
+  addEvidenceGapFindings(chainResult, timestampFailuresAreFatal, findings);
+}
+
+// ─── Chain Verification ───────────────────────────────────────────────────────
+
+async function verifyTimestampChain(
+  events: Awaited<ReturnType<typeof readAuditTrail>>['events'],
+  state: import('../../state/schema.js').SessionState | null,
+  manifest: ArchiveManifest,
+  findings: ArchiveFinding[],
+  strict: boolean,
+): Promise<void> {
+  const timestampPolicy = state?.policySnapshot.audit.timestampAssurance;
+  const strictTimestamps = events.some(hasTimestampEvidence) || timestampPolicy?.enabled === true;
+  const timestampFailuresAreFatal = strict || timestampPolicy?.strict === true;
+  const chainResult = verifyChain(events, { strict, strictTimestamps });
+  logAuditChainVerificationFailure(chainResult);
+  addAuditFormatFindings(chainResult, findings);
+  addTimestampFindings(chainResult, timestampFailuresAreFatal, findings);
+
+  const { verifyArchiveTimestampTokens } = await import('./archive-timestamp-verification.js');
+  await verifyArchiveTimestampTokens({ events, state, manifest, findings });
+}
+
+async function verifyAuditChainIntegrity(
+  sessDir: string,
+  manifest: ArchiveManifest,
+  findings: ArchiveFinding[],
+  state: import('../../state/schema.js').SessionState | null,
+  strict: boolean,
+): Promise<void> {
+  try {
+    const { events, skipped } = await readAuditTrail(sessDir);
+    verifyAuditCompleteness(manifest, events, findings);
+
+    if (strict && skipped > 0) {
+      findings.push({
+        code: 'audit_chain_invalid',
+        severity: 'error',
+        message: `Audit trail contains ${skipped} unparseable line(s) in regulated mode`,
+        file: 'audit.jsonl',
+      });
+    }
+
+    await verifyArtifactBinding(sessDir, manifest, events, findings);
+
+    if (events.length > 0) {
+      await verifyTimestampChain(events, state, manifest, findings, strict);
+    }
+  } catch (error) {
+    if (strict) {
+      findings.push({
+        code: 'audit_chain_invalid',
+        severity: 'error',
+        message: `Audit chain verification could not read audit.jsonl: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        file: 'audit.jsonl',
+      });
+    }
+  }
+}
+
+// ─── Archive Integrity & Top-Level Orchestration ────────────────────────────
+
+async function verifyArchiveIntegrity(
+  location: { sessDir: string; fingerprint: string; validSessionId: string },
+  manifest: ArchiveManifest,
+  findings: ArchiveFinding[],
+  state: import('../../state/schema.js').SessionState | null,
+): Promise<void> {
+  const { sessDir, fingerprint, validSessionId } = location;
+  // Strict authority and completeness checks run BEFORE the content digest so a
+  // mode/anchor tamper surfaces explicitly rather than only as a digest mismatch.
+  const strict = resolveStrictMode(state);
+  verifyManifestPolicyMode(manifest, state, findings);
+  await verifyAuditChainIntegrity(sessDir, manifest, findings, state, strict);
+
+  // Content digest is ALWAYS verified — including an empty archive (no included
+  // files). The integrity header (policy mode, audit anchor, identity) is part of
+  // the digest, so a tampered header on a 0-file manifest must still fail closed.
+  const computedContentDigest = computeArchiveContentDigest({
+    includedFiles: manifest.includedFiles,
+    fileDigests: manifest.fileDigests,
+    policyMode: manifest.policyMode,
+    auditChainHead: manifest.auditChainHead,
+    auditEventCount: manifest.auditEventCount,
+    schemaVersion: manifest.schemaVersion,
+    sessionId: manifest.sessionId,
+    fingerprint: manifest.fingerprint,
+    discoveryDigest: manifest.discoveryDigest,
+  });
+  if (computedContentDigest !== manifest.contentDigest) {
+    findings.push({
+      code: 'content_digest_mismatch',
+      severity: 'error',
+      message:
+        'Content digest does not match computed value from file digests and integrity header',
+    });
+  }
+
+  const archiveCheckDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
+  const archiveTarPath = path.join(archiveCheckDir, `${validSessionId}.tar.gz`);
+  const checksumSidecarPath = `${archiveTarPath}.sha256`;
+
+  const checksumExists = await fileExists(checksumSidecarPath);
+  if (!checksumExists) {
+    findings.push({
+      code: 'archive_checksum_missing',
+      severity: strict ? 'error' : 'warning',
+      message: 'Archive checksum sidecar (.sha256) not found',
+    });
+  } else {
+    try {
+      const sidecarContent = await fs.readFile(checksumSidecarPath, 'utf-8');
+      const expectedHash = sidecarContent.trim().split(/\s+/)[0];
+      const archiveBuffer = await fs.readFile(archiveTarPath);
+      const actualHash = crypto.createHash('sha256').update(archiveBuffer).digest('hex');
+      if (expectedHash !== actualHash) {
+        findings.push({
+          code: 'archive_checksum_mismatch',
+          severity: 'error',
+          message: `Archive checksum mismatch: sidecar says ${expectedHash?.slice(0, 12)}..., actual is ${actualHash.slice(0, 12)}...`,
+        });
+      }
+    } catch {
+      // Can't read archive or sidecar — skip
+    }
+  }
+}
+
+async function verifyArchiveImpl(
+  fingerprint: string,
+  sessionId: string,
+): Promise<ArchiveVerification> {
+  validateFingerprint(fingerprint);
+  const validSessionId = validateSessionId(sessionId);
+
+  const sessDir = sessionDir(fingerprint, validSessionId);
+  const findings: ArchiveFinding[] = [];
+
+  const manifest = await loadArchiveManifest(sessDir, findings);
+  if (!manifest) {
+    return buildVerificationResult(findings, null);
+  }
+
+  const stateExists = await fileExists(path.join(sessDir, 'session-state.json'));
+  let state: import('../../state/schema.js').SessionState | null = null;
+  if (stateExists) {
+    try {
+      state = await readState(sessDir);
+    } catch (error) {
+      findings.push({
+        code: 'state_invalid',
+        severity: 'error',
+        message: `Session state file could not be parsed or validated: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        file: 'session-state.json',
+      });
+    }
+  }
+  if (!stateExists) {
+    findings.push({
+      code: 'state_missing',
+      severity: 'error',
+      message: 'Session state file not found',
+      file: 'session-state.json',
+    });
+  }
+
+  if (manifest.discoveryDigest) {
+    for (const snapshotFile of ['discovery-snapshot.json', 'profile-resolution-snapshot.json']) {
+      const exists = await fileExists(path.join(sessDir, snapshotFile));
+      if (!exists) {
+        findings.push({
+          code: 'snapshot_missing',
+          severity: 'warning',
+          message: `Discovery snapshot not found: ${snapshotFile}`,
+          file: snapshotFile,
+        });
+      }
+    }
+  }
+
+  await verifyManifestFiles(sessDir, manifest, findings);
+  await checkUnexpectedFiles(sessDir, manifest, findings);
+  await verifyArchiveIntegrity({ sessDir, fingerprint, validSessionId }, manifest, findings, state);
+
+  const result = buildVerificationResult(findings, manifest);
+  getAdapterLogger().info('archive', 'archive_verified', {
+    sessionId: validSessionId,
+    passed: result.passed,
+    findingCount: result.findings.length,
+  });
+  return result;
+}
+
+// ─── Result Construction ──────────────────────────────────────────────────────
+
+/** Build the final verification result from findings. */
+function buildVerificationResult(
+  findings: ArchiveFinding[],
+  manifest: ArchiveManifest | null,
+): ArchiveVerification {
+  const hasError = findings.some((f) => f.severity === 'error');
+  return {
+    passed: !hasError,
+    findings,
+    manifest,
+    verifiedAt: new Date().toISOString(),
+  };
+}
