@@ -43,7 +43,7 @@ import {
   type ArtifactBindingEntry,
   ARTIFACT_BINDING_EVENT,
   ARTIFACT_BINDING_SCHEMA_VERSION,
-} from './archive.js';
+} from './archive-artifact-binding.js';
 
 // Timestamp token verification is lazy-imported to avoid requiring optional
 // 'asn1js'/'pkijs' packages at module load time. Only needed during archive verification.

@@ -46,6 +46,11 @@ import { workspacesHome, sessionDir } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
 import { verifyEvidenceArtifacts } from './evidence-artifacts.js';
 import { fileExists, listSessionFiles } from './archive-files.js';
+import {
+  type ArtifactBindingEntry,
+  ARTIFACT_BINDING_EVENT,
+  ARTIFACT_BINDING_SCHEMA_VERSION,
+} from './archive-artifact-binding.js';
 
 // -- Session Archive ----------------------------------------------------------
 
@@ -178,15 +183,6 @@ interface ArchiveRedactionResult {
   excludedFiles: string[];
   riskFlags: string[];
 }
-
-export interface ArtifactBindingEntry {
-  readonly path: string;
-  readonly sha256: string;
-  readonly artifactType: string | null;
-}
-
-export const ARTIFACT_BINDING_EVENT = 'archive:artifacts_bound';
-export const ARTIFACT_BINDING_SCHEMA_VERSION = 'flowguard-archive-artifact-binding.v1';
 
 async function applyArchiveRedaction(
   sessDir: string,
