@@ -6,15 +6,17 @@
  * @test-policy HAPPY, BAD
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   validatePipelineAttestation,
   isStrictEnforcementEnabled,
   isOutputAlreadyBlocked,
+  buildReviewDiscoveryContextForPipeline,
   REASON_MANDATE_MISSING,
   REASON_MANDATE_MISMATCH,
   REASON_UNABLE_TO_REVIEW,
 } from './shared-helpers.js';
+import type { PipelineContext } from './pipeline-types.js';
 import type { SessionState } from '../../state/schema.js';
 
 vi.mock('../review/orchestrator.js', () => ({
@@ -181,5 +183,52 @@ describe('isOutputAlreadyBlocked', () => {
 
   it('returns false for non-JSON output', () => {
     expect(isOutputAlreadyBlocked({ output: 'plain text output' })).toBe(false);
+  });
+});
+
+// ─── buildReviewDiscoveryContextForPipeline (#401 drift) ──────────────────────
+
+const buildReviewDiscoveryContext = vi.fn();
+
+vi.mock('./discovery-context-loader.js', () => ({
+  buildReviewDiscoveryContext: (input: unknown) => buildReviewDiscoveryContext(input),
+}));
+
+describe('buildReviewDiscoveryContextForPipeline (#401 drift)', () => {
+  beforeEach(() => {
+    buildReviewDiscoveryContext.mockReset();
+    buildReviewDiscoveryContext.mockResolvedValue({ verificationCandidates: [] });
+  });
+
+  function makeCtx(): PipelineContext {
+    return {
+      sessionState: { binding: { worktree: '/tmp/repo' } },
+      deps: {
+        resolveFingerprint: vi.fn().mockResolvedValue('fp-1'),
+        log: { warn: vi.fn(), info: vi.fn() },
+        adapter: { getWorktree: () => '/tmp/repo' },
+      },
+    } as unknown as PipelineContext;
+  }
+
+  it('requests a drift check for content/PR review (includeDriftCheck: true)', async () => {
+    await buildReviewDiscoveryContextForPipeline(makeCtx());
+
+    expect(buildReviewDiscoveryContext).toHaveBeenCalledTimes(1);
+    const input = buildReviewDiscoveryContext.mock.calls[0][0] as {
+      includeDriftCheck?: boolean;
+    };
+    expect(input.includeDriftCheck).toBe(true);
+  });
+
+  it('passes resolved fingerprint and worktree to the loader', async () => {
+    await buildReviewDiscoveryContextForPipeline(makeCtx());
+
+    const input = buildReviewDiscoveryContext.mock.calls[0][0] as {
+      fingerprint?: string | null;
+      worktree?: string;
+    };
+    expect(input.fingerprint).toBe('fp-1');
+    expect(input.worktree).toBe('/tmp/repo');
   });
 });
