@@ -14,7 +14,7 @@ import {
   validateResolvedReviewUrlTarget,
   parseIPv4,
 } from './review.js';
-import { makeState, makeProgressedState } from '../__fixtures__.js';
+import { makeState, makeProgressedState } from '../fixtures.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 

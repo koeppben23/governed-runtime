@@ -12,7 +12,7 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
   ARCHITECTURE_DECISION,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 import { Phase } from '../state/schema.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 

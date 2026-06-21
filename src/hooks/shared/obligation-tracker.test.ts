@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { unresolvedBlockingObligations, assessObligationEscalation } from './obligation-tracker.js';
-import { makeState } from '../../__fixtures__.js';
+import { makeState } from '../../fixtures.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 
 const FIXED_UUID = '550e8400-e29b-41d4-a716-446655440000';

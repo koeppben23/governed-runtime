@@ -48,7 +48,7 @@ import { writeState, auditPath, globalConfigPath, PersistenceError } from './per
 import { readAuditTrail } from './persistence-audit.js';
 import { computeArchiveContentDigest } from '../archive/content-digest.js';
 import type { ArchiveManifest } from '../archive/types.js';
-import { makeState, POLICY_SNAPSHOT, REGULATED_POLICY_SNAPSHOT } from '../__fixtures__.js';
+import { makeState, POLICY_SNAPSHOT, REGULATED_POLICY_SNAPSHOT } from '../fixtures.js';
 import type { PolicySnapshot } from '../state/evidence.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────

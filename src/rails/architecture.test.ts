@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { executeArchitecture } from './architecture.js';
 import type { ArchitectureInput } from './architecture.js';
 import { createTestContext } from '../testing.js';
-import { makeState, FIXED_TIME } from '../__fixtures__.js';
+import { makeState, FIXED_TIME } from '../fixtures.js';
 import { SOLO_POLICY, TEAM_POLICY } from '../config/policy.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 

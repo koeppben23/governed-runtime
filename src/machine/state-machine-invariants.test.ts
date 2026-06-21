@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { makeProgressedState } from '../__fixtures__.js';
+import { makeProgressedState } from '../fixtures.js';
 import type { Phase } from '../state/schema.js';
 import { evaluate } from './evaluate.js';
 import { resolveNextAction } from './next-action.js';

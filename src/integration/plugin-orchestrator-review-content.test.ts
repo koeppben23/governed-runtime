@@ -27,7 +27,7 @@ vi.mock('../rails/review.js', () => ({
 
 import { readState } from '../adapters/persistence.js';
 import { loadExternalContent } from '../rails/review.js';
-import { makeState, POLICY_SNAPSHOT } from '../__fixtures__.js';
+import { makeState, POLICY_SNAPSHOT } from '../fixtures.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { createTestAdapter } from './test-adapter-helper.js';

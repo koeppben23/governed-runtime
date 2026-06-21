@@ -1,5 +1,5 @@
 /**
- * @module __fixtures__
+ * @module fixtures
  * @description Shared test fixtures for the FlowGuard test suite.
  *
  * Provides minimal valid objects for each evidence type and a complete SessionState.

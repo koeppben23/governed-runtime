@@ -8,7 +8,7 @@ import {
   makeState,
   PLAN_RECORD,
   TICKET,
-} from '../../__fixtures__.js';
+} from '../../fixtures.js';
 import { appendReviewObligation, createReviewObligation } from './assurance.js';
 import { bindExternalReviewEvidence } from './transport-evidence.js';
 

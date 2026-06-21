@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolveNextAction } from '../machine/next-action.js';
 import { buildProductNextAction } from './next-action-copy.js';
-import { makeState, makeProgressedState } from '../__fixtures__.js';
+import { makeState, makeProgressedState } from '../fixtures.js';
 
 describe('buildProductNextAction', () => {
   describe('HAPPY — known codes produce product guidance', () => {

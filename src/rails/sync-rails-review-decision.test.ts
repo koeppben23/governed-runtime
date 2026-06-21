@@ -7,7 +7,7 @@ import {
   REGULATED_POLICY_SNAPSHOT,
   DECISION_IDENTITY_REVIEWER,
   DECISION_IDENTITY_VERIFIED_REVIEWER,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy.js';
 
 const ctx = createTestContext();

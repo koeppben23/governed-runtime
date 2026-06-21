@@ -28,7 +28,7 @@ import {
   IMPL_REVIEW_PENDING_RESULT,
   ERROR_INFO,
   POLICY_SNAPSHOT,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 describe('guards', () => {

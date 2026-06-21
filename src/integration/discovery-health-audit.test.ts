@@ -21,7 +21,7 @@ vi.mock('./review/audit-events.js', () => ({
 
 import { auditDiscoveryHealthGateTransition } from './discovery-health-audit.js';
 import type { SessionState, DiscoveryHealthGate } from '../state/schema.js';
-import { makeState } from '../__fixtures__.js';
+import { makeState } from '../fixtures.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 

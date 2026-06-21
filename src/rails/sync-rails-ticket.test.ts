@@ -1,12 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { executeTicket } from '../rails/ticket.js';
 import { createTestContext } from '../testing.js';
-import {
-  makeState,
-  makeProgressedState,
-  PLAN_RECORD,
-  SELF_REVIEW_CONVERGED,
-} from '../__fixtures__.js';
+import { makeState, makeProgressedState, PLAN_RECORD, SELF_REVIEW_CONVERGED } from '../fixtures.js';
 
 const ctx = createTestContext();
 

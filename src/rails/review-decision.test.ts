@@ -6,7 +6,7 @@ import {
   IMPL_EVIDENCE,
   PLAN_RECORD,
   FIXED_TIME,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 
 const baseCtx = {
   now: () => FIXED_TIME,

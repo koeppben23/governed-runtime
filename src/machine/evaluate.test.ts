@@ -16,7 +16,7 @@ import {
   ERROR_INFO,
   ARCHITECTURE_DECISION,
   POLICY_SNAPSHOT,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 describe('evaluate', () => {

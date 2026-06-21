@@ -5,7 +5,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as path from 'node:path';
 import { validateBinding, fromOpenCodeContext, BindingError } from './binding.js';
-import { makeState, FIXED_TIME } from '../__fixtures__.js';
+import { makeState, FIXED_TIME } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 const tmpDir = '';

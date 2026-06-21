@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { executeAbort } from '../rails/abort.js';
 import { createTestContext } from '../testing.js';
-import { makeState, makeProgressedState, TICKET, PLAN_RECORD } from '../__fixtures__.js';
+import { makeState, makeProgressedState, TICKET, PLAN_RECORD } from '../fixtures.js';
 
 const ctx = createTestContext();
 

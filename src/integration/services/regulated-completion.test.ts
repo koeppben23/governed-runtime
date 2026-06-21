@@ -23,7 +23,7 @@ import {
   VALIDATION_PASSED,
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
-} from '../../__fixtures__.js';
+} from '../../fixtures.js';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────
 

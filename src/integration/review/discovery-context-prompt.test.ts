@@ -6,7 +6,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { unavailableDiscoveryHealth } from '../../discovery/discovery-health.js';
-import { makeState, PLAN_RECORD, TICKET } from '../../__fixtures__.js';
+import { makeState, PLAN_RECORD, TICKET } from '../../fixtures.js';
 import {
   buildDiscoveryDriftStatus,
   notCheckedDiscoveryDriftStatus,

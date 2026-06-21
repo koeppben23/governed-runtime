@@ -6,7 +6,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as crypto from 'node:crypto';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
-import { makeState } from '../__fixtures__.js';
+import { makeState } from '../fixtures.js';
 import type { PolicyMode } from '../config/policy.js';
 import * as barrel from './index.js';
 import * as fs from 'node:fs/promises';

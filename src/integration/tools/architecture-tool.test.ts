@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeState } from '../../__fixtures__.js';
+import { makeState } from '../../fixtures.js';
 
 const originalFlowguardHostPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
 

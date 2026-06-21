@@ -41,7 +41,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
-import { makeState, TICKET } from '../__fixtures__.js';
+import { makeState, TICKET } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 
 // Mock the verification executor to avoid real subprocess execution
