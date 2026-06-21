@@ -138,6 +138,18 @@ describe('isIPv6Address / HAPPY', () => {
   it('accepts IPv4-mapped hex hextet form', () => {
     expect(isIPv6Address('::ffff:c000:280')).toBe(true);
   });
+
+  it('accepts IPv4-mapped with more than two hextets', () => {
+    expect(isIPv6Address('::ffff:0:0:1')).toBe(true);
+  });
+
+  it('accepts IPv4-mapped dois-hextet form', () => {
+    expect(isIPv6Address('::ffff:0:0')).toBe(true);
+  });
+
+  it('accepts full 8-hextet form of IPv4-mapped', () => {
+    expect(isIPv6Address('0:0:0:0:0:ffff:c000:0280')).toBe(true);
+  });
 });
 
 // ─── isIPv6Address: BAD ───────────────────────────────────────────────────────
@@ -190,6 +202,10 @@ describe('isIPv6Address / BAD', () => {
 describe('isIPv6Address / CORNER', () => {
   it('accepts IPv4-mapped loopback (format only — privacy check is separate)', () => {
     expect(isIPv6Address('::ffff:127.0.0.1')).toBe(true);
+  });
+
+  it('accepts generic dotted IPv4 tail outside ::ffff: prefix', () => {
+    expect(isIPv6Address('2001:db8::192.0.2.1')).toBe(true);
   });
 
   it('rejects malformed IPv4-mapped', () => {
