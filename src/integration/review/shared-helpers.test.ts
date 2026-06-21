@@ -19,6 +19,14 @@ import {
 import type { PipelineContext } from './pipeline-types.js';
 import type { SessionState } from '../../state/schema.js';
 
+const { buildReviewDiscoveryContext } = vi.hoisted(() => ({
+  buildReviewDiscoveryContext: vi.fn(),
+}));
+
+vi.mock('./discovery-context-loader.js', () => ({
+  buildReviewDiscoveryContext: (input: unknown) => buildReviewDiscoveryContext(input),
+}));
+
 vi.mock('../review/orchestrator.js', () => ({
   extractReviewContext: vi.fn(),
 }));
@@ -27,9 +35,6 @@ vi.mock('../review/prompt-builders.js', () => ({
   buildImplReviewPrompt: vi.fn(),
   buildArchitectureReviewPrompt: vi.fn(),
   selectReviewerProfileRules: vi.fn(() => ({})),
-}));
-vi.mock('../review/discovery-context-loader.js', () => ({
-  buildReviewDiscoveryContext: vi.fn(),
 }));
 
 vi.mock('../plugin-helpers.js', () => ({
@@ -187,12 +192,6 @@ describe('isOutputAlreadyBlocked', () => {
 });
 
 // ─── buildReviewDiscoveryContextForPipeline (#401 drift) ──────────────────────
-
-const buildReviewDiscoveryContext = vi.fn();
-
-vi.mock('./discovery-context-loader.js', () => ({
-  buildReviewDiscoveryContext: (input: unknown) => buildReviewDiscoveryContext(input),
-}));
 
 describe('buildReviewDiscoveryContextForPipeline (#401 drift)', () => {
   beforeEach(() => {
