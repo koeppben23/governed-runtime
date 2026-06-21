@@ -9,7 +9,7 @@ const SRC_ROOT = join(__dirname, '..');
 
 const PRODUCER_BY_OBLIGATION_TYPE: Readonly<Record<string, string>> = {
   plan: 'integration/tools/plan.ts',
-  implement: 'integration/tools/implement.ts',
+  implement: 'integration/tools/implement-record.ts',
   architecture: 'integration/tools/architecture.ts',
   review: 'integration/tools/review-tool/obligation.ts',
 };
