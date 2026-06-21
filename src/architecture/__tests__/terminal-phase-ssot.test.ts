@@ -59,7 +59,7 @@ const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
     reason: 'detects the ticket-flow COMPLETE transition specifically (not terminal membership)',
   },
   {
-    file: 'integration/tools/architecture.ts',
+    file: 'integration/tools/architecture-review.ts',
     max: 2,
     reason: 'architecture-flow completion checks tied to ARCH_COMPLETE only',
   },
