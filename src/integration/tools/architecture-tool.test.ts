@@ -1,10 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeState } from '../../__fixtures__.js';
-import {
-  REVIEW_CRITERIA_VERSION,
-  REVIEW_MANDATE_DIGEST,
-  hashFindings,
-} from '../review/assurance.js';
 
 const originalFlowguardHostPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
 
@@ -886,10 +881,6 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
   });
-
-  // ═════════════════════════════════════════════════════════════════════════
-  // BUG-15 Stufe 2: evidence-based findings resolution in tool layer
-  // ═════════════════════════════════════════════════════════════════════════
 
   // ═══════════════════════════════════════════════════════════════════════════════
   // BUG-21: Null-tolerant mode detection (defense-in-depth for Fix F)
