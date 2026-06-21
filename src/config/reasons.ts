@@ -33,6 +33,17 @@ import { PRECONDITION_REASONS } from './reasons-precondition.js';
 import { VALIDATION_REASONS } from './reasons-validation.js';
 import { INFRA_REASONS } from './reasons-infra.js';
 
+export type ReasonRegistryErrorCode = 'REGISTRY_FROZEN' | 'REGISTRY_DUPLICATE';
+
+export class ReasonRegistryError extends Error {
+  readonly code: ReasonRegistryErrorCode;
+
+  constructor(code: ReasonRegistryErrorCode, message: string) {
+    super(message);
+    this.name = 'ReasonRegistryError';
+    this.code = code;
+  }
+}
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** Category for blocked reason classification. */
@@ -124,10 +135,16 @@ export class BlockedReasonRegistry {
   /** Register a blocked reason. Duplicate codes and frozen registries fail fast. */
   register(reason: BlockedReason): void {
     if (this.frozen) {
-      throw new Error(`Reason registry is frozen; cannot register ${reason.code}`);
+      throw new ReasonRegistryError(
+        'REGISTRY_FROZEN',
+        `Reason registry is frozen; cannot register ${reason.code}`,
+      );
     }
     if (this.reasons.has(reason.code)) {
-      throw new Error(`Reason code ${reason.code} is already registered`);
+      throw new ReasonRegistryError(
+        'REGISTRY_DUPLICATE',
+        `Reason code ${reason.code} is already registered`,
+      );
     }
     this.reasons.set(reason.code, reason);
   }

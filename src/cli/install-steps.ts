@@ -12,6 +12,7 @@ import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
+import { InstallError } from './install-helpers.js';
 import { globalConfigPath, ensureDir } from '../adapters/persistence.js';
 import { readConfig, writeGlobalConfig, writeRepoConfig } from '../adapters/persistence-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
@@ -357,7 +358,10 @@ async function writeNewOpencodeConfig(
     await writeRepoConfig(resolve('.'), config);
   }
   if (!existsSync(snapshot.cfgPath)) {
-    throw new Error(`CONFIG_WRITE_FAILED: config is required but missing at ${snapshot.cfgPath}`);
+    throw new InstallError(
+      'TARBALL_CHECKSUMS_UNREADABLE',
+      `CONFIG_WRITE_FAILED: config is required but missing at ${snapshot.cfgPath}`,
+    );
   }
   ctx.ops.push({ path: snapshot.cfgPath, action: 'written' });
 }

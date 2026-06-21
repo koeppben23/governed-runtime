@@ -6,7 +6,7 @@
 import type { ArchiveFinding, ArchiveManifest } from '../../archive/types.js';
 import type { AuditEvent } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
-import { PkijsTimestampVerifier } from '../../audit/rfc3161-pkijs-verifier.js';
+import { PkijsTimestampVerifier } from '../../audit/rfc-3161-pkijs-verifier.js';
 import { verifyTimestampTokensForEvents } from '../../audit/timestamp-token-verification.js';
 
 function eventHasTsaEvidence(event: AuditEvent): boolean {
