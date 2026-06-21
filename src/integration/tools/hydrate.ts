@@ -1,90 +1,46 @@
-/**
- * @module integration/tools/hydrate
- * @description FlowGuard hydrate tool — bootstrap or reload session.
- *
- * This is the entry point for every FlowGuard workflow. Creates a new session
- * if none exists, runs repository discovery, resolves the governance profile,
- * and returns the session state.
- *
- * @version v3
- */
+/** @module integration/tools/hydrate — Session bootstrap/reload tool. */
 
 import { z } from 'zod';
-import { existsSync } from 'node:fs';
-import { readFile as fsReadFile } from 'node:fs/promises';
-import * as nodePath from 'node:path';
-import { createHash } from 'node:crypto';
-
-import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
-import {
-  getWorktree,
-  resolvePolicyFromState,
-  createPolicyContext,
-  formatBlocked,
-  formatError,
-  withSessionWriteTransaction,
-} from './helpers.js';
-
-// Rails
+import type { ToolDefinition, ToolContext } from './helpers.js';
+import type { ToolResult } from './helpers.js';
+import { getWorktree, formatBlocked, formatError, withSessionWriteTransaction } from './helpers.js';
 import { executeHydrate } from '../../rails/hydrate.js';
-
-// Discovery health gate (#399)
-import { loadDiscoveryHealthContext } from '../../discovery/discovery-health.js';
-import { buildDiscoveryDriftStatus } from '../discovery-drift-status.js';
-import { reconcileDiscoveryHealthGate } from '../discovery-health-gate.js';
-import { auditDiscoveryHealthGateTransition } from '../discovery-health-audit.js';
-import type { DiscoveryDriftAssessment } from '../../state/schema.js';
-import { PolicyModeSchema, type PolicyMode } from '../../state/policy-mode.js';
-import type { RailResult } from '../../rails/types.js';
-
-// Adapters
+import { PolicyModeSchema } from '../../state/policy-mode.js';
+import type { PolicyMode } from '../../state/policy-mode.js';
 import { readState, PersistenceError } from '../../adapters/persistence.js';
-import { REASON_SESSION_LOCK_CONTENDED } from '../../shared/flowguard-identifiers.js';
-import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
-import { listRepoSignals } from '../../adapters/git.js';
 import { readConfig } from '../../adapters/persistence-config.js';
-import {
-  writeDiscovery,
-  writeProfileResolution,
-  writeDiscoverySnapshot,
-  writeProfileResolutionSnapshot,
-} from '../../adapters/persistence-discovery.js';
-
-// Workspace
 import { initWorkspace, writeSessionPointer } from '../../adapters/workspace/index.js';
-
-// Actor identity (P27)
 import { resolveActor, ActorClaimError } from '../../adapters/actor.js';
-
-// Discovery
-import {
-  runDiscovery,
-  extractDiscoverySummary,
-  extractDetectedStack,
-  computeDiscoveryDigest,
-} from '../../discovery/orchestrator.js';
-import type { DiscoveryResult, ProfileResolution, DetectedStack } from '../../discovery/types.js';
-import { PROFILE_RESOLUTION_SCHEMA_VERSION } from '../../discovery/types.js';
-import { planVerificationCandidates } from '../../discovery/verification-planner.js';
-import { defaultProfileRegistry as profileRegistryForResolution } from '../../config/profile.js';
-import type { FlowGuardProfile, RepoSignals } from '../../config/profile.js';
-
-// Config
-import {
-  detectCiContext,
-  resolvePolicyForHydrate,
-  validateExistingPolicyAgainstCentral,
-} from '../../config/policy.js';
-import { throwHydrateError } from './hydrate-errors.js';
+import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
+import { REASON_SESSION_LOCK_CONTENDED } from '../../shared/flowguard-identifiers.js';
+import { resolveHydratePolicy } from './hydrate-policy.js';
+import { resolveDiscoveryHydration } from './hydrate-discovery.js';
 import { buildHydrateInput, formatHydrateResult, withLockContended } from './hydrate-format.js';
+import { reconcileHydrateDiscoveryHealthGate } from './hydrate-discovery-health.js';
+import { resolvePolicyForHydrate } from '../../config/policy.js';
+import { validateExistingPolicyAgainstCentral } from '../../config/policy.js';
+import { extractDiscoverySummary } from '../../discovery/orchestrator.js';
+import { planVerificationCandidates } from '../../discovery/verification-planner.js';
+import type { DiscoveryResult } from '../../discovery/types.js';
+import type { DetectedStack } from '../../discovery/types.js';
+import type { ProfileResolution } from '../../discovery/types.js';
+import type { RepoSignals } from '../../config/profile.js';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Shared types (exported for sibling modules)
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export type ExistingHydrateState = Awaited<ReturnType<typeof readState>>;
 export type HydrateConfig = Awaited<ReturnType<typeof readConfig>>;
 export type HydratePolicyResolution = Awaited<ReturnType<typeof resolvePolicyForHydrate>>;
-type HydrateArgs = { policyMode?: PolicyMode; profileId?: string; claimedTaskClass?: string };
-type HydrateWorkspace = Awaited<ReturnType<typeof initWorkspace>>;
-type HydratePolicyContext = Awaited<ReturnType<typeof resolveHydratePolicy>>;
-type ReadRepoFile = (relativePath: string) => Promise<string | undefined>;
+export type HydrateArgs = {
+  policyMode?: PolicyMode;
+  profileId?: string;
+  claimedTaskClass?: string;
+};
+export type HydrateWorkspace = Awaited<ReturnType<typeof initWorkspace>>;
+export type HydratePolicyContext = Awaited<ReturnType<typeof resolveHydratePolicy>>;
+export type ReadRepoFile = (relativePath: string) => Promise<string | undefined>;
 export type ExistingCentralEvidence = NonNullable<
   Awaited<ReturnType<typeof validateExistingPolicyAgainstCentral>>
 >;
@@ -99,7 +55,7 @@ export interface DiscoveryHydration {
   readonly profileResolution?: ProfileResolution;
 }
 
-interface ResolveDiscoveryHydrationInput {
+export interface ResolveDiscoveryHydrationInput {
   readonly existing: ExistingHydrateState;
   readonly worktree: string;
   readonly workspace: HydrateWorkspace;
@@ -119,439 +75,7 @@ export interface BuildHydrateInputParams {
   readonly args: HydrateArgs;
 }
 
-function digestText(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex');
-}
-
-async function resolveCentralEvidenceForExisting(existing: ExistingHydrateState) {
-  if (!existing) return undefined;
-  return validateExistingPolicyAgainstCentral({
-    existingMode: existing.policySnapshot.mode,
-    centralPolicyPath: process.env.FLOWGUARD_POLICY_PATH,
-    digestFn: digestText,
-  });
-}
-
-function mergeCentralEvidence(
-  existing: ExistingHydrateState,
-  centralEvidence: ExistingCentralEvidence | undefined,
-) {
-  if (!existing || !centralEvidence) return existing;
-  return {
-    ...existing,
-    policySnapshot: {
-      ...existing.policySnapshot,
-      centralMinimumMode: centralEvidence.minimumMode,
-      policyDigest: centralEvidence.digest,
-      policyVersion: centralEvidence.version,
-      policyPathHint: centralEvidence.pathHint,
-    },
-  };
-}
-
-function snapshotCentralEvidence(existing: NonNullable<ExistingHydrateState>) {
-  if (!existing.policySnapshot.centralMinimumMode) return undefined;
-  return {
-    minimumMode: existing.policySnapshot.centralMinimumMode,
-    digest: existing.policySnapshot.policyDigest ?? '',
-    ...(existing.policySnapshot.policyVersion
-      ? { version: existing.policySnapshot.policyVersion }
-      : {}),
-    pathHint: existing.policySnapshot.policyPathHint ?? 'basename:unknown',
-  };
-}
-
-function resolveExistingPolicyResolution(
-  existing: NonNullable<ExistingHydrateState>,
-  centralEvidenceForExisting: Awaited<ReturnType<typeof validateExistingPolicyAgainstCentral>>,
-): HydratePolicyResolution {
-  return {
-    requestedMode: existing.policySnapshot.requestedMode,
-    requestedSource: (existing.policySnapshot.source ?? 'default') as
-      | 'explicit'
-      | 'repo'
-      | 'default',
-    effectiveMode: existing.policySnapshot.mode,
-    effectiveSource: existing.policySnapshot.source ?? 'default',
-    effectiveGateBehavior: existing.policySnapshot.effectiveGateBehavior,
-    degradedReason: existing.policySnapshot.degradedReason as 'ci_context_missing' | undefined,
-    policy: resolvePolicyFromState(existing),
-    resolutionReason: existing.policySnapshot.resolutionReason as
-      | 'repo_weaker_than_central'
-      | 'default_weaker_than_central'
-      | 'explicit_stronger_than_central'
-      | undefined,
-    centralEvidence: centralEvidenceForExisting ?? snapshotCentralEvidence(existing),
-  };
-}
-
-async function resolveNewPolicyResolution(
-  config: HydrateConfig,
-  args: { policyMode?: PolicyMode },
-) {
-  return resolvePolicyForHydrate({
-    explicitMode: args.policyMode,
-    repoMode: config.policy.defaultMode,
-    // Fail-closed default: a session with no explicit mode and no repo config
-    // is human-gated (team), so the plan/evidence gates require an explicit
-    // human decision rather than auto-approving. This aligns the hydrate tool
-    // with the runtime fallback in resolveRuntimePolicyMode (also `team`).
-    // Auto-approve modes (solo / team-ci) must be chosen explicitly.
-    defaultMode: 'team',
-    ciContext: detectCiContext(),
-    centralPolicyPath: process.env.FLOWGUARD_POLICY_PATH,
-    digestFn: digestText,
-    configMaxSelfReviewIterations: config.policy.maxSelfReviewIterations,
-    configMaxImplReviewIterations: config.policy.maxImplReviewIterations,
-    configRequireVerifiedActorsForApproval: config.policy.requireVerifiedActorsForApproval,
-    configMinimumActorAssuranceForApproval: config.policy.minimumActorAssuranceForApproval,
-    configIdentityProvider: config.policy.identityProvider,
-    configIdentityProviderMode: config.policy.identityProviderMode,
-    configEnforceRiskClassification: config.policy.enforceRiskClassification,
-    configAllowRiskDowngradeOverride: config.policy.allowRiskDowngradeOverride,
-    configAllowReducedCeremony: config.policy.allowReducedCeremony,
-    configDiscoveryHealth: config.policy.discoveryHealth,
-    configValidationEvidence: config.policy.validationEvidence,
-  });
-}
-
-async function resolveHydratePolicy(
-  existing: ExistingHydrateState,
-  config: HydrateConfig,
-  args: { policyMode?: PolicyMode },
-) {
-  const centralEvidenceForExisting = await resolveCentralEvidenceForExisting(existing);
-  const existingWithCentralEvidence = mergeCentralEvidence(existing, centralEvidenceForExisting);
-  const policyResolution = existing
-    ? resolveExistingPolicyResolution(existing, centralEvidenceForExisting)
-    : await resolveNewPolicyResolution(config, args);
-  const policy = existing
-    ? resolvePolicyFromState(existingWithCentralEvidence ?? existing)
-    : policyResolution.policy;
-  const ctx = createPolicyContext(policy);
-  return { policy, policyResolution, ctx, existingWithCentralEvidence, centralEvidenceForExisting };
-}
-
-function requireDiscoveryContract(
-  discoveryDigest: string | undefined,
-  discoverySummary: ReturnType<typeof extractDiscoverySummary> | undefined,
-): void {
-  if (!discoveryDigest || !discoverySummary) {
-    throwHydrateError(
-      'HYDRATE_DISCOVERY_CONTRACT_FAILED',
-      'Hydrate cannot enter READY without persisted discoveryDigest and discoverySummary',
-    );
-  }
-}
-
-function requireDiscoveryArtifacts(wsDir: string, sessDir: string): void {
-  const required = [
-    `${wsDir}/discovery/discovery.json`,
-    `${wsDir}/discovery/profile-resolution.json`,
-    `${sessDir}/discovery-snapshot.json`,
-    `${sessDir}/profile-resolution-snapshot.json`,
-  ];
-
-  for (const filePath of required) {
-    if (!existsSync(filePath)) {
-      throwHydrateError(
-        'HYDRATE_DISCOVERY_CONTRACT_FAILED',
-        `Hydrate discovery contract failed: missing artifact ${filePath}`,
-      );
-    }
-  }
-}
-
-function formatPersistError(prefix: string, err: unknown): string {
-  return `${prefix}: ${err instanceof Error ? err.message : String(err)}`;
-}
-
-async function runRequiredDiscovery(
-  worktree: string,
-  fingerprint: string,
-  repoSignals: RepoSignals,
-): Promise<DiscoveryResult> {
-  try {
-    return await runDiscovery({
-      worktreePath: worktree,
-      fingerprint,
-      allFiles: repoSignals.files,
-      packageFiles: repoSignals.packageFiles,
-      configFiles: repoSignals.configFiles,
-      packageFilePaths: repoSignals.packageFilePaths,
-      configFilePaths: repoSignals.configFilePaths,
-    });
-  } catch (err) {
-    throwHydrateError(
-      'DISCOVERY_RESULT_MISSING',
-      formatPersistError('Discovery failed before producing a result', err),
-    );
-  }
-}
-
-async function writeRequiredDiscovery(wsDir: string, discoveryResult: DiscoveryResult) {
-  try {
-    await writeDiscovery(wsDir, discoveryResult);
-  } catch (err) {
-    throwHydrateError(
-      'DISCOVERY_PERSIST_FAILED',
-      formatPersistError('Failed to persist discovery.json', err),
-    );
-  }
-}
-
-async function writeRequiredProfileResolution(wsDir: string, profileResolution: ProfileResolution) {
-  try {
-    await writeProfileResolution(wsDir, profileResolution);
-  } catch (err) {
-    throwHydrateError(
-      'PROFILE_RESOLUTION_PERSIST_FAILED',
-      formatPersistError('Failed to persist profile-resolution.json', err),
-    );
-  }
-}
-
-async function writeRequiredDiscoverySnapshot(sessDir: string, discoveryResult: DiscoveryResult) {
-  try {
-    await writeDiscoverySnapshot(sessDir, discoveryResult);
-  } catch (err) {
-    throwHydrateError(
-      'DISCOVERY_PERSIST_FAILED',
-      formatPersistError('Failed to persist discovery snapshot', err),
-    );
-  }
-}
-
-async function writeRequiredProfileSnapshot(sessDir: string, profileResolution: ProfileResolution) {
-  try {
-    await writeProfileResolutionSnapshot(sessDir, profileResolution);
-  } catch (err) {
-    throwHydrateError(
-      'PROFILE_RESOLUTION_PERSIST_FAILED',
-      formatPersistError('Failed to persist profile-resolution snapshot', err),
-    );
-  }
-}
-
-function requireProfile(profileId: string, source: string): FlowGuardProfile {
-  const profile = profileRegistryForResolution.get(profileId);
-  if (!profile) {
-    const sourceText = source ? ` ${source}` : '';
-    throwHydrateError('INVALID_PROFILE', `Profile "${profileId}"${sourceText} is not registered.`);
-  }
-  return profile;
-}
-
-function resolveConfiguredProfile(config: HydrateConfig): FlowGuardProfile | null {
-  const configDefaultProfileId = config.profile.defaultId;
-  if (!configDefaultProfileId) return null;
-  return requireProfile(configDefaultProfileId, 'from config');
-}
-
-function selectProfile(
-  args: HydrateArgs,
-  configProfile: FlowGuardProfile | null,
-  detectedProfile: FlowGuardProfile | null | undefined,
-): FlowGuardProfile | undefined {
-  if (args.profileId !== undefined) return requireProfile(args.profileId, '');
-  return configProfile ?? detectedProfile ?? profileRegistryForResolution.get('baseline');
-}
-
-function collectProfileCandidates(
-  detectionInput: { repoSignals: RepoSignals; discovery: DiscoveryResult },
-  selectedProfile: FlowGuardProfile | undefined,
-): Pick<ProfileResolution, 'secondary' | 'rejected'> {
-  const secondary: ProfileResolution['secondary'] = [];
-  const rejected: ProfileResolution['rejected'] = [];
-
-  for (const pid of profileRegistryForResolution.ids()) {
-    const profile = profileRegistryForResolution.get(pid);
-    if (!profile?.detect || profile.id === selectedProfile?.id) continue;
-    const score = profile.detect(detectionInput);
-    const evidence = buildProfileEvidence(profile, detectionInput);
-    if (score > 0)
-      secondary.push({ id: profile.id, name: profile.name, confidence: score, evidence });
-    else
-      rejected.push({
-        id: profile.id,
-        score: 0,
-        reason:
-          evidence.length > 0
-            ? `Checked signals [${evidence.join(', ')}] — none matched`
-            : 'No matching signals',
-      });
-  }
-
-  return { secondary, rejected };
-}
-
 /**
- * Build concrete evidence strings for a profile detection decision.
- *
- * Inspects the detection input for signals relevant to the profile's checks
- * (files, package manifests, config files, discovered stack).
- */
-function buildProfileEvidence(
-  profile: FlowGuardProfile,
-  detectionInput: { repoSignals: RepoSignals; discovery: DiscoveryResult },
-): string[] {
-  const evidence: string[] = [];
-  const { repoSignals, discovery } = detectionInput;
-  const profileId = profile.id.toLowerCase();
-
-  // Check for matching package files using a keyword-to-manifest map
-  const manifestSignals: Record<string, string[]> = {
-    java: ['pom.xml', 'build.gradle', 'build.gradle.kts'],
-    node: ['package.json'],
-    typescript: ['package.json'],
-    rust: ['Cargo.toml'],
-    go: ['go.mod'],
-    python: ['pyproject.toml', 'requirements.txt'],
-  };
-  for (const [keyword, manifests] of Object.entries(manifestSignals)) {
-    if (!profileId.includes(keyword)) continue;
-    for (const f of repoSignals.packageFiles) {
-      if (manifests.includes(f)) evidence.push(`packageFile:${f}`);
-    }
-  }
-
-  // Check for matching languages/frameworks in discovered stack
-  for (const lang of discovery.stack.languages) {
-    if (profileId.includes(lang.id.toLowerCase())) {
-      evidence.push(`language:${lang.id}`);
-    }
-  }
-  for (const fw of discovery.stack.frameworks) {
-    if (profileId.includes(fw.id.toLowerCase())) {
-      evidence.push(`framework:${fw.id}`);
-    }
-  }
-
-  return evidence;
-}
-
-function buildProfileResolution(
-  detectionInput: { repoSignals: RepoSignals; discovery: DiscoveryResult },
-  selectedProfile: FlowGuardProfile | undefined,
-  config: HydrateConfig,
-  resolvedAt: string,
-): ProfileResolution {
-  const candidates = collectProfileCandidates(detectionInput, selectedProfile);
-  const primaryEvidence = selectedProfile
-    ? buildProfileEvidence(selectedProfile, detectionInput)
-    : [];
-  return {
-    schemaVersion: PROFILE_RESOLUTION_SCHEMA_VERSION,
-    resolvedAt,
-    primary: {
-      id: selectedProfile?.id ?? 'baseline',
-      name: selectedProfile?.name ?? 'Baseline FlowGuard',
-      confidence: selectedProfile?.detect?.(detectionInput) ?? 0.1,
-      evidence: primaryEvidence,
-    },
-    secondary: candidates.secondary,
-    rejected: candidates.rejected,
-    activeChecks: [...(config.profile.activeChecks ?? selectedProfile?.activeChecks ?? [])],
-  };
-}
-
-function createReadRepoFile(worktree: string): ReadRepoFile {
-  const resolvedWorktree = nodePath.resolve(worktree);
-  return async (relativePath: string): Promise<string | undefined> => {
-    try {
-      const targetPath = nodePath.resolve(resolvedWorktree, relativePath);
-      const inWorktree = targetPath.startsWith(resolvedWorktree + nodePath.sep);
-      if (!inWorktree && targetPath !== resolvedWorktree) return undefined;
-      return await fsReadFile(targetPath, 'utf8');
-    } catch {
-      return undefined;
-    }
-  };
-}
-
-async function computeDiscoveryHydration(
-  discoveryResult: DiscoveryResult,
-  repoSignals: RepoSignals,
-  readRepoFile: ReadRepoFile,
-) {
-  const discoveryDigest = computeDiscoveryDigest(discoveryResult);
-  const discoverySummary = extractDiscoverySummary(discoveryResult);
-  const detectedStack = await extractDetectedStack(
-    discoveryResult,
-    repoSignals.files,
-    readRepoFile,
-  );
-  const verificationCandidates = await planVerificationCandidates({
-    detectedStack,
-    allFiles: repoSignals.files,
-    readFile: readRepoFile,
-  });
-  return { discoveryDigest, discoverySummary, detectedStack, verificationCandidates };
-}
-
-async function hydrateDiscoveryForNewSession(
-  worktree: string,
-  workspace: HydrateWorkspace,
-  config: HydrateConfig,
-  args: HydrateArgs,
-  resolvedAt: string,
-): Promise<DiscoveryHydration> {
-  const repoSignals = await listRepoSignals(worktree);
-  if (!repoSignals) {
-    throwHydrateError(
-      'DISCOVERY_RESULT_MISSING',
-      'Discovery requires repository signals on first hydrate, but none were available',
-    );
-  }
-
-  const discoveryResult = await runRequiredDiscovery(worktree, workspace.fingerprint, repoSignals);
-  await writeRequiredDiscovery(workspace.workspaceDir, discoveryResult);
-  const detectionInput = { repoSignals, discovery: discoveryResult };
-  const detectedProfile = profileRegistryForResolution.detect(detectionInput);
-  const selectedProfile = selectProfile(args, resolveConfiguredProfile(config), detectedProfile);
-  const profileResolution = buildProfileResolution(
-    detectionInput,
-    selectedProfile,
-    config,
-    resolvedAt,
-  );
-  await writeRequiredProfileResolution(workspace.workspaceDir, profileResolution);
-  await writeRequiredDiscoverySnapshot(workspace.sessionDir, discoveryResult);
-  await writeRequiredProfileSnapshot(workspace.sessionDir, profileResolution);
-
-  const hydration = await computeDiscoveryHydration(
-    discoveryResult,
-    repoSignals,
-    createReadRepoFile(worktree),
-  );
-  requireDiscoveryContract(hydration.discoveryDigest, hydration.discoverySummary);
-  requireDiscoveryArtifacts(workspace.workspaceDir, workspace.sessionDir);
-  return { repoSignals, discoveryResult, profileResolution, ...hydration };
-}
-
-function discoveryForExistingSession(): DiscoveryHydration {
-  return {};
-}
-
-async function resolveDiscoveryHydration(
-  input: ResolveDiscoveryHydrationInput,
-): Promise<DiscoveryHydration> {
-  const { existing, worktree, workspace, config, args, resolvedAt } = input;
-  if (existing) return discoveryForExistingSession();
-  return hydrateDiscoveryForNewSession(worktree, workspace, config, args, resolvedAt);
-}
-/**
-/**
- * Hydrate read-modify-write, serialized under the session write lock (#429).
- *
- * Pre-lock: only pure path/config resolution (worktree, workspace, config) —
- * none of which read session state. Everything that participates in the
- * read-modify-write — the fresh state read, policy/discovery/actor resolution,
- * the pure executeHydrate, the Discovery-health reconcile, and the final
- * write — runs INSIDE the lock so a concurrent mutable transaction cannot
- * interleave and be lost (the prior defect read state with no lock and only
- * acquired it at write time).
- *
  * The lock is intentionally held across discovery/git for the duration of the
  * transaction; the 10s acquisition timeout in the lock adapter is the
  * fail-closed compensation (mapped to SESSION_LOCK_CONTENDED by the caller).
@@ -623,67 +147,6 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<Tool
     }
     return withLockContended(formatted, waited);
   });
-}
-
-interface ReconcileGateContext {
-  readonly sessDir: string;
-  readonly workspaceDir: string;
-  readonly worktree: string;
-  readonly fingerprint: string;
-  readonly now: string;
-}
-
-/**
- * Compute and attach the Discovery-health gate at hydrate (#399).
- *
- * This is the ONLY site that may clear a blocked gate. It reads the current
- * persisted DiscoveryResult (SSOT) for the health projection and runs a single
- * bounded drift check; both feed the pure `reconcileDiscoveryHealthGate`
- * authority. Drift IO is skipped entirely unless enforcement is 'required'.
- *
- * Gate lifecycle audit: because this is the sole clear authority, it also emits
- * the `discovery_health:gate_changed` event for both block AND clear (recovery)
- * transitions via the single audit authority, so unblocks are auditable.
- *
- * Exported for targeted lifecycle tests; not part of the public tool surface.
- */
-export async function reconcileHydrateDiscoveryHealthGate(
-  result: RailResult,
-  ctx: ReconcileGateContext,
-): Promise<RailResult> {
-  if (result.kind !== 'ok') return result;
-
-  const previousGate = result.state.discoveryHealthGate;
-  const policy = result.state.policySnapshot.discoveryHealth;
-  const { discoveryHealth } = await loadDiscoveryHealthContext(ctx.workspaceDir);
-
-  let driftAssessment: DiscoveryDriftAssessment = 'not_checked';
-  if (policy.enforcement === 'required') {
-    const drift = await buildDiscoveryDriftStatus({
-      workspaceDir: ctx.workspaceDir,
-      worktree: ctx.worktree,
-      fingerprint: ctx.fingerprint,
-    });
-    driftAssessment = drift.status;
-  }
-
-  const discoveryHealthGate = reconcileDiscoveryHealthGate({
-    policy,
-    health: discoveryHealth,
-    driftAssessment,
-    now: ctx.now,
-  });
-
-  const nextState = { ...result.state, discoveryHealthGate };
-  // Audit block/clear transitions (no-op when status is unchanged).
-  await auditDiscoveryHealthGateTransition(
-    ctx.sessDir,
-    nextState,
-    previousGate,
-    discoveryHealthGate,
-  );
-
-  return { ...result, state: nextState };
 }
 
 async function executeHydrateTool(args: HydrateArgs, context: ToolContext): Promise<ToolResult> {
