@@ -11,8 +11,10 @@
  * ARCHITECTURE RULES (verified by these tests):
  *
  * 1. LEAF MODULES: Inner layers must NOT import from outer layers
- *    - state/ must not import from machine/, rails/, adapters/, integration/, config/, audit/, archive/, logging/, cli/, diagnostics/
- *    - state/ may import from shared/ (neutral constants with zero dependencies)
+ *    - state/ must not import from machine/, rails/, adapters/, integration/, config/, audit/, archive/, logging/, cli/, diagnostics/, shared/
+ *    - state/ owns evidence-level discriminators in state/evidence-identifiers.ts
+ *      (FINGERPRINT_PATTERN, REVIEW_REPORT_SCHEMA_ID, REVIEWER_SUBAGENT_TYPE);
+ *      shared/flowguard-identifiers.ts re-exports them for backward compatibility
  *    - archive/types.ts must not import from any other FF module
  *    - discovery/types.ts must not import from any other FF module
  *
@@ -471,10 +473,10 @@ describe('Layer Dependency Rules', () => {
       'telemetry',
       'diagnostics',
     ]);
-    // Intentional exception: state/evidence.ts imports IdpConfigSchema from
+    // Intentional exception: state/evidence-policy.ts imports IdpConfigSchema from
     // identity/types.js for policy snapshot validation. Do not expand this
     // to actor resolution or runtime identity services.
-    const allowedForState = new Set(['shared', 'identity']);
+    const allowedForState = new Set(['identity']);
 
     beforeAll(() => {
       for (const [, analysis] of analyses) {

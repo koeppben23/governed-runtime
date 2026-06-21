@@ -1,14 +1,14 @@
 /**
  * @module evidence-primitives
  * @description Foundation enums, scalar types for FlowGuard evidence schemas.
- *              All schemas in this module depend only on Zod and shared identifiers —
+ *              All schemas in this module depend only on Zod and evidence identifiers —
  *              no dependencies on other state modules.
  *
  * @version v1
  */
 
 import { z } from 'zod';
-import { FINGERPRINT_PATTERN } from '../shared/flowguard-identifiers.js';
+import { FINGERPRINT_PATTERN } from './evidence-identifiers.js';
 
 export { FINGERPRINT_PATTERN };
 

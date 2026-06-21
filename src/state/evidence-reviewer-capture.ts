@@ -15,7 +15,7 @@
  */
 
 import { z } from 'zod';
-import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { REVIEWER_SUBAGENT_TYPE } from './evidence-identifiers.js';
 
 /**
  * A single host-captured corroboration record for a reviewer subagent.
