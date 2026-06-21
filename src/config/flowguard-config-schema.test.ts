@@ -1,12 +1,15 @@
 /**
  * @module config/flowguard-config-schema.test
- * @description Tests for FlowGuard config schema, readConfig, and writeDefaultConfig.
+ * @description Tests for FlowGuardConfigSchema and DEFAULT_CONFIG.
+ *              Pure in-memory — no filesystem, no readConfig.
  *
  * Covers:
  * - Schema: parsing, defaults, validation, rejection of invalid inputs
- * - readConfig: missing file (returns defaults), valid file, invalid JSON, schema errors, read errors
- * - writeDefaultConfig: creates file, content round-trips through readConfig
- * - configPath: correct path resolution
+ * - DEFAULT_CONFIG: normalization and round-trip
+ * - PERF: schema parse speed benchmark
+ *
+ * Config I/O, precedence, and path resolution tests live in
+ * flowguard-config-io.test.ts.
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */

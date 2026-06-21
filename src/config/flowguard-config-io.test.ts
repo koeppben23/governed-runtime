@@ -1,14 +1,19 @@
 /**
  * @module config/flowguard-config-io.test
- * @description Tests for FlowGuard config schema, readConfig, and writeDefaultConfig.
+ * @description Tests for config I/O — readConfig, precedence, path resolution,
+ *              and file round-tripping.
  *
  * Covers:
- * - Schema: parsing, defaults, validation, rejection of invalid inputs
- * - readConfig: missing file (returns defaults), valid file, invalid JSON, schema errors, read errors
- * - writeDefaultConfig: creates file, content round-trips through readConfig
- * - configPath: correct path resolution
+ * - configPath: repoConfigPath and globalConfigPath resolution
+ * - readConfig: missing file (returns defaults), valid file, invalid JSON,
+ *   schema errors, read errors
+ * - file I/O: write, read, overwrite, directory creation
+ * - precedence: repo → global → default chain with fail-closed validation
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
+ * Schema validation and DEFAULT_CONFIG shape tests live in
+ * flowguard-config-schema.test.ts.
+ *
+ * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -34,10 +39,9 @@ function restoreReadFile(): void {
     actual.readFile(...args),
   );
 }
-import { FlowGuardConfigSchema, DEFAULT_CONFIG, type FlowGuardConfig } from './flowguard-config.js';
+import { DEFAULT_CONFIG, type FlowGuardConfig } from './flowguard-config.js';
 import { globalConfigPath, repoConfigPath, PersistenceError } from '../adapters/persistence.js';
 import { readConfig } from '../adapters/persistence-config.js';
-import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
