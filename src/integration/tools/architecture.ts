@@ -8,17 +8,11 @@
 import { z } from 'zod';
 
 import type { ToolDefinition } from './helpers.js';
-import { withMutableSessionTransaction, formatBlocked, formatError } from './helpers.js';
+import { withMutableSessionTransaction, formatError } from './helpers.js';
 
-import type { SessionState } from '../../state/schema.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-
-import {
-  type ArchitectureArgs,
-  type ArchitectureSession,
-  validateInitialSubmissionGate,
-} from './architecture-shared.js';
+import { validateInitialSubmissionGate } from './architecture-shared.js';
 import { handleAdrSubmission } from './architecture-submit.js';
 import { handleAdrReview } from './architecture-review.js';
 

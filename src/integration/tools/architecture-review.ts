@@ -20,10 +20,7 @@ import { autoAdvance } from '../../rails/types.js';
 import type { AutoAdvanceResult } from '../../rails/types.js';
 
 import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../state/evidence.js';
-import {
-  validateAdrSections,
-  ReviewFindings as ReviewFindingsSchema,
-} from '../../state/evidence.js';
+import { validateAdrSections } from '../../state/evidence.js';
 
 import {
   consumeReviewObligation,
@@ -37,12 +34,7 @@ import {
 } from '../review/assurance.js';
 
 import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
-import {
-  resolveRuntimeReviewPlatform,
-  resolveReviewOrchestrationMode,
-} from '../review/orchestration-mode.js';
+import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 
 import {
   PHASE_LABELS,

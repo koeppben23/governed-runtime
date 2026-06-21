@@ -10,7 +10,6 @@ import type { MutableSession } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
 import { ensureReviewAssurance, createReviewObligation } from '../review/assurance.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
