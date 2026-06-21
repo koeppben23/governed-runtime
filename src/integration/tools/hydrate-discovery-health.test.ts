@@ -31,7 +31,7 @@ vi.mock('../discovery-health-audit.js', () => ({
   auditDiscoveryHealthGateTransition: mockAudit,
 }));
 
-import { reconcileHydrateDiscoveryHealthGate } from './hydrate.js';
+import { reconcileHydrateDiscoveryHealthGate } from './hydrate-discovery-health.js';
 import {
   unavailableDiscoveryHealth,
   extractDiscoveryHealth,
