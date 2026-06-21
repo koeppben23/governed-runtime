@@ -1,55 +1,26 @@
-import * as path from 'node:path';
 /**
- * @module integration/tools-execute-hydrate.test
- * @description Execution tests for the hydrate tool (session creation, P31 Config, P27 Actor).
+ * @module integration/tools-execute-hydrate-p31.test
+ * @description P31 Config-as-Runtime-Authority hydrate execution tests.
+ *              Tests hydrate.execute() with tempdir-backed config resolution
+ *              and direct invocation (no hydrateSession helper).
  *
- * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
+ * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import {
   createToolContext,
-  createTestWorkspace,
-  isTarAvailable,
   parseToolResult,
-  isBlockedResult,
   GIT_MOCK_DEFAULTS,
-  type TestToolContext,
   type TestWorkspace,
   withTestEnv,
 } from './test-helpers.js';
-import {
-  status,
-  hydrate,
-  ticket,
-  plan,
-  decision,
-  implement,
-  validate,
-  review,
-  abort_session,
-  archive,
-} from './tools/index.js';
-import { readState, writeState } from '../adapters/persistence.js';
-import { readAuditTrail } from '../adapters/persistence-audit.js';
-import * as persistence from '../adapters/persistence.js';
-import * as persistenceDiscovery from '../adapters/persistence-discovery.js';
-import {
-  makeState,
-  makeProgressedState,
-  TICKET,
-  PLAN_RECORD,
-  SELF_REVIEW_CONVERGED,
-  REVIEW_APPROVE,
-  VALIDATION_PASSED,
-  IMPL_EVIDENCE,
-  IMPL_REVIEW_CONVERGED,
-} from '../__fixtures__.js';
-import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
-
-// ─── Git Mock ────────────────────────────────────────────────────────────────
+import { readState } from '../adapters/persistence.js';
+import { hydrate } from './tools/index.js';
+import { createTestWorkspace } from './test-helpers.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -60,56 +31,6 @@ vi.mock('../adapters/git', async (importOriginal) => {
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
   };
 });
-
-// ─── Workspace Mock (P26) ────────────────────────────────────────────────────
-// Partial mock: archiveSession and verifyArchive are vi.fn() wrappers that
-// default to the real implementations. P26 tests override them per-test.
-// All other workspace exports (computeFingerprint, initWorkspace, etc.)
-// remain real for full integration fidelity.
-//
-// Originals are stored via vi.hoisted (survives vi.mock hoisting) so afterEach
-// can fully reset the once-queues (vi.clearAllMocks does NOT clear
-// mockResolvedValueOnce queues — unconsumed values leak across tests).
-
-const wsOriginals = vi.hoisted(() => ({
-  archiveSession:
-    null as unknown as (typeof import('../adapters/workspace/index.js'))['archiveSession'],
-  verifyArchive:
-    null as unknown as (typeof import('../adapters/workspace/index.js'))['verifyArchive'],
-}));
-
-vi.mock('../adapters/workspace', async (importOriginal) => {
-  const original = await importOriginal<typeof import('../adapters/workspace/index.js')>();
-  wsOriginals.archiveSession = original.archiveSession;
-  wsOriginals.verifyArchive = original.verifyArchive;
-  return {
-    ...original,
-    archiveSession: vi.fn(original.archiveSession),
-    verifyArchive: vi.fn(original.verifyArchive),
-  };
-});
-
-// ─── Windows EBUSY Cleanup Helper ────────────────────────────────────────────
-/** Retry fs.rm on EBUSY (Windows file lock after workspace ops). */
-async function rmWithRetry(dir: string, retries = 3): Promise<void> {
-  for (let i = 0; i < retries; i++) {
-    try {
-      await fs.rm(dir, { recursive: true, force: true });
-      return;
-    } catch (err: unknown) {
-      if (i < retries - 1 && (err as NodeJS.ErrnoException).code === 'EBUSY') {
-        await new Promise((r) => setTimeout(r, 100 * (i + 1)));
-      } else {
-        // Best-effort on final attempt
-        return;
-      }
-    }
-  }
-}
-
-// ─── Actor Mock (P27) ────────────────────────────────────────────────────────
-// Mock resolveActor to return a deterministic actor for integration tests.
-// Prevents dependency on real env vars or git config.
 
 const actorOriginal = vi.hoisted(() => ({
   resolveActor: null as unknown as (typeof import('../adapters/actor.js'))['resolveActor'],
@@ -128,54 +49,34 @@ vi.mock('../adapters/actor', async (importOriginal) => {
   };
 });
 
-// Lazy import for per-test overrides
-const gitMock = await import('../adapters/git.js');
-const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
 
-// ─── Capability Gates ────────────────────────────────────────────────────────
-
-const tarOk = await isTarAvailable();
-
-// ─── Test Setup ──────────────────────────────────────────────────────────────
+async function rmWithRetry(dir: string, retries = 3): Promise<void> {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await fs.rm(dir, { recursive: true, force: true });
+      return;
+    } catch {
+      if (i === retries - 1) throw new Error(`Failed to clean up dir: ${dir}`);
+      await new Promise((resolve) => setTimeout(resolve, 100 * (i + 1)));
+    }
+  }
+}
 
 let ws: TestWorkspace;
-let ctx: TestToolContext;
 let cleanupEnv: () => void;
 
 beforeEach(async () => {
   cleanupEnv = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
   ws = await createTestWorkspace();
-  // Ensure clean config state (no stale global/repo config from other test files)
   try {
-    await import('node:fs/promises').then((fs) =>
-      fs.rm(path.join(ws.tmpDir, '.opencode', 'flowguard.json'), { force: true }),
-    );
+    await fs.rm(path.join(ws.tmpDir, '.opencode', 'flowguard.json'), { force: true });
   } catch {
-    /* ok */
+    // No stale config
   }
-  try {
-    await import('node:fs/promises').then((fs) =>
-      fs.rm(path.join(ws.tmpDir, 'flowguard.json'), { force: true }),
-    );
-  } catch {
-    /* ok */
-  }
-  ctx = createToolContext({
-    worktree: ws.tmpDir,
-    directory: ws.tmpDir,
-    sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
-  });
 });
 
 afterEach(async () => {
-  // Reset workspace mock once-queues to prevent cross-test leaks.
-  // vi.clearAllMocks() only clears calls/results, NOT mockResolvedValueOnce
-  // queues. If a P26 test fails before consuming its once-mocks, the stale
-  // values leak into subsequent tests (e.g. archive manifest test).
-  vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
-  vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
-  // Reset actor mock to default deterministic value (P27/P34)
   vi.mocked(actorMock.resolveActor)
     .mockReset()
     .mockResolvedValue({
@@ -186,48 +87,9 @@ afterEach(async () => {
       assurance: 'best_effort' as const,
     });
   cleanupEnv();
-  // Clean up config written by tests (P11: config at repo path)
-  try {
-    await import('node:fs/promises').then((fs) =>
-      fs.rm(path.join(ws.tmpDir, '.opencode', 'flowguard.json'), { force: true }),
-    );
-  } catch {
-    /* ok */
-  }
   vi.clearAllMocks();
   await ws.cleanup();
 });
-
-// ─── Helper ──────────────────────────────────────────────────────────────────
-
-/** Hydrate a session and return parsed result. Convenience for setup. */
-async function hydrateSession(
-  overrides: { policyMode?: string; profileId?: string; claimedTaskClass?: string } = {},
-): Promise<Record<string, unknown>> {
-  const args: { policyMode: string; profileId?: string; claimedTaskClass?: string } = {
-    policyMode: overrides.policyMode ?? 'solo',
-  };
-  if (overrides.profileId !== undefined) {
-    args.profileId = overrides.profileId;
-  }
-  if (overrides.claimedTaskClass !== undefined) {
-    args.claimedTaskClass = overrides.claimedTaskClass;
-  }
-  const raw = await hydrate.execute(args, ctx);
-  return parseToolResult(raw);
-}
-
-/** Hydrate + ticket. Convenience for tests that need to start from PLAN phase. */
-async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> {
-  await hydrateSession();
-  await ticket.execute({ text: ticketText, source: 'user' }, ctx);
-}
-
-// =============================================================================
-
-// ═══════════════════════════════════════════════════════════════════════════
-// P31: Config as Runtime Authority
-// ═══════════════════════════════════════════════════════════════════════════
 
 describe('P31 Config as Runtime Authority', () => {
   it('config.profile.defaultId is used when no explicit profileId', async () => {
