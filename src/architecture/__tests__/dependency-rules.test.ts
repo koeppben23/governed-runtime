@@ -824,6 +824,7 @@ describe('Layer Dependency Rules', () => {
       'url',
       'http',
       'https',
+      'net',
       'node:fs',
       'node:path',
       'node:crypto',
@@ -832,6 +833,7 @@ describe('Layer Dependency Rules', () => {
       'node:os',
       'node:events',
       'node:stream',
+      'node:net',
     ]);
 
     beforeAll(() => {

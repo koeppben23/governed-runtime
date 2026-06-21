@@ -17,7 +17,6 @@
  */
 
 import type { SessionState } from '../state/schema.js';
-import { isIP } from 'node:net';
 import { ReviewReport, type ExternalReference, type InputOrigin } from '../state/evidence.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
@@ -27,7 +26,13 @@ import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { blockedFromOverflow } from './auto-advance-overflow.js';
 import { hasGhCli, loadPrDiff, loadBranchDiff } from '../adapters/gh-cli.js';
-import { parseIPv4, isPrivateIPv4, isPrivateIPv6 } from '../adapters/ip-validation.js';
+import {
+  parseIPv4,
+  isPrivateIPv4,
+  isPrivateIPv6,
+  isIPv4Address,
+  isIPv6Address,
+} from '../adapters/ip-validation.js';
 import { lookupReviewHostname, type ReviewDnsLookup } from '../adapters/dns-resolution.js';
 export { parseIPv4 };
 
@@ -155,7 +160,7 @@ function validateResolvedAddress(
   family: 4 | 6,
 ): { valid: true } | { valid: false; reason: string } {
   if (family === 4) {
-    if (isIP(address) !== 4) {
+    if (!isIPv4Address(address)) {
       return {
         valid: false,
         reason: `DNS lookup for "${hostname}" returned malformed IPv4 address "${address}"`,
@@ -171,7 +176,7 @@ function validateResolvedAddress(
     return { valid: true };
   }
 
-  if (isIP(address) !== 6) {
+  if (!isIPv6Address(address)) {
     return {
       valid: false,
       reason: `DNS lookup for "${hostname}" returned malformed IPv6 address "${address}"`,
