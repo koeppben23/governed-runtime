@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { writeReviewerCapture } from './shared/reviewer-capture-writer.js';
 import { appendReviewerCapture } from '../adapters/persistence-reviewer-capture.js';
 
+// Intentionally covers the hook-boundary adapter failure path; broad writer
+// behavior lives in ./shared/reviewer-capture-writer.test.ts.
 vi.mock('../adapters/persistence-reviewer-capture.js', () => ({
   appendReviewerCapture: vi.fn(),
 }));
