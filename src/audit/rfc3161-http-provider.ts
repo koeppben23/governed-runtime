@@ -6,6 +6,7 @@
 import * as asn1js from 'asn1js';
 import { AlgorithmIdentifier, MessageImprint, TimeStampReq, TimeStampResp, PKIStatus } from 'pkijs';
 import type { TimestampAuthorityProvider } from './tsa-provider.js';
+import { TsaError } from './errors.js';
 
 type FetchLike = typeof fetch;
 
@@ -19,7 +20,8 @@ function derToBase64(der: ArrayBuffer): string {
 
 function parseTimeStampResp(der: ArrayBuffer): TimeStampResp {
   const parsed = asn1js.fromBER(der);
-  if (parsed.offset === -1) throw new Error('TSA response is malformed ASN.1');
+  if (parsed.offset === -1)
+    throw new TsaError('TSA_MALFORMED_ASN1', 'TSA response is malformed ASN.1');
   return new TimeStampResp({ schema: parsed.result });
 }
 
@@ -36,8 +38,9 @@ export class HttpTimestampAuthorityProvider implements TimestampAuthorityProvide
     tsaUrl: string;
     timeoutMs: number;
   }): Promise<{ tokenDerBase64: string; receivedAt: string }> {
-    if (!input.tsaUrl.trim()) throw new Error('TSA URL is required');
-    if (input.digestAlgorithm !== 'sha256') throw new Error('Unsupported TSA digest algorithm');
+    if (!input.tsaUrl.trim()) throw new TsaError('TSA_URL_REQUIRED', 'TSA URL is required');
+    if (input.digestAlgorithm !== 'sha256')
+      throw new TsaError('TSA_UNSUPPORTED_DIGEST', 'Unsupported TSA digest algorithm');
 
     const request = new TimeStampReq({
       version: 1,
@@ -62,15 +65,20 @@ export class HttpTimestampAuthorityProvider implements TimestampAuthorityProvide
         signal: controller.signal,
       });
 
-      if (!response.ok) throw new Error(`TSA request failed with HTTP ${response.status}`);
+      if (!response.ok)
+        throw new TsaError('TSA_HTTP_FAILURE', `TSA request failed with HTTP ${response.status}`);
 
       const der = await response.arrayBuffer();
-      if (der.byteLength === 0) throw new Error('TSA response is empty');
+      if (der.byteLength === 0) throw new TsaError('TSA_RESPONSE_EMPTY', 'TSA response is empty');
       const timestampResponse = parseTimeStampResp(der);
       if (timestampResponse.status.status !== PKIStatus.granted) {
-        throw new Error(`TSA request was rejected with status ${timestampResponse.status.status}`);
+        throw new TsaError(
+          'TSA_REJECTED',
+          `TSA request was rejected with status ${timestampResponse.status.status}`,
+        );
       }
-      if (!timestampResponse.timeStampToken) throw new Error('TSA response missing TimeStampToken');
+      if (!timestampResponse.timeStampToken)
+        throw new TsaError('TSA_MISSING_TOKEN', 'TSA response missing TimeStampToken');
 
       return {
         tokenDerBase64: derToBase64(timestampResponse.timeStampToken.toSchema().toBER(false)),

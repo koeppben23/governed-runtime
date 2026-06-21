@@ -18,6 +18,7 @@ import {
   getCrypto,
 } from 'pkijs';
 import type { TimestampVerifier } from './tsa-provider.js';
+import { TsaError } from './errors.js';
 
 const OID_SIGNED_DATA = '1.2.840.113549.1.7.2';
 const OID_TST_INFO = '1.2.840.113549.1.9.16.1.4';
@@ -50,13 +51,13 @@ function decodeBase64Der(input: string): ArrayBuffer {
     const bytes = Buffer.from(input, 'base64');
     return new Uint8Array(bytes).buffer;
   } catch {
-    throw new Error('invalid base64 DER');
+    throw new TsaError('TSA_MALFORMED_ASN1', 'invalid base64 DER');
   }
 }
 
 function parseDer(input: ArrayBuffer): asn1js.BaseBlock<asn1js.ValueBlock> {
   const parsed = asn1js.fromBER(input);
-  if (parsed.offset === -1) throw new Error('invalid DER');
+  if (parsed.offset === -1) throw new TsaError('TSA_MALFORMED_ASN1', 'invalid DER');
   return parsed.result;
 }
 
@@ -78,13 +79,15 @@ function octetStringBytes(input: asn1js.OctetString): ArrayBuffer {
 function parseToken(tokenDerBase64: string): ParsedToken {
   const tokenDer = decodeBase64Der(tokenDerBase64);
   const contentInfo = new ContentInfo({ schema: parseDer(tokenDer) });
-  if (contentInfo.contentType !== OID_SIGNED_DATA) throw new Error('not SignedData');
+  if (contentInfo.contentType !== OID_SIGNED_DATA)
+    throw new TsaError('TSA_MALFORMED_ASN1', 'not SignedData');
 
   const signedData = new SignedData({ schema: contentInfo.content });
-  if (signedData.encapContentInfo.eContentType !== OID_TST_INFO) throw new Error('not TSTInfo');
+  if (signedData.encapContentInfo.eContentType !== OID_TST_INFO)
+    throw new TsaError('TSA_MALFORMED_ASN1', 'not TSTInfo');
 
   const eContent = signedData.encapContentInfo.eContent;
-  if (!eContent) throw new Error('missing TSTInfo content');
+  if (!eContent) throw new TsaError('TSA_MALFORMED_ASN1', 'missing TSTInfo content');
   const contentDer = octetStringBytes(eContent);
   const tstInfo = new TSTInfo({ schema: parseDer(contentDer) });
   return { signedData, tstInfo, tstInfoDer: contentDer };
@@ -95,7 +98,7 @@ function parseTrustAnchor(pem: string): Certificate {
     .replace(/-----BEGIN CERTIFICATE-----/g, '')
     .replace(/-----END CERTIFICATE-----/g, '')
     .replace(/\s+/g, '');
-  if (!base64) throw new Error('empty trust anchor');
+  if (!base64) throw new TsaError('TSA_MALFORMED_ASN1', 'empty trust anchor');
   return new Certificate({ schema: parseDer(decodeBase64Der(base64)) });
 }
 

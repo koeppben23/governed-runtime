@@ -14,6 +14,7 @@
 
 import type { AuditEvent } from '../state/evidence.js';
 import { computeCanonicalEventDigest } from './canonical-digest.js';
+import { TsaError } from './errors.js';
 
 /**
  * Convert a hex string to Uint8Array.
@@ -21,10 +22,13 @@ import { computeCanonicalEventDigest } from './canonical-digest.js';
  */
 export function canonicalDigestToUint8Array(hex: string): Uint8Array {
   if (hex.length % 2 !== 0) {
-    throw new Error(`canonicalDigestToUint8Array: odd hex length ${hex.length}`);
+    throw new TsaError(
+      'TSA_HEX_ODD_LENGTH',
+      `canonicalDigestToUint8Array: odd hex length ${hex.length}`,
+    );
   }
   if (!/^[0-9a-fA-F]+$/.test(hex)) {
-    throw new Error(`canonicalDigestToUint8Array: invalid hex input`);
+    throw new TsaError('TSA_HEX_INVALID', `canonicalDigestToUint8Array: invalid hex input`);
   }
   const bytes = new Uint8Array(hex.length / 2);
   for (let i = 0; i < hex.length; i += 2) {
