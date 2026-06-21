@@ -4,7 +4,8 @@
  *
  * Tests split into individual files per tool/feature group:
  *   - tools-execute-status.test.ts    (status)
- *   - tools-execute-hydrate.test.ts   (hydrate, P31 Config, P27 Actor)
+ *   - tools-execute-hydrate.test.ts   (hydrate, P27 Actor)
+ *   - tools-execute-hydrate-p31.test.ts (P31 Config as Runtime Authority)
  *   - tools-execute-ticket.test.ts     (ticket)
  *   - tools-execute-planning.test.ts   (plan)
  *   - tools-execute-review.test.ts    (P34a review, policy, decision)
@@ -26,6 +27,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SPLIT_FILES = [
   'tools-execute-status.test.ts',
   'tools-execute-hydrate.test.ts',
+  'tools-execute-hydrate-p31.test.ts',
   'tools-execute-ticket.test.ts',
   'tools-execute-planning.test.ts',
   'tools-execute-review.test.ts',
