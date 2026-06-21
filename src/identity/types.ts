@@ -1,137 +1,55 @@
 /**
  * @module identity/types
- * @description IdP types for P35a/P35b1/P35b2 static + JWKS verification.
+ * @description IdP types and JWKS document schemas for P35a/P35b1/P35b2
+ *              static + JWKS verification.
+ *
+ * IdP configuration schemas (IdpConfigSchema, SigningKeySchema, etc.) are
+ * owned by state/policy-idp-config.ts and re-exported here for backward
+ * compatibility with identity runtime and config-layer consumers.
+ *
+ * JWKS document schemas (JwksDocumentSchema, JwksKeySchema) remain owned
+ * by this module — they describe on-the-wire JWKS document formats,
+ * not persisted policy configuration.
  */
 
 import { z } from 'zod';
+
+import {
+  ClaimMappingSchema,
+  IdpConfigSchema,
+  IdentityProviderModeSchema,
+  JwkKeySchema,
+  JwksIdpConfigSchema,
+  PemKeySchema,
+  SigningKeySchema,
+  StaticIdpConfigSchema,
+} from '../state/policy-idp-config.js';
+
+export {
+  ClaimMappingSchema,
+  IdpConfigSchema,
+  IdentityProviderModeSchema,
+  JwkKeySchema,
+  JwksIdpConfigSchema,
+  PemKeySchema,
+  SigningKeySchema,
+  StaticIdpConfigSchema,
+};
 
 export type KeyKind = 'jwk' | 'pem';
 
 export type KeyAlgorithm = 'RS256' | 'ES256';
 
-const JwkRsaSchema = z
-  .object({
-    kty: z.literal('RSA'),
-    n: z.string().min(1),
-    e: z.string().min(1),
-  })
-  .strict();
-
-const JwkEcSchema = z
-  .object({
-    kty: z.literal('EC'),
-    x: z.string().min(1),
-    y: z.string().min(1),
-    crv: z.string().min(1),
-  })
-  .strict();
-
-const JwkFieldsSchema = z.discriminatedUnion('kty', [JwkRsaSchema, JwkEcSchema]);
-
-export const JwkKeySchema = z
-  .object({
-    kind: z.literal('jwk'),
-    kid: z.string().min(1),
-    alg: z.enum(['RS256', 'ES256']),
-    jwk: JwkFieldsSchema,
-  })
-  .strict()
-  .superRefine((data, ctx) => {
-    // Enforce alg ↔ kty consistency
-    if (data.alg === 'RS256' && data.jwk.kty !== 'RSA') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'RS256 requires RSA key (kty=RSA)',
-        path: ['alg'],
-      });
-    }
-    if (data.alg === 'ES256' && data.jwk.kty !== 'EC') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'ES256 requires EC key (kty=EC)',
-        path: ['alg'],
-      });
-    }
-  });
-
-export const PemKeySchema = z.object({
-  kind: z.literal('pem'),
-  kid: z.string().min(1),
-  alg: z.enum(['RS256', 'ES256']),
-  pem: z.string().min(1),
-});
-
-export const SigningKeySchema = z.union([JwkKeySchema, PemKeySchema]);
-
-export type SigningKey = z.infer<typeof SigningKeySchema>;
 export type JwkKey = z.infer<typeof JwkKeySchema>;
 export type PemKey = z.infer<typeof PemKeySchema>;
-
-export const ClaimMappingSchema = z.object({
-  subjectClaim: z.string().min(1).default('sub'),
-  emailClaim: z.string().min(1).default('email'),
-  nameClaim: z.string().min(1).default('name'),
-});
-
+export type SigningKey = z.infer<typeof SigningKeySchema>;
 export type ClaimMapping = z.infer<typeof ClaimMappingSchema>;
-
-const IdpConfigBaseSchema = z.object({
-  issuer: z.string().min(1),
-  audience: z
-    .union([z.string().min(1), z.array(z.string().min(1))])
-    .transform((val) => (Array.isArray(val) ? val : [val])),
-  claimMapping: ClaimMappingSchema.default({
-    subjectClaim: 'sub',
-    emailClaim: 'email',
-    nameClaim: 'name',
-  }),
-});
-
-export const StaticIdpConfigSchema = IdpConfigBaseSchema.extend({
-  mode: z.literal('static'),
-  signingKeys: z.array(SigningKeySchema).min(1),
-}).strict();
-
-export const JwksIdpConfigSchema = IdpConfigBaseSchema.extend({
-  mode: z.literal('jwks'),
-  jwksPath: z.string().min(1).optional(),
-  jwksUri: z.string().url().optional(),
-  cacheTtlSeconds: z.number().int().min(1).max(3600).default(300),
-}).strict();
-
-const IdpConfigDiscriminatedSchema = z
-  .discriminatedUnion('mode', [StaticIdpConfigSchema, JwksIdpConfigSchema])
-  .superRefine((value, ctx) => {
-    if (value.mode !== 'jwks') return;
-    const hasPath = typeof value.jwksPath === 'string' && value.jwksPath.trim().length > 0;
-    const hasUri = typeof value.jwksUri === 'string' && value.jwksUri.trim().length > 0;
-    if (hasPath === hasUri) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "JWKS mode requires exactly one of 'jwksPath' or 'jwksUri'",
-      });
-    }
-  });
-
-const IdpConfigWithCompatSchema = z.preprocess((raw) => {
-  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-    return raw;
-  }
-  const record = raw as Record<string, unknown>;
-  if (record.mode === undefined && Array.isArray(record.signingKeys)) {
-    return {
-      ...record,
-      mode: 'static',
-    };
-  }
-  return raw;
-}, IdpConfigDiscriminatedSchema);
-
-export const IdpConfigSchema = IdpConfigWithCompatSchema;
-
 export type IdpConfig = z.infer<typeof IdpConfigSchema>;
 export type StaticIdpConfig = z.infer<typeof StaticIdpConfigSchema>;
 export type JwksIdpConfig = z.infer<typeof JwksIdpConfigSchema>;
+export type IdentityProviderMode = z.infer<typeof IdentityProviderModeSchema>;
+
+// ─── JWKS Document Schemas ────────────────────────────────────────────────────
 
 const JwksRsaKeySchema = z
   .object({
@@ -165,9 +83,7 @@ export const JwksDocumentSchema = z
 export type JwksKey = z.infer<typeof JwksKeySchema>;
 export type JwksDocument = z.infer<typeof JwksDocumentSchema>;
 
-export const IdentityProviderModeSchema = z.enum(['optional', 'required']);
-
-export type IdentityProviderMode = z.infer<typeof IdentityProviderModeSchema>;
+// ─── Interfaces ───────────────────────────────────────────────────────────────
 
 export interface VerifiedToken {
   subject: string;
