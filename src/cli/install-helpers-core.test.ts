@@ -1,5 +1,5 @@
 /**
- * @module cli/install-helpers.test
+ * @module cli/install-helpers-core.test
  * @description Unit tests for install-helper functions — targets uncovered branches.
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE
