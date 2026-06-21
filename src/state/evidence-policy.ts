@@ -6,7 +6,7 @@
  */
 
 import { z } from 'zod';
-import { IdpConfigSchema } from '../identity/types.js';
+import { IdpConfigSchema } from './policy-idp-config.js';
 import { PolicyModeSchema, CentralMinimumModeSchema, type PolicyMode } from './policy-mode.js';
 
 /**

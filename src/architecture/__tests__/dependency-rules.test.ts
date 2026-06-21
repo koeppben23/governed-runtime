@@ -473,10 +473,10 @@ describe('Layer Dependency Rules', () => {
       'telemetry',
       'diagnostics',
     ]);
-    // Intentional exception: state/evidence-policy.ts imports IdpConfigSchema from
-    // identity/types.js for policy snapshot validation. Do not expand this
-    // to actor resolution or runtime identity services.
-    const allowedForState = new Set(['identity']);
+    // state/evidence-policy.ts imports IdpConfigSchema from ./policy-idp-config.js
+    // — state now owns the IdP config schemas it persists. No explicit identity/
+    // exception needed.
+    const allowedForState = new Set<string>();
 
     beforeAll(() => {
       for (const [, analysis] of analyses) {
