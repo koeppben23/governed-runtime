@@ -1,85 +1,32 @@
-/**
- * @module integration/tools/hydrate
- * @description FlowGuard hydrate tool — bootstrap or reload session.
- *
- * This is the entry point for every FlowGuard workflow. Creates a new session
- * if none exists, runs repository discovery, resolves the governance profile,
- * and returns the session state.
- *
- * @version v3
- */
+/** @module integration/tools/hydrate — Session bootstrap/reload tool. */
 
 import { z } from 'zod';
-import { existsSync } from 'node:fs';
-import { readFile as fsReadFile } from 'node:fs/promises';
-import * as nodePath from 'node:path';
-import { createHash } from 'node:crypto';
-
-import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
-import {
-  getWorktree,
-  resolvePolicyFromState,
-  createPolicyContext,
-  formatBlocked,
-  formatError,
-  withSessionWriteTransaction,
-} from './helpers.js';
-
-// Rails
+import type { ToolDefinition, ToolContext } from './helpers.js';
+import type { ToolResult } from './helpers.js';
+import { getWorktree, formatBlocked, formatError, withSessionWriteTransaction } from './helpers.js';
 import { executeHydrate } from '../../rails/hydrate.js';
-
-// Discovery health gate (#399)
-import { loadDiscoveryHealthContext } from '../../discovery/discovery-health.js';
-import { buildDiscoveryDriftStatus } from '../discovery-drift-status.js';
-import { reconcileDiscoveryHealthGate } from '../discovery-health-gate.js';
-import { auditDiscoveryHealthGateTransition } from '../discovery-health-audit.js';
-import type { DiscoveryDriftAssessment } from '../../state/schema.js';
-import { PolicyModeSchema, type PolicyMode } from '../../state/policy-mode.js';
-import type { RailResult } from '../../rails/types.js';
-
-// Adapters
+import { PolicyModeSchema } from '../../state/policy-mode.js';
+import type { PolicyMode } from '../../state/policy-mode.js';
 import { readState, PersistenceError } from '../../adapters/persistence.js';
-import { REASON_SESSION_LOCK_CONTENDED } from '../../shared/flowguard-identifiers.js';
-import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
-import { listRepoSignals } from '../../adapters/git.js';
 import { readConfig } from '../../adapters/persistence-config.js';
-import {
-  writeDiscovery,
-  writeProfileResolution,
-  writeDiscoverySnapshot,
-  writeProfileResolutionSnapshot,
-} from '../../adapters/persistence-discovery.js';
-
-// Workspace
 import { initWorkspace, writeSessionPointer } from '../../adapters/workspace/index.js';
-
-// Actor identity (P27)
 import { resolveActor, ActorClaimError } from '../../adapters/actor.js';
-
-// Discovery
-import {
-  runDiscovery,
-  extractDiscoverySummary,
-  extractDetectedStack,
-  computeDiscoveryDigest,
-} from '../../discovery/orchestrator.js';
-import type { DiscoveryResult, ProfileResolution, DetectedStack } from '../../discovery/types.js';
-import { PROFILE_RESOLUTION_SCHEMA_VERSION } from '../../discovery/types.js';
-import { planVerificationCandidates } from '../../discovery/verification-planner.js';
-import { defaultProfileRegistry as profileRegistryForResolution } from '../../config/profile.js';
-import type { FlowGuardProfile, RepoSignals } from '../../config/profile.js';
-
-// Config
-import {
-  detectCiContext,
-  resolvePolicyForHydrate,
-  validateExistingPolicyAgainstCentral,
-} from '../../config/policy.js';
-import { throwHydrateError } from './hydrate-errors.js';
-import { buildHydrateInput, formatHydrateResult, withLockContended } from './hydrate-format.js';
+import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
+import { REASON_SESSION_LOCK_CONTENDED } from '../../shared/flowguard-identifiers.js';
 import { resolveHydratePolicy } from './hydrate-policy.js';
 import { resolveDiscoveryHydration } from './hydrate-discovery.js';
+import { buildHydrateInput, formatHydrateResult, withLockContended } from './hydrate-format.js';
 import { reconcileHydrateDiscoveryHealthGate } from './hydrate-discovery-health.js';
+import { resolvePolicyForHydrate } from '../../config/policy.js';
+import { validateExistingPolicyAgainstCentral } from '../../config/policy.js';
+import { extractDiscoverySummary } from '../../discovery/orchestrator.js';
+import { planVerificationCandidates } from '../../discovery/verification-planner.js';
+import type { DiscoveryResult } from '../../discovery/types.js';
+import type { RepoSignals } from '../../config/profile.js';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Shared types (exported for sibling modules)
+// ═══════════════════════════════════════════════════════════════════════════════
 
 export type ExistingHydrateState = Awaited<ReturnType<typeof readState>>;
 export type HydrateConfig = Awaited<ReturnType<typeof readConfig>>;
@@ -101,9 +48,9 @@ export interface DiscoveryHydration {
   readonly discoveryResult?: DiscoveryResult;
   readonly discoveryDigest?: string;
   readonly discoverySummary?: ReturnType<typeof extractDiscoverySummary>;
-  readonly detectedStack?: DetectedStack | null;
+  readonly detectedStack?: unknown | null;
   readonly verificationCandidates?: Awaited<ReturnType<typeof planVerificationCandidates>>;
-  readonly profileResolution?: ProfileResolution;
+  readonly profileResolution?: unknown;
 }
 
 export interface ResolveDiscoveryHydrationInput {
@@ -126,6 +73,11 @@ export interface BuildHydrateInputParams {
   readonly args: HydrateArgs;
 }
 
+/**
+ * The lock is intentionally held across discovery/git for the duration of the
+ * transaction; the 10s acquisition timeout in the lock adapter is the
+ * fail-closed compensation (mapped to SESSION_LOCK_CONTENDED by the caller).
+ */
 async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<ToolResult> {
   const worktree = getWorktree(context);
   const workspace = await initWorkspace(worktree, context.sessionID);
