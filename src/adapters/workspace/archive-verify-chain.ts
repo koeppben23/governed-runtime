@@ -17,18 +17,21 @@ import * as crypto from 'node:crypto';
 import { readState } from '../persistence.js';
 import { readAuditTrail } from '../persistence-audit.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
-import {
-  verifyChain,
-  getLastChainHash,
-  type ChainVerification,
-  type ChainVerificationReason,
-} from '../../audit/integrity.js';
+import { verifyChain, getLastChainHash, type ChainVerification } from '../../audit/integrity.js';
 import {
   type ArchiveManifest,
   type ArchiveVerification,
   type ArchiveFinding,
 } from '../../archive/types.js';
 import { computeArchiveContentDigest } from '../../archive/content-digest.js';
+import {
+  findBindingArtifacts,
+  isArtifactBindingEntry,
+  hasTimestampEvidence,
+  isCurrentChainIntegrityFailure,
+  isAuditFormatFailure,
+  resolveStrictMode,
+} from './archive-verify-helpers.js';
 import { isPolicyMode } from '../../state/policy-mode.js';
 import { validateFingerprint, validateSessionId } from './types.js';
 import { workspacesHome, sessionDir } from './init.js';
@@ -39,23 +42,12 @@ import {
   checkUnexpectedFiles,
 } from './archive-verify-manifest.js';
 import { fileExists } from './archive-files.js';
-import {
-  type ArtifactBindingEntry,
-  ARTIFACT_BINDING_EVENT,
-  ARTIFACT_BINDING_SCHEMA_VERSION,
-} from './archive-artifact-binding.js';
+import { type ArtifactBindingEntry } from './archive-artifact-binding.js';
 
 // Timestamp token verification is lazy-imported to avoid requiring optional
 // 'asn1js'/'pkijs' packages at module load time. Only needed during archive verification.
 
 // ─── Constants ────────────────────────────────────────────────────────────────
-
-/**
- * Fail-closed default: when the governed policy mode cannot be resolved from
- * integrity-covered state, verification runs strict. A resolvable non-regulated
- * mode is never escalated.
- */
-const STRICT_WHEN_MODE_UNRESOLVED = true;
 
 /** Hex prefix length for logging chain-head fingerprints (never the full hash material). */
 const AUDIT_HEAD_LOG_PREFIX_LENGTH = 16;
@@ -96,17 +88,6 @@ export async function verifyArchive(
 }
 
 // ─── Artifact Binding ─────────────────────────────────────────────────────────
-
-function findBindingArtifacts(events: readonly Record<string, unknown>[]): unknown[] | undefined {
-  const binding = [...events].reverse().find((event) => event.event === ARTIFACT_BINDING_EVENT);
-  const detail = binding?.detail as Record<string, unknown> | undefined;
-  if (
-    detail?.schemaVersion !== ARTIFACT_BINDING_SCHEMA_VERSION ||
-    !Array.isArray(detail?.artifacts)
-  )
-    return undefined;
-  return detail.artifacts as unknown[];
-}
 
 async function checkBoundArtifacts(
   sessDir: string,
@@ -186,36 +167,6 @@ async function verifyArtifactBinding(
   await checkBoundArtifacts(sessDir, manifest, bound, manifestArtifacts, findings);
 }
 
-function isArtifactBindingEntry(value: unknown): value is ArtifactBindingEntry {
-  if (!value || typeof value !== 'object') return false;
-  const entry = value as Record<string, unknown>;
-  return (
-    typeof entry.path === 'string' &&
-    entry.path.startsWith('artifacts/') &&
-    typeof entry.sha256 === 'string' &&
-    /^[a-f0-9]{64}$/.test(entry.sha256) &&
-    (entry.artifactType === null || typeof entry.artifactType === 'string')
-  );
-}
-
-// ─── Audit Chain Predicates ────────────────────────────────────────────────────
-
-function hasTimestampEvidence(event: Record<string, unknown>): boolean {
-  const evidence = event.timestampEvidence;
-  return typeof evidence === 'object' && evidence !== null;
-}
-
-function isCurrentChainIntegrityFailure(reason: ChainVerificationReason | null): boolean {
-  return reason === 'CHAIN_BREAK' || reason === 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE';
-}
-
-function isAuditFormatFailure(reason: ChainVerificationReason | null): boolean {
-  return (
-    reason === 'LEGACY_AUDIT_CHAIN_NOT_VERIFIABLE_WITH_V2' ||
-    reason === 'UNSUPPORTED_AUDIT_FORMAT_VERSION'
-  );
-}
-
 // ─── Audit Chain Logging & Findings ───────────────────────────────────────────
 
 function logAuditChainVerificationFailure(chainResult: ChainVerification): void {
@@ -283,22 +234,6 @@ function addAuditFormatFindings(chainResult: ChainVerification, findings: Archiv
 }
 
 // ─── Policy Mode ──────────────────────────────────────────────────────────────
-
-/**
- * Resolve whether verification runs in strict mode.
- *
- * SSOT: strict is derived from the integrity-covered `state.policySnapshot.mode`,
- * NOT from the mutable, unsigned `manifest.policyMode`. Fail-closed: when the mode
- * cannot be safely resolved to a known PolicyMode (missing/invalid state), strict
- * is assumed. A resolvable non-regulated mode is NOT escalated.
- */
-function resolveStrictMode(state: import('../../state/schema.js').SessionState | null): boolean {
-  const mode = state?.policySnapshot?.mode;
-  if (!isPolicyMode(mode)) {
-    return STRICT_WHEN_MODE_UNRESOLVED;
-  }
-  return mode === 'regulated';
-}
 
 /**
  * Cross-check the unsigned manifest.policyMode against the integrity-covered
