@@ -1,21 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-  _resetAgentResolutionCache,
-  REVIEWER_AGENT_PRIMARY,
-  REVIEWER_AGENT_FALLBACK,
-  REVIEWER_SYSTEM_DIRECTIVE,
-} from './agent-resolution.js';
+import { _resetAgentResolutionCache } from './agent-resolution.js';
 import { invokeReviewer } from './orchestrator.js';
-import { buildPlanReviewPrompt } from './prompt-builders.js';
-import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
-import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
-import {
-  validFindings,
-  NO_SLEEP,
-  TEXT_COMPAT_OPTIONS,
-  makeClient,
-  PROMPT,
-} from './orchestrator-test-helpers.js';
+import { NO_SLEEP, TEXT_COMPAT_OPTIONS, makeClient, PROMPT } from './orchestrator-test-helpers.js';
 describe('invokeReviewer — error handling', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();
