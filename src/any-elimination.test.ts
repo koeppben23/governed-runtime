@@ -130,7 +130,7 @@ describe('BUG-21 null-tolerance tests', () => {
     });
 
     it('execution BUG-21 block explains intentionally invalid input', () => {
-      const source = readSource('integration/tools-execute-execution.test.ts');
+      const source = readSource('integration/tools-execute-implement.test.ts');
       expect(source).toContain('BUG-21');
       expect(source).toContain('as any');
     });
