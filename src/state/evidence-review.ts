@@ -7,10 +7,7 @@
  */
 
 import { z } from 'zod';
-import {
-  REVIEWER_SUBAGENT_TYPE,
-  REVIEW_REPORT_SCHEMA_ID,
-} from '../shared/flowguard-identifiers.js';
+import { REVIEWER_SUBAGENT_TYPE, REVIEW_REPORT_SCHEMA_ID } from './evidence-identifiers.js';
 import { assuranceSchema } from './evidence-assurance-internal.js';
 import {
   CheckId,

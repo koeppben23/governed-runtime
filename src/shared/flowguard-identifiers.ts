@@ -1,21 +1,24 @@
 /**
  * @module shared/flowguard-identifiers
- * @description Canonical FlowGuard identifier constants.
+ * @description Canonical FlowGuard identifier constants and runtime reason codes.
  *
- * Neutral module with zero dependencies — importable by any layer
- * (state, integration, adapters, CLI) without creating cycles.
+ * The evidence-level discriminator constants (FINGERPRINT_PATTERN,
+ * REVIEW_REPORT_SCHEMA_ID, REVIEWER_SUBAGENT_TYPE) are owned by
+ * state/evidence-identifiers.ts and re-exported here for backward
+ * compatibility with non-state callers.
+ *
+ * Reason codes and diagnostic fields remain owned by this module.
  *
  * @version v1
  */
 
-/** Canonical regex for a 24-hex-char repository fingerprint. */
-export const FINGERPRINT_PATTERN = /^[0-9a-f]{24}$/;
+import {
+  FINGERPRINT_PATTERN,
+  REVIEW_REPORT_SCHEMA_ID,
+  REVIEWER_SUBAGENT_TYPE,
+} from '../state/evidence-identifiers.js';
 
-/** Subagent type identifier for the FlowGuard reviewer subagent. */
-export const REVIEWER_SUBAGENT_TYPE = 'flowguard-reviewer';
-
-/** Schema identifier for the FlowGuard review report artifact. */
-export const REVIEW_REPORT_SCHEMA_ID = 'flowguard-review-report.v1' as const;
+export { FINGERPRINT_PATTERN, REVIEW_REPORT_SCHEMA_ID, REVIEWER_SUBAGENT_TYPE };
 
 /** Block code when host-visible subagent Task invocation is required by policy. */
 export const REASON_HOST_SUBAGENT_TASK_REQUIRED = 'HOST_SUBAGENT_TASK_REQUIRED';
