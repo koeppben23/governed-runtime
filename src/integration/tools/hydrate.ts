@@ -22,6 +22,8 @@ import { validateExistingPolicyAgainstCentral } from '../../config/policy.js';
 import { extractDiscoverySummary } from '../../discovery/orchestrator.js';
 import { planVerificationCandidates } from '../../discovery/verification-planner.js';
 import type { DiscoveryResult } from '../../discovery/types.js';
+import type { DetectedStack } from '../../discovery/types.js';
+import type { ProfileResolution } from '../../discovery/types.js';
 import type { RepoSignals } from '../../config/profile.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -48,9 +50,9 @@ export interface DiscoveryHydration {
   readonly discoveryResult?: DiscoveryResult;
   readonly discoveryDigest?: string;
   readonly discoverySummary?: ReturnType<typeof extractDiscoverySummary>;
-  readonly detectedStack?: unknown | null;
+  readonly detectedStack?: DetectedStack | null;
   readonly verificationCandidates?: Awaited<ReturnType<typeof planVerificationCandidates>>;
-  readonly profileResolution?: unknown;
+  readonly profileResolution?: ProfileResolution;
 }
 
 export interface ResolveDiscoveryHydrationInput {
