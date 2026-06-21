@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 
 import { executeReviewDecision } from '../rails/review-decision.js';
-import { makeProgressedState } from '../__fixtures__.js';
+import { makeProgressedState } from '../fixtures.js';
 import { getPolicyPreset } from '../config/policy.js';
 import {
   normalizePolicySnapshotWithMeta,

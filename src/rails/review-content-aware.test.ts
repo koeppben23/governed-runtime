@@ -14,7 +14,7 @@ import {
   type ReviewExecutors,
   type ReviewReferenceInput,
 } from './review.js';
-import { makeProgressedState } from '../__fixtures__.js';
+import { makeProgressedState } from '../fixtures.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 

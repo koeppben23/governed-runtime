@@ -19,7 +19,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
-import { makeState, FIXED_TIME } from '../__fixtures__.js';
+import { makeState, FIXED_TIME } from '../fixtures.js';
 import type { PolicyMode } from '../config/policy.js';
 
 function createValidState(policyMode: PolicyMode) {

@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { executeReview, buildReviewReport } from './review.js';
 import { ReviewReport } from '../state/evidence.js';
-import { makeState } from '../__fixtures__.js';
+import { makeState } from '../fixtures.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 

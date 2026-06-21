@@ -43,7 +43,7 @@ import {
   PLAN_RECORD,
   ARCHITECTURE_DECISION,
   SELF_REVIEW_CONVERGED,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 
 const ALL_HOSTS = ['opencode', 'claude-code', 'codex'] as const satisfies readonly HostId[];

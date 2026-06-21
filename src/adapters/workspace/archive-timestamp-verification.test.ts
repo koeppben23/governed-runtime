@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { makeState } from '../../__fixtures__.js';
+import { makeState } from '../../fixtures.js';
 import type { ArchiveFinding, ArchiveManifest, ManifestPolicyMode } from '../../archive/types.js';
 import { ARCHIVE_MANIFEST_SCHEMA_VERSION } from '../../archive/types.js';
 import type { AuditEvent } from '../../state/evidence.js';

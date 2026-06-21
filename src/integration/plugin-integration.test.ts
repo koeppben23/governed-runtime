@@ -36,7 +36,7 @@ import {
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
-import { makeState, makeProgressedState } from '../__fixtures__.js';
+import { makeState, makeProgressedState } from '../fixtures.js';
 import type { Phase } from '../state/schema.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────

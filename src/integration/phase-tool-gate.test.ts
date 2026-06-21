@@ -17,7 +17,7 @@ import {
   INVESTIGATION_ONLY_PHASES,
 } from './phase-tool-gate.js';
 import type { Phase } from '../state/schema.js';
-import { makeState } from '../__fixtures__.js';
+import { makeState } from '../fixtures.js';
 
 // ─── isMutatingHostTool ──────────────────────────────────────────────────────
 

@@ -45,7 +45,7 @@ let ws: TestWorkspace;
 let ctx: TestToolContext;
 
 async function loadFixture(name: string): Promise<Record<string, unknown>> {
-  const file = path.join(process.cwd(), 'src', '__fixtures__', 'session-state', name);
+  const file = path.join(process.cwd(), 'src', 'fixtures', 'session-state', name);
   const raw = await fs.readFile(file, 'utf-8');
   return JSON.parse(raw) as Record<string, unknown>;
 }

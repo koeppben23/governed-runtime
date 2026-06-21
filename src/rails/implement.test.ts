@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { executeImplement, type ImplExecutors } from './implement.js';
-import { makeState, FIXED_TIME, TICKET, PLAN_RECORD, IMPL_EVIDENCE } from '../__fixtures__.js';
+import { makeState, FIXED_TIME, TICKET, PLAN_RECORD, IMPL_EVIDENCE } from '../fixtures.js';
 import type { RailContext } from './types.js';
 
 const ctx: RailContext = {

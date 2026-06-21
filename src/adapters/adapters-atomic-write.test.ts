@@ -69,7 +69,7 @@ import {
   FIXED_TIME,
   FIXED_UUID,
   FIXED_SESSION_UUID,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 import { materializeReviewCardArtifact } from './workspace/evidence-artifacts.js';
 import { initWorkspace, archiveSession } from './workspace/index.js';
 import { benchmarkSync, measureAsync, PERF_BUDGETS } from '../test-policy.js';

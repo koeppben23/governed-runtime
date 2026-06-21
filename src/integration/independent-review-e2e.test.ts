@@ -27,7 +27,7 @@ import * as fs from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { FlowGuardAuditPlugin } from './plugin.js';
-import { makeState } from '../__fixtures__.js';
+import { makeState } from '../fixtures.js';
 import { createTestWorkspace } from './test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import {

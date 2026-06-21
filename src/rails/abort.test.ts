@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { executeAbort, type AbortInput } from './abort.js';
-import { makeState, makeProgressedState, FIXED_TIME } from '../__fixtures__.js';
+import { makeState, makeProgressedState, FIXED_TIME } from '../fixtures.js';
 import type { RailContext } from './types.js';
 
 const ctx: RailContext = {

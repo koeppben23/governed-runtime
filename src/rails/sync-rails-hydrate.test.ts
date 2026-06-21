@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { executeHydrate } from '../rails/hydrate.js';
 import { createTestContext } from '../testing.js';
-import { makeState, FIXED_SESSION_UUID, FIXED_FINGERPRINT } from '../__fixtures__.js';
+import { makeState, FIXED_SESSION_UUID, FIXED_FINGERPRINT } from '../fixtures.js';
 import type { HydratePolicyResolution } from '../config/policy.js';
 import { TEAM_POLICY } from '../config/policy.js';
 

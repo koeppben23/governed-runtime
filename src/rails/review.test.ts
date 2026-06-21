@@ -21,7 +21,7 @@ import {
   FIXED_TIME,
   FIXED_UUID,
   VALIDATION_FAILED,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 import { benchmarkAsync, PERF_BUDGETS } from '../test-policy.js';
 import { createTestContext } from '../testing.js';
 

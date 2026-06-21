@@ -25,7 +25,7 @@ import {
   ReviewReport,
 } from '../state/evidence.js';
 import { Phase, Event, Transition, SessionState } from '../state/schema.js';
-import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../__fixtures__.js';
+import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { readState } from '../adapters/persistence.js';
 
