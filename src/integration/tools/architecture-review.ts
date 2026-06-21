@@ -5,15 +5,10 @@
  * @version v1
  */
 
-import { z } from 'zod';
-
 import type { ToolContext } from './helpers.js';
 import {
-  type MutableSession,
-  withMutableSessionTransaction,
   formatEval,
   formatBlocked,
-  formatError,
   formatAutoAdvanceOverflow,
   appendNextAction,
   writeStateWithArtifacts,

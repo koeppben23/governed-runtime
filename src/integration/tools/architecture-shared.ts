@@ -5,57 +5,17 @@
  * @version v1
  */
 
-import { z } from 'zod';
-
-import type { ToolContext } from './helpers.js';
-import {
-  type MutableSession,
-  formatBlocked,
-  appendNextAction,
-  writeStateWithArtifacts,
-} from './helpers.js';
-
+import { formatBlocked } from './helpers.js';
+import type { MutableSession } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
-import { evaluate } from '../../machine/evaluate.js';
-
-import { executeArchitecture } from '../../rails/architecture.js';
-
-import type { AutoAdvanceResult } from '../../rails/types.js';
-import { autoAdvance } from '../../rails/types.js';
-
-import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../state/evidence.js';
-import {
-  ReviewFindings as ReviewFindingsSchema,
-  validateAdrSections,
-} from '../../state/evidence.js';
-
-import {
-  appendReviewObligation,
-  consumeReviewObligation,
-  createReviewObligation,
-  ensureReviewAssurance,
-  findAcceptedInvocationForFindings,
-  findLatestObligation,
-  findLatestUnconsumedObligation,
-  reviewObligationResponseFields,
-} from '../review/assurance.js';
-
-import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
+import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
+import { ensureReviewAssurance, createReviewObligation } from '../review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
-
-import {
-  PHASE_LABELS,
-  buildArchitectureReviewCard,
-  buildProductNextAction,
-} from '../../presentation/index.js';
-import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js';
-import { resolveNextAction } from '../../machine/next-action.js';
-import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
 // ─── Shared Types ─────────────────────────────────────────────────────────
 
