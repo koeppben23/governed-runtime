@@ -52,15 +52,9 @@
  * @version v5
  */
 
-import { z } from 'zod';
-
-import type { ToolDefinition, ToolContext } from './helpers.js';
 import {
-  withMutableSession,
-  withMutableSessionTransaction,
   formatEval,
   formatBlocked,
-  formatError,
   formatAutoAdvanceOverflow,
   appendNextAction,
   writeStateWithArtifacts,
@@ -69,51 +63,28 @@ import {
 // State & Machine
 import type { SessionState } from '../../state/schema.js';
 import { evaluate, evaluateWithEvent } from '../../machine/evaluate.js';
-import { isCommandAllowed, Command } from '../../machine/commands.js';
 
 // Rail helpers
-import type { RailContext } from '../../rails/types.js';
 import { applyTransition, autoAdvance } from '../../rails/types.js';
 
 // Adapters
-import { changedFiles } from '../../adapters/git.js';
-import type { FlowGuardPolicy } from '../../config/policy.js';
 
 // Evidence types
 import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
-import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
 // Review findings validation (shared with plan.ts)
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
 import {
-  validateReviewFindings,
-  requireReviewFindings,
-  resolveHostTaskEffectiveFindings,
-} from './review-validation.js';
-import {
-  appendReviewObligation,
   consumeReviewObligation,
-  createReviewObligation,
   ensureReviewAssurance,
   findAcceptedInvocationForFindings,
   findLatestObligation,
-  reviewObligationResponseFields,
 } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
-import { resolveCeremonyProfile } from '../phase-tool-gate.js';
-import {
-  resolveRuntimeReviewPlatform,
-  resolveReviewOrchestrationMode,
-} from '../review/orchestration-mode.js';
-import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
-import {
-  type ImplementArgs,
-  type ImplementRuntime,
-  classifyImplementArgs,
-  buildImplementRuntime,
-  validateImplementSequence,
-  nextImplementationReviewIteration,
-} from './implement-shared.js';
+import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
+import type { ImplementRuntime } from './implement-shared.js';
+import { nextImplementationReviewIteration } from './implement-shared.js';
 function findPendingImplObligation(state: SessionState) {
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
   return (

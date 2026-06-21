@@ -52,51 +52,34 @@
  * @version v5
  */
 
-import { z } from 'zod';
-
-import type { ToolDefinition, ToolContext } from './helpers.js';
 import {
-  withMutableSession,
-  withMutableSessionTransaction,
-  formatEval,
   formatBlocked,
-  formatError,
   formatAutoAdvanceOverflow,
   appendNextAction,
   writeStateWithArtifacts,
 } from './helpers.js';
 
 // State & Machine
+import { evaluate } from '../../machine/evaluate.js';
+import { autoAdvance } from '../../rails/types.js';
+import type { ReviewFindings } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
-import { evaluate, evaluateWithEvent } from '../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 
 // Rail helpers
-import type { RailContext } from '../../rails/types.js';
-import { applyTransition, autoAdvance } from '../../rails/types.js';
 
 // Adapters
 import { changedFiles } from '../../adapters/git.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 
 // Evidence types
-import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
-import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 
 // Review findings validation (shared with plan.ts)
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import {
-  validateReviewFindings,
-  requireReviewFindings,
-  resolveHostTaskEffectiveFindings,
-} from './review-validation.js';
+import { validateReviewFindings } from './review-validation.js';
 import {
   appendReviewObligation,
-  consumeReviewObligation,
   createReviewObligation,
   ensureReviewAssurance,
-  findAcceptedInvocationForFindings,
-  findLatestObligation,
   reviewObligationResponseFields,
 } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
@@ -106,15 +89,8 @@ import {
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
-import {
-  type ImplementArgs,
-  type ImplementRuntime,
-  type ImplementationCeremony,
-  classifyImplementArgs,
-  buildImplementRuntime,
-  validateImplementSequence,
-  nextImplementationReviewIteration,
-} from './implement-shared.js';
+import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
+import { nextImplementationReviewIteration } from './implement-shared.js';
 // Mode A
 export function validateInitialReviewFindings(input: ImplementRuntime): string | null {
   if (!input.args.reviewFindings) return null;

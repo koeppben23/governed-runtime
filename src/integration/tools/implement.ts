@@ -1,13 +1,7 @@
 import { z } from 'zod';
 import type { ToolDefinition, ToolContext } from './helpers.js';
-import {
-  formatBlocked,
-  formatError,
-  withMutableSession,
-  withMutableSessionTransaction,
-} from './helpers.js';
+import { formatError, withMutableSession, withMutableSessionTransaction } from './helpers.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
-import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { changedFiles } from '../../adapters/git.js';
 import {
   type ImplementArgs,
