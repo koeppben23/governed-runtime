@@ -19,7 +19,8 @@ export type TsaErrorCode =
   | 'TSA_MISSING_TOKEN'
   | 'TSA_HEX_ODD_LENGTH'
   | 'TSA_HEX_INVALID'
-  | 'TSA_CONFIG_INVALID';
+  | 'TSA_CONFIG_INVALID'
+  | 'TSA_MOCK_FAILURE';
 
 export class TsaError extends Error {
   readonly code: TsaErrorCode;

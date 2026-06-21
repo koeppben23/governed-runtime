@@ -1,5 +1,5 @@
 /**
- * @module audit/rfc3161-pkijs-verifier
+ * @module audit/rfc-3161-pkijs-verifier
  * @description RFC 3161 TimeStampToken verification using pkijs/asn1js.
  *
  * Trust anchor model: this verifier supports end-entity certificate pinning only.
