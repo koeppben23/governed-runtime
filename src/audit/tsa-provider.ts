@@ -12,9 +12,9 @@
  * MockTimestampVerifier, MOCK_TSA_FIXTURE_TOKEN) for testing.
  *
  * Production implementations live in sibling files:
- *   - PkijsTimestampVerifier (rfc3161-pkijs-verifier.ts) — cryptographic
+ *   - PkijsTimestampVerifier (rfc-3161-pkijs-verifier.ts) — cryptographic
  *     TimeStampToken verification using pkijs + asn1js.
- *   - HttpTimestampAuthorityProvider (rfc3161-http-provider.ts) — HTTP
+ *   - HttpTimestampAuthorityProvider (rfc-3161-http-provider.ts) — HTTP
  *     client that sends digests to a remote TSA.
  *
  * @version v1

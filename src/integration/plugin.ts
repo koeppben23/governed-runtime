@@ -41,8 +41,8 @@ import {
   type OrchestratorDeps,
 } from './plugin-orchestrator.js';
 import { runAudit as runAuditModule, type AuditDeps } from './plugin-audit.js';
-import { HttpTimestampAuthorityProvider } from '../audit/rfc3161-http-provider.js';
-import { PkijsTimestampVerifier } from '../audit/rfc3161-pkijs-verifier.js';
+import { HttpTimestampAuthorityProvider } from '../audit/rfc-3161-http-provider.js';
+import { PkijsTimestampVerifier } from '../audit/rfc-3161-pkijs-verifier.js';
 import { createWorkspace } from './plugin-workspace.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
