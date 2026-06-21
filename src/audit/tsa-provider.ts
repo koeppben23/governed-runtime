@@ -21,6 +21,7 @@
  */
 
 import * as crypto from 'node:crypto';
+import { TsaError } from './errors.js';
 
 export interface TimestampAuthorityProvider {
   requestTimestamp(input: {
@@ -69,7 +70,7 @@ export class MockTimestampAuthorityProvider implements TimestampAuthorityProvide
     timeoutMs: number;
   }): Promise<{ tokenDerBase64: string; receivedAt: string }> {
     if (this.simulateFailure) {
-      throw new Error('Mock TSA failure');
+      throw new TsaError('TSA_MOCK_FAILURE', 'Mock TSA failure');
     }
     return {
       tokenDerBase64: this.tokenDerBase64,

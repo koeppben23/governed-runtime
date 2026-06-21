@@ -1,5 +1,5 @@
 /**
- * @module audit/rfc3161-http-provider
+ * @module audit/rfc-3161-http-provider
  * @description RFC 3161 HTTP Timestamp Authority provider.
  */
 
