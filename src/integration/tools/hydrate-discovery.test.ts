@@ -12,7 +12,7 @@ import {
   buildProfileResolution,
   collectProfileCandidates,
 } from './hydrate-discovery.js';
-import type { FlowGuardProfile } from '../../config/profile-registry.js';
+import type { FlowGuardProfile } from '../../config/profile.js';
 import type { DiscoveryResult } from '../../discovery/types.js';
 import type { RepoSignals } from '../../adapters/git.js';
 import type { HydrateConfig } from './hydrate.js';
