@@ -513,33 +513,16 @@ export function startReviewFlow(state: SessionState, ctx: RailContext): RailResu
  * The tool layer must use startReviewFlow + writeReport + autoAdvance instead.
  */
 export function executeReviewFlow(state: SessionState, ctx: RailContext): RailResult {
-  if (!isCommandAllowed(state.phase, Command.REVIEW)) {
-    return blocked('COMMAND_NOT_ALLOWED', {
-      command: '/review',
-      phase: state.phase,
-    });
-  }
-
-  const preTransitions: TransitionRecord[] = [];
-  const at = ctx.now();
-  const tr: TransitionRecord = { from: 'READY', to: 'REVIEW', event: 'REVIEW_SELECTED', at };
-  preTransitions.push(tr);
-
-  const reviewState: SessionState = applyTransition(
-    state,
-    'READY',
-    'REVIEW',
-    'REVIEW_SELECTED',
-    at,
-  );
+  const started = startReviewFlow(state, ctx);
+  if (started.kind === 'blocked') return started;
 
   const evalFn = createPolicyEvalFn(ctx);
-  const advanced = autoAdvance(reviewState, evalFn, ctx);
+  const advanced = autoAdvance(started.state, evalFn, ctx);
   if (advanced.kind === 'overflow') {
     return blockedFromOverflow(advanced);
   }
   const { state: finalState, evalResult, transitions: advanceTransitions } = advanced;
-  const transitions = [...preTransitions, ...advanceTransitions];
+  const transitions = [...started.transitions, ...advanceTransitions];
 
   return { kind: 'ok', state: finalState, evalResult, transitions };
 }
