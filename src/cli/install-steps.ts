@@ -12,7 +12,7 @@ import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { globalConfigPath } from '../adapters/persistence.js';
+import { globalConfigPath, ensureDir } from '../adapters/persistence.js';
 import { readConfig, writeGlobalConfig, writeRepoConfig } from '../adapters/persistence-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
@@ -43,7 +43,6 @@ import {
   PACKAGE_VERSION,
   computeMandatesDigest,
   detectPackageManager,
-  ensureDir,
   mergeOpencodeJson,
   mergePackageJson,
   reviewerDefinitionForPlatform,

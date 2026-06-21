@@ -10,7 +10,8 @@
 
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, readFile, writeFile, unlink, rm } from 'node:fs/promises';
+import { readFile, writeFile, unlink, rm } from 'node:fs/promises';
+import { ensureDir } from '../adapters/persistence.js';
 import { join, resolve, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { timingSafeEqual } from 'node:crypto';
@@ -336,10 +337,6 @@ export function findParallelOpencodeConfig(preferredPath: string): string | null
 
 function isEnoent(err: unknown): boolean {
   return typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT';
-}
-
-export async function ensureDir(dir: string): Promise<void> {
-  await mkdir(dir, { recursive: true });
 }
 
 export async function safeRead(filePath: string): Promise<string | null> {

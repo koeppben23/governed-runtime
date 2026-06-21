@@ -8,8 +8,9 @@
  * @version v1
  */
 
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { writeFile, readFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { ensureDir } from '../adapters/persistence.js';
 import { parse as jsoncParse, type ParseError } from 'jsonc-parser';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import {
@@ -51,10 +52,6 @@ async function safeRead(filePath: string): Promise<string | null> {
     if (isEnoent(err)) return null;
     throw err;
   }
-}
-
-async function ensureDir(dir: string): Promise<void> {
-  await mkdir(dir, { recursive: true });
 }
 
 export async function createMalformedJsonBackup(
