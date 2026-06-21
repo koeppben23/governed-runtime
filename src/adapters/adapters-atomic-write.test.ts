@@ -1,6 +1,8 @@
 /**
- * @module adapters.test
- * @description Tests for persistence: atomic file I/O, Zod validation, JSONL trail.
+ * @module adapters-atomic-write.test
+ * @description Atomic write authority: write-then-rename pattern, state/report/
+ *              evidence/archive integration, EPERM/EBUSY retry with backoff,
+ *              and rename failure preservation.
  *
  * Note: git adapter is integration-level (requires real git repo). Excluded from V1 tests.
  * Binding and context tests moved to adapters-binding.test.ts and adapters-context.test.ts.
