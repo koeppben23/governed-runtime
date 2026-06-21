@@ -1,6 +1,7 @@
 /**
  * @module adapters/ip-validation
- * @description Private/reserved IP address validation for SSRF mitigation (BUG-13).
+ * @description Private/reserved IP address validation and IP format checks
+ *              for SSRF mitigation (BUG-13).
  *
  * Extracted from rails/review.ts to keep IP-level concerns in the adapters layer.
  */
@@ -81,4 +82,72 @@ function parseHextet(value: string): number | null {
   if (!/^[0-9a-f]{1,4}$/.test(value)) return null;
   const parsed = Number.parseInt(value, 16);
   return Number.isInteger(parsed) && parsed >= 0 && parsed <= 0xffff ? parsed : null;
+}
+
+/**
+ * Check if a string is a syntactically valid dotted-decimal IPv4 address.
+ */
+export function isIPv4Address(addr: string): boolean {
+  return parseIPv4(addr) !== null;
+}
+
+/**
+ * Check if a string is a syntactically valid IPv6 address.
+ *
+ * Conservative, fail-closed format validation. Handles full, compressed
+ * (::), and IPv4-mapped (::ffff:x.x.x.x) formats. Unknown formats are
+ * rejected — this is a DNS-resolver sanity check, so permissiveness
+ * would be a security defect.
+ */
+export function isIPv6Address(addr: string): boolean {
+  if (!addr || addr.length < 2) return false;
+
+  const lo = addr.toLowerCase();
+
+  // IPv4-mapped: ::ffff:1.2.3.4 or ::ffff:a:b
+  if (lo.startsWith('::ffff:')) {
+    const tail = addr.slice(7);
+    if (!tail.includes('.') && tail.includes(':')) {
+      const hextets = tail.split(':');
+      if (hextets.length !== 2) return false;
+      const high = parseHextet(hextets[0]!);
+      const low = parseHextet(hextets[1]!);
+      return high !== null && low !== null;
+    }
+    return parseIPv4(tail) !== null;
+  }
+
+  if (!lo.includes(':')) return false;
+
+  // Leading :: — e.g. ::1, ::
+  if (lo.startsWith('::')) {
+    const rest = lo.slice(2);
+    if (rest === '') return true; // just ::
+    if (rest.startsWith(':')) return false; // :::
+    const segments = rest.split(':');
+    return segments.length <= 7 && segments.every((s) => /^[0-9a-f]{1,4}$/.test(s));
+  }
+
+  // Trailing :: — e.g. 2001:db8::
+  if (lo.endsWith('::')) {
+    const before = lo.slice(0, -2);
+    if (before.endsWith(':')) return false;
+    const segments = before.split(':');
+    return segments.length <= 7 && segments.every((s) => /^[0-9a-f]{1,4}$/.test(s));
+  }
+
+  // Middle :: — e.g. 2001:db8::1
+  if (lo.includes('::')) {
+    const parts = lo.split('::');
+    if (parts.length !== 2) return false;
+    const left = parts[0] ? parts[0].split(':') : [];
+    const right = parts[1] ? parts[1].split(':') : [];
+    if (left.length + right.length > 7) return false;
+    return [...left, ...right].every((s) => /^[0-9a-f]{1,4}$/.test(s));
+  }
+
+  // Full address — exactly 8 segments
+  const parts = lo.split(':');
+  if (parts.length !== 8) return false;
+  return parts.every((s) => /^[0-9a-f]{1,4}$/.test(s));
 }
