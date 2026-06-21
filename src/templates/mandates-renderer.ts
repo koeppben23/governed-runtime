@@ -29,6 +29,21 @@ import {
   CONCISE_BEFORE_COMPLETING,
 } from './mandates.js';
 
+export type MandatesRenderErrorCode =
+  | 'MANDATES_SECTION_NOT_FOUND'
+  | 'MANDATES_SAFETY_CRITICAL_OMITTED'
+  | 'MANDATES_ANCHOR_MISSING';
+
+export class MandatesRenderError extends Error {
+  readonly code: MandatesRenderErrorCode;
+
+  constructor(code: MandatesRenderErrorCode, message: string) {
+    super(message);
+    this.name = 'MandatesRenderError';
+    this.code = code;
+  }
+}
+
 export type MandatesRenderPhase =
   | 'PRE_SESSION'
   | 'INVESTIGATION'
@@ -227,7 +242,10 @@ function extractMandatesSection(heading: string | null): string {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = FLOWGUARD_MANDATES_BODY.match(new RegExp(`^${escaped}\\s*$`, 'm'));
   if (!match || match.index === undefined) {
-    throw new Error(`Mandates section not found: ${heading}`);
+    throw new MandatesRenderError(
+      'MANDATES_SECTION_NOT_FOUND',
+      `Mandates section not found: ${heading}`,
+    );
   }
   const start = match.index;
   const afterHeading = FLOWGUARD_MANDATES_BODY.slice(start + match[0].length);
@@ -289,7 +307,10 @@ function assertSafetyCriticalSections(rendered: string, phase: MandatesRenderPha
     '## Governance rules',
   ]) {
     if (!rendered.includes(heading)) {
-      throw new Error(`Phase-aware mandates omitted safety-critical section: ${heading}`);
+      throw new MandatesRenderError(
+        'MANDATES_SAFETY_CRITICAL_OMITTED',
+        `Phase-aware mandates omitted safety-critical section: ${heading}`,
+      );
     }
   }
 }
@@ -310,7 +331,10 @@ function assertMandatesAnchors(
   for (const [name, terms] of anchors) {
     for (const term of terms) {
       if (!rendered.includes(term)) {
-        throw new Error(`Mandates ${usage} rendering omitted ${name} anchor: ${term}`);
+        throw new MandatesRenderError(
+          'MANDATES_ANCHOR_MISSING',
+          `Mandates ${usage} rendering omitted ${name} anchor: ${term}`,
+        );
       }
     }
   }

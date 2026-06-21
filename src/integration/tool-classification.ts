@@ -108,7 +108,13 @@ export function isOperationalTool(toolName: string): boolean {
 export function getToolClassification(toolName: string): ToolClassification {
   const classification = TOOL_CLASSIFICATION[toolName as keyof typeof TOOL_CLASSIFICATION];
   if (!classification) {
-    throw new Error(`Unclassified tool: ${toolName}. Add to TOOL_CLASSIFICATION registry.`);
+    throw new (class extends Error {
+      readonly code = 'UNCLASSIFIED_TOOL' as const;
+      constructor(m: string) {
+        super(m);
+        this.name = 'ToolClassificationError';
+      }
+    })(`Unclassified tool: ${toolName}. Add to TOOL_CLASSIFICATION registry.`);
   }
   return classification;
 }
