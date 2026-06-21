@@ -143,7 +143,7 @@ describe('isIPv6Address / HAPPY', () => {
     expect(isIPv6Address('::ffff:0:0:1')).toBe(true);
   });
 
-  it('accepts IPv4-mapped dois-hextet form', () => {
+  it('accepts IPv4-mapped two-hextet form', () => {
     expect(isIPv6Address('::ffff:0:0')).toBe(true);
   });
 

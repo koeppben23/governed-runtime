@@ -97,8 +97,9 @@ export function isIPv4Address(addr: string): boolean {
  * Conservative, fail-closed format validation. Handles full, compressed
  * (::), dotted-IPv4-tail, and IPv4-mapped (::ffff:x.x.x.x) formats.
  * Unrecognised formats are rejected — this is a DNS-resolver sanity
- * check inside an SSRF mitigation path, so false positives are preferred
- * over false negatives.
+ * check inside an SSRF mitigation path, so rejecting valid but unusual
+ * forms (false negative) is preferred over accepting malformed input
+ * (false positive).
  *
  * Limitations (by design, not oversight):
  * - Bare IPv4 addresses are not accepted (use isIPv4Address).
