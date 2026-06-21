@@ -150,6 +150,14 @@ describe('isIPv6Address / HAPPY', () => {
   it('accepts full 8-hextet form of IPv4-mapped', () => {
     expect(isIPv6Address('0:0:0:0:0:ffff:c000:0280')).toBe(true);
   });
+
+  it('accepts leading :: with 7 explicit hextets', () => {
+    expect(isIPv6Address('::1:2:3:4:5:6:7')).toBe(true);
+  });
+
+  it('accepts trailing :: with 7 explicit hextets', () => {
+    expect(isIPv6Address('1:2:3:4:5:6:7::')).toBe(true);
+  });
 });
 
 // ─── isIPv6Address: BAD ───────────────────────────────────────────────────────
@@ -206,6 +214,14 @@ describe('isIPv6Address / CORNER', () => {
 
   it('accepts generic dotted IPv4 tail outside ::ffff: prefix', () => {
     expect(isIPv6Address('2001:db8::192.0.2.1')).toBe(true);
+  });
+
+  it('accepts leading :: with dotted IPv4 tail', () => {
+    expect(isIPv6Address('::1:2:3:4:5:192.0.2.1')).toBe(true);
+  });
+
+  it('accepts trailing :: with dotted IPv4 tail', () => {
+    expect(isIPv6Address('1:2:3:4:5::192.0.2.1')).toBe(true);
   });
 
   it('rejects malformed IPv4-mapped', () => {

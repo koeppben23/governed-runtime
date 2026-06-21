@@ -143,7 +143,7 @@ function hextetPrefixValid(prefix: string, max: number): boolean {
     if (rest === '') return true;
     if (rest.startsWith(':')) return false;
     const segments = rest.split(':');
-    return segments.length <= max - 2 && segments.every((s) => /^[0-9a-f]{1,4}$/.test(s));
+    return segments.length <= max - 1 && segments.every((s) => /^[0-9a-f]{1,4}$/.test(s));
   }
 
   // Trailing :: — e.g. 2001:db8::
@@ -151,7 +151,7 @@ function hextetPrefixValid(prefix: string, max: number): boolean {
     const before = prefix.slice(0, -2);
     if (before.endsWith(':')) return false;
     const segments = before.split(':');
-    return segments.length <= max - 2 && segments.every((s) => /^[0-9a-f]{1,4}$/.test(s));
+    return segments.length <= max - 1 && segments.every((s) => /^[0-9a-f]{1,4}$/.test(s));
   }
 
   // Middle :: — e.g. 2001:db8::1
