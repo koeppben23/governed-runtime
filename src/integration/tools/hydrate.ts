@@ -20,16 +20,13 @@ import {
   getWorktree,
   resolvePolicyFromState,
   createPolicyContext,
-  persistAndFormat,
   formatBlocked,
   formatError,
-  appendNextAction,
   withSessionWriteTransaction,
 } from './helpers.js';
 
 // Rails
 import { executeHydrate } from '../../rails/hydrate.js';
-import type { HydrateInput, HydratePolicyInput, HydrateProfileInput } from '../../rails/hydrate.js';
 
 // Discovery health gate (#399)
 import { loadDiscoveryHealthContext } from '../../discovery/discovery-health.js';
@@ -42,10 +39,7 @@ import type { RailResult } from '../../rails/types.js';
 
 // Adapters
 import { readState, PersistenceError } from '../../adapters/persistence.js';
-import {
-  REASON_SESSION_LOCK_CONTENDED,
-  LOCK_CONTENDED_OUTPUT_FIELD,
-} from '../../shared/flowguard-identifiers.js';
+import { REASON_SESSION_LOCK_CONTENDED } from '../../shared/flowguard-identifiers.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { listRepoSignals } from '../../adapters/git.js';
 import { readConfig } from '../../adapters/persistence-config.js';

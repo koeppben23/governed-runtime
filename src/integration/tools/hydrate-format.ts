@@ -6,12 +6,10 @@
  */
 
 import { resolveActor } from '../../adapters/actor.js';
+import type { HydrateInput, HydratePolicyInput, HydrateProfileInput } from '../../rails/hydrate.js';
 import { executeHydrate } from '../../rails/hydrate.js';
 import type { ToolResult } from './helpers.js';
 import { persistAndFormat, appendNextAction } from './helpers.js';
-import type { HydrateInput, HydratePolicyInput, HydrateProfileInput } from '../../rails/hydrate.js';
-import { LOCK_CONTENDED_OUTPUT_FIELD } from '../../shared/flowguard-identifiers.js';
-import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
 import type {
   DiscoveryHydration,
@@ -235,7 +233,6 @@ export function injectLockContended(output: string): string {
   // `status: 'ok'`) MUST NOT carry lockContended — otherwise the plugin
   // boundary would log a "waited success" for a hydrate that actually failed.
   if (parsed.error === true || parsed.status !== 'ok') return output;
-  parsed[LOCK_CONTENDED_OUTPUT_FIELD] = true;
   return JSON.stringify(parsed) + tail;
 }
 
