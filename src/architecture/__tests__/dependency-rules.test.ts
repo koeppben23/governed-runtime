@@ -446,13 +446,19 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
 }
 
 function resolveImportPath(importerDir: string, importPath: string): string {
-  if (importPath.startsWith('.')) {
-    const resolved = normalizeSep(path.resolve(importerDir, importPath));
-    // Try with .ts extension
-    if (existsSync(resolved + '.ts')) return resolved + '.ts';
-    // Try with .ts matching the .js extension convention
-    const withoutJs = resolved.replace(/\.js$/, '');
-  }
+  if (!importPath.startsWith('.')) return '';
+
+  const resolved = normalizeSep(path.resolve(importerDir, importPath));
+
+  if (existsSync(resolved)) return resolved;
+  if (existsSync(resolved + '.ts')) return resolved + '.ts';
+
+  const withoutJs = resolved.replace(/\.js$/, '');
+  if (withoutJs !== resolved && existsSync(withoutJs + '.ts')) return withoutJs + '.ts';
+
+  const indexPath = path.join(resolved, 'index.ts');
+  if (existsSync(indexPath)) return normalizeSep(indexPath);
+
   return '';
 }
 
