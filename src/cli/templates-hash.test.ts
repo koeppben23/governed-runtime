@@ -110,9 +110,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for standalone /review host-task flow: /review now treats
     // HOST_SUBAGENT_TASK_REQUIRED as an intermediate state and documents local
     // branch diff fallback when no remote/PR is available.
+    // Refreshed for #565: /implement template + shared-review-loop now submit the
+    // implementation review verdict via the separate flowguard_review_implementation
+    // tool (record evidence vs. submit verdict are distinct single-purpose tools).
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '34043e39fad06c259e7dad05a60bb7c5a87f9e8671c7f4ec5cf1dc45c7fca408',
+      '2d50ba1ccb68204c4f6a94cadc17d40d793043ce3bcff2a9e43383f7a91866d0',
     );
   });
 

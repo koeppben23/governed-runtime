@@ -72,7 +72,7 @@ function buildHostTaskBlockedOutput(
     `a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool. ` +
     `Call the Task tool with subagent_type="${REVIEWER_SUBAGENT_TYPE}".` +
     (contextSuffix ? ` Context: ${contextSuffix}.` : '') +
-    ` The reviewer subagent must NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, flowguard_architecture) in its own session.` +
+    ` The reviewer subagent must NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, flowguard_review_implementation, flowguard_architecture) in its own session.` +
     ` When it returns, submit ONLY the verdict (reviewVerdict) matching the reviewer's overallVerdict — ` +
     `the captured evidence is resolved automatically; do NOT submit, copy, or alter reviewFindings. ` +
     `reviewVerdict is the reviewer's result, NOT user approval, and only advances to the human review gate.` +

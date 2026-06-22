@@ -9,11 +9,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   nextImplementationReviewIteration,
-  classifyImplementArgs,
   buildImplementRuntime,
   validateImplementSequence,
   type ImplementArgs,
-  type ImplementFlags,
   type ImplementRuntime,
 } from './implement-shared.js';
 import type { SessionState, Phase } from '../../state/schema.js';
@@ -114,44 +112,6 @@ describe('nextImplementationReviewIteration', () => {
       ],
     } as Partial<SessionState>);
     expect(nextImplementationReviewIteration(s)).toBe(6);
-  });
-});
-
-// ─── classifyImplementArgs ────────────────────────────────────────────────────
-
-describe('classifyImplementArgs', () => {
-  it('empty args => isRecordImpl true, no verdict or findings', () => {
-    const flags = classifyImplementArgs(implementArgs());
-    expect(flags).toEqual<ImplementFlags>({
-      hasVerdict: false,
-      hasFindings: false,
-      isRecordImpl: true,
-    });
-  });
-
-  it('reviewVerdict set => hasVerdict true, isRecordImpl false', () => {
-    const flags = classifyImplementArgs(implementArgs({ reviewVerdict: 'accept' }));
-    expect(flags.hasVerdict).toBe(true);
-    expect(flags.isRecordImpl).toBe(false);
-  });
-
-  it('reviewFindings provided => hasFindings true', () => {
-    const flags = classifyImplementArgs(
-      implementArgs({ reviewFindings: {} as unknown as ImplementArgs['reviewFindings'] }),
-    );
-    expect(flags.hasFindings).toBe(true);
-  });
-
-  it('both verdict and findings => both flags true', () => {
-    const flags = classifyImplementArgs(
-      implementArgs({
-        reviewVerdict: 'changes_requested',
-        reviewFindings: {} as unknown as ImplementArgs['reviewFindings'],
-      }),
-    );
-    expect(flags.hasVerdict).toBe(true);
-    expect(flags.hasFindings).toBe(true);
-    expect(flags.isRecordImpl).toBe(false);
   });
 });
 

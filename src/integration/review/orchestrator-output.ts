@@ -39,7 +39,7 @@ export function buildMutatedOutput(
     `${REVIEWER_SUBAGENT_TYPE} subagent. Review findings are included in ` +
     `pluginReviewFindings. Submit your reviewVerdict based on the ` +
     `overallVerdict, and include the reviewFindings object from ` +
-    `pluginReviewFindings in your flowguard_plan, flowguard_architecture, or flowguard_implement call.`;
+    `pluginReviewFindings in your flowguard_plan, flowguard_architecture, or flowguard_review_implementation call.`;
 
   parsed.pluginReviewFindings = reviewerResult.findings;
   parsed._pluginReviewSessionId = reviewerResult.sessionId;

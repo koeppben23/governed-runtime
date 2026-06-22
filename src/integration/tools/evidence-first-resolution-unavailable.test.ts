@@ -320,8 +320,8 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
       reviewInvocationPolicy: 'host_task_required',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
-    const { implement } = await import('./implement.js');
-    const res = await implement.execute(
+    const { review_implementation } = await import('./implement.js');
+    const res = await review_implementation.execute(
       { reviewVerdict: 'accept', reviewerUnavailable: true },
       {} as never,
     );
@@ -385,8 +385,8 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
     });
 
-    const { implement } = await import('./implement.js');
-    const res = await implement.execute(
+    const { review_implementation } = await import('./implement.js');
+    const res = await review_implementation.execute(
       { reviewVerdict: 'accept', reviewerUnavailable: true },
       {} as never,
     );

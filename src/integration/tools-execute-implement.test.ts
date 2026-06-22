@@ -36,6 +36,7 @@ import {
   plan,
   decision,
   implement,
+  review_implementation,
   run_check,
   review,
   abort_session,
@@ -297,7 +298,10 @@ describe('implement', () => {
       await reachImplementation();
       await implement.execute({}, ctx);
       const reviewFindings = await fulfillReview('implement', 1, 'accept');
-      const raw = await implement.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+      const raw = await review_implementation.execute(
+        { reviewVerdict: 'accept', reviewFindings },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(
@@ -406,7 +410,7 @@ describe('implement', () => {
 
     it('Mode B blocks with IMPLEMENTATION_EVIDENCE_REQUIRED before evidence is recorded', async () => {
       await reachImplementation();
-      const raw = await implement.execute({ reviewVerdict: 'accept' }, ctx);
+      const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_REQUIRED');
@@ -418,7 +422,7 @@ describe('implement', () => {
 
     it('blocks reviewerUnavailable mixed into a record-mode call with INVALID_IMPLEMENT_TOOL_SEQUENCE (#499 gap closed)', async () => {
       await reachImplementation();
-      const raw = await implement.execute({ reviewerUnavailable: true }, ctx);
+      const raw = await review_implementation.execute({ reviewerUnavailable: true }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('INVALID_IMPLEMENT_TOOL_SEQUENCE');
@@ -438,7 +442,7 @@ describe('implement', () => {
         implementation: null,
       });
 
-      const raw = await implement.execute({ reviewVerdict: 'accept' }, ctx);
+      const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_REQUIRED');
@@ -500,7 +504,10 @@ describe('implement', () => {
       await reachImplementation();
       await enterImplReview();
       const reviewFindings = await fulfillReview('implement', 1, 'accept');
-      const raw = await implement.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+      const raw = await review_implementation.execute(
+        { reviewVerdict: 'accept', reviewFindings },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.latestImplementationReview.reviewMode).toBe('subagent');
@@ -509,7 +516,7 @@ describe('implement', () => {
     it('reviewMode=self blocked by mandatory default in Mode B', async () => {
       await reachImplementation();
       await enterImplReview();
-      const raw = await implement.execute(
+      const raw = await review_implementation.execute(
         {
           reviewVerdict: 'accept',
           reviewFindings: { ...validReviewFindingsSelf, iteration: 1 },
@@ -525,7 +532,7 @@ describe('implement', () => {
       await reachImplementation();
       await enterImplReview();
       const wrongVersion = { ...validReviewFindingsSubagent, iteration: 1, planVersion: 99 };
-      const raw = await implement.execute(
+      const raw = await review_implementation.execute(
         {
           reviewVerdict: 'changes_requested',
           reviewFindings: wrongVersion,
@@ -539,7 +546,10 @@ describe('implement', () => {
 
     it('reviewFindings without reviewVerdict blocks with INVALID_IMPLEMENT_TOOL_SEQUENCE', async () => {
       await reachImplementation();
-      const raw = await implement.execute({ reviewFindings: validReviewFindingsSubagent }, ctx);
+      const raw = await review_implementation.execute(
+        { reviewFindings: validReviewFindingsSubagent },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('INVALID_IMPLEMENT_TOOL_SEQUENCE');
@@ -550,7 +560,10 @@ describe('implement', () => {
       await setSelfReviewPolicy(true, false);
       await enterImplReview();
       const reviewFindings = await fulfillReview('implement', 1, 'accept');
-      const raw = await implement.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+      const raw = await review_implementation.execute(
+        { reviewVerdict: 'accept', reviewFindings },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.latestImplementationReview).toBeTruthy();
@@ -561,7 +574,7 @@ describe('implement', () => {
       await reachImplementation();
       await setSelfReviewPolicy(true, true);
       await enterImplReview();
-      const raw = await implement.execute(
+      const raw = await review_implementation.execute(
         {
           reviewVerdict: 'accept',
           reviewFindings: { ...validReviewFindingsSelf, iteration: 1 },
@@ -577,7 +590,7 @@ describe('implement', () => {
       await reachImplementation();
       await setSelfReviewPolicy(true, false);
       await enterImplReview();
-      const raw = await implement.execute(
+      const raw = await review_implementation.execute(
         {
           reviewVerdict: 'accept',
           reviewFindings: { ...validReviewFindingsSelf, iteration: 1 },
@@ -592,7 +605,7 @@ describe('implement', () => {
     it('Mode B: missing mandatory reviewer findings blocks approve', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
-      const raw = await implement.execute({ reviewVerdict: 'accept' }, ctx);
+      const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -604,7 +617,7 @@ describe('implement', () => {
       await enterImplReview();
 
       const modeBFindings = { ...validReviewFindingsSelf, iteration: 1 };
-      const raw = await implement.execute(
+      const raw = await review_implementation.execute(
         { reviewVerdict: 'changes_requested', reviewFindings: modeBFindings },
         ctx,
       );
@@ -618,7 +631,7 @@ describe('implement', () => {
       await implement.execute({}, ctx);
 
       const wrongVersion = { ...validReviewFindingsSubagent, iteration: 1, planVersion: 99 };
-      const raw = await implement.execute(
+      const raw = await review_implementation.execute(
         { reviewVerdict: 'changes_requested', reviewFindings: wrongVersion },
         ctx,
       );
@@ -632,7 +645,7 @@ describe('implement', () => {
       await implement.execute({}, ctx);
 
       const wrongIteration = { ...validReviewFindingsSubagent, iteration: 99 };
-      const raw = await implement.execute(
+      const raw = await review_implementation.execute(
         { reviewVerdict: 'changes_requested', reviewFindings: wrongIteration },
         ctx,
       );
@@ -646,7 +659,7 @@ describe('implement', () => {
       await implement.execute({}, ctx);
 
       const changesRequestedFindings = await fulfillReview('implement', 1, 'changes_requested');
-      const raw = await implement.execute(
+      const raw = await review_implementation.execute(
         { reviewVerdict: 'accept', reviewFindings: changesRequestedFindings },
         ctx,
       );
@@ -660,7 +673,7 @@ describe('implement', () => {
       await implement.execute({}, ctx);
 
       const validModeBFindings = await fulfillReview('implement', 1, 'changes_requested');
-      const raw = await implement.execute(
+      const raw = await review_implementation.execute(
         { reviewVerdict: 'changes_requested', reviewFindings: validModeBFindings },
         ctx,
       );
@@ -674,7 +687,7 @@ describe('implement', () => {
       await implement.execute({}, ctx);
 
       const validModeBFindings = await fulfillReview('implement', 1, 'changes_requested');
-      const reviewRaw = await implement.execute(
+      const reviewRaw = await review_implementation.execute(
         { reviewVerdict: 'changes_requested', reviewFindings: validModeBFindings },
         ctx,
       );
@@ -700,7 +713,7 @@ describe('implement', () => {
       expect(afterRecordState?.implReviewFindings).toHaveLength(1);
 
       const secondReviewFindings = await fulfillReview('implement', 2, 'accept');
-      const approveRaw = await implement.execute(
+      const approveRaw = await review_implementation.execute(
         { reviewVerdict: 'accept', reviewFindings: secondReviewFindings },
         ctx,
       );
@@ -715,7 +728,7 @@ describe('implement', () => {
       await setSelfReviewPolicy(true, false);
       await implement.execute({}, ctx);
 
-      const raw = await implement.execute({ reviewVerdict: 'accept' }, ctx);
+      const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -727,7 +740,7 @@ describe('implement', () => {
 
       await enterImplReview();
       const modeBFindings = await fulfillReview('implement', 1, 'accept');
-      const raw = await implement.execute(
+      const raw = await review_implementation.execute(
         { reviewVerdict: 'accept', reviewFindings: modeBFindings },
         ctx,
       );
@@ -744,7 +757,7 @@ describe('implement', () => {
       await enterImplReview();
       const reviewFindings = await fulfillReview('implement', 1, 'accept');
 
-      const raw = await implement.execute(
+      const raw = await review_implementation.execute(
         {
           reviewVerdict: 'accept',
           reviewFindings: {
@@ -763,7 +776,7 @@ describe('implement', () => {
       await reachImplementation();
       await enterImplReview();
       const reviewFindings = await fulfillReview('implement', 1, 'accept');
-      await implement.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+      await review_implementation.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
 
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -779,7 +792,7 @@ describe('implement', () => {
       await reachImplementation();
       await enterImplReview();
       const reviewFindings = await fulfillReview('implement', 1, 'accept');
-      await implement.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
+      await review_implementation.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
 
       const raw = await status.execute({}, ctx);
       const result = parseToolResult(raw);
@@ -799,7 +812,7 @@ describe('implement', () => {
         const baseFindings = await fulfillReview('implement', 1, 'accept');
         const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
-        const raw = await implement.execute(
+        const raw = await review_implementation.execute(
           { reviewVerdict: 'changes_requested', reviewFindings: unableFindings },
           ctx,
         );
@@ -815,7 +828,7 @@ describe('implement', () => {
         const baseFindings = await fulfillReview('implement', 1, 'accept');
         const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
-        const raw = await implement.execute(
+        const raw = await review_implementation.execute(
           { reviewVerdict: 'accept', reviewFindings: unableFindings },
           ctx,
         );
@@ -827,11 +840,14 @@ describe('implement', () => {
   });
 
   // ═══════════════════════════════════════════════════════════════════════════════
-  // BUG-21: Null-tolerant mode detection (defense-in-depth for Fix E)
+  // BUG-21: Null-tolerant record tool (defense-in-depth for Fix E)
+  // The record tool (flowguard_implement) takes no arguments; any stray/null
+  // verdict-shaped keys injected by a model are ignored and evidence is recorded
+  // (issue #565: the record tool can no longer carry a verdict at all).
   // ═══════════════════════════════════════════════════════════════════════════════
 
-  describe('BUG-21: null-tolerant mode detection (implement tool)', () => {
-    it('HAPPY: reviewVerdict=null → Mode A (record implementation)', async () => {
+  describe('BUG-21: null-tolerant record tool (implement tool)', () => {
+    it('HAPPY: stray reviewVerdict=null is ignored → records implementation', async () => {
       await reachImplementation();
       const raw = await implement.execute({ reviewVerdict: null } as any, ctx);
       const result = parseToolResult(raw);
@@ -839,7 +855,7 @@ describe('implement', () => {
       expect(result.changedFiles).toBeDefined();
     });
 
-    it('HAPPY: reviewFindings=null → Mode A (no INVALID_IMPLEMENT_TOOL_SEQUENCE)', async () => {
+    it('HAPPY: stray reviewFindings=null is ignored → records implementation', async () => {
       await reachImplementation();
       const raw = await implement.execute({ reviewFindings: null } as any, ctx);
       const result = parseToolResult(raw);
@@ -847,7 +863,7 @@ describe('implement', () => {
       expect(result.changedFiles).toBeDefined();
     });
 
-    it('CORNER: both reviewVerdict=null + reviewFindings=null → Mode A', async () => {
+    it('CORNER: both stray reviewVerdict=null + reviewFindings=null → records implementation', async () => {
       await reachImplementation();
       const raw = await implement.execute(
         { reviewVerdict: null, reviewFindings: null } as any,

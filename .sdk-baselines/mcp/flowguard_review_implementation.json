@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_review_implementation",
+  "title": "flowguard_review_implementation",
+  "description": "Submit the independent reviewer's verdict on the recorded implementation (issue #565). reviewVerdict is required. Use at IMPL_REVIEW after the flowguard-reviewer subagent reviewed the implementation recorded by flowguard_implement.",
+  "type": "object",
+  "properties": {
+    "reviewVerdict": {
+      "type": "string",
+      "enum": ["accept", "changes_requested"],
+      "description": "REQUIRED. The independent reviewer's verdict on the implementation. 'accept' converges the loop and advances to the EVIDENCE_REVIEW user gate; 'changes_requested' requires revision."
+    },
+    "reviewFindings": {
+      "$ref": "#/$defs/ReviewFindings",
+      "description": "Structured review findings from independent review (SDK mode only)."
+    },
+    "reviewerUnavailable": {
+      "type": "boolean",
+      "description": "Set to true when the reviewer subagent cannot be invoked (fail-closed signal)."
+    }
+  },
+  "required": ["reviewVerdict"],
+  "$defs": {
+    "ReviewFindings": {
+      "type": "object",
+      "description": "Structured findings from the flowguard-reviewer subagent.",
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

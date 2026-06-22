@@ -12,7 +12,7 @@ import type { RailContext } from '../../rails/types.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { ReviewFindings } from '../../state/evidence.js';
 import type { resolveCeremonyProfile } from '../phase-tool-gate.js';
-import { classifyToolCallMode, toolCallFlags } from './review-validation-mode.js';
+import { classifyToolCallMode } from './review-validation-mode.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Shared Types / Helpers
@@ -47,25 +47,6 @@ export type ImplementRuntime = {
 };
 
 export type ImplementationCeremony = ReturnType<typeof resolveCeremonyProfile>;
-
-export type ImplementFlags = {
-  hasVerdict: boolean;
-  hasFindings: boolean;
-  isRecordImpl: boolean;
-};
-
-export function classifyImplementArgs(args: ImplementArgs): ImplementFlags {
-  const { hasVerdict, hasFindings } = toolCallFlags({
-    reviewVerdict: args.reviewVerdict,
-    reviewFindings: args.reviewFindings,
-    reviewerUnavailable: args.reviewerUnavailable,
-  });
-  return {
-    hasVerdict,
-    hasFindings,
-    isRecordImpl: !hasVerdict,
-  };
-}
 
 export function buildImplementRuntime(input: {
   args: ImplementArgs;

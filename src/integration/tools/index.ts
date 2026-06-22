@@ -2,11 +2,13 @@
  * @module integration/tools
  * @description Barrel export for FlowGuard tool definitions.
  *
- * Re-exports 12 tools from focused modules:
+ * Re-exports 13 tools from focused modules:
  * - helpers.ts        — shared interfaces, formatters, workspace/state/policy helpers
  * - hydrate.ts        — session bootstrap with discovery and profile resolution
  * - plan.ts           — plan submission and independent review loop
- * - implement.ts      — implementation recording and review loop
+ * - implement.ts      — implementation recording (flowguard_implement) and
+ *                       review verdict (flowguard_review_implementation) — split
+ *                       into single-purpose tools (issue #565)
  * - architecture.ts   — ADR submission and review loop
  * - status-tool.ts    — read-only session state check
  * - decision-tool.ts  — human review verdict at user gates
@@ -30,6 +32,7 @@ import {
 import { hydrate as rawHydrate } from './hydrate.js';
 import { plan as rawPlan } from './plan.js';
 import { implement as rawImplement } from './implement.js';
+import { review_implementation as rawReviewImplementation } from './implement.js';
 import { architecture as rawArchitecture } from './architecture.js';
 import { continue_cmd as rawContinue } from './continue-tool.js';
 import type { ToolDefinition, ToolResult } from './helpers.js';
@@ -100,6 +103,7 @@ export const archive = withGovernanceFooter(rawArchive);
 export const hydrate = withGovernanceFooter(rawHydrate);
 export const plan = withGovernanceFooter(rawPlan);
 export const implement = withGovernanceFooter(rawImplement);
+export const review_implementation = withGovernanceFooter(rawReviewImplementation);
 export const architecture = withGovernanceFooter(rawArchitecture);
 const continueTool = withGovernanceFooter(rawContinue);
 export { continueTool as continue };

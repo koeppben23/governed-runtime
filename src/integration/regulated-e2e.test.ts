@@ -22,7 +22,16 @@ import {
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
-import { status, hydrate, ticket, plan, decision, run_check, implement } from './tools/index.js';
+import {
+  status,
+  hydrate,
+  ticket,
+  plan,
+  decision,
+  run_check,
+  implement,
+  review_implementation,
+} from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import {
@@ -185,7 +194,7 @@ async function driveToEvidenceReview(): Promise<void> {
   }
   await callOk(implement, {});
   for (let i = 0; i < 8 && (await phase()) !== 'EVIDENCE_REVIEW'; i++) {
-    await callOk(implement, { reviewVerdict: 'accept' });
+    await callOk(review_implementation, { reviewVerdict: 'accept' });
   }
   expect(await phase()).toBe('EVIDENCE_REVIEW');
 }

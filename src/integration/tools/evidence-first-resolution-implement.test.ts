@@ -325,8 +325,8 @@ describe('BUG-17: implement evidence-first resolution', () => {
       transitions: [],
     });
 
-    const { implement } = await import('./implement.js');
-    const res = await implement.execute({ reviewVerdict: 'accept' }, {} as never);
+    const { review_implementation } = await import('./implement.js');
+    const res = await review_implementation.execute({ reviewVerdict: 'accept' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBeUndefined();
   });
@@ -369,8 +369,8 @@ describe('BUG-17: implement evidence-first resolution', () => {
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
 
-    const { implement } = await import('./implement.js');
-    const res = await implement.execute({ reviewVerdict: 'accept' }, {} as never);
+    const { review_implementation } = await import('./implement.js');
+    const res = await review_implementation.execute({ reviewVerdict: 'accept' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -391,8 +391,8 @@ describe('BUG-17: implement evidence-first resolution', () => {
       transitions: [],
     });
 
-    const { implement } = await import('./implement.js');
-    const res = await implement.execute(
+    const { review_implementation } = await import('./implement.js');
+    const res = await review_implementation.execute(
       {
         reviewVerdict: 'accept',
         // Agent submits WRONG iteration — ignored in host_task mode
@@ -414,8 +414,8 @@ describe('BUG-17: implement evidence-first resolution', () => {
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
 
-    const { implement } = await import('./implement.js');
-    const res = await implement.execute({ reviewVerdict: 'accept' }, {} as never);
+    const { review_implementation } = await import('./implement.js');
+    const res = await review_implementation.execute({ reviewVerdict: 'accept' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
@@ -473,8 +473,8 @@ describe('BUG-17: implement evidence-first resolution', () => {
       transitions: [],
     });
 
-    const { implement } = await import('./implement.js');
-    const res = await implement.execute(
+    const { review_implementation } = await import('./implement.js');
+    const res = await review_implementation.execute(
       { reviewVerdict: 'accept', reviewFindings: findings },
       {} as never,
     );

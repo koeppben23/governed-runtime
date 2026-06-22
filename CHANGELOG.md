@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **#565: split the multi-mode `flowguard_implement` tool into two
+  single-purpose tools, and made MCP tool input schemas strict.** Recording
+  implementation evidence and submitting the reviewer verdict are now distinct
+  tools: `flowguard_implement` records evidence and takes **no arguments**;
+  the new `flowguard_review_implementation` submits the reviewer verdict and
+  **requires** `reviewVerdict`. This makes the previously-possible invalid
+  state (sending a `reviewVerdict` on an evidence-record call) unrepresentable
+  at the tool surface, addressing the root cause behind #499. Separately, all
+  MCP tool input schemas are now emitted with `additionalProperties: false`
+  (strict) via `schema-converter.ts`, so MCP hosts that honor `strict`
+  reject unknown keys before the call reaches FlowGuard. A new runtime
+  conformance guard (`mcp-schema-strictness.test.ts`) verifies the live MCP
+  schemas are strict (the static baselines alone did not).
+  - **Breaking (tool surface, pre-release):** the MCP tool registry now exposes
+    **13** tools. Agents/hosts that submitted the implementation verdict via
+    `flowguard_implement({ reviewVerdict })` must call
+    `flowguard_review_implementation({ reviewVerdict })` instead. Command
+    templates and the Claude/Codex skills are updated accordingly. OpenCode is
+    unaffected at the schema layer (it has no FlowGuard-owned tool schema; its
+    protection remains the pre-tool-use runtime validation).
+
 - **#499: unified multi-mode tool-contract validation.** `flowguard_plan`,
   `flowguard_architecture`, and `flowguard_implement` now classify their
   argument shape through one canonical authority (`review-validation-mode.ts`),
