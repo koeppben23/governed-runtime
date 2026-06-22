@@ -4,7 +4,8 @@
  *              both plugin.ts (before-hook enforcement) and
  *              plugin-afterhooks.ts (after-hook processing).
  *
- * Leaf module — no sibling imports.
+ * Shared plugin runtime types and trace helpers used by both before-hook
+ * and after-hook modules.
  *
  * @version v1
  */

@@ -3,8 +3,9 @@
  * @description After-hook processing and diagnostic logging for the
  *              FlowGuard OpenCode plugin.
  *
- * Extracted from plugin.ts. All functions are diagnostic/non-blocking —
- * Allow/Deny enforcement lives in plugin.ts.
+ * After-hook processing for diagnostics, audit finalisation, and
+ * post-execution output handling. Before-hook Allow/Deny enforcement
+ * remains in plugin.ts.
  *
  * @version v1
  */
