@@ -172,7 +172,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'PLAN_APPROVE_WITH_TEXT',
     category: 'precondition',
     messageTemplate:
-      'Plan approval included planText. Approval and plan submission must be separate calls; planText is for initial submissions and revisions only.',
+      'Plan approval included planText (you sent reviewVerdict="{receivedVerdict}"). Approval and plan submission must be separate calls; planText is for initial submissions and revisions only.',
     recoverySteps: [
       'For host_task_required approval: call flowguard_plan({ reviewVerdict: "accept" }) after reviewer evidence is captured',
       'For SDK/manual-attested approval: call flowguard_plan({ reviewVerdict: "accept", reviewFindings }) with the exact reviewer output',
@@ -270,6 +270,30 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'ADR_APPROVE_WITH_TEXT',
+    category: 'precondition',
+    messageTemplate:
+      'ADR approval included adrText (you sent reviewVerdict="{receivedVerdict}"). Approval and ADR submission must be separate calls; adrText is for initial submissions and revisions only.',
+    recoverySteps: [
+      'For approval: call flowguard_architecture({ reviewVerdict: "accept" }) (host-task mode) or with reviewFindings (SDK mode) — without adrText',
+      'Include adrText only when reviewVerdict is "changes_requested" (revised ADR)',
+    ],
+    quickFixCommand: '/architecture',
+  },
+
+  {
+    code: 'ADR_FINDINGS_WITHOUT_VERDICT',
+    category: 'precondition',
+    messageTemplate:
+      'Review findings were submitted without a verdict. Include reviewVerdict alongside reviewFindings.',
+    recoverySteps: [
+      'Include reviewVerdict alongside reviewFindings',
+      'Call flowguard_architecture({ reviewVerdict: "accept"|"changes_requested", reviewFindings })',
+    ],
+    quickFixCommand: '/architecture',
+  },
+
+  {
     code: 'ADR_REVIEW_IN_PROGRESS',
     category: 'precondition',
     messageTemplate:
@@ -316,10 +340,11 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'IMPLEMENTATION_EVIDENCE_REQUIRED',
     category: 'precondition',
     messageTemplate:
-      'An implementation review verdict was submitted before implementation evidence exists.',
+      'An implementation review verdict (reviewVerdict="{receivedVerdict}") was submitted before implementation evidence exists. Remove it and record evidence first.',
     recoverySteps: [
       'Make the implementation changes first',
-      'Call flowguard_implement({}) to record implementation evidence before submitting reviewVerdict',
+      'Call flowguard_implement({}) with NO reviewVerdict to record implementation evidence',
+      'Only after evidence is recorded, submit the verdict in a separate call',
     ],
     quickFixCommand: '/implement',
   },
@@ -341,7 +366,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'IMPLEMENT_REVIEW_LOOP_REQUIRED',
     category: 'precondition',
     messageTemplate:
-      'An implementation review verdict requires an active implementation review loop.',
+      'An implementation review verdict requires an active implementation review loop, but the current phase is {phase}.',
     recoverySteps: [
       'Record implementation evidence first and wait for the implementation review obligation',
       'Then submit reviewVerdict together with reviewFindings',

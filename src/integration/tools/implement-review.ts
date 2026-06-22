@@ -281,7 +281,13 @@ async function handleApprovedReview(input: {
 
 export async function handleImplReview(input: ImplementRuntime): Promise<string> {
   const implementation = input.state.implementation;
-  if (!implementation) return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
+  if (!implementation) {
+    const receivedVerdict = input.args.reviewVerdict;
+    return formatBlocked(
+      'IMPLEMENTATION_EVIDENCE_REQUIRED',
+      receivedVerdict ? { receivedVerdict } : undefined,
+    );
+  }
 
   const iteration = nextImplementationReviewIteration(input.state);
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;

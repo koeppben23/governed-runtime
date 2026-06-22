@@ -12,6 +12,7 @@ import type { RailContext } from '../../rails/types.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { ReviewFindings } from '../../state/evidence.js';
 import type { resolveCeremonyProfile } from '../phase-tool-gate.js';
+import { classifyToolCallMode, toolCallFlags } from './review-validation-mode.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Shared Types / Helpers
@@ -54,10 +55,14 @@ export type ImplementFlags = {
 };
 
 export function classifyImplementArgs(args: ImplementArgs): ImplementFlags {
-  const hasVerdict = typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
+  const { hasVerdict, hasFindings } = toolCallFlags({
+    reviewVerdict: args.reviewVerdict,
+    reviewFindings: args.reviewFindings,
+    reviewerUnavailable: args.reviewerUnavailable,
+  });
   return {
     hasVerdict,
-    hasFindings: args.reviewFindings != null && typeof args.reviewFindings === 'object',
+    hasFindings,
     isRecordImpl: !hasVerdict,
   };
 }
@@ -80,14 +85,23 @@ export function buildImplementRuntime(input: {
   };
 }
 
-export function validateImplementSequence(
-  args: ImplementArgs,
-  state: SessionState,
-  hasVerdict: boolean,
-  hasFindings: boolean,
-): string | null {
-  if (hasFindings && !hasVerdict) return formatBlocked('INVALID_IMPLEMENT_TOOL_SEQUENCE');
-  if (hasVerdict && !state.implementation) return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
+export function validateImplementSequence(args: ImplementArgs, state: SessionState): string | null {
+  // 1. Canonical argument-shape validation (findings-without-verdict and
+  //    reviewerUnavailable-with-record-mode are pure-shape faults).
+  const mode = classifyToolCallMode('implement', {
+    reviewVerdict: args.reviewVerdict,
+    reviewFindings: args.reviewFindings,
+    reviewerUnavailable: args.reviewerUnavailable,
+  });
+  if (mode.kind === 'invalid') return formatBlocked(mode.code, mode.params);
+
+  // 2. State-dependent sequencing (requires SessionState; not pure shape).
+  const receivedVerdict = args.reviewVerdict;
+  const hasVerdict = typeof receivedVerdict === 'string' && receivedVerdict.length > 0;
+  const verdictParams = receivedVerdict ? { receivedVerdict } : undefined;
+  if (hasVerdict && !state.implementation) {
+    return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED', verdictParams);
+  }
   if (hasVerdict && state.phase !== 'IMPL_REVIEW') {
     return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: state.phase });
   }

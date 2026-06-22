@@ -23,6 +23,24 @@ describe('config/reasons', () => {
       expect(result.recovery.length).toBeGreaterThan(0);
     });
 
+    it('#499 anti-confabulation: mixed-mode approval codes echo the received verdict', () => {
+      for (const code of ['PLAN_APPROVE_WITH_TEXT', 'ADR_APPROVE_WITH_TEXT'] as const) {
+        const result = defaultReasonRegistry.format(code, { receivedVerdict: 'accept' });
+        expect(result.code).toBe(code);
+        expect(result.reason).toContain('reviewVerdict="accept"');
+        // No literal placeholder leaks when the param is supplied.
+        expect(result.reason).not.toContain('{receivedVerdict}');
+      }
+    });
+
+    it('#499 anti-confabulation: IMPLEMENTATION_EVIDENCE_REQUIRED echoes the received verdict', () => {
+      const result = defaultReasonRegistry.format('IMPLEMENTATION_EVIDENCE_REQUIRED', {
+        receivedVerdict: 'changes_requested',
+      });
+      expect(result.reason).toContain('reviewVerdict="changes_requested"');
+      expect(result.reason).not.toContain('{receivedVerdict}');
+    });
+
     it('blocked() helper returns correct RailBlocked structure', () => {
       const result = blocked('TICKET_REQUIRED', { action: 'planning' });
       expect(result.kind).toBe('blocked');

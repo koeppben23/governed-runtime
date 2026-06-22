@@ -10,6 +10,7 @@ import type { MutableSession } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
 import { ensureReviewAssurance, createReviewObligation } from '../review/assurance.js';
+import { classifyToolCallMode } from './review-validation-mode.js';
 import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
@@ -42,9 +43,21 @@ export function validateInitialSubmissionGate(
   const hasTitle = hasText(args.title);
   const hasAdrText = hasText(args.adrText);
 
+  // title + verdict keeps its distinct code (submission metadata with a verdict).
   if (hasTitle && hasText(args.reviewVerdict)) {
     return formatBlocked('ADR_SUBMISSION_MIXED_INPUTS');
   }
+
+  // Canonical argument-shape validation (closes the historical architecture gaps:
+  // adrText+verdict=accept, findings-without-verdict, reviewerUnavailable+submission).
+  // `text` is the heavy ADR payload (adrText); title is handled above.
+  const mode = classifyToolCallMode('architecture', {
+    text: args.adrText,
+    reviewVerdict: args.reviewVerdict,
+    reviewFindings: args.reviewFindings,
+    reviewerUnavailable: args.reviewerUnavailable,
+  });
+  if (mode.kind === 'invalid') return formatBlocked(mode.code, mode.params);
 
   if (!isInitialSubmission || (!hasTitle && !hasAdrText) || state.phase !== 'ARCHITECTURE') {
     return null;

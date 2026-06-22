@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **#499: unified multi-mode tool-contract validation.** `flowguard_plan`,
+  `flowguard_architecture`, and `flowguard_implement` now classify their
+  argument shape through one canonical authority (`review-validation-mode.ts`),
+  replacing three divergent per-tool validators. This closes architecture gaps:
+  `adrText + reviewVerdict:"accept"` is now rejected (`ADR_APPROVE_WITH_TEXT`)
+  instead of silently dropping adrText; findings-without-verdict is rejected
+  (`ADR_FINDINGS_WITHOUT_VERDICT`); and the previously-orphaned
+  `INVALID_ARCHITECTURE_TOOL_SEQUENCE` is wired for reviewerUnavailable-with-
+  submission. `flowguard_implement` now also rejects reviewerUnavailable mixed
+  into a record-mode call. A new SSOT guard (`mode-validation-ssot.test.ts`)
+  prevents future per-tool classifier drift.
+  - **Behavior change:** the architecture tool previously ACCEPTED (and silently
+    discarded) `reviewFindings` on a Mode-A submission; it now fails closed with
+    `ADR_FINDINGS_WITHOUT_VERDICT`, matching plan/implement.
+  - Block messages for `IMPLEMENTATION_EVIDENCE_REQUIRED`, `PLAN_APPROVE_WITH_TEXT`,
+    and `ADR_APPROVE_WITH_TEXT` now echo the verdict the caller actually sent
+    (anti-confabulation), e.g. `reviewVerdict="accept"`.
+
 - **Clean Code: unified canonical JSON serializer.** The two divergent recursive
   key-sorting serializers (audit `canonical-digest.ts` and a private one in
   `discovery-digest.ts`) are consolidated into a single `shared/canonical-json.ts`

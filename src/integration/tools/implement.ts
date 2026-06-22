@@ -22,12 +22,7 @@ async function executeImplement(args: ImplementArgs, context: ToolContext): Prom
   if (flags.isRecordImpl) {
     const probe = await withMutableSession(context);
     const probeRuntime = buildImplementRuntime({ args, context, ...probe });
-    const sequenceBlocked = validateImplementSequence(
-      args,
-      probe.state,
-      flags.hasVerdict,
-      flags.hasFindings,
-    );
+    const sequenceBlocked = validateImplementSequence(args, probe.state);
     if (sequenceBlocked) return sequenceBlocked;
     const prereqBlocked = validateImplRecordPrerequisites(probeRuntime);
     if (prereqBlocked) return prereqBlocked;
@@ -48,12 +43,7 @@ async function executeImplement(args: ImplementArgs, context: ToolContext): Prom
           policy,
           ctx,
         });
-        const freshSequenceBlocked = validateImplementSequence(
-          args,
-          state,
-          flags.hasVerdict,
-          flags.hasFindings,
-        );
+        const freshSequenceBlocked = validateImplementSequence(args, state);
         if (freshSequenceBlocked) return freshSequenceBlocked;
         const freshPrereqBlocked = validateImplRecordPrerequisites(runtime);
         if (freshPrereqBlocked) return freshPrereqBlocked;
@@ -76,12 +66,7 @@ async function executeImplement(args: ImplementArgs, context: ToolContext): Prom
         policy,
         ctx,
       });
-      const sequenceBlocked = validateImplementSequence(
-        args,
-        state,
-        flags.hasVerdict,
-        flags.hasFindings,
-      );
+      const sequenceBlocked = validateImplementSequence(args, state);
       if (sequenceBlocked) return sequenceBlocked;
 
       return handleImplReview(runtime);

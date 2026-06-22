@@ -13,6 +13,7 @@ import { withMutableSessionTransaction, formatError } from './helpers.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { validateInitialSubmissionGate } from './architecture-shared.js';
+import { toolCallFlags } from './review-validation-mode.js';
 import { handleAdrSubmission } from './architecture-submit.js';
 import { handleAdrReview } from './architecture-review.js';
 
@@ -69,9 +70,13 @@ export const architecture: ToolDefinition = {
   async execute(args, context) {
     try {
       return await withMutableSessionTransaction(context, async (session) => {
-        // BUG-21: Use typeof checks — `!== undefined` is true for null (which LLMs
-        // may send for absent optional fields). Defense-in-depth.
-        const hasVerdict = typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
+        // Mode routing uses the canonical flag derivation (single authority).
+        const { hasVerdict } = toolCallFlags({
+          text: args.adrText,
+          reviewVerdict: args.reviewVerdict,
+          reviewFindings: args.reviewFindings,
+          reviewerUnavailable: args.reviewerUnavailable,
+        });
         const isInitialSubmission = !hasVerdict;
 
         const gateBlocked = validateInitialSubmissionGate(args, session.state, isInitialSubmission);
