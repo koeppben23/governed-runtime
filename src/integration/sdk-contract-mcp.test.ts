@@ -9,7 +9,7 @@
  * - Description changes (informational)
  *
  * Evidence sources:
- * - .sdk-baselines/mcp/ (12 tool schema files + version.json)
+ * - .sdk-baselines/mcp/ (13 tool schema files + version.json)
  * - src/mcp-server/server.ts (tool registry)
  * - src/integration/tools/ (tool definitions with Zod args)
  *
@@ -38,6 +38,7 @@ const EXPECTED_TOOLS = [
   'flowguard_hydrate',
   'flowguard_plan',
   'flowguard_implement',
+  'flowguard_review_implementation',
   'flowguard_architecture',
   'flowguard_decision',
   'flowguard_run_check',
@@ -67,13 +68,13 @@ describe('SDK Contract: MCP tool registry', () => {
       );
     });
 
-    it('version.json lists all 12 tool schemas', () => {
+    it('version.json lists all 13 tool schemas', () => {
       const version = loadSchema('version.json');
-      expect((version.schemas as string[]).length).toBe(12);
+      expect((version.schemas as string[]).length).toBe(13);
     });
   });
 
-  describe('HAPPY: all 12 tool schema files exist', () => {
+  describe('HAPPY: all 13 tool schema files exist', () => {
     for (const tool of EXPECTED_TOOLS) {
       it(`${tool}.json exists`, () => {
         expect(existsSync(path.join(mcpBaseDir, `${tool}.json`))).toBe(true);
@@ -157,6 +158,32 @@ describe('SDK Contract: MCP tool registry', () => {
       const schema = loadSchema('flowguard_plan.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
       expect(props.reviewVerdict.enum).toEqual(['accept', 'changes_requested']);
+    });
+
+    it('flowguard_review_implementation reviewVerdict enum has 2 values', () => {
+      const schema = loadSchema('flowguard_review_implementation.json');
+      const props = schema.properties as Record<string, Record<string, unknown>>;
+      expect(props.reviewVerdict.enum).toEqual(['accept', 'changes_requested']);
+    });
+  });
+
+  describe('EDGE: implement/verdict tool split (issue #565)', () => {
+    it('flowguard_implement is a record tool with NO arguments', () => {
+      const schema = loadSchema('flowguard_implement.json');
+      expect(schema.properties).toEqual({});
+      expect(schema.additionalProperties).toBe(false);
+    });
+
+    it('flowguard_implement cannot carry a reviewVerdict (unrepresentable)', () => {
+      const schema = loadSchema('flowguard_implement.json');
+      const props = schema.properties as Record<string, unknown>;
+      expect(props.reviewVerdict).toBeUndefined();
+    });
+
+    it('flowguard_review_implementation requires reviewVerdict', () => {
+      const schema = loadSchema('flowguard_review_implementation.json');
+      expect(schema.required).toEqual(['reviewVerdict']);
+      expect(schema.additionalProperties).toBe(false);
     });
   });
 

@@ -207,9 +207,10 @@ description: Begin governed implementation only after FlowGuard allows implement
 Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy state yourself.
 
 1. Call \`mcp__flowguard__flowguard_status\` to obtain the runtime-provided next action.
-2. Call \`mcp__flowguard__flowguard_implement\` only with the evidence required by the tool.
-3. If FlowGuard blocks, fails, or requests review evidence, report the exact blocker and stop.
-4. Use mutating host tools only after FlowGuard explicitly allows implementation.
+2. After completing the plan steps, call \`mcp__flowguard__flowguard_implement\` (no arguments) to record implementation evidence.
+3. To submit the independent reviewer's verdict, call \`mcp__flowguard__flowguard_review_implementation\` with \`reviewVerdict\` (record and verdict are separate single-purpose tools). Submit only the verdict FlowGuard's \`next\` field instructs; never self-approve.
+4. If FlowGuard blocks, fails, or requests review evidence, report the exact blocker and stop.
+5. Use mutating host tools only after FlowGuard explicitly allows implementation.
 `,
 } as const;
 

@@ -47,6 +47,7 @@ import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../../tool-names.
 import {
   isReviewableTool,
   obligationTypeForTool,
+  resolveReviewObligationTool,
   type ReviewableTool,
 } from '../obligation-tools.js';
 import { parseToolResult } from '../../plugin-helpers.js';
@@ -126,18 +127,34 @@ export function onFlowGuardToolAfter(
   output: string,
   now: string,
 ): void {
-  if (!isReviewableTool(toolName) && toolName !== TOOL_FLOWGUARD_REVIEW) return;
+  // The obligation-owning tool for a verdict submission. For
+  // flowguard_review_implementation this resolves to flowguard_implement (the
+  // tool that created the pending review); for plan/architecture/review it is
+  // the tool itself.
+  const obligationTool = resolveReviewObligationTool(toolName);
+  const isReviewContent = toolName === TOOL_FLOWGUARD_REVIEW;
+  if (obligationTool === undefined && !isReviewContent) return;
 
-  const reviewTool: PendingReviewTool = toolName;
   const parsed = parseToolResult(output);
   if (!parsed) return;
 
+  // Verdict submission clears the pending review on the obligation-owning key.
   const hasSelfReviewVerdict =
     typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
-  if (hasSelfReviewVerdict && parsed.error !== true) state.pendingReviews.delete(reviewTool);
+  if (hasSelfReviewVerdict && parsed.error !== true) {
+    const verdictKey: PendingReviewTool = obligationTool ?? TOOL_FLOWGUARD_REVIEW;
+    state.pendingReviews.delete(verdictKey);
+  }
 
+  // REVIEW_REQUIRED is emitted by the record/content tool itself, which owns its
+  // pending-review key. A verdict-only tool never emits REVIEW_REQUIRED.
+  const recordKey: PendingReviewTool = isReviewContent
+    ? TOOL_FLOWGUARD_REVIEW
+    : (obligationTool as PendingReviewTool);
   const next = typeof parsed.next === 'string' ? parsed.next : '';
-  if (next.startsWith(REVIEW_REQUIRED_PREFIX)) trackReviewRequired(state, reviewTool, next, now);
+  if (next.startsWith(REVIEW_REQUIRED_PREFIX) && isReviewableTool(toolName)) {
+    trackReviewRequired(state, recordKey, next, now);
+  }
 
   handleContentAnalysisFlag(state, parsed, toolName, now);
 }
@@ -430,9 +447,12 @@ export function enforceBeforeVerdict(
   } | null,
   strictEnforcement = false,
 ): EnforcementResult {
-  if (!isReviewableTool(toolName)) return { allowed: true };
+  // Resolve the obligation-owning tool. For flowguard_review_implementation the
+  // verdict applies to the flowguard_implement obligation (issue #565); for
+  // plan/architecture the verdict tool owns its own obligation (identity).
+  const reviewTool = resolveReviewObligationTool(toolName);
+  if (reviewTool === undefined) return { allowed: true };
 
-  const reviewTool: ReviewableTool = toolName;
   const reviewVerdictValue = args.reviewVerdict;
   const hasSelfReviewVerdict =
     typeof reviewVerdictValue === 'string' && reviewVerdictValue.length > 0;
@@ -498,9 +518,8 @@ export function recordPluginReview(
   capturedFindings: CapturedFindings | null,
   now: string,
 ): boolean {
-  if (!isReviewableTool(toolName)) return false;
-
-  const reviewTool: ReviewableTool = toolName;
+  const reviewTool = resolveReviewObligationTool(toolName);
+  if (reviewTool === undefined) return false;
   const pending = state.pendingReviews.get(reviewTool);
   if (!pending || pending.subagentCalled) return false;
 

@@ -34,6 +34,14 @@ export const DISCOVERY_REVIEW_DONE_WHEN = `- Discovery health and drift checked 
 export interface ReviewLoopParams {
   /** Full tool name, e.g. `flowguard_plan`. */
   toolName: string;
+  /**
+   * Tool name used to SUBMIT the review verdict. Defaults to `toolName`. For
+   * /implement this differs from `toolName`: evidence is recorded via
+   * `flowguard_implement` but the verdict is submitted via
+   * `flowguard_review_implementation` (issue #565 — record and verdict are
+   * separate single-purpose tools).
+   */
+  verdictToolName?: string;
   /** Artifact noun (lowercase), e.g. `plan`, `implementation`, `ADR`. */
   artifactName: string;
   /** The `changes_requested` revise-and-resubmit parameters string,
@@ -72,13 +80,14 @@ export interface ReviewLoopParams {
  * no multi-sentence paragraphs with embedded conditionals.
  */
 export function SHARED_REVIEW_LOOP(p: ReviewLoopParams): string {
+  const verdictTool = p.verdictToolName ?? p.toolName;
   return `   - \`reviewVerdict\` records the INDEPENDENT REVIEWER's result, never your own approval. On convergence it only advances to the human review gate, where the USER approves the ${p.artifactName} via /review-decision. \`flowguard_decision\` is the only user approval.
    - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED":
        1. Read \`overallVerdict\` from \`pluginReviewFindings\` in the response.
        2. host_task_required mode: findings are resolved from plugin evidence automatically — submit only the verdict without \`reviewFindings\`.
        3. SDK mode: pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`.
-       4. "accept": Call \`${p.toolName}({ reviewVerdict: "accept" })\` (or with \`reviewFindings\` in SDK mode). This is the reviewer's acceptance, not user approval.
-       5. "changes_requested": Revise the ${p.artifactName} to address blocking issues, then call \`${p.toolName}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\` (or with \`reviewFindings\` in SDK mode).${p.changesRequestedExtra}
+       4. "accept": Call \`${verdictTool}({ reviewVerdict: "accept" })\` (or with \`reviewFindings\` in SDK mode). This is the reviewer's acceptance, not user approval.
+       5. "changes_requested": Revise the ${p.artifactName} to address blocking issues, then call \`${verdictTool}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\` (or with \`reviewFindings\` in SDK mode).${p.changesRequestedExtra}
        6. "unable_to_review": The reviewer declared the ${p.artifactName} unreviewable (${p.unableDescription}). The tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same ${p.artifactName} — that obligation is consumed. Report the reviewer's findings to the user, then either ${p.unableRecoveryA} OR ${p.unableRecoveryB}.
    - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED":
        1. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool${p.subagentExtra}. Pass the compact Discovery context captured in Phase 1 (health, drift, detectedStack, verificationCandidates, risk surfaces), and instruct the subagent to check Discovery health and drift BEFORE any repo-dependent quality claim and to mark Discovery-dependent claims NOT_VERIFIED when they cannot be correlated to local repository Discovery.
