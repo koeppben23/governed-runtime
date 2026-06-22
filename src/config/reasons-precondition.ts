@@ -263,7 +263,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'ADR submission included a review verdict. Submission and verdict are separate calls.',
     recoverySteps: [
-      'Submit the ADR with flowguard_architecture({ id, title, adrText }) only',
+      'Submit the ADR with flowguard_architecture({ title, adrText }) only',
       'Submit the review verdict separately: flowguard_architecture({ reviewVerdict })',
     ],
     quickFixCommand: '/architecture',
@@ -328,10 +328,10 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'INVALID_IMPLEMENT_TOOL_SEQUENCE',
     category: 'precondition',
     messageTemplate:
-      'Invalid flowguard_implement call sequence: implementation evidence and review findings must be separate calls.',
+      'Invalid implementation review call: recording evidence and submitting the verdict are separate single-purpose tools.',
     recoverySteps: [
       'Record implementation evidence first with flowguard_implement({}) only',
-      'Do not include reviewFindings unless reviewVerdict is also provided',
+      'Submit the reviewer verdict separately with flowguard_review_implementation({ reviewVerdict })',
     ],
     quickFixCommand: '/implement',
   },
@@ -368,8 +368,8 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'An implementation review verdict requires an active implementation review loop, but the current phase is {phase}.',
     recoverySteps: [
-      'Record implementation evidence first and wait for the implementation review obligation',
-      'Then submit reviewVerdict together with reviewFindings',
+      'Record implementation evidence first with flowguard_implement({}) and wait for the implementation review obligation',
+      'Then submit the verdict with flowguard_review_implementation({ reviewVerdict }) (in host-task mode the plugin resolves reviewFindings automatically)',
     ],
     quickFixCommand: '/implement',
   },

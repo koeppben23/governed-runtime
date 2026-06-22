@@ -19,6 +19,21 @@ import {
   OPENCODE_JSON_TEMPLATE,
   PACKAGE_JSON_TEMPLATE,
 } from './templates.js';
+import {
+  TOOL_FLOWGUARD_STATUS,
+  TOOL_FLOWGUARD_HYDRATE,
+  TOOL_FLOWGUARD_TICKET,
+  TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RUN_CHECK,
+  TOOL_FLOWGUARD_REVIEW,
+  TOOL_FLOWGUARD_CONTINUE,
+  TOOL_FLOWGUARD_ABORT,
+  TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_ARCHITECTURE,
+} from '../integration/tool-names.js';
 
 function sha256(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
@@ -27,7 +42,7 @@ function sha256(value: string): string {
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
     expect(sha256(TOOL_WRAPPER)).toBe(
-      'b4b460e0fd2575b450b774fb941f108248e0fa7637dcac5f1909025a044d0d7d',
+      '3d7e2c04d9d51119d6682d434326b57679580be4aaa79a2b4296af585bf2b298',
     );
   });
 
@@ -143,5 +158,63 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       'why.md',
     ];
     expect(Object.keys(COMMANDS).sort()).toEqual(expected);
+  });
+
+  // Drift guard (issue #565 regression): the OpenCode tool surface is built
+  // verbatim from TOOL_WRAPPER. OpenCode derives the callable tool name as
+  // `flowguard_<exportname>`, so TOOL_WRAPPER MUST re-export every canonical
+  // FlowGuard tool. The #565 split added flowguard_review_implementation to the
+  // barrel and the MCP registry but NOT to TOOL_WRAPPER, making the verdict tool
+  // uncallable on OpenCode. This test cross-checks TOOL_WRAPPER against the
+  // canonical tool-name SSOT so that omission can never silently recur.
+  it('TOOL_WRAPPER re-exports every canonical FlowGuard tool (OpenCode surface completeness)', () => {
+    const canonicalToolNames = [
+      TOOL_FLOWGUARD_STATUS,
+      TOOL_FLOWGUARD_HYDRATE,
+      TOOL_FLOWGUARD_TICKET,
+      TOOL_FLOWGUARD_PLAN,
+      TOOL_FLOWGUARD_DECISION,
+      TOOL_FLOWGUARD_IMPLEMENT,
+      TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+      TOOL_FLOWGUARD_RUN_CHECK,
+      TOOL_FLOWGUARD_REVIEW,
+      TOOL_FLOWGUARD_CONTINUE,
+      TOOL_FLOWGUARD_ABORT,
+      TOOL_FLOWGUARD_ARCHIVE,
+      TOOL_FLOWGUARD_ARCHITECTURE,
+    ];
+
+    // Parse the actual export identifiers from TOOL_WRAPPER's export block.
+    const exportBlock = TOOL_WRAPPER.match(/export\s*\{([^}]*)\}/);
+    expect(exportBlock, 'TOOL_WRAPPER must contain an export block').not.toBeNull();
+    const exportedIdentifiers = new Set(
+      exportBlock![1]!
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
+    );
+
+    // OpenCode tool name `flowguard_<exportname>` -> the export identifier is the
+    // canonical name with the `flowguard_` prefix stripped. abort_session maps to
+    // the `abort_session` export even though its tool name is flowguard_abort_session.
+    const missing = canonicalToolNames
+      .map((toolName) => toolName.replace(/^flowguard_/, ''))
+      .filter((exportName) => !exportedIdentifiers.has(exportName));
+
+    expect(
+      missing,
+      `TOOL_WRAPPER is missing re-exports for: ${missing.join(', ')}. ` +
+        `Add them to src/templates/wrappers/index.ts or OpenCode cannot call these tools.`,
+    ).toEqual([]);
+
+    // Symmetry: no stray exports beyond the canonical tool set.
+    const canonicalExportNames = new Set(
+      canonicalToolNames.map((t) => t.replace(/^flowguard_/, '')),
+    );
+    const stray = [...exportedIdentifiers].filter((id) => !canonicalExportNames.has(id));
+    expect(
+      stray,
+      `TOOL_WRAPPER exports unexpected identifiers (not canonical tools): ${stray.join(', ')}`,
+    ).toEqual([]);
   });
 });

@@ -42,11 +42,11 @@
  *   -> Returns "review needed" with policy-conditional next-action
  *
  * Step 3: LLM calls flowguard-reviewer subagent via Task tool
- * Step 4: LLM calls flowguard_implement({ reviewVerdict: "accept", reviewFindings })
+ * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept", reviewFindings })
  *   -> Tool records review iteration, checks convergence
  *   -> On convergence: auto-advance to EVIDENCE_REVIEW
  *
- * OR Step 4: LLM calls flowguard_implement({ reviewVerdict: "changes_requested" })
+ * OR Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "changes_requested" })
  *   -> LLM makes more code changes, then calls flowguard_implement({}) again
  *
  * @version v5

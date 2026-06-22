@@ -229,8 +229,8 @@ Use `/implement` to record evidence and auto-advance.
 
 The reviewer subagent reviews the implementation against the plan. This is an
 **independent review gate, not a human gate** (USER_GATES = {PLAN_REVIEW,
-EVIDENCE_REVIEW, ARCH_REVIEW}). The LLM submits the subagent ReviewFindings with
-`flowguard_implement` to record each iteration. The reviewer's three verdicts
+EVIDENCE_REVIEW, ARCH_REVIEW}). The LLM records evidence with `flowguard_implement` and submits the reviewer verdict via
+`flowguard_review_implementation`. The reviewer's three verdicts
 (`approve`, `changes_requested`, `unable_to_review`) follow the same semantics
 as the PLAN loop. On `approve` convergence, auto-advances to EVIDENCE_REVIEW;
 on `unable_to_review`, BLOCKED via `SUBAGENT_UNABLE_TO_REVIEW`.
