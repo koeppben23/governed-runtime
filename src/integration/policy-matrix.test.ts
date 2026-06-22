@@ -371,7 +371,8 @@ describe('policy mode matrix', () => {
   });
 
   it('normalizes missing reviewOutputPolicy mode-consistently for solo', async () => {
-    const { normalizePolicySnapshotWithMeta } = await import('../config/policy-snapshot.js');
+    const { normalizePolicySnapshotWithMeta } =
+      await import('../config/policy-snapshot-normalize.js');
     const result = normalizePolicySnapshotWithMeta({
       mode: 'solo',
       hash: 'test-hash',
@@ -390,7 +391,8 @@ describe('policy mode matrix', () => {
   });
 
   it('normalizes missing reviewOutputPolicy mode-consistently for team-ci', async () => {
-    const { normalizePolicySnapshotWithMeta } = await import('../config/policy-snapshot.js');
+    const { normalizePolicySnapshotWithMeta } =
+      await import('../config/policy-snapshot-normalize.js');
     const result = normalizePolicySnapshotWithMeta({
       mode: 'team-ci',
       hash: 'test-hash',
