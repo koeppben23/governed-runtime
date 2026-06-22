@@ -3,9 +3,8 @@
  * @description Policy snapshot normalization — enriches incomplete/legacy
  *              snapshots with mode-consistent safe defaults.
  *
- * Extracted from policy-snapshot.ts to keep the module under the 400 LOC
- * threshold. Build (createPolicySnapshot, freezePolicySnapshot) and resolve
- * (resolvePolicyFromSnapshot) remain in policy-snapshot.ts.
+ * Extracted from policy-snapshot.ts to separate normalisation from
+ * build/resolve and keep both modules under the 700 LOC threshold.
  *
  * @version v1
  */
