@@ -14,7 +14,7 @@ import {
   renderPhaseAwareMandates,
   renderReviewerPrompt,
   resolveMandatesVerbosity,
-} from './mandates-renderer.js';
+} from '../rendering/mandates-renderer.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const COMMANDS_DIR = join(__dirname, 'commands');

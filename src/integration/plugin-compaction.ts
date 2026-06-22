@@ -12,7 +12,7 @@
 
 import { readState } from '../adapters/persistence.js';
 import { PHASE_LABELS } from '../presentation/phase-labels.js';
-import { renderCompactionMandatesSummary } from '../templates/mandates-renderer.js';
+import { renderCompactionMandatesSummary } from '../rendering/mandates-renderer.js';
 
 /**
  * Dependencies for the compaction hook.

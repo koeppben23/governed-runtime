@@ -5,7 +5,7 @@
  *             in reasons-validation.ts.
  */
 
-import type { BlockedReason } from './reasons.js';
+import type { BlockedReason } from './reasons-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 export const REVIEW_VALIDATION_REASONS = [

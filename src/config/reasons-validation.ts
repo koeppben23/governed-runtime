@@ -4,7 +4,7 @@
  *
  * @internal — do not import directly. Use reasons.ts barrel.
  */
-import type { BlockedReason } from './reasons.js';
+import type { BlockedReason } from './reasons-types.js';
 import { REVIEW_VALIDATION_REASONS } from './reasons-validation-review.js';
 
 export const VALIDATION_REASONS: readonly BlockedReason[] = [

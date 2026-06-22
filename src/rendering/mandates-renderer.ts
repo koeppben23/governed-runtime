@@ -27,7 +27,7 @@ import {
   CONCISE_EXTENDED_GUIDANCE,
   CONCISE_BEFORE_ACTING,
   CONCISE_BEFORE_COMPLETING,
-} from './mandates.js';
+} from '../templates/mandates.js';
 
 export type MandatesRenderErrorCode =
   | 'MANDATES_SECTION_NOT_FOUND'
@@ -526,4 +526,4 @@ export {
   renderCodexReviewerSubagent,
   renderReviewerPrompt,
   type ReviewerPromptType,
-} from './mandates-reviewer-criteria.js';
+} from '../templates/mandates-reviewer-criteria.js';

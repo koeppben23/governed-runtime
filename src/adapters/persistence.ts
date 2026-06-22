@@ -57,6 +57,14 @@ import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { SessionState } from '../state/schema.js';
 import { ReviewReport } from '../state/evidence.js';
 import { withSessionWriteLock } from './persistence-lock.js';
+import { ensureDir, PersistenceError, isEnoent } from './persistence-core.js';
+
+export {
+  ensureDir,
+  PersistenceError,
+  isEnoent,
+  type PersistenceErrorCode,
+} from './persistence-core.js';
 
 // -- Constants ----------------------------------------------------------------
 
@@ -94,48 +102,6 @@ export function repoConfigPath(worktree: string): string {
 }
 
 // -- Error Types --------------------------------------------------------------
-
-/**
- * Typed persistence error codes.
- * Compile-time validated — no arbitrary strings allowed.
- */
-export type PersistenceErrorCode =
-  | 'READ_FAILED'
-  | 'WRITE_FAILED'
-  | 'PARSE_FAILED'
-  | 'SCHEMA_VALIDATION_FAILED'
-  | 'LOCK_TIMEOUT'
-  | 'LOCK_TIMEOUT_EXHAUSTED';
-
-/**
- * Typed persistence error.
- * Codes:
- * - READ_FAILED: filesystem read error (permissions, disk, etc.)
- * - PARSE_FAILED: file is not valid JSON
- * - SCHEMA_VALIDATION_FAILED: JSON parsed but Zod validation rejected it
- * - WRITE_FAILED: filesystem write error
- * - LOCK_TIMEOUT: session-state write lock could not be acquired within timeout
- * - LOCK_TIMEOUT_EXHAUSTED: session write lock retries exhausted (#504)
- */
-export class PersistenceError extends Error {
-  readonly code: PersistenceErrorCode;
-
-  constructor(code: PersistenceErrorCode, message: string) {
-    super(message);
-    this.name = 'PersistenceError';
-    this.code = code;
-  }
-}
-
-// -- Directory ----------------------------------------------------------------
-
-/**
- * Ensure a directory exists. Idempotent.
- * Uses recursive mkdir -- safe to call even if parent dirs are missing.
- */
-export async function ensureDir(dir: string): Promise<void> {
-  await fs.mkdir(dir, { recursive: true });
-}
 
 // -- Atomic Write -------------------------------------------------------------
 
@@ -509,16 +475,4 @@ export async function readReport(sessionDir: string): Promise<ReviewReport | nul
   }
 
   return result.data;
-}
-
-// -- Internals ----------------------------------------------------------------
-
-/** Type-safe ENOENT check. Shared by persistence and git adapters. */
-export function isEnoent(err: unknown): boolean {
-  return (
-    typeof err === 'object' &&
-    err !== null &&
-    'code' in err &&
-    (err as { code: unknown }).code === 'ENOENT'
-  );
 }

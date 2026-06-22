@@ -44,6 +44,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { benchmarkAsync, PERF_BUDGETS } from '../../test-policy.js';
 
@@ -173,6 +174,16 @@ interface ImportViolation {
   rule: string;
   message: string;
   imports?: string[];
+}
+
+function mockImport(module: string): ImportInfo {
+  return {
+    module,
+    raw: `import '${module}'`,
+    isNodeBuiltin: false,
+    isFFModule: false,
+    targetModule: null,
+  };
 }
 
 function isNodeBuiltinImport(module: string): boolean {
@@ -464,7 +475,6 @@ function resolveImportPath(importerDir: string, importPath: string): string {
 
 function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
   const cycles: string[] = [];
-  const seen = new Set<string>();
 
   // Build adjacency: source file -> set of imported source files
   const adjacency = new Map<string, Set<string>>();
@@ -480,22 +490,22 @@ function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
     adjacency.set(normalizeSep(filePath), targets);
   }
 
-  // DFS from each node
+  // DFS from each node. Do not use a global visited set: a node can participate
+  // in multiple independent cycles and must remain explorable from other paths.
   const sorted = [...adjacency.keys()].sort();
   for (const node of sorted) {
     const dfsPath: string[] = [];
     const visiting = new Set<string>();
 
-    function dfs(current: string): boolean {
+    function dfs(current: string): void {
       if (visiting.has(current)) {
         // Cycle found via visiting -> extract the cycle substring
         const idx = dfsPath.indexOf(current);
         if (idx >= 0) {
           cycleKey(current, dfsPath.slice(idx));
         }
-        return true;
+        return;
       }
-      if (seen.has(current)) return false;
 
       visiting.add(current);
       dfsPath.push(current);
@@ -504,31 +514,28 @@ function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
       if (targets) {
         const targetList = [...targets].sort();
         for (const next of targetList) {
-          if (dfs(next)) return true;
+          dfs(next);
         }
       }
 
       dfsPath.pop();
       visiting.delete(current);
-      seen.add(current);
-      return false;
     }
 
     function cycleKey(start: string, cyclePath: string[]): void {
-      // Normalize: rotate so the lexicographically first node comes first
-      const sortedCycle = [...cyclePath];
+      // Normalize for deterministic de-duplication without changing edge order.
+      const orderedCycle = [...cyclePath];
       let minIdx = 0;
-      for (let i = 1; i < sortedCycle.length; i++) {
-        if (sortedCycle[i] < sortedCycle[minIdx]) minIdx = i;
+      for (let i = 1; i < orderedCycle.length; i++) {
+        if (orderedCycle[i] < orderedCycle[minIdx]) minIdx = i;
       }
-      const normalized = [...sortedCycle.slice(minIdx), ...sortedCycle.slice(0, minIdx), start];
+      const rotated = [...orderedCycle.slice(minIdx), ...orderedCycle.slice(0, minIdx)];
+      const normalized = [...rotated, rotated[0]];
       const key = normalized.map((f) => path.relative(PROJECT_ROOT, f)).join(' -> ');
       cycles.push(key);
     }
 
-    if (!seen.has(node)) {
-      dfs(node);
-    }
+    dfs(node);
   }
 
   return [...new Set(cycles)].sort();
@@ -1409,15 +1416,59 @@ describe('Layer Dependency Rules', () => {
     });
   });
 
-  describe('Rule 8: No circular module dependencies (templates scope)', () => {
-    it('should have no circular imports between templates source files', () => {
-      const templatesAnalyses = new Map(
-        [...analyses.entries()].filter(([fp]) => fp.includes('/templates/')),
-      );
-      const cycles = detectCycles(templatesAnalyses);
+  describe('Rule 8: No circular module dependencies', () => {
+    it('reports cycles in real import-edge order', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-cycle-test-'));
+      try {
+        const a = normalizeSep(path.join(dir, 'a.ts'));
+        const b = normalizeSep(path.join(dir, 'b.ts'));
+        const c = normalizeSep(path.join(dir, 'c.ts'));
+        await Promise.all([
+          fs.writeFile(a, "import './c.js';\n", 'utf-8'),
+          fs.writeFile(b, "import './a.js';\n", 'utf-8'),
+          fs.writeFile(c, "import './b.js';\n", 'utf-8'),
+        ]);
+
+        const fakeAnalyses = new Map<string, FileAnalysis>([
+          [
+            a,
+            {
+              filePath: a,
+              relativePath: path.relative(PROJECT_ROOT, a),
+              imports: [mockImport('./c.js')],
+            },
+          ],
+          [
+            b,
+            {
+              filePath: b,
+              relativePath: path.relative(PROJECT_ROOT, b),
+              imports: [mockImport('./a.js')],
+            },
+          ],
+          [
+            c,
+            {
+              filePath: c,
+              relativePath: path.relative(PROJECT_ROOT, c),
+              imports: [mockImport('./b.js')],
+            },
+          ],
+        ]);
+
+        expect(detectCycles(fakeAnalyses)).toContain(
+          [a, c, b, a].map((f) => path.relative(PROJECT_ROOT, f)).join(' -> '),
+        );
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('should have no circular imports between source files', () => {
+      const cycles = detectCycles(analyses);
       if (cycles.length > 0) {
         console.error(
-          '\nCircular module dependencies in templates/:\n' +
+          '\nCircular module dependencies in source files:\n' +
             cycles.map((c) => `  ${c}`).join('\n'),
         );
       }

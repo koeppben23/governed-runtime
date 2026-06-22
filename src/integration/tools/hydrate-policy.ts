@@ -12,7 +12,7 @@ import type {
   ExistingHydrateState,
   ExistingCentralEvidence,
   HydratePolicyResolution,
-} from './hydrate.js';
+} from './hydrate-types.js';
 import { hashText } from '../../shared/hashing.js';
 
 /** Full SHA-256 hex digest of a UTF-8 string. Delegates to the shared authority. */
