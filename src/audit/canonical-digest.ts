@@ -12,7 +12,7 @@
  * prevHash is excluded so the TSA stamp remains valid even when chain
  * position is recomputed inside an atomic append transaction.
  * The chainHash binds the full record including timestampEvidence using the
- * same recursive canonical JSON authority.
+ * same recursive canonical JSON authority (`shared/canonical-json.ts`).
  *
  * Verification recomputes this digest from event content. Pure synchronous
  * verification compares it to the current internal trusted-imprint
@@ -29,6 +29,13 @@
  */
 
 import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+
+// Re-exported so existing consumers (and the SSOT guard's audit allowlist) keep
+// importing the canonical serializer from here, while the single definition
+// lives in shared/canonical-json.ts.
+export { canonicalJsonStringify };
+
 const EXCLUDED_FIELDS = new Set([
   'chainHash',
   'timestampEvidence',
@@ -53,25 +60,4 @@ export function computeCanonicalEventDigest(event: Record<string, unknown>): str
   }
   const canonical = canonicalJsonStringify(stripped);
   return hashText(canonical);
-}
-
-/**
- * Serialize JSON-compatible values with object keys sorted at every depth.
- * This is the single canonical JSON authority for audit digests and chain hashes.
- */
-export function canonicalJsonStringify(value: unknown): string {
-  return JSON.stringify(canonicalize(value));
-}
-
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (!value || typeof value !== 'object') return value;
-
-  const record = value as Record<string, unknown>;
-  const sorted: Record<string, unknown> = {};
-  for (const key of Object.keys(record).sort()) {
-    const nested = record[key];
-    if (nested !== undefined) sorted[key] = canonicalize(nested);
-  }
-  return sorted;
 }

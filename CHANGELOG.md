@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Clean Code: unified canonical JSON serializer.** The two divergent recursive
+  key-sorting serializers (audit `canonical-digest.ts` and a private one in
+  `discovery-digest.ts`) are consolidated into a single `shared/canonical-json.ts`
+  authority. Byte-identical output (proven by lock-in tests); no persisted digest
+  changes. The SSOT guard now catches any duplicate `canonicalize` helper.
+- **Clean Code enforcement and docs.** Added a `file-size.test.ts` guard (blocker
+  at 750 LOC production / 2000 LOC tests). CONTRIBUTING.md and project-governance.md
+  now document per-principle "Enforced by" mappings, a single canonical size budget,
+  additional principles (fail-closed, typed errors, determinism, API stability),
+  and a falsifiable "Definition of 100% Clean Code" checklist.
 
 ## [1.2.0-tp.1] - 2026-06-16
 

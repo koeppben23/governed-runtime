@@ -171,25 +171,52 @@ import { defaultProfileRegistry } from '../config/profile';
 
 Every ticket, PR, and merge MUST follow clean code and clean architecture. No exceptions.
 
-| Principle                     | Rule                                                                    | Red Flag                                                   |
-| ----------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------- |
-| **Single Responsibility**     | One reason to change per module/file/function                           | God-files > 400 LOC without natural domain split           |
-| **Layer Isolation**           | Respect `state/` → `machine/` → `rails/` → `adapters/` → `integration/` | Upward imports, layer bypass                               |
-| **Extract, Don't Accumulate** | Split files at 400–500 LOC along domain boundaries                      | Linear growth with every feature                           |
-| **No Duplicate Authority**    | One canonical implementation per concept                                | Near-identical functions in one file, duplicated pipelines |
-| **Content/Logic Separation**  | Template content in content files, assembly in renderer files           | Template strings mixed with business logic                 |
-| **Infrastructure Isolation**  | Locking, atomic I/O, and domain logic in separate modules               | Concurrency code inside domain persistence files           |
-| **Import Hygiene**            | Imports proportional to responsibility                                  | 15+ imports from 8+ modules in one file                    |
-| **Testability**               | Every extracted module independently testable                           | Dropped coverage after extraction                          |
+The **Enforced by** column states how each rule is checked: an automated guard
+(test/lint that fails CI) or human review. Rules with an automated guard cannot
+regress silently; review-enforced rules depend on reviewer diligence.
+
+| Principle                     | Rule                                                                    | Red Flag                                                   | Enforced by                                                                 |
+| ----------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------- |
+| **Single Responsibility**     | One reason to change per module/file/function                           | God-files; over-long/over-complex functions               | `eslint` `complexity:12`, `max-lines-per-function:80`, `max-params:5` (lint:strict = `--max-warnings=0`) |
+| **Layer Isolation**           | Respect `state/`  `machine/`  `rails/`  `adapters/`  `integration/` | Upward imports, layer bypass                               | `src/architecture/__tests__/dependency-rules.test.ts`                       |
+| **Extract, Don't Accumulate** | Split files along domain boundaries within the size budget              | Linear growth with every feature                           | `src/architecture/__tests__/file-size.test.ts`                             |
+| **No Duplicate Authority**    | One canonical implementation per concept                                | Near-identical functions, duplicated pipelines             | SSOT guards: `audit-canonicalization-ssot`, `policy-mode-ssot`, `review-acceptance-ssot`, `terminal-phase-ssot` |
+| **Content/Logic Separation**  | Template content in content files, assembly in renderer files           | Template strings mixed with business logic                 | Review                                                                       |
+| **Infrastructure Isolation**  | Locking, atomic I/O, and domain logic in separate modules               | Concurrency code inside domain persistence files           | Review                                                                       |
+| **Import Hygiene**            | Imports proportional to responsibility                                  | 15+ imports from 8+ modules in one file                    | Review                                                                       |
+| **Testability**               | Every extracted module independently testable                           | Dropped coverage after extraction                          | Review (coverage gate)                                                       |
+| **Fail-Closed**               | Errors block; no silent fallback masks a failure                        | Swallowed errors, default-allow on missing evidence        | Review (+ negative-path tests required per AGENTS.md)                        |
+| **Typed Errors**              | Throw typed errors with codes, not bare `throw new Error` in control flow | Bare throws in runtime paths                              | Review                                                                       |
+| **Determinism**               | Same input → same output for digests/canonicalization/state             | Hidden nondeterminism (time, ordering) in hash inputs      | `audit-canonicalization-ssot`, digest byte-identity tests                   |
+| **API Stability**             | Public surface stays intentional; no test-only utilities leaked         | Test helpers exported from the public barrel               | Review (barrel-export tests)                                                |
 
 ### File Size Budget
 
-| Threshold    | Action Required                       |
-| ------------ | ------------------------------------- |
-| ≤ 400 LOC    | Healthy — no action                   |
-| 400–700 LOC  | Consider splitting at next touch      |
-| 700–1000 LOC | MUST split before adding new features |
-| > 1000 LOC   | Blocker — split required before merge |
+Single source of truth for the size budget. The blocker thresholds are enforced
+by `src/architecture/__tests__/file-size.test.ts` (constants `PROD_FILE_LOC_BLOCKER`
+= 750, `TEST_FILE_LOC_BLOCKER` = 2000).
+
+| Threshold (production) | Action Required                       |
+| ---------------------- | ------------------------------------- |
+| =< 400 LOC             | Healthy - no action                   |
+| 400-750 LOC            | Consider splitting at next touch      |
+| > 750 LOC              | Blocker - split required before merge (enforced) |
+
+Test files may be broader (suites group related cases): advisory split at
+1500 LOC, hard blocker above 2000 LOC (enforced).
+
+### Definition Of "100% Clean Code"
+
+"Clean" is a verifiable state, not an opinion. A change is clean when ALL of the
+following hold:
+
+1. `npm run check` (tsc) passes.
+2. `npm run lint:strict` passes (`eslint --max-warnings=0`).
+3. `dependency-rules.test.ts` passes (no layer violation).
+4. All SSOT guards pass (no duplicate authority).
+5. `file-size.test.ts` passes (no production file > 750 LOC, no test file > 2000 LOC).
+6. No bare `throw new Error(...)` in production control flow (typed errors only).
+7. New behavior touching state/policy/evidence/audit has negative-path tests.
 
 ## Repository Governance
 

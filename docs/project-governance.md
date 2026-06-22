@@ -19,18 +19,24 @@ Every ticket should state:
 ## Clean Code And Clean Architecture
 
 Every ticket MUST adhere to clean code and clean architecture. This is mandatory —
-no exceptions.
+no exceptions. Each principle below is either enforced by an automated guard
+(test/lint that fails CI) or by review; see CONTRIBUTING.md
+(section "Clean Code And Clean Architecture Principles") for the per-principle
+"Enforced by" mapping and the canonical file-size budget.
 
 - **Single Responsibility Principle** — Every module, file, and function MUST
   have exactly one reason to change. No god-files, no god-functions.
+  (Enforced: `eslint` complexity/max-lines.)
 - **Layer Isolation** — Code MUST respect FlowGuard's documented layer boundaries
   (`state/` → `machine/` → `rails/` → `adapters/` → `integration/`). No upward
-  imports, no layer bypass.
-- **Extract, Don't Accumulate** — When a file exceeds 400–500 LOC, MUST split
-  along domain boundaries. Do not let files grow unbounded.
+  imports, no layer bypass. (Enforced: `architecture/__tests__/dependency-rules.test.ts`.)
+- **Extract, Don't Accumulate** — Split files along domain boundaries within the
+  size budget. The canonical budget and its enforced blocker thresholds (750 LOC
+  production, 2000 LOC tests) live in CONTRIBUTING.md and are enforced by
+  `architecture/__tests__/file-size.test.ts`. Do not let files grow unbounded.
 - **No Duplicate Authority** — Every concept MUST have exactly one canonical
   implementation. No duplicated logic, no parallel pipelines with identical
-  algorithms.
+  algorithms. (Enforced: SSOT guards, e.g. `audit-canonicalization-ssot.test.ts`.)
 - **Separation Of Content And Logic** — Template content and rendering/assembly
   logic MUST live in separate modules. Content files define what; renderer files
   define how.
@@ -42,6 +48,16 @@ no exceptions.
   modules.
 - **Testability** — Every extracted module MUST be independently testable.
   Existing test coverage MUST be preserved or migrated, never dropped.
+- **Fail-Closed** — Errors MUST block; no silent fallback may mask a failure.
+- **Typed Errors** — Throw typed errors with codes; no bare `throw new Error`
+  in production control flow.
+- **Determinism** — Digests, canonicalization, and state transitions MUST be
+  deterministic; no hidden nondeterminism (time, ordering) in hash inputs.
+- **API Stability** — The public surface stays intentional; test-only utilities
+  MUST NOT leak into the public barrel.
+
+"100% clean" is a verifiable state, not an opinion — see the
+Definition Of "100% Clean Code" checklist in CONTRIBUTING.md.
 
 ## Definition Of Done
 
