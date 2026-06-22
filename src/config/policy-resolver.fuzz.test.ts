@@ -17,7 +17,7 @@
 
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
-import { normalizePolicySnapshotWithMeta } from './policy-snapshot.js';
+import { normalizePolicySnapshotWithMeta } from './policy-snapshot-normalize.js';
 import { PolicyConfigurationError } from './policy-errors.js';
 
 describe('policy resolver fuzz', () => {

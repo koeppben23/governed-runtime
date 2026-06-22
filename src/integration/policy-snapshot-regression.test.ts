@@ -8,7 +8,7 @@ import { getPolicyPreset } from '../config/policy.js';
 import {
   normalizePolicySnapshotWithMeta,
   resolvePolicyFromSnapshot,
-} from '../config/policy-snapshot.js';
+} from '../config/policy-snapshot-normalize.js';
 import { readState } from '../adapters/persistence.js';
 import { readConfig, writeRepoConfig } from '../adapters/persistence-config.js';
 import { computeFingerprint, sessionDir, workspaceDir } from '../adapters/workspace/index.js';

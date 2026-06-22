@@ -64,6 +64,6 @@ export type { HydratePolicyOptions, PolicyResolution } from './policy-resolver.j
 export {
   createPolicySnapshot,
   freezePolicySnapshot,
-  normalizePolicySnapshot,
   resolvePolicyFromSnapshot,
 } from './policy-snapshot.js';
+export { normalizePolicySnapshot } from './policy-snapshot-normalize.js';
