@@ -12,11 +12,11 @@ import {
   install,
   uninstall,
   doctor,
-  checkPluginActivation,
-  checkLastSessionHandshake,
   hasNonFlowGuardInstructions,
   FLOWGUARD_INSTRUCTION_ENTRIES,
 } from './install.js';
+import { checkPluginActivation } from './doctor-plugin.js';
+import { checkLastSessionHandshake } from './doctor-handshake.js';
 import {
   COMMANDS,
   MANDATES_FILENAME,
@@ -25,7 +25,7 @@ import {
 } from './templates.js';
 import { measureAsync } from '../test-policy.js';
 import { SHIPPED_EXECUTABLE_CHECK } from './install-helpers.js';
-import { checkShippedExecutables } from './doctor-command.js';
+import { checkShippedExecutables } from './doctor-executables.js';
 import {
   VERSION,
   tmpDir,
