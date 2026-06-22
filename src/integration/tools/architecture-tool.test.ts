@@ -213,6 +213,44 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(JSON.parse(String(res)).code).toBe('ADR_SUBMISSION_MIXED_INPUTS');
   });
 
+  it('blocks adrText + reviewVerdict=accept with ADR_APPROVE_WITH_TEXT (#499 gap closed, mirrors verdict)', async () => {
+    // #499: an approval carrying adrText (the heavy payload, no title) previously
+    // routed to review and SILENTLY DROPPED the adrText. It now fails closed,
+    // analogous to plan's PLAN_APPROVE_WITH_TEXT.
+    const { architecture } = await import('./architecture.js');
+    const res = await architecture.execute(
+      {
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        reviewVerdict: 'accept',
+      },
+      {} as never,
+    );
+    const parsed = JSON.parse(String(res));
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('ADR_APPROVE_WITH_TEXT');
+    // Anti-confabulation: the verdict the caller sent is forwarded to the block
+    // (this suite mocks formatBlocked, so it surfaces as the passed-through param;
+    // the rendered "reviewVerdict=..." message is covered by the reasons tests).
+    expect(parsed.receivedVerdict).toBe('accept');
+    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
+  });
+
+  it('blocks reviewerUnavailable mixed into an ADR submission with INVALID_ARCHITECTURE_TOOL_SEQUENCE (#499: dead code now wired)', async () => {
+    const { architecture } = await import('./architecture.js');
+    const res = await architecture.execute(
+      {
+        title: 'ADR',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        reviewerUnavailable: true,
+      },
+      {} as never,
+    );
+    const parsed = JSON.parse(String(res));
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('INVALID_ARCHITECTURE_TOOL_SEQUENCE');
+    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
+  });
+
   it('blocks ADR resubmission during active review loop', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {
@@ -550,13 +588,11 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(parsed.status).toContain('ADR auto-finalized');
   });
 
-  it('accepts the F13 reviewFindings arg (slice 7a additive surface)', async () => {
-    // F13 slice 7a adds reviewFindings as an optional arg on the architecture
-    // tool, mirroring plan/implement. In slice 7a the arg is wired into the
-    // zod schema but not yet consumed by the runtime — the tool MUST accept
-    // a well-formed reviewFindings payload without new error codes, and MUST
-    // behave byte-identically to a call that omits the arg. Slice 7c will
-    // start consuming the arg.
+  it('rejects reviewFindings without a verdict in a submission (#499: no silent discard)', async () => {
+    // #499 hardening: previously the architecture tool silently DISCARDED
+    // reviewFindings supplied on a Mode-A submission (no verdict). That mixed
+    // shape is now rejected with ADR_FINDINGS_WITHOUT_VERDICT, matching plan's
+    // PLAN_FINDINGS_WITHOUT_VERDICT and implement's INVALID_IMPLEMENT_TOOL_SEQUENCE.
     const { architecture } = await import('./architecture.js');
     const findings = {
       iteration: 1,
@@ -576,10 +612,10 @@ describe('integration/tools/architecture (wrapper)', () => {
       {} as never,
     );
     const parsed = JSON.parse(String(res));
-    // Same Mode-A success outcome as the baseline test above, regardless of
-    // whether reviewFindings was supplied.
-    expect(parsed.phase).toBe('ARCHITECTURE');
-    expect(mocks.writeStateWithArtifacts).toHaveBeenCalledTimes(1);
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('ADR_FINDINGS_WITHOUT_VERDICT');
+    // Fail-closed: no state written on a rejected submission.
+    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
   });
 
   it('formats error when dependency throws', async () => {

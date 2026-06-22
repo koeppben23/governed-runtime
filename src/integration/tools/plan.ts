@@ -175,7 +175,7 @@ function validatePlanInputShape(
 
 function validateSubmissionInputShape(args: PlanArgs, input: PlanInputFlags): string | null {
   const mode = classifyPlanCall(args, input);
-  if (mode.kind === 'invalid') return formatBlocked(mode.code);
+  if (mode.kind === 'invalid') return formatBlocked(mode.code, mode.params);
   return null;
 }
 

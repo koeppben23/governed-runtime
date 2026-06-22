@@ -208,26 +208,35 @@ describe('buildImplementRuntime', () => {
 
 describe('validateImplementSequence', () => {
   it('findings without verdict => INVALID_IMPLEMENT_TOOL_SEQUENCE', () => {
-    const result = validateImplementSequence(implementArgs(), state('IMPLEMENTATION'), false, true);
+    const result = validateImplementSequence(
+      implementArgs({ reviewFindings: {} as unknown as ImplementArgs['reviewFindings'] }),
+      state('IMPLEMENTATION'),
+    );
     expect(result).toContain('INVALID_IMPLEMENT_TOOL_SEQUENCE');
   });
 
-  it('verdict without implementation evidence => IMPLEMENTATION_EVIDENCE_REQUIRED', () => {
+  it('reviewerUnavailable without verdict => INVALID_IMPLEMENT_TOOL_SEQUENCE (#499 gap closed)', () => {
+    const result = validateImplementSequence(
+      implementArgs({ reviewerUnavailable: true }),
+      state('IMPLEMENTATION'),
+    );
+    expect(result).toContain('INVALID_IMPLEMENT_TOOL_SEQUENCE');
+  });
+
+  it('verdict without implementation evidence => IMPLEMENTATION_EVIDENCE_REQUIRED (mirrors verdict)', () => {
     const result = validateImplementSequence(
       implementArgs({ reviewVerdict: 'accept' }),
       state('READY'),
-      true,
-      false,
     );
     expect(result).toContain('IMPLEMENTATION_EVIDENCE_REQUIRED');
+    // #499 anti-confabulation: the block echoes the verdict the caller actually sent.
+    expect(result).toContain('accept');
   });
 
   it('verdict in wrong phase => IMPLEMENT_REVIEW_LOOP_REQUIRED', () => {
     const result = validateImplementSequence(
       implementArgs({ reviewVerdict: 'accept' }),
       state('IMPLEMENTATION', { implementation: {} } as Partial<SessionState>),
-      true,
-      false,
     );
     expect(result).toContain('IMPLEMENT_REVIEW_LOOP_REQUIRED');
   });
@@ -236,8 +245,6 @@ describe('validateImplementSequence', () => {
     const s = state('IMPL_REVIEW', {
       implementation: {} as unknown as SessionState['implementation'],
     });
-    expect(
-      validateImplementSequence(implementArgs({ reviewVerdict: 'accept' }), s, true, false),
-    ).toBeNull();
+    expect(validateImplementSequence(implementArgs({ reviewVerdict: 'accept' }), s)).toBeNull();
   });
 });

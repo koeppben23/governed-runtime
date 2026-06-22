@@ -12,6 +12,7 @@ import type {
   ReviewFindings,
 } from '../../state/evidence.js';
 import type { MutableSession, ToolContext } from './helpers.js';
+import { classifyToolCallMode, toolCallFlags } from './review-validation-mode.js';
 
 export type PlanArgs = {
   planText?: string;
@@ -39,10 +40,10 @@ export type PlanCallMode =
       code:
         | 'INVALID_PLAN_TOOL_SEQUENCE'
         | 'PLAN_APPROVE_WITH_TEXT'
-        | 'PLAN_SUBMISSION_MIXED_INPUTS';
+        | 'PLAN_SUBMISSION_MIXED_INPUTS'
+        | 'PLAN_FINDINGS_WITHOUT_VERDICT';
+      params?: Record<string, string>;
     };
-
-type InvalidPlanCallCode = Extract<PlanCallMode, { kind: 'invalid' }>['code'];
 
 export type PlanReviewPolicy = {
   subagentEnabled: boolean;
@@ -91,36 +92,38 @@ export type ConvergedPlanReviewInput = {
 };
 
 export function planInputFlags(args: PlanArgs): PlanInputFlags {
-  const hasPlanText = typeof args.planText === 'string' && args.planText.trim().length > 0;
-  const hasVerdict = typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
-  const hasFindings = args.reviewFindings != null && typeof args.reviewFindings === 'object';
-  const hasReviewerUnavailable = args.reviewerUnavailable === true;
+  const f = toolCallFlags({
+    text: args.planText,
+    reviewVerdict: args.reviewVerdict,
+    reviewFindings: args.reviewFindings,
+    reviewerUnavailable: args.reviewerUnavailable,
+  });
   return {
-    hasPlanText,
-    hasVerdict,
-    hasFindings,
-    hasReviewerUnavailable,
-    isInitialSubmission: !hasVerdict,
+    hasPlanText: f.hasText,
+    hasVerdict: f.hasVerdict,
+    hasFindings: f.hasFindings,
+    hasReviewerUnavailable: f.hasReviewerUnavailable,
+    isInitialSubmission: !f.hasVerdict,
   };
 }
 
 export function classifyPlanCall(args: PlanArgs, input = planInputFlags(args)): PlanCallMode {
-  const invalidCode = [
-    [
-      input.hasPlanText && input.hasVerdict && args.reviewVerdict !== 'changes_requested',
-      'PLAN_APPROVE_WITH_TEXT',
-    ],
-    [input.hasPlanText && input.hasFindings && !input.hasVerdict, 'PLAN_SUBMISSION_MIXED_INPUTS'],
-    [
-      input.hasPlanText && input.hasReviewerUnavailable && !input.hasVerdict,
-      'INVALID_PLAN_TOOL_SEQUENCE',
-    ],
-  ] satisfies readonly [boolean, InvalidPlanCallCode][];
-  const matchedInvalidCode = invalidCode.find(([matches]) => matches)?.[1];
-
-  if (matchedInvalidCode) return { kind: 'invalid', code: matchedInvalidCode };
-  if (!input.hasVerdict) return { kind: 'initial_submission' };
-  if (args.reviewVerdict === 'changes_requested') return { kind: 'revision' };
+  void input;
+  const mode = classifyToolCallMode('plan', {
+    text: args.planText,
+    reviewVerdict: args.reviewVerdict,
+    reviewFindings: args.reviewFindings,
+    reviewerUnavailable: args.reviewerUnavailable,
+  });
+  if (mode.kind === 'invalid') {
+    return {
+      kind: 'invalid',
+      code: mode.code as Extract<PlanCallMode, { kind: 'invalid' }>['code'],
+      params: mode.params,
+    };
+  }
+  if (mode.kind === 'initial_submission') return { kind: 'initial_submission' };
+  if (mode.kind === 'revision') return { kind: 'revision' };
   return { kind: 'approval' };
 }
 

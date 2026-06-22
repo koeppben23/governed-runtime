@@ -410,6 +410,18 @@ describe('implement', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_REQUIRED');
+      // #499 anti-confabulation: the block echoes the verdict the caller actually
+      // sent (the real field-evidence case from the #499 implement-surface report,
+      // where the agent narrated an "empty" call while submitting a verdict).
+      expect(result.message).toContain('accept');
+    });
+
+    it('blocks reviewerUnavailable mixed into a record-mode call with INVALID_IMPLEMENT_TOOL_SEQUENCE (#499 gap closed)', async () => {
+      await reachImplementation();
+      const raw = await implement.execute({ reviewerUnavailable: true }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INVALID_IMPLEMENT_TOOL_SEQUENCE');
     });
 
     it('Mode B blocks with IMPLEMENTATION_EVIDENCE_REQUIRED when implementation is null', async () => {
