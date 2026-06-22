@@ -11,7 +11,7 @@ import type {
   DiscoveryHydration,
   ResolveDiscoveryHydrationInput,
   HydrateArgs,
-} from './hydrate.js';
+} from './hydrate-types.js';
 import {
   runDiscovery,
   extractDiscoverySummary,

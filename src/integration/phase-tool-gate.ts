@@ -172,7 +172,7 @@ const HIGH_RISK_EXACT = new Set([
   'yarn.lock',
   'bun.lockb',
   'src/templates/mandates.ts',
-  'src/templates/mandates-renderer.ts',
+  'src/rendering/mandates-renderer.ts',
   'src/templates/mandates-reviewer-criteria.ts',
 ]);
 

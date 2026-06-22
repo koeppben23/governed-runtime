@@ -19,9 +19,7 @@ import type {
   HydratePolicyResolution,
   HydrateConfig,
   BuildHydrateInputParams,
-} from './hydrate.js';
-
-export type HydrateArgs = { policyMode?: string; profileId?: string; claimedTaskClass?: string };
+} from './hydrate-types.js';
 
 // ─── Input Assembly ──────────────────────────────────────────────────────
 

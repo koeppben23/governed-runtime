@@ -22,36 +22,9 @@ import {
 } from './run-hosts.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { DEFAULT_HOST, HOST_IDS, type HostId } from '../shared/hosts.js';
+import type { HeadlessConfig, RunResult, ServeConfig, ServeResult } from './run-types.js';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-export interface RunResult {
-  success: boolean;
-  output?: string;
-  error?: string;
-}
-
-export interface HeadlessConfig {
-  prompt: string;
-  host?: HostId;
-  cwd?: string;
-  env?: Record<string, string>;
-}
-
-export interface ServeConfig {
-  host?: HostId;
-  port?: number;
-  hostname?: string;
-  cwd?: string;
-  env?: Record<string, string>;
-}
-
-export interface ServeResult {
-  success: boolean;
-  port: number;
-  pid?: number;
-  error?: string;
-}
+export type { HeadlessConfig, RunResult, ServeConfig, ServeResult } from './run-types.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 

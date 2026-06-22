@@ -4,7 +4,7 @@
  *
  * @internal — do not import directly. Use reasons.ts barrel.
  */
-import type { BlockedReason } from './reasons.js';
+import type { BlockedReason } from './reasons-types.js';
 
 export const INFRA_REASONS: readonly BlockedReason[] = [
   {

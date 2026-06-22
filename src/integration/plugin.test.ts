@@ -1512,15 +1512,18 @@ describe('integration/plugin', () => {
       }
     });
 
-    // SMOKE: source-level regression — plugin.ts must import types.ts,
+    // SMOKE: source-level regression — before/after hook modules must import types.ts,
     // preventing drift back to anonymous inline casts.
-    it('SMOKE — plugin.ts imports ToolHookInput from types.ts (source regression)', async () => {
-      const pluginPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'plugin.ts');
+    it('SMOKE — hook modules import ToolHookInput from types.ts (source regression)', async () => {
+      const beforehooksPath = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        'plugin-beforehooks.ts',
+      );
       const afterhooksPath = path.resolve(
         path.dirname(fileURLToPath(import.meta.url)),
         'plugin-afterhooks.ts',
       );
-      const source = await fs.readFile(pluginPath, 'utf-8');
+      const source = await fs.readFile(beforehooksPath, 'utf-8');
       const afterSource = await fs.readFile(afterhooksPath, 'utf-8');
       expect(source).toContain("from './types.js'");
       expect(source).toContain('ToolHookBeforeInput');

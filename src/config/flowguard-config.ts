@@ -24,6 +24,7 @@ import { z } from 'zod';
 import { IdpConfigSchema, IdentityProviderModeSchema } from '../identity/index.js';
 import { PolicyModeSchema } from '../state/policy-mode.js';
 import { HOST_IDS } from '../shared/hosts.js';
+import { LogLevelSchema } from './logging-config.js';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
@@ -37,7 +38,7 @@ export const FlowGuardConfigSchema = z.object({
       /** Logging output mode. */
       mode: z.enum(['file', 'ui', 'both', 'console', 'file+console']).default('file'),
       /** Minimum log level. Messages below this level are suppressed. */
-      level: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
+      level: LogLevelSchema.default('info'),
       /** Number of days to retain log files. */
       retentionDays: z.number().int().min(1).max(90).default(7),
     })
@@ -141,8 +142,7 @@ export const FlowGuardConfigSchema = z.object({
 /** Fully resolved FlowGuard configuration (all defaults applied). */
 export type FlowGuardConfig = z.infer<typeof FlowGuardConfigSchema>;
 
-/** Log level union type. */
-export type LogLevel = FlowGuardConfig['logging']['level'];
+export type { LogLevel } from './logging-config.js';
 
 /** Logging mode union type. */
 export type LogMode = FlowGuardConfig['logging']['mode'];

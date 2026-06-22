@@ -4,7 +4,7 @@
  */
 
 import { isHostId } from '../shared/hosts.js';
-import type { HeadlessConfig, ServeConfig } from './run.js';
+import type { HeadlessConfig, ServeConfig } from './run-types.js';
 
 function isUnknownFlag(arg: string, knownFlags: string[]): boolean {
   return arg.startsWith('-') && !knownFlags.includes(arg);

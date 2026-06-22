@@ -1,4 +1,4 @@
-import { renderCommandGovernanceRules } from '../mandates-renderer.js';
+import { renderCommandGovernanceRules } from '../../rendering/mandates-renderer.js';
 
 /**
  * Temporary compatibility projection for command templates.

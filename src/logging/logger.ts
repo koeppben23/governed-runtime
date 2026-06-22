@@ -32,7 +32,7 @@
  * @version v3
  */
 
-import type { LogLevel } from '../config/flowguard-config.js';
+import type { LogLevel } from '../config/logging-config.js';
 
 // ─── Level Ordering ──────────────────────────────────────────────────────────
 

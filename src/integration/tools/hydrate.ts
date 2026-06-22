@@ -1,79 +1,40 @@
 /** @module integration/tools/hydrate — Session bootstrap/reload tool. */
 
 import { z } from 'zod';
-import type { ToolDefinition, ToolContext } from './helpers.js';
-import type { ToolResult } from './helpers.js';
-import { getWorktree, formatBlocked, formatError, withSessionWriteTransaction } from './helpers.js';
-import { executeHydrate } from '../../rails/hydrate.js';
-import { PolicyModeSchema } from '../../state/policy-mode.js';
-import type { PolicyMode } from '../../state/policy-mode.js';
+
+import { resolveActor, ActorClaimError } from '../../adapters/actor.js';
 import { readState, PersistenceError } from '../../adapters/persistence.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import { initWorkspace, writeSessionPointer } from '../../adapters/workspace/index.js';
-import { resolveActor, ActorClaimError } from '../../adapters/actor.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
+import { executeHydrate } from '../../rails/hydrate.js';
 import { REASON_SESSION_LOCK_CONTENDED } from '../../shared/flowguard-identifiers.js';
-import { resolveHydratePolicy } from './hydrate-policy.js';
+import { PolicyModeSchema } from '../../state/policy-mode.js';
+import { formatBlocked, formatError, getWorktree, withSessionWriteTransaction } from './helpers.js';
+import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
 import { resolveDiscoveryHydration } from './hydrate-discovery.js';
-import { buildHydrateInput, formatHydrateResult, withLockContended } from './hydrate-format.js';
 import { reconcileHydrateDiscoveryHealthGate } from './hydrate-discovery-health.js';
-import { resolvePolicyForHydrate } from '../../config/policy.js';
-import { validateExistingPolicyAgainstCentral } from '../../config/policy.js';
-import { extractDiscoverySummary } from '../../discovery/orchestrator.js';
-import { planVerificationCandidates } from '../../discovery/verification-planner.js';
-import type { DiscoveryResult } from '../../discovery/types.js';
-import type { DetectedStack } from '../../discovery/types.js';
-import type { ProfileResolution } from '../../discovery/types.js';
-import type { RepoSignals } from '../../config/profile.js';
+import { buildHydrateInput, formatHydrateResult, withLockContended } from './hydrate-format.js';
+import { resolveHydratePolicy } from './hydrate-policy.js';
+import type { HydrateArgs } from './hydrate-types.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Shared types (exported for sibling modules)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-export type ExistingHydrateState = Awaited<ReturnType<typeof readState>>;
-export type HydrateConfig = Awaited<ReturnType<typeof readConfig>>;
-export type HydratePolicyResolution = Awaited<ReturnType<typeof resolvePolicyForHydrate>>;
-export type HydrateArgs = {
-  policyMode?: PolicyMode;
-  profileId?: string;
-  claimedTaskClass?: string;
-};
-export type HydrateWorkspace = Awaited<ReturnType<typeof initWorkspace>>;
-export type HydratePolicyContext = Awaited<ReturnType<typeof resolveHydratePolicy>>;
-export type ReadRepoFile = (relativePath: string) => Promise<string | undefined>;
-export type ExistingCentralEvidence = NonNullable<
-  Awaited<ReturnType<typeof validateExistingPolicyAgainstCentral>>
->;
-
-export interface DiscoveryHydration {
-  readonly repoSignals?: RepoSignals;
-  readonly discoveryResult?: DiscoveryResult;
-  readonly discoveryDigest?: string;
-  readonly discoverySummary?: ReturnType<typeof extractDiscoverySummary>;
-  readonly detectedStack?: DetectedStack | null;
-  readonly verificationCandidates?: Awaited<ReturnType<typeof planVerificationCandidates>>;
-  readonly profileResolution?: ProfileResolution;
-}
-
-export interface ResolveDiscoveryHydrationInput {
-  readonly existing: ExistingHydrateState;
-  readonly worktree: string;
-  readonly workspace: HydrateWorkspace;
-  readonly config: HydrateConfig;
-  readonly args: HydrateArgs;
-  readonly resolvedAt: string;
-}
-
-export interface BuildHydrateInputParams {
-  readonly context: ToolContext;
-  readonly worktree: string;
-  readonly workspace: HydrateWorkspace;
-  readonly policyContext: HydratePolicyContext;
-  readonly config: HydrateConfig;
-  readonly discovery: DiscoveryHydration;
-  readonly actorInfo: Awaited<ReturnType<typeof resolveActor>>;
-  readonly args: HydrateArgs;
-}
+export type {
+  BuildHydrateInputParams,
+  DiscoveryHydration,
+  ExistingCentralEvidence,
+  ExistingHydrateState,
+  HydrateArgs,
+  HydrateConfig,
+  HydratePolicyContext,
+  HydratePolicyResolution,
+  HydrateWorkspace,
+  ReadRepoFile,
+  ResolveDiscoveryHydrationInput,
+} from './hydrate-types.js';
 
 /**
  * The lock is intentionally held across discovery/git for the duration of the
