@@ -13,9 +13,7 @@ import { canonicalJsonStringify } from './canonical-json.js';
 describe('canonicalJsonStringify', () => {
   it('sorts object keys lexicographically at every depth', () => {
     expect(canonicalJsonStringify({ b: 1, a: 2 })).toBe('{"a":2,"b":1}');
-    expect(canonicalJsonStringify({ z: { y: 1, x: 2 }, a: 3 })).toBe(
-      '{"a":3,"z":{"x":2,"y":1}}',
-    );
+    expect(canonicalJsonStringify({ z: { y: 1, x: 2 }, a: 3 })).toBe('{"a":3,"z":{"x":2,"y":1}}');
   });
 
   it('preserves array order (order is semantic) and recurses elements', () => {

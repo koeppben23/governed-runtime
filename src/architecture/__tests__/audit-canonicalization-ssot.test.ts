@@ -162,7 +162,8 @@ describe('audit canonicalization SSOT (#434 C1 anti-drift)', () => {
       const fixture: SourceFile[] = [
         {
           rel: 'adapters/workspace/fingerprint.ts',
-          content: 'export function canonicalizeOriginUrl(rawUrl: string): string { return rawUrl; }',
+          content:
+            'export function canonicalizeOriginUrl(rawUrl: string): string { return rawUrl; }',
         },
       ];
       const violations = findCanonicalizationViolations(fixture);
