@@ -28,7 +28,7 @@
  * @version v1
  */
 
-import * as crypto from 'node:crypto';
+import { hashText } from '../shared/hashing.js';
 const EXCLUDED_FIELDS = new Set([
   'chainHash',
   'timestampEvidence',
@@ -52,7 +52,7 @@ export function computeCanonicalEventDigest(event: Record<string, unknown>): str
     stripped[key] = event[key];
   }
   const canonical = canonicalJsonStringify(stripped);
-  return crypto.createHash('sha256').update(canonical, 'utf-8').digest('hex');
+  return hashText(canonical);
 }
 
 /**

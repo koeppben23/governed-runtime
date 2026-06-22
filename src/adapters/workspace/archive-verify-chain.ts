@@ -13,7 +13,7 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import * as crypto from 'node:crypto';
+import { hashBuffer } from '../../shared/hashing.js';
 import { readState } from '../persistence.js';
 import { readAuditTrail } from '../persistence-audit.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
@@ -119,7 +119,7 @@ async function checkBoundArtifacts(
       continue;
     }
     const content = await fs.readFile(path.join(sessDir, relPath));
-    const actual = crypto.createHash('sha256').update(content).digest('hex');
+    const actual = hashBuffer(content);
     if (actual !== entry.sha256) {
       findings.push({
         code: 'artifact_binding_mismatch',
@@ -488,7 +488,7 @@ async function verifyArchiveIntegrity(
       const sidecarContent = await fs.readFile(checksumSidecarPath, 'utf-8');
       const expectedHash = sidecarContent.trim().split(/\s+/)[0];
       const archiveBuffer = await fs.readFile(archiveTarPath);
-      const actualHash = crypto.createHash('sha256').update(archiveBuffer).digest('hex');
+      const actualHash = hashBuffer(archiveBuffer);
       if (expectedHash !== actualHash) {
         findings.push({
           code: 'archive_checksum_mismatch',

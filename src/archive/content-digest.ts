@@ -67,6 +67,9 @@ export function computeArchiveContentDigest(input: ArchiveContentDigestInput): s
     auditEventCount: input.auditEventCount,
   });
 
+  // Multi-part streaming digest (header + separator + joined values). Kept as a
+  // direct createHash call: the shared hashing helpers cover single-shot string
+  // and buffer inputs, not this incremental multi-update form.
   return crypto
     .createHash('sha256')
     .update(integrityHeader)

@@ -8,7 +8,7 @@
  * @version v1
  */
 
-import { createHash } from 'node:crypto';
+import { hashTextShort } from '../shared/hashing.js';
 
 /**
  * Redact identity-related log extra fields.
@@ -44,7 +44,7 @@ export function redactIdentityExtra(
       }
     } else if (key === 'issuer') {
       if (typeof value === 'string' && value.trim()) {
-        const hash = createHash('sha256').update(value).digest('hex').slice(0, 8);
+        const hash = hashTextShort(value, 8);
         redacted[key] = `[hashed:${hash}]`;
       }
     } else if (key === 'error') {

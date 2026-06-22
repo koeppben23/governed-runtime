@@ -25,6 +25,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { atomicWrite, readState } from '../persistence.js';
 import { appendAuditEvent, readAuditTrail } from '../persistence-audit.js';
+import { hashBuffer } from '../../shared/hashing.js';
 import { readConfig } from '../persistence-config.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { getLastChainHash } from '../../audit/integrity.js';
@@ -259,7 +260,7 @@ async function collectArtifactBindings(sessDir: string): Promise<ArtifactBinding
     const content = await fs.readFile(path.join(sessDir, relPath));
     entries.push({
       path: relPath,
-      sha256: crypto.createHash('sha256').update(content).digest('hex'),
+      sha256: hashBuffer(content),
       artifactType: inferArtifactType(relPath),
     });
   }
@@ -347,7 +348,7 @@ async function writeArchiveChecksum(
   const validSessionId = path.basename(path.dirname(archivePath));
   try {
     const archiveBuffer = await fs.readFile(archivePath);
-    const archiveHash = crypto.createHash('sha256').update(archiveBuffer).digest('hex');
+    const archiveHash = hashBuffer(archiveBuffer);
     await atomicWrite(checksumPath, `${archiveHash}  ${path.basename(archivePath)}\n`);
   } catch (err) {
     getAdapterLogger().error('archive', 'Checksum sidecar write failed', {
@@ -389,7 +390,7 @@ async function buildArchiveManifest(
 
   for (const relPath of files) {
     const content = await fs.readFile(path.join(sessDir, relPath));
-    fileDigests[relPath] = crypto.createHash('sha256').update(content).digest('hex');
+    fileDigests[relPath] = hashBuffer(content);
   }
 
   // Audit completeness anchor — read AFTER the artifact-binding append so head and

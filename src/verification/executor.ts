@@ -21,8 +21,8 @@
  */
 
 import { execFile } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import type { VerificationCandidateKind } from '../state/discovery-schemas.js';
+import { hashText } from '../shared/hashing.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -121,9 +121,7 @@ export async function executeCheck(input: ExecuteCheckInput): Promise<ExecutionE
   const executionMs = Math.round(performance.now() - startTime);
 
   // Compute tamper-evident digest BEFORE truncation (full output)
-  const outputDigest = createHash('sha256')
-    .update(stdout + stderr, 'utf-8')
-    .digest('hex');
+  const outputDigest = hashText(stdout + stderr);
 
   // Truncate for evidence embedding
   const truncatedStdout = truncateOutput(stdout);

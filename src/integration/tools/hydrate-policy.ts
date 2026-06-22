@@ -1,6 +1,5 @@
 /** @module integration/tools/hydrate-policy — Policy resolution for hydrate. */
 
-import { createHash } from 'node:crypto';
 import type { PolicyMode } from '../../state/policy-mode.js';
 import { resolvePolicyFromState, createPolicyContext } from './helpers.js';
 import {
@@ -14,8 +13,11 @@ import type {
   ExistingCentralEvidence,
   HydratePolicyResolution,
 } from './hydrate.js';
+import { hashText } from '../../shared/hashing.js';
+
+/** Full SHA-256 hex digest of a UTF-8 string. Delegates to the shared authority. */
 export function digestText(text: string): string {
-  return createHash('sha256').update(text, 'utf8').digest('hex');
+  return hashText(text);
 }
 
 export async function resolveCentralEvidenceForExisting(existing: ExistingHydrateState) {
