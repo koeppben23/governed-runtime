@@ -14,11 +14,11 @@
  */
 
 import { z } from 'zod';
-import * as crypto from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 // State & Machine
 import { SessionState } from '../../state/schema.js';
+import { hashText } from '../../shared/hashing.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 import { TERMINAL } from '../../machine/topology.js';
@@ -329,10 +329,7 @@ export async function writeStateWithArtifactsAlreadyLocked(
 
   // 2. Pre-compute serialized form and hash (identical to what writeState would produce)
   const serialized = JSON.stringify(result.data, null, 2) + '\n';
-  const preComputedStateHash = crypto
-    .createHash('sha256')
-    .update(serialized, 'utf-8')
-    .digest('hex');
+  const preComputedStateHash = hashText(serialized);
 
   await materializeEvidenceArtifacts(sessDir, nextState, preComputedStateHash);
   await writeStateAlreadyLocked(sessDir, nextState);

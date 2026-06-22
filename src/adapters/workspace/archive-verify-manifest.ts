@@ -12,7 +12,7 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import * as crypto from 'node:crypto';
+import { hashBuffer } from '../../shared/hashing.js';
 import {
   ArchiveManifestSchema,
   type ArchiveManifest,
@@ -83,7 +83,7 @@ export async function verifyManifestFiles(
     const expectedDigest = manifest.fileDigests[relPath];
     if (expectedDigest) {
       const content = await fs.readFile(fullPath);
-      const actualDigest = crypto.createHash('sha256').update(content).digest('hex');
+      const actualDigest = hashBuffer(content);
       if (actualDigest !== expectedDigest) {
         findings.push({
           code: 'file_digest_mismatch',

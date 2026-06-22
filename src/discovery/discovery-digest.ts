@@ -11,7 +11,7 @@
  * - computeDiscoveryDigest() is backward-compatible, behavior unchanged
  * - computeStableDriftDigest() strips only collectedAt and diagnostics[].durationMs
  */
-import { createHash } from 'node:crypto';
+import { hashText } from '../shared/hashing.js';
 import type { DiscoveryResult } from './types.js';
 
 /**
@@ -47,7 +47,7 @@ function canonicalize(value: unknown): unknown {
  */
 export function computeDiscoveryDigest(result: DiscoveryResult): string {
   const canonical = JSON.stringify(canonicalize(result));
-  return createHash('sha256').update(canonical).digest('hex');
+  return hashText(canonical);
 }
 
 /**
@@ -92,5 +92,5 @@ function stripVolatileFields(result: DiscoveryResult): Record<string, unknown> {
 export function computeStableDriftDigest(result: DiscoveryResult): string {
   const stable = stripVolatileFields(result);
   const canonical = JSON.stringify(canonicalize(stable));
-  return createHash('sha256').update(canonical).digest('hex');
+  return hashText(canonical);
 }

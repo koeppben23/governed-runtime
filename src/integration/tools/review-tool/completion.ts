@@ -7,7 +7,7 @@
  * @version v1
  */
 
-import { createHash } from 'node:crypto';
+import { hashTextShort } from '../../../shared/hashing.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
@@ -242,8 +242,7 @@ async function materializeStandaloneReviewCard(input: {
       'review-report-card',
       reviewCard,
       result.state,
-      validatedReviewObligation?.obligationId ??
-        createHash('sha256').update(reviewCard, 'utf-8').digest('hex').slice(0, 16),
+      validatedReviewObligation?.obligationId ?? hashTextShort(reviewCard, 16),
     )) ?? undefined
   );
 }

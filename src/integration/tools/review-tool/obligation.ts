@@ -7,7 +7,7 @@
  * @version v1
  */
 
-import { createHash } from 'node:crypto';
+import { hashText, hashTextShort } from '../../../shared/hashing.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
@@ -137,18 +137,11 @@ export function fingerprintReviewInput(args: {
     prNumber: args.prNumber,
     branch: args.branch,
     url: args.url,
-    textHash: args.text
-      ? createHash('sha256').update(args.text, 'utf-8').digest('hex').slice(0, 16)
-      : undefined,
+    textHash: args.text ? hashTextShort(args.text, 16) : undefined,
     inputOrigin: args.inputOrigin,
-    references: args.references
-      ? createHash('sha256')
-          .update(JSON.stringify(args.references), 'utf-8')
-          .digest('hex')
-          .slice(0, 16)
-      : undefined,
+    references: args.references ? hashTextShort(JSON.stringify(args.references), 16) : undefined,
   });
-  return createHash('sha256').update(payload, 'utf-8').digest('hex');
+  return hashText(payload);
 }
 
 // ─── Obligation lifecycle ────────────────────────────────────────────────────
