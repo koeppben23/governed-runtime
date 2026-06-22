@@ -53,7 +53,10 @@ export {
   resolveOpencodeConfigPath,
   FLOWGUARD_INSTRUCTION_ENTRIES,
 } from './install-helpers.js';
-export { checkLastSessionHandshake, checkPluginActivation, doctor } from './doctor-command.js';
+export { doctor } from './doctor-command.js';
+export { checkLastSessionHandshake } from './doctor-handshake.js';
+export { checkPluginActivation } from './doctor-plugin.js';
+export { checkShippedExecutables } from './doctor-executables.js';
 export { detectPackageManager, install } from './install-command.js';
 export { uninstall } from './uninstall-command.js';
 
