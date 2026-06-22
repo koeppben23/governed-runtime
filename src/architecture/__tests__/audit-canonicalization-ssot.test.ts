@@ -25,11 +25,18 @@ import { describe, expect, it } from 'vitest';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 
-/** The sole module permitted to define/own audit event canonicalization. */
-const CANONICAL_MODULE = 'audit/canonical-digest.ts';
+/** The sole module permitted to define/own the canonical JSON serializer. */
+const CANONICAL_MODULE = 'shared/canonical-json.ts';
 
-/** A definition (not a call/import) of the canonical serializer. */
+/** A definition (not a call/import) of the canonical serializer entry point. */
 const DEFINE_CANONICAL = /\b(?:function|const)\s+canonicalJsonStringify\b/;
+
+/**
+ * A definition of a recursive key-sorting helper named exactly `canonicalize`.
+ * The `\b` after the name keeps this from matching legitimately-distinct names
+ * such as `canonicalizeOriginUrl` (URL canonicalizer, not a JSON key-sorter).
+ */
+const DEFINE_CANONICALIZE = /\b(?:function|const)\s+canonicalize\b/;
 
 /** Hashing over a raw JSON.stringify — the C1 broken-serializer shape. */
 const HASH_OVER_RAW_JSON = /\.update\(\s*JSON\.stringify\(/;
@@ -72,6 +79,17 @@ function findCanonicalizationViolations(files: readonly SourceFile[]): Violation
           line: i + 1,
           snippet: text.trim(),
           rule: 'duplicate-canonical-serializer',
+        });
+      }
+      // Any recursive key-sorter named `canonicalize` must live only in the
+      // authority. This catches differently-named-but-duplicate serializers
+      // (the discovery-digest divergence that the public-API check missed).
+      if (DEFINE_CANONICALIZE.test(text) && f.rel !== CANONICAL_MODULE) {
+        out.push({
+          rel: f.rel,
+          line: i + 1,
+          snippet: text.trim(),
+          rule: 'duplicate-canonicalize-helper',
         });
       }
       // Allowlist: only the canonical module may hash a serialized form directly.
@@ -124,6 +142,31 @@ describe('audit canonicalization SSOT (#434 C1 anti-drift)', () => {
       const violations = findCanonicalizationViolations(fixture);
       expect(violations).toHaveLength(1);
       expect(violations[0]!.rule).toBe('raw-json-event-hash');
+    });
+
+    it('detects a duplicate `canonicalize` recursive key-sorter outside the authority', () => {
+      const fixture: SourceFile[] = [
+        {
+          rel: 'discovery/rogue.ts',
+          content: 'function canonicalize(value) { return value; }',
+        },
+      ];
+      const violations = findCanonicalizationViolations(fixture);
+      expect(violations).toHaveLength(1);
+      expect(violations[0]!.rule).toBe('duplicate-canonicalize-helper');
+    });
+
+    it('does NOT flag a differently-named canonicalizer (canonicalizeOriginUrl)', () => {
+      // Suffix safety: `canonicalizeOriginUrl` in adapters/workspace/fingerprint.ts
+      // is a URL canonicalizer, not a JSON key-sorter, and must never be flagged.
+      const fixture: SourceFile[] = [
+        {
+          rel: 'adapters/workspace/fingerprint.ts',
+          content: 'export function canonicalizeOriginUrl(rawUrl: string): string { return rawUrl; }',
+        },
+      ];
+      const violations = findCanonicalizationViolations(fixture);
+      expect(violations).toEqual([]);
     });
   });
 });
