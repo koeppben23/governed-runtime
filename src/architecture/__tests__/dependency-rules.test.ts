@@ -445,6 +445,89 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
   return allViolations;
 }
 
+function resolveImportPath(importerDir: string, importPath: string): string {
+  if (importPath.startsWith('.')) {
+    const resolved = normalizeSep(path.resolve(importerDir, importPath));
+    // Try with .ts extension
+    if (existsSync(resolved + '.ts')) return resolved + '.ts';
+    // Try with .ts matching the .js extension convention
+    const withoutJs = resolved.replace(/\.js$/, '');
+  }
+  return '';
+}
+
+function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
+  const cycles: string[] = [];
+  const seen = new Set<string>();
+
+  // Build adjacency: source file -> set of imported source files
+  const adjacency = new Map<string, Set<string>>();
+  for (const [filePath, analysis] of analyses) {
+    const dir = path.dirname(filePath);
+    const targets = new Set<string>();
+    for (const imp of analysis.imports) {
+      const resolved = resolveImportPath(dir, imp.module);
+      if (resolved && analyses.has(resolved) && resolved !== filePath) {
+        targets.add(resolved);
+      }
+    }
+    adjacency.set(normalizeSep(filePath), targets);
+  }
+
+  // DFS from each node
+  const sorted = [...adjacency.keys()].sort();
+  for (const node of sorted) {
+    const dfsPath: string[] = [];
+    const visiting = new Set<string>();
+
+    function dfs(current: string): boolean {
+      if (visiting.has(current)) {
+        // Cycle found via visiting -> extract the cycle substring
+        const idx = dfsPath.indexOf(current);
+        if (idx >= 0) {
+          cycleKey(current, dfsPath.slice(idx));
+        }
+        return true;
+      }
+      if (seen.has(current)) return false;
+
+      visiting.add(current);
+      dfsPath.push(current);
+
+      const targets = adjacency.get(current);
+      if (targets) {
+        const targetList = [...targets].sort();
+        for (const next of targetList) {
+          if (dfs(next)) return true;
+        }
+      }
+
+      dfsPath.pop();
+      visiting.delete(current);
+      seen.add(current);
+      return false;
+    }
+
+    function cycleKey(start: string, cyclePath: string[]): void {
+      // Normalize: rotate so the lexicographically first node comes first
+      const sortedCycle = [...cyclePath];
+      let minIdx = 0;
+      for (let i = 1; i < sortedCycle.length; i++) {
+        if (sortedCycle[i] < sortedCycle[minIdx]) minIdx = i;
+      }
+      const normalized = [...sortedCycle.slice(minIdx), ...sortedCycle.slice(0, minIdx), start];
+      const key = normalized.map((f) => path.relative(PROJECT_ROOT, f)).join(' -> ');
+      cycles.push(key);
+    }
+
+    if (!seen.has(node)) {
+      dfs(node);
+    }
+  }
+
+  return [...new Set(cycles)].sort();
+}
+
 describe('Layer Dependency Rules', () => {
   let analyses: Map<string, FileAnalysis>;
 
@@ -1317,6 +1400,22 @@ describe('Layer Dependency Rules', () => {
       expect(existsSync(path.join(SRC_DIR, 'cli/install-command.ts'))).toBe(true);
       expect(existsSync(path.join(SRC_DIR, 'cli/uninstall-command.ts'))).toBe(true);
       expect(existsSync(path.join(SRC_DIR, 'cli/doctor-command.ts'))).toBe(true);
+    });
+  });
+
+  describe('Rule 8: No circular module dependencies (templates scope)', () => {
+    it('should have no circular imports between templates source files', () => {
+      const templatesAnalyses = new Map(
+        [...analyses.entries()].filter(([fp]) => fp.includes('/templates/')),
+      );
+      const cycles = detectCycles(templatesAnalyses);
+      if (cycles.length > 0) {
+        console.error(
+          '\nCircular module dependencies in templates/:\n' +
+            cycles.map((c) => `  ${c}`).join('\n'),
+        );
+      }
+      expect(cycles).toHaveLength(0);
     });
   });
 
