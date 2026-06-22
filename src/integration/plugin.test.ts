@@ -1516,11 +1516,18 @@ describe('integration/plugin', () => {
     // preventing drift back to anonymous inline casts.
     it('SMOKE — plugin.ts imports ToolHookInput from types.ts (source regression)', async () => {
       const pluginPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'plugin.ts');
+      const afterhooksPath = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        'plugin-afterhooks.ts',
+      );
       const source = await fs.readFile(pluginPath, 'utf-8');
+      const afterSource = await fs.readFile(afterhooksPath, 'utf-8');
       expect(source).toContain("from './types.js'");
       expect(source).toContain('ToolHookBeforeInput');
       expect(source).toContain('ToolHookBeforeOutput');
-      expect(source).toContain('ToolHookAfterOutput');
+      // ToolHookAfterOutput used by afterhooks
+      expect(afterSource).toContain("from './types.js'");
+      expect(afterSource).toContain('ToolHookAfterOutput');
     });
   });
 });
