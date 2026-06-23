@@ -45,14 +45,25 @@ export const archive: ToolDefinition = {
 
       const archivePath = await archiveSession(fingerprint, context.sessionID);
 
-      // Track archiveStatus for consistency with regulated completion path.
-      // Verify archive integrity and persist status on state.
+      // Verify archive integrity and persist status. /export is an explicit
+      // request for a verifiable audit package, so a concrete verified/failed
+      // status is appropriate here (regardless of policy mode). With the
+      // idempotent artifact-binding (see archive.ts), a re-archive of an
+      // already-archived session no longer perturbs the audit-trail anchor, so a
+      // freshly created valid archive verifies as 'verified' rather than racing
+      // to 'failed'.
       let archiveStatus: 'verified' | 'failed' = 'failed';
+      let verifyError: string | null = null;
       try {
         const verification = await verifyArchive(fingerprint, context.sessionID);
         archiveStatus = verification.passed ? 'verified' : 'failed';
-      } catch {
+        if (!verification.passed) {
+          const errs = verification.findings.filter((f) => f.severity === 'error');
+          verifyError = errs.map((f) => f.code).join(', ') || 'integrity verification failed';
+        }
+      } catch (err) {
         // Verification failure is non-fatal for manual archive — status stays 'failed'.
+        verifyError = err instanceof Error ? err.message : String(err);
       }
       const archivedState = { ...state, archiveStatus };
       await writeStateWithArtifacts(sessDir, archivedState);
@@ -63,10 +74,17 @@ export const archive: ToolDefinition = {
         ...getLogTraceFields(),
       });
 
+      // Keep the status string consistent with archiveStatus — never report
+      // success alongside a failed verification (#archive-payload-mismatch).
+      const status =
+        archiveStatus === 'verified'
+          ? 'Session archived and verified.'
+          : `Session archived, but integrity verification failed${verifyError ? `: ${verifyError}` : ''}.`;
+
       return appendNextAction(
         JSON.stringify({
           phase: state.phase,
-          status: 'Session archived successfully.',
+          status,
           archivePath,
           archiveStatus,
         }),

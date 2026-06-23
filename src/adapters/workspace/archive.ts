@@ -47,6 +47,7 @@ import { workspacesHome, sessionDir } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
 import { verifyEvidenceArtifacts } from './evidence-artifacts.js';
 import { fileExists, listSessionFiles } from './archive-files.js';
+import { findBindingArtifacts } from './archive-verify-helpers.js';
 import {
   type ArtifactBindingEntry,
   ARTIFACT_BINDING_EVENT,
@@ -234,6 +235,16 @@ async function appendArtifactBindingAuditEvent(
   const artifacts = await collectArtifactBindings(sessDir);
   if (artifacts.length === 0) return;
 
+  // Idempotency (#archive-race): if the audit trail already ends with an
+  // artifact-binding event for the SAME artifact set (paths + content hashes),
+  // do not append a duplicate. Two archive runs of the same completed session
+  // (e.g. the fire-and-forget auto-archive on COMPLETE plus a manual /export)
+  // would otherwise each append a binding event, leaving the live trail with one
+  // more event than the manifest anchor recorded -> verify reports
+  // audit_chain_truncated -> archiveStatus:"failed" on a perfectly valid archive.
+  const { events } = await readAuditTrail(sessDir);
+  if (artifactBindingMatches(findBindingArtifacts(events), artifacts)) return;
+
   const body = {
     id: crypto.randomUUID(),
     sessionId,
@@ -249,6 +260,27 @@ async function appendArtifactBindingAuditEvent(
     },
   };
   await appendAuditEvent(sessDir, body);
+}
+
+/**
+ * True when a previously-recorded artifact-binding set (from the last binding
+ * event in the trail) is identical to the freshly-collected set, compared by
+ * sorted (path, sha256) pairs so ordering is irrelevant.
+ */
+function artifactBindingMatches(
+  previous: unknown[] | undefined,
+  current: readonly ArtifactBindingEntry[],
+): boolean {
+  if (!previous || previous.length !== current.length) return false;
+  const key = (p: string, h: string): string => `${p}\u0000${h}`;
+  const prevKeys = new Set<string>();
+  for (const entry of previous) {
+    if (!entry || typeof entry !== 'object') return false;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.path !== 'string' || typeof e.sha256 !== 'string') return false;
+    prevKeys.add(key(e.path, e.sha256));
+  }
+  return current.every((c) => prevKeys.has(key(c.path, c.sha256)));
 }
 
 async function collectArtifactBindings(sessDir: string): Promise<ArtifactBindingEntry[]> {
