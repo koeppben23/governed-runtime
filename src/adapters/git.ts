@@ -327,6 +327,37 @@ export async function changedFiles(worktree: string): Promise<string[]> {
 }
 
 /**
+ * Compute the git blob hash of each given worktree path's CURRENT content.
+ *
+ * Uses `git hash-object` (the same content addressing git uses for blobs), so
+ * the hash changes iff the file content changes. Used to capture a
+ * pre-implementation baseline: a file that was already dirty at session start
+ * is only scoped out of implementation evidence if its hash is unchanged (i.e.
+ * the task did not touch it). A deleted or unreadable path maps to null.
+ *
+ * Paths are processed individually so one unreadable/deleted file does not lose
+ * the hashes of the others.
+ *
+ * @returns Map of input path -> blob hash, or null when the path could not be hashed.
+ */
+export async function hashWorktreeFiles(
+  worktree: string,
+  paths: readonly string[],
+): Promise<Record<string, string | null>> {
+  const out: Record<string, string | null> = {};
+  for (const p of paths) {
+    try {
+      // `--` guards against paths that look like options. hash-object reads the
+      // working-tree file content (not the index/HEAD).
+      out[p] = await git(worktree, ['hash-object', '--', p]);
+    } catch {
+      out[p] = null; // deleted, untracked-removed, or unreadable
+    }
+  }
+  return out;
+}
+
+/**
  * Get the current HEAD commit hash (short form).
  * Returns null if no commits exist.
  */

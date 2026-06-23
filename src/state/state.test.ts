@@ -137,6 +137,27 @@ describe('state schemas', () => {
       expect(parsed.riskGate).toBeUndefined();
     });
 
+    it('SessionState treats implementationBaseline as optional (absent/null/populated all parse)', () => {
+      const state = makeState('TICKET');
+      // Absent (legacy session created before the baseline field existed).
+      const legacy: Record<string, unknown> = { ...state };
+      delete legacy.implementationBaseline;
+      expect(SessionState.parse(legacy).implementationBaseline).toBeUndefined();
+      // Null is accepted and treated like absent.
+      expect(() => SessionState.parse({ ...state, implementationBaseline: null })).not.toThrow();
+      // Populated parses and round-trips.
+      const populated = SessionState.parse({
+        ...state,
+        implementationBaseline: {
+          dirtyFiles: [{ path: 'stale/a.txt', hash: 'abc123' }],
+          capturedAt: FIXED_TIME,
+        },
+      });
+      expect(populated.implementationBaseline?.dirtyFiles).toEqual([
+        { path: 'stale/a.txt', hash: 'abc123' },
+      ]);
+    });
+
     it('SessionState normalizes legacy regulated/team-ci snapshots to risk enforcement on', () => {
       for (const mode of ['regulated', 'team-ci'] as const) {
         const state = makeState('TICKET');

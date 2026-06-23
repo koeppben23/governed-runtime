@@ -69,6 +69,15 @@ vi.mock('../adapters/git', async (importOriginal) => {
     remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
     changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
     listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+    // Deterministic per-path content hash so baseline scoping is testable: a
+    // file is "unchanged since baseline" iff the baseline recorded this same
+    // `stable:<path>` value; tests that simulate a real edit record a DIFFERENT
+    // baseline hash for that path.
+    hashWorktreeFiles: vi.fn(async (_worktree: string, paths: readonly string[]) => {
+      const out: Record<string, string | null> = {};
+      for (const p of paths) out[p] = `stable:${p}`;
+      return out;
+    }),
   };
 });
 
@@ -233,6 +242,11 @@ async function hydrateSession(
   if (overrides.profileId !== undefined) {
     args.profileId = overrides.profileId;
   }
+  // Pre-implementation baseline (#baseline): hydrate snapshots the dirty
+  // worktree once. Simulate a clean start so later changedFiles mocks represent
+  // the task's own edits (not pre-existing dirt).
+  const gitMockForBaseline = await import('../adapters/git.js');
+  vi.mocked(gitMockForBaseline.changedFiles).mockResolvedValueOnce([]);
   const raw = await hydrate.execute(args, ctx);
   return parseToolResult(raw);
 }
@@ -312,7 +326,6 @@ describe('implement', () => {
     });
 
     it('reduced ceremony records evidence and skips implementation review obligation only for runtime-verified TRIVIAL changes', async () => {
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['docs/usage-notes.md']);
       await reachImplementation();
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
@@ -322,6 +335,7 @@ describe('implement', () => {
         policySnapshot: { ...state!.policySnapshot, allowReducedCeremony: true },
       });
 
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['docs/usage-notes.md']);
       const raw = await implement.execute({}, ctx);
       const result = parseToolResult(raw);
       const finalState = await readState(sessDir);
@@ -348,7 +362,6 @@ describe('implement', () => {
     });
 
     it('keeps full implementation review for computed HIGH-RISK surfaces even when reduced ceremony is enabled', async () => {
-      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/security/policy.ts']);
       await reachImplementation();
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
@@ -358,6 +371,7 @@ describe('implement', () => {
         policySnapshot: { ...state!.policySnapshot, allowReducedCeremony: true },
       });
 
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/security/policy.ts']);
       const raw = await implement.execute({}, ctx);
       const result = parseToolResult(raw);
       const finalState = await readState(sessDir);
@@ -394,12 +408,12 @@ describe('implement', () => {
 
   describe('CORNER', () => {
     it('filters out .opencode/ files from domain files', async () => {
+      await reachImplementation();
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
         'src/foo.ts',
         '.opencode/tools/flowguard.ts',
         'node_modules/dep/index.js',
       ]);
-      await reachImplementation();
       const raw = await implement.execute({}, ctx);
       const result = parseToolResult(raw);
       const domain = result.domainFiles as string[];
@@ -411,12 +425,12 @@ describe('implement', () => {
     it('excludes root tool config (opencode.json) from domain files but keeps it in changedFiles', async () => {
       // Real demo case: a stale opencode.json detected in the worktree must not
       // be counted as an implementation domain surface.
+      await reachImplementation();
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
         'opencode.json',
         'src/main/Service.java',
         'tsconfig.json',
       ]);
-      await reachImplementation();
       const raw = await implement.execute({}, ctx);
       const result = parseToolResult(raw);
       const domain = result.domainFiles as string[];
@@ -426,6 +440,124 @@ describe('implement', () => {
       expect(domain).not.toContain('tsconfig.json');
       // changedFiles still reports the full git-detected set for transparency.
       expect(changed).toContain('opencode.json');
+    });
+
+    it('baseline scoping subtracts pre-existing dirty files from the implementation evidence', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      // A stale file was already dirty at session start and is UNCHANGED since
+      // (its recorded baseline hash matches the deterministic re-hash mock).
+      await writeState(sessDir, {
+        ...state!,
+        implementationBaseline: {
+          dirtyFiles: [{ path: 'stale/preexisting.txt', hash: 'stable:stale/preexisting.txt' }],
+          capturedAt: new Date().toISOString(),
+        },
+      });
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
+        'src/main/Service.java',
+        'stale/preexisting.txt',
+      ]);
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.baselineScoping).toBe('applied');
+      const changed = result.changedFiles as string[];
+      expect(changed).toContain('src/main/Service.java');
+      expect(changed).not.toContain('stale/preexisting.txt');
+    });
+
+    it('keeps a pre-dirty file the task actually modified (content hash changed)', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      // The file was dirty at start with a DIFFERENT hash; the task then edited
+      // it, so the current re-hash differs and it must NOT be scoped out.
+      await writeState(sessDir, {
+        ...state!,
+        implementationBaseline: {
+          dirtyFiles: [{ path: 'src/main/Service.java', hash: 'old:src/main/Service.java' }],
+          capturedAt: new Date().toISOString(),
+        },
+      });
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/main/Service.java']);
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.baselineScoping).toBe('applied');
+      const changed = result.changedFiles as string[];
+      expect(changed).toContain('src/main/Service.java');
+    });
+
+    it('absent baseline records the full worktree and marks scoping unavailable', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      // Simulate a legacy session: strip any captured baseline.
+      const { implementationBaseline: _drop, ...withoutBaseline } = state!;
+      await writeState(sessDir, withoutBaseline as typeof state);
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
+        'src/main/Service.java',
+        'stale/preexisting.txt',
+      ]);
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.baselineScoping).toBe('unavailable');
+      const changed = result.changedFiles as string[];
+      // No subtraction: the full worktree is recorded, nothing hidden.
+      expect(changed).toContain('src/main/Service.java');
+      expect(changed).toContain('stale/preexisting.txt');
+    });
+
+    it('a stale HIGH-RISK file in the baseline does not escalate ceremony once scoped out', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        claimedTaskClass: 'TRIVIAL',
+        policySnapshot: { ...state!.policySnapshot, allowReducedCeremony: true },
+        implementationBaseline: {
+          dirtyFiles: [{ path: 'package.json', hash: 'stable:package.json' }],
+          capturedAt: new Date().toISOString(),
+        },
+      });
+      // The task only touched a doc; a stale dirty package.json (HIGH-RISK) was
+      // present before the task, unchanged, and must be scoped out, not raise
+      // the floor.
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
+        'docs/usage-notes.md',
+        'package.json',
+      ]);
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.baselineScoping).toBe('applied');
+      expect(result.computedMinimumTaskClass).toBe('TRIVIAL');
+      expect(result.ceremonyProfile).toBe('reduced');
+    });
+
+    it('blocks when every changed file was already dirty and unchanged since session start', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      await writeState(sessDir, {
+        ...state!,
+        implementationBaseline: {
+          dirtyFiles: [
+            { path: 'stale/a.txt', hash: 'stable:stale/a.txt' },
+            { path: 'stale/b.txt', hash: 'stable:stale/b.txt' },
+          ],
+          capturedAt: new Date().toISOString(),
+        },
+      });
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['stale/a.txt', 'stale/b.txt']);
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_EMPTY');
     });
 
     it('Mode B blocks with IMPLEMENTATION_EVIDENCE_REQUIRED before evidence is recorded', async () => {

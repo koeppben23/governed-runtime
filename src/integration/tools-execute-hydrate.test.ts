@@ -353,6 +353,27 @@ describe('hydrate', () => {
       expect(state!.binding.fingerprint).toBe(fp.fingerprint);
     });
 
+    it('captures a pre-implementation baseline of the dirty worktree at session start', async () => {
+      // The git mock reports a dirty worktree; hydrate must snapshot it so
+      // implement can later scope evidence to the task's own edits.
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state!.implementationBaseline).toBeDefined();
+      expect(state!.implementationBaseline!.dirtyFiles.map((d) => d.path)).toEqual(
+        GIT_MOCK_DEFAULTS.changedFiles,
+      );
+      // Each entry carries a content hash slot (null when the path is not
+      // hashable in this fixture worktree).
+      for (const entry of state!.implementationBaseline!.dirtyFiles) {
+        expect(entry).toHaveProperty('hash');
+      }
+      expect(state!.implementationBaseline!.capturedAt).toBeTruthy();
+    });
+
     it('auto-detects TypeScript profile from repo signals', async () => {
       // P31: No profileId = auto-detect (not profileId: 'baseline')
       const result = await hydrateSession({});
