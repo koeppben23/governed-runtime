@@ -108,6 +108,16 @@ function prepareHostTaskVerdictReview(
     'review',
     fingerprint,
   );
+
+  // First content-aware /review call that already carries a reviewVerdict but
+  // has NO pending obligation yet: do NOT terminally block on missing host-task
+  // evidence. Fall through (return null) so prepareReviewExecution reaches
+  // ensureMissingAnalysisObligation, which creates the PENDING obligation and
+  // returns CONTENT_ANALYSIS_REQUIRED — exactly like a verdict-less first call.
+  // Otherwise the reviewer Task would have nothing to bind to and the flow
+  // wedges (a verdict in the first call could never succeed).
+  if (obligation === null) return null;
+
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
 
   if (resolved.kind !== 'resolved') {

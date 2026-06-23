@@ -319,12 +319,12 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
    - URL: fetch the content, set \`inputOrigin: "external_reference"\`.
    - Manual text: use it directly, set \`inputOrigin: "manual_text"\`.
    - Both text and a reference: set \`inputOrigin: "mixed"\`. No reference: omit \`inputOrigin\`.
-3. Call \`mcp__flowguard__flowguard_review\` with the matching content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`) and optional \`inputOrigin\` / \`references\`.
+3. Call \`mcp__flowguard__flowguard_review\` with ONLY the matching content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`) and optional \`inputOrigin\` / \`references\`. Do NOT include \`reviewVerdict\` or \`reviewFindings\` on this first call.
    - If the response is \`CONTENT_ANALYSIS_REQUIRED\` with \`requiredReviewAttestation\` and no \`pluginReviewFindings\`: delegate to the \`flowguard-reviewer\` subagent, passing the loaded content, the attestation values, and the captured Discovery context. Instruct it to check Discovery health/drift before repo-dependent claims and to mark uncorrelated claims \`NOT_VERIFIED\`. The reviewer returns a complete \`ReviewFindings\` object.
    - Re-call \`mcp__flowguard__flowguard_review\` with the same content field plus \`reviewFindings\` set to that object (as-is — no mapping, no array).
    - If the reviewer returns \`overallVerdict: "unable_to_review"\`, do NOT submit \`reviewFindings\`; report the reason and stop.
 4. Fail closed — never bypass review:
-   - \`HOST_SUBAGENT_TASK_REQUIRED\`: the active policy (team, team-ci, or regulated) requires host-visible reviewer evidence this host cannot provide inline. Report the blocker verbatim and STOP. Do not self-approve or fabricate findings.
+   - \`HOST_SUBAGENT_TASK_REQUIRED\`: the active policy (team, team-ci, or regulated) requires host-visible reviewer evidence. This is an EXPECTED intermediate state, not a terminal failure: ensure the \`flowguard-reviewer\` subagent has actually run (step 3) and re-call \`flowguard_review\` so its evidence can bind. Do not self-approve or fabricate findings, and do not tell the user to restart the whole flow.
    - \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: transient — re-run this review to retry. \`ORCHESTRATION_PERMANENTLY_FAILED\` or any other blocked/failed result: report the exact blocker and stop.
 5. ${CLAUDE_REVIEW_CARD_RULE}
 

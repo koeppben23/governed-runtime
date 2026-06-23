@@ -38,9 +38,10 @@ Start the compliance review flow for the current FlowGuard session.
     Always preserve the original URL/reference.
 
 3. **Create the review obligation** (content-aware only):
-    If content was provided, call \`flowguard_review\` first with the matching content field
-    (\`text\`, \`prNumber\`, \`branch\`, or \`url\`), optional \`inputOrigin\`, and
-    optional \`references\`. Do not include \`reviewFindings\` in this first call.
+    If content was provided, call \`flowguard_review\` first with ONLY the matching
+    content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`), optional \`inputOrigin\`,
+    and optional \`references\`. Do NOT include \`reviewVerdict\` or \`reviewFindings\` in
+    this first call — the verdict is submitted only AFTER the reviewer runs (step 5).
     This call creates the ReviewObligation and returns either plugin-provided findings or
     host-task instructions.
 

@@ -135,9 +135,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // non-existent top-level `blocker`); /plan + /implement no longer claim the
     // ticket/plan BODY comes from the status response (status only confirms
     // hasTicket/hasPlan/planVersion + phase).
+    // Refreshed for /review first-call contract: step 3 now forbids reviewVerdict
+    // (and reviewFindings) on the first content-aware flowguard_review call — the
+    // verdict is submitted only after the reviewer runs, so a verdict-bearing
+    // first call no longer wedges the host-task bind.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '66e9508d282fc893255260f56592386180b9f376fdbebe9edab82a773fa6393a',
+      'a35aef57eba05507a17fc5eb3dadb6e3d60f645f4808873f4aed74ae152de99f',
     );
   });
 

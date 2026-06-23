@@ -409,6 +409,35 @@ describe('review (standalone flow)', () => {
       ).toBe(1);
     });
 
+    it('standalone /review Call 1 carrying a premature reviewVerdict creates the obligation instead of terminally blocking', async () => {
+      // Real demo failure: the agent's FIRST flowguard_review call already
+      // included reviewVerdict:"accept". Previously this took the host-task
+      // verdict-bind path with no pending obligation -> terminal
+      // HOST_SUBAGENT_TASK_REQUIRED / bindOutcome:not_found, and the reviewer
+      // Task was never run. It must instead create the PENDING obligation and
+      // return CONTENT_ANALYSIS_REQUIRED.
+      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
+      const first = parseToolResult(
+        await review.execute(
+          { branch: 'feature-auth', inputOrigin: 'branch', reviewVerdict: 'accept' },
+          ctx,
+        ),
+      );
+      // CONTENT_ANALYSIS_REQUIRED is the (blocked-shaped) instruction to run the
+      // reviewer — NOT the terminal HOST_SUBAGENT_TASK_REQUIRED/not_found.
+      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+      expect(
+        (first.requiredReviewAttestation as Record<string, string>).toolObligationId,
+      ).toBeTruthy();
+
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      const pendingReview = (state!.reviewAssurance?.obligations ?? []).filter(
+        (o) => o.obligationType === 'review' && o.status === 'pending' && o.consumedAt === null,
+      );
+      expect(pendingReview.length).toBe(1);
+    });
+
     it('host_task_required branch review completes with host evidence and verdict only', async () => {
       await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
       const first = parseToolResult(
