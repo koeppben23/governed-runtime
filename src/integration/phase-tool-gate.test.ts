@@ -57,6 +57,10 @@ describe('phase-tool-gate', () => {
       it('T7: webfetch → false', () => {
         expect(isMutatingHostTool('webfetch')).toBe(false);
       });
+
+      it('T7b: todowrite → false (host task-list tool, no repo/state mutation)', () => {
+        expect(isMutatingHostTool('todowrite')).toBe(false);
+      });
     });
 
     describe('CORNER — non-host tools return false', () => {
@@ -115,6 +119,18 @@ describe('phase-tool-gate', () => {
       it('T17: grep in ARCHITECTURE → allowed', () => {
         const result = isHostToolAllowedInPhase('grep', 'ARCHITECTURE');
         expect(result.allowed).toBe(true);
+      });
+
+      it('T17b: todowrite in PLAN → allowed (not default-denied as unknown)', () => {
+        const result = isHostToolAllowedInPhase('todowrite', 'PLAN');
+        expect(result.allowed).toBe(true);
+        expect(result.code).toBeUndefined();
+      });
+
+      it('T17c: todowrite in IMPLEMENTATION → allowed', () => {
+        const result = isHostToolAllowedInPhase('todowrite', 'IMPLEMENTATION');
+        expect(result.allowed).toBe(true);
+        expect(result.code).toBeUndefined();
       });
     });
 

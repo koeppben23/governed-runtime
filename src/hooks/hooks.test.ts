@@ -699,6 +699,10 @@ describe('pre-tool-use decision logic', () => {
       expect(isMutatingHostTool('webfetch')).toBe(false);
     });
 
+    it('should not identify todowrite as mutating', () => {
+      expect(isMutatingHostTool('todowrite')).toBe(false);
+    });
+
     it('should treat unknown tools as mutating until explicitly classified', () => {
       expect(isMutatingHostTool('unknown_tool')).toBe(true);
     });

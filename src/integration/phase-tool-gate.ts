@@ -4,8 +4,8 @@
  *
  * Investigation-only phases (TICKET, PLAN, ARCHITECTURE) restrict mutating
  * host tools (bash, write, edit) to prevent premature execution during
- * planning and investigation. Read-only tools (read, glob, grep, webfetch)
- * are always allowed.
+ * planning and investigation. Read-only tools (read, glob, grep, webfetch,
+ * todowrite) are always allowed.
  *
  * FlowGuard's own tools (`flowguard_*`) and `task` subagent calls are
  * excluded — they have their own enforcement in review-enforcement.ts
@@ -46,6 +46,11 @@ export const READ_ONLY_HOST_TOOLS: ReadonlySet<string> = new Set([
   'glob',
   'grep',
   'webfetch',
+  // todowrite is a host task-list / organization tool: it does not write
+  // repository files, run commands, or mutate FlowGuard session/audit/evidence
+  // state. Its risk profile matches read/glob/grep, so it is always allowed and
+  // never triggers the unknown-host-tool default deny.
+  'todowrite',
 ]);
 
 function isGovernedOutsideHostPhaseGate(toolName: string): boolean {
