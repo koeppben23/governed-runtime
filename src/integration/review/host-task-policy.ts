@@ -22,10 +22,25 @@ import type { OrchestratorDeps, ToolCallEvent } from './pipeline-types.js';
 
 // ─── Host Task Policy ────────────────────────────────────────────────────────
 
+/**
+ * Attestation/cycle-binding context the host-task instruction must convey to the
+ * agent so it can forward a correct, bindable prompt to the flowguard-reviewer
+ * subagent. Sourced from the ReviewObligation (host-authoritative), NOT chosen by
+ * the agent.
+ */
+interface HostTaskAttestationMeta {
+  readonly toolObligationId: string;
+  readonly iteration: number;
+  readonly planVersion: number;
+  readonly mandateDigest: string;
+  readonly criteriaVersion: string;
+}
+
 function buildHostTaskPolicyOutput(
   originalOutput: string,
   policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>,
   childSessionId: string | null,
+  attestationMeta: HostTaskAttestationMeta | null,
 ): string | null {
   const result = parseToolResult(originalOutput);
   if (!result || Array.isArray(result)) return null;
@@ -47,31 +62,63 @@ function buildHostTaskPolicyOutput(
     return JSON.stringify(result);
   }
 
-  return buildHostTaskBlockedOutput(result, policy);
+  return buildHostTaskBlockedOutput(result, policy, attestationMeta);
+}
+
+/**
+ * Resolve the cycle-binding context (iteration/planVersion) for the host-task
+ * instruction. Prefer values already present in the original tool `next` field
+ * (plan/implement/architecture carry them there); fall back to the obligation's
+ * own values when the originating tool output has no `next` (standalone
+ * `/review` emits CONTENT_ANALYSIS_REQUIRED without a `next`).
+ */
+function resolveHostTaskContext(
+  result: Record<string, unknown>,
+  attestationMeta: HostTaskAttestationMeta | null,
+): { iteration: number; planVersion: number | null } | null {
+  const fromNext = typeof result.next === 'string' ? extractContentMeta(result.next) : null;
+  if (fromNext) {
+    return { iteration: fromNext.expectedIteration, planVersion: fromNext.expectedPlanVersion };
+  }
+  if (attestationMeta) {
+    return { iteration: attestationMeta.iteration, planVersion: attestationMeta.planVersion };
+  }
+  return null;
 }
 
 function buildHostTaskBlockedOutput(
   result: Record<string, unknown>,
   policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>,
+  attestationMeta: HostTaskAttestationMeta | null,
 ): string {
-  // BUG-16: Preserve iteration/planVersion from the original next field so
-  // the agent can construct a correct subagent prompt that passes
-  // promptContainsValue enforcement. BUG-18: Instruct the reviewer subagent
-  // to NOT call FlowGuard tools in its own session.
-  const originalMeta = typeof result.next === 'string' ? extractContentMeta(result.next) : null;
-  const iterStr =
-    originalMeta?.expectedIteration != null ? `iteration=${originalMeta.expectedIteration}` : '';
-  const versionStr =
-    originalMeta?.expectedPlanVersion != null
-      ? `planVersion=${originalMeta.expectedPlanVersion}`
-      : '';
+  // BUG-16: Preserve iteration/planVersion so the agent can construct a correct
+  // subagent prompt that passes promptContainsValue enforcement. Standalone
+  // /review (CONTENT_ANALYSIS_REQUIRED) has no `next`, so the values are sourced
+  // from the obligation instead (see resolveHostTaskContext). BUG-18: Instruct
+  // the reviewer subagent to NOT call FlowGuard tools in its own session.
+  const ctx = resolveHostTaskContext(result, attestationMeta);
+  const iterStr = ctx?.iteration != null ? `iteration=${ctx.iteration}` : '';
+  const versionStr = ctx?.planVersion != null ? `planVersion=${ctx.planVersion}` : '';
   const contextSuffix = [iterStr, versionStr].filter(Boolean).join(', ');
+
+  // Forward the host-authoritative attestation so the agent passes a concrete
+  // toolObligationId (UUID) to the reviewer subagent. Without this the
+  // standalone /review instruction omitted the attestation, the reviewer
+  // defaulted toolObligationId to "NOT_VERIFIED", and the verdict could not bind
+  // host-task evidence (HOST_SUBAGENT_TASK_REQUIRED).
+  const attestationStr = attestationMeta
+    ? ` Required attestation (forward verbatim to the reviewer): ` +
+      `toolObligationId=${attestationMeta.toolObligationId}, ` +
+      `mandateDigest=${attestationMeta.mandateDigest}, ` +
+      `criteriaVersion=${attestationMeta.criteriaVersion}.`
+    : '';
 
   result.next =
     `INDEPENDENT_REVIEW_REQUIRED: ${policy === 'host_task_required' ? 'Policy requires' : 'Policy prefers'} ` +
     `a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool. ` +
     `Call the Task tool with subagent_type="${REVIEWER_SUBAGENT_TYPE}".` +
     (contextSuffix ? ` Context: ${contextSuffix}.` : '') +
+    attestationStr +
     ` The reviewer subagent must NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, flowguard_review_implementation, flowguard_architecture) in its own session.` +
     ` When it returns, submit ONLY the verdict (reviewVerdict) matching the reviewer's overallVerdict — ` +
     `the captured evidence is resolved automatically; do NOT submit, copy, or alter reviewFindings. ` +
@@ -80,6 +127,20 @@ function buildHostTaskBlockedOutput(
     `do NOT approve and do NOT invent findings — report the transport failure and stop; independent review is ` +
     `mandatory and cannot be self-substituted. Setting reviewerUnavailable: true fails closed ` +
     `(REVIEWER_UNAVAILABLE_STRICT) with recovery guidance; it never approves or enables self-review.`;
+
+  // Structured attestation so the agent can forward it machine-readably to the
+  // reviewer (mirrors pending-instruction.ts requiredReviewAttestation).
+  if (attestationMeta) {
+    result.requiredReviewAttestation = {
+      reviewedBy: REVIEWER_SUBAGENT_TYPE,
+      mandateDigest: attestationMeta.mandateDigest,
+      criteriaVersion: attestationMeta.criteriaVersion,
+      toolObligationId: attestationMeta.toolObligationId,
+      iteration: attestationMeta.iteration,
+      planVersion: attestationMeta.planVersion,
+    };
+  }
+
   result.reviewInvocation = {
     policy,
     status: policy === 'host_task_required' ? 'blocked_until_host_task' : 'host_task_requested',
@@ -155,7 +216,25 @@ export async function handleHostTaskPolicy(
   const childSessionId = hostEvidence
     ? (hostEvidence as { childSessionId: string }).childSessionId
     : null;
-  const mutated = buildHostTaskPolicyOutput(rawOutput, typedPolicy, childSessionId);
+  // Host-authoritative attestation/cycle-binding context the agent must forward
+  // to the reviewer subagent. Sourced from the obligation (not agent-chosen) so
+  // the reviewer echoes a concrete toolObligationId (UUID) and the captured
+  // evidence binds. The standalone /review obligation always exists here.
+  const attestationMeta: HostTaskAttestationMeta | null = preUpdateObligation
+    ? {
+        toolObligationId: preUpdateObligation.obligationId,
+        iteration: preUpdateObligation.iteration,
+        planVersion: preUpdateObligation.planVersion,
+        mandateDigest: preUpdateObligation.mandateDigest,
+        criteriaVersion: preUpdateObligation.criteriaVersion,
+      }
+    : null;
+  const mutated = buildHostTaskPolicyOutput(
+    rawOutput,
+    typedPolicy,
+    childSessionId,
+    attestationMeta,
+  );
   if (mutated) output.output = mutated;
   return true;
 }

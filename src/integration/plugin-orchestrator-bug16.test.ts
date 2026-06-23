@@ -175,7 +175,7 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     expect(parsed.next).toContain('planVersion=3');
   });
 
-  it('EDGE: missing iteration/planVersion in original next → no context suffix', async () => {
+  it('EDGE: missing iteration/planVersion in original next → context falls back to obligation', async () => {
     // Original output has no iteration= or planVersion= pattern
     const malformedOutput = JSON.stringify({
       phase: 'PLAN',
@@ -205,8 +205,11 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     const parsed = JSON.parse(output.output);
     // Should still produce a valid next field (no crash on missing meta)
     expect(parsed.next).toContain('INDEPENDENT_REVIEW_REQUIRED');
-    // Should NOT contain "Context:" since there's no iteration/planVersion
-    expect(parsed.next).not.toContain('Context:');
+    // When the original `next` lacks iteration/planVersion, the host-task
+    // instruction now falls back to the obligation's own values (issue: standalone
+    // /review CONTENT_ANALYSIS has no `next`; the reviewer must still receive the
+    // cycle context). The buildState() obligation is iteration=2, planVersion=3.
+    expect(parsed.next).toContain('Context: iteration=2, planVersion=3');
   });
 
   it('EDGE: host_task_preferred first call → also preserves context', async () => {

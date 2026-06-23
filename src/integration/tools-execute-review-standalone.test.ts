@@ -385,6 +385,30 @@ describe('review (standalone flow)', () => {
       expect(result.inputOrigin).toBe('branch');
     });
 
+    it('standalone /review Call 1 persists a PENDING review obligation for host-task binding', async () => {
+      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
+      const first = parseToolResult(
+        await review.execute({ branch: 'feature-auth', inputOrigin: 'branch' }, ctx),
+      );
+      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+
+      // The host-task evidence binder (plugin-task-evidence.ts) reads fresh state
+      // and filters obligations by status==='pending'. The log shows
+      // pendingObligationCount:0 at the reviewer-task bind for standalone /review,
+      // so the obligation created by Call 1 must be persisted AND pending.
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      const obligations = state!.reviewAssurance?.obligations ?? [];
+      const pendingReview = obligations.filter(
+        (o) => o.obligationType === 'review' && o.status === 'pending' && o.consumedAt === null,
+      );
+      expect(
+        pendingReview.length,
+        `expected exactly one PENDING review obligation after Call 1, got ${pendingReview.length} (total obligations: ${obligations.length})`,
+      ).toBe(1);
+    });
+
     it('host_task_required branch review completes with host evidence and verdict only', async () => {
       await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
       const first = parseToolResult(
