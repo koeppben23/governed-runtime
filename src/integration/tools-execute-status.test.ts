@@ -473,6 +473,51 @@ describe('status', () => {
       expect(result.context).toBeUndefined();
       expect(result.readiness).toBeUndefined();
     });
+
+    it('focused projections still carry verification-check fields (no VALIDATION dead-state)', async () => {
+      // Regression: a focused status call (e.g. whyBlocked:true) must NOT strip the
+      // verification-check fields that /check, /validate, and /implement gate on.
+      // Otherwise a VALIDATION session looks like it has "no active checks" and can
+      // never advance (flowguard_run_check is never invoked).
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      await writeState(sessDir, {
+        ...state!,
+        phase: 'VALIDATION',
+        activeChecks: ['build'],
+        validation: [],
+        verificationCandidates: [
+          {
+            kind: 'build',
+            command: './mvnw verify',
+            source: 'repo:mvnw',
+            confidence: 'high',
+            reason: 'Maven wrapper detected',
+          },
+        ],
+      });
+
+      // Every focused flag must include the cheap state-derived check fields.
+      for (const flag of ['whyBlocked', 'evidence', 'context', 'readiness'] as const) {
+        const focused = parseToolResult(await status.execute({ [flag]: true }, ctx));
+        expect(Array.isArray(focused.activeChecks)).toBe(true);
+        expect(focused.activeChecks).toEqual(['build']);
+        expect(Array.isArray(focused.verificationCandidates)).toBe(true);
+        expect((focused.verificationCandidates as unknown[]).length).toBe(1);
+        expect(focused.remainingChecks).toEqual(['build']);
+      }
+
+      // But the EXPENSIVE full-only discovery fields stay full-projection-only.
+      const focusedEvidence = parseToolResult(await status.execute({ evidence: true }, ctx));
+      expect(focusedEvidence.implementationGuidance).toBeUndefined();
+      expect(focusedEvidence.discoveryDrift).toBeUndefined();
+      expect(focusedEvidence.detectedStack).toBeUndefined();
+    });
   });
 
   describe('CORNER', () => {

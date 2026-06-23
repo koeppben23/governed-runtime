@@ -128,9 +128,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for #565: /implement template + shared-review-loop now submit the
     // implementation review verdict via the separate flowguard_review_implementation
     // tool (record evidence vs. submit verdict are distinct single-purpose tools).
+    // Refreshed for VALIDATION check-field contract: /check + /validate now read
+    // checks from an UNFOCUSED flowguard_status (focused projections must not be
+    // used to gate checks) and reference both activeChecks and remainingChecks.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '2d50ba1ccb68204c4f6a94cadc17d40d793043ce3bcff2a9e43383f7a91866d0',
+      'e9857bf5b43611b920cbeff29913d75452fc01716a15acbc07a08e108e22841f',
     );
   });
 

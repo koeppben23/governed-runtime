@@ -17,12 +17,12 @@ Execute all active verification checks for the FlowGuard session.
 
 ## Steps
 
-1. Call \`flowguard_status\` to verify a session exists in VALIDATION phase with an approved plan.
+1. Call \`flowguard_status\` with NO focused flags (no whyBlocked/evidence/context/readiness) so the full projection is returned, and verify a session exists in VALIDATION phase with an approved plan.
    - If not in VALIDATION: report the current phase and stop.
 
-2. Read the active checks and verificationCandidates from the status response. Each active check corresponds to a discovered verification kind (e.g., \`test\`, \`lint\`, \`typecheck\`, \`build\`).
+2. Read \`activeChecks\` (equivalently \`remainingChecks\`) and \`verificationCandidates\` from the status response. Each active check corresponds to a discovered verification kind (e.g., \`test\`, \`lint\`, \`typecheck\`, \`build\`). If you see no checks, re-read status WITHOUT focused flags before concluding there are none — focused projections are not the source for checks.
 
-3. For EACH active check, call \`flowguard_run_check({ kind: "<kind>" })\`:
+3. For EACH active check kind, call \`flowguard_run_check({ kind: "<kind>" })\`:
    - FlowGuard will execute the discovered command for that kind.
    - The tool returns execution evidence: exit code, timing, output digest, pass/fail.
    - If the check times out, it is recorded as failed with timedOut: true.

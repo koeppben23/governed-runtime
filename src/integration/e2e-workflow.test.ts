@@ -302,6 +302,17 @@ describe('e2e-workflow', () => {
       await callOk(decision, { verdict: 'approve', rationale: 'Good plan' });
       expect(await getPhase()).toBe('VALIDATION');
 
+      // Contract guard (VALIDATION dead-state regression): a FOCUSED status call
+      // must still surface the verification-check fields that /check and /validate
+      // gate on. If a focused projection stripped them, the agent would report
+      // "no active checks" and the session could never leave VALIDATION.
+      const focusedInValidation = parseToolResult(await status.execute({ whyBlocked: true }, ctx));
+      expect(Array.isArray(focusedInValidation.activeChecks)).toBe(true);
+      expect((focusedInValidation.activeChecks as unknown[]).length).toBeGreaterThan(0);
+      expect(Array.isArray(focusedInValidation.verificationCandidates)).toBe(true);
+      expect(Array.isArray(focusedInValidation.remainingChecks)).toBe(true);
+      expect((focusedInValidation.remainingChecks as unknown[]).length).toBeGreaterThan(0);
+
       // 5. Pass validation
       await passValidation();
       expect(await getPhase()).toBe('IMPLEMENTATION');
