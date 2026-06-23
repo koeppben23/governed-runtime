@@ -335,8 +335,10 @@ export async function changedFiles(worktree: string): Promise<string[]> {
  * is only scoped out of implementation evidence if its hash is unchanged (i.e.
  * the task did not touch it). A deleted or unreadable path maps to null.
  *
- * Paths are processed individually so one unreadable/deleted file does not lose
- * the hashes of the others.
+ * Fast path: a single batched `git hash-object -- <paths...>` call (one
+ * subprocess, output is one hash per line in input order). If the batch fails
+ * (e.g. a deleted path makes git abort), fall back to per-path hashing so one
+ * unreadable/deleted file does not lose the hashes of the others.
  *
  * @returns Map of input path -> blob hash, or null when the path could not be hashed.
  */
@@ -344,6 +346,22 @@ export async function hashWorktreeFiles(
   worktree: string,
   paths: readonly string[],
 ): Promise<Record<string, string | null>> {
+  if (paths.length === 0) return {};
+  // Fast path: one subprocess for all paths.
+  try {
+    const raw = await gitRaw(worktree, ['hash-object', '--', ...paths]);
+    const lines = raw.split('\n').filter((l) => l.length > 0);
+    if (lines.length === paths.length) {
+      const out: Record<string, string | null> = {};
+      paths.forEach((p, i) => {
+        out[p] = lines[i] ?? null;
+      });
+      return out;
+    }
+    // Line count mismatch — fall through to robust per-path hashing.
+  } catch {
+    // Batch aborted (e.g. a deleted path) — fall through.
+  }
   const out: Record<string, string | null> = {};
   for (const p of paths) {
     try {

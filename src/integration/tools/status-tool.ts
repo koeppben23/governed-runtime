@@ -59,6 +59,23 @@ import { buildImplementationGuidance } from '../implementation-guidance.js';
 import type { DiscoveryDriftStatusProjection } from '../discovery-drift-status.js';
 import { buildDiscoveryDriftStatus } from '../discovery-drift-status.js';
 import { evaluateDiscoveryEvidenceGate } from '../discovery-health-gate.js';
+import { BUILD_INFO } from '../../shared/build-info.js';
+
+/**
+ * Build identity for the governanceMandates block — surfaces the installed
+ * plugin's version + git SHA at runtime so a stale installed dist (older than
+ * source) is visible in /status. Null gitSha when no build-info is shipped
+ * (dev/test running from source). Diagnostic only; never gates.
+ */
+function buildIdentityField(): Record<string, unknown> {
+  const info = BUILD_INFO();
+  return {
+    version: info?.version ?? null,
+    gitSha: info?.gitSha ?? null,
+    builtAt: info?.builtAt ?? null,
+    source: info ? 'dist/build-info.json' : 'unavailable',
+  };
+}
 
 // ─── Projection dispatch ──────────────────────────────────────────────────────
 
@@ -459,6 +476,7 @@ function buildFullStatusResponse(input: FullStatusInput): string {
         runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence: true,
         phaseRelevantRules: renderPhaseAwareMandates({}, state.phase),
       },
+      build: buildIdentityField(),
     }),
     state,
   );
@@ -505,6 +523,7 @@ export const status: ToolDefinition = {
             renderFallbackIsPromptSafetyOnly: true,
             runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence: true,
           },
+          build: buildIdentityField(),
         });
       }
 

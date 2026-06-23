@@ -26,6 +26,7 @@ import {
 import { measureAsync } from '../test-policy.js';
 import { SHIPPED_EXECUTABLE_CHECK } from './install-helpers.js';
 import { checkShippedExecutables } from './doctor-executables.js';
+import { checkBuildInfo } from './doctor-build-info.js';
 import {
   VERSION,
   tmpDir,
@@ -156,8 +157,21 @@ describe('cli/doctor', () => {
       // Derive the shipped-executable count from the same package.json bin SSOT
       // doctor uses, so adding a bin entry does not require touching this magic sum.
       const executableChecks = checkShippedExecutables().length;
+      const buildInfoChecks = checkBuildInfo().length;
       const expectedChecks =
-        1 + 1 + 1 + Object.keys(COMMANDS).length + 1 + 1 + 1 + 1 + 1 + 1 + 11 + executableChecks;
+        1 +
+        1 +
+        1 +
+        Object.keys(COMMANDS).length +
+        1 +
+        1 +
+        1 +
+        1 +
+        1 +
+        1 +
+        11 +
+        executableChecks +
+        buildInfoChecks;
       expect(checks.length).toBe(expectedChecks);
     });
   });

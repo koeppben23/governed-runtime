@@ -244,6 +244,14 @@ describe('status', () => {
       expect(mandates.runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence).toBe(true);
       expect(String(mandates.phaseRelevantRules)).toContain('# FlowGuard Agent Rules');
 
+      // Build identity is surfaced for stale-dist visibility (diagnostic only).
+      const build = result.build as Record<string, unknown>;
+      expect(build).toBeDefined();
+      expect(build).toHaveProperty('version');
+      expect(build).toHaveProperty('gitSha');
+      expect(build).toHaveProperty('builtAt');
+      expect(build).toHaveProperty('source');
+
       const footer = result.flowguardFooter as Record<string, unknown>;
       expect(footer.source).toBe('flowguard-tool-output-wrapper');
       expect(footer.authority).toBe('diagnostic-only');
