@@ -131,9 +131,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for VALIDATION check-field contract: /check + /validate now read
     // checks from an UNFOCUSED flowguard_status (focused projections must not be
     // used to gate checks) and reference both activeChecks and remainingChecks.
+    // Refreshed for status-contract sweep: /why reads whyBlocked.* (not a
+    // non-existent top-level `blocker`); /plan + /implement no longer claim the
+    // ticket/plan BODY comes from the status response (status only confirms
+    // hasTicket/hasPlan/planVersion + phase).
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'e9857bf5b43611b920cbeff29913d75452fc01716a15acbc07a08e108e22841f',
+      '66e9508d282fc893255260f56592386180b9f376fdbebe9edab82a773fa6393a',
     );
   });
 

@@ -346,6 +346,9 @@ function buildProfileStatus(
     profileName: state.activeProfile?.name ?? 'None',
     profileRules,
     detectedStack: state.detectedStack ?? null,
+    // Surfaced in the FULL projection too (not just focused) so the /check and
+    // /validate prompts — which read it from an unfocused status call — find it.
+    activeChecks: state.activeChecks,
     verificationCandidates: state.verificationCandidates ?? [],
   };
 }

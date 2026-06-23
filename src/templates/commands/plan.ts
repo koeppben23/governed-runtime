@@ -29,7 +29,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 2: Generate Plan
 
-2. Read the ticket text from the status response.
+2. Use the ticket already provided in this session as the source of truth for the task. (The ticket text is NOT included in the flowguard_status response — status only confirms \`hasTicket\` and the phase. Use the ticket content from the user's request / the /ticket step.)
 3. Write a detailed implementation plan in markdown with these 7 required sections:
    - \`## Objective\` — 1-3 sentences: what is being built and why.
    - \`## Approach\` — Technical strategy with specific patterns, libraries, or architecture decisions.

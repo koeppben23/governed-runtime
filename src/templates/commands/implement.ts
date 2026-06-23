@@ -27,7 +27,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 2: Implement
 
-2. Read the plan from the status response. Identify the numbered steps and files to modify.
+2. Use the approved plan authored in the /plan step as the source of truth. Identify the numbered steps and files to modify. (The plan body is NOT included in the flowguard_status response — status only confirms \`hasPlan\`/\`planVersion\` and the phase. Use the plan you produced during /plan; the persisted plan is also written to \`<sessionDir>/artifacts/plan.v<N>.md\` if you need to re-read it.)
 3. Execute each step in order:
    - Use \`read\` to examine existing files before modifying.
    - Use \`write\` or \`edit\` to create or modify files.

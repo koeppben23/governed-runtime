@@ -289,7 +289,7 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
 2. ${CLAUDE_DISCOVERY_CAPTURE}
 
 ## Phase 2 — Implement
-3. Read the plan from the status response. Execute each numbered step in order, using the host's Read/Edit/Write/Bash tools, only after FlowGuard's status confirms IMPLEMENTATION. Follow the plan exactly — add nothing beyond what it specifies.
+3. Use the approved plan authored in the /plan step (NOT from the status response - status only confirms hasPlan/planVersion and the phase). Execute each numbered step in order, using the host's Read/Edit/Write/Bash tools, only after FlowGuard's status confirms IMPLEMENTATION. Follow the plan exactly — add nothing beyond what it specifies.
 4. After completing ALL plan steps, call \`mcp__flowguard__flowguard_implement({})\` with no arguments (the tool auto-detects changed files via git and records evidence).
 5. Record a \`## Verification Evidence\` section distinguishing planned checks from checks actually executed; mark every unexecuted check \`NOT_VERIFIED\`.
 

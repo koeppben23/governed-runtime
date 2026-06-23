@@ -14,8 +14,8 @@ Show the user what is blocking progress and how to resolve it.
 ## Steps
 
 1. Call \`flowguard_status({ whyBlocked: true })\`.
-2. Read the \`blocker\` field (\`reasonText\`, \`reasonCode\`).
-3. Report in plain language: what is blocking, why, and exactly one recommended command to resolve it.
+2. Read the \`whyBlocked\` object (\`whyBlocked.reasonText\`, \`whyBlocked.reasonCode\`, \`whyBlocked.recoveryHint\`, \`whyBlocked.nextResolvableCommand\`).
+3. Report in plain language: what is blocking, why, and exactly one recommended command to resolve it (use \`whyBlocked.nextResolvableCommand\` / \`whyBlocked.recoveryHint\`).
 
 ## Rules
 

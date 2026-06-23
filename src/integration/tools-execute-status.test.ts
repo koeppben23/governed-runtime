@@ -33,6 +33,8 @@ import {
   architecture,
 } from './tools/index.js';
 import { PersistenceError, readState, statePath, writeState } from '../adapters/persistence.js';
+import { makeProgressedState } from '../fixtures.js';
+import type { Phase } from '../state/schema.js';
 
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
 
@@ -844,5 +846,263 @@ describe('status', () => {
         expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
       );
     });
+  });
+});
+
+// =============================================================================
+// Status ↔ Command-Prompt contract guard
+//
+// Every field a command PROMPT reads from flowguard_status must actually be
+// emitted by the tool in the projection shape that command uses, in every phase
+// the command is allowed to run. Three governed demos in a row wedged on a phase
+// dead-state caused by a prompt↔tool contract gap (a prompt read a status field
+// the tool did not emit in that call shape). This guard is the structural net.
+//
+// The "fields a prompt reads" are a CURATED map (declared here, reviewable),
+// derived from the command templates in src/templates/commands/. It is kept
+// curated rather than parsed from prompt prose, because Markdown parsing is
+// fragile; a negative control proves the guard is sharp.
+// =============================================================================
+
+type CallShape = 'full' | 'whyBlocked' | 'evidence' | 'context' | 'readiness';
+
+interface StatusContractEntry {
+  /** Command whose prompt reads flowguard_status. */
+  readonly label: string;
+  /** Phases this command is allowed to run in (or '*' for all), used to scope the check. */
+  readonly phases: readonly Phase[] | '*';
+  /** The flowguard_status call shape the prompt uses. */
+  readonly callShape: CallShape;
+  /** Top-level status fields the prompt reads (must be emitted in every allowed phase). */
+  readonly requiredTopLevel: readonly string[];
+  /** Nested status paths the prompt reads, e.g. 'whyBlocked.reasonText'. */
+  readonly requiredPaths?: readonly string[];
+  /**
+   * Top-level fields only required in specific phases (e.g. remainingChecks only
+   * exists in VALIDATION). Checked only when the allowed phase matches.
+   */
+  readonly phaseGatedTopLevel?: ReadonlyArray<{ field: string; phases: readonly Phase[] }>;
+}
+
+// SOLL contract — the fields the (correct) prompts read from flowguard_status.
+// reviewCard / pluginReviewFindings / gateNotice / policyResolution / _continue
+// are intentionally absent: they come from other tool responses, not status.
+const STATUS_CONTRACT: readonly StatusContractEntry[] = [
+  {
+    label: '/ticket',
+    phases: ['READY', 'TICKET'],
+    callShape: 'full',
+    requiredTopLevel: ['phase', 'nextAction'],
+  },
+  {
+    label: '/plan',
+    phases: ['TICKET', 'PLAN'],
+    callShape: 'full',
+    // ticket BODY is NOT read from status (Gap C fix); only gating + candidates + profile rules.
+    requiredTopLevel: [
+      'phase',
+      'hasTicket',
+      'verificationCandidates',
+      'profileRules',
+      'detectedStack',
+      'discoveryHealth',
+      'discoveryDrift',
+    ],
+  },
+  {
+    label: '/implement',
+    phases: ['IMPLEMENTATION'],
+    callShape: 'full',
+    // plan BODY is NOT read from status (Gap C fix); only gating + profile + discovery + validation.
+    requiredTopLevel: [
+      'phase',
+      'hasPlan',
+      'profileRules',
+      'detectedStack',
+      'verificationCandidates',
+      'validationResults',
+    ],
+  },
+  {
+    label: '/validate',
+    phases: ['VALIDATION'],
+    callShape: 'full',
+    // Gap A: activeChecks must be present in the FULL projection (was focused-only).
+    requiredTopLevel: ['phase', 'activeChecks', 'verificationCandidates'],
+    phaseGatedTopLevel: [{ field: 'remainingChecks', phases: ['VALIDATION'] }],
+  },
+  {
+    label: '/review-decision',
+    phases: ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'],
+    callShape: 'full',
+    requiredTopLevel: ['phase'],
+  },
+  {
+    label: '/review',
+    phases: ['READY'],
+    callShape: 'full',
+    requiredTopLevel: [
+      'phase',
+      'discoveryHealth',
+      'discoveryDrift',
+      'detectedStack',
+      'verificationCandidates',
+    ],
+  },
+  {
+    label: '/architecture',
+    phases: ['READY', 'ARCHITECTURE'],
+    callShape: 'full',
+    requiredTopLevel: [
+      'phase',
+      'detectedStack',
+      'verificationCandidates',
+      'discoveryHealth',
+      'discoveryDrift',
+    ],
+  },
+  {
+    label: '/archive',
+    // /archive is a slash-command alias (flowguard_archive tool); its /status read
+    // is only an existence/phase gate. Allowed broadly; check terminal phases.
+    phases: ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE', 'IMPL_REVIEW'],
+    callShape: 'full',
+    requiredTopLevel: ['phase'],
+  },
+  {
+    label: '/abort',
+    phases: '*',
+    callShape: 'full',
+    requiredTopLevel: ['phase'],
+  },
+  {
+    label: '/why',
+    phases: '*',
+    callShape: 'whyBlocked',
+    requiredTopLevel: ['whyBlocked'],
+    // Gap B: the blocker reason is under whyBlocked.*, NOT a top-level `blocker`.
+    requiredPaths: [
+      'whyBlocked.reasonText',
+      'whyBlocked.reasonCode',
+      'whyBlocked.nextResolvableCommand',
+    ],
+  },
+];
+
+// /check shares VALIDATE's contract (full projection, activeChecks/remainingChecks).
+const CHECK_ENTRY: StatusContractEntry = {
+  label: '/check',
+  phases: ['VALIDATION'],
+  callShape: 'full',
+  requiredTopLevel: ['activeChecks', 'verificationCandidates'],
+  phaseGatedTopLevel: [{ field: 'remainingChecks', phases: ['VALIDATION'] }],
+};
+
+const ALL_PHASES: readonly Phase[] = [
+  'READY',
+  'TICKET',
+  'PLAN',
+  'PLAN_REVIEW',
+  'VALIDATION',
+  'IMPLEMENTATION',
+  'IMPL_REVIEW',
+  'EVIDENCE_REVIEW',
+  'COMPLETE',
+  'ARCHITECTURE',
+  'ARCH_REVIEW',
+  'ARCH_COMPLETE',
+  'REVIEW',
+  'REVIEW_COMPLETE',
+];
+
+describe('status-prompt-contract', () => {
+  let ws2: TestWorkspace;
+  let ctx2: TestToolContext;
+  let cleanupEnv2: () => void;
+
+  beforeEach(async () => {
+    cleanupEnv2 = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
+    ws2 = await createTestWorkspace();
+    ctx2 = createToolContext({
+      worktree: ws2.tmpDir,
+      directory: ws2.tmpDir,
+      sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+    });
+  });
+
+  afterEach(async () => {
+    cleanupEnv2();
+    await ws2.cleanup();
+  });
+
+  async function statusFor(phase: Phase, callShape: CallShape): Promise<Record<string, unknown>> {
+    const { computeFingerprint, sessionDir: resolveSessionDir } =
+      await import('../adapters/workspace/index.js');
+    const fp = await computeFingerprint(ws2.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx2.sessionID);
+    // Seed canonical state at the requested phase, preserving the session id/binding
+    // that the tool resolves from ctx2.
+    const seeded = { ...makeProgressedState(phase), id: makeProgressedState(phase).id };
+    await writeState(sessDir, seeded);
+    const args = callShape === 'full' ? {} : ({ [callShape]: true } as Record<string, boolean>);
+    return parseToolResult(await status.execute(args, ctx2));
+  }
+
+  function hasPath(obj: Record<string, unknown>, dottedPath: string): boolean {
+    const parts = dottedPath.split('.');
+    let cur: unknown = obj;
+    for (const p of parts) {
+      if (cur === null || typeof cur !== 'object' || !(p in (cur as object))) return false;
+      cur = (cur as Record<string, unknown>)[p];
+    }
+    return cur !== undefined;
+  }
+
+  const entries = [...STATUS_CONTRACT, CHECK_ENTRY];
+
+  for (const entry of entries) {
+    const phases = entry.phases === '*' ? ALL_PHASES : entry.phases;
+    it(`${entry.label}: status (${entry.callShape}) emits required fields in all allowed phases`, async () => {
+      expect(phases.length).toBeGreaterThan(0);
+      for (const phase of phases) {
+        const result = await statusFor(phase, entry.callShape);
+        for (const field of entry.requiredTopLevel) {
+          expect(
+            field in result,
+            `${entry.label} reads top-level "${field}" but status(${entry.callShape}) in ${phase} did not emit it`,
+          ).toBe(true);
+        }
+        for (const p of entry.requiredPaths ?? []) {
+          expect(
+            hasPath(result, p),
+            `${entry.label} reads "${p}" but status(${entry.callShape}) in ${phase} did not emit it`,
+          ).toBe(true);
+        }
+        for (const gated of entry.phaseGatedTopLevel ?? []) {
+          if (gated.phases.includes(phase)) {
+            expect(
+              gated.field in result,
+              `${entry.label} reads "${gated.field}" in ${phase} but status(${entry.callShape}) did not emit it`,
+            ).toBe(true);
+          }
+        }
+      }
+    });
+  }
+
+  // Negative control: a field NO prompt reads must NOT be present — proves the
+  // guard would actually fail if a required field were missing/renamed.
+  it('NEGATIVE CONTROL: a made-up field is absent from full status (guard is sharp)', async () => {
+    const result = await statusFor('VALIDATION', 'full');
+    expect('madeUpFieldThatNoPromptReads' in result).toBe(false);
+  });
+
+  // Gap B documentation: the focused whyBlocked projection has NO top-level
+  // `blocker` key (the old /why prompt incorrectly read blocker.*). The reason
+  // lives under whyBlocked.* — asserted by the /why contract entry above.
+  it('Gap B: focused whyBlocked has no top-level "blocker" (reason is under whyBlocked.*)', async () => {
+    const result = await statusFor('VALIDATION', 'whyBlocked');
+    expect('blocker' in result).toBe(false);
+    expect(hasPath(result, 'whyBlocked.reasonText')).toBe(true);
   });
 });
