@@ -389,6 +389,48 @@ describe('phase-tool-gate', () => {
       }
     });
 
+    it('HAPPY — root tool/editor config (opencode.json, tsconfig, vitest config) is not a STANDARD floor', () => {
+      for (const cfg of [
+        'opencode.json',
+        'opencode.jsonc',
+        'tsconfig.json',
+        'vitest.config.ts',
+        '.eslintrc.json',
+        '.prettierrc',
+        '.gitignore',
+      ]) {
+        expect(assessMinimumTaskClass([cfg]).minimumTaskClass, cfg).toBe('TRIVIAL');
+      }
+    });
+
+    it('BAD — high-risk config stays HIGH-RISK and is NOT downgraded as non-domain config', () => {
+      // Critical invariant: the non-domain-config exclusion must never lower
+      // package.json or lockfiles, which are governed supply-chain surfaces.
+      for (const cfg of [
+        'package.json',
+        'package-lock.json',
+        'npm-shrinkwrap.json',
+        'pnpm-lock.yaml',
+        'yarn.lock',
+        'bun.lockb',
+      ]) {
+        expect(assessMinimumTaskClass([cfg]).minimumTaskClass, cfg).toBe('HIGH-RISK');
+      }
+    });
+
+    it('CORNER — a nested config.json (not root tooling) keeps the STANDARD default', () => {
+      // Only exact ROOT basenames are non-domain; a project config nested in
+      // source may carry behavior and must not be silently downgraded.
+      expect(assessMinimumTaskClass(['src/app/config.json']).minimumTaskClass).toBe('STANDARD');
+      expect(assessMinimumTaskClass(['config/opencode.json']).minimumTaskClass).toBe('STANDARD');
+    });
+
+    it('CORNER — a stale opencode.json does not escalate an otherwise TRIVIAL change', () => {
+      expect(
+        assessMinimumTaskClass(['opencode.json', 'docs/usage-notes.md']).minimumTaskClass,
+      ).toBe('TRIVIAL');
+    });
+
     it('BAD — downgrade override flag is denied rather than accepted', () => {
       const base = makeState('IMPLEMENTATION', { claimedTaskClass: 'TRIVIAL' });
       const state = {

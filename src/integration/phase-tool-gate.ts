@@ -197,6 +197,55 @@ function normalizePathForRisk(filePath: string): string {
   return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
+/**
+ * Repo-root tool/editor configuration files that are NOT a governed domain
+ * surface and must not, on their own, raise the risk floor or count as
+ * implementation domain files.
+ *
+ * Deliberately narrow and explicit (not a blanket `*.json`): only well-known
+ * tooling config at the repository ROOT. High-risk config — `package.json`,
+ * lockfiles, anything under `.opencode/` — is NOT listed here and is classified
+ * by the HIGH_RISK_* sets BEFORE this predicate is consulted, so it stays
+ * HIGH-RISK. A project-level config that carries real behavior (e.g. an app
+ * `config.json` nested in source) is also excluded because this matches only
+ * exact root basenames.
+ */
+const NON_DOMAIN_CONFIG_BASENAMES = new Set([
+  'opencode.json',
+  'opencode.jsonc',
+  'tsconfig.json',
+  'tsconfig.base.json',
+  'vitest.config.ts',
+  'vitest.config.js',
+  'vitest.config.mts',
+  'eslint.config.js',
+  'eslint.config.mjs',
+  '.eslintrc',
+  '.eslintrc.js',
+  '.eslintrc.cjs',
+  '.eslintrc.json',
+  '.prettierrc',
+  '.prettierrc.json',
+  '.prettierrc.js',
+  '.editorconfig',
+  '.gitignore',
+  '.gitattributes',
+  '.npmrc',
+  '.nvmrc',
+]);
+
+/**
+ * True for a repo-root tool/editor config file that is not a governed domain
+ * surface. Matches only ROOT-level paths (no `/` after normalization) against
+ * an explicit allowlist. Never matches high-risk config (package.json,
+ * lockfiles, `.opencode/`), which the HIGH_RISK_* sets own.
+ */
+export function isNonDomainConfigPath(filePath: string): boolean {
+  const p = normalizePathForRisk(filePath);
+  if (p.includes('/')) return false; // root-level only
+  return NON_DOMAIN_CONFIG_BASENAMES.has(p);
+}
+
 function maxTaskClass(a: TaskClass, b: TaskClass): TaskClass {
   return TASK_CLASS_ORDER[a] >= TASK_CLASS_ORDER[b] ? a : b;
 }
@@ -209,6 +258,12 @@ function classifyPath(filePath: string): { minimumTaskClass: TaskClass; surface:
     HIGH_RISK_RE.some((pattern) => pattern.test(p))
   ) {
     return { minimumTaskClass: 'HIGH-RISK', surface: p };
+  }
+  // Root-level tool/editor config (opencode.json, tsconfig.json, ...) is not a
+  // governed domain surface and must not impose a STANDARD floor. High-risk
+  // config (package.json, lockfiles, .opencode/) already returned above.
+  if (isNonDomainConfigPath(p)) {
+    return { minimumTaskClass: 'TRIVIAL', surface: p };
   }
   if (p === 'CHANGELOG.md' || GOVERNANCE_DOC_RE.test(p)) {
     return { minimumTaskClass: 'STANDARD', surface: p };

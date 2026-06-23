@@ -408,6 +408,26 @@ describe('implement', () => {
       expect(domain).not.toContain('node_modules/dep/index.js');
     });
 
+    it('excludes root tool config (opencode.json) from domain files but keeps it in changedFiles', async () => {
+      // Real demo case: a stale opencode.json detected in the worktree must not
+      // be counted as an implementation domain surface.
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
+        'opencode.json',
+        'src/main/Service.java',
+        'tsconfig.json',
+      ]);
+      await reachImplementation();
+      const raw = await implement.execute({}, ctx);
+      const result = parseToolResult(raw);
+      const domain = result.domainFiles as string[];
+      const changed = result.changedFiles as string[];
+      expect(domain).toContain('src/main/Service.java');
+      expect(domain).not.toContain('opencode.json');
+      expect(domain).not.toContain('tsconfig.json');
+      // changedFiles still reports the full git-detected set for transparency.
+      expect(changed).toContain('opencode.json');
+    });
+
     it('Mode B blocks with IMPLEMENTATION_EVIDENCE_REQUIRED before evidence is recorded', async () => {
       await reachImplementation();
       const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);

@@ -83,7 +83,7 @@ import {
   reviewObligationResponseFields,
 } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
-import { resolveCeremonyProfile } from '../phase-tool-gate.js';
+import { resolveCeremonyProfile, isNonDomainConfigPath } from '../phase-tool-gate.js';
 import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
@@ -209,7 +209,7 @@ export async function handleImplRecord(
   }
 
   const domainFiles = files.filter(
-    (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/'),
+    (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/') && !isNonDomainConfigPath(f),
   );
   const implEvidence = {
     changedFiles: files,
