@@ -110,8 +110,19 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Review findings are required for all review verdicts in mandatory review mode.',
     recoverySteps: [
-      `Obtain structured ReviewFindings from ${REVIEWER_SUBAGENT_TYPE} subagent`,
-      'Submit verdict with reviewFindings parameter',
+      `Invoke the ${REVIEWER_SUBAGENT_TYPE} subagent so its ReviewFindings are captured for this obligation`,
+      'host-task mode: submit the verdict ONLY (reviewFindings is resolved from captured evidence and ignored if submitted). SDK mode: submit the verdict together with the reviewer reviewFindings',
+    ],
+  },
+
+  {
+    code: 'HOST_TASK_FINDINGS_UNPARSEABLE',
+    category: 'precondition',
+    messageTemplate:
+      'Host-task review evidence was captured but its findings could not be parsed as valid ReviewFindings: {message}',
+    recoverySteps: [
+      `Re-run the ${REVIEWER_SUBAGENT_TYPE} subagent and ensure it returns a complete, schema-valid ReviewFindings object`,
+      'Do not hand-edit the captured findings; the host-task evidence is the single source of truth and corrupt captures cannot be substituted by submitting reviewFindings',
     ],
   },
 

@@ -147,7 +147,7 @@ describe('resolveHostTaskFindings', () => {
     expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
   });
 
-  it('BAD: returns null when capturedRawFindings fails Zod parse (missing required fields)', () => {
+  it('BAD: returns unparseable when capturedRawFindings fails Zod parse (missing required fields)', () => {
     const invalidRaw = { overallVerdict: 'accept' }; // missing required fields
     const assurance = {
       obligations: [makeObligation()],
@@ -157,7 +157,9 @@ describe('resolveHostTaskFindings', () => {
         }),
       ],
     };
-    expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('not_found');
+    // Evidence WAS captured (reviewer ran) but is corrupt — distinct from the
+    // "no evidence at all" not_found case so the caller can emit a distinct block.
+    expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('unparseable');
   });
 
   it('D (hardening): logs a distinct warn when captured findings are present but unparseable', () => {
@@ -178,8 +180,9 @@ describe('resolveHostTaskFindings', () => {
 
       const result = resolveHostTaskFindings(assurance, makeObligation());
 
-      // Still fail-closed (not_found), but the garbled capture is now observable.
-      expect(result.kind).toBe('not_found');
+      // Fail-closed and DISTINCT (unparseable, not the generic not_found): the
+      // garbled capture is now both observable in logs and signalled to the caller.
+      expect(result.kind).toBe('unparseable');
       const unparseable = warnCalls.find((c) => /unparseable/i.test(c.message));
       expect(unparseable).toBeDefined();
       expect(unparseable?.extra).toMatchObject({ invocationId: INVOCATION_ID });

@@ -734,6 +734,38 @@ describe('implement', () => {
       expect(result.code).toBe('REVIEW_FINDINGS_REQUIRED');
     });
 
+    it('Mode B: changes_requested with NO resolvable findings still returns to IMPLEMENTATION (no dead-state)', async () => {
+      // Regression: a reviewer asking for changes must never wedge the session
+      // into an unrecoverable IMPL_REVIEW state. Unlike `accept`, changes_requested
+      // closes the loop by returning to IMPLEMENTATION (fresh evidence replaces the
+      // stale evidence), so it must NOT require bindable reviewer findings. The
+      // sibling `accept` case above stays BLOCKED with REVIEW_FINDINGS_REQUIRED.
+      await reachImplementation();
+      await enterImplReview(); // pending obligation, but NO bound reviewer evidence
+
+      const reviewRaw = await review_implementation.execute(
+        { reviewVerdict: 'changes_requested' },
+        ctx,
+      );
+      const reviewResult = parseToolResult(reviewRaw);
+      expect(reviewResult.error).toBeUndefined();
+      expect(reviewResult.phase).toBe('IMPLEMENTATION');
+
+      const sessDir = await currentSessionDir();
+      const afterReviewState = await readState(sessDir);
+      expect(afterReviewState?.implementation).toBeNull();
+      expect(afterReviewState?.implReview).toBeNull();
+
+      // Recovery is actually reachable: re-recording implementation works.
+      const recordRaw = await implement.execute({}, ctx);
+      const recordResult = parseToolResult(recordRaw);
+      expect(recordResult.error).toBeUndefined();
+      expect(recordResult.phase).toBe('IMPL_REVIEW');
+      // No reviewer findings were recorded for the changes_requested cycle, so the
+      // next review obligation starts fresh at iteration 1 (not 2).
+      expect(recordResult.reviewObligationIteration).toBe(1);
+    });
+
     it('approve + subagentEnabled=true + valid reviewFindings -> accepted', async () => {
       await reachImplementation();
       await setSelfReviewPolicy(true, false);

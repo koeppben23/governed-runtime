@@ -516,6 +516,14 @@ export function resolveHostTaskEffectiveFindings(
     if (resolved.kind === 'rejected') {
       return { blocked: formatHostTaskAcceptanceRejection(resolved.rejection) };
     }
+    if (resolved.kind === 'unparseable') {
+      // The reviewer ran and evidence was captured, but the captured findings
+      // are not schema-valid. Emit a DISTINCT block so this is not confused with
+      // "reviewer never ran" (REVIEW_FINDINGS_REQUIRED).
+      return {
+        blocked: formatBlocked('HOST_TASK_FINDINGS_UNPARSEABLE', { message: resolved.detail }),
+      };
+    }
     if (ctx.input.reviewerUnavailable === true) {
       return {
         blocked: formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {

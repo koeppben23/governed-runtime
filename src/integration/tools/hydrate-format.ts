@@ -159,6 +159,7 @@ export async function formatNewSessionResponse(
   const formatted = JSON.parse(outputStr) as Record<string, unknown>;
   const response: Record<string, unknown> = {
     ...formatted,
+    sessionId: state.id,
     profileId: state.activeProfile?.id ?? 'baseline',
     profileName: state.activeProfile?.name ?? 'Baseline Governance',
     profileDetected: !!discovery.repoSignals,

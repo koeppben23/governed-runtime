@@ -236,6 +236,11 @@ describe('hydrate', () => {
       expect(result.profileDetected).toBe(true);
       expect(result.discoveryComplete).toBe(true);
       expect(result.discoverySummary).not.toBeNull();
+      // hydrate must surface the session UUID (same value status reports) so the
+      // /start command can report the Session ID without a follow-up status call.
+      expect(result.sessionId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
     });
 
     it('creates a new session with team policy', async () => {

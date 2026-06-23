@@ -133,7 +133,17 @@ function validateEffectiveFindings(
   submittedVerdict: LoopVerdict,
   obligationId: string,
 ): string | null {
-  if (!findings) return requireReviewFindings(false);
+  if (!findings) {
+    // changes_requested closes the review loop by returning to IMPLEMENTATION,
+    // where fresh evidence replaces the stale evidence on the next /implement.
+    // It therefore does NOT require bindable reviewer findings to proceed: a
+    // reviewer asking for changes must not be able to wedge the session into an
+    // unrecoverable IMPL_REVIEW dead-state (no command can leave IMPL_REVIEW once
+    // this guard blocks). Only `accept` — which advances to the evidence-review
+    // user gate and renders the review card — still requires findings.
+    if (submittedVerdict === 'changes_requested') return null;
+    return requireReviewFindings(false);
+  }
   if (findings.overallVerdict === 'unable_to_review') {
     return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId });
   }

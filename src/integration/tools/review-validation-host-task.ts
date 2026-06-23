@@ -39,6 +39,7 @@ export interface ResolvedHostTaskFindings {
 export type HostTaskFindingsResolution =
   | ({ readonly kind: 'resolved' } & ResolvedHostTaskFindings)
   | { readonly kind: 'rejected'; readonly rejection: HostTaskFindingsAcceptanceRejection }
+  | { readonly kind: 'unparseable'; readonly detail: string }
   | { readonly kind: 'not_found' };
 
 /**
@@ -75,6 +76,13 @@ export function resolveHostTaskFindings(
       inv.hostVisible === true &&
       inv.capturedRawFindings != null,
   );
+  // Track the first unparseable capture so the caller can emit a DISTINCT
+  // HOST_TASK_FINDINGS_UNPARSEABLE block instead of a generic "no evidence"
+  // REVIEW_FINDINGS_REQUIRED. Without this, a garbled host capture is
+  // indistinguishable from "no evidence at all" in the tool output (both
+  // historically degraded to not_found), which is exactly the confusing
+  // failure operators hit when the reviewer ran but its findings were corrupt.
+  let unparseableDetail: string | null = null;
   for (const invocation of matchingInvocations) {
     const invocationRejection = getReviewFindingsAcceptanceRejection({ obligation, invocation });
     if (invocationRejection) {
@@ -83,7 +91,8 @@ export function resolveHostTaskFindings(
 
     // Parse through ReviewFindings schema for type safety and validation.
     // safeParse: if the raw findings are malformed (missing required fields,
-    // invalid types), return not_found so the caller falls back to BLOCKED.
+    // invalid types), surface it as `unparseable` so the caller falls back to
+    // a distinct BLOCKED code (not silent not_found).
     const parsed = ReviewFindingsSchema.safeParse(invocation.capturedRawFindings);
     if (parsed.success) {
       return {
@@ -94,19 +103,24 @@ export function resolveHostTaskFindings(
       };
     }
     // Diagnostic for error analysis: captured findings are PRESENT (filter above
-    // requires capturedRawFindings != null) but FAIL schema validation. Without
-    // this, a garbled host capture is indistinguishable from "no evidence at all"
-    // (both degrade to not_found -> REVIEW_FINDINGS_REQUIRED). Surface it.
+    // requires capturedRawFindings != null) but FAIL schema validation. Surface it.
+    const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, 8);
+    if (unparseableDetail === null) {
+      unparseableDetail = issues.join('; ') || 'unknown schema validation failure';
+    }
     getAdapterLogger().warn(
       'flowguard_review',
-      'host-task captured findings present but unparseable; treated as not_found',
+      'host-task captured findings present but unparseable; treated as unparseable',
       {
         obligationId: obligation.obligationId,
         invocationId: invocation.invocationId,
-        issues: parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, 8),
+        issues,
       },
     );
   }
 
+  if (unparseableDetail !== null) {
+    return { kind: 'unparseable', detail: unparseableDetail };
+  }
   return { kind: 'not_found' };
 }
