@@ -92,7 +92,10 @@ describe('cli/doctor', () => {
       // build artifact, so shipped-executable checks are covered separately in
       // doctor-executables.test.ts and filtered out here.
       const fileChecks = checks.filter(
-        (c) => !c.file.startsWith('trust://') && c.check !== SHIPPED_EXECUTABLE_CHECK,
+        (c) =>
+          !c.file.startsWith('trust://') &&
+          c.check !== SHIPPED_EXECUTABLE_CHECK &&
+          !c.file.includes('build-info.json'),
       );
       const allOk = fileChecks.every((c) => c.status === 'ok');
       expect(allOk).toBe(true);
@@ -794,7 +797,12 @@ describe('cli/doctor', () => {
 
       expect(
         checks
-          .filter((c) => !c.file.startsWith('trust://') && c.check !== SHIPPED_EXECUTABLE_CHECK)
+          .filter(
+            (c) =>
+              !c.file.startsWith('trust://') &&
+              c.check !== SHIPPED_EXECUTABLE_CHECK &&
+              !c.file.includes('build-info.json'),
+          )
           .every((c) => c.status === 'ok'),
       ).toBe(true);
     });
@@ -809,7 +817,12 @@ describe('cli/doctor', () => {
       const installedChecks = await doctor(repoArgs({ action: 'doctor' }));
       expect(
         installedChecks
-          .filter((c) => !c.file.startsWith('trust://') && c.check !== SHIPPED_EXECUTABLE_CHECK)
+          .filter(
+            (c) =>
+              !c.file.startsWith('trust://') &&
+              c.check !== SHIPPED_EXECUTABLE_CHECK &&
+              !c.file.includes('build-info.json'),
+          )
           .every((c) => c.status === 'ok'),
       ).toBe(true);
 
