@@ -2,8 +2,9 @@ import { defineConfig } from 'vitest/config';
 
 /**
  * Stryker-specific vitest config.
- * 17 governance-core files with proven >70% individual mutation scores.
- * FlowGuard decision chain: state, audit, config, identity, machine, rails, tools.
+ * Governance-core files with proven individual mutation scores.
+ * FlowGuard decision chain: state, audit, config, identity, machine, rails, tools,
+ * review orchestrator detection/output, multi-mode validation, and canonical JSON.
  */
 export default defineConfig({
   test: {
@@ -18,7 +19,11 @@ export default defineConfig({
       'src/integration/command-aliases.test.ts',
       'src/integration/status.test.ts',
       'src/integration/tool-classification.test.ts',
+      'src/integration/tools/review-validation-mode.test.ts',
       'src/integration/review/orchestrator.test.ts',
+      'src/integration/review/orchestrator-detection.test.ts',
+      'src/integration/review/orchestrator-output.test.ts',
+      'src/integration/review/agent-resolution.test.ts',
       'src/integration/review/orchestrator-invoke-agent-edges.test.ts',
       'src/integration/review/orchestrator-invoke-diagnostics.test.ts',
       'src/integration/review/orchestrator-invoke-errors.test.ts',
@@ -28,6 +33,10 @@ export default defineConfig({
       'src/integration/review/enforcement/mutation.test.ts',
       'src/integration/review/enforcement/extraction.test.ts',
       'src/integration/review/enforcement/session.test.ts',
+
+      'src/shared/canonical-json.test.ts',
+      'src/architecture/__tests__/audit-canonicalization-ssot.test.ts',
+      'src/architecture/__tests__/mode-validation-ssot.test.ts',
 
       'src/hooks/**/*.test.ts',
       'src/mcp-server/**/*.test.ts',

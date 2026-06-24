@@ -24,8 +24,14 @@
 
     "src/integration/command-aliases.ts",
     "src/integration/tool-classification.ts",
+    "src/integration/tools/review-validation-mode.ts",
     "src/integration/review/enforcement/enforcement.ts",
     "src/integration/review/orchestrator.ts",
+    "src/integration/review/orchestrator-detection.ts",
+    "src/integration/review/orchestrator-output.ts",
+    "src/integration/review/agent-resolution.ts",
+
+    "src/shared/canonical-json.ts",
 
     "src/machine/commands.ts",
     "src/machine/evaluate.ts",
