@@ -192,7 +192,7 @@ description: Submit a governed implementation plan through FlowGuard MCP tools.
 Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy state yourself.
 
 1. Ensure a session exists by calling \`mcp__flowguard__flowguard_status\` or hydrate if needed.
-2. Submit the plan only through \`mcp__flowguard__flowguard_plan\`.
+2. Submit the plan only through \`mcp__flowguard__flowguard_plan\`. Prefer vertical tracer-bullet slices over horizontal layer-by-layer builds; resolve repository-answerable questions by exploring the codebase instead of asking.
 3. Treat any blocked, failed, malformed, or nonconforming tool result as terminal.
 4. Do not start implementation until FlowGuard returns an explicit allowed path.
 

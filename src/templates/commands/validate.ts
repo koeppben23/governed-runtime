@@ -15,6 +15,10 @@ FlowGuard executes verification commands directly via \`flowguard_run_check\`. Y
 
 Execute all active verification checks for the FlowGuard session.
 
+## Test quality (advisory)
+
+FlowGuard executes the discovered checks; it does not judge their quality. When the validating checks include tests and you have any influence over them, favor checks that exercise observable behavior through public interfaces over checks coupled to internal structure. A check that breaks on an internal refactor without a behavior change is a weak signal. This guidance never changes which checks run or how \`flowguard_run_check\` executes them.
+
 ## Steps
 
 1. Call \`flowguard_status\` with NO focused flags (no whyBlocked/evidence/context/readiness) so the full projection is returned, and verify a session exists in VALIDATION phase with an approved plan.

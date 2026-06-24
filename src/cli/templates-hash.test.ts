@@ -75,11 +75,14 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for review-verdict disambiguation: the reviewer output verdict
     // token was renamed 'approve' -> 'accept' (overallVerdict) to separate the
     // reviewer's acceptance from the user-gate approval.
-    // This changes the runtime REVIEW_MANDATE_DIGEST.
-    // Existing sessions with obligations bound to the previous digest must be
-    // re-hydrated or re-created.
+    // Refreshed for reviewer-criteria enrichment (criteriaVersion p35->p36):
+    // plan/implementation/adr/content REVIEWER_CRITERIA gained test-integrity,
+    // conviction, ADR-justification, deletion-test, and changed-scope/signal
+    // guidance. This changes the REVIEWER_AGENT body and therefore the runtime
+    // REVIEW_MANDATE_DIGEST. Existing sessions with obligations bound to the
+    // previous digest must be re-hydrated or re-created.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'a8f088a19b7fe9698e5de5c381765805d41e76d31f45b1b09635843791b92899',
+      'dc46f287340f193d8bd391420bc21ae93a9dd1a2a022c5ff53b46917b0a65181',
     );
   });
 
@@ -152,9 +155,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // forbid reviewFindings "not even an empty placeholder object" in
     // host_task_required mode — matching the runtime, which resolves findings from
     // captured evidence and validates the verdict against it.
+    // Refreshed for reviewer-criteria enrichment: /plan gained tracer-bullet /
+    // deep-module step guidance plus a "Planning discipline" section, and
+    // /validate gained an advisory "Test quality" section. These change the
+    // /plan and /validate command bodies and therefore the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '0889d6bf5d01df6d6bc9078a79f72548f41c8830b8f4fb5a6877ee19366b17cf',
+      '67f059101732eec98b74874fea55f26096e1b70c529b4277864d91a35c914f11',
     );
   });
 

@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Reviewer criteria enrichment (`criteriaVersion` p35-v1 -> p36-v1).** The
+  independent-reviewer criteria (`REVIEWER_CRITERIA` in
+  `src/templates/mandates-reviewer-criteria.ts`) gained falsification-oriented
+  guidance distilled from established engineering practice, without changing the
+  review authority model: plan review now checks module depth and vertical
+  tracer-bullet slicing; implementation review now flags tests coupled to
+  internals (mocking internal collaborators, asserting call counts, verifying
+  past the interface) and non-boundary mocks, and requires conviction (uncertain
+  concerns recorded under `unknowns`/`missingVerification`, not as blocking
+  issues); ADR review now checks decision justification (hard-to-reverse,
+  surprising-without-context, real trade-off) and applies the deletion test to
+  proposed seams; content review now restricts findings to changed code, flags
+  newly changed source files over ~1000 lines, and demands high-conviction
+  findings with an exact location and concrete remedy.
+  - Because the criteria are part of the reviewer mandate, the runtime
+    `REVIEW_MANDATE_DIGEST` changes with them; `REVIEW_CRITERIA_VERSION` is bumped
+    to `p36-v1`. Both are attestation-bound and fail-closed validated, so
+    sessions with obligations bound to the previous digest/version must be
+    re-hydrated or re-created. The `criteriaVersion`/`mandateDigest` mismatch
+    negative paths remain enforced.
+  - The `/plan` command gained tracer-bullet / deep-module step guidance and a
+    "Planning discipline" section (resolve repository-answerable questions by
+    exploring the codebase, stress-test edge scenarios, cross-check claims
+    against code); `/validate` gained an advisory "Test quality" section. These
+    are author-side ergonomics only — `flowguard_run_check` execution and all
+    gates are unchanged. The Claude Code and Codex plan skills carry a condensed
+    parity note. These refresh the `COMMANDS` and `REVIEWER_AGENT` template
+    hashes.
+
 - **#565: split the multi-mode `flowguard_implement` tool into two
   single-purpose tools, and made MCP tool input schemas strict.** Recording
   implementation evidence and submitting the reviewer verdict are now distinct

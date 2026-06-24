@@ -239,7 +239,8 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
 2. ${CLAUDE_DISCOVERY_CAPTURE}
 
 ## Phase 2 — Submit the plan
-3. Write the plan in markdown with these required sections: \`## Objective\`, \`## Approach\`, \`## Steps\` (each step names a specific file path and a concrete change), \`## Files to Modify\`, \`## Edge Cases\`, \`## Validation Criteria\`, \`## Verification Plan\` (cite the command AND its Source, e.g. \`Source: package.json:scripts.test\`, or state \`NOT_VERIFIED\` with recovery steps).
+3. Write the plan in markdown with these required sections: \`## Objective\`, \`## Approach\`, \`## Steps\` (each step names a specific file path and a concrete change; prefer vertical tracer-bullet slices over horizontal layer-by-layer builds, and favor deep modules over shallow pass-throughs), \`## Files to Modify\`, \`## Edge Cases\`, \`## Validation Criteria\`, \`## Verification Plan\` (cite the command AND its Source, e.g. \`Source: package.json:scripts.test\`, or state \`NOT_VERIFIED\` with recovery steps).
+   - Resolve open questions the repository can answer by exploring the codebase instead of asking the user; cross-check stated behavior against the actual code and surface contradictions in the plan.
 4. Submit the plan only through \`mcp__flowguard__flowguard_plan({ planText })\` with the full plan markdown. When revising, include the COMPLETE plan text, never a diff.
 5. Read the response; the \`next\` field carries the review workflow.
 

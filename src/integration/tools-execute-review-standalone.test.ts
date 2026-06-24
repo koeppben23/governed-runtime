@@ -303,7 +303,7 @@ describe('review (standalone flow)', () => {
         planVersion: 1,
         reviewedBy: 'flowguard-reviewer',
         mandateDigest: REVIEW_MANDATE_DIGEST,
-        criteriaVersion: 'p35-v1',
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
       },
     };
   }
@@ -1200,7 +1200,7 @@ describe('review (standalone flow)', () => {
           obligationType: 'review' as const,
           iteration: 1,
           planVersion: 1,
-          criteriaVersion: 'p35-v1',
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
           createdAt: new Date().toISOString(),
           pluginHandshakeAt: null,

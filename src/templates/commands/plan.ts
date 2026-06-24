@@ -33,7 +33,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
 3. Write a detailed implementation plan in markdown with these 7 required sections:
    - \`## Objective\` — 1-3 sentences: what is being built and why.
    - \`## Approach\` — Technical strategy with specific patterns, libraries, or architecture decisions.
-   - \`## Steps\` — Numbered list. Each step names at least one specific file path AND describes the concrete change.
+   - \`## Steps\` — Numbered list. Each step names at least one specific file path AND describes the concrete change. Prefer vertical tracer-bullet slices (one thin end-to-end path through every layer that is independently verifiable) over horizontal slices that build one layer at a time. Where a step introduces a module, favor a deep module (small interface, substantial hidden implementation) over a shallow pass-through.
    - \`## Files to Modify\` — Complete list of file paths to create, modify, or delete.
    - \`## Edge Cases\` — Numbered list: scenario + handling strategy.
    - \`## Validation Criteria\` — Numbered list of verifiable conditions.
@@ -70,6 +70,12 @@ ${SHARED_REVIEW_LOOP({
   unableRecoveryB:
     'revise the plan substantially (new flowguard_plan({ planText }) submission, which starts a fresh review obligation)',
 })}
+
+## Planning discipline
+
+- Resolve open questions that the repository can answer by exploring the codebase (use the explore agent or read/search tools) instead of asking the user. Reserve user questions for genuine product or intent decisions that the code cannot settle.
+- Stress-test domain relationships and edge behavior with concrete scenarios before writing \`## Edge Cases\`; a scenario that the plan cannot answer is a gap to resolve, not a detail to defer.
+- Cross-check stated behavior against the actual code. When a claim in the request contradicts what the code does, surface the contradiction in the plan rather than planning on top of the unverified claim.
 
 ## Rules
 

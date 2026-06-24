@@ -53,7 +53,7 @@ function validFindings(): Record<string, unknown> {
     reviewedAt: '2026-05-07T12:00:00.000Z',
     attestation: {
       mandateDigest: 'test-mandate-digest',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p36-v1',
       toolObligationId: '11111111-1111-4111-8111-111111111111',
       iteration: 0,
       planVersion: 1,

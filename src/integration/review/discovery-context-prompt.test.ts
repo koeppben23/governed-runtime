@@ -182,7 +182,7 @@ describe('review prompt Discovery context loading', () => {
       iteration: 0,
       planVersion: 1,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p36-v1',
       mandateDigest: 'test-digest',
       discoveryContext,
     });
@@ -201,7 +201,7 @@ describe('review prompt Discovery context loading', () => {
       iteration: 1,
       planVersion: 2,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p36-v1',
       mandateDigest: 'test-digest',
       discoveryContext: BASE_CONTEXT,
     });
@@ -209,7 +209,7 @@ describe('review prompt Discovery context loading', () => {
       content: 'diff --git a/src/auth.ts b/src/auth.ts',
       ticketText: TICKET.text,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p36-v1',
       mandateDigest: 'test-digest',
       iteration: 0,
       planVersion: 1,
@@ -230,7 +230,7 @@ describe('review prompt Discovery context loading', () => {
       iteration: 0,
       planVersion: 1,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p36-v1',
       mandateDigest: 'test-digest',
       discoveryContext: BASE_CONTEXT,
     });
@@ -251,7 +251,7 @@ describe('review prompt Discovery context loading', () => {
       iteration: 0,
       planVersion: 1,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p36-v1',
       mandateDigest: 'test-digest',
     });
 
@@ -270,7 +270,7 @@ describe('review prompt Discovery context loading', () => {
       iteration: 1,
       planVersion: 2,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p36-v1',
       mandateDigest: 'test-digest',
     });
 
@@ -286,7 +286,7 @@ describe('review prompt Discovery context loading', () => {
       content: 'diff --git a/src/auth.ts b/src/auth.ts',
       ticketText: TICKET.text,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p36-v1',
       mandateDigest: 'test-digest',
       iteration: 0,
       planVersion: 1,
@@ -326,7 +326,7 @@ describe('review prompt Discovery context loading', () => {
       content: 'diff --git a/src/auth.ts b/src/auth.ts',
       ticketText: TICKET.text,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p36-v1',
       mandateDigest: 'test-digest',
       iteration: 0,
       planVersion: 1,
@@ -350,7 +350,7 @@ describe('review prompt Discovery context loading', () => {
       iteration: 0,
       planVersion: 1,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p36-v1',
       mandateDigest: 'test-digest',
       discoveryContext: BASE_CONTEXT,
     });
@@ -370,7 +370,7 @@ describe('review prompt Discovery context loading', () => {
       iteration: 1,
       planVersion: 2,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p36-v1',
       mandateDigest: 'test-digest',
       discoveryContext: BASE_CONTEXT,
     });
@@ -387,7 +387,7 @@ describe('review prompt Discovery context loading', () => {
       content: 'diff --git a/src/auth.ts b/src/auth.ts',
       ticketText: TICKET.text,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p36-v1',
       mandateDigest: 'test-digest',
       iteration: 0,
       planVersion: 1,
@@ -485,7 +485,7 @@ describe('review prompt Discovery context loading', () => {
       iteration: 0,
       planVersion: 1,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p36-v1',
       mandateDigest: 'test-digest',
       profileRules: PLAN_REVIEW_DISCOVERY_INSTRUCTION,
       discoveryContext: BASE_CONTEXT,
