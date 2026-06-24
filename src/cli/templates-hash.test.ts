@@ -147,9 +147,14 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // branch now states reviewFindings submitted alongside the verdict are ignored
     // and the verdict is validated against captured evidence; /plan + /review
     // first-call lines forbid a prefilled verdict imperatively.
+    // Refreshed for host-task verdict-only parity: the shared verdict branch,
+    // /review step 5, /plan payload contract, and /architecture review step now
+    // forbid reviewFindings "not even an empty placeholder object" in
+    // host_task_required mode — matching the runtime, which resolves findings from
+    // captured evidence and validates the verdict against it.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'bbf553c760136c935001bb9587ea401195b9a0faada342ed419ff8e0437dd02c',
+      '0889d6bf5d01df6d6bc9078a79f72548f41c8830b8f4fb5a6877ee19366b17cf',
     );
   });
 

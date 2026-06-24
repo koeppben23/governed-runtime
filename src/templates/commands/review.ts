@@ -87,7 +87,7 @@ Start the compliance review flow for the current FlowGuard session.
       Task evidence: after the \`${REVIEWER_SUBAGENT_TYPE}\` Task returns, call
       \`flowguard_review\` with the same content fields plus \`reviewVerdict\` only
       (\`"accept"\` or \`"changes_requested"\`) matching the reviewer's \`overallVerdict\`.
-      Do NOT submit, copy, or alter \`reviewFindings\`; FlowGuard resolves the captured
+      Do NOT submit, copy, or alter \`reviewFindings\` (not even an empty placeholder object); FlowGuard resolves the captured
       ReviewInvocationEvidence automatically.
       \`HOST_SUBAGENT_TASK_REQUIRED\` is an expected intermediate state in this mode, not
       a terminal failure and not a reason to tell the user to restart the flow.
