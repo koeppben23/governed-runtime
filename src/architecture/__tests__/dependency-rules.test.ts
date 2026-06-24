@@ -246,6 +246,21 @@ function parseImports(fileContent: string): ImportInfo[] {
     });
   }
 
+  // Dynamic imports: await import('./foo.js'), import('./foo.js')
+  const dynamicImportRegex = /(?:await\s+)?import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+  while ((match = dynamicImportRegex.exec(fileContent)) !== null) {
+    const module = match[1];
+    if (!module) continue;
+
+    imports.push({
+      module,
+      raw: match[0],
+      isNodeBuiltin: isNodeBuiltinImport(module),
+      isFFModule: isFFModuleImport(module),
+      targetModule: isFFModuleImport(module) ? getTargetModule(module) : null,
+    });
+  }
+
   return imports;
 }
 
@@ -1004,6 +1019,131 @@ describe('Layer Dependency Rules', () => {
       if (violations.length > 0) {
         console.error(
           '\nadapters/ -> integration/ violations (HAI boundary):\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+        );
+      }
+      expect(violations).toHaveLength(0);
+    });
+  });
+
+  describe('Rule 5e: config/ must NOT import from outer layers', () => {
+    const violations: ImportViolation[] = [];
+    const forbiddenFromConfig = new Set(['adapters', 'integration', 'cli', 'rails', 'audit']);
+
+    beforeAll(() => {
+      for (const [, analysis] of analyses) {
+        if (!analysis.filePath.includes('/config/')) continue;
+        if (analysis.filePath.includes('.test.')) continue;
+
+        const forbiddenImports = analysis.imports.filter(
+          (i) => i.isFFModule && i.targetModule && forbiddenFromConfig.has(i.targetModule),
+        );
+
+        for (const imp of forbiddenImports) {
+          violations.push({
+            file: analysis.relativePath,
+            rule: 'config-no-upward',
+            message: `config/ imports from outer layer: ${imp.targetModule}`,
+            imports: [imp.module],
+          });
+        }
+      }
+    });
+
+    it('should have config files', () => {
+      const configFiles = Array.from(analyses.values()).filter(
+        (a) => a.filePath.includes('/config/') && !a.filePath.includes('.test.'),
+      );
+      expect(configFiles.length).toBeGreaterThan(0);
+    });
+
+    it('should have no config -> outer layer imports', () => {
+      if (violations.length > 0) {
+        console.error(
+          '\nconfig/ -> outer layer violations:\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+        );
+      }
+      expect(violations).toHaveLength(0);
+    });
+  });
+
+  describe('Rule 5f: identity/ must NOT import from outer layers', () => {
+    const violations: ImportViolation[] = [];
+    const forbiddenFromIdentity = new Set(['adapters', 'integration', 'cli', 'rails']);
+
+    beforeAll(() => {
+      for (const [, analysis] of analyses) {
+        if (!analysis.filePath.includes('/identity/')) continue;
+        if (analysis.filePath.includes('.test.')) continue;
+
+        const forbiddenImports = analysis.imports.filter(
+          (i) => i.isFFModule && i.targetModule && forbiddenFromIdentity.has(i.targetModule),
+        );
+
+        for (const imp of forbiddenImports) {
+          violations.push({
+            file: analysis.relativePath,
+            rule: 'identity-no-upward',
+            message: `identity/ imports from outer layer: ${imp.targetModule}`,
+            imports: [imp.module],
+          });
+        }
+      }
+    });
+
+    it('should have identity files', () => {
+      const identityFiles = Array.from(analyses.values()).filter(
+        (a) => a.filePath.includes('/identity/') && !a.filePath.includes('.test.'),
+      );
+      expect(identityFiles.length).toBeGreaterThan(0);
+    });
+
+    it('should have no identity -> outer layer imports', () => {
+      if (violations.length > 0) {
+        console.error(
+          '\nidentity/ -> outer layer violations:\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+        );
+      }
+      expect(violations).toHaveLength(0);
+    });
+  });
+
+  describe('Rule 5g: integration/tools/ must NOT import from plugin-* modules', () => {
+    const violations: ImportViolation[] = [];
+
+    beforeAll(() => {
+      for (const [, analysis] of analyses) {
+        if (!analysis.filePath.includes('/integration/tools/')) continue;
+        if (analysis.filePath.includes('.test.')) continue;
+
+        const pluginImports = analysis.imports.filter(
+          (i) => i.module.startsWith('../plugin-') || i.module.startsWith('./plugin-'),
+        );
+
+        for (const imp of pluginImports) {
+          violations.push({
+            file: analysis.relativePath,
+            rule: 'tools-no-plugin',
+            message: `integration/tools/ imports from plugin-* module (bridge bypass): ${imp.module}`,
+            imports: [imp.module],
+          });
+        }
+      }
+    });
+
+    it('should have integration/tools files', () => {
+      const toolsFiles = Array.from(analyses.values()).filter(
+        (a) => a.filePath.includes('/integration/tools/') && !a.filePath.includes('.test.'),
+      );
+      expect(toolsFiles.length).toBeGreaterThan(0);
+    });
+
+    it('should have no tools -> plugin-* imports', () => {
+      if (violations.length > 0) {
+        console.error(
+          '\nintegration/tools/ -> plugin-* violations:\n' +
             violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
         );
       }
