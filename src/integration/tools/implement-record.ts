@@ -42,11 +42,11 @@
  *   -> Returns "review needed" with policy-conditional next-action
  *
  * Step 3: LLM calls flowguard-reviewer subagent via Task tool
- * Step 4: LLM calls flowguard_implement({ reviewVerdict: "accept", reviewFindings })
+ * Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "accept", reviewFindings })
  *   -> Tool records review iteration, checks convergence
  *   -> On convergence: auto-advance to EVIDENCE_REVIEW
  *
- * OR Step 4: LLM calls flowguard_implement({ reviewVerdict: "changes_requested" })
+ * OR Step 4: LLM calls flowguard_review_implementation({ reviewVerdict: "changes_requested" })
  *   -> LLM makes more code changes, then calls flowguard_implement({}) again
  *
  * @version v5
@@ -69,7 +69,7 @@ import { isCommandAllowed, Command } from '../../machine/commands.js';
 // Rail helpers
 
 // Adapters
-import { changedFiles } from '../../adapters/git.js';
+import { changedFiles, hashWorktreeFiles } from '../../adapters/git.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 
 // Evidence types
@@ -83,7 +83,7 @@ import {
   reviewObligationResponseFields,
 } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
-import { resolveCeremonyProfile } from '../phase-tool-gate.js';
+import { resolveCeremonyProfile, isNonDomainConfigPath } from '../phase-tool-gate.js';
 import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
@@ -151,6 +151,7 @@ function buildImplRecordedResponse(input: {
   reviewFindings: ReviewFindings[];
   ceremony: ImplementationCeremony;
   policy: FlowGuardPolicy;
+  baselineScoping: 'applied' | 'unavailable';
 }): Record<string, unknown> {
   const reduced = input.ceremony.profile === 'reduced';
   const platform = resolveRuntimeReviewPlatform();
@@ -174,6 +175,7 @@ function buildImplRecordedResponse(input: {
     status: `Implementation recorded. ${input.files.length} files changed, ${input.domainFiles.length} domain files.`,
     changedFiles: input.files,
     domainFiles: input.domainFiles,
+    baselineScoping: input.baselineScoping,
     reviewMode: reduced ? 'reduced_ceremony' : 'subagent',
     ceremonyProfile: input.ceremony.profile,
     ceremonyReason: input.ceremony.reason,
@@ -194,6 +196,64 @@ function buildImplRecordedResponse(input: {
   return response;
 }
 
+/**
+ * Apply pre-implementation baseline scoping (#baseline): subtract files that
+ * were already dirty at session start AND are still unchanged (same content
+ * hash), so pre-existing worktree changes (e.g. a stale opencode.json) are not
+ * attributed to this implementation — while a pre-dirty file the task actually
+ * modified (hash changed) is KEPT, never hidden. When no baseline was captured
+ * (legacy session / git unreadable at hydrate), do NOT subtract: record the
+ * full worktree exactly as before and mark scoping unavailable.
+ *
+ * Returns the scoped file list plus the scoping status, or an
+ * IMPLEMENTATION_EVIDENCE_EMPTY block when nothing remains.
+ */
+async function scopeImplementationFiles(
+  worktree: string,
+  rawFiles: string[],
+  baseline: SessionState['implementationBaseline'],
+): Promise<{ files: string[]; baselineScoping: 'applied' | 'unavailable' } | { block: string }> {
+  if (!baseline) {
+    if (rawFiles.length === 0) {
+      return {
+        block: formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
+          reason: 'no changed files detected in worktree',
+        }),
+      };
+    }
+    return { files: rawFiles, baselineScoping: 'unavailable' };
+  }
+
+  // Re-hash the still-present baseline paths; a path is scoped out only if it
+  // was pre-dirty and its content hash is unchanged since session start.
+  const baselineByPath = new Map(baseline.dirtyFiles.map((d) => [d.path, d.hash]));
+  const candidatesToRehash = rawFiles.filter((f) => baselineByPath.has(f));
+  const currentHashes =
+    candidatesToRehash.length > 0 ? await hashWorktreeFiles(worktree, candidatesToRehash) : {};
+  const files = rawFiles.filter((f) => {
+    if (!baselineByPath.has(f)) return true; // not pre-dirty → task change
+    const before = baselineByPath.get(f) ?? null;
+    const now = currentHashes[f] ?? null;
+    // Scope out ONLY when both hashes are present and equal (provably unchanged
+    // since session start). If either hash is missing, we cannot prove the file
+    // is untouched, so we conservatively KEEP it — never hide a change.
+    if (before === null || now === null) return true;
+    return before !== now; // changed since baseline → keep; unchanged → drop
+  });
+
+  if (files.length === 0) {
+    return {
+      block: formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
+        reason:
+          rawFiles.length > 0
+            ? 'no changed files attributable to this implementation after baseline scoping (all changed files were already dirty and unchanged since session start)'
+            : 'no changed files detected in worktree',
+      }),
+    };
+  }
+  return { files, baselineScoping: 'applied' };
+}
+
 export async function handleImplRecord(
   input: ImplementRuntime,
   changedFilesOverride?: string[],
@@ -201,15 +261,17 @@ export async function handleImplRecord(
   const blocked = validateImplRecordPrerequisites(input);
   if (blocked) return blocked;
 
-  const files = changedFilesOverride ?? (await changedFiles(input.worktree));
-  if (files.length === 0) {
-    return formatBlocked('IMPLEMENTATION_EVIDENCE_EMPTY', {
-      reason: 'no changed files detected in worktree',
-    });
-  }
+  const rawFiles = changedFilesOverride ?? (await changedFiles(input.worktree));
+  const scoped = await scopeImplementationFiles(
+    input.worktree,
+    rawFiles,
+    input.state.implementationBaseline,
+  );
+  if ('block' in scoped) return scoped.block;
+  const { files, baselineScoping } = scoped;
 
   const domainFiles = files.filter(
-    (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/'),
+    (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/') && !isNonDomainConfigPath(f),
   );
   const implEvidence = {
     changedFiles: files,
@@ -262,6 +324,7 @@ export async function handleImplRecord(
     nextObligation,
     reviewFindings: newReviewFindings,
     ceremony,
+    baselineScoping,
   });
 }
 
@@ -275,6 +338,7 @@ interface PersistImplRecordArgs {
   nextObligation: ReturnType<typeof createReviewObligation> | null;
   reviewFindings: ReviewFindings[];
   ceremony: ReturnType<typeof resolveCeremonyProfile>;
+  baselineScoping: 'applied' | 'unavailable';
 }
 
 export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): Promise<string> {
@@ -300,6 +364,7 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
         reviewFindings: args.reviewFindings,
         ceremony: args.ceremony,
         policy: input.policy,
+        baselineScoping: args.baselineScoping,
       }),
     ),
     finalState,

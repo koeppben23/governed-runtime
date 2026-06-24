@@ -64,4 +64,10 @@ export interface BuildHydrateInputParams {
   readonly discovery: DiscoveryHydration;
   readonly actorInfo: Awaited<ReturnType<typeof resolveActor>>;
   readonly args: HydrateArgs;
+  /**
+   * Files already dirty at session start with content hashes (captured via git
+   * in runHydrate before any editing). Undefined when git was unreadable or for
+   * existing sessions.
+   */
+  readonly baselineDirtyFiles?: ReadonlyArray<{ path: string; hash: string | null }>;
 }

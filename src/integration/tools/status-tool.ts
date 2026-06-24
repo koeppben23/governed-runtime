@@ -59,6 +59,23 @@ import { buildImplementationGuidance } from '../implementation-guidance.js';
 import type { DiscoveryDriftStatusProjection } from '../discovery-drift-status.js';
 import { buildDiscoveryDriftStatus } from '../discovery-drift-status.js';
 import { evaluateDiscoveryEvidenceGate } from '../discovery-health-gate.js';
+import { BUILD_INFO } from '../../shared/build-info.js';
+
+/**
+ * Build identity for the governanceMandates block — surfaces the installed
+ * plugin's version + git SHA at runtime so a stale installed dist (older than
+ * source) is visible in /status. Null gitSha when no build-info is shipped
+ * (dev/test running from source). Diagnostic only; never gates.
+ */
+function buildIdentityField(): Record<string, unknown> {
+  const info = BUILD_INFO();
+  return {
+    version: info?.version ?? null,
+    gitSha: info?.gitSha ?? null,
+    builtAt: info?.builtAt ?? null,
+    source: info ? 'dist/build-info.json' : 'unavailable',
+  };
+}
 
 // ─── Projection dispatch ──────────────────────────────────────────────────────
 
@@ -70,6 +87,34 @@ interface StatusArgs {
 }
 
 /**
+ * Cheap, SessionState-derived verification-check fields that the /check,
+ * /validate, and /implement command prompts read to decide whether to run
+ * flowguard_run_check. These are included in EVERY focused projection (not just
+ * the full projection) because a focused status call (e.g. whyBlocked:true) must
+ * not silently strip the exact fields those prompts gate on — otherwise a
+ * VALIDATION session looks like it has "no active checks" and can never advance.
+ *
+ * Intentionally excludes the EXPENSIVE full-only fields (discoveryHealth,
+ * discoveryDrift, implementationGuidance, detectedStack) which require reading
+ * the persisted discovery artifact; those stay full-projection-only.
+ *
+ * `remainingChecks` mirrors the gate in buildStatusProjection (status.ts).
+ * Both `activeChecks` and `remainingChecks` are surfaced so command prompts
+ * referencing either name resolve.
+ */
+function buildCheckProjectionFields(state: SessionState): Record<string, unknown> {
+  const remainingChecks =
+    state.phase === 'VALIDATION' && state.activeChecks.length > 0
+      ? state.activeChecks.filter((id) => !state.validation.some((v) => v.checkId === id))
+      : undefined;
+  return {
+    activeChecks: state.activeChecks,
+    verificationCandidates: state.verificationCandidates ?? [],
+    ...(remainingChecks !== undefined ? { remainingChecks } : {}),
+  };
+}
+
+/**
  * Resolve a focused projection response, or null if no projection flag is set.
  */
 function resolveProjection(
@@ -77,31 +122,52 @@ function resolveProjection(
   state: SessionState,
   policy: FlowGuardPolicy,
 ): string | null {
+  const checkFields = buildCheckProjectionFields(state);
   if (args.whyBlocked) {
     const blocked = buildBlockedProjection(state, policy);
     return appendNextAction(
-      JSON.stringify({ phase: state.phase, sessionId: state.id, whyBlocked: blocked }),
+      JSON.stringify({
+        phase: state.phase,
+        sessionId: state.id,
+        whyBlocked: blocked,
+        ...checkFields,
+      }),
       state,
     );
   }
   if (args.evidence) {
     const evidenceDetail = buildEvidenceDetailProjection(state);
     return appendNextAction(
-      JSON.stringify({ phase: state.phase, sessionId: state.id, evidence: evidenceDetail }),
+      JSON.stringify({
+        phase: state.phase,
+        sessionId: state.id,
+        evidence: evidenceDetail,
+        ...checkFields,
+      }),
       state,
     );
   }
   if (args.context) {
     const contextDetail = buildContextProjection(state);
     return appendNextAction(
-      JSON.stringify({ phase: state.phase, sessionId: state.id, context: contextDetail }),
+      JSON.stringify({
+        phase: state.phase,
+        sessionId: state.id,
+        context: contextDetail,
+        ...checkFields,
+      }),
       state,
     );
   }
   if (args.readiness) {
     const readinessDetail = buildReadinessProjection(state, policy);
     return appendNextAction(
-      JSON.stringify({ phase: state.phase, sessionId: state.id, readiness: readinessDetail }),
+      JSON.stringify({
+        phase: state.phase,
+        sessionId: state.id,
+        readiness: readinessDetail,
+        ...checkFields,
+      }),
       state,
     );
   }
@@ -297,6 +363,9 @@ function buildProfileStatus(
     profileName: state.activeProfile?.name ?? 'None',
     profileRules,
     detectedStack: state.detectedStack ?? null,
+    // Surfaced in the FULL projection too (not just focused) so the /check and
+    // /validate prompts — which read it from an unfocused status call — find it.
+    activeChecks: state.activeChecks,
     verificationCandidates: state.verificationCandidates ?? [],
   };
 }
@@ -407,6 +476,7 @@ function buildFullStatusResponse(input: FullStatusInput): string {
         runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence: true,
         phaseRelevantRules: renderPhaseAwareMandates({}, state.phase),
       },
+      build: buildIdentityField(),
     }),
     state,
   );
@@ -453,6 +523,7 @@ export const status: ToolDefinition = {
             renderFallbackIsPromptSafetyOnly: true,
             runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence: true,
           },
+          build: buildIdentityField(),
         });
       }
 

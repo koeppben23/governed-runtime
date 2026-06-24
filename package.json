@@ -39,7 +39,7 @@
   },
   "scripts": {
     "clean": "node scripts/clean-dist.js",
-    "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc",
+    "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc && npm run generate-build-info",
     "check:esm": "node scripts/check-esm-imports.js",
     "check:actions-pinned": "node scripts/check-github-actions-pinned.js",
     "check": "tsc --noEmit",
@@ -77,6 +77,7 @@
     "sync-version": "node scripts/sync-version.js",
     "update:opencode-sdk": "node scripts/update-opencode-sdk.mjs",
     "generate-docs": "node scripts/generate-docs.js",
+    "generate-build-info": "node scripts/generate-build-info.js",
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",
     "mutation": "node scripts/stryker-patch.js && stryker run",

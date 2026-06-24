@@ -126,6 +126,7 @@ export function buildHydrateInput(params: BuildHydrateInputParams): HydrateInput
       discoverySummary: discovery.discoverySummary,
       detectedStack: discovery.detectedStack,
       verificationCandidates: discovery.verificationCandidates,
+      ...(params.baselineDirtyFiles ? { baselineDirtyFiles: params.baselineDirtyFiles } : {}),
     },
     policy: buildPolicyInput(
       existingWithCentralEvidence,
@@ -159,6 +160,7 @@ export async function formatNewSessionResponse(
   const formatted = JSON.parse(outputStr) as Record<string, unknown>;
   const response: Record<string, unknown> = {
     ...formatted,
+    sessionId: state.id,
     profileId: state.activeProfile?.id ?? 'baseline',
     profileName: state.activeProfile?.name ?? 'Baseline Governance',
     profileDetected: !!discovery.repoSignals,

@@ -303,7 +303,7 @@ describe('review (standalone flow)', () => {
         planVersion: 1,
         reviewedBy: 'flowguard-reviewer',
         mandateDigest: REVIEW_MANDATE_DIGEST,
-        criteriaVersion: 'p35-v1',
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
       },
     };
   }
@@ -383,6 +383,59 @@ describe('review (standalone flow)', () => {
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('REVIEW_COMPLETE');
       expect(result.inputOrigin).toBe('branch');
+    });
+
+    it('standalone /review Call 1 persists a PENDING review obligation for host-task binding', async () => {
+      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
+      const first = parseToolResult(
+        await review.execute({ branch: 'feature-auth', inputOrigin: 'branch' }, ctx),
+      );
+      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+
+      // The host-task evidence binder (plugin-task-evidence.ts) reads fresh state
+      // and filters obligations by status==='pending'. The log shows
+      // pendingObligationCount:0 at the reviewer-task bind for standalone /review,
+      // so the obligation created by Call 1 must be persisted AND pending.
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      expect(state).not.toBeNull();
+      const obligations = state!.reviewAssurance?.obligations ?? [];
+      const pendingReview = obligations.filter(
+        (o) => o.obligationType === 'review' && o.status === 'pending' && o.consumedAt === null,
+      );
+      expect(
+        pendingReview.length,
+        `expected exactly one PENDING review obligation after Call 1, got ${pendingReview.length} (total obligations: ${obligations.length})`,
+      ).toBe(1);
+    });
+
+    it('standalone /review Call 1 carrying a premature reviewVerdict creates the obligation instead of terminally blocking', async () => {
+      // Real demo failure: the agent's FIRST flowguard_review call already
+      // included reviewVerdict:"accept". Previously this took the host-task
+      // verdict-bind path with no pending obligation -> terminal
+      // HOST_SUBAGENT_TASK_REQUIRED / bindOutcome:not_found, and the reviewer
+      // Task was never run. It must instead create the PENDING obligation and
+      // return CONTENT_ANALYSIS_REQUIRED.
+      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
+      const first = parseToolResult(
+        await review.execute(
+          { branch: 'feature-auth', inputOrigin: 'branch', reviewVerdict: 'accept' },
+          ctx,
+        ),
+      );
+      // CONTENT_ANALYSIS_REQUIRED is the (blocked-shaped) instruction to run the
+      // reviewer — NOT the terminal HOST_SUBAGENT_TASK_REQUIRED/not_found.
+      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+      expect(
+        (first.requiredReviewAttestation as Record<string, string>).toolObligationId,
+      ).toBeTruthy();
+
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      const pendingReview = (state!.reviewAssurance?.obligations ?? []).filter(
+        (o) => o.obligationType === 'review' && o.status === 'pending' && o.consumedAt === null,
+      );
+      expect(pendingReview.length).toBe(1);
     });
 
     it('host_task_required branch review completes with host evidence and verdict only', async () => {
@@ -1147,7 +1200,7 @@ describe('review (standalone flow)', () => {
           obligationType: 'review' as const,
           iteration: 1,
           planVersion: 1,
-          criteriaVersion: 'p35-v1',
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
           mandateDigest: REVIEW_MANDATE_DIGEST,
           createdAt: new Date().toISOString(),
           pluginHandshakeAt: null,

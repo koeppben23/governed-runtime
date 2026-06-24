@@ -71,6 +71,13 @@ export interface HydrateSessionInput {
   readonly detectedStack?: DetectedStack | null;
   readonly verificationCandidates?: VerificationCandidates;
   readonly claimedTaskClass?: TaskClass;
+  /**
+   * Files already dirty in the worktree at session start (with content hashes),
+   * captured by the async tool layer (runHydrate) via git before any editing.
+   * Undefined when git could not be read; absence means implement will not
+   * scope (records the full worktree, as before) and marks scoping unavailable.
+   */
+  readonly baselineDirtyFiles?: ReadonlyArray<{ path: string; hash: string | null }>;
 }
 
 /**
@@ -289,6 +296,14 @@ function buildNewHydrateState(
     discoverySummary: s.discoverySummary ?? null,
     detectedStack: s.detectedStack ?? null,
     verificationCandidates: s.verificationCandidates ?? [],
+    ...(s.baselineDirtyFiles
+      ? {
+          implementationBaseline: {
+            dirtyFiles: s.baselineDirtyFiles.map((d) => ({ path: d.path, hash: d.hash })),
+            capturedAt: now,
+          },
+        }
+      : {}),
     transition: null,
     error: null,
     createdAt: now,

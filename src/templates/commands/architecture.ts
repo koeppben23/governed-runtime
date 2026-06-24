@@ -77,7 +77,7 @@ ${SHARED_REVIEW_LOOP({
 Happy path:
 1. \`flowguard_status\` → phase: READY
 2. \`flowguard_architecture({ title, adrText })\` → returns \`next: "INDEPENDENT_REVIEW_REQUIRED: ..."\` or "INDEPENDENT_REVIEW_COMPLETED: ..."
-3. (If REQUIRED) Call flowguard-reviewer subagent via Task tool. In host-task mode submit the verdict only (do NOT submit reviewFindings); in SDK mode parse and pass the exact ReviewFindings.
+3. (If REQUIRED) Call flowguard-reviewer subagent via Task tool. In host-task mode submit the verdict only (do NOT submit \`reviewFindings\`, not even an empty placeholder object); in SDK mode parse and pass the exact ReviewFindings.
 4. \`flowguard_architecture({ reviewVerdict: "accept" })\` → ARCH_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the ADR)
 
 Revision path (when review returns changes_requested):

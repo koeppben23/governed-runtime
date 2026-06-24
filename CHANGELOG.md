@@ -9,6 +9,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Reviewer criteria: security and root-cause dimensions (`criteriaVersion`
+  p36-v1 -> p37-v1).** The independent-reviewer criteria (`REVIEWER_CRITERIA` in
+  `src/templates/mandates-reviewer-criteria.ts`) gained two dimensions distilled
+  from established practice, without changing the review authority model or the
+  ReviewFindings schema: a **Security-as-risk** vulnerability lens (content +
+  implementation) — trace user input to sensitive sinks and flag concretely
+  exploitable injection, authn/authz bypass or privilege escalation, hardcoded
+  secrets or weak crypto, unsafe deserialization/RCE, XSS, and sensitive-data/PII
+  exposure, requiring a clear attack path rather than theoretical hardening; and
+  a **root-cause** check (plan + implementation) — a fix editing a shared
+  function must address the shared cause for every caller, not only the symptom
+  path named by the ticket. Security findings remain mapped to the existing
+  `risk` category (no new `category` enum value; the Zod ReviewFindings schema is
+  unchanged).
+  - Because the criteria are part of the reviewer mandate, the runtime
+    `REVIEW_MANDATE_DIGEST` changes with them; `REVIEW_CRITERIA_VERSION` is bumped
+    to `p37-v1`. Both are attestation-bound and fail-closed validated, so sessions
+    with obligations bound to the previous digest/version must be re-hydrated or
+    re-created. The `criteriaVersion`/`mandateDigest` mismatch negative paths
+    remain enforced. The `REVIEWER_AGENT` template hash and the reviewer-prompt
+    compactness budget (96 -> 98 lines) are refreshed; no command templates change
+    (`COMMANDS` hash is unchanged).
+
+- **Reviewer criteria enrichment (`criteriaVersion` p35-v1 -> p36-v1).** The
+  independent-reviewer criteria (`REVIEWER_CRITERIA` in
+  `src/templates/mandates-reviewer-criteria.ts`) gained falsification-oriented
+  guidance distilled from established engineering practice, without changing the
+  review authority model: plan review now checks module depth and vertical
+  tracer-bullet slicing; implementation review now flags tests coupled to
+  internals (mocking internal collaborators, asserting call counts, verifying
+  past the interface) and non-boundary mocks, and requires conviction (uncertain
+  concerns recorded under `unknowns`/`missingVerification`, not as blocking
+  issues); ADR review now checks decision justification (hard-to-reverse,
+  surprising-without-context, real trade-off) and applies the deletion test to
+  proposed seams; content review now restricts findings to changed code, flags
+  newly changed source files over ~1000 lines, and demands high-conviction
+  findings with an exact location and concrete remedy.
+  - Because the criteria are part of the reviewer mandate, the runtime
+    `REVIEW_MANDATE_DIGEST` changes with them; `REVIEW_CRITERIA_VERSION` is bumped
+    to `p36-v1`. Both are attestation-bound and fail-closed validated, so
+    sessions with obligations bound to the previous digest/version must be
+    re-hydrated or re-created. The `criteriaVersion`/`mandateDigest` mismatch
+    negative paths remain enforced.
+  - The `/plan` command gained tracer-bullet / deep-module step guidance and a
+    "Planning discipline" section (resolve repository-answerable questions by
+    exploring the codebase, stress-test edge scenarios, cross-check claims
+    against code); `/validate` gained an advisory "Test quality" section. These
+    are author-side ergonomics only — `flowguard_run_check` execution and all
+    gates are unchanged. The Claude Code and Codex plan skills carry a condensed
+    parity note. These refresh the `COMMANDS` and `REVIEWER_AGENT` template
+    hashes.
+
 - **#565: split the multi-mode `flowguard_implement` tool into two
   single-purpose tools, and made MCP tool input schemas strict.** Recording
   implementation evidence and submitting the reviewer verdict are now distinct

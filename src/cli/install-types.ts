@@ -75,6 +75,9 @@ export interface DoctorCheck {
 /** Check-category tag for shipped `dist/` executable validation (#423). */
 export const SHIPPED_EXECUTABLE_CHECK = 'shipped-executable';
 
+/** Check-category tag for the dist build-info freshness/identity check. */
+export const BUILD_INFO_CHECK = 'build-info';
+
 // ---- Constants ----
 
 /** Files owned by FlowGuard that uninstall may remove. */

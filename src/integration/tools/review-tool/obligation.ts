@@ -163,9 +163,17 @@ export async function ensureMissingAnalysisObligation(
   args: ReviewToolArgs,
   now: string,
 ): Promise<string | null> {
-  if (!hasReviewContentInput(args) || args.reviewFindings !== undefined) return null;
+  if (!hasReviewContentInput(args)) return null;
   const fingerprint = fingerprintReviewInput(args);
-  let obligation = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
+  const existing = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
+  // A verdict-bearing FIRST call with no pending obligation yet must create the
+  // obligation here (the host-task verdict path deferred to us via null), even
+  // if it erroneously carried a placeholder reviewFindings object. This keeps
+  // such a call on the "create pending obligation -> CONTENT_ANALYSIS_REQUIRED"
+  // path instead of falling through to the SDK reviewFindings-submission path.
+  const verdictFirstCall = args.reviewVerdict !== undefined && existing === null;
+  if (!verdictFirstCall && args.reviewFindings !== undefined) return null;
+  let obligation = existing;
   if (!obligation) {
     obligation = createReviewObligation({
       obligationType: 'review',

@@ -4,6 +4,7 @@ import { z } from 'zod';
 
 import { resolveActor, ActorClaimError } from '../../adapters/actor.js';
 import { readState, PersistenceError } from '../../adapters/persistence.js';
+import { changedFiles, hashWorktreeFiles } from '../../adapters/git.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import { initWorkspace, writeSessionPointer } from '../../adapters/workspace/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
@@ -37,6 +38,26 @@ export type {
 } from './hydrate-types.js';
 
 /**
+ * Capture the set of files already dirty in the worktree, before the agent
+ * makes any task edits, each with the git blob hash of its current content.
+ * Fail-soft: any git failure yields undefined so hydrate never fails on
+ * baseline capture and implement falls back to recording the full worktree
+ * (marking scoping unavailable).
+ */
+async function captureBaselineDirtyFiles(
+  worktree: string,
+): Promise<Array<{ path: string; hash: string | null }> | undefined> {
+  try {
+    const dirty = await changedFiles(worktree);
+    if (dirty.length === 0) return [];
+    const hashes = await hashWorktreeFiles(worktree, dirty);
+    return dirty.map((path) => ({ path, hash: hashes[path] ?? null }));
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * The lock is intentionally held across discovery/git for the duration of the
  * transaction; the 10s acquisition timeout in the lock adapter is the
  * fail-closed compensation (mapped to SESSION_LOCK_CONTENDED by the caller).
@@ -48,6 +69,12 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<Tool
 
   return withSessionWriteTransaction(workspace.sessionDir, async ({ waited }) => {
     const existing = await readState(workspace.sessionDir);
+    // Pre-implementation baseline (#baseline): for a NEW session, snapshot the
+    // files already dirty in the worktree BEFORE any editing, so flowguard_implement
+    // can scope evidence to the task's own changes. Fail-soft: if git is
+    // unreadable, leave it undefined and implement records the full worktree.
+    const baselineDirtyFiles =
+      existing === null ? await captureBaselineDirtyFiles(worktree) : undefined;
     const policyContext = await resolveHydratePolicy(existing, config, args);
     getAdapterLogger().info('policy', 'policy_resolved', {
       sessionId: context.sessionID,
@@ -76,6 +103,7 @@ async function runHydrate(args: HydrateArgs, context: ToolContext): Promise<Tool
         discovery,
         actorInfo,
         args,
+        baselineDirtyFiles,
       }),
       policyContext.ctx,
     );

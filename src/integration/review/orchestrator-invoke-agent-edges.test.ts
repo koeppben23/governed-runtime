@@ -219,7 +219,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
         iteration: 0,
         planVersion: 1,
         obligationId: '22222222-2222-4222-8222-222222222222',
-        criteriaVersion: 'p35-v1',
+        criteriaVersion: 'p37-v1',
         mandateDigest: 'abc123',
       });
 
@@ -244,7 +244,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
         iteration: 1,
         planVersion: 2,
         obligationId: '33333333-3333-4333-8333-333333333333',
-        criteriaVersion: 'p35-v1',
+        criteriaVersion: 'p37-v1',
         mandateDigest: 'def456',
       });
 

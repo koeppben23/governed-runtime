@@ -405,6 +405,29 @@ describe('BUG-17: implement evidence-first resolution', () => {
     expect(parsed.error).toBeUndefined();
   });
 
+  it('BAD: host_task_required + captured findings UNPARSEABLE → HOST_TASK_FINDINGS_UNPARSEABLE (distinct from no-evidence)', async () => {
+    const state = implStateWithEvidence('accept');
+    // Corrupt the captured findings so ReviewFindingsSchema.safeParse fails.
+    // The reviewer DID run and evidence WAS bound — this must NOT degrade to the
+    // generic REVIEW_FINDINGS_REQUIRED ("reviewer never ran").
+    (
+      state.reviewAssurance!.invocations[0] as { capturedRawFindings: unknown }
+    ).capturedRawFindings = { overallVerdict: 12345, not: 'a-valid-findings-object' };
+    mocks.state = state;
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'host_task_required',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+    });
+
+    const { review_implementation } = await import('./implement.js');
+    const res = await review_implementation.execute({ reviewVerdict: 'accept' }, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('HOST_TASK_FINDINGS_UNPARSEABLE');
+  });
+
   it('REGRESSION: sdk_allowed + no reviewFindings → BLOCKED', async () => {
     mocks.state = implStateWithEvidence('accept');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);

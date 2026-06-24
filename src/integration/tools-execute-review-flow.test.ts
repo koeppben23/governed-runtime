@@ -303,7 +303,7 @@ describe('review', () => {
           planVersion: 1,
           reviewedBy: 'flowguard-reviewer',
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          criteriaVersion: 'p35-v1',
+          criteriaVersion: 'p37-v1',
         },
       };
 

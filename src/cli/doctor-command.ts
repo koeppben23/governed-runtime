@@ -41,6 +41,7 @@ import { resolveClaudeCodePluginRoot } from './claude-code-plugin-install.js';
 import { resolveCodexPluginRoot } from './codex-plugin-install.js';
 import { buildPlatformTrustReport } from './platform-trust-report.js';
 import { checkShippedExecutables } from './doctor-executables.js';
+import { checkBuildInfo } from './doctor-build-info.js';
 import { checkPluginActivation } from './doctor-plugin.js';
 import { checkLastSessionHandshake } from './doctor-handshake.js';
 
@@ -452,6 +453,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   }
   checks.push(...(await checkBrokenInstall(target)));
   checks.push(...checkShippedExecutables());
+  checks.push(...checkBuildInfo());
   checks.push(...buildPlatformTrustReport(installPlatform, args.installScope, target));
   return checks;
 }

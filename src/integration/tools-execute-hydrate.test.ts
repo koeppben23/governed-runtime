@@ -236,6 +236,11 @@ describe('hydrate', () => {
       expect(result.profileDetected).toBe(true);
       expect(result.discoveryComplete).toBe(true);
       expect(result.discoverySummary).not.toBeNull();
+      // hydrate must surface the session UUID (same value status reports) so the
+      // /start command can report the Session ID without a follow-up status call.
+      expect(result.sessionId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
     });
 
     it('creates a new session with team policy', async () => {
@@ -346,6 +351,27 @@ describe('hydrate', () => {
       expect(state).not.toBeNull();
       expect(state!.phase).toBe('READY');
       expect(state!.binding.fingerprint).toBe(fp.fingerprint);
+    });
+
+    it('captures a pre-implementation baseline of the dirty worktree at session start', async () => {
+      // The git mock reports a dirty worktree; hydrate must snapshot it so
+      // implement can later scope evidence to the task's own edits.
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      expect(state!.implementationBaseline).toBeDefined();
+      expect(state!.implementationBaseline!.dirtyFiles.map((d) => d.path)).toEqual(
+        GIT_MOCK_DEFAULTS.changedFiles,
+      );
+      // Each entry carries a content hash slot (null when the path is not
+      // hashable in this fixture worktree).
+      for (const entry of state!.implementationBaseline!.dirtyFiles) {
+        expect(entry).toHaveProperty('hash');
+      }
+      expect(state!.implementationBaseline!.capturedAt).toBeTruthy();
     });
 
     it('auto-detects TypeScript profile from repo signals', async () => {
