@@ -9,6 +9,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Reviewer criteria: security and root-cause dimensions (`criteriaVersion`
+  p36-v1 -> p37-v1).** The independent-reviewer criteria (`REVIEWER_CRITERIA` in
+  `src/templates/mandates-reviewer-criteria.ts`) gained two dimensions distilled
+  from established practice, without changing the review authority model or the
+  ReviewFindings schema: a **Security-as-risk** vulnerability lens (content +
+  implementation) — trace user input to sensitive sinks and flag concretely
+  exploitable injection, authn/authz bypass or privilege escalation, hardcoded
+  secrets or weak crypto, unsafe deserialization/RCE, XSS, and sensitive-data/PII
+  exposure, requiring a clear attack path rather than theoretical hardening; and
+  a **root-cause** check (plan + implementation) — a fix editing a shared
+  function must address the shared cause for every caller, not only the symptom
+  path named by the ticket. Security findings remain mapped to the existing
+  `risk` category (no new `category` enum value; the Zod ReviewFindings schema is
+  unchanged).
+  - Because the criteria are part of the reviewer mandate, the runtime
+    `REVIEW_MANDATE_DIGEST` changes with them; `REVIEW_CRITERIA_VERSION` is bumped
+    to `p37-v1`. Both are attestation-bound and fail-closed validated, so sessions
+    with obligations bound to the previous digest/version must be re-hydrated or
+    re-created. The `criteriaVersion`/`mandateDigest` mismatch negative paths
+    remain enforced. The `REVIEWER_AGENT` template hash and the reviewer-prompt
+    compactness budget (96 -> 98 lines) are refreshed; no command templates change
+    (`COMMANDS` hash is unchanged).
+
 - **Reviewer criteria enrichment (`criteriaVersion` p35-v1 -> p36-v1).** The
   independent-reviewer criteria (`REVIEWER_CRITERIA` in
   `src/templates/mandates-reviewer-criteria.ts`) gained falsification-oriented

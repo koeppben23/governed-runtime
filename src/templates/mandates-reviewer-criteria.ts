@@ -9,14 +9,17 @@ export const REVIEWER_CRITERIA: Record<Exclude<ReviewerPromptType, 'all'>, strin
 - Feasibility: referenced files/APIs exist and the plan can be implemented.
 - Edge cases: unhappy paths and fail-closed behavior are concrete.
 - Verification: checks are testable and sourced from repo scripts/contracts.
-- Shape: prefer deep modules and vertical tracer-bullet slices over shallow pass-throughs and horizontal layer-by-layer builds.`,
+- Shape: prefer deep modules and vertical tracer-bullet slices over shallow pass-throughs and horizontal layer-by-layer builds.
+- Root cause: for a bug fix, the plan targets the shared cause (all affected callers), not just the symptom path named by the ticket.`,
   implementation: `### For Implementations
 - Plan conformance: every approved step is implemented or explicitly marked NOT_VERIFIED.
 - Correctness: no logic, null-safety, fail-open, or state/policy bugs.
 - Edge coverage: negative paths from the plan are tested.
 - Quality: follows repo conventions without duplicate authority.
 - Verification evidence: executed checks are recorded; missing checks are NOT_VERIFIED.
-- Test integrity: tests assert observable behavior through public interfaces; flag internal-coupling (mocking internal collaborators, call-count assertions, verifying past the interface) and non-boundary mocks. Raise a defect only when evidenced; record uncertainty under unknowns/missingVerification.`,
+- Test integrity: tests assert observable behavior through public interfaces; flag internal-coupling (mocking internal collaborators, call-count assertions, verifying past the interface) and non-boundary mocks. Raise a defect only when evidenced; record uncertainty under unknowns/missingVerification.
+- Security (as risk): flag concretely exploitable injection, authn/authz bypass, hardcoded secrets or weak crypto, unsafe deserialization/RCE, XSS, or sensitive-data/PII exposure introduced by the change; require a clear attack path, not theoretical hardening.
+- Root cause: a fix editing a shared function addresses the shared cause for every caller, not only the ticket's path (a fixed caller with a broken sibling is incomplete).`,
   adr: `### For Architecture Decisions (ADRs)
 - Problem framing: constraints and forces are explicit.
 - Alternatives: at least two realistic options with trade-offs.
@@ -29,7 +32,8 @@ export const REVIEWER_CRITERIA: Record<Exclude<ReviewerPromptType, 'all'>, strin
 - Analyze provided PR diff, branch diff, URL content, or manual text.
 - Use severity values: "critical" | "major" | "minor" | "info".
 - Use categories: "completeness" | "correctness" | "feasibility" | "risk" | "quality".
-- Security -> risk; compliance -> correctness; missing validation -> completeness.
+- Compliance -> correctness; missing validation -> completeness.
+- Security (as risk): trace user input to sensitive sinks and flag concretely exploitable injection (SQL/command/path/template), authn/authz bypass or privilege escalation, hardcoded secrets or weak crypto, unsafe deserialization/RCE, XSS, and sensitive-data/PII exposure; require a clear attack path and skip theoretical hardening.
 - Scope: review only changed code (flag newly changed files over ~1000 lines); report high-conviction findings with an exact location and concrete remedy, not style preferences.
 - Return complete ReviewFindings; do not drop reviewMode, reviewedBy, reviewedAt, attestation, overallVerdict, missingVerification, scopeCreep, or unknowns.
 - Include attestation.toolObligationId exactly as FlowGuard provides it.`,

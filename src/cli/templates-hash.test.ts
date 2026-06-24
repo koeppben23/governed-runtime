@@ -81,8 +81,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // guidance. This changes the REVIEWER_AGENT body and therefore the runtime
     // REVIEW_MANDATE_DIGEST. Existing sessions with obligations bound to the
     // previous digest must be re-hydrated or re-created.
+    // Refreshed again for p36->p37: added a Security-as-risk vulnerability bullet
+    // (content + implementation) and a root-cause bullet (plan + implementation),
+    // which changes the REVIEWER_AGENT body and REVIEW_MANDATE_DIGEST.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'dc46f287340f193d8bd391420bc21ae93a9dd1a2a022c5ff53b46917b0a65181',
+      '12d8e68edfa5dcc81d0a3bec1626b47413ebd0566049fb74a6100280e01723b4',
     );
   });
 

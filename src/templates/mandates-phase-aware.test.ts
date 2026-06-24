@@ -294,9 +294,9 @@ describe('phase-aware mandates rendering', () => {
     expect(REVIEWER_AGENT).toContain('### Content Review');
     // Compactness budget: the reviewer prompt is loaded on every review, so the
     // line count is bounded deliberately. Raised 90 -> 96 for the p36-v1 criteria
-    // enrichment (one added bullet each for plan shape, test integrity, ADR
-    // justification, and changed-scope/conviction). Keep new criteria terse;
-    // do not treat this as headroom for unbounded growth.
-    expect(roughTokenBudget(REVIEWER_AGENT).lines).toBeLessThanOrEqual(96);
+    // enrichment, then 96 -> 98 for p37-v1 (a Security-as-risk vulnerability bullet
+    // in content + implementation, and a root-cause bullet in plan + implementation).
+    // Keep new criteria terse; do not treat this as headroom for unbounded growth.
+    expect(roughTokenBudget(REVIEWER_AGENT).lines).toBeLessThanOrEqual(98);
   });
 });
