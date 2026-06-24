@@ -30,6 +30,7 @@ import { runReviewOrchestration as runOrchestrator } from './plugin-orchestrator
 import { runAudit as runAuditModule } from './plugin-audit.js';
 import { handleEvent, type EventHandlerDeps } from './plugin-events.js';
 import { appendReviewAuditEvent } from './review/audit-events.js';
+import { readState } from '../adapters/persistence.js';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
@@ -324,6 +325,33 @@ async function runFlowGuardAuditAfter(args: {
   });
 }
 
+/**
+ * Resolve the FlowGuard phase for a session-error audit detail.
+ *
+ * A silent host/LLM stall (e.g. a long inference hang between tool calls, which
+ * the user can only resolve by aborting) surfaces to FlowGuard as a
+ * `session.error` event. That event hook has NO conversation-output channel, so
+ * FlowGuard cannot tell the user anything live; the audit trail is the only
+ * place it can record WHERE the session was when the host reported the error.
+ * Including the phase makes such a stall post-mortem LOCATABLE.
+ *
+ * Fail-safe: returns an empty object when the state is missing or unreadable —
+ * the audit event must always record, with or without a phase.
+ *
+ * @param sessDir - Resolved session directory.
+ * @returns `{ phase }` when the persisted state has a phase, else `{}`.
+ */
+export async function resolveSessionErrorPhaseDetail(
+  sessDir: string,
+): Promise<Record<string, string>> {
+  try {
+    const state = await readState(sessDir);
+    return state?.phase ? { phase: state.phase } : {};
+  } catch {
+    return {};
+  }
+}
+
 export async function handlePluginEvent(
   runtime: FlowGuardPluginRuntime,
   event: unknown,
@@ -338,6 +366,7 @@ export async function handlePluginEvent(
         await appendReviewAuditEvent(sessDir, sessionId, 'unknown', 'error:SESSION_ERROR', {
           code: 'SESSION_ERROR',
           message: errorMessage,
+          ...(await resolveSessionErrorPhaseDetail(sessDir)),
           ...detail,
         });
       },
