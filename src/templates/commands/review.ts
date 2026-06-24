@@ -17,6 +17,10 @@ Start the compliance review flow for the current FlowGuard session.
 
 1. Call \`flowguard_status\` to verify a session exists in READY phase.
     - If not in READY: report the current phase and stop.
+    - Call \`flowguard_status\` with NO focused flags (no whyBlocked/evidence/context/readiness)
+      so the FULL projection is returned. Focused projections omit \`discoveryHealth\`,
+      \`discoveryDrift\`, and \`detectedStack\`; never conclude Discovery is unavailable from a
+      focused call — re-read status WITHOUT focused flags first.
     - Capture the compact Discovery context from the status response: Discovery
       \`health\`, \`drift\`, \`detectedStack\`, repo-native \`verificationCandidates\`,
       and risk surfaces. This is REQUIRED review evidence for repo-dependent claims.
@@ -38,10 +42,11 @@ Start the compliance review flow for the current FlowGuard session.
     Always preserve the original URL/reference.
 
 3. **Create the review obligation** (content-aware only):
-    If content was provided, call \`flowguard_review\` first with ONLY the matching
+    If content was provided, the FIRST \`flowguard_review\` call MUST carry ONLY the matching
     content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`), optional \`inputOrigin\`,
-    and optional \`references\`. Do NOT include \`reviewVerdict\` or \`reviewFindings\` in
-    this first call — the verdict is submitted only AFTER the reviewer runs (step 5).
+    and optional \`references\`. NEVER include \`reviewVerdict\` or \`reviewFindings\` in this
+    first call — a prefilled verdict is a fabrication-of-convergence attempt and is rejected
+    (\`CONTENT_ANALYSIS_REQUIRED\`). The verdict is submitted only AFTER the reviewer runs (step 5).
     This call creates the ReviewObligation and returns either plugin-provided findings or
     host-task instructions.
 

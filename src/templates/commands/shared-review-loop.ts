@@ -15,7 +15,12 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
  * Rendered as 3-space-indented sub-bullets to match the existing Phase 1
  * `flowguard_status` step in each template.
  */
-export const DISCOVERY_REVIEW_CAPTURE = `   - Capture the compact Discovery context from the status response: Discovery
+export const DISCOVERY_REVIEW_CAPTURE = `   - Call \`flowguard_status\` with NO focused flags (no whyBlocked/evidence/context/readiness)
+     so the FULL projection is returned. Focused projections omit \`discoveryHealth\`,
+     \`discoveryDrift\`, and \`detectedStack\` — capture Discovery from the unfocused status,
+     and never conclude Discovery is unavailable from a focused call; re-read status
+     WITHOUT focused flags first.
+   - Capture the compact Discovery context from the status response: Discovery
      \`health\`, \`drift\`, \`detectedStack\`, repo-native \`verificationCandidates\`,
      and risk surfaces. This is REQUIRED review evidence for repo-dependent claims.
    - Discovery context is advisory falsification evidence, NOT review verdict
@@ -84,14 +89,14 @@ export function SHARED_REVIEW_LOOP(p: ReviewLoopParams): string {
   return `   - \`reviewVerdict\` records the INDEPENDENT REVIEWER's result, never your own approval. On convergence it only advances to the human review gate, where the USER approves the ${p.artifactName} via /review-decision. \`flowguard_decision\` is the only user approval.
    - When \`next\` starts with "INDEPENDENT_REVIEW_COMPLETED":
        1. Read \`overallVerdict\` from \`pluginReviewFindings\` in the response.
-       2. host_task_required mode: findings are resolved from plugin evidence automatically — submit only the verdict without \`reviewFindings\`.
+       2. host_task_required mode: findings are resolved from plugin evidence automatically — submit ONLY the verdict, never \`reviewFindings\`. Any \`reviewFindings\` sent here are ignored and logged as misuse, and the submitted verdict is validated against the captured reviewer evidence (a mismatch is rejected).
        3. SDK mode: pass the entire \`pluginReviewFindings\` object as \`reviewFindings\`.
        4. "accept": Call \`${verdictTool}({ reviewVerdict: "accept" })\` (or with \`reviewFindings\` in SDK mode). This is the reviewer's acceptance, not user approval.
        5. "changes_requested": Revise the ${p.artifactName} to address blocking issues, then call \`${verdictTool}({ reviewVerdict: "changes_requested"${p.reviseParams ? `, ${p.reviseParams}` : ''} })\` (or with \`reviewFindings\` in SDK mode).${p.changesRequestedExtra}
        6. "unable_to_review": The reviewer declared the ${p.artifactName} unreviewable (${p.unableDescription}). The tool will be BLOCKED with reason \`SUBAGENT_UNABLE_TO_REVIEW\`. DO NOT retry the review with the same ${p.artifactName} — that obligation is consumed. Report the reviewer's findings to the user, then either ${p.unableRecoveryA} OR ${p.unableRecoveryB}.
    - When \`next\` starts with "INDEPENDENT_REVIEW_REQUIRED":
        1. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool${p.subagentExtra}. Pass the compact Discovery context captured in Phase 1 (health, drift, detectedStack, verificationCandidates, risk surfaces), and instruct the subagent to check Discovery health and drift BEFORE any repo-dependent quality claim and to mark Discovery-dependent claims NOT_VERIFIED when they cannot be correlated to local repository Discovery.
-       2. Submit the verdict. In host_task_required mode, plugin evidence is resolved automatically — do not submit \`reviewFindings\`.
+       2. Submit the verdict. In host_task_required mode, plugin evidence is resolved automatically — submit ONLY the verdict, never \`reviewFindings\`. Any \`reviewFindings\` sent here are ignored and logged as misuse, and the submitted verdict is validated against the captured reviewer evidence (a mismatch is rejected).
        3. In strict mode, manual JSON/attestation copy alone is diagnostic context only; FlowGuard must persist matching \`ReviewInvocationEvidence\` before reviewFindings satisfy governance.
         4. **FALLBACK**: If the Task tool cannot spawn the reviewer (error, agent unavailable${p.fallbackExtra}), do NOT invent ReviewFindings and do NOT approve. Report the real reviewer transport failure to the user and stop — independent review is mandatory and cannot be self-substituted. \`reviewerUnavailable: true\` is a fail-closed signal only: FlowGuard blocks with \`REVIEWER_UNAVAILABLE_STRICT\` and recovery guidance; it never approves and never enables self-review.
    - If review converged: Report the result per the Presentation section below.

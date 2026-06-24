@@ -139,9 +139,17 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // (and reviewFindings) on the first content-aware flowguard_review call — the
     // verdict is submitted only after the reviewer runs, so a verdict-bearing
     // first call no longer wedges the host-task bind.
+    // Refreshed for discovery-capture + payload-contract hardening: the shared
+    // Discovery capture (plan/implement/architecture) and /review step 1 now
+    // require an UNFOCUSED flowguard_status (focused projections omit
+    // discoveryHealth/discoveryDrift/detectedStack), so repo-dependent claims are
+    // no longer spuriously NOT_VERIFIED. The shared host_task_required verdict
+    // branch now states reviewFindings submitted alongside the verdict are ignored
+    // and the verdict is validated against captured evidence; /plan + /review
+    // first-call lines forbid a prefilled verdict imperatively.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'a35aef57eba05507a17fc5eb3dadb6e3d60f645f4808873f4aed74ae152de99f',
+      'bbf553c760136c935001bb9587ea401195b9a0faada342ed419ff8e0437dd02c',
     );
   });
 

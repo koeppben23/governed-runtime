@@ -42,7 +42,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
 5. Read the response. The \`next\` field contains the review workflow instructions.
 
 Payload contract for \`flowguard_plan\`:
-- Initial submission: call exactly \`flowguard_plan({ planText })\`. Do not include \`reviewVerdict\`, \`reviewFindings\`, or \`reviewerUnavailable\`.
+- Initial submission: the FIRST call MUST be exactly \`flowguard_plan({ planText })\`. NEVER include \`reviewVerdict\`, \`reviewFindings\`, or \`reviewerUnavailable\` in the first call — a prefilled verdict is a fabrication-of-convergence attempt and is rejected (the tool routes a verdict-bearing first call back to \`INDEPENDENT_REVIEW_REQUIRED\`).
 - Record the reviewer verdict after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict })\` (verdict only — the plugin resolves the reviewer findings from captured evidence; do NOT submit or alter \`reviewFindings\`); SDK/manual-attested modes also include the reviewer's exact \`reviewFindings\`. \`reviewVerdict: "accept"\` is the reviewer's acceptance, NOT user approval.
 - Revision after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <complete revised plan> })\`; SDK/manual-attested modes also include the exact reviewer output as \`reviewFindings\`.
 - Never submit placeholder, diagnostic, or manually fabricated \`reviewFindings\`.
