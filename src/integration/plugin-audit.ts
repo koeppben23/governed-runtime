@@ -297,6 +297,10 @@ async function maybeCompleteAndArchive(
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
     prevHash = evt.chainHash!;
+    deps.log.debug('audit', 'audit chain hash', {
+      prevHashPrefix: ctx.prevHash.slice(0, 8),
+      nextHashPrefix: prevHash.slice(0, 8),
+    });
   } else {
     deps.log.debug('audit', 'session_completed handled by tool layer', {
       archiveStatus: freshState.archiveStatus,

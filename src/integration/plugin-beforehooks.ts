@@ -217,6 +217,11 @@ function enforceHostToolPhase(
   state: SessionState,
 ): void {
   const gateResult = isHostToolAllowedInPhase(toolName, state.phase);
+  runtime.log.debug('enforcement', 'evaluating phase gate', {
+    tool: toolName,
+    phase: state.phase,
+    allowed: gateResult.allowed,
+  });
   if (gateResult.allowed) return;
   // The denial reason is phase-specific only for HOST_TOOL_PHASE_DENIED (a
   // mutating tool blocked in an investigation-only phase). HOST_TOOL_UNKNOWN_DENIED

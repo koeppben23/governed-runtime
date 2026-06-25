@@ -27,6 +27,17 @@ export { createFileSink, getLogDir, type FileSinkOptions } from './file-sink.js'
 export { createConsoleSink, type ConsoleSinkOptions } from './console-sink.js';
 export { createOtlpLogSink, type OtlpSinkOptions } from './otlp-sink.js';
 export {
+  logAudit,
+  logEnforcement,
+  logEnforcementDebug,
+  logHook,
+  logOrchestrator,
+  type AuditLogExtra,
+  type EnforcementLogExtra,
+  type HookLogExtra,
+  type OrchestratorLogExtra,
+} from './log-extras.js';
+export {
   setAdapterLogger,
   getAdapterLogger,
   resetAdapterLogger,
