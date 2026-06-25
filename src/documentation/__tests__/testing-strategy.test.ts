@@ -21,6 +21,16 @@ function mutationTargets(): string[] {
   return JSON.parse(readRepoFile('stryker.conf.json')).mutate;
 }
 
+const CRITICAL_MUTATION_TARGETS = [
+  'src/integration/review/orchestrator-detection.ts',
+  'src/integration/review/orchestrator-output.ts',
+  'src/integration/review/agent-resolution.ts',
+  'src/integration/tools/review-validation-mode.ts',
+  'src/shared/canonical-json.ts',
+  'src/integration/plugin-audit-lifecycle-reason.ts',
+  'src/templates/codex-plugin.ts',
+];
+
 describe('documentation/testing-strategy', () => {
   it('HAPPY: documents the current mutation target count from stryker.conf.json', () => {
     const docs = readRepoFile('docs/testing-strategy.md');
@@ -30,6 +40,14 @@ describe('documentation/testing-strategy', () => {
     expect(docs).toMatch(
       new RegExp(`\\|\\s*\\*\\*Total\\*\\*\\s*\\|\\s*\\*\\*${count}\\*\\*\\s*\\|`),
     );
+  });
+
+  it('HAPPY: includes documented critical mutation targets in stryker.conf.json', () => {
+    const targets = mutationTargets();
+
+    for (const target of CRITICAL_MUTATION_TARGETS) {
+      expect(targets).toContain(target);
+    }
   });
 
   it('BAD: does not claim mutation is a pull-request required check', () => {

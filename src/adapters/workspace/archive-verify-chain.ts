@@ -478,9 +478,21 @@ function isMalformedChecksumSidecar(expectedHash: string, tokens: string[]): boo
   return !/^[a-f0-9]{64}$/i.test(expectedHash) || digestTokens.length !== 1;
 }
 
+function readFailureCode(error: unknown): unknown {
+  return typeof error === 'object' && error !== null && 'code' in error ? error.code : null;
+}
+
 function archiveReadFailureReason(error: unknown): string {
-  const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : null;
+  const code = readFailureCode(error);
   return code === 'ENOENT' ? 'Archive tarball is missing' : 'Archive tarball is unreadable';
+}
+
+function addArchiveChecksumMismatch(findings: ArchiveFinding[], message: string): void {
+  findings.push({
+    code: 'archive_checksum_mismatch',
+    severity: 'error',
+    message,
+  });
 }
 
 async function verifyArchiveChecksum(
@@ -499,36 +511,45 @@ async function verifyArchiveChecksum(
     return;
   }
 
+  let sidecarContent: string;
   try {
-    const sidecarContent = await fs.readFile(checksumSidecarPath, 'utf-8');
-    const sidecarTokens = sidecarContent.trim().split(/\s+/).filter(Boolean);
-    const expectedHash = sidecarTokens[0];
-    if (!expectedHash || isMalformedChecksumSidecar(expectedHash, sidecarTokens)) {
-      findings.push({
-        code: 'archive_checksum_mismatch',
-        severity: 'error',
-        message:
-          'Archive checksum sidecar is malformed or ambiguous; expected exactly one SHA-256 digest',
-      });
-      return;
-    }
+    sidecarContent = await fs.readFile(checksumSidecarPath, 'utf-8');
+  } catch (error) {
+    addArchiveChecksumMismatch(
+      findings,
+      `Archive checksum sidecar is unreadable; archive checksum could not be verified: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return;
+  }
+
+  const sidecarTokens = sidecarContent.trim().split(/\s+/).filter(Boolean);
+  const expectedHash = sidecarTokens[0];
+  if (!expectedHash || isMalformedChecksumSidecar(expectedHash, sidecarTokens)) {
+    addArchiveChecksumMismatch(
+      findings,
+      'Archive checksum sidecar is malformed or ambiguous; expected exactly one SHA-256 digest',
+    );
+    return;
+  }
+
+  try {
     const archiveBuffer = await fs.readFile(archiveTarPath);
     const actualHash = hashBuffer(archiveBuffer);
     if (expectedHash !== actualHash) {
-      findings.push({
-        code: 'archive_checksum_mismatch',
-        severity: 'error',
-        message: `Archive checksum mismatch: sidecar says ${expectedHash.slice(0, 12)}..., actual is ${actualHash.slice(0, 12)}...`,
-      });
+      addArchiveChecksumMismatch(
+        findings,
+        `Archive checksum mismatch: sidecar says ${expectedHash.slice(0, 12)}..., actual is ${actualHash.slice(0, 12)}...`,
+      );
     }
   } catch (error) {
-    findings.push({
-      code: 'archive_checksum_mismatch',
-      severity: 'error',
-      message: `${archiveReadFailureReason(error)}; archive checksum could not be verified: ${
+    addArchiveChecksumMismatch(
+      findings,
+      `${archiveReadFailureReason(error)}; archive checksum could not be verified: ${
         error instanceof Error ? error.message : String(error)
       }`,
-    });
+    );
   }
 }
 

@@ -398,6 +398,22 @@ describe('verifyArchive', () => {
     );
   });
 
+  it('reports archive_checksum_missing as an error when regulated sidecar is absent', async () => {
+    const { fingerprint, sessionId, archivePath } = await createArchivedSession(
+      '550e8400-e29b-41d4-a716-446655440111',
+      REGULATED_POLICY_SNAPSHOT,
+    );
+
+    await fs.unlink(`${archivePath}.sha256`);
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({ code: 'archive_checksum_missing', severity: 'error' }),
+    );
+  });
+
   it('reports archive_checksum_mismatch when sidecar hash is wrong', async () => {
     const { fingerprint, sessionId, archivePath } = await createArchivedSession();
 
@@ -460,6 +476,28 @@ describe('verifyArchive', () => {
         code: 'archive_checksum_mismatch',
         severity: 'error',
         message: expect.stringContaining('ambiguous'),
+      }),
+    );
+  });
+
+  it('reports archive_checksum_mismatch when sidecar exists but cannot be read', async () => {
+    const { fingerprint, sessionId, archivePath } = await createArchivedSession(
+      '550e8400-e29b-41d4-a716-446655440112',
+      REGULATED_POLICY_SNAPSHOT,
+    );
+    const sidecarPath = `${archivePath}.sha256`;
+
+    await fs.rm(sidecarPath, { force: true });
+    await fs.mkdir(sidecarPath);
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        code: 'archive_checksum_mismatch',
+        severity: 'error',
+        message: expect.stringContaining('Archive checksum sidecar is unreadable'),
       }),
     );
   });
