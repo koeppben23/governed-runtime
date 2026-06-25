@@ -7,6 +7,9 @@
 
 export {
   type FlowGuardLogger,
+  type HealthAwareLogger,
+  type LoggerHealth,
+  type LoggerConfig,
   type LogEntry,
   type LogSink,
   createLogger,

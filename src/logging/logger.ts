@@ -4,7 +4,7 @@
  *
  * Design:
  * - FlowGuardLogger interface: debug, info, warn, error — each takes (service, message, extra?)
- * - createLogger(level, sinks?): Level-filtered logger that delegates to optional structured sinks
+ * - createLogger(level, sinks?, config?): Level-filtered logger with optional rate limiting
  * - createNoopLogger(): Silent logger for tests and contexts without a client
  *
  * Architecture:
@@ -29,7 +29,7 @@
  * FlowGuard operational logs are diagnostic only. They are not audit evidence
  * and are not part of the governance SSOT. Audit/Archive remain separate.
  *
- * @version v3
+ * @version v4
  */
 
 import type { LogLevel } from '../config/logging-config.js';
@@ -64,6 +64,17 @@ export interface FlowGuardLogger {
   info(service: string, message: string, extra?: Record<string, unknown>): void;
   warn(service: string, message: string, extra?: Record<string, unknown>): void;
   error(service: string, message: string, extra?: Record<string, unknown>): void;
+}
+
+/**
+ * Logger that exposes health metrics.
+ *
+ * Extends FlowGuardLogger with getHealth() — used by rate-limiting
+ * and sink-failure monitoring (G6/G10). Dynamic log level (G5) will
+ * extend this further in a future slice.
+ */
+export interface HealthAwareLogger extends FlowGuardLogger {
+  getHealth(): LoggerHealth;
 }
 
 // ─── Structured Log Entry ────────────────────────────────────────────────────
@@ -106,27 +117,162 @@ export interface LogEntry {
  * All sinks are async to support file I/O and network calls.
  * Errors must be handled internally — the logger never throws.
  *
- * In production:
- * - file-sink: writes to {workspace}/.opencode/logs/flowguard-{date}.log
- * - ui-sink: delegates to client.app.log()
+ * Sinks may return a Promise; createLogger counts async rejections
+ * in sinkFailuresTotal (G10).
  */
-export type LogSink = (entry: LogEntry) => Promise<void> | void;
+export type LogSink = (entry: LogEntry) => void | Promise<void>;
+
+// ─── Logger Health ────────────────────────────────────────────────────────────
+
+/** Logger health counters (G10). */
+export interface LoggerHealth {
+  /** Current minimum log level. */
+  level: LogLevel;
+  /** Total sink errors (sync throw + async rejection) since creation. */
+  sinkFailuresTotal: number;
+  /** Total rate-limited entries dropped since creation. */
+  rateLimitDroppedTotal: number;
+}
+
+// ─── Logger Config ────────────────────────────────────────────────────────────
+
+/** Logger tuning configuration (G6). */
+export interface LoggerConfig {
+  rateLimit?: {
+    /** Enable rate limiting. Default: false (opt-in). */
+    enabled: boolean;
+    /** Max entries per second per (service, level) key. */
+    maxPerSecond: number;
+    /** Levels exempt from rate limiting. */
+    exemptLevels: LogLevel[];
+    /** Interval in ms between rate-limit summary reports on stderr. */
+    summaryIntervalMs: number;
+    /** @internal clock override for deterministic tests. */
+    _clock?: () => number;
+  };
+}
+
+// ─── Token Bucket ────────────────────────────────────────────────────────────
+
+interface Bucket {
+  tokens: number;
+  lastRefill: number;
+  dropped: number;
+}
+
+class TokenBucket {
+  private readonly _buckets = new Map<string, Bucket>();
+  private readonly _capacity: number;
+  private readonly _refillRate: number;
+  private readonly _exemptLevels: Set<LogLevel>;
+  private readonly _clock: () => number;
+  private readonly _summaryIntervalMs: number;
+  private _timer: ReturnType<typeof setInterval> | null = null;
+
+  constructor(
+    maxPerSecond: number,
+    exemptLevels: LogLevel[],
+    clock: () => number,
+    summaryIntervalMs: number,
+  ) {
+    this._capacity = maxPerSecond;
+    this._refillRate = maxPerSecond / 1000;
+    this._exemptLevels = new Set(exemptLevels);
+    this._clock = clock;
+    this._summaryIntervalMs = summaryIntervalMs;
+  }
+
+  allow(level: 'debug' | 'info' | 'warn' | 'error', service: string): boolean {
+    if (this._exemptLevels.has(level)) return true;
+
+    const key = `${service}:${level}`;
+    const now = this._clock();
+    let bucket = this._buckets.get(key);
+    if (!bucket) {
+      bucket = { tokens: this._capacity, lastRefill: now, dropped: 0 };
+      this._buckets.set(key, bucket);
+    }
+
+    this._refill(bucket, now);
+
+    if (bucket.tokens >= 1) {
+      bucket.tokens -= 1;
+      return true;
+    }
+
+    bucket.dropped++;
+    this._ensureTimer();
+    return false;
+  }
+
+  destroy(): void {
+    this._stopTimer();
+  }
+
+  private _refill(bucket: Bucket, now: number): void {
+    const elapsed = now - bucket.lastRefill;
+    if (elapsed <= 0) return;
+    bucket.tokens = Math.min(this._capacity, bucket.tokens + elapsed * this._refillRate);
+    bucket.lastRefill = now;
+  }
+
+  private _ensureTimer(): void {
+    if (this._timer) return;
+    this._timer = setInterval(() => {
+      let anyDrop = false;
+      for (const [key, bucket] of this._buckets) {
+        if (bucket.dropped > 0) {
+          anyDrop = true;
+          process.stderr.write(
+            `[FlowGuard] rate limit: ${key} dropped ${bucket.dropped} ` +
+              `in last ${Math.round(this._summaryIntervalMs / 1000)}s\n`,
+          );
+          bucket.dropped = 0;
+        }
+      }
+      if (!anyDrop) {
+        this._stopTimer();
+      }
+    }, this._summaryIntervalMs);
+    this._timer?.unref?.();
+  }
+
+  private _stopTimer(): void {
+    const timer = this._timer;
+    this._timer = null;
+    if (timer) clearInterval(timer);
+  }
+}
 
 // ─── Factories ────────────────────────────────────────────────────────────────
 
 /**
- * Create a level-filtered logger.
- *
- * Messages below `minLevel` are suppressed. Messages at or above are
- * forwarded to all sinks as structured LogEntry objects. If no sinks are
- * provided, the logger is effectively a noop (but still does level
- * filtering — useful for testing).
+ * Create a level-filtered logger with optional rate limiting and health tracking.
  *
  * @param minLevel - Minimum severity to emit.
  * @param sinks - Optional array of structured output functions.
+ * @param config - Optional logger tuning configuration.
  */
-export function createLogger(minLevel: LogLevel, sinks?: LogSink | LogSink[]): FlowGuardLogger {
+export function createLogger(
+  minLevel: LogLevel,
+  sinks?: LogSink | LogSink[],
+  config?: LoggerConfig,
+): HealthAwareLogger {
   const sinkArray = Array.isArray(sinks) ? sinks : sinks ? [sinks] : [];
+
+  let sinkFailuresTotal = 0;
+  let rateLimitDroppedTotal = 0;
+
+  const rateLimit = config?.rateLimit;
+  const tokenBucket =
+    rateLimit?.enabled === true
+      ? new TokenBucket(
+          rateLimit.maxPerSecond,
+          rateLimit.exemptLevels,
+          rateLimit._clock ?? (() => Date.now()),
+          rateLimit.summaryIntervalMs,
+        )
+      : null;
 
   function emit(
     level: 'debug' | 'info' | 'warn' | 'error',
@@ -136,6 +282,11 @@ export function createLogger(minLevel: LogLevel, sinks?: LogSink | LogSink[]): F
   ): void {
     if (LEVEL_ORDER[level] < LEVEL_ORDER[minLevel]) return;
     if (sinkArray.length === 0) return;
+
+    if (tokenBucket && !tokenBucket.allow(level, service)) {
+      rateLimitDroppedTotal++;
+      return;
+    }
 
     const ctx = getLogContext();
     const entry: LogEntry = {
@@ -150,9 +301,11 @@ export function createLogger(minLevel: LogLevel, sinks?: LogSink | LogSink[]): F
     for (const sink of sinkArray) {
       try {
         const result = sink(entry);
-        void Promise.resolve(result).catch(() => {});
+        void Promise.resolve(result).catch(() => {
+          sinkFailuresTotal++;
+        });
       } catch {
-        // Sink errors are non-blocking — logging never fails the flow
+        sinkFailuresTotal++;
       }
     }
   }
@@ -162,6 +315,13 @@ export function createLogger(minLevel: LogLevel, sinks?: LogSink | LogSink[]): F
     info: (service, message, extra) => emit('info', service, message, extra),
     warn: (service, message, extra) => emit('warn', service, message, extra),
     error: (service, message, extra) => emit('error', service, message, extra),
+    getHealth(): LoggerHealth {
+      return {
+        level: minLevel,
+        sinkFailuresTotal,
+        rateLimitDroppedTotal,
+      };
+    },
   };
 }
 
@@ -173,12 +333,17 @@ export function createLogger(minLevel: LogLevel, sinks?: LogSink | LogSink[]): F
  * - Contexts where no client is available
  * - Fallback when config loading itself fails
  */
-export function createNoopLogger(): FlowGuardLogger {
+export function createNoopLogger(): HealthAwareLogger {
   const noop = () => {};
   return {
     debug: noop,
     info: noop,
     warn: noop,
     error: noop,
+    getHealth: () => ({
+      level: 'silent',
+      sinkFailuresTotal: 0,
+      rateLimitDroppedTotal: 0,
+    }),
   };
 }

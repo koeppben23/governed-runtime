@@ -13,3 +13,6 @@ export type ConsoleFormat = z.infer<typeof ConsoleFormatSchema>;
 export const MaxFileSizeMbSchema = z.number().int().min(1).max(1024).default(10);
 
 export type MaxFileSizeMb = z.infer<typeof MaxFileSizeMbSchema>;
+
+/** Maximum log entries per second per (service, level) before rate limiting kicks in. */
+export const RateLimitMaxPerSecondSchema = z.number().int().min(1).max(10000).default(100);

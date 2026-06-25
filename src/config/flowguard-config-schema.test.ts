@@ -319,6 +319,68 @@ describe('FlowGuardConfigSchema', () => {
     });
   });
 
+  describe('logging.rateLimit', () => {
+    it('defaults to disabled', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.rateLimit.enabled).toBe(false);
+      expect(result.data!.logging.rateLimit.maxPerSecond).toBe(100);
+      expect(result.data!.logging.rateLimit.exemptLevels).toEqual(['error']);
+      expect(result.data!.logging.rateLimit.summaryIntervalMs).toBe(60000);
+    });
+
+    it('accepts enabled with custom maxPerSecond', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { enabled: true, maxPerSecond: 50 } },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.rateLimit.enabled).toBe(true);
+      expect(result.data!.logging.rateLimit.maxPerSecond).toBe(50);
+    });
+
+    it('accepts custom exemptLevels', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { enabled: true, exemptLevels: ['error', 'warn'] } },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.rateLimit.exemptLevels).toEqual(['error', 'warn']);
+    });
+
+    it('rejects maxPerSecond below minimum', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { maxPerSecond: 0 } },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects invalid exemptLevel', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { exemptLevels: ['fatal'] } },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts boundary maxPerSecond values', () => {
+      const min = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { maxPerSecond: 1 } },
+      });
+      expect(min.success).toBe(true);
+
+      const max = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { maxPerSecond: 10000 } },
+      });
+      expect(max.success).toBe(true);
+    });
+  });
+
   it('rejects invalid policy mode', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
