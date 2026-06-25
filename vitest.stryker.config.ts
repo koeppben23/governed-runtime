@@ -11,6 +11,7 @@ export default defineConfig({
     setupFiles: ['./vitest.setup.ts'],
     include: [
       'src/adapters/**/*.test.ts',
+      'src/archive/**/*.test.ts',
       'src/audit/**/*.test.ts',
       'src/config/**/*.test.ts',
       'src/identity/**/*.test.ts',

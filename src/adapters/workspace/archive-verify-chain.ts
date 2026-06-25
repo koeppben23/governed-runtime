@@ -487,6 +487,14 @@ async function verifyArchiveIntegrity(
     try {
       const sidecarContent = await fs.readFile(checksumSidecarPath, 'utf-8');
       const expectedHash = sidecarContent.trim().split(/\s+/)[0];
+      if (!expectedHash || !/^[a-f0-9]{64}$/i.test(expectedHash)) {
+        findings.push({
+          code: 'archive_checksum_mismatch',
+          severity: 'error',
+          message: 'Archive checksum sidecar is malformed or missing a SHA-256 digest',
+        });
+        return;
+      }
       const archiveBuffer = await fs.readFile(archiveTarPath);
       const actualHash = hashBuffer(archiveBuffer);
       if (expectedHash !== actualHash) {
@@ -496,8 +504,14 @@ async function verifyArchiveIntegrity(
           message: `Archive checksum mismatch: sidecar says ${expectedHash?.slice(0, 12)}..., actual is ${actualHash.slice(0, 12)}...`,
         });
       }
-    } catch {
-      // Can't read archive or sidecar — skip
+    } catch (error) {
+      findings.push({
+        code: 'archive_checksum_mismatch',
+        severity: 'error',
+        message: `Archive checksum could not be verified: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      });
     }
   }
 }

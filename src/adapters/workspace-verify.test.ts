@@ -390,6 +390,60 @@ describe('verifyArchive', () => {
     );
   });
 
+  it('reports archive_checksum_mismatch when sidecar is empty', async () => {
+    const { fingerprint, sessionId, archivePath } = await createArchivedSession();
+
+    await fs.writeFile(`${archivePath}.sha256`, '', 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        code: 'archive_checksum_mismatch',
+        severity: 'error',
+        message: expect.stringContaining('malformed'),
+      }),
+    );
+  });
+
+  it('reports archive_checksum_mismatch when sidecar digest is not SHA-256 hex', async () => {
+    const { fingerprint, sessionId, archivePath } = await createArchivedSession();
+
+    await fs.writeFile(`${archivePath}.sha256`, 'not-a-sha256  archive.tar.gz\n', 'utf-8');
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        code: 'archive_checksum_mismatch',
+        severity: 'error',
+        message: expect.stringContaining('SHA-256'),
+      }),
+    );
+  });
+
+  it('reports archive_checksum_mismatch when sidecar exists but archive tarball is missing', async () => {
+    const { fingerprint, sessionId, archivePath } = await createArchivedSession(
+      '550e8400-e29b-41d4-a716-446655440109',
+      REGULATED_POLICY_SNAPSHOT,
+    );
+
+    await fs.unlink(archivePath);
+
+    const result = await verifyArchive(fingerprint, sessionId);
+
+    expect(result.passed).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        code: 'archive_checksum_mismatch',
+        severity: 'error',
+        message: expect.stringContaining('could not be verified'),
+      }),
+    );
+  });
+
   it('reports archive_checksum_missing when sidecar file is absent', async () => {
     const { fingerprint, sessionId, archivePath } = await createArchivedSession();
 
