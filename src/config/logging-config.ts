@@ -19,3 +19,6 @@ export const RateLimitMaxPerSecondSchema = z.number().int().min(1).max(10000).de
 
 /** Enable SIGUSR1 handler for runtime log level changes. Default: false (opt-in). */
 export const DynamicLogLevelEnabledSchema = z.boolean().default(false);
+
+/** Enable OTLP log export (OpenTelemetry Logs). Default: false. */
+export const OtlpEnabledSchema = z.boolean().default(false);

@@ -25,6 +25,7 @@ import {
   sigusr1Registrar,
   type LevelReloader,
 } from '../logging/level-reloader.js';
+import { createOtlpLogSink } from '../logging/otlp-sink.js';
 
 /**
  * Shape of the log message accepted by the OpenCode SDK client.log().
@@ -74,6 +75,14 @@ export function buildLogSinks(
       retentionDays: number;
       consoleFormat: 'text' | 'json';
       maxFileSizeMb: number;
+      rateLimit?: {
+        enabled: boolean;
+        maxPerSecond: number;
+        exemptLevels: string[];
+        summaryIntervalMs: number;
+      };
+      enableDynamicLevel?: boolean;
+      otlp?: { enabled: boolean; endpoint?: string };
     };
   },
   client: PluginLogClient | undefined,
@@ -133,7 +142,38 @@ export function buildLogSinks(
     sinks.push(createConsoleSink({ format: config.logging.consoleFormat }));
   }
 
+  // G3: OTLP log export — opt-in, endpoint validated here
+  addOtlpSinkIfEnabled(config, sinks);
+
   return sinks;
+}
+
+function addOtlpSinkIfEnabled(
+  config: {
+    logging: {
+      otlp?: { enabled: boolean; endpoint?: string };
+    };
+  },
+  sinks: LogSink[],
+): void {
+  if (!config.logging.otlp?.enabled) return;
+
+  const endpoint = config.logging.otlp.endpoint ?? process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  if (!endpoint) {
+    process.stderr.write('[FlowGuard] OTLP log export disabled: no endpoint configured\n');
+    return;
+  }
+
+  sinks.push(
+    createOtlpLogSink({
+      endpoint,
+      onFailure: (err) => {
+        process.stderr.write(
+          `[FlowGuard] OTLP log export failure: ${err instanceof Error ? err.message : String(err)}\n`,
+        );
+      },
+    }),
+  );
 }
 
 /**

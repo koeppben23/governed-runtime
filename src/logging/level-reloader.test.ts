@@ -17,14 +17,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createLogger, type DynamicLogger } from './logger.js';
 import { createLevelReloader, type SignalRegistrar } from './level-reloader.js';
-import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 function makeTempConfigDir(): string {
-  const dir = join(tmpdir(), `fg-lr-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`);
-  mkdirSync(dir, { recursive: true });
-  return dir;
+  return mkdtempSync(join(tmpdir(), 'fg-lr-'));
 }
 
 function writeConfig(dir: string, content: Record<string, unknown>): string {
