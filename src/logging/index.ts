@@ -8,6 +8,7 @@
 export {
   type FlowGuardLogger,
   type HealthAwareLogger,
+  type DynamicLogger,
   type LoggerHealth,
   type LoggerConfig,
   type LogEntry,
@@ -15,6 +16,12 @@ export {
   createLogger,
   createNoopLogger,
 } from './logger.js';
+export {
+  createLevelReloader,
+  sigusr1Registrar,
+  type SignalRegistrar,
+  type LevelReloader,
+} from './level-reloader.js';
 
 export { createFileSink, getLogDir, type FileSinkOptions } from './file-sink.js';
 export { createConsoleSink, type ConsoleSinkOptions } from './console-sink.js';

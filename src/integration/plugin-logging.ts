@@ -20,6 +20,11 @@ import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import { createFileSink, getLogDir } from '../logging/file-sink.js';
 import { createConsoleSink } from '../logging/console-sink.js';
 import { createLogger, createNoopLogger, type LogEntry, type LogSink } from '../logging/logger.js';
+import {
+  createLevelReloader,
+  sigusr1Registrar,
+  type LevelReloader,
+} from '../logging/level-reloader.js';
 
 /**
  * Shape of the log message accepted by the OpenCode SDK client.log().
@@ -141,14 +146,20 @@ export function buildLogSinks(
  * @param workspaceDir - Resolved workspace directory (may be null)
  * @param worktree - Project worktree path (for init log context)
  * @param fingerprint - Workspace fingerprint (for init log context)
- * @returns Logger instance and resolved config
+ * @param configPath - Resolved config file path for dynamic log level reload (G5)
+ * @returns Logger instance, resolved config, and optional dispose callback
  */
 export async function createPluginLogger(
   client: PluginLogClient | undefined,
   workspaceDir: string | null,
   worktree: string | undefined,
   fingerprint: string | null,
-): Promise<{ log: ReturnType<typeof createLogger>; config: FlowGuardConfig }> {
+  configPath?: string,
+): Promise<{
+  log: ReturnType<typeof createLogger>;
+  config: FlowGuardConfig;
+  disposeLogging?: () => void;
+}> {
   // Read config once at plugin init. Failures fall back to defaults — never block.
   let config: FlowGuardConfig;
   try {
@@ -183,6 +194,18 @@ export async function createPluginLogger(
         })
       : createNoopLogger();
 
+  let reloader: LevelReloader | undefined;
+
+  // G5: Dynamic log level via SIGUSR1 — opt-in, only when enabled and config path known
+  if (config.logging.enableDynamicLevel) {
+    if (configPath) {
+      reloader = createLevelReloader(sigusr1Registrar);
+      reloader.attach(log, configPath);
+    } else {
+      log.warn('logging', 'dynamic log level reload disabled: config path unavailable');
+    }
+  }
+
   log.info('plugin', 'initialized', {
     worktree: worktree ?? 'none',
     logMode: config.logging.mode,
@@ -193,5 +216,5 @@ export async function createPluginLogger(
     fingerprint: fingerprint ?? 'unknown',
   });
 
-  return { log, config };
+  return { log, config, disposeLogging: () => reloader?.detach() };
 }

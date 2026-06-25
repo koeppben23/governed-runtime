@@ -381,6 +381,25 @@ describe('FlowGuardConfigSchema', () => {
     });
   });
 
+  describe('logging.enableDynamicLevel', () => {
+    it('defaults to false', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.enableDynamicLevel).toBe(false);
+    });
+
+    it('accepts true', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { enableDynamicLevel: true },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.enableDynamicLevel).toBe(true);
+    });
+  });
+
   it('rejects invalid policy mode', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',

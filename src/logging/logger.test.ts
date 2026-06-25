@@ -723,3 +723,57 @@ describe('createLogger — sink failure counting', () => {
     expect(health.sinkFailuresTotal).toBe(2);
   });
 });
+
+// =============================================================================
+// G5: Dynamic Log Level
+// =============================================================================
+
+describe('createLogger — dynamic log level', () => {
+  it('setLevel changes runtime level: info→debug shows previously filtered logs', () => {
+    const { entries, sink } = captureSink();
+    const log = createLogger('info', sink);
+
+    // debug is below info — filtered out
+    log.debug('s', 'hidden');
+    expect(entries).toHaveLength(0);
+
+    log.setLevel('debug');
+
+    // debug is now visible
+    log.debug('s', 'visible');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.message).toBe('visible');
+  });
+
+  it('setLevel changes runtime level: debug→info hides debug logs', () => {
+    const { entries, sink } = captureSink();
+    const log = createLogger('debug', sink);
+
+    log.debug('s', 'visible');
+    expect(entries).toHaveLength(1);
+
+    log.setLevel('info');
+    log.debug('s', 'hidden');
+    expect(entries).toHaveLength(1);
+  });
+
+  it('getHealth().level reflects current level after setLevel', () => {
+    const { sink } = captureSink();
+    const log = createLogger('warn', sink);
+
+    expect(log.getHealth().level).toBe('warn');
+
+    log.setLevel('debug');
+    expect(log.getHealth().level).toBe('debug');
+
+    log.setLevel('error');
+    expect(log.getHealth().level).toBe('error');
+  });
+
+  it('noop logger setLevel is noop', () => {
+    const log = createNoopLogger();
+    expect(log.getHealth().level).toBe('silent');
+    log.setLevel('debug');
+    expect(log.getHealth().level).toBe('silent');
+  });
+});
