@@ -30,6 +30,13 @@ describe('toolCallFlags', () => {
     expect(toolCallFlags({ text: '   ' }).hasText).toBe(false);
     expect(toolCallFlags({ text: '## Plan' }).hasText).toBe(true);
   });
+
+  it('treats empty verdict strings and primitive findings as absent', () => {
+    expect(toolCallFlags({ reviewVerdict: '' }).hasVerdict).toBe(false);
+    expect(toolCallFlags({ reviewVerdict: 'accept' }).hasVerdict).toBe(true);
+    expect(toolCallFlags({ reviewFindings: 'not-object' }).hasFindings).toBe(false);
+    expect(toolCallFlags({ reviewFindings: findings }).hasFindings).toBe(true);
+  });
 });
 
 describe('classifyToolCallMode — valid modes (all families)', () => {

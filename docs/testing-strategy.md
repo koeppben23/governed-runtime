@@ -161,6 +161,9 @@ detect semantic errors, not just that code is executed (coverage alone cannot pr
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
+`stryker.conf.json` excludes `StringLiteral` and `ArrayDeclaration` mutators to
+avoid low-signal literal churn and declarative table rewrites while keeping the
+security-critical target list and `break: 80` gate intact.
 
 ### CI Enforcement
 

@@ -42,6 +42,7 @@ export default defineConfig({
       'src/hooks/**/*.test.ts',
       'src/mcp-server/**/*.test.ts',
       'src/templates/**/*.test.ts',
+      'src/integration/plugin-audit-lifecycle-reason.test.ts',
       'src/integration/plugin-audit.test.ts',
       'src/integration/plugin-compaction.test.ts',
       'src/integration/plugin-enforcement-tracking.test.ts',

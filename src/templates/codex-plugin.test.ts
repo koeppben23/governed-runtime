@@ -21,6 +21,7 @@ describe('Codex plugin templates', () => {
       displayName: 'FlowGuard Governance',
       version: '1.2.3',
       skills: './skills/',
+      subagents: ['./subagents/flowguard-reviewer.md'],
       hooks: './hooks/hooks.json',
       mcpServers: './.mcp.json',
     });
@@ -33,10 +34,22 @@ describe('Codex plugin templates', () => {
     const hooks = JSON.parse(codexHooksJson());
     const preHook = hooks.hooks.PreToolUse[0].hooks[0];
 
+    expect(hooks.hooks.PreToolUse).toHaveLength(1);
     expect(hooks.hooks.PreToolUse[0].matcher).toBe('^Bash$|^apply_patch$');
+    expect(hooks.hooks.PreToolUse[0].hooks).toHaveLength(1);
     expect(preHook.command).toBe('node ${PLUGIN_ROOT}/dist/hooks/pre-tool-use.js');
+    expect(preHook.type).toBe('command');
+    expect(preHook.timeout).toBe(10);
     expect(preHook.args).toBeUndefined();
+    expect(hooks.hooks.PostToolUse).toHaveLength(1);
     expect(hooks.hooks.PostToolUse[0].matcher).toBe('^Bash$|^apply_patch$|^mcp__flowguard__.*$');
+    expect(hooks.hooks.PostToolUse[0].hooks).toHaveLength(1);
+    expect(hooks.hooks.SessionStart).toHaveLength(1);
+    expect(hooks.hooks.SessionStart[0].matcher).toBe('startup|resume|clear');
+    expect(hooks.hooks.SessionStart[0].hooks).toHaveLength(1);
+    expect(hooks.hooks.Stop).toHaveLength(1);
+    expect(hooks.hooks.Stop[0].hooks).toHaveLength(1);
+    expect(hooks.hooks.Stop[0].hooks[0].timeout).toBe(15);
 
     for (const event of ['PreToolUse', 'PostToolUse', 'SessionStart', 'Stop'] as const) {
       const entries = hooks.hooks[event];

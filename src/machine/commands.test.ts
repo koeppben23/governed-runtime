@@ -211,6 +211,42 @@ describe('commands', () => {
       expect(isCommandAllowed('READY', Command.REVIEW_DECISION)).toBe(false);
       expect(isCommandAllowed('READY', Command.VALIDATE)).toBe(false);
     });
+
+    it('pins the complete non-terminal command admissibility matrix', () => {
+      const phases: Phase[] = [
+        'READY',
+        'TICKET',
+        'PLAN',
+        'PLAN_REVIEW',
+        'VALIDATION',
+        'IMPLEMENTATION',
+        'IMPL_REVIEW',
+        'EVIDENCE_REVIEW',
+        'ARCHITECTURE',
+        'ARCH_REVIEW',
+        'REVIEW',
+      ];
+      const expectedAllowed: Record<Command, readonly Phase[] | '*'> = {
+        [Command.HYDRATE]: '*',
+        [Command.TICKET]: ['READY', 'TICKET'],
+        [Command.PLAN]: ['TICKET', 'PLAN'],
+        [Command.CONTINUE]: '*',
+        [Command.IMPLEMENT]: ['IMPLEMENTATION'],
+        [Command.REVIEW_DECISION]: ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'],
+        [Command.VALIDATE]: ['VALIDATION'],
+        [Command.REVIEW]: ['READY'],
+        [Command.ARCHITECTURE]: ['READY', 'ARCHITECTURE'],
+        [Command.ABORT]: '*',
+      };
+
+      for (const command of Object.values(Command)) {
+        for (const phase of phases) {
+          const allowed = expectedAllowed[command];
+          const expected = allowed === '*' || allowed.includes(phase);
+          expect(isCommandAllowed(phase, command), `${command} in ${phase}`).toBe(expected);
+        }
+      }
+    });
   });
 
   // ─── PERF ──────────────────────────────────────────────────

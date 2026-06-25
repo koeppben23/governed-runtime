@@ -53,6 +53,12 @@ describe('canonicalJsonStringify', () => {
     expect(canonicalJsonStringify({ k: [{ b: undefined, a: 1 }] })).toBe('{"k":[{"a":1}]}');
   });
 
+  it('preserves defined falsey object properties while dropping only undefined', () => {
+    expect(canonicalJsonStringify({ a: 0, b: false, c: '', d: null, e: undefined })).toBe(
+      '{"a":0,"b":false,"c":"","d":null}',
+    );
+  });
+
   it('serializes top-level undefined the same as JSON.stringify (undefined)', () => {
     // JSON.stringify(undefined) === undefined (not a string). Lock the behaviour in.
     expect(canonicalJsonStringify(undefined)).toBeUndefined();

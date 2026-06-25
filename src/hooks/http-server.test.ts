@@ -340,6 +340,17 @@ describe('handleHttpRequest', () => {
     );
   });
 
+  it('BAD: non-POST non-health requests return 405 without resolving a session', async () => {
+    const req = makeRequest({ method: 'GET', url: '/hooks/pre-tool-use', body: '' });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(405);
+    expect(JSON.parse(res.body)).toEqual({ error: 'Method not allowed' });
+    expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
   it('BAD: unknown POST route returns 404 without resolving a session', async () => {
     const req = makeRequest({ url: '/hooks/unknown', body: '{}' });
     const res = makeResponse();
@@ -409,6 +420,41 @@ describe('handleHttpRequest', () => {
           hookSource: 'http_hook',
         }),
         enforcementLevel: 'hook_gated',
+      }),
+    );
+  });
+
+  it('HAPPY: /hooks/post-tool-use truncates large string inputs in the audit detail', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test_123',
+      state: { phase: 'IMPLEMENTATION' },
+    });
+    mockAppendAuditEvent.mockResolvedValue(undefined);
+    const longCommand = 'x'.repeat(501);
+    const req = makeRequest({
+      url: '/hooks/post-tool-use',
+      body: JSON.stringify({
+        tool_name: 'Bash',
+        tool_input: { command: longCommand, untouched: 7 },
+        session_id: 'sess_test_123',
+        cwd: '/tmp/project',
+      }),
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(200);
+    expect(mockAppendAuditEvent).toHaveBeenCalledWith(
+      '/sessions/sess_test_123',
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          input: {
+            command: `${'x'.repeat(500)}... [truncated, 501 chars]`,
+            untouched: 7,
+          },
+        }),
       }),
     );
   });
@@ -487,6 +533,75 @@ describe('handleHttpRequest', () => {
     );
   });
 
+  it('HAPPY: /hooks/stop counts zero pending obligations when none are open', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test_123',
+      state: {
+        phase: 'COMPLETE',
+        reviewAssurance: {
+          obligations: [
+            { obligationId: 'obl-consumed', status: 'consumed', consumedAt: null },
+            {
+              obligationId: 'obl-consumed-at',
+              status: 'pending',
+              consumedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+    mockAppendAuditEvent.mockResolvedValue(undefined);
+    const req = makeRequest({
+      url: '/hooks/stop',
+      body: JSON.stringify({ session_id: 'sess_test_123', cwd: '/tmp/project' }),
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(200);
+    expect(mockAppendAuditEvent).toHaveBeenCalledWith(
+      '/sessions/sess_test_123',
+      expect.objectContaining({
+        detail: expect.objectContaining({
+          pendingObligations: 0,
+          finalPhase: 'COMPLETE',
+        }),
+      }),
+    );
+  });
+
+  it('BAD: /hooks/pre-tool-use denial includes Claude-compatible deny output', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test_123',
+      state: { phase: 'TICKET' },
+    });
+    const req = makeRequest({
+      url: '/hooks/pre-tool-use',
+      body: JSON.stringify({
+        tool_name: 'Bash',
+        tool_input: { command: 'npm test' },
+        session_id: 'sess_test_123',
+        cwd: '/tmp/project',
+      }),
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    const body = JSON.parse(res.body);
+    expect(res.status).toBe(200);
+    expect(body.decision).toBe('deny');
+    expect(body.code).toBe('HOST_TOOL_PHASE_DENIED');
+    expect(body.hookSpecificOutput).toMatchObject({
+      hookEventName: 'PreToolUse',
+      permissionDecision: 'deny',
+      permissionDecisionReason: expect.stringContaining('HOST_TOOL_PHASE_DENIED'),
+    });
+  });
+
   it('BAD: /hooks/pre-tool-use internal errors fail closed with deny output', async () => {
     mockResolveSession.mockRejectedValue(new Error('resolver exploded'));
     const req = makeRequest({
@@ -512,6 +627,46 @@ describe('handleHttpRequest', () => {
         permissionDecisionReason: expect.stringContaining('INTERNAL_ERROR'),
       }),
     );
+  });
+
+  it('BAD: non-pre hook internal errors return 500 without deny hook output', async () => {
+    mockResolveSession.mockRejectedValue(new Error('resolver exploded'));
+    const req = makeRequest({
+      url: '/hooks/post-tool-use',
+      body: JSON.stringify({
+        tool_name: 'Bash',
+        tool_input: { command: 'npm test' },
+        session_id: 'sess_test_123',
+        cwd: '/tmp/project',
+      }),
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(500);
+    expect(JSON.parse(res.body)).toEqual({ error: 'Internal server error' });
+  });
+
+  it('HAPPY: accepts Content-Length exactly at the hook body limit', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test_123',
+      state: { phase: 'IMPLEMENTATION' },
+    });
+    const body = JSON.stringify({
+      tool_name: 'Read',
+      tool_input: { file_path: '/tmp/file' },
+      session_id: 'sess_test_123',
+      cwd: '/tmp/project',
+    });
+    const req = makeRequest({ body, contentLength: '1048576' });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ decision: 'allow' });
   });
 
   it('BAD: rejects Content-Length over the hook body limit with 413', async () => {
