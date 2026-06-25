@@ -208,7 +208,7 @@ describe('Tool Adapter Session Identity', () => {
     expect(contexts[0]?.messageID).not.toBe(contexts[1]?.messageID);
   });
 
-  it('HAPPY: MCP tool execution provides adapter logger and trace context', async () => {
+  it('HAPPY: MCP tool execution provides adapter logger and log context', async () => {
     let handler:
       | ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown)
       | null = null;
@@ -239,7 +239,8 @@ describe('Tool Adapter Session Identity', () => {
 
     expect(observed).toHaveLength(1);
     expect(observed[0]!.traceId).toMatch(/^mcp-/);
-    expect(typeof observed[0]!.durationMs).toBe('number');
+    expect(observed[0]!.sessionId).toBe('mcp-session');
+    expect(observed[0]!.durationMs).toBeUndefined();
   });
 
   it('governance denial returns isError:false with governance:true in content', async () => {

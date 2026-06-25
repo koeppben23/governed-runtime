@@ -29,6 +29,33 @@
 import type { LogEntry, LogSink } from './logger.js';
 import { sanitizeDiagnosticString } from './redact.js';
 
+interface OtlpLogger {
+  emit(record: {
+    severityNumber: number;
+    severityText: LogEntry['level'];
+    body: string;
+    attributes: Record<string, string>;
+  }): void;
+}
+
+type LoggerProviderConstructor = new (config: { processors: unknown[] }) => {
+  getLogger(name: string, version?: string): OtlpLogger;
+};
+
+type BatchLogRecordProcessorConstructor = new (exporter: unknown) => unknown;
+type OtlpLogExporterConstructor = new (config: { url: string }) => unknown;
+
+interface SdkLogsModule {
+  LoggerProvider: LoggerProviderConstructor;
+  BatchLogRecordProcessor: BatchLogRecordProcessorConstructor;
+}
+
+interface OtlpExporterModule {
+  OTLPLogExporter: OtlpLogExporterConstructor;
+}
+
+type OtlpModuleImporter = (specifier: string) => Promise<unknown>;
+
 const SEVERITY_MAP: Record<string, number> = {
   debug: 1, // TRACE
   info: 9, // INFO
@@ -45,7 +72,7 @@ export interface OtlpSinkOptions {
    *  are NOT observable through this callback in this slice. */
   onFailure?: (error: unknown) => void;
   /** @internal dynamic import override for deterministic tests. */
-  _import?: (specifier: string) => Promise<Record<string, unknown>>;
+  _import?: OtlpModuleImporter;
 }
 
 /**
@@ -60,43 +87,30 @@ export interface OtlpSinkOptions {
 export function createOtlpLogSink(options: OtlpSinkOptions): LogSink {
   const endpoint = options.endpoint;
   const onFailure = options.onFailure;
-  const _import =
-    options._import ??
-    ((specifier: string) => import(specifier) as Promise<Record<string, unknown>>);
+  const _import = options._import ?? ((specifier: string) => import(specifier) as Promise<unknown>);
 
   let _initialized = false;
   let _initErrLogged = false;
 
   // Lazy-initialised OTEL references
-  let _logger: import('@opentelemetry/api-logs').Logger | null = null;
+  let _logger: OtlpLogger | null = null;
 
   async function ensureInit(): Promise<boolean> {
     if (_initialized) return _logger !== null;
     _initialized = true;
 
     try {
-      const [sdkLogsMod, exporterMod] = await Promise.all([
+      const [sdkLogsMod, exporterMod] = (await Promise.all([
         _import('@opentelemetry/sdk-logs'),
         _import('@opentelemetry/exporter-logs-otlp-http'),
-      ]);
+      ])) as [SdkLogsModule, OtlpExporterModule];
 
-      const LoggerProvider = (sdkLogsMod as Record<string, unknown>).LoggerProvider as new (
-        ..._args: unknown[]
-      ) => unknown;
-      const BatchLogRecordProcessor = (sdkLogsMod as Record<string, unknown>)
-        .BatchLogRecordProcessor as new (...args: unknown[]) => unknown;
-      const OTLPLogExporter = (exporterMod as Record<string, unknown>).OTLPLogExporter as new (
-        ...args: unknown[]
-      ) => unknown;
+      const { LoggerProvider, BatchLogRecordProcessor } = sdkLogsMod;
+      const { OTLPLogExporter } = exporterMod;
 
       const provider = new LoggerProvider({
         processors: [new BatchLogRecordProcessor(new OTLPLogExporter({ url: endpoint }))],
-      }) as unknown as {
-        getLogger(
-          name: string,
-          version?: string,
-        ): { emit(r: Record<string, unknown>): void; enabled(): boolean };
-      };
+      });
 
       _logger = provider.getLogger('flowguard', '1.0.0');
 

@@ -41,7 +41,14 @@ describe('plugin-logging.ts', () => {
     it('accepts client with matching log signature', async () => {
       const { buildLogSinks } = await import('./integration/plugin-logging.js');
       const config = {
-        logging: { mode: 'both' as const, level: 'info', retentionDays: 7 },
+        logging: {
+          mode: 'both' as const,
+          level: 'info',
+          retentionDays: 7,
+          consoleFormat: 'text' as const,
+          maxFileSizeMb: 10,
+          otlp: { enabled: false },
+        },
       };
       const client = {
         app: {

@@ -33,7 +33,6 @@
  */
 
 import type { LogLevel } from '../config/logging-config.js';
-import { randomUUID } from 'node:crypto';
 import { getLogContext } from './log-context.js';
 
 // ─── Level Ordering ──────────────────────────────────────────────────────────
@@ -107,8 +106,7 @@ export interface LogEntry {
   message: string;
   /** Optional structured metadata. */
   extra?: Record<string, unknown>;
-  /** Auto-injected correlation trace id. Always present when emitted
-   *  by createLogger; may be absent in test-constructed entries. */
+  /** Correlation trace id from log-context, when available. */
   traceId?: string;
   /** Session id from log-context, if available. */
   sessionId?: string;
@@ -300,7 +298,7 @@ export function createLogger(
       service,
       message,
       extra,
-      traceId: ctx?.traceId ?? randomUUID(),
+      traceId: ctx?.traceId,
       sessionId: ctx?.sessionId,
     };
 

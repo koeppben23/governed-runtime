@@ -52,6 +52,14 @@ interface PluginLogClient {
   };
 }
 
+type BuildLogSinksConfig = Pick<
+  FlowGuardConfig['logging'],
+  'mode' | 'retentionDays' | 'consoleFormat' | 'maxFileSizeMb'
+> & {
+  level: string;
+  otlp?: FlowGuardConfig['logging']['otlp'];
+};
+
 /**
  * Maximum number of UI sink failures before stderr warnings are suppressed.
  * Prevents flooding stderr when the SDK connection is persistently broken.
@@ -68,23 +76,7 @@ const UI_HEALTH_REPORT_MS = 5 * 60 * 1000;
  * @returns Array of LogSink functions
  */
 export function buildLogSinks(
-  config: {
-    logging: {
-      mode: 'file' | 'ui' | 'both' | 'console' | 'file+console';
-      level: string;
-      retentionDays: number;
-      consoleFormat: 'text' | 'json';
-      maxFileSizeMb: number;
-      rateLimit?: {
-        enabled: boolean;
-        maxPerSecond: number;
-        exemptLevels: string[];
-        summaryIntervalMs: number;
-      };
-      enableDynamicLevel?: boolean;
-      otlp?: { enabled: boolean; endpoint?: string };
-    };
-  },
+  config: { logging: BuildLogSinksConfig },
   client: PluginLogClient | undefined,
   workspaceDir: string | null,
 ): LogSink[] {

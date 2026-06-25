@@ -92,12 +92,22 @@ export async function runWithAdapterLoggerAsync<T>(
   return _store.run(_wrapWithWarnOnce(log, new Map()), () => fn());
 }
 
-/** Execute a synchronous function with trace metadata scoped to the current async context. */
+/**
+ * Execute a synchronous function with legacy trace metadata scoped to the current async context.
+ *
+ * @deprecated Use `runWithLogContext` from log-context.ts. The log-context store
+ *             is the long-term authority for traceId/sessionId correlation.
+ */
 export function runWithTraceContext<T>(traceId: string, fn: () => T): T {
   return _traceStore.run({ traceId, startedAtMs: Date.now() }, fn);
 }
 
-/** Execute an async function with trace metadata scoped to the current async context. */
+/**
+ * Execute an async function with legacy trace metadata scoped to the current async context.
+ *
+ * @deprecated Use `runWithLogContextAsync` from log-context.ts. The log-context
+ *             store is the long-term authority for traceId/sessionId correlation.
+ */
 export async function runWithTraceContextAsync<T>(
   traceId: string,
   fn: () => Promise<T>,
@@ -105,7 +115,11 @@ export async function runWithTraceContextAsync<T>(
   return _traceStore.run({ traceId, startedAtMs: Date.now() }, () => fn());
 }
 
-/** Return the current trace context, if the caller is inside a trace scope. */
+/**
+ * Return the current legacy trace context, if the caller is inside a trace scope.
+ *
+ * @deprecated Use `getLogContext` from log-context.ts for new code.
+ */
 export function getTraceContext(): TraceContext | undefined {
   return _traceStore.getStore();
 }
@@ -120,7 +134,11 @@ export function getTraceContext(): TraceContext | undefined {
  */
 export function getLogTraceFields(): { traceId?: string; sessionId?: string; durationMs?: number } {
   const ctx = getLogContext();
-  if (ctx) return { traceId: ctx.traceId, sessionId: ctx.sessionId };
+  if (ctx) {
+    return ctx.sessionId === undefined
+      ? { traceId: ctx.traceId }
+      : { traceId: ctx.traceId, sessionId: ctx.sessionId };
+  }
   const trace = getTraceContext();
   if (!trace) return {};
   return {
