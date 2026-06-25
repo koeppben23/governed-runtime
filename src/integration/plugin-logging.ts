@@ -66,6 +66,8 @@ export function buildLogSinks(
       mode: 'file' | 'ui' | 'both' | 'console' | 'file+console';
       level: string;
       retentionDays: number;
+      consoleFormat: 'text' | 'json';
+      maxFileSizeMb: number;
     };
   },
   client: PluginLogClient | undefined,
@@ -76,7 +78,17 @@ export function buildLogSinks(
 
   if (mode === 'file' || mode === 'both' || mode === 'file+console') {
     if (workspaceDir) {
-      sinks.push(createFileSink(workspaceDir, config.logging.retentionDays));
+      sinks.push(
+        createFileSink(workspaceDir, {
+          retentionDays: config.logging.retentionDays,
+          maxSizeBytes: config.logging.maxFileSizeMb * 1024 * 1024,
+          onRotate: (event) => {
+            process.stderr.write(
+              `[FlowGuard] diagnostic log file rotated: ${event.reason} — ${event.newPath}\n`,
+            );
+          },
+        }),
+      );
     }
   }
 
@@ -106,7 +118,7 @@ export function buildLogSinks(
   }
 
   if (mode === 'console' || mode === 'file+console') {
-    sinks.push(createConsoleSink());
+    sinks.push(createConsoleSink({ format: config.logging.consoleFormat }));
   }
 
   return sinks;
