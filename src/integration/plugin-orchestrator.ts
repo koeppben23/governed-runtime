@@ -14,6 +14,7 @@
  * @version v2
  */
 
+import { serializeError } from '../logging/error-serialize.js';
 import { readState } from '../adapters/persistence.js';
 import { getToolOutput, parseToolResult, strictBlockedOutput } from './plugin-helpers.js';
 import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
@@ -98,11 +99,11 @@ function handleOrchestrationError(
       reason: 'reviewer orchestration threw an exception',
     });
     deps.log.warn('audit', 'review orchestration failed (strict mode blocked)', {
-      error: err instanceof Error ? err.message : String(err),
+      error: serializeError(err),
     });
   } else {
     deps.log.warn('audit', 'review orchestration failed (fallback to LLM-driven)', {
-      error: err instanceof Error ? err.message : String(err),
+      error: serializeError(err),
     });
   }
 }

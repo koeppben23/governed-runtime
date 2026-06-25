@@ -5,7 +5,14 @@
  * Some log points handle sensitive data (token paths, JWKS URIs, issuers).
  * These helpers strip or hash sensitive values before they enter log sinks.
  *
- * @version v1
+ * `sanitizeDiagnosticString()` is the general-purpose string redactor used
+ * by both `redactIdentityExtra()` and `serializeError()`. It strips:
+ * - absolute file paths
+ * - https:// URLs (keeps hostname)
+ * - line:column references
+ * - ENOENT paths
+ *
+ * @version v2
  */
 
 import { hashTextShort } from '../shared/hashing.js';
@@ -49,7 +56,7 @@ export function redactIdentityExtra(
       }
     } else if (key === 'error') {
       if (typeof value === 'string') {
-        redacted[key] = sanitizeErrorMessage(value);
+        redacted[key] = sanitizeDiagnosticString(value);
       } else {
         redacted[key] = value;
       }
@@ -62,10 +69,12 @@ export function redactIdentityExtra(
 }
 
 /**
- * Sanitize an error message by stripping absolute paths and URLs.
+ * Sanitize a diagnostic string by stripping absolute paths and URLs.
+ * Used by redactIdentityExtra() and serializeError().
+ *
  * Keeps the error class/type and the last path segment.
  */
-function sanitizeErrorMessage(msg: string): string {
+export function sanitizeDiagnosticString(msg: string): string {
   return (
     msg
       // Strip https:// URLs FIRST (before path regex can grab them)

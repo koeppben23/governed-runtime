@@ -13,6 +13,8 @@
  * @version v1
  */
 
+import { serializeError } from '../logging/error-serialize.js';
+
 /**
  * OpenCode Event shape (from @opencode-ai/sdk, used by plugin event hooks).
  *
@@ -149,7 +151,7 @@ export async function handleEvent(deps: EventHandlerDeps, event: PluginEvent): P
   } catch (err) {
     deps.log.warn('event', 'event handler failed (non-blocking)', {
       eventType: event.type,
-      error: err instanceof Error ? err.message : String(err),
+      error: serializeError(err),
     });
   }
 }

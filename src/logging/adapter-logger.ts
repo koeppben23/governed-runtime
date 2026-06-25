@@ -22,6 +22,7 @@
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { FlowGuardLogger } from './logger.js';
+import { getLogContext } from './log-context.js';
 
 /** Minimal logger subset needed by adapters. */
 export interface AdapterLogger {
@@ -109,8 +110,17 @@ export function getTraceContext(): TraceContext | undefined {
   return _traceStore.getStore();
 }
 
-/** Fields safe to spread into structured diagnostic log extras. */
-export function getLogTraceFields(): { traceId?: string; durationMs?: number } {
+/**
+ * Fields safe to spread into structured diagnostic log extras.
+ *
+ * @deprecated traceId and sessionId are now auto-injected by createLogger()
+ *             from the log-context. This helper remains available for
+ *             compatibility — it reads from log-context first, then falls
+ *             back to the legacy trace store.
+ */
+export function getLogTraceFields(): { traceId?: string; sessionId?: string; durationMs?: number } {
+  const ctx = getLogContext();
+  if (ctx) return { traceId: ctx.traceId, sessionId: ctx.sessionId };
   const trace = getTraceContext();
   if (!trace) return {};
   return {

@@ -11,6 +11,7 @@
 
 import { readState, writeState } from '../adapters/persistence.js';
 import { archiveSession } from '../adapters/workspace/index.js';
+import { serializeError } from '../logging/error-serialize.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
 import {
   buildToolCallBody,
@@ -310,7 +311,7 @@ async function maybeCompleteAndArchive(
     } else {
       archiveSession(deps.cachedFingerprint, sessionId).catch((err) => {
         deps.log.warn('audit', 'auto-archive failed', {
-          error: err instanceof Error ? err.message : String(err),
+          error: serializeError(err),
         });
       });
     }

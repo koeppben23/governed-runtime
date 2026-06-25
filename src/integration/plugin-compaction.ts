@@ -11,6 +11,7 @@
  */
 
 import { readState } from '../adapters/persistence.js';
+import { serializeError } from '../logging/error-serialize.js';
 import { PHASE_LABELS } from '../presentation/phase-labels.js';
 import { renderCompactionMandatesSummary } from '../rendering/mandates-renderer.js';
 
@@ -104,7 +105,7 @@ export async function buildCompactionContext(
   } catch (err) {
     deps.log.warn('compaction', 'failed to build compaction context', {
       sessionId,
-      error: err instanceof Error ? err.message : String(err),
+      error: serializeError(err),
     });
     return null;
   }

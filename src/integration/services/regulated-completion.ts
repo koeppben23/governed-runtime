@@ -16,6 +16,7 @@ import { createLifecycleEvent } from '../../audit/types.js';
 import { getLastChainHash } from '../../audit/integrity.js';
 import { writeStateWithArtifacts } from '../tools/helpers.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import { serializeError } from '../../logging/error-serialize.js';
 
 /**
  * Execute the P26 regulated completion chain: audit emit → archive → verify.
@@ -90,7 +91,7 @@ export async function executeRegulatedCompletion(
     getAdapterLogger().error('services', 'Regulated completion chain failed', {
       sessionID,
       fingerprint,
-      error: err instanceof Error ? err.message : String(err),
+      error: serializeError(err),
     });
     finalState = { ...resultState, archiveStatus: 'failed' as const };
   }
