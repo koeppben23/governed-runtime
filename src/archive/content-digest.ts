@@ -53,8 +53,13 @@ export interface ArchiveContentDigestInput {
  */
 export function computeArchiveContentDigest(input: ArchiveContentDigestInput): string {
   const sortedDigestValues = input.includedFiles
-    .map((file) => input.fileDigests[file])
-    .filter((digest): digest is string => Boolean(digest))
+    .map((file) => {
+      const digest = input.fileDigests[file];
+      if (!digest) {
+        throw new Error(`Missing file digest for included archive file '${file}'`);
+      }
+      return digest;
+    })
     .sort();
 
   const integrityHeader = JSON.stringify({

@@ -62,6 +62,17 @@ describe('computeArchiveContentDigest', () => {
     expect(computeArchiveContentDigest(changed)).not.toBe(computeArchiveContentDigest(input));
   });
 
+  it('BAD: throws when an included file has no digest', () => {
+    const input: ArchiveContentDigestInput = {
+      ...baseInput(),
+      fileDigests: { 'audit.jsonl': DIGEST_A },
+    };
+
+    expect(() => computeArchiveContentDigest(input)).toThrow(
+      "Missing file digest for included archive file 'session-state.json'",
+    );
+  });
+
   it('CORNER: equivalent included-file order is deterministic', () => {
     const input = baseInput();
     const reordered: ArchiveContentDigestInput = {

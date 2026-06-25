@@ -27,8 +27,8 @@ describe('documentation/testing-strategy', () => {
     const count = mutationTargets().length;
 
     expect(docs).toContain(`${count} security-critical`);
-    expect(docs).toContain(
-      `| **Total**                                                                                                       | **${count}** |`,
+    expect(docs).toMatch(
+      new RegExp(`\\|\\s*\\*\\*Total\\*\\*\\s*\\|\\s*\\*\\*${count}\\*\\*\\s*\\|`),
     );
   });
 
