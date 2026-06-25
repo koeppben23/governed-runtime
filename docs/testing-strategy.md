@@ -37,14 +37,14 @@ enforcement chain (actor resolution, assurance tiers, policy snapshot flow-throu
 
 Each CI job maps to exactly one npm script for clear diagnosis:
 
-| CI Job              | npm Script                     | Scope                                                                       | Requires Build |
-| ------------------- | ------------------------------ | --------------------------------------------------------------------------- | -------------- |
-| **unit**            | `npm run test:unit`            | All `*.test.ts` outside `integration/`, including T1 and T2                 | No             |
-| **integration**     | `npm run test:integration`     | All `src/integration/**/*.test.ts`, including T3, T4, and T5                | No             |
-| **smoke**           | `npm run test:smoke`           | Built CLI contract smoke and ACP smoke                                      | Yes            |
-| **install-verify**  | `npm run test:install-verify`  | Tarball pack/install/doctor verification                                    | Yes            |
-| **mutation**        | `npm run mutation`             | StrykerJS mutation testing for security-critical paths                      | No             |
-| **actions-pinning** | `npm run check:actions-pinned` | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests | No             |
+| CI Job              | npm Script                     | Scope                                                                                   | Requires Build |
+| ------------------- | ------------------------------ | --------------------------------------------------------------------------------------- | -------------- |
+| **unit**            | `npm run test:unit`            | All `*.test.ts` outside `integration/`, including T1 and T2                             | No             |
+| **integration**     | `npm run test:integration`     | All `src/integration/**/*.test.ts`, including T3, T4, and T5                            | No             |
+| **smoke**           | `npm run test:smoke`           | Built CLI contract smoke and ACP smoke                                                  | Yes            |
+| **install-verify**  | `npm run test:install-verify`  | Tarball pack/install/doctor verification                                                | Yes            |
+| **mutation**        | `npm run mutation`             | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence | No             |
+| **actions-pinning** | `npm run check:actions-pinned` | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests             | No             |
 
 The `smoke` job also requires the OpenCode CLI (`opencode-ai`) for ACP tests.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
@@ -58,15 +58,20 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 23 security-critical
-files spanning adapters (persistence + persistence-lock + host-adapter), audit
-(integrity + completeness), config (reasons + policy), hooks (shared
-obligation-tracker + phase-gate), identity (token-verifier), integration
-(command-aliases, tool-classification, review enforcement, review
-orchestrator), machine (commands, evaluate, guards, next-action), and rails
-(architecture, hydrate, review, review-decision, ticket). It uploads a
-mutation report artifact (`reports/mutation/`) and is blocking with the
-`break: 80` threshold enforced by `stryker.conf.json`.
+The `mutation` job runs StrykerJS mutation testing against 34 security-critical
+files spanning adapters (persistence + persistence-lock + host-adapter + archive
+verification), archive digesting, audit (integrity + completeness), config
+(reasons + policy), hooks (HTTP hook server + shared obligation-tracker +
+phase-gate), identity (token-verifier + key-resolver), integration
+(command-aliases, tool-classification, review-validation-mode,
+plugin-audit-lifecycle-reason, review enforcement, review orchestrator,
+orchestrator detection/output, and agent resolution), templates (codex-plugin),
+shared canonical JSON, machine (commands, evaluate, guards, next-action), and
+rails (architecture, hydrate, review, review-decision, ticket). It uploads a
+mutation report artifact (`reports/mutation/`) and enforces the `break: 80`
+threshold in `stryker.conf.json` when the scheduled/release/manual mutation
+workflow runs. It is intentionally not a pull-request required check; see
+`.github/BRANCH-PROTECTION.md`.
 
 ## Test Organization by Layer
 
@@ -136,29 +141,33 @@ detect semantic errors, not just that code is executed (coverage alone cannot pr
 
 ### Scope
 
-23 files are mutated, covering the fail-closed governance core
+34 files are mutated, covering the fail-closed governance core
 (see `stryker.conf.json` for the canonical list):
 
-| Area                                                                                                            | Files  | Representative score            |
-| --------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------- |
-| Adapters (`persistence`, `persistence-lock`, `host-adapter`)                                                    | 3      | (see latest report)             |
-| Audit (`integrity`, `completeness`)                                                                             | 2      | (see latest report)             |
-| Config (`policy`, `reasons`)                                                                                    | 2      | (see latest report)             |
-| Hooks (`shared/obligation-tracker`, `shared/phase-gate`)                                                        | 2      | (see latest report)             |
-| Identity (`token-verifier`)                                                                                     | 1      | (see latest report)             |
-| Integration (`command-aliases`, `tool-classification`, `review/enforcement/enforcement`, `review/orchestrator`) | 4      | (see latest report)             |
-| Machine (`commands`, `evaluate`, `guards`, `next-action`)                                                       | 4      | (see latest report)             |
-| Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`)                                        | 5      | (see latest report)             |
-| **Total**                                                                                                       | **23** | uploaded as `reports/mutation/` |
+| Area                                                                                                                                                                                 | Files  | Representative score            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | ------------------------------- |
+| Adapters (`persistence`, `persistence-lock`, `host-adapter`, archive verification)                                                                                                   | 4      | (see latest report)             |
+| Archive (`content-digest`)                                                                                                                                                           | 1      | (see latest report)             |
+| Audit (`integrity`, `completeness`)                                                                                                                                                  | 2      | (see latest report)             |
+| Config (`policy`, `reasons`)                                                                                                                                                         | 2      | (see latest report)             |
+| Hooks (`http-server`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                                                              | 3      | (see latest report)             |
+| Identity (`token-verifier`, `key-resolver`)                                                                                                                                          | 2      | (see latest report)             |
+| Integration (`command-aliases`, `tool-classification`, `tools/review-validation-mode`, `plugin-audit-lifecycle-reason`, review enforcement/orchestrator/detection/output/resolution) | 10     | (see latest report)             |
+| Templates (`codex-plugin`)                                                                                                                                                           | 1      | (see latest report)             |
+| Shared (`canonical-json`)                                                                                                                                                            | 1      | (see latest report)             |
+| Machine (`commands`, `evaluate`, `guards`, `next-action`)                                                                                                                            | 4      | (see latest report)             |
+| Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`)                                                                                                             | 5      | (see latest report)             |
+| **Total**                                                                                                                                                                            | **34** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
 
 ### CI Enforcement
 
-The `mutation` CI job is blocking. A mutation score below the configured
-`break: 80` threshold (`stryker.conf.json`) fails the job. Survivor analysis
-remains part of normal security-critical test maintenance.
+The scheduled/release/manual `mutation` workflow is blocking for that workflow
+run. It is not a pull-request required check. A mutation score below the
+configured `break: 80` threshold (`stryker.conf.json`) fails the mutation job.
+Survivor analysis remains part of normal security-critical test maintenance.
 
 ### Interpreting Results
 

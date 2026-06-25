@@ -14,7 +14,7 @@
  * @test-policy HAPPY, BAD, CORNER
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Readable } from 'node:stream';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
@@ -67,10 +67,18 @@ vi.mock('./shared/obligation-tracker.js', () => ({
 
 let handleSessionStart: (typeof import('./http-server.js'))['handleSessionStart'];
 let handleHttpRequest: (typeof import('./http-server.js'))['handleHttpRequest'];
+let signalListenerBaseline: {
+  sigterm: NodeJS.SignalsListener[];
+  sigint: NodeJS.SignalsListener[];
+};
 
 beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
+  signalListenerBaseline = {
+    sigterm: process.listeners('SIGTERM') as NodeJS.SignalsListener[],
+    sigint: process.listeners('SIGINT') as NodeJS.SignalsListener[],
+  };
 
   // Re-apply mocks for fresh module load.
   vi.doMock('node:http', () => ({
@@ -104,6 +112,15 @@ beforeEach(async () => {
   handleSessionStart = mod.handleSessionStart;
   handlePreToolUse = mod.handlePreToolUse;
   handleHttpRequest = mod.handleHttpRequest;
+});
+
+afterEach(() => {
+  for (const listener of process.listeners('SIGTERM') as NodeJS.SignalsListener[]) {
+    if (!signalListenerBaseline.sigterm.includes(listener)) process.off('SIGTERM', listener);
+  }
+  for (const listener of process.listeners('SIGINT') as NodeJS.SignalsListener[]) {
+    if (!signalListenerBaseline.sigint.includes(listener)) process.off('SIGINT', listener);
+  }
 });
 
 let handlePreToolUse: (typeof import('./http-server.js'))['handlePreToolUse'];
@@ -311,6 +328,192 @@ describe('handlePreToolUse', () => {
 });
 
 describe('handleHttpRequest', () => {
+  it('HAPPY: GET /health returns liveness JSON', async () => {
+    const req = makeRequest({ method: 'GET', url: '/health', body: '' });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual(
+      expect.objectContaining({ status: 'ok', pid: expect.any(Number) }),
+    );
+  });
+
+  it('BAD: unknown POST route returns 404 without resolving a session', async () => {
+    const req = makeRequest({ url: '/hooks/unknown', body: '{}' });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(404);
+    expect(JSON.parse(res.body)).toEqual({ error: 'Unknown route: /hooks/unknown' });
+    expect(mockResolveSession).not.toHaveBeenCalled();
+    expect(mockAppendAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('BAD: invalid JSON returns 400', async () => {
+    const req = makeRequest({ body: '{not-json}' });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(400);
+    expect(JSON.parse(res.body)).toEqual({ error: 'Invalid JSON in request body' });
+    expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  it.each(['[]', 'null', '"string"'])('BAD: non-object JSON body %s returns 400', async (body) => {
+    const req = makeRequest({ body });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(400);
+    expect(JSON.parse(res.body)).toEqual({ error: 'Request body must be a JSON object' });
+    expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  it('HAPPY: /hooks/post-tool-use appends a tool_call audit event', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test_123',
+      state: { phase: 'IMPLEMENTATION' },
+    });
+    mockAppendAuditEvent.mockResolvedValue(undefined);
+    const req = makeRequest({
+      url: '/hooks/post-tool-use',
+      body: JSON.stringify({
+        tool_name: 'Bash',
+        tool_input: { command: 'npm test' },
+        session_id: 'sess_test_123',
+        cwd: '/tmp/project',
+      }),
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ decision: 'allow' });
+    expect(mockAppendAuditEvent).toHaveBeenCalledWith(
+      '/sessions/sess_test_123',
+      expect.objectContaining({
+        sessionId: 'sess_test_123',
+        phase: 'IMPLEMENTATION',
+        event: 'tool_call',
+        actor: 'machine',
+        detail: expect.objectContaining({
+          tool: 'Bash',
+          input: { command: 'npm test' },
+          hookSource: 'http_hook',
+        }),
+        enforcementLevel: 'hook_gated',
+      }),
+    );
+  });
+
+  it('BAD: /hooks/post-tool-use allows with explicit skip reason when session resolution fails', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: false,
+      code: 'NO_SESSION',
+      reason: 'No governed session found',
+    });
+    const req = makeRequest({
+      url: '/hooks/post-tool-use',
+      body: JSON.stringify({
+        tool_name: 'Bash',
+        tool_input: { command: 'npm test' },
+        session_id: 'sess_test_123',
+        cwd: '/tmp/project',
+      }),
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({
+      decision: 'allow',
+      reason: 'audit skipped: NO_SESSION',
+    });
+    expect(mockAppendAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('HAPPY: /hooks/stop appends a session_stop lifecycle event', async () => {
+    mockResolveSession.mockResolvedValue({
+      ok: true,
+      sessionDir: '/sessions/sess_test_123',
+      state: {
+        phase: 'IMPL_REVIEW',
+        reviewAssurance: {
+          obligations: [
+            { obligationId: 'obl-pending', status: 'pending', consumedAt: null },
+            {
+              obligationId: 'obl-consumed',
+              status: 'consumed',
+              consumedAt: '2026-01-01T00:00:00.000Z',
+            },
+          ],
+        },
+      },
+    });
+    mockAppendAuditEvent.mockResolvedValue(undefined);
+    const req = makeRequest({
+      url: '/hooks/stop',
+      body: JSON.stringify({ session_id: 'sess_test_123', cwd: '/tmp/project' }),
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(200);
+    expect(JSON.parse(res.body)).toEqual({ decision: 'allow' });
+    expect(mockAppendAuditEvent).toHaveBeenCalledWith(
+      '/sessions/sess_test_123',
+      expect.objectContaining({
+        sessionId: 'sess_test_123',
+        phase: 'IMPL_REVIEW',
+        event: 'lifecycle',
+        actor: 'system',
+        detail: expect.objectContaining({
+          action: 'session_stop',
+          hookSource: 'http_hook',
+          pendingObligations: 1,
+          finalPhase: 'IMPL_REVIEW',
+        }),
+        enforcementLevel: 'hook_gated',
+      }),
+    );
+  });
+
+  it('BAD: /hooks/pre-tool-use internal errors fail closed with deny output', async () => {
+    mockResolveSession.mockRejectedValue(new Error('resolver exploded'));
+    const req = makeRequest({
+      url: '/hooks/pre-tool-use',
+      body: JSON.stringify({
+        tool_name: 'Bash',
+        tool_input: { command: 'npm test' },
+        session_id: 'sess_test_123',
+        cwd: '/tmp/project',
+      }),
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    const body = JSON.parse(res.body);
+    expect(res.status).toBe(200);
+    expect(body.decision).toBe('deny');
+    expect(body.hookSpecificOutput).toEqual(
+      expect.objectContaining({
+        hookEventName: 'PreToolUse',
+        permissionDecision: 'deny',
+        permissionDecisionReason: expect.stringContaining('INTERNAL_ERROR'),
+      }),
+    );
+  });
+
   it('BAD: rejects Content-Length over the hook body limit with 413', async () => {
     const req = makeRequest({ body: '{}', contentLength: '1048577' });
     const res = makeResponse();

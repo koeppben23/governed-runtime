@@ -436,6 +436,123 @@ async function verifyAuditChainIntegrity(
 
 // ─── Archive Integrity & Top-Level Orchestration ────────────────────────────
 
+function addContentDigestFindings(manifest: ArchiveManifest, findings: ArchiveFinding[]): void {
+  // Content digest is ALWAYS verified — including an empty archive (no included
+  // files). The integrity header (policy mode, audit anchor, identity) is part of
+  // the digest, so a tampered header on a 0-file manifest must still fail closed.
+  let computedContentDigest: string | null = null;
+  try {
+    computedContentDigest = computeArchiveContentDigest({
+      includedFiles: manifest.includedFiles,
+      fileDigests: manifest.fileDigests,
+      policyMode: manifest.policyMode,
+      auditChainHead: manifest.auditChainHead,
+      auditEventCount: manifest.auditEventCount,
+      schemaVersion: manifest.schemaVersion,
+      sessionId: manifest.sessionId,
+      fingerprint: manifest.fingerprint,
+      discoveryDigest: manifest.discoveryDigest,
+    });
+  } catch (error) {
+    findings.push({
+      code: 'content_digest_mismatch',
+      severity: 'error',
+      message: `Content digest could not be computed: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    });
+  }
+
+  if (computedContentDigest !== null && computedContentDigest !== manifest.contentDigest) {
+    findings.push({
+      code: 'content_digest_mismatch',
+      severity: 'error',
+      message:
+        'Content digest does not match computed value from file digests and integrity header',
+    });
+  }
+}
+
+function isMalformedChecksumSidecar(expectedHash: string, tokens: string[]): boolean {
+  const digestTokens = tokens.filter((token) => /^[a-f0-9]{64}$/i.test(token));
+  return !/^[a-f0-9]{64}$/i.test(expectedHash) || digestTokens.length !== 1;
+}
+
+function readFailureCode(error: unknown): unknown {
+  return typeof error === 'object' && error !== null && 'code' in error ? error.code : null;
+}
+
+function archiveReadFailureReason(error: unknown): string {
+  const code = readFailureCode(error);
+  return code === 'ENOENT' ? 'Archive tarball is missing' : 'Archive tarball is unreadable';
+}
+
+function addArchiveChecksumMismatch(findings: ArchiveFinding[], message: string): void {
+  findings.push({
+    code: 'archive_checksum_mismatch',
+    severity: 'error',
+    message,
+  });
+}
+
+async function verifyArchiveChecksum(
+  archiveTarPath: string,
+  checksumSidecarPath: string,
+  strict: boolean,
+  findings: ArchiveFinding[],
+): Promise<void> {
+  const checksumExists = await fileExists(checksumSidecarPath);
+  if (!checksumExists) {
+    findings.push({
+      code: 'archive_checksum_missing',
+      severity: strict ? 'error' : 'warning',
+      message: 'Archive checksum sidecar (.sha256) not found',
+    });
+    return;
+  }
+
+  let sidecarContent: string;
+  try {
+    sidecarContent = await fs.readFile(checksumSidecarPath, 'utf-8');
+  } catch (error) {
+    addArchiveChecksumMismatch(
+      findings,
+      `Archive checksum sidecar is unreadable; archive checksum could not be verified: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return;
+  }
+
+  const sidecarTokens = sidecarContent.trim().split(/\s+/).filter(Boolean);
+  const expectedHash = sidecarTokens[0];
+  if (!expectedHash || isMalformedChecksumSidecar(expectedHash, sidecarTokens)) {
+    addArchiveChecksumMismatch(
+      findings,
+      'Archive checksum sidecar is malformed or ambiguous; expected exactly one SHA-256 digest',
+    );
+    return;
+  }
+
+  try {
+    const archiveBuffer = await fs.readFile(archiveTarPath);
+    const actualHash = hashBuffer(archiveBuffer);
+    if (expectedHash !== actualHash) {
+      addArchiveChecksumMismatch(
+        findings,
+        `Archive checksum mismatch: sidecar says ${expectedHash.slice(0, 12)}..., actual is ${actualHash.slice(0, 12)}...`,
+      );
+    }
+  } catch (error) {
+    addArchiveChecksumMismatch(
+      findings,
+      `${archiveReadFailureReason(error)}; archive checksum could not be verified: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+}
+
 async function verifyArchiveIntegrity(
   location: { sessDir: string; fingerprint: string; validSessionId: string },
   manifest: ArchiveManifest,
@@ -448,58 +565,12 @@ async function verifyArchiveIntegrity(
   const strict = resolveStrictMode(state);
   verifyManifestPolicyMode(manifest, state, findings);
   await verifyAuditChainIntegrity(sessDir, manifest, findings, state, strict);
-
-  // Content digest is ALWAYS verified — including an empty archive (no included
-  // files). The integrity header (policy mode, audit anchor, identity) is part of
-  // the digest, so a tampered header on a 0-file manifest must still fail closed.
-  const computedContentDigest = computeArchiveContentDigest({
-    includedFiles: manifest.includedFiles,
-    fileDigests: manifest.fileDigests,
-    policyMode: manifest.policyMode,
-    auditChainHead: manifest.auditChainHead,
-    auditEventCount: manifest.auditEventCount,
-    schemaVersion: manifest.schemaVersion,
-    sessionId: manifest.sessionId,
-    fingerprint: manifest.fingerprint,
-    discoveryDigest: manifest.discoveryDigest,
-  });
-  if (computedContentDigest !== manifest.contentDigest) {
-    findings.push({
-      code: 'content_digest_mismatch',
-      severity: 'error',
-      message:
-        'Content digest does not match computed value from file digests and integrity header',
-    });
-  }
+  addContentDigestFindings(manifest, findings);
 
   const archiveCheckDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
   const archiveTarPath = path.join(archiveCheckDir, `${validSessionId}.tar.gz`);
   const checksumSidecarPath = `${archiveTarPath}.sha256`;
-
-  const checksumExists = await fileExists(checksumSidecarPath);
-  if (!checksumExists) {
-    findings.push({
-      code: 'archive_checksum_missing',
-      severity: strict ? 'error' : 'warning',
-      message: 'Archive checksum sidecar (.sha256) not found',
-    });
-  } else {
-    try {
-      const sidecarContent = await fs.readFile(checksumSidecarPath, 'utf-8');
-      const expectedHash = sidecarContent.trim().split(/\s+/)[0];
-      const archiveBuffer = await fs.readFile(archiveTarPath);
-      const actualHash = hashBuffer(archiveBuffer);
-      if (expectedHash !== actualHash) {
-        findings.push({
-          code: 'archive_checksum_mismatch',
-          severity: 'error',
-          message: `Archive checksum mismatch: sidecar says ${expectedHash?.slice(0, 12)}..., actual is ${actualHash.slice(0, 12)}...`,
-        });
-      }
-    } catch {
-      // Can't read archive or sidecar — skip
-    }
-  }
+  await verifyArchiveChecksum(archiveTarPath, checksumSidecarPath, strict, findings);
 }
 
 async function verifyArchiveImpl(

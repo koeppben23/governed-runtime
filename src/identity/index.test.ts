@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { IdpConfigSchema, IdpError, resolveIdpToken } from './index.js';
 import { JwksRemoteKeyResolver } from './key-resolver.js';
+import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
 
 interface RsaFixture {
   readonly privateKey: crypto.KeyObject;
@@ -518,6 +519,100 @@ describe('identity resolveIdpToken (P35b1)', () => {
     await expect(resolveIdpToken(tokenPath, config)).rejects.toMatchObject<Partial<IdpError>>({
       code: 'IDP_JWKS_FETCH_FAILED',
     });
+  });
+
+  it('BAD jwksUri fetch failures log redacted URI metadata only', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-idp-jwks-log-redaction-'));
+    const fixture = createRsaFixture();
+    const token = createJwtToken({ privateKey: fixture.privateKey, kid: 'log-key' });
+    const tokenPath = await writeTempFile(tempDir, 'token.jwt', token);
+    vi.spyOn(globalThis, 'fetch').mockRejectedValueOnce(
+      new Error('network down for https://id.example.com/.well-known/jwks.json?token=secret'),
+    );
+    const logs: Array<{
+      level: string;
+      service: string;
+      message: string;
+      extra?: Record<string, unknown>;
+    }> = [];
+    const logger: AdapterLogger = {
+      info: (service, message, extra) => logs.push({ level: 'info', service, message, extra }),
+      warn: (service, message, extra) => logs.push({ level: 'warn', service, message, extra }),
+      error: (service, message, extra) => logs.push({ level: 'error', service, message, extra }),
+    };
+
+    const config = IdpConfigSchema.parse({
+      mode: 'jwks',
+      issuer: 'https://issuer.example.com',
+      audience: ['flowguard'],
+      claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+      jwksUri: 'https://id.example.com/.well-known/jwks.json?token=secret',
+      cacheTtlSeconds: 300,
+    });
+
+    await expect(
+      runWithAdapterLoggerAsync(logger, () => resolveIdpToken(tokenPath, config)),
+    ).rejects.toMatchObject<Partial<IdpError>>({ code: 'IDP_JWKS_FETCH_FAILED' });
+
+    const entry = logs.find(
+      (log) =>
+        log.level === 'error' &&
+        log.service === 'identity' &&
+        log.message === 'JWKS remote fetch failed',
+    );
+    expect(entry?.extra?.jwksUri).toBe('[redacted:id.example.com]');
+    const serialized = JSON.stringify(entry);
+    expect(serialized).not.toContain('token=secret');
+    expect(serialized).not.toContain('.well-known/jwks.json');
+    expect(serialized).not.toContain(token);
+  });
+
+  it('BAD jwksUri non-OK responses log redacted URI metadata only', async () => {
+    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-idp-jwks-http-log-redaction-'));
+    const fixture = createRsaFixture();
+    const token = createJwtToken({ privateKey: fixture.privateKey, kid: 'http-log-key' });
+    const tokenPath = await writeTempFile(tempDir, 'token.jwt', token);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response('unavailable', { status: 503 }),
+    );
+    const logs: Array<{
+      level: string;
+      service: string;
+      message: string;
+      extra?: Record<string, unknown>;
+    }> = [];
+    const logger: AdapterLogger = {
+      info: (service, message, extra) => logs.push({ level: 'info', service, message, extra }),
+      warn: (service, message, extra) => logs.push({ level: 'warn', service, message, extra }),
+      error: (service, message, extra) => logs.push({ level: 'error', service, message, extra }),
+    };
+
+    const config = IdpConfigSchema.parse({
+      mode: 'jwks',
+      issuer: 'https://issuer.example.com',
+      audience: ['flowguard'],
+      claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
+      jwksUri: 'https://id.example.com/.well-known/jwks.json?token=secret',
+      cacheTtlSeconds: 300,
+    });
+
+    await expect(
+      runWithAdapterLoggerAsync(logger, () => resolveIdpToken(tokenPath, config)),
+    ).rejects.toMatchObject<Partial<IdpError>>({ code: 'IDP_JWKS_FETCH_FAILED' });
+
+    const entry = logs.find(
+      (log) =>
+        log.level === 'error' &&
+        log.service === 'identity' &&
+        log.message === 'JWKS remote fetch returned non-OK status',
+    );
+    expect(entry?.extra).toMatchObject({
+      jwksUri: '[redacted:id.example.com]',
+      error: 'HTTP 503',
+    });
+    const serialized = JSON.stringify(entry);
+    expect(serialized).not.toContain('token=secret');
+    expect(serialized).not.toContain(token);
   });
 
   it('EDGE runtime-guards missing jwksPath/jwksUri with IDP_JWKS_URI_INVALID', async () => {
