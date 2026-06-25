@@ -11,8 +11,15 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
  */
 
-import { describe, it, expect } from 'vitest';
-import { createLogger, createNoopLogger, type FlowGuardLogger, type LogEntry } from './logger.js';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import {
+  createLogger,
+  createNoopLogger,
+  type FlowGuardLogger,
+  type HealthAwareLogger,
+  type LogEntry,
+  type LoggerConfig,
+} from './logger.js';
 import { runWithLogContext } from './log-context.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
@@ -382,5 +389,337 @@ describe('Performance', () => {
       log.info('test', 'noop');
     }, 10000);
     expect(result.p99Ms).toBeLessThan(0.1);
+  });
+});
+
+// =============================================================================
+// G6: Rate Limiting
+// =============================================================================
+
+describe('createLogger — rate limiting', () => {
+  beforeEach(() => {
+    vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('rate limit is off by default (config not passed)', () => {
+    const { entries, sink } = captureSink();
+    const log = createLogger('debug', sink);
+
+    // 200 rapid calls — all should pass since rate limiting is disabled
+    for (let i = 0; i < 200; i++) {
+      log.info('test', 'msg');
+    }
+    expect(entries).toHaveLength(200);
+
+    const health = (log as HealthAwareLogger).getHealth();
+    expect(health.rateLimitDroppedTotal).toBe(0);
+  });
+
+  it('wiring: rateLimit config from FlowGuardConfig shape activates rate limiting', () => {
+    // This is the exact shape that createPluginLogger passes to createLogger
+    const log = createLogger('info', [() => {}], {
+      rateLimit: {
+        enabled: true,
+        maxPerSecond: 3,
+        exemptLevels: ['error'],
+        summaryIntervalMs: 60000,
+      },
+    });
+
+    // 3 at level should pass
+    for (let i = 0; i < 3; i++) log.info('svc', `m${i}`);
+    // 4th should be rate-limited
+    log.info('svc', 'excess');
+
+    const health = (log as HealthAwareLogger).getHealth();
+    expect(health.rateLimitDroppedTotal).toBeGreaterThanOrEqual(1);
+  });
+
+  it('allows up to maxPerSecond entries per key', () => {
+    const { entries, sink } = captureSink();
+    const cfg: LoggerConfig = {
+      rateLimit: {
+        enabled: true,
+        maxPerSecond: 50,
+        exemptLevels: [],
+        summaryIntervalMs: 60000,
+        _clock: () => Date.now(),
+      },
+    };
+    const log = createLogger('debug', sink, cfg);
+
+    for (let i = 0; i < 50; i++) {
+      log.info('svc', 'msg');
+    }
+    expect(entries).toHaveLength(50);
+  });
+
+  it('drops entries exceeding maxPerSecond', () => {
+    const { entries, sink } = captureSink();
+    const cfg: LoggerConfig = {
+      rateLimit: {
+        enabled: true,
+        maxPerSecond: 10,
+        exemptLevels: [],
+        summaryIntervalMs: 60000,
+        _clock: () => Date.now(),
+      },
+    };
+    const log = createLogger('debug', sink, cfg);
+
+    for (let i = 0; i < 20; i++) {
+      log.info('svc', 'msg');
+    }
+    expect(entries.length).toBeLessThanOrEqual(10);
+    const health = (log as HealthAwareLogger).getHealth();
+    expect(health.rateLimitDroppedTotal).toBeGreaterThan(0);
+  });
+
+  it('exempt levels are never dropped', () => {
+    const { entries, sink } = captureSink();
+    const cfg: LoggerConfig = {
+      rateLimit: {
+        enabled: true,
+        maxPerSecond: 5,
+        exemptLevels: ['error'],
+        summaryIntervalMs: 60000,
+        _clock: () => Date.now(),
+      },
+    };
+    const log = createLogger('debug', sink, cfg);
+
+    for (let i = 0; i < 20; i++) {
+      log.error('svc', `e${i}`);
+    }
+    expect(entries).toHaveLength(20);
+  });
+
+  it('per-key isolation: audit:warn does not affect hook:warn', () => {
+    const { entries, sink } = captureSink();
+    const cfg: LoggerConfig = {
+      rateLimit: {
+        enabled: true,
+        maxPerSecond: 5,
+        exemptLevels: [],
+        summaryIntervalMs: 60000,
+        _clock: () => Date.now(),
+      },
+    };
+    const log = createLogger('debug', sink, cfg);
+
+    for (let i = 0; i < 5; i++) log.warn('audit', 'a');
+    for (let i = 0; i < 5; i++) log.warn('hook', 'h');
+
+    expect(entries).toHaveLength(10);
+  });
+
+  it('per-level isolation: audit:warn does not affect audit:info', () => {
+    const { entries, sink } = captureSink();
+    const cfg: LoggerConfig = {
+      rateLimit: {
+        enabled: true,
+        maxPerSecond: 5,
+        exemptLevels: [],
+        summaryIntervalMs: 60000,
+        _clock: () => Date.now(),
+      },
+    };
+    const log = createLogger('debug', sink, cfg);
+
+    for (let i = 0; i < 5; i++) log.warn('audit', 'w');
+    for (let i = 0; i < 5; i++) log.info('audit', 'i');
+
+    expect(entries).toHaveLength(10);
+  });
+
+  it('refills tokens over time', () => {
+    const { entries, sink } = captureSink();
+    let fakeNow = 0;
+    const cfg: LoggerConfig = {
+      rateLimit: {
+        enabled: true,
+        maxPerSecond: 100,
+        exemptLevels: [],
+        summaryIntervalMs: 60000,
+        _clock: () => fakeNow,
+      },
+    };
+    const log = createLogger('debug', sink, cfg);
+
+    // Burst 100 — all pass
+    for (let i = 0; i < 100; i++) log.info('svc', `b${i}`);
+    expect(entries).toHaveLength(100);
+
+    // 101st should be dropped
+    log.info('svc', 'drop');
+    expect(entries).toHaveLength(100);
+
+    // Advance 500ms — ~50 tokens refilled
+    fakeNow += 500;
+
+    // Should allow ~50 more
+    const before = entries.length;
+    for (let i = 0; i < 50; i++) log.info('svc', `r${i}`);
+    expect(entries.length - before).toBeGreaterThanOrEqual(49);
+  });
+
+  it('lazy timer: starts on first drop, writes summary, stops on idle', () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+    // Capture timer callbacks
+    let timerCallback: (() => void) | null = null;
+    let timerCleared = false;
+    let unrefCalled = false;
+
+    const origSetInterval = global.setInterval;
+    const origClearInterval = global.clearInterval;
+
+    global.setInterval = ((fn: () => void, ms: number) => {
+      timerCallback = fn;
+      return {
+        unref: () => {
+          unrefCalled = true;
+        },
+      } as unknown as ReturnType<typeof setInterval>;
+    }) as typeof setInterval;
+
+    global.clearInterval = (() => {
+      timerCleared = true;
+      timerCallback = null;
+    }) as typeof clearInterval;
+
+    const cfg: LoggerConfig = {
+      rateLimit: {
+        enabled: true,
+        maxPerSecond: 5,
+        exemptLevels: [],
+        summaryIntervalMs: 1000,
+        _clock: () => Date.now(),
+      },
+    };
+
+    try {
+      const log = createLogger('debug', [() => {}], cfg);
+
+      // No drops yet — timer should not be started
+      expect(timerCallback).toBeNull();
+
+      // Trigger drops
+      for (let i = 0; i < 10; i++) log.info('svc', `m${i}`);
+      // Drop happened — timer should now be started
+      expect(timerCallback).not.toBeNull();
+      expect(unrefCalled).toBe(true);
+
+      // Fire the timer callback — should write summary to stderr
+      const callCountBefore = stderr.mock.calls.length;
+      timerCallback!();
+      expect(stderr.mock.calls.length).toBeGreaterThan(callCountBefore);
+
+      const summaryLine = stderr.mock.calls[stderr.mock.calls.length - 1]![0] as string;
+      expect(summaryLine).toContain('[FlowGuard] rate limit:');
+      expect(summaryLine).toContain('svc:info');
+      expect(summaryLine).toContain('dropped');
+
+      // Next interval with no new drops — timer should stop
+      timerCallback!();
+      expect(timerCleared).toBe(true);
+    } finally {
+      global.setInterval = origSetInterval;
+      global.clearInterval = origClearInterval;
+      stderr.mockRestore();
+    }
+  });
+});
+
+// =============================================================================
+// G10: Health
+// =============================================================================
+
+describe('createLogger — health', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('getHealth returns initial state', () => {
+    const { sink } = captureSink();
+    const log = createLogger('info', sink);
+    const health = (log as HealthAwareLogger).getHealth();
+    expect(health.level).toBe('info');
+    expect(health.sinkFailuresTotal).toBe(0);
+    expect(health.rateLimitDroppedTotal).toBe(0);
+  });
+
+  it('getHealth returns correct values after operations', () => {
+    const { sink } = captureSink();
+    const cfg: LoggerConfig = {
+      rateLimit: {
+        enabled: true,
+        maxPerSecond: 5,
+        exemptLevels: [],
+        summaryIntervalMs: 60000,
+        _clock: () => Date.now(),
+      },
+    };
+    const log = createLogger('debug', sink, cfg);
+
+    // Cause rate limit drops
+    for (let i = 0; i < 20; i++) log.info('svc', 'm');
+    const health = (log as HealthAwareLogger).getHealth();
+    expect(health.level).toBe('debug');
+    expect(health.rateLimitDroppedTotal).toBeGreaterThan(0);
+  });
+
+  it('noop logger getHealth returns zeroes and silent', () => {
+    const log = createNoopLogger();
+    const health = (log as HealthAwareLogger).getHealth();
+    expect(health.level).toBe('silent');
+    expect(health.sinkFailuresTotal).toBe(0);
+    expect(health.rateLimitDroppedTotal).toBe(0);
+  });
+});
+
+// =============================================================================
+// G10: Sink failure counting
+// =============================================================================
+
+describe('createLogger — sink failure counting', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('counts sync sink errors', () => {
+    const { sink } = captureSink();
+    const throwingSink = () => {
+      throw new Error('sync failure');
+    };
+    const log = createLogger('info', [throwingSink, sink]);
+
+    log.info('s', 'm1');
+    log.info('s', 'm2');
+
+    const health = (log as HealthAwareLogger).getHealth();
+    expect(health.sinkFailuresTotal).toBe(2);
+  });
+
+  it('counts async sink rejections', async () => {
+    const { sink } = captureSink();
+    const asyncFailingSink = async () => {
+      throw new Error('async failure');
+    };
+    const log = createLogger('info', [asyncFailingSink, sink]);
+
+    // Trigger async sink — rejection is counted asynchronously
+    log.info('s', 'm1');
+    log.info('s', 'm2');
+
+    // Wait for microtasks
+    await new Promise((r) => setImmediate(r));
+
+    const health = (log as HealthAwareLogger).getHealth();
+    expect(health.sinkFailuresTotal).toBe(2);
   });
 });

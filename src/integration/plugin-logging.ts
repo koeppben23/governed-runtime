@@ -51,6 +51,7 @@ interface PluginLogClient {
  * Prevents flooding stderr when the SDK connection is persistently broken.
  */
 const UI_SINK_FAILURE_WARN_LIMIT = 3;
+const UI_HEALTH_REPORT_MS = 5 * 60 * 1000;
 
 /**
  * Build logging sinks based on config mode, client, and workspace.
@@ -96,23 +97,29 @@ export function buildLogSinks(
     if (client?.app?.log) {
       const clientLog = client.app.log.bind(client.app);
       let uiSinkFailures = 0;
-      sinks.push((entry: LogEntry) => {
-        clientLog({
-          body: {
-            service: entry.service,
-            level: entry.level,
-            message: entry.message,
-            ...(entry.extra ? { extra: entry.extra } : {}),
-          },
-        }).catch((err: unknown) => {
+      let lastHealthReport = 0;
+      sinks.push(async (entry: LogEntry) => {
+        try {
+          await clientLog({
+            body: {
+              service: entry.service,
+              level: entry.level,
+              message: entry.message,
+              ...(entry.extra ? { extra: entry.extra } : {}),
+            },
+          });
+        } catch {
           uiSinkFailures++;
-          if (uiSinkFailures <= UI_SINK_FAILURE_WARN_LIMIT) {
-            const detail = err instanceof Error ? err.message : String(err);
-            process.stderr.write(
-              `[FlowGuard] UI log sink error (${uiSinkFailures}/${UI_SINK_FAILURE_WARN_LIMIT}): ${detail}\n`,
-            );
+          const now = Date.now();
+          if (
+            uiSinkFailures <= UI_SINK_FAILURE_WARN_LIMIT ||
+            now - lastHealthReport > UI_HEALTH_REPORT_MS
+          ) {
+            process.stderr.write(`[FlowGuard] UI log sink failure (${uiSinkFailures} total)\n`);
+            lastHealthReport = now;
           }
-        });
+          throw new Error('UI log sink failure'); // rethrow for central counting (G10)
+        }
       });
     }
   }
@@ -164,7 +171,17 @@ export async function createPluginLogger(
   // Non-blocking: logging errors never block the plugin
   const sinks = buildLogSinks(config, client, workspaceDir);
 
-  const log = sinks.length > 0 ? createLogger(config.logging.level, sinks) : createNoopLogger();
+  const log =
+    sinks.length > 0
+      ? createLogger(config.logging.level, sinks, {
+          rateLimit: {
+            enabled: config.logging.rateLimit.enabled,
+            maxPerSecond: config.logging.rateLimit.maxPerSecond,
+            exemptLevels: config.logging.rateLimit.exemptLevels,
+            summaryIntervalMs: config.logging.rateLimit.summaryIntervalMs,
+          },
+        })
+      : createNoopLogger();
 
   log.info('plugin', 'initialized', {
     worktree: worktree ?? 'none',

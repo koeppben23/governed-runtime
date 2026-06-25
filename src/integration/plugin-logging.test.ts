@@ -207,18 +207,17 @@ describe('UI sink error observability', () => {
     const sinks = buildLogSinks(uiConfig, client, null);
 
     expect(sinks).toHaveLength(1);
-    sinks[0](testEntry);
+    await expect(sinks[0](testEntry)).rejects.toThrow('UI log sink failure');
 
     await new Promise((r) => setTimeout(r, 10));
 
     expect(stderrSpy).toHaveBeenCalledTimes(1);
     const written = stderrSpy.mock.calls[0][0] as string;
-    expect(written).toContain('[FlowGuard] UI log sink error');
-    expect(written).toContain('connection lost');
-    expect(written).toContain('1/3');
+    expect(written).toContain('[FlowGuard] UI log sink failure');
+    expect(written).toContain('(1 total)');
   });
 
-  // CORNER: stderr warnings stop after the limit (3 failures)
+  // CORNER: stderr warnings stop after the limit (3 failures) per 5-min window
   it('CORNER — suppresses stderr after 3 failures to prevent flooding', async () => {
     const client = {
       app: { log: vi.fn().mockRejectedValue(new Error('broken')) },
@@ -226,33 +225,33 @@ describe('UI sink error observability', () => {
     const sinks = buildLogSinks(uiConfig, client, null);
     const sink = sinks[0];
 
-    // Fire 5 log calls — only first 3 should emit stderr
+    // Fire 5 log calls — only first 3 should emit stderr (5-min window)
     for (let i = 0; i < 5; i++) {
-      sink(testEntry);
+      await expect(sink(testEntry)).rejects.toThrow('UI log sink failure');
     }
 
     await new Promise((r) => setTimeout(r, 50));
 
     expect(stderrSpy).toHaveBeenCalledTimes(3);
-    // Verify the counter increments in the messages
-    expect(stderrSpy.mock.calls[0][0] as string).toContain('1/3');
-    expect(stderrSpy.mock.calls[1][0] as string).toContain('2/3');
-    expect(stderrSpy.mock.calls[2][0] as string).toContain('3/3');
+    expect(stderrSpy.mock.calls[0][0] as string).toContain('(1 total)');
+    expect(stderrSpy.mock.calls[1][0] as string).toContain('(2 total)');
+    expect(stderrSpy.mock.calls[2][0] as string).toContain('(3 total)');
   });
 
   // EDGE: non-Error rejection (e.g. string) is still reported
-  it('EDGE — non-Error rejection is reported via String()', async () => {
+  it('EDGE — non-Error rejection is reported via stderr', async () => {
     const client = {
       app: { log: vi.fn().mockRejectedValue('raw string rejection') },
     };
     const sinks = buildLogSinks(uiConfig, client, null);
 
-    sinks[0](testEntry);
+    await expect(sinks[0](testEntry)).rejects.toThrow('UI log sink failure');
     await new Promise((r) => setTimeout(r, 10));
 
     expect(stderrSpy).toHaveBeenCalledTimes(1);
     const written = stderrSpy.mock.calls[0][0] as string;
-    expect(written).toContain('raw string rejection');
+    expect(written).toContain('[FlowGuard] UI log sink failure');
+    expect(written).toContain('(1 total)');
   });
 
   // EDGE: extra field in LogEntry is forwarded to client.app.log body
@@ -292,17 +291,39 @@ describe('UI sink error observability', () => {
     const sinks1 = buildLogSinks(uiConfig, client1, null);
     const sinks2 = buildLogSinks(uiConfig, client2, null);
 
-    // 4 failures on sink1 (only 3 reported) + 1 failure on sink2
-    for (let i = 0; i < 4; i++) sinks1[0](testEntry);
-    sinks2[0](testEntry);
+    // 4 failures on sink1 (only 3 reported within 5-min window) + 1 failure on sink2
+    for (let i = 0; i < 4; i++)
+      await expect(sinks1[0](testEntry)).rejects.toThrow('UI log sink failure');
+    await expect(sinks2[0](testEntry)).rejects.toThrow('UI log sink failure');
 
     await new Promise((r) => setTimeout(r, 50));
 
     // sink1: 3 warnings + sink2: 1 warning = 4 total
     expect(stderrSpy).toHaveBeenCalledTimes(4);
-    // sink2's warning should reference its own counter (1/3, not 4/3)
+    // sink2's warning should reference its own counter (1 total, not 4 total)
     const lastCall = stderrSpy.mock.calls[3][0] as string;
-    expect(lastCall).toContain('1/3');
-    expect(lastCall).toContain('fail-2');
+    expect(lastCall).toContain('(1 total)');
+  });
+
+  // G10: UI sink rejection is centrally counted via createLogger's sinkFailuresTotal
+  it('G10 — UI sink rejection increments central sinkFailuresTotal', async () => {
+    const client = {
+      app: { log: vi.fn().mockRejectedValue(new Error('ui failure')) },
+    };
+    const sinks = buildLogSinks(uiConfig, client, null);
+    expect(sinks).toHaveLength(1);
+
+    // Wrap the UI sink in a logger so createLogger counts rejections
+    const { createLogger } = await import('../logging/logger.js');
+    const log = createLogger('debug', sinks);
+
+    // Cause a UI sink failure
+    log.info('test', 'message');
+
+    // Wait for async rejection to be counted
+    await new Promise((r) => setTimeout(r, 50));
+
+    const health = (log as import('../logging/logger.js').HealthAwareLogger).getHealth();
+    expect(health.sinkFailuresTotal).toBeGreaterThanOrEqual(1);
   });
 });

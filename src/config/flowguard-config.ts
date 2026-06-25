@@ -24,7 +24,12 @@ import { z } from 'zod';
 import { IdpConfigSchema, IdentityProviderModeSchema } from '../identity/index.js';
 import { PolicyModeSchema } from '../state/policy-mode.js';
 import { HOST_IDS } from '../shared/hosts.js';
-import { LogLevelSchema, ConsoleFormatSchema, MaxFileSizeMbSchema } from './logging-config.js';
+import {
+  LogLevelSchema,
+  ConsoleFormatSchema,
+  MaxFileSizeMbSchema,
+  RateLimitMaxPerSecondSchema,
+} from './logging-config.js';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
@@ -45,6 +50,24 @@ export const FlowGuardConfigSchema = z.object({
       consoleFormat: ConsoleFormatSchema,
       /** Maximum log file size in megabytes before rotation. */
       maxFileSizeMb: MaxFileSizeMbSchema,
+      /** Rate limiting configuration. Disabled by default — enable in production. */
+      rateLimit: z
+        .object({
+          /** Enable rate limiting. Default: false (opt-in). */
+          enabled: z.boolean().default(false),
+          /** Max entries per second per (service, level) key. */
+          maxPerSecond: RateLimitMaxPerSecondSchema,
+          /** Levels exempt from rate limiting. Default: ['error']. */
+          exemptLevels: z.array(LogLevelSchema).default(['error']),
+          /** Interval in ms between rate-limit summary reports on stderr. */
+          summaryIntervalMs: z.number().int().min(10000).max(600000).default(60000),
+        })
+        .default({
+          enabled: false,
+          maxPerSecond: 100,
+          exemptLevels: ['error'],
+          summaryIntervalMs: 60000,
+        }),
     })
     .default({
       mode: 'file',
@@ -52,6 +75,12 @@ export const FlowGuardConfigSchema = z.object({
       retentionDays: 7,
       consoleFormat: 'text',
       maxFileSizeMb: 10,
+      rateLimit: {
+        enabled: false,
+        maxPerSecond: 100,
+        exemptLevels: ['error'],
+        summaryIntervalMs: 60000,
+      },
     }),
 
   /** Policy override configuration. Merged field-wise with the resolved preset. */
