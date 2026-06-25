@@ -16,7 +16,6 @@
  * - The sink always resolves — no Promise rejections to createLogger.
  *
  * Dependencies (added to package.json as direct deps):
- *   @opentelemetry/api-logs
  *   @opentelemetry/sdk-logs
  *   @opentelemetry/exporter-logs-otlp-http
  *
