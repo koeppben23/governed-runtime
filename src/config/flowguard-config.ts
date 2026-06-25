@@ -30,6 +30,7 @@ import {
   MaxFileSizeMbSchema,
   RateLimitMaxPerSecondSchema,
   DynamicLogLevelEnabledSchema,
+  OtlpEnabledSchema,
 } from './logging-config.js';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -71,6 +72,15 @@ export const FlowGuardConfigSchema = z.object({
         }),
       /** Enable SIGUSR1 for runtime log level changes. Default: false. */
       enableDynamicLevel: DynamicLogLevelEnabledSchema,
+      /** OTLP log export (OpenTelemetry Logs). Disabled by default. */
+      otlp: z
+        .object({
+          /** Enable OTLP log export. Default: false. */
+          enabled: OtlpEnabledSchema,
+          /** OTLP endpoint override. Falls back to OTEL_EXPORTER_OTLP_ENDPOINT env var. */
+          endpoint: z.string().optional(),
+        })
+        .default({ enabled: false }),
     })
     .default({
       mode: 'file',
@@ -85,6 +95,7 @@ export const FlowGuardConfigSchema = z.object({
         summaryIntervalMs: 60000,
       },
       enableDynamicLevel: false,
+      otlp: { enabled: false },
     }),
 
   /** Policy override configuration. Merged field-wise with the resolved preset. */

@@ -400,6 +400,36 @@ describe('FlowGuardConfigSchema', () => {
     });
   });
 
+  describe('logging.otlp', () => {
+    it('defaults to disabled', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.otlp.enabled).toBe(false);
+      expect(result.data!.logging.otlp.endpoint).toBeUndefined();
+    });
+
+    it('accepts enabled with endpoint', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { otlp: { enabled: true, endpoint: 'http://collector:4318' } },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.otlp.enabled).toBe(true);
+      expect(result.data!.logging.otlp.endpoint).toBe('http://collector:4318');
+    });
+
+    it('accepts enabled without endpoint (env var fallback)', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { otlp: { enabled: true } },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.otlp.endpoint).toBeUndefined();
+    });
+  });
+
   it('rejects invalid policy mode', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
