@@ -203,7 +203,7 @@ describe('createLogger', () => {
 
   // ── G1: CORRELATION IDS ───────────────────────────────────────────────
 
-  it('injects traceId into every emitted entry', () => {
+  it('does not invent traceId when no log-context is set', () => {
     const { entries, sink } = captureSink();
     const log = createLogger('debug', sink);
 
@@ -211,22 +211,24 @@ describe('createLogger', () => {
     log.error('test', 'error');
 
     for (const entry of entries) {
-      expect(typeof entry.traceId).toBe('string');
-      expect(entry.traceId!.length).toBeGreaterThan(0);
+      expect(entry.traceId).toBeUndefined();
     }
   });
 
-  it('traceIds are unique per log call when no context is set', () => {
+  it('reuses log-context traceId for every emitted entry in the scope', () => {
     const { entries, sink } = captureSink();
     const log = createLogger('debug', sink);
 
-    log.info('a', '1');
-    log.info('a', '2');
-    log.info('a', '3');
+    runWithLogContext({ traceId: 'scoped-trace' }, () => {
+      log.info('a', '1');
+      log.info('a', '2');
+      log.info('a', '3');
+    });
 
     const ids = entries.map((e) => e.traceId);
     const unique = new Set(ids);
-    expect(unique.size).toBe(3);
+    expect(unique.size).toBe(1);
+    expect(ids).toEqual(['scoped-trace', 'scoped-trace', 'scoped-trace']);
   });
 
   it('injects sessionId when log-context is set', () => {

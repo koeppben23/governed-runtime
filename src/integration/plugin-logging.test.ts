@@ -14,14 +14,24 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { buildLogSinks } from './plugin-logging.js';
 import type { LogEntry, LogSink } from '../logging/logger.js';
+import type { FlowGuardConfig } from '../config/flowguard-config.js';
 
-const mockConfig = {
-  logging: {
-    mode: 'file' as const,
+type TestLoggingConfig = Pick<
+  FlowGuardConfig['logging'],
+  'mode' | 'level' | 'retentionDays' | 'consoleFormat' | 'maxFileSizeMb' | 'otlp'
+>;
+
+function loggingConfig(overrides: Partial<TestLoggingConfig> = {}): TestLoggingConfig {
+  return {
+    mode: 'file',
     level: 'info',
     retentionDays: 7,
-  },
-};
+    consoleFormat: 'text',
+    maxFileSizeMb: 10,
+    otlp: { enabled: false },
+    ...overrides,
+  };
+}
 
 const mockClient = {
   app: {
@@ -34,14 +44,14 @@ const TEST_DIR = '/tmp/flowguard-wiring-test';
 describe('buildLogSinks', () => {
   describe('HAPPY', () => {
     it('creates file sink when mode=file and workspace provided', () => {
-      const config = { ...mockConfig, logging: { ...mockConfig.logging, mode: 'file' } };
+      const config = { logging: loggingConfig({ mode: 'file' }) };
       const sinks = buildLogSinks(config, undefined, TEST_DIR);
 
       expect(sinks).toHaveLength(1);
     });
 
     it('creates UI sink when mode=ui and client provided', () => {
-      const config = { ...mockConfig, logging: { ...mockConfig.logging, mode: 'ui' } };
+      const config = { logging: loggingConfig({ mode: 'ui' }) };
       const sinks = buildLogSinks(config, mockClient, null);
 
       expect(sinks).toHaveLength(1);
@@ -49,21 +59,21 @@ describe('buildLogSinks', () => {
     });
 
     it('creates both sinks when mode=both', () => {
-      const config = { ...mockConfig, logging: { ...mockConfig.logging, mode: 'both' } };
+      const config = { logging: loggingConfig({ mode: 'both' }) };
       const sinks = buildLogSinks(config, mockClient, TEST_DIR);
 
       expect(sinks).toHaveLength(2);
     });
 
     it('returns file sink only for mode=file even with client', () => {
-      const config = { ...mockConfig, logging: { ...mockConfig.logging, mode: 'file' } };
+      const config = { logging: loggingConfig({ mode: 'file' }) };
       const sinks = buildLogSinks(config, mockClient, TEST_DIR);
 
       expect(sinks).toHaveLength(1);
     });
 
     it('returns UI sink only for mode=ui even with workspace', () => {
-      const config = { ...mockConfig, logging: { ...mockConfig.logging, mode: 'ui' } };
+      const config = { logging: loggingConfig({ mode: 'ui' }) };
       const sinks = buildLogSinks(config, mockClient, TEST_DIR);
 
       expect(sinks).toHaveLength(1);
@@ -72,35 +82,35 @@ describe('buildLogSinks', () => {
 
   describe('BAD', () => {
     it('returns empty array when mode=file but no workspace', () => {
-      const config = { ...mockConfig, logging: { ...mockConfig.logging, mode: 'file' } };
+      const config = { logging: loggingConfig({ mode: 'file' }) };
       const sinks = buildLogSinks(config, undefined, null);
 
       expect(sinks).toHaveLength(0);
     });
 
     it('returns empty array when mode=ui but no client', () => {
-      const config = { ...mockConfig, logging: { ...mockConfig.logging, mode: 'ui' } };
+      const config = { logging: loggingConfig({ mode: 'ui' }) };
       const sinks = buildLogSinks(config, undefined, TEST_DIR);
 
       expect(sinks).toHaveLength(0);
     });
 
     it('returns empty array when mode=both but no workspace AND no client', () => {
-      const config = { ...mockConfig, logging: { ...mockConfig.logging, mode: 'both' } };
+      const config = { logging: loggingConfig({ mode: 'both' }) };
       const sinks = buildLogSinks(config, undefined, null);
 
       expect(sinks).toHaveLength(0);
     });
 
     it('returns empty array when workspace is empty string', () => {
-      const config = { ...mockConfig, logging: { ...mockConfig.logging, mode: 'file' } };
+      const config = { logging: loggingConfig({ mode: 'file' }) };
       const sinks = buildLogSinks(config, undefined, '');
 
       expect(sinks).toHaveLength(0);
     });
 
     it('handles relative workspace path without crashing', () => {
-      const config = { ...mockConfig, logging: { ...mockConfig.logging, mode: 'file' } };
+      const config = { logging: loggingConfig({ mode: 'file' }) };
       const sinks = buildLogSinks(config, undefined, './relative');
 
       expect(sinks).toHaveLength(1);
@@ -109,21 +119,21 @@ describe('buildLogSinks', () => {
 
   describe('CORNER', () => {
     it('handles mode as "both" with only workspace (no client)', () => {
-      const config = { ...mockConfig, logging: { ...mockConfig.logging, mode: 'both' } };
+      const config = { logging: loggingConfig({ mode: 'both' }) };
       const sinks = buildLogSinks(config, undefined, TEST_DIR);
 
       expect(sinks).toHaveLength(1);
     });
 
     it('handles mode as "both" with only client (no workspace)', () => {
-      const config = { ...mockConfig, logging: { ...mockConfig.logging, mode: 'both' } };
+      const config = { logging: loggingConfig({ mode: 'both' }) };
       const sinks = buildLogSinks(config, mockClient, null);
 
       expect(sinks).toHaveLength(1);
     });
 
     it('handles client without app.log', () => {
-      const config = { ...mockConfig, logging: { ...mockConfig.logging, mode: 'ui' } };
+      const config = { logging: loggingConfig({ mode: 'ui' }) };
       const clientNoLog = { app: {} };
       const sinks = buildLogSinks(config, clientNoLog as any, TEST_DIR);
 
@@ -132,7 +142,7 @@ describe('buildLogSinks', () => {
 
     it('handles retentionDays from config', () => {
       const config = {
-        logging: { mode: 'file' as const, level: 'info', retentionDays: 30 },
+        logging: loggingConfig({ mode: 'file', retentionDays: 30 }),
       };
       const sinks = buildLogSinks(config, undefined, TEST_DIR);
 
@@ -145,14 +155,14 @@ describe('buildLogSinks', () => {
       const modes = ['file', 'ui', 'both'] as const;
 
       for (const mode of modes) {
-        const config = { ...mockConfig, logging: { ...mockConfig.logging, mode } };
+        const config = { logging: loggingConfig({ mode }) };
         const sinks = buildLogSinks(config, mockClient, TEST_DIR);
         expect(sinks.length).toBeGreaterThan(0);
       }
     });
 
     it('handles minimal config structure', () => {
-      const config = { logging: { mode: 'file' as const, level: 'info', retentionDays: 7 } };
+      const config = { logging: loggingConfig({ mode: 'file' }) };
       const sinks = buildLogSinks(config, undefined, TEST_DIR);
 
       expect(sinks).toHaveLength(1);
@@ -175,7 +185,7 @@ describe('UI sink error observability', () => {
     stderrSpy.mockRestore();
   });
 
-  const uiConfig = { logging: { mode: 'ui' as const, level: 'info', retentionDays: 7 } };
+  const uiConfig = { logging: loggingConfig({ mode: 'ui' }) };
   const testEntry: LogEntry = {
     level: 'info',
     service: 'test',

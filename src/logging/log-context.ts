@@ -11,6 +11,8 @@
  * - `getLogContext()` returns the current context, or undefined.
  * - No dependency on FlowGuardLogger — pure context carrier.
  * - Used by createLogger() to auto-inject traceId/sessionId into every LogEntry.
+ * - Long-term authority for diagnostic log correlation; adapter-logger's trace
+ *   store is legacy compatibility only.
  *
  * @version v1
  */
