@@ -16,3 +16,6 @@ export type MaxFileSizeMb = z.infer<typeof MaxFileSizeMbSchema>;
 
 /** Maximum log entries per second per (service, level) before rate limiting kicks in. */
 export const RateLimitMaxPerSecondSchema = z.number().int().min(1).max(10000).default(100);
+
+/** Enable SIGUSR1 handler for runtime log level changes. Default: false (opt-in). */
+export const DynamicLogLevelEnabledSchema = z.boolean().default(false);

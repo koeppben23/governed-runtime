@@ -67,14 +67,19 @@ export interface FlowGuardLogger {
 }
 
 /**
- * Logger that exposes health metrics.
- *
- * Extends FlowGuardLogger with getHealth() — used by rate-limiting
- * and sink-failure monitoring (G6/G10). Dynamic log level (G5) will
- * extend this further in a future slice.
+ * Logger that exposes health metrics (G10).
  */
 export interface HealthAwareLogger extends FlowGuardLogger {
   getHealth(): LoggerHealth;
+}
+
+/**
+ * Logger that supports runtime level changes (G5).
+ *
+ * Extends HealthAwareLogger with setLevel().
+ */
+export interface DynamicLogger extends HealthAwareLogger {
+  setLevel(newLevel: LogLevel): void;
 }
 
 // ─── Structured Log Entry ────────────────────────────────────────────────────
@@ -126,8 +131,8 @@ export type LogSink = (entry: LogEntry) => void | Promise<void>;
 
 /** Logger health counters (G10). */
 export interface LoggerHealth {
-  /** Current minimum log level. */
-  level: LogLevel;
+  /** Current minimum log level. 'silent' for noop loggers. */
+  level: LogLevel | 'silent';
   /** Total sink errors (sync throw + async rejection) since creation. */
   sinkFailuresTotal: number;
   /** Total rate-limited entries dropped since creation. */
@@ -257,9 +262,10 @@ export function createLogger(
   minLevel: LogLevel,
   sinks?: LogSink | LogSink[],
   config?: LoggerConfig,
-): HealthAwareLogger {
+): DynamicLogger {
   const sinkArray = Array.isArray(sinks) ? sinks : sinks ? [sinks] : [];
 
+  let currentMinLevel: LogLevel = minLevel;
   let sinkFailuresTotal = 0;
   let rateLimitDroppedTotal = 0;
 
@@ -280,7 +286,7 @@ export function createLogger(
     message: string,
     extra?: Record<string, unknown>,
   ): void {
-    if (LEVEL_ORDER[level] < LEVEL_ORDER[minLevel]) return;
+    if (LEVEL_ORDER[level] < LEVEL_ORDER[currentMinLevel]) return;
     if (sinkArray.length === 0) return;
 
     if (tokenBucket && !tokenBucket.allow(level, service)) {
@@ -317,10 +323,13 @@ export function createLogger(
     error: (service, message, extra) => emit('error', service, message, extra),
     getHealth(): LoggerHealth {
       return {
-        level: minLevel,
+        level: currentMinLevel,
         sinkFailuresTotal,
         rateLimitDroppedTotal,
       };
+    },
+    setLevel(newLevel: LogLevel): void {
+      currentMinLevel = newLevel;
     },
   };
 }
@@ -333,7 +342,7 @@ export function createLogger(
  * - Contexts where no client is available
  * - Fallback when config loading itself fails
  */
-export function createNoopLogger(): HealthAwareLogger {
+export function createNoopLogger(): DynamicLogger {
   const noop = () => {};
   return {
     debug: noop,
@@ -341,9 +350,10 @@ export function createNoopLogger(): HealthAwareLogger {
     warn: noop,
     error: noop,
     getHealth: () => ({
-      level: 'silent',
+      level: 'silent' as const,
       sinkFailuresTotal: 0,
       rateLimitDroppedTotal: 0,
     }),
+    setLevel: noop,
   };
 }

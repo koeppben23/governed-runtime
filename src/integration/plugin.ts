@@ -16,6 +16,7 @@ import type { Plugin } from '@opencode-ai/plugin';
 import { HttpTimestampAuthorityProvider } from '../audit/rfc-3161-http-provider.js';
 import { PkijsTimestampVerifier } from '../audit/rfc-3161-pkijs-verifier.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
+import { repoConfigPath } from '../adapters/persistence.js';
 import { toAdapterLogger } from '../logging/adapter-logger.js';
 import { serializeError } from '../logging/error-serialize.js';
 import type { SessionState } from '../state/schema.js';
@@ -66,6 +67,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     ws.cachedWsDir,
     auditWorktree,
     ws.cachedFingerprint,
+    auditWorktree ? repoConfigPath(auditWorktree) : undefined,
   );
 
   const adapterLog = toAdapterLogger(log);

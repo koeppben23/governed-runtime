@@ -29,6 +29,7 @@ import {
   ConsoleFormatSchema,
   MaxFileSizeMbSchema,
   RateLimitMaxPerSecondSchema,
+  DynamicLogLevelEnabledSchema,
 } from './logging-config.js';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -68,6 +69,8 @@ export const FlowGuardConfigSchema = z.object({
           exemptLevels: ['error'],
           summaryIntervalMs: 60000,
         }),
+      /** Enable SIGUSR1 for runtime log level changes. Default: false. */
+      enableDynamicLevel: DynamicLogLevelEnabledSchema,
     })
     .default({
       mode: 'file',
@@ -81,6 +84,7 @@ export const FlowGuardConfigSchema = z.object({
         exemptLevels: ['error'],
         summaryIntervalMs: 60000,
       },
+      enableDynamicLevel: false,
     }),
 
   /** Policy override configuration. Merged field-wise with the resolved preset. */
