@@ -11,11 +11,8 @@ import type { CommandHookBeforeInput, ToolHookBeforeInput, ToolHookBeforeOutput 
 import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
 import { getToolTraceId, type FlowGuardPluginRuntime } from './plugin-shared.js';
 import { isFlowGuardVerdictTool } from './tool-names.js';
-import {
-  getLogTraceFields,
-  runWithAdapterLoggerAsync,
-  runWithTraceContextAsync,
-} from '../logging/adapter-logger.js';
+import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
+import { runWithLogContextAsync } from '../logging/log-context.js';
 import type { SessionState } from '../state/schema.js';
 import { enforceRiskClassificationBefore as enforceRiskBefore } from './plugin-risk.js';
 import { enforceDiscoveryHealthBefore } from './plugin-discovery-health.js';
@@ -59,13 +56,11 @@ export async function toolBefore(
     const toolName = (input as ToolHookBeforeInput)?.tool ?? '';
     const sessionId = (input as ToolHookBeforeInput)?.sessionID ?? 'unknown';
     const traceId = getToolTraceId(runtime, input, 'before');
-    return runWithTraceContextAsync(traceId, async () => {
+    return runWithLogContextAsync({ traceId, sessionId }, async () => {
       runtime.setCurrentSessionId(sessionId);
       const args = (output as ToolHookBeforeOutput)?.args ?? {};
       runtime.log.info('hook', 'tool.execute.before', {
         tool: toolName,
-        sessionId,
-        ...getLogTraceFields(),
       });
       await enforceBeforeRules(runtime, toolName, sessionId, args);
     });

@@ -13,6 +13,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { createLogger, createNoopLogger, type FlowGuardLogger, type LogEntry } from './logger.js';
+import { runWithLogContext } from './log-context.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
@@ -191,6 +192,60 @@ describe('createLogger', () => {
     expect(typeof entry.message).toBe('string');
     expect(['debug', 'info', 'warn', 'error']).toContain(entry.level);
     expect(entry.extra).toBeDefined();
+  });
+
+  // ── G1: CORRELATION IDS ───────────────────────────────────────────────
+
+  it('injects traceId into every emitted entry', () => {
+    const { entries, sink } = captureSink();
+    const log = createLogger('debug', sink);
+
+    log.info('test', 'hello');
+    log.error('test', 'error');
+
+    for (const entry of entries) {
+      expect(typeof entry.traceId).toBe('string');
+      expect(entry.traceId!.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('traceIds are unique per log call when no context is set', () => {
+    const { entries, sink } = captureSink();
+    const log = createLogger('debug', sink);
+
+    log.info('a', '1');
+    log.info('a', '2');
+    log.info('a', '3');
+
+    const ids = entries.map((e) => e.traceId);
+    const unique = new Set(ids);
+    expect(unique.size).toBe(3);
+  });
+
+  it('injects sessionId when log-context is set', () => {
+    const { entries, sink } = captureSink();
+    const log = createLogger('debug', sink);
+
+    runWithLogContext({ traceId: 'parent-trace', sessionId: 'session-abc' }, () => {
+      log.warn('test', 'scoped');
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.traceId).toBe('parent-trace');
+    expect(entries[0]!.sessionId).toBe('session-abc');
+  });
+
+  it('sessionId is undefined when context has no sessionId', () => {
+    const { entries, sink } = captureSink();
+    const log = createLogger('debug', sink);
+
+    runWithLogContext({ traceId: 'no-session' }, () => {
+      log.info('test', 'no session');
+    });
+
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.traceId).toBe('no-session');
+    expect(entries[0]!.sessionId).toBeUndefined();
   });
 });
 

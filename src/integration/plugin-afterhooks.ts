@@ -10,11 +10,8 @@
  * @version v1
  */
 
-import {
-  runWithAdapterLoggerAsync,
-  runWithTraceContextAsync,
-  getLogTraceFields,
-} from '../logging/adapter-logger.js';
+import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
+import { runWithLogContextAsync } from '../logging/log-context.js';
 import {
   getToolArgs,
   getToolOutput,
@@ -70,13 +67,11 @@ export async function toolAfter(
     const toolName = hookInput?.tool ?? '';
     const sessionId = hookInput?.sessionID ?? 'unknown';
     const traceId = getToolTraceId(runtime, input, 'after');
-    return runWithTraceContextAsync(traceId, async () => {
+    return runWithLogContextAsync({ traceId, sessionId }, async () => {
       const now = new Date().toISOString();
       runtime.setCurrentSessionId(sessionId);
       runtime.log.info('hook', 'tool.execute.after', {
         tool: toolName,
-        sessionId,
-        ...getLogTraceFields(),
       });
       await handleAfterDiagnostics(runtime, {
         toolName,

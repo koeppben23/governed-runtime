@@ -217,7 +217,9 @@ describe('integration/plugin-events', () => {
       const warnCall = deps.calls.find((c) => c.method === 'log.warn');
       expect(warnCall).toBeDefined();
       expect(warnCall!.args[1]).toBe('event handler failed (non-blocking)');
-      expect((warnCall!.args[2] as Record<string, unknown>).error).toBe('cleanup exploded');
+      expect((warnCall!.args[2] as Record<string, unknown>).error).toMatchObject({
+        message: 'cleanup exploded',
+      });
     });
 
     it('fail-safe: handler catches and logs log.error exceptions', async () => {
@@ -237,7 +239,9 @@ describe('integration/plugin-events', () => {
 
       const warnCall = deps.calls.find((c) => c.method === 'log.warn');
       expect(warnCall).toBeDefined();
-      expect((warnCall!.args[2] as Record<string, unknown>).error).toBe('logging exploded');
+      expect((warnCall!.args[2] as Record<string, unknown>).error).toMatchObject({
+        message: 'logging exploded',
+      });
     });
 
     it('handles event with readonly frozen properties', async () => {
@@ -458,7 +462,9 @@ describe('integration/plugin-events', () => {
       const warnCall = deps.calls.find((c) => c.method === 'log.warn');
       expect(warnCall).toBeDefined();
       expect(warnCall!.args[1]).toBe('event handler failed (non-blocking)');
-      expect((warnCall!.args[2] as Record<string, unknown>).error).toBe('audit boom');
+      expect((warnCall!.args[2] as Record<string, unknown>).error).toMatchObject({
+        message: 'audit boom',
+      });
     });
 
     // T9 -- BAD: audit returns rejected promise -- handler is fail-safe
@@ -475,7 +481,9 @@ describe('integration/plugin-events', () => {
 
       const warnCall = deps.calls.find((c) => c.method === 'log.warn');
       expect(warnCall).toBeDefined();
-      expect((warnCall!.args[2] as Record<string, unknown>).error).toBe('audit rejected');
+      expect((warnCall!.args[2] as Record<string, unknown>).error).toMatchObject({
+        message: 'audit rejected',
+      });
     });
 
     // T10 -- CORNER: unknown sessionId still triggers audit

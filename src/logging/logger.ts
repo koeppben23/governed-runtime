@@ -33,6 +33,8 @@
  */
 
 import type { LogLevel } from '../config/logging-config.js';
+import { randomUUID } from 'node:crypto';
+import { getLogContext } from './log-context.js';
 
 // ─── Level Ordering ──────────────────────────────────────────────────────────
 
@@ -72,6 +74,10 @@ export interface FlowGuardLogger {
  * Maps 1:1 to the OpenCode SDK's client.app.log() body shape:
  *   { service, level, message, extra? }
  *
+ * traceId and sessionId are auto-injected by createLogger() from the
+ * log-context (runWithLogContext). Adapter logs within the same context
+ * inherit the same identifiers for end-to-end correlation.
+ *
  * The sink receives all fields so it can delegate to the SDK
  * with the correct level — not a pre-formatted string that
  * loses level information.
@@ -85,6 +91,11 @@ export interface LogEntry {
   message: string;
   /** Optional structured metadata. */
   extra?: Record<string, unknown>;
+  /** Auto-injected correlation trace id. Always present when emitted
+   *  by createLogger; may be absent in test-constructed entries. */
+  traceId?: string;
+  /** Session id from log-context, if available. */
+  sessionId?: string;
 }
 
 // ─── LogSink Interface ────────────────────────────────────────────────────────
@@ -126,7 +137,15 @@ export function createLogger(minLevel: LogLevel, sinks?: LogSink | LogSink[]): F
     if (LEVEL_ORDER[level] < LEVEL_ORDER[minLevel]) return;
     if (sinkArray.length === 0) return;
 
-    const entry: LogEntry = { level, service, message, extra };
+    const ctx = getLogContext();
+    const entry: LogEntry = {
+      level,
+      service,
+      message,
+      extra,
+      traceId: ctx?.traceId ?? randomUUID(),
+      sessionId: ctx?.sessionId,
+    };
 
     for (const sink of sinkArray) {
       try {

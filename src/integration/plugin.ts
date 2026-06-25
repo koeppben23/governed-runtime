@@ -17,6 +17,7 @@ import { HttpTimestampAuthorityProvider } from '../audit/rfc-3161-http-provider.
 import { PkijsTimestampVerifier } from '../audit/rfc-3161-pkijs-verifier.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { toAdapterLogger } from '../logging/adapter-logger.js';
+import { serializeError } from '../logging/error-serialize.js';
 import type { SessionState } from '../state/schema.js';
 import type { AuditDeps } from './plugin-audit.js';
 import { commandBefore, toolBefore } from './plugin-beforehooks.js';
@@ -70,7 +71,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
   const adapterLog = toAdapterLogger(log);
 
   function logError(message: string, err: unknown): void {
-    log.error('audit', message, { error: err instanceof Error ? err.message : String(err) });
+    log.error('audit', message, { error: serializeError(err) });
   }
 
   async function resolveSessionPolicy(
