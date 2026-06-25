@@ -13,8 +13,8 @@ export {
   createNoopLogger,
 } from './logger.js';
 
-export { createFileSink, getLogDir } from './file-sink.js';
-export { createConsoleSink } from './console-sink.js';
+export { createFileSink, getLogDir, type FileSinkOptions } from './file-sink.js';
+export { createConsoleSink, type ConsoleSinkOptions } from './console-sink.js';
 export {
   setAdapterLogger,
   getAdapterLogger,

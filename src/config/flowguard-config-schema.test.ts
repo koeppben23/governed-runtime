@@ -243,6 +243,82 @@ describe('FlowGuardConfigSchema', () => {
     });
   });
 
+  describe('logging.consoleFormat', () => {
+    it('defaults to text', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.consoleFormat).toBe('text');
+    });
+
+    it('accepts json', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { consoleFormat: 'json' },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.consoleFormat).toBe('json');
+    });
+
+    it('rejects invalid format', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { consoleFormat: 'xml' },
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
+  describe('logging.maxFileSizeMb', () => {
+    it('defaults to 10', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.maxFileSizeMb).toBe(10);
+    });
+
+    it('accepts custom value', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { maxFileSizeMb: 50 },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.maxFileSizeMb).toBe(50);
+    });
+
+    it('rejects below minimum (1)', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { maxFileSizeMb: 0 },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('rejects above maximum (1024)', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { maxFileSizeMb: 1025 },
+      });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts boundary values 1 and 1024', () => {
+      const min = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { maxFileSizeMb: 1 },
+      });
+      expect(min.success).toBe(true);
+
+      const max = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { maxFileSizeMb: 1024 },
+      });
+      expect(max.success).toBe(true);
+    });
+  });
+
   it('rejects invalid policy mode', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
