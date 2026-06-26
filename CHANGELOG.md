@@ -96,8 +96,6 @@ global defaults"`.
   is throw-safe and depth-bounded — `log.*()` never throws. Closes the logging
   portion of R3, R5, R6, R7, R8, and D1.
 
-### Changed
-
 - **Reviewer criteria: security and root-cause dimensions (`criteriaVersion`
   p36-v1 -> p37-v1).** The independent-reviewer criteria (`REVIEWER_CRITERIA` in
   `src/templates/mandates-reviewer-criteria.ts`) gained two dimensions distilled
