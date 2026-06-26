@@ -30,7 +30,7 @@ integration/  -> rails/  -> machine/  -> state/
 ### Prerequisites
 
 - Node.js 20+
-- Bun (recommended) or npm
+- npm
 
 ### Installation
 
@@ -81,22 +81,22 @@ npm run format
 # Generate changelog
 npm run changelog
 
-# Run specific test file
-npm test -- src/state/state.test.ts
+# Run specific test file (bypasses vitest project mode)
+npx vitest run src/state/state.test.ts
 
 # Run architecture tests
-npm test -- src/architecture/__tests__/dependency-rules.test.ts
+npx vitest run src/architecture/__tests__/dependency-rules.test.ts
 ```
 
 ### Test Categories
 
-| Category     | Files                          | Purpose                           |
-| ------------ | ------------------------------ | --------------------------------- |
-| Unit         | `*.test.ts` in each module     | Core logic testing                |
-| Architecture | `src/architecture/__tests__/`  | Dependency rule verification      |
-| Integration  | `src/integration/*.test.ts`    | OpenCode tool integration         |
-| CLI          | `src/cli/*.test.ts`            | Command-line interface            |
-| Performance  | `*.test.ts` with PERF describe | Performance regression prevention |
+| Category     | Files                              | Purpose                                     |
+| ------------ | ---------------------------------- | ------------------------------------------- |
+| Unit         | `src/**/*.test.ts` (w/ exclusions) | Core logic testing (no integration imports) |
+| Architecture | `src/architecture/__tests__/`      | Dependency rule verification                |
+| Integration  | `src/integration/*.test.ts`        | OpenCode tool integration                   |
+| CLI / Smoke  | `src/cli/*smoke*.test.ts`          | Built CLI + ACP end-to-end                  |
+| Performance  | `*.test.ts` with PERF describe     | Performance regression prevention           |
 
 ### Test Naming Conventions
 
@@ -175,20 +175,20 @@ The **Enforced by** column states how each rule is checked: an automated guard
 (test/lint that fails CI) or human review. Rules with an automated guard cannot
 regress silently; review-enforced rules depend on reviewer diligence.
 
-| Principle                     | Rule                                                                    | Red Flag                                                   | Enforced by                                                                 |
-| ----------------------------- | ----------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------- |
-| **Single Responsibility**     | One reason to change per module/file/function                           | God-files; over-long/over-complex functions               | `eslint` `complexity:12`, `max-lines-per-function:80`, `max-params:5` (lint:strict = `--max-warnings=0`) |
-| **Layer Isolation**           | Respect `state/`  `machine/`  `rails/`  `adapters/`  `integration/` | Upward imports, layer bypass                               | `src/architecture/__tests__/dependency-rules.test.ts`                       |
-| **Extract, Don't Accumulate** | Split files along domain boundaries within the size budget              | Linear growth with every feature                           | `src/architecture/__tests__/file-size.test.ts`                             |
-| **No Duplicate Authority**    | One canonical implementation per concept                                | Near-identical functions, duplicated pipelines             | SSOT guards: `audit-canonicalization-ssot`, `policy-mode-ssot`, `review-acceptance-ssot`, `terminal-phase-ssot` |
-| **Content/Logic Separation**  | Template content in content files, assembly in renderer files           | Template strings mixed with business logic                 | Review                                                                       |
-| **Infrastructure Isolation**  | Locking, atomic I/O, and domain logic in separate modules               | Concurrency code inside domain persistence files           | Review                                                                       |
-| **Import Hygiene**            | Imports proportional to responsibility                                  | 15+ imports from 8+ modules in one file                    | Review                                                                       |
-| **Testability**               | Every extracted module independently testable                           | Dropped coverage after extraction                          | Review (coverage gate)                                                       |
-| **Fail-Closed**               | Errors block; no silent fallback masks a failure                        | Swallowed errors, default-allow on missing evidence        | Review (+ negative-path tests required per AGENTS.md)                        |
-| **Typed Errors**              | Throw typed errors with codes, not bare `throw new Error` in control flow | Bare throws in runtime paths                              | Review                                                                       |
-| **Determinism**               | Same input → same output for digests/canonicalization/state             | Hidden nondeterminism (time, ordering) in hash inputs      | `audit-canonicalization-ssot`, digest byte-identity tests                   |
-| **API Stability**             | Public surface stays intentional; no test-only utilities leaked         | Test helpers exported from the public barrel               | Review (barrel-export tests)                                                |
+| Principle                     | Rule                                                                      | Red Flag                                              | Enforced by                                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| **Single Responsibility**     | One reason to change per module/file/function                             | God-files; over-long/over-complex functions           | `eslint` `complexity:12`, `max-lines-per-function:80`, `max-params:5` (lint:strict = `--max-warnings=0`)        |
+| **Layer Isolation**           | Respect `state/` `machine/` `rails/` `adapters/` `integration/`           | Upward imports, layer bypass                          | `src/architecture/__tests__/dependency-rules.test.ts`                                                           |
+| **Extract, Don't Accumulate** | Split files along domain boundaries within the size budget                | Linear growth with every feature                      | `src/architecture/__tests__/file-size.test.ts`                                                                  |
+| **No Duplicate Authority**    | One canonical implementation per concept                                  | Near-identical functions, duplicated pipelines        | SSOT guards: `audit-canonicalization-ssot`, `policy-mode-ssot`, `review-acceptance-ssot`, `terminal-phase-ssot` |
+| **Content/Logic Separation**  | Template content in content files, assembly in renderer files             | Template strings mixed with business logic            | Review                                                                                                          |
+| **Infrastructure Isolation**  | Locking, atomic I/O, and domain logic in separate modules                 | Concurrency code inside domain persistence files      | Review                                                                                                          |
+| **Import Hygiene**            | Imports proportional to responsibility                                    | 15+ imports from 8+ modules in one file               | Review                                                                                                          |
+| **Testability**               | Every extracted module independently testable                             | Dropped coverage after extraction                     | Review (coverage gate)                                                                                          |
+| **Fail-Closed**               | Errors block; no silent fallback masks a failure                          | Swallowed errors, default-allow on missing evidence   | Review (+ negative-path tests required per AGENTS.md)                                                           |
+| **Typed Errors**              | Throw typed errors with codes, not bare `throw new Error` in control flow | Bare throws in runtime paths                          | Review                                                                                                          |
+| **Determinism**               | Same input → same output for digests/canonicalization/state               | Hidden nondeterminism (time, ordering) in hash inputs | `audit-canonicalization-ssot`, digest byte-identity tests                                                       |
+| **API Stability**             | Public surface stays intentional; no test-only utilities leaked           | Test helpers exported from the public barrel          | Review (barrel-export tests)                                                                                    |
 
 ### File Size Budget
 
@@ -196,10 +196,10 @@ Single source of truth for the size budget. The blocker thresholds are enforced
 by `src/architecture/__tests__/file-size.test.ts` (constants `PROD_FILE_LOC_BLOCKER`
 = 750, `TEST_FILE_LOC_BLOCKER` = 2000).
 
-| Threshold (production) | Action Required                       |
-| ---------------------- | ------------------------------------- |
-| =< 400 LOC             | Healthy - no action                   |
-| 400-750 LOC            | Consider splitting at next touch      |
+| Threshold (production) | Action Required                                  |
+| ---------------------- | ------------------------------------------------ |
+| =< 400 LOC             | Healthy - no action                              |
+| 400-750 LOC            | Consider splitting at next touch                 |
 | > 750 LOC              | Blocker - split required before merge (enforced) |
 
 Test files may be broader (suites group related cases): advisory split at
@@ -291,15 +291,29 @@ refactor: extract validation helpers
 
 The following checks must pass for a PR to be merged:
 
-| Check      | Command                        | Description                                                                            |
-| ---------- | ------------------------------ | -------------------------------------------------------------------------------------- |
-| Tests      | `npm test`                     | All tests must pass                                                                    |
-| Coverage   | `npm run test:coverage`        | Global threshold gate (branches/lines/functions/statements >= 80%)                     |
-| Format     | `npm run check:format`         | Prettier formatting check (blocking in CI)                                             |
-| Lint       | `npm run lint`                 | ESLint gate (`src/**/*.ts`) + type-aware safety rules for critical governance surfaces |
-| Type Check | `npm run check`                | TypeScript compilation                                                                 |
-| Build      | `npm run build`                | Successful compilation to dist/                                                        |
-| Audit      | `npm audit --audit-level=high` | High+ vulnerabilities block CI                                                         |
+| Check                  | Command                                        | Description                                                        |
+| ---------------------- | ---------------------------------------------- | ------------------------------------------------------------------ |
+| Tests                  | `npm test`                                     | All unit + integration tests must pass                             |
+| Coverage               | `npm run test:coverage`                        | Global threshold gate (branches/lines/functions/statements >= 80%) |
+| Format                 | `npm run check:format`                         | Prettier formatting check (blocking in CI)                         |
+| Lint                   | `npm run lint:strict`                          | ESLint gate with --max-warnings=0 for all src/\*.ts                |
+| Type Check             | `npm run check`                                | TypeScript compilation                                             |
+| Build                  | `npm run build`                                | Successful compilation to dist/                                    |
+| Architecture           | `npm run test:architecture`                    | Dependency rules + file-size enforcement                           |
+| SDK Baseline           | `npm run test:sdk-baseline`                    | SDK contract surface stability                                     |
+| Fuzz                   | `npm run test:fuzz`                            | Fast-check property-based tests                                    |
+| Unused Dependencies    | `npm run check:unused-dependencies`            | Knip — no stale imports or modules                                 |
+| Actions Pinning        | `npm run check:actions-pinned`                 | All GitHub Actions refs are immutable commit SHAs                  |
+| Actionlint             | —                                              | Workflow syntax validation (docker)                                |
+| Secrets Scan           | —                                              | GitGuardian or Gitleaks secret detection                           |
+| Security Policy        | —                                              | OSV/GHAS vulnerability scan                                        |
+| Dependency Review      | —                                              | Software supply-chain review                                       |
+| Audit                  | `npm audit --audit-level=high`                 | High+ vulnerabilities block CI                                     |
+| Install (3 platforms)  | `npm run build`                                | Cross-platform install on ubuntu, macos, windows                   |
+| Mutation               | `npm run mutation`                             | StrykerJS mutation testing for security-critical paths             |
+| Install Verify         | `npm run build && npm run test:install-verify` | Tarball install + doctor verified                                  |
+| Smoke                  | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works                                        |
+| Independent Review E2E | `npm run test:independent-review-e2e`          | Standalone reviewer session contract                               |
 
 ## Pull Request Process
 

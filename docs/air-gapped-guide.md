@@ -170,7 +170,7 @@ The `--force` flag ensures all thin wrappers and managed artifacts are overwritt
 
 ```
 ERROR: --core-tarball is required.
-Usage: npx --package ./flowguard-core-1.2.0 flowguard install --core-tarball ./flowguard-core-1.2.0
+Usage: npx --package ./flowguard-core-1.2.0-tp.1 flowguard install --core-tarball ./flowguard-core-1.2.0-tp.1
 Download from: https://github.com/koeppben23/governed-runtime/releases
 ```
 
