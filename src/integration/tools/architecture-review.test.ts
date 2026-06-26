@@ -3,9 +3,9 @@
  * @description Contract tests for the handleAdrReview() public API.
  *
  * Tests the blocked-path validation gates (wrong phase, missing architecture,
- * missing selfReview, empty ADR text on changes_requested). The full success
- * path requires a complete MutableSession fixture with persisted state and
- * is exercised by integration-level architecture tool tests.
+ * missing selfReview, missing findings). The full success path requires a
+ * complete MutableSession fixture with persisted state and is intentionally
+ * left to integration-level tests.
  *
  * @test-policy HAPPY, BAD, CORNER
  */
