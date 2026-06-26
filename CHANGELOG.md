@@ -61,9 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Stryker mutation scope expanded 35→40 (Tier 3, #595).** Five canonical
+- **Stryker mutation scope expanded 35→39 (Tier 3, #595).** Four canonical
   authority files added: `flowguard-config.ts`, `policy-presets.ts`,
-  `policy-snapshot-normalize.ts`, `profile.ts`, `mandates.ts`.
+  `policy-snapshot-normalize.ts`, `profile.ts`.
   `vitest.stryker.config.ts` unchanged — existing globs cover all test files.
 
 - **KNOWN_ISSUES.md structural sync (#589).** MUT1 `Tracked`→`Fixed`,
