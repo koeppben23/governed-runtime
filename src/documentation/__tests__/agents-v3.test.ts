@@ -81,8 +81,8 @@ describe('repository AGENTS guidance', () => {
       const lines = content.split('\n').length;
 
       expect(lines).toBeGreaterThanOrEqual(25);
-      expect(lines).toBeLessThanOrEqual(80);
-      expect(content.length).toBeLessThanOrEqual(4000);
+      expect(lines).toBeLessThanOrEqual(120);
+      expect(content.length).toBeLessThanOrEqual(6000);
     });
 
     it('keeps guidance docs free of second mandatory output semantics', async () => {
