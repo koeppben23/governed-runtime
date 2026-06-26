@@ -32,7 +32,7 @@
  * @version v4
  */
 
-import type { LogLevel } from '../config/logging-config.js';
+import type { LogLevel } from './log-level.js';
 import { getLogContext } from './log-context.js';
 import { redactExtra, redactMessage } from './redact.js';
 
@@ -277,7 +277,9 @@ export function createLogger(
       ? new TokenBucket(
           rateLimit.maxPerSecond,
           rateLimit.exemptLevels,
-          rateLimit._clock ?? (() => Date.now()),
+          // Monotonic clock for token-bucket refill so wall-clock jumps (NTP
+          // corrections) cannot stall or distort rate limiting.
+          rateLimit._clock ?? (() => performance.now()),
           rateLimit.summaryIntervalMs,
         )
       : null;

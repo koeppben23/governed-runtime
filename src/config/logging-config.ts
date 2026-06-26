@@ -1,8 +1,8 @@
 import { z } from 'zod';
 
-export const LogLevelSchema = z.enum(['debug', 'info', 'warn', 'error', 'silent']);
-
-export type LogLevel = z.infer<typeof LogLevelSchema>;
+// LogLevel is owned by the logging layer; re-exported here for config consumers
+// so the dependency flows config -> logging (never logging -> config).
+export { LogLevelSchema, type LogLevel } from '../logging/log-level.js';
 
 /** Console output format for diagnostic log lines. */
 export const ConsoleFormatSchema = z.enum(['text', 'json']).default('text');
