@@ -165,6 +165,7 @@ jobs:
   sdk-baseline:
     name: sdk-baseline
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
@@ -182,6 +183,7 @@ jobs:
   lint:
     name: lint
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
@@ -201,6 +203,7 @@ jobs:
   unused-dependencies:
     name: unused-dependencies
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
@@ -220,6 +223,7 @@ jobs:
   format:
     name: format
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
@@ -260,6 +264,7 @@ jobs:
   actions-pinning:
     name: actions-pinning
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
@@ -424,6 +429,7 @@ jobs:
   actionlint:
     name: actionlint
     runs-on: ubuntu-latest
+    timeout-minutes: 3
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
@@ -436,6 +442,7 @@ jobs:
   secrets-scan:
     name: secrets-scan
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     steps:
@@ -452,6 +459,7 @@ jobs:
   security-policy:
     name: security-policy
     runs-on: ubuntu-latest
+    timeout-minutes: 2
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
@@ -474,6 +482,7 @@ jobs:
   dependency-review:
     name: dependency-review
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: github.event_name == 'pull_request'
     permissions:
       contents: read
@@ -536,6 +545,7 @@ jobs:
   ci-runtime-report:
     name: ci-runtime-report
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: always()
     continue-on-error: true
     needs:

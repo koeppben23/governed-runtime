@@ -17,6 +17,7 @@
  */
 
 import * as crypto from 'node:crypto';
+import { PersistenceError } from '../adapters/persistence-core.js';
 
 /**
  * Inputs to the archive content digest.
@@ -56,7 +57,10 @@ export function computeArchiveContentDigest(input: ArchiveContentDigestInput): s
     .map((file) => {
       const digest = input.fileDigests[file];
       if (!digest) {
-        throw new Error(`Missing file digest for included archive file '${file}'`);
+        throw new PersistenceError(
+          'MISSING_FILE_DIGEST',
+          `Missing file digest for included archive file '${file}'`,
+        );
       }
       return digest;
     })
