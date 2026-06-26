@@ -386,6 +386,18 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'STATE_UNAVAILABLE_FOR_REVIEWER_TASK',
+    category: 'adapter',
+    messageTemplate:
+      'Session state could not be read. The flowguard-reviewer Task cannot run without verifiable state.',
+    recoverySteps: [
+      'Check filesystem permissions on the session state directory',
+      'Run flowguard doctor to diagnose session state issues',
+      'Restart the session and re-run /hydrate if state is corrupt',
+    ],
+  },
+
+  {
     code: 'SESSION_LOCK_CONTENDED',
     category: 'adapter',
     messageTemplate:
