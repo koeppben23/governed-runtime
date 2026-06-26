@@ -32,6 +32,25 @@ FlowGuard-governed runtime session.
 - Mark unexecuted or unproven claims as `NOT_VERIFIED`.
 - For trust-boundary reviews, use `docs/trust-boundaries.md` as the canonical
   review contract.
+- Respect the file-size budget: 750 LOC is a review blocker for production
+  files unless explicitly justified; 2000 LOC for test files. New files near
+  the limit must not be further inflated. Prefer refactoring when a touched
+  file already exceeds budget.
+
+### Error Conventions
+
+- In production code, do not introduce bare `throw new Error(...)` at
+  persistence, Git, IDP, config, policy, CLI, or tool boundaries. Use typed
+  errors with a `code` field (`PersistenceError`, `GitError`, `IdpError`).
+- For blocked tool results, use the discriminated union pattern:
+  `{ kind: 'blocked', code: string, reason: string, recovery?: string }`.
+
+### Naming Conventions
+
+- Files: kebab-case (`install-steps.ts`, `error-serialize.ts`).
+- Classes: PascalCase (`PersistenceError`, `FlowGuardConfig`).
+- Constants: SCREAMING_SNAKE_CASE (`DEFAULT_RETENTION_DAYS`,
+  `REVIEWER_SUBAGENT_TYPE`).
 
 ## Canonical Authorities
 
@@ -48,6 +67,29 @@ canonical authority. Change the authority, not a local duplicate.
 
 Do not introduce parallel registries, local enum copies, ad-hoc serializers,
 or inline reason/mandate definitions.
+
+- Before creating a new module, verify no existing canonical authority already
+  covers the concern. If unsure, check this file and `docs/trust-boundaries.md`.
+
+## Module Boundaries
+
+These import rules must stay aligned with `npm run test:architecture`:
+
+| Layer              | May Import                                             | Must NOT Import                                 |
+| ------------------ | ------------------------------------------------------ | ----------------------------------------------- |
+| `src/state/`       | `src/shared/`                                          | `src/config/`, `src/rails/`, `src/integration/` |
+| `src/machine/`     | `src/state/`, `src/shared/`                            | `src/config/`, `src/rails/`                     |
+| `src/rails/`       | `src/machine/`, `src/state/`, `src/shared/`            | `src/integration/`, `src/adapters/`             |
+| `src/config/`      | `src/shared/`, `src/logging/log-level.ts`              | `src/state/`, `src/rails/`, `src/integration/`  |
+| `src/adapters/`    | `src/state/`, `src/config/`, `src/shared/`             | `src/integration/`                              |
+| `src/integration/` | Consumes canonical authorities and runtime-facing APIs | Must not become a provider for lower layers     |
+
+Additional rules:
+
+- `src/config/` must not derive runtime state — it defines schemas, not behavior.
+- `src/templates/mandates.ts` is the sole mandate authority.
+- `src/logging/` is diagnostic only — it must not become a governance authority.
+- Integration and CLI may consume authorities but must never duplicate them.
 
 ## Test Placement
 
@@ -106,12 +148,25 @@ Before marking any task complete:
    ```
    npx vitest run --project unit src/config/reasons-completeness.test.ts src/documentation/__tests__/reasons-doc-drift.test.ts
    ```
-10. Before pushing, run `npm run check:format`; the CI pre-push hook requires clean Prettier output.
+10. Coverage thresholds: 80% across branches, lines, functions, and statements.
+    Run `npm run test:coverage:ci` to verify.
+11. Before pushing, run `npm run check:format`; the CI pre-push hook requires clean Prettier output.
+
+## Pull Request Metadata
+
+Use `.github/PULL_REQUEST_TEMPLATE.md` as the canonical source for PR
+metadata fields. Before submitting a PR, classify:
+
+- **Touched Surface**: Docs, CLI, Policy, State, Audit, Release, Security,
+  Tests.
+- **Risk Class**: `TRIVIAL`, `STANDARD`, or `HIGH-RISK`. HIGH-RISK triggers
+  extended verification (mutation, negative-path tests, SSOT checks).
 
 ## Git Conventions
 
 - Branches: `fix/<name>`, `feat/<name>`, `chore/<name>`.
-- Commits: conventional commit format (`fix(scope):`, `feat(scope):`, `docs:`, `chore:`).
+- Commits: conventional commit format. Allowed types: `feat`, `fix`, `docs`,
+  `test`, `refactor`, `chore`, `perf`, `ci`. Use `(scope):` where applicable.
 - Never commit unless explicitly asked by the user.
 - Never force-push without explicit user instruction.
 - Push with `--force-with-lease` when rebasing; never use plain `--force`.

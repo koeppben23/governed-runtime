@@ -81,8 +81,8 @@ describe('repository AGENTS guidance', () => {
       const lines = content.split('\n').length;
 
       expect(lines).toBeGreaterThanOrEqual(25);
-      expect(lines).toBeLessThanOrEqual(120);
-      expect(content.length).toBeLessThanOrEqual(6000);
+      expect(lines).toBeLessThanOrEqual(185);
+      expect(content.length).toBeLessThanOrEqual(9000);
     });
 
     it('keeps guidance docs free of second mandatory output semantics', async () => {
@@ -113,6 +113,55 @@ describe('repository AGENTS guidance', () => {
       expect(content).toContain('`FAIL`');
       expect(content).toContain('Expected behavior');
       expect(content).toContain('Forbidden behavior');
+    });
+  });
+
+  describe('agent contract completeness', () => {
+    it('documents file-size budget (Tier 2)', async () => {
+      const content = await readAgents();
+      expect(content).toContain('750 LOC');
+      expect(content).toContain('review blocker');
+    });
+
+    it('documents error handling conventions (Tier 2)', async () => {
+      const content = await readAgents();
+      expect(content).toContain('Use typed');
+      expect(content).toContain('errors with a `code` field');
+      expect(content).toContain('discriminated union pattern');
+    });
+
+    it('documents naming conventions (Tier 2)', async () => {
+      const content = await readAgents();
+      expect(content).toContain('kebab-case');
+      expect(content).toContain('SCREAMING_SNAKE_CASE');
+    });
+
+    it('documents coverage thresholds (Tier 2)', async () => {
+      const content = await readAgents();
+      expect(content).toContain('80% across branches');
+      expect(content).toContain('test:coverage:ci');
+    });
+
+    it('documents module boundary import rules (Tier 2)', async () => {
+      const content = await readAgents();
+      expect(content).toContain('import rules must stay aligned with');
+      expect(content).toContain('Must not become a provider for lower layers');
+      expect(content).toContain('must not derive runtime state');
+      expect(content).toContain('diagnostic only');
+    });
+
+    it('documents PR metadata classification (Tier 2)', async () => {
+      const content = await readAgents();
+      expect(content).toContain('.github/PULL_REQUEST_TEMPLATE.md');
+      expect(content).toContain('Touched Surface');
+      expect(content).toContain('Risk Class');
+    });
+
+    it('lists all allowed commit types (Tier 2)', async () => {
+      const content = await readAgents();
+      for (const type of ['feat', 'fix', 'docs', 'test', 'refactor', 'chore', 'perf', 'ci']) {
+        expect(content).toMatch(new RegExp(`\`${type}\``));
+      }
     });
   });
 });
