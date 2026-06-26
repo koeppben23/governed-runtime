@@ -22,6 +22,10 @@
 
     "src/config/policy.ts",
     "src/config/reasons.ts",
+    "src/config/flowguard-config.ts",
+    "src/config/policy-presets.ts",
+    "src/config/policy-snapshot-normalize.ts",
+    "src/config/profile.ts",
 
     "src/hooks/http-server.ts",
 
@@ -33,6 +37,7 @@
     "src/integration/tools/review-validation-mode.ts",
     "src/integration/plugin-audit-lifecycle-reason.ts",
     "src/templates/codex-plugin.ts",
+    "src/templates/mandates.ts",
     "src/integration/review/enforcement/enforcement.ts",
     "src/integration/review/orchestrator.ts",
     "src/integration/review/orchestrator-detection.ts",
