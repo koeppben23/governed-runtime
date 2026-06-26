@@ -25,7 +25,7 @@ describe('Plugin logging e2e', () => {
 
   describe('HAPPY', () => {
     it('file+console mode creates both sinks', () => {
-      const sinks = buildLogSinks(
+      const { sinks } = buildLogSinks(
         {
           logging: { mode: 'file+console', level: 'info', retentionDays: 7, ...loggingDefaults },
         },
@@ -36,7 +36,7 @@ describe('Plugin logging e2e', () => {
     });
 
     it('file+console mode with workspaceDir creates file and console sinks', () => {
-      const sinks = buildLogSinks(
+      const { sinks } = buildLogSinks(
         {
           logging: { mode: 'file+console', level: 'info', retentionDays: 7, ...loggingDefaults },
         },
@@ -47,7 +47,7 @@ describe('Plugin logging e2e', () => {
     });
 
     it('console mode creates console sink', () => {
-      const sinks = buildLogSinks(
+      const { sinks } = buildLogSinks(
         {
           logging: { mode: 'console', level: 'info', retentionDays: 7, ...loggingDefaults },
         },
@@ -93,7 +93,7 @@ describe('Plugin logging e2e', () => {
 
   describe('BAD', () => {
     it('buildLogSinks returns empty array for unsupported config combination', () => {
-      const sinks = buildLogSinks(
+      const { sinks } = buildLogSinks(
         {
           logging: { mode: 'file', level: 'info', retentionDays: 7, ...loggingDefaults },
         },

@@ -19,6 +19,7 @@ import type { FlowGuardPolicy } from '../config/policy.js';
 import { repoConfigPath } from '../adapters/persistence.js';
 import { toAdapterLogger } from '../logging/adapter-logger.js';
 import { serializeError } from '../logging/error-serialize.js';
+import { processExitRegistrar } from '../logging/process-exit.js';
 import type { SessionState } from '../state/schema.js';
 import type { AuditDeps } from './plugin-audit.js';
 import { commandBefore, toolBefore } from './plugin-beforehooks.js';
@@ -62,13 +63,20 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     );
   }
 
-  const { log, config } = await createPluginLogger(
+  const { log, config, disposeLogging } = await createPluginLogger(
     client,
     ws.cachedWsDir,
     auditWorktree,
     ws.cachedFingerprint,
     auditWorktree ? repoConfigPath(auditWorktree) : undefined,
   );
+
+  // OpenCode exposes no plugin teardown hook, so bind log-sink disposal
+  // (OTLP flush/shutdown + SIGUSR1 detach) to process exit. Mirrors the
+  // SIGTERM/SIGINT precedent in hooks/http-server.ts.
+  if (disposeLogging) {
+    processExitRegistrar.register(disposeLogging);
+  }
 
   const adapterLog = toAdapterLogger(log);
 

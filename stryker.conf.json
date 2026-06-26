@@ -41,6 +41,8 @@
 
     "src/shared/canonical-json.ts",
 
+    "src/logging/process-exit.ts",
+
     "src/machine/commands.ts",
     "src/machine/evaluate.ts",
     "src/machine/guards.ts",

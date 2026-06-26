@@ -38,6 +38,8 @@ export default defineConfig({
       'src/shared/canonical-json.test.ts',
       'src/architecture/__tests__/audit-canonicalization-ssot.test.ts',
       'src/architecture/__tests__/mode-validation-ssot.test.ts',
+      'src/logging/otlp-sink.test.ts',
+      'src/logging/process-exit.test.ts',
 
       'src/hooks/**/*.test.ts',
       'src/mcp-server/**/*.test.ts',

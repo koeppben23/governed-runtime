@@ -25,7 +25,7 @@ import {
   sigusr1Registrar,
   type LevelReloader,
 } from '../logging/level-reloader.js';
-import { createOtlpLogSink } from '../logging/otlp-sink.js';
+import { createOtlpLogSink, type OtlpSinkHandle } from '../logging/otlp-sink.js';
 
 /**
  * Shape of the log message accepted by the OpenCode SDK client.log().
@@ -75,12 +75,19 @@ const UI_HEALTH_REPORT_MS = 5 * 60 * 1000;
  * @param workspaceDir - Absolute workspace directory (optional, for file logging)
  * @returns Array of LogSink functions
  */
+/** Sinks plus any lifecycle-bearing disposables (e.g. the OTLP exporter). */
+export interface BuiltLogSinks {
+  sinks: LogSink[];
+  disposables: OtlpSinkHandle[];
+}
+
 export function buildLogSinks(
   config: { logging: BuildLogSinksConfig },
   client: PluginLogClient | undefined,
   workspaceDir: string | null,
-): LogSink[] {
+): BuiltLogSinks {
   const sinks: LogSink[] = [];
+  const disposables: OtlpSinkHandle[] = [];
   const mode = config.logging.mode;
 
   if (mode === 'file' || mode === 'both' || mode === 'file+console') {
@@ -135,9 +142,9 @@ export function buildLogSinks(
   }
 
   // G3: OTLP log export — opt-in, endpoint validated here
-  addOtlpSinkIfEnabled(config, sinks);
+  addOtlpSinkIfEnabled(config, sinks, disposables);
 
-  return sinks;
+  return { sinks, disposables };
 }
 
 function addOtlpSinkIfEnabled(
@@ -147,6 +154,7 @@ function addOtlpSinkIfEnabled(
     };
   },
   sinks: LogSink[],
+  disposables: OtlpSinkHandle[],
 ): void {
   if (!config.logging.otlp?.enabled) return;
 
@@ -156,16 +164,16 @@ function addOtlpSinkIfEnabled(
     return;
   }
 
-  sinks.push(
-    createOtlpLogSink({
-      endpoint,
-      onFailure: (err) => {
-        process.stderr.write(
-          `[FlowGuard] OTLP log export failure: ${err instanceof Error ? err.message : String(err)}\n`,
-        );
-      },
-    }),
-  );
+  const handle = createOtlpLogSink({
+    endpoint,
+    onFailure: (err) => {
+      process.stderr.write(
+        `[FlowGuard] OTLP log export failure: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    },
+  });
+  sinks.push(handle.sink);
+  disposables.push(handle);
 }
 
 /**
@@ -190,7 +198,7 @@ export async function createPluginLogger(
 ): Promise<{
   log: ReturnType<typeof createLogger>;
   config: FlowGuardConfig;
-  disposeLogging?: () => void;
+  disposeLogging?: () => Promise<void>;
 }> {
   // Read config once at plugin init. Failures fall back to defaults — never block.
   let config: FlowGuardConfig;
@@ -212,7 +220,7 @@ export async function createPluginLogger(
   // File sink: {workspace}/.opencode/logs/flowguard-{date}.log (JSONL)
   // UI sink: delegates to client.app.log() (OpenCode UI)
   // Non-blocking: logging errors never block the plugin
-  const sinks = buildLogSinks(config, client, workspaceDir);
+  const { sinks, disposables } = buildLogSinks(config, client, workspaceDir);
 
   const log =
     sinks.length > 0
@@ -248,5 +256,16 @@ export async function createPluginLogger(
     fingerprint: fingerprint ?? 'unknown',
   });
 
-  return { log, config, disposeLogging: () => reloader?.detach() };
+  return {
+    log,
+    config,
+    disposeLogging: async () => {
+      reloader?.detach();
+      // Flush + release the OTLP exporter so batched records are not lost on
+      // exit and the BatchLogRecordProcessor timer is released.
+      for (const d of disposables) {
+        await d.shutdown();
+      }
+    },
+  };
 }
