@@ -298,18 +298,29 @@ export function createLogger(
       return;
     }
 
-    const ctx = getLogContext();
-    const entry: LogEntry = {
-      level,
-      service,
-      // Central sink-layer redaction (defense-in-depth): every message and extra
-      // is sanitized before reaching any sink, so a call site that forgets to
-      // redact cannot leak secrets or absolute paths.
-      message: redactMessage(message),
-      extra: redactExtra(extra),
-      traceId: ctx?.traceId,
-      sessionId: ctx?.sessionId,
-    };
+    // Belt-and-suspenders: redactMessage/redactExtra are already throw-safe, but
+    // the whole emit body is wrapped so the logger contract ("never throws,
+    // never blocks the flow") holds even if context resolution or a future change
+    // here were to throw. A logging failure must never propagate to the caller.
+    let entry: LogEntry;
+    try {
+      const ctx = getLogContext();
+      entry = {
+        level,
+        service,
+        // Central sink-layer redaction (defense-in-depth): every message and extra
+        // is sanitized before reaching any sink, so a call site that forgets to
+        // redact cannot leak secrets or absolute paths.
+        message: redactMessage(message),
+        extra: redactExtra(extra),
+        traceId: ctx?.traceId,
+        sessionId: ctx?.sessionId,
+      };
+    } catch {
+      sinkFailuresTotal++;
+      reportSinkHealth();
+      return;
+    }
 
     for (const sink of sinkArray) {
       try {

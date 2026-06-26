@@ -186,8 +186,8 @@ describe('redactExtra', () => {
         r: /abc/g,
         b: Buffer.from('deadbeef', 'hex'),
       })!;
-      expect(out.m).toBe('[Map(1)]');
-      expect(out.s).toBe('[Set(3)]');
+      expect(out.m).toBe('[Map]');
+      expect(out.s).toBe('[Set]');
       expect(out.r).toBe('/abc/g');
       expect(out.b).toBe('[binary:4]');
     });
@@ -204,6 +204,81 @@ describe('redactExtra', () => {
       expect(out.id).toBe('abc');
       expect('_private' in out).toBe(false);
     });
+  });
+
+  describe('never throws on hostile input (logger contract)', () => {
+    it('a throwing enumerable getter becomes a placeholder, not an exception', () => {
+      const hostile: Record<string, unknown> = { ok: 1 };
+      Object.defineProperty(hostile, 'boom', {
+        enumerable: true,
+        get() {
+          throw new Error('getter boom');
+        },
+      });
+      let out: Record<string, unknown> | undefined;
+      // Object.entries evaluates getters eagerly, so the whole object degrades to
+      // a safe placeholder rather than throwing out of the log call.
+      expect(() => {
+        out = redactExtra({ hostile });
+      }).not.toThrow();
+      expect(out!.hostile).toBe('[unredactable-object]');
+    });
+
+    it('a Proxy whose ownKeys trap throws degrades safely', () => {
+      const proxy = new Proxy(
+        {},
+        {
+          ownKeys() {
+            throw new Error('ownKeys boom');
+          },
+        },
+      );
+      expect(() => redactExtra({ p: proxy })).not.toThrow();
+      expect(redactExtra({ p: proxy })!.p).toBe('[unredactable-object]');
+    });
+
+    it('a Map subclass with a throwing size getter does not throw', () => {
+      class BadMap extends Map {
+        get size(): number {
+          throw new Error('size boom');
+        }
+      }
+      expect(() => redactExtra({ m: new BadMap() })).not.toThrow();
+      expect(redactExtra({ m: new BadMap() })!.m).toBe('[Map]');
+    });
+
+    it('deep acyclic nesting is bounded, not a stack overflow', () => {
+      let deep: Record<string, unknown> = { leaf: 'x' };
+      for (let i = 0; i < 5000; i++) deep = { nested: deep };
+      let out: Record<string, unknown> | undefined;
+      expect(() => {
+        out = redactExtra({ deep });
+      }).not.toThrow();
+      // somewhere down the chain it bails with the depth marker
+      const json = JSON.stringify(out);
+      expect(json).toContain('[redacted:too-deep]');
+    });
+
+    it('an invalid Date is coerced without throwing', () => {
+      expect(redactExtra({ d: new Date('not-a-date') })!.d).toBe('[invalid-date]');
+    });
+  });
+});
+
+describe('redactMessage / sanitizeDiagnosticString robustness', () => {
+  it('redactMessage never throws and coerces a non-string', () => {
+    // simulate a JS-interop caller passing a non-string that matches a trigger
+    const arr = ['/etc/passwd'] as unknown as string;
+    let out = '';
+    expect(() => {
+      out = redactMessage(arr);
+    }).not.toThrow();
+    expect(out).not.toContain('/etc/passwd');
+  });
+
+  it('sanitizeDiagnosticString coerces a non-string input', () => {
+    expect(() => sanitizeDiagnosticString(42 as unknown as string)).not.toThrow();
+    expect(sanitizeDiagnosticString(42 as unknown as string)).toBe('42');
   });
 });
 

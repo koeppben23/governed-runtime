@@ -105,6 +105,15 @@ function redactPathMatch(match: string): string {
  * Keeps the error class/type and the last path segment.
  */
 export function sanitizeDiagnosticString(msg: string): string {
+  // Robustness: callers are typed `string`, but JS interop (MCP, adapters) can
+  // pass a non-string. Coerce so `.replace` cannot throw a TypeError.
+  if (typeof msg !== 'string') {
+    try {
+      msg = String(msg);
+    } catch {
+      return '[unprintable]';
+    }
+  }
   // Fast path: skip the regex passes when no redaction-triggering character is
   // present. Paths/URLs/secrets all require at least one of / \ : = or the
   // letters used by the secret keywords. This keeps the per-log-call cost near
@@ -148,29 +157,45 @@ export function sanitizeDiagnosticString(msg: string): string {
   );
 }
 
-/** Redact a single log message string (central, sink-layer). */
+/** Redact a single log message string (central, sink-layer). Never throws. */
 export function redactMessage(message: string): string {
-  return sanitizeDiagnosticString(message);
+  try {
+    return sanitizeDiagnosticString(message);
+  } catch {
+    // Redaction must never break the logging contract ("logger never throws").
+    return '[redaction-error]';
+  }
 }
+
+/** Maximum nesting depth walked by redactValue before bailing out. Guards
+ *  against stack overflow on deep (acyclic) extra objects. */
+const MAX_REDACT_DEPTH = 64;
 
 /**
  * Central, sink-layer redaction for an entire `extra` object. Deep-walks nested
  * objects and arrays, sanitizing every string value (R6), and is null-safe (R7).
- * Cycles are handled via a seen-set. This is defense-in-depth: it runs on EVERY
- * log entry regardless of whether the call site already redacted.
+ * Cycles are handled via a seen-set and depth via MAX_REDACT_DEPTH. This is
+ * defense-in-depth: it runs on EVERY log entry regardless of whether the call
+ * site already redacted, so it MUST NOT throw — any failure (throwing getter,
+ * exotic proxy, depth) degrades to a safe placeholder.
  */
 export function redactExtra(extra?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (extra === undefined || extra === null) return extra ?? undefined;
-  return redactValue(extra, new WeakSet<object>()) as Record<string, unknown>;
+  try {
+    return redactValue(extra, new WeakSet<object>(), 0) as Record<string, unknown>;
+  } catch {
+    return { redaction: '[redaction-error]' };
+  }
 }
 
-function redactValue(value: unknown, seen: WeakSet<object>): unknown {
+function redactValue(value: unknown, seen: WeakSet<object>, depth: number): unknown {
   if (typeof value === 'string') return sanitizeDiagnosticString(value);
   // bigint is not JSON-serializable — coerce so a sink's JSON.stringify cannot
   // throw and silently drop the whole entry.
   if (typeof value === 'bigint') return `${value}`;
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value)) return '[redacted:circular]';
+  if (depth >= MAX_REDACT_DEPTH) return '[redacted:too-deep]';
   seen.add(value);
 
   // Built-in objects do not survive a generic Object.entries() walk: Date/Map/
@@ -187,17 +212,16 @@ function redactValue(value: unknown, seen: WeakSet<object>): unknown {
     if (typeof code === 'string') out.code = code;
     return out;
   }
-  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Date) return safeDateToISO(value);
   if (value instanceof RegExp) return value.toString();
-  if (value instanceof Map) return `[Map(${value.size})]`;
-  if (value instanceof Set) return `[Set(${value.size})]`;
+  if (value instanceof Map) return `[Map]`;
+  if (value instanceof Set) return `[Set]`;
   if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) {
-    const len = value instanceof ArrayBuffer ? value.byteLength : value.byteLength;
-    return `[binary:${len}]`;
+    return `[binary:${value.byteLength}]`;
   }
 
   if (Array.isArray(value)) {
-    return value.map((v) => redactValue(v, seen));
+    return value.map((v) => redactValue(v, seen, depth + 1));
   }
 
   // Honor a custom toJSON() (e.g. class instances that intentionally project a
@@ -206,17 +230,36 @@ function redactValue(value: unknown, seen: WeakSet<object>): unknown {
   const maybeToJSON = (value as { toJSON?: unknown }).toJSON;
   if (typeof maybeToJSON === 'function') {
     try {
-      return redactValue((value as { toJSON: () => unknown }).toJSON(), seen);
+      return redactValue((value as { toJSON: () => unknown }).toJSON(), seen, depth + 1);
     } catch {
       // fall through to the generic walk if toJSON throws
     }
   }
 
-  const out: Record<string, unknown> = {};
-  for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
-    out[key] = redactValue(v, seen);
+  // The generic walk can throw if an enumerable getter or a proxy trap throws.
+  // Catch per-object so one hostile property cannot break the whole log call.
+  try {
+    const out: Record<string, unknown> = {};
+    for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
+      try {
+        out[key] = redactValue(v, seen, depth + 1);
+      } catch {
+        out[key] = '[redaction-error]';
+      }
+    }
+    return out;
+  } catch {
+    return '[unredactable-object]';
   }
-  return out;
+}
+
+function safeDateToISO(d: Date): string {
+  // An invalid Date throws on toISOString(); guard it.
+  try {
+    return d.toISOString();
+  } catch {
+    return '[invalid-date]';
+  }
 }
 
 function basename$0(p: string): string {

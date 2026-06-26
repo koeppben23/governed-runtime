@@ -805,6 +805,28 @@ describe('central sink-layer redaction (defense-in-depth)', () => {
     expect((extra.nested as Record<string, string>).winPath).not.toContain('C:\\Users\\bob');
     expect(extra.count).toBe(7);
   });
+
+  it('NEVER throws to the caller on a hostile extra (logger contract)', () => {
+    const { entries, sink } = captureSink();
+    const log = createLogger('debug', sink);
+
+    const throwingGetter: Record<string, unknown> = {};
+    Object.defineProperty(throwingGetter, 'boom', {
+      enumerable: true,
+      get() {
+        throw new Error('getter boom');
+      },
+    });
+
+    let deep: Record<string, unknown> = { leaf: 'x' };
+    for (let i = 0; i < 5000; i++) deep = { nested: deep };
+
+    expect(() => log.error('svc', 'failed', { throwingGetter })).not.toThrow();
+    expect(() => log.error('svc', 'deep', { deep })).not.toThrow();
+    expect(() => log.error('svc', 'big', { n: 10n })).not.toThrow();
+    // entries were still produced (logging did not silently break)
+    expect(entries.length).toBe(3);
+  });
 });
 
 describe('sink health surfacing', () => {
