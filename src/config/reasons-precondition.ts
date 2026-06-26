@@ -489,4 +489,16 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Restart OpenCode if the sidecar session points to stale workspace state.',
     ],
   },
+
+  {
+    code: 'REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION',
+    category: 'precondition',
+    messageTemplate:
+      'A flowguard-reviewer Task may only run when a pending review obligation exists. Run flowguard_plan or flowguard_review first to create a pending review obligation, then start the reviewer Task.',
+    recoverySteps: [
+      'Run the relevant FlowGuard review tool (flowguard_plan, flowguard_review, or flowguard_review_implementation) first',
+      `Wait for the tool response to signal INDEPENDENT_REVIEW_REQUIRED before starting the ${REVIEWER_SUBAGENT_TYPE} Task`,
+      'Do not start reviewer Tasks speculatively before a review obligation has been created',
+    ],
+  },
 ];
