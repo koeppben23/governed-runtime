@@ -12,8 +12,9 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { buildLogSinks } from './plugin-logging.js';
+import { buildLogSinks, addOtlpSinkIfEnabled } from './plugin-logging.js';
 import type { LogEntry, LogSink } from '../logging/logger.js';
+import type { OtlpSinkHandle } from '../logging/otlp-sink.js';
 import type { FlowGuardConfig } from '../config/flowguard-config.js';
 
 type TestLoggingConfig = Pick<
@@ -335,5 +336,88 @@ describe('UI sink error observability', () => {
 
     const health = (log as import('../logging/logger.js').HealthAwareLogger).getHealth();
     expect(health.sinkFailuresTotal).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('addOtlpSinkIfEnabled (egress gating)', () => {
+  const ORIGINAL_ENV = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  let stderr: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+    stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+  });
+  afterEach(() => {
+    if (ORIGINAL_ENV === undefined) delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+    else process.env.OTEL_EXPORTER_OTLP_ENDPOINT = ORIGINAL_ENV;
+    vi.restoreAllMocks();
+  });
+
+  function run(otlp: { enabled: boolean; endpoint?: string; allowInsecure?: boolean }): {
+    sinks: LogSink[];
+    disposables: OtlpSinkHandle[];
+  } {
+    const sinks: LogSink[] = [];
+    const disposables: OtlpSinkHandle[] = [];
+    addOtlpSinkIfEnabled({ logging: { otlp } }, sinks, disposables);
+    return { sinks, disposables };
+  }
+
+  it('disabled: adds no sink and no disposable', () => {
+    const { sinks, disposables } = run({ enabled: false });
+    expect(sinks).toHaveLength(0);
+    expect(disposables).toHaveLength(0);
+  });
+
+  it('enabled with https endpoint: adds a sink and a disposable', () => {
+    const { sinks, disposables } = run({ enabled: true, endpoint: 'https://collector:4318' });
+    expect(sinks).toHaveLength(1);
+    expect(disposables).toHaveLength(1);
+  });
+
+  it('enabled without endpoint and no env var: warns and adds nothing', () => {
+    const { sinks } = run({ enabled: true });
+    expect(sinks).toHaveLength(0);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('no endpoint configured'));
+  });
+
+  it('enabled with malformed endpoint: warns and adds nothing', () => {
+    const { sinks } = run({ enabled: true, endpoint: 'not a url at all' });
+    expect(sinks).toHaveLength(0);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('not a valid URL'));
+  });
+
+  it('enabled with a non-http scheme: warns and adds nothing', () => {
+    const { sinks } = run({ enabled: true, endpoint: 'collector:4318' });
+    expect(sinks).toHaveLength(0);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('http(s) URL'));
+  });
+
+  it('enabled with http endpoint and no allowInsecure: warns and adds nothing', () => {
+    const { sinks } = run({ enabled: true, endpoint: 'http://collector:4318' });
+    expect(sinks).toHaveLength(0);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('must use https://'));
+  });
+
+  it('enabled with http endpoint and allowInsecure: adds the sink', () => {
+    const { sinks } = run({
+      enabled: true,
+      endpoint: 'http://collector:4318',
+      allowInsecure: true,
+    });
+    expect(sinks).toHaveLength(1);
+  });
+
+  it('uses OTEL_EXPORTER_OTLP_ENDPOINT env fallback (validated)', () => {
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'https://env-collector:4318';
+    const { sinks } = run({ enabled: true });
+    expect(sinks).toHaveLength(1);
+  });
+
+  it('rejects a cleartext env fallback endpoint without allowInsecure', () => {
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'http://env-collector:4318';
+    const { sinks } = run({ enabled: true });
+    expect(sinks).toHaveLength(0);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('must use https://'));
   });
 });

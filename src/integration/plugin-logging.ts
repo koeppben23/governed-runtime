@@ -147,10 +147,10 @@ export function buildLogSinks(
   return { sinks, disposables };
 }
 
-function addOtlpSinkIfEnabled(
+export function addOtlpSinkIfEnabled(
   config: {
     logging: {
-      otlp?: { enabled: boolean; endpoint?: string };
+      otlp?: { enabled: boolean; endpoint?: string; allowInsecure?: boolean };
     };
   },
   sinks: LogSink[],
@@ -161,6 +161,28 @@ function addOtlpSinkIfEnabled(
   const endpoint = config.logging.otlp.endpoint ?? process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
   if (!endpoint) {
     process.stderr.write('[FlowGuard] OTLP log export disabled: no endpoint configured\n');
+    return;
+  }
+
+  // The config-schema endpoint is already URL/HTTPS-validated, but the
+  // OTEL_EXPORTER_OTLP_ENDPOINT env fallback bypasses the schema. Validate the
+  // resolved endpoint here so a malformed or cleartext egress fails closed.
+  let parsed: URL;
+  try {
+    parsed = new URL(endpoint);
+  } catch {
+    process.stderr.write('[FlowGuard] OTLP log export disabled: endpoint is not a valid URL\n');
+    return;
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    process.stderr.write('[FlowGuard] OTLP log export disabled: endpoint must be an http(s) URL\n');
+    return;
+  }
+  if (parsed.protocol !== 'https:' && !config.logging.otlp.allowInsecure) {
+    process.stderr.write(
+      '[FlowGuard] OTLP log export disabled: endpoint must use https:// ' +
+        '(set logging.otlp.allowInsecure to opt into cleartext http://)\n',
+    );
     return;
   }
 

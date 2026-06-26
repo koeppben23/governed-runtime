@@ -2,11 +2,6 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["src/cli/run.ts", "scripts/*.js"],
   "project": ["src/**/*.ts", "scripts/*.js", "*.config.*"],
-  "ignoreDependencies": [
-    "conventional-changelog-conventionalcommits",
-    "@commitlint/cli",
-    "@opentelemetry/sdk-logs",
-    "@opentelemetry/exporter-logs-otlp-http"
-  ],
+  "ignoreDependencies": ["conventional-changelog-conventionalcommits", "@commitlint/cli"],
   "ignoreBinaries": ["opencode", "gh", "claude"]
 }

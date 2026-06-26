@@ -22,3 +22,18 @@ export const DynamicLogLevelEnabledSchema = z.boolean().default(false);
 
 /** Enable OTLP log export (OpenTelemetry Logs). Default: false. */
 export const OtlpEnabledSchema = z.boolean().default(false);
+
+/**
+ * OTLP endpoint URL. Must be a valid absolute URL. HTTPS is required unless
+ * `allowInsecure` is explicitly enabled, because OTLP export is a network
+ * egress and FlowGuard is offline-by-default. Validated here so an invalid or
+ * cleartext endpoint fails closed at config parse time rather than silently
+ * sending logs to an unintended target.
+ */
+export const OtlpEndpointSchema = z
+  .string()
+  .url('OTLP endpoint must be a valid absolute URL (e.g. https://collector:4318)')
+  .optional();
+
+/** Allow a cleartext http:// OTLP endpoint. Default: false (HTTPS required). */
+export const OtlpAllowInsecureSchema = z.boolean().default(false);
