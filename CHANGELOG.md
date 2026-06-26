@@ -7,6 +7,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **AGENTS.md: Lead-level agent contract (Tier 2, #590, #591, #592).** Canonical
+  Authorities map, Module Boundaries import table, Error/Naming conventions,
+  Test Placement rules, Verification Checklist, PR Metadata classification,
+  Generated Guards protocol, Git Conventions. 73 → 172 lines.
+
+- **Pre-execution reviewer-task enforcement (#588).** `flowguard-reviewer` Tasks
+  are now blocked BEFORE subagent execution when `host_task_required` policy is
+  active and no pending review obligation exists. Prevents wasted LLM time in
+  demo and production flows. New reason codes:
+  `REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION` and
+  `STATE_UNAVAILABLE_FOR_REVIEWER_TASK`.
+
+- **File-sink JSONL correlation IDs (#587).** `traceId` and `sessionId` are now
+  serialized in file-sink JSONL output, matching the correlation transport of
+  console-sink JSON mode and OTLP-sink attributes.
+
+- **OtlpSinkHandle barrel export (#586).** Added `OtlpSinkHandle` type to the
+  logging barrel export (`src/logging/index.ts`).
+
+- **Contract test suites — 6 untested authority modules (Tier 3, #593, #594,
+  #595).** New tests for: `mandates-renderer.ts`, `discovery-schemas.ts`,
+  `install-steps.ts`, `doctor-command.ts`, `helpers.ts`,
+  `architecture-review.ts`. Zero production code changes.
+
+### Fixed
+
+- **ISO timestamps preserved in diagnostic sanitization (#587).** The
+  `sanitizeDiagnosticString` line:column regex (`:\d+:\d+`) now uses a negative
+  lookbehind (`(?<!\d)`) so ISO 8601 timestamps like `T08:30:16.735Z` are no
+  longer mangled into `T08.735Z`.
+
+- **CLI file-sink onFailure (#586).** CLI file-sink switched from
+  number-overload to object form with `serializeError(err).message`-based
+  `onFailure` handler. Previously silent on write errors.
+
+- **vitest double-run (#589).** `inspect-command.test.ts` now excluded from
+  `unit` project — was running twice (unit + smoke).
+
+- **Bare `throw new Error` eliminated (#596).** `content-digest.ts` changed
+  from bare `throw new Error(...)` to `PersistenceError('MISSING_FILE_DIGEST',
+...)`. New error code added to `PersistenceErrorCode` union.
+
+- **22 docs-drift findings (#589).** KNOWN_ISSUES table formatting, README CI
+  Jobs expanded 6→21, CONTRIBUTING Bun reference removed, CI checks 7→21,
+  `lint`→`lint:strict` corrected, 5 user-guide version references updated.
+
+- **Historical reason-code test entries (#588).** `LOCK_TIMEOUT` and
+  `LOCK_TIMEOUT_EXHAUSTED` added to the `PersisenceErrorCode` valid-codes
+  test array.
+
+### Changed
+
+- **Stryker mutation scope expanded 35→40 (Tier 3, #595).** Five canonical
+  authority files added: `flowguard-config.ts`, `policy-presets.ts`,
+  `policy-snapshot-normalize.ts`, `profile.ts`, `mandates.ts`.
+  `vitest.stryker.config.ts` unchanged — existing globs cover all test files.
+
+- **KNOWN_ISSUES.md structural sync (#589).** MUT1 `Tracked`→`Fixed`,
+  7 items moved to Fixed table, Status Legend expanded (+4 statuses),
+  SZ1/SZ2 file sizes updated, per-file mutation scores marked `NOT_VERIFIED`,
+  AC3 cross-reference added between Packages B and D.
+
+- **CI timeouts (#596).** 10 `timeout-minutes` added to jobs without limits:
+  `sdk-baseline`, `lint`, `unused-dependencies`, `format`, `actions-pinning`,
+  `actionlint`, `secrets-scan`, `security-policy`, `dependency-review`,
+  `ci-runtime-report`.
+
+- **Release workflow hardening (#596).** `npm run lint:strict` added to
+  `verify` job — was missing in the tag-triggered release path.
+
+- **Global config warning precision (#587).** Changed from `"Global config
+not found, using defaults"` to `"Optional global config not found; using
+global defaults"`.
+
+- **Test migration to modern log context (#586).** `boundary-logging`,
+  `log-sanitization`, and `run-check-tool` tests migrated from deprecated
+  `runWithTraceContext*` to `runWithLogContext*`.
+
+### Security
+
+- **Central sink-layer redaction (#585).** Every log `message` and `extra` is
+  sanitized before reaching any sink (console, file, OTLP). Redacts: bearer
+  tokens, JWTs, `sk-/sk_live_` keys, `password=`/`token=`/`secret=`/`api_key=`
+  assignments, absolute POSIX paths, Windows/UNC paths, http(s) URLs. Redaction
+  is throw-safe and depth-bounded — `log.*()` never throws. Closes the logging
+  portion of R3, R5, R6, R7, R8, and D1.
+
 ### Changed
 
 - **Reviewer criteria: security and root-cause dimensions (`criteriaVersion`
