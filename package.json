@@ -68,6 +68,8 @@
     "test:sdk-contract:hooks": "vitest run --project integration src/integration/sdk-contract-hooks.test.ts",
     "test:sdk-contract:mcp": "vitest run --project integration src/integration/sdk-contract-mcp.test.ts",
     "test:sdk-contract:governance": "vitest run --project integration src/integration/sdk-contract-governance.test.ts",
+    "test:sdk-contract:plugin": "vitest run --project integration src/integration/sdk-contract-plugin.test.ts",
+    "test:sdk-contract:runtime": "vitest run --project integration src/integration/sdk-contract-runtime.test.ts",
     "test:sdk-contract:all": "vitest run --project integration src/integration/sdk-contract*.test.ts",
     "test:smoke": "vitest run --project smoke",
     "test:fuzz": "vitest run --project fuzz",
