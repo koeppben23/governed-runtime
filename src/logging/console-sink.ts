@@ -20,6 +20,20 @@
 import type { LogEntry, LogSink } from './logger.js';
 
 /**
+ * Escape control characters (newlines, carriage returns, tabs, ANSI escapes,
+ * other C0 controls) so a crafted message cannot inject a forged log line or
+ * emit raw terminal escape sequences in text mode. JSON mode is already safe
+ * because JSON.stringify escapes these.
+ */
+function escapeControlChars(s: string): string {
+  // eslint-disable-next-line no-control-regex
+  return s.replace(
+    /[\u0000-\u001F\u007F]/g,
+    (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`,
+  );
+}
+
+/**
  * Console sink options.
  */
 export interface ConsoleSinkOptions {
@@ -45,7 +59,7 @@ export function createConsoleSink(options?: ConsoleSinkOptions): LogSink {
         const ids = [entry.traceId?.slice(0, 8), entry.sessionId].filter(Boolean).join('/');
         const idStr = ids ? `[${ids}] ` : '';
         const extraStr = entry.extra ? ` ${JSON.stringify(entry.extra)}` : '';
-        const line = `[${ts}] [${entry.level.toUpperCase()}] ${idStr}${entry.service}: ${entry.message}${extraStr}\n`;
+        const line = `[${ts}] [${entry.level.toUpperCase()}] ${idStr}${entry.service}: ${escapeControlChars(entry.message)}${extraStr}\n`;
         process.stderr.write(line);
       }
     } catch {

@@ -34,6 +34,7 @@
 
 import type { LogLevel } from '../config/logging-config.js';
 import { getLogContext } from './log-context.js';
+import { redactExtra, redactMessage } from './redact.js';
 
 // ─── Level Ordering ──────────────────────────────────────────────────────────
 
@@ -296,8 +297,11 @@ export function createLogger(
     const entry: LogEntry = {
       level,
       service,
-      message,
-      extra,
+      // Central sink-layer redaction (defense-in-depth): every message and extra
+      // is sanitized before reaching any sink, so a call site that forgets to
+      // redact cannot leak secrets or absolute paths.
+      message: redactMessage(message),
+      extra: redactExtra(extra),
       traceId: ctx?.traceId,
       sessionId: ctx?.sessionId,
     };

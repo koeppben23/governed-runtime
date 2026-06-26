@@ -779,3 +779,30 @@ describe('createLogger — dynamic log level', () => {
     expect(log.getHealth().level).toBe('silent');
   });
 });
+
+describe('central sink-layer redaction (defense-in-depth)', () => {
+  it('redacts secrets and absolute paths in the message before they reach a sink', () => {
+    const { entries, sink } = captureSink();
+    const log = createLogger('debug', sink);
+    log.error('audit', 'auth failed: Bearer eyJabc.def.ghi at /home/alice/.ssh/id_rsa');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.message).toContain('Bearer [redacted]');
+    expect(entries[0]!.message).not.toContain('/home/alice/.ssh/id_rsa');
+  });
+
+  it('redacts secrets and paths in extra, even when the call site did not redact', () => {
+    const { entries, sink } = captureSink();
+    const log = createLogger('debug', sink);
+    log.info('svc', 'config', {
+      tokenPath: '/home/alice/token.json',
+      authHeader: 'password=hunter2supersecret',
+      nested: { winPath: 'C:\\Users\\bob\\secret.key' },
+      count: 7,
+    });
+    const extra = entries[0]!.extra as Record<string, unknown>;
+    expect(extra.tokenPath).not.toContain('/home/alice');
+    expect(extra.authHeader).toContain('password=[redacted]');
+    expect((extra.nested as Record<string, string>).winPath).not.toContain('C:\\Users\\bob');
+    expect(extra.count).toBe(7);
+  });
+});
