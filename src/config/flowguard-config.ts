@@ -61,17 +61,8 @@ export const FlowGuardConfigSchema = z.object({
           enabled: z.boolean().default(false),
           /** Max entries per second per (service, level) key. */
           maxPerSecond: RateLimitMaxPerSecondSchema,
-          /**
-           * Levels exempt from rate limiting. Default: ['error']. `error` is
-           * always forced into the set — error logs surface failures and must
-           * never be silently dropped by rate limiting, regardless of config.
-           */
-          exemptLevels: z
-            .array(LogLevelSchema)
-            .default(['error'])
-            .transform((levels) =>
-              levels.includes('error') ? levels : [...levels, 'error' as const],
-            ),
+          /** Levels exempt from rate limiting. Default: ['error']. */
+          exemptLevels: z.array(LogLevelSchema).default(['error']),
           /** Interval in ms between rate-limit summary reports on stderr. */
           summaryIntervalMs: z.number().int().min(10000).max(600000).default(60000),
         })
@@ -80,7 +71,17 @@ export const FlowGuardConfigSchema = z.object({
           maxPerSecond: 100,
           exemptLevels: ['error'],
           summaryIntervalMs: 60000,
-        }),
+        })
+        // `error` is ALWAYS exempt — error logs surface failures and must never be
+        // silently dropped by rate limiting. Applied at the OBJECT level so it
+        // also covers the object-level / outer-logging .default() paths, which
+        // bypass a field-level transform in Zod. This transform is the single
+        // guard of the invariant, not the hand-written literals above.
+        .transform((rl) =>
+          rl.exemptLevels.includes('error')
+            ? rl
+            : { ...rl, exemptLevels: [...rl.exemptLevels, 'error' as const] },
+        ),
       /** Enable SIGUSR1 for runtime log level changes. Default: false. */
       enableDynamicLevel: DynamicLogLevelEnabledSchema,
       /** OTLP log export (OpenTelemetry Logs). Disabled by default. */

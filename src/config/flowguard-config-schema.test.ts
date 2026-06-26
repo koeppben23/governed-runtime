@@ -360,6 +360,18 @@ describe('FlowGuardConfigSchema', () => {
       expect(errs).toHaveLength(1);
     });
 
+    it('object-level transform guards the invariant: a partial rateLimit without exemptLevels still gets error', () => {
+      // Only maxPerSecond set — exemptLevels falls to the field default, then the
+      // object-level transform runs. If the transform (not a literal) is the
+      // guard, error is present. This fails if the object-level transform is removed.
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { maxPerSecond: 42 } },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.rateLimit.exemptLevels).toContain('error');
+    });
+
     it('accepts enabled with custom maxPerSecond', () => {
       const result = FlowGuardConfigSchema.safeParse({
         schemaVersion: 'v1',
