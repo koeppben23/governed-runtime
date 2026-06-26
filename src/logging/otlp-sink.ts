@@ -15,7 +15,8 @@
  * - Export failures are non-blocking and reported via onFailure callback.
  * - The sink always resolves — no Promise rejections to createLogger.
  *
- * Dependencies (added to package.json as direct deps):
+ * Dependencies (lazy dynamic-import; listed as optionalDependencies so they are
+ * not required for default/offline operation):
  *   @opentelemetry/sdk-logs
  *   @opentelemetry/exporter-logs-otlp-http
  *

@@ -39,7 +39,6 @@ export default defineConfig({
       'src/architecture/__tests__/audit-canonicalization-ssot.test.ts',
       'src/architecture/__tests__/mode-validation-ssot.test.ts',
       'src/logging/otlp-sink.test.ts',
-      'src/logging/process-exit.test.ts',
       'src/logging/redact.test.ts',
       'src/logging/error-serialize.test.ts',
       'src/logging/coverage-proof.test.ts',

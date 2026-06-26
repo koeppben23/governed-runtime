@@ -41,7 +41,6 @@
 
     "src/shared/canonical-json.ts",
 
-    "src/logging/process-exit.ts",
     "src/logging/error-serialize.ts",
 
     "src/machine/commands.ts",

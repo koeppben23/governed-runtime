@@ -19,7 +19,6 @@ import type { FlowGuardPolicy } from '../config/policy.js';
 import { repoConfigPath } from '../adapters/persistence.js';
 import { toAdapterLogger } from '../logging/adapter-logger.js';
 import { serializeError } from '../logging/error-serialize.js';
-import { processExitRegistrar } from '../logging/process-exit.js';
 import type { SessionState } from '../state/schema.js';
 import type { AuditDeps } from './plugin-audit.js';
 import { commandBefore, toolBefore } from './plugin-beforehooks.js';
@@ -71,13 +70,6 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     auditWorktree ? repoConfigPath(auditWorktree) : undefined,
   );
 
-  // OpenCode exposes no plugin teardown hook, so bind log-sink disposal
-  // (OTLP flush/shutdown + SIGUSR1 detach) to process exit. Mirrors the
-  // SIGTERM/SIGINT precedent in hooks/http-server.ts.
-  if (disposeLogging) {
-    processExitRegistrar.register(disposeLogging);
-  }
-
   const adapterLog = toAdapterLogger(log);
 
   function logError(message: string, err: unknown): void {
@@ -124,7 +116,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     getWorkspaceDir: () => ws.cachedWsDir,
   };
 
-  return createFlowGuardPluginHooks({
+  const hooks = createFlowGuardPluginHooks({
     ws,
     log,
     adapterLog,
@@ -138,6 +130,16 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     },
     logError,
   });
+
+  // Use OpenCode's plugin teardown hook (Hooks.dispose) to flush + release log
+  // sinks (OTLP shutdown + SIGUSR1 detach). OpenCode awaits dispose, giving the
+  // OTLP batch exporter a real completion point — unlike global process-exit
+  // listeners, this is per-instance and is not leaked across plugin inits.
+  if (disposeLogging) {
+    hooks.dispose = disposeLogging;
+  }
+
+  return hooks;
 };
 
 type PluginLogger = Awaited<ReturnType<typeof createPluginLogger>>['log'];
