@@ -142,7 +142,7 @@ detect semantic errors, not just that code is executed (coverage alone cannot pr
 
 ### Scope
 
-34 files are mutated, covering the fail-closed governance core
+35 files are mutated, covering the fail-closed governance core
 (see `stryker.conf.json` for the canonical list):
 
 | Area                                                                                                                                                                                 | Files  | Representative score            |
@@ -153,9 +153,10 @@ detect semantic errors, not just that code is executed (coverage alone cannot pr
 | Config (`policy`, `reasons`)                                                                                                                                                         | 2      | (see latest report)             |
 | Hooks (`http-server`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                                                              | 3      | (see latest report)             |
 | Identity (`token-verifier`, `key-resolver`)                                                                                                                                          | 2      | (see latest report)             |
-| Integration (`command-aliases`, `tool-classification`, `tools/review-validation-mode`, `plugin-audit-lifecycle-reason`, review enforcement/orchestrator/detection/output/resolution) | 10     | (see latest report)             |
+| Integration (`command-aliases`, `tool-classification`, `tools/review-validation-mode`, `plugin-audit-lifecycle-reason`, review enforcement/orchestrator/detection/output/resolution) | 9      | (see latest report)             |
 | Templates (`codex-plugin`)                                                                                                                                                           | 1      | (see latest report)             |
 | Shared (`canonical-json`)                                                                                                                                                            | 1      | (see latest report)             |
+| Logging (`error-serialize`)                                                                                                                                                          | 1      | (see latest report)             |
 | Machine (`commands`, `evaluate`, `guards`, `next-action`)                                                                                                                            | 4      | (see latest report)             |
 | Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`)                                                                                                             | 5      | (see latest report)             |
 | **Total**                                                                                                                                                                            | **35** | uploaded as `reports/mutation/` |
