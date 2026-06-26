@@ -20,6 +20,7 @@ import { createConsoleSink } from '../logging/console-sink.js';
 import { createFileSink } from '../logging/file-sink.js';
 import { createLogger, type FlowGuardLogger } from '../logging/logger.js';
 import { setAdapterLogger, toAdapterLogger } from '../logging/adapter-logger.js';
+import { serializeError } from '../logging/error-serialize.js';
 
 export type CliLogMode = 'console' | 'file' | 'file+console';
 
@@ -41,7 +42,16 @@ export function initCliLogger(
   }
 
   if ((mode === 'file' || mode === 'file+console') && targetDir) {
-    sinks.push(createFileSink(targetDir, 7));
+    sinks.push(
+      createFileSink(targetDir, {
+        retentionDays: 7,
+        onFailure: (err) => {
+          process.stderr.write(
+            `[FlowGuard] CLI log file sink failure: ${serializeError(err).message}\n`,
+          );
+        },
+      }),
+    );
   }
 
   const log = createLogger('info', sinks);
