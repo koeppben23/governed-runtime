@@ -209,7 +209,7 @@ For debugging FlowGuard inside the OpenCode runtime with IntelliJ IDEA Ultimate,
 | **integration**            | `npm run test:integration`                     | Governance chain fidelity                              |
 | **architecture**           | `npm run test:architecture`                    | Dependency rules, file sizes                           |
 | **typecheck**              | `npm run check`                                | TypeScript compilation                                 |
-| **sdk-baseline**           | `npm run test:sdk-baseline`                    | SDK contract surface stability                         |
+| **sdk-baseline**           | `node scripts/sdk-type-snapshot.mjs`           | SDK contract surface stability                         |
 | **lint**                   | `npm run lint:strict`                          | ESLint with --max-warnings=0                           |
 | **unused-dependencies**    | `npm run check:unused-dependencies`            | Knip — no stale imports or modules                     |
 | **format**                 | `npm run check:format`                         | Prettier formatting                                    |

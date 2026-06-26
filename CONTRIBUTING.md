@@ -41,8 +41,8 @@ npm install
 # Type check
 npm run check
 
-# Lint
-npm run lint
+# Lint (CI gate: --max-warnings=0)
+npm run lint:strict
 
 # Run tests
 npm test
@@ -225,7 +225,7 @@ following hold:
 - `main` is **protected** — no direct commits allowed
 - All changes must go through Pull Requests
 - Branch naming convention:
-  - `feature/<description>` — new features
+  - `feat/<description>` — new features
   - `fix/<description>` — bug fixes
   - `docs/<description>` — documentation updates
   - `chore/<description>` — maintenance tasks
@@ -300,7 +300,7 @@ The following checks must pass for a PR to be merged:
 | Type Check             | `npm run check`                                | TypeScript compilation                                                   |
 | Build                  | `npm run build`                                | Successful compilation to dist/                                          |
 | Architecture           | `npm run test:architecture`                    | Dependency rules + file-size enforcement                                 |
-| SDK Baseline           | `npm run test:sdk-baseline`                    | SDK contract surface stability                                           |
+| SDK Baseline           | `node scripts/sdk-type-snapshot.mjs`           | SDK contract surface stability                                           |
 | Fuzz                   | `npm run test:fuzz`                            | Fast-check property-based tests                                          |
 | Unused Dependencies    | `npm run check:unused-dependencies`            | Knip — no stale imports or modules                                       |
 | Actions Pinning        | `npm run check:actions-pinned`                 | All GitHub Actions refs are immutable commit SHAs                        |
@@ -395,7 +395,7 @@ High-risk work must include:
 
 ```bash
 # Create a feature branch
-git checkout -b feature/my-feature
+git checkout -b feat/my-feature
 
 # Make changes
 # ... write code ...
@@ -407,7 +407,7 @@ npm test
 npm run check
 
 # Run architecture tests
-npm test -- src/architecture/
+npm run test:architecture
 ```
 
 ### 3. Commit Messages
