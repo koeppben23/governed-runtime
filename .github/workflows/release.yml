@@ -57,6 +57,11 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+      - name: Lint (strict)
+        run: npm run lint:strict
+        env:
+          FORCE_COLOR: 0
+
       - name: Build
         run: npm run build
         env:

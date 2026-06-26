@@ -10,7 +10,8 @@ export type PersistenceErrorCode =
   | 'PARSE_FAILED'
   | 'SCHEMA_VALIDATION_FAILED'
   | 'LOCK_TIMEOUT'
-  | 'LOCK_TIMEOUT_EXHAUSTED';
+  | 'LOCK_TIMEOUT_EXHAUSTED'
+  | 'MISSING_FILE_DIGEST';
 
 /**
  * Typed persistence error shared by adapter persistence modules.
