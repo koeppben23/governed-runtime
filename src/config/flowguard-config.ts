@@ -31,6 +31,8 @@ import {
   RateLimitMaxPerSecondSchema,
   DynamicLogLevelEnabledSchema,
   OtlpEnabledSchema,
+  OtlpEndpointSchema,
+  OtlpAllowInsecureSchema,
 } from './logging-config.js';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
@@ -69,7 +71,17 @@ export const FlowGuardConfigSchema = z.object({
           maxPerSecond: 100,
           exemptLevels: ['error'],
           summaryIntervalMs: 60000,
-        }),
+        })
+        // `error` is ALWAYS exempt — error logs surface failures and must never be
+        // silently dropped by rate limiting. Applied at the OBJECT level so it
+        // also covers the object-level / outer-logging .default() paths, which
+        // bypass a field-level transform in Zod. This transform is the single
+        // guard of the invariant, not the hand-written literals above.
+        .transform((rl) =>
+          rl.exemptLevels.includes('error')
+            ? rl
+            : { ...rl, exemptLevels: [...rl.exemptLevels, 'error' as const] },
+        ),
       /** Enable SIGUSR1 for runtime log level changes. Default: false. */
       enableDynamicLevel: DynamicLogLevelEnabledSchema,
       /** OTLP log export (OpenTelemetry Logs). Disabled by default. */
@@ -78,9 +90,25 @@ export const FlowGuardConfigSchema = z.object({
           /** Enable OTLP log export. Default: false. */
           enabled: OtlpEnabledSchema,
           /** OTLP endpoint override. Falls back to OTEL_EXPORTER_OTLP_ENDPOINT env var. */
-          endpoint: z.string().optional(),
+          endpoint: OtlpEndpointSchema,
+          /** Allow a cleartext http:// endpoint. Default: false (HTTPS required). */
+          allowInsecure: OtlpAllowInsecureSchema,
         })
-        .default({ enabled: false }),
+        .superRefine((val, ctx) => {
+          if (
+            val.endpoint &&
+            !val.allowInsecure &&
+            !val.endpoint.toLowerCase().startsWith('https://')
+          ) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['endpoint'],
+              message:
+                'OTLP endpoint must use https:// (set logging.otlp.allowInsecure to opt into cleartext http://)',
+            });
+          }
+        })
+        .default({ enabled: false, allowInsecure: false }),
     })
     .default({
       mode: 'file',
@@ -95,7 +123,7 @@ export const FlowGuardConfigSchema = z.object({
         summaryIntervalMs: 60000,
       },
       enableDynamicLevel: false,
-      otlp: { enabled: false },
+      otlp: { enabled: false, allowInsecure: false },
     }),
 
   /** Policy override configuration. Merged field-wise with the resolved preset. */

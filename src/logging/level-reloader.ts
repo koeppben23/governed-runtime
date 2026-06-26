@@ -19,7 +19,7 @@
  */
 
 import { readFileSync } from 'node:fs';
-import { LogLevelSchema, type LogLevel } from '../config/logging-config.js';
+import { LogLevelSchema, type LogLevel } from './log-level.js';
 import { type DynamicLogger } from './logger.js';
 import { serializeError } from './error-serialize.js';
 
@@ -34,8 +34,18 @@ export interface SignalRegistrar {
 /** Production SIGUSR1 registrar. */
 export const sigusr1Registrar: SignalRegistrar = {
   register(cb) {
-    process.on('SIGUSR1', cb);
-    return () => process.off('SIGUSR1', cb);
+    // Wrap in a guard: a throw out of a signal handler crashes the process.
+    // The reload logic already try/catches, but a custom logger whose warn
+    // throws must not take the process down.
+    const guarded = (): void => {
+      try {
+        cb();
+      } catch {
+        // never propagate out of a signal handler
+      }
+    };
+    process.on('SIGUSR1', guarded);
+    return () => process.off('SIGUSR1', guarded);
   },
 };
 

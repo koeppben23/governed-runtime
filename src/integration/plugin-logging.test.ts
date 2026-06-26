@@ -12,8 +12,9 @@
  */
 
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { buildLogSinks } from './plugin-logging.js';
+import { buildLogSinks, addOtlpSinkIfEnabled } from './plugin-logging.js';
 import type { LogEntry, LogSink } from '../logging/logger.js';
+import type { OtlpSinkHandle } from '../logging/otlp-sink.js';
 import type { FlowGuardConfig } from '../config/flowguard-config.js';
 
 type TestLoggingConfig = Pick<
@@ -45,14 +46,14 @@ describe('buildLogSinks', () => {
   describe('HAPPY', () => {
     it('creates file sink when mode=file and workspace provided', () => {
       const config = { logging: loggingConfig({ mode: 'file' }) };
-      const sinks = buildLogSinks(config, undefined, TEST_DIR);
+      const { sinks } = buildLogSinks(config, undefined, TEST_DIR);
 
       expect(sinks).toHaveLength(1);
     });
 
     it('creates UI sink when mode=ui and client provided', () => {
       const config = { logging: loggingConfig({ mode: 'ui' }) };
-      const sinks = buildLogSinks(config, mockClient, null);
+      const { sinks } = buildLogSinks(config, mockClient, null);
 
       expect(sinks).toHaveLength(1);
       expect(mockClient.app.log).not.toHaveBeenCalled();
@@ -60,21 +61,21 @@ describe('buildLogSinks', () => {
 
     it('creates both sinks when mode=both', () => {
       const config = { logging: loggingConfig({ mode: 'both' }) };
-      const sinks = buildLogSinks(config, mockClient, TEST_DIR);
+      const { sinks } = buildLogSinks(config, mockClient, TEST_DIR);
 
       expect(sinks).toHaveLength(2);
     });
 
     it('returns file sink only for mode=file even with client', () => {
       const config = { logging: loggingConfig({ mode: 'file' }) };
-      const sinks = buildLogSinks(config, mockClient, TEST_DIR);
+      const { sinks } = buildLogSinks(config, mockClient, TEST_DIR);
 
       expect(sinks).toHaveLength(1);
     });
 
     it('returns UI sink only for mode=ui even with workspace', () => {
       const config = { logging: loggingConfig({ mode: 'ui' }) };
-      const sinks = buildLogSinks(config, mockClient, TEST_DIR);
+      const { sinks } = buildLogSinks(config, mockClient, TEST_DIR);
 
       expect(sinks).toHaveLength(1);
     });
@@ -83,35 +84,35 @@ describe('buildLogSinks', () => {
   describe('BAD', () => {
     it('returns empty array when mode=file but no workspace', () => {
       const config = { logging: loggingConfig({ mode: 'file' }) };
-      const sinks = buildLogSinks(config, undefined, null);
+      const { sinks } = buildLogSinks(config, undefined, null);
 
       expect(sinks).toHaveLength(0);
     });
 
     it('returns empty array when mode=ui but no client', () => {
       const config = { logging: loggingConfig({ mode: 'ui' }) };
-      const sinks = buildLogSinks(config, undefined, TEST_DIR);
+      const { sinks } = buildLogSinks(config, undefined, TEST_DIR);
 
       expect(sinks).toHaveLength(0);
     });
 
     it('returns empty array when mode=both but no workspace AND no client', () => {
       const config = { logging: loggingConfig({ mode: 'both' }) };
-      const sinks = buildLogSinks(config, undefined, null);
+      const { sinks } = buildLogSinks(config, undefined, null);
 
       expect(sinks).toHaveLength(0);
     });
 
     it('returns empty array when workspace is empty string', () => {
       const config = { logging: loggingConfig({ mode: 'file' }) };
-      const sinks = buildLogSinks(config, undefined, '');
+      const { sinks } = buildLogSinks(config, undefined, '');
 
       expect(sinks).toHaveLength(0);
     });
 
     it('handles relative workspace path without crashing', () => {
       const config = { logging: loggingConfig({ mode: 'file' }) };
-      const sinks = buildLogSinks(config, undefined, './relative');
+      const { sinks } = buildLogSinks(config, undefined, './relative');
 
       expect(sinks).toHaveLength(1);
     });
@@ -120,14 +121,14 @@ describe('buildLogSinks', () => {
   describe('CORNER', () => {
     it('handles mode as "both" with only workspace (no client)', () => {
       const config = { logging: loggingConfig({ mode: 'both' }) };
-      const sinks = buildLogSinks(config, undefined, TEST_DIR);
+      const { sinks } = buildLogSinks(config, undefined, TEST_DIR);
 
       expect(sinks).toHaveLength(1);
     });
 
     it('handles mode as "both" with only client (no workspace)', () => {
       const config = { logging: loggingConfig({ mode: 'both' }) };
-      const sinks = buildLogSinks(config, mockClient, null);
+      const { sinks } = buildLogSinks(config, mockClient, null);
 
       expect(sinks).toHaveLength(1);
     });
@@ -135,7 +136,7 @@ describe('buildLogSinks', () => {
     it('handles client without app.log', () => {
       const config = { logging: loggingConfig({ mode: 'ui' }) };
       const clientNoLog = { app: {} };
-      const sinks = buildLogSinks(config, clientNoLog as any, TEST_DIR);
+      const { sinks } = buildLogSinks(config, clientNoLog as any, TEST_DIR);
 
       expect(sinks).toHaveLength(0);
     });
@@ -144,7 +145,7 @@ describe('buildLogSinks', () => {
       const config = {
         logging: loggingConfig({ mode: 'file', retentionDays: 30 }),
       };
-      const sinks = buildLogSinks(config, undefined, TEST_DIR);
+      const { sinks } = buildLogSinks(config, undefined, TEST_DIR);
 
       expect(sinks).toHaveLength(1);
     });
@@ -156,14 +157,14 @@ describe('buildLogSinks', () => {
 
       for (const mode of modes) {
         const config = { logging: loggingConfig({ mode }) };
-        const sinks = buildLogSinks(config, mockClient, TEST_DIR);
+        const { sinks } = buildLogSinks(config, mockClient, TEST_DIR);
         expect(sinks.length).toBeGreaterThan(0);
       }
     });
 
     it('handles minimal config structure', () => {
       const config = { logging: loggingConfig({ mode: 'file' }) };
-      const sinks = buildLogSinks(config, undefined, TEST_DIR);
+      const { sinks } = buildLogSinks(config, undefined, TEST_DIR);
 
       expect(sinks).toHaveLength(1);
     });
@@ -195,7 +196,7 @@ describe('UI sink error observability', () => {
   // HAPPY: successful client.app.log produces no stderr output
   it('HAPPY — successful log does not write to stderr', async () => {
     const client = { app: { log: vi.fn().mockResolvedValue(undefined) } };
-    const sinks = buildLogSinks(uiConfig, client, null);
+    const { sinks } = buildLogSinks(uiConfig, client, null);
 
     expect(sinks).toHaveLength(1);
     sinks[0](testEntry);
@@ -214,7 +215,7 @@ describe('UI sink error observability', () => {
     const client = {
       app: { log: vi.fn().mockRejectedValue(new Error('connection lost')) },
     };
-    const sinks = buildLogSinks(uiConfig, client, null);
+    const { sinks } = buildLogSinks(uiConfig, client, null);
 
     expect(sinks).toHaveLength(1);
     await expect(sinks[0](testEntry)).rejects.toThrow('UI log sink failure');
@@ -232,7 +233,7 @@ describe('UI sink error observability', () => {
     const client = {
       app: { log: vi.fn().mockRejectedValue(new Error('broken')) },
     };
-    const sinks = buildLogSinks(uiConfig, client, null);
+    const { sinks } = buildLogSinks(uiConfig, client, null);
     const sink = sinks[0];
 
     // Fire 5 log calls — only first 3 should emit stderr (5-min window)
@@ -253,7 +254,7 @@ describe('UI sink error observability', () => {
     const client = {
       app: { log: vi.fn().mockRejectedValue('raw string rejection') },
     };
-    const sinks = buildLogSinks(uiConfig, client, null);
+    const { sinks } = buildLogSinks(uiConfig, client, null);
 
     await expect(sinks[0](testEntry)).rejects.toThrow('UI log sink failure');
     await new Promise((r) => setTimeout(r, 10));
@@ -267,7 +268,7 @@ describe('UI sink error observability', () => {
   // EDGE: extra field in LogEntry is forwarded to client.app.log body
   it('EDGE — log entry with extra field includes it in the body', async () => {
     const client = { app: { log: vi.fn().mockResolvedValue(undefined) } };
-    const sinks = buildLogSinks(uiConfig, client, null);
+    const { sinks } = buildLogSinks(uiConfig, client, null);
 
     const entryWithExtra: LogEntry = {
       level: 'warn',
@@ -298,8 +299,8 @@ describe('UI sink error observability', () => {
       app: { log: vi.fn().mockRejectedValue(new Error('fail-2')) },
     };
 
-    const sinks1 = buildLogSinks(uiConfig, client1, null);
-    const sinks2 = buildLogSinks(uiConfig, client2, null);
+    const { sinks: sinks1 } = buildLogSinks(uiConfig, client1, null);
+    const { sinks: sinks2 } = buildLogSinks(uiConfig, client2, null);
 
     // 4 failures on sink1 (only 3 reported within 5-min window) + 1 failure on sink2
     for (let i = 0; i < 4; i++)
@@ -320,7 +321,7 @@ describe('UI sink error observability', () => {
     const client = {
       app: { log: vi.fn().mockRejectedValue(new Error('ui failure')) },
     };
-    const sinks = buildLogSinks(uiConfig, client, null);
+    const { sinks } = buildLogSinks(uiConfig, client, null);
     expect(sinks).toHaveLength(1);
 
     // Wrap the UI sink in a logger so createLogger counts rejections
@@ -335,5 +336,88 @@ describe('UI sink error observability', () => {
 
     const health = (log as import('../logging/logger.js').HealthAwareLogger).getHealth();
     expect(health.sinkFailuresTotal).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('addOtlpSinkIfEnabled (egress gating)', () => {
+  const ORIGINAL_ENV = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  let stderr: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+    stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+  });
+  afterEach(() => {
+    if (ORIGINAL_ENV === undefined) delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+    else process.env.OTEL_EXPORTER_OTLP_ENDPOINT = ORIGINAL_ENV;
+    vi.restoreAllMocks();
+  });
+
+  function run(otlp: { enabled: boolean; endpoint?: string; allowInsecure?: boolean }): {
+    sinks: LogSink[];
+    disposables: OtlpSinkHandle[];
+  } {
+    const sinks: LogSink[] = [];
+    const disposables: OtlpSinkHandle[] = [];
+    addOtlpSinkIfEnabled({ logging: { otlp } }, sinks, disposables);
+    return { sinks, disposables };
+  }
+
+  it('disabled: adds no sink and no disposable', () => {
+    const { sinks, disposables } = run({ enabled: false });
+    expect(sinks).toHaveLength(0);
+    expect(disposables).toHaveLength(0);
+  });
+
+  it('enabled with https endpoint: adds a sink and a disposable', () => {
+    const { sinks, disposables } = run({ enabled: true, endpoint: 'https://collector:4318' });
+    expect(sinks).toHaveLength(1);
+    expect(disposables).toHaveLength(1);
+  });
+
+  it('enabled without endpoint and no env var: warns and adds nothing', () => {
+    const { sinks } = run({ enabled: true });
+    expect(sinks).toHaveLength(0);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('no endpoint configured'));
+  });
+
+  it('enabled with malformed endpoint: warns and adds nothing', () => {
+    const { sinks } = run({ enabled: true, endpoint: 'not a url at all' });
+    expect(sinks).toHaveLength(0);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('not a valid URL'));
+  });
+
+  it('enabled with a non-http scheme: warns and adds nothing', () => {
+    const { sinks } = run({ enabled: true, endpoint: 'collector:4318' });
+    expect(sinks).toHaveLength(0);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('http(s) URL'));
+  });
+
+  it('enabled with http endpoint and no allowInsecure: warns and adds nothing', () => {
+    const { sinks } = run({ enabled: true, endpoint: 'http://collector:4318' });
+    expect(sinks).toHaveLength(0);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('must use https://'));
+  });
+
+  it('enabled with http endpoint and allowInsecure: adds the sink', () => {
+    const { sinks } = run({
+      enabled: true,
+      endpoint: 'http://collector:4318',
+      allowInsecure: true,
+    });
+    expect(sinks).toHaveLength(1);
+  });
+
+  it('uses OTEL_EXPORTER_OTLP_ENDPOINT env fallback (validated)', () => {
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'https://env-collector:4318';
+    const { sinks } = run({ enabled: true });
+    expect(sinks).toHaveLength(1);
+  });
+
+  it('rejects a cleartext env fallback endpoint without allowInsecure', () => {
+    process.env.OTEL_EXPORTER_OTLP_ENDPOINT = 'http://env-collector:4318';
+    const { sinks } = run({ enabled: true });
+    expect(sinks).toHaveLength(0);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('must use https://'));
   });
 });

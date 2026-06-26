@@ -57,7 +57,7 @@ describe('plugin-logging.ts', () => {
           },
         },
       };
-      const sinks = buildLogSinks(config, client, '/tmp/test');
+      const { sinks } = buildLogSinks(config, client, '/tmp/test');
       expect(Array.isArray(sinks)).toBe(true);
     });
   });

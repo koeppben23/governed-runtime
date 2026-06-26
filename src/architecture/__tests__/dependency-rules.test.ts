@@ -370,6 +370,21 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
       }
     }
 
+    if (layer === 'logging') {
+      // logging/ owns its own LogLevel type and must not import from config/.
+      // The dependency flows config -> logging only, breaking the prior
+      // config<->logging module-group coupling.
+      for (const imp of ffImports) {
+        if (imp.targetModule === 'config') {
+          allViolations.push({
+            file: analysis.relativePath,
+            rule: 'logging-no-config',
+            message: `logging/ must not import config/ but imports: ${imp.targetModule}`,
+          });
+        }
+      }
+    }
+
     if (layer === 'rails' && analysis.filePath.includes('/rails/')) {
       const integrationImports = ffImports.filter((i) => i.targetModule === 'integration');
       for (const imp of integrationImports) {

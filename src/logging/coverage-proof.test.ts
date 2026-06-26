@@ -118,10 +118,8 @@ describe('Coverage proofs', () => {
       expect(result!.issuer).toMatch(/^\[hashed:[a-f0-9]{8}\]$/);
       // Error must NOT contain raw path
       expect(result!.error).not.toContain('/home/user');
-      // Error must contain redacted marker
-      expect(result!.error).toContain('[redacted]');
-      // The sanitized error may keep basenames in [path:] markers
-      expect(result!.error).toContain('[path:');
+      // The absolute path is reduced to a [path:basename] marker (message stays readable)
+      expect(result!.error).toContain('[path:token.jwt]');
     });
 
     it('HAPPY: error with https URL is redacted to hostname', () => {

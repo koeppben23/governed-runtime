@@ -16,7 +16,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createLogger, type DynamicLogger } from './logger.js';
-import { createLevelReloader, type SignalRegistrar } from './level-reloader.js';
+import { createLevelReloader, sigusr1Registrar, type SignalRegistrar } from './level-reloader.js';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -211,5 +211,28 @@ describe('LevelReloader', () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('sigusr1Registrar (production)', () => {
+  it('invokes the callback when a real SIGUSR1 fires and dispose removes it', () => {
+    let calls = 0;
+    const before = process.listenerCount('SIGUSR1');
+    const dispose = sigusr1Registrar.register(() => {
+      calls++;
+    });
+    expect(process.listenerCount('SIGUSR1')).toBe(before + 1);
+    process.emit('SIGUSR1', 'SIGUSR1' as never);
+    expect(calls).toBe(1);
+    dispose();
+    expect(process.listenerCount('SIGUSR1')).toBe(before);
+  });
+
+  it('a throwing callback does not propagate out of the signal handler', () => {
+    const dispose = sigusr1Registrar.register(() => {
+      throw new Error('handler boom');
+    });
+    expect(() => process.emit('SIGUSR1', 'SIGUSR1' as never)).not.toThrow();
+    dispose();
   });
 });

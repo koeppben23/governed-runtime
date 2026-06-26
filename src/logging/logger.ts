@@ -32,8 +32,9 @@
  * @version v4
  */
 
-import type { LogLevel } from '../config/logging-config.js';
+import type { LogLevel } from './log-level.js';
 import { getLogContext } from './log-context.js';
+import { redactExtra, redactMessage } from './redact.js';
 
 // ─── Level Ordering ──────────────────────────────────────────────────────────
 
@@ -45,6 +46,9 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   error: 3,
   silent: 4,
 };
+
+/** Throttle window for the sink-failure stderr health signal. */
+const SINK_HEALTH_REPORT_MS = 60_000;
 
 // ─── Logger Interface ────────────────────────────────────────────────────────
 
@@ -273,7 +277,9 @@ export function createLogger(
       ? new TokenBucket(
           rateLimit.maxPerSecond,
           rateLimit.exemptLevels,
-          rateLimit._clock ?? (() => Date.now()),
+          // Monotonic clock for token-bucket refill so wall-clock jumps (NTP
+          // corrections) cannot stall or distort rate limiting.
+          rateLimit._clock ?? (() => performance.now()),
           rateLimit.summaryIntervalMs,
         )
       : null;
@@ -292,25 +298,56 @@ export function createLogger(
       return;
     }
 
-    const ctx = getLogContext();
-    const entry: LogEntry = {
-      level,
-      service,
-      message,
-      extra,
-      traceId: ctx?.traceId,
-      sessionId: ctx?.sessionId,
-    };
+    // Belt-and-suspenders: redactMessage/redactExtra are already throw-safe, but
+    // the whole emit body is wrapped so the logger contract ("never throws,
+    // never blocks the flow") holds even if context resolution or a future change
+    // here were to throw. A logging failure must never propagate to the caller.
+    let entry: LogEntry;
+    try {
+      const ctx = getLogContext();
+      entry = {
+        level,
+        service,
+        // Central sink-layer redaction (defense-in-depth): every message and extra
+        // is sanitized before reaching any sink, so a call site that forgets to
+        // redact cannot leak secrets or absolute paths.
+        message: redactMessage(message),
+        extra: redactExtra(extra),
+        traceId: ctx?.traceId,
+        sessionId: ctx?.sessionId,
+      };
+    } catch {
+      sinkFailuresTotal++;
+      reportSinkHealth();
+      return;
+    }
 
     for (const sink of sinkArray) {
       try {
         const result = sink(entry);
         void Promise.resolve(result).catch(() => {
           sinkFailuresTotal++;
+          reportSinkHealth();
         });
       } catch {
         sinkFailuresTotal++;
+        reportSinkHealth();
       }
+    }
+  }
+
+  // Surface sink failures on stderr so a fully broken sink (silent total log
+  // loss) is detectable. Throttled: warns on the first failure, then at most
+  // once per SINK_HEALTH_REPORT_MS, so a flapping sink does not flood stderr.
+  let lastSinkHealthReport = 0;
+  function reportSinkHealth(): void {
+    const now = Date.now();
+    if (sinkFailuresTotal === 1 || now - lastSinkHealthReport >= SINK_HEALTH_REPORT_MS) {
+      lastSinkHealthReport = now;
+      process.stderr.write(
+        `[FlowGuard] diagnostic log sink failures: ${sinkFailuresTotal} total ` +
+          `(logs may be incomplete)\n`,
+      );
     }
   }
 

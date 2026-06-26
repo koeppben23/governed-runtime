@@ -62,7 +62,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     );
   }
 
-  const { log, config } = await createPluginLogger(
+  const { log, config, disposeLogging } = await createPluginLogger(
     client,
     ws.cachedWsDir,
     auditWorktree,
@@ -116,7 +116,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     getWorkspaceDir: () => ws.cachedWsDir,
   };
 
-  return createFlowGuardPluginHooks({
+  const hooks = createFlowGuardPluginHooks({
     ws,
     log,
     adapterLog,
@@ -130,6 +130,16 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     },
     logError,
   });
+
+  // Use OpenCode's plugin teardown hook (Hooks.dispose) to flush + release log
+  // sinks (OTLP shutdown + SIGUSR1 detach). OpenCode awaits dispose, giving the
+  // OTLP batch exporter a real completion point — unlike global process-exit
+  // listeners, this is per-instance and is not leaked across plugin inits.
+  if (disposeLogging) {
+    hooks.dispose = disposeLogging;
+  }
+
+  return hooks;
 };
 
 type PluginLogger = Awaited<ReturnType<typeof createPluginLogger>>['log'];

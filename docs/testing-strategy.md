@@ -58,14 +58,15 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 34 security-critical
+The `mutation` job runs StrykerJS mutation testing against 35 security-critical
 files spanning adapters (persistence + persistence-lock + host-adapter + archive
 verification), archive digesting, audit (integrity + completeness), config
 (reasons + policy), hooks (HTTP hook server + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
 (command-aliases, tool-classification, review-validation-mode,
 plugin-audit-lifecycle-reason, review enforcement, review orchestrator,
-orchestrator detection/output, and agent resolution), templates (codex-plugin),
+orchestrator detection/output, and agent resolution), logging (error-serialize),
+templates (codex-plugin),
 shared canonical JSON, machine (commands, evaluate, guards, next-action), and
 rails (architecture, hydrate, review, review-decision, ticket). It uploads a
 mutation report artifact (`reports/mutation/`) and enforces the `break: 80`
@@ -141,7 +142,7 @@ detect semantic errors, not just that code is executed (coverage alone cannot pr
 
 ### Scope
 
-34 files are mutated, covering the fail-closed governance core
+35 files are mutated, covering the fail-closed governance core
 (see `stryker.conf.json` for the canonical list):
 
 | Area                                                                                                                                                                                 | Files  | Representative score            |
@@ -152,12 +153,13 @@ detect semantic errors, not just that code is executed (coverage alone cannot pr
 | Config (`policy`, `reasons`)                                                                                                                                                         | 2      | (see latest report)             |
 | Hooks (`http-server`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                                                              | 3      | (see latest report)             |
 | Identity (`token-verifier`, `key-resolver`)                                                                                                                                          | 2      | (see latest report)             |
-| Integration (`command-aliases`, `tool-classification`, `tools/review-validation-mode`, `plugin-audit-lifecycle-reason`, review enforcement/orchestrator/detection/output/resolution) | 10     | (see latest report)             |
+| Integration (`command-aliases`, `tool-classification`, `tools/review-validation-mode`, `plugin-audit-lifecycle-reason`, review enforcement/orchestrator/detection/output/resolution) | 9      | (see latest report)             |
 | Templates (`codex-plugin`)                                                                                                                                                           | 1      | (see latest report)             |
 | Shared (`canonical-json`)                                                                                                                                                            | 1      | (see latest report)             |
+| Logging (`error-serialize`)                                                                                                                                                          | 1      | (see latest report)             |
 | Machine (`commands`, `evaluate`, `guards`, `next-action`)                                                                                                                            | 4      | (see latest report)             |
 | Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`)                                                                                                             | 5      | (see latest report)             |
-| **Total**                                                                                                                                                                            | **34** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                                                            | **35** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.

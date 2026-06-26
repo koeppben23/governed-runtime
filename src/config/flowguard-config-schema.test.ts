@@ -331,6 +331,47 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data!.logging.rateLimit.summaryIntervalMs).toBe(60000);
     });
 
+    it('forces error into exemptLevels even when omitted (error logs never dropped)', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { enabled: true, exemptLevels: [] } },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.rateLimit.exemptLevels).toContain('error');
+    });
+
+    it('keeps a custom exemptLevels list but still guarantees error', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { enabled: true, exemptLevels: ['warn'] } },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.rateLimit.exemptLevels).toContain('warn');
+      expect(result.data!.logging.rateLimit.exemptLevels).toContain('error');
+    });
+
+    it('does not duplicate error when already present', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { enabled: true, exemptLevels: ['error', 'warn'] } },
+      });
+      expect(result.success).toBe(true);
+      const errs = result.data!.logging.rateLimit.exemptLevels.filter((l) => l === 'error');
+      expect(errs).toHaveLength(1);
+    });
+
+    it('object-level transform guards the invariant: a partial rateLimit without exemptLevels still gets error', () => {
+      // Only maxPerSecond set — exemptLevels falls to the field default, then the
+      // object-level transform runs. If the transform (not a literal) is the
+      // guard, error is present. This fails if the object-level transform is removed.
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { maxPerSecond: 42 } },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.rateLimit.exemptLevels).toContain('error');
+    });
+
     it('accepts enabled with custom maxPerSecond', () => {
       const result = FlowGuardConfigSchema.safeParse({
         schemaVersion: 'v1',
@@ -410,14 +451,41 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data!.logging.otlp.endpoint).toBeUndefined();
     });
 
-    it('accepts enabled with endpoint', () => {
+    it('accepts enabled with an https endpoint', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { otlp: { enabled: true, endpoint: 'https://collector:4318' } },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.otlp.enabled).toBe(true);
+      expect(result.data!.logging.otlp.endpoint).toBe('https://collector:4318');
+    });
+
+    it('rejects a cleartext http endpoint by default', () => {
       const result = FlowGuardConfigSchema.safeParse({
         schemaVersion: 'v1',
         logging: { otlp: { enabled: true, endpoint: 'http://collector:4318' } },
       });
+      expect(result.success).toBe(false);
+    });
+
+    it('accepts a cleartext http endpoint only when allowInsecure is set', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: {
+          otlp: { enabled: true, endpoint: 'http://collector:4318', allowInsecure: true },
+        },
+      });
       expect(result.success).toBe(true);
-      expect(result.data!.logging.otlp.enabled).toBe(true);
       expect(result.data!.logging.otlp.endpoint).toBe('http://collector:4318');
+    });
+
+    it('rejects a malformed endpoint URL', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { otlp: { enabled: true, endpoint: 'collector:4318' } },
+      });
+      expect(result.success).toBe(false);
     });
 
     it('accepts enabled without endpoint (env var fallback)', () => {

@@ -70,8 +70,9 @@ describe('doctor shipped-executable boundary logging (#423)', () => {
     expect(output).toContain('[ERROR]');
     expect(output).toContain('shipped executable invalid');
     expect(output).toContain(SHIPPED_EXECUTABLE_CHECK);
-    expect(output).toContain('dist/cli/install.js');
-    // package-relative path, not the absolute one
+    // Central log redaction reduces the absolute path to its basename, so the
+    // filename is shown but the absolute workspace path is not leaked.
+    expect(output).toContain('install.js');
     expect(output).not.toContain(missingFile);
     expect(code).toBe(1);
   });

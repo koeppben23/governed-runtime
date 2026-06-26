@@ -15,7 +15,8 @@
  * - Export failures are non-blocking and reported via onFailure callback.
  * - The sink always resolves — no Promise rejections to createLogger.
  *
- * Dependencies (added to package.json as direct deps):
+ * Dependencies (lazy dynamic-import; listed as optionalDependencies so they are
+ * not required for default/offline operation):
  *   @opentelemetry/sdk-logs
  *   @opentelemetry/exporter-logs-otlp-http
  *
@@ -37,9 +38,13 @@ interface OtlpLogger {
   }): void;
 }
 
-type LoggerProviderConstructor = new (config: { processors: unknown[] }) => {
+interface OtlpProvider {
   getLogger(name: string, version?: string): OtlpLogger;
-};
+  forceFlush(): Promise<void>;
+  shutdown(): Promise<void>;
+}
+
+type LoggerProviderConstructor = new (config: { processors: unknown[] }) => OtlpProvider;
 
 type BatchLogRecordProcessorConstructor = new (exporter: unknown) => unknown;
 type OtlpLogExporterConstructor = new (config: { url: string }) => unknown;
@@ -75,28 +80,46 @@ export interface OtlpSinkOptions {
 }
 
 /**
+ * OTLP sink handle: the sink function plus a reachable lifecycle surface.
+ *
+ * `flush()` forces the BatchLogRecordProcessor to export buffered records.
+ * `shutdown()` flushes and releases the provider + its internal timer.
+ * Both are idempotent and always resolve (errors are reported via onFailure).
+ */
+export interface OtlpSinkHandle {
+  sink: LogSink;
+  flush(): Promise<void>;
+  shutdown(): Promise<void>;
+}
+
+/**
  * Create an OTLP log exporter sink.
  *
  * Lazy-initialises the OpenTelemetry Logs SDK on the first write.
  * Uses an isolated LoggerProvider — does not call setGlobalLoggerProvider().
  *
  * @param options - Endpoint and optional callbacks.
- * @returns LogSink function (always resolves).
+ * @returns OtlpSinkHandle: the sink (always resolves) plus flush/shutdown.
  */
-export function createOtlpLogSink(options: OtlpSinkOptions): LogSink {
+export function createOtlpLogSink(options: OtlpSinkOptions): OtlpSinkHandle {
   const endpoint = options.endpoint;
   const onFailure = options.onFailure;
   const _import = options._import ?? ((specifier: string) => import(specifier) as Promise<unknown>);
 
   let _initialized = false;
   let _initErrLogged = false;
+  let _shutdown = false;
 
-  // Lazy-initialised OTEL references
+  // Lazy-initialised OTEL references. The provider is RETAINED (not discarded)
+  // so flush()/shutdown() can reach BatchLogRecordProcessor — otherwise batched
+  // records are silently lost on process exit and the timer leaks.
+  let _provider: OtlpProvider | null = null;
   let _logger: OtlpLogger | null = null;
 
   async function ensureInit(): Promise<boolean> {
     if (_initialized) return _logger !== null;
     _initialized = true;
+    if (_shutdown) return false;
 
     try {
       const [sdkLogsMod, exporterMod] = (await Promise.all([
@@ -107,11 +130,11 @@ export function createOtlpLogSink(options: OtlpSinkOptions): LogSink {
       const { LoggerProvider, BatchLogRecordProcessor } = sdkLogsMod;
       const { OTLPLogExporter } = exporterMod;
 
-      const provider = new LoggerProvider({
+      _provider = new LoggerProvider({
         processors: [new BatchLogRecordProcessor(new OTLPLogExporter({ url: endpoint }))],
       });
 
-      _logger = provider.getLogger('flowguard', '1.0.0');
+      _logger = _provider.getLogger('flowguard', '1.0.0');
 
       return true;
     } catch (err) {
@@ -130,7 +153,8 @@ export function createOtlpLogSink(options: OtlpSinkOptions): LogSink {
     return SEVERITY_MAP[level] ?? 9; // default: INFO
   }
 
-  return async (entry: LogEntry): Promise<void> => {
+  const sink: LogSink = async (entry: LogEntry): Promise<void> => {
+    if (_shutdown) return;
     const ok = await ensureInit();
     if (!ok || !_logger) return;
 
@@ -138,7 +162,7 @@ export function createOtlpLogSink(options: OtlpSinkOptions): LogSink {
       _logger.emit({
         severityNumber: mapSeverity(entry.level),
         severityText: entry.level,
-        body: entry.message,
+        body: sanitizeDiagnosticString(entry.message),
         attributes: {
           'flowguard.service': entry.service,
           'flowguard.level': entry.level,
@@ -150,5 +174,30 @@ export function createOtlpLogSink(options: OtlpSinkOptions): LogSink {
     } catch (err) {
       onFailure?.(err);
     }
+  };
+
+  return {
+    sink,
+    async flush(): Promise<void> {
+      if (!_provider) return;
+      try {
+        await _provider.forceFlush();
+      } catch (err) {
+        onFailure?.(err);
+      }
+    },
+    async shutdown(): Promise<void> {
+      if (_shutdown) return;
+      _shutdown = true;
+      if (!_provider) return;
+      try {
+        await _provider.shutdown();
+      } catch (err) {
+        onFailure?.(err);
+      } finally {
+        _provider = null;
+        _logger = null;
+      }
+    },
   };
 }

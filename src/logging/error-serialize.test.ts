@@ -50,6 +50,12 @@ describe('serializeError', () => {
       expect(result.cause!.message).toBe('root cause');
     });
 
+    it('ignores a non-Error cause (only Error causes recurse)', () => {
+      const err = new Error('top-level', { cause: 'just a string cause' });
+      const result = serializeError(err);
+      expect(result.cause).toBeUndefined();
+    });
+
     it('preserves deeply nested cause chains', () => {
       const innerMost = new Error('inner');
       const middle = new Error('middle', { cause: innerMost });

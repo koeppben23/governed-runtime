@@ -286,11 +286,12 @@ describe('integration/plugin', () => {
       expect(hooks).toBeDefined();
     });
 
-    it('returns all expected hooks (command + tool + event + compaction)', async () => {
+    it('returns all expected hooks (command + tool + event + compaction + dispose)', async () => {
       const hooks = await FlowGuardAuditPlugin(createMockInput());
       const keys = Object.keys(hooks).sort();
       expect(keys).toEqual([
         'command.execute.before',
+        'dispose',
         'event',
         'experimental.session.compacting',
         'tool.execute.after',
@@ -1531,6 +1532,44 @@ describe('integration/plugin', () => {
       // ToolHookAfterOutput used by afterhooks
       expect(afterSource).toContain("from './types.js'");
       expect(afterSource).toContain('ToolHookAfterOutput');
+    });
+  });
+
+  describe('teardown (dispose hook, no global listener leak)', () => {
+    const EXIT_SIGNALS = ['SIGTERM', 'SIGINT', 'beforeExit'] as const;
+
+    function exitListenerCount(): number {
+      return EXIT_SIGNALS.reduce((n, s) => n + process.listenerCount(s), 0);
+    }
+
+    it('returns a dispose hook that is callable and resolves', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-dispose-'));
+      try {
+        await initGitRepo(dir);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: dir, directory: dir }),
+        );
+        expect(typeof hooks.dispose).toBe('function');
+        await expect(hooks.dispose!()).resolves.toBeUndefined();
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('does not register global process exit listeners (no leak across inits)', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-noleak-'));
+      try {
+        await initGitRepo(dir);
+        const before = exitListenerCount();
+        // Multiple inits must not accumulate SIGTERM/SIGINT/beforeExit listeners:
+        // teardown is wired via the per-instance Hooks.dispose, not global signals.
+        for (let i = 0; i < 5; i++) {
+          await FlowGuardAuditPlugin(createMockInput({ worktree: dir, directory: dir }));
+        }
+        expect(exitListenerCount()).toBe(before);
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
     });
   });
 });

@@ -779,3 +779,66 @@ describe('createLogger — dynamic log level', () => {
     expect(log.getHealth().level).toBe('silent');
   });
 });
+
+describe('central sink-layer redaction (defense-in-depth)', () => {
+  it('redacts secrets and absolute paths in the message before they reach a sink', () => {
+    const { entries, sink } = captureSink();
+    const log = createLogger('debug', sink);
+    log.error('audit', 'auth failed: Bearer eyJabc.def.ghi at /home/alice/.ssh/id_rsa');
+    expect(entries).toHaveLength(1);
+    expect(entries[0]!.message).toContain('Bearer [redacted]');
+    expect(entries[0]!.message).not.toContain('/home/alice/.ssh/id_rsa');
+  });
+
+  it('redacts secrets and paths in extra, even when the call site did not redact', () => {
+    const { entries, sink } = captureSink();
+    const log = createLogger('debug', sink);
+    log.info('svc', 'config', {
+      tokenPath: '/home/alice/token.json',
+      authHeader: 'password=hunter2supersecret',
+      nested: { winPath: 'C:\\Users\\bob\\secret.key' },
+      count: 7,
+    });
+    const extra = entries[0]!.extra as Record<string, unknown>;
+    expect(extra.tokenPath).not.toContain('/home/alice');
+    expect(extra.authHeader).toContain('password=[redacted]');
+    expect((extra.nested as Record<string, string>).winPath).not.toContain('C:\\Users\\bob');
+    expect(extra.count).toBe(7);
+  });
+
+  it('NEVER throws to the caller on a hostile extra (logger contract)', () => {
+    const { entries, sink } = captureSink();
+    const log = createLogger('debug', sink);
+
+    const throwingGetter: Record<string, unknown> = {};
+    Object.defineProperty(throwingGetter, 'boom', {
+      enumerable: true,
+      get() {
+        throw new Error('getter boom');
+      },
+    });
+
+    let deep: Record<string, unknown> = { leaf: 'x' };
+    for (let i = 0; i < 5000; i++) deep = { nested: deep };
+
+    expect(() => log.error('svc', 'failed', { throwingGetter })).not.toThrow();
+    expect(() => log.error('svc', 'deep', { deep })).not.toThrow();
+    expect(() => log.error('svc', 'big', { n: 10n })).not.toThrow();
+    // entries were still produced (logging did not silently break)
+    expect(entries.length).toBe(3);
+  });
+});
+
+describe('sink health surfacing', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('writes a stderr warning on the first sink failure (silent loss is observable)', () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const throwingSink = (): void => {
+      throw new Error('sink down');
+    };
+    const log = createLogger('debug', throwingSink);
+    log.info('svc', 'message');
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('diagnostic log sink failures'));
+  });
+});
