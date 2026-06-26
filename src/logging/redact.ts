@@ -152,8 +152,8 @@ export function sanitizeDiagnosticString(msg: string): string {
         const b = m.split(/[/\\]/).pop() ?? m;
         return b && b.length < m.length ? `[path:${b}]` : m;
       })
-      // Strip line:column references.
-      .replace(/:\d+:\d+/g, '')
+      // Strip line:column references (but not ISO timestamps like T08:30:16.735Z).
+      .replace(/(?<!\d):\d+:\d+/g, '')
   );
 }
 
