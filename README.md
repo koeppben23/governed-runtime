@@ -202,14 +202,30 @@ For debugging FlowGuard inside the OpenCode runtime with IntelliJ IDEA Ultimate,
 
 ### CI Jobs
 
-| Job                 | Script                                         | What It Proves                                         |
-| ------------------- | ---------------------------------------------- | ------------------------------------------------------ |
-| **unit**            | `npm run test:unit`                            | Pure logic correctness                                 |
-| **integration**     | `npm run test:integration`                     | Governance chain fidelity                              |
-| **smoke**           | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works                            |
-| **install-verify**  | `npm run build && npm run test:install-verify` | Tarball install + doctor (cross-platform)              |
-| **mutation**        | `npm run mutation`                             | StrykerJS mutation testing for security-critical paths |
-| **actions-pinning** | `npm run check:actions-pinned`                 | GitHub Actions are pinned to immutable refs            |
+| Job                        | Script                                         | What It Proves                                         |
+| -------------------------- | ---------------------------------------------- | ------------------------------------------------------ |
+| **unit**                   | `npm run test:unit`                            | Pure logic correctness                                 |
+| **test**                   | needs: [unit, integration]                     | Aggregated branch-protection check                     |
+| **integration**            | `npm run test:integration`                     | Governance chain fidelity                              |
+| **architecture**           | `npm run test:architecture`                    | Dependency rules, file sizes                           |
+| **typecheck**              | `npm run check`                                | TypeScript compilation                                 |
+| **sdk-baseline**           | `npm run test:sdk-baseline`                    | SDK contract surface stability                         |
+| **lint**                   | `npm run lint:strict`                          | ESLint with --max-warnings=0                           |
+| **unused-dependencies**    | `npm run check:unused-dependencies`            | Knip — no stale imports or modules                     |
+| **format**                 | `npm run check:format`                         | Prettier formatting                                    |
+| **fuzz**                   | `npm run test:fuzz`                            | Fast-check property-based test coverage                |
+| **actions-pinning**        | `npm run check:actions-pinned`                 | GitHub Actions pinned to immutable refs                |
+| **build**                  | `npm run build`                                | Successful compilation to dist/                        |
+| **install-verify**         | `npm run build && npm run test:install-verify` | Tarball install + doctor (cross-platform)              |
+| **smoke**                  | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works                            |
+| **independent-review-e2e** | `npm run test:independent-review-e2e`          | Standalone reviewer session contract                   |
+| **actionlint**             | —                                              | GitHub Actions workflow linting (docker)               |
+| **secrets-scan**           | —                                              | GitGuardian or Gitleaks secret detection               |
+| **security-policy**        | —                                              | OSV/GHAS vulnerability scan                            |
+| **dependency-review**      | —                                              | Dependency review (software supply-chain)              |
+| **install**                | `npm run build` (implicit)                     | Cross-platform install (ubuntu, macos, windows)        |
+| **ci-runtime-report**      | —                                              | CI execution time summary                              |
+| **mutation**               | `npm run mutation`                             | StrykerJS mutation testing for security-critical paths |
 
 See [docs/testing-strategy.md](./docs/testing-strategy.md) for the full test tier system.
 

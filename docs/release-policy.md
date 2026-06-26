@@ -187,7 +187,7 @@ your organization needs to retain:
 ```
 /artifact-store/
 ├── flowguard-core-1.2.0-tp.1.tgz   # current
-├── flowguard-core-1.2.0-tp.1.tgz   # previous
+├── flowguard-core-1.1.0-tp.1.tgz   # previous
 ├── flowguard-core-1.1.x.tgz        # rollback candidate
 ├── checksums.sha256                # release-versioned (one per release)
 ├── sbom.cdx.json                   # release-versioned

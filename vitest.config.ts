@@ -62,6 +62,7 @@ export default defineConfig({
             'src/cli/cli-contract-smoke.test.ts',
             'src/cli/doctor-cli-smoke.test.ts',
             'src/cli/run-acp-smoke.test.ts',
+            'src/cli/inspect-command.test.ts',
           ],
           globals: false,
           restoreMocks: true,

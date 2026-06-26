@@ -406,7 +406,7 @@ Config file location: `~/.config/opencode/flowguard.json` (global) or `.opencode
 The CLI uses a separate flag because it has no OpenCode plugin context:
 
 ```bash
-flowguard install --core-tarball ./flowguard-core-1.0.0.tgz --log-mode console
+flowguard install --core-tarball ./flowguard-core-1.2.0-tp.1.tgz --log-mode console
 flowguard doctor --log-mode file
 flowguard uninstall --log-mode file+console
 ```

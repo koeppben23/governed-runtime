@@ -178,15 +178,13 @@ Survivor analysis remains part of normal security-critical test maintenance.
 
 - **Killed**: Mutant was detected by a test assertion.
 - **Survived**: Mutant was not detected — test gap to address.
-- **CompileError**: Mutant was rejected by the TypeScript checker. The high count (119)
-  is expected for TypeScript-heavy governance code: literal unions, strict object
-  shapes, and typed return contracts reject many invalid mutations before tests run.
+- **CompileError**: Mutant was rejected by the TypeScript checker. The count varies per mutation run; see the HTML report under `reports/mutation/` for the current run's numbers. CompileError results are expected in TypeScript-heavy governance code because literal unions, strict object shapes, and typed return contracts reject many invalid mutations before tests run.
 - **Timeout**: Mutant caused infinite loop or excessive runtime — also detected.
 
 ### Running Locally
 
 ```bash
-npm run mutation    # Runs stryker-patch.js pre-flight + stryker run
+npm run mutation    # Runs scripts/stryker-patch.js pre-flight + stryker run
 ```
 
 The pre-flight script patches `@stryker-mutator/vitest-runner` to use `pool=forks`
