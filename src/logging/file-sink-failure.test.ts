@@ -12,13 +12,18 @@
 
 import { describe, it, expect, vi } from 'vitest';
 
-const { mockAppendFile } = vi.hoisted(() => ({
+const { mockAppendFile, mockRename, mockStat } = vi.hoisted(() => ({
   mockAppendFile: vi.fn(),
+  mockRename: vi.fn(),
+  mockStat: vi.fn(),
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs/promises')>();
-  return { ...actual, appendFile: mockAppendFile };
+  // Default to the real implementations; individual tests opt in to failures.
+  mockRename.mockImplementation(actual.rename);
+  mockStat.mockImplementation(actual.stat);
+  return { ...actual, appendFile: mockAppendFile, rename: mockRename, stat: mockStat };
 });
 
 import { mkdir, rm, mkdtemp } from 'node:fs/promises';
@@ -85,6 +90,59 @@ describe('file-sink write failure', () => {
       const sink = createFileSink(testDir, { retentionDays: 1, onFailure });
       await expect(sink({ level: 'error', service: 'test', message: 'x' })).resolves.not.toThrow();
       expect(onFailure).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(testDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  it('a persistent rename (rotation) failure is surfaced via onFailure, not silent', async () => {
+    const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-rotate-fail-'));
+    await mkdir(join(testDir, '.opencode', 'logs'), { recursive: true });
+    const onFailure = vi.fn();
+
+    // Write "succeeds" (mocked), stat reports over-size to trigger rotation,
+    // rename fails — the live file stays in place and would grow unbounded.
+    mockAppendFile.mockResolvedValueOnce(undefined);
+    mockStat.mockResolvedValueOnce({ size: 10 * 1024 * 1024 } as unknown as Awaited<
+      ReturnType<typeof import('node:fs/promises').stat>
+    >);
+    const renameErr = Object.assign(new Error('cross-device link'), { code: 'EXDEV' });
+    mockRename.mockRejectedValueOnce(renameErr);
+
+    try {
+      // maxSizeBytes = 1 MiB so the faked 10 MiB stat exceeds it.
+      const sink = createFileSink(testDir, {
+        retentionDays: 1,
+        maxSizeBytes: 1024 * 1024,
+        onFailure,
+      });
+      await expect(
+        sink({ level: 'info', service: 'test', message: 'rotate me' }),
+      ).resolves.not.toThrow();
+      expect(mockRename).toHaveBeenCalledTimes(1);
+      expect(onFailure).toHaveBeenCalledTimes(1);
+      expect(onFailure.mock.calls[0]![0]).toBe(renameErr);
+    } finally {
+      await rm(testDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  it('a stat failure during rotation check is surfaced via onFailure, not silent', async () => {
+    const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-stat-fail-'));
+    await mkdir(join(testDir, '.opencode', 'logs'), { recursive: true });
+    const onFailure = vi.fn();
+
+    mockAppendFile.mockResolvedValueOnce(undefined);
+    const statErr = Object.assign(new Error('io error'), { code: 'EIO' });
+    mockStat.mockRejectedValueOnce(statErr);
+
+    try {
+      const sink = createFileSink(testDir, { retentionDays: 1, onFailure });
+      await expect(
+        sink({ level: 'info', service: 'test', message: 'stat boom' }),
+      ).resolves.not.toThrow();
+      expect(onFailure).toHaveBeenCalledTimes(1);
+      expect(onFailure.mock.calls[0]![0]).toBe(statErr);
     } finally {
       await rm(testDir, { recursive: true, force: true }).catch(() => {});
     }

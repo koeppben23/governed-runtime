@@ -108,6 +108,16 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
   const onRotate = normalized.onRotate;
   const onFailure = normalized.onFailure;
 
+  // Safe one-shot notifier: surfaces a sink failure without ever throwing back
+  // into the logging path (an onFailure that itself throws is swallowed).
+  const notifyFailure = (error: unknown): void => {
+    try {
+      onFailure?.(error);
+    } catch {
+      // onFailure errors are swallowed — logging must never fail the flow.
+    }
+  };
+
   let initialized = false;
   let _initPromise: Promise<boolean> | null = null;
   let logDir: string;
@@ -211,21 +221,23 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
             } catch {
               // onRotate errors are non-blocking
             }
-          } catch {
-            // Rotation failure is non-blocking — next write creates new file
+          } catch (rotateErr) {
+            // Rotation is non-blocking, but a persistent rename failure leaves the
+            // live file in place — subsequent writes keep appending to the SAME
+            // file, so it grows past maxSizeBytes unbounded. Surface it via
+            // onFailure so a stuck rotation is observable instead of silent.
+            notifyFailure(rotateErr);
           }
         }
-      } catch {
-        // stat/rename failure is non-blocking
+      } catch (statErr) {
+        // A stat failure means rotation can't be evaluated; signal it so a stuck
+        // rotation (and unbounded growth) is observable rather than silent.
+        notifyFailure(statErr);
       }
     } catch (err) {
       // Non-blocking — logging errors never fail the flow. Surface via onFailure
       // so a failing write (ENOSPC/EACCES) is observable instead of silent.
-      try {
-        onFailure?.(err);
-      } catch {
-        // onFailure errors are swallowed — never fail the flow
-      }
+      notifyFailure(err);
     }
   };
 }
