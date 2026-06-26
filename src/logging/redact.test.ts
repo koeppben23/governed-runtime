@@ -64,6 +64,22 @@ describe('sanitizeDiagnosticString — paths', () => {
     );
     expect(sanitizeDiagnosticString('at foo (file:10:5)')).not.toMatch(/:\d+:\d+/);
   });
+
+  it('preserves ISO 8601 timestamps (regression: line:col regex must not match :mm:ss)', () => {
+    const iso = 'expiresAt=2026-06-26T08:30:16.735Z';
+    expect(sanitizeDiagnosticString(iso)).toContain('2026-06-26T08:30:16.735Z');
+    expect(sanitizeDiagnosticString(iso)).not.toContain('T08.735Z');
+    const spaceSep = '2026-06-26 08:30:16 end';
+    expect(sanitizeDiagnosticString(spaceSep)).toContain(':30:16');
+  });
+
+  it('strips line:col after path redaction in real pipeline order', () => {
+    // After path redaction, /home/user/handler.ts becomes [path:handler.ts],
+    // then line:col stripping should remove the :10:5 suffix.
+    const real = sanitizeDiagnosticString('at /home/user/project/src/handler.ts:10:5');
+    expect(real).not.toMatch(/:\d+:\d+/);
+    expect(real).toContain('[path:handler.ts]');
+  });
 });
 
 describe('sanitizeDiagnosticString — conservative secret values', () => {

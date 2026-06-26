@@ -81,6 +81,48 @@ describe('createFileSink', () => {
       expect(JSON.parse(lines[1]!).fields).toEqual({ code: 'E1' });
     });
 
+    it('includes traceId and sessionId in JSONL when present on LogEntry', async () => {
+      const sink = createFileSink(testDir, { retentionDays: 1 });
+      await sink({
+        level: 'info',
+        service: 'plugin',
+        message: 'bound',
+        traceId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeffff0000',
+        sessionId: 'ses_00000000000abcde',
+      });
+      await sink({
+        level: 'info',
+        service: 'plugin',
+        message: 'trace-only',
+        traceId: 'trace-only-001',
+      });
+      await sink({
+        level: 'info',
+        service: 'plugin',
+        message: 'no-trace',
+      });
+
+      const files = await readdir(join(testDir, '.opencode/logs'));
+      const content = await readFile(join(testDir, '.opencode/logs', files[0]), 'utf-8');
+      const lines = content.trim().split('\n');
+
+      // Entry with both
+      const e1 = JSON.parse(lines[0]!);
+      expect(e1.traceId).toBe('aaaaaaaa-bbbb-4ccc-8ddd-eeeeffff0000');
+      expect(e1.sessionId).toBe('ses_00000000000abcde');
+      expect(e1.level).toBe('info');
+
+      // Entry with traceId only (no sessionId)
+      const e2 = JSON.parse(lines[1]!);
+      expect(e2.traceId).toBe('trace-only-001');
+      expect(e2.sessionId).toBeUndefined();
+
+      // Entry with neither
+      const e3 = JSON.parse(lines[2]!);
+      expect(e3.traceId).toBeUndefined();
+      expect(e3.sessionId).toBeUndefined();
+    });
+
     it('appends to existing daily log file', async () => {
       const sink = createFileSink(testDir, 7);
       await sink({ level: 'info', service: 'test', message: 'first' });

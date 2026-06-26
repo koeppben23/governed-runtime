@@ -194,6 +194,8 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
         message: entry.message,
         service: entry.service,
       };
+      if (entry.traceId) logEntry.traceId = entry.traceId;
+      if (entry.sessionId) logEntry.sessionId = entry.sessionId;
       if (entry.extra) {
         logEntry.fields = entry.extra;
       }
