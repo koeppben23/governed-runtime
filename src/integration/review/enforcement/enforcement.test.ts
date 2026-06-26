@@ -1663,8 +1663,10 @@ describe('review-enforcement', () => {
 
   // ─── Pre-execution reviewer obligation check ─────────────────────
   describe('enforceReviewerObligation', () => {
-    const PENDING = { status: 'pending' };
-    const CONSUMED = { status: 'consumed' };
+    const PENDING = { status: 'pending' } as const;
+    const CONSUMED = { status: 'consumed' } as const;
+    const FULFILLED = { status: 'fulfilled' } as const;
+    const BLOCKED = { status: 'blocked' } as const;
 
     it('allows when host_task_required and pending obligation exists', () => {
       const result = enforceReviewerObligation({
@@ -1688,14 +1690,10 @@ describe('review-enforcement', () => {
     });
 
     it('blocks when host_task_required and only non-pending obligations', () => {
-      for (const statuses of [
-        [{ status: 'consumed' }],
-        [{ status: 'fulfilled' }],
-        [{ status: 'blocked' }],
-        [{ status: 'consumed' }, { status: 'fulfilled' }],
-      ]) {
+      const nonPendingCases = [[CONSUMED], [FULFILLED], [BLOCKED], [CONSUMED, FULFILLED]];
+      for (const obligations of nonPendingCases) {
         const result = enforceReviewerObligation({
-          obligations: statuses,
+          obligations,
           reviewInvocationPolicy: 'host_task_required',
           strictEnforcement: true,
           stateAvailable: true,
@@ -1757,7 +1755,7 @@ describe('review-enforcement', () => {
 
     it('allows when host_task_required with mixed obligations including one pending', () => {
       const result = enforceReviewerObligation({
-        obligations: [CONSUMED, PENDING, { status: 'blocked' }],
+        obligations: [CONSUMED, PENDING, BLOCKED],
         reviewInvocationPolicy: 'host_task_required',
         strictEnforcement: true,
         stateAvailable: true,
