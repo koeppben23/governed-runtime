@@ -78,6 +78,14 @@ export function redactIdentityExtra(
 }
 
 /**
+ * Cheap pre-filter: a string can only need redaction if it contains a path/URL
+ * separator (`/ \ :`), a key=value separator (`=`), or one of the secret
+ * keywords / token prefixes. Used to short-circuit sanitizeDiagnosticString.
+ */
+const REDACTION_TRIGGER =
+  /[/\\:=]|password|passwd|secret|token|api[_-]?key|apikey|[Bb]earer|eyJ|sk[-_]/;
+
+/**
  * Replace a matched absolute path with its last segment, e.g.
  * `C:\Users\bob\token.json` -> `[path:token.json]`. Falls back to
  * `[path:redacted]` when no usable trailing segment is found.
@@ -98,6 +106,11 @@ function redactPathMatch(match: string): string {
  * Keeps the error class/type and the last path segment.
  */
 export function sanitizeDiagnosticString(msg: string): string {
+  // Fast path: skip the regex passes when no redaction-triggering character is
+  // present. Paths/URLs/secrets all require at least one of / \ : = or the
+  // letters used by the secret keywords. This keeps the per-log-call cost near
+  // zero for the overwhelmingly common case of clean diagnostic text.
+  if (!REDACTION_TRIGGER.test(msg)) return msg;
   return (
     msg
       // High-confidence secret values FIRST (before path/URL passes can eat them).

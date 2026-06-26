@@ -58,14 +58,15 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 34 security-critical
+The `mutation` job runs StrykerJS mutation testing against 36 security-critical
 files spanning adapters (persistence + persistence-lock + host-adapter + archive
 verification), archive digesting, audit (integrity + completeness), config
 (reasons + policy), hooks (HTTP hook server + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
 (command-aliases, tool-classification, review-validation-mode,
 plugin-audit-lifecycle-reason, review enforcement, review orchestrator,
-orchestrator detection/output, and agent resolution), templates (codex-plugin),
+orchestrator detection/output, and agent resolution), logging (process-exit and
+error-serialize), templates (codex-plugin),
 shared canonical JSON, machine (commands, evaluate, guards, next-action), and
 rails (architecture, hydrate, review, review-decision, ticket). It uploads a
 mutation report artifact (`reports/mutation/`) and enforces the `break: 80`
@@ -157,7 +158,7 @@ detect semantic errors, not just that code is executed (coverage alone cannot pr
 | Shared (`canonical-json`)                                                                                                                                                            | 1      | (see latest report)             |
 | Machine (`commands`, `evaluate`, `guards`, `next-action`)                                                                                                                            | 4      | (see latest report)             |
 | Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`)                                                                                                             | 5      | (see latest report)             |
-| **Total**                                                                                                                                                                            | **34** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                                                            | **36** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.

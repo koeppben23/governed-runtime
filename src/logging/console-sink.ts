@@ -26,11 +26,16 @@ import type { LogEntry, LogSink } from './logger.js';
  * because JSON.stringify escapes these.
  */
 function escapeControlChars(s: string): string {
-  // eslint-disable-next-line no-control-regex
-  return s.replace(
-    /[\u0000-\u001F\u007F]/g,
-    (c) => `\\x${c.charCodeAt(0).toString(16).padStart(2, '0')}`,
-  );
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) {
+      out += `\\x${code.toString(16).padStart(2, '0')}`;
+    } else {
+      out += s[i];
+    }
+  }
+  return out;
 }
 
 /**
