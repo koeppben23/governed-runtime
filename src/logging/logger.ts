@@ -47,6 +47,9 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   silent: 4,
 };
 
+/** Throttle window for the sink-failure stderr health signal. */
+const SINK_HEALTH_REPORT_MS = 60_000;
+
 // ─── Logger Interface ────────────────────────────────────────────────────────
 
 /**
@@ -311,10 +314,27 @@ export function createLogger(
         const result = sink(entry);
         void Promise.resolve(result).catch(() => {
           sinkFailuresTotal++;
+          reportSinkHealth();
         });
       } catch {
         sinkFailuresTotal++;
+        reportSinkHealth();
       }
+    }
+  }
+
+  // Surface sink failures on stderr so a fully broken sink (silent total log
+  // loss) is detectable. Throttled: warns on the first failure, then at most
+  // once per SINK_HEALTH_REPORT_MS, so a flapping sink does not flood stderr.
+  let lastSinkHealthReport = 0;
+  function reportSinkHealth(): void {
+    const now = Date.now();
+    if (sinkFailuresTotal === 1 || now - lastSinkHealthReport >= SINK_HEALTH_REPORT_MS) {
+      lastSinkHealthReport = now;
+      process.stderr.write(
+        `[FlowGuard] diagnostic log sink failures: ${sinkFailuresTotal} total ` +
+          `(logs may be incomplete)\n`,
+      );
     }
   }
 

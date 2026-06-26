@@ -66,6 +66,7 @@ type BuildLogSinksConfig = Pick<
  */
 const UI_SINK_FAILURE_WARN_LIMIT = 3;
 const UI_HEALTH_REPORT_MS = 5 * 60 * 1000;
+const FILE_SINK_FAILURE_REPORT_MS = 5 * 60 * 1000;
 
 /**
  * Build logging sinks based on config mode, client, and workspace.
@@ -101,6 +102,21 @@ export function buildLogSinks(
               `[FlowGuard] diagnostic log file rotated: ${event.reason} — ${event.newPath}\n`,
             );
           },
+          onFailure: (() => {
+            let fileSinkFailures = 0;
+            let lastReport = 0;
+            return (err: unknown) => {
+              fileSinkFailures++;
+              const now = Date.now();
+              if (fileSinkFailures === 1 || now - lastReport >= FILE_SINK_FAILURE_REPORT_MS) {
+                lastReport = now;
+                process.stderr.write(
+                  `[FlowGuard] diagnostic log file sink failure (${fileSinkFailures} total): ` +
+                    `${err instanceof Error ? err.message : String(err)}\n`,
+                );
+              }
+            };
+          })(),
         }),
       );
     }

@@ -61,8 +61,17 @@ export const FlowGuardConfigSchema = z.object({
           enabled: z.boolean().default(false),
           /** Max entries per second per (service, level) key. */
           maxPerSecond: RateLimitMaxPerSecondSchema,
-          /** Levels exempt from rate limiting. Default: ['error']. */
-          exemptLevels: z.array(LogLevelSchema).default(['error']),
+          /**
+           * Levels exempt from rate limiting. Default: ['error']. `error` is
+           * always forced into the set — error logs surface failures and must
+           * never be silently dropped by rate limiting, regardless of config.
+           */
+          exemptLevels: z
+            .array(LogLevelSchema)
+            .default(['error'])
+            .transform((levels) =>
+              levels.includes('error') ? levels : [...levels, 'error' as const],
+            ),
           /** Interval in ms between rate-limit summary reports on stderr. */
           summaryIntervalMs: z.number().int().min(10000).max(600000).default(60000),
         })

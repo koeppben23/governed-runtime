@@ -331,6 +331,35 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data!.logging.rateLimit.summaryIntervalMs).toBe(60000);
     });
 
+    it('forces error into exemptLevels even when omitted (error logs never dropped)', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { enabled: true, exemptLevels: [] } },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.rateLimit.exemptLevels).toContain('error');
+    });
+
+    it('keeps a custom exemptLevels list but still guarantees error', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { enabled: true, exemptLevels: ['warn'] } },
+      });
+      expect(result.success).toBe(true);
+      expect(result.data!.logging.rateLimit.exemptLevels).toContain('warn');
+      expect(result.data!.logging.rateLimit.exemptLevels).toContain('error');
+    });
+
+    it('does not duplicate error when already present', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        logging: { rateLimit: { enabled: true, exemptLevels: ['error', 'warn'] } },
+      });
+      expect(result.success).toBe(true);
+      const errs = result.data!.logging.rateLimit.exemptLevels.filter((l) => l === 'error');
+      expect(errs).toHaveLength(1);
+    });
+
     it('accepts enabled with custom maxPerSecond', () => {
       const result = FlowGuardConfigSchema.safeParse({
         schemaVersion: 'v1',

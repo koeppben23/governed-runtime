@@ -53,4 +53,40 @@ describe('file-sink write failure', () => {
       await rm(testDir, { recursive: true, force: true }).catch(() => {});
     }
   });
+
+  it('invokes onFailure with the error on a write failure (observable, not silent)', async () => {
+    const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-onfail-'));
+    await mkdir(join(testDir, '.opencode', 'logs'), { recursive: true });
+    const onFailure = vi.fn();
+    const err = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    mockAppendFile.mockRejectedValueOnce(err);
+
+    try {
+      const sink = createFileSink(testDir, { retentionDays: 1, onFailure });
+      await expect(
+        sink({ level: 'error', service: 'test', message: 'cannot write' }),
+      ).resolves.not.toThrow();
+      expect(onFailure).toHaveBeenCalledTimes(1);
+      expect(onFailure.mock.calls[0]![0]).toBe(err);
+    } finally {
+      await rm(testDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  it('a throwing onFailure never propagates out of the sink', async () => {
+    const testDir = await mkdtemp(join(tmpdir(), 'fg-fs-onfail-throw-'));
+    await mkdir(join(testDir, '.opencode', 'logs'), { recursive: true });
+    const onFailure = vi.fn(() => {
+      throw new Error('onFailure boom');
+    });
+    mockAppendFile.mockRejectedValueOnce(new Error('disk error'));
+
+    try {
+      const sink = createFileSink(testDir, { retentionDays: 1, onFailure });
+      await expect(sink({ level: 'error', service: 'test', message: 'x' })).resolves.not.toThrow();
+      expect(onFailure).toHaveBeenCalledTimes(1);
+    } finally {
+      await rm(testDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
 });

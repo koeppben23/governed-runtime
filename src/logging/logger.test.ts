@@ -806,3 +806,17 @@ describe('central sink-layer redaction (defense-in-depth)', () => {
     expect(extra.count).toBe(7);
   });
 });
+
+describe('sink health surfacing', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('writes a stderr warning on the first sink failure (silent loss is observable)', () => {
+    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const throwingSink = (): void => {
+      throw new Error('sink down');
+    };
+    const log = createLogger('debug', throwingSink);
+    log.info('svc', 'message');
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining('diagnostic log sink failures'));
+  });
+});

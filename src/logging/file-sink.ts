@@ -47,6 +47,13 @@ export interface FileSinkOptions {
   maxSizeBytes?: number;
   /** Called when a log file is rotated due to size. */
   onRotate?: (event: { oldPath: string; newPath: string; reason: 'size' }) => void;
+  /**
+   * Called when a write, rotation, or stat operation fails. Gives the file sink
+   * a failure signal (parity with the OTLP sink) so silent log loss is
+   * observable. Non-blocking — invoked best-effort and its own errors are
+   * swallowed.
+   */
+  onFailure?: (error: unknown) => void;
 }
 async function pathExists(p: string): Promise<boolean> {
   try {
@@ -71,6 +78,7 @@ function normalizeFileSinkOptions(options?: FileSinkOptions | number): {
   retentionDays: number;
   maxSizeBytes: number;
   onRotate?: FileSinkOptions['onRotate'];
+  onFailure?: FileSinkOptions['onFailure'];
 } {
   if (typeof options === 'number') {
     return {
@@ -82,6 +90,7 @@ function normalizeFileSinkOptions(options?: FileSinkOptions | number): {
     retentionDays: options?.retentionDays ?? DEFAULT_RETENTION_DAYS,
     maxSizeBytes: options?.maxSizeBytes ?? DEFAULT_MAX_SIZE_BYTES,
     onRotate: options?.onRotate,
+    onFailure: options?.onFailure,
   };
 }
 
@@ -97,6 +106,7 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
   const effectiveRetention = normalized.retentionDays;
   const effectiveMaxSize = normalized.maxSizeBytes;
   const onRotate = normalized.onRotate;
+  const onFailure = normalized.onFailure;
 
   let initialized = false;
   let _initPromise: Promise<boolean> | null = null;
@@ -208,8 +218,14 @@ export function createFileSink(workspaceDir: string, options?: FileSinkOptions |
       } catch {
         // stat/rename failure is non-blocking
       }
-    } catch {
-      // Non-blocking — logging errors never fail the flow
+    } catch (err) {
+      // Non-blocking — logging errors never fail the flow. Surface via onFailure
+      // so a failing write (ENOSPC/EACCES) is observable instead of silent.
+      try {
+        onFailure?.(err);
+      } catch {
+        // onFailure errors are swallowed — never fail the flow
+      }
     }
   };
 }
