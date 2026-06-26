@@ -154,4 +154,82 @@ describe('redactExtra', () => {
     const out = redactExtra(a)!;
     expect(out.self).toBe('[redacted:circular]');
   });
+
+  describe('built-in objects are coerced, not corrupted', () => {
+    it('Date -> ISO string (not {})', () => {
+      const d = new Date('2026-01-02T03:04:05.000Z');
+      expect(redactExtra({ at: d })!.at).toBe('2026-01-02T03:04:05.000Z');
+    });
+
+    it('a raw Error -> {name,message,stack} with sanitized strings (not {})', () => {
+      const err = Object.assign(new Error('open /home/u/secret/key.pem failed'), {
+        code: 'EACCES',
+      });
+      const out = redactExtra({ error: err })!.error as Record<string, unknown>;
+      expect(out.name).toBe('Error');
+      expect(out.message).not.toContain('/home/u/secret');
+      expect(out.code).toBe('EACCES');
+      expect(typeof out.stack).toBe('string');
+    });
+
+    it('BigInt -> string (so a sink JSON.stringify cannot throw)', () => {
+      const out = redactExtra({ big: 10n })!;
+      expect(out.big).toBe('10');
+      // must be JSON-serializable now
+      expect(() => JSON.stringify(out)).not.toThrow();
+    });
+
+    it('Map/Set/RegExp/Buffer are coerced to compact markers', () => {
+      const out = redactExtra({
+        m: new Map([['a', 1]]),
+        s: new Set([1, 2, 3]),
+        r: /abc/g,
+        b: Buffer.from('deadbeef', 'hex'),
+      })!;
+      expect(out.m).toBe('[Map(1)]');
+      expect(out.s).toBe('[Set(3)]');
+      expect(out.r).toBe('/abc/g');
+      expect(out.b).toBe('[binary:4]');
+    });
+
+    it('honors toJSON() instead of walking raw private fields', () => {
+      class Snapshot {
+        id = 'abc';
+        _private = 'leaky-secret-value';
+        toJSON() {
+          return { id: this.id };
+        }
+      }
+      const out = redactExtra({ snap: new Snapshot() })!.snap as Record<string, unknown>;
+      expect(out.id).toBe('abc');
+      expect('_private' in out).toBe(false);
+    });
+  });
+});
+
+describe('sanitizeDiagnosticString — case-insensitive bearer + clean ENOENT', () => {
+  it('redacts BEARER and bEaReR (case-insensitive)', () => {
+    expect(sanitizeDiagnosticString('Authorization: BEARER deadbeefcafef00d')).not.toContain(
+      'deadbeefcafef00d',
+    );
+    expect(sanitizeDiagnosticString('authorization: bEaReR mixedCaseToken123')).not.toContain(
+      'mixedCaseToken123',
+    );
+  });
+
+  it('redacts the path inside an ENOENT message without mangling the prose', () => {
+    const msg = "ENOENT: no such file or directory, open '/home/u/.ssh/id_rsa'";
+    const out = sanitizeDiagnosticString(msg);
+    expect(out).not.toContain('/home/u/.ssh/id_rsa');
+    expect(out).toContain('[path:id_rsa]');
+    // the words "no such file or directory" survive (the old pass ate "no")
+    expect(out).toContain('no such file or directory');
+  });
+
+  it('redacts the path inside a Windows ENOENT message cleanly', () => {
+    const msg = "ENOENT: no such file or directory, open 'C:\\Users\\bob\\token.key'";
+    const out = sanitizeDiagnosticString(msg);
+    expect(out).not.toContain('C:\\Users\\bob');
+    expect(out).toContain('no such file or directory');
+  });
 });

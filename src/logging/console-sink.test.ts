@@ -212,4 +212,32 @@ describe('createConsoleSink', () => {
       expect(call).not.toMatch(/\[[a-f0-9]{8}\//);
     });
   });
+
+  describe('control-character / log-injection hardening (text mode)', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('escapes a newline in the message so it cannot forge a log line', () => {
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      const sink = createConsoleSink({ format: 'text' });
+      sink({ level: 'info', service: 'svc', message: 'ok\n[ERROR] forged line' } as LogEntry);
+      const out = stderr.mock.calls[0]![0] as string;
+      // exactly one real newline (the trailing one); the injected \n is escaped
+      expect(out.match(/\n/g)).toHaveLength(1);
+      expect(out).toContain('\\x0a');
+    });
+
+    it('escapes control characters in sessionId and service', () => {
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      const sink = createConsoleSink({ format: 'text' });
+      sink({
+        level: 'info',
+        service: 'sv\nc',
+        message: 'm',
+        sessionId: 'ses\n[FAKE]',
+      } as LogEntry);
+      const out = stderr.mock.calls[0]![0] as string;
+      expect(out.match(/\n/g)).toHaveLength(1);
+      expect(out).not.toContain('[FAKE]\n');
+    });
+  });
 });

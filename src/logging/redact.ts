@@ -13,7 +13,6 @@
  * - Windows drive paths (`C:\Users\...`) and UNC paths (`\\server\share\...`)
  * - http(s):// URLs (keeps hostname)
  * - line:column references
- * - ENOENT paths
  * - high-confidence secret values (bearer tokens, JWTs, sk-/sk_live_ keys,
  *   `password=`/`token=`/`secret=`/`api_key=` assignments)
  *
@@ -83,7 +82,7 @@ export function redactIdentityExtra(
  * keywords / token prefixes. Used to short-circuit sanitizeDiagnosticString.
  */
 const REDACTION_TRIGGER =
-  /[/\\:=]|password|passwd|secret|token|api[_-]?key|apikey|[Bb]earer|eyJ|sk[-_]/;
+  /[/\\:=]|password|passwd|secret|token|api[_-]?key|apikey|bearer|eyJ|sk[-_]/i;
 
 /**
  * Replace a matched absolute path with its last segment, e.g.
@@ -114,8 +113,8 @@ export function sanitizeDiagnosticString(msg: string): string {
   return (
     msg
       // High-confidence secret values FIRST (before path/URL passes can eat them).
-      // Bearer tokens.
-      .replace(/\b[Bb]earer\s+[A-Za-z0-9._~+/-]+=*/g, 'Bearer [redacted]')
+      // Bearer tokens (case-insensitive — RFC 6750 auth schemes are not case-sensitive).
+      .replace(/\bbearer\s+[A-Za-z0-9._~+/-]+=*/gi, 'Bearer [redacted]')
       // JSON Web Tokens (three base64url segments).
       .replace(/\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}/g, '[redacted:jwt]')
       // OpenAI-style keys (sk-..., sk_live_..., sk-proj-...).
@@ -146,8 +145,6 @@ export function sanitizeDiagnosticString(msg: string): string {
       })
       // Strip line:column references.
       .replace(/:\d+:\d+/g, '')
-      // Strip ENOENT path from errors.
-      .replace(/ENOENT\s*:\s*\S+/g, 'ENOENT: [redacted]')
   );
 }
 
@@ -169,13 +166,52 @@ export function redactExtra(extra?: Record<string, unknown>): Record<string, unk
 
 function redactValue(value: unknown, seen: WeakSet<object>): unknown {
   if (typeof value === 'string') return sanitizeDiagnosticString(value);
+  // bigint is not JSON-serializable — coerce so a sink's JSON.stringify cannot
+  // throw and silently drop the whole entry.
+  if (typeof value === 'bigint') return `${value}`;
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value)) return '[redacted:circular]';
   seen.add(value);
 
+  // Built-in objects do not survive a generic Object.entries() walk: Date/Map/
+  // Set/RegExp collapse to {}, Buffer becomes an index map, and a raw Error loses
+  // its (non-enumerable) name/message/stack. Coerce them to safe, sanitized forms
+  // BEFORE the generic walk so values are neither corrupted nor leaked.
+  if (value instanceof Error) {
+    const out: Record<string, unknown> = {
+      name: sanitizeDiagnosticString(value.name),
+      message: sanitizeDiagnosticString(value.message),
+    };
+    if (value.stack) out.stack = sanitizeDiagnosticString(value.stack);
+    const code = (value as NodeJS.ErrnoException).code;
+    if (typeof code === 'string') out.code = code;
+    return out;
+  }
+  if (value instanceof Date) return value.toISOString();
+  if (value instanceof RegExp) return value.toString();
+  if (value instanceof Map) return `[Map(${value.size})]`;
+  if (value instanceof Set) return `[Set(${value.size})]`;
+  if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) {
+    const len = value instanceof ArrayBuffer ? value.byteLength : value.byteLength;
+    return `[binary:${len}]`;
+  }
+
   if (Array.isArray(value)) {
     return value.map((v) => redactValue(v, seen));
   }
+
+  // Honor a custom toJSON() (e.g. class instances that intentionally project a
+  // subset) before walking raw own-properties, so the redactor cannot surface
+  // private fields the value meant to hide or drop derived getters.
+  const maybeToJSON = (value as { toJSON?: unknown }).toJSON;
+  if (typeof maybeToJSON === 'function') {
+    try {
+      return redactValue((value as { toJSON: () => unknown }).toJSON(), seen);
+    } catch {
+      // fall through to the generic walk if toJSON throws
+    }
+  }
+
   const out: Record<string, unknown> = {};
   for (const [key, v] of Object.entries(value as Record<string, unknown>)) {
     out[key] = redactValue(v, seen);

@@ -62,9 +62,12 @@ export function createConsoleSink(options?: ConsoleSinkOptions): LogSink {
       } else {
         const ts = new Date().toISOString();
         const ids = [entry.traceId?.slice(0, 8), entry.sessionId].filter(Boolean).join('/');
-        const idStr = ids ? `[${ids}] ` : '';
+        // Escape every interpolated field (ids + service + message), not just the
+        // message: a sessionId carrying a newline could otherwise forge a log line
+        // in text mode. JSON mode is already safe via JSON.stringify.
+        const idStr = ids ? `[${escapeControlChars(ids)}] ` : '';
         const extraStr = entry.extra ? ` ${JSON.stringify(entry.extra)}` : '';
-        const line = `[${ts}] [${entry.level.toUpperCase()}] ${idStr}${entry.service}: ${escapeControlChars(entry.message)}${extraStr}\n`;
+        const line = `[${ts}] [${entry.level.toUpperCase()}] ${idStr}${escapeControlChars(entry.service)}: ${escapeControlChars(entry.message)}${extraStr}\n`;
         process.stderr.write(line);
       }
     } catch {
