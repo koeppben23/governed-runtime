@@ -21,6 +21,7 @@ import {
   enforceBeforeVerdict,
   enforceBeforeSubagentCall,
   matchPendingReview,
+  enforceReviewerObligation,
 } from './enforcement.js';
 import {
   REVIEW_REQUIRED_PREFIX,
@@ -1657,6 +1658,111 @@ describe('review-enforcement', () => {
       });
       expect(result.allowed).toBe(false);
       expect(result).toHaveProperty('code', 'SUBAGENT_FINDINGS_ISSUES_MISMATCH');
+    });
+  });
+
+  // ─── Pre-execution reviewer obligation check ─────────────────────
+  describe('enforceReviewerObligation', () => {
+    const PENDING = { status: 'pending' };
+    const CONSUMED = { status: 'consumed' };
+
+    it('allows when host_task_required and pending obligation exists', () => {
+      const result = enforceReviewerObligation({
+        obligations: [PENDING],
+        reviewInvocationPolicy: 'host_task_required',
+        strictEnforcement: true,
+        stateAvailable: true,
+      });
+      expect(result.allowed).toBe(true);
+    });
+
+    it('blocks when host_task_required and no obligations at all', () => {
+      const result = enforceReviewerObligation({
+        obligations: [],
+        reviewInvocationPolicy: 'host_task_required',
+        strictEnforcement: true,
+        stateAvailable: true,
+      });
+      expect(result.allowed).toBe(false);
+      expect((result as { code: string }).code).toBe('REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION');
+    });
+
+    it('blocks when host_task_required and only non-pending obligations', () => {
+      for (const statuses of [
+        [{ status: 'consumed' }],
+        [{ status: 'fulfilled' }],
+        [{ status: 'blocked' }],
+        [{ status: 'consumed' }, { status: 'fulfilled' }],
+      ]) {
+        const result = enforceReviewerObligation({
+          obligations: statuses,
+          reviewInvocationPolicy: 'host_task_required',
+          strictEnforcement: true,
+          stateAvailable: true,
+        });
+        expect(result.allowed).toBe(false);
+      }
+    });
+
+    it('allows when host_task_preferred and no pending obligation', () => {
+      const result = enforceReviewerObligation({
+        obligations: [],
+        reviewInvocationPolicy: 'host_task_preferred',
+        strictEnforcement: true,
+        stateAvailable: true,
+      });
+      expect(result.allowed).toBe(true);
+    });
+
+    it('allows when policy is undefined and no pending obligation', () => {
+      const result = enforceReviewerObligation({
+        obligations: [],
+        reviewInvocationPolicy: undefined,
+        strictEnforcement: true,
+        stateAvailable: true,
+      });
+      expect(result.allowed).toBe(true);
+    });
+
+    it('allows when sdk_allowed policy and no pending obligation', () => {
+      const result = enforceReviewerObligation({
+        obligations: [],
+        reviewInvocationPolicy: 'sdk_allowed',
+        strictEnforcement: false,
+        stateAvailable: true,
+      });
+      expect(result.allowed).toBe(true);
+    });
+
+    it('blocks when state unavailable and strict enforcement', () => {
+      const result = enforceReviewerObligation({
+        obligations: [],
+        reviewInvocationPolicy: 'host_task_required',
+        strictEnforcement: true,
+        stateAvailable: false,
+      });
+      expect(result.allowed).toBe(false);
+      expect((result as { code: string }).code).toBe('STATE_UNAVAILABLE_FOR_REVIEWER_TASK');
+    });
+
+    it('allows when state unavailable and non-strict enforcement', () => {
+      const result = enforceReviewerObligation({
+        obligations: [],
+        reviewInvocationPolicy: 'host_task_required',
+        strictEnforcement: false,
+        stateAvailable: false,
+      });
+      expect(result.allowed).toBe(true);
+    });
+
+    it('allows when host_task_required with mixed obligations including one pending', () => {
+      const result = enforceReviewerObligation({
+        obligations: [CONSUMED, PENDING, { status: 'blocked' }],
+        reviewInvocationPolicy: 'host_task_required',
+        strictEnforcement: true,
+        stateAvailable: true,
+      });
+      expect(result.allowed).toBe(true);
     });
   });
 });

@@ -25,6 +25,7 @@
  */
 
 import type { SessionState } from '../../../state/schema.js';
+import type { ReviewObligation } from '../../../state/evidence-review.js';
 import {
   type SessionEnforcementState,
   type PendingReview,
@@ -530,4 +531,48 @@ export function recordPluginReview(
   };
   pending.capturedFindings = capturedFindings;
   return true;
+}
+
+/**
+ * Pre-execution check: a flowguard-reviewer Task may only run when a pending
+ * review obligation exists. This prevents wasted LLM time for reviewer Tasks
+ * that would be blocked post-execution by handleHostTaskEvidence.
+ *
+ * If the session state is unavailable, only strict enforcement blocks —
+ * non-strict modes allow the task to proceed rather than risking a
+ * false-positive denial from a transient state read failure.
+ *
+ * @public unit-testable, no side effects
+ */
+export function enforceReviewerObligation(params: {
+  obligations: ReadonlyArray<Pick<ReviewObligation, 'status'>>;
+  reviewInvocationPolicy: string | undefined;
+  strictEnforcement: boolean;
+  stateAvailable: boolean;
+}): EnforcementResult {
+  if (!params.stateAvailable) {
+    if (params.strictEnforcement) {
+      return {
+        allowed: false,
+        code: 'STATE_UNAVAILABLE_FOR_REVIEWER_TASK',
+        reason:
+          'Session state could not be read. The flowguard-reviewer Task cannot run without verifiable state.',
+      };
+    }
+    return { allowed: true };
+  }
+
+  const hasPending = params.obligations.some((o) => o.status === 'pending');
+  if (params.reviewInvocationPolicy === 'host_task_required' && !hasPending) {
+    return {
+      allowed: false,
+      code: 'REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION',
+      reason:
+        'A flowguard-reviewer Task may only run when a pending review obligation exists. ' +
+        'Run flowguard_plan or flowguard_review first to create a pending review obligation, ' +
+        'then start the reviewer Task.',
+    };
+  }
+
+  return { allowed: true };
 }

@@ -5,6 +5,7 @@ import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.
 import {
   enforceBeforeVerdict,
   enforceBeforeSubagentCall,
+  enforceReviewerObligation,
 } from './review/enforcement/enforcement.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import type { CommandHookBeforeInput, ToolHookBeforeInput, ToolHookBeforeOutput } from './types.js';
@@ -112,7 +113,27 @@ async function enforceTaskBefore(
   const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
   if (subagentType === REVIEWER_SUBAGENT_TYPE) {
     const eState = runtime.ws.getEnforcementState(sessionId);
-    const { strictEnforcement } = await resolveEnforcement(runtime, sessionId, 'subagent');
+    const { strictEnforcement, sessionState } = await resolveEnforcement(
+      runtime,
+      sessionId,
+      'subagent',
+    );
+
+    const obligationResult = enforceReviewerObligation({
+      obligations: sessionState?.reviewAssurance?.obligations ?? [],
+      reviewInvocationPolicy: sessionState?.policySnapshot?.reviewInvocationPolicy,
+      strictEnforcement,
+      stateAvailable: sessionState !== null,
+    });
+    if (!obligationResult.allowed) {
+      const obligations = sessionState?.reviewAssurance?.obligations ?? [];
+      runtime.log.warn('enforcement', `reviewer task blocked — ${obligationResult.code}`, {
+        policy: sessionState?.policySnapshot?.reviewInvocationPolicy,
+        pendingObligationCount: obligations.filter((o) => o.status === 'pending').length,
+      });
+      throw buildEnforcementError(obligationResult.code, obligationResult.reason);
+    }
+
     const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
     if (result.allowed) return;
     runtime.log.warn('enforcement', 'blocked subagent call', {
