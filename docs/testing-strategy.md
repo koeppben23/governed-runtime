@@ -178,9 +178,7 @@ Survivor analysis remains part of normal security-critical test maintenance.
 
 - **Killed**: Mutant was detected by a test assertion.
 - **Survived**: Mutant was not detected — test gap to address.
-- **CompileError**: Mutant was rejected by the TypeScript checker. The count varies per mutation run; see the HTML report under `reports/mutation/` for the current run's numbers.
-  is expected for TypeScript-heavy governance code: literal unions, strict object
-  shapes, and typed return contracts reject many invalid mutations before tests run.
+- **CompileError**: Mutant was rejected by the TypeScript checker. The count varies per mutation run; see the HTML report under `reports/mutation/` for the current run's numbers. CompileError results are expected in TypeScript-heavy governance code because literal unions, strict object shapes, and typed return contracts reject many invalid mutations before tests run.
 - **Timeout**: Mutant caused infinite loop or excessive runtime — also detected.
 
 ### Running Locally
