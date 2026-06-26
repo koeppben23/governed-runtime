@@ -205,7 +205,7 @@ For debugging FlowGuard inside the OpenCode runtime with IntelliJ IDEA Ultimate,
 | Job                        | Script                                         | What It Proves                                         |
 | -------------------------- | ---------------------------------------------- | ------------------------------------------------------ |
 | **unit**                   | `npm run test:unit`                            | Pure logic correctness                                 |
-| **test**                   | `npm test`                                     | Combined unit + integration gate                       |
+| **test**                   | needs: [unit, integration]                     | Aggregated branch-protection check                     |
 | **integration**            | `npm run test:integration`                     | Governance chain fidelity                              |
 | **architecture**           | `npm run test:architecture`                    | Dependency rules, file sizes                           |
 | **typecheck**              | `npm run check`                                | TypeScript compilation                                 |

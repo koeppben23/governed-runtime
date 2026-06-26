@@ -85,6 +85,22 @@ jobs:
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
 
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    needs: [unit, integration]
+    if: always()
+    timeout-minutes: 1
+    steps:
+      - name: Confirm split test jobs passed
+        run: |
+          echo "unit: ${{ needs.unit.result }}"
+          echo "integration: ${{ needs.integration.result }}"
+          if [ "${{ needs.unit.result }}" != "success" ] || [ "${{ needs.integration.result }}" != "success" ]; then
+            echo "Blocked: unit or integration test job failed"
+            exit 1
+          fi
+
   integration:
     name: integration
     runs-on: ubuntu-latest

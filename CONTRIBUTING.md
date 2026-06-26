@@ -81,7 +81,7 @@ npm run format
 # Generate changelog
 npm run changelog
 
-# Run specific test file (bypasses vitest project mode)
+# Run a specific test file
 npx vitest run src/state/state.test.ts
 
 # Run architecture tests
@@ -90,13 +90,13 @@ npx vitest run src/architecture/__tests__/dependency-rules.test.ts
 
 ### Test Categories
 
-| Category     | Files                              | Purpose                                     |
-| ------------ | ---------------------------------- | ------------------------------------------- |
-| Unit         | `src/**/*.test.ts` (w/ exclusions) | Core logic testing (no integration imports) |
-| Architecture | `src/architecture/__tests__/`      | Dependency rule verification                |
-| Integration  | `src/integration/*.test.ts`        | OpenCode tool integration                   |
-| CLI / Smoke  | `src/cli/*smoke*.test.ts`          | Built CLI + ACP end-to-end                  |
-| Performance  | `*.test.ts` with PERF describe     | Performance regression prevention           |
+| Category     | Files                              | Purpose                           |
+| ------------ | ---------------------------------- | --------------------------------- |
+| Unit         | `src/**/*.test.ts` (w/ exclusions) | Core logic testing                |
+| Architecture | `src/architecture/__tests__/`      | Dependency rule verification      |
+| Integration  | `src/integration/*.test.ts`        | OpenCode tool integration         |
+| Smoke        | `src/cli/*smoke*.test.ts`          | Built CLI + ACP end-to-end        |
+| Performance  | `*.test.ts` with PERF describe     | Performance regression prevention |
 
 ### Test Naming Conventions
 
@@ -291,29 +291,29 @@ refactor: extract validation helpers
 
 The following checks must pass for a PR to be merged:
 
-| Check                  | Command                                        | Description                                                        |
-| ---------------------- | ---------------------------------------------- | ------------------------------------------------------------------ |
-| Tests                  | `npm test`                                     | All unit + integration tests must pass                             |
-| Coverage               | `npm run test:coverage`                        | Global threshold gate (branches/lines/functions/statements >= 80%) |
-| Format                 | `npm run check:format`                         | Prettier formatting check (blocking in CI)                         |
-| Lint                   | `npm run lint:strict`                          | ESLint gate with --max-warnings=0 for all src/\*.ts                |
-| Type Check             | `npm run check`                                | TypeScript compilation                                             |
-| Build                  | `npm run build`                                | Successful compilation to dist/                                    |
-| Architecture           | `npm run test:architecture`                    | Dependency rules + file-size enforcement                           |
-| SDK Baseline           | `npm run test:sdk-baseline`                    | SDK contract surface stability                                     |
-| Fuzz                   | `npm run test:fuzz`                            | Fast-check property-based tests                                    |
-| Unused Dependencies    | `npm run check:unused-dependencies`            | Knip — no stale imports or modules                                 |
-| Actions Pinning        | `npm run check:actions-pinned`                 | All GitHub Actions refs are immutable commit SHAs                  |
-| Actionlint             | —                                              | Workflow syntax validation (docker)                                |
-| Secrets Scan           | —                                              | GitGuardian or Gitleaks secret detection                           |
-| Security Policy        | —                                              | OSV/GHAS vulnerability scan                                        |
-| Dependency Review      | —                                              | Software supply-chain review                                       |
-| Audit                  | `npm audit --audit-level=high`                 | High+ vulnerabilities block CI                                     |
-| Install (3 platforms)  | `npm run build`                                | Cross-platform install on ubuntu, macos, windows                   |
-| Mutation               | `npm run mutation`                             | StrykerJS mutation testing for security-critical paths             |
-| Install Verify         | `npm run build && npm run test:install-verify` | Tarball install + doctor verified                                  |
-| Smoke                  | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works                                        |
-| Independent Review E2E | `npm run test:independent-review-e2e`          | Standalone reviewer session contract                               |
+| Check                  | Command                                        | Description                                                              |
+| ---------------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| Tests                  | needs: [unit, integration]                     | Aggregated branch-protection check (passes when unit + integration pass) |
+| Coverage               | `npm run test:coverage`                        | Global threshold gate (branches/lines/functions/statements >= 80%)       |
+| Format                 | `npm run check:format`                         | Prettier formatting check (blocking in CI)                               |
+| Lint                   | `npm run lint:strict`                          | ESLint gate with --max-warnings=0 for all src/\*.ts                      |
+| Type Check             | `npm run check`                                | TypeScript compilation                                                   |
+| Build                  | `npm run build`                                | Successful compilation to dist/                                          |
+| Architecture           | `npm run test:architecture`                    | Dependency rules + file-size enforcement                                 |
+| SDK Baseline           | `npm run test:sdk-baseline`                    | SDK contract surface stability                                           |
+| Fuzz                   | `npm run test:fuzz`                            | Fast-check property-based tests                                          |
+| Unused Dependencies    | `npm run check:unused-dependencies`            | Knip — no stale imports or modules                                       |
+| Actions Pinning        | `npm run check:actions-pinned`                 | All GitHub Actions refs are immutable commit SHAs                        |
+| Actionlint             | —                                              | Workflow syntax validation (docker)                                      |
+| Secrets Scan           | —                                              | GitGuardian or Gitleaks secret detection                                 |
+| Security Policy        | —                                              | OSV/GHAS vulnerability scan                                              |
+| Dependency Review      | —                                              | Software supply-chain review                                             |
+| Audit                  | `npm audit --audit-level=high`                 | High+ vulnerabilities block CI                                           |
+| Install (3 platforms)  | `npm run build`                                | Cross-platform install on ubuntu, macos, windows                         |
+| Mutation               | `npm run mutation`                             | StrykerJS mutation testing for security-critical paths                   |
+| Install Verify         | `npm run build && npm run test:install-verify` | Tarball install + doctor verified                                        |
+| Smoke                  | `npm run build && npm run test:smoke`          | Built CLI starts, ACP works                                              |
+| Independent Review E2E | `npm run test:independent-review-e2e`          | Standalone reviewer session contract                                     |
 
 ## Pull Request Process
 
