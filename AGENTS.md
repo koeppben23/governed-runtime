@@ -33,6 +33,50 @@ FlowGuard-governed runtime session.
 - For trust-boundary reviews, use `docs/trust-boundaries.md` as the canonical
   review contract.
 
+## Canonical Authorities
+
+Before implementing a change, identify whether the touched concern has a
+canonical authority. Change the authority, not a local duplicate.
+
+- State transitions: `src/machine/`
+- Canonical serialization and digests: `src/shared/canonical-json.ts`
+- Review mode classification: `src/integration/tools/review-validation-mode.ts`
+- Reason codes: `src/config/reasons.ts`
+- Installed mandates: `src/templates/mandates.ts`
+- Runtime config schema: `src/config/flowguard-config.ts`
+- Logging config schema: `src/config/logging-config.ts`
+
+Do not introduce parallel registries, local enum copies, ad-hoc serializers,
+or inline reason/mandate definitions.
+
+## Test Placement
+
+- Use `--project unit` for pure logic, validation, serializers, and mocked IO.
+- Use `--project integration` for runtime/plugin/adapter behavior that crosses
+  module boundaries.
+- Use `--project smoke` for CLI, packaging, install, and end-to-end sanity checks.
+- Use `npm run test:architecture` for dependency boundaries, file-size limits,
+  and module rules.
+- Co-locate tests with the touched source unless the existing package uses a
+  dedicated `__tests__/` layout.
+
+## Generated Guards and Digests
+
+Some source files are protected by generated digests or guard tests. When
+changing mandates, schemas, generated contracts, or serialized evidence
+formats, run the owning guard tests:
+
+- Mandate content changes: run the mandate hash guard
+  (`src/cli/templates-hash.test.ts`) and the install contract tests
+- Schema changes: run the relevant schema, default parsing, and version
+  consistency tests
+- Generated documentation or version placeholders: run `npm run generate-docs`
+
+Do not hand-edit generated hashes or digests. When a guard test fails because
+the content has intentionally changed, update the guard's expected value
+**explicitly** as part of the same change — the guard must never be
+blindly suppressed.
+
 ## Local Commands
 
 - `npm test` — full unit + integration suite.
