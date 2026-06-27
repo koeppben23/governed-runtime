@@ -37,6 +37,7 @@
     "src/integration/tools/review-validation-mode.ts",
     "src/integration/plugin-audit-lifecycle-reason.ts",
     "src/templates/codex-plugin.ts",
+    "src/templates/mandates.ts",
     "src/integration/review/enforcement/enforcement.ts",
     "src/integration/review/orchestrator.ts",
     "src/integration/review/orchestrator-detection.ts",
