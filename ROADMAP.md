@@ -75,6 +75,65 @@ complete as the mined conventions and authorities in this slice.
    implementation guidance; acceptance remains governed by existing review
    findings, obligations, attestations, and validation.
 
+## Near-Term Deliverables
+
+The first product slice should produce the following concrete capabilities.
+
+### 1. RepoIntelligenceSnapshot v1
+
+- Add a typed `RepoIntelligenceSnapshot` schema with `evidenceRefs`,
+  `confidence`, `freshness`, `signalClass`, and `verificationState`.
+- Store only compact summaries, digests, and stable references in session state.
+- Keep large mined artifacts outside session state.
+- Represent unavailable, stale, degraded, or unproven signals as structured
+  `NOT_VERIFIED` states.
+
+### 2. Initial Risk Classification
+
+- Add a task risk classifier that can identify at least low-risk docs/text-only
+  changes, test-only changes, generated-file edits, public API/package surface
+  changes, dependency or lockfile changes, config/policy/schema/state-machine
+  changes, and security/trust-boundary changes.
+- Use risk classification to select reduced, standard, or high-risk review and
+  verification behavior.
+
+### 3. Convention Mining v1
+
+- Mine two or three high-value repository conventions first, such as error
+  handling, test layout/assertion style, and file naming or module layout.
+- For each convention signal, include evidence examples, confidence, freshness,
+  affected files or directories, and `NOT_VERIFIED` when evidence is insufficient.
+- Do not block on convention signals unless policy explicitly enables that.
+
+### 4. Authority Map v1
+
+- Detect likely canonical authorities such as config schemas, state machines,
+  validators, generated artifacts, package/API surfaces, and policy or reason-code
+  catalogs.
+- Emit authority signals with evidence and confidence.
+- Mark authority detection as advisory unless policy gates on specific authority
+  classes.
+- Prevent duplicate-authority creation by feeding authority signals into planning
+  and review.
+
+### 5. Reviewer And Implementation Consumption
+
+- Feed relevant conventions and authority signals into planning, implementation
+  guidance, reviewer prompts, and status or decision summaries.
+- Acceptance remains governed by existing review findings, obligations,
+  attestations, and validation.
+- Reviewer prompts may use Repo Intelligence, but prompt text must not become an
+  authority.
+
+### 6. Minimal Scope Creep Detection
+
+- Compare touched files against the approved plan and known authority/risk
+  signals.
+- Flag unrelated files, new dependencies, public API changes, generated-file
+  edits, config/policy/schema changes, and large refactors outside the plan.
+- Require `NOT_VERIFIED` or explicit acknowledgement when scope expansion cannot
+  be proven safe.
+
 ## Later Capabilities
 
 These capabilities are intentionally listed as later slices. They may be built in
