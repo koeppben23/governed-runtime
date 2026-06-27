@@ -72,8 +72,8 @@ complete as the mined conventions and authorities in this slice.
    schemas, contracts, state machines, validators, and public package/API
    surfaces.
 6. Feed relevant convention and authority signals into reviewer prompts and
-   implementation guidance without treating those signals as governance
-   authority.
+   implementation guidance; acceptance remains governed by existing review
+   findings, obligations, attestations, and validation.
 
 ## Later Capabilities
 
@@ -127,6 +127,8 @@ the shared Repo Intelligence schema and decision semantics.
   concrete locations, verification discussion, and Discovery degradation handling.
 - Enable policy-gated multi-review for high-risk work, with specialized
   correctness, security, test, architecture, and adversarial perspectives.
+- Keep ReviewFindings, obligation binding, attestation, and validation as the
+  acceptance authority; reviewer prompt text remains non-authoritative.
 
 ### Trust, Security, Release, And Compliance Analysis
 
