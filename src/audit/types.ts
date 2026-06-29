@@ -111,11 +111,7 @@ export interface DecisionDetail {
 
 /** Union of all typed detail payloads. */
 export type TypedDetail =
-  | TransitionDetail
-  | ToolCallDetail
-  | ErrorDetail
-  | LifecycleDetail
-  | DecisionDetail;
+  TransitionDetail | ToolCallDetail | ErrorDetail | LifecycleDetail | DecisionDetail;
 
 // ─── Actor Identity ──────────────────────────────────────────────────────────
 // P2b: ActorInfo and ActorVerificationMeta are canonically defined in

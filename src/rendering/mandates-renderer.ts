@@ -45,12 +45,7 @@ export class MandatesRenderError extends Error {
 }
 
 export type MandatesRenderPhase =
-  | 'PRE_SESSION'
-  | 'INVESTIGATION'
-  | 'PLAN'
-  | 'IMPLEMENTATION'
-  | 'REVIEW'
-  | 'ALL_PHASES';
+  'PRE_SESSION' | 'INVESTIGATION' | 'PLAN' | 'IMPLEMENTATION' | 'REVIEW' | 'ALL_PHASES';
 
 export type MandatesVerbosity = 'explicit' | 'concise' | 'diagnosticSummary';
 

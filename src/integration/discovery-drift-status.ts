@@ -10,12 +10,7 @@
 import { checkDiscoveryDrift, type DriftResult } from '../discovery/drift.js';
 
 export type DiscoveryDriftProjectionStatus =
-  | 'clean'
-  | 'drifted'
-  | 'missing_discovery'
-  | 'unavailable'
-  | 'timeout'
-  | 'not_checked';
+  'clean' | 'drifted' | 'missing_discovery' | 'unavailable' | 'timeout' | 'not_checked';
 
 export interface DiscoveryDriftStatusWarning {
   readonly code: string;

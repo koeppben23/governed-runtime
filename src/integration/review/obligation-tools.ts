@@ -28,9 +28,7 @@ import {
  * {@link resolveReviewObligationTool}.
  */
 export type ReviewableTool =
-  | typeof TOOL_FLOWGUARD_PLAN
-  | typeof TOOL_FLOWGUARD_IMPLEMENT
-  | typeof TOOL_FLOWGUARD_ARCHITECTURE;
+  typeof TOOL_FLOWGUARD_PLAN | typeof TOOL_FLOWGUARD_IMPLEMENT | typeof TOOL_FLOWGUARD_ARCHITECTURE;
 
 const REVIEW_OBLIGATION_BY_TOOL = {
   [TOOL_FLOWGUARD_PLAN]: 'plan',

@@ -215,8 +215,7 @@ async function runReviewContent(
   seedInvocations: Array<Record<string, unknown>> = [],
 ) {
   const client = (clientOverride ?? buildClient(findings)) as
-    | ReturnType<typeof buildClient>
-    | ReturnType<typeof buildTextCompatClient>;
+    ReturnType<typeof buildClient> | ReturnType<typeof buildTextCompatClient>;
   const stateRef = {
     current: buildSessionState(
       strictEnforcement,

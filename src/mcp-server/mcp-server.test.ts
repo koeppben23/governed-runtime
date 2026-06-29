@@ -175,8 +175,7 @@ describe('Tool Adapter Session Identity', () => {
   it('BAD: reuses stable sessionID across calls and creates unique messageIDs', async () => {
     const contexts: ToolContext[] = [];
     let handler:
-      | ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown)
-      | null = null;
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
     const fakeServer = {
       registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
         handler = registered;
@@ -210,8 +209,7 @@ describe('Tool Adapter Session Identity', () => {
 
   it('HAPPY: MCP tool execution provides adapter logger and log context', async () => {
     let handler:
-      | ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown)
-      | null = null;
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
     const fakeServer = {
       registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
         handler = registered;
@@ -245,8 +243,7 @@ describe('Tool Adapter Session Identity', () => {
 
   it('governance denial returns isError:false with governance:true in content', async () => {
     let handler:
-      | ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown)
-      | null = null;
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
     const fakeServer = {
       registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
         handler = registered;
@@ -282,8 +279,7 @@ describe('Tool Adapter Session Identity', () => {
   // resolveContext() inside the denial-mapping path.
   it('resolver fail-closed maps to SESSION_UNRESOLVABLE governance denial', async () => {
     let handler:
-      | ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown)
-      | null = null;
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
     const fakeServer = {
       registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
         handler = registered;
@@ -337,8 +333,7 @@ describe('Tool Adapter Session Identity', () => {
 
   it('execution error returns isError:true without governance field', async () => {
     let handler:
-      | ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown)
-      | null = null;
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
     const fakeServer = {
       registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
         handler = registered;
