@@ -84,11 +84,9 @@ export interface TimestampEvidenceCheck {
  */
 export function verifyTsaMessageImprint(event: AuditEvent): TimestampEvidenceCheck {
   const evidence = (event as Record<string, unknown>).timestampEvidence as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
   const storedCanonicalDigest = (event as Record<string, unknown>).canonicalEventDigest as
-    | string
-    | undefined;
+    string | undefined;
 
   if (!evidence) {
     return { valid: true, reason: null, needsTokenVerification: false };
@@ -166,8 +164,7 @@ export function verifyTimestampEvidencePresence(
   for (let i = 0; i < events.length; i++) {
     const event = events[i]!;
     const evidence = (event as Record<string, unknown>).timestampEvidence as
-      | Record<string, unknown>
-      | undefined;
+      Record<string, unknown> | undefined;
 
     const eventKind = extractEventKind(event.event);
 

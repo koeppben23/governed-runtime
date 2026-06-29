@@ -281,8 +281,7 @@ function checkDesktopTaskHardening(
 
   const agent = parsed['agent'] as Record<string, unknown> | undefined;
   const buildPerms = (agent?.['build'] as Record<string, unknown> | undefined)?.['permission'] as
-    | Record<string, unknown>
-    | undefined;
+    Record<string, unknown> | undefined;
   const taskPerms = buildPerms?.['task'] as Record<string, unknown> | undefined;
   const hasTaskHardening =
     taskPerms?.['*'] === 'deny' && taskPerms?.[REVIEWER_SUBAGENT_TYPE] === 'allow';
@@ -699,8 +698,7 @@ async function checkObligationHandshake(
   const stateRaw = readFileSync(join(sessDir, 'session-state.json'), 'utf-8');
   const state = JSON.parse(stateRaw) as Record<string, unknown>;
   const assurance = state.reviewAssurance as
-    | { obligations?: Array<{ status?: string; pluginHandshakeAt?: unknown }> }
-    | undefined;
+    { obligations?: Array<{ status?: string; pluginHandshakeAt?: unknown }> } | undefined;
 
   const pendingObligation = assurance?.obligations?.find((o) => o.status === 'pending');
   if (!pendingObligation) return;

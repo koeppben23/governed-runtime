@@ -126,12 +126,12 @@ be updated through reviewed dependency PRs instead of mutable workflow execution
 
 ### Air-Gapped Deployment
 
-| Step | Action                                                |
+| Step | Action |
 | ---- | ----------------------------------------------------- | --- |
-| 1    | Operator downloads artifact from release source       |
-| 2    | Verify checksum                                       |
-| 3    | Transfer to air-gapped environment                    |
-| 4    | Install via `flowguard install --core-tarball <path>` |     |
+| 1 | Operator downloads artifact from release source |
+| 2 | Verify checksum |
+| 3 | Transfer to air-gapped environment |
+| 4 | Install via `flowguard install --core-tarball <path>` | |
 
 **Customer Responsibility:**
 

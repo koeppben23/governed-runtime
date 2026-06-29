@@ -96,8 +96,7 @@ export interface PipelineContext {
 
 /** Result of strict attestation validation. */
 export type AttestationResult =
-  | { valid: true }
-  | { valid: false; code: string; detail: Record<string, string> };
+  { valid: true } | { valid: false; code: string; detail: Record<string, string> };
 
 /** Result of evidence recording (reuse detection + fulfillment). */
 export type EvidenceRecordResult = 'fulfilled' | 'reused';

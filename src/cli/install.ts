@@ -266,7 +266,7 @@ export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string
   const st = initialParseState();
   const deprecations: string[] = [];
 
-  for (let i = 1; i < argv.length; ) {
+  for (let i = 1; i < argv.length;) {
     const arg = argv[i];
     if (arg === undefined) return null;
     const advance = parseOneArg(st, deprecations, arg, argv, i);

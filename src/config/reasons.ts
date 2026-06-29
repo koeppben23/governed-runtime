@@ -37,13 +37,7 @@ import { INFRA_REASONS } from './reasons-infra.js';
 
 /** Category for blocked reason classification. */
 export type BlockedCategory =
-  | 'admissibility'
-  | 'precondition'
-  | 'input'
-  | 'identity'
-  | 'adapter'
-  | 'state'
-  | 'config';
+  'admissibility' | 'precondition' | 'input' | 'identity' | 'adapter' | 'state' | 'config';
 
 /** A registered blocked reason with metadata. */
 export interface BlockedReason {

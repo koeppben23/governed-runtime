@@ -117,7 +117,4 @@ export type ExternalReference = z.infer<typeof ExternalReferenceSchema>;
  *   correlation is best-effort, not a synchronous handshake).
  */
 export type ReviewInvocationMode =
-  | 'host_subagent_task'
-  | 'sdk_session_prompt'
-  | 'manual_attested'
-  | 'native_subagent_attested';
+  'host_subagent_task' | 'sdk_session_prompt' | 'manual_attested' | 'native_subagent_attested';

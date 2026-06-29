@@ -202,8 +202,7 @@ function reviewerSessionId(
   return (
     boundInvocation?.childSessionId ??
     ((args.reviewFindings?.reviewedBy as Record<string, unknown> | undefined)?.sessionId as
-      | string
-      | undefined)
+      string | undefined)
   );
 }
 
