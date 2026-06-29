@@ -332,9 +332,7 @@ export type PolicySource = 'explicit' | 'central' | 'repo' | 'default';
 
 /** Why a policy source was selected or overridden. */
 export type PolicyResolutionReason =
-  | 'repo_weaker_than_central'
-  | 'default_weaker_than_central'
-  | 'explicit_stronger_than_central';
+  'repo_weaker_than_central' | 'default_weaker_than_central' | 'explicit_stronger_than_central';
 
 /** Central policy bundle schema (P29 local distribution model). */
 export interface CentralPolicyBundle {

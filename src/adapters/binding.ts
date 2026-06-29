@@ -38,10 +38,7 @@ import * as path from 'node:path';
  * Compile-time validated — no arbitrary strings allowed.
  */
 export type BindingErrorCode =
-  | 'MISSING_SESSION_ID'
-  | 'NO_WORKTREE'
-  | 'NOT_GIT_REPO'
-  | 'WORKTREE_MISMATCH';
+  'MISSING_SESSION_ID' | 'NO_WORKTREE' | 'NOT_GIT_REPO' | 'WORKTREE_MISMATCH';
 
 /**
  * Binding errors (workspace ↔ git worktree resolution).

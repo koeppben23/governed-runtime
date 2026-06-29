@@ -69,8 +69,7 @@ interface AttestedReviewCheckInput {
 }
 
 type ReviewFindingsAcceptanceRejectionReason =
-  | 'STRICT_REVIEW_ORCHESTRATION_FAILED'
-  | 'SUBAGENT_EVIDENCE_REUSED';
+  'STRICT_REVIEW_ORCHESTRATION_FAILED' | 'SUBAGENT_EVIDENCE_REUSED';
 
 type ReviewFindingsAcceptanceRejectionStatus = ReviewObligation['status'] | 'invocation_consumed';
 

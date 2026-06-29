@@ -37,9 +37,7 @@ export type PlanCallMode =
   | {
       kind: 'invalid';
       code:
-        | 'INVALID_PLAN_TOOL_SEQUENCE'
-        | 'PLAN_APPROVE_WITH_TEXT'
-        | 'PLAN_SUBMISSION_MIXED_INPUTS';
+        'INVALID_PLAN_TOOL_SEQUENCE' | 'PLAN_APPROVE_WITH_TEXT' | 'PLAN_SUBMISSION_MIXED_INPUTS';
     };
 
 type InvalidPlanCallCode = Extract<PlanCallMode, { kind: 'invalid' }>['code'];

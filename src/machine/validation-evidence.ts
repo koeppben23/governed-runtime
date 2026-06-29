@@ -28,8 +28,7 @@ import type { SessionState } from '../state/schema.js';
 
 /** Reason codes surfaced by the validation-evidence authority (#400). */
 export type ValidationEvidenceReasonCode =
-  | 'VALIDATION_EVIDENCE_REQUIRED'
-  | 'VALIDATION_EVIDENCE_UNVERIFIED';
+  'VALIDATION_EVIDENCE_REQUIRED' | 'VALIDATION_EVIDENCE_UNVERIFIED';
 
 /** Outcome of a validation-evidence evaluation. Pure value object. */
 export interface ValidationEvidenceDecision {

@@ -25,11 +25,7 @@ export const EVIDENCE_ARTIFACT_SCHEMA_VERSION = 'flowguard-evidence-artifact.v1'
 export const EVIDENCE_ARTIFACTS_DIR = 'artifacts';
 
 type ArtifactType =
-  | 'ticket'
-  | 'plan'
-  | 'plan-review-card'
-  | 'review-report-card'
-  | 'architecture-review-card';
+  'ticket' | 'plan' | 'plan-review-card' | 'review-report-card' | 'architecture-review-card';
 
 interface EvidenceArtifactMeta {
   readonly schemaVersion: typeof EVIDENCE_ARTIFACT_SCHEMA_VERSION;
@@ -57,9 +53,7 @@ interface ArtifactFile {
  * Compile-time validated — no arbitrary strings allowed.
  */
 export type EvidenceArtifactErrorCode =
-  | 'EVIDENCE_ARTIFACT_MISSING'
-  | 'EVIDENCE_ARTIFACT_MISMATCH'
-  | 'EVIDENCE_ARTIFACT_IMMUTABLE';
+  'EVIDENCE_ARTIFACT_MISSING' | 'EVIDENCE_ARTIFACT_MISMATCH' | 'EVIDENCE_ARTIFACT_IMMUTABLE';
 
 export class EvidenceArtifactError extends Error {
   readonly code: EvidenceArtifactErrorCode;

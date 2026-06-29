@@ -176,9 +176,7 @@ function resolveExistingPolicyResolution(
   return {
     requestedMode: existing.policySnapshot.requestedMode,
     requestedSource: (existing.policySnapshot.source ?? 'default') as
-      | 'explicit'
-      | 'repo'
-      | 'default',
+      'explicit' | 'repo' | 'default',
     effectiveMode: existing.policySnapshot.mode,
     effectiveSource: existing.policySnapshot.source ?? 'default',
     effectiveGateBehavior: existing.policySnapshot.effectiveGateBehavior,
@@ -559,8 +557,7 @@ function buildExistingPolicyInput(
     policySource: existing.policySnapshot.source ?? 'default',
     effectiveGateBehavior: existing.policySnapshot.effectiveGateBehavior,
     policyDegradedReason: existing.policySnapshot.degradedReason as
-      | 'ci_context_missing'
-      | undefined,
+      'ci_context_missing' | undefined,
     policyResolutionReason: existing.policySnapshot.resolutionReason as
       | 'repo_weaker_than_central'
       | 'default_weaker_than_central'

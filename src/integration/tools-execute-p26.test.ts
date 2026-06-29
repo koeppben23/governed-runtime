@@ -538,8 +538,7 @@ describe('P26: regulated archive completion', () => {
         .mockImplementation(async (_sessDir, event) => {
           // Track lifecycle completion events
           const detail = (event as Record<string, unknown>).detail as
-            | Record<string, unknown>
-            | undefined;
+            Record<string, unknown> | undefined;
           if (detail?.action === 'session_completed') {
             callOrder.push('session_completed');
           }

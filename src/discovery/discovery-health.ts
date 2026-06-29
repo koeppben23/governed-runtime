@@ -18,10 +18,7 @@ import { readDiscovery } from '../adapters/persistence-discovery.js';
 import { PersistenceError } from '../adapters/persistence.js';
 
 export type DiscoveryHealthUnavailableReason =
-  | 'missing'
-  | 'corrupt'
-  | 'schema_invalid'
-  | 'read_failed';
+  'missing' | 'corrupt' | 'schema_invalid' | 'read_failed';
 
 export interface DiscoveryHealthAvailableProjection {
   readonly kind: 'derived_discovery_health';
@@ -52,8 +49,7 @@ export interface DiscoveryHealthUnavailableProjection {
 }
 
 export type DiscoveryHealthProjection =
-  | DiscoveryHealthAvailableProjection
-  | DiscoveryHealthUnavailableProjection;
+  DiscoveryHealthAvailableProjection | DiscoveryHealthUnavailableProjection;
 
 /**
  * Extract a compact advisory health projection from a DiscoveryResult.

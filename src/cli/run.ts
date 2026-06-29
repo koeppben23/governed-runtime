@@ -185,8 +185,7 @@ type ServeHostSpec = HostCommandSpec & {
 };
 
 type ServeHostResolution =
-  | { ok: true; selectedHost: HostId; spec: ServeHostSpec }
-  | { ok: false; error: ServeResult };
+  { ok: true; selectedHost: HostId; spec: ServeHostSpec } | { ok: false; error: ServeResult };
 
 function supportsServe(spec: HostCommandSpec): spec is ServeHostSpec {
   return spec.supportsServe === true && spec.buildServeArgs !== undefined;
