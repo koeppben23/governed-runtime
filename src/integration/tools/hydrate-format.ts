@@ -33,8 +33,7 @@ export function buildExistingPolicyInput(
     policySource: existing.policySnapshot.source ?? 'default',
     effectiveGateBehavior: existing.policySnapshot.effectiveGateBehavior,
     policyDegradedReason: existing.policySnapshot.degradedReason as
-      | 'ci_context_missing'
-      | undefined,
+      'ci_context_missing' | undefined,
     policyResolutionReason: existing.policySnapshot.resolutionReason as
       | 'repo_weaker_than_central'
       | 'default_weaker_than_central'

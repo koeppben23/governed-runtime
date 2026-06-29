@@ -72,24 +72,6 @@ interface AttestedReviewCheckInput {
   readonly ctx: ReviewFindingsValidationContext;
 }
 
-type ReviewFindingsAcceptanceRejectionReason =
-  'STRICT_REVIEW_ORCHESTRATION_FAILED' | 'SUBAGENT_EVIDENCE_REUSED';
-
-type ReviewFindingsAcceptanceRejectionStatus = ReviewObligation['status'] | 'invocation_consumed';
-
-export interface ReviewFindingsAcceptanceRejection {
-  readonly reason: ReviewFindingsAcceptanceRejectionReason;
-  readonly status: ReviewFindingsAcceptanceRejectionStatus;
-  readonly obligationId?: string;
-  readonly invocationId?: string;
-  readonly consumedBy?: string;
-  readonly blockedCode?: string | null;
-}
-
-export type HostTaskFindingsAcceptanceRejection = ReviewFindingsAcceptanceRejection & {
-  readonly path: 'host_task';
-};
-
 /**
  * Shared evidence checks for any agent-submitted attested review (manual_attested and
  * its strict superset native_subagent_attested). Excludes the invocationMode check so

@@ -37,8 +37,7 @@ async function checkObligationHandshake(
   const stateRaw = readFileSync(join(sessDir, 'session-state.json'), 'utf-8');
   const state = JSON.parse(stateRaw) as Record<string, unknown>;
   const assurance = state.reviewAssurance as
-    | { obligations?: Array<{ status?: string; pluginHandshakeAt?: unknown }> }
-    | undefined;
+    { obligations?: Array<{ status?: string; pluginHandshakeAt?: unknown }> } | undefined;
 
   const pendingObligation = assurance?.obligations?.find((o) => o.status === 'pending');
   if (!pendingObligation) return;

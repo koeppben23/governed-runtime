@@ -13,8 +13,7 @@ import { HOST_TASK_FINDINGS_REJECTION_FIELD } from '../../shared/flowguard-ident
 // ─── Acceptance / Rejection Types ─────────────────────────────────────────────
 
 type ReviewFindingsAcceptanceRejectionReason =
-  | 'STRICT_REVIEW_ORCHESTRATION_FAILED'
-  | 'SUBAGENT_EVIDENCE_REUSED';
+  'STRICT_REVIEW_ORCHESTRATION_FAILED' | 'SUBAGENT_EVIDENCE_REUSED';
 
 type ReviewFindingsAcceptanceRejectionStatus = ReviewObligation['status'] | 'invocation_consumed';
 
