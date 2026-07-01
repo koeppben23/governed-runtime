@@ -1,0 +1,9 @@
+{
+  "schemaVersion": "v1",
+  "actorId": "m.weber",
+  "actorEmail": "m.weber@adorsys.example",
+  "actorDisplayName": "Martina Weber",
+  "issuer": "adorsys-demo-idp",
+  "issuedAt": "2024-01-01T00:00:00Z",
+  "expiresAt": "2099-12-31T23:59:59Z"
+}

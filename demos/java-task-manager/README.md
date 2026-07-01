@@ -43,6 +43,23 @@ npx --package /path/to/flowguard-core-*.tgz flowguard install \
 # Follow DEMO_SCRIPT.md step by step
 ```
 
+## Optional: Regulated Four-Eyes Walkthrough
+
+The main flow runs in `team` mode (human-gated, self-approval allowed). To also
+demonstrate the **four-eyes principle** (initiator ≠ approver, enforced fail-closed
+in `regulated` mode), install into a **separate** workspace with the regulated
+policy and follow the "Regulated Mode & Four-Eyes" section in `DEMO_SCRIPT.md`:
+
+```bash
+./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz \
+  --policy-mode regulated /tmp/flowguard-java-regulated-demo
+```
+
+The mode is set by the install flag (persisted to `.opencode/flowguard.json`);
+`/start` inherits it. Two ready-made identities live in `actor-claims/`
+(`m.weber` as initiator, `t.schneider` as reviewer). Keep this in its own target
+directory so it never pollutes the main `team`-mode demo.
+
 ## The Bug
 
 `TaskService.updateTask()` does not check whether a task ID exists before
@@ -72,6 +89,7 @@ demos/java-task-manager/
 ├── RESET.md               ← How to reset for a fresh demo
 ├── run-demo-setup.sh      ← Prepare or prepare+install the demo project
 ├── FALLBACK.md            ← Pre-recorded fallback strategy for live presentations
+├── actor-claims/          ← Claim files for the optional regulated four-eyes walkthrough
 ├── review-fixtures/       ← Files copied by setup to create the optional /review branch
 └── seed/                  ← The buggy starting state (a standalone Maven project)
     ├── .gitignore

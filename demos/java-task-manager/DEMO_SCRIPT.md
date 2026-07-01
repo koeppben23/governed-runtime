@@ -113,10 +113,20 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ## Step 10 — Export the Evidence
 
-| Action                            | What I Say                                                                                                                                                                                                         |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/export`                         | "Ich exportiere das Audit-Archive. FlowGuard erzeugt ein verifizierbares Paket mit allen Artefakten."                                                                                                              |
-| `ls .flowguard/sessions/archive/` | "Hier im Archive: Manifest, Session-State, Plan-Evidence, Review-Cards, Implementation-Diff. Alles ist über Manifest und Checksums prüfbar. Das ist der Governance-Nachweis — nachvollziehbar und tamper-evident." |
+| Action                          | What I Say                                                                                                                                                                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/export`                       | "Ich exportiere das Audit-Archive. FlowGuard erzeugt ein verifizierbares Paket mit allen Artefakten."                                                                                                              |
+| Locate the archive (path below) | "Hier im Archive: Manifest, Session-State, Plan-Evidence, Review-Cards, Implementation-Diff. Alles ist über Manifest und Checksums prüfbar. Das ist der Governance-Nachweis — nachvollziehbar und tamper-evident." |
+
+> **Archive location** (under the OpenCode config home, NOT the project directory):
+>
+> ```
+> ~/.config/opencode/workspaces/{fingerprint}/sessions/archive/{sessionId}.tar.gz
+> ~/.config/opencode/workspaces/{fingerprint}/sessions/archive/{sessionId}.tar.gz.sha256
+> ```
+>
+> The root is overridable via `OPENCODE_CONFIG_DIR`. The `/export` output reports
+> the exact archive path and its verification result — read it from there.
 
 ---
 
@@ -209,6 +219,139 @@ git diff --name-only main...feature/add-due-date
   submit them via the `flowguard-reviewer` subagent.
 - The diff between `main` and `feature/add-due-date` contains only the dueDate
   changes. The 404 bug is identical on both branches and does not appear.
+
+---
+
+## Optional: Regulated Mode & Four-Eyes (~5 min)
+
+> **Only if the audience is regulated (banks, DATEV, insurance).** This shows the
+> single hardest control most AI tools cannot demonstrate: **the initiator of a
+> change cannot approve their own work.** Uses a SEPARATE workspace so it never
+> pollutes the main `team`-mode demo.
+
+### Why this matters
+
+`team` mode (the main demo) has human gates but allows self-approval. `regulated`
+mode sets `allowSelfApproval: false` and enforces the **four-eyes principle**
+(MaRisk AT 7.2 separation of duties): the approver must be a different, identified
+actor than the initiator. FlowGuard blocks fail-closed if they are the same.
+
+### Precondition — install in regulated mode
+
+```bash
+./run-demo-setup.sh --install --tarball <tgz> --policy-mode regulated /tmp/flowguard-java-regulated-demo
+cd /tmp/flowguard-java-regulated-demo
+# Open /tmp/flowguard-java-regulated-demo in OpenCode Desktop
+```
+
+> **Important:** The session mode is set by the **install flag**
+> (`--policy-mode regulated`, written to `.opencode/flowguard.json` as
+> `policy.defaultMode`), NOT by a chat argument. `/start` is run with **no
+> arguments** and inherits that mode. Confirm it in the `/start` output:
+> `policyResolution.effectiveMode` must read `regulated`.
+
+### Identity setup (no IdP required)
+
+Regulated mode defaults to `minimumActorAssuranceForApproval: claim_validated`.
+That tier is satisfied by a signed-looking **local claim file** — no OIDC/JWKS
+needed. Two identities ship with the demo:
+
+| File                                   | actorId       | Role      |
+| -------------------------------------- | ------------- | --------- |
+| `actor-claims/initiator-weber.json`    | `m.weber`     | Initiator |
+| `actor-claims/reviewer-schneider.json` | `t.schneider` | Reviewer  |
+
+FlowGuard re-resolves the actor **at every command** from
+`FLOWGUARD_ACTOR_CLAIMS_PATH`. So the initiator identity is frozen at `/hydrate`,
+and the reviewer identity is whatever the env var points to **at `/approve` time**.
+That is exactly why you point the variable at a _different_ claim for the approval.
+
+> Use **absolute** paths (the env var is read inside the target workspace, not the
+> demo repo). Adjust the repo path below to where you checked out FlowGuard.
+
+**PowerShell:**
+
+```powershell
+$env:FLOWGUARD_ACTOR_CLAIMS_PATH = "C:\work\opencode-redesign\demos\java-task-manager\actor-claims\initiator-weber.json"
+```
+
+**bash / zsh:**
+
+```bash
+export FLOWGUARD_ACTOR_CLAIMS_PATH="$HOME/work/opencode-redesign/demos/java-task-manager/actor-claims/initiator-weber.json"
+```
+
+### Steps
+
+| Step | Action                                          | Phase                      | What I Say                                                                                                                                                                                                                                 |
+| ---- | ----------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| R1   | Set claims env → `m.weber`, then `/start`       | READY                      | "Ich starte im Modus `regulated`. In der `/start`-Ausgabe steht `effectiveMode: regulated`. Ich arbeite als Initiator Martina Weber — ihre Identität wird jetzt in die Session eingefroren."                                               |
+| R2   | `/task TICKET.md` → `/plan` → `/approve` (plan) | … → VALIDATION             | "Plan erstellen und den Plan-Gate freigeben. Bis hier verhält sich der Fluss wie im Team-Modus."                                                                                                                                           |
+| R3   | `/check` → `/implement` → reviewer converges    | … → EVIDENCE_REVIEW        | "Validierung, Implementierung, unabhängiges Implementation-Review — dann das menschliche Schluss-Gate EVIDENCE_REVIEW."                                                                                                                    |
+| R4   | `/approve` — **still as m.weber**               | EVIDENCE_REVIEW (blocked)  | "Jetzt versuche ich, meine eigene Arbeit freizugeben. FlowGuard blockt: **`FOUR_EYES_ACTOR_MATCH`** — 'session initiator (m.weber) cannot approve their own work. A different reviewer is required.' Kein Modell-Aufruf kann das umgehen." |
+| R5   | Switch claims env → `t.schneider`, `/approve`   | EVIDENCE_REVIEW → COMPLETE | "Ich wechsle die Identität auf den Reviewer Tobias Schneider und genehmige. Initiator ≠ Reviewer, beide `claim_validated` — das Vier-Augen-Prinzip ist erfüllt, die Session ist komplett."                                                 |
+
+> **Live wrinkle:** switching `FLOWGUARD_ACTOR_CLAIMS_PATH` must happen in the
+> environment the OpenCode host reads. If the host was started before you exported
+> the variable, restart it (or set the variable before launching). Verify the
+> reviewer identity took effect: the decision receipt records `decidedBy: t.schneider`.
+
+### Honest constraints (say these if asked)
+
+- Using only `FLOWGUARD_ACTOR_ID` (env) yields `best_effort` assurance, which in
+  default regulated mode is rejected with `ACTOR_ASSURANCE_INSUFFICIENT` — that is
+  why the demo uses claim files, not a bare env var.
+- If `FLOWGUARD_ACTOR_CLAIMS_PATH` is set but the file is missing, malformed, or
+  expired, FlowGuard fails **closed** (no fallback to git/env identity). The
+  shipped claims use a far-future `expiresAt`; do not shorten it.
+- Identity comparison is case/Unicode-normalized, so `M.Weber` and `m.weber` count
+  as the **same** person for four-eyes.
+
+---
+
+## Optional: Show the Revision Loop (~2 min)
+
+> A deterministic way to show that a gate can send work back. Use the **human**
+> `changes_requested` verdict — it is fully presenter-controlled.
+
+| Step | Action                               | Phase                    | What I Say                                                                                                                                                  |
+| ---- | ------------------------------------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| L1   | At the plan gate: `/request-changes` | PLAN_REVIEW → PLAN       | "Statt zu genehmigen, verlange ich Änderungen. FlowGuard verwirft die Plan-Evidence und springt zurück nach PLAN — der Loop ist dokumentiert, kein Fehler." |
+| L2   | `/plan`                              | PLAN → PLAN_REVIEW       | "Der Agent liefert einen überarbeiteten Plan, erneut independent-reviewed."                                                                                 |
+| L3   | `/approve`                           | PLAN_REVIEW → VALIDATION | "Diesmal genehmige ich. Weiter im normalen Fluss."                                                                                                          |
+
+> **Why human and not the subagent?** The reviewer subagent's verdict
+> (`accept` / `changes_requested` / `unable_to_review`) is model-driven, and
+> FlowGuard cryptographically enforces that the submitted verdict matches what the
+> subagent actually returned (`SUBAGENT_FINDINGS_VERDICT_MISMATCH`). You therefore
+> **cannot force** a subagent `changes_requested` — the reliable lever is the human
+> gate shown above. (`/request-changes` needs no identity setup; four-eyes is only
+> enforced on `approve`.)
+
+---
+
+## Optional: Prove Tamper-Evidence (~2 min)
+
+> The strongest single proof for auditors: the audit trail is a hash chain, and any
+> edit is detectable from the terminal.
+
+| Step | Action                                       | What I Say                                                                                                                                             |
+| ---- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| T1   | `flowguard inspect`                          | "`flowguard inspect` listet die Sessions dieses Workspaces mit ihrer Session-ID."                                                                      |
+| T2   | `flowguard inspect --session <id>`           | "Der Compliance-Report für die Session. Unten: **`Chain integrity: valid (N/N verified)`** — die Hash-Kette ist intakt."                               |
+| T3   | Edit one line in the session's `audit.jsonl` | "Ich manipuliere jetzt eine einzige Zeile im Audit-Trail — genau das, was ein Angreifer täte."                                                         |
+| T4   | `flowguard inspect --session <id>` again     | "Erneut geprüft: **`Chain integrity: broken`**, und der Exit-Code ist ≠ 0. Die Manipulation ist sofort sichtbar. Das ist der Nachweis für den Prüfer." |
+
+> **Where is `audit.jsonl`?** Under the OpenCode config home, NOT in the project:
+> `~/.config/opencode/workspaces/{fingerprint}/sessions/{sessionId}/audit.jsonl`
+> (override root with `OPENCODE_CONFIG_DIR`). Get the exact path from the
+> `flowguard inspect --session <id>` header if unsure.
+>
+> **Note:** `flowguard doctor` checks the _installation_, not the audit chain — use
+> `flowguard inspect` for tamper-evidence.
+>
+> **Reset after this exhibit:** the edited `audit.jsonl` stays broken. Discard the
+> workspace (see RESET.md) before reusing it for another run.
 
 ---
 

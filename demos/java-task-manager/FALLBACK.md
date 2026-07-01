@@ -30,7 +30,8 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 - `git diff` of the fix
 - `/approve` → COMPLETE
 - `./mvnw test` — 16 green, 0 skipped
-- `/export` and `ls .flowguard/sessions/archive/`
+- `/export` and the reported archive path under
+  `~/.config/opencode/workspaces/{fingerprint}/sessions/archive/`
 
 ### 2. Screen Recording — `/review` Bonus (~3–5 min, optional)
 
@@ -51,8 +52,9 @@ After a successful live or recorded run, keep the workspace intact:
 
 ```bash
 # Do NOT delete the workspace after the demo.
-# Keep it as a fallback exhibit.
-ls -la /tmp/flowguard-java-demo/.flowguard/sessions/archive/
+# Keep it as a fallback exhibit. The archive lives under the OpenCode config
+# home (root overridable via OPENCODE_CONFIG_DIR), not inside the project:
+ls -la ~/.config/opencode/workspaces/*/sessions/archive/
 ```
 
 ---

@@ -27,3 +27,29 @@ git status --short           # Expected: no output
 The seed is a standalone git repository. The setup script copies it, runs
 `git init && git add -A && git commit -m "Initial"` to create a clean
 starting point.
+
+## Resetting the Regulated Walkthrough
+
+The regulated four-eyes walkthrough uses its own workspace and environment. Reset
+both:
+
+```bash
+# 1. Discard the regulated workspace (its policy mode is baked into
+#    .opencode/flowguard.json, and any tamper-evidence exhibit leaves a broken
+#    audit.jsonl — do not reuse it in place).
+rm -rf /tmp/flowguard-java-regulated-demo
+
+# 2. Clear the actor identity so it does not leak into the next session.
+#    bash / zsh:
+unset FLOWGUARD_ACTOR_CLAIMS_PATH FLOWGUARD_ACTOR_ID FLOWGUARD_ACTOR_TOKEN_PATH
+```
+
+```powershell
+# PowerShell:
+Remove-Item Env:FLOWGUARD_ACTOR_CLAIMS_PATH -ErrorAction SilentlyContinue
+Remove-Item Env:FLOWGUARD_ACTOR_ID -ErrorAction SilentlyContinue
+Remove-Item Env:FLOWGUARD_ACTOR_TOKEN_PATH -ErrorAction SilentlyContinue
+```
+
+Because the policy mode lives in the workspace config, never switch a workspace
+between `team` and `regulated` in place — always use a fresh target directory.
