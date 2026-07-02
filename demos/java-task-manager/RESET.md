@@ -47,7 +47,7 @@ rm -f "$HOME/flowguard-demo-actor.json"
 unset FLOWGUARD_ACTOR_CLAIMS_PATH FLOWGUARD_ACTOR_ID FLOWGUARD_ACTOR_TOKEN_PATH
 ```
 
-```powershell
+```text
 # PowerShell:
 Remove-Item "$HOME\flowguard-demo-actor.json" -ErrorAction SilentlyContinue
 Remove-Item Env:FLOWGUARD_ACTOR_CLAIMS_PATH -ErrorAction SilentlyContinue

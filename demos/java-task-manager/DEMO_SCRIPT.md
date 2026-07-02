@@ -291,7 +291,7 @@ Seed the working copy with the initiator, export the fixed path, then start the
 
 **PowerShell:**
 
-```powershell
+```text
 $repo = "C:\work\opencode-redesign\demos\java-task-manager\actor-claims"
 $live = "$HOME\flowguard-demo-actor.json"
 Copy-Item "$repo\initiator-weber.json" $live -Force
@@ -340,7 +340,7 @@ opencode
 The R5 file swap (run in a side terminal — this only edits a file on disk, it does
 **not** need to reach the app's environment):
 
-```powershell
+```text
 # PowerShell
 Copy-Item "$HOME\...\actor-claims\reviewer-schneider.json" "$HOME\flowguard-demo-actor.json" -Force
 ```
