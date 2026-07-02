@@ -56,9 +56,21 @@ policy and follow the "Regulated Mode & Four-Eyes" section in `DEMO_SCRIPT.md`:
 ```
 
 The mode is set by the install flag (persisted to `.opencode/flowguard.json`);
-`/start` inherits it. Two ready-made identities live in `actor-claims/`
-(`m.weber` as initiator, `t.schneider` as reviewer). Keep this in its own target
-directory so it never pollutes the main `team`-mode demo.
+`/start` inherits it. Two ready-made identity templates live in `actor-claims/`
+(`m.weber` as initiator, `t.schneider` as reviewer).
+
+Actor identity comes from the OpenCode host's environment
+(`FLOWGUARD_ACTOR_CLAIMS_PATH`), so it must be visible to the host process and set
+**before** it starts. The reliable, officially-documented host for this is the
+**terminal TUI** (`opencode` in a terminal), which inherits the shell environment.
+The **Desktop GUI** app's environment inheritance is not documented by OpenCode —
+if you must use it, set a persistent user environment variable and relaunch. The
+four-eyes switch is done by pointing that variable at one fixed working-copy file
+and **editing that file's contents** between hydrate and approve (FlowGuard re-reads
+it on every command) — no host restart, no mid-session env change. See the
+"Regulated Mode & Four-Eyes" section in `DEMO_SCRIPT.md` for the exact commands and
+the Desktop caveat. Keep this in its own target directory so it never pollutes the
+main `team`-mode demo.
 
 ## The Bug
 

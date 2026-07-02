@@ -126,12 +126,12 @@ be updated through reviewed dependency PRs instead of mutable workflow execution
 
 ### Air-Gapped Deployment
 
-| Step | Action |
-| ---- | ----------------------------------------------------- | --- |
-| 1 | Operator downloads artifact from release source |
-| 2 | Verify checksum |
-| 3 | Transfer to air-gapped environment |
-| 4 | Install via `flowguard install --core-tarball <path>` | |
+| Step | Action                                                |
+| ---- | ----------------------------------------------------- |
+| 1    | Operator downloads artifact from release source       |
+| 2    | Verify checksum                                       |
+| 3    | Transfer to air-gapped environment                    |
+| 4    | Install via `flowguard install --core-tarball <path>` |
 
 **Customer Responsibility:**
 
@@ -393,9 +393,14 @@ Representative typed fail-closed IdP errors:
 
 - **Not authentication.** `FLOWGUARD_ACTOR_ID` is an operator-provided identifier, not a
   verified login claim. No OIDC discovery, SAML, LDAP, or RBAC.
-- **Resolved once.** Actor identity is resolved at `/hydrate` and immutable for the session
-  lifecycle. Changing `FLOWGUARD_ACTOR_*` or git config after hydrate does not affect the
-  current session. Re-run `/hydrate` to resolve a new actor.
+- **Initiator resolved once; reviewer resolved at decision time.** The **initiator**
+  identity is resolved at `/hydrate` and frozen into session state for the session
+  lifecycle. The **reviewer** identity is resolved fresh at each `/review-decision`
+  (approve/changes_requested/reject) from the current `FLOWGUARD_ACTOR_*`
+  environment and claim file. Changing `FLOWGUARD_ACTOR_*` or git config after
+  hydrate does not change the frozen initiator, but it does determine the reviewer
+  at decision time — this is what makes four-eyes (initiator != reviewer)
+  enforceable. Re-run `/hydrate` to resolve a new initiator.
 - **Session ID != Actor.** `sessionId` remains the workflow/session identity.
   `actorInfo` is a separate, optional field for human attribution.
 - **Hash-safe.** When absent, `actorInfo` is omitted from the event object — `JSON.stringify`

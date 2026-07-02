@@ -39,17 +39,26 @@ both:
 #    audit.jsonl — do not reuse it in place).
 rm -rf /tmp/flowguard-java-regulated-demo
 
-# 2. Clear the actor identity so it does not leak into the next session.
+# 2. Remove the live working-copy identity file used for the four-eyes swap.
+rm -f "$HOME/flowguard-demo-actor.json"
+
+# 3. Clear the actor identity so it does not leak into the next session.
 #    bash / zsh:
 unset FLOWGUARD_ACTOR_CLAIMS_PATH FLOWGUARD_ACTOR_ID FLOWGUARD_ACTOR_TOKEN_PATH
 ```
 
 ```powershell
 # PowerShell:
+Remove-Item "$HOME\flowguard-demo-actor.json" -ErrorAction SilentlyContinue
 Remove-Item Env:FLOWGUARD_ACTOR_CLAIMS_PATH -ErrorAction SilentlyContinue
 Remove-Item Env:FLOWGUARD_ACTOR_ID -ErrorAction SilentlyContinue
 Remove-Item Env:FLOWGUARD_ACTOR_TOKEN_PATH -ErrorAction SilentlyContinue
 ```
+
+> `Remove-Item Env:...` and `unset` only clear the **current shell**. If you made
+> the variable persistent (e.g. `setx` on Windows or a shell profile on
+> macOS/Linux), remove it there too, otherwise the next launched OpenCode inherits
+> it.
 
 Because the policy mode lives in the workspace config, never switch a workspace
 between `team` and `regulated` in place — always use a fresh target directory.

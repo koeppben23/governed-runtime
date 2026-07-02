@@ -241,7 +241,6 @@ actor than the initiator. FlowGuard blocks fail-closed if they are the same.
 ```bash
 ./run-demo-setup.sh --install --tarball <tgz> --policy-mode regulated /tmp/flowguard-java-regulated-demo
 cd /tmp/flowguard-java-regulated-demo
-# Open /tmp/flowguard-java-regulated-demo in OpenCode Desktop
 ```
 
 > **Important:** The session mode is set by the **install flag**
@@ -250,62 +249,124 @@ cd /tmp/flowguard-java-regulated-demo
 > arguments** and inherits that mode. Confirm it in the `/start` output:
 > `policyResolution.effectiveMode` must read `regulated`.
 
-### Identity setup (no IdP required)
+### How identity actually reaches the OpenCode host (read this first)
 
-Regulated mode defaults to `minimumActorAssuranceForApproval: claim_validated`.
-That tier is satisfied by a signed-looking **local claim file** — no OIDC/JWKS
-needed. Two identities ship with the demo:
+FlowGuard resolves the actor from the **environment of the OpenCode host process**
+(`process.env.FLOWGUARD_ACTOR_CLAIMS_PATH`). Two consequences that decide the whole
+setup:
 
-| File                                   | actorId       | Role      |
-| -------------------------------------- | ------------- | --------- |
-| `actor-claims/initiator-weber.json`    | `m.weber`     | Initiator |
-| `actor-claims/reviewer-schneider.json` | `t.schneider` | Reviewer  |
+1. **The env var must be visible to the host process, set _before_ it starts.** A
+   shell you open _after_ the host is already running cannot change the environment
+   of the running process. Setting `$env:...` / `export ...` in a side terminal does
+   **not** reach an already-started host.
+2. **You do NOT switch the env var mid-session.** Instead you point it at one fixed
+   **working-copy** file and **edit that file's contents** between hydrate and
+   approve. FlowGuard re-reads the file fresh on every command, so the initiator is
+   whatever the file said at `/hydrate` and the reviewer is whatever it says at
+   `/approve`. No restart, no env change during the demo.
 
-FlowGuard re-resolves the actor **at every command** from
-`FLOWGUARD_ACTOR_CLAIMS_PATH`. So the initiator identity is frozen at `/hydrate`,
-and the reviewer identity is whatever the env var points to **at `/approve` time**.
-That is exactly why you point the variable at a _different_ claim for the approval.
+> **Which host?** The **safest, officially-guaranteed** path is the **terminal TUI**
+> (`opencode` in a terminal): a process launched from a shell inherits that shell's
+> environment. The **Desktop GUI app** is a separate process whose environment is
+> **not** documented by OpenCode as inheriting from a terminal — see the Desktop note
+> below. This walkthrough is written for the **TUI**; use it unless you specifically
+> need the GUI.
 
-> Use **absolute** paths (the env var is read inside the target workspace, not the
-> demo repo). Adjust the repo path below to where you checked out FlowGuard.
+The two shipped claim files are **templates** you copy from; the live file is a
+separate working copy:
+
+| File                                       | actorId       | Role in demo       |
+| ------------------------------------------ | ------------- | ------------------ |
+| `actor-claims/initiator-weber.json`        | `m.weber`     | Initiator template |
+| `actor-claims/reviewer-schneider.json`     | `t.schneider` | Reviewer template  |
+| `~/flowguard-demo-actor.json` (you create) | (swapped)     | Live working copy  |
+
+Regulated mode defaults to `minimumActorAssuranceForApproval: claim_validated`,
+which a local claim file satisfies — **no OIDC/JWKS/IdP needed.**
+
+### One-time setup — BEFORE launching the OpenCode host
+
+Seed the working copy with the initiator, export the fixed path, then start the
+**terminal TUI from that same shell** so it inherits the variable.
 
 **PowerShell:**
 
 ```powershell
-$env:FLOWGUARD_ACTOR_CLAIMS_PATH = "C:\work\opencode-redesign\demos\java-task-manager\actor-claims\initiator-weber.json"
+$repo = "C:\work\opencode-redesign\demos\java-task-manager\actor-claims"
+$live = "$HOME\flowguard-demo-actor.json"
+Copy-Item "$repo\initiator-weber.json" $live -Force
+$env:FLOWGUARD_ACTOR_CLAIMS_PATH = $live
+cd C:\path\to\flowguard-java-regulated-demo
+# Start the OpenCode TUI FROM THIS SHELL so it inherits the variable:
+opencode
 ```
 
 **bash / zsh:**
 
 ```bash
-export FLOWGUARD_ACTOR_CLAIMS_PATH="$HOME/work/opencode-redesign/demos/java-task-manager/actor-claims/initiator-weber.json"
+REPO="$HOME/work/opencode-redesign/demos/java-task-manager/actor-claims"
+LIVE="$HOME/flowguard-demo-actor.json"
+cp "$REPO/initiator-weber.json" "$LIVE"
+export FLOWGUARD_ACTOR_CLAIMS_PATH="$LIVE"
+cd /path/to/flowguard-java-regulated-demo
+# Start the OpenCode TUI FROM THIS SHELL so it inherits the variable:
+opencode
 ```
+
+> **`opencode` starts the terminal TUI**, per the official CLI docs — not the Desktop
+> GUI. The TUI is the reliable host for this demo because it inherits the shell
+> environment you just set.
+>
+> **If you must use the Desktop GUI app:** OpenCode does **not** document how the GUI
+> inherits environment variables, and a GUI launcher (Start menu, Dock, icon)
+> generally starts under the OS session environment, not your terminal's. The only
+> reliable way is a **persistent user environment variable**, then start the app
+> fresh: Windows `setx FLOWGUARD_ACTOR_CLAIMS_PATH "%USERPROFILE%\flowguard-demo-actor.json"`
+> (affects **new** processes only — fully quit and relaunch the app); macOS/Linux a
+> login-shell profile or `launchctl setenv` / systemd user environment. Treat GUI
+> behavior as **environment-dependent and unverified** until you confirm it on the
+> presentation machine.
 
 ### Steps
 
-| Step | Action                                          | Phase                      | What I Say                                                                                                                                                                                                                                 |
-| ---- | ----------------------------------------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| R1   | Set claims env → `m.weber`, then `/start`       | READY                      | "Ich starte im Modus `regulated`. In der `/start`-Ausgabe steht `effectiveMode: regulated`. Ich arbeite als Initiator Martina Weber — ihre Identität wird jetzt in die Session eingefroren."                                               |
-| R2   | `/task TICKET.md` → `/plan` → `/approve` (plan) | … → VALIDATION             | "Plan erstellen und den Plan-Gate freigeben. Bis hier verhält sich der Fluss wie im Team-Modus."                                                                                                                                           |
-| R3   | `/check` → `/implement` → reviewer converges    | … → EVIDENCE_REVIEW        | "Validierung, Implementierung, unabhängiges Implementation-Review — dann das menschliche Schluss-Gate EVIDENCE_REVIEW."                                                                                                                    |
-| R4   | `/approve` — **still as m.weber**               | EVIDENCE_REVIEW (blocked)  | "Jetzt versuche ich, meine eigene Arbeit freizugeben. FlowGuard blockt: **`FOUR_EYES_ACTOR_MATCH`** — 'session initiator (m.weber) cannot approve their own work. A different reviewer is required.' Kein Modell-Aufruf kann das umgehen." |
-| R5   | Switch claims env → `t.schneider`, `/approve`   | EVIDENCE_REVIEW → COMPLETE | "Ich wechsle die Identität auf den Reviewer Tobias Schneider und genehmige. Initiator ≠ Reviewer, beide `claim_validated` — das Vier-Augen-Prinzip ist erfüllt, die Session ist komplett."                                                 |
+| Step | Action                                                     | Phase                      | What I Say                                                                                                                                                                                                                                   |
+| ---- | ---------------------------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| R1   | `/start` (live file = `m.weber`)                           | READY                      | "Ich starte im Modus `regulated` — in der `/start`-Ausgabe steht `effectiveMode: regulated`. Die Identitätsdatei sagt aktuell Martina Weber; ihre Identität wird jetzt als Initiator in die Session eingefroren."                            |
+| R2   | `/task TICKET.md` → `/plan` → `/approve` (plan)            | … → VALIDATION             | "Plan erstellen und den Plan-Gate freigeben. Bis hier verhält sich der Fluss wie im Team-Modus."                                                                                                                                             |
+| R3   | `/check` → `/implement` → reviewer converges               | … → EVIDENCE_REVIEW        | "Validierung, Implementierung, unabhängiges Implementation-Review — dann das menschliche Schluss-Gate EVIDENCE_REVIEW."                                                                                                                      |
+| R4   | `/approve` — file still says `m.weber`                     | EVIDENCE_REVIEW (blocked)  | "Ich versuche, meine eigene Arbeit freizugeben. FlowGuard blockt: **`FOUR_EYES_ACTOR_MATCH`** — 'session initiator (m.weber) cannot approve their own work. A different reviewer is required.' Kein Modell-Aufruf kann das umgehen."         |
+| R5   | Overwrite the live file with the reviewer, then `/approve` | EVIDENCE_REVIEW → COMPLETE | "Ich ersetze den Inhalt der Identitätsdatei durch den Reviewer Tobias Schneider und genehmige. FlowGuard liest die Datei beim Approve frisch: Initiator ≠ Reviewer, beide `claim_validated` — Vier-Augen erfüllt, die Session ist komplett." |
 
-> **Live wrinkle:** switching `FLOWGUARD_ACTOR_CLAIMS_PATH` must happen in the
-> environment the OpenCode host reads. If the host was started before you exported
-> the variable, restart it (or set the variable before launching). Verify the
-> reviewer identity took effect: the decision receipt records `decidedBy: t.schneider`.
+The R5 file swap (run in a side terminal — this only edits a file on disk, it does
+**not** need to reach the app's environment):
+
+```powershell
+# PowerShell
+Copy-Item "$HOME\...\actor-claims\reviewer-schneider.json" "$HOME\flowguard-demo-actor.json" -Force
+```
+
+```bash
+# bash / zsh
+cp "$HOME/.../actor-claims/reviewer-schneider.json" "$HOME/flowguard-demo-actor.json"
+```
+
+> Verify the reviewer identity took effect: the decision receipt records
+> `decidedBy: t.schneider`.
 
 ### Honest constraints (say these if asked)
 
+- The env var (the **path**) is fixed for the whole session; only the **file
+  contents** change. That is why no host restart is needed — FlowGuard re-reads the
+  file on every command (initiator frozen at `/hydrate`, reviewer read at
+  `/approve`).
 - Using only `FLOWGUARD_ACTOR_ID` (env) yields `best_effort` assurance, which in
   default regulated mode is rejected with `ACTOR_ASSURANCE_INSUFFICIENT` — that is
   why the demo uses claim files, not a bare env var.
-- If `FLOWGUARD_ACTOR_CLAIMS_PATH` is set but the file is missing, malformed, or
-  expired, FlowGuard fails **closed** (no fallback to git/env identity). The
-  shipped claims use a far-future `expiresAt`; do not shorten it.
+- If the live file is missing, malformed, or expired at read time, FlowGuard fails
+  **closed** (no fallback to git/env identity). Keep it schema-valid; the templates
+  use a far-future `expiresAt` — do not shorten it.
 - Identity comparison is case/Unicode-normalized, so `M.Weber` and `m.weber` count
-  as the **same** person for four-eyes.
+  as the **same** person for four-eyes. Make sure the two `actorId`s genuinely differ.
 
 ---
 
