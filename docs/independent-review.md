@@ -428,5 +428,5 @@ Mandatory by default. The default policy enables strict subagent review, blocks 
 
 ---
 
-FlowGuard Version: 1.2.0-tp.1
+FlowGuard Version: 1.2.0-tp.2
 _Last Updated: 2026-04-24_
