@@ -212,8 +212,8 @@ Every ticket, PR, and merge MUST follow clean code and clean architecture. No ex
 Release work follows the same protected-`main` PR model as all other changes.
 Start release branches from current `main`, integrate the release candidate from
 `develop`, prepare release files on `release/vX.Y.Z`, open a PR to `main`, wait
-for required checks, and squash-merge. Create and push the `vX.Y.Z` tag only
-after local `main` has been fast-forwarded to the merged `origin/main` commit.
+for required checks, and squash-merge. Create and push the `vX.Y.Z` tag only after
+local `main` has been fast-forwarded to the merged `origin/main` commit.
 
 Use `npm run release:prepare -- X.Y.Z` to update release files. Do not use
 `npm version` for FlowGuard releases because it creates local commit/tag state
