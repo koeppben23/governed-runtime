@@ -47,10 +47,12 @@ export {
 export {
   createPolicySnapshot,
   freezePolicySnapshot,
-  normalizePolicySnapshot,
-  normalizePolicySnapshotWithMeta,
   resolvePolicyFromSnapshot,
 } from './policy-snapshot.js';
+export {
+  normalizePolicySnapshot,
+  normalizePolicySnapshotWithMeta,
+} from './policy-snapshot-normalize.js';
 
 // ── Reasons ──────────────────────────────────────────────────────────────────
 export {

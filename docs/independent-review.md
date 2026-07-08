@@ -20,7 +20,7 @@ FlowGuard's independent review system enables structured, policy-governed review
 │     → INDEPENDENT_REVIEW_REQUIRED: call Task tool       │
 │       to invoke flowguard-reviewer manually             │
 │     → BLOCKED (strict mode orchestration/evidence fail) │
-│  4. Submit verdict + reviewFindings to FlowGuard tool   │
+│  4. Submit verdict via flowguard_review_implementation  │
 └────────────────────┬────────────────────────────────────┘
                      │
           ┌──────────▼──────────┐

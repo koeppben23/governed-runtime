@@ -1,43 +1,18 @@
 /**
  * @module discovery/discovery-digest
- * @description Canonical digest authority for DiscoveryResult.
+ * @description Discovery digest computation for DiscoveryResult.
  *
- * Single source of truth for discovery hashing:
  * - computeDiscoveryDigest(): full snapshot digest (includes all fields)
  * - computeStableDriftDigest(): drift digest (excludes volatile runtime metadata)
  *
- * Invariants:
- * - canonicalize() is private — not part of any public API
+ * JSON canonicalization is delegated to the single canonical serializer in
+ * `shared/canonical-json.ts`; this module does NOT define its own. Invariants:
  * - computeDiscoveryDigest() is backward-compatible, behavior unchanged
  * - computeStableDriftDigest() strips only collectedAt and diagnostics[].durationMs
  */
-import { createHash } from 'node:crypto';
+import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import type { DiscoveryResult } from './types.js';
-
-/**
- * Recursively produce a canonical form of a JSON-compatible value.
- *
- * - Objects: keys sorted lexicographically, values canonicalized recursively.
- * - Arrays: element order preserved (order is semantic), values canonicalized.
- * - Primitives: returned unchanged.
- *
- * Guarantees two structurally equal values produce identical JSON.stringify
- * output regardless of original key insertion order.
- */
-function canonicalize(value: unknown): unknown {
-  if (value === null || value === undefined) return value;
-  if (typeof value !== 'object') return value;
-
-  if (Array.isArray(value)) {
-    return value.map(canonicalize);
-  }
-
-  const sorted: Record<string, unknown> = {};
-  for (const key of Object.keys(value).sort()) {
-    sorted[key] = canonicalize((value as Record<string, unknown>)[key]);
-  }
-  return sorted;
-}
 
 /**
  * Compute SHA-256 digest of a DiscoveryResult.
@@ -46,8 +21,7 @@ function canonicalize(value: unknown): unknown {
  * Used as `discoveryDigest` on SessionState for snapshot integrity.
  */
 export function computeDiscoveryDigest(result: DiscoveryResult): string {
-  const canonical = JSON.stringify(canonicalize(result));
-  return createHash('sha256').update(canonical).digest('hex');
+  return hashText(canonicalJsonStringify(result));
 }
 
 /**
@@ -91,6 +65,5 @@ function stripVolatileFields(result: DiscoveryResult): Record<string, unknown> {
  */
 export function computeStableDriftDigest(result: DiscoveryResult): string {
   const stable = stripVolatileFields(result);
-  const canonical = JSON.stringify(canonicalize(stable));
-  return createHash('sha256').update(canonical).digest('hex');
+  return hashText(canonicalJsonStringify(stable));
 }

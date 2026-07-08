@@ -10,7 +10,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { writeMadrArtifact, formatMadrContent, madrFileName } from './madr-writer.js';
-import { ARCHITECTURE_DECISION, FIXED_TIME } from '../../__fixtures__.js';
+import { ARCHITECTURE_DECISION, FIXED_TIME } from '../../fixtures.js';
 import { benchmarkSync } from '../../test-policy.js';
 
 // ─── Test Setup ───────────────────────────────────────────────────────────────

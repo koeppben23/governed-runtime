@@ -4,7 +4,7 @@
  *
  * Tests the full MCP protocol flow:
  * - Server spawns and responds to initialize
- * - tools/list returns all 12 FlowGuard tools
+ * - tools/list returns all 13 FlowGuard tools
  * - tools/call dispatches to tool executors
  * - stdout guard prevents protocol contamination
  * - Negative paths: invalid tool, bad args, no session
@@ -29,30 +29,49 @@ import { z } from 'zod';
 // --- Schema Converter Tests ---
 
 describe('Schema Converter', () => {
-  it('HAPPY: returns args unchanged for valid record', () => {
+  it('HAPPY: wraps args into a strict ZodObject (additionalProperties:false)', () => {
     const args = { name: z.string(), count: z.number() };
     const result = convertArgsToInputSchema(args);
-    expect(result).toBe(args);
+    const json = z.toJSONSchema(result) as Record<string, unknown>;
+    expect(json.type).toBe('object');
+    expect(json.additionalProperties).toBe(false);
+    expect(Object.keys(json.properties as Record<string, unknown>).sort()).toEqual([
+      'count',
+      'name',
+    ]);
   });
 
-  it('HAPPY: returns empty object for null args', () => {
+  it('HAPPY: returns an empty strict object for null args', () => {
     const result = convertArgsToInputSchema(null as unknown as Record<string, z.ZodType>);
-    expect(result).toEqual({});
+    const json = z.toJSONSchema(result) as Record<string, unknown>;
+    expect(json.type).toBe('object');
+    expect(json.additionalProperties).toBe(false);
+    expect(json.properties).toEqual({});
   });
 
-  it('HAPPY: returns empty object for undefined args', () => {
+  it('HAPPY: returns an empty strict object for undefined args', () => {
     const result = convertArgsToInputSchema(undefined as unknown as Record<string, z.ZodType>);
-    expect(result).toEqual({});
+    const json = z.toJSONSchema(result) as Record<string, unknown>;
+    expect(json.additionalProperties).toBe(false);
+    expect(json.properties).toEqual({});
   });
 
-  it('HAPPY: handles complex args with optional and enum types', () => {
+  it('HAPPY: keeps optional args optional while forbidding unknown keys', () => {
     const args = {
       verdict: z.enum(['approve', 'reject']),
       reason: z.string().optional(),
       force: z.boolean().default(false),
     };
     const result = convertArgsToInputSchema(args);
-    expect(Object.keys(result)).toEqual(['verdict', 'reason', 'force']);
+    const json = z.toJSONSchema(result) as Record<string, unknown>;
+    expect(Object.keys(json.properties as Record<string, unknown>).sort()).toEqual([
+      'force',
+      'reason',
+      'verdict',
+    ]);
+    expect(json.additionalProperties).toBe(false);
+    // The plain optional field is not required; strict only forbids unknown keys.
+    expect(json.required as string[]).not.toContain('reason');
   });
 });
 
@@ -188,7 +207,7 @@ describe('Tool Adapter Session Identity', () => {
     expect(contexts[0]?.messageID).not.toBe(contexts[1]?.messageID);
   });
 
-  it('HAPPY: MCP tool execution provides adapter logger and trace context', async () => {
+  it('HAPPY: MCP tool execution provides adapter logger and log context', async () => {
     let handler:
       ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
     const fakeServer = {
@@ -218,7 +237,8 @@ describe('Tool Adapter Session Identity', () => {
 
     expect(observed).toHaveLength(1);
     expect(observed[0]!.traceId).toMatch(/^mcp-/);
-    expect(typeof observed[0]!.durationMs).toBe('number');
+    expect(observed[0]!.sessionId).toBe('mcp-session');
+    expect(observed[0]!.durationMs).toBeUndefined();
   });
 
   it('governance denial returns isError:false with governance:true in content', async () => {
@@ -376,13 +396,14 @@ describe('Stdout Guard', () => {
 // --- Tool Registry Completeness ---
 
 describe('Tool Registry', () => {
-  it('HAPPY: all 12 FlowGuard tools are importable', async () => {
+  it('HAPPY: all 13 FlowGuard tools are importable', async () => {
     const tools = await import('../integration/tools/index.js');
     const expectedNames = [
       'status',
       'hydrate',
       'plan',
       'implement',
+      'review_implementation',
       'architecture',
       'decision',
       'run_check',
@@ -415,6 +436,7 @@ describe('Tool Registry', () => {
       'hydrate',
       'plan',
       'implement',
+      'review_implementation',
       'architecture',
       'decision',
       'run_check',

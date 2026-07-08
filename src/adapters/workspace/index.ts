@@ -6,7 +6,10 @@
  * - types.ts      — types, WorkspaceError, validation, constants
  * - fingerprint.ts — URL canonicalization, path normalization, fingerprint computation
  * - init.ts       — path resolution (SSOT), initialization, workspace info, session pointer
- * - archive.ts    — session archiving and verification
+ * - archive.ts                   — session archive build pipeline
+ * - archive-files.ts             — internal filesystem helpers shared by archive build and verification
+ * - archive-verify-manifest.ts   — file-inventory and digest verification
+ * - archive-verify-chain.ts      — audit-chain, timestamp, content-digest verification (owns verifyArchive)
  *
  * All existing imports from "./workspace" or "../adapters/workspace" resolve
  * to this barrel unchanged because TypeScript resolves directory imports to index.ts.
@@ -55,4 +58,5 @@ export {
 } from './evidence-artifacts.js';
 
 // ── Archive ──────────────────────────────────────────────────────────────────
-export { archiveSession, verifyArchive } from './archive.js';
+export { archiveSession } from './archive.js';
+export { verifyArchive } from './archive-verify-chain.js';

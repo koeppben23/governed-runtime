@@ -9,7 +9,7 @@
  * - Stateless: all state on filesystem, crash-safe restart
  * - Delegates to same rail executors as the OpenCode plugin
  *
- * The server exposes all 12 FlowGuard governance tools via the MCP protocol.
+ * The server exposes all 13 FlowGuard governance tools via the MCP protocol.
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/243
  */
@@ -29,6 +29,7 @@ import { status } from '../integration/tools/index.js';
 import { hydrate } from '../integration/tools/index.js';
 import { plan } from '../integration/tools/index.js';
 import { implement } from '../integration/tools/index.js';
+import { review_implementation } from '../integration/tools/index.js';
 import { architecture } from '../integration/tools/index.js';
 import { decision } from '../integration/tools/index.js';
 import { run_check } from '../integration/tools/index.js';
@@ -46,6 +47,7 @@ const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   hydrate,
   plan,
   implement,
+  review_implementation,
   architecture,
   decision,
   run_check,
@@ -78,7 +80,7 @@ export function createMcpServer(): McpServer {
     },
   );
 
-  // Register all 12 FlowGuard tools
+  // Register all 13 FlowGuard tools
   registerAllTools(server, FLOWGUARD_TOOLS, () => {
     // Resolve session context fresh for each tool call from host-advertised
     // sources (FLOWGUARD_SESSION_DIR / FLOWGUARD_PROJECT_DIR env, or MCP roots).

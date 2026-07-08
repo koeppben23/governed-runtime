@@ -17,7 +17,6 @@
  */
 
 import type { SessionState } from '../state/schema.js';
-import { isIP } from 'node:net';
 import { ReviewReport, type ExternalReference, type InputOrigin } from '../state/evidence.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
@@ -27,7 +26,13 @@ import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { blockedFromOverflow } from './auto-advance-overflow.js';
 import { hasGhCli, loadPrDiff, loadBranchDiff } from '../adapters/gh-cli.js';
-import { parseIPv4, isPrivateIPv4, isPrivateIPv6 } from '../adapters/ip-validation.js';
+import {
+  parseIPv4,
+  isPrivateIPv4,
+  isPrivateIPv6,
+  isIPv4Address,
+  isIPv6Address,
+} from '../adapters/ip-validation.js';
 import { lookupReviewHostname, type ReviewDnsLookup } from '../adapters/dns-resolution.js';
 export { parseIPv4 };
 
@@ -155,7 +160,7 @@ function validateResolvedAddress(
   family: 4 | 6,
 ): { valid: true } | { valid: false; reason: string } {
   if (family === 4) {
-    if (isIP(address) !== 4) {
+    if (!isIPv4Address(address)) {
       return {
         valid: false,
         reason: `DNS lookup for "${hostname}" returned malformed IPv4 address "${address}"`,
@@ -171,7 +176,7 @@ function validateResolvedAddress(
     return { valid: true };
   }
 
-  if (isIP(address) !== 6) {
+  if (!isIPv6Address(address)) {
     return {
       valid: false,
       reason: `DNS lookup for "${hostname}" returned malformed IPv6 address "${address}"`,
@@ -189,17 +194,26 @@ function validateResolvedAddress(
 /** Fetch content from URL using native fetch. Validates URL before fetching.
  *  Rejects private/reserved targets (SSRF mitigation).
  *  Disables redirect following to prevent SSRF via redirect.
- *  Throws on validation failure or HTTP errors. */
-async function fetchUrlContent(url: string, dnsLookup?: ReviewDnsLookup): Promise<string> {
+ *  Returns a blocked result on validation failure or HTTP errors. */
+async function fetchUrlContent(
+  url: string,
+  dnsLookup?: ReviewDnsLookup,
+): Promise<{ content: string } | RailBlocked> {
   const validation = await validateResolvedReviewUrlTarget(url, dnsLookup);
   if (!validation.valid) {
-    throw new Error(`URL validation blocked: ${validation.reason}`);
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason: `URL validation blocked: ${validation.reason}`,
+    });
   }
   const resp = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(15000) });
   if (!resp.ok) {
-    throw new Error(`Failed to fetch ${url}: HTTP ${resp.status} ${resp.statusText}`);
+    return blocked('COMMAND_BLOCKED', {
+      command: '/review',
+      reason: `Failed to fetch ${url}: HTTP ${resp.status} ${resp.statusText}`,
+    });
   }
-  return resp.text();
+  return { content: await resp.text() };
 }
 
 // ─── Executor Interface ───────────────────────────────────────────────
@@ -369,15 +383,9 @@ async function loadUrlContent(
       reason: `URL blocked: ${validation.reason}`,
     });
   }
-  try {
-    const content = await fetchUrlContent(refInput.url!, dnsLookup);
-    return { content };
-  } catch (err) {
-    return blocked('COMMAND_BLOCKED', {
-      command: '/review',
-      reason: `Failed to fetch URL ${refInput.url}: ${err instanceof Error ? err.message : String(err)}`,
-    });
-  }
+  const fetchResult = await fetchUrlContent(refInput.url!, dnsLookup);
+  if ('kind' in fetchResult) return fetchResult;
+  return { content: fetchResult.content };
 }
 
 // ─── Build Report ──────────────────────────────────────────
@@ -513,33 +521,16 @@ export function startReviewFlow(state: SessionState, ctx: RailContext): RailResu
  * The tool layer must use startReviewFlow + writeReport + autoAdvance instead.
  */
 export function executeReviewFlow(state: SessionState, ctx: RailContext): RailResult {
-  if (!isCommandAllowed(state.phase, Command.REVIEW)) {
-    return blocked('COMMAND_NOT_ALLOWED', {
-      command: '/review',
-      phase: state.phase,
-    });
-  }
-
-  const preTransitions: TransitionRecord[] = [];
-  const at = ctx.now();
-  const tr: TransitionRecord = { from: 'READY', to: 'REVIEW', event: 'REVIEW_SELECTED', at };
-  preTransitions.push(tr);
-
-  const reviewState: SessionState = applyTransition(
-    state,
-    'READY',
-    'REVIEW',
-    'REVIEW_SELECTED',
-    at,
-  );
+  const started = startReviewFlow(state, ctx);
+  if (started.kind === 'blocked') return started;
 
   const evalFn = createPolicyEvalFn(ctx);
-  const advanced = autoAdvance(reviewState, evalFn, ctx);
+  const advanced = autoAdvance(started.state, evalFn, ctx);
   if (advanced.kind === 'overflow') {
     return blockedFromOverflow(advanced);
   }
   const { state: finalState, evalResult, transitions: advanceTransitions } = advanced;
-  const transitions = [...preTransitions, ...advanceTransitions];
+  const transitions = [...started.transitions, ...advanceTransitions];
 
   return { kind: 'ok', state: finalState, evalResult, transitions };
 }

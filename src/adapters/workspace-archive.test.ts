@@ -44,7 +44,7 @@ import { benchmarkSync, measureAsync } from '../test-policy.js';
 import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types.js';
 import { writeState, auditPath, globalConfigPath, PersistenceError } from './persistence.js';
 import { readAuditTrail } from './persistence-audit.js';
-import { makeState, POLICY_SNAPSHOT } from '../__fixtures__.js';
+import { makeState, POLICY_SNAPSHOT } from '../fixtures.js';
 import { computeArchiveContentDigest } from '../archive/content-digest.js';
 import type { ArchiveManifest } from '../archive/types.js';
 

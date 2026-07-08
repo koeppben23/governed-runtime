@@ -28,14 +28,14 @@ Operational logs use the logging SSOT in [`src/logging/logger.ts`](../src/loggin
 
 ## Delivery Scope
 
-| Category                    | Description                                          | Example                                                  |
-| --------------------------- | ---------------------------------------------------- | -------------------------------------------------------- |
-| **Technically Enforced**    | Guarantees implemented by runtime authorities        | State schema validation, audit hash chain, phase gates   |
-| **Diagnostic Only**         | Signals for operators/reviewers, not evidence        | Structured logs, doctor diagnostics, presentation output |
-| **Currently Delivered**     | Available in current release                         | CLI, state validation, audit, archive verification       |
-| **Optional**                | Enabled only by configuration or operator action     | Remote JWKS, `/review url=...`, TSA timestamp assurance  |
-| **Not Covered**             | Intentionally outside FlowGuard runtime protection   | OS compromise prevention, network isolation, encryption  |
-| **Customer Responsibility** | External controls required for deployment assurances | Filesystem permissions, host sandboxing, backup controls |
+| Category                    | Description                                          | Example                                                                  |
+| --------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------ |
+| **Technically Enforced**    | Guarantees implemented by runtime authorities        | State schema validation, audit hash chain, phase gates                   |
+| **Diagnostic Only**         | Signals for operators/reviewers, not evidence        | Structured logs, doctor diagnostics, presentation output                 |
+| **Currently Delivered**     | Available in current release                         | CLI, state validation, audit, archive verification                       |
+| **Optional**                | Enabled only by configuration or operator action     | Remote JWKS, `/review url=...`, TSA timestamp assurance, OTLP log export |
+| **Not Covered**             | Intentionally outside FlowGuard runtime protection   | OS compromise prevention, network isolation, encryption                  |
+| **Customer Responsibility** | External controls required for deployment assurances | Filesystem permissions, host sandboxing, backup controls                 |
 
 ---
 
@@ -82,12 +82,12 @@ Technically enforced:
 
 ### Adapters
 
-| Property             | Trust Level | Reason                                                   |
-| -------------------- | ----------- | -------------------------------------------------------- |
-| **Persistence**      | Medium      | Owns filesystem writes and locks                         |
-| **Workspace/Git**    | Medium      | Reads repository and external git state                  |
-| **Network surfaces** | Medium      | Optional URL review, remote JWKS, local hook listener    |
-| **Host integration** | Medium      | Translates host/runtime events into FlowGuard boundaries |
+| Property             | Trust Level | Reason                                                                 |
+| -------------------- | ----------- | ---------------------------------------------------------------------- |
+| **Persistence**      | Medium      | Owns filesystem writes and locks                                       |
+| **Workspace/Git**    | Medium      | Reads repository and external git state                                |
+| **Network surfaces** | Medium      | Optional URL review, remote JWKS, local hook listener, OTLP log export |
+| **Host integration** | Medium      | Translates host/runtime events into FlowGuard boundaries               |
 
 Customer responsibility:
 

@@ -8,7 +8,8 @@ import { chmod, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import type { FileOp, InstallScope } from './install-helpers.js';
-import { ensureDir, writeIfAbsent } from './install-helpers.js';
+import { writeIfAbsent } from './install-helpers.js';
+import { ensureDir } from '../adapters/persistence.js';
 import { CODEX_PLUGIN_NAME, CODEX_PLUGIN_RELATIVE_FILES, codexPluginFiles } from './templates.js';
 
 interface CodexMarketplaceEntry {

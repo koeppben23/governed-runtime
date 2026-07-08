@@ -12,7 +12,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as crypto from 'node:crypto';
-import { ensureDir, PersistenceError, isEnoent } from './persistence.js';
+import { ensureDir, PersistenceError, isEnoent } from './persistence-core.js';
 
 // -- Constants ----------------------------------------------------------------
 

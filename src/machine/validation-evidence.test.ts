@@ -13,7 +13,7 @@ import {
   evaluateValidationEvidence,
   hasTrustworthyDiscoveryForVerification,
 } from './validation-evidence.js';
-import { makeState, POLICY_SNAPSHOT } from '../__fixtures__.js';
+import { makeState, POLICY_SNAPSHOT } from '../fixtures.js';
 
 const SUMMARY: DiscoverySummary = {
   primaryLanguages: ['typescript'],

@@ -60,6 +60,7 @@ vi.mock('../integration/tools/index.js', () => {
     hydrate: tool,
     plan: tool,
     implement: tool,
+    review_implementation: tool,
     architecture: tool,
     decision: tool,
     run_check: tool,

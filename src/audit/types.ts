@@ -23,6 +23,7 @@
  */
 
 import * as crypto from 'node:crypto';
+import { hashText } from '../shared/hashing.js';
 import type { Phase, Event } from '../state/schema.js';
 import type { ReviewVerdict, TimestampEvidence } from '../state/evidence.js';
 import { canonicalJsonStringify, computeCanonicalEventDigest } from './canonical-digest.js';
@@ -180,7 +181,7 @@ export function computeChainHash(
 ): string {
   const canonical = canonicalJsonStringify(event);
   const input = prevHash + canonical;
-  return crypto.createHash('sha256').update(input, 'utf-8').digest('hex');
+  return hashText(input);
 }
 
 /**

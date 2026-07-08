@@ -44,7 +44,7 @@ import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import { REVIEW_REQUIRED_PREFIX } from './review/enforcement/types.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
-import { POLICY_SNAPSHOT, makeState } from '../__fixtures__.js';
+import { POLICY_SNAPSHOT, makeState } from '../fixtures.js';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 

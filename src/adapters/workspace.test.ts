@@ -44,7 +44,7 @@ import { withTestEnv } from '../integration/test-helpers.js';
 import { benchmarkSync, measureAsync } from '../test-policy.js';
 import { createDecisionEvent, createLifecycleEvent, GENESIS_HASH } from '../audit/types.js';
 import { writeState, auditPath, globalConfigPath, PersistenceError } from './persistence.js';
-import { makeState, POLICY_SNAPSHOT } from '../__fixtures__.js';
+import { makeState, POLICY_SNAPSHOT } from '../fixtures.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 

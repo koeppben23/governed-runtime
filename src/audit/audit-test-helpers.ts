@@ -5,7 +5,7 @@
 
 import { GENESIS_HASH, createTransitionEvent, type ChainedAuditEvent } from './types.js';
 import type { AuditEvent } from '../state/evidence.js';
-import { FIXED_SESSION_UUID } from '../__fixtures__.js';
+import { FIXED_SESSION_UUID } from '../fixtures.js';
 
 export const SESSION_ID = FIXED_SESSION_UUID;
 export const TS1 = '2026-01-01T00:00:00.000Z';

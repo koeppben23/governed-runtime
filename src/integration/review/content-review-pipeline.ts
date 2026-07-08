@@ -25,7 +25,7 @@ import { updateObligation } from './obligation-state.js';
 import type { PipelineContext } from './pipeline-types.js';
 import { INVOCATION_MODE_SDK_SESSION, EVIDENCE_SOURCE_HOST } from './pipeline-types.js';
 import {
-  validateStrictAttestation,
+  validatePipelineAttestation,
   blockReviewOutcomeHelper,
   isStrictEnforcementEnabled,
   getReviewerPolicies,
@@ -200,7 +200,7 @@ async function enforceContentStrictGate(
 ): Promise<boolean> {
   const { deps, sessDir, reviewCtx, output, sessionId, now } = ctx;
 
-  const attestation = validateStrictAttestation(findings, {
+  const attestation = validatePipelineAttestation(findings, {
     obligationId: reviewCtx.obligationId,
     criteriaVersion: reviewCtx.criteriaVersion,
     mandateDigest: reviewCtx.mandateDigest,

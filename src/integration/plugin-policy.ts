@@ -17,6 +17,7 @@
 
 import { resolveRuntimePolicyMode, resolvePolicyWithContext } from '../config/policy.js';
 import type { PolicyMode, FlowGuardPolicy } from '../config/policy.js';
+import { serializeError } from '../logging/error-serialize.js';
 import type { SessionState } from '../state/schema.js';
 import * as fs from 'node:fs/promises';
 import { readState } from '../adapters/persistence.js';
@@ -57,7 +58,7 @@ async function checkStateFileExists(
       log?.warn('policy', 'Failed to access session state file', {
         sessionDir: sessDir,
         code,
-        error: err instanceof Error ? err.message : String(err),
+        error: serializeError(err),
       });
     }
     return false;

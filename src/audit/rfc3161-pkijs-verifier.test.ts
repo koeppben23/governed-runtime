@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PkijsTimestampVerifier } from './rfc3161-pkijs-verifier.js';
+import { PkijsTimestampVerifier } from './rfc-3161-pkijs-verifier.js';
 import { verifyTimestampTokensForEvents } from './timestamp-token-verification.js';
 import { computeCanonicalEventDigest } from './canonical-digest.js';
 import { canonicalDigestToUint8Array } from './timestamp-verification.js';

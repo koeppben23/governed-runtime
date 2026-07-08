@@ -19,6 +19,21 @@ import {
   OPENCODE_JSON_TEMPLATE,
   PACKAGE_JSON_TEMPLATE,
 } from './templates.js';
+import {
+  TOOL_FLOWGUARD_STATUS,
+  TOOL_FLOWGUARD_HYDRATE,
+  TOOL_FLOWGUARD_TICKET,
+  TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RUN_CHECK,
+  TOOL_FLOWGUARD_REVIEW,
+  TOOL_FLOWGUARD_CONTINUE,
+  TOOL_FLOWGUARD_ABORT,
+  TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_ARCHITECTURE,
+} from '../integration/tool-names.js';
 
 function sha256(value: string): string {
   return createHash('sha256').update(value, 'utf8').digest('hex');
@@ -27,7 +42,7 @@ function sha256(value: string): string {
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
     expect(sha256(TOOL_WRAPPER)).toBe(
-      'b4b460e0fd2575b450b774fb941f108248e0fa7637dcac5f1909025a044d0d7d',
+      '3d7e2c04d9d51119d6682d434326b57679580be4aaa79a2b4296af585bf2b298',
     );
   });
 
@@ -60,11 +75,17 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for review-verdict disambiguation: the reviewer output verdict
     // token was renamed 'approve' -> 'accept' (overallVerdict) to separate the
     // reviewer's acceptance from the user-gate approval.
-    // This changes the runtime REVIEW_MANDATE_DIGEST.
-    // Existing sessions with obligations bound to the previous digest must be
-    // re-hydrated or re-created.
+    // Refreshed for reviewer-criteria enrichment (criteriaVersion p35->p36):
+    // plan/implementation/adr/content REVIEWER_CRITERIA gained test-integrity,
+    // conviction, ADR-justification, deletion-test, and changed-scope/signal
+    // guidance. This changes the REVIEWER_AGENT body and therefore the runtime
+    // REVIEW_MANDATE_DIGEST. Existing sessions with obligations bound to the
+    // previous digest must be re-hydrated or re-created.
+    // Refreshed again for p36->p37: added a Security-as-risk vulnerability bullet
+    // (content + implementation) and a root-cause bullet (plan + implementation),
+    // which changes the REVIEWER_AGENT body and REVIEW_MANDATE_DIGEST.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'a8f088a19b7fe9698e5de5c381765805d41e76d31f45b1b09635843791b92899',
+      '12d8e68edfa5dcc81d0a3bec1626b47413ebd0566049fb74a6100280e01723b4',
     );
   });
 
@@ -110,9 +131,40 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for standalone /review host-task flow: /review now treats
     // HOST_SUBAGENT_TASK_REQUIRED as an intermediate state and documents local
     // branch diff fallback when no remote/PR is available.
+    // Refreshed for #565: /implement template + shared-review-loop now submit the
+    // implementation review verdict via the separate flowguard_review_implementation
+    // tool (record evidence vs. submit verdict are distinct single-purpose tools).
+    // Refreshed for VALIDATION check-field contract: /check + /validate now read
+    // checks from an UNFOCUSED flowguard_status (focused projections must not be
+    // used to gate checks) and reference both activeChecks and remainingChecks.
+    // Refreshed for status-contract sweep: /why reads whyBlocked.* (not a
+    // non-existent top-level `blocker`); /plan + /implement no longer claim the
+    // ticket/plan BODY comes from the status response (status only confirms
+    // hasTicket/hasPlan/planVersion + phase).
+    // Refreshed for /review first-call contract: step 3 now forbids reviewVerdict
+    // (and reviewFindings) on the first content-aware flowguard_review call — the
+    // verdict is submitted only after the reviewer runs, so a verdict-bearing
+    // first call no longer wedges the host-task bind.
+    // Refreshed for discovery-capture + payload-contract hardening: the shared
+    // Discovery capture (plan/implement/architecture) and /review step 1 now
+    // require an UNFOCUSED flowguard_status (focused projections omit
+    // discoveryHealth/discoveryDrift/detectedStack), so repo-dependent claims are
+    // no longer spuriously NOT_VERIFIED. The shared host_task_required verdict
+    // branch now states reviewFindings submitted alongside the verdict are ignored
+    // and the verdict is validated against captured evidence; /plan + /review
+    // first-call lines forbid a prefilled verdict imperatively.
+    // Refreshed for host-task verdict-only parity: the shared verdict branch,
+    // /review step 5, /plan payload contract, and /architecture review step now
+    // forbid reviewFindings "not even an empty placeholder object" in
+    // host_task_required mode — matching the runtime, which resolves findings from
+    // captured evidence and validates the verdict against it.
+    // Refreshed for reviewer-criteria enrichment: /plan gained tracer-bullet /
+    // deep-module step guidance plus a "Planning discipline" section, and
+    // /validate gained an advisory "Test quality" section. These change the
+    // /plan and /validate command bodies and therefore the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '34043e39fad06c259e7dad05a60bb7c5a87f9e8671c7f4ec5cf1dc45c7fca408',
+      '67f059101732eec98b74874fea55f26096e1b70c529b4277864d91a35c914f11',
     );
   });
 
@@ -140,5 +192,63 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       'why.md',
     ];
     expect(Object.keys(COMMANDS).sort()).toEqual(expected);
+  });
+
+  // Drift guard (issue #565 regression): the OpenCode tool surface is built
+  // verbatim from TOOL_WRAPPER. OpenCode derives the callable tool name as
+  // `flowguard_<exportname>`, so TOOL_WRAPPER MUST re-export every canonical
+  // FlowGuard tool. The #565 split added flowguard_review_implementation to the
+  // barrel and the MCP registry but NOT to TOOL_WRAPPER, making the verdict tool
+  // uncallable on OpenCode. This test cross-checks TOOL_WRAPPER against the
+  // canonical tool-name SSOT so that omission can never silently recur.
+  it('TOOL_WRAPPER re-exports every canonical FlowGuard tool (OpenCode surface completeness)', () => {
+    const canonicalToolNames = [
+      TOOL_FLOWGUARD_STATUS,
+      TOOL_FLOWGUARD_HYDRATE,
+      TOOL_FLOWGUARD_TICKET,
+      TOOL_FLOWGUARD_PLAN,
+      TOOL_FLOWGUARD_DECISION,
+      TOOL_FLOWGUARD_IMPLEMENT,
+      TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+      TOOL_FLOWGUARD_RUN_CHECK,
+      TOOL_FLOWGUARD_REVIEW,
+      TOOL_FLOWGUARD_CONTINUE,
+      TOOL_FLOWGUARD_ABORT,
+      TOOL_FLOWGUARD_ARCHIVE,
+      TOOL_FLOWGUARD_ARCHITECTURE,
+    ];
+
+    // Parse the actual export identifiers from TOOL_WRAPPER's export block.
+    const exportBlock = TOOL_WRAPPER.match(/export\s*\{([^}]*)\}/);
+    expect(exportBlock, 'TOOL_WRAPPER must contain an export block').not.toBeNull();
+    const exportedIdentifiers = new Set(
+      exportBlock![1]!
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s) => s.length > 0),
+    );
+
+    // OpenCode tool name `flowguard_<exportname>` -> the export identifier is the
+    // canonical name with the `flowguard_` prefix stripped. abort_session maps to
+    // the `abort_session` export even though its tool name is flowguard_abort_session.
+    const missing = canonicalToolNames
+      .map((toolName) => toolName.replace(/^flowguard_/, ''))
+      .filter((exportName) => !exportedIdentifiers.has(exportName));
+
+    expect(
+      missing,
+      `TOOL_WRAPPER is missing re-exports for: ${missing.join(', ')}. ` +
+        `Add them to src/templates/wrappers/index.ts or OpenCode cannot call these tools.`,
+    ).toEqual([]);
+
+    // Symmetry: no stray exports beyond the canonical tool set.
+    const canonicalExportNames = new Set(
+      canonicalToolNames.map((t) => t.replace(/^flowguard_/, '')),
+    );
+    const stray = [...exportedIdentifiers].filter((id) => !canonicalExportNames.has(id));
+    expect(
+      stray,
+      `TOOL_WRAPPER exports unexpected identifiers (not canonical tools): ${stray.join(', ')}`,
+    ).toEqual([]);
   });
 });

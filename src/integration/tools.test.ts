@@ -23,6 +23,7 @@ import {
   plan,
   decision,
   implement,
+  review_implementation,
   run_check,
   review,
   continue as continueTool,
@@ -36,7 +37,7 @@ import { benchmarkSync } from '../test-policy.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** All 12 exported tool names, matching the filenames OpenCode will discover. */
+/** All 13 exported tool names, matching the filenames OpenCode will discover. */
 const TOOL_NAMES = [
   'status',
   'hydrate',
@@ -44,6 +45,7 @@ const TOOL_NAMES = [
   'plan',
   'decision',
   'implement',
+  'review_implementation',
   'run_check',
   'review',
   'continue',
@@ -60,6 +62,7 @@ const TOOLS: Record<string, unknown> = {
   plan,
   decision,
   implement,
+  review_implementation,
   run_check,
   review,
   continue: continueTool,
@@ -75,7 +78,7 @@ const TOOLS_WITH_ARGS = [
   'ticket',
   'plan',
   'decision',
-  'implement',
+  'review_implementation',
   'run_check',
   'abort_session',
   'architecture',
@@ -83,15 +86,15 @@ const TOOLS_WITH_ARGS = [
 ] as const;
 
 /** Tools that have no arguments (args: {}). */
-const TOOLS_WITHOUT_ARGS = ['archive'] as const;
+const TOOLS_WITHOUT_ARGS = ['archive', 'implement'] as const;
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('integration/tools', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('exports exactly 12 tools', () => {
-      expect(Object.keys(TOOLS).length).toBe(12);
+    it('exports exactly 13 tools', () => {
+      expect(Object.keys(TOOLS).length).toBe(13);
     });
 
     for (const name of TOOL_NAMES) {
@@ -111,7 +114,7 @@ describe('integration/tools', () => {
       });
     }
 
-    it('barrel re-exports all 12 tools', () => {
+    it('barrel re-exports all 13 tools', () => {
       for (const name of TOOL_NAMES) {
         expect((barrel as Record<string, unknown>)[name]).toBeDefined();
         expect((barrel as Record<string, unknown>)[name]).toBe(TOOLS[name]);
@@ -235,9 +238,9 @@ describe('integration/tools', () => {
       expect(attachGovernanceFooter('"ok"')).toBe('"ok"');
     });
 
-    it('barrel has exactly 13 named exports (12 tools + 1 plugin)', () => {
+    it('barrel has exactly 14 named exports (13 tools + 1 plugin)', () => {
       const exports = Object.keys(barrel);
-      expect(exports.length).toBe(13);
+      expect(exports.length).toBe(14);
     });
   });
 
@@ -264,8 +267,13 @@ describe('integration/tools', () => {
       expect(Object.keys(toolArgs(architecture))).not.toContain('selfReviewVerdict');
     });
 
-    it('implement exposes reviewVerdict', () => {
-      expect(Object.keys(toolArgs(implement))).toContain('reviewVerdict');
+    it('review_implementation exposes reviewVerdict (issue #565)', () => {
+      expect(Object.keys(toolArgs(review_implementation))).toContain('reviewVerdict');
+    });
+
+    it('implement (record tool) does NOT expose reviewVerdict (issue #565)', () => {
+      expect(Object.keys(toolArgs(implement))).not.toContain('reviewVerdict');
+      expect(Object.keys(toolArgs(implement))).toHaveLength(0);
     });
 
     it('review exposes reviewFindings, not analysisFindings', () => {

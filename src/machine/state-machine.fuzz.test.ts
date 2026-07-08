@@ -25,7 +25,7 @@ import * as fc from 'fast-check';
 import { evaluate } from './evaluate.js';
 import { TRANSITIONS, resolveTransition, TERMINAL } from './topology.js';
 import type { Phase, Event, SessionState } from '../state/schema.js';
-import { makeState } from '../__fixtures__.js';
+import { makeState } from '../fixtures.js';
 
 const ALL_PHASES: Phase[] = [
   'READY',

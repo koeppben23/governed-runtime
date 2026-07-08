@@ -12,7 +12,7 @@ import {
   FIXED_FINGERPRINT,
   DECISION_IDENTITY_INITIATOR,
   makeState,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 import { getPolicyPreset } from '../config/policy.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

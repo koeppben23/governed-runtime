@@ -59,7 +59,7 @@ function validFindings(overrides: Record<string, unknown> = {}): string {
     reviewedAt: '2026-04-24T12:00:00.000Z',
     attestation: {
       mandateDigest: 'test-mandate-digest',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p37-v1',
       toolObligationId: '11111111-1111-4111-8111-111111111111',
       iteration: 0,
       planVersion: 1,
@@ -127,7 +127,7 @@ function modeAOutput(
     status: `Plan submitted (v${planVersion}).`,
     selfReviewIteration: iteration,
     reviewObligationId: '11111111-1111-4111-8111-111111111111',
-    reviewCriteriaVersion: 'p35-v1',
+    reviewCriteriaVersion: 'p37-v1',
     reviewMandateDigest: 'test-mandate-digest',
     reviewMode: 'subagent',
     next:
@@ -320,7 +320,7 @@ describe('extractReviewContext', () => {
     const parsed = {
       next: `${REVIEW_REQUIRED_PREFIX}: iteration=1, planVersion=2`,
       reviewObligationId: '11111111-1111-4111-8111-111111111111',
-      reviewCriteriaVersion: 'p35-v1',
+      reviewCriteriaVersion: 'p37-v1',
       reviewMandateDigest: 'test-mandate-digest',
       selfReviewIteration: 99, // different — but implement doesn't check
     };
@@ -416,7 +416,7 @@ describe('buildReviewContentPrompt', () => {
     ticketText: 'Fix auth bug',
     obligationId: '00000000-0000-0000-0000-000000000001',
     mandateDigest: 'a'.repeat(64),
-    criteriaVersion: 'p35-v1',
+    criteriaVersion: 'p37-v1',
     iteration: 1,
     planVersion: 1,
     discoveryContext: {},
@@ -477,7 +477,7 @@ describe('buildReviewContentMutatedOutput', () => {
       reviewedAt: '2026-01-01T00:00:00.000Z',
       attestation: {
         mandateDigest: 'a'.repeat(64),
-        criteriaVersion: 'p35-v1',
+        criteriaVersion: 'p37-v1',
         toolObligationId: '00000000-0000-0000-0000-000000000001',
         iteration: 0,
         planVersion: 1,
@@ -579,7 +579,7 @@ describe('isReviewRequired for /review', () => {
       requiredReviewAttestation: {
         reviewedBy: 'flowguard-reviewer',
         mandateDigest: 'a'.repeat(64),
-        criteriaVersion: 'p35-v1',
+        criteriaVersion: 'p37-v1',
         toolObligationId: '00000000-0000-0000-0000-000000000001',
       },
     });
@@ -614,7 +614,7 @@ describe('extractReviewContext for /review', () => {
       requiredReviewAttestation: {
         toolObligationId: '00000000-0000-0000-0000-000000000001',
         mandateDigest: 'a'.repeat(64),
-        criteriaVersion: 'p35-v1',
+        criteriaVersion: 'p37-v1',
       },
     });
     expect(result).toBeDefined();
@@ -643,7 +643,7 @@ describe('buildReviewContentPrompt edge cases', () => {
     ticketText: '',
     obligationId: '00000000-0000-0000-0000-000000000001',
     mandateDigest: 'a'.repeat(64),
-    criteriaVersion: 'p35-v1',
+    criteriaVersion: 'p37-v1',
     iteration: 0,
     planVersion: 1,
     discoveryContext: {},
@@ -765,7 +765,7 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
       reviewedAt: '2026-01-01T00:00:00.000Z',
       attestation: {
         mandateDigest: 'a'.repeat(64),
-        criteriaVersion: 'p35-v1',
+        criteriaVersion: 'p37-v1',
         toolObligationId: '00000000-0000-0000-0000-000000000001',
         iteration: 0,
         planVersion: 1,

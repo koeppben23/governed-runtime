@@ -59,7 +59,7 @@ function validFindings(overrides: Record<string, unknown> = {}): string {
     reviewedAt: '2026-04-24T12:00:00.000Z',
     attestation: {
       mandateDigest: 'test-mandate-digest',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p37-v1',
       toolObligationId: '11111111-1111-4111-8111-111111111111',
       iteration: 0,
       planVersion: 1,
@@ -127,7 +127,7 @@ function modeAOutput(
     status: `Plan submitted (v${planVersion}).`,
     selfReviewIteration: iteration,
     reviewObligationId: '11111111-1111-4111-8111-111111111111',
-    reviewCriteriaVersion: 'p35-v1',
+    reviewCriteriaVersion: 'p37-v1',
     reviewMandateDigest: 'test-mandate-digest',
     reviewMode: 'subagent',
     next:
@@ -158,7 +158,7 @@ describe('buildPlanReviewPrompt', () => {
     iteration: 0,
     planVersion: 1,
     obligationId: '11111111-1111-4111-8111-111111111111',
-    criteriaVersion: 'p35-v1',
+    criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest',
   };
 
@@ -301,7 +301,7 @@ describe('P9c — profile rule non-leakage', () => {
     iteration: 0,
     planVersion: 1,
     obligationId: '11111111-1111-4111-8111-111111111111',
-    criteriaVersion: 'p35-v1',
+    criteriaVersion: 'p37-v1',
     mandateDigest: 'test-digest',
     profileName: 'backend-java',
     profileRules,
@@ -323,7 +323,7 @@ describe('P9c — profile rule non-leakage', () => {
       iteration: 0,
       planVersion: 1,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p37-v1',
       mandateDigest: 'test-digest',
       profileName: 'backend-java',
       profileRules: 'impl-rule-456',
@@ -341,7 +341,7 @@ describe('P9c — profile rule non-leakage', () => {
       iteration: 0,
       planVersion: 1,
       obligationId: '11111111-1111-4111-8111-111111111111',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p37-v1',
       mandateDigest: 'test-digest',
       profileName: 'backend-java',
       profileRules: 'arch-rule-abc',
@@ -357,7 +357,7 @@ describe('P9c — profile rule non-leakage', () => {
       ticketText: 'Test',
       obligationId: '11111111-1111-4111-8111-111111111111',
       mandateDigest: 'test-digest',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p37-v1',
       iteration: 0,
       planVersion: 1,
       profileName: 'backend-java',
@@ -382,7 +382,7 @@ describe('buildImplReviewPrompt', () => {
     iteration: 1,
     planVersion: 2,
     obligationId: '11111111-1111-4111-8111-111111111111',
-    criteriaVersion: 'p35-v1',
+    criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest',
   };
 
@@ -489,7 +489,7 @@ describe('buildArchitectureReviewPrompt', () => {
     iteration: 0,
     planVersion: 1,
     obligationId: '11111111-1111-4111-8111-111111111111',
-    criteriaVersion: 'p35-v1',
+    criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest',
   };
 
@@ -522,7 +522,7 @@ describe('buildArchitectureReviewPrompt', () => {
     expect(prompt).toContain(
       'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
     );
-    expect(prompt).toContain('Set attestation.criteriaVersion=p35-v1.');
+    expect(prompt).toContain('Set attestation.criteriaVersion=p37-v1.');
     expect(prompt).toContain('Set attestation.mandateDigest=test-mandate-digest.');
   });
 
@@ -589,7 +589,7 @@ describe('invokeReviewer', () => {
     iteration: 0,
     planVersion: 1,
     obligationId: '11111111-1111-4111-8111-111111111111',
-    criteriaVersion: 'p35-v1',
+    criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest',
   });
 

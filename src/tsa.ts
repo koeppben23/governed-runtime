@@ -10,5 +10,5 @@
  * @version v1
  */
 
-export { HttpTimestampAuthorityProvider } from './audit/rfc3161-http-provider.js';
-export { PkijsTimestampVerifier } from './audit/rfc3161-pkijs-verifier.js';
+export { HttpTimestampAuthorityProvider } from './audit/rfc-3161-http-provider.js';
+export { PkijsTimestampVerifier } from './audit/rfc-3161-pkijs-verifier.js';

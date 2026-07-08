@@ -7,7 +7,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { materializeReviewCardArtifact } from './evidence-artifacts.js';
-import { makeState } from '../../__fixtures__.js';
+import { makeState } from '../../fixtures.js';
 
 describe('materializeReviewCardArtifact', () => {
   let tmpDir: string;

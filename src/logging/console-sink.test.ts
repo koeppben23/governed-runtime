@@ -133,4 +133,111 @@ describe('createConsoleSink', () => {
       expect(result).toBeUndefined();
     });
   });
+
+  describe('G4: JSON mode', () => {
+    it('outputs valid JSONL in json format mode', () => {
+      const sink = createConsoleSink({ format: 'json' });
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+      sink({ level: 'info', service: 'plugin', message: 'started' });
+
+      const call = stderr.mock.calls[0]![0] as string;
+      expect(call.endsWith('\n')).toBe(true);
+      const parsed = JSON.parse(call.trim());
+      expect(parsed.level).toBe('info');
+      expect(parsed.service).toBe('plugin');
+      expect(parsed.message).toBe('started');
+    });
+
+    it('json mode includes extra fields', () => {
+      const sink = createConsoleSink({ format: 'json' });
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+      sink({
+        level: 'warn',
+        service: 'audit',
+        message: 'degraded',
+        extra: { code: 'E1' },
+      });
+
+      const call = stderr.mock.calls[0]![0] as string;
+      const parsed = JSON.parse(call.trim());
+      expect(parsed.extra).toEqual({ code: 'E1' });
+    });
+
+    it('json mode includes traceId and sessionId', () => {
+      const sink = createConsoleSink({ format: 'json' });
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+      sink({
+        level: 'info',
+        service: 'test',
+        message: 'scoped',
+        traceId: 'abc12345-def',
+        sessionId: 'session-1',
+      });
+
+      const call = stderr.mock.calls[0]![0] as string;
+      const parsed = JSON.parse(call.trim());
+      expect(parsed.traceId).toBe('abc12345-def');
+      expect(parsed.sessionId).toBe('session-1');
+    });
+  });
+
+  describe('G4: text mode with correlation ids', () => {
+    it('includes traceId and sessionId prefix in text mode', () => {
+      const sink = createConsoleSink();
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+      sink({
+        level: 'info',
+        service: 'test',
+        message: 'scoped',
+        traceId: 'abc12345-def',
+        sessionId: 'session-1',
+      });
+
+      const call = stderr.mock.calls[0]![0] as string;
+      expect(call).toContain('[abc12345/session-1]');
+    });
+
+    it('omits id prefix when traceId and sessionId are absent', () => {
+      const sink = createConsoleSink();
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+
+      sink({ level: 'info', service: 'test', message: 'no context' });
+
+      const call = stderr.mock.calls[0]![0] as string;
+      // Should not contain the opening bracket of the id section
+      expect(call).not.toMatch(/\[[a-f0-9]{8}\//);
+    });
+  });
+
+  describe('control-character / log-injection hardening (text mode)', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it('escapes a newline in the message so it cannot forge a log line', () => {
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      const sink = createConsoleSink({ format: 'text' });
+      sink({ level: 'info', service: 'svc', message: 'ok\n[ERROR] forged line' } as LogEntry);
+      const out = stderr.mock.calls[0]![0] as string;
+      // exactly one real newline (the trailing one); the injected \n is escaped
+      expect(out.match(/\n/g)).toHaveLength(1);
+      expect(out).toContain('\\x0a');
+    });
+
+    it('escapes control characters in sessionId and service', () => {
+      const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+      const sink = createConsoleSink({ format: 'text' });
+      sink({
+        level: 'info',
+        service: 'sv\nc',
+        message: 'm',
+        sessionId: 'ses\n[FAKE]',
+      } as LogEntry);
+      const out = stderr.mock.calls[0]![0] as string;
+      expect(out.match(/\n/g)).toHaveLength(1);
+      expect(out).not.toContain('[FAKE]\n');
+    });
+  });
 });

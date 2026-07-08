@@ -10,7 +10,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import { executeValidate, type ValidateExecutors } from './validate.js';
-import { makeState, FIXED_TIME, TICKET } from '../__fixtures__.js';
+import { makeState, FIXED_TIME, TICKET } from '../fixtures.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord, ValidationResult } from '../state/evidence.js';
 

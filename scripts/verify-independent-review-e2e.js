@@ -13,11 +13,17 @@ const testFiles = [
   'src/integration/independent-review-e2e.test.ts',
   'src/integration/tools-execute-session.test.ts',
   'src/integration/tools-execute-planning.test.ts',
+  'src/integration/tools-execute-ticket.test.ts',
   'src/integration/tools-execute-review.test.ts',
   'src/integration/tools-execute-p26.test.ts',
-  'src/integration/tools-execute-execution.test.ts',
+  'src/integration/tools-execute-implement.test.ts',
+  'src/integration/tools-execute-run-check.test.ts',
+  'src/integration/tools-execute-review-flow.test.ts',
+  'src/integration/tools-execute-abort-session.test.ts',
   'src/integration/tools-execute-archive.test.ts',
-  'src/integration/tools/review-validation.test.ts',
+  'src/integration/tools/review-validation-findings.test.ts',
+  'src/integration/tools/review-validation-anti-forgery.test.ts',
+  'src/integration/tools/review-validation-host-task.test.ts',
 ];
 
 const mustPassTestTitles = [

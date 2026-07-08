@@ -7,7 +7,7 @@
  * @version v1
  */
 
-import { createHash } from 'node:crypto';
+import { hashText, hashTextShort } from '../../../shared/hashing.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
@@ -137,18 +137,11 @@ export function fingerprintReviewInput(args: {
     prNumber: args.prNumber,
     branch: args.branch,
     url: args.url,
-    textHash: args.text
-      ? createHash('sha256').update(args.text, 'utf-8').digest('hex').slice(0, 16)
-      : undefined,
+    textHash: args.text ? hashTextShort(args.text, 16) : undefined,
     inputOrigin: args.inputOrigin,
-    references: args.references
-      ? createHash('sha256')
-          .update(JSON.stringify(args.references), 'utf-8')
-          .digest('hex')
-          .slice(0, 16)
-      : undefined,
+    references: args.references ? hashTextShort(JSON.stringify(args.references), 16) : undefined,
   });
-  return createHash('sha256').update(payload, 'utf-8').digest('hex');
+  return hashText(payload);
 }
 
 // ─── Obligation lifecycle ────────────────────────────────────────────────────
@@ -170,9 +163,17 @@ export async function ensureMissingAnalysisObligation(
   args: ReviewToolArgs,
   now: string,
 ): Promise<string | null> {
-  if (!hasReviewContentInput(args) || args.reviewFindings !== undefined) return null;
+  if (!hasReviewContentInput(args)) return null;
   const fingerprint = fingerprintReviewInput(args);
-  let obligation = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
+  const existing = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
+  // A verdict-bearing FIRST call with no pending obligation yet must create the
+  // obligation here (the host-task verdict path deferred to us via null), even
+  // if it erroneously carried a placeholder reviewFindings object. This keeps
+  // such a call on the "create pending obligation -> CONTENT_ANALYSIS_REQUIRED"
+  // path instead of falling through to the SDK reviewFindings-submission path.
+  const verdictFirstCall = args.reviewVerdict !== undefined && existing === null;
+  if (!verdictFirstCall && args.reviewFindings !== undefined) return null;
+  let obligation = existing;
   if (!obligation) {
     obligation = createReviewObligation({
       obligationType: 'review',

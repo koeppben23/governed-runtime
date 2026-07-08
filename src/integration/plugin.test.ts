@@ -17,7 +17,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
-import { makeState } from '../__fixtures__.js';
+import { makeState } from '../fixtures.js';
 import type { PolicyMode } from '../config/policy.js';
 import * as barrel from './index.js';
 import * as fs from 'node:fs/promises';
@@ -286,11 +286,12 @@ describe('integration/plugin', () => {
       expect(hooks).toBeDefined();
     });
 
-    it('returns all expected hooks (command + tool + event + compaction)', async () => {
+    it('returns all expected hooks (command + tool + event + compaction + dispose)', async () => {
       const hooks = await FlowGuardAuditPlugin(createMockInput());
       const keys = Object.keys(hooks).sort();
       expect(keys).toEqual([
         'command.execute.before',
+        'dispose',
         'event',
         'experimental.session.compacting',
         'tool.execute.after',
@@ -1512,15 +1513,63 @@ describe('integration/plugin', () => {
       }
     });
 
-    // SMOKE: source-level regression — plugin.ts must import types.ts,
+    // SMOKE: source-level regression — before/after hook modules must import types.ts,
     // preventing drift back to anonymous inline casts.
-    it('SMOKE — plugin.ts imports ToolHookInput from types.ts (source regression)', async () => {
-      const pluginPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 'plugin.ts');
-      const source = await fs.readFile(pluginPath, 'utf-8');
+    it('SMOKE — hook modules import ToolHookInput from types.ts (source regression)', async () => {
+      const beforehooksPath = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        'plugin-beforehooks.ts',
+      );
+      const afterhooksPath = path.resolve(
+        path.dirname(fileURLToPath(import.meta.url)),
+        'plugin-afterhooks.ts',
+      );
+      const source = await fs.readFile(beforehooksPath, 'utf-8');
+      const afterSource = await fs.readFile(afterhooksPath, 'utf-8');
       expect(source).toContain("from './types.js'");
       expect(source).toContain('ToolHookBeforeInput');
       expect(source).toContain('ToolHookBeforeOutput');
-      expect(source).toContain('ToolHookAfterOutput');
+      // ToolHookAfterOutput used by afterhooks
+      expect(afterSource).toContain("from './types.js'");
+      expect(afterSource).toContain('ToolHookAfterOutput');
+    });
+  });
+
+  describe('teardown (dispose hook, no global listener leak)', () => {
+    const EXIT_SIGNALS = ['SIGTERM', 'SIGINT', 'beforeExit'] as const;
+
+    function exitListenerCount(): number {
+      return EXIT_SIGNALS.reduce((n, s) => n + process.listenerCount(s), 0);
+    }
+
+    it('returns a dispose hook that is callable and resolves', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-dispose-'));
+      try {
+        await initGitRepo(dir);
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: dir, directory: dir }),
+        );
+        expect(typeof hooks.dispose).toBe('function');
+        await expect(hooks.dispose!()).resolves.toBeUndefined();
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('does not register global process exit listeners (no leak across inits)', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-noleak-'));
+      try {
+        await initGitRepo(dir);
+        const before = exitListenerCount();
+        // Multiple inits must not accumulate SIGTERM/SIGINT/beforeExit listeners:
+        // teardown is wired via the per-instance Hooks.dispose, not global signals.
+        for (let i = 0; i < 5; i++) {
+          await FlowGuardAuditPlugin(createMockInput({ worktree: dir, directory: dir }));
+        }
+        expect(exitListenerCount()).toBe(before);
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
     });
   });
 });

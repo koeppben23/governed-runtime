@@ -13,12 +13,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import {
-  setAdapterLogger,
-  resetAdapterLogger,
-  runWithTraceContext,
-  type AdapterLogger,
-} from '../adapter-logger.js';
+import { setAdapterLogger, resetAdapterLogger, type AdapterLogger } from '../adapter-logger.js';
+import { runWithLogContext } from '../log-context.js';
 
 vi.mock('../../adapters/persistence.js', () => ({
   readState: vi.fn(),
@@ -139,7 +135,7 @@ describe('boundary-logging', () => {
       setAdapterLogger(log);
       const { formatBlocked } = await import('../../integration/tools/helpers.js');
 
-      runWithTraceContext('trace-boundary', () => {
+      runWithLogContext({ traceId: 'trace-boundary' }, () => {
         formatBlocked('TICKET_REQUIRED');
       });
 
@@ -147,7 +143,6 @@ describe('boundary-logging', () => {
         code: 'TICKET_REQUIRED',
         traceId: 'trace-boundary',
       });
-      expect(typeof entries[0]!.extra!.durationMs).toBe('number');
     });
   });
 

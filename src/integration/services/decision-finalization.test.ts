@@ -25,7 +25,7 @@ import {
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
   ARCHITECTURE_DECISION,
-} from '../../__fixtures__.js';
+} from '../../fixtures.js';
 import type { RailResult } from '../../rails/types.js';
 
 // ─── Mocks ──────────────────────────────────────────────────────────────────

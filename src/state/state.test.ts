@@ -25,7 +25,7 @@ import {
   ReviewReport,
 } from '../state/evidence.js';
 import { Phase, Event, Transition, SessionState } from '../state/schema.js';
-import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../__fixtures__.js';
+import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { readState } from '../adapters/persistence.js';
 
@@ -135,6 +135,27 @@ describe('state schemas', () => {
       const parsed = SessionState.parse(legacy);
       expect(parsed.claimedTaskClass).toBeUndefined();
       expect(parsed.riskGate).toBeUndefined();
+    });
+
+    it('SessionState treats implementationBaseline as optional (absent/null/populated all parse)', () => {
+      const state = makeState('TICKET');
+      // Absent (legacy session created before the baseline field existed).
+      const legacy: Record<string, unknown> = { ...state };
+      delete legacy.implementationBaseline;
+      expect(SessionState.parse(legacy).implementationBaseline).toBeUndefined();
+      // Null is accepted and treated like absent.
+      expect(() => SessionState.parse({ ...state, implementationBaseline: null })).not.toThrow();
+      // Populated parses and round-trips.
+      const populated = SessionState.parse({
+        ...state,
+        implementationBaseline: {
+          dirtyFiles: [{ path: 'stale/a.txt', hash: 'abc123' }],
+          capturedAt: FIXED_TIME,
+        },
+      });
+      expect(populated.implementationBaseline?.dirtyFiles).toEqual([
+        { path: 'stale/a.txt', hash: 'abc123' },
+      ]);
     });
 
     it('SessionState normalizes legacy regulated/team-ci snapshots to risk enforcement on', () => {

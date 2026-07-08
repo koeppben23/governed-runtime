@@ -47,7 +47,7 @@ vi.mock('./plugin-helpers.js', () => ({
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
 import type { PluginWorkspace } from './plugin-workspace.js';
 import type { SessionState } from '../state/schema.js';
-import { makeState } from '../__fixtures__.js';
+import { makeState } from '../fixtures.js';
 
 const SESSION_ID = 's1';
 

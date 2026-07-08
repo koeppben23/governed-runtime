@@ -14,7 +14,7 @@ import {
   sessionLockPath,
 } from './persistence-lock.js';
 import { createRailContext } from './context.js';
-import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../__fixtures__.js';
+import { makeState, FIXED_TIME, FIXED_UUID, FIXED_SESSION_UUID } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
 async function walkSrcFiles(dir: string): Promise<string[]> {

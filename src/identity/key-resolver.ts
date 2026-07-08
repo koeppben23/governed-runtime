@@ -284,6 +284,14 @@ async function fetchJwksDocument(jwksUri: string): Promise<string> {
     );
   }
   if (!response.ok) {
+    getAdapterLogger().error(
+      'identity',
+      'JWKS remote fetch returned non-OK status',
+      redactIdentityExtra({
+        jwksUri,
+        error: `HTTP ${response.status}`,
+      }),
+    );
     throw new IdpError(
       'IDP_JWKS_FETCH_FAILED',
       `JWKS fetch returned HTTP ${response.status} for '${jwksUri}'`,

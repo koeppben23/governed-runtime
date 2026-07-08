@@ -17,6 +17,7 @@
  */
 
 import * as crypto from 'node:crypto';
+import { PersistenceError } from '../adapters/persistence-core.js';
 
 /**
  * Inputs to the archive content digest.
@@ -53,8 +54,16 @@ export interface ArchiveContentDigestInput {
  */
 export function computeArchiveContentDigest(input: ArchiveContentDigestInput): string {
   const sortedDigestValues = input.includedFiles
-    .map((file) => input.fileDigests[file])
-    .filter((digest): digest is string => Boolean(digest))
+    .map((file) => {
+      const digest = input.fileDigests[file];
+      if (!digest) {
+        throw new PersistenceError(
+          'MISSING_FILE_DIGEST',
+          `Missing file digest for included archive file '${file}'`,
+        );
+      }
+      return digest;
+    })
     .sort();
 
   const integrityHeader = JSON.stringify({
@@ -67,6 +76,9 @@ export function computeArchiveContentDigest(input: ArchiveContentDigestInput): s
     auditEventCount: input.auditEventCount,
   });
 
+  // Multi-part streaming digest (header + separator + joined values). Kept as a
+  // direct createHash call: the shared hashing helpers cover single-shot string
+  // and buffer inputs, not this incremental multi-update form.
   return crypto
     .createHash('sha256')
     .update(integrityHeader)

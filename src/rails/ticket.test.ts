@@ -10,7 +10,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { executeTicket, type TicketInput } from './ticket.js';
-import { makeState, FIXED_TIME } from '../__fixtures__.js';
+import { makeState, FIXED_TIME } from '../fixtures.js';
 import type { RailContext } from './types.js';
 
 const ctx: RailContext = {

@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { makeState, PLAN_EVIDENCE, TICKET } from '../../__fixtures__.js';
+import { makeState, PLAN_EVIDENCE, TICKET } from '../../fixtures.js';
 import { writeState } from '../persistence.js';
 import {
   EVIDENCE_ARTIFACTS_DIR,

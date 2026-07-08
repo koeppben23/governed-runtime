@@ -3,7 +3,7 @@
  * @description SSOT helpers for strict independent-review obligations and evidence.
  */
 
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { hashText } from '../../shared/hashing.js';
 export { hashText };
 
@@ -20,13 +20,11 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
 
-export const REVIEW_CRITERIA_VERSION = 'p35-v1';
+export const REVIEW_CRITERIA_VERSION = 'p37-v1';
 
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 // No fallback: if the import fails, the module fails fast (desired for governance)
-export const REVIEW_MANDATE_DIGEST = createHash('sha256')
-  .update(REVIEWER_AGENT, 'utf-8')
-  .digest('hex');
+export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
 
 export function getReviewMandateDigest(): string {
   return REVIEW_MANDATE_DIGEST;

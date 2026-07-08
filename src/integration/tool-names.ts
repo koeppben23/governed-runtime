@@ -17,6 +17,17 @@ export const TOOL_FLOWGUARD_TICKET = 'flowguard_ticket';
 export const TOOL_FLOWGUARD_PLAN = 'flowguard_plan';
 export const TOOL_FLOWGUARD_DECISION = 'flowguard_decision';
 export const TOOL_FLOWGUARD_IMPLEMENT = 'flowguard_implement';
+/**
+ * Verdict tool for the implementation review loop (issue #565).
+ *
+ * Split out of the former multi-mode `flowguard_implement` so that the
+ * record-evidence call and the submit-verdict call are SEPARATE single-purpose
+ * tools. `flowguard_implement` now only records evidence (no verdict args);
+ * `flowguard_review_implementation` only submits the reviewer's verdict. This
+ * makes the previously-possible invalid state — sending a `reviewVerdict` on an
+ * evidence-record call — unrepresentable at the tool surface.
+ */
+export const TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION = 'flowguard_review_implementation';
 export const TOOL_FLOWGUARD_RUN_CHECK = 'flowguard_run_check';
 export const TOOL_FLOWGUARD_REVIEW = 'flowguard_review';
 export const TOOL_FLOWGUARD_CONTINUE = 'flowguard_continue';
@@ -28,7 +39,7 @@ export { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 const FLOWGUARD_VERDICT_TOOLS: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_PLAN,
-  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
   TOOL_FLOWGUARD_ARCHITECTURE,
   TOOL_FLOWGUARD_REVIEW,
 ]);

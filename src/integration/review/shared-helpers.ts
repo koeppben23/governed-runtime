@@ -58,7 +58,7 @@ export const REASON_UNABLE_TO_REVIEW = 'SUBAGENT_UNABLE_TO_REVIEW';
  * Content pipeline uses values from reviewCtx; standard pipeline uses
  * module-level constants. Both paths share the same structural check.
  */
-export function validateStrictAttestation(
+export function validatePipelineAttestation(
   findings: {
     reviewMode?: string;
     attestation?: Record<string, unknown> | null;

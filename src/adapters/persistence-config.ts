@@ -105,9 +105,13 @@ export async function readConfig(worktree?: string): Promise<FlowGuardConfig> {
   } catch (err: unknown) {
     if (err instanceof PersistenceError) throw err;
     if (isEnoent(err)) {
-      getAdapterLogger().warn('persistence-config', 'Global config not found, using defaults', {
-        globalConfigPath: globalPath,
-      });
+      getAdapterLogger().warn(
+        'persistence-config',
+        'Optional global config not found; using global defaults',
+        {
+          globalConfigPath: globalPath,
+        },
+      );
       return structuredClone(DEFAULT_CONFIG);
     }
     throw new PersistenceError(

@@ -332,7 +332,7 @@ via the environment setup script.
 
 ```bash
 # In your Codex cloud environment setup:
-FLOWGUARD_VERSION=1.2.0-rc.3 bash scripts/codex-cloud-setup.sh
+FLOWGUARD_VERSION=1.2.0-tp.1 bash scripts/codex-cloud-setup.sh
 ```
 
 The script downloads `flowguard-core-${FLOWGUARD_VERSION}.tgz` (and
@@ -346,7 +346,7 @@ fully air-gapped images.
 
 | Variable                      | Default                       | Description                                                                                  |
 | ----------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------- |
-| `FLOWGUARD_VERSION`           | (required if no tarball)      | Release tag to install (e.g. `1.2.0-rc.3`)                                                   |
+| `FLOWGUARD_VERSION`           | (required if no tarball)      | Release tag to install (e.g. `1.2.0-tp.1`)                                                   |
 | `FLOWGUARD_TARBALL`           | (unset)                       | Local path or URL to a pre-staged tarball; overrides `FLOWGUARD_VERSION`                     |
 | `FLOWGUARD_REPO`              | `koeppben23/governed-runtime` | GitHub repo to download from                                                                 |
 | `FLOWGUARD_DIR`               | `/usr/local/lib/flowguard`    | Installation directory                                                                       |

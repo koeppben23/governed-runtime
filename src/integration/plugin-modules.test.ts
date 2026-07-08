@@ -27,7 +27,7 @@ vi.mock('./review/enforcement/enforcement.js', () => ({
   resolveSessionEnforcementState: vi.fn(),
 }));
 import type { SessionState } from '../state/schema.js';
-import { makeState } from '../__fixtures__.js';
+import { makeState } from '../fixtures.js';
 import type { ReviewObligation } from '../state/evidence.js';
 
 // ─── plugin-helpers.ts ────────────────────────────────────────────────────────

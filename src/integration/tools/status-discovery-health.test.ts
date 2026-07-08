@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 
 import { buildDiscoveryHealthGateStatus } from './status-tool.js';
 import type { SessionState } from '../../state/schema.js';
-import { makeState } from '../../__fixtures__.js';
+import { makeState } from '../../fixtures.js';
 
 describe('buildDiscoveryHealthGateStatus (read-only)', () => {
   it('returns null when no gate is persisted', () => {

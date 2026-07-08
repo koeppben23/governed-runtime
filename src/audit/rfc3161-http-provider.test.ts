@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as asn1js from 'asn1js';
 import { ContentInfo, PKIStatus, PKIStatusInfo, TimeStampReq, TimeStampResp } from 'pkijs';
-import { HttpTimestampAuthorityProvider } from './rfc3161-http-provider.js';
+import { HttpTimestampAuthorityProvider } from './rfc-3161-http-provider.js';
 
 const DIGEST = new Uint8Array(Array.from({ length: 32 }, (_, i) => i));
 

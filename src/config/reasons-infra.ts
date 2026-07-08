@@ -4,7 +4,7 @@
  *
  * @internal — do not import directly. Use reasons.ts barrel.
  */
-import type { BlockedReason } from './reasons.js';
+import type { BlockedReason } from './reasons-types.js';
 
 export const INFRA_REASONS: readonly BlockedReason[] = [
   {
@@ -382,6 +382,18 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
       'Check filesystem permissions on the session state file',
       'Run flowguard doctor to diagnose state file corruption',
       'Re-hydrate the session if the state is irrecoverable',
+    ],
+  },
+
+  {
+    code: 'STATE_UNAVAILABLE_FOR_REVIEWER_TASK',
+    category: 'adapter',
+    messageTemplate:
+      'Session state could not be read. The flowguard-reviewer Task cannot run without verifiable state.',
+    recoverySteps: [
+      'Check filesystem permissions on the session state directory',
+      'Run flowguard doctor to diagnose session state issues',
+      'Restart the session and re-run /hydrate if state is corrupt',
     ],
   },
 

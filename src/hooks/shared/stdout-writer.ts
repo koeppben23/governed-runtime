@@ -14,6 +14,8 @@
 import type { HookDenyOutput, HookEventName } from './types.js';
 
 export class DenyOutputError extends Error {
+  readonly code = 'HOOK_DENY_WRITE_FAILED' as const;
+
   constructor(message: string, options?: { cause?: unknown }) {
     super(message, options);
     this.name = 'DenyOutputError';

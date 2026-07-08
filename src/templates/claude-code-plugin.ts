@@ -188,16 +188,16 @@ const CLAUDE_DISCOVERY_CAPTURE = `Capture the compact Discovery context from the
 // skill never infers verdicts and never self-approves. There is deliberately
 // no "reviewer unavailable" self-approval path: on this host, an unobtainable
 // reviewer fails closed.
-function claudeReviewLoop(tool: string, artifact: string): string {
+function claudeReviewLoop(tool: string, artifact: string, verdictTool: string = tool): string {
   return `## Independent review loop (host-driven, fail-closed)
 
 FlowGuard drives this loop. Read the \`next\` field of every tool response and follow it exactly. Never infer review state, verdicts, or policy yourself.
 
-- When \`next\` starts with \`INDEPENDENT_REVIEW_COMPLETED\`: read \`overallVerdict\` from \`pluginReviewFindings\`. For "accept", call \`${tool}({ reviewVerdict: "accept" })\` (reviewer acceptance, not user approval). For "changes_requested", revise the ${artifact} to resolve every blocking issue, then resubmit the verdict exactly as \`next\` instructs.
+- When \`next\` starts with \`INDEPENDENT_REVIEW_COMPLETED\`: read \`overallVerdict\` from \`pluginReviewFindings\`. For "accept", call \`${verdictTool}({ reviewVerdict: "accept" })\` (reviewer acceptance, not user approval). For "changes_requested", revise the ${artifact} to resolve every blocking issue, then resubmit the verdict exactly as \`next\` instructs.
 - When \`next\` starts with \`INDEPENDENT_REVIEW_REQUIRED\`:
   1. Delegate to the \`flowguard-reviewer\` subagent (for example: "Use the flowguard-reviewer subagent to independently review this ${artifact}."). The subagent runs in its own context and already has the \`mcp__flowguard__flowguard_review\` tool.
   2. Give the reviewer the ${artifact} text, the ticket text, the \`requiredReviewAttestation\` values (\`toolObligationId\`, \`iteration\`, \`planVersion\`, \`mandateDigest\`, \`criteriaVersion\`), and the captured Discovery context. Instruct it to check Discovery health and drift before any repo-dependent claim and to mark uncorrelated claims \`NOT_VERIFIED\`.
-  3. The reviewer returns a complete \`ReviewFindings\` object. Submit the verdict exactly as \`next\` instructs — include that object as \`reviewFindings\` unless \`next\` states findings are resolved automatically.
+  3. The reviewer returns a complete \`ReviewFindings\` object. Submit the verdict exactly as \`next\` instructs. In host-task mode (\`next\` states the findings are resolved automatically) submit ONLY \`reviewVerdict\` — never \`reviewFindings\`, not even an empty placeholder object; submitted findings are ignored and the verdict is validated against the captured evidence. Include the \`ReviewFindings\` object as \`reviewFindings\` ONLY when \`next\` explicitly accepts SDK/manual findings.
 - Fail closed — never bypass independent review:
   - \`HOST_SUBAGENT_TASK_REQUIRED\`: the active policy (team, team-ci, or regulated) requires host-visible reviewer evidence that this host cannot provide inline. Report the blocker verbatim and STOP. Do not self-approve, fabricate findings, or downgrade the policy.
   - \`SUBAGENT_UNABLE_TO_REVIEW\`: the obligation is consumed. Do not retry the same ${artifact}. Report the reviewer's reason and stop.
@@ -239,7 +239,8 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
 2. ${CLAUDE_DISCOVERY_CAPTURE}
 
 ## Phase 2 — Submit the plan
-3. Write the plan in markdown with these required sections: \`## Objective\`, \`## Approach\`, \`## Steps\` (each step names a specific file path and a concrete change), \`## Files to Modify\`, \`## Edge Cases\`, \`## Validation Criteria\`, \`## Verification Plan\` (cite the command AND its Source, e.g. \`Source: package.json:scripts.test\`, or state \`NOT_VERIFIED\` with recovery steps).
+3. Write the plan in markdown with these required sections: \`## Objective\`, \`## Approach\`, \`## Steps\` (each step names a specific file path and a concrete change; prefer vertical tracer-bullet slices over horizontal layer-by-layer builds, and favor deep modules over shallow pass-throughs), \`## Files to Modify\`, \`## Edge Cases\`, \`## Validation Criteria\`, \`## Verification Plan\` (cite the command AND its Source, e.g. \`Source: package.json:scripts.test\`, or state \`NOT_VERIFIED\` with recovery steps).
+   - Resolve open questions the repository can answer by exploring the codebase instead of asking the user; cross-check stated behavior against the actual code and surface contradictions in the plan.
 4. Submit the plan only through \`mcp__flowguard__flowguard_plan({ planText })\` with the full plan markdown. When revising, include the COMPLETE plan text, never a diff.
 5. Read the response; the \`next\` field carries the review workflow.
 
@@ -289,18 +290,18 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
 2. ${CLAUDE_DISCOVERY_CAPTURE}
 
 ## Phase 2 — Implement
-3. Read the plan from the status response. Execute each numbered step in order, using the host's Read/Edit/Write/Bash tools, only after FlowGuard's status confirms IMPLEMENTATION. Follow the plan exactly — add nothing beyond what it specifies.
+3. Use the approved plan authored in the /plan step (NOT from the status response - status only confirms hasPlan/planVersion and the phase). Execute each numbered step in order, using the host's Read/Edit/Write/Bash tools, only after FlowGuard's status confirms IMPLEMENTATION. Follow the plan exactly — add nothing beyond what it specifies.
 4. After completing ALL plan steps, call \`mcp__flowguard__flowguard_implement({})\` with no arguments (the tool auto-detects changed files via git and records evidence).
 5. Record a \`## Verification Evidence\` section distinguishing planned checks from checks actually executed; mark every unexecuted check \`NOT_VERIFIED\`.
 
 ## Phase 3 — Review
-${claudeReviewLoop('mcp__flowguard__flowguard_implement', 'implementation')}
+${claudeReviewLoop('mcp__flowguard__flowguard_implement', 'implementation', 'mcp__flowguard__flowguard_review_implementation')}
 
 When the review returns changes_requested, make the actual code changes based on the blocking issues, then call \`mcp__flowguard__flowguard_implement({})\` again to re-record before resubmitting the verdict.
 
 ## Presentation and rules
 - ${CLAUDE_REVIEW_CARD_RULE}
-- Always record evidence (no \`reviewVerdict\`) before submitting a review verdict. Use mutating host tools only after FlowGuard confirms IMPLEMENTATION.
+- Record evidence with \`mcp__flowguard__flowguard_implement({})\` (no arguments) before submitting the review verdict via \`mcp__flowguard__flowguard_review_implementation({ reviewVerdict })\`. Use mutating host tools only after FlowGuard confirms IMPLEMENTATION.
 - Treat any blocked, failed, malformed, or nonconforming tool result as terminal: report it and stop. Do not auto-chain into the review decision.
 `,
   'skills/review/SKILL.md': `---
@@ -319,12 +320,13 @@ Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy
    - URL: fetch the content, set \`inputOrigin: "external_reference"\`.
    - Manual text: use it directly, set \`inputOrigin: "manual_text"\`.
    - Both text and a reference: set \`inputOrigin: "mixed"\`. No reference: omit \`inputOrigin\`.
-3. Call \`mcp__flowguard__flowguard_review\` with the matching content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`) and optional \`inputOrigin\` / \`references\`.
+3. Call \`mcp__flowguard__flowguard_review\` with ONLY the matching content field (\`text\`, \`prNumber\`, \`branch\`, or \`url\`) and optional \`inputOrigin\` / \`references\`. Do NOT include \`reviewVerdict\` or \`reviewFindings\` on this first call.
    - If the response is \`CONTENT_ANALYSIS_REQUIRED\` with \`requiredReviewAttestation\` and no \`pluginReviewFindings\`: delegate to the \`flowguard-reviewer\` subagent, passing the loaded content, the attestation values, and the captured Discovery context. Instruct it to check Discovery health/drift before repo-dependent claims and to mark uncorrelated claims \`NOT_VERIFIED\`. The reviewer returns a complete \`ReviewFindings\` object.
-   - Re-call \`mcp__flowguard__flowguard_review\` with the same content field plus \`reviewFindings\` set to that object (as-is — no mapping, no array).
+   - Host-task mode (the response cites host-visible Task evidence or \`HOST_SUBAGENT_TASK_REQUIRED\`): after the \`flowguard-reviewer\` subagent has run, re-call \`mcp__flowguard__flowguard_review\` with the same content field plus \`reviewVerdict\` ONLY (matching the reviewer's \`overallVerdict\`). Do NOT submit \`reviewFindings\`, not even an empty placeholder — FlowGuard resolves the captured ReviewInvocationEvidence automatically and validates the verdict against it.
+   - SDK/manual mode only (the active mode accepts SDK/manual findings): re-call \`mcp__flowguard__flowguard_review\` with the same content field plus \`reviewFindings\` set to that object (as-is — no mapping, no array).
    - If the reviewer returns \`overallVerdict: "unable_to_review"\`, do NOT submit \`reviewFindings\`; report the reason and stop.
 4. Fail closed — never bypass review:
-   - \`HOST_SUBAGENT_TASK_REQUIRED\`: the active policy (team, team-ci, or regulated) requires host-visible reviewer evidence this host cannot provide inline. Report the blocker verbatim and STOP. Do not self-approve or fabricate findings.
+   - \`HOST_SUBAGENT_TASK_REQUIRED\`: the active policy (team, team-ci, or regulated) requires host-visible reviewer evidence. This is an EXPECTED intermediate state, not a terminal failure: ensure the \`flowguard-reviewer\` subagent has actually run (step 3) and re-call \`flowguard_review\` so its evidence can bind. Do not self-approve or fabricate findings, and do not tell the user to restart the whole flow.
    - \`STRICT_REVIEW_ORCHESTRATION_FAILED\`: transient — re-run this review to retry. \`ORCHESTRATION_PERMANENTLY_FAILED\` or any other blocked/failed result: report the exact blocker and stop.
 5. ${CLAUDE_REVIEW_CARD_RULE}
 

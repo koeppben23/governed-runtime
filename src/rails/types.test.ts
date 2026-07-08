@@ -21,7 +21,7 @@ import {
   VALIDATION_PASSED,
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { createTestContext } from '../testing.js';
 

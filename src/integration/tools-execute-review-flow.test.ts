@@ -1,0 +1,438 @@
+/**
+ * @module integration/Execution tests for the review flow tool
+ * @description Execution tests for the review flow tool.
+ *
+ * Tests each tool's execute() against real filesystem persistence with
+ * OPENCODE_CONFIG_DIR redirected to a temp directory. Git adapter functions
+ * (remoteOriginUrl, changedFiles, listRepoSignals) are selectively mocked;
+ * all other I/O (workspace init, state read/write, config) runs for real.
+ *
+ * Scope: Tool behavior, tool-to-state, tool-to-persistence, tool-specific edge cases.
+ * NOT in scope: Full multi-step workflows (see e2e-workflow.test.ts).
+ *
+ * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — all five categories present.
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import * as crypto from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import {
+  createToolContext,
+  createTestWorkspace,
+  isTarAvailable,
+  parseToolResult,
+  isBlockedResult,
+  fulfillStrictReviewObligation,
+  GIT_MOCK_DEFAULTS,
+  type TestToolContext,
+  type TestWorkspace,
+  withTestEnv,
+} from './test-helpers.js';
+import { REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  status,
+  hydrate,
+  ticket,
+  plan,
+  decision,
+  implement,
+  run_check,
+  review,
+  abort_session,
+  archive,
+} from './tools/index.js';
+import { readState, writeState } from '../adapters/persistence.js';
+import { readAuditTrail } from '../adapters/persistence-audit.js';
+import * as persistence from '../adapters/persistence.js';
+import {
+  makeState,
+  makeProgressedState,
+  TICKET,
+  PLAN_RECORD,
+  SELF_REVIEW_CONVERGED,
+  REVIEW_APPROVE,
+  VALIDATION_PASSED,
+  IMPL_EVIDENCE,
+  IMPL_REVIEW_CONVERGED,
+} from '../fixtures.js';
+import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
+import { TEAM_POLICY } from '../config/policy.js';
+import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
+
+// ─── Git Mock ────────────────────────────────────────────────────────────────
+
+vi.mock('../adapters/git', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/git.js')>();
+  return {
+    ...original,
+    remoteOriginUrl: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.remoteOriginUrl),
+    changedFiles: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.changedFiles),
+    listRepoSignals: vi.fn().mockResolvedValue(GIT_MOCK_DEFAULTS.repoSignals),
+  };
+});
+
+// ─── Workspace Mock (P26) ────────────────────────────────────────────────────
+// Partial mock: archiveSession and verifyArchive are vi.fn() wrappers that
+// default to the real implementations. P26 tests override them per-test.
+// All other workspace exports (computeFingerprint, initWorkspace, etc.)
+// remain real for full integration fidelity.
+//
+// Originals are stored via vi.hoisted (survives vi.mock hoisting) so afterEach
+// can fully reset the once-queues (vi.clearAllMocks does NOT clear
+// mockResolvedValueOnce queues — unconsumed values leak across tests).
+
+const wsOriginals = vi.hoisted(() => ({
+  archiveSession:
+    null as unknown as (typeof import('../adapters/workspace/index.js'))['archiveSession'],
+  verifyArchive:
+    null as unknown as (typeof import('../adapters/workspace/index.js'))['verifyArchive'],
+}));
+
+vi.mock('../adapters/workspace', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/workspace/index.js')>();
+  wsOriginals.archiveSession = original.archiveSession;
+  wsOriginals.verifyArchive = original.verifyArchive;
+  return {
+    ...original,
+    archiveSession: vi.fn(original.archiveSession),
+    verifyArchive: vi.fn(original.verifyArchive),
+  };
+});
+
+// ─── Actor Mock (P27) ────────────────────────────────────────────────────────
+// Mock resolveActor to return a deterministic actor for integration tests.
+// Prevents dependency on real env vars or git config.
+
+const actorOriginal = vi.hoisted(() => ({
+  resolveActor: null as unknown as (typeof import('../adapters/actor.js'))['resolveActor'],
+}));
+
+vi.mock('../adapters/actor', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/actor.js')>();
+  actorOriginal.resolveActor = original.resolveActor;
+  return {
+    ...original,
+    resolveActor: vi.fn().mockResolvedValue({
+      id: 'test-operator',
+      email: 'test@flowguard.dev',
+      source: 'env',
+    }),
+  };
+});
+
+// ─── Persistence Mock (P8b: writeReport-throws test) ────────────────────────
+// wrap writeReport as vi.fn forwarding to real implementation; tests can
+// override per-test via mockImplementation.
+
+const persistenceOriginals = vi.hoisted(() => ({
+  writeReport: null as unknown as (typeof import('../adapters/persistence.js'))['writeReport'],
+  readState: null as unknown as (typeof import('../adapters/persistence.js'))['readState'],
+  writeState: null as unknown as (typeof import('../adapters/persistence.js'))['writeState'],
+}));
+
+vi.mock('../adapters/persistence', async (importOriginal) => {
+  const original = await importOriginal<typeof import('../adapters/persistence.js')>();
+  persistenceOriginals.writeReport = original.writeReport;
+  persistenceOriginals.readState = original.readState;
+  persistenceOriginals.writeState = original.writeState;
+  return {
+    ...original,
+    writeReport: vi.fn(original.writeReport),
+    readState: vi.fn(original.readState),
+    writeState: vi.fn(original.writeState),
+  };
+});
+
+// ─── Verification Executor Mock ─────────────────────────────────────────────
+// Mock executeCheck to avoid real subprocess execution.
+vi.mock('../verification/executor', () => ({
+  executeCheck: vi
+    .fn()
+    .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => ({
+      kind: input.kind,
+      command: input.command,
+      exitCode: 0,
+      passed: true,
+      executionMs: 100,
+      outputDigest: 'a'.repeat(64),
+      stdout: 'OK',
+      stderr: '',
+      timedOut: false,
+      startedAt: new Date().toISOString(),
+    })),
+}));
+
+// Lazy import for per-test overrides
+const gitMock = await import('../adapters/git.js');
+const wsMock = await import('../adapters/workspace/index.js');
+const actorMock = await import('../adapters/actor.js');
+const persistenceMock = await import('../adapters/persistence.js');
+const executorMock = await import('../verification/executor.js');
+
+// ─── Capability Gates ────────────────────────────────────────────────────────
+
+const tarOk = await isTarAvailable();
+
+// ─── Test Setup ──────────────────────────────────────────────────────────────
+
+let ws: TestWorkspace;
+let ctx: TestToolContext;
+let cleanupEnv: () => void;
+
+beforeEach(async () => {
+  cleanupEnv = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
+  ws = await createTestWorkspace();
+  ctx = createToolContext({
+    worktree: ws.tmpDir,
+    directory: ws.tmpDir,
+    sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+  });
+});
+
+afterEach(async () => {
+  // Reset workspace mock once-queues to prevent cross-test leaks.
+  // vi.clearAllMocks() only clears calls/results, NOT mockResolvedValueOnce
+  // queues. If a P26 test fails before consuming its once-mocks, the stale
+  // values leak into subsequent tests (e.g. archive manifest test).
+  vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
+  vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
+  // Reset persistence mock to real implementation (P8b)
+  vi.mocked(persistenceMock.writeReport)
+    .mockReset()
+    .mockImplementation(persistenceOriginals.writeReport);
+  vi.mocked(persistenceMock.readState)
+    .mockReset()
+    .mockImplementation(persistenceOriginals.readState);
+  vi.mocked(persistenceMock.writeState)
+    .mockReset()
+    .mockImplementation(persistenceOriginals.writeState);
+  // Reset actor mock to default deterministic value (P27/P34)
+  vi.mocked(actorMock.resolveActor)
+    .mockReset()
+    .mockResolvedValue({
+      id: 'test-operator',
+      email: 'test@flowguard.dev',
+      displayName: null,
+      source: 'env' as const,
+      assurance: 'best_effort' as const,
+    });
+  cleanupEnv();
+  vi.clearAllMocks();
+  await ws.cleanup();
+});
+
+// ─── Helpers ────────────────────────────────────────────────────────────
+
+async function hydrateSession(
+  overrides: { policyMode?: string; profileId?: string } = {},
+): Promise<Record<string, unknown>> {
+  const args: { policyMode: string; profileId?: string } = {
+    policyMode: overrides.policyMode ?? 'solo',
+  };
+  if (overrides.profileId !== undefined) {
+    args.profileId = overrides.profileId;
+  }
+  const raw = await hydrate.execute(args, ctx);
+  return parseToolResult(raw);
+}
+
+async function hydrateAndTicket(ticketText = 'Fix the auth bug'): Promise<void> {
+  await hydrateSession();
+  await ticket.execute({ text: ticketText, source: 'user' }, ctx);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Tool: review (standalone review flow)
+// ═══════════════════════════════════════════════════════════════════════════
+
+describe('review', () => {
+  describe('HAPPY', () => {
+    it('exposes content-aware review arguments', () => {
+      expect(review.args.text).toBeDefined();
+      expect(review.args.prNumber).toBeDefined();
+      expect(review.args.branch).toBeDefined();
+      expect(review.args.url).toBeDefined();
+      expect(review.args.reviewFindings).toBeDefined();
+    });
+
+    it('requires analysis findings for content-aware review inputs', async () => {
+      await hydrateSession();
+      const raw = await review.execute({ text: 'diff --git a/file.ts b/file.ts' }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    });
+
+    it('persists supplied analysis findings for text review content', async () => {
+      await hydrateSession();
+      // Step 1: call /review with content but no findings — creates the obligation
+      // and gives us the canonical toolObligationId.
+      const blockedRaw = await review.execute(
+        { inputOrigin: 'manual_text', text: 'diff --git a/file.ts b/file.ts' },
+        ctx,
+      );
+      const blocked = parseToolResult(blockedRaw);
+      expect(blocked.error).toBe(true);
+      expect(blocked.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+      const obligationId = (blocked.requiredReviewAttestation as Record<string, string>)
+        .toolObligationId;
+      expect(obligationId).toMatch(/^[0-9a-f-]{36}$/);
+
+      // Step 2: submit valid ReviewFindings with the matching toolObligationId.
+      const findings = {
+        iteration: 1,
+        planVersion: 1,
+        reviewMode: 'subagent' as const,
+        overallVerdict: 'accept' as const,
+        blockingIssues: [],
+        majorRisks: [
+          {
+            severity: 'major' as const,
+            category: 'correctness',
+            message: 'The supplied diff needs follow-up review evidence.',
+          },
+        ],
+        missingVerification: [],
+        scopeCreep: [],
+        unknowns: [],
+        reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
+        reviewedAt: '2026-01-01T00:00:00.000Z',
+        attestation: {
+          toolObligationId: obligationId,
+          iteration: 1,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: 'p37-v1',
+        },
+      };
+
+      const raw = await review.execute(
+        {
+          inputOrigin: 'manual_text',
+          text: 'diff --git a/file.ts b/file.ts',
+          reviewFindings: findings,
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.findings).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            severity: 'error', // 'major' maps to 'error'
+            category: 'correctness',
+            message: 'The supplied diff needs follow-up review evidence.',
+          }),
+        ]),
+      );
+    });
+
+    it('starts review flow from READY and transitions to REVIEW_COMPLETE', async () => {
+      await hydrateSession();
+      const raw = await review.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('REVIEW_COMPLETE');
+      expect(result.completeness).toBeDefined();
+    });
+
+    it('report includes completeness matrix', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await review.execute({}, ctx));
+      const comp = result.completeness as Record<string, unknown>;
+      expect(typeof comp.overallComplete).toBe('boolean');
+      expect(comp.slots).toBeDefined();
+    });
+  });
+
+  describe('BAD', () => {
+    it('blocks without session', async () => {
+      const raw = await review.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('NO_SESSION');
+    });
+
+    it('blocks when not in READY phase', async () => {
+      await hydrateAndTicket();
+      const raw = await review.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('COMMAND_NOT_ALLOWED');
+    });
+  });
+
+  describe('CORNER', () => {
+    it('review flow persists REVIEW_COMPLETE phase on disk', async () => {
+      await hydrateSession();
+      await review.execute({}, ctx);
+      const s = parseToolResult(await status.execute({}, ctx));
+      expect(s.phase).toBe('REVIEW_COMPLETE');
+    });
+
+    it('review with references stores them in report and on disk', async () => {
+      await hydrateSession();
+      const raw = await review.execute(
+        {
+          inputOrigin: 'pr',
+          references: [
+            {
+              ref: 'https://github.com/org/repo/pull/42',
+              type: 'pr',
+              title: 'PR #42: Fix auth',
+              source: 'github',
+              extractedAt: '2026-01-15T10:00:00.000Z',
+            },
+          ],
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.inputOrigin).toBe('pr');
+      expect(result.references).toBeDefined();
+      expect(Array.isArray(result.references)).toBe(true);
+      expect((result.references as unknown[]).length).toBe(1);
+      expect((result.references as Record<string, unknown>[])[0]!.ref).toBe(
+        'https://github.com/org/repo/pull/42',
+      );
+
+      // Also verify the persisted report file contains references
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const { readFile } = await import('node:fs/promises');
+      const { join } = await import('node:path');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const reportRaw = await readFile(join(sessDir, 'review-report.json'), 'utf-8');
+      const report = JSON.parse(reportRaw);
+      expect(report.inputOrigin).toBe('pr');
+      expect(report.references).toHaveLength(1);
+      expect(report.references[0].ref).toBe('https://github.com/org/repo/pull/42');
+      expect(report.references[0].type).toBe('pr');
+      expect(report.references[0].source).toBe('github');
+    });
+
+    // P8b: writeReport throws → no REVIEW_COMPLETE persisted
+    it('P8b: writeReport failure leaves session in REVIEW, not REVIEW_COMPLETE', async () => {
+      await hydrateSession();
+      // Make writeReport throw
+      vi.mocked(persistenceMock.writeReport).mockRejectedValueOnce(
+        new Error('simulated disk failure'),
+      );
+      const raw = await review.execute({}, ctx);
+      const result = parseToolResult(raw);
+      // writeReport throws → the catch block returns formatError(err)
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('INTERNAL_ERROR');
+      // Phase on disk should still be READY (session was at READY before review
+      // was called, and the failed review didn't persist any state).
+      // Actually, startReviewFlow transitions in-memory to REVIEW, but that
+      // state was never persisted because writeReport failed before
+      // writeStateWithArtifacts. The persisted state (from hydrate) remains READY.
+      const s = parseToolResult(await status.execute({}, ctx));
+      expect(s.phase).not.toBe('REVIEW_COMPLETE');
+    });
+  });
+});

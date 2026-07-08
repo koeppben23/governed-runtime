@@ -3,12 +3,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 
 import { executeReviewDecision } from '../rails/review-decision.js';
-import { makeProgressedState } from '../__fixtures__.js';
+import { makeProgressedState } from '../fixtures.js';
 import { getPolicyPreset } from '../config/policy.js';
-import {
-  normalizePolicySnapshotWithMeta,
-  resolvePolicyFromSnapshot,
-} from '../config/policy-snapshot.js';
+import { normalizePolicySnapshotWithMeta } from '../config/policy-snapshot-normalize.js';
+import { resolvePolicyFromSnapshot } from '../config/policy-snapshot.js';
 import { readState } from '../adapters/persistence.js';
 import { readConfig, writeRepoConfig } from '../adapters/persistence-config.js';
 import { computeFingerprint, sessionDir, workspaceDir } from '../adapters/workspace/index.js';

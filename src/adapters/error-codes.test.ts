@@ -36,6 +36,9 @@ describe('error code type safety — HAPPY', () => {
       'WRITE_FAILED',
       'PARSE_FAILED',
       'SCHEMA_VALIDATION_FAILED',
+      'LOCK_TIMEOUT',
+      'LOCK_TIMEOUT_EXHAUSTED',
+      'MISSING_FILE_DIGEST',
     ];
     for (const code of codes) {
       const err = new PersistenceError(code, `test ${code}`);

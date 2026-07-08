@@ -97,7 +97,13 @@ export class OpenCodeHostAdapter implements HostAdapter {
     // OpenCode SDK client is ready at plugin load time — no async init needed.
     // Verify client is structurally valid (fail-closed on broken SDK).
     if (!this.client?.session?.create || !this.client?.session?.prompt) {
-      throw new Error(
+      throw new (class extends Error {
+        readonly code = 'HOST_ADAPTER_INIT_FAILED' as const;
+        constructor(m: string) {
+          super(m);
+          this.name = 'HostAdapterInitError';
+        }
+      })(
         '[FlowGuard] OpenCode adapter initialization failed: SDK client missing ' +
           'session.create or session.prompt methods. Cannot guarantee reviewer capability.',
       );

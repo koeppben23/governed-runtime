@@ -4,7 +4,7 @@
  *
  * Design:
  * - FlowGuardLogger interface: debug, info, warn, error — each takes (service, message, extra?)
- * - createLogger(level, sinks?): Level-filtered logger that delegates to optional structured sinks
+ * - createLogger(level, sinks?, config?): Level-filtered logger with optional rate limiting
  * - createNoopLogger(): Silent logger for tests and contexts without a client
  *
  * Architecture:
@@ -29,10 +29,12 @@
  * FlowGuard operational logs are diagnostic only. They are not audit evidence
  * and are not part of the governance SSOT. Audit/Archive remain separate.
  *
- * @version v3
+ * @version v4
  */
 
-import type { LogLevel } from '../config/flowguard-config.js';
+import type { LogLevel } from './log-level.js';
+import { getLogContext } from './log-context.js';
+import { redactExtra, redactMessage } from './redact.js';
 
 // ─── Level Ordering ──────────────────────────────────────────────────────────
 
@@ -44,6 +46,9 @@ const LEVEL_ORDER: Record<LogLevel, number> = {
   error: 3,
   silent: 4,
 };
+
+/** Throttle window for the sink-failure stderr health signal. */
+const SINK_HEALTH_REPORT_MS = 60_000;
 
 // ─── Logger Interface ────────────────────────────────────────────────────────
 
@@ -64,6 +69,22 @@ export interface FlowGuardLogger {
   error(service: string, message: string, extra?: Record<string, unknown>): void;
 }
 
+/**
+ * Logger that exposes health metrics (G10).
+ */
+export interface HealthAwareLogger extends FlowGuardLogger {
+  getHealth(): LoggerHealth;
+}
+
+/**
+ * Logger that supports runtime level changes (G5).
+ *
+ * Extends HealthAwareLogger with setLevel().
+ */
+export interface DynamicLogger extends HealthAwareLogger {
+  setLevel(newLevel: LogLevel): void;
+}
+
 // ─── Structured Log Entry ────────────────────────────────────────────────────
 
 /**
@@ -71,6 +92,10 @@ export interface FlowGuardLogger {
  *
  * Maps 1:1 to the OpenCode SDK's client.app.log() body shape:
  *   { service, level, message, extra? }
+ *
+ * traceId and sessionId are auto-injected by createLogger() from the
+ * log-context (runWithLogContext). Adapter logs within the same context
+ * inherit the same identifiers for end-to-end correlation.
  *
  * The sink receives all fields so it can delegate to the SDK
  * with the correct level — not a pre-formatted string that
@@ -85,6 +110,10 @@ export interface LogEntry {
   message: string;
   /** Optional structured metadata. */
   extra?: Record<string, unknown>;
+  /** Correlation trace id from log-context, when available. */
+  traceId?: string;
+  /** Session id from log-context, if available. */
+  sessionId?: string;
 }
 
 // ─── LogSink Interface ────────────────────────────────────────────────────────
@@ -95,27 +124,165 @@ export interface LogEntry {
  * All sinks are async to support file I/O and network calls.
  * Errors must be handled internally — the logger never throws.
  *
- * In production:
- * - file-sink: writes to {workspace}/.opencode/logs/flowguard-{date}.log
- * - ui-sink: delegates to client.app.log()
+ * Sinks may return a Promise; createLogger counts async rejections
+ * in sinkFailuresTotal (G10).
  */
-export type LogSink = (entry: LogEntry) => Promise<void> | void;
+export type LogSink = (entry: LogEntry) => void | Promise<void>;
+
+// ─── Logger Health ────────────────────────────────────────────────────────────
+
+/** Logger health counters (G10). */
+export interface LoggerHealth {
+  /** Current minimum log level. 'silent' for noop loggers. */
+  level: LogLevel | 'silent';
+  /** Total sink errors (sync throw + async rejection) since creation. */
+  sinkFailuresTotal: number;
+  /** Total rate-limited entries dropped since creation. */
+  rateLimitDroppedTotal: number;
+}
+
+// ─── Logger Config ────────────────────────────────────────────────────────────
+
+/** Logger tuning configuration (G6). */
+export interface LoggerConfig {
+  rateLimit?: {
+    /** Enable rate limiting. Default: false (opt-in). */
+    enabled: boolean;
+    /** Max entries per second per (service, level) key. */
+    maxPerSecond: number;
+    /** Levels exempt from rate limiting. */
+    exemptLevels: LogLevel[];
+    /** Interval in ms between rate-limit summary reports on stderr. */
+    summaryIntervalMs: number;
+    /** @internal clock override for deterministic tests. */
+    _clock?: () => number;
+  };
+}
+
+// ─── Token Bucket ────────────────────────────────────────────────────────────
+
+interface Bucket {
+  tokens: number;
+  lastRefill: number;
+  dropped: number;
+}
+
+class TokenBucket {
+  private readonly _buckets = new Map<string, Bucket>();
+  private readonly _capacity: number;
+  private readonly _refillRate: number;
+  private readonly _exemptLevels: Set<LogLevel>;
+  private readonly _clock: () => number;
+  private readonly _summaryIntervalMs: number;
+  private _timer: ReturnType<typeof setInterval> | null = null;
+
+  constructor(
+    maxPerSecond: number,
+    exemptLevels: LogLevel[],
+    clock: () => number,
+    summaryIntervalMs: number,
+  ) {
+    this._capacity = maxPerSecond;
+    this._refillRate = maxPerSecond / 1000;
+    this._exemptLevels = new Set(exemptLevels);
+    this._clock = clock;
+    this._summaryIntervalMs = summaryIntervalMs;
+  }
+
+  allow(level: 'debug' | 'info' | 'warn' | 'error', service: string): boolean {
+    if (this._exemptLevels.has(level)) return true;
+
+    const key = `${service}:${level}`;
+    const now = this._clock();
+    let bucket = this._buckets.get(key);
+    if (!bucket) {
+      bucket = { tokens: this._capacity, lastRefill: now, dropped: 0 };
+      this._buckets.set(key, bucket);
+    }
+
+    this._refill(bucket, now);
+
+    if (bucket.tokens >= 1) {
+      bucket.tokens -= 1;
+      return true;
+    }
+
+    bucket.dropped++;
+    this._ensureTimer();
+    return false;
+  }
+
+  destroy(): void {
+    this._stopTimer();
+  }
+
+  private _refill(bucket: Bucket, now: number): void {
+    const elapsed = now - bucket.lastRefill;
+    if (elapsed <= 0) return;
+    bucket.tokens = Math.min(this._capacity, bucket.tokens + elapsed * this._refillRate);
+    bucket.lastRefill = now;
+  }
+
+  private _ensureTimer(): void {
+    if (this._timer) return;
+    this._timer = setInterval(() => {
+      let anyDrop = false;
+      for (const [key, bucket] of this._buckets) {
+        if (bucket.dropped > 0) {
+          anyDrop = true;
+          process.stderr.write(
+            `[FlowGuard] rate limit: ${key} dropped ${bucket.dropped} ` +
+              `in last ${Math.round(this._summaryIntervalMs / 1000)}s\n`,
+          );
+          bucket.dropped = 0;
+        }
+      }
+      if (!anyDrop) {
+        this._stopTimer();
+      }
+    }, this._summaryIntervalMs);
+    this._timer?.unref?.();
+  }
+
+  private _stopTimer(): void {
+    const timer = this._timer;
+    this._timer = null;
+    if (timer) clearInterval(timer);
+  }
+}
 
 // ─── Factories ────────────────────────────────────────────────────────────────
 
 /**
- * Create a level-filtered logger.
- *
- * Messages below `minLevel` are suppressed. Messages at or above are
- * forwarded to all sinks as structured LogEntry objects. If no sinks are
- * provided, the logger is effectively a noop (but still does level
- * filtering — useful for testing).
+ * Create a level-filtered logger with optional rate limiting and health tracking.
  *
  * @param minLevel - Minimum severity to emit.
  * @param sinks - Optional array of structured output functions.
+ * @param config - Optional logger tuning configuration.
  */
-export function createLogger(minLevel: LogLevel, sinks?: LogSink | LogSink[]): FlowGuardLogger {
+export function createLogger(
+  minLevel: LogLevel,
+  sinks?: LogSink | LogSink[],
+  config?: LoggerConfig,
+): DynamicLogger {
   const sinkArray = Array.isArray(sinks) ? sinks : sinks ? [sinks] : [];
+
+  let currentMinLevel: LogLevel = minLevel;
+  let sinkFailuresTotal = 0;
+  let rateLimitDroppedTotal = 0;
+
+  const rateLimit = config?.rateLimit;
+  const tokenBucket =
+    rateLimit?.enabled === true
+      ? new TokenBucket(
+          rateLimit.maxPerSecond,
+          rateLimit.exemptLevels,
+          // Monotonic clock for token-bucket refill so wall-clock jumps (NTP
+          // corrections) cannot stall or distort rate limiting.
+          rateLimit._clock ?? (() => performance.now()),
+          rateLimit.summaryIntervalMs,
+        )
+      : null;
 
   function emit(
     level: 'debug' | 'info' | 'warn' | 'error',
@@ -123,18 +290,64 @@ export function createLogger(minLevel: LogLevel, sinks?: LogSink | LogSink[]): F
     message: string,
     extra?: Record<string, unknown>,
   ): void {
-    if (LEVEL_ORDER[level] < LEVEL_ORDER[minLevel]) return;
+    if (LEVEL_ORDER[level] < LEVEL_ORDER[currentMinLevel]) return;
     if (sinkArray.length === 0) return;
 
-    const entry: LogEntry = { level, service, message, extra };
+    if (tokenBucket && !tokenBucket.allow(level, service)) {
+      rateLimitDroppedTotal++;
+      return;
+    }
+
+    // Belt-and-suspenders: redactMessage/redactExtra are already throw-safe, but
+    // the whole emit body is wrapped so the logger contract ("never throws,
+    // never blocks the flow") holds even if context resolution or a future change
+    // here were to throw. A logging failure must never propagate to the caller.
+    let entry: LogEntry;
+    try {
+      const ctx = getLogContext();
+      entry = {
+        level,
+        service,
+        // Central sink-layer redaction (defense-in-depth): every message and extra
+        // is sanitized before reaching any sink, so a call site that forgets to
+        // redact cannot leak secrets or absolute paths.
+        message: redactMessage(message),
+        extra: redactExtra(extra),
+        traceId: ctx?.traceId,
+        sessionId: ctx?.sessionId,
+      };
+    } catch {
+      sinkFailuresTotal++;
+      reportSinkHealth();
+      return;
+    }
 
     for (const sink of sinkArray) {
       try {
         const result = sink(entry);
-        void Promise.resolve(result).catch(() => {});
+        void Promise.resolve(result).catch(() => {
+          sinkFailuresTotal++;
+          reportSinkHealth();
+        });
       } catch {
-        // Sink errors are non-blocking — logging never fails the flow
+        sinkFailuresTotal++;
+        reportSinkHealth();
       }
+    }
+  }
+
+  // Surface sink failures on stderr so a fully broken sink (silent total log
+  // loss) is detectable. Throttled: warns on the first failure, then at most
+  // once per SINK_HEALTH_REPORT_MS, so a flapping sink does not flood stderr.
+  let lastSinkHealthReport = 0;
+  function reportSinkHealth(): void {
+    const now = Date.now();
+    if (sinkFailuresTotal === 1 || now - lastSinkHealthReport >= SINK_HEALTH_REPORT_MS) {
+      lastSinkHealthReport = now;
+      process.stderr.write(
+        `[FlowGuard] diagnostic log sink failures: ${sinkFailuresTotal} total ` +
+          `(logs may be incomplete)\n`,
+      );
     }
   }
 
@@ -143,6 +356,16 @@ export function createLogger(minLevel: LogLevel, sinks?: LogSink | LogSink[]): F
     info: (service, message, extra) => emit('info', service, message, extra),
     warn: (service, message, extra) => emit('warn', service, message, extra),
     error: (service, message, extra) => emit('error', service, message, extra),
+    getHealth(): LoggerHealth {
+      return {
+        level: currentMinLevel,
+        sinkFailuresTotal,
+        rateLimitDroppedTotal,
+      };
+    },
+    setLevel(newLevel: LogLevel): void {
+      currentMinLevel = newLevel;
+    },
   };
 }
 
@@ -154,12 +377,18 @@ export function createLogger(minLevel: LogLevel, sinks?: LogSink | LogSink[]): F
  * - Contexts where no client is available
  * - Fallback when config loading itself fails
  */
-export function createNoopLogger(): FlowGuardLogger {
+export function createNoopLogger(): DynamicLogger {
   const noop = () => {};
   return {
     debug: noop,
     info: noop,
     warn: noop,
     error: noop,
+    getHealth: () => ({
+      level: 'silent' as const,
+      sinkFailuresTotal: 0,
+      rateLimitDroppedTotal: 0,
+    }),
+    setLevel: noop,
   };
 }

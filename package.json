@@ -39,7 +39,7 @@
   },
   "scripts": {
     "clean": "node scripts/clean-dist.js",
-    "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc",
+    "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc && npm run generate-build-info",
     "check:esm": "node scripts/check-esm-imports.js",
     "check:actions-pinned": "node scripts/check-github-actions-pinned.js",
     "check": "tsc --noEmit",
@@ -68,6 +68,8 @@
     "test:sdk-contract:hooks": "vitest run --project integration src/integration/sdk-contract-hooks.test.ts",
     "test:sdk-contract:mcp": "vitest run --project integration src/integration/sdk-contract-mcp.test.ts",
     "test:sdk-contract:governance": "vitest run --project integration src/integration/sdk-contract-governance.test.ts",
+    "test:sdk-contract:plugin": "vitest run --project integration src/integration/sdk-contract-plugin.test.ts",
+    "test:sdk-contract:runtime": "vitest run --project integration src/integration/sdk-contract-runtime.test.ts",
     "test:sdk-contract:all": "vitest run --project integration src/integration/sdk-contract*.test.ts",
     "test:smoke": "vitest run --project smoke",
     "test:fuzz": "vitest run --project fuzz",
@@ -77,6 +79,7 @@
     "sync-version": "node scripts/sync-version.js",
     "update:opencode-sdk": "node scripts/update-opencode-sdk.mjs",
     "generate-docs": "node scripts/generate-docs.js",
+    "generate-build-info": "node scripts/generate-build-info.js",
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",
     "mutation": "node scripts/stryker-patch.js && stryker run",
@@ -101,7 +104,9 @@
   },
   "optionalDependencies": {
     "@opentelemetry/auto-instrumentations-node": "^0.78.0",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.220.0",
     "@opentelemetry/exporter-trace-otlp-http": "^0.220.0",
+    "@opentelemetry/sdk-logs": "^0.220.0",
     "@opentelemetry/sdk-node": "^0.220.0"
   },
   "devDependencies": {

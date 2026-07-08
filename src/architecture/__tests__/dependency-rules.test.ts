@@ -11,8 +11,10 @@
  * ARCHITECTURE RULES (verified by these tests):
  *
  * 1. LEAF MODULES: Inner layers must NOT import from outer layers
- *    - state/ must not import from machine/, rails/, adapters/, integration/, config/, audit/, archive/, logging/, cli/, diagnostics/
- *    - state/ may import from shared/ (neutral constants with zero dependencies)
+ *    - state/ must not import from machine/, rails/, adapters/, integration/, config/, audit/, archive/, logging/, cli/, diagnostics/, shared/
+ *    - state/ owns evidence-level discriminators in state/evidence-identifiers.ts
+ *      (FINGERPRINT_PATTERN, REVIEW_REPORT_SCHEMA_ID, REVIEWER_SUBAGENT_TYPE);
+ *      shared/flowguard-identifiers.ts re-exports them for backward compatibility
  *    - archive/types.ts must not import from any other FF module
  *    - discovery/types.ts must not import from any other FF module
  *
@@ -42,6 +44,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as fs from 'node:fs/promises';
 import { existsSync } from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
 import { benchmarkAsync, PERF_BUDGETS } from '../../test-policy.js';
 
@@ -173,6 +176,16 @@ interface ImportViolation {
   imports?: string[];
 }
 
+function mockImport(module: string): ImportInfo {
+  return {
+    module,
+    raw: `import '${module}'`,
+    isNodeBuiltin: false,
+    isFFModule: false,
+    targetModule: null,
+  };
+}
+
 function isNodeBuiltinImport(module: string): boolean {
   if (NODE_BUILTINS.has(module)) return true;
   if (module.startsWith('node:') && NODE_BUILTINS.has(module.slice(5))) return true;
@@ -222,6 +235,21 @@ function parseImports(fileContent: string): ImportInfo[] {
   let match;
   while ((match = importRegex.exec(fileContent)) !== null) {
     const module = match[1] || match[2] || match[3] || match[4] || match[5] || match[6];
+    if (!module) continue;
+
+    imports.push({
+      module,
+      raw: match[0],
+      isNodeBuiltin: isNodeBuiltinImport(module),
+      isFFModule: isFFModuleImport(module),
+      targetModule: isFFModuleImport(module) ? getTargetModule(module) : null,
+    });
+  }
+
+  // Dynamic imports: await import('./foo.js'), import('./foo.js')
+  const dynamicImportRegex = /(?:await\s+)?import\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
+  while ((match = dynamicImportRegex.exec(fileContent)) !== null) {
+    const module = match[1];
     if (!module) continue;
 
     imports.push({
@@ -342,6 +370,21 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
       }
     }
 
+    if (layer === 'logging') {
+      // logging/ owns its own LogLevel type and must not import from config/.
+      // The dependency flows config -> logging only, breaking the prior
+      // config<->logging module-group coupling.
+      for (const imp of ffImports) {
+        if (imp.targetModule === 'config') {
+          allViolations.push({
+            file: analysis.relativePath,
+            rule: 'logging-no-config',
+            message: `logging/ must not import config/ but imports: ${imp.targetModule}`,
+          });
+        }
+      }
+    }
+
     if (layer === 'rails' && analysis.filePath.includes('/rails/')) {
       const integrationImports = ffImports.filter((i) => i.targetModule === 'integration');
       for (const imp of integrationImports) {
@@ -443,6 +486,91 @@ function detectViolations(analyses: Map<string, FileAnalysis>): ImportViolation[
   return allViolations;
 }
 
+function resolveImportPath(importerDir: string, importPath: string): string {
+  if (!importPath.startsWith('.')) return '';
+
+  const resolved = normalizeSep(path.resolve(importerDir, importPath));
+
+  if (existsSync(resolved)) return resolved;
+  if (existsSync(resolved + '.ts')) return resolved + '.ts';
+
+  const withoutJs = resolved.replace(/\.js$/, '');
+  if (withoutJs !== resolved && existsSync(withoutJs + '.ts')) return withoutJs + '.ts';
+
+  const indexPath = path.join(resolved, 'index.ts');
+  if (existsSync(indexPath)) return normalizeSep(indexPath);
+
+  return '';
+}
+
+function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
+  const cycles: string[] = [];
+
+  // Build adjacency: source file -> set of imported source files
+  const adjacency = new Map<string, Set<string>>();
+  for (const [filePath, analysis] of analyses) {
+    const dir = path.dirname(filePath);
+    const targets = new Set<string>();
+    for (const imp of analysis.imports) {
+      const resolved = resolveImportPath(dir, imp.module);
+      if (resolved && analyses.has(resolved) && resolved !== filePath) {
+        targets.add(resolved);
+      }
+    }
+    adjacency.set(normalizeSep(filePath), targets);
+  }
+
+  // DFS from each node. Do not use a global visited set: a node can participate
+  // in multiple independent cycles and must remain explorable from other paths.
+  const sorted = [...adjacency.keys()].sort();
+  for (const node of sorted) {
+    const dfsPath: string[] = [];
+    const visiting = new Set<string>();
+
+    function dfs(current: string): void {
+      if (visiting.has(current)) {
+        // Cycle found via visiting -> extract the cycle substring
+        const idx = dfsPath.indexOf(current);
+        if (idx >= 0) {
+          cycleKey(current, dfsPath.slice(idx));
+        }
+        return;
+      }
+
+      visiting.add(current);
+      dfsPath.push(current);
+
+      const targets = adjacency.get(current);
+      if (targets) {
+        const targetList = [...targets].sort();
+        for (const next of targetList) {
+          dfs(next);
+        }
+      }
+
+      dfsPath.pop();
+      visiting.delete(current);
+    }
+
+    function cycleKey(start: string, cyclePath: string[]): void {
+      // Normalize for deterministic de-duplication without changing edge order.
+      const orderedCycle = [...cyclePath];
+      let minIdx = 0;
+      for (let i = 1; i < orderedCycle.length; i++) {
+        if (orderedCycle[i] < orderedCycle[minIdx]) minIdx = i;
+      }
+      const rotated = [...orderedCycle.slice(minIdx), ...orderedCycle.slice(0, minIdx)];
+      const normalized = [...rotated, rotated[0]];
+      const key = normalized.map((f) => path.relative(PROJECT_ROOT, f)).join(' -> ');
+      cycles.push(key);
+    }
+
+    dfs(node);
+  }
+
+  return [...new Set(cycles)].sort();
+}
+
 describe('Layer Dependency Rules', () => {
   let analyses: Map<string, FileAnalysis>;
 
@@ -471,10 +599,10 @@ describe('Layer Dependency Rules', () => {
       'telemetry',
       'diagnostics',
     ]);
-    // Intentional exception: state/evidence.ts imports IdpConfigSchema from
-    // identity/types.js for policy snapshot validation. Do not expand this
-    // to actor resolution or runtime identity services.
-    const allowedForState = new Set(['shared', 'identity']);
+    // state/evidence-policy.ts imports IdpConfigSchema from ./policy-idp-config.js
+    // — state now owns the IdP config schemas it persists. No explicit identity/
+    // exception needed.
+    const allowedForState = new Set<string>();
 
     beforeAll(() => {
       for (const [, analysis] of analyses) {
@@ -822,6 +950,7 @@ describe('Layer Dependency Rules', () => {
       'url',
       'http',
       'https',
+      'net',
       'node:fs',
       'node:path',
       'node:crypto',
@@ -830,6 +959,7 @@ describe('Layer Dependency Rules', () => {
       'node:os',
       'node:events',
       'node:stream',
+      'node:net',
     ]);
 
     beforeAll(() => {
@@ -904,6 +1034,131 @@ describe('Layer Dependency Rules', () => {
       if (violations.length > 0) {
         console.error(
           '\nadapters/ -> integration/ violations (HAI boundary):\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+        );
+      }
+      expect(violations).toHaveLength(0);
+    });
+  });
+
+  describe('Rule 5e: config/ must NOT import from outer layers', () => {
+    const violations: ImportViolation[] = [];
+    const forbiddenFromConfig = new Set(['adapters', 'integration', 'cli', 'rails', 'audit']);
+
+    beforeAll(() => {
+      for (const [, analysis] of analyses) {
+        if (!analysis.filePath.includes('/config/')) continue;
+        if (analysis.filePath.includes('.test.')) continue;
+
+        const forbiddenImports = analysis.imports.filter(
+          (i) => i.isFFModule && i.targetModule && forbiddenFromConfig.has(i.targetModule),
+        );
+
+        for (const imp of forbiddenImports) {
+          violations.push({
+            file: analysis.relativePath,
+            rule: 'config-no-upward',
+            message: `config/ imports from outer layer: ${imp.targetModule}`,
+            imports: [imp.module],
+          });
+        }
+      }
+    });
+
+    it('should have config files', () => {
+      const configFiles = Array.from(analyses.values()).filter(
+        (a) => a.filePath.includes('/config/') && !a.filePath.includes('.test.'),
+      );
+      expect(configFiles.length).toBeGreaterThan(0);
+    });
+
+    it('should have no config -> outer layer imports', () => {
+      if (violations.length > 0) {
+        console.error(
+          '\nconfig/ -> outer layer violations:\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+        );
+      }
+      expect(violations).toHaveLength(0);
+    });
+  });
+
+  describe('Rule 5f: identity/ must NOT import from outer layers', () => {
+    const violations: ImportViolation[] = [];
+    const forbiddenFromIdentity = new Set(['adapters', 'integration', 'cli', 'rails']);
+
+    beforeAll(() => {
+      for (const [, analysis] of analyses) {
+        if (!analysis.filePath.includes('/identity/')) continue;
+        if (analysis.filePath.includes('.test.')) continue;
+
+        const forbiddenImports = analysis.imports.filter(
+          (i) => i.isFFModule && i.targetModule && forbiddenFromIdentity.has(i.targetModule),
+        );
+
+        for (const imp of forbiddenImports) {
+          violations.push({
+            file: analysis.relativePath,
+            rule: 'identity-no-upward',
+            message: `identity/ imports from outer layer: ${imp.targetModule}`,
+            imports: [imp.module],
+          });
+        }
+      }
+    });
+
+    it('should have identity files', () => {
+      const identityFiles = Array.from(analyses.values()).filter(
+        (a) => a.filePath.includes('/identity/') && !a.filePath.includes('.test.'),
+      );
+      expect(identityFiles.length).toBeGreaterThan(0);
+    });
+
+    it('should have no identity -> outer layer imports', () => {
+      if (violations.length > 0) {
+        console.error(
+          '\nidentity/ -> outer layer violations:\n' +
+            violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
+        );
+      }
+      expect(violations).toHaveLength(0);
+    });
+  });
+
+  describe('Rule 5g: integration/tools/ must NOT import from plugin-* modules', () => {
+    const violations: ImportViolation[] = [];
+
+    beforeAll(() => {
+      for (const [, analysis] of analyses) {
+        if (!analysis.filePath.includes('/integration/tools/')) continue;
+        if (analysis.filePath.includes('.test.')) continue;
+
+        const pluginImports = analysis.imports.filter(
+          (i) => i.module.startsWith('../plugin-') || i.module.startsWith('./plugin-'),
+        );
+
+        for (const imp of pluginImports) {
+          violations.push({
+            file: analysis.relativePath,
+            rule: 'tools-no-plugin',
+            message: `integration/tools/ imports from plugin-* module (bridge bypass): ${imp.module}`,
+            imports: [imp.module],
+          });
+        }
+      }
+    });
+
+    it('should have integration/tools files', () => {
+      const toolsFiles = Array.from(analyses.values()).filter(
+        (a) => a.filePath.includes('/integration/tools/') && !a.filePath.includes('.test.'),
+      );
+      expect(toolsFiles.length).toBeGreaterThan(0);
+    });
+
+    it('should have no tools -> plugin-* imports', () => {
+      if (violations.length > 0) {
+        console.error(
+          '\nintegration/tools/ -> plugin-* violations:\n' +
             violations.map((v) => `  - ${v.file}: ${v.message}`).join('\n'),
         );
       }
@@ -1313,6 +1568,66 @@ describe('Layer Dependency Rules', () => {
       expect(existsSync(path.join(SRC_DIR, 'cli/install-command.ts'))).toBe(true);
       expect(existsSync(path.join(SRC_DIR, 'cli/uninstall-command.ts'))).toBe(true);
       expect(existsSync(path.join(SRC_DIR, 'cli/doctor-command.ts'))).toBe(true);
+    });
+  });
+
+  describe('Rule 8: No circular module dependencies', () => {
+    it('reports cycles in real import-edge order', async () => {
+      const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-cycle-test-'));
+      try {
+        const a = normalizeSep(path.join(dir, 'a.ts'));
+        const b = normalizeSep(path.join(dir, 'b.ts'));
+        const c = normalizeSep(path.join(dir, 'c.ts'));
+        await Promise.all([
+          fs.writeFile(a, "import './c.js';\n", 'utf-8'),
+          fs.writeFile(b, "import './a.js';\n", 'utf-8'),
+          fs.writeFile(c, "import './b.js';\n", 'utf-8'),
+        ]);
+
+        const fakeAnalyses = new Map<string, FileAnalysis>([
+          [
+            a,
+            {
+              filePath: a,
+              relativePath: path.relative(PROJECT_ROOT, a),
+              imports: [mockImport('./c.js')],
+            },
+          ],
+          [
+            b,
+            {
+              filePath: b,
+              relativePath: path.relative(PROJECT_ROOT, b),
+              imports: [mockImport('./a.js')],
+            },
+          ],
+          [
+            c,
+            {
+              filePath: c,
+              relativePath: path.relative(PROJECT_ROOT, c),
+              imports: [mockImport('./b.js')],
+            },
+          ],
+        ]);
+
+        expect(detectCycles(fakeAnalyses)).toContain(
+          [a, c, b, a].map((f) => path.relative(PROJECT_ROOT, f)).join(' -> '),
+        );
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('should have no circular imports between source files', () => {
+      const cycles = detectCycles(analyses);
+      if (cycles.length > 0) {
+        console.error(
+          '\nCircular module dependencies in source files:\n' +
+            cycles.map((c) => `  ${c}`).join('\n'),
+        );
+      }
+      expect(cycles).toHaveLength(0);
     });
   });
 

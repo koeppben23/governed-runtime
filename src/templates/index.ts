@@ -31,7 +31,7 @@ export {
   renderClaudeReviewerAgent,
   renderCodexReviewerSubagent,
   resolveMandatesVerbosity,
-} from './mandates-renderer.js';
+} from '../rendering/mandates-renderer.js';
 export {
   CLAUDE_CODE_PLUGIN_DIR,
   CLAUDE_CODE_PLUGIN_RELATIVE_FILES,

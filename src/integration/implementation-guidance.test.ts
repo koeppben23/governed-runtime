@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 
 import { extractDiscoveryHealth } from '../discovery/discovery-health.js';
 import { makeDiscoveryResult } from '../discovery/discovery-test-fixtures.js';
-import { makeState, PLAN_RECORD, TICKET } from '../__fixtures__.js';
+import { makeState, PLAN_RECORD, TICKET } from '../fixtures.js';
 import { buildImplementationGuidance } from './implementation-guidance.js';
 
 describe('buildImplementationGuidance', () => {

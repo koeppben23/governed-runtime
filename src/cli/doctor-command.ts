@@ -3,9 +3,7 @@
  * @description FlowGuard doctor command implementation.
  */
 
-import { execSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { globalConfigPath, PersistenceError } from '../adapters/persistence.js';
 import { readConfig } from '../adapters/persistence-config.js';
@@ -30,12 +28,10 @@ import {
   type DoctorCheck,
   type InstallScope,
   PACKAGE_VERSION,
-  SHIPPED_EXECUTABLE_CHECK,
   computeMandatesDigest,
   hasNonFlowGuardInstructions,
   parseJsonc,
   resolveOpencodeConfigPath,
-  resolvePackageRoot,
   resolveTarget,
   safeRead,
   sha256,
@@ -44,6 +40,10 @@ import {
 import { resolveClaudeCodePluginRoot } from './claude-code-plugin-install.js';
 import { resolveCodexPluginRoot } from './codex-plugin-install.js';
 import { buildPlatformTrustReport } from './platform-trust-report.js';
+import { checkShippedExecutables } from './doctor-executables.js';
+import { checkBuildInfo } from './doctor-build-info.js';
+import { checkPluginActivation } from './doctor-plugin.js';
+import { checkLastSessionHandshake } from './doctor-handshake.js';
 
 /**
  * Read a file for doctor inspection. Returns content or null.
@@ -452,6 +452,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   }
   checks.push(...(await checkBrokenInstall(target)));
   checks.push(...checkShippedExecutables());
+  checks.push(...checkBuildInfo());
   checks.push(...buildPlatformTrustReport(installPlatform, args.installScope, target));
   return checks;
 }
@@ -493,131 +494,6 @@ async function checkPlatformPluginArtifacts(
   return checks;
 }
 
-/** Node shebang every shipped FlowGuard executable must begin with. */
-const EXPECTED_EXECUTABLE_SHEBANG = '#!/usr/bin/env node';
-
-/**
- * Read the shipped-executable manifest (the `bin` map) from the FlowGuard
- * package.json at `packageRoot`. The `bin` map is the single SSOT for shipped
- * CLI/runtime executables — this is its only reader; doctor derives the validated
- * surface from it rather than from a hand-maintained duplicate list.
- *
- * Returns the bin map, or `null` when the manifest is unreadable or its `bin`
- * field is missing, empty, or not a string→string object. Callers MUST treat
- * `null` as a fail-closed error: a broken package manifest must not pass
- * diagnostics by silently validating zero executables.
- */
-function readShippedExecutableManifest(packageRoot: string): Record<string, string> | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf-8'));
-  } catch {
-    return null;
-  }
-  const bin = (parsed as { bin?: unknown } | null)?.bin;
-  if (typeof bin !== 'object' || bin === null || Array.isArray(bin)) return null;
-  const entries = Object.entries(bin);
-  if (entries.length === 0) return null;
-  // All-or-error: a single non-string target means the bin SSOT is invalid, not
-  // partially valid. Filtering bad entries would silently validate an incomplete
-  // executable surface — a fail-closed violation.
-  if (!entries.every((entry): entry is [string, string] => typeof entry[1] === 'string')) {
-    return null;
-  }
-  return Object.fromEntries(entries);
-}
-
-/**
- * Validate one shipped executable. It must exist, be a regular file, be
- * non-empty, and begin with the Node shebang. Any deviation is a fail-closed
- * doctor failure (`missing`/`error`), never silently downgraded.
- *
- * Shebang presence — not a POSIX exec bit — is the corruption signal: the exec
- * bit is not cross-platform (Windows) and is not guaranteed by the installer's
- * file writes, whereas the shebang is emitted into every shipped bin entry.
- *
- * The file is read in a single operation with no separate existence/stat
- * pre-check: a check-then-read sequence is a time-of-check/time-of-use race
- * (CodeQL js/file-system-race). Existence and file-type are derived from the
- * read's own error codes (`ENOENT` → missing, `EISDIR` → not a regular file).
- */
-function validateShippedExecutable(file: string): DoctorCheck {
-  let content: string;
-  try {
-    content = readFileSync(file, 'utf-8');
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code === 'ENOENT') {
-      return {
-        file,
-        status: 'missing',
-        detail: 'shipped executable not found',
-        check: SHIPPED_EXECUTABLE_CHECK,
-      };
-    }
-    if (code === 'EISDIR') {
-      return {
-        file,
-        status: 'error',
-        detail: 'shipped executable is not a regular file',
-        check: SHIPPED_EXECUTABLE_CHECK,
-      };
-    }
-    const msg = err instanceof Error ? err.message : String(err);
-    return {
-      file,
-      status: 'error',
-      detail: `cannot read shipped executable: ${msg}`,
-      check: SHIPPED_EXECUTABLE_CHECK,
-    };
-  }
-  if (content.length === 0) {
-    return {
-      file,
-      status: 'error',
-      detail: 'shipped executable is empty',
-      check: SHIPPED_EXECUTABLE_CHECK,
-    };
-  }
-  const firstLine = content.split('\n', 1)[0] ?? '';
-  if (firstLine !== EXPECTED_EXECUTABLE_SHEBANG) {
-    return {
-      file,
-      status: 'error',
-      detail: 'shipped executable missing Node shebang (corrupt)',
-      check: SHIPPED_EXECUTABLE_CHECK,
-    };
-  }
-  return { file, status: 'ok', check: SHIPPED_EXECUTABLE_CHECK };
-}
-
-/**
- * Validate the shipped `dist/` executable surface declared in package.json `bin`.
- * The list is derived from that single SSOT, so adding a new bin entry is
- * validated automatically without a parallel hand-maintained list (#423). A
- * missing or invalid `bin` manifest fails closed with an explicit error check.
- *
- * `packageRoot` is injectable for tests; production resolves the running
- * FlowGuard package root.
- */
-export function checkShippedExecutables(packageRoot: string = resolvePackageRoot()): DoctorCheck[] {
-  const manifest = readShippedExecutableManifest(packageRoot);
-  if (manifest === null) {
-    return [
-      {
-        file: join(packageRoot, 'package.json'),
-        status: 'error',
-        detail:
-          'package.json bin map missing, empty, or not an object — cannot validate shipped executables',
-        check: SHIPPED_EXECUTABLE_CHECK,
-      },
-    ];
-  }
-  return Object.values(manifest).map((relativeTarget) =>
-    validateShippedExecutable(join(packageRoot, relativeTarget)),
-  );
-}
-
 /**
  * Detect "files installed but dependencies unresolved" broken state.
  * This happens when a previous install failed after writing assets but
@@ -636,126 +512,5 @@ async function checkBrokenInstall(target: string): Promise<DoctorCheck[]> {
         'FlowGuard files installed but dependencies unresolved — run `flowguard install --force` to repair, or `flowguard uninstall` to remove completely.',
     });
   }
-  return checks;
-}
-
-/** Verify plugin file exists and @flowguard/core is ESM-importable. */
-export async function checkPluginActivation(target: string): Promise<DoctorCheck[]> {
-  const checks: DoctorCheck[] = [];
-  const pluginFile = join(target, 'plugins', 'flowguard-audit.ts');
-
-  if (!existsSync(pluginFile)) {
-    checks.push({
-      file: pluginFile,
-      status: 'missing',
-      detail: 'Plugin file not installed — run flowguard install',
-    });
-    return checks;
-  }
-
-  try {
-    execSync(`node --input-type=module -e "import('@flowguard/core/integration/plugin')"`, {
-      cwd: target,
-      stdio: 'pipe',
-      timeout: 10_000,
-    });
-    checks.push({
-      file: pluginFile,
-      status: 'ok',
-      detail: 'Plugin package importable',
-    });
-  } catch {
-    checks.push({
-      file: pluginFile,
-      status: 'error',
-      detail:
-        'Plugin package not importable — verify @flowguard/core is installed and dependencies are present',
-    });
-  }
-
-  return checks;
-}
-
-async function checkObligationHandshake(
-  pointer: { sessionId: string; worktree: string },
-  pointerPath: string,
-  checks: DoctorCheck[],
-): Promise<void> {
-  const { computeFingerprint } = await import('../adapters/workspace/fingerprint.js');
-  const { sessionDir } = await import('../adapters/workspace/init.js');
-  const fp = await computeFingerprint(pointer.worktree);
-  const sessDir = sessionDir(fp.fingerprint, pointer.sessionId);
-
-  if (!existsSync(join(sessDir, 'session-state.json'))) {
-    checks.push({
-      file: pointerPath,
-      status: 'warn',
-      detail: 'Session state file not found — cannot verify handshake',
-    });
-    return;
-  }
-
-  const stateRaw = readFileSync(join(sessDir, 'session-state.json'), 'utf-8');
-  const state = JSON.parse(stateRaw) as Record<string, unknown>;
-  const assurance = state.reviewAssurance as
-    { obligations?: Array<{ status?: string; pluginHandshakeAt?: unknown }> } | undefined;
-
-  const pendingObligation = assurance?.obligations?.find((o) => o.status === 'pending');
-  if (!pendingObligation) return;
-
-  if (pendingObligation.pluginHandshakeAt == null) {
-    checks.push({
-      file: pointerPath,
-      status: 'error',
-      detail:
-        'Pending review obligation without plugin handshake — plugin enforcement hooks are not active. Restart OpenCode and verify flowguard-audit plugin loads.',
-    });
-  } else {
-    checks.push({
-      file: pointerPath,
-      status: 'ok',
-      detail: 'Last session plugin handshake present',
-    });
-  }
-}
-
-/** Check if the last session has a pending review obligation without plugin handshake. */
-export async function checkLastSessionHandshake(scope: InstallScope): Promise<DoctorCheck[]> {
-  const checks: DoctorCheck[] = [];
-  if (scope !== 'global') return checks;
-
-  const pointerPath = join(
-    process.env.OPENCODE_CONFIG_DIR || join(homedir(), '.config', 'opencode'),
-    'SESSION_POINTER.json',
-  );
-
-  try {
-    const raw = readFileSync(pointerPath, 'utf-8');
-    const pointer = JSON.parse(raw) as { sessionId?: string; worktree?: string };
-    if (!pointer.sessionId || !pointer.worktree) {
-      checks.push({
-        file: pointerPath,
-        status: 'warn',
-        detail: 'SESSION_POINTER.json missing sessionId or worktree — cannot verify handshake',
-      });
-      return checks;
-    }
-    await checkObligationHandshake(
-      pointer as { sessionId: string; worktree: string },
-      pointerPath,
-      checks,
-    );
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code !== 'ENOENT') {
-      checks.push({
-        file: pointerPath,
-        status: 'warn',
-        detail:
-          'Cannot check session handshake: ' + (err instanceof Error ? err.message : String(err)),
-      });
-    }
-  }
-
   return checks;
 }
