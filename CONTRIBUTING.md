@@ -262,7 +262,7 @@ refactor: extract validation helpers
 - **Preferred:** Squash and merge
 - PR title must follow conventional commit format
 - All CI checks must pass before merge
-- At least one approval required
+- External review is recommended for high-risk changes when a second reviewer is available
 
 ### CI Status Checks
 

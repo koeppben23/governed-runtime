@@ -15,7 +15,7 @@ protected integration branch for main-ready work before a release cut.
 | Setting                                      | Value     |
 | -------------------------------------------- | --------- |
 | Require a pull request before merging        | Enabled   |
-| Required approvals                           | 1 or more |
+| Required approvals                           | 0         |
 | Dismiss stale reviews                        | Enabled   |
 | Require review thread resolution             | Enabled   |
 | Require status checks to pass before merging | Enabled   |
@@ -48,6 +48,18 @@ From `.github/workflows/ci.yml`:
 
 The `format` check is the merge-blocking Prettier gate for both protected
 branches.
+
+## Solo Maintainer Review Model
+
+This repository uses a solo-maintainer ruleset: GitHub cannot count the PR
+author's own approval toward required approvals, so the live ruleset does not
+require a separate approving reviewer. Lead-level protection is enforced through
+mandatory PRs, strict required checks, branch freshness, linear history,
+resolved review threads, and deletion/force-push protection.
+
+External review remains recommended for high-risk release, security, persistence,
+policy, identity, audit, archive, installer, and CI changes when a second
+reviewer is available.
 
 From `.github/workflows/conventional-commits.yml`:
 
