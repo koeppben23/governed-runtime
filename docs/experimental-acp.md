@@ -45,5 +45,5 @@ RUN_OPENCODE_ACP_TESTS=1 npm run test:acp
 
 ---
 
-FlowGuard Version: 1.2.0-tp.1
+FlowGuard Version: 1.2.0-tp.2
 _Last Updated: 2026-04-20_
