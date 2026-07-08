@@ -15,7 +15,9 @@ protected integration branch for main-ready work before a release cut.
 | Setting                                      | Value     |
 | -------------------------------------------- | --------- |
 | Require a pull request before merging        | Enabled   |
+| Required approvals                           | 1 or more |
 | Dismiss stale reviews                        | Enabled   |
+| Require review thread resolution             | Enabled   |
 | Require status checks to pass before merging | Enabled   |
 | Require branch to be up to date before merge | Enabled   |
 | Require linear history                       | Enabled   |
@@ -32,8 +34,13 @@ From `.github/workflows/ci.yml`:
 
 - `test`
 - `typecheck`
+- `lint`
 - `format`
+- `architecture`
 - `build`
+- `actionlint`
+- `secrets-scan`
+- `security-policy`
 - `install-verify (ubuntu-latest)`
 - `install-verify (macos-latest)`
 - `install-verify (windows-latest)`
@@ -41,6 +48,15 @@ From `.github/workflows/ci.yml`:
 
 The `format` check is the merge-blocking Prettier gate for both protected
 branches.
+
+From `.github/workflows/conventional-commits.yml`:
+
+- `Validate Commit Messages`
+
+From `.github/workflows/security.yml`:
+
+- `audit`
+- `codeql-sast`
 
 ## Non-blocking CI Jobs
 
@@ -50,15 +66,11 @@ The following jobs run but are intentionally not required by the live ruleset:
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `unit`                | Runs as a direct job, but the required `test` aggregator is the branch-protection check.                                                                                                                                                                                                               |
 | `integration`         | Runs as a direct job, but the required `test` aggregator is the branch-protection check.                                                                                                                                                                                                               |
-| `architecture`        | Runs on PRs and should be reviewed before merge; it is not currently required by the live ruleset.                                                                                                                                                                                                     |
-| `lint`                | Runs on PRs and should be reviewed before merge; it is not currently required by the live ruleset.                                                                                                                                                                                                     |
 | `sdk-baseline`        | Snapshot comparison against upstream SDK/host baselines; drift is informational and acted on via a separate update workflow (`scripts/check-opencode-host-drift.mjs`).                                                                                                                                |
 | `unused-dependencies` | `knip --dependencies`; a false positive should not block a release. Review the diff manually.                                                                                                                                                                                                         |
 | `fuzz`                | `fast-check` property tests with a fixed seed. Deep fuzzing runs on the nightly schedule (`fuzz-nightly.yml`); regressions block via the nightly cadence, not the PR.                                                                                                                                 |
 | `mutation`            | Stryker runs on the nightly/release cadence (`mutation.yml`), not per-PR. A reliable per-PR incremental gate is not achievable with the current perTest + vitest-runner setup (see the workflow rationale); it is therefore not a required check.                                                     |
 | `dependency-review`   | `fail-on-severity: high` is configured; runs as advisory (`continue-on-error: true`) because Dependency Graph is not yet enabled for this repository. Will become a required check after the repo setting is toggled on.                                                                               |
-| `audit`               | Runs in the Security workflow, but is not currently required by the live ruleset.                                                                                                                                                                                                                      |
-| `codeql-sast`         | Runs in the Security workflow, but is not currently required by the live ruleset.                                                                                                                                                                                                                      |
 
 If any of these is promoted to merge-blocking, move it to the required list
 above in the same PR that flips the ruleset setting.
