@@ -195,10 +195,13 @@ Every ticket, PR, and merge MUST follow clean code and clean architecture. No ex
 
 ### Branch Model
 
-- `main` is **protected** — no direct commits allowed
-- All changes must go through Pull Requests
+- `main` is **protected** and must remain release-ready at all times. No direct commits allowed.
+- `develop` is **protected** and is the integration branch for main-ready work before a release cut.
+- All changes must go through Pull Requests.
+- Default PR target is `develop` for normal feature, fix, docs, refactor, test, and chore work.
+- PRs to `main` are reserved for release branches, urgent hotfixes, or repository-governance changes that must apply immediately.
 - Branch naming convention:
-  - `feature/<description>` — new features
+  - `feat/<description>` — new features
   - `fix/<description>` — bug fixes
   - `docs/<description>` — documentation updates
   - `chore/<description>` — maintenance tasks
@@ -207,9 +210,10 @@ Every ticket, PR, and merge MUST follow clean code and clean architecture. No ex
 ### Release Branches
 
 Release work follows the same protected-`main` PR model as all other changes.
-Prepare release files on `release/vX.Y.Z`, open a PR to `main`, wait for required
-checks, and squash-merge. Create and push the `vX.Y.Z` tag only after local
-`main` has been fast-forwarded to the merged `origin/main` commit.
+Start release branches from current `main`, integrate the release candidate from
+`develop`, prepare release files on `release/vX.Y.Z`, open a PR to `main`, wait
+for required checks, and squash-merge. Create and push the `vX.Y.Z` tag only
+after local `main` has been fast-forwarded to the merged `origin/main` commit.
 
 Use `npm run release:prepare -- X.Y.Z` to update release files. Do not use
 `npm version` for FlowGuard releases because it creates local commit/tag state
