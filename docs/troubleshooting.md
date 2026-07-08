@@ -119,20 +119,21 @@ real, registered reason.
 
 ### Session & State
 
-| Code                             | Description                                                                                | Solution                                                                                                                                                             |
-| -------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NO_SESSION`                     | No session exists for the current workspace                                                | Run `/hydrate` first                                                                                                                                                 |
-| `MISSING_SESSION_ID`             | Tool call missing session id                                                               | Re-invoke via OpenCode (the runtime injects sessionId)                                                                                                               |
-| `MISSING_WORKTREE`               | Workspace fingerprint cannot be resolved                                                   | Run from inside a git worktree                                                                                                                                       |
-| `INVALID_FINGERPRINT`            | Workspace fingerprint mismatch                                                             | Run `flowguard doctor`                                                                                                                                               |
-| `CONFIG_MISSING`                 | Config file is absent                                                                      | Re-run `flowguard install` for this workspace                                                                                                                        |
-| `CONFIG_INVALID`                 | Config file failed schema validation                                                       | Restore from a trusted backup or re-install                                                                                                                          |
-| `SCHEMA_VALIDATION_FAILED`       | Persisted session state failed schema check                                                | Restore from archive — pre-1.0 sessions are not supported                                                                                                            |
-| `SESSION_ERROR`                  | Session error received from host runtime                                                   | Check OpenCode logs for root cause; start a new session                                                                                                              |
-| `SESSION_LOCK_CONTENDED`         | Session write lock could not be acquired (a concurrent operation held it past the timeout) | Wait for the concurrent FlowGuard operation to finish and re-run `/hydrate`; remove a stale `session-state.json.lock` only after confirming no live process holds it |
-| `LOCK_TIMEOUT_EXHAUSTED`         | Session write lock retries exhausted after all attempts                                    | Retry `/check` for the same check kind; run `/status --why-blocked` to inspect session state; if persistent, check session directory for stale lock diagnostics      |
-| `REVIEWER_INVOCATION_EXHAUSTED`  | All reviewer subagent retry attempts failed                                                | Re-run the tool command to create a fresh obligation; check that the reviewer model supports structured output                                                       |
-| `TSA_TIMESTAMP_ASSURANCE_FAILED` | Timestamp authority assurance failed                                                       | Check TSA endpoint availability, trust anchors, and timestamp policy configuration                                                                                   |
+| Code                                  | Description                                                                                 | Solution                                                                                                                                                             |
+| ------------------------------------- | ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NO_SESSION`                          | No session exists for the current workspace                                                 | Run `/hydrate` first                                                                                                                                                 |
+| `MISSING_SESSION_ID`                  | Tool call missing session id                                                                | Re-invoke via OpenCode (the runtime injects sessionId)                                                                                                               |
+| `MISSING_WORKTREE`                    | Workspace fingerprint cannot be resolved                                                    | Run from inside a git worktree                                                                                                                                       |
+| `INVALID_FINGERPRINT`                 | Workspace fingerprint mismatch                                                              | Run `flowguard doctor`                                                                                                                                               |
+| `CONFIG_MISSING`                      | Config file is absent                                                                       | Re-run `flowguard install` for this workspace                                                                                                                        |
+| `CONFIG_INVALID`                      | Config file failed schema validation                                                        | Restore from a trusted backup or re-install                                                                                                                          |
+| `SCHEMA_VALIDATION_FAILED`            | Persisted session state failed schema check                                                 | Restore from archive — pre-1.0 sessions are not supported                                                                                                            |
+| `SESSION_ERROR`                       | Session error received from host runtime                                                    | Check OpenCode logs for root cause; start a new session                                                                                                              |
+| `SESSION_LOCK_CONTENDED`              | Session write lock could not be acquired (a concurrent operation held it past the timeout)  | Wait for the concurrent FlowGuard operation to finish and re-run `/hydrate`; remove a stale `session-state.json.lock` only after confirming no live process holds it |
+| `LOCK_TIMEOUT_EXHAUSTED`              | Session write lock retries exhausted after all attempts                                     | Retry `/check` for the same check kind; run `/status --why-blocked` to inspect session state; if persistent, check session directory for stale lock diagnostics      |
+| `STATE_UNAVAILABLE_FOR_REVIEWER_TASK` | Session state unreadable when reviewer Task requires verifiable state (pre-execution block) | Check filesystem permissions on session state directory; run `flowguard doctor`; restart session and re-run `/hydrate` if state is corrupt                           |
+| `REVIEWER_INVOCATION_EXHAUSTED`       | All reviewer subagent retry attempts failed                                                 | Re-run the tool command to create a fresh obligation; check that the reviewer model supports structured output                                                       |
+| `TSA_TIMESTAMP_ASSURANCE_FAILED`      | Timestamp authority assurance failed                                                        | Check TSA endpoint availability, trust anchors, and timestamp policy configuration                                                                                   |
 
 ### Command & Phase
 
@@ -167,26 +168,27 @@ real, registered reason.
 
 ### Independent Review (subagent)
 
-| Code                                 | Description                                                                   | Solution                                                                                  |
-| ------------------------------------ | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| `SUBAGENT_REVIEW_NOT_INVOKED`        | L1 — primary agent submitted a verdict without invoking the reviewer subagent | Read the previous tool response and follow the `next` action                              |
-| `SUBAGENT_REVIEW_REQUIRED`           | Content-aware review requires reviewFindings from flowguard-reviewer subagent | Call Task tool with subagent_type: "flowguard-reviewer" and pass output as reviewFindings |
-| `SUBAGENT_SESSION_MISMATCH`          | L2 — `reviewedBy.sessionId` does not match actual subagent session            | Do not edit `reviewedBy.sessionId`; the runtime authoritatively sets it                   |
-| `SUBAGENT_PROMPT_EMPTY`              | L3 — subagent prompt < 200 chars                                              | Use the runtime-built review prompt (do not hand-craft)                                   |
-| `SUBAGENT_PROMPT_MISSING_CONTEXT`    | L3 — prompt missing iteration or planVersion context                          | Use the runtime-built prompt                                                              |
-| `SUBAGENT_FINDINGS_VERDICT_MISMATCH` | L4 — submitted overallVerdict differs from actual subagent verdict            | Submit the findings exactly as returned by the orchestrator                               |
-| `SUBAGENT_FINDINGS_ISSUES_MISMATCH`  | L4 — submitted blockingIssues count differs from actual count                 | Submit the findings exactly as returned                                                   |
-| `SUBAGENT_EVIDENCE_REUSED`           | One-shot review evidence reused for a second obligation                       | Submit a substantively-new artifact for a fresh review obligation                         |
-| `MAX_REVIEW_ITERATIONS_REACHED`      | Retained; no longer emitted — loop force-converges to the review gate         | Use `/review-decision` (approve / request-changes / reject) at the gate                   |
-| `SUBAGENT_UNABLE_TO_REVIEW`          | Reviewer declared the artifact unreviewable; obligation consumed              | Address the reviewer's reason or substantially revise; do not retry the same artifact     |
-| `SUBAGENT_TYPE_UNAUTHORIZED`         | Non-reviewer subagent type blocked by FlowGuard governance (defense-in-depth) | Only `flowguard-reviewer` subagent type is authorized; do not spawn other subagents       |
-| `SUBAGENT_CONTEXT_UNVERIFIABLE`      | Strict enforcement cannot validate obligation context from tool output        | Re-run the tool that produced the review obligation                                       |
-| `REVIEW_FINDINGS_REQUIRED`           | Mode B verdict submitted without `reviewFindings`                             | Include the structured `reviewFindings` object                                            |
-| `REVIEW_FINDINGS_SESSION_MISMATCH`   | Findings came from a different session than the current FlowGuard session     | Use findings produced for the current session                                             |
-| `REVIEW_FINDINGS_HASH_MISMATCH`      | Findings hash does not match the review obligation                            | Re-run the review for the current obligation                                              |
-| `REVIEW_SELF_APPROVAL_DENIED`        | Manual-attested findings came from the governed parent session                | Invoke `flowguard-reviewer` in a distinct session                                         |
-| `REVIEW_TRANSPORT_EVIDENCE_INVALID`  | External review-evidence transport JSON is malformed or unbindable            | Regenerate evidence with valid obligation-bound `ReviewFindings`                          |
-| `REVIEW_ASSURANCE_STATE_UNAVAILABLE` | Strict review assurance state cannot be read                                  | Re-hydrate; if persistent, restore from archive                                           |
+| Code                                        | Description                                                                   | Solution                                                                                                             |
+| ------------------------------------------- | ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `SUBAGENT_REVIEW_NOT_INVOKED`               | L1 — primary agent submitted a verdict without invoking the reviewer subagent | Read the previous tool response and follow the `next` action                                                         |
+| `SUBAGENT_REVIEW_REQUIRED`                  | Content-aware review requires reviewFindings from flowguard-reviewer subagent | Call Task tool with subagent_type: "flowguard-reviewer" and pass output as reviewFindings                            |
+| `SUBAGENT_SESSION_MISMATCH`                 | L2 — `reviewedBy.sessionId` does not match actual subagent session            | Do not edit `reviewedBy.sessionId`; the runtime authoritatively sets it                                              |
+| `SUBAGENT_PROMPT_EMPTY`                     | L3 — subagent prompt < 200 chars                                              | Use the runtime-built review prompt (do not hand-craft)                                                              |
+| `SUBAGENT_PROMPT_MISSING_CONTEXT`           | L3 — prompt missing iteration or planVersion context                          | Use the runtime-built prompt                                                                                         |
+| `SUBAGENT_FINDINGS_VERDICT_MISMATCH`        | L4 — submitted overallVerdict differs from actual subagent verdict            | Submit the findings exactly as returned by the orchestrator                                                          |
+| `SUBAGENT_FINDINGS_ISSUES_MISMATCH`         | L4 — submitted blockingIssues count differs from actual count                 | Submit the findings exactly as returned                                                                              |
+| `SUBAGENT_EVIDENCE_REUSED`                  | One-shot review evidence reused for a second obligation                       | Submit a substantively-new artifact for a fresh review obligation                                                    |
+| `MAX_REVIEW_ITERATIONS_REACHED`             | Retained; no longer emitted — loop force-converges to the review gate         | Use `/review-decision` (approve / request-changes / reject) at the gate                                              |
+| `SUBAGENT_UNABLE_TO_REVIEW`                 | Reviewer declared the artifact unreviewable; obligation consumed              | Address the reviewer's reason or substantially revise; do not retry the same artifact                                |
+| `SUBAGENT_TYPE_UNAUTHORIZED`                | Non-reviewer subagent type blocked by FlowGuard governance (defense-in-depth) | Only `flowguard-reviewer` subagent type is authorized; do not spawn other subagents                                  |
+| `REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION` | Reviewer Task started before pending review obligation (pre-execution block)  | Run `flowguard_plan` or `flowguard_review` first to create a pending review obligation, then start the reviewer Task |
+| `SUBAGENT_CONTEXT_UNVERIFIABLE`             | Strict enforcement cannot validate obligation context from tool output        | Re-run the tool that produced the review obligation                                                                  |
+| `REVIEW_FINDINGS_REQUIRED`                  | Mode B verdict submitted without `reviewFindings`                             | Include the structured `reviewFindings` object                                                                       |
+| `REVIEW_FINDINGS_SESSION_MISMATCH`          | Findings came from a different session than the current FlowGuard session     | Use findings produced for the current session                                                                        |
+| `REVIEW_FINDINGS_HASH_MISMATCH`             | Findings hash does not match the review obligation                            | Re-run the review for the current obligation                                                                         |
+| `REVIEW_SELF_APPROVAL_DENIED`               | Manual-attested findings came from the governed parent session                | Invoke `flowguard-reviewer` in a distinct session                                                                    |
+| `REVIEW_TRANSPORT_EVIDENCE_INVALID`         | External review-evidence transport JSON is malformed or unbindable            | Regenerate evidence with valid obligation-bound `ReviewFindings`                                                     |
+| `REVIEW_ASSURANCE_STATE_UNAVAILABLE`        | Strict review assurance state cannot be read                                  | Re-hydrate; if persistent, restore from archive                                                                      |
 
 ### Identity & Approvals
 
@@ -234,6 +236,8 @@ ACTOR_CLAIM_PATH_EMPTY
 ACTOR_CLAIM_UNREADABLE
 ACTOR_IDP_CONFIG_REQUIRED
 ACTOR_IDP_MODE_REQUIRED
+ADR_APPROVE_WITH_TEXT
+ADR_FINDINGS_WITHOUT_VERDICT
 ADR_REVIEW_IN_PROGRESS
 ADR_SUBMISSION_MIXED_INPUTS
 ARCHITECTURE_REVIEW_LOOP_REQUIRED
@@ -273,6 +277,7 @@ FOUR_EYES_ACTOR_MATCH
 GIT_COMMAND_FAILED
 GIT_NOT_FOUND
 HOST_SUBAGENT_TASK_REQUIRED
+HOST_TASK_FINDINGS_UNPARSEABLE
 HOST_TOOL_PHASE_DENIED
 HOST_TOOL_UNKNOWN_DENIED
 HUMAN_DECISION_REQUIRED
@@ -328,6 +333,7 @@ REVIEW_PLAN_VERSION_MISMATCH
 REVIEW_SELF_APPROVAL_DENIED
 REVIEW_TRANSPORT_EVIDENCE_INVALID
 REVIEWER_INVOCATION_EXHAUSTED
+REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION
 REVIEWER_UNAVAILABLE_STRICT
 REVISED_PLAN_REQUIRED
 RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE
@@ -342,6 +348,7 @@ SESSION_ERROR
 SESSION_LOCK_CONTENDED
 STATE_MISSING
 STATE_UNREADABLE
+STATE_UNAVAILABLE_FOR_REVIEWER_TASK
 STRICT_REVIEW_ORCHESTRATION_FAILED
 SUBAGENT_CONTEXT_UNVERIFIABLE
 SUBAGENT_EVIDENCE_REUSED
@@ -399,7 +406,7 @@ Config file location: `~/.config/opencode/flowguard.json` (global) or `.opencode
 The CLI uses a separate flag because it has no OpenCode plugin context:
 
 ```bash
-flowguard install --core-tarball ./flowguard-core-1.0.0.tgz --log-mode console
+flowguard install --core-tarball ./flowguard-core-1.2.0-tp.1.tgz --log-mode console
 flowguard doctor --log-mode file
 flowguard uninstall --log-mode file+console
 ```

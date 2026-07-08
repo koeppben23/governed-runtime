@@ -7,6 +7,13 @@
  */
 
 import { readFileSync } from 'node:fs';
+export class PackageVersionError extends Error {
+  readonly code = 'PACKAGE_VERSION_MISSING' as const;
+  constructor(message: string) {
+    super(message);
+    this.name = 'PackageVersionError';
+  }
+}
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -26,7 +33,9 @@ function getPackageVersion(): string {
   try {
     return readFileSync(versionFile, 'utf-8').trim();
   } catch {
-    throw new Error(`VERSION file not found at ${versionFile}. Run from the project root.`);
+    throw new PackageVersionError(
+      `VERSION file not found at ${versionFile}. Run from the project root.`,
+    );
   }
 }
 

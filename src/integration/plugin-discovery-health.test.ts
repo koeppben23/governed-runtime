@@ -74,7 +74,7 @@ import {
   type DiscoveryHealthEnforcementDeps,
 } from './plugin-discovery-health.js';
 import type { SessionState } from '../state/schema.js';
-import { makeState } from '../__fixtures__.js';
+import { makeState } from '../fixtures.js';
 
 function requiredState(overrides: Partial<SessionState> = {}): SessionState {
   const base = makeState('IMPLEMENTATION');

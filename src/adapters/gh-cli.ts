@@ -8,6 +8,7 @@
 
 import { execFileSync } from 'node:child_process';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { GitError } from './git.js';
 
 /**
  * Check if `gh` CLI is available and authenticated.
@@ -44,7 +45,7 @@ export function loadPrDiff(prNumber: number): string {
     },
   );
   if (!out || out.trim() === 'null') {
-    throw new Error(`PR #${prNumber} not found or has no diff`);
+    throw new GitError('GIT_NOT_FOUND', `PR #${prNumber} not found or has no diff`);
   }
   return out;
 }
@@ -63,7 +64,10 @@ export function loadBranchDiff(branch: string): string {
     timeout: 15000,
   });
   if (!out || out.trim() === '') {
-    throw new Error(`Branch '${branch}' has no changes relative to ${base}`);
+    throw new GitError(
+      'GIT_COMMAND_FAILED',
+      `Branch '${branch}' has no changes relative to ${base}`,
+    );
   }
   return out;
 }
@@ -91,6 +95,6 @@ function detectBaseBranch(): string {
     return 'master';
   } catch {
     getAdapterLogger().error('gh-cli', 'Cannot determine base branch for diff');
-    throw new Error('Cannot determine base branch for diff');
+    throw new GitError('GIT_COMMAND_FAILED', 'Cannot determine base branch for diff');
   }
 }

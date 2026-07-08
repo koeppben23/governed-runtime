@@ -17,6 +17,15 @@ import * as path from 'node:path';
 import * as crypto from 'node:crypto';
 import type { ArchitectureDecision } from '../../state/evidence.js';
 
+export class MadrWriteError extends Error {
+  readonly code = 'MADR_WRITE_FAILED' as const;
+
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'MadrWriteError';
+  }
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const MADR_SCHEMA_VERSION = 'madr-artifact.v1';
@@ -83,7 +92,7 @@ export async function writeMadrArtifact(
     } catch {
       /* ignore */
     }
-    throw new Error(
+    throw new MadrWriteError(
       `Failed to write MADR artifact: ${err instanceof Error ? err.message : String(err)}`,
       { cause: err },
     );

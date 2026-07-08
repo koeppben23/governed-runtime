@@ -53,7 +53,7 @@ import {
   VALIDATION_PASSED,
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
 
@@ -234,6 +234,76 @@ describe('archive', () => {
         expect(manifest.includedFiles).toContain('artifacts/plan.v1.json');
         expect(manifest.fileDigests['artifacts/ticket.v1.json']).toBeTruthy();
         expect(manifest.fileDigests['artifacts/plan.v1.json']).toBeTruthy();
+      },
+    );
+
+    it.skipIf(!tarOk)(
+      're-archiving a session is idempotent: no duplicate artifact-binding event, verify still passes',
+      async () => {
+        // Reproduces the demo archive race: the fire-and-forget auto-archive on
+        // COMPLETE plus the manual /export both archive the same session. Without
+        // idempotent binding, each appends an archive:artifacts_bound event, the
+        // live trail outgrows the manifest anchor, and verify reports
+        // audit_chain_truncated -> archiveStatus:"failed" on a valid archive.
+        await hydrateSession();
+        await ticket.execute({ text: 'Idempotent re-archive test', source: 'user' }, ctx);
+        await plan.execute({ planText: '## Plan\n1. Step' }, ctx);
+
+        const {
+          computeFingerprint,
+          sessionDir: resolveSessionDir,
+          archiveSession,
+          verifyArchive,
+        } = await import('../adapters/workspace/index.js');
+        const { readAuditTrail } = await import('../adapters/persistence-audit.js');
+        const { ARTIFACT_BINDING_EVENT } =
+          await import('../adapters/workspace/archive-artifact-binding.js');
+
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const state = await readState(sessDir);
+        await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
+
+        // First archive (simulates the auto-archive on COMPLETE).
+        await archiveSession(fp.fingerprint, ctx.sessionID);
+        // Second archive (simulates the manual /export).
+        await archiveSession(fp.fingerprint, ctx.sessionID);
+
+        const { events } = await readAuditTrail(sessDir);
+        const bindingEvents = events.filter((e) => e.event === ARTIFACT_BINDING_EVENT);
+        expect(bindingEvents.length).toBe(1);
+
+        const verification = await verifyArchive(fp.fingerprint, ctx.sessionID);
+        expect(verification.passed).toBe(true);
+      },
+    );
+
+    it.skipIf(!tarOk)(
+      'manual archive after a prior archive reports verified (status and archiveStatus agree)',
+      async () => {
+        await hydrateSession();
+        await ticket.execute({ text: 'Archive status consistency test', source: 'user' }, ctx);
+        await plan.execute({ planText: '## Plan\n1. Step' }, ctx);
+
+        const {
+          computeFingerprint,
+          sessionDir: resolveSessionDir,
+          archiveSession,
+        } = await import('../adapters/workspace/index.js');
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+        const state = await readState(sessDir);
+        await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
+
+        // Prior archive (auto-archive equivalent).
+        await archiveSession(fp.fingerprint, ctx.sessionID);
+
+        // Manual /export now must not race to failed.
+        const result = parseToolResult(await archive.execute({}, ctx));
+        expect(result.error).toBeUndefined();
+        expect(result.archiveStatus).toBe('verified');
+        expect(String(result.status)).toContain('verified');
+        expect(String(result.status)).not.toContain('failed');
       },
     );
   });

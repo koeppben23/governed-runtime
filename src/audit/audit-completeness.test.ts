@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { evaluateCompleteness } from './completeness.js';
-import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '../__fixtures__.js';
+import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 describe('audit completeness', () => {
   // ─── HAPPY ──────────────────────────────────────────────────

@@ -29,11 +29,11 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 2: Generate Plan
 
-2. Read the ticket text from the status response.
+2. Use the ticket already provided in this session as the source of truth for the task. (The ticket text is NOT included in the flowguard_status response — status only confirms \`hasTicket\` and the phase. Use the ticket content from the user's request / the /ticket step.)
 3. Write a detailed implementation plan in markdown with these 7 required sections:
    - \`## Objective\` — 1-3 sentences: what is being built and why.
    - \`## Approach\` — Technical strategy with specific patterns, libraries, or architecture decisions.
-   - \`## Steps\` — Numbered list. Each step names at least one specific file path AND describes the concrete change.
+   - \`## Steps\` — Numbered list. Each step names at least one specific file path AND describes the concrete change. Prefer vertical tracer-bullet slices (one thin end-to-end path through every layer that is independently verifiable) over horizontal slices that build one layer at a time. Where a step introduces a module, favor a deep module (small interface, substantial hidden implementation) over a shallow pass-through.
    - \`## Files to Modify\` — Complete list of file paths to create, modify, or delete.
    - \`## Edge Cases\` — Numbered list: scenario + handling strategy.
    - \`## Validation Criteria\` — Numbered list of verifiable conditions.
@@ -42,8 +42,8 @@ ${DISCOVERY_REVIEW_CAPTURE}
 5. Read the response. The \`next\` field contains the review workflow instructions.
 
 Payload contract for \`flowguard_plan\`:
-- Initial submission: call exactly \`flowguard_plan({ planText })\`. Do not include \`reviewVerdict\`, \`reviewFindings\`, or \`reviewerUnavailable\`.
-- Record the reviewer verdict after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict })\` (verdict only — the plugin resolves the reviewer findings from captured evidence; do NOT submit or alter \`reviewFindings\`); SDK/manual-attested modes also include the reviewer's exact \`reviewFindings\`. \`reviewVerdict: "accept"\` is the reviewer's acceptance, NOT user approval.
+- Initial submission: the FIRST call MUST be exactly \`flowguard_plan({ planText })\`. NEVER include \`reviewVerdict\`, \`reviewFindings\`, or \`reviewerUnavailable\` in the first call — a prefilled verdict is a fabrication-of-convergence attempt and is rejected (the tool routes a verdict-bearing first call back to \`INDEPENDENT_REVIEW_REQUIRED\`).
+- Record the reviewer verdict after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict })\` (verdict only — the plugin resolves the reviewer findings from captured evidence; do NOT submit or alter \`reviewFindings\`, not even an empty placeholder object); SDK/manual-attested modes also include the reviewer's exact \`reviewFindings\`. \`reviewVerdict: "accept"\` is the reviewer's acceptance, NOT user approval.
 - Revision after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <complete revised plan> })\`; SDK/manual-attested modes also include the exact reviewer output as \`reviewFindings\`.
 - Never submit placeholder, diagnostic, or manually fabricated \`reviewFindings\`.
 - Set \`reviewerUnavailable: true\` only after an actual Task/subagent spawn failure; never set it preemptively.
@@ -70,6 +70,12 @@ ${SHARED_REVIEW_LOOP({
   unableRecoveryB:
     'revise the plan substantially (new flowguard_plan({ planText }) submission, which starts a fresh review obligation)',
 })}
+
+## Planning discipline
+
+- Resolve open questions that the repository can answer by exploring the codebase (use the explore agent or read/search tools) instead of asking the user. Reserve user questions for genuine product or intent decisions that the code cannot settle.
+- Stress-test domain relationships and edge behavior with concrete scenarios before writing \`## Edge Cases\`; a scenario that the plan cannot answer is a gap to resolve, not a detail to defer.
+- Cross-check stated behavior against the actual code. When a claim in the request contradicts what the code does, surface the contradiction in the plan rather than planning on top of the unverified claim.
 
 ## Rules
 

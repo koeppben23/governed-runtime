@@ -15,11 +15,11 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { readState, writeState } from '../adapters/persistence.js';
-import { makeState } from '../__fixtures__.js';
+import { makeState } from '../fixtures.js';
 import { runAudit, type AuditDeps } from './plugin-audit.js';
 import { MockTimestampAuthorityProvider } from '../audit/tsa-provider.js';
 import type { TimestampAuthorityProvider } from '../audit/tsa-provider.js';
-import { PkijsTimestampVerifier } from '../audit/rfc3161-pkijs-verifier.js';
+import { PkijsTimestampVerifier } from '../audit/rfc-3161-pkijs-verifier.js';
 import { makeRfc3161Fixture, makeRfc3161FixtureAuthority } from '../audit/__fixtures__/rfc3161.js';
 
 class FixtureTimestampAuthorityProvider implements TimestampAuthorityProvider {

@@ -5,7 +5,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { getReviewLoopProgress } from './review-loop-progress.js';
-import { makeState } from '../../__fixtures__.js';
+import { makeState } from '../../fixtures.js';
 import type { SessionState } from '../../state/schema.js';
 
 function reviewState(phase: string, overrides: Partial<SessionState> = {}): SessionState {
@@ -349,7 +349,7 @@ describe('getReviewLoopProgress', () => {
   describe('SURFACE', () => {
     it('formatRailResult includes reviewLoop in PLAN_REVIEW', async () => {
       const { formatRailResult } = await import('../tools/helpers.js');
-      const { makeState } = await import('../../__fixtures__.js');
+      const { makeState } = await import('../../fixtures.js');
 
       const state = makeState('PLAN_REVIEW', {
         selfReview: {
@@ -381,7 +381,7 @@ describe('getReviewLoopProgress', () => {
 
     it('formatRailResult omits reviewLoop in non-review phase', async () => {
       const { formatRailResult } = await import('../tools/helpers.js');
-      const { makeState } = await import('../../__fixtures__.js');
+      const { makeState } = await import('../../fixtures.js');
 
       const state = makeState('TICKET', {});
 
@@ -399,7 +399,7 @@ describe('getReviewLoopProgress', () => {
 
     it('buildStatusProjection includes reviewLoop in IMPL_REVIEW', async () => {
       const { buildStatusProjection } = await import('../status.js');
-      const { makeState } = await import('../../__fixtures__.js');
+      const { makeState } = await import('../../fixtures.js');
 
       const state = makeState('IMPL_REVIEW', {
         implReview: {
@@ -430,7 +430,7 @@ describe('getReviewLoopProgress', () => {
 
     it('buildStatusProjection reviewLoop is null in non-review phase', async () => {
       const { buildStatusProjection } = await import('../status.js');
-      const { makeState } = await import('../../__fixtures__.js');
+      const { makeState } = await import('../../fixtures.js');
 
       const state = makeState('TICKET', {});
 

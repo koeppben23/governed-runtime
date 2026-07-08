@@ -17,7 +17,7 @@ import {
   PLAN_RECORD,
   ARCHITECTURE_DECISION,
   POLICY_SNAPSHOT,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord } from '../state/evidence.js';
 

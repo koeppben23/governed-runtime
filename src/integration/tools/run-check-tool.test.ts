@@ -36,10 +36,10 @@ import { PersistenceError } from '../../adapters/persistence.js';
 import { withSessionWriteLockRetry } from '../../adapters/lock-retry.js';
 import {
   resetAdapterLogger,
-  runWithTraceContextAsync,
   setAdapterLogger,
   type AdapterLogger,
 } from '../../logging/adapter-logger.js';
+import { runWithLogContextAsync } from '../../logging/log-context.js';
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -478,7 +478,7 @@ describe('CONCURRENCY', () => {
     );
     vi.mocked(withSessionWriteLockRetry).mockRejectedValueOnce(exhaustedError);
 
-    const raw = await runWithTraceContextAsync('trace-run-check', () =>
+    const raw = await runWithLogContextAsync({ traceId: 'trace-run-check' }, () =>
       run_check.execute({ kind: 'typecheck' }, ctx),
     );
     const result = parseToolResult(raw) as Record<string, unknown>;
@@ -496,7 +496,7 @@ describe('CONCURRENCY', () => {
       retries: 3,
       traceId: 'trace-run-check',
     });
-    expect(typeof exhausted?.extra?.durationMs).toBe('number');
+    expect(exhausted?.extra?.traceId).toBe('trace-run-check');
 
     vi.mocked(withSessionWriteLockRetry).mockRestore();
   });
@@ -516,7 +516,7 @@ describe('CONCURRENCY', () => {
       },
     );
 
-    await runWithTraceContextAsync('trace-retry', () =>
+    await runWithLogContextAsync({ traceId: 'trace-retry' }, () =>
       run_check.execute({ kind: 'typecheck' }, ctx),
     );
 
@@ -531,7 +531,7 @@ describe('CONCURRENCY', () => {
         errorCode: 'LOCK_TIMEOUT',
         causedBy: 'session_write_lock_contention',
       });
-      expect(typeof entry.extra!.durationMs).toBe('number');
+      expect(entry.extra!.traceId).toBe('trace-retry');
       expect(JSON.stringify(entry.extra)).not.toContain('test contention');
     }
 

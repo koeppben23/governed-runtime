@@ -78,7 +78,7 @@ import {
 } from './plugin-risk.js';
 import type { SessionState } from '../state/schema.js';
 import type { RiskClassificationDecision } from './phase-tool-gate.js';
-import { makeState } from '../__fixtures__.js';
+import { makeState } from '../fixtures.js';
 
 function mockDeps(overrides: Partial<RiskEnforcementDeps> = {}): RiskEnforcementDeps {
   return {

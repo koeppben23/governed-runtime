@@ -30,7 +30,7 @@ import { REASON_HOST_SUBAGENT_TASK_REQUIRED } from '../../shared/flowguard-ident
 import type { PipelineContext } from './pipeline-types.js';
 import type { EvidenceRecordResult } from './pipeline-types.js';
 import {
-  validateStrictAttestation,
+  validatePipelineAttestation,
   recordEvidenceOrBlockReuse,
   blockReviewOutcomeHelper,
   isStrictEnforcementEnabled,
@@ -328,7 +328,7 @@ async function enforceStandardStrictGate(
 ): Promise<boolean> {
   const { deps, sessDir, reviewCtx, sessionState, output, sessionId } = ctx;
 
-  const attestation = validateStrictAttestation(findings, {
+  const attestation = validatePipelineAttestation(findings, {
     obligationId: reviewCtx.obligationId,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
     mandateDigest: REVIEW_MANDATE_DIGEST,

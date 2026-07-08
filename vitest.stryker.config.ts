@@ -2,14 +2,16 @@ import { defineConfig } from 'vitest/config';
 
 /**
  * Stryker-specific vitest config.
- * 17 governance-core files with proven >70% individual mutation scores.
- * FlowGuard decision chain: state, audit, config, identity, machine, rails, tools.
+ * Governance-core files with proven individual mutation scores.
+ * FlowGuard decision chain: state, audit, config, identity, machine, rails, tools,
+ * review orchestrator detection/output, multi-mode validation, and canonical JSON.
  */
 export default defineConfig({
   test: {
     setupFiles: ['./vitest.setup.ts'],
     include: [
       'src/adapters/**/*.test.ts',
+      'src/archive/**/*.test.ts',
       'src/audit/**/*.test.ts',
       'src/config/**/*.test.ts',
       'src/identity/**/*.test.ts',
@@ -18,17 +20,33 @@ export default defineConfig({
       'src/integration/command-aliases.test.ts',
       'src/integration/status.test.ts',
       'src/integration/tool-classification.test.ts',
+      'src/integration/tools/review-validation-mode.test.ts',
       'src/integration/review/orchestrator.test.ts',
-      'src/integration/review/orchestrator-invoke.test.ts',
-      'src/integration/review/orchestrator-retry.test.ts',
+      'src/integration/review/orchestrator-detection.test.ts',
+      'src/integration/review/orchestrator-output.test.ts',
+      'src/integration/review/agent-resolution.test.ts',
+      'src/integration/review/orchestrator-invoke-agent-edges.test.ts',
+      'src/integration/review/orchestrator-invoke-diagnostics.test.ts',
+      'src/integration/review/orchestrator-invoke-errors.test.ts',
+      'src/integration/review/orchestrator-retry-core.test.ts',
+      'src/integration/review/orchestrator-retry-format-free.test.ts',
       'src/integration/review/enforcement/enforcement.test.ts',
       'src/integration/review/enforcement/mutation.test.ts',
       'src/integration/review/enforcement/extraction.test.ts',
       'src/integration/review/enforcement/session.test.ts',
 
+      'src/shared/canonical-json.test.ts',
+      'src/architecture/__tests__/audit-canonicalization-ssot.test.ts',
+      'src/architecture/__tests__/mode-validation-ssot.test.ts',
+      'src/logging/otlp-sink.test.ts',
+      'src/logging/redact.test.ts',
+      'src/logging/error-serialize.test.ts',
+      'src/logging/coverage-proof.test.ts',
+
       'src/hooks/**/*.test.ts',
       'src/mcp-server/**/*.test.ts',
       'src/templates/**/*.test.ts',
+      'src/integration/plugin-audit-lifecycle-reason.test.ts',
       'src/integration/plugin-audit.test.ts',
       'src/integration/plugin-compaction.test.ts',
       'src/integration/plugin-enforcement-tracking.test.ts',

@@ -20,6 +20,12 @@ import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import { createFileSink, getLogDir } from '../logging/file-sink.js';
 import { createConsoleSink } from '../logging/console-sink.js';
 import { createLogger, createNoopLogger, type LogEntry, type LogSink } from '../logging/logger.js';
+import {
+  createLevelReloader,
+  sigusr1Registrar,
+  type LevelReloader,
+} from '../logging/level-reloader.js';
+import { createOtlpLogSink, type OtlpSinkHandle } from '../logging/otlp-sink.js';
 
 /**
  * Shape of the log message accepted by the OpenCode SDK client.log().
@@ -46,11 +52,21 @@ interface PluginLogClient {
   };
 }
 
+type BuildLogSinksConfig = Pick<
+  FlowGuardConfig['logging'],
+  'mode' | 'retentionDays' | 'consoleFormat' | 'maxFileSizeMb'
+> & {
+  level: string;
+  otlp?: FlowGuardConfig['logging']['otlp'];
+};
+
 /**
  * Maximum number of UI sink failures before stderr warnings are suppressed.
  * Prevents flooding stderr when the SDK connection is persistently broken.
  */
 const UI_SINK_FAILURE_WARN_LIMIT = 3;
+const UI_HEALTH_REPORT_MS = 5 * 60 * 1000;
+const FILE_SINK_FAILURE_REPORT_MS = 5 * 60 * 1000;
 
 /**
  * Build logging sinks based on config mode, client, and workspace.
@@ -60,23 +76,49 @@ const UI_SINK_FAILURE_WARN_LIMIT = 3;
  * @param workspaceDir - Absolute workspace directory (optional, for file logging)
  * @returns Array of LogSink functions
  */
+/** Sinks plus any lifecycle-bearing disposables (e.g. the OTLP exporter). */
+export interface BuiltLogSinks {
+  sinks: LogSink[];
+  disposables: OtlpSinkHandle[];
+}
+
 export function buildLogSinks(
-  config: {
-    logging: {
-      mode: 'file' | 'ui' | 'both' | 'console' | 'file+console';
-      level: string;
-      retentionDays: number;
-    };
-  },
+  config: { logging: BuildLogSinksConfig },
   client: PluginLogClient | undefined,
   workspaceDir: string | null,
-): LogSink[] {
+): BuiltLogSinks {
   const sinks: LogSink[] = [];
+  const disposables: OtlpSinkHandle[] = [];
   const mode = config.logging.mode;
 
   if (mode === 'file' || mode === 'both' || mode === 'file+console') {
     if (workspaceDir) {
-      sinks.push(createFileSink(workspaceDir, config.logging.retentionDays));
+      sinks.push(
+        createFileSink(workspaceDir, {
+          retentionDays: config.logging.retentionDays,
+          maxSizeBytes: config.logging.maxFileSizeMb * 1024 * 1024,
+          onRotate: (event) => {
+            process.stderr.write(
+              `[FlowGuard] diagnostic log file rotated: ${event.reason} — ${event.newPath}\n`,
+            );
+          },
+          onFailure: (() => {
+            let fileSinkFailures = 0;
+            let lastReport = 0;
+            return (err: unknown) => {
+              fileSinkFailures++;
+              const now = Date.now();
+              if (fileSinkFailures === 1 || now - lastReport >= FILE_SINK_FAILURE_REPORT_MS) {
+                lastReport = now;
+                process.stderr.write(
+                  `[FlowGuard] diagnostic log file sink failure (${fileSinkFailures} total): ` +
+                    `${err instanceof Error ? err.message : String(err)}\n`,
+                );
+              }
+            };
+          })(),
+        }),
+      );
     }
   }
 
@@ -84,32 +126,92 @@ export function buildLogSinks(
     if (client?.app?.log) {
       const clientLog = client.app.log.bind(client.app);
       let uiSinkFailures = 0;
-      sinks.push((entry: LogEntry) => {
-        clientLog({
-          body: {
-            service: entry.service,
-            level: entry.level,
-            message: entry.message,
-            ...(entry.extra ? { extra: entry.extra } : {}),
-          },
-        }).catch((err: unknown) => {
+      let lastHealthReport = 0;
+      sinks.push(async (entry: LogEntry) => {
+        try {
+          await clientLog({
+            body: {
+              service: entry.service,
+              level: entry.level,
+              message: entry.message,
+              ...(entry.extra ? { extra: entry.extra } : {}),
+            },
+          });
+        } catch {
           uiSinkFailures++;
-          if (uiSinkFailures <= UI_SINK_FAILURE_WARN_LIMIT) {
-            const detail = err instanceof Error ? err.message : String(err);
-            process.stderr.write(
-              `[FlowGuard] UI log sink error (${uiSinkFailures}/${UI_SINK_FAILURE_WARN_LIMIT}): ${detail}\n`,
-            );
+          const now = Date.now();
+          if (
+            uiSinkFailures <= UI_SINK_FAILURE_WARN_LIMIT ||
+            now - lastHealthReport > UI_HEALTH_REPORT_MS
+          ) {
+            process.stderr.write(`[FlowGuard] UI log sink failure (${uiSinkFailures} total)\n`);
+            lastHealthReport = now;
           }
-        });
+          throw new Error('UI log sink failure'); // rethrow for central counting (G10)
+        }
       });
     }
   }
 
   if (mode === 'console' || mode === 'file+console') {
-    sinks.push(createConsoleSink());
+    sinks.push(createConsoleSink({ format: config.logging.consoleFormat }));
   }
 
-  return sinks;
+  // G3: OTLP log export — opt-in, endpoint validated here
+  addOtlpSinkIfEnabled(config, sinks, disposables);
+
+  return { sinks, disposables };
+}
+
+export function addOtlpSinkIfEnabled(
+  config: {
+    logging: {
+      otlp?: { enabled: boolean; endpoint?: string; allowInsecure?: boolean };
+    };
+  },
+  sinks: LogSink[],
+  disposables: OtlpSinkHandle[],
+): void {
+  if (!config.logging.otlp?.enabled) return;
+
+  const endpoint = config.logging.otlp.endpoint ?? process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+  if (!endpoint) {
+    process.stderr.write('[FlowGuard] OTLP log export disabled: no endpoint configured\n');
+    return;
+  }
+
+  // The config-schema endpoint is already URL/HTTPS-validated, but the
+  // OTEL_EXPORTER_OTLP_ENDPOINT env fallback bypasses the schema. Validate the
+  // resolved endpoint here so a malformed or cleartext egress fails closed.
+  let parsed: URL;
+  try {
+    parsed = new URL(endpoint);
+  } catch {
+    process.stderr.write('[FlowGuard] OTLP log export disabled: endpoint is not a valid URL\n');
+    return;
+  }
+  if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    process.stderr.write('[FlowGuard] OTLP log export disabled: endpoint must be an http(s) URL\n');
+    return;
+  }
+  if (parsed.protocol !== 'https:' && !config.logging.otlp.allowInsecure) {
+    process.stderr.write(
+      '[FlowGuard] OTLP log export disabled: endpoint must use https:// ' +
+        '(set logging.otlp.allowInsecure to opt into cleartext http://)\n',
+    );
+    return;
+  }
+
+  const handle = createOtlpLogSink({
+    endpoint,
+    onFailure: (err) => {
+      process.stderr.write(
+        `[FlowGuard] OTLP log export failure: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+    },
+  });
+  sinks.push(handle.sink);
+  disposables.push(handle);
 }
 
 /**
@@ -122,14 +224,20 @@ export function buildLogSinks(
  * @param workspaceDir - Resolved workspace directory (may be null)
  * @param worktree - Project worktree path (for init log context)
  * @param fingerprint - Workspace fingerprint (for init log context)
- * @returns Logger instance and resolved config
+ * @param configPath - Resolved config file path for dynamic log level reload (G5)
+ * @returns Logger instance, resolved config, and optional dispose callback
  */
 export async function createPluginLogger(
   client: PluginLogClient | undefined,
   workspaceDir: string | null,
   worktree: string | undefined,
   fingerprint: string | null,
-): Promise<{ log: ReturnType<typeof createLogger>; config: FlowGuardConfig }> {
+  configPath?: string,
+): Promise<{
+  log: ReturnType<typeof createLogger>;
+  config: FlowGuardConfig;
+  disposeLogging?: () => Promise<void>;
+}> {
   // Read config once at plugin init. Failures fall back to defaults — never block.
   let config: FlowGuardConfig;
   try {
@@ -150,9 +258,31 @@ export async function createPluginLogger(
   // File sink: {workspace}/.opencode/logs/flowguard-{date}.log (JSONL)
   // UI sink: delegates to client.app.log() (OpenCode UI)
   // Non-blocking: logging errors never block the plugin
-  const sinks = buildLogSinks(config, client, workspaceDir);
+  const { sinks, disposables } = buildLogSinks(config, client, workspaceDir);
 
-  const log = sinks.length > 0 ? createLogger(config.logging.level, sinks) : createNoopLogger();
+  const log =
+    sinks.length > 0
+      ? createLogger(config.logging.level, sinks, {
+          rateLimit: {
+            enabled: config.logging.rateLimit.enabled,
+            maxPerSecond: config.logging.rateLimit.maxPerSecond,
+            exemptLevels: config.logging.rateLimit.exemptLevels,
+            summaryIntervalMs: config.logging.rateLimit.summaryIntervalMs,
+          },
+        })
+      : createNoopLogger();
+
+  let reloader: LevelReloader | undefined;
+
+  // G5: Dynamic log level via SIGUSR1 — opt-in, only when enabled and config path known
+  if (config.logging.enableDynamicLevel) {
+    if (configPath) {
+      reloader = createLevelReloader(sigusr1Registrar);
+      reloader.attach(log, configPath);
+    } else {
+      log.warn('logging', 'dynamic log level reload disabled: config path unavailable');
+    }
+  }
 
   log.info('plugin', 'initialized', {
     worktree: worktree ?? 'none',
@@ -164,5 +294,16 @@ export async function createPluginLogger(
     fingerprint: fingerprint ?? 'unknown',
   });
 
-  return { log, config };
+  return {
+    log,
+    config,
+    disposeLogging: async () => {
+      reloader?.detach();
+      // Flush + release the OTLP exporter so batched records are not lost on
+      // exit and the BatchLogRecordProcessor timer is released.
+      for (const d of disposables) {
+        await d.shutdown();
+      }
+    },
+  };
 }

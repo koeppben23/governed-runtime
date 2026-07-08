@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { writeFile, readFile, readdir, stat, mkdir, rm, utimes, mkdtemp } from 'node:fs/promises';
+import { writeFile, readFile, readdir, stat, mkdir, rm, mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createFileSink, getLogDir } from './file-sink.js';
@@ -79,6 +79,48 @@ describe('createFileSink', () => {
       expect(JSON.parse(lines[0]!).fields).toBeUndefined();
       // Second entry has extra → fields present
       expect(JSON.parse(lines[1]!).fields).toEqual({ code: 'E1' });
+    });
+
+    it('includes traceId and sessionId in JSONL when present on LogEntry', async () => {
+      const sink = createFileSink(testDir, { retentionDays: 1 });
+      await sink({
+        level: 'info',
+        service: 'plugin',
+        message: 'bound',
+        traceId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeffff0000',
+        sessionId: 'ses_00000000000abcde',
+      });
+      await sink({
+        level: 'info',
+        service: 'plugin',
+        message: 'trace-only',
+        traceId: 'trace-only-001',
+      });
+      await sink({
+        level: 'info',
+        service: 'plugin',
+        message: 'no-trace',
+      });
+
+      const files = await readdir(join(testDir, '.opencode/logs'));
+      const content = await readFile(join(testDir, '.opencode/logs', files[0]), 'utf-8');
+      const lines = content.trim().split('\n');
+
+      // Entry with both
+      const e1 = JSON.parse(lines[0]!);
+      expect(e1.traceId).toBe('aaaaaaaa-bbbb-4ccc-8ddd-eeeeffff0000');
+      expect(e1.sessionId).toBe('ses_00000000000abcde');
+      expect(e1.level).toBe('info');
+
+      // Entry with traceId only (no sessionId)
+      const e2 = JSON.parse(lines[1]!);
+      expect(e2.traceId).toBe('trace-only-001');
+      expect(e2.sessionId).toBeUndefined();
+
+      // Entry with neither
+      const e3 = JSON.parse(lines[2]!);
+      expect(e3.traceId).toBeUndefined();
+      expect(e3.sessionId).toBeUndefined();
     });
 
     it('appends to existing daily log file', async () => {
@@ -217,25 +259,24 @@ describe('createFileSink', () => {
       return `flowguard-${y}-${m}-${d}.log`;
     }
 
-    async function createLogFile(dir: string, filename: string, mtime: Date): Promise<string> {
+    async function createLogFile(dir: string, filename: string): Promise<string> {
       const logDir = join(dir, '.opencode', 'logs');
       await mkdir(logDir, { recursive: true });
       const filePath = join(logDir, filename);
       await writeFile(filePath, '{"level":"info","message":"old"}\n');
-      await utimes(filePath, mtime, mtime);
       return filePath;
     }
 
     it('recent file within retention window survives', async () => {
       const testDir = await mkdtemp(join(tmpdir(), 'fg-ret-survive-'));
       try {
-        const recentDate = new Date(Date.now() - oneDayMs + 60_000); // 23h ago
-        const recentFile = await createLogFile(testDir, makeLogFileName(recentDate), recentDate);
+        // 1 day ago — within 7-day retention
+        const recentDate = new Date(Date.now() - oneDayMs);
+        const recentFile = await createLogFile(testDir, makeLogFileName(recentDate));
 
-        const sink = createFileSink(testDir, 1);
+        const sink = createFileSink(testDir, 7);
         await sink({ level: 'info', service: 'test', message: 'trigger' });
 
-        // Recent file should still exist
         await expect(stat(recentFile)).resolves.toBeDefined();
       } finally {
         await rm(testDir, { recursive: true, force: true }).catch(() => {});
@@ -245,13 +286,13 @@ describe('createFileSink', () => {
     it('expired file outside retention window is deleted', async () => {
       const testDir = await mkdtemp(join(tmpdir(), 'fg-ret-delete-'));
       try {
-        const expiredDate = new Date(Date.now() - oneDayMs - 60_000); // 25h ago
-        const expiredFile = await createLogFile(testDir, makeLogFileName(expiredDate), expiredDate);
+        // 8 days ago — outside 7-day retention
+        const expiredDate = new Date(Date.now() - oneDayMs * 8);
+        const expiredFile = await createLogFile(testDir, makeLogFileName(expiredDate));
 
-        const sink = createFileSink(testDir, 1);
+        const sink = createFileSink(testDir, 7);
         await sink({ level: 'info', service: 'test', message: 'trigger' });
 
-        // Expired file should be deleted
         await expect(stat(expiredFile)).rejects.toThrow();
       } finally {
         await rm(testDir, { recursive: true, force: true }).catch(() => {});
@@ -261,26 +302,26 @@ describe('createFileSink', () => {
     it('mixed old and new: only expired files are deleted', async () => {
       const testDir = await mkdtemp(join(tmpdir(), 'fg-ret-mixed-'));
       try {
-        // Two recent files on different days (different filenames)
-        const recent1 = await createLogFile(testDir, 'flowguard-recent-1.log', new Date());
+        // Two recent files (within 7-day window)
+        const recent1 = await createLogFile(
+          testDir,
+          makeLogFileName(new Date(Date.now() - oneDayMs)),
+        );
         const recent2 = await createLogFile(
           testDir,
-          'flowguard-recent-2.log',
-          new Date(Date.now() - oneDayMs / 2),
+          makeLogFileName(new Date(Date.now() - oneDayMs * 3)),
         );
-        // Two old files on different days
+        // Two old files (outside 7-day window)
         const old1 = await createLogFile(
           testDir,
-          'flowguard-old-1.log',
-          new Date(Date.now() - oneDayMs * 2),
+          makeLogFileName(new Date(Date.now() - oneDayMs * 8)),
         );
         const old2 = await createLogFile(
           testDir,
-          'flowguard-old-2.log',
-          new Date(Date.now() - oneDayMs * 3),
+          makeLogFileName(new Date(Date.now() - oneDayMs * 14)),
         );
 
-        const sink = createFileSink(testDir, 1);
+        const sink = createFileSink(testDir, 7);
         await sink({ level: 'info', service: 'test', message: 'trigger' });
 
         await expect(stat(recent1)).resolves.toBeDefined();
@@ -294,24 +335,18 @@ describe('createFileSink', () => {
   });
 
   describe('cleanup error paths', () => {
-    it('handles stat failure gracefully (non-blocking)', async () => {
-      const testDir = await mkdtemp(join(tmpdir(), 'fg-log-sink-stat-'));
+    it('deletes files with old dates in filename', async () => {
+      const testDir = await mkdtemp(join(tmpdir(), 'fg-log-sink-olddate-'));
       try {
-        // Create fake old log file
         const logDir = join(testDir, '.opencode', 'logs');
         await mkdir(logDir, { recursive: true });
         const oldLog = join(logDir, 'flowguard-2020-01-01.log');
         await writeFile(oldLog, '{"level":"info","message":"old"}\n');
 
-        // Set file to very old timestamp so it would be cleaned up
-        const oldDate = new Date('2020-01-01');
-        await utimes(oldLog, oldDate, oldDate);
-
-        // Create sink — cleanup runs on first log
         const sink = createFileSink(testDir, 7);
         await sink({ level: 'info', service: 'test', message: 'test' });
 
-        // File should have been cleaned up (retention=7 days, file from 2020)
+        // File from 2020 should be cleaned up (far outside 7-day retention)
         try {
           await stat(oldLog);
           // File may survive if system clock is weird
@@ -335,6 +370,144 @@ describe('createFileSink', () => {
         const sink = createFileSink(testDir, 7);
         // This should not throw — cleanup errors are non-blocking
         await sink({ level: 'info', service: 'test', message: 'test' });
+      } finally {
+        await rm(testDir, { recursive: true, force: true }).catch(() => {});
+      }
+    });
+  });
+
+  describe('G9: size rotation', () => {
+    it('rotates file post-write when maxSizeBytes is exceeded', async () => {
+      const testDir = await mkdtemp(join(tmpdir(), 'fg-log-sink-rotate-'));
+      const logDir = join(testDir, '.opencode', 'logs');
+      await mkdir(logDir, { recursive: true });
+
+      try {
+        // maxSizeBytes large enough for ~2 small entries but not 3
+        const sink = createFileSink(testDir, {
+          retentionDays: 7,
+          maxSizeBytes: 250,
+        });
+
+        const date = new Date().toISOString().slice(0, 10);
+
+        // Two writes fit within 250 bytes
+        await sink({ level: 'info', service: 't', message: 'a' });
+        await sink({ level: 'info', service: 't', message: 'b' });
+
+        let files = await readdir(logDir);
+        expect(files).toContain(`flowguard-${date}.log`);
+        expect(files).not.toContain(`flowguard-${date}.1.log`);
+
+        // Third write pushes past maxSizeBytes → post-write rotation
+        await sink({ level: 'info', service: 't', message: 'c' });
+
+        files = await readdir(logDir);
+        expect(files).toContain(`flowguard-${date}.1.log`);
+        // New file created for subsequent writes
+      } finally {
+        await rm(testDir, { recursive: true, force: true }).catch(() => {});
+      }
+    });
+
+    it('rotates file on single oversized entry', async () => {
+      const testDir = await mkdtemp(join(tmpdir(), 'fg-log-sink-oversize-'));
+      const logDir = join(testDir, '.opencode', 'logs');
+      await mkdir(logDir, { recursive: true });
+
+      try {
+        const sink = createFileSink(testDir, {
+          retentionDays: 7,
+          maxSizeBytes: 50,
+        });
+
+        // Single write exceeds maxSizeBytes → post-write rotation
+        await sink({ level: 'info', service: 't', message: 'oversized content' });
+
+        const date = new Date().toISOString().slice(0, 10);
+        const files = await readdir(logDir);
+        expect(files).toContain(`flowguard-${date}.1.log`);
+      } finally {
+        await rm(testDir, { recursive: true, force: true }).catch(() => {});
+      }
+    });
+
+    it('onRotate callback is invoked on rotation', async () => {
+      const testDir = await mkdtemp(join(tmpdir(), 'fg-log-sink-onrot-'));
+      const logDir = join(testDir, '.opencode', 'logs');
+      await mkdir(logDir, { recursive: true });
+
+      const rotations: Array<{
+        oldPath: string;
+        newPath: string;
+        reason: string;
+      }> = [];
+
+      try {
+        const sink = createFileSink(testDir, {
+          retentionDays: 7,
+          maxSizeBytes: 250,
+          onRotate: (event) => {
+            rotations.push(event);
+          },
+        });
+
+        // First two writes fit; third triggers rotation
+        await sink({ level: 'info', service: 't', message: 'a' });
+        await sink({ level: 'info', service: 't', message: 'b' });
+        expect(rotations.length).toBe(0);
+
+        await sink({ level: 'info', service: 't', message: 'c' });
+        expect(rotations.length).toBe(1);
+        expect(rotations[0]!.reason).toBe('size');
+        expect(rotations[0]!.oldPath).toContain('flowguard-');
+        expect(rotations[0]!.newPath).toContain('flowguard-');
+      } finally {
+        await rm(testDir, { recursive: true, force: true }).catch(() => {});
+      }
+    });
+
+    it('onRotate failure is non-blocking', async () => {
+      const testDir = await mkdtemp(join(tmpdir(), 'fg-log-sink-onrotf-'));
+      const logDir = join(testDir, '.opencode', 'logs');
+      await mkdir(logDir, { recursive: true });
+
+      try {
+        const sink = createFileSink(testDir, {
+          retentionDays: 7,
+          maxSizeBytes: 50,
+          onRotate: () => {
+            throw new Error('onRotate crashed');
+          },
+        });
+
+        await expect(
+          sink({ level: 'info', service: 't', message: 'triggers rotation xxxxxxxxxxxxxxxxxxxxx' }),
+        ).resolves.not.toThrow();
+      } finally {
+        await rm(testDir, { recursive: true, force: true }).catch(() => {});
+      }
+    });
+
+    it('rotated .N.log files are cleaned up by retention', async () => {
+      const testDir = await mkdtemp(join(tmpdir(), 'fg-log-sink-rotcln-'));
+      const logDir = join(testDir, '.opencode', 'logs');
+      await mkdir(logDir, { recursive: true });
+
+      try {
+        const oldDate = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const oldRotated = join(logDir, `flowguard-${oldDate}.1.log`);
+        await writeFile(oldRotated, '{"ts":"old"}\n');
+
+        const sink = createFileSink(testDir, { retentionDays: 7 });
+        await sink({
+          level: 'info',
+          service: 'test',
+          message: 'trigger cleanup',
+        });
+
+        const files = await readdir(logDir);
+        expect(files).not.toContain(`flowguard-${oldDate}.1.log`);
       } finally {
         await rm(testDir, { recursive: true, force: true }).catch(() => {});
       }

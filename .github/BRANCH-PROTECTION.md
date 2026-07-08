@@ -72,7 +72,7 @@ From `.github/workflows/security.yml`:
 
 ## Non-blocking CI Jobs
 
-The following jobs run but are intentionally not required by the live ruleset:
+The following jobs run but are intentionally **not** required by the live ruleset:
 
 | Job                   | Why non-blocking                                                                                                                                                                                                                                                                                      |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

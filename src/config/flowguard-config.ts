@@ -24,6 +24,16 @@ import { z } from 'zod';
 import { IdpConfigSchema, IdentityProviderModeSchema } from '../identity/index.js';
 import { PolicyModeSchema } from '../state/policy-mode.js';
 import { HOST_IDS } from '../shared/hosts.js';
+import {
+  LogLevelSchema,
+  ConsoleFormatSchema,
+  MaxFileSizeMbSchema,
+  RateLimitMaxPerSecondSchema,
+  DynamicLogLevelEnabledSchema,
+  OtlpEnabledSchema,
+  OtlpEndpointSchema,
+  OtlpAllowInsecureSchema,
+} from './logging-config.js';
 
 // ─── Schema ──────────────────────────────────────────────────────────────────
 
@@ -37,11 +47,84 @@ export const FlowGuardConfigSchema = z.object({
       /** Logging output mode. */
       mode: z.enum(['file', 'ui', 'both', 'console', 'file+console']).default('file'),
       /** Minimum log level. Messages below this level are suppressed. */
-      level: z.enum(['debug', 'info', 'warn', 'error', 'silent']).default('info'),
+      level: LogLevelSchema.default('info'),
       /** Number of days to retain log files. */
       retentionDays: z.number().int().min(1).max(90).default(7),
+      /** Console output format. 'text' for readable, 'json' for structured (container aggregators). */
+      consoleFormat: ConsoleFormatSchema,
+      /** Maximum log file size in megabytes before rotation. */
+      maxFileSizeMb: MaxFileSizeMbSchema,
+      /** Rate limiting configuration. Disabled by default — enable in production. */
+      rateLimit: z
+        .object({
+          /** Enable rate limiting. Default: false (opt-in). */
+          enabled: z.boolean().default(false),
+          /** Max entries per second per (service, level) key. */
+          maxPerSecond: RateLimitMaxPerSecondSchema,
+          /** Levels exempt from rate limiting. Default: ['error']. */
+          exemptLevels: z.array(LogLevelSchema).default(['error']),
+          /** Interval in ms between rate-limit summary reports on stderr. */
+          summaryIntervalMs: z.number().int().min(10000).max(600000).default(60000),
+        })
+        .default({
+          enabled: false,
+          maxPerSecond: 100,
+          exemptLevels: ['error'],
+          summaryIntervalMs: 60000,
+        })
+        // `error` is ALWAYS exempt — error logs surface failures and must never be
+        // silently dropped by rate limiting. Applied at the OBJECT level so it
+        // also covers the object-level / outer-logging .default() paths, which
+        // bypass a field-level transform in Zod. This transform is the single
+        // guard of the invariant, not the hand-written literals above.
+        .transform((rl) =>
+          rl.exemptLevels.includes('error')
+            ? rl
+            : { ...rl, exemptLevels: [...rl.exemptLevels, 'error' as const] },
+        ),
+      /** Enable SIGUSR1 for runtime log level changes. Default: false. */
+      enableDynamicLevel: DynamicLogLevelEnabledSchema,
+      /** OTLP log export (OpenTelemetry Logs). Disabled by default. */
+      otlp: z
+        .object({
+          /** Enable OTLP log export. Default: false. */
+          enabled: OtlpEnabledSchema,
+          /** OTLP endpoint override. Falls back to OTEL_EXPORTER_OTLP_ENDPOINT env var. */
+          endpoint: OtlpEndpointSchema,
+          /** Allow a cleartext http:// endpoint. Default: false (HTTPS required). */
+          allowInsecure: OtlpAllowInsecureSchema,
+        })
+        .superRefine((val, ctx) => {
+          if (
+            val.endpoint &&
+            !val.allowInsecure &&
+            !val.endpoint.toLowerCase().startsWith('https://')
+          ) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ['endpoint'],
+              message:
+                'OTLP endpoint must use https:// (set logging.otlp.allowInsecure to opt into cleartext http://)',
+            });
+          }
+        })
+        .default({ enabled: false, allowInsecure: false }),
     })
-    .default({ mode: 'file', level: 'info', retentionDays: 7 }),
+    .default({
+      mode: 'file',
+      level: 'info',
+      retentionDays: 7,
+      consoleFormat: 'text',
+      maxFileSizeMb: 10,
+      rateLimit: {
+        enabled: false,
+        maxPerSecond: 100,
+        exemptLevels: ['error'],
+        summaryIntervalMs: 60000,
+      },
+      enableDynamicLevel: false,
+      otlp: { enabled: false, allowInsecure: false },
+    }),
 
   /** Policy override configuration. Merged field-wise with the resolved preset. */
   policy: z
@@ -141,8 +224,7 @@ export const FlowGuardConfigSchema = z.object({
 /** Fully resolved FlowGuard configuration (all defaults applied). */
 export type FlowGuardConfig = z.infer<typeof FlowGuardConfigSchema>;
 
-/** Log level union type. */
-export type LogLevel = FlowGuardConfig['logging']['level'];
+export type { LogLevel, ConsoleFormat, MaxFileSizeMb } from './logging-config.js';
 
 /** Logging mode union type. */
 export type LogMode = FlowGuardConfig['logging']['mode'];

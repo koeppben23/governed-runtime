@@ -12,6 +12,8 @@ import { setAdapterLogger, getAdapterLogger, resetAdapterLogger } from './adapte
 import { createConsoleSink } from './console-sink.js';
 import type { LogEntry } from './logger.js';
 
+const loggingDefaults = { consoleFormat: 'text' as const, maxFileSizeMb: 10 };
+
 describe('Plugin logging e2e', () => {
   beforeEach(() => {
     resetAdapterLogger();
@@ -23,9 +25,9 @@ describe('Plugin logging e2e', () => {
 
   describe('HAPPY', () => {
     it('file+console mode creates both sinks', () => {
-      const sinks = buildLogSinks(
+      const { sinks } = buildLogSinks(
         {
-          logging: { mode: 'file+console', level: 'info', retentionDays: 7 },
+          logging: { mode: 'file+console', level: 'info', retentionDays: 7, ...loggingDefaults },
         },
         undefined,
         null,
@@ -34,9 +36,9 @@ describe('Plugin logging e2e', () => {
     });
 
     it('file+console mode with workspaceDir creates file and console sinks', () => {
-      const sinks = buildLogSinks(
+      const { sinks } = buildLogSinks(
         {
-          logging: { mode: 'file+console', level: 'info', retentionDays: 7 },
+          logging: { mode: 'file+console', level: 'info', retentionDays: 7, ...loggingDefaults },
         },
         undefined,
         '/tmp/test-workspace',
@@ -45,9 +47,9 @@ describe('Plugin logging e2e', () => {
     });
 
     it('console mode creates console sink', () => {
-      const sinks = buildLogSinks(
+      const { sinks } = buildLogSinks(
         {
-          logging: { mode: 'console', level: 'info', retentionDays: 7 },
+          logging: { mode: 'console', level: 'info', retentionDays: 7, ...loggingDefaults },
         },
         undefined,
         null,
@@ -71,7 +73,7 @@ describe('Plugin logging e2e', () => {
     it('buildLogSinks accepts all new modes without throwing', () => {
       expect(() =>
         buildLogSinks(
-          { logging: { mode: 'console', level: 'debug', retentionDays: 7 } },
+          { logging: { mode: 'console', level: 'debug', retentionDays: 7, ...loggingDefaults } },
           undefined,
           '/tmp',
         ),
@@ -79,7 +81,9 @@ describe('Plugin logging e2e', () => {
 
       expect(() =>
         buildLogSinks(
-          { logging: { mode: 'file+console', level: 'info', retentionDays: 14 } },
+          {
+            logging: { mode: 'file+console', level: 'info', retentionDays: 14, ...loggingDefaults },
+          },
           undefined,
           '/tmp',
         ),
@@ -89,9 +93,9 @@ describe('Plugin logging e2e', () => {
 
   describe('BAD', () => {
     it('buildLogSinks returns empty array for unsupported config combination', () => {
-      const sinks = buildLogSinks(
+      const { sinks } = buildLogSinks(
         {
-          logging: { mode: 'file', level: 'info', retentionDays: 7 },
+          logging: { mode: 'file', level: 'info', retentionDays: 7, ...loggingDefaults },
         },
         undefined,
         null,

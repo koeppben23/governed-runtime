@@ -27,7 +27,7 @@ vi.mock('../rails/review.js', () => ({
 
 import { readState } from '../adapters/persistence.js';
 import { loadExternalContent } from '../rails/review.js';
-import { makeState, POLICY_SNAPSHOT } from '../__fixtures__.js';
+import { makeState, POLICY_SNAPSHOT } from '../fixtures.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { createTestAdapter } from './test-adapter-helper.js';
@@ -267,6 +267,42 @@ describe('runReviewOrchestration strict /review content analysis', () => {
       invocationMode: 'host_subagent_task',
       hostVisible: true,
     });
+  });
+
+  it('standalone /review host-task instruction forwards obligation attestation + cycle context', async () => {
+    // Regression: standalone /review Call 1 emits CONTENT_ANALYSIS_REQUIRED with
+    // no `next`, so the host-task instruction previously omitted iteration/
+    // planVersion AND the requiredReviewAttestation. The reviewer then defaulted
+    // toolObligationId to "NOT_VERIFIED" and the verdict could not bind host-task
+    // evidence. The instruction must now source these from the obligation.
+    const { output } = await runReviewContent(
+      buildFindings(),
+      { args: { text: 'diff content', inputOrigin: 'manual_text' } },
+      true,
+      'structured_required',
+      undefined,
+      'host_task_required',
+    );
+
+    const parsed = JSON.parse(output.output) as Record<string, unknown>;
+
+    // Structured attestation forwarded from the obligation (machine-readable).
+    expect(parsed.requiredReviewAttestation).toMatchObject({
+      reviewedBy: 'flowguard-reviewer',
+      toolObligationId: OBLIGATION_ID,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      iteration: 1,
+      planVersion: 1,
+    });
+
+    // The next-instruction text carries the cycle context and a concrete UUID
+    // (not "NOT_VERIFIED"), so the agent can forward them to the reviewer.
+    const next = String(parsed.next);
+    expect(next).toContain('iteration=1');
+    expect(next).toContain('planVersion=1');
+    expect(next).toContain(`toolObligationId=${OBLIGATION_ID}`);
+    expect(next).not.toContain('toolObligationId=NOT_VERIFIED');
   });
 
   it('blocks with SUBAGENT_MANDATE_MISMATCH when strict /review attestation obligation mismatches', async () => {

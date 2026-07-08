@@ -19,34 +19,15 @@
 
 import type { Phase } from '../state/schema.js';
 import type { DiscoveryResult } from '../discovery/types.js';
+import type { PhaseInstructions } from './profile-types.js';
 import { profileRuleContent as javaRuleContent } from './profiles/content/java.js';
 import { profileRuleContent as angularRuleContent } from './profiles/content/angular.js';
 import { profileRuleContent as typescriptRuleContent } from './profiles/content/typescript.js';
 import { profileRuleContent as baselineRuleContent } from './profiles/content/baseline.js';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+export type { PhaseInstructions } from './profile-types.js';
 
-/**
- * Phase-aware profile instructions.
- *
- * Static declarative object — configuration, not behavior.
- * - `base`: Always-injected instructions (present in every phase).
- * - `byPhase`: Optional phase-specific overrides/additions.
- *   When present, the phase-specific text is appended to the base.
- *
- * Profiles that don't need phase differentiation simply provide a plain string
- * for `instructions` (backward compatible).
- */
-export interface PhaseInstructions {
-  /** Base instructions — always injected regardless of phase. */
-  readonly base: string;
-  /**
-   * Phase-specific additional instructions.
-   * Keyed by Phase value (e.g., "PLAN", "IMPLEMENTATION").
-   * Text is appended to `base` when the session is in that phase.
-   */
-  readonly byPhase?: Partial<Record<Phase, string>>;
-}
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 /**
  * Resolve effective instructions for a given phase.

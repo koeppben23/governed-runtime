@@ -13,7 +13,16 @@ import {
   type TestToolContext,
   type TestWorkspace,
 } from './test-helpers.js';
-import { hydrate, ticket, plan, decision, run_check, implement, status } from './tools/index.js';
+import {
+  hydrate,
+  ticket,
+  plan,
+  decision,
+  run_check,
+  implement,
+  review_implementation,
+  status,
+} from './tools/index.js';
 import { readState } from '../adapters/persistence.js';
 import { computeFingerprint, sessionDir, verifyArchive } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
@@ -156,7 +165,7 @@ async function completeRegulatedSession(): Promise<{
 
   await callOk(implement, {});
   for (let i = 0; i < 8 && (await currentPhase()) !== 'EVIDENCE_REVIEW'; i++) {
-    await callOk(implement, { reviewVerdict: 'accept' });
+    await callOk(review_implementation, { reviewVerdict: 'accept' });
   }
 
   await callOk(decision, { verdict: 'approve', rationale: 'evidence approved' });

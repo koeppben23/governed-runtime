@@ -11,6 +11,7 @@
 
 import { readState, writeState } from '../adapters/persistence.js';
 import { archiveSession } from '../adapters/workspace/index.js';
+import { serializeError } from '../logging/error-serialize.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
 import {
   buildToolCallBody,
@@ -24,11 +25,10 @@ import {
 } from '../audit/types.js';
 import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { resolveTimestampEvidence } from '../audit/timestamp-resolution.js';
-import { checkNtpClock } from '../audit/ntp-check.js';
-import type { NtpCheckResult } from '../audit/ntp-check.js';
 import type { TimestampAssurancePolicy } from '../config/policy-types.js';
 import type { TimestampAuthorityProvider, TimestampVerifier } from '../audit/tsa-provider.js';
-import { parseToolResult } from './plugin-helpers.js';
+import { resolveAuditContext, type AuditContext } from './plugin-audit-context.js';
+import { buildLifecycleDetail } from './plugin-audit-lifecycle-reason.js';
 
 /** Closure dependencies injected from plugin.ts. */
 export interface AuditDeps {
@@ -73,153 +73,6 @@ const LIFECYCLE_TOOLS: Record<string, string> = {
   flowguard_hydrate: 'session_created',
   flowguard_abort_session: 'session_aborted',
 };
-
-// ─── Internal types ───────────────────────────────────────────────────────────
-
-interface AuditContext {
-  sessDir: string;
-  emitToolCalls: boolean;
-  emitTransitions: boolean;
-  enableChainHash: boolean;
-  actor: string;
-  now: string;
-  prevHash: string;
-  phase: string;
-  transitions: Array<{ from: Phase; to: Phase; event: Event; at: string }>;
-  success: boolean;
-  errorMessage: string | undefined;
-  parsed: ReturnType<typeof parseToolResult>;
-  timestampAssurance: TimestampAssurancePolicy;
-  ntpResult?: NtpCheckResult;
-}
-
-// ─── Extracted helpers ────────────────────────────────────────────────────────
-
-async function resolveAuditContext(
-  deps: AuditDeps,
-  toolName: string,
-  output: unknown,
-  sessionId: string,
-): Promise<{
-  ctx: AuditContext;
-  policy: {
-    audit: { emitToolCalls: boolean; emitTransitions: boolean; enableChainHash: boolean };
-    actorClassification: Record<string, string>;
-    mode: string;
-    requireHumanGates: boolean;
-  };
-  state: SessionState | null;
-  policyResolved: boolean;
-  effectiveMode: string;
-} | null> {
-  await deps.resolveFingerprint();
-  const sessDir = deps.getSessionDir(sessionId);
-  if (!sessDir) return null;
-
-  const { policy, state } = await deps.resolveSessionPolicy(sessDir);
-  const { emitToolCalls, emitTransitions, enableChainHash } = policy.audit;
-  const effectiveMode = policy.mode;
-
-  deps.log.debug('audit', 'processing tool call', {
-    tool: toolName,
-    emitToolCalls,
-    emitTransitions,
-    enableChainHash,
-  });
-
-  const actor = policy.actorClassification[toolName] ?? 'system';
-  const now = new Date().toISOString();
-
-  if (state?.archiveStatus) deps.invalidateChainState(sessionId);
-  const prevHash = await deps.initChain(sessDir, sessionId);
-  const parsedOutput = parseAuditOutput(output);
-  const resolvedTsa = resolveTimestampAssurancePolicy(policy.audit.timestampAssurance);
-  const ntpResult = await resolveAuditNtpResult(resolvedTsa);
-
-  return {
-    ctx: {
-      sessDir,
-      emitToolCalls,
-      emitTransitions,
-      enableChainHash,
-      actor,
-      now,
-      prevHash,
-      phase: parsedOutput.phase,
-      transitions: parsedOutput.transitions,
-      success: parsedOutput.success,
-      errorMessage: parsedOutput.errorMessage,
-      parsed: parsedOutput.parsed,
-      timestampAssurance: resolvedTsa,
-      ntpResult,
-    },
-    policy,
-    state,
-    policyResolved: true,
-    effectiveMode,
-  };
-}
-
-function parseAuditOutput(
-  output: unknown,
-): Pick<AuditContext, 'phase' | 'transitions' | 'success' | 'errorMessage' | 'parsed'> {
-  const parsed = parseToolResult(extractToolOutputValue(output));
-  const metadataTransitions = extractMetadataTransitions(output);
-  return {
-    phase: typeof parsed?.phase === 'string' ? parsed.phase : 'unknown',
-    transitions:
-      metadataTransitions.length > 0 ? metadataTransitions : extractParsedTransitions(parsed),
-    success: parsed?.error !== true,
-    errorMessage: typeof parsed?.errorMessage === 'string' ? parsed.errorMessage : undefined,
-    parsed,
-  };
-}
-
-function extractToolOutputValue(output: unknown): unknown {
-  return typeof output === 'object' && output !== null && 'output' in output
-    ? (output as { output?: unknown }).output
-    : output;
-}
-
-function extractMetadataTransitions(output: unknown): AuditContext['transitions'] {
-  const metadata =
-    typeof output === 'object' && output !== null
-      ? ((output as Record<string, unknown>).metadata as Record<string, unknown> | undefined)
-      : undefined;
-  return Array.isArray(metadata?.transitions)
-    ? (metadata.transitions as AuditContext['transitions'])
-    : [];
-}
-
-function extractParsedTransitions(
-  parsed: ReturnType<typeof parseToolResult>,
-): AuditContext['transitions'] {
-  const rawTransitions = (parsed?._audit as { transitions?: unknown } | undefined)?.transitions;
-  return Array.isArray(rawTransitions) ? (rawTransitions as AuditContext['transitions']) : [];
-}
-
-function resolveTimestampAssurancePolicy(
-  configured: TimestampAssurancePolicy | undefined,
-): TimestampAssurancePolicy {
-  return (
-    configured ?? {
-      enabled: false,
-      mode: 'local_only' as const,
-      strict: false,
-      criticalEvents: [],
-      ntpDriftThresholdMs: 30000,
-      tsaTimeoutMs: 10000,
-    }
-  );
-}
-
-async function resolveAuditNtpResult(
-  policy: TimestampAssurancePolicy,
-): Promise<NtpCheckResult | undefined> {
-  return policy.enabled && policy.mode !== 'local_only'
-    ? checkNtpClock(policy.ntpServers, policy.tsaTimeoutMs, policy.ntpDriftThresholdMs)
-    : undefined;
-}
 
 interface DecisionReceiptParams {
   deps: AuditDeps;
@@ -444,6 +297,10 @@ async function maybeCompleteAndArchive(
     const evt = finalizeWithTimestampEvidence(body, prevHash, evidence, digest);
     await deps.appendAndTrack(evt, ctx.sessDir, ctx.enableChainHash, sessionId);
     prevHash = evt.chainHash!;
+    deps.log.debug('audit', 'audit chain hash', {
+      prevHashPrefix: ctx.prevHash.slice(0, 8),
+      nextHashPrefix: prevHash.slice(0, 8),
+    });
   } else {
     deps.log.debug('audit', 'session_completed handled by tool layer', {
       archiveStatus: freshState.archiveStatus,
@@ -458,7 +315,7 @@ async function maybeCompleteAndArchive(
     } else {
       archiveSession(deps.cachedFingerprint, sessionId).catch((err) => {
         deps.log.warn('audit', 'auto-archive failed', {
-          error: err instanceof Error ? err.message : String(err),
+          error: serializeError(err),
         });
       });
     }
@@ -609,123 +466,6 @@ async function emitLifecycleAudit(input: {
     localTimestamp: ctx.now,
     timestampTracker,
   });
-}
-
-function buildLifecycleDetail(
-  ctx: AuditContext,
-  lifecycleAction: string,
-  state: SessionState | null,
-  policy: { mode: string; requireHumanGates: boolean },
-): {
-  action: 'session_created' | 'session_completed' | 'session_aborted';
-  finalPhase: Phase;
-  reason?: string;
-} {
-  const finalPhase =
-    ctx.transitions.length > 0
-      ? ctx.transitions[ctx.transitions.length - 1]!.to
-      : (ctx.phase as Phase);
-  const reason =
-    lifecycleAction === 'session_created' ? buildLifecycleReason(ctx, state, policy) : undefined;
-  return {
-    action: lifecycleAction as 'session_created' | 'session_completed' | 'session_aborted',
-    finalPhase,
-    ...(reason ? { reason } : {}),
-  };
-}
-
-function buildLifecycleReason(
-  ctx: AuditContext,
-  state: SessionState | null,
-  policy: { mode: string; requireHumanGates: boolean },
-): string {
-  const parsed =
-    typeof ctx.parsed?.policyResolution === 'object'
-      ? (ctx.parsed.policyResolution as Record<string, unknown>)
-      : null;
-  return lifecycleReasonFields(parsed, state, policy)
-    .map(([key, value]) => `${key}:${value}`)
-    .join(';');
-}
-
-function lifecycleReasonFields(
-  parsed: Record<string, unknown> | null,
-  state: SessionState | null,
-  policy: { mode: string; requireHumanGates: boolean },
-): Array<[string, string]> {
-  return [
-    ['requested_mode', lifecycleRequestedMode(parsed, state, policy)],
-    ['effective_mode', lifecycleEffectiveMode(parsed, state, policy)],
-    ['source', lifecycleSource(parsed, state)],
-    ['effective_gate_behavior', lifecycleGateBehavior(parsed, state, policy)],
-    ['reason', lifecycleReasonValue(parsed, state)],
-    ['resolution_reason', lifecycleResolutionReason(parsed, state)],
-    ['central_minimum_mode', lifecycleCentralMinimumMode(parsed, state)],
-    ['central_policy_digest', lifecycleCentralPolicyDigest(parsed, state)],
-  ];
-}
-
-function lifecycleRequestedMode(
-  parsed: Record<string, unknown> | null,
-  state: SessionState | null,
-  policy: { mode: string },
-): string {
-  return String(parsed?.requestedMode ?? state?.policySnapshot.requestedMode ?? policy.mode);
-}
-
-function lifecycleEffectiveMode(
-  parsed: Record<string, unknown> | null,
-  state: SessionState | null,
-  policy: { mode: string },
-): string {
-  return String(parsed?.effectiveMode ?? state?.policySnapshot.mode ?? policy.mode);
-}
-
-function lifecycleSource(
-  parsed: Record<string, unknown> | null,
-  state: SessionState | null,
-): string {
-  return String(parsed?.source ?? state?.policySnapshot.source ?? 'unknown');
-}
-
-function lifecycleGateBehavior(
-  parsed: Record<string, unknown> | null,
-  state: SessionState | null,
-  policy: { requireHumanGates: boolean },
-): string {
-  return String(
-    parsed?.effectiveGateBehavior ??
-      state?.policySnapshot.effectiveGateBehavior ??
-      (policy.requireHumanGates ? 'human_gated' : 'auto_approve'),
-  );
-}
-
-function lifecycleReasonValue(
-  parsed: Record<string, unknown> | null,
-  state: SessionState | null,
-): string {
-  return String(parsed?.reason ?? state?.policySnapshot.degradedReason ?? 'none');
-}
-
-function lifecycleResolutionReason(
-  parsed: Record<string, unknown> | null,
-  state: SessionState | null,
-): string {
-  return String(parsed?.resolutionReason ?? state?.policySnapshot.resolutionReason ?? 'none');
-}
-
-function lifecycleCentralMinimumMode(
-  parsed: Record<string, unknown> | null,
-  state: SessionState | null,
-): string {
-  return String(parsed?.centralMinimumMode ?? state?.policySnapshot.centralMinimumMode ?? 'none');
-}
-
-function lifecycleCentralPolicyDigest(
-  parsed: Record<string, unknown> | null,
-  state: SessionState | null,
-): string {
-  return String(parsed?.centralPolicyDigest ?? state?.policySnapshot.policyDigest ?? 'none');
 }
 
 async function emitToolErrorAudit(input: {

@@ -177,7 +177,10 @@ describe('integration/plugin-compaction', () => {
       expect(result).toBeNull();
       expect(deps.warnings).toHaveLength(1);
       expect(deps.warnings[0].message).toBe('failed to build compaction context');
-      expect(deps.warnings[0].extra.error).toBe('disk failure');
+      expect(deps.warnings[0].extra.error).toMatchObject({
+        name: 'Error',
+        message: 'disk failure',
+      });
     });
 
     it('returns null and logs warning for non-Error thrown values', async () => {
@@ -187,7 +190,10 @@ describe('integration/plugin-compaction', () => {
       const result = await buildCompactionContext(deps, 'sess-str');
 
       expect(result).toBeNull();
-      expect(deps.warnings[0].extra.error).toBe('string error');
+      expect(deps.warnings[0].extra.error).toMatchObject({
+        name: 'Error',
+        message: 'string error',
+      });
     });
   });
 

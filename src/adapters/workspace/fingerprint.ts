@@ -10,7 +10,7 @@
  */
 
 import * as path from 'node:path';
-import * as crypto from 'node:crypto';
+import { hashTextShort } from '../../shared/hashing.js';
 import { remoteOriginUrl } from '../git.js';
 
 import { FINGERPRINT_LENGTH, type FingerprintResult } from './types.js';
@@ -136,11 +136,7 @@ export async function computeFingerprint(worktree: string): Promise<FingerprintR
   if (remote) {
     const canonical = canonicalizeOriginUrl(remote);
     const material = `repo:${canonical}`;
-    const fingerprint = crypto
-      .createHash('sha256')
-      .update(material, 'utf-8')
-      .digest('hex')
-      .slice(0, FINGERPRINT_LENGTH);
+    const fingerprint = hashTextShort(material, FINGERPRINT_LENGTH);
     return {
       fingerprint,
       materialClass: 'remote_canonical',
@@ -152,11 +148,7 @@ export async function computeFingerprint(worktree: string): Promise<FingerprintR
   // Fallback: no remote — use normalized local path
   const normalizedRoot = normalizeForFingerprint(worktree);
   const material = `repo:local:${normalizedRoot}`;
-  const fingerprint = crypto
-    .createHash('sha256')
-    .update(material, 'utf-8')
-    .digest('hex')
-    .slice(0, FINGERPRINT_LENGTH);
+  const fingerprint = hashTextShort(material, FINGERPRINT_LENGTH);
   return {
     fingerprint,
     materialClass: 'local_path',
@@ -171,11 +163,7 @@ export async function computeFingerprint(worktree: string): Promise<FingerprintR
  */
 export function computeFingerprintFromRemote(canonicalRemote: string): string {
   const material = `repo:${canonicalRemote}`;
-  return crypto
-    .createHash('sha256')
-    .update(material, 'utf-8')
-    .digest('hex')
-    .slice(0, FINGERPRINT_LENGTH);
+  return hashTextShort(material, FINGERPRINT_LENGTH);
 }
 
 /**
@@ -184,9 +172,5 @@ export function computeFingerprintFromRemote(canonicalRemote: string): string {
  */
 export function computeFingerprintFromPath(normalizedPath: string): string {
   const material = `repo:local:${normalizedPath}`;
-  return crypto
-    .createHash('sha256')
-    .update(material, 'utf-8')
-    .digest('hex')
-    .slice(0, FINGERPRINT_LENGTH);
+  return hashTextShort(material, FINGERPRINT_LENGTH);
 }

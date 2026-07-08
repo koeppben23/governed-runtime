@@ -5,7 +5,7 @@
  * Runtime/session SSOT stays raw. This module only transforms export artifacts.
  */
 
-import { createHash } from 'node:crypto';
+import { hashTextShort } from '../shared/hashing.js';
 
 export type RedactionMode = 'none' | 'basic' | 'strict';
 
@@ -22,7 +22,7 @@ export interface RedactionOutcome {
 function stableMask(value: string, mode: RedactionMode): string {
   if (mode === 'none') return value;
   if (mode === 'basic') return '[REDACTED]';
-  const token = createHash('sha256').update(value).digest('hex').slice(0, 12);
+  const token = hashTextShort(value, 12);
   return `[REDACTED:${token}]`;
 }
 

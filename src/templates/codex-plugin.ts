@@ -192,7 +192,7 @@ description: Submit a governed implementation plan through FlowGuard MCP tools.
 Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy state yourself.
 
 1. Ensure a session exists by calling \`mcp__flowguard__flowguard_status\` or hydrate if needed.
-2. Submit the plan only through \`mcp__flowguard__flowguard_plan\`.
+2. Submit the plan only through \`mcp__flowguard__flowguard_plan\`. Prefer vertical tracer-bullet slices over horizontal layer-by-layer builds; resolve repository-answerable questions by exploring the codebase instead of asking.
 3. Treat any blocked, failed, malformed, or nonconforming tool result as terminal.
 4. Do not start implementation until FlowGuard returns an explicit allowed path.
 
@@ -207,9 +207,10 @@ description: Begin governed implementation only after FlowGuard allows implement
 Use the existing FlowGuard MCP tools. Do not interpret FlowGuard phase or policy state yourself.
 
 1. Call \`mcp__flowguard__flowguard_status\` to obtain the runtime-provided next action.
-2. Call \`mcp__flowguard__flowguard_implement\` only with the evidence required by the tool.
-3. If FlowGuard blocks, fails, or requests review evidence, report the exact blocker and stop.
-4. Use mutating host tools only after FlowGuard explicitly allows implementation.
+2. After completing the plan steps, call \`mcp__flowguard__flowguard_implement\` (no arguments) to record implementation evidence.
+3. To submit the independent reviewer's verdict, call \`mcp__flowguard__flowguard_review_implementation\` with \`reviewVerdict\` (record and verdict are separate single-purpose tools). Submit only the verdict FlowGuard's \`next\` field instructs; never self-approve.
+4. If FlowGuard blocks, fails, or requests review evidence, report the exact blocker and stop.
+5. Use mutating host tools only after FlowGuard explicitly allows implementation.
 `,
 } as const;
 

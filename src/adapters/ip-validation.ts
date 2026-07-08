@@ -1,6 +1,7 @@
 /**
  * @module adapters/ip-validation
- * @description Private/reserved IP address validation for SSRF mitigation (BUG-13).
+ * @description Private/reserved IP address validation and IP format checks
+ *              for SSRF mitigation (BUG-13).
  *
  * Extracted from rails/review.ts to keep IP-level concerns in the adapters layer.
  */
@@ -81,4 +82,91 @@ function parseHextet(value: string): number | null {
   if (!/^[0-9a-f]{1,4}$/.test(value)) return null;
   const parsed = Number.parseInt(value, 16);
   return Number.isInteger(parsed) && parsed >= 0 && parsed <= 0xffff ? parsed : null;
+}
+
+/**
+ * Check if a string is a syntactically valid dotted-decimal IPv4 address.
+ */
+export function isIPv4Address(addr: string): boolean {
+  return parseIPv4(addr) !== null;
+}
+
+/**
+ * Check if a string is a syntactically valid IPv6 address.
+ *
+ * Conservative, fail-closed format validation. Handles full, compressed
+ * (::), dotted-IPv4-tail, and IPv4-mapped (::ffff:x.x.x.x) formats.
+ * Unrecognised formats are rejected — this is a DNS-resolver sanity
+ * check inside an SSRF mitigation path, so rejecting valid but unusual
+ * forms (false negative) is preferred over accepting malformed input
+ * (false positive).
+ *
+ * Limitations (by design, not oversight):
+ * - Bare IPv4 addresses are not accepted (use isIPv4Address).
+ * - Non-dotted embedded IPv4 (e.g. hex-only ::ffff:a:b) flows through
+ *   the generic hextet validator.
+ */
+export function isIPv6Address(addr: string): boolean {
+  if (!addr || addr.length < 2) return false;
+
+  const lo = addr.toLowerCase();
+  if (!lo.includes(':')) return false;
+
+  // Embedded dotted IPv4 tail — ::ffff:192.0.2.128, 2001:db8::192.0.2.1
+  // The dotted tail counts as two hextets; the prefix must have ≤ 6.
+  const lastColon = lo.lastIndexOf(':');
+  if (lastColon >= 0) {
+    const tail = lo.slice(lastColon + 1);
+    if (tail.includes('.') && parseIPv4(tail) !== null) {
+      let prefix = lo.slice(0, lastColon);
+      // When :: sits right before the dotted IPv4 tail, the prefix slice
+      // captures only one colon.  Restore the second so :: is preserved.
+      if (prefix.endsWith(':')) {
+        prefix += ':';
+      }
+      return hextetPrefixValid(prefix, 6);
+    }
+  }
+
+  // Pure hex hextet IPv6 — no dotted tail
+  return hextetPrefixValid(lo, 8);
+}
+
+/**
+ * Validate an IPv6 address or prefix consisting only of hex hextets
+ * with optional `::` compression.  `max` is the maximum total hextet
+ * count (8 for a full address, 6 when a dotted-IPv4 tail contributes 2).
+ */
+function hextetPrefixValid(prefix: string, max: number): boolean {
+  // Leading :: — e.g. ::1, ::
+  if (prefix.startsWith('::')) {
+    const rest = prefix.slice(2);
+    if (rest === '') return true;
+    if (rest.startsWith(':')) return false;
+    const segments = rest.split(':');
+    return segments.length <= max - 1 && segments.every((s) => /^[0-9a-f]{1,4}$/.test(s));
+  }
+
+  // Trailing :: — e.g. 2001:db8::
+  if (prefix.endsWith('::')) {
+    const before = prefix.slice(0, -2);
+    if (before.endsWith(':')) return false;
+    const segments = before.split(':');
+    return segments.length <= max - 1 && segments.every((s) => /^[0-9a-f]{1,4}$/.test(s));
+  }
+
+  // Middle :: — e.g. 2001:db8::1
+  if (prefix.includes('::')) {
+    const parts = prefix.split('::');
+    if (parts.length !== 2) return false;
+    const left = parts[0] ? parts[0].split(':') : [];
+    const right = parts[1] ? parts[1].split(':') : [];
+    if (left.length + right.length > max - 1) return false;
+    return [...left, ...right].every((s) => /^[0-9a-f]{1,4}$/.test(s));
+  }
+
+  // Full address — exactly max segments
+  const parts = prefix.split(':');
+  if (parts.length !== max) return false;
+  return parts.every((s) => /^[0-9a-f]{1,4}$/.test(s));
 }

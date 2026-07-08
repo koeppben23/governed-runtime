@@ -7,6 +7,198 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0-tp.2] - 2026-07-08
+
+### Added
+
+- **AGENTS.md: Lead-level agent contract (Tier 2, #590, #591, #592).** Canonical
+  Authorities map, Module Boundaries import table, Error/Naming conventions,
+  Test Placement rules, Verification Checklist, PR Metadata classification,
+  Generated Guards protocol, Git Conventions. 73 → 172 lines.
+
+- **Pre-execution reviewer-task enforcement (#588).** `flowguard-reviewer` Tasks
+  are now blocked BEFORE subagent execution when `host_task_required` policy is
+  active and no pending review obligation exists. Prevents wasted LLM time in
+  demo and production flows. New reason codes:
+  `REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION` and
+  `STATE_UNAVAILABLE_FOR_REVIEWER_TASK`.
+
+- **File-sink JSONL correlation IDs (#587).** `traceId` and `sessionId` are now
+  serialized in file-sink JSONL output, matching the correlation transport of
+  console-sink JSON mode and OTLP-sink attributes.
+
+- **OtlpSinkHandle barrel export (#586).** Added `OtlpSinkHandle` type to the
+  logging barrel export (`src/logging/index.ts`).
+
+- **Contract test suites — 6 untested authority modules (Tier 3, #593, #594,
+  #595).** New tests for: `mandates-renderer.ts`, `discovery-schemas.ts`,
+  `install-steps.ts`, `doctor-command.ts`, `helpers.ts`,
+  `architecture-review.ts`. Zero production code changes.
+
+### Fixed
+
+- **ISO timestamps preserved in diagnostic sanitization (#587).** The
+  `sanitizeDiagnosticString` line:column regex (`:\d+:\d+`) now uses a negative
+  lookbehind (`(?<!\d)`) so ISO 8601 timestamps like `T08:30:16.735Z` are no
+  longer mangled into `T08.735Z`.
+
+- **CLI file-sink onFailure (#586).** CLI file-sink switched from
+  number-overload to object form with `serializeError(err).message`-based
+  `onFailure` handler. Previously silent on write errors.
+
+- **vitest double-run (#589).** `inspect-command.test.ts` now excluded from
+  `unit` project — was running twice (unit + smoke).
+
+- **Bare `throw new Error` eliminated (#596).** `content-digest.ts` changed
+  from bare `throw new Error(...)` to `PersistenceError('MISSING_FILE_DIGEST',
+...)`. New error code added to `PersistenceErrorCode` union.
+
+- **22 docs-drift findings (#589).** KNOWN_ISSUES table formatting, README CI
+  Jobs expanded 6→21, CONTRIBUTING Bun reference removed, CI checks 7→21,
+  `lint`→`lint:strict` corrected, 5 user-guide version references updated.
+
+- **Historical reason-code test entries (#588).** `LOCK_TIMEOUT` and
+  `LOCK_TIMEOUT_EXHAUSTED` added to the `PersisenceErrorCode` valid-codes
+  test array.
+
+### Changed
+
+- **Stryker mutation scope expanded 35→39 (Tier 3, #595).** Four canonical
+  authority files added: `flowguard-config.ts`, `policy-presets.ts`,
+  `policy-snapshot-normalize.ts`, `profile.ts`.
+  `vitest.stryker.config.ts` unchanged — existing globs cover all test files.
+
+- **KNOWN_ISSUES.md structural sync (#589).** MUT1 `Tracked`→`Fixed`,
+  7 items moved to Fixed table, Status Legend expanded (+4 statuses),
+  SZ1/SZ2 file sizes updated, per-file mutation scores marked `NOT_VERIFIED`,
+  AC3 cross-reference added between Packages B and D.
+
+- **CI timeouts (#596).** 10 `timeout-minutes` added to jobs without limits:
+  `sdk-baseline`, `lint`, `unused-dependencies`, `format`, `actions-pinning`,
+  `actionlint`, `secrets-scan`, `security-policy`, `dependency-review`,
+  `ci-runtime-report`.
+
+- **Release workflow hardening (#596).** `npm run lint:strict` added to
+  `verify` job — was missing in the tag-triggered release path.
+
+- **Global config warning precision (#587).** Changed from `"Global config
+not found, using defaults"` to `"Optional global config not found; using
+global defaults"`.
+
+- **Test migration to modern log context (#586).** `boundary-logging`,
+  `log-sanitization`, and `run-check-tool` tests migrated from deprecated
+  `runWithTraceContext*` to `runWithLogContext*`.
+
+### Security
+
+- **Central sink-layer redaction (#585).** Every log `message` and `extra` is
+  sanitized before reaching any sink (console, file, OTLP). Redacts: bearer
+  tokens, JWTs, `sk-/sk_live_` keys, `password=`/`token=`/`secret=`/`api_key=`
+  assignments, absolute POSIX paths, Windows/UNC paths, http(s) URLs. Redaction
+  is throw-safe and depth-bounded — `log.*()` never throws. Closes the logging
+  portion of R3, R5, R6, R7, R8, and D1.
+
+- **Reviewer criteria: security and root-cause dimensions (`criteriaVersion`
+  p36-v1 -> p37-v1).** The independent-reviewer criteria (`REVIEWER_CRITERIA` in
+  `src/templates/mandates-reviewer-criteria.ts`) gained two dimensions distilled
+  from established practice, without changing the review authority model or the
+  ReviewFindings schema: a **Security-as-risk** vulnerability lens (content +
+  implementation) — trace user input to sensitive sinks and flag concretely
+  exploitable injection, authn/authz bypass or privilege escalation, hardcoded
+  secrets or weak crypto, unsafe deserialization/RCE, XSS, and sensitive-data/PII
+  exposure, requiring a clear attack path rather than theoretical hardening; and
+  a **root-cause** check (plan + implementation) — a fix editing a shared
+  function must address the shared cause for every caller, not only the symptom
+  path named by the ticket. Security findings remain mapped to the existing
+  `risk` category (no new `category` enum value; the Zod ReviewFindings schema is
+  unchanged).
+  - Because the criteria are part of the reviewer mandate, the runtime
+    `REVIEW_MANDATE_DIGEST` changes with them; `REVIEW_CRITERIA_VERSION` is bumped
+    to `p37-v1`. Both are attestation-bound and fail-closed validated, so sessions
+    with obligations bound to the previous digest/version must be re-hydrated or
+    re-created. The `criteriaVersion`/`mandateDigest` mismatch negative paths
+    remain enforced. The `REVIEWER_AGENT` template hash and the reviewer-prompt
+    compactness budget (96 -> 98 lines) are refreshed; no command templates change
+    (`COMMANDS` hash is unchanged).
+
+- **Reviewer criteria enrichment (`criteriaVersion` p35-v1 -> p36-v1).** The
+  independent-reviewer criteria (`REVIEWER_CRITERIA` in
+  `src/templates/mandates-reviewer-criteria.ts`) gained falsification-oriented
+  guidance distilled from established engineering practice, without changing the
+  review authority model: plan review now checks module depth and vertical
+  tracer-bullet slicing; implementation review now flags tests coupled to
+  internals (mocking internal collaborators, asserting call counts, verifying
+  past the interface) and non-boundary mocks, and requires conviction (uncertain
+  concerns recorded under `unknowns`/`missingVerification`, not as blocking
+  issues); ADR review now checks decision justification (hard-to-reverse,
+  surprising-without-context, real trade-off) and applies the deletion test to
+  proposed seams; content review now restricts findings to changed code, flags
+  newly changed source files over ~1000 lines, and demands high-conviction
+  findings with an exact location and concrete remedy.
+  - Because the criteria are part of the reviewer mandate, the runtime
+    `REVIEW_MANDATE_DIGEST` changes with them; `REVIEW_CRITERIA_VERSION` is bumped
+    to `p36-v1`. Both are attestation-bound and fail-closed validated, so
+    sessions with obligations bound to the previous digest/version must be
+    re-hydrated or re-created. The `criteriaVersion`/`mandateDigest` mismatch
+    negative paths remain enforced.
+  - The `/plan` command gained tracer-bullet / deep-module step guidance and a
+    "Planning discipline" section (resolve repository-answerable questions by
+    exploring the codebase, stress-test edge scenarios, cross-check claims
+    against code); `/validate` gained an advisory "Test quality" section. These
+    are author-side ergonomics only — `flowguard_run_check` execution and all
+    gates are unchanged. The Claude Code and Codex plan skills carry a condensed
+    parity note. These refresh the `COMMANDS` and `REVIEWER_AGENT` template
+    hashes.
+
+- **#565: split the multi-mode `flowguard_implement` tool into two
+  single-purpose tools, and made MCP tool input schemas strict.** Recording
+  implementation evidence and submitting the reviewer verdict are now distinct
+  tools: `flowguard_implement` records evidence and takes **no arguments**;
+  the new `flowguard_review_implementation` submits the reviewer verdict and
+  **requires** `reviewVerdict`. This makes the previously-possible invalid
+  state (sending a `reviewVerdict` on an evidence-record call) unrepresentable
+  at the tool surface, addressing the root cause behind #499. Separately, all
+  MCP tool input schemas are now emitted with `additionalProperties: false`
+  (strict) via `schema-converter.ts`, so MCP hosts that honor `strict`
+  reject unknown keys before the call reaches FlowGuard. A new runtime
+  conformance guard (`mcp-schema-strictness.test.ts`) verifies the live MCP
+  schemas are strict (the static baselines alone did not).
+  - **Breaking (tool surface, pre-release):** the MCP tool registry now exposes
+    **13** tools. Agents/hosts that submitted the implementation verdict via
+    `flowguard_implement({ reviewVerdict })` must call
+    `flowguard_review_implementation({ reviewVerdict })` instead. Command
+    templates and the Claude/Codex skills are updated accordingly. OpenCode is
+    unaffected at the schema layer (it has no FlowGuard-owned tool schema; its
+    protection remains the pre-tool-use runtime validation).
+
+- **#499: unified multi-mode tool-contract validation.** `flowguard_plan`,
+  `flowguard_architecture`, and `flowguard_implement` now classify their
+  argument shape through one canonical authority (`review-validation-mode.ts`),
+  replacing three divergent per-tool validators. This closes architecture gaps:
+  `adrText + reviewVerdict:"accept"` is now rejected (`ADR_APPROVE_WITH_TEXT`)
+  instead of silently dropping adrText; findings-without-verdict is rejected
+  (`ADR_FINDINGS_WITHOUT_VERDICT`); and the previously-orphaned
+  `INVALID_ARCHITECTURE_TOOL_SEQUENCE` is wired for reviewerUnavailable-with-
+  submission. `flowguard_implement` now also rejects reviewerUnavailable mixed
+  into a record-mode call. A new SSOT guard (`mode-validation-ssot.test.ts`)
+  prevents future per-tool classifier drift.
+  - **Behavior change:** the architecture tool previously ACCEPTED (and silently
+    discarded) `reviewFindings` on a Mode-A submission; it now fails closed with
+    `ADR_FINDINGS_WITHOUT_VERDICT`, matching plan/implement.
+  - Block messages for `IMPLEMENTATION_EVIDENCE_REQUIRED`, `PLAN_APPROVE_WITH_TEXT`,
+    and `ADR_APPROVE_WITH_TEXT` now echo the verdict the caller actually sent
+    (anti-confabulation), e.g. `reviewVerdict="accept"`.
+
+- **Clean Code: unified canonical JSON serializer.** The two divergent recursive
+  key-sorting serializers (audit `canonical-digest.ts` and a private one in
+  `discovery-digest.ts`) are consolidated into a single `shared/canonical-json.ts`
+  authority. Byte-identical output (proven by lock-in tests); no persisted digest
+  changes. The SSOT guard now catches any duplicate `canonicalize` helper.
+- **Clean Code enforcement and docs.** Added a `file-size.test.ts` guard (blocker
+  at 750 LOC production / 2000 LOC tests). CONTRIBUTING.md and project-governance.md
+  now document per-principle "Enforced by" mappings, a single canonical size budget,
+  additional principles (fail-closed, typed errors, determinism, API stability),
+  and a falsifiable "Definition of 100% Clean Code" checklist.
 
 ## [1.2.0-tp.1] - 2026-06-16
 

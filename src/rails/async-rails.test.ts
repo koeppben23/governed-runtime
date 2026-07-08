@@ -17,7 +17,7 @@ import {
   IMPL_REVIEW_CONVERGED,
   IMPL_REVIEW_PENDING_RESULT,
   ARCHITECTURE_DECISION,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import type { ValidationResult } from '../state/evidence-validation.js';
 import { SOLO_POLICY, TEAM_POLICY } from '../config/policy.js';

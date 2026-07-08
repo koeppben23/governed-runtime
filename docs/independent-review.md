@@ -20,7 +20,7 @@ FlowGuard's independent review system enables structured, policy-governed review
 │     → INDEPENDENT_REVIEW_REQUIRED: call Task tool       │
 │       to invoke flowguard-reviewer manually             │
 │     → BLOCKED (strict mode orchestration/evidence fail) │
-│  4. Submit verdict + reviewFindings to FlowGuard tool   │
+│  4. Submit verdict via flowguard_review_implementation  │
 └────────────────────┬────────────────────────────────────┘
                      │
           ┌──────────▼──────────┐
@@ -428,5 +428,5 @@ Mandatory by default. The default policy enables strict subagent review, blocks 
 
 ---
 
-FlowGuard Version: 1.2.0-tp.1
+FlowGuard Version: 1.2.0-tp.2
 _Last Updated: 2026-04-24_

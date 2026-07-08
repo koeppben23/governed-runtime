@@ -59,7 +59,7 @@ function validFindings(overrides: Record<string, unknown> = {}): string {
     reviewedAt: '2026-04-24T12:00:00.000Z',
     attestation: {
       mandateDigest: 'test-mandate-digest',
-      criteriaVersion: 'p35-v1',
+      criteriaVersion: 'p37-v1',
       toolObligationId: '11111111-1111-4111-8111-111111111111',
       iteration: 0,
       planVersion: 1,
@@ -127,7 +127,7 @@ function modeAOutput(
     status: `Plan submitted (v${planVersion}).`,
     selfReviewIteration: iteration,
     reviewObligationId: '11111111-1111-4111-8111-111111111111',
-    reviewCriteriaVersion: 'p35-v1',
+    reviewCriteriaVersion: 'p37-v1',
     reviewMandateDigest: 'test-mandate-digest',
     reviewMode: 'subagent',
     next:
@@ -290,7 +290,7 @@ describe('MUTATION_KILL: isReviewRequired /review CONTENT_ANALYSIS_REQUIRED boun
 describe('MUTATION_KILL: extractReviewContext regex fallback with multi-digit and whitespace', () => {
   const baseFields = {
     reviewObligationId: '11111111-1111-4111-8111-111111111111',
-    reviewCriteriaVersion: 'p35-v1',
+    reviewCriteriaVersion: 'p37-v1',
     reviewMandateDigest: 'test-mandate-digest',
   };
 

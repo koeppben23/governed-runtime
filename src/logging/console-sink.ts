@@ -6,31 +6,70 @@
  * to keep stdout clean for CLI user output and machine-readable data.
  *
  * Design:
- * - Formats each entry as: [TIMESTAMP] [LEVEL] service: message {extra}
+ * - Text mode: [TIMESTAMP] [LEVEL] [trace/session] service: message {extra}
+ * - JSON mode: JSON.stringify(entry) + '\n' (for container log aggregators)
  * - All output to stderr (industry standard for diagnostic logs)
  * - Non-blocking: errors are swallowed; logging never affects governance flow
  *
  * FlowGuard operational logs are diagnostic only. They are not audit evidence
  * and are not part of the governance SSOT.
  *
- * @version v2
+ * @version v3
  */
 
 import type { LogEntry, LogSink } from './logger.js';
 
 /**
+ * Escape control characters (newlines, carriage returns, tabs, ANSI escapes,
+ * other C0 controls) so a crafted message cannot inject a forged log line or
+ * emit raw terminal escape sequences in text mode. JSON mode is already safe
+ * because JSON.stringify escapes these.
+ */
+function escapeControlChars(s: string): string {
+  let out = '';
+  for (let i = 0; i < s.length; i++) {
+    const code = s.charCodeAt(i);
+    if (code <= 0x1f || code === 0x7f) {
+      out += `\\x${code.toString(16).padStart(2, '0')}`;
+    } else {
+      out += s[i];
+    }
+  }
+  return out;
+}
+
+/**
+ * Console sink options.
+ */
+export interface ConsoleSinkOptions {
+  /** Output format. 'text' is the backward-compatible default. */
+  format?: 'text' | 'json';
+}
+
+/**
  * Create a console-based logging sink.
  *
+ * @param options - Optional format configuration (defaults to 'text').
  * @returns LogSink function.
  */
-export function createConsoleSink(): LogSink {
+export function createConsoleSink(options?: ConsoleSinkOptions): LogSink {
+  const fmt = options?.format ?? 'text';
+
   return (entry: LogEntry): void => {
     try {
-      const ts = new Date().toISOString();
-      const extraStr = entry.extra ? ` ${JSON.stringify(entry.extra)}` : '';
-      const line = `[${ts}] [${entry.level.toUpperCase()}] ${entry.service}: ${entry.message}${extraStr}\n`;
-
-      process.stderr.write(line);
+      if (fmt === 'json') {
+        process.stderr.write(JSON.stringify(entry) + '\n');
+      } else {
+        const ts = new Date().toISOString();
+        const ids = [entry.traceId?.slice(0, 8), entry.sessionId].filter(Boolean).join('/');
+        // Escape every interpolated field (ids + service + message), not just the
+        // message: a sessionId carrying a newline could otherwise forge a log line
+        // in text mode. JSON mode is already safe via JSON.stringify.
+        const idStr = ids ? `[${escapeControlChars(ids)}] ` : '';
+        const extraStr = entry.extra ? ` ${JSON.stringify(entry.extra)}` : '';
+        const line = `[${ts}] [${entry.level.toUpperCase()}] ${idStr}${escapeControlChars(entry.service)}: ${escapeControlChars(entry.message)}${extraStr}\n`;
+        process.stderr.write(line);
+      }
     } catch {
       // Non-blocking — console errors never fail the flow
     }

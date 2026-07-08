@@ -5,7 +5,7 @@
  * Spawns the FlowGuard MCP server as a child process and communicates
  * via JSON-RPC over stdin/stdout to verify:
  * - Protocol initialization handshake
- * - tools/list returns all 12 tools with correct schemas
+ * - tools/list returns all 13 tools with correct schemas
  * - tools/call with valid and invalid inputs
  * - Error handling for unknown tools, bad args, missing session state
  * - stdout is exclusively JSON-RPC (no contamination)
@@ -188,7 +188,7 @@ describe('MCP Protocol Compliance', () => {
     await new Promise((r) => setTimeout(r, 100));
   });
 
-  it('HAPPY: tools/list returns all 12 FlowGuard tools', async () => {
+  it('HAPPY: tools/list returns all 13 FlowGuard tools', async () => {
     const resp = await client.send(makeRequest('tools/list', {}));
 
     expect(resp.error).toBeUndefined();
@@ -197,7 +197,7 @@ describe('MCP Protocol Compliance', () => {
     const result = resp.result as { tools: Array<{ name: string; description: string }> };
     expect(result.tools).toBeDefined();
     expect(Array.isArray(result.tools)).toBe(true);
-    expect(result.tools.length).toBe(12);
+    expect(result.tools.length).toBe(13);
 
     const toolNames = result.tools.map((t) => t.name).sort();
     const expectedNames = [
@@ -207,6 +207,7 @@ describe('MCP Protocol Compliance', () => {
       'flowguard_decision',
       'flowguard_hydrate',
       'flowguard_implement',
+      'flowguard_review_implementation',
       'flowguard_plan',
       'flowguard_review',
       'flowguard_status',
@@ -214,7 +215,7 @@ describe('MCP Protocol Compliance', () => {
       'flowguard_run_check',
     ];
 
-    // We expect 12 tools - check at least these core ones are present
+    // We expect 13 tools - check at least these core ones are present
     for (const name of expectedNames) {
       expect(toolNames, `Missing tool: ${name}`).toContain(name);
     }
@@ -280,12 +281,13 @@ describe('MCP Protocol Compliance', () => {
     expect(resp.jsonrpc).toBe('2.0');
   });
 
-  it('HAPPY: tools/call invokes each of the 12 tools without protocol error', async () => {
+  it('HAPPY: tools/call invokes each of the 13 tools without protocol error', async () => {
     const allToolNames = [
       'flowguard_status',
       'flowguard_hydrate',
       'flowguard_plan',
       'flowguard_implement',
+      'flowguard_review_implementation',
       'flowguard_architecture',
       'flowguard_decision',
       'flowguard_run_check',
@@ -297,10 +299,15 @@ describe('MCP Protocol Compliance', () => {
     ];
 
     for (const toolName of allToolNames) {
+      // flowguard_review_implementation requires reviewVerdict (strict schema,
+      // issue #565). Supply a valid value so we exercise the tool, not a schema
+      // rejection. All other tools accept an empty argument object.
+      const toolArgs: Record<string, unknown> =
+        toolName === 'flowguard_review_implementation' ? { reviewVerdict: 'accept' } : {};
       const resp = await client.send(
         makeRequest('tools/call', {
           name: toolName,
-          arguments: {},
+          arguments: toolArgs,
         }),
       );
 

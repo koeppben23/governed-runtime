@@ -32,7 +32,7 @@ import {
   writeStateWithArtifacts,
 } from './helpers.js';
 import { readState, statePath, atomicWrite } from '../../adapters/persistence.js';
-import { makeState, makeProgressedState } from '../../__fixtures__.js';
+import { makeState, makeProgressedState } from '../../fixtures.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 

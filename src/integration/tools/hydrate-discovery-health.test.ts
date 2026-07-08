@@ -31,7 +31,7 @@ vi.mock('../discovery-health-audit.js', () => ({
   auditDiscoveryHealthGateTransition: mockAudit,
 }));
 
-import { reconcileHydrateDiscoveryHealthGate } from './hydrate.js';
+import { reconcileHydrateDiscoveryHealthGate } from './hydrate-discovery-health.js';
 import {
   unavailableDiscoveryHealth,
   extractDiscoveryHealth,
@@ -39,7 +39,7 @@ import {
 import type { RailResult } from '../../rails/types.js';
 import type { SessionState } from '../../state/schema.js';
 import type { DiscoveryResult } from '../../discovery/types.js';
-import { makeState } from '../../__fixtures__.js';
+import { makeState } from '../../fixtures.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 

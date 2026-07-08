@@ -9,7 +9,7 @@ import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { resolveActorForPolicy } from '../adapters/actor-context.js';
-import { makeProgressedState } from '../__fixtures__.js';
+import { makeProgressedState } from '../fixtures.js';
 
 type RequiredTier = 'best_effort' | 'claim_validated' | 'idp_verified';
 type ActualTier = 'best_effort' | 'claim_validated' | 'idp_verified' | 'unknown';

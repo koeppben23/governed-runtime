@@ -15,7 +15,7 @@
  * @version v2
  */
 
-import type { PhaseInstructions } from '../../profile.js';
+import type { PhaseInstructions } from '../../profile-types.js';
 import {
   DETECTED_STACK_INSTRUCTION,
   PLAN_REVIEW_DISCOVERY_INSTRUCTION,

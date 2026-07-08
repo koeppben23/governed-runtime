@@ -13,10 +13,9 @@
  * @version v2
  */
 
-import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { hashText } from '../../shared/hashing.js';
+import { hashText, hashFile } from '../../shared/hashing.js';
 import type { SessionState } from '../../state/schema.js';
 import { atomicWrite } from '../persistence.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
@@ -118,10 +117,7 @@ export async function materializeReviewCardArtifact(
   const jsonPath = path.join(artifactsDir, `${base}.json`);
   const persistedContent = markdown.endsWith('\n') ? markdown : `${markdown}\n`;
   // P0#2: hash is computed from the ACTUAL persisted content (with trailing newline).
-  const markdownSha256 = crypto
-    .createHash('sha256')
-    .update(persistedContent, 'utf-8')
-    .digest('hex');
+  const markdownSha256 = hashText(persistedContent);
 
   try {
     await fs.mkdir(artifactsDir, { recursive: true });
@@ -130,7 +126,7 @@ export async function materializeReviewCardArtifact(
     // Immutability: if the file already exists, preserve the original.
     try {
       const existing = await fs.readFile(mdPath, 'utf-8');
-      const existingHash = crypto.createHash('sha256').update(existing, 'utf-8').digest('hex');
+      const existingHash = hashText(existing);
       if (existingHash === markdownSha256) {
         // P1#3: verify .json metadata exists and matches. Recreate if missing.
         await ensureMetaJson({
@@ -673,11 +669,6 @@ async function cleanupCreatedArtifacts(createdPaths: string[]): Promise<void> {
       /* best effort cleanup */
     }
   }
-}
-
-async function hashFile(filePath: string): Promise<string> {
-  const content = await fs.readFile(filePath);
-  return crypto.createHash('sha256').update(content).digest('hex');
 }
 
 function isNotFound(err: unknown): boolean {

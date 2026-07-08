@@ -132,6 +132,33 @@ export const PERF_BUDGETS = {
 
   /** Read-only review report generation without an LLM executor. */
   reviewReportMs: 5 * CI_MULTIPLIER * PERF_BUDGET_FACTOR,
+
+  /**
+   * Unfocused flowguard_status over a small fixture workspace (full projection:
+   * discovery read + advisory discovery-drift rediscovery + mandates).
+   * Baseline guard for the F1 hot path — a future drift cache (P1) should pull
+   * this far below the value here. Intentionally generous: this is the
+   * status-quo baseline, not a tightened target.
+   * I/O + discovery bound → 3x CI multiplier for noisy VMs.
+   */
+  statusUnfocusedFixtureMs: 1500 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
+
+  /**
+   * Focused flowguard_status over the same fixture (evidence projection only,
+   * no discovery read / no drift). The unfocused-vs-focused DELTA is the cost
+   * the P1 drift cache removes; this is the floor the unfocused path should
+   * approach once drift is cached.
+   * I/O bound → 3x CI multiplier.
+   */
+  statusFocusedFixtureMs: 200 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
+
+  /**
+   * Single computeFingerprint(worktree) — spawns `git remote get-url origin`.
+   * Baseline guard for the F3 hot path (per-tool-call fingerprint). A future
+   * fingerprint cache (P2) should make repeat resolutions effectively free.
+   * Subprocess + I/O bound → 3x CI multiplier.
+   */
+  fingerprintResolveMs: 200 * (process.env.CI ? 3 : 1) * PERF_BUDGET_FACTOR,
 };
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────

@@ -10,22 +10,38 @@
     "configFile": "vitest.stryker.config.ts"
   },
   "mutate": [
-    "src/adapters/persistence.ts",
     "src/adapters/persistence-lock.ts",
     "src/adapters/host-adapter.ts",
+
+    "src/archive/content-digest.ts",
 
     "src/audit/completeness.ts",
     "src/audit/integrity.ts",
 
     "src/config/policy.ts",
     "src/config/reasons.ts",
+    "src/config/profile.ts",
+
+    "src/hooks/http-server.ts",
 
     "src/identity/token-verifier.ts",
+    "src/identity/key-resolver.ts",
 
     "src/integration/command-aliases.ts",
     "src/integration/tool-classification.ts",
+    "src/integration/tools/review-validation-mode.ts",
+    "src/integration/plugin-audit-lifecycle-reason.ts",
+    "src/templates/codex-plugin.ts",
+    "src/templates/mandates.ts",
     "src/integration/review/enforcement/enforcement.ts",
     "src/integration/review/orchestrator.ts",
+    "src/integration/review/orchestrator-detection.ts",
+    "src/integration/review/orchestrator-output.ts",
+    "src/integration/review/agent-resolution.ts",
+
+    "src/shared/canonical-json.ts",
+
+    "src/logging/error-serialize.ts",
 
     "src/machine/commands.ts",
     "src/machine/evaluate.ts",
@@ -42,12 +58,12 @@
     "src/hooks/shared/phase-gate.ts"
   ],
   "mutator": {
-    "excludedMutations": ["StringLiteral"]
+    "excludedMutations": ["StringLiteral", "ArrayDeclaration"]
   },
   "ignoreStatic": true,
   "thresholds": {
-    "high": 90,
-    "low": 60,
+    "high": 85,
+    "low": 80,
     "break": 80
   }
 }

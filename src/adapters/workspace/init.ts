@@ -47,7 +47,8 @@ import { computeFingerprint } from './fingerprint.js';
 export function workspacesHome(): string {
   if (process.env.FLOWGUARD_REQUIRE_TEST_CONFIG_DIR) {
     if (!process.env.OPENCODE_CONFIG_DIR) {
-      throw new Error(
+      throw new WorkspaceError(
+        'INIT_FAILED',
         `OPENCODE_CONFIG_DIR is not set but FLOWGUARD_REQUIRE_TEST_CONFIG_DIR is active. ` +
           `Test environments must set OPENCODE_CONFIG_DIR to an isolated temporary directory.`,
       );
@@ -72,7 +73,8 @@ function assertSafeConfigDir(dir: string): void {
   if (resolvedDir === tmpRoot) return;
   const rel = path.relative(tmpRoot, resolvedDir);
   if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) {
-    throw new Error(
+    throw new WorkspaceError(
+      'INIT_FAILED',
       `OPENCODE_CONFIG_DIR (${resolvedDir}) must be under the OS temp directory (${tmpRoot}) ` +
         `when FLOWGUARD_REQUIRE_TEST_CONFIG_DIR is active.`,
     );

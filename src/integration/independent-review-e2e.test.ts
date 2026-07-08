@@ -21,13 +21,21 @@
  * @test-policy HAPPY, BAD, CORNER, EDGE, PERF — covered by the suite + unit peers.
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+
+vi.mock('../adapters/gh-cli', () => ({
+  loadPrDiff: vi.fn().mockReturnValue('diff --git a/src/x.java b/src/x.java\n+pr line'),
+  loadBranchDiff: vi
+    .fn()
+    .mockReturnValue('diff --git a/src/x.java b/src/x.java\n+branch line for review'),
+}));
 import { FlowGuardAuditPlugin } from './plugin.js';
-import { makeState } from '../__fixtures__.js';
+import { review } from './tools/index.js';
+import { makeState } from '../fixtures.js';
 import { createTestWorkspace } from './test-helpers.js';
 import { readState, writeState } from '../adapters/persistence.js';
 import {
@@ -338,5 +346,139 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
         },
       ),
     ).resolves.toBeUndefined();
+  });
+
+  it('standalone /review: real Call 1 + reviewer Task binds host-task evidence through the plugin hooks', async () => {
+    // Closes the coverage gap: no test previously drove the standalone
+    // flowguard_review (CONTENT_ANALYSIS) -> flowguard_review after-hook
+    // (orchestrator handshake) -> reviewer Task after-hook -> buildHostTaskEvidence
+    // path against real persisted state. The review obligation created by Call 1
+    // must remain pending through the handshake so the reviewer Task binds a
+    // host_subagent_task invocation (the field reported as pendingObligationCount).
+    const ws = await createTestWorkspace();
+    cleanup = ws.cleanup;
+    await initGitRepo(ws.tmpDir);
+
+    // Seed a READY-phase session (host_task_required) with NO pre-existing review
+    // obligation — Call 1 must create it.
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, PARENT_SESSION);
+    await fs.mkdir(sessDir, { recursive: true });
+    const base = makeState('READY');
+    await writeState(
+      sessDir,
+      makeState('READY', {
+        policySnapshot: {
+          ...base.policySnapshot,
+          reviewInvocationPolicy: 'host_task_required',
+        },
+      }),
+    );
+
+    const ctx = {
+      sessionID: PARENT_SESSION,
+      worktree: ws.tmpDir,
+      directory: ws.tmpDir,
+      messageID: 'm1',
+      agent: 'build',
+      abort: new AbortController().signal,
+      metadata: () => {},
+    } as unknown as Parameters<typeof review.execute>[1];
+
+    // Call 1: content-aware /review with a BRANCH reference (the reported failing
+    // invocation was `/review branch=feature/add-due-date`) -> CONTENT_ANALYSIS_REQUIRED.
+    const call1Raw = await review.execute(
+      { branch: 'feature-add-due-date', inputOrigin: 'branch' },
+      ctx,
+    );
+    const call1 = JSON.parse(String(call1Raw)) as Record<string, unknown>;
+    expect(call1.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+    const att = call1.requiredReviewAttestation as Record<string, unknown>;
+    const obligationId = att.toolObligationId as string;
+    expect(typeof obligationId).toBe('string');
+
+    // The obligation must be persisted and pending after Call 1.
+    const afterCall1 = await readState(sessDir);
+    const pendingAfterCall1 = (afterCall1?.reviewAssurance?.obligations ?? []).filter(
+      (o) => o.obligationType === 'review' && o.status === 'pending',
+    );
+    expect(pendingAfterCall1.length, 'pending review obligation after Call 1').toBe(1);
+
+    const hooks = await FlowGuardAuditPlugin({
+      project: {} as unknown,
+      client: strictNoSdkClient(),
+      $: {} as unknown,
+      directory: ws.tmpDir,
+      worktree: ws.tmpDir,
+      serverUrl: new URL('http://localhost:3000'),
+    } as Parameters<typeof FlowGuardAuditPlugin>[0]);
+    const afterHook = hooks['tool.execute.after']!;
+
+    // flowguard_review after-hook: the orchestrator runs handleHostTaskPolicy
+    // (host-task handshake) on the SAME output the tool returned.
+    await afterHook(
+      { tool: 'flowguard_review', sessionID: PARENT_SESSION, callID: 'c-review', args: {} },
+      { output: String(call1Raw), metadata: {} },
+    );
+
+    // The obligation must STILL be pending after the handshake (the log shows it
+    // becomes 0 — that is the bug).
+    const afterHandshake = await readState(sessDir);
+    const pendingAfterHandshake = (afterHandshake?.reviewAssurance?.obligations ?? []).filter(
+      (o) => o.obligationType === 'review' && o.status === 'pending',
+    );
+    expect(
+      pendingAfterHandshake.length,
+      'pending review obligation after flowguard_review after-hook (handshake)',
+    ).toBe(1);
+
+    // task after-hook: reviewer returns findings carrying the real obligationId.
+    await afterHook(
+      {
+        tool: 'task',
+        sessionID: PARENT_SESSION,
+        callID: 'c-task',
+        args: {
+          subagent_type: 'flowguard-reviewer',
+          prompt: `Review this content. iteration=1, planVersion=1. toolObligationId=${obligationId}. Return ReviewFindings JSON.`,
+        },
+      },
+      {
+        output: JSON.stringify({
+          iteration: 1,
+          planVersion: 1,
+          reviewMode: 'subagent',
+          overallVerdict: 'changes_requested',
+          blockingIssues: [],
+          majorRisks: [],
+          missingVerification: [],
+          scopeCreep: [],
+          unknowns: [],
+          reviewedBy: { sessionId: 'ses_reviewer_selfreported' },
+          reviewedAt: '2026-06-22T00:00:00.000Z',
+          attestation: {
+            toolObligationId: obligationId,
+            mandateDigest: REVIEW_MANDATE_DIGEST,
+            criteriaVersion: REVIEW_CRITERIA_VERSION,
+            iteration: 1,
+            planVersion: 1,
+            reviewedBy: 'flowguard-reviewer',
+          },
+        }),
+        metadata: { sessionID: CHILD_SESSION },
+      },
+    );
+
+    // The host-task evidence must be bound to the review obligation.
+    const finalState = await readState(sessDir);
+    const bound = (finalState?.reviewAssurance?.invocations ?? []).find(
+      (inv) => inv.obligationId === obligationId,
+    );
+    expect(
+      bound,
+      'host_subagent_task invocation evidence bound for the /review obligation',
+    ).toBeDefined();
+    expect(bound?.invocationMode).toBe('host_subagent_task');
+    expect(bound?.hostVisible).toBe(true);
   });
 });

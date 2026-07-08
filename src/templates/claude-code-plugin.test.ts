@@ -77,6 +77,34 @@ describe('Claude Code plugin templates', () => {
     );
   });
 
+  it('host-task verdict-only parity: review-loop skills forbid reviewFindings (not even a placeholder)', () => {
+    const files = claudeCodePluginFiles('1.2.3');
+
+    // The shared review-loop (plan/architecture/implement) must instruct
+    // verdict-only submission in host-task mode, matching the runtime that
+    // resolves findings from captured evidence and ignores submitted findings.
+    for (const skill of [
+      'skills/plan/SKILL.md',
+      'skills/architecture/SKILL.md',
+      'skills/implement/SKILL.md',
+    ]) {
+      expect(files[skill], skill).toContain('submit ONLY `reviewVerdict`');
+      expect(files[skill], skill).toContain('not even an empty placeholder object');
+    }
+  });
+
+  it('host-task verdict-only parity: standalone /review skill has a host-task verdict-only branch', () => {
+    const files = claudeCodePluginFiles('1.2.3');
+    const reviewSkill = files['skills/review/SKILL.md'];
+
+    // Host-task branch: verdict only, no reviewFindings.
+    expect(reviewSkill).toContain('Host-task mode');
+    expect(reviewSkill).toContain('`reviewVerdict` ONLY');
+    expect(reviewSkill).toContain('Do NOT submit `reviewFindings`, not even an empty placeholder');
+    // SDK/manual branch is preserved but now conditional.
+    expect(reviewSkill).toContain('SDK/manual mode only');
+  });
+
   it('pre-tool wrapper denies when the runtime hook target is unreachable', () => {
     const files = claudeCodePluginFiles('1.2.3');
     const wrapper = files['dist/hooks/pre-tool-use.js'];

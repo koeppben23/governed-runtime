@@ -27,7 +27,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 2: Implement
 
-2. Read the plan from the status response. Identify the numbered steps and files to modify.
+2. Use the approved plan authored in the /plan step as the source of truth. Identify the numbered steps and files to modify. (The plan body is NOT included in the flowguard_status response — status only confirms \`hasPlan\`/\`planVersion\` and the phase. Use the plan you produced during /plan; the persisted plan is also written to \`<sessionDir>/artifacts/plan.v<N>.md\` if you need to re-read it.)
 3. Execute each step in order:
    - Use \`read\` to examine existing files before modifying.
    - Use \`write\` or \`edit\` to create or modify files.
@@ -47,6 +47,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
 6. Read the \`next\` field from the tool response and follow its instructions exactly:
 ${SHARED_REVIEW_LOOP({
   toolName: 'flowguard_implement',
+  verdictToolName: 'flowguard_review_implementation',
   artifactName: 'implementation',
   reviseParams: '',
   changesRequestedExtra:
@@ -68,7 +69,7 @@ ${SHARED_REVIEW_LOOP({
 ## Rules
 
 - Follow the approved plan exactly — no deviations or additions.
-- Always record evidence (Mode A, no reviewVerdict) before submitting review verdict (Mode B, with reviewVerdict).
+- Record evidence with \`flowguard_implement({})\` (no arguments) BEFORE submitting the review verdict with \`flowguard_review_implementation({ reviewVerdict })\` — these are separate single-purpose tools.
 - Always complete the independent review (plugin findings or reviewer subagent).
 - When changes are requested: make the actual code changes, then re-record with flowguard_implement({}).
 - In Verification Evidence, list only checks that were actually executed. Mark all others as NOT_VERIFIED.
@@ -82,13 +83,13 @@ Happy path:
 1. \`flowguard_status\` → phase: IMPLEMENTATION, plan approved
 2. (execute plan steps: read/write/edit/bash)
 3. \`flowguard_implement({})\` → records evidence, returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-4. \`flowguard_implement({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the implementation)
+4. \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the implementation)
 
 Revision path (when review returns changes_requested):
-1. \`flowguard_implement({ reviewVerdict: "changes_requested" })\`
+1. \`flowguard_review_implementation({ reviewVerdict: "changes_requested" })\`
 2. (fix code based on blockingIssues)
 3. \`flowguard_implement({})\` → re-records evidence, new review starts
-4. \`flowguard_implement({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER decides via /review-decision)
+4. \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER decides via /review-decision)
 
 ${GOVERNANCE_RULES}
 ## Presentation

@@ -35,6 +35,7 @@ import {
   plan,
   decision,
   implement,
+  review_implementation,
   run_check,
   review,
   abort_session,
@@ -54,7 +55,7 @@ import {
   VALIDATION_PASSED,
   IMPL_EVIDENCE,
   IMPL_REVIEW_CONVERGED,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
@@ -413,7 +414,7 @@ describe('P26: regulated archive completion', () => {
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));
         if (s.phase === 'EVIDENCE_REVIEW') break;
-        await executeWithStrictReview(implement, { reviewVerdict: 'accept' });
+        await executeWithStrictReview(review_implementation, { reviewVerdict: 'accept' });
       }
       const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
       const result = parseToolResult(raw);
@@ -446,7 +447,7 @@ describe('P26: regulated archive completion', () => {
         }
       }
       await implement.execute({}, ctx);
-      await executeWithStrictReview(implement, { reviewVerdict: 'accept' });
+      await executeWithStrictReview(review_implementation, { reviewVerdict: 'accept' });
 
       // Verify we're at COMPLETE (solo auto-approves EVIDENCE_REVIEW)
       const s = parseToolResult(await status.execute({}, ctx));

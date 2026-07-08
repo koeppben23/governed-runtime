@@ -416,5 +416,5 @@ Representative typed fail-closed IdP errors:
 
 ---
 
-FlowGuard Version: 1.2.0-tp.1
+FlowGuard Version: 1.2.0-tp.2
 _Last Updated: 2026-04-23_

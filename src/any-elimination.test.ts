@@ -41,7 +41,14 @@ describe('plugin-logging.ts', () => {
     it('accepts client with matching log signature', async () => {
       const { buildLogSinks } = await import('./integration/plugin-logging.js');
       const config = {
-        logging: { mode: 'both' as const, level: 'info', retentionDays: 7 },
+        logging: {
+          mode: 'both' as const,
+          level: 'info',
+          retentionDays: 7,
+          consoleFormat: 'text' as const,
+          maxFileSizeMb: 10,
+          otlp: { enabled: false },
+        },
       };
       const client = {
         app: {
@@ -50,7 +57,7 @@ describe('plugin-logging.ts', () => {
           },
         },
       };
-      const sinks = buildLogSinks(config, client, '/tmp/test');
+      const { sinks } = buildLogSinks(config, client, '/tmp/test');
       expect(Array.isArray(sinks)).toBe(true);
     });
   });
@@ -130,7 +137,7 @@ describe('BUG-21 null-tolerance tests', () => {
     });
 
     it('execution BUG-21 block explains intentionally invalid input', () => {
-      const source = readSource('integration/tools-execute-execution.test.ts');
+      const source = readSource('integration/tools-execute-implement.test.ts');
       expect(source).toContain('BUG-21');
       expect(source).toContain('as any');
     });

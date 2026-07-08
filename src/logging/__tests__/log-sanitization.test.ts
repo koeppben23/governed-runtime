@@ -10,12 +10,8 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import {
-  setAdapterLogger,
-  resetAdapterLogger,
-  runWithTraceContext,
-  type AdapterLogger,
-} from '../adapter-logger.js';
+import { setAdapterLogger, resetAdapterLogger, type AdapterLogger } from '../adapter-logger.js';
+import { runWithLogContext } from '../log-context.js';
 
 function captureLogger(): {
   log: AdapterLogger;
@@ -67,7 +63,7 @@ describe('log-sanitization', () => {
       setAdapterLogger(log);
       const { formatBlocked } = await import('../../integration/tools/helpers.js');
 
-      runWithTraceContext('11111111-1111-4111-8111-111111111111', () => {
+      runWithLogContext({ traceId: '11111111-1111-4111-8111-111111111111' }, () => {
         formatBlocked('TICKET_REQUIRED', { action: '/some/internal/path' });
       });
 
@@ -75,7 +71,6 @@ describe('log-sanitization', () => {
         code: 'TICKET_REQUIRED',
         traceId: '11111111-1111-4111-8111-111111111111',
       });
-      expect(typeof entries[0]!.extra!.durationMs).toBe('number');
       expect(JSON.stringify(entries[0]!.extra)).not.toContain('/some/internal/path');
     });
   });

@@ -29,7 +29,7 @@ import { writeStateWithArtifacts } from './tools/helpers.js';
 import type { HostId } from '../shared/hosts.js';
 
 import { plan } from './tools/plan.js';
-import { implement } from './tools/implement.js';
+import { implement, review_implementation } from './tools/implement.js';
 import { architecture } from './tools/architecture.js';
 import { review } from './tools/review-tool/index.js';
 import { run_check } from './tools/run-check-tool.js';
@@ -41,7 +41,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
-import { makeState, TICKET } from '../__fixtures__.js';
+import { makeState, TICKET } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 
 // Mock the verification executor to avoid real subprocess execution
@@ -307,7 +307,7 @@ describe('FlowGuard tool-level E2E', () => {
         const { oblId } = await inject(s.sDir, st!, host, 'implement', s.tc.sessionID);
         st = await readState(s.sDir);
         const o1 = st!.reviewAssurance!.obligations.find((o) => o.obligationId === oblId)!;
-        const b = await implement.execute(
+        const b = await review_implementation.execute(
           {
             reviewVerdict: 'accept',
             reviewFindings: f(o1.obligationId, o1.iteration, o1.planVersion),
@@ -407,7 +407,7 @@ describe('FlowGuard tool-level E2E', () => {
         const { oblId: iid } = await inject(s.sDir, st!, host, 'implement', s.tc.sessionID);
         st = await readState(s.sDir);
         const io = st!.reviewAssurance!.obligations.find((o) => o.obligationId === iid)!;
-        const r4 = await implement.execute(
+        const r4 = await review_implementation.execute(
           {
             reviewVerdict: 'accept',
             reviewFindings: f(io.obligationId, io.iteration, io.planVersion),

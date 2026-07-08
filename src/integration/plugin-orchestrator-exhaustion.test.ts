@@ -25,7 +25,7 @@ vi.mock('./review/audit-events.js', () => ({
 
 import { readState } from '../adapters/persistence.js';
 import { appendReviewAuditEvent } from './review/audit-events.js';
-import { makeState, POLICY_SNAPSHOT, PLAN_RECORD, TICKET } from '../__fixtures__.js';
+import { makeState, POLICY_SNAPSHOT, PLAN_RECORD, TICKET } from '../fixtures.js';
 import { runReviewOrchestration } from './plugin-orchestrator.js';
 import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { createTestAdapter } from './test-adapter-helper.js';

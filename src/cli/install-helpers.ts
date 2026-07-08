@@ -10,7 +10,8 @@
 
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
-import { mkdir, readFile, writeFile, unlink, rm } from 'node:fs/promises';
+import { readFile, writeFile, unlink, rm } from 'node:fs/promises';
+import { ensureDir } from '../adapters/persistence.js';
 import { join, resolve, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
 import { timingSafeEqual } from 'node:crypto';
@@ -22,6 +23,27 @@ import {
   REVIEWER_AGENT,
   FLOWGUARD_MANDATES_BODY,
 } from './templates.js';
+
+// ─── Typed Errors ────────────────────────────────────────────────────────────
+
+export type InstallErrorCode =
+  | 'TARBALL_CHECKSUMS_UNREADABLE'
+  | 'TARBALL_DUPLICATE_ENTRY'
+  | 'TARBALL_NOT_FOUND'
+  | 'TARBALL_SHA256_MISMATCH'
+  | 'REVIEWER_CONFIG_REJECTED'
+  | 'REVIEWER_CONFIG_INVALID'
+  | 'REVIEWER_TUNING_UNSUPPORTED';
+
+export class InstallError extends Error {
+  readonly code: InstallErrorCode;
+
+  constructor(code: InstallErrorCode, message: string) {
+    super(message);
+    this.name = 'InstallError';
+    this.code = code;
+  }
+}
 
 // ---- re-export everything from split modules for backward compatibility ----
 export type {
@@ -39,6 +61,7 @@ export {
   PACKAGE_VERSION,
   resolvePackageRoot,
   SHIPPED_EXECUTABLE_CHECK,
+  BUILD_INFO_CHECK,
   FLOWGUARD_OWNED_FILES,
   FLOWGUARD_TARBALL_PATTERN,
   FLOWGUARD_INSTRUCTION_ENTRIES,
@@ -134,7 +157,8 @@ export async function verifyTarballChecksum(
   try {
     content = readFileSync(checksumsFilePath, 'utf-8');
   } catch (err) {
-    throw new Error(
+    throw new InstallError(
+      'TARBALL_CHECKSUMS_UNREADABLE',
       `Cannot read checksums file: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
@@ -156,7 +180,8 @@ export async function verifyTarballChecksum(
 
     if (basename(filename) === tarballName) {
       if (matchedHash !== undefined) {
-        throw new Error(
+        throw new InstallError(
+          'TARBALL_DUPLICATE_ENTRY',
           `Duplicate entry for "${tarballName}" in checksums file. ` +
             `Ambiguous integrity verification is denied.`,
         );
@@ -166,14 +191,18 @@ export async function verifyTarballChecksum(
   }
 
   if (matchedHash === undefined) {
-    throw new Error(`Tarball "${tarballName}" not found in checksums file "${checksumsFilePath}".`);
+    throw new InstallError(
+      'TARBALL_NOT_FOUND',
+      `Tarball "${tarballName}" not found in checksums file "${checksumsFilePath}".`,
+    );
   }
 
   const expectedHash = matchedHash;
   const actualHash = await hashFile(tarballPath);
 
   if (!safeHashHexEqual(actualHash, expectedHash)) {
-    throw new Error(
+    throw new InstallError(
+      'TARBALL_SHA256_MISMATCH',
       `Tarball SHA-256 mismatch.\n` +
         `  Expected: ${expectedHash}\n` +
         `  Actual:   ${actualHash}\n` +
@@ -217,13 +246,15 @@ function readReviewerModelEnv(): string | null {
   if (!model) return null;
 
   if (/[\r\n]/.test(model)) {
-    throw new Error(
+    throw new InstallError(
+      'REVIEWER_CONFIG_REJECTED',
       `${FLOWGUARD_REVIEWER_MODEL_ENV} contains newline characters — ` +
         'rejected to prevent YAML injection.',
     );
   }
   if (!VALID_MODEL_ID_PATTERN.test(model)) {
-    throw new Error(
+    throw new InstallError(
+      'REVIEWER_CONFIG_INVALID',
       `${FLOWGUARD_REVIEWER_MODEL_ENV} contains invalid characters: "${model}" — ` +
         'only alphanumeric, dots, slashes, @, colons, and hyphens are allowed.',
     );
@@ -238,7 +269,8 @@ function readReviewerEffortEnv(): string | null {
   if (!effort) return null;
 
   if (!VALID_EFFORT_PATTERN.test(effort)) {
-    throw new Error(
+    throw new InstallError(
+      'REVIEWER_CONFIG_INVALID',
       `${FLOWGUARD_REVIEWER_EFFORT_ENV} contains invalid value: "${effort}" — ` +
         'only lowercase letters are allowed (e.g. low, medium, high, xhigh, max).',
     );
@@ -264,7 +296,8 @@ function assertReviewerTuningSupported(platform: InstallPlatform): void {
     requested.push(FLOWGUARD_REVIEWER_EFFORT_ENV);
   if (requested.length === 0) return;
 
-  throw new Error(
+  throw new InstallError(
+    'REVIEWER_TUNING_UNSUPPORTED',
     `${requested.join(' and ')} ${requested.length > 1 ? 'are' : 'is'} set but reviewer ` +
       `model/effort tuning is not supported for platform "${platform}". ` +
       'Codex configures custom-agent model and model_reasoning_effort via native TOML under ' +
@@ -336,10 +369,6 @@ export function findParallelOpencodeConfig(preferredPath: string): string | null
 
 function isEnoent(err: unknown): boolean {
   return typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT';
-}
-
-export async function ensureDir(dir: string): Promise<void> {
-  await mkdir(dir, { recursive: true });
 }
 
 export async function safeRead(filePath: string): Promise<string | null> {

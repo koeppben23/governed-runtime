@@ -35,7 +35,7 @@ import {
   PLAN_RECORD,
   ARCHITECTURE_DECISION,
   IMPL_EVIDENCE,
-} from '../__fixtures__.js';
+} from '../fixtures.js';
 
 import type {
   ReviewFindings,

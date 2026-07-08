@@ -406,6 +406,42 @@ export const SessionState = z.object({
    */
   verificationCandidates: VerificationCandidatesSchema.optional(),
 
+  /**
+   * Pre-implementation worktree baseline (P-baseline).
+   *
+   * Snapshot of files already dirty at session start (hydrate), used by
+   * flowguard_implement to scope recorded evidence to files the task actually
+   * changed — pre-existing dirty files (e.g. a stale opencode.json) are
+   * subtracted so they are not attributed to the implementation or used to
+   * raise the risk floor.
+   *
+   * `.optional()` for backward compatibility (no schema version bump): legacy
+   * sessions and sessions hydrated by an older plugin have no baseline. When
+   * absent, implement does NOT subtract (it records the full worktree exactly
+   * as before) and surfaces `baselineScoping: "unavailable"` — it never hides
+   * evidence. Null is treated identically to absent.
+   */
+  implementationBaseline: z
+    .object({
+      /**
+       * Files dirty at capture time, each with the git blob hash of its content
+       * at session start. A pre-dirty file is scoped out of implementation
+       * evidence ONLY if its current hash still matches — so a file the task
+       * actually modified (hash changed) is never hidden. `hash` is null for a
+       * path that was unreadable/deleted at capture time.
+       */
+      dirtyFiles: z.array(
+        z.object({
+          path: z.string(),
+          hash: z.string().nullable(),
+        }),
+      ),
+      /** ISO-8601 capture timestamp (hydrate time). */
+      capturedAt: z.string().datetime(),
+    })
+    .nullable()
+    .optional(),
+
   // ── Metadata ────────────────────────────────────────────────
 
   /** Last transition (from → to via event). Null before first transition. */
