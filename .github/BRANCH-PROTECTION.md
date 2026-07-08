@@ -1,105 +1,108 @@
 # GitHub Branch Protection
 
-This document defines the merge-blocking settings for the `main` branch.
+This document defines the active repository ruleset for the protected `main` and
+`develop` branches.
+
+`main` is the release authority and must remain release-ready. `develop` is the
+protected integration branch for main-ready work before a release cut.
 
 ## Rule Target
 
-- Branch name pattern: `main`
+- Branch name patterns: `main`, `develop`
 
 ## Required Protection Settings
 
 | Setting                                      | Value     |
 | -------------------------------------------- | --------- |
 | Require a pull request before merging        | Enabled   |
-| Required approvals                           | 1 or more |
+| Required approvals                           | 0         |
 | Dismiss stale reviews                        | Enabled   |
+| Require review thread resolution             | Enabled   |
 | Require status checks to pass before merging | Enabled   |
+| Require branch to be up to date before merge | Enabled   |
+| Require linear history                       | Enabled   |
 | Do not allow bypassing the above settings    | Enabled   |
 | Do not allow force pushes                    | Enabled   |
 | Do not allow deletion                        | Enabled   |
 
-## Required Status Checks (merge-blocking)
+## Required Status Checks
 
 Only real CI job names are allowed in this list. Configure the following check
-names exactly (grouped by the workflow that produces them):
+names exactly in the `Protect main and develop` ruleset.
+
+From `.github/workflows/ci.yml`:
+
+- `test`
+- `typecheck`
+- `lint`
+- `format`
+- `architecture`
+- `build`
+- `actionlint`
+- `secrets-scan`
+- `security-policy`
+- `install-verify (ubuntu-latest)`
+- `install-verify (macos-latest)`
+- `install-verify (windows-latest)`
+- `independent-review-e2e`
+
+The `format` check is the merge-blocking Prettier gate for both protected
+branches.
+
+## Solo Maintainer Review Model
+
+This repository uses a solo-maintainer ruleset: GitHub cannot count the PR
+author's own approval toward required approvals, so the live ruleset does not
+require a separate approving reviewer. Lead-level protection is enforced through
+mandatory PRs, strict required checks, branch freshness, linear history,
+resolved review threads, and deletion/force-push protection.
+
+External review remains recommended for high-risk release, security, persistence,
+policy, identity, audit, archive, installer, and CI changes when a second
+reviewer is available.
 
 From `.github/workflows/conventional-commits.yml`:
 
 - `Validate Commit Messages`
-
-From `.github/workflows/ci.yml`:
-
-- `unit`
-- `test`
-- `integration`
-- `architecture`
-- `typecheck`
-- `lint`
-- `format`
-- `actions-pinning`
-- `build`
-- `install-verify (ubuntu-latest)`
-- `install-verify (macos-latest)`
-- `install-verify (windows-latest)`
-- `smoke`
-- `independent-review-e2e`
-- `actionlint`
-- `secrets-scan`
-- `security-policy`
-- `dependency-review`
-- `install (ubuntu-latest)`
-- `install (macos-latest)`
-- `install (windows-latest)`
 
 From `.github/workflows/security.yml`:
 
 - `audit`
 - `codeql-sast`
 
-`install-verify (...)` and `install (...)` are distinct required jobs and must
-both stay aligned with CI truth.
-
-> Live-setting changes required when this PR merges (admin action):
->
-> - **Remove `mutation`** from the required list — it no longer runs on PRs (see
->   below). If left required, every PR stays blocked on a never-reported check.
-> - **Add `dependency-review`** — configured with `fail-on-severity: high` and
->   `continue-on-error: true`. The check runs but is non-blocking until
->   [Dependency Graph](https://github.com/koeppben23/governed-runtime/settings/security_analysis)
->   is enabled for the repository (required by the action). After enabling,
->   remove `continue-on-error: true` and add it to the required list.
-> - `audit` and `codeql-sast` keep the same check names (now produced by
->   `security.yml`); no name change is needed.
-
 ## Non-blocking CI Jobs
 
-The following jobs run but are intentionally **not** required:
+The following jobs run but are intentionally not required by the live ruleset:
 
 | Job                   | Why non-blocking                                                                                                                                                                                                                                                                                      |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unit`                | Runs as a direct job, but the required `test` aggregator is the branch-protection check.                                                                                                                                                                                                               |
+| `integration`         | Runs as a direct job, but the required `test` aggregator is the branch-protection check.                                                                                                                                                                                                               |
 | `sdk-baseline`        | Snapshot comparison against upstream SDK/host baselines; drift is informational and acted on via a separate update workflow (`scripts/check-opencode-host-drift.mjs`).                                                                                                                                |
 | `unused-dependencies` | `knip --dependencies`; a false positive should not block a release. Review the diff manually.                                                                                                                                                                                                         |
-| `fuzz`                | `fast-check` property tests with a fixed seed (~100 iterations). Deep fuzzing runs on the nightly schedule (`fuzz-nightly.yml`); regressions block via the nightly cadence, not the PR.                                                                                                               |
+| `fuzz`                | `fast-check` property tests with a fixed seed. Deep fuzzing runs on the nightly schedule (`fuzz-nightly.yml`); regressions block via the nightly cadence, not the PR.                                                                                                                                 |
 | `mutation`            | Stryker runs on the nightly/release cadence (`mutation.yml`), not per-PR. A reliable per-PR incremental gate is not achievable with the current perTest + vitest-runner setup (see the workflow rationale); it is therefore not a required check.                                                     |
-| `dependency-review`   | `fail-on-severity: high` is configured; runs as advisory (`continue-on-error: true`) because [Dependency Graph](https://github.com/koeppben23/governed-runtime/settings/security_analysis) is not yet enabled for this repository. Will become a required check after the repo setting is toggled on. |
+| `dependency-review`   | `fail-on-severity: high` is configured; runs as advisory (`continue-on-error: true`) because Dependency Graph is not yet enabled for this repository. Will become a required check after the repo setting is toggled on.                                                                               |
 
 If any of these is promoted to merge-blocking, move it to the required list
-above in the same PR that flips the branch-protection setting.
+above in the same PR that flips the ruleset setting.
 
-## Source of Truth
+## Source Of Truth
 
+- Live GitHub ruleset: `Protect main and develop`
 - CI workflow: `.github/workflows/ci.yml`
 - Security workflow: `.github/workflows/security.yml`
 - Commit title check: `.github/workflows/conventional-commits.yml`
 
-If CI job names change, update this file and the branch protection required-check list together.
+If CI job names change, update this file and the ruleset required-check list together.
 
 ## Quick Validation Steps
 
-1. Open `Settings -> Branches -> Branch protection rules -> main`.
-2. Verify all settings in this file are enabled.
-3. Verify all required check names above are present and exact.
-4. Open a test PR and confirm merge stays blocked until all required checks pass.
+1. Open `Settings -> Rules -> Rulesets -> Protect main and develop`.
+2. Verify `refs/heads/main` and `refs/heads/develop` are included.
+3. Verify all settings in this file are enabled.
+4. Verify all required check names above are present and exact.
+5. Open a test PR and confirm merge stays blocked until all required checks pass.
 
 ## Emergency Procedure
 

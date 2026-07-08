@@ -195,10 +195,13 @@ Every ticket, PR, and merge MUST follow clean code and clean architecture. No ex
 
 ### Branch Model
 
-- `main` is **protected** — no direct commits allowed
-- All changes must go through Pull Requests
+- `main` is **protected** and must remain release-ready at all times. No direct commits allowed.
+- `develop` is **protected** and is the integration branch for main-ready work before a release cut.
+- All changes must go through Pull Requests.
+- Default PR target is `develop` for normal feature, fix, docs, refactor, test, and chore work.
+- PRs to `main` are reserved for release branches, urgent hotfixes, or repository-governance changes that must apply immediately.
 - Branch naming convention:
-  - `feature/<description>` — new features
+  - `feat/<description>` — new features
   - `fix/<description>` — bug fixes
   - `docs/<description>` — documentation updates
   - `chore/<description>` — maintenance tasks
@@ -207,9 +210,10 @@ Every ticket, PR, and merge MUST follow clean code and clean architecture. No ex
 ### Release Branches
 
 Release work follows the same protected-`main` PR model as all other changes.
-Prepare release files on `release/vX.Y.Z`, open a PR to `main`, wait for required
-checks, and squash-merge. Create and push the `vX.Y.Z` tag only after local
-`main` has been fast-forwarded to the merged `origin/main` commit.
+Start release branches from current `main`, integrate the release candidate from
+`develop`, prepare release files on `release/vX.Y.Z`, open a PR to `main`, wait
+for required checks, and squash-merge. Create and push the `vX.Y.Z` tag only after
+local `main` has been fast-forwarded to the merged `origin/main` commit.
 
 Use `npm run release:prepare -- X.Y.Z` to update release files. Do not use
 `npm version` for FlowGuard releases because it creates local commit/tag state
@@ -258,21 +262,28 @@ refactor: extract validation helpers
 - **Preferred:** Squash and merge
 - PR title must follow conventional commit format
 - All CI checks must pass before merge
-- At least one approval required
+- External review is recommended for high-risk changes when a second reviewer is available
 
 ### CI Status Checks
 
-The following checks must pass for a PR to be merged:
+The following checks are merge-blocking for both protected branches:
 
-| Check      | Command                        | Description                                                                            |
-| ---------- | ------------------------------ | -------------------------------------------------------------------------------------- |
-| Tests      | `npm test`                     | All tests must pass                                                                    |
-| Coverage   | `npm run test:coverage`        | Global threshold gate (branches/lines/functions/statements >= 80%)                     |
-| Format     | `npm run check:format`         | Prettier formatting check (blocking in CI)                                             |
-| Lint       | `npm run lint`                 | ESLint gate (`src/**/*.ts`) + type-aware safety rules for critical governance surfaces |
-| Type Check | `npm run check`                | TypeScript compilation                                                                 |
-| Build      | `npm run build`                | Successful compilation to dist/                                                        |
-| Audit      | `npm audit --audit-level=high` | High+ vulnerabilities block CI                                                         |
+| Check                     | Command                                        | Description                                                              |
+| ------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| Validate Commit Messages  | —                                              | PR title and commit-message convention gate                              |
+| Tests                     | needs: [unit, integration]                     | Aggregated branch-protection check (passes when unit + integration pass) |
+| Type Check                | `npm run check`                                | TypeScript compilation                                                   |
+| Lint                      | `npm run lint:strict`                          | ESLint gate with --max-warnings=0 for all src/\*.ts                     |
+| Format                    | `npm run check:format`                         | Prettier formatting check                                                |
+| Architecture              | `npm run test:architecture`                    | Dependency rules + file-size enforcement                                 |
+| Build                     | `npm run build`                                | Successful compilation to dist/                                          |
+| Actionlint                | —                                              | Workflow syntax validation                                               |
+| Secrets Scan              | —                                              | Secret detection                                                         |
+| Security Policy           | —                                              | Security policy checks                                                   |
+| Audit                     | `npm audit --audit-level=high`                 | High+ vulnerabilities block CI                                           |
+| CodeQL SAST               | —                                              | Static analysis                                                          |
+| Install Verify (3 OSes)   | `npm run build && npm run test:install-verify` | Tarball install verification on ubuntu, macos, windows                   |
+| Independent Review E2E    | `npm run test:independent-review-e2e`          | Standalone reviewer session contract                                     |
 
 ## Pull Request Process
 
