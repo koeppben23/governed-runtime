@@ -2,7 +2,7 @@
 
 Host-aware governance runtime for AI-assisted software delivery.
 
-> **Version:** 1.2.0-tp.1 | TypeScript | Host-aware | OpenCode synchronous enforcement path
+> **Version:** 1.2.0-tp.2 | TypeScript | Host-aware | OpenCode synchronous enforcement path
 
 FlowGuard provides deterministic workflow control, evidence gates, audit trails,
 and policy-bound decisions around supported AI-assisted engineering hosts. OpenCode

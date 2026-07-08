@@ -1,6 +1,6 @@
 {
   "name": "@flowguard/core",
-  "version": "1.2.0-tp.1",
+  "version": "1.2.0-tp.2",
   "description": "Host-aware governance runtime for AI-assisted software delivery — deterministic, fail-closed, audit-ready workflow engine.",
   "type": "module",
   "main": "dist/index.js",
