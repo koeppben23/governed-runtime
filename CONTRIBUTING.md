@@ -298,22 +298,22 @@ refactor: extract validation helpers
 
 The following checks are merge-blocking for both protected branches:
 
-| Check                     | Command                                        | Description                                                              |
-| ------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------ |
-| Validate Commit Messages  | —                                              | PR title and commit-message convention gate                              |
-| Tests                     | needs: [unit, integration]                     | Aggregated branch-protection check (passes when unit + integration pass) |
-| Type Check                | `npm run check`                                | TypeScript compilation                                                   |
-| Lint                      | `npm run lint:strict`                          | ESLint gate with --max-warnings=0 for all src/\*.ts                     |
-| Format                    | `npm run check:format`                         | Prettier formatting check                                                |
-| Architecture              | `npm run test:architecture`                    | Dependency rules + file-size enforcement                                 |
-| Build                     | `npm run build`                                | Successful compilation to dist/                                          |
-| Actionlint                | —                                              | Workflow syntax validation                                               |
-| Secrets Scan              | —                                              | Secret detection                                                         |
-| Security Policy           | —                                              | Security policy checks                                                   |
-| Audit                     | `npm audit --audit-level=high`                 | High+ vulnerabilities block CI                                           |
-| CodeQL SAST               | —                                              | Static analysis                                                          |
-| Install Verify (3 OSes)   | `npm run build && npm run test:install-verify` | Tarball install verification on ubuntu, macos, windows                   |
-| Independent Review E2E    | `npm run test:independent-review-e2e`          | Standalone reviewer session contract                                     |
+| Check                    | Command                                        | Description                                                              |
+| ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------ |
+| Validate Commit Messages | —                                              | PR title and commit-message convention gate                              |
+| Tests                    | needs: [unit, integration]                     | Aggregated branch-protection check (passes when unit + integration pass) |
+| Type Check               | `npm run check`                                | TypeScript compilation                                                   |
+| Lint                     | `npm run lint:strict`                          | ESLint gate with --max-warnings=0 for all src/\*.ts                      |
+| Format                   | `npm run check:format`                         | Prettier formatting check                                                |
+| Architecture             | `npm run test:architecture`                    | Dependency rules + file-size enforcement                                 |
+| Build                    | `npm run build`                                | Successful compilation to dist/                                          |
+| Actionlint               | —                                              | Workflow syntax validation                                               |
+| Secrets Scan             | —                                              | Secret detection                                                         |
+| Security Policy          | —                                              | Security policy checks                                                   |
+| Audit                    | `npm audit --audit-level=high`                 | High+ vulnerabilities block CI                                           |
+| CodeQL SAST              | —                                              | Static analysis                                                          |
+| Install Verify (3 OSes)  | `npm run build && npm run test:install-verify` | Tarball install verification on ubuntu, macos, windows                   |
+| Independent Review E2E   | `npm run test:independent-review-e2e`          | Standalone reviewer session contract                                     |
 
 ## Pull Request Process
 

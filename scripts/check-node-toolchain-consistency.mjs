@@ -52,7 +52,9 @@ if (!pkg.devEngines || !pkg.devEngines.runtime) {
   if (runtime.onFail !== 'error') {
     error(`devEngines.runtime.onFail expected "error", got "${runtime.onFail}"`);
   }
-  console.log(`  ok: devEngines.runtime.name=${runtime.name}, version=${runtime.version}, onFail=${runtime.onFail}`);
+  console.log(
+    `  ok: devEngines.runtime.name=${runtime.name}, version=${runtime.version}, onFail=${runtime.onFail}`,
+  );
 }
 
 // ─── 3. package.json engines ────────────────────────────────────────────────
@@ -71,18 +73,18 @@ if (!enginesNode) {
 
 console.log('--- Workflows ---');
 
-const MATRIX_ALLOW_LIST = new Set([
-  'node-compat.yml',
-  'release.yml',
-]);
+const MATRIX_ALLOW_LIST = new Set(['node-compat.yml', 'release.yml']);
 
-const yamlFiles = readdirSync(WORKFLOW_DIR).filter((f) => f.endsWith('.yml') || f.endsWith('.yaml'));
+const yamlFiles = readdirSync(WORKFLOW_DIR).filter(
+  (f) => f.endsWith('.yml') || f.endsWith('.yaml'),
+);
 
 for (const file of yamlFiles) {
   const content = readFileSync(join(WORKFLOW_DIR, file), 'utf-8');
 
   // Check: no job sets both node-version and node-version-file simultaneously
-  const hasBoth = /node-version-file:/.test(content) && /node-version:\s*(?!\s*\${{)/m.test(content);
+  const hasBoth =
+    /node-version-file:/.test(content) && /node-version:\s*(?!\s*\${{)/m.test(content);
   if (hasBoth) {
     // Only flag if both appear in different setup-node blocks within the same file
     // (a file with both node-version-file and explicit node-version in different jobs is fine)
