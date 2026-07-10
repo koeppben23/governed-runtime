@@ -42,6 +42,17 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
+## Step 2a — Prove Enforcement (the forbidden transition)
+
+| Action       | Phase  | What I Say                                                                                                                                                                                                                            |
+| ------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/implement` | TICKET | "Ich versuche direkt zu implementieren — ohne Plan, ohne Review, ohne Freigabe. FlowGuard blockiert mit `COMMAND_NOT_ALLOWED`. Erst Plan, unabhängige Prüfung, menschliche Freigabe und Validation öffnen die Implementierungsphase." |
+
+> Das ist der zentrale Unterschied: Der Prozess ist nicht nur eine Prompt-Anweisung.
+> Der unzulässige Übergang wird technisch abgelehnt.
+
+---
+
 ## Step 3 — Generate the Plan
 
 | Action                | Phase       | What I Say                                                                                                                                                      |
@@ -97,9 +108,9 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ## Step 8 — Final Approval (Human Gate)
 
-| Action     | Phase                      | What I Say                                                                                                                                                                        |
-| ---------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/approve` | EVIDENCE_REVIEW → COMPLETE | "Finale menschliche Genehmigung im EVIDENCE_REVIEW-Gate. Die Session ist komplett. FlowGuard hat jeden Schritt dokumentiert — und kein Modell-Aufruf konnte dieses Gate umgehen." |
+| Action     | Phase                      | What I Say                                                                                                                                                                                                                             |
+| ---------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/approve` | EVIDENCE_REVIEW → COMPLETE | "Finale menschliche Genehmigung im EVIDENCE_REVIEW-Gate. Die Session ist komplett. In dieser OpenCode-Integration blockiert FlowGuard den Übergang technisch, bis gültige Review-Evidence und die menschliche Entscheidung vorliegen." |
 
 ---
 
@@ -113,21 +124,20 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ## Step 10 — Export the Evidence
 
-| Action                            | What I Say                                                                                                                                                                                                         |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/export`                         | "Ich exportiere das Audit-Archive. FlowGuard erzeugt ein verifizierbares Paket mit allen Artefakten."                                                                                                              |
-| `ls .flowguard/sessions/archive/` | "Hier im Archive: Manifest, Session-State, Plan-Evidence, Review-Cards, Implementation-Diff. Alles ist über Manifest und Checksums prüfbar. Das ist der Governance-Nachweis — nachvollziehbar und tamper-evident." |
+| Action                                      | What I Say                                                                                                                                                                            |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/export`                                   | "Ich exportiere das Audit-Archive. FlowGuard erzeugt ein verifizierbares Paket mit allen Artefakten."                                                                                 |
+| Show `/export` response                     | "Die `/export`-Antwort zeigt: `archiveStatus: verified` und `Session archived and verified.` — FlowGuard hat das Archiv direkt nach der Erstellung verifiziert."                      |
+| Optional: `ls .flowguard/sessions/archive/` | "Hier im Archive: Manifest, Session-State, Plan-Evidence, Review-Cards, Implementation-Diff. Manifest und Checksums machen nachträgliche Änderungen am exportierten Paket erkennbar." |
 
 ---
 
 ## Summary Slide
 
-> "Ich habe den Regressionstest im Seed bewusst disabled, weil FlowGuard zurecht keinen
-> failing Check in die Implementierung durchlässt. Der Fix besteht deshalb aus zwei Teilen:
-> Bug beheben und Regressionstest aktivieren. Am Ende beweist der grüne Testlauf, dass der
-> zuvor dokumentierte Bug wirklich geschlossen wurde."
->
-> — Ben Koepp
+Ich habe den Regressionstest im Seed bewusst disabled, weil FlowGuard zurecht keinen
+fehlschlagenden Baseline-Check in die Implementierung durchlässt. Der Fix besteht deshalb
+aus zwei Teilen: Bug beheben und Regressionstest aktivieren. Am Ende beweist der grüne
+Testlauf, dass der zuvor dokumentierte Bug wirklich geschlossen wurde.
 
 ---
 

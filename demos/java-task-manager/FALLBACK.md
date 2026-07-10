@@ -25,12 +25,13 @@ cd /tmp/flowguard-java-demo
 Capture: OpenCode window + terminal side-by-side. The recording should show:
 
 - `/start` output with policy mode
+- `/implement` blocker (`COMMAND_NOT_ALLOWED` in TICKET phase)
 - Plan Review Card
 - `/check` passing (VALIDATION → IMPLEMENTATION)
 - `git diff` of the fix
 - `/approve` → COMPLETE
 - `./mvnw test` — 16 green, 0 skipped
-- `/export` and `ls .flowguard/sessions/archive/`
+- `/export` response (`archiveStatus: verified`, `Session archived and verified.`)
 
 ### 2. Screen Recording — `/review` Bonus (~3–5 min, optional)
 
@@ -39,7 +40,7 @@ Record B1–B4 from the bonus section:
 ```bash
 ./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-review-demo
 cd /tmp/flowguard-java-review-demo
-# Open /tmp/flowguard-java-demo in OpenCode Desktop
+# Open /tmp/flowguard-java-review-demo in OpenCode Desktop
 ```
 
 Capture: branch listing, `/review` block with `CONTENT_ANALYSIS_REQUIRED`,
@@ -52,7 +53,7 @@ After a successful live or recorded run, keep the workspace intact:
 ```bash
 # Do NOT delete the workspace after the demo.
 # Keep it as a fallback exhibit.
-ls -la /tmp/flowguard-java-demo/.flowguard/sessions/archive/
+ls -la /tmp/flowguard-java-review-demo/.flowguard/sessions/archive/
 ```
 
 ---
