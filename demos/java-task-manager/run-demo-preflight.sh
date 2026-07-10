@@ -5,18 +5,19 @@ set -euo pipefail
 
 usage() {
     cat <<EOF
-Usage: $0 --tarball <tgz> [--opencode-version <version>] <workspace>
+Usage: $0 --tarball <tgz> [--node-version-file <path>] [--opencode-version <version>] <workspace>
 
 Run pre-flight checks for a demo workspace before a live pitch.
 
 Options:
-  --tarball <tgz>          Path to flowguard-core tarball (required).
-  --opencode-version <v>   OpenCode version when CLI is not in PATH.
-  -h, --help               Show this help.
+  --tarball <tgz>           Path to flowguard-core tarball (required).
+  --node-version-file <p>   Path to .node-version file (e.g. repo root).
+  --opencode-version <v>    OpenCode version when CLI is not in PATH.
+  -h, --help                Show this help.
 
 Example:
   $0 --tarball /path/to/flowguard-core-1.2.0.tgz /tmp/flowguard-java-demo
-  $0 --tarball flowguard-core-*.tgz --opencode-version 1.17.8 /tmp/flowguard-java-demo
+  $0 --tarball flowguard-core-*.tgz --node-version-file ~/work/governed-runtime/.node-version /tmp/flowguard-java-demo
 EOF
     exit 1
 }
@@ -24,6 +25,7 @@ EOF
 # ─── Parse args ───────────────────────────────────────────────────────────────
 
 TARBALL=""
+NODE_VERSION_FILE=""
 OPENCODE_VERSION_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
@@ -34,6 +36,14 @@ while [[ $# -gt 0 ]]; do
                 usage
             fi
             TARBALL="$2"
+            shift 2
+            ;;
+        --node-version-file)
+            if [[ $# -lt 2 || "$2" == -* || -z "$2" ]]; then
+                echo "Error: --node-version-file requires a path argument." >&2
+                usage
+            fi
+            NODE_VERSION_FILE="$2"
             shift 2
             ;;
         --opencode-version)
@@ -177,25 +187,23 @@ echo "  Node:     $NODE_VERSION"
 check "node --version" "$(test "$NODE_VERSION" != "unknown" && echo 0 || echo 1)"
 
 # Validate Node version against repository .node-version (set by #619)
-NODE_VERSION_FILE="$WORKSPACE/../governed-runtime/.node-version"
-# Also check common locations
-for candidate in ".node-version" ".nvmrc" "../.node-version" "../.nvmrc"; do
-    if [[ -f "$candidate" ]]; then
-        NODE_VERSION_FILE="$candidate"
-        break
-    fi
-done
-if [[ -f "$NODE_VERSION_FILE" ]]; then
-    EXPECTED_NODE=$(head -1 "$NODE_VERSION_FILE" | tr -d '[:space:]')
-    if [[ "$NODE_VERSION" == "v$EXPECTED_NODE" || "$NODE_VERSION" == "$EXPECTED_NODE" ]]; then
-        check "Node version matches .node-version ($EXPECTED_NODE)" 0
+if [[ -n "$NODE_VERSION_FILE" ]]; then
+    if [[ ! -f "$NODE_VERSION_FILE" ]]; then
+        echo "  Error: --node-version-file not found: $NODE_VERSION_FILE" >&2
+        check "Node version file exists" 1
     else
-        echo "  Expected: $EXPECTED_NODE, got: $NODE_VERSION"
-        check "Node version matches .node-version" 1
+        EXPECTED_NODE=$(head -1 "$NODE_VERSION_FILE" | tr -d '[:space:]')
+        check "Node version file readable" 0
+        if [[ "$NODE_VERSION" == "v$EXPECTED_NODE" || "$NODE_VERSION" == "$EXPECTED_NODE" ]]; then
+            check "Node version matches .node-version ($EXPECTED_NODE)" 0
+        else
+            echo "  Expected: $EXPECTED_NODE, got: $NODE_VERSION"
+            check "Node version matches .node-version" 1
+        fi
     fi
 else
-    echo "  (no .node-version found — ensure #619 is completed)"
-    check "Node version policy file present" 1
+    echo "  (no --node-version-file provided — specify the repo .node-version path)"
+    check "Node version file path provided" 1
 fi
 
 NPM_VERSION=$(npm --version 2>/dev/null || echo "unknown")

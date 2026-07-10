@@ -163,6 +163,11 @@ case "$ACTION" in
         echo "  Source: $CHECKPOINT_DIR"
         echo "  Target: $WORKSPACE"
 
+        # Remove build artefacts that rsync --delete does not cover
+        # (excluded dirs are skipped, so leftover target/node_modules survive)
+        echo "  Cleaning excluded build artefacts..."
+        rm -rf "$WORKSPACE/target" "$WORKSPACE/node_modules"
+
         EXCLUDE_ARGS=()
         for pattern in "${RSYNC_EXCLUDES[@]}"; do
             EXCLUDE_ARGS+=(--exclude "$pattern")

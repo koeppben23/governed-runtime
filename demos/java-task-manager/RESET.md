@@ -43,5 +43,7 @@ See `snapshot-demo.sh` for labels and usage.
 Run pre-flight checks before a live pitch:
 
 ```bash
-demos/java-task-manager/run-demo-preflight.sh /tmp/flowguard-java-demo
+demos/java-task-manager/run-demo-preflight.sh \
+  --tarball <tgz> \
+  /tmp/flowguard-java-demo
 ```
