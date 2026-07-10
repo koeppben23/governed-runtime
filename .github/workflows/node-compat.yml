@@ -59,6 +59,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - node: '20'
+            status: supported-runtime
+            continue-on-error: false
           - node: '22'
             status: supported-runtime
             continue-on-error: false
