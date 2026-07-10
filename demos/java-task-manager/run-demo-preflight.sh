@@ -94,7 +94,18 @@ fi
 # Resolve tarball to absolute path before cd, so relative paths survive the cd into WORKSPACE
 TARBALL="$(cd "$(dirname "$TARBALL")" && pwd)/$(basename "$TARBALL")"
 
-# ─── Checks ───────────────────────────────────────────────────────────────────
+# ─── Locate node version file ──────────────────────────────────────────────────
+
+if [[ -z "$NODE_VERSION_FILE" ]]; then
+    # Auto-detect from the repository root (two levels above this script)
+    SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+    REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+    if [[ -f "$REPO_ROOT/.node-version" ]]; then
+        NODE_VERSION_FILE="$REPO_ROOT/.node-version"
+    elif [[ -f "$REPO_ROOT/.nvmrc" ]]; then
+        NODE_VERSION_FILE="$REPO_ROOT/.nvmrc"
+    fi
+fi
 
 cd "$WORKSPACE"
 PASS=0
@@ -187,23 +198,18 @@ echo "  Node:     $NODE_VERSION"
 check "node --version" "$(test "$NODE_VERSION" != "unknown" && echo 0 || echo 1)"
 
 # Validate Node version against repository .node-version (set by #619)
-if [[ -n "$NODE_VERSION_FILE" ]]; then
-    if [[ ! -f "$NODE_VERSION_FILE" ]]; then
-        echo "  Error: --node-version-file not found: $NODE_VERSION_FILE" >&2
-        check "Node version file exists" 1
+if [[ -n "$NODE_VERSION_FILE" && -f "$NODE_VERSION_FILE" ]]; then
+    EXPECTED_NODE=$(head -1 "$NODE_VERSION_FILE" | tr -d '[:space:]')
+    check "Node version file readable" 0
+    if [[ "$NODE_VERSION" == "v$EXPECTED_NODE" || "$NODE_VERSION" == "$EXPECTED_NODE" ]]; then
+        check "Node version matches .node-version ($EXPECTED_NODE)" 0
     else
-        EXPECTED_NODE=$(head -1 "$NODE_VERSION_FILE" | tr -d '[:space:]')
-        check "Node version file readable" 0
-        if [[ "$NODE_VERSION" == "v$EXPECTED_NODE" || "$NODE_VERSION" == "$EXPECTED_NODE" ]]; then
-            check "Node version matches .node-version ($EXPECTED_NODE)" 0
-        else
-            echo "  Expected: $EXPECTED_NODE, got: $NODE_VERSION"
-            check "Node version matches .node-version" 1
-        fi
+        echo "  Expected: $EXPECTED_NODE, got: $NODE_VERSION"
+        check "Node version matches .node-version" 1
     fi
 else
-    echo "  (no --node-version-file provided — specify the repo .node-version path)"
-    check "Node version file path provided" 1
+    echo "  (no .node-version found — ensure #619 is completed or use --node-version-file)"
+    check "Node version policy file present" 1
 fi
 
 NPM_VERSION=$(npm --version 2>/dev/null || echo "unknown")
