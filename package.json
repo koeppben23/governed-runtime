@@ -42,6 +42,7 @@
     "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc && npm run generate-build-info",
     "check:esm": "node scripts/check-esm-imports.js",
     "check:actions-pinned": "node scripts/check-github-actions-pinned.js",
+    "check:node-toolchain": "node scripts/check-node-toolchain-consistency.mjs",
     "check": "tsc --noEmit",
     "typecheck": "npm run check",
     "check:opencode-host": "node scripts/check-opencode-host-drift.mjs",
@@ -91,7 +92,19 @@
     "release:assert-main-tag": "node scripts/assert-main-release-tag.js"
   },
   "engines": {
-    "node": ">=20"
+    "node": "^20.0.0 || ^22.0.0 || ^24.0.0"
+  },
+  "devEngines": {
+    "runtime": {
+      "name": "node",
+      "version": "22.22.2",
+      "onFail": "error"
+    },
+    "packageManager": {
+      "name": "npm",
+      "version": "10.9.2",
+      "onFail": "warn"
+    }
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
