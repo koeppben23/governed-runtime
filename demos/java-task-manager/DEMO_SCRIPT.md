@@ -12,9 +12,9 @@
 
 ### Executive Stop Points
 
-- **Stop A** (Plan latency): switch to `workspace-01-plan-approved` snapshot.
-- **Stop B** (Implementation latency): switch to `workspace-02-implemented` snapshot.
-- **Stop C** (second reviewer iteration): switch to `workspace-03-complete` snapshot.
+- **Stop A** (Plan latency): switch to `01-plan-approved` snapshot.
+- **Stop B** (Implementation latency): switch to `02-implemented` snapshot.
+- **Stop C** (second reviewer iteration): switch to `03-complete` snapshot.
 
 ### Guardrails
 

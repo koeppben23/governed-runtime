@@ -5,27 +5,37 @@ set -euo pipefail
 
 usage() {
     cat <<EOF
-Usage: $0 [--opencode-version <version>] <workspace>
+Usage: $0 --tarball <tgz> [--opencode-version <version>] <workspace>
 
 Run pre-flight checks for a demo workspace before a live pitch.
 
 Options:
-  --opencode-version <v>  OpenCode version when CLI is not in PATH.
-  -h, --help              Show this help.
+  --tarball <tgz>          Path to flowguard-core tarball (required).
+  --opencode-version <v>   OpenCode version when CLI is not in PATH.
+  -h, --help               Show this help.
 
 Example:
-  $0 /tmp/flowguard-java-demo
-  $0 --opencode-version 1.17.8 /tmp/flowguard-java-demo
+  $0 --tarball /path/to/flowguard-core-1.2.0.tgz /tmp/flowguard-java-demo
+  $0 --tarball flowguard-core-*.tgz --opencode-version 1.17.8 /tmp/flowguard-java-demo
 EOF
     exit 1
 }
 
 # ─── Parse args ───────────────────────────────────────────────────────────────
 
+TARBALL=""
 OPENCODE_VERSION_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --tarball)
+            if [[ $# -lt 2 || "$2" == -* || -z "$2" ]]; then
+                echo "Error: --tarball requires a path argument." >&2
+                usage
+            fi
+            TARBALL="$2"
+            shift 2
+            ;;
         --opencode-version)
             if [[ $# -lt 2 || "$2" == -* || -z "$2" ]]; then
                 echo "Error: --opencode-version requires a version argument." >&2
@@ -51,6 +61,16 @@ if [[ -z "${WORKSPACE:-}" ]]; then
     usage
 fi
 
+if [[ -z "$TARBALL" ]]; then
+    echo "Error: --tarball is required." >&2
+    usage
+fi
+
+if [[ ! -f "$TARBALL" ]]; then
+    echo "Error: tarball not found: $TARBALL" >&2
+    exit 1
+fi
+
 if [[ ! -d "$WORKSPACE" ]]; then
     echo "Error: workspace not found: $WORKSPACE" >&2
     exit 1
@@ -60,6 +80,9 @@ if [[ ! -f "$WORKSPACE/pom.xml" ]]; then
     echo "Error: workspace does not appear to be a demo workspace (pom.xml missing): $WORKSPACE" >&2
     exit 1
 fi
+
+# Resolve tarball to absolute path before cd, so relative paths survive the cd into WORKSPACE
+TARBALL="$(cd "$(dirname "$TARBALL")" && pwd)/$(basename "$TARBALL")"
 
 # ─── Checks ───────────────────────────────────────────────────────────────────
 
@@ -80,17 +103,30 @@ check() {
 
 echo "=== FlowGuard Demo Pre-flight ==="
 echo "Workspace: $WORKSPACE"
+echo "Tarball:   $TARBALL"
 echo "Date:      $(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo ""
+
+# 0. Tarball check
+echo "--- Tarball ---"
+if command -v shasum >/dev/null 2>&1; then
+    TARBALL_SHA256=$(shasum -a 256 "$TARBALL" | awk '{print $1}')
+elif command -v sha256sum >/dev/null 2>&1; then
+    TARBALL_SHA256=$(sha256sum "$TARBALL" | awk '{print $1}')
+else
+    TARBALL_SHA256="unavailable (no shasum/sha256sum)"
+fi
+echo "  SHA-256: $TARBALL_SHA256"
+check "tarball exists and is readable" "$(test -r "$TARBALL" && echo 0 || echo 1)"
 
 # 1. Git checks
 echo "--- Git ---"
 COMMIT_HASH=$(git rev-parse HEAD 2>/dev/null) && echo "  Commit: $COMMIT_HASH" || COMMIT_HASH="unknown"
 check "git repository" "$(git rev-parse --is-inside-work-tree >/dev/null 2>&1 && echo 0 || echo 1)"
 
-# 2. Working tree clean
+# 2. Working tree clean (including untracked files)
 echo "--- Working tree ---"
-if git diff --quiet 2>/dev/null; then
+if [[ -z "$(git status --porcelain)" ]]; then
     check "working tree clean" 0
 else
     check "working tree clean" 1
@@ -110,6 +146,10 @@ check "commands directory present" "$(test -d .opencode/commands && echo 0 || ec
 # 5. Maven
 echo "--- Maven ---"
 check "./mvnw exists" "$(test -f mvnw && echo 0 || echo 1)"
+
+MAVEN_VERSION=$(./mvnw --version 2>/dev/null | head -1 || echo "unknown")
+echo "  Version:  $MAVEN_VERSION"
+check "./mvnw --version" "$(test "$MAVEN_VERSION" != "unknown" && echo 0 || echo 1)"
 
 if ./mvnw test > .demo-preflight-maven-online.log 2>&1; then
     check "Maven online test" 0
@@ -135,6 +175,28 @@ echo "--- Tooling ---"
 NODE_VERSION=$(node --version 2>/dev/null || echo "unknown")
 echo "  Node:     $NODE_VERSION"
 check "node --version" "$(test "$NODE_VERSION" != "unknown" && echo 0 || echo 1)"
+
+# Validate Node version against repository .node-version (set by #619)
+NODE_VERSION_FILE="$WORKSPACE/../governed-runtime/.node-version"
+# Also check common locations
+for candidate in ".node-version" ".nvmrc" "../.node-version" "../.nvmrc"; do
+    if [[ -f "$candidate" ]]; then
+        NODE_VERSION_FILE="$candidate"
+        break
+    fi
+done
+if [[ -f "$NODE_VERSION_FILE" ]]; then
+    EXPECTED_NODE=$(head -1 "$NODE_VERSION_FILE" | tr -d '[:space:]')
+    if [[ "$NODE_VERSION" == "v$EXPECTED_NODE" || "$NODE_VERSION" == "$EXPECTED_NODE" ]]; then
+        check "Node version matches .node-version ($EXPECTED_NODE)" 0
+    else
+        echo "  Expected: $EXPECTED_NODE, got: $NODE_VERSION"
+        check "Node version matches .node-version" 1
+    fi
+else
+    echo "  (no .node-version found — ensure #619 is completed)"
+    check "Node version policy file present" 1
+fi
 
 NPM_VERSION=$(npm --version 2>/dev/null || echo "unknown")
 echo "  npm:      $NPM_VERSION"
@@ -166,10 +228,12 @@ echo ""
 echo "=== Pre-flight Summary ==="
 echo ""
 echo "Workspace:     $WORKSPACE"
+echo "Tarball SHA-256: $TARBALL_SHA256"
 echo "Commit:        $COMMIT_HASH"
 echo "Node:          $NODE_VERSION"
 echo "npm:           $NPM_VERSION"
 echo "Java:          $JAVA_VERSION"
+echo "Maven:         $MAVEN_VERSION"
 echo "OpenCode:      $OPENCODE_VERSION"
 echo ""
 echo "Results: $PASS passed, $FAIL failed"

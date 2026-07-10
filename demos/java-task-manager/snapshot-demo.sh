@@ -45,7 +45,22 @@ if [[ "$ACTION" != "save" && "$ACTION" != "restore" ]]; then
     usage
 fi
 
-# ─── Validate workspace ───────────────────────────────────────────────────────
+# ─── Validate label ──────────────────────────────────────────────────────────
+
+ALLOWED_LABELS=('00-seed' '01-plan-approved' '02-implemented' '03-complete' '04-exported')
+LABEL_VALID=0
+for allowed in "${ALLOWED_LABELS[@]}"; do
+    if [[ "$LABEL" == "$allowed" ]]; then
+        LABEL_VALID=1
+        break
+    fi
+done
+if [[ "$LABEL_VALID" -eq 0 ]]; then
+    echo "Error: unknown label '$LABEL'. Allowed: ${ALLOWED_LABELS[*]}" >&2
+    exit 1
+fi
+
+# ─── Validate workspace path ──────────────────────────────────────────────────
 
 if [[ ! -d "$WORKSPACE" ]]; then
     echo "Error: workspace not found: $WORKSPACE" >&2
@@ -53,6 +68,18 @@ if [[ ! -d "$WORKSPACE" ]]; then
 fi
 
 WORKSPACE="$(cd "$WORKSPACE" && pwd)"
+
+# Guard: workspace must be under an expected demo workspace prefix
+if [[ "$WORKSPACE" != /tmp/flowguard-java-* ]]; then
+    echo "Error: workspace must be under /tmp/flowguard-java-* (got: $WORKSPACE)" >&2
+    exit 1
+fi
+
+# Guard: workspace path must not contain traversal components after resolution
+if [[ "$WORKSPACE" == *".."* ]]; then
+    echo "Error: workspace path contains traversal components: $WORKSPACE" >&2
+    exit 1
+fi
 
 # ─── Restore safety guards ───────────────────────────────────────────────────
 
@@ -89,6 +116,9 @@ fi
 # ─── Validate checkpoint ──────────────────────────────────────────────────────
 
 CHECKPOINT_DIR="$CHECKPOINT_ROOT/$LABEL"
+
+# Guard: label is validated against an explicit allow-list above, so
+# CHECKPOINT_DIR is guaranteed to be a safe path under CHECKPOINT_ROOT.
 
 if [[ "$ACTION" == "restore" ]]; then
     if [[ ! -d "$CHECKPOINT_DIR" ]]; then
