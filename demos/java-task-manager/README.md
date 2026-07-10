@@ -14,7 +14,7 @@ of disappearing informally in a chat.
 ## Prerequisites
 
 - JDK 21+
-- Node.js 20+
+- Node.js 22+
 - OpenCode CLI (`opencode`) in PATH
 - FlowGuard core tarball (build with `npm run build && npm pack` from the
   governed-runtime repo root)
@@ -71,6 +71,8 @@ demos/java-task-manager/
 ├── DEMO_SCRIPT.md         ← Live presentation script with talking points
 ├── RESET.md               ← How to reset for a fresh demo
 ├── run-demo-setup.sh      ← Prepare or prepare+install the demo project
+├── run-demo-preflight.sh  ← Pre-flight checks before a live pitch
+├── snapshot-demo.sh       ← Workspace checkpoint save/restore
 ├── FALLBACK.md            ← Pre-recorded fallback strategy for live presentations
 ├── review-fixtures/       ← Files copied by setup to create the optional /review branch
 └── seed/                  ← The buggy starting state (a standalone Maven project)
