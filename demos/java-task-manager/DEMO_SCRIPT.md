@@ -1,7 +1,26 @@
 # Demo Script — Java Task Manager Bug Fix
 
-**Duration:** 10–15 minutes
 **Audience:** Technical decision makers, engineering leads
+
+## Runbook Variants
+
+| Variant                 | Duration  | Audience         | Scope                                                                                           |
+| ----------------------- | --------- | ---------------- | ----------------------------------------------------------------------------------------------- |
+| **Executive**           | 8–10 min  | CEO / Management | Steps 0–5, 2a (blocker), 1–10, with prepared checkpoints for latency                            |
+| **Technical Deep Dive** | 20–25 min | Engineering      | Full main flow including baseline test, git diff, live review loop (max 1 unexpected iteration) |
+| **Bonus /review**       | 5–10 min  | Optional         | Content-aware `/review` flow with external branch (separate workspace)                          |
+
+### Executive Stop Points
+
+- **Stop A** (Plan latency): switch to `workspace-01-plan-approved` snapshot.
+- **Stop B** (Implementation latency): switch to `workspace-02-implemented` snapshot.
+- **Stop C** (second reviewer iteration): switch to `workspace-03-complete` snapshot.
+
+### Guardrails
+
+- Maximum 1 unplanned reviewer iteration before switching to a prepared checkpoint.
+- Pre-recorded golden-path and bonus recordings remain available (see `FALLBACK.md`).
+- Both variants reference the same workspace checkpoints (see `snapshot-demo.sh`).
 
 ## Prerequisites (run before the demo)
 
@@ -141,10 +160,10 @@ Testlauf, dass der zuvor dokumentierte Bug wirklich geschlossen wurde.
 
 ---
 
-## Optional Bonus: Content-aware `/review` Flow (~5–7 min)
+## Optional Appendix: Content-aware `/review` Flow (~5–10 min)
 
-> **Only if time permits.** Uses a separate workspace with a pre-built branch.
-> This is a standalone bonus — not part of the main demo.
+> Uses a separate workspace with a pre-built branch.
+> This is a standalone bonus — not part of the fixed time budget of either main variant.
 
 ### Precondition
 

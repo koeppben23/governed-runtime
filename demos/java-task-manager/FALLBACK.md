@@ -12,9 +12,9 @@ not a planned part of the presentation.
 
 ## Fallback Assets (prepare once, keep ready)
 
-### 1. Screen Recording — Main Golden Path (~6–8 min)
+### 1. Screen Recording — Executive (~5–6 min)
 
-Record a complete run of Steps 1–10 from `DEMO_SCRIPT.md`:
+Record the Executive variant (Steps 0–5, 2a, 1–10 from `DEMO_SCRIPT.md`):
 
 ```bash
 ./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
@@ -33,7 +33,7 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 - `./mvnw test` — 16 green, 0 skipped
 - `/export` response (`archiveStatus: verified`, `Session archived and verified.`)
 
-### 2. Screen Recording — `/review` Bonus (~3–5 min, optional)
+### 2. Screen Recording — Optional Appendix (~3–5 min)
 
 Record B1–B4 from the bonus section:
 
@@ -70,13 +70,31 @@ ls -la /tmp/flowguard-java-review-demo/.flowguard/sessions/archive/
 
 ### Tab Group 2: Fallback (open, hidden, ready)
 
-| Application                    | Purpose                      |
-| ------------------------------ | ---------------------------- |
-| Video player (paused at 00:00) | Pre-recorded main run        |
-| Video player (paused at 00:00) | Pre-recorded bonus run       |
-| Finder / file browser          | Frozen `archive/` directory  |
-| Text editor                    | `git diff` output of the fix |
-| Terminal                       | Saved `./mvnw test` output   |
+| Application                    | Purpose                                                        |
+| ------------------------------ | -------------------------------------------------------------- |
+| Video player (paused at 00:00) | Pre-recorded executive run                                     |
+| Video player (paused at 00:00) | Pre-recorded appendix run                                      |
+| Finder / file browser          | Workspace checkpoints under `/tmp/flowguard-demo-checkpoints/` |
+| Text editor                    | `git diff` output of the fix                                   |
+| Terminal                       | Saved `./mvnw test` output                                     |
+
+### Checkpoint Recovery
+
+If a live step takes too long, switch to a prepared workspace snapshot:
+
+```bash
+./snapshot-demo.sh restore <label> /tmp/flowguard-java-demo
+```
+
+After restore, reopen the workspace in OpenCode Desktop.
+
+| Snapshot            | Label            | Phase               |
+| ------------------- | ---------------- | ------------------- |
+| Seed workspace      | 00-seed          | Initial             |
+| Plan approved       | 01-plan-approved | VALIDATION          |
+| Implementation done | 02-implemented   | IMPL_REVIEW         |
+| Session complete    | 03-complete      | COMPLETE            |
+| Evidence exported   | 04-exported      | COMPLETE (archived) |
 
 ---
 
@@ -94,8 +112,13 @@ ls -la /tmp/flowguard-java-review-demo/.flowguard/sessions/archive/
 - [ ] Both recordings play correctly
 - [ ] `./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo` completes with verified install
 - [ ] `./mvnw test` — 16 tests, 0 failures, 1 skipped
-- [ ] OpenCode starts and `/start` works
+- [ ] `./mvnw -o test` passes (Maven offline-ready)
+- [ ] OpenCode Desktop starts and `/start` works
+- [ ] Git commit hash recorded
+- [ ] Tarball built from the exact commit intended for the pitch
+- [ ] Node, npm, OpenCode, Java, Maven versions recorded
 - [ ] Internet connection stable
 - [ ] External display tested (resolution, font size for the room)
 - [ ] Tab groups arranged
+- [ ] Checkpoint snapshots created
 - [ ] Video player windows positioned behind live window group
