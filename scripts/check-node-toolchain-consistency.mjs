@@ -54,9 +54,22 @@ if (!pkg.devEngines || !pkg.devEngines.runtime) {
     error(`devEngines.runtime.onFail expected "error", got "${runtime.onFail}"`);
   }
   if (nodeVersionFile && runtime.version !== nodeVersionFile) {
-    error(
-      `devEngines.runtime.version "${runtime.version}" does not match .node-version "${nodeVersionFile}"`,
-    );
+    // Check if the .node-version satisfies the devEngines range
+    // (devEngines may use >=22.22.2 while .node-version pins 22.22.2)
+    const rangeMin = runtime.version.replace(/^>=/, '');
+    const [a, b, c] = rangeMin.split('.').map(Number);
+    const [x, y, z] = nodeVersionFile.split('.').map(Number);
+    const nodeVer = x * 10000 + y * 100 + z;
+    const minVer = a * 10000 + b * 100 + c;
+    if (nodeVer < minVer) {
+      error(
+        `.node-version "${nodeVersionFile}" does not satisfy devEngines.runtime.version "${runtime.version}"`,
+      );
+    } else {
+      console.log(
+        `  ok: .node-version ${nodeVersionFile} satisfies devEngines range ${runtime.version}`,
+      );
+    }
   }
   console.log(
     `  ok: devEngines.runtime.name=${runtime.name}, version=${runtime.version}, onFail=${runtime.onFail}`,
