@@ -279,6 +279,16 @@ jobs:
       - name: Check GitHub Actions pinning
         run: npm run check:actions-pinned
 
+  node-toolchain:
+    name: node-toolchain
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
+      - name: Check node toolchain consistency
+        run: node scripts/check-node-toolchain-consistency.mjs
+
   build:
     name: build
     runs-on: ubuntu-latest

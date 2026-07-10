@@ -42,6 +42,7 @@
     "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc && npm run generate-build-info",
     "check:esm": "node scripts/check-esm-imports.js",
     "check:actions-pinned": "node scripts/check-github-actions-pinned.js",
+    "check:node-toolchain": "node scripts/check-node-toolchain-consistency.mjs",
     "check": "tsc --noEmit",
     "typecheck": "npm run check",
     "check:opencode-host": "node scripts/check-opencode-host-drift.mjs",
