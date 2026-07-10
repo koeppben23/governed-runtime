@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Node toolchain reproducible at 22.22.2 (#619).** `.node-version` and
+  `devEngines` define the dev baseline; runtime support narrowed from `>=20` to
+  `^20.0.0 || ^22.0.0 || ^24.0.0` and verified via artifact consumer jobs.
+
 ## [1.2.0-tp.2] - 2026-07-08
 
 ### Added

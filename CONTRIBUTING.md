@@ -29,8 +29,11 @@ integration/  -> rails/  -> machine/  -> state/
 
 ### Prerequisites
 
-- Node.js 20+
-- npm
+- Node.js — canonical version defined in `.node-version` (currently `22.22.2`).
+  - `nvm install "$(cat .node-version)" && nvm use "$(cat .node-version)"`
+  - `fnm use "$(cat .node-version)"`
+- npm (bundled with the Node version)
+- The package runtime support claim is `^20.0.0 || ^22.0.0 || ^24.0.0` (see `engines` in `package.json`); CI verifies the packed artifact on each supported major separately from the dev toolchain.
 
 ### Installation
 
