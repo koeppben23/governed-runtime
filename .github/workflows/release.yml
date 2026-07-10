@@ -68,9 +68,24 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+      - name: Pack release tarball
+        id: pack
+        shell: bash
+        run: |
+          mkdir -p release
+          PKG_FILE=$(npm pack --pack-destination release --silent)
+          echo "path=release/$PKG_FILE" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release tarball
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact v7.0.1
+        with:
+          name: flowguard-release-tarball
+          path: ${{ steps.pack.outputs.path }}
+          retention-days: 1
+
   verify-runtime:
     name: verify-runtime (node ${{ matrix.node }})
-    needs: [verify, release-smoke]
+    needs: verify
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -145,13 +160,6 @@ jobs:
         env:
           FORCE_COLOR: 0
           FLOWGUARD_TARBALL: ${{ steps.pack.outputs.path }}
-
-      - name: Upload release tarball
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact v7.0.1
-        with:
-          name: flowguard-release-tarball
-          path: ${{ steps.pack.outputs.path }}
-          retention-days: 1
 
   release:
     name: release

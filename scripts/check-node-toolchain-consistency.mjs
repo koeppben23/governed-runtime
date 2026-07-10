@@ -16,6 +16,7 @@ const REPO_ROOT = join(__dirname, '..');
 const WORKFLOW_DIR = join(REPO_ROOT, '.github', 'workflows');
 
 let errors = 0;
+let nodeVersionFile = '';
 
 function error(msg) {
   console.error(`  FAIL  ${msg}`);
@@ -29,12 +30,12 @@ const nodeVersionPath = join(REPO_ROOT, '.node-version');
 if (!existsSync(nodeVersionPath)) {
   error('.node-version file missing');
 } else {
-  const nodeVersion = readFileSync(nodeVersionPath, 'utf-8').trim();
+  nodeVersionFile = readFileSync(nodeVersionPath, 'utf-8').trim();
   const semverRe = /^\d+\.\d+\.\d+$/;
-  if (!semverRe.test(nodeVersion)) {
-    error(`.node-version "${nodeVersion}" is not a valid semver`);
+  if (!semverRe.test(nodeVersionFile)) {
+    error(`.node-version "${nodeVersionFile}" is not a valid semver`);
   } else {
-    console.log(`  ok: .node-version = ${nodeVersion}`);
+    console.log(`  ok: .node-version = ${nodeVersionFile}`);
   }
 }
 
@@ -51,6 +52,11 @@ if (!pkg.devEngines || !pkg.devEngines.runtime) {
   }
   if (runtime.onFail !== 'error') {
     error(`devEngines.runtime.onFail expected "error", got "${runtime.onFail}"`);
+  }
+  if (nodeVersionFile && runtime.version !== nodeVersionFile) {
+    error(
+      `devEngines.runtime.version "${runtime.version}" does not match .node-version "${nodeVersionFile}"`,
+    );
   }
   console.log(
     `  ok: devEngines.runtime.name=${runtime.name}, version=${runtime.version}, onFail=${runtime.onFail}`,
@@ -81,15 +87,6 @@ const yamlFiles = readdirSync(WORKFLOW_DIR).filter(
 
 for (const file of yamlFiles) {
   const content = readFileSync(join(WORKFLOW_DIR, file), 'utf-8');
-
-  // Check: no job sets both node-version and node-version-file simultaneously
-  const hasBoth =
-    /node-version-file:/.test(content) && /node-version:\s*(?!\s*\${{)/m.test(content);
-  if (hasBoth) {
-    // Only flag if both appear in different setup-node blocks within the same file
-    // (a file with both node-version-file and explicit node-version in different jobs is fine)
-    // This check is approximate; structural parsing would be more precise.
-  }
 
   const isAllowListed = MATRIX_ALLOW_LIST.has(file);
 
