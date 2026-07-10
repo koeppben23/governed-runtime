@@ -12,7 +12,9 @@ intentionally summarized here; use the linked issues for implementation scope.
 A 2026-06-24 re-verification against `develop` (post-#570) confirmed that four
 findings previously marked `Open` were already satisfied in code at the analysis
 baseline (I1, I2, I3, G9 — see "Re-Triaged" below) and added three new findings
-from a mutation-scope and file-size audit (MUT1, SZ1, SZ2).
+from a mutation-scope and file-size audit (MUT1, SZ1, SZ2). A 2026-07-10
+re-triage confirmed two additional pre-existing fixes (G3, C7), one merged fix
+(G7), and four partial fixes (H2, M3, C3, I4).
 
 ## Status Legend
 
@@ -23,7 +25,6 @@ from a mutation-scope and file-size audit (MUT1, SZ1, SZ2).
 | `Partially Fixed`      | Some findings in the group are fixed; others remain open. |
 | `Tracked`              | Covered by an open issue or package, not fixed yet.       |
 | `Open`                 | Known item without a dedicated child issue yet.           |
-| `Re-Triaged`           | Re-verified false-positive; already satisfied in code.    |
 | `Not Verified`         | Static-analysis claim still needs confirmation.           |
 | `Non-Regression Note`  | Positive finding or behavior to preserve.                 |
 | `SEE ALSO`             | Cross-reference note, not a fixable finding.              |
@@ -49,8 +50,9 @@ from a mutation-scope and file-size audit (MUT1, SZ1, SZ2).
 | R8   | MEDIUM      | Fixed  | #585       | Conservative secret-value scanning (bearer/JWT/sk-/key=value) added to the central log redactor.                   |
 | D1   | LOW         | Fixed  | #585       | Central sink-layer redaction sanitizes diagnostic strings regardless of call site.                                 |
 | MUT1 | MEDIUM-HIGH | Fixed  | (direct)   | Mutation scope restored: 5 orchestrator/multi-mode files added to stryker scope with unit tests.                   |
+| G7   | MEDIUM      | Fixed  | #421       | Abort is a no-op at all terminal phases and no longer overwrites architecture or review terminal state.            |
 
-## Re-Triaged (2026-06-24)
+## Re-Triaged (2026-06-24, 2026-07-10)
 
 Findings the static analysis marked `Open` that a `develop` re-verification found
 already satisfied in code. Git history shows the relevant logic predates the
@@ -64,6 +66,8 @@ disproven, update the status and link the evidence."
 | I2  | MEDIUM      | Fixed (pre-existing) | `enforcement.ts` verdict path only reads `args.reviewVerdict`/`reviewFindings`; the unified mode classifier is pure. No caller-arg mutation.                                          |
 | I3  | MEDIUM      | Fixed (pre-existing) | `enforcement.ts` returns `REVIEW_ASSURANCE_STATE_UNAVAILABLE` when session state is absent under strict enforcement; orchestrator fails closed with `PLUGIN_ENFORCEMENT_UNAVAILABLE`. |
 | G9  | MEDIUM      | Fixed (pre-existing) | `machine/guards.ts` `isConverged` returns false for `unable_to_review`; tool layer blocks with `SUBAGENT_UNABLE_TO_REVIEW` and routes to a recoverable blocked obligation.            |
+| G3  | HIGH        | Fixed (pre-existing) | Reject, changes-requested, and hydrate recovery paths clear `reducedCeremony`; regression tests cover the review-decision paths.                                                      |
+| C7  | MEDIUM      | Fixed (pre-existing) | OpenCode configuration is parsed as JSONC and structurally merged before serialization; tests cover comments and existing fields.                                                     |
 
 ## Priority Work Packages
 
@@ -73,77 +77,70 @@ disproven, update the status and link the evidence."
 | B       | P1       | Partially Fixed | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2            | Hash-chain, canonical digest, TSA, and NTP hardening. AC1 fixed; AC2–AC5, TSA1–TSA2 remain open. AC3 also tracked in Package D (audit summarization redaction spans both domains). |
 | C       | P1       | Partially Fixed | AR1, AR2, AUD2                                 | Archive integrity and audit write-lock recovery. AR1 fixed; AR2, AUD2 remain open.                                                                                                 |
 | D       | P1       | Partially Fixed | R1, R2, R3, R4, R5, AC3                        | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 remain open.                                                                           |
-| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H4 fixed; H1–H2, C1–C5, M1–M3, I4 remain open.                                                                   |
-| F       | P2       | Tracked         | G3, G7, G9, G15, AC6, AC7, G12, G13            | State-machine correctness and audit completeness.                                                                                                                                  |
+| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H4 fixed; H2, C3, M3, and I4 partially fixed; H1, C1–C2, C4–C5, M1–M2 remain open.                               |
+| F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13            | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421; G15, AC6–AC7, and G12–G13 remain open.                                    |
 
-## Open High-Priority Findings
+## Outstanding High-Priority Findings
 
-| ID   | Severity | Status | Summary                                                                                    |
-| ---- | -------- | ------ | ------------------------------------------------------------------------------------------ |
-| AC2  | HIGH     | Open   | Timestamp verification must not trust downgraded status when stronger evidence is present. |
-| AC3  | HIGH     | Open   | Audit argument summarization can expose scalar secrets and needs redaction hardening.      |
-| AC4  | HIGH     | Open   | NTP offset/delay calculation needs RFC-aligned correction.                                 |
-| AC5  | HIGH     | Open   | NTP response validation needs stricter checks.                                             |
-| G3   | HIGH     | Open   | Stale reduced-ceremony state can survive reset/rejection paths.                            |
-| H1   | HIGH     | Open   | HTTP hook server needs an explicit trust/auth/origin boundary.                             |
-| H2   | HIGH     | Open   | Command hook and HTTP hook obligation enforcement must be aligned.                         |
-| H3   | HIGH     | Open   | Session ID validation needs Windows/reserved-name hardening.                               |
-| M1   | HIGH     | Open   | MCP tool execution needs timeout/rate-limit hardening.                                     |
-| M2   | HIGH     | Open   | MCP session/project directory environment inputs need validation.                          |
-| M3   | HIGH     | Open   | MCP client-facing errors need sanitization.                                                |
-| C1   | HIGH     | Open   | Non-OpenCode config install skip/error handling needs explicit surfacing.                  |
-| C2   | HIGH     | Open   | Installer auto-run guard needs stricter entrypoint detection.                              |
-| C3   | HIGH     | Open   | Dependency install/rollback ordering needs safer behavior.                                 |
-| C4   | HIGH     | Open   | Codex marketplace registration needs atomic/locked update semantics.                       |
-| C5   | HIGH     | Open   | Rollback removal needs symlink/TOCTOU hardening.                                           |
-| I4   | HIGH     | Open   | Plugin initialization failures must fail closed rather than disabling enforcement.         |
-| R1   | HIGH     | Open   | Export redaction should not default-allow unknown fields.                                  |
-| R2   | HIGH     | Open   | Archive export must respect redaction mode for audit/state/raw artifacts.                  |
-| R4   | HIGH     | Open   | Telemetry error/status export needs scrubbing.                                             |
-| AUD2 | HIGH     | Open   | Audit write lock needs stale-lock recovery.                                                |
+| ID   | Severity | Status          | Summary                                                                                                           |
+| ---- | -------- | --------------- | ----------------------------------------------------------------------------------------------------------------- |
+| AC2  | HIGH     | Open            | Timestamp verification must not trust downgraded status when stronger evidence is present.                        |
+| AC3  | HIGH     | Open            | Audit argument summarization can expose scalar secrets and needs redaction hardening.                             |
+| AC4  | HIGH     | Open            | NTP offset/delay calculation needs RFC-aligned correction.                                                        |
+| AC5  | HIGH     | Open            | NTP response validation needs stricter checks.                                                                    |
+| H1   | HIGH     | Open            | HTTP hook server needs an explicit trust/auth/origin boundary.                                                    |
+| H2   | HIGH     | Partially Fixed | HTTP hook blocks unresolved obligations; command-hook enforcement still needs equivalent obligation handling.     |
+| H3   | HIGH     | Open            | Session ID validation needs Windows/reserved-name hardening.                                                      |
+| M1   | HIGH     | Open            | MCP tool execution needs timeout/rate-limit hardening.                                                            |
+| M2   | HIGH     | Open            | MCP session/project directory environment inputs need validation.                                                 |
+| M3   | HIGH     | Partially Fixed | Missing-root diagnostics omit paths; ordinary MCP failures can still return raw error messages.                   |
+| C1   | HIGH     | Open            | Non-OpenCode config install skip/error handling needs explicit surfacing.                                         |
+| C2   | HIGH     | Open            | Installer auto-run guard needs stricter entrypoint detection.                                                     |
+| C3   | HIGH     | Partially Fixed | Dependency-install failure invokes rollback, but installation and rollback are not transactionally isolated.      |
+| C4   | HIGH     | Open            | Codex marketplace registration needs atomic/locked update semantics.                                              |
+| C5   | HIGH     | Open            | Rollback removal needs symlink/TOCTOU hardening.                                                                  |
+| I4   | HIGH     | Partially Fixed | Strict state-read failures block enforcement; missing session-directory mapping still needs fail-closed handling. |
+| R1   | HIGH     | Open            | Export redaction should not default-allow unknown fields.                                                         |
+| R2   | HIGH     | Open            | Archive export must respect redaction mode for audit/state/raw artifacts.                                         |
+| R4   | HIGH     | Open            | Telemetry error/status export needs scrubbing.                                                                    |
+| AUD2 | HIGH     | Open            | Audit write lock needs stale-lock recovery.                                                                       |
 
-## Medium-Priority Findings
+## Outstanding Medium-Priority Findings
 
-| ID   | Severity    | Status          | Summary                                                                                                        |
-| ---- | ----------- | --------------- | -------------------------------------------------------------------------------------------------------------- |
-| AC6  | MEDIUM      | Open            | Review-flow completeness can report complete mid-flow. `TESTED_BUG_BEHAVIOR`.                                  |
-| AC7  | MEDIUM      | Open            | Completeness summary total is ticket-flow-specific.                                                            |
-| AC8  | MEDIUM      | Partially Fixed | Four-eyes reporting now uses structured identity; history handling remains open.                               |
-| AC9  | MEDIUM      | Open            | Timestamp imprint comparison and missing-cache behavior need tightening.                                       |
-| AC10 | MEDIUM      | Not Verified    | Timestamp token verification should distinguish legacy format from tampering.                                  |
-| AC11 | MEDIUM      | Open            | Timestamp comparisons should parse time values instead of relying on lexical order.                            |
-| G4   | MEDIUM      | Open            | `team-ci` degradation snapshot mode can remain inconsistent. `TESTED_BUG_BEHAVIOR`.                            |
-| G6   | MEDIUM      | Open            | Command policy and terminal handling diverge for HYDRATE/ABORT. `TESTED_BUG_BEHAVIOR`.                         |
-| G7   | MEDIUM      | Open            | Abort terminal phase loses flow type.                                                                          |
-| G9   | MEDIUM      | Re-Triaged      | `unable_to_review` convergence — fixed pre-existing; see Re-Triaged section.                                   |
-| G12  | MEDIUM      | Open            | ADR rejection is not represented in architecture state.                                                        |
-| G13  | MEDIUM      | Open            | ADR section validation should use line-anchored matching.                                                      |
-| G15  | MEDIUM      | Open            | Transition records lack actor identity.                                                                        |
-| G22  | MEDIUM      | Open            | Hydrate risk-class recovery behavior and documentation diverge.                                                |
-| G26  | MEDIUM      | Open            | IdP token subject/email persistence normalization remains open.                                                |
-| G27  | MEDIUM      | Not Verified    | JWKS fetch needs body-size and redirect-boundary review.                                                       |
-| H5   | MEDIUM      | Open            | Stop hook should flush logger sinks before process exit.                                                       |
-| H6   | MEDIUM      | Open            | Pre-tool fatal path exit-code behavior needs fail-closed coverage. `TESTED_BUG_BEHAVIOR`.                      |
-| H7   | MEDIUM      | Open            | Command hook stdin needs a byte cap.                                                                           |
-| H8   | MEDIUM      | Open            | Hook payload working-directory trust boundary needs validation.                                                |
-| M4   | MEDIUM      | Open            | MCP schema conversion should not silently become free-form on missing args.                                    |
-| M5   | MEDIUM      | Open            | MCP stdout guard JSON-RPC detection needs stricter framing.                                                    |
-| C6   | MEDIUM      | Open            | Installer config-dir environment inputs need validation.                                                       |
-| C7   | MEDIUM      | Open            | OpenCode JSON template rendering should avoid fragile string injection.                                        |
-| C8   | MEDIUM      | Open            | Claude Code plugin install hint should respect force/overwrite semantics.                                      |
-| C11  | MEDIUM      | Open            | Serve port allocation has a TOCTOU gap.                                                                        |
-| I1   | MEDIUM-HIGH | Re-Triaged      | Tool-result footer attachment — fixed pre-existing; see Re-Triaged section.                                    |
-| I2   | MEDIUM      | Re-Triaged      | Verdict enforcement caller-arg mutation — fixed pre-existing; see Re-Triaged section.                          |
-| I3   | MEDIUM      | Re-Triaged      | Strict enforcement null session state — fixed pre-existing; see Re-Triaged section.                            |
-| T1   | MEDIUM      | Open            | Mandate section extraction should tolerate heading drift or fail with clearer contract. `TESTED_BUG_BEHAVIOR`. |
-| AR2  | MEDIUM      | Open            | Archive timestamp severity should derive from trusted policy state.                                            |
-| AR3  | MEDIUM      | Open            | Archive strict-mode escalation diagnostics need consistency.                                                   |
-| AR4  | MEDIUM      | Open            | Unexpected-file checks should surface inconclusive directory reads.                                            |
-| AR5  | MEDIUM      | Not Verified    | Archive binding event ordering should avoid phantom evidence.                                                  |
-| TSA1 | MEDIUM      | Open            | RFC3161 verifier should enforce timestamping EKU.                                                              |
-| TSA2 | MEDIUM      | Not Verified    | TSA signature hash algorithm handling needs review.                                                            |
-| S1   | MEDIUM      | Open            | State schema versioning needs forward-migration strategy.                                                      |
-| S2   | MEDIUM      | Open            | Policy snapshot parse transforms can rewrite historical state.                                                 |
+| ID   | Severity | Status          | Summary                                                                                                        |
+| ---- | -------- | --------------- | -------------------------------------------------------------------------------------------------------------- |
+| AC6  | MEDIUM   | Open            | Review-flow completeness can report complete mid-flow. `TESTED_BUG_BEHAVIOR`.                                  |
+| AC7  | MEDIUM   | Open            | Completeness summary total is ticket-flow-specific.                                                            |
+| AC8  | MEDIUM   | Partially Fixed | Four-eyes reporting now uses structured identity; history handling remains open.                               |
+| AC9  | MEDIUM   | Open            | Timestamp imprint comparison and missing-cache behavior need tightening.                                       |
+| AC10 | MEDIUM   | Not Verified    | Timestamp token verification should distinguish legacy format from tampering.                                  |
+| AC11 | MEDIUM   | Open            | Timestamp comparisons should parse time values instead of relying on lexical order.                            |
+| G4   | MEDIUM   | Open            | `team-ci` degradation snapshot mode can remain inconsistent. `TESTED_BUG_BEHAVIOR`.                            |
+| G6   | MEDIUM   | Open            | Command policy and terminal handling diverge for HYDRATE/ABORT. `TESTED_BUG_BEHAVIOR`.                         |
+| G12  | MEDIUM   | Open            | ADR rejection is not represented in architecture state.                                                        |
+| G13  | MEDIUM   | Open            | ADR section validation should use line-anchored matching.                                                      |
+| G15  | MEDIUM   | Open            | Transition records lack actor identity.                                                                        |
+| G22  | MEDIUM   | Open            | Hydrate risk-class recovery behavior and documentation diverge.                                                |
+| G26  | MEDIUM   | Open            | IdP token subject/email persistence normalization remains open.                                                |
+| G27  | MEDIUM   | Not Verified    | JWKS fetch needs body-size and redirect-boundary review.                                                       |
+| H5   | MEDIUM   | Open            | Stop hook should flush logger sinks before process exit.                                                       |
+| H6   | MEDIUM   | Open            | Pre-tool fatal path exit-code behavior needs fail-closed coverage. `TESTED_BUG_BEHAVIOR`.                      |
+| H7   | MEDIUM   | Open            | Command hook stdin needs a byte cap.                                                                           |
+| H8   | MEDIUM   | Open            | Hook payload working-directory trust boundary needs validation.                                                |
+| M4   | MEDIUM   | Open            | MCP schema conversion should not silently become free-form on missing args.                                    |
+| M5   | MEDIUM   | Open            | MCP stdout guard JSON-RPC detection needs stricter framing.                                                    |
+| C6   | MEDIUM   | Open            | Installer config-dir environment inputs need validation.                                                       |
+| C8   | MEDIUM   | Open            | Claude Code plugin install hint should respect force/overwrite semantics.                                      |
+| C11  | MEDIUM   | Open            | Serve port allocation has a TOCTOU gap.                                                                        |
+| T1   | MEDIUM   | Open            | Mandate section extraction should tolerate heading drift or fail with clearer contract. `TESTED_BUG_BEHAVIOR`. |
+| AR2  | MEDIUM   | Open            | Archive timestamp severity should derive from trusted policy state.                                            |
+| AR3  | MEDIUM   | Open            | Archive strict-mode escalation diagnostics need consistency.                                                   |
+| AR4  | MEDIUM   | Open            | Unexpected-file checks should surface inconclusive directory reads.                                            |
+| AR5  | MEDIUM   | Not Verified    | Archive binding event ordering should avoid phantom evidence.                                                  |
+| TSA1 | MEDIUM   | Open            | RFC3161 verifier should enforce timestamping EKU.                                                              |
+| TSA2 | MEDIUM   | Not Verified    | TSA signature hash algorithm handling needs review.                                                            |
+| S1   | MEDIUM   | Open            | State schema versioning needs forward-migration strategy.                                                      |
+| S2   | MEDIUM   | Open            | Policy snapshot parse transforms can rewrite historical state.                                                 |
 
 ## Low-Priority And Hardening Findings
 
@@ -199,7 +196,7 @@ disproven, update the status and link the evidence."
 | V3   | LOW        | Open         | Repair-guidance regex risk remains bounded by sanitization.                                                                                                                                        |
 | EA1  | LOW        | Open         | Artifact-type validation should match declared artifact union.                                                                                                                                     |
 | EA2  | LOW        | Open         | Review-card metadata needs schema coverage.                                                                                                                                                        |
-| SZ1  | LOW-MEDIUM | Open         | Prod files near the 750-LOC blocker: `src/adapters/workspace/evidence-artifacts.ts` (684), `src/config/policy-snapshot-normalize.ts` (677). `src/integration/plugin-audit.ts` relieved 706 -> 595. |
+| SZ1  | LOW-MEDIUM | Open         | Prod files near the 750-LOC blocker: `src/adapters/workspace/evidence-artifacts.ts` (678), `src/config/policy-snapshot-normalize.ts` (677). `src/integration/plugin-audit.ts` relieved 706 -> 595. |
 | SZ2  | LOW        | Open         | `dependency-rules.test.ts` (1656 LOC) exceeds the 1500 advisory; split without breaking the cycle-detection logic when it next grows.                                                              |
 | CMP1 | SEE ALSO   | Open         | Compliance mapping overlaps AC6, AC7, AC8, and G2.                                                                                                                                                 |
 
