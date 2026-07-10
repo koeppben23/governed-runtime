@@ -27,3 +27,21 @@ git status --short           # Expected: no output
 The seed is a standalone git repository. The setup script copies it, runs
 `git init && git add -A && git commit -m "Initial"` to create a clean
 starting point.
+
+## Snapshot Recovery
+
+Restore a saved workspace checkpoint instead of starting fresh:
+
+```bash
+./demos/java-task-manager/snapshot-demo.sh restore 01-plan-approved /tmp/flowguard-java-demo
+```
+
+See `snapshot-demo.sh` for labels and usage.
+
+## Pre-flight
+
+Run pre-flight checks before a live pitch:
+
+```bash
+demos/java-task-manager/run-demo-preflight.sh /tmp/flowguard-java-demo
+```
