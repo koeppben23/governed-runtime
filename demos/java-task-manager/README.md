@@ -14,7 +14,7 @@ of disappearing informally in a chat.
 ## Prerequisites
 
 - JDK 21+
-- Node.js — use the repository-controlled version from [#619](https://github.com/koeppben23/governed-runtime/issues/619). This demo requires #619 to be completed before pitch rehearsal.
+- Node.js 22+
 - OpenCode CLI (`opencode`) in PATH
 - FlowGuard core tarball (build with `npm run build && npm pack` from the
   governed-runtime repo root)
