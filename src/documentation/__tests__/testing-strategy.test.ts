@@ -21,6 +21,18 @@ function mutationTargets(): string[] {
   return JSON.parse(readRepoFile('stryker.conf.json')).mutate;
 }
 
+const INTEGRITY_MUTATION_TARGETS = [
+  // audit integrity
+  'src/audit/completeness.ts',
+  'src/audit/integrity.ts',
+  // policy and reasons
+  'src/config/policy.ts',
+  'src/config/reasons.ts',
+  // identity
+  'src/identity/token-verifier.ts',
+  'src/identity/key-resolver.ts',
+];
+
 const CRITICAL_MUTATION_TARGETS = [
   'src/integration/review/orchestrator-detection.ts',
   'src/integration/review/orchestrator-output.ts',
@@ -29,6 +41,8 @@ const CRITICAL_MUTATION_TARGETS = [
   'src/shared/canonical-json.ts',
   'src/integration/plugin-audit-lifecycle-reason.ts',
   'src/templates/codex-plugin.ts',
+  'src/templates/claude-code-plugin.ts',
+  ...INTEGRITY_MUTATION_TARGETS,
 ];
 
 describe('documentation/testing-strategy', () => {
@@ -65,5 +79,16 @@ describe('documentation/testing-strategy', () => {
     expect(workflow).not.toMatch(/^\s*pull_request:/m);
     expect(workflow).toContain('workflow_dispatch');
     expect(workflow).toContain('schedule:');
+  });
+
+  it('HAPPY: documents threshold and admission rule rationale', () => {
+    const docs = readRepoFile('docs/testing-strategy.md');
+
+    expect(docs).toContain('Threshold And Admission Rule');
+    expect(docs).toContain('`break: 80`');
+    expect(docs).toContain('no per-area lower thresholds');
+    expect(docs).toContain('targeted `--mutate` run');
+    expect(docs).toContain('`StringLiteral`');
+    expect(docs).toContain('`ArrayDeclaration`');
   });
 });

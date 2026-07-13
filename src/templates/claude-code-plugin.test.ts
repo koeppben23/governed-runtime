@@ -31,6 +31,8 @@ describe('Claude Code plugin templates', () => {
     // default location. Declaring an `agents` key silently drops the agent
     // (Agents (0)), so the manifest must NOT reference it.
     expect(manifest.agents).toBeUndefined();
+    // Structural: ObjectLiteral mutant guard — author object must have 'name'.
+    expect(manifest.author).toEqual({ name: 'FlowGuard' });
   });
 
   it('renders hook config in exec form with FlowGuard matchers', () => {
@@ -43,6 +45,50 @@ describe('Claude Code plugin templates', () => {
     expect(preHook.args).toEqual(['${CLAUDE_PLUGIN_ROOT}/dist/hooks/pre-tool-use.js']);
     expect(preHook.command).not.toContain('${CLAUDE_PLUGIN_ROOT}');
     expect(postMatcher).toBe('Bash|Edit|Write|apply_patch|mcp__flowguard__.*');
+  });
+
+  it('every hook slot in hooks config has the expected exec-form structure', () => {
+    const hooks = JSON.parse(claudeCodeHooksJson());
+
+    // PostToolUse — matcher + hook object
+    const post = hooks.hooks.PostToolUse[0];
+    expect(post.matcher).toBe('Bash|Edit|Write|apply_patch|mcp__flowguard__.*');
+    expect(post.hooks[0]).toMatchObject({
+      type: 'command',
+      command: 'node',
+      args: ['${CLAUDE_PLUGIN_ROOT}/dist/hooks/post-tool-use.js'],
+      timeout: 30,
+    });
+
+    // SessionStart — matcher + hook object with statusMessage, no timeout
+    const sstart = hooks.hooks.SessionStart[0];
+    expect(sstart.matcher).toBe('startup');
+    expect(sstart.hooks[0]).toMatchObject({
+      type: 'command',
+      command: 'node',
+      args: ['${CLAUDE_PLUGIN_ROOT}/dist/hooks/session-start.js'],
+      statusMessage: 'FlowGuard: initializing session',
+    });
+
+    // Stop — no matcher, has timeout
+    const stop = hooks.hooks.Stop[0];
+    expect(stop.matcher).toBeUndefined();
+    expect(stop.hooks[0]).toMatchObject({
+      type: 'command',
+      command: 'node',
+      args: ['${CLAUDE_PLUGIN_ROOT}/dist/hooks/stop.js'],
+      timeout: 15,
+    });
+
+    // SubagentStop — no matcher, has timeout
+    const subStop = hooks.hooks.SubagentStop[0];
+    expect(subStop.matcher).toBeUndefined();
+    expect(subStop.hooks[0]).toMatchObject({
+      type: 'command',
+      command: 'node',
+      args: ['${CLAUDE_PLUGIN_ROOT}/dist/hooks/subagent-stop.js'],
+      timeout: 15,
+    });
   });
 
   it('renders MCP config for the existing FlowGuard MCP server', () => {
