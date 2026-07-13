@@ -152,11 +152,6 @@ jobs:
           RUN_LINK: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          BRANCH="$BRANCH"
-          CURRENT_SDK="$CURRENT_SDK"
-          CURRENT_HOST="$CURRENT_HOST"
-          TARGET_SDK="$TARGET_SDK"
-          TARGET_HOST="$TARGET_HOST"
 
           body=$(cat <<'EOF'
           Updates OpenCode compatibility baselines and verifies both SDK and Desktop/host surfaces.
