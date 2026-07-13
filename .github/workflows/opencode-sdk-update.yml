@@ -142,95 +142,86 @@ jobs:
         run: git push --force-with-lease origin "flowguard/opencode-${{ steps.resolve.outputs.target_sdk }}-host-${{ steps.resolve.outputs.target_host }}"
       - name: Create or update pull request
         if: steps.resolve.outputs.needs_update == 'true'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
         env:
+          GH_TOKEN: ${{ github.token }}
           BRANCH: flowguard/opencode-${{ steps.resolve.outputs.target_sdk }}-host-${{ steps.resolve.outputs.target_host }}
           TARGET_SDK: ${{ steps.resolve.outputs.target_sdk }}
           TARGET_HOST: ${{ steps.resolve.outputs.target_host }}
           CURRENT_SDK: ${{ steps.resolve.outputs.current_sdk }}
           CURRENT_HOST: ${{ steps.resolve.outputs.current_host }}
-        with:
-          script: |
-            const branch = process.env.BRANCH;
-            const currentSdk = process.env.CURRENT_SDK;
-            const currentHost = process.env.CURRENT_HOST;
-            const targetSdk = process.env.TARGET_SDK;
-            const targetHost = process.env.TARGET_HOST;
+          RUN_LINK: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          BRANCH="$BRANCH"
+          CURRENT_SDK="$CURRENT_SDK"
+          CURRENT_HOST="$CURRENT_HOST"
+          TARGET_SDK="$TARGET_SDK"
+          TARGET_HOST="$TARGET_HOST"
 
-            const title = 'chore(deps-dev): update opencode sdk and host baselines';
-            const body = [
-              'Updates OpenCode compatibility baselines and verifies both SDK and Desktop/host surfaces.',
-              '',
-              'Versions:',
-              `- @opencode-ai/plugin: ${currentSdk} -> ${targetSdk}`,
-              `- opencode-ai host/Desktop: ${currentHost} -> ${targetHost}`,
-              '',
-              'Verification in workflow:',
-              '- npm run check',
-              '- node scripts/sdk-type-snapshot.mjs --platform opencode',
-              '- npm run test:sdk-contract:all',
-              '- npm run test:integration',
-              '- npm run lint',
-              '- npm run build',
-              '- npm run test:smoke with RUN_OPENCODE_ACP_TESTS=1',
-              '- npm run test:independent-review-e2e',
-            ].join('\n');
+          body=$(cat <<'EOF'
+          Updates OpenCode compatibility baselines and verifies both SDK and Desktop/host surfaces.
 
-            const { data: existing } = await github.rest.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              head: `${context.repo.owner}:${branch}`,
-              state: 'open',
-            });
+          Versions:
+          - @opencode-ai/plugin: $CURRENT_SDK -> $TARGET_SDK
+          - opencode-ai host/Desktop: $CURRENT_HOST -> $TARGET_HOST
 
-            if (existing.length > 0) {
-              await github.rest.pulls.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                pull_number: existing[0].number,
-                title,
-                body,
-              });
-              core.info(`Updated existing PR #${existing[0].number}`);
-            } else {
-              const { data: pr } = await github.rest.pulls.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                head: branch,
-                base: 'main',
-                title,
-                body,
-              });
-              core.info(`Created PR #${pr.number}: ${pr.html_url}`);
-            }
+          Verification in workflow:
+          - npm run check
+          - node scripts/sdk-type-snapshot.mjs --platform opencode
+          - npm run test:sdk-contract:all
+          - npm run test:integration
+          - npm run lint
+          - npm run build
+          - npm run test:smoke with RUN_OPENCODE_ACP_TESTS=1
+          - npm run test:independent-review-e2e
+
+          Workflow run: $RUN_LINK
+          EOF
+          )
+
+          existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number')
+          if [ -n "$existing" ]; then
+            gh pr edit "$existing" --title "chore(deps-dev): update opencode sdk and host baselines" --body "$body"
+            echo "Updated existing PR #$existing"
+          else
+            pr_url=$(gh pr create --base develop --head "$BRANCH" --title "chore(deps-dev): update opencode sdk and host baselines" --body "$body")
+            echo "Created PR: $pr_url"
+          fi
+      - name: Close drift issue on success
+        if: success() && steps.resolve.outputs.needs_update == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SDK: ${{ steps.resolve.outputs.target_sdk }}
+          TARGET_HOST: ${{ steps.resolve.outputs.target_host }}
+        run: |
+          set -euo pipefail
+          title="OpenCode update: SDK $TARGET_SDK / host $TARGET_HOST requires manual review"
+          issue_number=$(gh issue list --search "$title" --state open --limit 1 --json number --jq '.[0].number')
+          if [ -n "$issue_number" ]; then
+            gh issue close "$issue_number" --reason completed --comment "Automated update succeeded. See linked PR."
+            echo "Closed issue #$issue_number"
+          else
+            echo "No matching open issue found."
+          fi
       - name: Create issue on failure
         if: failure() && steps.resolve.outputs.needs_update == 'true'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # actions/github-script v9.0.0
-        with:
-          script: |
-            const targetSdk = '${{ steps.resolve.outputs.target_sdk }}' || 'unknown';
-            const targetHost = '${{ steps.resolve.outputs.target_host }}' || 'unknown';
-            const issues = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-            });
-            const title = `OpenCode update: SDK ${targetSdk} / host ${targetHost} requires manual review`;
-            if (issues.data.some((issue) => issue.title === title)) {
-              core.info('Matching sdk-drift issue already exists, skipping.');
-              return;
-            }
-            await github.rest.issues.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              title,
-              body: [
-                '## SDK Update Failure',
-                '',
-                `The automated OpenCode update for \`@opencode-ai/plugin@${targetSdk}\` and \`opencode-ai@${targetHost}\` failed.`,
-                '',
-                `**Run**: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-                '',
-                'Review the failed step before accepting any regenerated SDK baseline.',
-              ].join('\n'),
-            });
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SDK: ${{ steps.resolve.outputs.target_sdk }}
+          TARGET_HOST: ${{ steps.resolve.outputs.target_host }}
+          RUN_LINK: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          title="OpenCode update: SDK $TARGET_SDK / host $TARGET_HOST requires manual review"
+          if gh issue list --search "$title" --state open --limit 1 --json number --jq '.[0].number' | grep -q .; then
+            echo "Matching sdk-drift issue already exists, skipping."
+          else
+            gh issue create --title "$title" --body "## SDK Update Failure
+
+          The automated OpenCode update for \`@opencode-ai/plugin@$TARGET_SDK\` and \`opencode-ai@$TARGET_HOST\` failed.
+
+          **Run**: $RUN_LINK
+
+          Review the failed step before accepting any regenerated SDK baseline."
+            echo "Created issue."
+          fi
