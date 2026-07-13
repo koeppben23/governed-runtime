@@ -125,7 +125,7 @@ blindly suppressed.
 - `npx vitest run --project unit <file>` — run a focused unit test file.
 - `npx vitest run --project integration <file>` — run a focused integration test file.
 - `npx vitest run --project smoke <file>` — run a focused smoke test file.
-- `npm run check` — TypeScript compilation (`tsc --noEmit`).
+- `npm run check` — Production + test TypeScript compilation; use `check:prod` or `check:tests` individually.
 - `npm run lint:strict` — ESLint with `--max-warnings=0` as a CI gate.
 - `npm run check:format` — Prettier formatting check.
 - `npm run build` — production build to `dist/`.

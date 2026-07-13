@@ -44,6 +44,10 @@ npm install
 # Type check
 npm run check
 
+# Check production or test/configuration contexts separately
+npm run check:prod
+npm run check:tests
+
 # Lint (CI gate: --max-warnings=0)
 npm run lint:strict
 
@@ -131,6 +135,10 @@ describe('ModuleName / Feature', () => {
 ### TypeScript
 
 - Use strict TypeScript (`"strict": true` in tsconfig.json)
+- `tsconfig.json` is the production/build authority; `tsconfig.test.json` extends
+  it for the full source graph in the test/configuration compilation context.
+- Keep Vitest imports explicit. Do not add ambient test globals through
+  `types: ["vitest/globals"]`.
 - Prefer `type` over `interface` for simple type aliases
 - Use Zod schemas as the source of truth for data validation
 - Use `readonly` for immutable data structures
@@ -213,7 +221,7 @@ Test files may be broader (suites group related cases): advisory split at
 "Clean" is a verifiable state, not an opinion. A change is clean when ALL of the
 following hold:
 
-1. `npm run check` (tsc) passes.
+1. `npm run check` (production and test-context TypeScript compilation) passes.
 2. `npm run lint:strict` passes (`eslint --max-warnings=0`).
 3. `dependency-rules.test.ts` passes (no layer violation).
 4. All SSOT guards pass (no duplicate authority).
@@ -302,7 +310,7 @@ The following checks are merge-blocking for both protected branches:
 | ------------------------ | ---------------------------------------------- | ------------------------------------------------------------------------ |
 | Validate Commit Messages | —                                              | PR title and commit-message convention gate                              |
 | Tests                    | needs: [unit, integration]                     | Aggregated branch-protection check (passes when unit + integration pass) |
-| Type Check               | `npm run check`                                | TypeScript compilation                                                   |
+| Type Check               | `npm run check`                                | Production and test-context TypeScript compilation                       |
 | Lint                     | `npm run lint:strict`                          | ESLint gate with --max-warnings=0 for all src/\*.ts                      |
 | Format                   | `npm run check:format`                         | Prettier formatting check                                                |
 | Architecture             | `npm run test:architecture`                    | Dependency rules + file-size enforcement                                 |
