@@ -49,6 +49,7 @@ import {
   workspaceDir as resolveWorkspaceDir,
 } from '../adapters/workspace/index.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import type { ToolDefinition } from './tools/helpers.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
@@ -122,6 +123,7 @@ afterEach(async () => {
     id: 'test-operator',
     email: 'test@flowguard.dev',
     source: 'env',
+    assurance: 'best_effort',
   });
   vi.clearAllMocks();
   await ws.cleanup();
@@ -131,7 +133,7 @@ afterEach(async () => {
 
 /** Call a tool and parse the result. Fails the test if the result is an error. */
 async function callOk(
-  tool: { execute: (args: unknown, ctx: TestToolContext) => Promise<string> },
+  tool: ToolDefinition,
   args: unknown,
   context: TestToolContext = ctx,
 ): Promise<Record<string, unknown>> {
@@ -146,7 +148,7 @@ async function callOk(
 }
 
 function recordDecisionIntentForTool(
-  tool: { execute: (args: unknown, ctx: TestToolContext) => Promise<string> },
+  tool: ToolDefinition,
   args: unknown,
   context: TestToolContext = ctx,
 ): void {
@@ -998,6 +1000,7 @@ describe('e2e-workflow', () => {
         id: 'unknown',
         email: null,
         source: 'unknown',
+        assurance: 'best_effort',
       });
 
       await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
@@ -1013,6 +1016,7 @@ describe('e2e-workflow', () => {
         id: 'unknown',
         email: null,
         source: 'unknown',
+        assurance: 'best_effort',
       });
       recordDecisionIntentForTool(decision, { verdict: 'approve', rationale: 'LGTM' }, ctx);
       const raw = await decision.execute({ verdict: 'approve', rationale: 'LGTM' }, ctx);

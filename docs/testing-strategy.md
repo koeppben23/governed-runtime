@@ -53,6 +53,14 @@ Additional CI jobs (not test-focused): `typecheck`, `lint`, `format`, `build`,
 `audit`, `actionlint`, `actions-pinning`, `secrets-scan`, `codeql-sast`,
 `security-policy`, `install`.
 
+The `typecheck` job runs `npm run check`, which executes both `check:prod` and
+`check:tests`. `check:prod` compiles production sources through `tsconfig.json`.
+`check:tests` typechecks the complete source graph in the test/configuration
+compilation context through `tsconfig.test.json`, including the approved
+root-level Vitest configuration files. The test configuration inherits the
+production compiler rules and does not introduce ambient Vitest globals;
+existing explicit Vitest imports remain the test API authority.
+
 The `actions-pinning` job enforces the CI supply-chain contract for workflow and
 local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
@@ -96,6 +104,13 @@ workflow runs. It is intentionally not a pull-request required check; see
 ```bash
 # Full suite
 npm test
+
+# TypeScript: production and complete test/configuration contexts
+npm run check
+
+# TypeScript: individual contexts
+npm run check:prod
+npm run check:tests
 
 # By layer
 npm run test:unit          # Pure logic, no build needed

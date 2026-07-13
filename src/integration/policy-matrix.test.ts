@@ -33,6 +33,7 @@ import {
 } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import type { ToolDefinition } from './tools/helpers.js';
 
 type Mode = 'solo' | 'team' | 'team-ci' | 'regulated';
 type CellResult = { allowed: boolean; code?: string; phase?: string; detail?: string };
@@ -116,7 +117,7 @@ function contextFor(mode: Mode): TestToolContext {
 }
 
 async function callOk(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
+  tool: ToolDefinition,
   args: unknown,
   ctx: TestToolContext,
 ): Promise<Record<string, unknown>> {
@@ -130,7 +131,7 @@ async function callOk(
 }
 
 async function callResult(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
+  tool: ToolDefinition,
   args: unknown,
   ctx: TestToolContext,
 ): Promise<CellResult> {
@@ -145,7 +146,7 @@ async function callResult(
 }
 
 function recordDecisionIntentForTool(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
+  tool: ToolDefinition,
   args: unknown,
   ctx: TestToolContext,
 ): void {
@@ -291,7 +292,7 @@ async function scenarioLegacyAuditStrictness(mode: Mode): Promise<CellResult> {
   });
   return {
     allowed: result.valid,
-    code: result.valid ? undefined : result.reason,
+    code: result.valid ? undefined : (result.reason ?? undefined),
     phase: await currentPhase(ctx),
   };
 }

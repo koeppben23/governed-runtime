@@ -16,7 +16,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { invokeReviewer, type OrchestratorClient } from './orchestrator.js';
+import {
+  invokeReviewer,
+  type OrchestratorClient,
+  type ReviewerResult,
+  type ReviewerSuccessResult,
+} from './orchestrator.js';
 import {
   _resetAgentResolutionCache,
   REVIEWER_AGENT_FALLBACK,
@@ -29,6 +34,15 @@ import {
   validFindings as sharedValidFindings,
   PROMPT as SHARED_PROMPT,
 } from './orchestrator-test-helpers.js';
+
+function assertSuccessfulResult(
+  result: ReviewerResult | null,
+): asserts result is ReviewerSuccessResult & { findings: Record<string, unknown> } {
+  expect(result).not.toBeNull();
+  if (!result || result.blocked) throw new TypeError('Expected reviewer invocation to succeed');
+  expect(result.findings).not.toBeNull();
+  if (!result.findings) throw new TypeError('Expected reviewer findings');
+}
 
 describe('invokeReviewer — format-free retry fallback', () => {
   /**
@@ -109,7 +123,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
 
-      expect(result).not.toBeNull();
+      assertSuccessfulResult(result);
       expect(result!.sessionId).toBe('retry-session-1');
       expect(result!.findings.overallVerdict).toBe('accept');
       expect(result!.findings.reviewMode).toBe('subagent');
@@ -170,7 +184,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
         _onAttemptFailed: () => {},
       });
 
-      expect(result).not.toBeNull();
+      assertSuccessfulResult(result);
       expect(result!.findings.overallVerdict).toBe('accept');
     });
 
@@ -193,7 +207,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
         _onAttemptFailed: () => {},
       });
 
-      expect(result).not.toBeNull();
+      assertSuccessfulResult(result);
       expect(result!.findings.overallVerdict).toBe('accept');
       expect(result!.findings.blockingIssues).toEqual([]);
     });
@@ -218,7 +232,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
         _onAttemptFailed: () => {},
       });
 
-      expect(result).not.toBeNull();
+      assertSuccessfulResult(result);
       // Authoritative injection overwrites subagent's guess
       expect((result!.findings.reviewedBy as Record<string, unknown>).sessionId).toBe(
         'retry-session-1',
@@ -244,7 +258,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
         _onAttemptFailed: () => {},
       });
 
-      expect(result).not.toBeNull();
+      assertSuccessfulResult(result);
       expect((result!.findings.reviewedBy as Record<string, unknown>).sessionId).toBe(
         'retry-session-1',
       );
@@ -273,7 +287,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
         _onAttemptFailed: () => {},
       });
 
-      expect(result).not.toBeNull();
+      assertSuccessfulResult(result);
       expect(result!.findings.overallVerdict).toBe('accept');
     });
   });
@@ -520,7 +534,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
         _onAttemptFailed: () => {},
       });
 
-      expect(result).not.toBeNull();
+      assertSuccessfulResult(result);
 
       // Verify format-free retry call includes system directive
       const secondCall = promptFn.mock.calls[1]!;
@@ -576,7 +590,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
         _onAttemptFailed: () => {},
       });
 
-      expect(result).not.toBeNull();
+      assertSuccessfulResult(result);
       const parsed = JSON.parse(result!.rawResponse);
       expect(parsed.overallVerdict).toBe('accept');
       expect(parsed.reviewedBy.sessionId).toBe('retry-session-1');
@@ -677,7 +691,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
 
-      expect(result).not.toBeNull();
+      assertSuccessfulResult(result);
       expect(result!.findings.overallVerdict).toBe('accept');
       expect(diagnostics.some((d) => d.step === 'model_capability_incompatible')).toBe(true);
     });
@@ -746,7 +760,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
       });
 
       // Success
-      expect(result).not.toBeNull();
+      assertSuccessfulResult(result);
       expect(result!.sessionId).toBe('retry-session-1');
       expect(result!.findings.overallVerdict).toBe('changes_requested');
       expect(result!.findings.blockingIssues).toHaveLength(1);
@@ -804,7 +818,7 @@ describe('invokeReviewer — format-free retry fallback', () => {
         _onAttemptFailed: (info) => diagnostics.push(info),
       });
 
-      expect(result).not.toBeNull();
+      assertSuccessfulResult(result);
       expect(result!.sessionId).toBe('child-session-2');
       expect((result!.findings.reviewedBy as Record<string, unknown>).sessionId).toBe(
         'child-session-2',

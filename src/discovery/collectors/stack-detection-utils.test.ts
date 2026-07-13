@@ -76,23 +76,23 @@ describe('enrichDetectedItem', () => {
   it('skips when item already exists (first-match-wins)', () => {
     const items: DetectedItem[] = [makeItem('postgresql')];
     enrichDetectedItem(items, 'postgresql', 'docker-compose.yml', '15.0');
-    expect(items[0].version).toBeUndefined();
-    expect(items[0].evidence).not.toContain('docker-compose.yml');
+    expect(items[0]!.version).toBeUndefined();
+    expect(items[0]!.evidence).not.toContain('docker-compose.yml');
   });
 
   it('creates item when not found', () => {
     const items: DetectedItem[] = [];
     enrichDetectedItem(items, 'postgresql', 'docker-compose.yml', '15.0');
     expect(items).toHaveLength(1);
-    expect(items[0].id).toBe('postgresql');
-    expect(items[0].version).toBe('15.0');
+    expect(items[0]!.id).toBe('postgresql');
+    expect(items[0]!.version).toBe('15.0');
   });
 
   it('creates item without version when version is undefined', () => {
     const items: DetectedItem[] = [];
     enrichDetectedItem(items, 'postgresql', 'docker-compose.yml');
     expect(items).toHaveLength(1);
-    expect(items[0].version).toBeUndefined();
+    expect(items[0]!.version).toBeUndefined();
   });
 });
 
@@ -103,7 +103,7 @@ describe('enrichDatabaseItem', () => {
     const dbs: DetectedItem[] = [];
     enrichDatabaseItem(dbs, 'postgresql', 'package.json:dependencies.pg');
     expect(dbs).toHaveLength(1);
-    expect(dbs[0].id).toBe('postgresql');
+    expect(dbs[0]!.id).toBe('postgresql');
   });
 
   it('does not overwrite existing database version', () => {
@@ -111,7 +111,7 @@ describe('enrichDatabaseItem', () => {
       makeItem('postgresql', { version: '14.0', versionEvidence: 'prior' }),
     ];
     enrichDatabaseItem(dbs, 'postgresql', 'package.json:dependencies.pg');
-    expect(dbs[0].version).toBe('14.0');
+    expect(dbs[0]!.version).toBe('14.0');
   });
 });
 
@@ -238,13 +238,13 @@ describe('enrichOrCreateItem', () => {
     const items: DetectedItem[] = [];
     enrichOrCreateItem(items, 'pytest', 'requirements.txt', '7.0');
     expect(items).toHaveLength(1);
-    expect(items[0].version).toBe('7.0');
+    expect(items[0]!.version).toBe('7.0');
   });
 
   it('enriches existing item that lacks a version', () => {
     const items: DetectedItem[] = [makeItem('pytest')];
     enrichOrCreateItem(items, 'pytest', 'requirements.txt', '7.0');
-    expect(items[0].version).toBe('7.0');
+    expect(items[0]!.version).toBe('7.0');
   });
 
   it('does not overwrite existing version', () => {
@@ -252,6 +252,6 @@ describe('enrichOrCreateItem', () => {
       makeItem('pytest', { version: '6.0', versionEvidence: 'prior' }),
     ];
     enrichOrCreateItem(items, 'pytest', 'requirements.txt', '7.0');
-    expect(items[0].version).toBe('6.0');
+    expect(items[0]!.version).toBe('6.0');
   });
 });

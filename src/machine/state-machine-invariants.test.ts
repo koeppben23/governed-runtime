@@ -139,8 +139,9 @@ describe('state machine invariants', () => {
           expect(regulated.kind).toBe('waiting');
         } else {
           const [first, ...rest] = results;
+          expect(first).toBeDefined();
           for (const r of rest) {
-            expect(r.evalResult).toEqual(first.evalResult);
+            expect(r.evalResult).toEqual(first!.evalResult);
           }
         }
       });

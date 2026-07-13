@@ -265,7 +265,9 @@ describe('createLogger', () => {
 describe('createLogger with multiple sinks', () => {
   it('writes to all sinks when array provided', () => {
     const entries: LogEntry[] = [];
-    const sink = (e: LogEntry) => entries.push(e);
+    const sink = (e: LogEntry): void => {
+      entries.push(e);
+    };
     const sink1 = sink;
     const sink2 = sink;
 
@@ -278,7 +280,9 @@ describe('createLogger with multiple sinks', () => {
 
   it('handles sync sink errors gracefully', () => {
     const entries: LogEntry[] = [];
-    const goodSink = (e: LogEntry) => entries.push(e);
+    const goodSink = (e: LogEntry): void => {
+      entries.push(e);
+    };
     const badSink = () => {
       throw new Error('sink error');
     };
@@ -300,7 +304,9 @@ describe('createLogger with multiple sinks', () => {
       }
       firstEntries.push(e);
     };
-    const stableSink = (e: LogEntry) => secondEntries.push(e);
+    const stableSink = (e: LogEntry): void => {
+      secondEntries.push(e);
+    };
 
     const log = createLogger('info', [flakySink, stableSink]);
 
@@ -332,7 +338,9 @@ describe('createLogger with multiple sinks', () => {
 
   it('works with single sink passed as non-array', () => {
     const entries: LogEntry[] = [];
-    const sink = (e: LogEntry) => entries.push(e);
+    const sink = (e: LogEntry): void => {
+      entries.push(e);
+    };
     const log = createLogger('info', sink);
 
     log.info('test', 'single sink');

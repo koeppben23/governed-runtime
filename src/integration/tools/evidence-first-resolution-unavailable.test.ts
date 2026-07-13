@@ -11,7 +11,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeState, TICKET } from '../../fixtures.js';
+import { makeState, POLICY_SNAPSHOT, TICKET } from '../../fixtures.js';
+import { TEAM_POLICY } from '../../config/policy-presets.js';
+import type { SessionState } from '../../state/schema.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -22,12 +24,17 @@ import {
 
 const mocks = vi.hoisted(() => {
   return {
-    state: null as unknown,
+    state: null as SessionState | null,
     isCommandAllowed: vi.fn(() => true),
     autoAdvance: vi.fn(),
-    resolveWorkspacePaths: vi.fn(async () => ({ sessDir: '/tmp/session' })),
+    resolveWorkspacePaths: vi.fn(async () => ({
+      worktree: '/tmp/test',
+      fingerprint: 'test',
+      sessDir: '/tmp/session',
+      wsDir: '/tmp/ws',
+    })),
     requireStateForMutation: vi.fn(async () => makeState('TICKET')),
-    resolvePolicyFromState: vi.fn(() => ({ maxSelfReviewIterations: 3 })),
+    resolvePolicyFromState: vi.fn(() => TEAM_POLICY),
     createPolicyContext: vi.fn(() => ({
       policy: { maxSelfReviewIterations: 3 },
       now: () => '2026-01-01T00:00:00.000Z',
@@ -48,7 +55,9 @@ const mocks = vi.hoisted(() => {
       }),
     ),
     appendNextAction: vi.fn((payload: string) => payload),
-    writeStateWithArtifacts: vi.fn(async () => undefined),
+    writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<void>>(
+      async () => undefined,
+    ),
     extractSections: vi.fn(() => []),
     changedFiles: vi.fn(async () => ['src/foo.ts']),
   };
@@ -67,7 +76,7 @@ vi.mock('./helpers.js', () => ({
   appendNextAction: mocks.appendNextAction,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   withMutableSession: vi.fn(async (ctx) => {
-    const paths = await mocks.resolveWorkspacePaths(ctx);
+    const paths = await mocks.resolveWorkspacePaths();
     const state = await mocks.requireStateForMutation();
     const policy = mocks.resolvePolicyFromState();
     const ctx2 = mocks.createPolicyContext();
@@ -82,7 +91,7 @@ vi.mock('./helpers.js', () => ({
     };
   }),
   withMutableSessionTransaction: vi.fn(async (ctx, fn) => {
-    const paths = await mocks.resolveWorkspacePaths(ctx);
+    const paths = await mocks.resolveWorkspacePaths();
     const state = await mocks.requireStateForMutation();
     const policy = mocks.resolvePolicyFromState();
     const ctx2 = mocks.createPolicyContext();
@@ -218,6 +227,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         verdict: 'changes_requested',
       },
       policySnapshot: {
+        ...POLICY_SNAPSHOT,
         mode: 'team',
         reviewInvocationPolicy: 'host_task_required',
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -252,7 +262,12 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         history: [],
         reviewFindings: [],
       },
-      implementation: { changedFiles: ['src/foo.ts'], digest: 'digest-impl', createdAt: now },
+      implementation: {
+        changedFiles: ['src/foo.ts'],
+        domainFiles: ['src/foo.ts'],
+        digest: 'digest-impl',
+        executedAt: now,
+      },
       selfReview: {
         iteration: 0,
         maxIterations: 3,
@@ -262,6 +277,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         verdict: 'changes_requested',
       },
       policySnapshot: {
+        ...POLICY_SNAPSHOT,
         mode: 'team',
         reviewInvocationPolicy: 'host_task_required',
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -298,6 +314,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
     const state = planStateNoEvidence();
     mocks.requireStateForMutation.mockResolvedValue(state);
     mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -316,6 +333,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
     const state = implStateNoEvidence();
     mocks.requireStateForMutation.mockResolvedValue(state);
     mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -334,6 +352,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
     const state = planStateNoEvidence();
     mocks.requireStateForMutation.mockResolvedValue(state);
     mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
@@ -353,13 +372,14 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
     const state = planStateNoEvidence();
     mocks.requireStateForMutation.mockResolvedValue(state);
     mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
 
     let persistedState: unknown = null;
-    mocks.writeStateWithArtifacts.mockImplementation(async (_dir: string, s: unknown) => {
+    mocks.writeStateWithArtifacts.mockImplementation(async (_dir: string, s: SessionState) => {
       persistedState = s;
     });
     mocks.autoAdvance.mockImplementation((s: unknown) => ({
@@ -380,6 +400,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
     const state = implStateNoEvidence();
     mocks.requireStateForMutation.mockResolvedValue(state);
     mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
@@ -399,6 +420,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
     const state = planStateNoEvidence();
     mocks.requireStateForMutation.mockResolvedValue(state);
     mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },

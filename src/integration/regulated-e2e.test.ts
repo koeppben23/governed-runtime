@@ -40,6 +40,7 @@ import {
 } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import type { ToolDefinition } from './tools/helpers.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -112,10 +113,7 @@ afterEach(async () => {
   await ws.cleanup();
 });
 
-async function callOk(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): Promise<Record<string, unknown>> {
+async function callOk(tool: ToolDefinition, args: unknown): Promise<Record<string, unknown>> {
   const finalArgs = await withStrictReviewFindings(await sessDir(), args);
   recordDecisionIntentForTool(tool, finalArgs);
   const result = parseToolResult(await tool.execute(finalArgs, ctx));
@@ -125,10 +123,7 @@ async function callOk(
   return result;
 }
 
-async function callBlocked(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): Promise<Record<string, unknown>> {
+async function callBlocked(tool: ToolDefinition, args: unknown): Promise<Record<string, unknown>> {
   recordDecisionIntentForTool(tool, args);
   const result = parseToolResult(await tool.execute(args, ctx));
   expect(result.error).toBe(true);
@@ -136,10 +131,7 @@ async function callBlocked(
   return result;
 }
 
-function recordDecisionIntentForTool(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): void {
+function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void {
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;

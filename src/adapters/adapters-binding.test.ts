@@ -22,6 +22,7 @@ describe('binding', () => {
         binding: {
           sessionId: 'old-session',
           worktree: tmpDir || '/tmp/test-repo',
+          fingerprint: 'test-fingerprint',
           resolvedAt: FIXED_TIME,
         },
       });
@@ -40,7 +41,12 @@ describe('binding', () => {
     it('validateBinding allows different session IDs (continuation)', () => {
       const worktree = path.resolve('/tmp/continuity-repo');
       const state = makeState('PLAN', {
-        binding: { sessionId: 'session-old', worktree, resolvedAt: FIXED_TIME },
+        binding: {
+          sessionId: 'session-old',
+          worktree,
+          fingerprint: 'test-fingerprint',
+          resolvedAt: FIXED_TIME,
+        },
       });
       expect(validateBinding(state, { worktreeRoot: worktree, sessionId: 'session-new' })).toBe(
         true,
@@ -52,7 +58,12 @@ describe('binding', () => {
   describe('BAD', () => {
     it('validateBinding throws on worktree mismatch', () => {
       const state = makeState('TICKET', {
-        binding: { sessionId: 'sess-1', worktree: '/tmp/repo-a', resolvedAt: FIXED_TIME },
+        binding: {
+          sessionId: 'sess-1',
+          worktree: '/tmp/repo-a',
+          fingerprint: 'test-fingerprint',
+          resolvedAt: FIXED_TIME,
+        },
       });
       const binding = { worktreeRoot: '/tmp/repo-b', sessionId: 'sess-1' };
       expect(() => validateBinding(state, binding)).toThrow(BindingError);
@@ -69,7 +80,12 @@ describe('binding', () => {
     it('validateBinding normalizes paths (trailing slash)', () => {
       const basePath = path.resolve('/tmp/norm-test');
       const state = makeState('TICKET', {
-        binding: { sessionId: 's1', worktree: basePath, resolvedAt: FIXED_TIME },
+        binding: {
+          sessionId: 's1',
+          worktree: basePath,
+          fingerprint: 'test-fingerprint',
+          resolvedAt: FIXED_TIME,
+        },
       });
       expect(validateBinding(state, { worktreeRoot: basePath + path.sep, sessionId: 's1' })).toBe(
         true,
@@ -99,7 +115,12 @@ describe('binding', () => {
     it(`validateBinding < ${PERF_BUDGETS.validateBindingMs}ms (p99 over 200 iterations)`, () => {
       const worktree = path.resolve('/tmp/perf-repo');
       const state = makeState('TICKET', {
-        binding: { sessionId: 's1', worktree, resolvedAt: FIXED_TIME },
+        binding: {
+          sessionId: 's1',
+          worktree,
+          fingerprint: 'test-fingerprint',
+          resolvedAt: FIXED_TIME,
+        },
       });
       const binding = { worktreeRoot: worktree, sessionId: 's1' };
       const { p99Ms } = benchmarkSync(() => validateBinding(state, binding), 200, 50);

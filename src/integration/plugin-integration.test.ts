@@ -36,7 +36,7 @@ import {
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
-import { makeState, makeProgressedState } from '../fixtures.js';
+import { makeState, makeProgressedState, POLICY_SNAPSHOT } from '../fixtures.js';
 import type { Phase } from '../state/schema.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
@@ -101,6 +101,7 @@ beforeEach(async () => {
       resolvedAt: new Date().toISOString(),
     },
     policySnapshot: {
+      ...POLICY_SNAPSHOT,
       mode: 'team',
       hash: 'test-policy-hash',
       resolvedAt: new Date().toISOString(),
@@ -111,9 +112,7 @@ beforeEach(async () => {
       maxImplReviewIterations: 3,
       allowSelfApproval: true,
       audit: {
-        emitTransitions: true,
-        emitToolCalls: true,
-        enableChainHash: true,
+        ...POLICY_SNAPSHOT.audit,
       },
       actorClassification: { flowguard_decision: 'human' },
     },
@@ -213,7 +212,7 @@ describe('plugin-integration', () => {
       expect(events.length).toBeGreaterThanOrEqual(1);
       const toolCallEvents = events.filter((e) => eventKind(e) === 'tool_call');
       expect(toolCallEvents.length).toBe(1);
-      expect(toolCallEvents[0].event).toBe('tool_call:flowguard_status');
+      expect(toolCallEvents[0]!.event).toBe('tool_call:flowguard_status');
     });
 
     it('persists transition events for phase changes', async () => {
@@ -241,7 +240,7 @@ describe('plugin-integration', () => {
       const { events } = await getEvents();
       const transEvents = events.filter((e) => eventKind(e) === 'transition');
       expect(transEvents.length).toBe(1);
-      expect(transEvents[0].event).toBe('transition:PLAN_READY');
+      expect(transEvents[0]!.event).toBe('transition:PLAN_READY');
     });
 
     it('emits lifecycle session_created for hydrate', async () => {
@@ -285,6 +284,7 @@ describe('plugin-integration', () => {
           resolvedAt: new Date().toISOString(),
         },
         policySnapshot: {
+          ...POLICY_SNAPSHOT,
           mode: 'team',
           hash: 'test-policy-hash',
           resolvedAt: new Date().toISOString(),
@@ -295,9 +295,7 @@ describe('plugin-integration', () => {
           maxImplReviewIterations: 3,
           allowSelfApproval: true,
           audit: {
-            emitTransitions: true,
-            emitToolCalls: true,
-            enableChainHash: true,
+            ...POLICY_SNAPSHOT.audit,
           },
           actorClassification: { flowguard_decision: 'human' },
         },
@@ -568,6 +566,7 @@ describe('plugin-integration', () => {
           resolvedAt: new Date().toISOString(),
         },
         policySnapshot: {
+          ...POLICY_SNAPSHOT,
           mode: 'solo',
           hash: 'solo-hash',
           resolvedAt: new Date().toISOString(),
@@ -578,8 +577,7 @@ describe('plugin-integration', () => {
           maxImplReviewIterations: 1,
           allowSelfApproval: true,
           audit: {
-            emitTransitions: true,
-            emitToolCalls: true,
+            ...POLICY_SNAPSHOT.audit,
             enableChainHash: false,
           },
           actorClassification: { flowguard_decision: 'system' },
@@ -618,8 +616,8 @@ describe('plugin-integration', () => {
       // Events should have chainHash but chain is NOT linked (each uses genesis)
       // Each event's prevHash should be "genesis" — chain verification will
       // still pass because each event independently chains from genesis.
-      expect(events[0].chainHash).toBeTruthy();
-      expect(events[1].chainHash).toBeTruthy();
+      expect(events[0]!.chainHash).toBeTruthy();
+      expect(events[1]!.chainHash).toBeTruthy();
     });
 
     it('policy is resolved from snapshot fields (frozen session authority)', async () => {
@@ -634,6 +632,7 @@ describe('plugin-integration', () => {
           resolvedAt: new Date().toISOString(),
         },
         policySnapshot: {
+          ...POLICY_SNAPSHOT,
           mode: 'team',
           hash: 'custom-hash',
           resolvedAt: new Date().toISOString(),
@@ -644,9 +643,8 @@ describe('plugin-integration', () => {
           maxImplReviewIterations: 3,
           allowSelfApproval: true,
           audit: {
-            emitTransitions: true,
+            ...POLICY_SNAPSHOT.audit,
             emitToolCalls: false, // snapshot says false...
-            enableChainHash: true,
           },
           actorClassification: { flowguard_decision: 'human' },
         },
@@ -771,7 +769,7 @@ describe('plugin-integration', () => {
       const { events } = await getEvents();
       const errors = events.filter((e) => eventKind(e) === 'error');
       expect(errors.length).toBe(1);
-      expect(errors[0].event).toContain('TOOL_ERROR');
+      expect(errors[0]!.event).toContain('TOOL_ERROR');
     });
 
     it('multiple independent plugin instances have separate chain states', async () => {
@@ -788,6 +786,7 @@ describe('plugin-integration', () => {
           resolvedAt: new Date().toISOString(),
         },
         policySnapshot: {
+          ...POLICY_SNAPSHOT,
           mode: 'team',
           hash: 'test-policy-hash',
           resolvedAt: new Date().toISOString(),
@@ -798,9 +797,7 @@ describe('plugin-integration', () => {
           maxImplReviewIterations: 3,
           allowSelfApproval: true,
           audit: {
-            emitTransitions: true,
-            emitToolCalls: true,
-            enableChainHash: true,
+            ...POLICY_SNAPSHOT.audit,
           },
           actorClassification: { flowguard_decision: 'human' },
         },
@@ -837,7 +834,7 @@ describe('plugin-integration', () => {
       expect(trail1.events.length).toBe(1);
       expect(trail2.events.length).toBe(1);
       // Chain hashes should be different (different session IDs in events)
-      expect(trail1.events[0].chainHash).not.toBe(trail2.events[0].chainHash);
+      expect(trail1.events[0]!.chainHash).not.toBe(trail2.events[0]!.chainHash);
     });
 
     it('lifecycle guard: hydrate produces session_created but NOT session_completed', async () => {

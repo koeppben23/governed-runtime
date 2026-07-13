@@ -29,7 +29,7 @@ function loggingConfig(overrides: Partial<TestLoggingConfig> = {}): TestLoggingC
     retentionDays: 7,
     consoleFormat: 'text',
     maxFileSizeMb: 10,
-    otlp: { enabled: false },
+    otlp: { enabled: false, allowInsecure: false },
     ...overrides,
   };
 }
@@ -135,8 +135,7 @@ describe('buildLogSinks', () => {
 
     it('handles client without app.log', () => {
       const config = { logging: loggingConfig({ mode: 'ui' }) };
-      const clientNoLog = { app: {} };
-      const { sinks } = buildLogSinks(config, clientNoLog as any, TEST_DIR);
+      const { sinks } = buildLogSinks(config, undefined, TEST_DIR);
 
       expect(sinks).toHaveLength(0);
     });
@@ -199,7 +198,7 @@ describe('UI sink error observability', () => {
     const { sinks } = buildLogSinks(uiConfig, client, null);
 
     expect(sinks).toHaveLength(1);
-    sinks[0](testEntry);
+    sinks[0]!(testEntry);
 
     // Allow microtask queue to flush (the .catch runs on next tick)
     await new Promise((r) => setTimeout(r, 10));
@@ -218,7 +217,7 @@ describe('UI sink error observability', () => {
     const { sinks } = buildLogSinks(uiConfig, client, null);
 
     expect(sinks).toHaveLength(1);
-    await expect(sinks[0](testEntry)).rejects.toThrow('UI log sink failure');
+    await expect(sinks[0]!(testEntry)).rejects.toThrow('UI log sink failure');
 
     await new Promise((r) => setTimeout(r, 10));
 
@@ -238,7 +237,7 @@ describe('UI sink error observability', () => {
 
     // Fire 5 log calls — only first 3 should emit stderr (5-min window)
     for (let i = 0; i < 5; i++) {
-      await expect(sink(testEntry)).rejects.toThrow('UI log sink failure');
+      await expect(sink!(testEntry)).rejects.toThrow('UI log sink failure');
     }
 
     await new Promise((r) => setTimeout(r, 50));
@@ -256,7 +255,7 @@ describe('UI sink error observability', () => {
     };
     const { sinks } = buildLogSinks(uiConfig, client, null);
 
-    await expect(sinks[0](testEntry)).rejects.toThrow('UI log sink failure');
+    await expect(sinks[0]!(testEntry)).rejects.toThrow('UI log sink failure');
     await new Promise((r) => setTimeout(r, 10));
 
     expect(stderrSpy).toHaveBeenCalledTimes(1);
@@ -276,7 +275,7 @@ describe('UI sink error observability', () => {
       message: 'integrity check',
       extra: { chain: 'ok', duration: 42 },
     };
-    sinks[0](entryWithExtra);
+    sinks[0]!(entryWithExtra);
     await new Promise((r) => setTimeout(r, 10));
 
     expect(client.app.log).toHaveBeenCalledWith({
@@ -304,8 +303,8 @@ describe('UI sink error observability', () => {
 
     // 4 failures on sink1 (only 3 reported within 5-min window) + 1 failure on sink2
     for (let i = 0; i < 4; i++)
-      await expect(sinks1[0](testEntry)).rejects.toThrow('UI log sink failure');
-    await expect(sinks2[0](testEntry)).rejects.toThrow('UI log sink failure');
+      await expect(sinks1[0]!(testEntry)).rejects.toThrow('UI log sink failure');
+    await expect(sinks2[0]!(testEntry)).rejects.toThrow('UI log sink failure');
 
     await new Promise((r) => setTimeout(r, 50));
 

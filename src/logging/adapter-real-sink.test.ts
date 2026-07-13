@@ -139,8 +139,10 @@ describe('Adapter logging — real sinks', () => {
       });
 
       expect(mockWarn).toHaveBeenCalledTimes(1);
-      expect(mockWarn.mock.calls[0][0]).toBe('git');
-      expect(mockWarn.mock.calls[0][1]).toBe('Failed to resolve current branch');
+      const [call] = mockWarn.mock.calls;
+      if (!call) throw new TypeError('expected warning call');
+      expect(call[0]).toBe('git');
+      expect(call[1]).toBe('Failed to resolve current branch');
     });
 
     it('warnOnce allows different messages but deduplicates same message', () => {

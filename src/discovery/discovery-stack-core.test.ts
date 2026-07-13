@@ -163,7 +163,7 @@ describe('discovery/collectors/stack-detection', () => {
       const result = await collectStack(TS_PROJECT_INPUT);
       const langs = result.data.languages;
       for (let i = 1; i < langs.length; i++) {
-        expect(langs[i - 1].confidence).toBeGreaterThanOrEqual(langs[i].confidence);
+        expect(langs[i - 1]!.confidence).toBeGreaterThanOrEqual(langs[i]!.confidence);
       }
     });
 

@@ -501,6 +501,7 @@ describe('review-enforcement mutation kills', () => {
               consumedAt: null,
             },
           ],
+          invocations: [],
         },
       };
       const result = enforceBeforeVerdict(
@@ -538,6 +539,7 @@ describe('review-enforcement mutation kills', () => {
               consumedAt: null,
             },
           ],
+          invocations: [],
         },
       };
       const result = enforceBeforeVerdict(

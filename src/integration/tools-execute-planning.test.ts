@@ -39,7 +39,6 @@ import {
   architecture,
   decision,
   implement,
-  validate,
   review,
   abort_session,
   archive,
@@ -705,7 +704,7 @@ describe('plan', () => {
         ...state!,
         policySnapshot: {
           ...state!.policySnapshot,
-          selfReview: { subagentEnabled: true, fallbackToSelf: false },
+          selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
         },
       });
 

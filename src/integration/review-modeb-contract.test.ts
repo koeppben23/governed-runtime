@@ -108,6 +108,9 @@ function buildAssuranceForObligation(
     fulfilledAt: NOW(),
     consumedByObligationId: null,
     capturedVerdict: s === 'plugin_handshake' ? 'approve' : undefined,
+    reviewOutputMode: 'structured_output' as const,
+    structuredOutputUsed: true,
+    reviewAssuranceLevel: 'structured_high' as const,
   };
   const fulfilled = {
     ...obligation,

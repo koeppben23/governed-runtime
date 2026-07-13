@@ -29,7 +29,7 @@ describe('audit integrity', () => {
 
     it('verifyChain passes for valid 3-event chain', () => {
       const chain = buildChain(3);
-      const result = verifyChain(chain as unknown as Record<string, unknown>[]);
+      const result = verifyChain(chain.map((event) => ({ ...event })));
       expect(result.valid).toBe(true);
       expect(result.totalEvents).toBe(3);
       expect(result.verifiedCount).toBe(3);
@@ -40,7 +40,7 @@ describe('audit integrity', () => {
 
     it('getLastChainHash returns last event chainHash', () => {
       const chain = buildChain(3);
-      const lastHash = getLastChainHash(chain as unknown as Record<string, unknown>[]);
+      const lastHash = getLastChainHash(chain.map((event) => ({ ...event })));
       expect(lastHash).toBe(chain[2]!.chainHash);
     });
   });
@@ -118,7 +118,7 @@ describe('audit integrity', () => {
 
     it('strict timestamp verification fails when nested content tamper is re-sealed but TSA imprint is unchanged', () => {
       const original = buildNestedDecisionEvent(GENESIS_HASH);
-      const originalDigest = computeCanonicalEventDigest(original);
+      const originalDigest = computeCanonicalEventDigest({ ...original });
       const { chainHash: _originalChainHash, ...originalBody } = original;
       const stampedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
         ...originalBody,

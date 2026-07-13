@@ -596,7 +596,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       },
     );
     expect(result.allowed).toBe(false);
-    expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
+    if (!result.allowed) expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
   });
 
   // ── Fix B: SessionState fallback ──────────────────────────────────────
@@ -647,7 +647,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       true,
     );
     expect(result.allowed).toBe(false);
-    expect(result.code).toBe('REVIEW_ASSURANCE_STATE_UNAVAILABLE');
+    if (!result.allowed) expect(result.code).toBe('REVIEW_ASSURANCE_STATE_UNAVAILABLE');
   });
 
   it('CORNER: sessionState=undefined, strict=true → BLOCKED', () => {
@@ -660,7 +660,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       true,
     );
     expect(result.allowed).toBe(false);
-    expect(result.code).toBe('REVIEW_ASSURANCE_STATE_UNAVAILABLE');
+    if (!result.allowed) expect(result.code).toBe('REVIEW_ASSURANCE_STATE_UNAVAILABLE');
   });
 
   it('HAPPY: sessionState=null, strict=false → allowed', () => {
@@ -707,8 +707,10 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
       true,
     );
     expect(result.allowed).toBe(false);
-    expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
-    expect(result.reason).toContain('bug21pending01');
+    if (!result.allowed) {
+      expect(result.code).toBe('SUBAGENT_REVIEW_NOT_INVOKED');
+      expect(result.reason).toContain('bug21pending01');
+    }
   });
 
   it('EDGE: sessionState readable, obligation for DIFFERENT tool → allowed', () => {

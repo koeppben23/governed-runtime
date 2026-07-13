@@ -179,6 +179,9 @@ async function inject(
     fulfilledAt: FIXED_TIME,
     consumedByObligationId: null,
     capturedVerdict: isOpen(host) ? 'approve' : undefined,
+    reviewOutputMode: 'structured_output' as const,
+    structuredOutputUsed: true,
+    reviewAssuranceLevel: 'structured_high' as const,
   };
   const aug: SessionState = {
     ...state,

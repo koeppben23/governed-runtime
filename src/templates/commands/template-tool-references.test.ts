@@ -84,11 +84,12 @@ describe('command templates: agent pinning for review-orchestration commands', (
   for (const cmd of COMMANDS_REQUIRING_BUILD_AGENT) {
     it(`${cmd} must pin agent: build in frontmatter`, () => {
       const body = COMMANDS[cmd];
-      expect(body).toBeDefined();
+      if (!body) throw new TypeError(`missing ${cmd} template`);
       // Frontmatter is between --- delimiters
       const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
       expect(frontmatterMatch).not.toBeNull();
-      const frontmatter = frontmatterMatch![1];
+      const frontmatter = frontmatterMatch?.[1];
+      if (!frontmatter) throw new TypeError(`missing ${cmd} frontmatter`);
       expect(frontmatter).toMatch(/^agent:\s*build$/m);
     });
   }
@@ -96,10 +97,11 @@ describe('command templates: agent pinning for review-orchestration commands', (
   it('commands without review orchestration do NOT require agent pinning', () => {
     // Smoke test: status.md should work without agent pin
     const body = COMMANDS['status.md'];
-    expect(body).toBeDefined();
+    if (!body) throw new TypeError('missing status template');
     const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
     expect(frontmatterMatch).not.toBeNull();
-    const frontmatter = frontmatterMatch![1];
+    const frontmatter = frontmatterMatch?.[1];
+    if (!frontmatter) throw new TypeError('missing status frontmatter');
     // status.md does NOT need agent: build (it only calls flowguard_status)
     expect(frontmatter).not.toMatch(/^agent:\s*build$/m);
   });
@@ -124,11 +126,12 @@ describe('command templates: agent pinning for review-orchestration commands', (
   for (const cmd of COMMANDS_REQUIRING_BUILD_AGENT) {
     it(`${cmd} must pin agent: build in frontmatter`, () => {
       const body = COMMANDS[cmd];
-      expect(body).toBeDefined();
+      if (!body) throw new TypeError(`missing ${cmd} template`);
       // Frontmatter is between --- delimiters
       const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
       expect(frontmatterMatch).not.toBeNull();
-      const frontmatter = frontmatterMatch![1];
+      const frontmatter = frontmatterMatch?.[1];
+      if (!frontmatter) throw new TypeError(`missing ${cmd} frontmatter`);
       expect(frontmatter).toMatch(/^agent:\s*build$/m);
     });
   }
@@ -136,10 +139,11 @@ describe('command templates: agent pinning for review-orchestration commands', (
   it('commands without review orchestration do NOT require agent pinning', () => {
     // Smoke test: status.md should work without agent pin
     const body = COMMANDS['status.md'];
-    expect(body).toBeDefined();
+    if (!body) throw new TypeError('missing status template');
     const frontmatterMatch = body.match(/^[\s\n]*---\n([\s\S]*?)\n---/);
     expect(frontmatterMatch).not.toBeNull();
-    const frontmatter = frontmatterMatch![1];
+    const frontmatter = frontmatterMatch?.[1];
+    if (!frontmatter) throw new TypeError('missing status frontmatter');
     // status.md does NOT need agent: build (it only calls flowguard_status)
     expect(frontmatter).not.toMatch(/^agent:\s*build$/m);
   });

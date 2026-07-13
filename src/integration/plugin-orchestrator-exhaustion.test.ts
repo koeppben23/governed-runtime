@@ -36,6 +36,7 @@ import {
   findLatestPendingReviewObligation,
 } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
+import type { OrchestratorClient } from './review/types.js';
 
 const PARENT_SESSION_ID = 'parent-session-exhaust-1';
 const OBLIGATION_ID = '33333333-3333-4333-8333-333333333333';
@@ -127,8 +128,9 @@ function buildAlreadyBlockedState(): SessionState {
 }
 
 /** Client that always fails — invokeReviewer will return null */
-function buildFailingClient() {
+function buildFailingClient(): OrchestratorClient {
   return {
+    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
     session: {
       create: vi
         .fn()
@@ -139,8 +141,9 @@ function buildFailingClient() {
 }
 
 /** Client that returns blocked response */
-function buildBlockedClient() {
+function buildBlockedClient(): OrchestratorClient {
   return {
+    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: 'child-blocked-1' }, error: undefined }),
       prompt: vi.fn().mockResolvedValue({
@@ -152,8 +155,9 @@ function buildBlockedClient() {
 }
 
 /** Client returning findings without structured_output (unparseable) */
-function buildUnparseableClient() {
+function buildUnparseableClient(): OrchestratorClient {
   return {
+    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: 'child-unparse-1' }, error: undefined }),
       prompt: vi.fn().mockResolvedValue({
@@ -168,7 +172,7 @@ function buildUnparseableClient() {
 }
 
 function buildDeps(
-  client: unknown,
+  client: OrchestratorClient,
   stateRef: { current: SessionState },
 ): {
   deps: OrchestratorDeps;
@@ -214,7 +218,7 @@ function buildDeps(
   };
 }
 
-async function runExhaustion(strictEnforcement: boolean, clientOverride?: unknown) {
+async function runExhaustion(strictEnforcement: boolean, clientOverride?: OrchestratorClient) {
   const state = buildState(strictEnforcement);
   const stateRef = { current: state };
   vi.mocked(readState).mockResolvedValue(stateRef.current);
@@ -326,6 +330,7 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
           .mockReturnValue({ sessionId: PARENT_SESSION_ID, pendingReviews }),
         log: { info: vi.fn(), warn: vi.fn() },
         client,
+        adapter: createTestAdapter(client),
       };
       const output = { output: reviewRequiredOutput() };
       const event: ToolCallEvent = {

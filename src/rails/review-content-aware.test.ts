@@ -9,16 +9,32 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  executeReview,
+  executeReview as executeReviewUnsafe,
   loadExternalContent,
   type ReviewExecutors,
   type ReviewReferenceInput,
 } from './review.js';
 import { makeProgressedState } from '../fixtures.js';
+import type { ReviewReport } from '../state/evidence.js';
+import type { RailBlocked } from './types.js';
 
 // ─── Test Helpers ─────────────────────────────────────────────────────────────
 
 const NOW = '2026-01-15T10:00:00.000Z';
+
+async function executeReview(
+  ...args: Parameters<typeof executeReviewUnsafe>
+): Promise<ReviewReport | RailBlocked> {
+  return executeReviewUnsafe(...args);
+}
+
+async function executeReviewReport(
+  ...args: Parameters<typeof executeReviewUnsafe>
+): Promise<ReviewReport> {
+  const result = await executeReviewUnsafe(...args);
+  if ('kind' in result && result.kind === 'blocked') throw new Error(result.reason);
+  return result;
+}
 
 // =============================================================================
 // PR-E: Content-Aware /review
@@ -46,7 +62,7 @@ describe('PR-E: content-aware /review', () => {
           ];
         },
       };
-      const report = await executeReview(state, NOW, llmExecutors, refInput);
+      const report = await executeReviewReport(state, NOW, llmExecutors, refInput);
       expect(capturedContent[0]).toBe('function add(a, b) { return a + b; }');
       expect(report.findings).toHaveLength(1);
       expect(report.findings[0]!.category).toBe('analysis');
@@ -112,7 +128,7 @@ describe('PR-E: content-aware /review', () => {
       // This test verifies the code path exists (mock would be needed for full test)
       const state = makeProgressedState('COMPLETE');
       const refInput: ReviewReferenceInput = {
-        inputOrigin: 'url',
+        inputOrigin: 'external_reference',
         url: 'https://example.com/spec.md',
       };
       // Without mocking fetch, this will fail at runtime, but the code path is covered
@@ -129,7 +145,7 @@ describe('PR-E: content-aware /review', () => {
         inputOrigin: 'manual_text',
         references: [{ type: 'ticket', ref: 'PROJ-123', title: 'My ticket' }],
       };
-      const report = await executeReview(state, NOW, undefined, refInput);
+      const report = await executeReviewReport(state, NOW, undefined, refInput);
       expect(report.schemaVersion).toBe('flowguard-review-report.v1');
       expect(report.references).toHaveLength(1);
     });

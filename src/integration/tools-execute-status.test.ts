@@ -56,7 +56,7 @@ describe('tool-schemas-zod-v4', () => {
   it('every tool exposes Zod v4 _zod metadata on all args', () => {
     for (const [name, tool] of Object.entries(allTools)) {
       for (const [argName, schema] of Object.entries(tool.args)) {
-        const zodMeta = (schema as Record<string, unknown>)?.['_zod'];
+        const zodMeta = (schema as unknown as Record<string, unknown>)['_zod'];
         expect(zodMeta, `${name}.args.${argName} missing _zod`).toBeDefined();
         expect(typeof zodMeta, `${name}.args.${argName} _zod not object`).toBe('object');
         expect(
@@ -368,7 +368,7 @@ describe('status', () => {
         version: '3.4.1',
         target: 'framework',
       });
-      expect(versions[1].evidence).toBeUndefined();
+      expect(versions[1]?.evidence).toBeUndefined();
     });
 
     it('returns verificationCandidates array (empty by default)', async () => {
@@ -827,8 +827,11 @@ describe('status', () => {
       // Verify state persistence
       const state = await readState(sd);
       expect(state!.validation.length).toBe(1);
-      expect(state!.validation[0].passed).toBe(false);
-      const persistedGuidance = state!.validation[0].derivedRepairGuidance;
+      const validation = state!.validation[0];
+      expect(validation).toBeDefined();
+      if (!validation) throw new TypeError('Expected persisted validation result');
+      expect(validation.passed).toBe(false);
+      const persistedGuidance = validation.derivedRepairGuidance;
       expect(persistedGuidance).toBeDefined();
       expect(persistedGuidance).toMatchObject({
         kind: 'derived_repair_guidance',
@@ -840,10 +843,13 @@ describe('status', () => {
       // Verify status surfaces the guidance
       const statusResult = parseToolResult(await status.execute({}, ctx));
       expect(Array.isArray(statusResult.validationResults)).toBe(true);
-      expect(statusResult.validationResults.length).toBeGreaterThanOrEqual(1);
-      const statusGuidance = (statusResult.validationResults as Record<string, unknown>[])[0]
-        .derivedRepairGuidance as Record<string, unknown>;
+      const validationResults = statusResult.validationResults;
+      if (!Array.isArray(validationResults)) throw new TypeError('Expected validation results');
+      expect(validationResults.length).toBeGreaterThanOrEqual(1);
+      const statusGuidance = (validationResults[0] as Record<string, unknown> | undefined)
+        ?.derivedRepairGuidance as Record<string, unknown> | undefined;
       expect(statusGuidance).toBeDefined();
+      if (!statusGuidance) throw new TypeError('Expected status repair guidance');
       expect(statusGuidance).toMatchObject({
         kind: 'derived_repair_guidance',
         advisory: true,

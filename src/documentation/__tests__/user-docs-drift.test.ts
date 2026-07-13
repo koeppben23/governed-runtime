@@ -36,20 +36,24 @@ function installedCoreCommands(): string[] {
 }
 
 function extractCommandHeadings(content: string): string[] {
-  return Array.from(content.matchAll(/^### (\/[a-z][a-z-]*)$/gm), (match) => match[1]).sort();
+  return Array.from(content.matchAll(/^### (\/[a-z][a-z-]*)$/gm), (match) => match[1] ?? '').sort();
 }
 
 function extractProductCommandRows(content: string): Map<string, string> {
   const rows = new Map<string, string>();
   for (const match of content.matchAll(/^\| `(\/[a-z][a-z-]*)`\s+\| `([^`]+)`/gm)) {
-    rows.set(match[1], match[2]);
+    const alias = match[1];
+    const target = match[2];
+    if (alias && target) rows.set(alias, target);
   }
   return rows;
 }
 
 function extractPhaseTableNames(content: string): string[] {
   return [
-    ...new Set(Array.from(content.matchAll(/^\| ([A-Z][A-Z_]+)\s+\|/gm), (match) => match[1])),
+    ...new Set(
+      Array.from(content.matchAll(/^\| ([A-Z][A-Z_]+)\s+\|/gm), (match) => match[1] ?? ''),
+    ),
   ].sort();
 }
 

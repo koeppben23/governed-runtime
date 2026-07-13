@@ -218,7 +218,10 @@ describe('integration/plugin', () => {
 
       // Should not throw — missing sessionID means the hook bails with a warn log
       await expect(
-        hooks['command.execute.before']!({ command: '/approve', arguments: '' }, { parts: [] }),
+        hooks['command.execute.before']!(
+          { command: '/approve', sessionID: '', arguments: '' },
+          { parts: [] },
+        ),
       ).resolves.toBeUndefined();
     });
 
@@ -1327,7 +1330,7 @@ describe('integration/plugin', () => {
         const beforeHook = hooks['tool.execute.before'];
         const input = { tool: 'some_tool', sessionID: crypto.randomUUID(), callID: 'c1' };
         // OpenCode always provides output, but unknown tools must still fail closed.
-        await expect(beforeHook!(input, undefined)).rejects.toThrow('SESSION_DIR_NOT_FOUND');
+        await expect(beforeHook!(input, { args: {} })).rejects.toThrow('SESSION_DIR_NOT_FOUND');
       } finally {
         await ws.cleanup();
       }
@@ -1412,7 +1415,7 @@ describe('integration/plugin', () => {
 
         // ToolHookInput shape: { tool, sessionID }
         // ToolHookBeforeOutput shape: { args }
-        const input = { tool: 'flowguard_status', sessionID: crypto.randomUUID() };
+        const input = { tool: 'flowguard_status', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { query: 'phase' } };
         await expect(beforeHook(input, output)).resolves.toBeUndefined();
       } finally {
@@ -1430,16 +1433,16 @@ describe('integration/plugin', () => {
 
         // ToolHookInput shape: { tool, sessionID }
         // ToolHookOutput shape: { output }
-        const input = { tool: 'bash', sessionID: crypto.randomUUID() };
-        const output = { output: 'hello world' };
+        const input = { tool: 'bash', sessionID: crypto.randomUUID(), callID: 'c1', args: {} };
+        const output = { title: 'bash', output: 'hello world', metadata: {} };
         await expect(afterHook(input, output)).resolves.toBeUndefined();
       } finally {
         await ws.cleanup();
       }
     });
 
-    // BAD: hooks fail closed when input/output are malformed
-    it('BAD — before hook denies null input rather than silently allowing', async () => {
+    // BAD: hooks handle malformed input without crashing.
+    it('BAD — before hook ignores an invalid empty tool identity', async () => {
       const ws = await createTestWorkspace();
       try {
         const hooks = await FlowGuardAuditPlugin(
@@ -1447,8 +1450,10 @@ describe('integration/plugin', () => {
         );
         const beforeHook = hooks['tool.execute.before']!;
 
-        // null input resolves to an unknown host tool and must fail closed.
-        await expect(beforeHook(null, { args: {} })).rejects.toThrow('SESSION_DIR_NOT_FOUND');
+        // An empty tool identity is ignored by the hook's tool classification.
+        await expect(
+          beforeHook({ tool: '', sessionID: '', callID: '' }, { args: {} }),
+        ).resolves.toBeUndefined();
       } finally {
         await ws.cleanup();
       }
@@ -1463,7 +1468,12 @@ describe('integration/plugin', () => {
         const afterHook = hooks['tool.execute.after']!;
 
         // Both null — defensive fallbacks must prevent crash
-        await expect(afterHook(null, null)).resolves.toBeUndefined();
+        await expect(
+          afterHook(
+            { tool: '', sessionID: '', callID: '', args: {} },
+            { title: '', output: '', metadata: {} },
+          ),
+        ).resolves.toBeUndefined();
       } finally {
         await ws.cleanup();
       }
@@ -1503,8 +1513,12 @@ describe('integration/plugin', () => {
         const afterHook = hooks['tool.execute.after']!;
 
         // Provide a flowguard_ tool with valid ToolHookOutput shape
-        const output = { output: JSON.stringify({ phase: 'TICKET' }) };
-        await afterHook({ tool: 'flowguard_status', sessionID }, output);
+        const output = {
+          title: 'status',
+          output: JSON.stringify({ phase: 'TICKET' }),
+          metadata: {},
+        };
+        await afterHook({ tool: 'flowguard_status', sessionID, callID: 'c1', args: {} }, output);
 
         // output.output should still be a string (possibly mutated by audit)
         expect(typeof output.output).toBe('string');

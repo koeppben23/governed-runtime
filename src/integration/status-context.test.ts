@@ -31,6 +31,8 @@ import {
   buildReadinessProjection,
 } from './status.js';
 import { getPolicyPreset } from '../config/policy.js';
+import { createPolicySnapshot } from '../config/policy-snapshot.js';
+import { makeState } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
 
@@ -68,28 +70,16 @@ const REVIEW_FLOW_PHASES = ['READY', 'REVIEW', 'REVIEW_COMPLETE'] as const;
 
 function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState {
   return {
-    id: 'ses_test_0001',
+    ...makeState(phase),
+    id: '00000000-0000-4000-8000-000000000001',
     phase,
     initiatedBy: 'tester@corp.com',
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    policySnapshot: {
-      mode: 'solo',
-      source: 'default',
-      requestedMode: 'solo',
-      effectiveGateBehavior: 'auto',
-      allowSelfApproval: true,
-      maxSelfReviewIterations: 2,
-      maxImplReviewIterations: 2,
-      requireHumanGates: false,
-      emitTransitions: true,
-      emitToolCalls: true,
-      enableChainHash: true,
-      actorClassification: 'solo',
-      policyDigest: 'testdigest123',
-      policyVersion: 'v1.0.0',
-      validationEvidence: { enforcement: 'off', allowNoCommands: false },
-    },
+    policySnapshot: createPolicySnapshot(
+      getPolicyPreset('solo'),
+      '2026-01-01T00:00:00.000Z',
+      () => 'testdigest123',
+    ),
     detectedStack: null,
     activeProfile: null,
     activeChecks: [],
@@ -103,7 +93,7 @@ function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState 
     reviewDecision: null,
     architecture: null,
     archiveStatus: null,
-    actorInfo: null,
+    actorInfo: undefined,
     error: null,
   };
 }
@@ -112,7 +102,13 @@ function makeActorState(
   phase: SessionState['phase'] = 'READY',
   actorInfo: { id: string; source: 'env' | 'git' | 'claim' | 'unknown'; email: string | null },
 ): SessionState {
-  return { ...makeMinimalState(phase), actorInfo };
+  return {
+    ...makeMinimalState(phase),
+    actorInfo: {
+      ...actorInfo,
+      assurance: actorInfo.source === 'claim' ? 'claim_validated' : 'best_effort',
+    },
+  };
 }
 
 describe('nextAction field mapping', () => {
@@ -220,7 +216,12 @@ describe('context and readiness projections', () => {
   it('buildContextProjection maps actor/policy/archive from state', () => {
     const state: SessionState = {
       ...makeMinimalState('EVIDENCE_REVIEW'),
-      actorInfo: { id: 'operator', source: 'env', email: 'op@example.com' },
+      actorInfo: {
+        id: 'operator',
+        source: 'env',
+        assurance: 'best_effort',
+        email: 'op@example.com',
+      },
       archiveStatus: 'pending',
       policySnapshot: {
         ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot!,
@@ -379,35 +380,35 @@ describe('context and readiness projections', () => {
 
   it('readiness actorKnown is true when actorInfo source is env (survivor kill)', () => {
     const state = makeMinimalState('READY');
-    state.actorInfo = { id: 'u1', source: 'env', email: 'u@e.com' };
+    state.actorInfo = { id: 'u1', source: 'env', assurance: 'best_effort', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(true);
   });
 
   it('readiness actorKnown is true when actorInfo source is git (survivor kill)', () => {
     const state = makeMinimalState('READY');
-    state.actorInfo = { id: 'u1', source: 'git', email: 'u@e.com' };
+    state.actorInfo = { id: 'u1', source: 'git', assurance: 'best_effort', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(true);
   });
 
   it('readiness actorKnown is true when actorInfo source is claim (survivor kill)', () => {
     const state = makeMinimalState('READY');
-    state.actorInfo = { id: 'u1', source: 'claim', email: 'u@e.com' };
+    state.actorInfo = { id: 'u1', source: 'claim', assurance: 'claim_validated', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(true);
   });
 
   it('readiness actorKnown is true when actorInfo source is oidc (survivor kill)', () => {
     const state = makeMinimalState('READY');
-    state.actorInfo = { id: 'u1', source: 'oidc', email: 'u@e.com' };
+    state.actorInfo = { id: 'u1', source: 'oidc', assurance: 'idp_verified', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(true);
   });
 
   it('readiness actorKnown is false when actorInfo source is unknown (survivor kill)', () => {
     const state = makeMinimalState('READY');
-    state.actorInfo = { id: 'u1', source: 'unknown', email: 'u@e.com' };
+    state.actorInfo = { id: 'u1', source: 'unknown', assurance: 'best_effort', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.actorKnown).toBe(false);
   });
@@ -458,7 +459,7 @@ describe('context and readiness projections', () => {
 
   it('blocker has null reasonText for pending phases (survivor kill)', () => {
     const policy = getPolicyPreset('solo');
-    const pendingPhases = ['READY', 'TICKET', 'PLAN', 'ARCHITECTURE'];
+    const pendingPhases: SessionState['phase'][] = ['READY', 'TICKET', 'PLAN', 'ARCHITECTURE'];
     for (const phase of pendingPhases) {
       const state = makeMinimalState(phase);
       const projection = buildStatusProjection(state, policy);
@@ -472,7 +473,7 @@ describe('context and readiness projections', () => {
   it('HAPPY returns readiness surface when readiness flag is set (survivor kill)', () => {
     const state = makeMinimalState('TICKET');
     state.ticket = { text: 't', digest: 'd', source: 'user', createdAt: new Date().toISOString() };
-    state.actorInfo = { id: 'u1', source: 'claim', email: 'u@e.com' };
+    state.actorInfo = { id: 'u1', source: 'claim', assurance: 'claim_validated', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.phase).toBe('TICKET');
     expect(readiness.blocked).toBe(true); // pending phase

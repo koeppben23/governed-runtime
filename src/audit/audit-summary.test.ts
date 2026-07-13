@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { generateTimeline, generateComplianceSummary } from './summary.js';
-import { verifyChain } from './integrity.js';
+import { verifyChain, type ChainVerification } from './integrity.js';
 import type { AuditEvent } from '../state/evidence.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import {
@@ -108,14 +108,24 @@ describe('audit summary', () => {
 
     it('compliance summary with broken chain reports failure', () => {
       const trail = buildSessionTrail();
-      const brokenChain = {
+      const brokenChain: ChainVerification = {
         valid: false,
         totalEvents: 10,
         verifiedCount: 8,
         skippedCount: 2,
-        firstBreak: { index: 3, eventId: 'broken-event', valid: false, reason: 'tampered' },
+        firstBreak: {
+          index: 3,
+          eventId: 'broken-event',
+          valid: false,
+          reason: 'tampered',
+          reasonCode: 'CHAIN_BREAK',
+        },
         results: [],
         reason: 'CHAIN_BREAK' as const,
+        timestampMonotonicity: null,
+        missingTimestampEvidence: [],
+        tsaImprintMismatches: [],
+        tokenVerificationRequired: [],
       };
       const summary = generateComplianceSummary(trail, SESSION_ID, brokenChain, TS3);
       const chainCheck = summary.checks.find((c) => c.name === 'chain_integrity');
@@ -228,7 +238,7 @@ describe('audit summary', () => {
   describe('STRICT CHAIN SUMMARY', () => {
     it('compliance summary with strict failure (legacy events) reports STRICT detail', () => {
       const trail = buildSessionTrail();
-      const strictFailure = {
+      const strictFailure: ChainVerification = {
         valid: false,
         totalEvents: 5,
         verifiedCount: 3,
@@ -236,6 +246,10 @@ describe('audit summary', () => {
         firstBreak: null,
         results: [],
         reason: 'LEGACY_EVENTS_NOT_ALLOWED_IN_STRICT_MODE' as const,
+        timestampMonotonicity: null,
+        missingTimestampEvidence: [],
+        tsaImprintMismatches: [],
+        tokenVerificationRequired: [],
       };
       const summary = generateComplianceSummary(trail, SESSION_ID, strictFailure, TS3);
       const chainCheck = summary.checks.find((c) => c.name === 'chain_integrity');
@@ -248,7 +262,7 @@ describe('audit summary', () => {
 
     it('compliance summary with strict valid (all chained) passes', () => {
       const trail = buildSessionTrail();
-      const strictValid = {
+      const strictValid: ChainVerification = {
         valid: true,
         totalEvents: 5,
         verifiedCount: 5,
@@ -256,6 +270,10 @@ describe('audit summary', () => {
         firstBreak: null,
         results: [],
         reason: null,
+        timestampMonotonicity: null,
+        missingTimestampEvidence: [],
+        tsaImprintMismatches: [],
+        tokenVerificationRequired: [],
       };
       const summary = generateComplianceSummary(trail, SESSION_ID, strictValid, TS3);
       const chainCheck = summary.checks.find((c) => c.name === 'chain_integrity');

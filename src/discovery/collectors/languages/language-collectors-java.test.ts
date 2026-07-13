@@ -30,7 +30,7 @@ describe('languages/java', () => {
     it('sets framework version when not already set', () => {
       const frameworks: DetectedItem[] = [makeItem('spring-boot')];
       enrichFrameworkVersion(frameworks, 'spring-boot', '3.4.1', 'build.gradle:springBootVersion');
-      expect(frameworks[0].version).toBe('3.4.1');
+      expect(frameworks[0]!.version).toBe('3.4.1');
     });
 
     it('does not overwrite existing framework version', () => {
@@ -38,14 +38,14 @@ describe('languages/java', () => {
         makeItem('spring-boot', { version: '3.3.0', versionEvidence: 'prior' }),
       ];
       enrichFrameworkVersion(frameworks, 'spring-boot', '3.4.1', 'build.gradle:springBootVersion');
-      expect(frameworks[0].version).toBe('3.3.0');
+      expect(frameworks[0]!.version).toBe('3.3.0');
     });
 
     it('creates framework when not yet in the array', () => {
       const frameworks: DetectedItem[] = [];
       enrichFrameworkVersion(frameworks, 'spring-boot', '3.4.1', 'build.gradle:springBootVersion');
       expect(frameworks).toHaveLength(1);
-      expect(frameworks[0].version).toBe('3.4.1');
+      expect(frameworks[0]!.version).toBe('3.4.1');
     });
   });
 
@@ -53,7 +53,7 @@ describe('languages/java', () => {
     it('does nothing when pom.xml is absent', async () => {
       const frameworks: DetectedItem[] = [makeItem('spring-boot')];
       await extractFromPomXml(mockReadFile({}), [], frameworks);
-      expect(frameworks[0].version).toBeUndefined();
+      expect(frameworks[0]!.version).toBeUndefined();
     });
 
     it('detects java version from pom.xml', async () => {
@@ -70,7 +70,7 @@ describe('languages/java', () => {
         languages,
         frameworks,
       );
-      expect(languages[0].version).toBe('21');
+      expect(languages[0]!.version).toBe('21');
     });
 
     it('detects spring-boot from pom.xml parent artifact', async () => {
@@ -136,7 +136,7 @@ describe('languages/java', () => {
       const runtimes: DetectedItem[] = [];
       enrichRuntimeVersion(runtimes, 'java', '21', 'pom.xml:java.version');
       expect(runtimes).toHaveLength(1);
-      expect(runtimes[0].version).toBe('21');
+      expect(runtimes[0]!.version).toBe('21');
     });
   });
 
@@ -237,10 +237,8 @@ describe('languages/java', () => {
   describe('EDGE', () => {
     it('extractFromNodeVersionFiles handles file with no version content', async () => {
       const runtimes = [makeItem('node')];
-      await extractFromNodeVersionFiles(mockReadFile({ '.nvmrc': '# comment only\n' }), runtimes, [
-        '.nvmrc',
-      ]);
-      expect(runtimes[0].version).toBeUndefined();
+      await extractFromNodeVersionFiles(mockReadFile({ '.nvmrc': '# comment only\n' }), runtimes);
+      expect(runtimes[0]!.version).toBeUndefined();
     });
 
     it('extractFromPackageJson handles engines.node with non-version constraint', async () => {
@@ -254,13 +252,13 @@ describe('languages/java', () => {
         [],
         [],
       );
-      expect(runtimes[0].version).toBeUndefined();
+      expect(runtimes[0]!.version).toBeUndefined();
     });
 
     it('extractFromPackageJson handles devDependencies missing typescript item', async () => {
-      const languages = [];
-      const frameworks = [];
-      const databases = [];
+      const languages: DetectedItem[] = [];
+      const frameworks: DetectedItem[] = [];
+      const databases: DetectedItem[] = [];
       await extractFromPackageJson(
         mockReadFile({
           'package.json': JSON.stringify({ devDependencies: { typescript: '^5.3' } }),
@@ -278,10 +276,10 @@ describe('languages/java', () => {
 
   describe('java artifact edge cases', () => {
     it('extractArtifactsFromPomXml skips when pom.xml has no content', async () => {
-      const testFrameworks = [];
-      const tools = [];
-      const qualityTools = [];
-      const databases = [];
+      const testFrameworks: DetectedItem[] = [];
+      const tools: DetectedItem[] = [];
+      const qualityTools: DetectedItem[] = [];
+      const databases: DetectedItem[] = [];
       await extractArtifactsFromPomXml(
         mockReadFile({}),
         testFrameworks,

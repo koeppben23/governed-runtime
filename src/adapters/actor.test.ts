@@ -22,13 +22,13 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { withTestEnv } from '../integration/test-helpers.js';
 import * as crypto from 'node:crypto';
+import type { JwksIdpConfig } from '../identity/types.js';
 import {
   resolveActor,
   resolveActorFromClaim,
   ActorClaimError,
   ActorIdentityError,
 } from './actor.js';
-import type { IdpConfig } from '../identity/types.js';
 
 // Mock git adapter — actor resolution must not depend on real git
 vi.mock('./git', () => ({
@@ -434,7 +434,8 @@ describe('resolveActor', () => {
 
   describe('P35b1 IdP mode behavior', () => {
     async function createJwksFixture(dir: string): Promise<{
-      idpConfig: IdpConfig;
+      idpConfig: JwksIdpConfig;
+      jwksPath: string;
       tokenPath: string;
     }> {
       const { privateKey, publicKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -469,13 +470,15 @@ describe('resolveActor', () => {
 
       return {
         tokenPath,
+        jwksPath,
         idpConfig: {
           mode: 'jwks',
           issuer: 'https://issuer.example.com',
           audience: ['flowguard'],
           claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
           jwksPath,
-        },
+          cacheTtlSeconds: 300,
+        } satisfies JwksIdpConfig,
       };
     }
 
@@ -514,13 +517,13 @@ describe('resolveActor', () => {
         path.join(os.tmpdir(), 'fg-actor-idp-optional-jwks-invalid-'),
       );
       try {
-        const { tokenPath, idpConfig } = await createJwksFixture(tempDir);
+        const { tokenPath, jwksPath, idpConfig } = await createJwksFixture(tempDir);
         process.env.FLOWGUARD_ACTOR_ID = 'fallback-user';
         process.env.FLOWGUARD_ACTOR_EMAIL = 'fallback@example.com';
         process.env.FLOWGUARD_ACTOR_TOKEN_PATH = tokenPath;
 
         await fs.writeFile(
-          idpConfig.jwksPath,
+          jwksPath,
           JSON.stringify({ keys: [{ kid: 'active-key', alg: 'RS256', kty: 'RSA' }] }),
           'utf8',
         );

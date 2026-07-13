@@ -27,6 +27,7 @@ import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
+import type { OrchestratorClient } from './review/types.js';
 
 const PARENT_SESSION_ID = 'parent-session-bug16-1';
 const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
@@ -116,6 +117,7 @@ function buildDeps(stateRef: { current: SessionState }): OrchestratorDeps {
     getEnforcementState: vi.fn().mockReturnValue({ sessionId: PARENT_SESSION_ID, pendingReviews }),
     log: { info: vi.fn(), warn: vi.fn() },
     client: {
+      app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
       session: {
         create: vi.fn(),
         prompt: vi.fn(),
@@ -290,8 +292,7 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     await runReviewOrchestration(deps, event);
 
     // Client should NOT be called — host_task_required blocks before SDK path
-    const client = deps.client as { session: { create: ReturnType<typeof vi.fn> } };
-    expect(client.session.create).not.toHaveBeenCalled();
+    expect(deps.client.session.create).not.toHaveBeenCalled();
   });
 
   it('BUG-19: next field includes a fail-closed reviewerUnavailable fallback instruction', async () => {

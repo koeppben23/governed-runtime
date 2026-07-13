@@ -170,10 +170,10 @@ describe('persistence-lock', () => {
     await fs.writeFile(lockPath, `pid=${process.pid}\ntoken=unreadable-token\n`);
     vi.mocked(fs.readFile).mockImplementation(((
       file: Parameters<typeof fs.readFile>[0],
-      ...args: unknown[]
+      ...args: [options?: Parameters<typeof fs.readFile>[1]]
     ) => {
       if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
-      return actualFs().readFile(file, ...(args as []));
+      return actualFs().readFile(file, args[0]);
     }) as typeof fs.readFile);
 
     await expect(acquireSessionWriteLock(sessionDir, 0)).rejects.toMatchObject({
@@ -209,21 +209,21 @@ describe('persistence-lock', () => {
 
     vi.mocked(fs.writeFile).mockImplementation(((
       file: Parameters<typeof fs.writeFile>[0],
-      ...args: unknown[]
+      ...args: [data: string, options?: Parameters<typeof fs.writeFile>[2]]
     ) => {
       if (String(file) === lockPath && writeAttempts === 0) {
         writeAttempts += 1;
         throw errno('EEXIST', 'lock already exists');
       }
       writeAttempts += 1;
-      return actualFs().writeFile(file, ...(args as []));
+      return actualFs().writeFile(file, args[0], args[1]);
     }) as typeof fs.writeFile);
     vi.mocked(fs.readFile).mockImplementation(((
       file: Parameters<typeof fs.readFile>[0],
-      ...args: unknown[]
+      ...args: [options?: Parameters<typeof fs.readFile>[1]]
     ) => {
       if (String(file) === lockPath) throw errno('ENOENT', 'lock disappeared');
-      return actualFs().readFile(file, ...(args as []));
+      return actualFs().readFile(file, args[0]);
     }) as typeof fs.readFile);
 
     const lock = await acquireSessionWriteLock(sessionDir, 1000);
@@ -293,7 +293,7 @@ describe('persistence-lock', () => {
       const lockPath = sessionLockPath(sessionDir);
       vi.mocked(fs.writeFile).mockImplementation(((file: Parameters<typeof fs.writeFile>[0]) => {
         if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
-        return actualFs().writeFile(file, ...([] as never));
+        return actualFs().writeFile(file, '', { encoding: 'utf-8' });
       }) as typeof fs.writeFile);
 
       // EACCES should propagate directly, not be treated as EEXIST
@@ -308,21 +308,21 @@ describe('persistence-lock', () => {
 
       vi.mocked(fs.writeFile).mockImplementation(((
         file: Parameters<typeof fs.writeFile>[0],
-        ...args: unknown[]
+        ...args: [data: string, options?: Parameters<typeof fs.writeFile>[2]]
       ) => {
         if (String(file) === lockPath && writeAttempts === 0) {
           writeAttempts += 1;
           throw errno('EEXIST', 'lock already exists');
         }
         writeAttempts += 1;
-        return actualFs().writeFile(file, ...(args as []));
+        return actualFs().writeFile(file, args[0], args[1]);
       }) as typeof fs.writeFile);
       vi.mocked(fs.readFile).mockImplementation(((
         file: Parameters<typeof fs.readFile>[0],
-        ...args: unknown[]
+        ...args: [options?: Parameters<typeof fs.readFile>[1]]
       ) => {
         if (String(file) === lockPath) throw errno('ENOENT', 'lock disappeared');
-        return actualFs().readFile(file, ...(args as []));
+        return actualFs().readFile(file, args[0]);
       }) as typeof fs.readFile);
 
       const lock = await acquireSessionWriteLock(sessionDir, 1000);
@@ -340,7 +340,7 @@ describe('persistence-lock', () => {
       // Mock readFile in release to throw EACCES
       vi.mocked(fs.readFile).mockImplementation(((file: Parameters<typeof fs.readFile>[0]) => {
         if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
-        return actualFs().readFile(file, ...([] as never));
+        return actualFs().readFile(file, { encoding: 'utf-8' });
       }) as typeof fs.readFile);
 
       // Release should throw EACCES (not swallow it)
@@ -360,7 +360,7 @@ describe('persistence-lock', () => {
       // Mock readFile to throw in the timeout path (so blockingPid stays undefined)
       vi.mocked(fs.readFile).mockImplementation(((file: Parameters<typeof fs.readFile>[0]) => {
         if (String(file) === lockPath) throw errno('EACCES', 'permission denied');
-        return actualFs().readFile(file, ...([] as never));
+        return actualFs().readFile(file, { encoding: 'utf-8' });
       }) as typeof fs.readFile);
 
       try {

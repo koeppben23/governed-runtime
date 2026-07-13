@@ -311,7 +311,7 @@ describe('review-decision rail', () => {
         policySnapshot: {
           ...REGULATED_POLICY_SNAPSHOT,
           requireVerifiedActorsForApproval: false,
-          minimumActorAssuranceForApproval: 'best_effort',
+          minimumActorAssuranceForApproval: 'best_effort' as const,
         },
       };
       const regulatedCtx = {
@@ -319,7 +319,7 @@ describe('review-decision rail', () => {
         policy: {
           ...REGULATED_POLICY,
           requireVerifiedActorsForApproval: false,
-          minimumActorAssuranceForApproval: 'best_effort',
+          minimumActorAssuranceForApproval: 'best_effort' as const,
         },
       };
       const result = executeReviewDecision(

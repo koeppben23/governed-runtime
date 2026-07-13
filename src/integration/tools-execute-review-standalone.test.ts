@@ -46,7 +46,6 @@ import {
   plan,
   decision,
   implement,
-  validate,
   review,
   abort_session,
   archive,
@@ -237,6 +236,20 @@ async function fulfillPlanReview(
   });
 }
 
+function requiredRecord(value: unknown, label: string): Record<string, unknown> {
+  if (value === null || typeof value !== 'object') {
+    throw new TypeError(`Expected ${label}`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function requiredString(value: unknown, key: string): string {
+  const record = requiredRecord(value, key);
+  const field = record[key];
+  if (typeof field !== 'string') throw new TypeError(`Expected ${key} string`);
+  return field;
+}
+
 describe('review (standalone flow)', () => {
   // Mock fetch for URL tests
   beforeEach(() => {
@@ -314,6 +327,7 @@ describe('review (standalone flow)', () => {
   ) {
     const sessDir = await currentSessionDir();
     const state = await readState(sessDir);
+    if (!state) throw new TypeError('Expected persisted session state');
     const invocation = buildInvocationEvidence({
       obligationId,
       obligationType: 'review',
@@ -348,8 +362,7 @@ describe('review (standalone flow)', () => {
     if (blocked.code !== 'CONTENT_ANALYSIS_REQUIRED') {
       throw new Error(`Expected CONTENT_ANALYSIS_REQUIRED, got ${blocked.code}`);
     }
-    const att = blocked.requiredReviewAttestation as Record<string, string>;
-    return att.toolObligationId;
+    return requiredString(blocked.requiredReviewAttestation, 'toolObligationId');
   }
 
   // Helper: Full two-step flow — creates obligation, then submits valid findings.
@@ -444,8 +457,7 @@ describe('review (standalone flow)', () => {
         await review.execute({ branch: 'feature-auth', inputOrigin: 'branch' }, ctx),
       );
       expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-      const obligationId = (first.requiredReviewAttestation as Record<string, string>)
-        .toolObligationId;
+      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
       await bindHostTaskReviewEvidence(obligationId);
 
       vi.mocked(ghMock.loadBranchDiff).mockImplementationOnce(() => {
@@ -471,8 +483,7 @@ describe('review (standalone flow)', () => {
         await review.execute({ text: 'manual diff', inputOrigin: 'manual_text' }, ctx),
       );
       expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-      const obligationId = (first.requiredReviewAttestation as Record<string, string>)
-        .toolObligationId;
+      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
       await bindHostTaskReviewEvidence(
         obligationId,
         buildAnalysisFindings('changes_requested', obligationId),
@@ -551,6 +562,7 @@ describe('review (standalone flow)', () => {
       expect(result.error).toBe(true);
       expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       expect(result.recovery).toBeDefined();
+      if (!Array.isArray(result.recovery)) throw new TypeError('Expected recovery array');
       expect(result.recovery.length).toBeGreaterThan(0);
     });
 
@@ -563,7 +575,7 @@ describe('review (standalone flow)', () => {
     it('BLOCKED: manual-attested reviewFindings from parent session are self-approval', async () => {
       const uuid = await obtainObligationUuid({ prNumber: 457, inputOrigin: 'pr' });
       const findings = {
-        ...buildAnalysisFindings('approve', uuid),
+        ...buildAnalysisFindings('accept', uuid),
         reviewedBy: { sessionId: ctx.sessionID },
       };
 
@@ -581,7 +593,7 @@ describe('review (standalone flow)', () => {
       await hydrateSession();
       await ticket.execute({ text: 'Some ticket', source: 'user' }, ctx);
 
-      const findings = buildAnalysisFindings('approve');
+      const findings = buildAnalysisFindings('accept');
       const raw = await review.execute({ prNumber: 123, reviewFindings: findings }, ctx);
       const result = parseToolResult(raw);
 
@@ -615,7 +627,9 @@ describe('review (standalone flow)', () => {
       });
       expect(result.error).toBeUndefined();
       expect(result.references).toBeDefined();
-      expect(result.references?.length).toBeGreaterThan(0);
+      expect(Array.isArray(result.references)).toBe(true);
+      if (!Array.isArray(result.references)) throw new TypeError('Expected review references');
+      expect(result.references.length).toBeGreaterThan(0);
     });
   });
 
@@ -649,7 +663,7 @@ describe('review (standalone flow)', () => {
           inputOrigin: 'pr',
           references: [{ ref: 'https://github.com/owner/repo/pull/42', type: 'pr' }],
         },
-        'approve',
+        'accept',
       );
 
       expect(result.error).toBeUndefined();
@@ -657,6 +671,8 @@ describe('review (standalone flow)', () => {
       expect(result.overallStatus).toBeDefined();
       expect(result.completeness).toBeDefined();
       expect(result.findings).toBeDefined();
+      expect(Array.isArray(result.findings)).toBe(true);
+      if (!Array.isArray(result.findings)) throw new TypeError('Expected review findings');
       expect(result.findings.length).toBeGreaterThan(0);
       expect(result.inputOrigin).toBe('pr');
     });
@@ -713,14 +729,16 @@ describe('review (standalone flow)', () => {
         expect(result.error).toBe(true);
         expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
         expect(result.requiredReviewAttestation).toBeDefined();
-        expect(result.requiredReviewAttestation.reviewedBy).toBe('flowguard-reviewer');
-        expect(result.requiredReviewAttestation.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
-        expect(result.requiredReviewAttestation.criteriaVersion).toBe(REVIEW_CRITERIA_VERSION);
+        const attestation = requiredRecord(result.requiredReviewAttestation, 'review attestation');
+        expect(attestation.reviewedBy).toBe('flowguard-reviewer');
+        expect(attestation.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
+        expect(attestation.criteriaVersion).toBe(REVIEW_CRITERIA_VERSION);
         // toolObligationId is always present — every content-aware /review
         // creates a real ReviewObligation with a canonical UUID.
-        expect(result.requiredReviewAttestation.toolObligationId).toMatch(/^[0-9a-f-]{36}$/);
+        expect(attestation.toolObligationId).toMatch(/^[0-9a-f-]{36}$/);
         expect(result.reviewerSubagentType).toBe('flowguard-reviewer');
         expect(Array.isArray(result.recovery)).toBe(true);
+        if (!Array.isArray(result.recovery)) throw new TypeError('Expected recovery array');
         expect(result.recovery.length).toBeGreaterThan(0);
       });
 
@@ -779,7 +797,7 @@ describe('review (standalone flow)', () => {
       it('B1: reviewMode !== "subagent" is rejected with requiredReviewAttestation', async () => {
         await hydrateAndGetReady();
         const findings = {
-          ...buildAnalysisFindings('approve'),
+          ...buildAnalysisFindings('accept'),
           reviewMode: 'human',
         } as unknown;
         const raw = await review.execute(
@@ -791,7 +809,7 @@ describe('review (standalone flow)', () => {
 
       it('B2: missing attestation is rejected with requiredReviewAttestation', async () => {
         await hydrateAndGetReady();
-        const base = buildAnalysisFindings('approve') as Record<string, unknown>;
+        const base = buildAnalysisFindings('accept') as Record<string, unknown>;
         const { attestation: _omit, ...rest } = base;
         void _omit;
         const raw = await review.execute(
@@ -803,7 +821,7 @@ describe('review (standalone flow)', () => {
 
       it('B3: attestation.reviewedBy !== "flowguard-reviewer" is rejected', async () => {
         await hydrateAndGetReady();
-        const base = buildAnalysisFindings('approve');
+        const base = buildAnalysisFindings('accept');
         const findings = {
           ...base,
           attestation: { ...base.attestation, reviewedBy: 'someone-else' },
@@ -817,7 +835,7 @@ describe('review (standalone flow)', () => {
 
       it('B4: attestation.mandateDigest mismatch is rejected', async () => {
         await hydrateAndGetReady();
-        const base = buildAnalysisFindings('approve');
+        const base = buildAnalysisFindings('accept');
         const findings = {
           ...base,
           attestation: { ...base.attestation, mandateDigest: 'wrong-digest-value' },
@@ -831,7 +849,7 @@ describe('review (standalone flow)', () => {
 
       it('B5: attestation.criteriaVersion mismatch is rejected', async () => {
         await hydrateAndGetReady();
-        const base = buildAnalysisFindings('approve');
+        const base = buildAnalysisFindings('accept');
         const findings = {
           ...base,
           attestation: { ...base.attestation, criteriaVersion: 'p99-bogus' },
@@ -846,7 +864,7 @@ describe('review (standalone flow)', () => {
       it('B6: consumed obligation (same toolObligationId after success) is rejected — single-use enforced', async () => {
         // Step 1: Obtain an obligation UUID and submit valid findings.
         const uuid = await obtainObligationUuid({ prNumber: 42, inputOrigin: 'pr' });
-        const findings1 = buildAnalysisFindings('approve', uuid);
+        const findings1 = buildAnalysisFindings('accept', uuid);
         const raw1 = await review.execute(
           { prNumber: 42, reviewFindings: findings1 as never, inputOrigin: 'pr' },
           ctx,
@@ -934,7 +952,7 @@ describe('review (standalone flow)', () => {
       });
 
       it('C2: empty finding arrays (subagent found no issues) are accepted', async () => {
-        const result = await submitContentReview({ prNumber: 99, inputOrigin: 'pr' }, 'approve');
+        const result = await submitContentReview({ prNumber: 99, inputOrigin: 'pr' }, 'accept');
         expect(result.error).toBeUndefined();
         expect(result.phase).toBe('REVIEW_COMPLETE');
       });
@@ -977,7 +995,7 @@ describe('review (standalone flow)', () => {
             iteration: 1,
             planVersion: 1,
             reviewedBy: 'flowguard-reviewer' as const,
-            // toolObligationId intentionally omitted — should fail the obligation gate
+            toolObligationId: '00000000-0000-0000-0000-000000000000',
           },
         };
         const expected = {
@@ -1054,8 +1072,9 @@ describe('review (standalone flow)', () => {
         await hydrateAndGetReady();
         const raw = await review.execute({ prNumber: 1, inputOrigin: 'pr' }, ctx);
         const result = parseToolResult(raw);
-        expect(result.requiredReviewAttestation.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
-        expect(result.requiredReviewAttestation.mandateDigest).toMatch(/^[a-f0-9]{64}$/);
+        const attestation = requiredRecord(result.requiredReviewAttestation, 'review attestation');
+        expect(attestation.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
+        expect(attestation.mandateDigest).toMatch(/^[a-f0-9]{64}$/);
       });
 
       it('S2: CONTENT_ANALYSIS_REQUIRED and SUBAGENT_REVIEW_NOT_INVOKED return identical attestation payload', async () => {
@@ -1069,7 +1088,7 @@ describe('review (standalone flow)', () => {
         // SUBAGENT_REVIEW_NOT_INVOKED: triggered by malformed reviewMode.
         await hydrateAndGetReady();
         const tampered = {
-          ...buildAnalysisFindings('approve'),
+          ...buildAnalysisFindings('accept'),
           reviewMode: 'human',
         } as unknown;
         const rawB = await review.execute(
@@ -1088,7 +1107,7 @@ describe('review (standalone flow)', () => {
     describe('INVOCATION EVIDENCE', () => {
       it('H4: successful /review appends ReviewInvocationEvidence to reviewAssurance', async () => {
         const uuid = await obtainObligationUuid({ prNumber: 42, inputOrigin: 'pr' });
-        const findings = buildAnalysisFindings('approve', uuid);
+        const findings = buildAnalysisFindings('accept', uuid);
         const raw = await review.execute(
           { prNumber: 42, reviewFindings: findings as never, inputOrigin: 'pr' },
           ctx,
@@ -1102,15 +1121,18 @@ describe('review (standalone flow)', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const state = await readState(sessDir);
+        if (!state) throw new TypeError('Expected persisted session state');
         const invocations = state.reviewAssurance?.invocations ?? [];
         expect(invocations.length).toBe(1);
-        expect(invocations[0].agentType).toBe('flowguard-reviewer');
-        expect(invocations[0].obligationType).toBe('review');
-        expect(invocations[0].obligationId).toBe(uuid);
-        expect(invocations[0].findingsHash).toMatch(/^[a-f0-9]{64}$/);
-        expect(invocations[0].promptHash).toMatch(/^[a-f0-9]{64}$/);
+        const invocation = invocations[0];
+        if (!invocation) throw new TypeError('Expected invocation evidence');
+        expect(invocation.agentType).toBe('flowguard-reviewer');
+        expect(invocation.obligationType).toBe('review');
+        expect(invocation.obligationId).toBe(uuid);
+        expect(invocation.findingsHash).toMatch(/^[a-f0-9]{64}$/);
+        expect(invocation.promptHash).toMatch(/^[a-f0-9]{64}$/);
         // childSessionId from the attested reviewedBy.sessionId in buildAnalysisFindings.
-        expect(invocations[0].childSessionId).toBe('flowguard-reviewer-session-123');
+        expect(invocation.childSessionId).toBe('flowguard-reviewer-session-123');
       });
 
       it('H4b: submit path fails closed with SUBAGENT_REVIEW_NOT_INVOKED on unable_to_review verdict', async () => {
@@ -1119,7 +1141,7 @@ describe('review (standalone flow)', () => {
         // /review submit path MUST reject it and MUST NOT record passing evidence.
         const uuid = await obtainObligationUuid({ prNumber: 91, inputOrigin: 'pr' });
         const findings = {
-          ...buildAnalysisFindings('approve', uuid),
+          ...buildAnalysisFindings('accept', uuid),
           overallVerdict: 'unable_to_review',
         };
         const raw = await review.execute(
@@ -1134,12 +1156,13 @@ describe('review (standalone flow)', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const state = await readState(sessDir);
+        if (!state) throw new TypeError('Expected persisted session state');
         expect(state.reviewAssurance?.invocations ?? []).toHaveLength(0);
       });
 
       it('H5: obligation is consumed after successful /review', async () => {
         const uuid = await obtainObligationUuid({ prNumber: 43, inputOrigin: 'pr' });
-        const findings = buildAnalysisFindings('approve', uuid);
+        const findings = buildAnalysisFindings('accept', uuid);
         const raw = await review.execute(
           { prNumber: 43, reviewFindings: findings as never, inputOrigin: 'pr' },
           ctx,
@@ -1152,6 +1175,7 @@ describe('review (standalone flow)', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const state = await readState(sessDir);
+        if (!state) throw new TypeError('Expected persisted session state');
         const consumed = state.reviewAssurance?.obligations.find(
           (o) => o.obligationType === 'review' && o.obligationId === uuid,
         );
@@ -1165,7 +1189,7 @@ describe('review (standalone flow)', () => {
       it('blocks text-compat findings without matching host invocation metadata', async () => {
         const uuid = await obtainObligationUuid({ prNumber: 44, inputOrigin: 'pr' });
         const findings = {
-          ...buildAnalysisFindings('approve', uuid),
+          ...buildAnalysisFindings('accept', uuid),
           pluginReviewOutput: {
             reviewOutputMode: 'text_compat',
             structuredOutputUsed: false,
@@ -1188,6 +1212,7 @@ describe('review (standalone flow)', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const state = await readState(sessDir);
+        if (!state) throw new TypeError('Expected persisted session state');
         expect(state.reviewAssurance?.invocations ?? []).toHaveLength(0);
       });
 
@@ -1225,7 +1250,7 @@ describe('review (standalone flow)', () => {
       });
 
       it('EE2: full flow end-to-end with invocation evidence', async () => {
-        const result = await submitContentReview({ prNumber: 48, inputOrigin: 'pr' }, 'approve');
+        const result = await submitContentReview({ prNumber: 48, inputOrigin: 'pr' }, 'accept');
         expect(result.error).toBeUndefined();
 
         const { computeFingerprint, sessionDir: resolveSessionDir } =
@@ -1233,6 +1258,7 @@ describe('review (standalone flow)', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const state = await readState(sessDir);
+        if (!state) throw new TypeError('Expected persisted session state');
         const inv = state.reviewAssurance?.invocations ?? [];
         const obl = state.reviewAssurance?.obligations ?? [];
         expect(inv.length).toBeGreaterThanOrEqual(1);
@@ -1261,7 +1287,7 @@ describe('review (standalone flow)', () => {
       });
 
       it('reviewCard is present in successful /review response', async () => {
-        const result = await submitContentReview({ prNumber: 49, inputOrigin: 'pr' }, 'approve');
+        const result = await submitContentReview({ prNumber: 49, inputOrigin: 'pr' }, 'accept');
         expect(result.error).toBeUndefined();
         expect(result.reviewCard).toBeDefined();
         expect(typeof result.reviewCard).toBe('string');
@@ -1296,10 +1322,10 @@ describe('review (standalone flow)', () => {
         const fp = await computeFingerprint(ws.tmpDir);
         const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
         const state = await readState(sessDir);
+        if (!state) throw new TypeError('Expected persisted session state');
 
         // Simulate legacy snapshot: remove reviewInvocationPolicy from snapshot.
-        const { reviewInvocationPolicy: _ri, ...snapshotWithoutPolicy } =
-          state.policySnapshot ?? {};
+        const { reviewInvocationPolicy: _ri, ...snapshotWithoutPolicy } = state.policySnapshot;
         await writeState(sessDir, {
           ...state,
           policySnapshot: snapshotWithoutPolicy,
@@ -1309,12 +1335,11 @@ describe('review (standalone flow)', () => {
         const firstRaw = await review.execute({ prNumber: 55, inputOrigin: 'pr' }, ctx);
         const firstResult = parseToolResult(firstRaw);
         expect(firstResult.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-        const uuid = (firstResult.requiredReviewAttestation as Record<string, string>)
-          .toolObligationId;
+        const uuid = requiredString(firstResult.requiredReviewAttestation, 'toolObligationId');
 
         // Second call: submit manual findings — should block because
         // the missing reviewInvocationPolicy falls back to host_task_required.
-        const findings = buildAnalysisFindings('approve', uuid);
+        const findings = buildAnalysisFindings('accept', uuid);
         const raw = await review.execute(
           { prNumber: 55, reviewFindings: findings as never, inputOrigin: 'pr' },
           ctx,
@@ -1370,10 +1395,10 @@ describe('review (standalone flow)', () => {
       // First call: create the review obligation (no findings yet).
       const first = parseToolResult(await review.execute({ prNumber: 77, inputOrigin: 'pr' }, ctx));
       expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-      const uuid = (first.requiredReviewAttestation as Record<string, string>).toolObligationId;
+      const uuid = requiredString(first.requiredReviewAttestation, 'toolObligationId');
 
       // Second call: submit inline (manual_attested) findings.
-      const findings = buildAnalysisFindings('approve', uuid);
+      const findings = buildAnalysisFindings('accept', uuid);
       const second = parseToolResult(
         await review.execute(
           { prNumber: 77, reviewFindings: findings as never, inputOrigin: 'pr' },
@@ -1457,12 +1482,11 @@ describe('review (standalone flow)', () => {
 
       const first = parseToolResult(await review.execute({ prNumber: 88, inputOrigin: 'pr' }, ctx));
       expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
-      const obligationId = (first.requiredReviewAttestation as Record<string, string>)
-        .toolObligationId;
+      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
 
       if (inject) await inject(obligationId, sessDir);
 
-      const findings = buildAnalysisFindings('approve', obligationId);
+      const findings = buildAnalysisFindings('accept', obligationId);
       const second = parseToolResult(
         await review.execute(
           { prNumber: 88, reviewFindings: findings as never, inputOrigin: 'pr' },

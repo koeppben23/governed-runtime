@@ -12,11 +12,13 @@ import { describe, expect, it, vi } from 'vitest';
 import { executeImplement, type ImplExecutors } from './implement.js';
 import { makeState, FIXED_TIME, TICKET, PLAN_RECORD, IMPL_EVIDENCE } from '../fixtures.js';
 import type { RailContext } from './types.js';
+import { TEAM_POLICY } from '../config/policy.js';
+import type { ValidationResult } from '../state/evidence.js';
 
 const ctx: RailContext = {
   now: () => FIXED_TIME,
   digest: (s: string) => `sha256:${s.length}`,
-  policy: { maxImplReviewIterations: 3 },
+  policy: { ...TEAM_POLICY, maxImplReviewIterations: 3 },
 };
 
 function makeExecutors(overrides?: Partial<ImplExecutors>): ImplExecutors {
@@ -34,13 +36,25 @@ function implState(overrides?: Record<string, unknown>) {
   return makeState('IMPLEMENTATION', {
     ticket: TICKET,
     plan: PLAN_RECORD,
-    validation: [
-      { checkId: 'test_quality', passed: true, detail: 'OK', executedAt: FIXED_TIME },
-      { checkId: 'rollback_safety', passed: true, detail: 'OK', executedAt: FIXED_TIME },
-    ],
+    validation: [validationResult('test_quality'), validationResult('rollback_safety')],
     activeChecks: ['test_quality', 'rollback_safety'],
     ...overrides,
   });
+}
+
+function validationResult(checkId: string): ValidationResult {
+  return {
+    checkId,
+    passed: true,
+    detail: 'OK',
+    executedAt: FIXED_TIME,
+    kind: 'test',
+    command: 'npm test',
+    exitCode: 0,
+    executionMs: 1,
+    outputDigest: 'a'.repeat(64),
+    timedOut: false,
+  };
 }
 
 describe('implement rail', () => {

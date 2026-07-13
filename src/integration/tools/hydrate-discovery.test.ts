@@ -14,13 +14,15 @@ import {
 } from './hydrate-discovery.js';
 import type { FlowGuardProfile } from '../../config/profile.js';
 import type { DiscoveryResult } from '../../discovery/types.js';
-import type { RepoSignals } from '../../adapters/git.js';
+import type { RepoSignals } from '../../config/profile.js';
+import { DEFAULT_CONFIG } from '../../config/flowguard-config.js';
 import type { HydrateConfig } from './hydrate.js';
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
 
 function profile(overrides: Partial<FlowGuardProfile> = {}): FlowGuardProfile {
   return {
+    ...DEFAULT_CONFIG,
     id: 'node-typescript',
     name: 'Node.js / TypeScript',
     detect: () => 0.9,
@@ -33,6 +35,7 @@ function profile(overrides: Partial<FlowGuardProfile> = {}): FlowGuardProfile {
 function detectionInput(overrides = {}) {
   return {
     repoSignals: {
+      files: [],
       packageFiles: ['package.json'],
       configFiles: ['tsconfig.json'],
     } as RepoSignals,
@@ -49,23 +52,9 @@ function detectionInput(overrides = {}) {
 
 function hydrateConfig(overrides = {}): HydrateConfig {
   return {
-    idp: null,
-    trustAnchors: [],
-    tsaUrl: '',
-    profile: { defaultId: '', activeChecks: [] },
-    policy: {
-      maxSelfReviewIterations: 3,
-      maxImplReviewIterations: 5,
-      requireVerifiedActorsForApproval: false,
-      identityProvider: null,
-      identityProviderMode: 'optional' as const,
-      minimumActorAssuranceForApproval: null,
-      enforceRiskClassification: false,
-      allowRiskDowngradeOverride: false,
-      allowReducedCeremony: false,
-    },
+    ...DEFAULT_CONFIG,
     ...overrides,
-  } as HydrateConfig;
+  };
 }
 
 // ─── buildProfileEvidence ─────────────────────────────────────────────────────

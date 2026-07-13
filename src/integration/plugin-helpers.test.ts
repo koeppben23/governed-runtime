@@ -487,7 +487,12 @@ describe('getNativeAttestationRejection (#427)', () => {
 });
 
 describe('getAutoAdvanceOverflow (#428)', () => {
-  const overflow = { kind: 'overflow' as const, phase: 'PLAN_REVIEW', limit: 10, transitions: [] };
+  const overflow = {
+    kind: 'overflow' as const,
+    phase: 'PLAN_REVIEW' as const,
+    limit: 10,
+    transitions: [],
+  };
 
   it('GOOD: returns { phase, limit } for a structured overflow result', () => {
     const output = formatAutoAdvanceOverflow(overflow);

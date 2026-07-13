@@ -50,6 +50,7 @@ function makeObligation(overrides?: Partial<ReviewObligation>): ReviewObligation
 }
 
 function makeInvocation(overrides?: Partial<ReviewInvocationEvidence>): ReviewInvocationEvidence {
+  const { fulfilledAt, ...rest } = overrides ?? {};
   return buildInvocationEvidence({
     obligationId: '00000000-0000-4000-8000-000000000001',
     obligationType: 'plan',
@@ -58,8 +59,10 @@ function makeInvocation(overrides?: Partial<ReviewInvocationEvidence>): ReviewIn
     promptHash: hashText('test prompt'),
     findingsHash: hashText('test findings'),
     invokedAt: NOW,
-    fulfilledAt: NOW,
-    ...overrides,
+    fulfilledAt: fulfilledAt ?? NOW,
+    invocationMode: 'sdk_session_prompt',
+    hostVisible: false,
+    ...rest,
   });
 }
 
@@ -364,6 +367,8 @@ describe('integration/review-assurance', () => {
         findingsHash: hashText('findings'),
         invokedAt: NOW,
         fulfilledAt: NOW,
+        invocationMode: 'sdk_session_prompt',
+        hostVisible: false,
       });
       expect(result.agentType).toBe(REVIEWER_SUBAGENT_TYPE);
       expect(result.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
@@ -402,6 +407,8 @@ describe('integration/review-assurance', () => {
         invokedAt: NOW,
         fulfilledAt: NOW,
         reviewOutputMode: 'text_compat',
+        invocationMode: 'sdk_session_prompt',
+        hostVisible: false,
       });
       expect(result.reviewOutputMode).toBe('text_compat');
       expect(result.structuredOutputUsed).toBe(false);
@@ -423,6 +430,8 @@ describe('integration/review-assurance', () => {
         invokedAt: NOW,
         fulfilledAt: NOW,
         capturedVerdict: 'accept',
+        invocationMode: 'sdk_session_prompt',
+        hostVisible: false,
       });
       expect(result.capturedVerdict).toBe('accept');
     });
@@ -437,6 +446,8 @@ describe('integration/review-assurance', () => {
         findingsHash: hashText('findings'),
         invokedAt: NOW,
         capturedVerdict: 'changes_requested',
+        invocationMode: 'sdk_session_prompt',
+        hostVisible: false,
       });
       expect(result.capturedVerdict).toBe('changes_requested');
     });
@@ -450,6 +461,8 @@ describe('integration/review-assurance', () => {
         promptHash: hashText('prompt'),
         findingsHash: hashText('findings'),
         invokedAt: NOW,
+        invocationMode: 'sdk_session_prompt',
+        hostVisible: false,
       });
       expect(result.capturedVerdict).toBeUndefined();
     });
@@ -665,8 +678,9 @@ describe('integration/review-assurance', () => {
       });
 
       it('returns SUBAGENT_MANDATE_MISMATCH when mandateDigest differs', () => {
-        const findings = makeFindings();
-        findings.attestation!.mandateDigest = 'wrong-digest';
+        const findings = makeFindings({
+          attestation: { ...makeFindings().attestation!, mandateDigest: 'wrong-digest' },
+        });
         // Covers line 143: mismatch → SUBAGENT_MANDATE_MISMATCH
         expect(
           validateStrictAttestation(findings, {
@@ -678,8 +692,9 @@ describe('integration/review-assurance', () => {
       });
 
       it('returns SUBAGENT_MANDATE_MISMATCH when criteriaVersion differs', () => {
-        const findings = makeFindings();
-        findings.attestation!.criteriaVersion = 'wrong-version';
+        const findings = makeFindings({
+          attestation: { ...makeFindings().attestation!, criteriaVersion: 'wrong-version' },
+        });
         expect(
           validateStrictAttestation(findings, {
             obligationId: '00000000-0000-4000-8000-000000000001',
@@ -724,7 +739,7 @@ describe('integration/review-assurance', () => {
 
       it('returns SUBAGENT_MANDATE_MISMATCH when reviewedBy is not flowguard-reviewer', () => {
         const findings = makeFindings();
-        findings.attestation!.reviewedBy = 'other-agent';
+        Object.assign(findings.attestation!, { reviewedBy: 'other-agent' });
         expect(
           validateStrictAttestation(findings, {
             obligationId: '00000000-0000-4000-8000-000000000001',

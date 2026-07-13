@@ -31,6 +31,8 @@ import {
   buildReadinessProjection,
 } from './status.js';
 import { getPolicyPreset } from '../config/policy.js';
+import { createPolicySnapshot } from '../config/policy-snapshot.js';
+import { makeState } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
 
@@ -68,28 +70,16 @@ const REVIEW_FLOW_PHASES = ['READY', 'REVIEW', 'REVIEW_COMPLETE'] as const;
 
 function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState {
   return {
-    id: 'ses_test_0001',
+    ...makeState(phase),
+    id: '00000000-0000-4000-8000-000000000001',
     phase,
     initiatedBy: 'tester@corp.com',
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    policySnapshot: {
-      mode: 'solo',
-      source: 'default',
-      requestedMode: 'solo',
-      effectiveGateBehavior: 'auto',
-      allowSelfApproval: true,
-      maxSelfReviewIterations: 2,
-      maxImplReviewIterations: 2,
-      requireHumanGates: false,
-      emitTransitions: true,
-      emitToolCalls: true,
-      enableChainHash: true,
-      actorClassification: 'solo',
-      policyDigest: 'testdigest123',
-      policyVersion: 'v1.0.0',
-      validationEvidence: { enforcement: 'off', allowNoCommands: false },
-    },
+    policySnapshot: createPolicySnapshot(
+      getPolicyPreset('solo'),
+      '2026-01-01T00:00:00.000Z',
+      () => 'testdigest123',
+    ),
     detectedStack: null,
     activeProfile: null,
     activeChecks: [],
@@ -103,7 +93,7 @@ function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState 
     reviewDecision: null,
     architecture: null,
     archiveStatus: null,
-    actorInfo: null,
+    actorInfo: undefined,
     error: null,
   };
 }
@@ -112,7 +102,13 @@ function makeActorState(
   phase: SessionState['phase'] = 'READY',
   actorInfo: { id: string; source: 'env' | 'git' | 'claim' | 'unknown'; email: string | null },
 ): SessionState {
-  return { ...makeMinimalState(phase), actorInfo };
+  return {
+    ...makeMinimalState(phase),
+    actorInfo: {
+      ...actorInfo,
+      assurance: actorInfo.source === 'claim' ? 'claim_validated' : 'best_effort',
+    },
+  };
 }
 
 describe('buildStatusProjection — E2E', () => {
@@ -135,7 +131,7 @@ describe('buildStatusProjection — E2E', () => {
       const projection = buildStatusProjection(state, policy);
 
       expect(projection.phase).toBe(phase);
-      expect(projection.sessionId).toBe('ses_test_0001');
+      expect(projection.sessionId).toBe('00000000-0000-4000-8000-000000000001');
       expect(Array.isArray(projection.allowedCommands)).toBe(true);
       expect(typeof projection.nextAction.summary).toBe('string');
     }
@@ -154,6 +150,7 @@ describe('buildStatusProjection — E2E', () => {
       actorInfo: {
         id: 'reviewer@corp.com',
         source: 'claim',
+        assurance: 'claim_validated',
         email: 'reviewer@corp.com',
       },
       archiveStatus: 'pending',
@@ -192,7 +189,6 @@ describe('buildStatusProjection — Profile Projection', () => {
       activeProfile: {
         id: 'java-spring-boot',
         name: 'Java / Spring Boot',
-        rules: [],
         ruleContent: '',
       },
     };
@@ -207,7 +203,6 @@ describe('buildStatusProjection — Profile Projection', () => {
       activeProfile: {
         id: 'angular-nx',
         name: 'Angular / Nx',
-        rules: [],
         ruleContent: '',
       },
     };
@@ -222,7 +217,6 @@ describe('buildStatusProjection — Profile Projection', () => {
       activeProfile: {
         id: 'typescript-node',
         name: 'TypeScript / Node.js',
-        rules: [],
         ruleContent: '',
       },
     };
@@ -237,7 +231,6 @@ describe('buildStatusProjection — Profile Projection', () => {
       activeProfile: {
         id: 'baseline',
         name: 'Baseline',
-        rules: [],
         ruleContent: '',
       },
     };
@@ -271,7 +264,12 @@ describe('status.ts MUTATION_KILL matrix', () => {
     return {
       ...stateWithTicket(phase),
       plan: {
-        current: { text: '## Plan\nShip status tests', digest: 'plan-digest' },
+        current: {
+          body: '## Plan\nShip status tests',
+          digest: 'plan-digest',
+          sections: [],
+          createdAt: fixedTime,
+        },
         history: [],
       },
     };
@@ -281,7 +279,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
     it('projects actor, policy, profile, archive, next action, product next action, and command prefixes', () => {
       const state: SessionState = {
         ...stateWithTicket('READY'),
-        activeProfile: { id: 'baseline', name: 'Baseline', rules: [], ruleContent: '' },
+        activeProfile: { id: 'baseline', name: 'Baseline', ruleContent: '' },
         archiveStatus: 'verified',
         actorInfo: {
           id: 'actor-1',
@@ -296,7 +294,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
       expect(projection).toMatchObject({
         phase: 'READY',
         phaseLabel: 'Ready',
-        sessionId: 'ses_test_0001',
+        sessionId: '00000000-0000-4000-8000-000000000001',
         policyMode: 'solo',
         profileId: 'baseline',
         archiveStatus: 'verified',
@@ -316,16 +314,16 @@ describe('status.ts MUTATION_KILL matrix', () => {
       expect(projection.productNextAction.summary).toContain('/task');
     });
 
-    it('BAD falls back to unknown policy mode and none profile without changing phase', () => {
+    it('keeps the canonical policy snapshot while projecting no active profile', () => {
       const state: SessionState = {
         ...makeMinimalState('READY'),
-        policySnapshot: undefined,
+        policySnapshot: makeMinimalState('READY').policySnapshot,
         activeProfile: null,
       };
 
       const projection = buildStatusProjection(state, solo);
 
-      expect(projection.policyMode).toBe('unknown');
+      expect(projection.policyMode).toBe('solo');
       expect(projection.profileId).toBe('none');
       expect(projection.phase).toBe('READY');
       expect(projection.actor).toBeNull();
@@ -392,11 +390,40 @@ describe('status.ts MUTATION_KILL matrix', () => {
     it('reports failed validation detail as hint and complete slots with null hint', () => {
       const state: SessionState = {
         ...stateWithPlan('IMPLEMENTATION'),
-        selfReview: { iteration: 1, maxIterations: 3, verdict: 'approve', revisionDelta: 'none' },
+        selfReview: {
+          iteration: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: 'self-review-digest',
+          verdict: 'accept',
+          revisionDelta: 'none',
+        },
         activeChecks: ['unit', 'lint'],
         validation: [
-          { checkId: 'unit', passed: false, detail: 'unit failed', executedAt: fixedTime },
-          { checkId: 'lint', passed: true, detail: 'lint passed', executedAt: fixedTime },
+          {
+            checkId: 'unit',
+            passed: false,
+            detail: 'unit failed',
+            executedAt: fixedTime,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 1,
+            executionMs: 1,
+            outputDigest: 'unit-digest',
+            timedOut: false,
+          },
+          {
+            checkId: 'lint',
+            passed: true,
+            detail: 'lint passed',
+            executedAt: fixedTime,
+            kind: 'lint',
+            command: 'npm run lint',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'lint-digest',
+            timedOut: false,
+          },
         ],
       };
 
@@ -490,7 +517,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
           mode: 'regulated' as const,
           requireHumanGates: true,
           allowSelfApproval: false,
-          minimumActorAssuranceForApproval: undefined,
+          minimumActorAssuranceForApproval: 'claim_validated',
         },
       };
 
@@ -677,8 +704,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
           ...makeMinimalState('EVIDENCE_REVIEW').policySnapshot!,
           mode: 'regulated' as const,
           allowSelfApproval: false,
-          // Intentionally undefined to force the ?? 'best_effort' fallback.
-          minimumActorAssuranceForApproval: undefined,
+          minimumActorAssuranceForApproval: 'claim_validated',
         },
       };
       const ctx = buildContextProjection(state);

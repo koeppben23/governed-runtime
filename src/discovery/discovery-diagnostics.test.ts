@@ -459,7 +459,17 @@ describe('discovery/diagnostics (#372)', () => {
       const d1 = computeStableDriftDigest(result);
       const changed = {
         ...result,
-        stack: { ...result.stack, languages: [{ id: 'typescript', confidence: 1.0 }] },
+        stack: {
+          ...result.stack,
+          languages: [
+            {
+              id: 'typescript',
+              confidence: 1.0,
+              classification: 'fact' as const,
+              evidence: ['tsconfig.json'],
+            },
+          ],
+        },
       };
       const d2 = computeStableDriftDigest(changed);
       expect(d1).not.toBe(d2);

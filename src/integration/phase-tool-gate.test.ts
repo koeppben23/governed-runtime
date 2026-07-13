@@ -19,6 +19,21 @@ import {
 import type { Phase } from '../state/schema.js';
 import { makeState } from '../fixtures.js';
 
+function validationResult(checkId: string) {
+  return {
+    checkId,
+    passed: true,
+    detail: 'OK',
+    executedAt: '2026-01-01T00:00:00.000Z',
+    kind: 'test' as const,
+    command: 'npm test',
+    exitCode: 0,
+    executionMs: 1,
+    outputDigest: 'a'.repeat(64),
+    timedOut: false,
+  };
+}
+
 // ─── isMutatingHostTool ──────────────────────────────────────────────────────
 
 describe('phase-tool-gate', () => {
@@ -539,20 +554,7 @@ describe('phase-tool-gate', () => {
 
     it('BAD — missing task class claim keeps full ceremony', () => {
       const base = makeState('IMPLEMENTATION', {
-        validation: [
-          {
-            checkId: 'test_quality',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-          {
-            checkId: 'rollback_safety',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ],
+        validation: [validationResult('test_quality'), validationResult('rollback_safety')],
       });
       const state = {
         ...base,
@@ -568,20 +570,7 @@ describe('phase-tool-gate', () => {
     it('BAD — non-TRIVIAL task class claim keeps full ceremony', () => {
       const base = makeState('IMPLEMENTATION', {
         claimedTaskClass: 'STANDARD',
-        validation: [
-          {
-            checkId: 'test_quality',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-          {
-            checkId: 'rollback_safety',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ],
+        validation: [validationResult('test_quality'), validationResult('rollback_safety')],
       });
       const state = {
         ...base,
@@ -597,20 +586,7 @@ describe('phase-tool-gate', () => {
     it('BAD — host-task-required review policy keeps full ceremony', () => {
       const base = makeState('IMPLEMENTATION', {
         claimedTaskClass: 'TRIVIAL',
-        validation: [
-          {
-            checkId: 'test_quality',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-          {
-            checkId: 'rollback_safety',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ],
+        validation: [validationResult('test_quality'), validationResult('rollback_safety')],
       });
       const state = {
         ...base,
@@ -630,20 +606,7 @@ describe('phase-tool-gate', () => {
     it('BAD — default policy keeps full ceremony even for TRIVIAL evidence', () => {
       const state = makeState('IMPLEMENTATION', {
         claimedTaskClass: 'TRIVIAL',
-        validation: [
-          {
-            checkId: 'test_quality',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-          {
-            checkId: 'rollback_safety',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ],
+        validation: [validationResult('test_quality'), validationResult('rollback_safety')],
       });
 
       const result = resolveCeremonyProfile({ state, changedFiles: ['docs/usage-notes.md'] });
@@ -655,20 +618,7 @@ describe('phase-tool-gate', () => {
     it('BAD — governance surface escalates to computed HIGH-RISK and blocks reduction', () => {
       const base = makeState('IMPLEMENTATION', {
         claimedTaskClass: 'TRIVIAL',
-        validation: [
-          {
-            checkId: 'test_quality',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-          {
-            checkId: 'rollback_safety',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ],
+        validation: [validationResult('test_quality'), validationResult('rollback_safety')],
       });
       const state = {
         ...base,
@@ -692,20 +642,7 @@ describe('phase-tool-gate', () => {
           blockedAt: '2026-01-01T00:00:00.000Z',
           lastDecisionId: 'RISK-1',
         },
-        validation: [
-          {
-            checkId: 'test_quality',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-          {
-            checkId: 'rollback_safety',
-            passed: true,
-            detail: 'OK',
-            executedAt: '2026-01-01T00:00:00.000Z',
-          },
-        ],
+        validation: [validationResult('test_quality'), validationResult('rollback_safety')],
       });
       const state = {
         ...base,

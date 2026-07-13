@@ -108,7 +108,7 @@ describe('formatEval', () => {
     const result = formatEval({
       kind: 'transition',
       target: 'PLAN',
-      event: 'start_planning',
+      event: 'PLAN_READY',
     } as EvalResult);
     expect(result).toContain('PLAN');
   });

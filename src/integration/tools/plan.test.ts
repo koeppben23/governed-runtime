@@ -145,8 +145,8 @@ describe('P34a Foundation: Independent Self-Review Schema & Policy', () => {
       if (result.success) {
         expect(result.data.history.length).toBe(1);
         expect(result.data.reviewFindings?.length).toBe(1);
-        expect(result.data.history[0].digest).toBe('sha256-orig');
-        expect(result.data.reviewFindings?.[0].blockingIssues.length).toBe(1);
+        expect(result.data.history[0]!.digest).toBe('sha256-orig');
+        expect(result.data.reviewFindings?.[0]?.blockingIssues.length).toBe(1);
       }
     });
 

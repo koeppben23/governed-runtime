@@ -25,6 +25,7 @@ import {
   ensureReviewAssurance,
 } from './assurance.js';
 import { validateReviewFindings, resolveHostTaskFindings } from '../tools/review-validation.js';
+import type { ReviewFindings } from '../../state/evidence.js';
 
 import {
   NOW,
@@ -152,7 +153,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
 
     // 5. Agent reconstructs findings with DIFFERENT structure (BUG-15 scenario)
     //    Key ordering, extra fields stripped by Zod, etc. → different hash
-    const agentReconstructedFindings = {
+    const agentReconstructedFindings: ReviewFindings = {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent' as const,
@@ -232,7 +233,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
     );
 
     // Agent tampers: submits approve instead of changes_requested
-    const tamperedFindings = {
+    const tamperedFindings: ReviewFindings = {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent' as const,
@@ -305,7 +306,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
     );
 
     // Agent reconstructs with extra data → hash differs
-    const agentFindings = {
+    const agentFindings: ReviewFindings = {
       iteration: 0,
       planVersion: 1,
       reviewMode: 'subagent' as const,

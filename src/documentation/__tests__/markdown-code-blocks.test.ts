@@ -75,7 +75,7 @@ function extractCodeBlocks(file: string): { blocks: CodeBlock[]; errors: string[
     }
 
     if (current === undefined) {
-      current = { startLine: index + 1, language: fence[1].trim(), body: [] };
+      current = { startLine: index + 1, language: fence[1]?.trim() ?? '', body: [] };
       return;
     }
 

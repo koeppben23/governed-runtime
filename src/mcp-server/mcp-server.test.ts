@@ -267,7 +267,9 @@ describe('Tool Adapter Session Identity', () => {
 
     const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
     expect(result.isError).toBe(false);
-    const parsed = JSON.parse(result.content[0].text);
+    const [content] = result.content;
+    if (!content) throw new TypeError('expected MCP response content');
+    const parsed = JSON.parse(content.text);
     expect(parsed.governance).toBe(true);
     expect(parsed.denied).toBe(true);
     expect(parsed.code).toBe('PHASE_GATE_BLOCKED');
@@ -309,7 +311,9 @@ describe('Tool Adapter Session Identity', () => {
 
       const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
       expect(result.isError).toBe(false);
-      const parsed = JSON.parse(result.content[0].text);
+      const [content] = result.content;
+      if (!content) throw new TypeError('expected MCP response content');
+      const parsed = JSON.parse(content.text);
       expect(parsed.governance).toBe(true);
       expect(parsed.denied).toBe(true);
       expect(parsed.code).toBe('SESSION_UNRESOLVABLE');
@@ -355,7 +359,9 @@ describe('Tool Adapter Session Identity', () => {
 
     const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
     expect(result.isError).toBe(true);
-    const parsed = JSON.parse(result.content[0].text);
+    const [content] = result.content;
+    if (!content) throw new TypeError('expected MCP response content');
+    const parsed = JSON.parse(content.text);
     expect(parsed.error).toBe(true);
     expect(parsed.governance).toBeUndefined();
     expect(parsed.code).toBe('TOOL_EXECUTION_ERROR');

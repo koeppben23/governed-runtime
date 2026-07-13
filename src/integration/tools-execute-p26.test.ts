@@ -57,6 +57,7 @@ import {
   IMPL_REVIEW_CONVERGED,
 } from '../fixtures.js';
 import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers.js';
+import type { ToolDefinition, ToolResult } from './tools/helpers.js';
 import { TEAM_POLICY } from '../config/policy.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
@@ -117,6 +118,7 @@ vi.mock('../adapters/actor', async (importOriginal) => {
       id: 'test-operator',
       email: 'test@flowguard.dev',
       source: 'env',
+      assurance: 'best_effort',
     }),
   };
 });
@@ -216,10 +218,7 @@ async function currentSessDir(): Promise<string> {
   return resolveSessionDir(fp.fingerprint, ctx.sessionID);
 }
 
-async function executeWithStrictReview(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): Promise<string> {
+async function executeWithStrictReview(tool: ToolDefinition, args: unknown): Promise<ToolResult> {
   const finalArgs = await withStrictReviewFindings(await currentSessDir(), args);
   recordDecisionIntentForTool(tool, finalArgs);
   return tool.execute(finalArgs, ctx);
@@ -228,7 +227,7 @@ async function executeWithStrictReview(
 async function executeDecision(args: {
   verdict: 'approve' | 'changes_requested' | 'reject';
   rationale: string;
-}): Promise<string> {
+}): Promise<ToolResult> {
   recordUserDecisionIntent({
     sessionId: ctx.sessionID,
     command: '/review-decision',
@@ -237,10 +236,7 @@ async function executeDecision(args: {
   return decision.execute(args, ctx);
 }
 
-function recordDecisionIntentForTool(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): void {
+function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void {
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
@@ -307,7 +303,7 @@ describe('P26: regulated archive completion', () => {
       policySnapshot: {
         ...baseState!.policySnapshot,
         mode: 'regulated' as const,
-        requestedMode: 'regulated',
+        requestedMode: 'regulated' as const,
         allowSelfApproval: false,
         requireHumanGates: true,
         audit: {
@@ -538,11 +534,11 @@ describe('P26: regulated archive completion', () => {
         .spyOn(persistenceAudit, 'appendAuditEvent')
         .mockImplementation(async (_sessDir, event) => {
           // Track lifecycle completion events
-          const detail = (event as Record<string, unknown>).detail as
-            Record<string, unknown> | undefined;
+          const detail = event.detail;
           if (detail?.action === 'session_completed') {
             callOrder.push('session_completed');
           }
+          return event;
         });
       vi.mocked(wsMock.archiveSession).mockImplementationOnce(async () => {
         callOrder.push('archiveSession');

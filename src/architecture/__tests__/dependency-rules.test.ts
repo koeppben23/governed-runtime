@@ -557,10 +557,10 @@ function detectCycles(analyses: Map<string, FileAnalysis>): string[] {
       const orderedCycle = [...cyclePath];
       let minIdx = 0;
       for (let i = 1; i < orderedCycle.length; i++) {
-        if (orderedCycle[i] < orderedCycle[minIdx]) minIdx = i;
+        if (orderedCycle[i]! < orderedCycle[minIdx]!) minIdx = i;
       }
       const rotated = [...orderedCycle.slice(minIdx), ...orderedCycle.slice(0, minIdx)];
-      const normalized = [...rotated, rotated[0]];
+      const normalized = [...rotated, rotated[0]!];
       const key = normalized.map((f) => path.relative(PROJECT_ROOT, f)).join(' -> ');
       cycles.push(key);
     }

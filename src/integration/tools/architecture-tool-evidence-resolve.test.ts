@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeState } from '../../fixtures.js';
+import { TEAM_POLICY } from '../../config/policy-presets.js';
+import type { SessionState } from '../../state/schema.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -10,14 +12,19 @@ const originalFlowguardHostPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
 
 const mocks = vi.hoisted(() => {
   return {
-    state: null as unknown,
+    state: null as SessionState | null,
     isCommandAllowed: vi.fn(() => true),
     executeArchitecture: vi.fn(),
     autoAdvance: vi.fn(),
     validateAdrSections: vi.fn(() => [] as string[]),
-    resolveWorkspacePaths: vi.fn(async () => ({ sessDir: '/tmp/session' })),
+    resolveWorkspacePaths: vi.fn(async () => ({
+      worktree: '/tmp/test',
+      fingerprint: 'test',
+      sessDir: '/tmp/session',
+      wsDir: '/tmp/ws',
+    })),
     requireStateForMutation: vi.fn(async () => makeState('READY')),
-    resolvePolicyFromState: vi.fn(() => ({ maxSelfReviewIterations: 3 })),
+    resolvePolicyFromState: vi.fn(() => TEAM_POLICY),
     createPolicyContext: vi.fn(() => ({
       policy: { maxSelfReviewIterations: 3 },
       now: () => '2026-01-01T00:00:00.000Z',
@@ -46,7 +53,7 @@ vi.mock('./helpers.js', () => ({
   appendNextAction: mocks.appendNextAction,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   withMutableSession: vi.fn(async (ctx) => {
-    const paths = await mocks.resolveWorkspacePaths(ctx);
+    const paths = await mocks.resolveWorkspacePaths();
     const state = await mocks.requireStateForMutation();
     const policy = mocks.resolvePolicyFromState();
     const ctx2 = mocks.createPolicyContext();
@@ -61,7 +68,7 @@ vi.mock('./helpers.js', () => ({
     };
   }),
   withMutableSessionTransaction: vi.fn(async (ctx, fn) => {
-    const paths = await mocks.resolveWorkspacePaths(ctx);
+    const paths = await mocks.resolveWorkspacePaths();
     const state = await mocks.requireStateForMutation();
     const policy = mocks.resolvePolicyFromState();
     const ctx2 = mocks.createPolicyContext();
@@ -233,6 +240,9 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               childSessionId: 'ses_child',
               agentType: 'flowguard-reviewer',
               invocationMode: 'host_subagent_task',
+              reviewOutputMode: 'structured_output',
+              structuredOutputUsed: true,
+              reviewAssuranceLevel: 'structured_high',
               hostVisible: true,
               promptHash: 'abc',
               mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -310,6 +320,9 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               childSessionId: 'ses_child',
               agentType: 'flowguard-reviewer',
               invocationMode: 'manual_attested',
+              reviewOutputMode: 'structured_output',
+              structuredOutputUsed: true,
+              reviewAssuranceLevel: 'structured_high',
               hostVisible: false,
               promptHash: 'abc',
               mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -329,6 +342,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       mocks.state = stateWithEvidence('accept');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
+        ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -374,6 +388,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       mocks.state = stateNoEvidence;
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
+        ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -391,6 +406,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       mocks.state = stateWithEvidence('changes_requested');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
+        ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -410,6 +426,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       mocks.state = stateWithEvidence('accept');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
+        ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'sdk_allowed', // NOT host_task_required
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -426,6 +443,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       mocks.state = stateWithEvidence('accept');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
+        ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -457,6 +475,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       mocks.state = stateWithEvidence('accept');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
+        ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -487,6 +506,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       mocks.state = stateWithEvidence('accept');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
+        ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'sdk_allowed',
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -516,6 +536,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       mocks.state = stateWithManualAttestedEvidence();
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
+        ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'sdk_allowed',
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },
@@ -540,6 +561,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       mocks.state = stateWithEvidence('changes_requested');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
       mocks.resolvePolicyFromState.mockReturnValue({
+        ...TEAM_POLICY,
         maxSelfReviewIterations: 3,
         reviewInvocationPolicy: 'host_task_required',
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },

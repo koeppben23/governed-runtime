@@ -826,7 +826,9 @@ describe('plugin bootstrap fail-closed', () => {
 
         const state = await readState(sessDir);
         expect(state?.riskGate?.status).toBe('blocked');
-        expect(state?.riskGate?.code).toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
+        expect(state?.riskGate?.status === 'blocked' && state.riskGate.code).toBe(
+          'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+        );
         const audit = await readAuditTrail(sessDir);
         expect(audit.events.some((event) => event.event === 'risk:classification_checked')).toBe(
           true,
@@ -864,8 +866,8 @@ describe('plugin bootstrap fail-closed', () => {
         await fs.mkdir(path.join(ws.tmpDir, 'src/state'), { recursive: true });
         await fs.writeFile(path.join(ws.tmpDir, 'src/state/risk-new.ts'), 'export const x = 1;');
 
-        const output = { output: 'bash ok' };
-        await afterHook({ tool: 'bash', sessionID, callID: 'c1' }, output);
+        const output = { title: 'bash', output: 'bash ok', metadata: {} };
+        await afterHook({ tool: 'bash', sessionID, callID: 'c1', args: {} }, output);
         expect(output.output).toContain('RISK_CLASSIFICATION_MISMATCH');
 
         const state = await readState(sessDir);
@@ -910,14 +912,16 @@ describe('plugin bootstrap fail-closed', () => {
         await fs.rm(path.join(ws.tmpDir, '.git'), { recursive: true, force: true });
 
         const afterHook = hooks['tool.execute.after']!;
-        const output = { output: 'bash ok' };
-        await afterHook({ tool: 'bash', sessionID, callID: 'c1' }, output);
+        const output = { title: 'bash', output: 'bash ok', metadata: {} };
+        await afterHook({ tool: 'bash', sessionID, callID: 'c1', args: {} }, output);
 
         expect(output.output).toContain('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
         expect(output.output).toContain('BLOCKED');
         const state = await readState(sessDir);
         expect(state?.riskGate?.status).toBe('blocked');
-        expect(state?.riskGate?.code).toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
+        expect(state?.riskGate?.status === 'blocked' && state.riskGate.code).toBe(
+          'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+        );
       } finally {
         await ws.cleanup();
       }

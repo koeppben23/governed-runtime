@@ -395,8 +395,10 @@ describe('cli/doctor', () => {
 
         const checks = await checkLastSessionHandshake('global');
         expect(checks.length).toBeGreaterThan(0);
-        expect(checks[0].status).toBe('error');
-        expect(checks[0].detail).toContain('plugin handshake');
+        const [check] = checks;
+        if (!check) throw new TypeError('expected handshake check');
+        expect(check.status).toBe('error');
+        expect(check.detail).toContain('plugin handshake');
       } finally {
         restoreEnv();
       }
@@ -420,8 +422,10 @@ describe('cli/doctor', () => {
         );
         const checks = await checkLastSessionHandshake('global');
         expect(checks.length).toBe(1);
-        expect(checks[0].status).toBe('warn');
-        expect(checks[0].detail).toContain('sessionId');
+        const [check] = checks;
+        if (!check) throw new TypeError('expected handshake check');
+        expect(check.status).toBe('warn');
+        expect(check.detail).toContain('sessionId');
       } finally {
         restoreEnv();
       }
@@ -442,8 +446,10 @@ describe('cli/doctor', () => {
 
         const checks = await checkLastSessionHandshake('global');
         expect(checks.length).toBe(1);
-        expect(checks[0].status).toBe('warn');
-        expect(checks[0].detail).toContain('Session state');
+        const [check] = checks;
+        if (!check) throw new TypeError('expected handshake check');
+        expect(check.status).toBe('warn');
+        expect(check.detail).toContain('Session state');
       } finally {
         restoreEnv();
       }

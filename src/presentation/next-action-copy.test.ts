@@ -50,7 +50,12 @@ describe('buildProductNextAction', () => {
 
     it('RUN_PLAN (TICKET, ticket captured)', () => {
       const state = makeState('TICKET', {
-        ticket: { title: 'Test', body: 'Fix bug', createdAt: new Date().toISOString() },
+        ticket: {
+          text: 'Fix bug',
+          digest: 'ticket-digest',
+          source: 'user',
+          createdAt: new Date().toISOString(),
+        },
       });
       const action = resolveNextAction('TICKET', state);
       const product = buildProductNextAction(action, 'TICKET');

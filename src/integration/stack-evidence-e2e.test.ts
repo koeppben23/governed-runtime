@@ -158,6 +158,8 @@ describe('stack-evidence E2E', () => {
         files: ['pom.xml', 'src/main/java/App.java'],
         packageFiles: ['pom.xml'],
         configFiles: [],
+        packageFilePaths: ['pom.xml'],
+        configFilePaths: [],
       });
 
       // 3. Hydrate — runs real discovery with real file reads
@@ -243,6 +245,8 @@ describe('stack-evidence E2E', () => {
         files: ['pom.xml', 'src/main/java/App.java'],
         packageFiles: ['pom.xml'],
         configFiles: [],
+        packageFilePaths: ['pom.xml'],
+        configFilePaths: [],
       });
       await hydrateSession();
       const sessDir = await resolveSessionDir();
@@ -273,6 +277,8 @@ describe('stack-evidence E2E', () => {
         files: ['.nvmrc', 'package.json', 'tsconfig.json', 'src/index.ts'],
         packageFiles: ['package.json'],
         configFiles: ['tsconfig.json'],
+        packageFilePaths: ['package.json'],
+        configFilePaths: ['tsconfig.json'],
       });
 
       // 3. Hydrate
@@ -348,6 +354,8 @@ describe('stack-evidence E2E', () => {
         files: ['docker-compose.yml'],
         packageFiles: [],
         configFiles: ['docker-compose.yml'],
+        packageFilePaths: [],
+        configFilePaths: ['docker-compose.yml'],
       });
 
       await hydrateSession();
@@ -415,6 +423,8 @@ components = ["clippy", "rustfmt"]
         ],
         packageFiles: ['pyproject.toml', 'requirements.txt', 'Cargo.toml', 'go.mod'],
         configFiles: ['.golangci.yml'],
+        packageFilePaths: ['pyproject.toml', 'requirements.txt', 'Cargo.toml', 'go.mod'],
+        configFilePaths: ['.golangci.yml'],
       });
 
       await hydrateSession();
@@ -493,6 +503,8 @@ components = ["clippy", "rustfmt"]
         files: ['pom.xml', 'src/main/java/App.java'],
         packageFiles: ['pom.xml'],
         configFiles: [],
+        packageFilePaths: ['pom.xml'],
+        configFilePaths: [],
       });
       await hydrateSession();
 
@@ -583,6 +595,8 @@ components = ["clippy", "rustfmt"]
         files: ['package.json', 'src/index.ts', 'apps/web/package.json', 'apps/web/src/index.tsx'],
         packageFiles: ['package.json', 'apps/web/package.json'],
         configFiles: [],
+        packageFilePaths: ['package.json', 'apps/web/package.json'],
+        configFilePaths: [],
       });
 
       // 3. Hydrate — runs real discovery with real file reads
@@ -657,6 +671,8 @@ services:
         files: ['package.json', 'services/db/docker-compose.yml'],
         packageFiles: ['package.json'],
         configFiles: [],
+        packageFilePaths: ['package.json'],
+        configFilePaths: [],
       });
 
       // 3. Hydrate

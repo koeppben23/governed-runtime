@@ -1,18 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeState } from '../../fixtures.js';
+import { TEAM_POLICY } from '../../config/policy-presets.js';
+import type { SessionState } from '../../state/schema.js';
 
 const originalFlowguardHostPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
 
 const mocks = vi.hoisted(() => {
   return {
-    state: null as unknown,
+    state: null as SessionState | null,
     isCommandAllowed: vi.fn(() => true),
     executeArchitecture: vi.fn(),
     autoAdvance: vi.fn(),
     validateAdrSections: vi.fn(() => [] as string[]),
-    resolveWorkspacePaths: vi.fn(async () => ({ sessDir: '/tmp/session' })),
+    resolveWorkspacePaths: vi.fn(async () => ({
+      worktree: '/tmp/test',
+      fingerprint: 'test',
+      sessDir: '/tmp/session',
+      wsDir: '/tmp/ws',
+    })),
     requireStateForMutation: vi.fn(async () => makeState('READY')),
-    resolvePolicyFromState: vi.fn(() => ({ maxSelfReviewIterations: 3 })),
+    resolvePolicyFromState: vi.fn(() => ({
+      ...TEAM_POLICY,
+      reviewInvocationPolicy: 'self',
+      selfReview: {
+        ...TEAM_POLICY.selfReview,
+        subagentEnabled: false,
+        strictEnforcement: false,
+      },
+    })),
     createPolicyContext: vi.fn(() => ({
       policy: { maxSelfReviewIterations: 3 },
       now: () => '2026-01-01T00:00:00.000Z',
@@ -26,7 +41,9 @@ const mocks = vi.hoisted(() => {
       JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
     ),
     appendNextAction: vi.fn((payload: string) => payload),
-    writeStateWithArtifacts: vi.fn(async () => undefined),
+    writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<void>>(
+      async () => undefined,
+    ),
   };
 });
 
@@ -41,7 +58,7 @@ vi.mock('./helpers.js', () => ({
   appendNextAction: mocks.appendNextAction,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   withMutableSession: vi.fn(async (ctx) => {
-    const paths = await mocks.resolveWorkspacePaths(ctx);
+    const paths = await mocks.resolveWorkspacePaths();
     const state = await mocks.requireStateForMutation();
     const policy = mocks.resolvePolicyFromState();
     const ctx2 = mocks.createPolicyContext();
@@ -56,7 +73,7 @@ vi.mock('./helpers.js', () => ({
     };
   }),
   withMutableSessionTransaction: vi.fn(async (ctx, fn) => {
-    const paths = await mocks.resolveWorkspacePaths(ctx);
+    const paths = await mocks.resolveWorkspacePaths();
     const state = await mocks.requireStateForMutation();
     const policy = mocks.resolvePolicyFromState();
     const ctx2 = mocks.createPolicyContext();
@@ -636,9 +653,10 @@ describe('integration/tools/architecture (wrapper)', () => {
     // plan.ts and implement.ts behavior. The orchestrator (slice 6) detects
     // this marker to dispatch the subagent automatically.
     mocks.resolvePolicyFromState.mockReturnValueOnce({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
-      selfReview: { subagentEnabled: true },
-    } as never);
+      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
+    });
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
@@ -657,9 +675,10 @@ describe('integration/tools/architecture (wrapper)', () => {
     //  (b) Mode B verdict submission can be cross-checked via
     //      validateReviewFindings (slice 7c).
     mocks.resolvePolicyFromState.mockReturnValueOnce({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
-      selfReview: { subagentEnabled: true },
-    } as never);
+      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
+    });
     const { architecture } = await import('./architecture.js');
     const res = await architecture.execute({ title: 'x', adrText: 'y' }, {} as never);
     const parsed = JSON.parse(String(res));
@@ -768,7 +787,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     // autoAdvance mock must echo the input state for this persistence test
     // (the default mock returns a fresh state without reviewFindings, which
     // would mask the field on writeStateWithArtifacts).
-    mocks.autoAdvance.mockImplementation((s: unknown) => ({
+    mocks.autoAdvance.mockImplementation((s: SessionState) => ({
       kind: 'advanced',
       state: s,
       evalResult: { kind: 'pending' },
@@ -925,7 +944,9 @@ describe('integration/tools/architecture (wrapper)', () => {
   describe('BUG-21: null-tolerant mode detection (architecture tool)', () => {
     it('HAPPY: reviewVerdict=null + title + adrText → Mode A (initial submission)', async () => {
       mocks.requireStateForMutation.mockResolvedValue(
-        makeState('ARCHITECTURE', { ticket: { text: 'x', digest: 'd', source: 'user' } }),
+        makeState('ARCHITECTURE', {
+          ticket: { text: 'x', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },
+        }),
       );
       const { architecture } = await import('./architecture.js');
       const raw = await architecture.execute(
@@ -944,7 +965,9 @@ describe('integration/tools/architecture (wrapper)', () => {
 
     it('HAPPY: reviewVerdict="" + title + adrText → Mode A (empty string treated as absent)', async () => {
       mocks.requireStateForMutation.mockResolvedValue(
-        makeState('ARCHITECTURE', { ticket: { text: 'x', digest: 'd', source: 'user' } }),
+        makeState('ARCHITECTURE', {
+          ticket: { text: 'x', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },
+        }),
       );
       const { architecture } = await import('./architecture.js');
       const raw = await architecture.execute(
@@ -961,7 +984,9 @@ describe('integration/tools/architecture (wrapper)', () => {
 
     it('CORNER: reviewVerdict=null → isInitialSubmission=true (consistent with hasVerdict=false)', async () => {
       mocks.requireStateForMutation.mockResolvedValue(
-        makeState('ARCHITECTURE', { ticket: { text: 'x', digest: 'd', source: 'user' } }),
+        makeState('ARCHITECTURE', {
+          ticket: { text: 'x', digest: 'd', source: 'user', createdAt: '2026-01-01T00:00:00.000Z' },
+        }),
       );
       const { architecture } = await import('./architecture.js');
       // With null verdict AND title → isInitialSubmission should be true

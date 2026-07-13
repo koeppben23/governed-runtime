@@ -91,7 +91,7 @@ describe('validatePipelineAttestation', () => {
   it('missing attestation returns MANDATE_MISSING', () => {
     const result = validatePipelineAttestation(findings({ attestation: null }), fullExpected());
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_MANDATE_MISSING);
+    if (!result.valid) expect(result.code).toBe(REASON_MANDATE_MISSING);
   });
 
   it('mandate digest mismatch returns MANDATE_MISMATCH', () => {
@@ -100,13 +100,13 @@ describe('validatePipelineAttestation', () => {
       fullExpected(),
     );
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_MANDATE_MISMATCH);
+    if (!result.valid) expect(result.code).toBe(REASON_MANDATE_MISMATCH);
   });
 
   it('iteration mismatch returns MANDATE_MISMATCH', () => {
     const result = validatePipelineAttestation(findings(), fullExpected({ iteration: 2 }));
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_MANDATE_MISMATCH);
+    if (!result.valid) expect(result.code).toBe(REASON_MANDATE_MISMATCH);
   });
 
   it('reviewedBy mismatch returns MANDATE_MISMATCH', () => {
@@ -117,7 +117,7 @@ describe('validatePipelineAttestation', () => {
       fullExpected(),
     );
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_MANDATE_MISMATCH);
+    if (!result.valid) expect(result.code).toBe(REASON_MANDATE_MISMATCH);
   });
 
   it('unable_to_review verdict with enforce flag returns UNABLE_TO_REVIEW', () => {
@@ -126,7 +126,7 @@ describe('validatePipelineAttestation', () => {
       fullExpected({ checkUnableToReview: true }),
     );
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_UNABLE_TO_REVIEW);
+    if (!result.valid) expect(result.code).toBe(REASON_UNABLE_TO_REVIEW);
   });
 
   it('obligationId mismatch returns MANDATE_MISMATCH', () => {
@@ -135,7 +135,7 @@ describe('validatePipelineAttestation', () => {
       fullExpected({ obligationId: 'bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb' }),
     );
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_MANDATE_MISMATCH);
+    if (!result.valid) expect(result.code).toBe(REASON_MANDATE_MISMATCH);
   });
 
   it('criteriaVersion mismatch returns MANDATE_MISMATCH', () => {
@@ -144,7 +144,7 @@ describe('validatePipelineAttestation', () => {
       fullExpected({ criteriaVersion: '9.9.9' }),
     );
     expect(result.valid).toBe(false);
-    expect(result.code).toBe(REASON_MANDATE_MISMATCH);
+    if (!result.valid) expect(result.code).toBe(REASON_MANDATE_MISMATCH);
   });
 });
 
@@ -214,7 +214,7 @@ describe('buildReviewDiscoveryContextForPipeline (#401 drift)', () => {
     await buildReviewDiscoveryContextForPipeline(makeCtx());
 
     expect(buildReviewDiscoveryContext).toHaveBeenCalledTimes(1);
-    const input = buildReviewDiscoveryContext.mock.calls[0][0] as {
+    const input = buildReviewDiscoveryContext.mock.calls[0]?.[0] as {
       includeDriftCheck?: boolean;
     };
     expect(input.includeDriftCheck).toBe(true);
@@ -223,7 +223,7 @@ describe('buildReviewDiscoveryContextForPipeline (#401 drift)', () => {
   it('passes resolved fingerprint and worktree to the loader', async () => {
     await buildReviewDiscoveryContextForPipeline(makeCtx());
 
-    const input = buildReviewDiscoveryContext.mock.calls[0][0] as {
+    const input = buildReviewDiscoveryContext.mock.calls[0]?.[0] as {
       fingerprint?: string | null;
       worktree?: string;
     };

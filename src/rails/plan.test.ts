@@ -12,11 +12,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { executePlan, type PlanInput, type PlanExecutors } from './plan.js';
 import { makeState, FIXED_TIME, TICKET, PLAN_RECORD } from '../fixtures.js';
 import type { RailContext } from './types.js';
+import { TEAM_POLICY } from '../config/policy.js';
 
 const ctx: RailContext = {
   now: () => FIXED_TIME,
   digest: (s: string) => `sha256:${s.length}`,
-  policy: { maxSelfReviewIterations: 3 },
+  policy: { ...TEAM_POLICY, maxSelfReviewIterations: 3 },
 };
 
 function makeExecutors(overrides?: Partial<PlanExecutors>): PlanExecutors {
@@ -37,7 +38,7 @@ describe('plan rail', () => {
     it('submits plan with ticket and starts self-review', async () => {
       const state = makeState('TICKET', { ticket: TICKET });
       const executors = makeExecutors({
-        selfReview: vi.fn().mockResolvedValue({ verdict: 'converged' as const }),
+        selfReview: vi.fn().mockResolvedValue({ verdict: 'accept' as const }),
       });
       const result = await executePlan(state, planInput('## Plan\nTest'), ctx, executors);
       expect(result.kind).toBe('ok');

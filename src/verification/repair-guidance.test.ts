@@ -194,7 +194,7 @@ describe('CORNER', () => {
     const guidance = deriveRepairGuidance(evidence);
     // No specific test framework pattern matched, no file locations → unparseable
     expect(guidance.status).toBe('unavailable');
-    expect(guidance.reason).toBe('unparseable');
+    if (guidance.status === 'unavailable') expect(guidance.reason).toBe('unparseable');
   });
 
   it('provides timeout guidance without claiming root cause', () => {
@@ -333,6 +333,6 @@ describe('EDGE', () => {
 
     const guidance = deriveRepairGuidance(evidence);
     expect(guidance.status).toBe('unavailable');
-    expect(guidance.reason).toBe('unparseable');
+    if (guidance.status === 'unavailable') expect(guidance.reason).toBe('unparseable');
   });
 });

@@ -39,7 +39,6 @@ import {
   plan,
   decision,
   implement,
-  validate,
   review,
   abort_session,
   archive,
@@ -336,10 +335,11 @@ describe('P34a: Agent-Orchestrated Review', () => {
     const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
     const state = await readState(sessDir);
 
-    expect(state.plan).toBeDefined();
-    expect(state.plan?.reviewFindings).toHaveLength(1);
-    expect(state.plan?.reviewFindings?.[0].reviewMode).toBe('subagent');
-    expect(state.plan?.history).toHaveLength(0);
+    expect(state).not.toBeNull();
+    if (!state?.plan) throw new TypeError('Expected persisted plan state');
+    expect(state.plan.reviewFindings).toHaveLength(1);
+    expect(state.plan.reviewFindings?.[0]?.reviewMode).toBe('subagent');
+    expect(state.plan.history).toHaveLength(0);
   });
 
   it('persists plan in state.plan.current (separate from reviewFindings)', async () => {
@@ -355,11 +355,12 @@ describe('P34a: Agent-Orchestrated Review', () => {
     const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
     const state = await readState(sessDir);
 
-    expect(state.plan).toBeDefined();
-    expect(state.plan?.current).toBeDefined();
-    expect(state.plan?.current.body).toContain('## Plan');
-    expect(state.plan?.reviewFindings?.[0].reviewedBy.sessionId).toBe('ses_plan_reviewer');
-    expect(state.plan?.history).toHaveLength(0);
+    expect(state).not.toBeNull();
+    if (!state?.plan) throw new TypeError('Expected persisted plan state');
+    expect(state.plan.current).toBeDefined();
+    expect(state.plan.current.body).toContain('## Plan');
+    expect(state.plan.reviewFindings?.[0]?.reviewedBy.sessionId).toBe('ses_plan_reviewer');
+    expect(state.plan.history).toHaveLength(0);
   });
 
   it('accepts valid reviewFindings with planVersion=1 in Mode B', async () => {
@@ -444,7 +445,7 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false },
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       },
     });
 
@@ -470,7 +471,7 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: true },
+        selfReview: { subagentEnabled: true, fallbackToSelf: true, strictEnforcement: false },
       },
     });
 
@@ -498,7 +499,7 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false },
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       },
     });
 
@@ -526,7 +527,7 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false },
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       },
     });
 
@@ -551,12 +552,12 @@ describe('P34a: Policy-Driven Branches', () => {
       ...state!,
       policySnapshot: {
         ...state!.policySnapshot,
-        selfReview: { subagentEnabled: true, fallbackToSelf: false },
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       },
     });
 
     state = await readState(sessDir);
-    expect(state.policySnapshot?.selfReview?.subagentEnabled).toBe(true);
+    expect(state?.policySnapshot.selfReview?.subagentEnabled).toBe(true);
 
     await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'accept');

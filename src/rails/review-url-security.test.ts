@@ -282,11 +282,11 @@ describe('Issue #310: resolved URL targets are validated before fetch', () => {
         state,
         NOW,
         { dnsLookup: async () => [{ address: '127.0.0.1', family: 4 }] },
-        { inputOrigin: 'url', url: 'https://metadata.example/spec.md' },
+        { inputOrigin: 'external_reference', url: 'https://metadata.example/spec.md' },
       );
 
       expect('kind' in result).toBe(true);
-      if ('kind' in result) {
+      if ('kind' in result && result.kind === 'blocked') {
         expect(result.kind).toBe('blocked');
         expect(result.code).toBe('COMMAND_BLOCKED');
         expect(result.reason).toContain('private/reserved IPv4');

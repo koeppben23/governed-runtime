@@ -344,13 +344,16 @@ describe('run_check', () => {
         timedOut: boolean;
       }>;
       expect(vr).toHaveLength(1);
-      expect(vr[0].checkId).toBe('typecheck');
-      expect(vr[0].passed).toBe(true);
-      expect(vr[0].kind).toBe('typecheck');
-      expect(typeof vr[0].command).toBe('string');
-      expect(vr[0].exitCode).toBe(0);
-      expect(typeof vr[0].executionMs).toBe('number');
-      expect(vr[0].timedOut).toBe(false);
+      const result = vr[0];
+      expect(result).toBeDefined();
+      if (!result) throw new TypeError('Expected a validation result');
+      expect(result.checkId).toBe('typecheck');
+      expect(result.passed).toBe(true);
+      expect(result.kind).toBe('typecheck');
+      expect(typeof result.command).toBe('string');
+      expect(result.exitCode).toBe(0);
+      expect(typeof result.executionMs).toBe('number');
+      expect(result.timedOut).toBe(false);
     });
 
     it('timed out check records timedOut evidence', async () => {

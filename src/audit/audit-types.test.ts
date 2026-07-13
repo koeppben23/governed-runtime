@@ -127,7 +127,12 @@ describe('audit types', () => {
     // ─── P27: Actor Identity ───────────────────────────────────
 
     it('lifecycle event contains actorInfo when provided', () => {
-      const actor: ActorInfo = { id: 'jane', email: 'jane@dev.io', source: 'git' };
+      const actor: ActorInfo = {
+        id: 'jane',
+        email: 'jane@dev.io',
+        source: 'git',
+        assurance: 'best_effort',
+      };
       const event = createLifecycleEvent({
         sessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
@@ -141,7 +146,12 @@ describe('audit types', () => {
     });
 
     it('tool_call event contains actorInfo when provided', () => {
-      const actor: ActorInfo = { id: 'ci-bot', email: null, source: 'env' };
+      const actor: ActorInfo = {
+        id: 'ci-bot',
+        email: null,
+        source: 'env',
+        assurance: 'best_effort',
+      };
       const event = createToolCallEvent({
         sessionId: SESSION_ID,
         phase: 'PLAN',
@@ -156,7 +166,12 @@ describe('audit types', () => {
     });
 
     it('decision event contains actorInfo when provided', () => {
-      const actor: ActorInfo = { id: 'reviewer', email: 'rev@co.com', source: 'env' };
+      const actor: ActorInfo = {
+        id: 'reviewer',
+        email: 'rev@co.com',
+        source: 'env',
+        assurance: 'best_effort',
+      };
       const event = createDecisionEvent({
         sessionId: SESSION_ID,
         gatePhase: 'PLAN_REVIEW',
@@ -181,7 +196,7 @@ describe('audit types', () => {
     });
 
     it('sessionID is still present separately from actorInfo', () => {
-      const actor: ActorInfo = { id: 'dev1', email: null, source: 'git' };
+      const actor: ActorInfo = { id: 'dev1', email: null, source: 'git', assurance: 'best_effort' };
       const event = createLifecycleEvent({
         sessionId: SESSION_ID,
         detail: { action: 'session_created', finalPhase: 'TICKET' },
@@ -378,7 +393,7 @@ describe('audit types', () => {
     });
 
     it('actorInfo changes the chain hash (isolated, same event body)', () => {
-      const actor: ActorInfo = { id: 'dev', email: null, source: 'git' };
+      const actor: ActorInfo = { id: 'dev', email: null, source: 'git', assurance: 'best_effort' };
       const sharedId = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
       const base = {
         id: sharedId,

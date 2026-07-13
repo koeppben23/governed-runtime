@@ -40,6 +40,24 @@ import {
   type AdapterLogger,
 } from '../../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../../logging/log-context.js';
+import type { ToolDefinition } from '../tools/helpers.js';
+
+type RunCheckResult = {
+  error?: boolean;
+  code?: string;
+  message?: string;
+  evidence: {
+    kind: string;
+    passed: boolean;
+    exitCode: number;
+    executionMs: number;
+    outputDigest: string;
+    timedOut: boolean;
+  };
+  derivedRepairGuidance?: unknown;
+  remainingChecks?: unknown[];
+  status?: string;
+};
 
 // ─── Mocks ───────────────────────────────────────────────────────────────────
 
@@ -146,10 +164,7 @@ function captureLogger(): {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-async function callOk(
-  tool: { execute: (args: unknown, ctx: TestToolContext) => Promise<string> },
-  args: unknown,
-) {
+async function callOk(tool: ToolDefinition, args: unknown) {
   const sd = await getSessDir();
   const finalArgs = await withStrictReviewFindings(sd, args);
   const raw = await tool.execute(finalArgs, ctx);
@@ -178,7 +193,9 @@ async function driveToValidation(): Promise<void> {
 describe('HAPPY', () => {
   it('executes check and returns evidence', async () => {
     await driveToValidation();
-    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    const result = parseToolResult<RunCheckResult>(
+      await run_check.execute({ kind: 'typecheck' }, ctx),
+    );
 
     expect(result.error).toBeUndefined();
     expect(result.evidence).toBeDefined();
@@ -197,9 +214,11 @@ describe('HAPPY', () => {
     const state = await readState(sd);
     expect(state).not.toBeNull();
     expect(state!.validation.length).toBe(1);
-    expect(state!.validation[0].checkId).toBe('typecheck');
-    expect(state!.validation[0].passed).toBe(true);
-    expect(state!.validation[0].outputDigest).toBe('a'.repeat(64));
+    const [validation] = state!.validation;
+    expect(validation).toBeDefined();
+    expect(validation!.checkId).toBe('typecheck');
+    expect(validation!.passed).toBe(true);
+    expect(validation!.outputDigest).toBe('a'.repeat(64));
   });
 
   it('advances to IMPLEMENTATION when all active checks pass', async () => {
@@ -261,10 +280,10 @@ describe('BAD', () => {
       verificationCandidates: [
         ...(state!.verificationCandidates ?? []),
         {
-          kind: 'security',
+          kind: 'security' as const,
           command: 'npm audit',
           source: 'manual',
-          confidence: 'low',
+          confidence: 'low' as const,
           reason: 'manual',
         },
       ],
@@ -292,7 +311,9 @@ describe('BAD', () => {
       },
     });
 
-    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    const result = parseToolResult<RunCheckResult>(
+      await run_check.execute({ kind: 'typecheck' }, ctx),
+    );
     expect(result.error).toBe(true);
     expect(result.code).toBe('VALIDATION_EVIDENCE_UNVERIFIED');
   });
@@ -350,8 +371,10 @@ describe('CORNER', () => {
 
     const finalState = await readState(sd);
     expect(finalState!.validation.length).toBe(1); // Replaced, not appended
-    expect(finalState!.validation[0].passed).toBe(true);
-    expect(finalState!.validation[0].outputDigest).toBe('a'.repeat(64));
+    const [validation] = finalState!.validation;
+    expect(validation).toBeDefined();
+    expect(validation!.passed).toBe(true);
+    expect(validation!.outputDigest).toBe('a'.repeat(64));
   });
 
   it('records failed check without advancing phase', async () => {
@@ -370,7 +393,9 @@ describe('CORNER', () => {
       startedAt: '2026-01-01T00:00:00.000Z',
     });
 
-    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    const result = parseToolResult<RunCheckResult>(
+      await run_check.execute({ kind: 'typecheck' }, ctx),
+    );
     expect(result.evidence.passed).toBe(false);
     expect(result.evidence.exitCode).toBe(1);
     expect(result.derivedRepairGuidance).toBeDefined();
@@ -390,7 +415,9 @@ describe('CORNER', () => {
     // Phase goes to PLAN on failure (CHECK_FAILED transition)
     expect(state!.phase).toBe('PLAN');
     // Derived repair guidance is persisted
-    expect(state!.validation[0].derivedRepairGuidance).toBeDefined();
+    const [validation] = state!.validation;
+    expect(validation).toBeDefined();
+    expect(validation!.derivedRepairGuidance).toBeDefined();
   });
 });
 
@@ -413,7 +440,9 @@ describe('EDGE', () => {
       startedAt: '2026-01-01T00:00:00.000Z',
     });
 
-    const result = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    const result = parseToolResult<RunCheckResult>(
+      await run_check.execute({ kind: 'typecheck' }, ctx),
+    );
     expect(result.evidence.timedOut).toBe(true);
     expect(result.evidence.exitCode).toBe(124);
     expect(result.status).toContain('timed out');
@@ -442,7 +471,9 @@ describe('EDGE', () => {
       startedAt: '2026-01-01T00:00:00.000Z',
     });
 
-    const result1 = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    const result1 = parseToolResult<RunCheckResult>(
+      await run_check.execute({ kind: 'typecheck' }, ctx),
+    );
     expect(result1.evidence.passed).toBe(false);
     expect(result1.evidence.exitCode).toBe(1);
     expect(result1.evidence.timedOut).toBe(false);

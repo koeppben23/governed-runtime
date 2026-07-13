@@ -276,6 +276,22 @@ async function fulfillReview(
   });
 }
 
+function implementationReview(result: Record<string, unknown>): {
+  reviewMode: string;
+  iteration: number;
+} {
+  const review = result.latestImplementationReview;
+  if (
+    review === null ||
+    typeof review !== 'object' ||
+    typeof (review as Record<string, unknown>).reviewMode !== 'string' ||
+    typeof (review as Record<string, unknown>).iteration !== 'number'
+  ) {
+    throw new TypeError('Expected latestImplementationReview summary');
+  }
+  return review as { reviewMode: string; iteration: number };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Tool: implement
 // ═══════════════════════════════════════════════════════════════════════════
@@ -495,8 +511,9 @@ describe('implement', () => {
       const sessDir = await currentSessionDir();
       const state = await readState(sessDir);
       // Simulate a legacy session: strip any captured baseline.
-      const { implementationBaseline: _drop, ...withoutBaseline } = state!;
-      await writeState(sessDir, withoutBaseline as typeof state);
+      if (!state) throw new TypeError('Expected persisted session state');
+      const { implementationBaseline: _drop, ...withoutBaseline } = state;
+      await writeState(sessDir, withoutBaseline);
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce([
         'src/main/Service.java',
         'stale/preexisting.txt',
@@ -643,7 +660,7 @@ describe('implement', () => {
         ...state!,
         policySnapshot: {
           ...state!.policySnapshot,
-          selfReview: { subagentEnabled, fallbackToSelf },
+          selfReview: { subagentEnabled, fallbackToSelf, strictEnforcement: false },
         },
       });
     }
@@ -662,7 +679,7 @@ describe('implement', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.latestImplementationReview.reviewMode).toBe('subagent');
+      expect(implementationReview(result).reviewMode).toBe('subagent');
     });
 
     it('reviewMode=self blocked by mandatory default in Mode B', async () => {
@@ -719,7 +736,7 @@ describe('implement', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.latestImplementationReview).toBeTruthy();
-      expect(result.latestImplementationReview.reviewMode).toBe('subagent');
+      expect(implementationReview(result).reviewMode).toBe('subagent');
     });
 
     it('subagentEnabled=true + fallbackToSelf=true + reviewMode=self -> BLOCKED in Mode B', async () => {
@@ -933,7 +950,7 @@ describe('implement', () => {
       expect(result.error).toBeUndefined();
       expect(result.implReviewIteration).toBeGreaterThanOrEqual(1);
       expect(result.latestImplementationReview).toBeTruthy();
-      expect(result.latestImplementationReview.reviewMode).toBe('subagent');
+      expect(implementationReview(result).reviewMode).toBe('subagent');
     });
 
     it('blocks tampered implementation review findings that do not match evidence', async () => {
@@ -968,8 +985,10 @@ describe('implement', () => {
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
 
+      expect(state).not.toBeNull();
+      if (!state) throw new TypeError('Expected persisted session state');
       expect(state.implReviewFindings).toHaveLength(1);
-      expect(state.implReviewFindings?.[0].reviewMode).toBe('subagent');
+      expect(state.implReviewFindings?.[0]?.reviewMode).toBe('subagent');
     });
 
     it('latestImplementationReview appears in status', async () => {
@@ -982,8 +1001,8 @@ describe('implement', () => {
       const result = parseToolResult(raw);
 
       expect(result.latestImplementationReview).toBeDefined();
-      expect(result.latestImplementationReview.reviewMode).toBe('subagent');
-      expect(result.latestImplementationReview.iteration).toBe(1);
+      expect(implementationReview(result).reviewMode).toBe('subagent');
+      expect(implementationReview(result).iteration).toBe(1);
     });
 
     // ─── P1.3 slice 8: third-verdict end-to-end through tool layer ──────

@@ -570,7 +570,7 @@ describe('verifyArchive', () => {
   async function createArchivedSessionWithAudit(opts: {
     sessionId?: string;
     policyMode?: string;
-    auditEvents?: Array<Record<string, unknown>>;
+    auditEvents?: Array<object>;
   }) {
     const snapshot = policyModeToSnapshot(opts.policyMode ?? 'team');
     const { fingerprint, sessionId, sessDir, archivePath } = await createArchivedSession(

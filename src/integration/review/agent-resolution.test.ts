@@ -9,7 +9,12 @@ import {
   REVIEWER_AGENT_FALLBACK,
   REVIEWER_SYSTEM_DIRECTIVE,
 } from './agent-resolution.js';
-import { invokeReviewer } from './orchestrator.js';
+import {
+  invokeReviewer,
+  type OrchestratorClient,
+  type ReviewerResult,
+  type ReviewerSuccessResult,
+} from './orchestrator.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import {
   makeClient,
@@ -18,6 +23,12 @@ import {
   validFindings,
   PROMPT,
 } from './orchestrator-test-helpers.js';
+
+function expectSuccessfulResult(result: ReviewerResult | null): ReviewerSuccessResult {
+  expect(result).not.toBeNull();
+  if (!result || result.blocked) throw new TypeError('Expected reviewer invocation to succeed');
+  return result;
+}
 
 describe('Agent Resolution Constants', () => {
   it('REVIEWER_AGENT_PRIMARY equals REVIEWER_SUBAGENT_TYPE', () => {
@@ -252,9 +263,9 @@ describe('invokeReviewer — retry session behavior', () => {
         _onAttemptFailed: () => {},
       });
 
-      expect(result).not.toBeNull();
+      const success = expectSuccessfulResult(result);
       // Result comes from the RETRY session
-      expect(result!.sessionId).toBe('retry-session');
+      expect(success.sessionId).toBe('retry-session');
       // Create called twice: original + retry
       expect(client.session.create).toHaveBeenCalledTimes(2);
       // First prompt on original, second on retry

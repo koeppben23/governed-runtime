@@ -34,6 +34,7 @@ import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_REVIEW } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
+import type { OrchestratorClient } from './review/types.js';
 
 const PARENT_SESSION_ID = 'parent-session-review-1';
 const CHILD_SESSION_ID = 'child-session-review-1';
@@ -80,8 +81,9 @@ function buildFindings(overrides: Record<string, unknown> = {}): Record<string, 
   };
 }
 
-function buildClient(findings: Record<string, unknown> | null) {
+function buildClient(findings: Record<string, unknown> | null): OrchestratorClient {
   return {
+    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
       prompt: vi
@@ -95,8 +97,9 @@ function buildClient(findings: Record<string, unknown> | null) {
   };
 }
 
-function buildTextCompatClient(findings: Record<string, unknown>) {
+function buildTextCompatClient(findings: Record<string, unknown>): OrchestratorClient {
   return {
+    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
       prompt: vi
@@ -120,7 +123,7 @@ function buildSessionState(
   strictEnforcement = true,
   reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
   reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
-  seedInvocations: Array<Record<string, unknown>> = [],
+  seedInvocations: NonNullable<SessionState['reviewAssurance']>['invocations'] = [],
 ) {
   return makeState('REVIEW', {
     ticket: {
@@ -163,7 +166,7 @@ function buildSessionState(
 }
 
 function buildDeps(
-  client: unknown,
+  client: OrchestratorClient,
   stateRef: { current: SessionState },
 ): {
   deps: OrchestratorDeps;
@@ -210,12 +213,11 @@ async function runReviewContent(
   input: unknown = { args: { text: 'diff content', inputOrigin: 'manual_text' } },
   strictEnforcement = true,
   reviewOutputPolicy: 'structured_required' | 'text_compat_allowed' = 'structured_required',
-  clientOverride?: unknown,
+  clientOverride?: OrchestratorClient,
   reviewInvocationPolicy?: 'host_task_required' | 'host_task_preferred' | 'sdk_allowed',
-  seedInvocations: Array<Record<string, unknown>> = [],
+  seedInvocations: NonNullable<SessionState['reviewAssurance']>['invocations'] = [],
 ) {
-  const client = (clientOverride ?? buildClient(findings)) as
-    ReturnType<typeof buildClient> | ReturnType<typeof buildTextCompatClient>;
+  const client = clientOverride ?? buildClient(findings);
   const stateRef = {
     current: buildSessionState(
       strictEnforcement,
@@ -548,10 +550,23 @@ describe('runReviewOrchestration strict /review content analysis', () => {
           invocationId: 'prior-invocation-1',
           obligationId: 'prior-obligation-1',
           obligationType: 'review',
+          parentSessionId: PARENT_SESSION_ID,
           childSessionId: CHILD_SESSION_ID,
+          agentType: 'flowguard-reviewer',
+          invocationMode: 'sdk_session_prompt',
+          hostVisible: false,
+          promptHash: 'prior-prompt-hash',
           findingsHash: 'prior-findings-hash',
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+          invokedAt: NOW,
+          fulfilledAt: NOW,
           source: 'host-orchestrated',
           consumedByObligationId: null,
+          reviewOutputMode: 'structured_output',
+          structuredOutputUsed: true,
+          reviewAssuranceLevel: 'structured_high',
+          capturedVerdict: 'accept',
         },
       ],
     );

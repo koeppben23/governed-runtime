@@ -29,6 +29,7 @@ import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
+import type { OrchestratorClient } from './review/types.js';
 
 const PARENT_SESSION_ID = 'parent-session-ssot-1';
 const CHILD_SESSION_ID = 'child-session-ssot-1';
@@ -115,10 +116,14 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
  * Build a mock client that captures the prompt text passed to session.prompt.
  * Returns the captured prompt for assertion.
  */
-function buildCapturingClient(findings: Record<string, unknown>) {
+function buildCapturingClient(findings: Record<string, unknown>): {
+  client: OrchestratorClient;
+  capturedPrompts: string[];
+} {
   const capturedPrompts: string[] = [];
   return {
     client: {
+      app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
       session: {
         create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
         prompt: vi
@@ -138,7 +143,7 @@ function buildCapturingClient(findings: Record<string, unknown>) {
 }
 
 function buildDeps(
-  client: unknown,
+  client: OrchestratorClient,
   stateRef: { current: SessionState },
 ): { deps: OrchestratorDeps; logInfo: ReturnType<typeof vi.fn> } {
   const logInfo = vi.fn();

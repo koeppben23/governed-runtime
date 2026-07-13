@@ -27,6 +27,8 @@ import {
 } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
+import type { OrchestratorClient } from './review/types.js';
+import type { PendingReviewTool } from './review/enforcement/types.js';
 
 const PARENT_SESSION_ID = 'parent-session-review-1';
 const CHILD_SESSION_ID = 'child-session-review-1';
@@ -35,7 +37,7 @@ const SESS_DIR = '/tmp/fg-independent-review-sess-dir';
 const NOW = '2026-05-06T12:00:00.000Z';
 
 type ReviewableCase = {
-  toolName: string;
+  toolName: PendingReviewTool;
   obligationType: 'plan' | 'implement' | 'architecture';
   phase: 'PLAN' | 'IMPLEMENTATION' | 'ARCHITECTURE';
   input: unknown;
@@ -79,8 +81,9 @@ function buildFindings() {
   };
 }
 
-function buildClient(findings: Record<string, unknown>) {
+function buildClient(findings: Record<string, unknown>): OrchestratorClient {
   return {
+    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
       prompt: vi
@@ -90,8 +93,9 @@ function buildClient(findings: Record<string, unknown>) {
   };
 }
 
-function buildTextCompatClient(findings: Record<string, unknown>) {
+function buildTextCompatClient(findings: Record<string, unknown>): OrchestratorClient {
   return {
+    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
       prompt: vi
@@ -163,7 +167,10 @@ function buildState(
   });
 }
 
-function buildDeps(client: unknown, stateRef: { current: SessionState }): OrchestratorDeps {
+function buildDeps(
+  client: OrchestratorClient,
+  stateRef: { current: SessionState },
+): OrchestratorDeps {
   const pendingReviews = new Map(
     [TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT, TOOL_FLOWGUARD_ARCHITECTURE].map((tool) => [
       tool,

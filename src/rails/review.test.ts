@@ -9,12 +9,15 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  executeReview,
+  executeReview as executeReviewUnsafe,
   executeReviewFlow,
   startReviewFlow,
   type ReviewExecutors,
   type ReviewReferenceInput,
 } from './review.js';
+import type { ReviewReport, ValidationResult } from '../state/evidence.js';
+import type { RailBlocked } from './types.js';
+import type { SessionState } from '../state/schema.js';
 import {
   makeState,
   makeProgressedState,
@@ -30,6 +33,33 @@ import { createTestContext } from '../testing.js';
 const NOW = '2026-01-15T10:00:00.000Z';
 
 const noopExecutors: ReviewExecutors = {};
+
+function isBlockedReview(result: ReviewReport | RailBlocked): result is RailBlocked {
+  return 'kind' in result && result.kind === 'blocked';
+}
+
+async function executeReview(
+  ...args: Parameters<typeof executeReviewUnsafe>
+): Promise<ReviewReport> {
+  const result = await executeReviewUnsafe(...args);
+  if (isBlockedReview(result)) throw new Error(`Expected review report, received ${result.code}`);
+  return result;
+}
+
+function validationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
+  return {
+    checkId,
+    passed,
+    detail,
+    executedAt: FIXED_TIME,
+    kind: 'test',
+    command: 'npm test',
+    exitCode: passed ? 0 : 1,
+    executionMs: 1,
+    outputDigest: 'a'.repeat(64),
+    timedOut: false,
+  };
+}
 
 // =============================================================================
 // /review rail
@@ -512,9 +542,9 @@ describe('review rail', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          { checkId: 'check_a', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-          { checkId: 'check_b', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-          { checkId: 'check_c', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('check_a', false, 'fail'),
+          validationResult('check_b', false, 'fail'),
+          validationResult('check_c', true, 'ok'),
         ],
       });
       const report = await executeReview(state, NOW);
@@ -528,8 +558,8 @@ describe('review rail', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          { checkId: 'failing_one', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-          { checkId: 'passing_one', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('failing_one', false, 'fail'),
+          validationResult('passing_one', true, 'ok'),
         ],
       });
       const report = await executeReview(state, NOW);
@@ -625,15 +655,15 @@ describe('review rail', () => {
 
     it('four-eyes required + NOT satisfied (same person) → error', async () => {
       const state = makeProgressedState('COMPLETE');
-      const stateViolated = {
+      const stateViolated: SessionState = {
         ...state,
         policySnapshot: { ...state.policySnapshot, allowSelfApproval: false },
         initiatedBy: 'same-person',
         initiatedByIdentity: {
           actorId: 'same-person',
           actorEmail: null,
-          actorSource: 'claim',
-          actorAssurance: 'claim_validated',
+          actorSource: 'claim' as const,
+          actorAssurance: 'claim_validated' as const,
         },
         reviewDecision: {
           ...state.reviewDecision!,
@@ -641,8 +671,8 @@ describe('review rail', () => {
           decisionIdentity: {
             actorId: 'same-person',
             actorEmail: null,
-            actorSource: 'claim',
-            actorAssurance: 'claim_validated',
+            actorSource: 'claim' as const,
+            actorAssurance: 'claim_validated' as const,
           },
         },
       };

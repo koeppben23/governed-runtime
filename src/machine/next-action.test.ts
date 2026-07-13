@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { resolveNextAction, ACTION_CODES } from './next-action.js';
 import type { NextAction } from './next-action.js';
+import type { DiscoverySummary } from '../state/discovery-schemas.js';
 import {
   makeState,
   makeProgressedState,
@@ -19,7 +20,11 @@ import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Assert NextAction shape. */
-function expectAction(action: NextAction, code: string, commands: readonly string[]): void {
+function expectAction(
+  action: NextAction,
+  code: NextAction['code'],
+  commands: readonly string[],
+): void {
   expect(action.code).toBe(code);
   expect(action.commands).toEqual(commands);
   expect(action.text.length).toBeGreaterThan(0);
@@ -103,16 +108,20 @@ describe('resolveNextAction', () => {
           discoveryHealth: { enforcement: 'required', onDegraded: 'block', onDrift: 'block' },
         },
         discoverySummary: {
-          lastRun: '2026-01-01T00:00:00.000Z',
-          repoRoot: '/tmp',
-          stackId: 'node',
-          profileId: 'baseline',
-        },
-        discoveryDigest: { totalFiles: 0, checksumsExist: false, profileVersion: 1 },
+          primaryLanguages: ['TypeScript'],
+          frameworks: [],
+          topologyKind: 'single-project',
+          moduleCount: 1,
+          hasApiSurface: false,
+          hasPersistenceSurface: false,
+          hasCiCd: true,
+          hasSecuritySurface: false,
+        } satisfies DiscoverySummary,
+        discoveryDigest: 'a'.repeat(64),
         discoveryHealthGate: {
           status: 'clear',
           lastDriftAssessment: 'clean',
-          lastCheckedAt: '2026-01-01T00:00:00.000Z',
+          clearedAt: '2026-01-01T00:00:00.000Z',
         },
       });
       const action = resolveNextAction('VALIDATION', state);
@@ -233,7 +242,7 @@ describe('resolveNextAction', () => {
     });
 
     it('code is always a known ACTION_CODE for every phase', () => {
-      const knownCodes = new Set(Object.values(ACTION_CODES));
+      const knownCodes = new Set<NextAction['code']>(Object.values(ACTION_CODES));
       for (const phase of Phase.options) {
         const state = makeProgressedState(phase);
         const action = resolveNextAction(phase, state);

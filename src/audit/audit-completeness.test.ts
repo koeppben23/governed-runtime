@@ -2,6 +2,23 @@ import { describe, it, expect } from 'vitest';
 import { evaluateCompleteness } from './completeness.js';
 import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import type { ValidationResult } from '../state/evidence.js';
+
+function validationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
+  return {
+    checkId,
+    passed,
+    detail,
+    executedAt: FIXED_TIME,
+    kind: 'test',
+    command: 'npm test',
+    exitCode: passed ? 0 : 1,
+    executionMs: 1,
+    outputDigest: 'a'.repeat(64),
+    timedOut: false,
+  };
+}
+
 describe('audit completeness', () => {
   // ─── HAPPY ──────────────────────────────────────────────────
   describe('HAPPY', () => {
@@ -69,13 +86,8 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          {
-            checkId: 'test_quality',
-            passed: false,
-            detail: 'Missing tests',
-            executedAt: FIXED_TIME,
-          },
-          { checkId: 'rollback_safety', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('test_quality', false, 'Missing tests'),
+          validationResult('rollback_safety', true, 'ok'),
         ],
       });
       const report = evaluateCompleteness(state);
@@ -388,7 +400,11 @@ describe('audit completeness', () => {
 
     it('all phases of ticket flow have correct slot requirements', () => {
       // Test each phase of the ticket flow and verify required slot counts
-      const phases: Array<{ phase: string; expectedRequired: number; expectedTotal: number }> = [
+      const phases: Array<{
+        phase: import('../state/schema.js').Phase;
+        expectedRequired: number;
+        expectedTotal: number;
+      }> = [
         { phase: 'READY', expectedRequired: 0, expectedTotal: 8 },
         { phase: 'TICKET', expectedRequired: 1, expectedTotal: 8 }, // ticket
         { phase: 'PLAN', expectedRequired: 2, expectedTotal: 8 }, // ticket, plan
@@ -434,13 +450,8 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          {
-            checkId: 'test_quality',
-            passed: false,
-            detail: 'Missing tests',
-            executedAt: FIXED_TIME,
-          },
-          { checkId: 'rollback_safety', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('test_quality', false, 'Missing tests'),
+          validationResult('rollback_safety', true, 'ok'),
         ],
       });
       const report = evaluateCompleteness(state);
@@ -483,7 +494,7 @@ describe('audit completeness', () => {
           prevDigest: null,
           currDigest: 'abc',
           revisionDelta: 'none',
-          verdict: 'approve',
+          verdict: 'changes_requested',
         },
       });
       const report = evaluateCompleteness(state);
@@ -521,8 +532,8 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          { checkId: 'sec_scan', passed: false, detail: 'vuln', executedAt: FIXED_TIME },
-          { checkId: 'test_quality', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('sec_scan', false, 'vuln'),
+          validationResult('test_quality', true, 'ok'),
         ],
       });
       const report = evaluateCompleteness(state);
@@ -583,9 +594,9 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          { checkId: 'chk_alpha', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-          { checkId: 'chk_beta', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-          { checkId: 'chk_gamma', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('chk_alpha', false, 'fail'),
+          validationResult('chk_beta', false, 'fail'),
+          validationResult('chk_gamma', true, 'ok'),
         ],
       });
       const report = evaluateCompleteness(state);
@@ -657,9 +668,7 @@ describe('audit completeness', () => {
     it('validation: empty activeChecks means NOT present even with validation results', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
-        validation: [
-          { checkId: 'test_quality', passed: true, detail: 'ok', executedAt: FIXED_TIME },
-        ],
+        validation: [validationResult('test_quality', true, 'ok')],
         activeChecks: [],
       });
       const report = evaluateCompleteness(state);
@@ -671,8 +680,8 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          { checkId: 'test_quality', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-          { checkId: 'rollback_safety', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('test_quality', false, 'fail'),
+          validationResult('rollback_safety', true, 'ok'),
         ],
         activeChecks: ['test_quality', 'rollback_safety'],
       });
@@ -684,9 +693,7 @@ describe('audit completeness', () => {
     it('validation: non-matching checkId → NOT present', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
-        validation: [
-          { checkId: 'other_check', passed: true, detail: 'ok', executedAt: FIXED_TIME },
-        ],
+        validation: [validationResult('other_check', true, 'ok')],
         activeChecks: ['test_quality'],
       });
       const report = evaluateCompleteness(state);
@@ -698,8 +705,8 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          { checkId: 'test_quality', passed: true, detail: 'ok', executedAt: FIXED_TIME },
-          { checkId: 'rollback_safety', passed: true, detail: 'ok', executedAt: FIXED_TIME },
+          validationResult('test_quality', true, 'ok'),
+          validationResult('rollback_safety', true, 'ok'),
         ],
         activeChecks: ['test_quality', 'rollback_safety'],
       });
@@ -739,9 +746,7 @@ describe('audit completeness', () => {
     it('isSlotFailed: validation with some failed → failed status', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
-        validation: [
-          { checkId: 'test_quality', passed: false, detail: 'fail', executedAt: FIXED_TIME },
-        ],
+        validation: [validationResult('test_quality', false, 'fail')],
         activeChecks: ['test_quality', 'rollback_safety'],
       });
       const report = evaluateCompleteness(state);
@@ -781,8 +786,9 @@ describe('audit completeness', () => {
         ...makeProgressedState('IMPLEMENTATION'),
         implementation: {
           changedFiles: ['a.ts', 'b.ts'],
+          domainFiles: ['a.ts', 'b.ts'],
           digest: longDigest,
-          createdAt: FIXED_TIME,
+          executedAt: FIXED_TIME,
         },
       });
       const report = evaluateCompleteness(state);
@@ -806,13 +812,8 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         validation: [
-          {
-            checkId: 'test_quality',
-            passed: false,
-            detail: 'Missing tests',
-            executedAt: FIXED_TIME,
-          },
-          { checkId: 'rollback_safety', passed: true, detail: 'OK', executedAt: FIXED_TIME },
+          validationResult('test_quality', false, 'Missing tests'),
+          validationResult('rollback_safety', true, 'OK'),
         ],
         activeChecks: ['test_quality', 'rollback_safety'],
       });

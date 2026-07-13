@@ -104,7 +104,15 @@ describe('nextImplementationReviewIteration', () => {
 
   it('returns max(findings iteration) + 1 when findings exceed implReview', () => {
     const s = state('IMPL_REVIEW', {
-      implReview: { iteration: 1 },
+      implReview: {
+        iteration: 1,
+        maxIterations: 5,
+        prevDigest: null,
+        currDigest: 'digest-impl',
+        revisionDelta: 'minor',
+        verdict: 'changes_requested',
+        executedAt: '2026-01-01T00:00:00.000Z',
+      },
       implReviewFindings: [
         { iteration: 5 } as unknown as SessionState['implReviewFindings'] extends Array<infer T>
           ? T

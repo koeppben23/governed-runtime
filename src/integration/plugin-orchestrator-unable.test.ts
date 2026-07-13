@@ -45,6 +45,7 @@ import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import { REVIEW_REQUIRED_PREFIX } from './review/enforcement/types.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { POLICY_SNAPSHOT, makeState } from '../fixtures.js';
+import type { OrchestratorClient } from './review/types.js';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────────
 
@@ -96,8 +97,9 @@ function findingsWithVerdict(verdict: 'approve' | 'unable_to_review'): string {
 }
 
 /** Mock OpenCode SDK client with a configurable findings payload. */
-function buildMockClient(findingsJson: string) {
+function buildMockClient(findingsJson: string): OrchestratorClient {
   return {
+    app: { agents: vi.fn().mockResolvedValue({ data: [] }) },
     session: {
       create: vi.fn().mockResolvedValue({ data: { id: CHILD_SESSION_ID }, error: undefined }),
       prompt: vi.fn().mockResolvedValue({
@@ -112,7 +114,7 @@ function buildMockClient(findingsJson: string) {
 }
 
 /** Build a minimal OrchestratorDeps with spies. */
-function buildDeps(client: unknown): {
+function buildDeps(client: OrchestratorClient): {
   deps: OrchestratorDeps;
   blockReviewOutcome: ReturnType<typeof vi.fn>;
   updateReviewAssurance: ReturnType<typeof vi.fn>;
@@ -162,11 +164,10 @@ function buildSessionState() {
       },
     },
     plan: {
-      version: 1,
       current: {
         body: 'plan body for review',
         digest: 'plan-digest-1',
-        version: 1,
+        sections: ['Plan'],
         createdAt: '2026-04-24T12:00:00.000Z',
       },
       history: [],
@@ -178,7 +179,7 @@ function buildSessionState() {
       source: 'user' as const,
       inputOrigin: 'manual_text' as const,
     },
-  } as Parameters<typeof makeState>[1]);
+  });
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────

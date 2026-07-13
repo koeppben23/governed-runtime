@@ -4,11 +4,21 @@ import {
   REVIEWER_AGENT_PRIMARY,
   REVIEWER_SYSTEM_DIRECTIVE,
 } from './agent-resolution.js';
-import { invokeReviewer } from './orchestrator.js';
+import { invokeReviewer, type ReviewerSuccessResult } from './orchestrator.js';
 import { buildPlanReviewPrompt } from './prompt-builders.js';
 import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import { validFindings, NO_SLEEP, makeClient, PROMPT } from './orchestrator-test-helpers.js';
+
+function expectReviewerSuccess(
+  result: Awaited<ReturnType<typeof invokeReviewer>>,
+): ReviewerSuccessResult {
+  expect(result && !result.blocked).toBe(true);
+  if (!result || result.blocked) throw new Error('Expected reviewer success result');
+  return result;
+}
+
+const DISCOVERY_CONTEXT = {};
 describe('invokeReviewer — agent resolution + extraction', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();
@@ -30,7 +40,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
       );
 
       // Verify NO system directive in primary path
-      const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.body.system).toBeUndefined();
     });
 
@@ -38,9 +48,9 @@ describe('invokeReviewer — agent resolution + extraction', () => {
       const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
 
-      expect(result).not.toBeNull();
-      expect(result!.sessionId).toBe('child-session-1');
-      expect(result!.findings!.overallVerdict).toBe('accept');
+      const successfulResult = expectReviewerSuccess(result);
+      expect(successfulResult.sessionId).toBe('child-session-1');
+      expect(successfulResult.findings?.overallVerdict).toBe('accept');
     });
 
     it('probes only once across multiple invocations', async () => {
@@ -77,7 +87,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
       const client = makeClient({ agentsThrows: true });
       await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
 
-      const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.body.agent).toBe('general');
       expect(call.body.system).toBe(REVIEWER_SYSTEM_DIRECTIVE);
     });
@@ -86,8 +96,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
       const client = makeClient({ agents: [] });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
 
-      expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('accept');
+      expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
     });
   });
 
@@ -191,7 +200,9 @@ describe('invokeReviewer — agent resolution + extraction', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(result!.findings!.reviewedBy).toEqual({ sessionId: 'child-session-1' });
+      expect(expectReviewerSuccess(result).findings?.reviewedBy).toEqual({
+        sessionId: 'child-session-1',
+      });
     });
 
     it('creates reviewedBy if missing', async () => {
@@ -205,7 +216,9 @@ describe('invokeReviewer — agent resolution + extraction', () => {
         },
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
-      expect(result!.findings!.reviewedBy).toEqual({ sessionId: 'child-session-1' });
+      expect(expectReviewerSuccess(result).findings?.reviewedBy).toEqual({
+        sessionId: 'child-session-1',
+      });
     });
   });
 
@@ -221,18 +234,19 @@ describe('invokeReviewer — agent resolution + extraction', () => {
         obligationId: '22222222-2222-4222-8222-222222222222',
         criteriaVersion: 'p37-v1',
         mandateDigest: 'abc123',
+        discoveryContext: DISCOVERY_CONTEXT,
       });
 
       const client = makeClient({ agents: [{ id: 'flowguard-reviewer' }] });
       const result = await invokeReviewer(client, realPrompt, 'sess-e2e', { _sleepFn: NO_SLEEP });
 
-      expect(result).not.toBeNull();
-      expect(result!.sessionId).toBe('child-session-1');
-      expect(result!.rawResponse).toBeTruthy();
-      expect(JSON.parse(result!.rawResponse)).toHaveProperty('overallVerdict');
+      const successfulResult = expectReviewerSuccess(result);
+      expect(successfulResult.sessionId).toBe('child-session-1');
+      expect(successfulResult.rawResponse).toBeTruthy();
+      expect(JSON.parse(successfulResult.rawResponse)).toHaveProperty('overallVerdict');
 
       // Primary path: no system directive
-      const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(call.body.agent).toBe('flowguard-reviewer');
       expect(call.body.system).toBeUndefined();
     });
@@ -246,15 +260,15 @@ describe('invokeReviewer — agent resolution + extraction', () => {
         obligationId: '33333333-3333-4333-8333-333333333333',
         criteriaVersion: 'p37-v1',
         mandateDigest: 'def456',
+        discoveryContext: DISCOVERY_CONTEXT,
       });
 
       const client = makeClient({ agents: [] }); // forces fallback
       const result = await invokeReviewer(client, realPrompt, 'sess-e2e-2', { _sleepFn: NO_SLEEP });
 
-      expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('accept');
+      expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
 
-      const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
+      const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
       expect(call.body.agent).toBe('general');
       expect(call.body.system).toBe(REVIEWER_SYSTEM_DIRECTIVE);
     });
@@ -307,7 +321,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
 
       const calls = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls;
       for (const call of calls) {
-        expect(call[0].body).not.toHaveProperty('system');
+        expect(call[0]?.body).not.toHaveProperty('system');
       }
     });
 
@@ -317,7 +331,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
 
       const calls = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls;
       for (const call of calls) {
-        expect(call[0].body.system).toBe(REVIEWER_SYSTEM_DIRECTIVE);
+        expect(call[0]?.body.system).toBe(REVIEWER_SYSTEM_DIRECTIVE);
       }
     });
 
@@ -332,7 +346,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
       await invokeReviewer(client2, PROMPT, 'p2', { _sleepFn: NO_SLEEP });
 
       for (const client of [client1, client2]) {
-        const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
+        const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0];
         expect(call.body.format).toEqual({
           type: 'json_schema',
           schema: REVIEW_FINDINGS_JSON_SCHEMA,
@@ -365,8 +379,8 @@ describe('invokeReviewer — agent resolution + extraction', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
       expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('accept');
-      expect(result!.findings!.reviewMode).toBe('subagent');
+      expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
+      expect(expectReviewerSuccess(result).findings?.reviewMode).toBe('subagent');
     });
 
     it('reads findings from info.structured (server alias fallback)', async () => {
@@ -383,7 +397,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
       });
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
       expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('accept');
+      expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
     });
 
     it('prefers info.structured_output over info.structured when both present', async () => {
@@ -402,7 +416,7 @@ describe('invokeReviewer — agent resolution + extraction', () => {
       const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
       expect(result).not.toBeNull();
       // Must use the canonical docs field (structured_output), not the server alias
-      expect(result!.findings!.overallVerdict).toBe('accept');
+      expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
     });
 
     it('returns null when both structured and structured_output are absent (fail-closed)', async () => {

@@ -13,11 +13,12 @@ import { executeValidate, type ValidateExecutors } from './validate.js';
 import { makeState, FIXED_TIME, TICKET } from '../fixtures.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord, ValidationResult } from '../state/evidence.js';
+import { TEAM_POLICY } from '../config/policy.js';
 
 const ctx: RailContext = {
   now: () => FIXED_TIME,
   digest: (s: string) => `sha256:${s.length}`,
-  policy: {},
+  policy: TEAM_POLICY,
 };
 
 function planWith(body: string): PlanRecord {
@@ -61,9 +62,10 @@ function validationState(overrides?: Record<string, unknown>) {
     plan: planWith('## Plan\nTest'),
     reviewDecision: {
       verdict: 'approve',
+      rationale: 'approved',
       decidedBy: 'r1',
       decidedAt: FIXED_TIME,
-      decidedByIdentity: {
+      decisionIdentity: {
         actorId: 'r1',
         actorEmail: 'r@t.com',
         actorSource: 'env' as const,
@@ -76,7 +78,7 @@ function validationState(overrides?: Record<string, unknown>) {
       prevDigest: null,
       currDigest: 'd1',
       revisionDelta: 'none' as const,
-      verdict: 'converged' as const,
+      verdict: 'accept' as const,
     },
     ...overrides,
   });

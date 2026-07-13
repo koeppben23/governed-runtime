@@ -26,7 +26,7 @@ function makeResponse(status = PKIStatus.granted): ArrayBuffer {
 describe('HttpTimestampAuthorityProvider', () => {
   it('posts RFC3161 TimeStampReq and returns TimeStampToken DER base64', async () => {
     let requestBody: ArrayBuffer | undefined;
-    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+    const fetchImpl = vi.fn<typeof fetch>(async (_url, init) => {
       requestBody = init?.body as ArrayBuffer;
       return new Response(makeResponse(), { status: 200 });
     });
