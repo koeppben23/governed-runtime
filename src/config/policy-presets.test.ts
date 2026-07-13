@@ -450,6 +450,7 @@ describe('config/policy', () => {
           audience: ['flowguard'],
           claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
           jwksPath: '/etc/flowguard/jwks.json',
+          cacheTtlSeconds: 300,
         },
         configIdentityProviderMode: 'required',
       });
@@ -460,6 +461,7 @@ describe('config/policy', () => {
         audience: ['flowguard'],
         claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
         jwksPath: '/etc/flowguard/jwks.json',
+        cacheTtlSeconds: 300,
       });
       expect(result.policy.identityProviderMode).toBe('required');
     });
@@ -489,6 +491,7 @@ describe('config/policy', () => {
           audience: ['flowguard'],
           claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
           jwksPath: '/etc/flowguard/jwks.json',
+          cacheTtlSeconds: 300,
         },
         identityProviderMode: 'required' as const,
       };

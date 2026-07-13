@@ -31,9 +31,9 @@ describe('rails/auto-advance-overflow', () => {
   });
 
   it('FAIL-CLOSED: the blocked result carries no advanced state or evalResult', () => {
-    const result = blockedFromOverflow(overflow) as Record<string, unknown>;
-    expect(result.state).toBeUndefined();
-    expect(result.evalResult).toBeUndefined();
+    const result = blockedFromOverflow(overflow);
+    expect('state' in result).toBe(false);
+    expect('evalResult' in result).toBe(false);
   });
 
   it('interpolates phase and limit into the human-readable reason', () => {

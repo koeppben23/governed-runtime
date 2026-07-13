@@ -512,7 +512,7 @@ describe('persistence', () => {
       delete stripped.prevHash;
       delete stripped.timestampEvidence;
       delete stripped.canonicalEventDigest;
-      const bodyWithOldPrev = {
+      const bodyWithOldPrev: Record<string, unknown> = {
         ...stripped,
         prevHash: 'old-prev-hash-64-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
       };

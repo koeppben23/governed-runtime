@@ -4,12 +4,26 @@ import type { AuditContext } from './plugin-audit-context.js';
 import type { SessionState } from '../state/schema.js';
 
 const baseCtx: AuditContext = {
-  sessionId: 'ses_test',
+  sessDir: '/tmp/ses_test',
+  emitToolCalls: true,
+  emitTransitions: true,
+  enableChainHash: true,
+  actor: 'system',
+  now: '2026-01-01T00:00:00.000Z',
+  prevHash: 'genesis',
   phase: 'READY',
-  previousPhase: 'READY',
   transitions: [],
-  metadata: {},
+  success: true,
+  errorMessage: undefined,
   parsed: {},
+  timestampAssurance: {
+    enabled: false,
+    mode: 'local_only',
+    strict: false,
+    criticalEvents: [],
+    ntpDriftThresholdMs: 30000,
+    tsaTimeoutMs: 10000,
+  },
 };
 
 const state = {
@@ -69,7 +83,7 @@ describe('buildLifecycleDetail', () => {
     const detail = buildLifecycleDetail(
       {
         ...baseCtx,
-        transitions: [{ event: 'DONE', from: 'IMPLEMENTATION', to: 'COMPLETE', at: 'now' }],
+        transitions: [{ event: 'APPROVE', from: 'IMPLEMENTATION', to: 'COMPLETE', at: 'now' }],
       },
       'session_completed',
       null,

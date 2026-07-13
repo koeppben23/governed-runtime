@@ -52,7 +52,7 @@ vi.mock('../../audit/integrity.js', () => ({
 }));
 
 const helperMocks = vi.hoisted(() => ({
-  resolveWorkspacePaths: vi.fn(async () => ({})),
+  resolveWorkspacePaths: vi.fn(async () => ({ worktree: '/tmp/test', fingerprint: 'test' })),
   requireStateForMutation: vi.fn(async () => ({ phase: 'COMPLETE' })),
   resolvePolicyFromState: vi.fn(() => ({ maxSelfReviewIterations: 3 })),
   createPolicyContext: vi.fn(() => ({
@@ -64,8 +64,8 @@ const helperMocks = vi.hoisted(() => ({
 
 vi.mock('../tools/helpers.js', () => ({
   writeStateWithArtifacts: vi.fn().mockResolvedValue(undefined),
-  withMutableSession: vi.fn(async (ctx: unknown) => {
-    const paths = await helperMocks.resolveWorkspacePaths(ctx);
+  withMutableSession: vi.fn(async () => {
+    const paths = await helperMocks.resolveWorkspacePaths();
     const state = await helperMocks.requireStateForMutation();
     const policy = helperMocks.resolvePolicyFromState();
     const ctx2 = helperMocks.createPolicyContext();

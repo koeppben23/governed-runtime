@@ -156,7 +156,7 @@ describe('invokeReviewer — error handling', () => {
               error: {
                 name: 'APIError',
                 message: 'deepseek-reasoner does not support this tool_choice',
-                data: { statusCode: 400, isRetryable: false },
+                data: { message: 'HTTP 400', retries: 0 },
               },
             },
           },

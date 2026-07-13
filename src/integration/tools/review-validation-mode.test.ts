@@ -32,7 +32,8 @@ describe('toolCallFlags', () => {
   });
 
   it('treats empty verdict strings and primitive findings as absent', () => {
-    expect(toolCallFlags({ reviewVerdict: '' }).hasVerdict).toBe(false);
+    const invalidVerdict: Record<string, unknown> = { reviewVerdict: '' };
+    expect(toolCallFlags(invalidVerdict).hasVerdict).toBe(false);
     expect(toolCallFlags({ reviewVerdict: 'accept' }).hasVerdict).toBe(true);
     expect(toolCallFlags({ reviewFindings: 'not-object' }).hasFindings).toBe(false);
     expect(toolCallFlags({ reviewFindings: findings }).hasFindings).toBe(true);

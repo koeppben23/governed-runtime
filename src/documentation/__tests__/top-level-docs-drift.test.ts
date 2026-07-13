@@ -44,14 +44,16 @@ function slash(name: string): string {
 
 function extractSlashCommands(content: string): string[] {
   return [
-    ...new Set(Array.from(content.matchAll(/`(\/[a-z][a-z-]*)`/g), (match) => match[1])),
+    ...new Set(Array.from(content.matchAll(/`(\/[a-z][a-z-]*)`/g), (match) => match[1] ?? '')),
   ].sort();
 }
 
 function extractCommandList(content: string, label: RegExp): string[] {
   const match = content.match(label);
   expect(match, `expected command list matching ${label}`).toBeTruthy();
-  return extractSlashCommands(match![1]);
+  const commandList = match?.[1];
+  if (!commandList) throw new TypeError(`missing command list matching ${label}`);
+  return extractSlashCommands(commandList);
 }
 
 function extractProductIdentityCoreCommandTable(): string[] {

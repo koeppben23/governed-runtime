@@ -172,7 +172,7 @@ describe('actor assurance matrix', () => {
         identityProvider: {
           mode: 'static' as const,
           issuer: 'https://issuer.example.com',
-          audience: 'flowguard',
+          audience: ['flowguard'],
           claimMapping: {
             subjectClaim: 'sub',
             emailClaim: 'email',
@@ -201,7 +201,7 @@ describe('actor assurance matrix', () => {
         identityProvider: {
           mode: 'static' as const,
           issuer: 'https://issuer.example.com',
-          audience: 'flowguard',
+          audience: ['flowguard'],
           claimMapping: {
             subjectClaim: 'sub',
             emailClaim: 'email',
@@ -254,7 +254,7 @@ describe('actor assurance matrix', () => {
         identityProvider: {
           mode: 'static' as const,
           issuer,
-          audience,
+          audience: [audience],
           claimMapping: {
             subjectClaim: 'sub',
             emailClaim: 'email',

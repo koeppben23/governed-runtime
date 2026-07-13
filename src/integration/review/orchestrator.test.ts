@@ -24,6 +24,7 @@ import {
   selectReviewerProfileRules,
   type PlanReviewPromptOpts,
   type ImplReviewPromptOpts,
+  type ArchitectureReviewPromptOpts,
 } from './prompt-builders.js';
 import { _resetAgentResolutionCache } from './agent-resolution.js';
 import {
@@ -35,6 +36,7 @@ import {
   REVIEW_COMPLETED_PREFIX,
   type OrchestratorClient,
   type ReviewerSuccessResult,
+  type ReviewerResult,
 } from './orchestrator.js';
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 
@@ -113,6 +115,18 @@ function mockClient(
   };
 }
 
+function expectSuccessfulResult(result: ReviewerResult | null): ReviewerSuccessResult {
+  expect(result).not.toBeNull();
+  if (!result || result.blocked) throw new TypeError('Expected reviewer invocation to succeed');
+  return result;
+}
+
+function assertSuccessfulResult(
+  result: ReviewerResult | null,
+): asserts result is ReviewerSuccessResult {
+  expectSuccessfulResult(result);
+}
+
 /** Build a Mode A tool output with INDEPENDENT_REVIEW_REQUIRED. */
 function modeAOutput(
   opts: {
@@ -160,6 +174,7 @@ describe('buildPlanReviewPrompt', () => {
     obligationId: '11111111-1111-4111-8111-111111111111',
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest',
+    discoveryContext: {},
   };
 
   // HAPPY: produces a prompt containing all required elements
@@ -303,6 +318,7 @@ describe('P9c — profile rule non-leakage', () => {
     obligationId: '11111111-1111-4111-8111-111111111111',
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-digest',
+    discoveryContext: {},
     profileName: 'backend-java',
     profileRules,
   });
@@ -325,6 +341,7 @@ describe('P9c — profile rule non-leakage', () => {
       obligationId: '11111111-1111-4111-8111-111111111111',
       criteriaVersion: 'p37-v1',
       mandateDigest: 'test-digest',
+      discoveryContext: {},
       profileName: 'backend-java',
       profileRules: 'impl-rule-456',
     });
@@ -345,6 +362,7 @@ describe('P9c — profile rule non-leakage', () => {
       mandateDigest: 'test-digest',
       profileName: 'backend-java',
       profileRules: 'arch-rule-abc',
+      discoveryContext: {},
     });
     expect(prompt).toContain('arch-rule-abc');
     expect(prompt).not.toContain('impl-rule-456');
@@ -384,6 +402,7 @@ describe('buildImplReviewPrompt', () => {
     obligationId: '11111111-1111-4111-8111-111111111111',
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest',
+    discoveryContext: {},
   };
 
   // HAPPY: includes all required elements
@@ -482,7 +501,7 @@ describe('buildImplReviewPrompt', () => {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('buildArchitectureReviewPrompt', () => {
-  const baseOpts = {
+  const baseOpts: ArchitectureReviewPromptOpts = {
     adrText: '## Context\nFoo.\n\n## Decision\nBar.\n\n## Consequences\nBaz.',
     adrTitle: 'ADR-001 Use X over Y',
     ticketText: 'Pick X or Y for the auth flow',
@@ -491,6 +510,7 @@ describe('buildArchitectureReviewPrompt', () => {
     obligationId: '11111111-1111-4111-8111-111111111111',
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest',
+    discoveryContext: {},
   };
 
   it('includes ADR title in the section heading', () => {
@@ -591,6 +611,7 @@ describe('invokeReviewer', () => {
     obligationId: '11111111-1111-4111-8111-111111111111',
     criteriaVersion: 'p37-v1',
     mandateDigest: 'test-mandate-digest',
+    discoveryContext: {},
   });
 
   // HAPPY: successful invocation
@@ -599,7 +620,7 @@ describe('invokeReviewer', () => {
     const client = mockClient();
     const result = await invokeReviewer(client, PROMPT, 'parent-session-1');
 
-    expect(result).not.toBeNull();
+    assertSuccessfulResult(result);
     expect(result!.sessionId).toBe('child-session-1');
     expect(result!.findings).not.toBeNull();
     expect(result!.findings!.overallVerdict).toBe('accept');
@@ -728,7 +749,7 @@ describe('invokeReviewer', () => {
       },
     });
     const result = await invokeReviewer(client, PROMPT, 'parent-1');
-    expect(result).not.toBeNull();
+    assertSuccessfulResult(result);
     expect(result!.findings).not.toBeNull();
     expect(result!.reviewOutputMode).toBe('structured_output');
     expect(result!.structuredOutputUsed).toBe(true);
@@ -751,7 +772,7 @@ describe('invokeReviewer', () => {
       },
     });
     const result = await invokeReviewer(client, PROMPT, 'parent-1');
-    expect(result).not.toBeNull();
+    assertSuccessfulResult(result);
     const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
     expect(reviewedBy.sessionId).toBe('child-session-1');
   });
@@ -775,7 +796,7 @@ describe('invokeReviewer', () => {
       },
     });
     const result = await invokeReviewer(client, PROMPT, 'parent-1');
-    expect(result).not.toBeNull();
+    assertSuccessfulResult(result);
     expect(result!.findings).not.toBeNull();
     expect(result!.findings!.overallVerdict).toBe('unable_to_review');
     // Confirm reviewedBy is still authoritatively set; the unreviewable

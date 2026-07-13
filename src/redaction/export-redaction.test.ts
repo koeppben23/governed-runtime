@@ -5,6 +5,18 @@ import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 type ReceiptOutput = { receipts: Array<Record<string, unknown>> };
 type ReportOutput = { findings: Array<Record<string, unknown>> };
 
+function recordArray(output: Record<string, unknown>, key: string): Array<Record<string, unknown>> {
+  const value = output[key];
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'object' && item !== null)) {
+    throw new TypeError(`expected ${key} record array`);
+  }
+  return value as Array<Record<string, unknown>>;
+}
+
+function redactedReceipts(input: Record<string, unknown>, mode: 'basic' | 'strict'): ReceiptOutput {
+  return { receipts: recordArray(redactDecisionReceipts(input, mode), 'receipts') };
+}
+
 describe('redaction/export-redaction', () => {
   // ─── HAPPY ────────────────────────────────────────────────────────────────
 
@@ -16,7 +28,7 @@ describe('redaction/export-redaction', () => {
           { decisionId: 'DEC-001', decidedBy: 'alice', rationale: 'Contains private context' },
         ],
       };
-      const output = redactDecisionReceipts(input, 'basic');
+      const output = redactedReceipts(input, 'basic');
       const receipt = output.receipts[0] as Record<string, unknown>;
       expect(receipt.decidedBy).toBe('[REDACTED]');
       expect(receipt.rationale).toBe('[REDACTED]');
@@ -29,7 +41,7 @@ describe('redaction/export-redaction', () => {
           { decidedBy: 'alice', rationale: 'same rationale text' },
         ],
       };
-      const output = redactDecisionReceipts(input, 'basic');
+      const output = redactedReceipts(input, 'basic');
       expect((output.receipts[0] as Record<string, unknown>).decidedBy).toBe(
         (output.receipts[1] as Record<string, unknown>).decidedBy,
       );
@@ -38,8 +50,8 @@ describe('redaction/export-redaction', () => {
 
     it('redacts strict mode with deterministic tokenized masks', () => {
       const input = { receipts: [{ decidedBy: 'alice', rationale: 'same' }] };
-      const outA = redactDecisionReceipts(input, 'strict');
-      const outB = redactDecisionReceipts(input, 'strict');
+      const outA = redactedReceipts(input, 'strict');
+      const outB = redactedReceipts(input, 'strict');
       const a = outA.receipts[0] as Record<string, unknown>;
       const b = outB.receipts[0] as Record<string, unknown>;
       expect(a.decidedBy).toBe(b.decidedBy);
@@ -47,8 +59,8 @@ describe('redaction/export-redaction', () => {
     });
 
     it('strict mode produces different tokens for different inputs', () => {
-      const out1 = redactDecisionReceipts({ receipts: [{ decidedBy: 'alice' }] }, 'strict');
-      const out2 = redactDecisionReceipts({ receipts: [{ decidedBy: 'bob' }] }, 'strict');
+      const out1 = redactedReceipts({ receipts: [{ decidedBy: 'alice' }] }, 'strict');
+      const out2 = redactedReceipts({ receipts: [{ decidedBy: 'bob' }] }, 'strict');
       expect(out1.receipts[0]).not.toEqual(out2.receipts[0]);
     });
 
@@ -74,19 +86,19 @@ describe('redaction/export-redaction', () => {
       expect(fe.initiatedBy).toBe('[REDACTED]');
       expect(fe.decidedBy).toBe('[REDACTED]');
       expect(fe.detail).toBe('[REDACTED]');
-      expect((output.findings[0] as Record<string, unknown>).message).toBe('[REDACTED]');
+      expect(recordArray(output, 'findings')[0]?.message).toBe('[REDACTED]');
     });
 
     it('redacts findings message in review report basic mode', () => {
       const input = { findings: [{ message: 'Contains PII: alice@example.com' }] };
       const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
-      expect((output.findings[0] as Record<string, unknown>).message).toBe('[REDACTED]');
+      expect(recordArray(output, 'findings')[0]?.message).toBe('[REDACTED]');
     });
 
     it('redacts validationSummary detail in review report', () => {
       const input = { validationSummary: [{ checkId: 'test_quality', detail: 'secret detail' }] };
       const output = redactReviewReport(input, 'basic') as Record<string, unknown>;
-      expect((output.validationSummary[0] as Record<string, unknown>).detail).toBe('[REDACTED]');
+      expect(recordArray(output, 'validationSummary')[0]?.detail).toBe('[REDACTED]');
     });
 
     it('redacts references in review report basic mode', () => {
@@ -223,7 +235,7 @@ describe('redaction/export-redaction', () => {
     it('handles null/undefined decidedBy without throwing (left unchanged)', () => {
       const input = { receipts: [{ decidedBy: null, rationale: undefined }] };
       expect(() => redactDecisionReceipts(input, 'basic')).not.toThrow();
-      const out = redactDecisionReceipts(input, 'basic') as Record<string, unknown>;
+      const out = redactedReceipts(input, 'basic');
       const r = out.receipts[0] as Record<string, unknown>;
       expect(r.decidedBy).toBe(null);
       expect(r.rationale).toBeUndefined();
@@ -236,7 +248,7 @@ describe('redaction/export-redaction', () => {
 
     it('handles empty string values', () => {
       const input = { receipts: [{ decidedBy: '', rationale: '' }] };
-      const out = redactDecisionReceipts(input, 'strict') as Record<string, unknown>;
+      const out = redactedReceipts(input, 'strict');
       const r = out.receipts[0] as Record<string, unknown>;
       expect(String(r.decidedBy)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
     });
@@ -263,7 +275,7 @@ describe('redaction/export-redaction', () => {
 
     it('non-string decidedBy/rationale are left unchanged (type guard)', () => {
       const input = { receipts: [{ decidedBy: 123 as unknown, rationale: false as unknown }] };
-      const out = redactDecisionReceipts(input, 'basic') as Record<string, unknown>;
+      const out = redactedReceipts(input, 'basic');
       const r = out.receipts[0] as Record<string, unknown>;
       expect(r.decidedBy).toBe(123);
       expect(r.rationale).toBe(false);
@@ -272,7 +284,7 @@ describe('redaction/export-redaction', () => {
     it('review report leaves non-string finding message unchanged', () => {
       const input = { findings: [{ message: 42 as unknown }] };
       const out = redactReviewReport(input, 'basic') as Record<string, unknown>;
-      expect((out.findings[0] as Record<string, unknown>).message).toBe(42);
+      expect(recordArray(out, 'findings')[0]?.message).toBe(42);
     });
 
     it('review report leaves non-string slot detail unchanged', () => {
@@ -311,7 +323,7 @@ describe('redaction/export-redaction', () => {
   describe('EDGE', () => {
     it('strict mode token is consistent across multiple calls with same input', () => {
       const input = { receipts: [{ decidedBy: 'alice', rationale: 'trust decision' }] };
-      const results = Array.from({ length: 5 }, () => redactDecisionReceipts(input, 'strict'));
+      const results = Array.from({ length: 5 }, () => redactedReceipts(input, 'strict'));
       const tokens = results.map((r) =>
         String((r.receipts[0] as Record<string, unknown>).decidedBy),
       );
@@ -319,7 +331,7 @@ describe('redaction/export-redaction', () => {
     });
 
     it('strict mode produces different tokens for different field values', () => {
-      const out = redactDecisionReceipts(
+      const out = redactedReceipts(
         { receipts: [{ decidedBy: 'alice', rationale: 'bob' }] },
         'strict',
       );
@@ -345,7 +357,7 @@ describe('redaction/export-redaction', () => {
     it('strict mode review report findings message', () => {
       const input = { findings: [{ message: 'sensitive review detail' }] };
       const out = redactReviewReport(input, 'strict') as Record<string, unknown>;
-      expect(String((out.findings[0] as Record<string, unknown>).message)).toMatch(
+      expect(String(recordArray(out, 'findings')[0]?.message)).toMatch(
         /^\[REDACTED:[a-f0-9]{12}\]$/,
       );
     });
@@ -356,8 +368,8 @@ describe('redaction/export-redaction', () => {
         decidedBy: `user-${i}`,
         rationale: `decision rationale ${i}`,
       }));
-      const out = redactDecisionReceipts({ receipts }, 'basic') as Record<string, unknown>;
-      const redacted = out.receipts as Array<Record<string, unknown>>;
+      const out = redactedReceipts({ receipts }, 'basic');
+      const redacted = out.receipts;
       expect(redacted).toHaveLength(100);
       redacted.forEach((r) => {
         expect(r.decidedBy).toBe('[REDACTED]');
@@ -375,7 +387,7 @@ describe('redaction/export-redaction', () => {
           },
         ],
       };
-      const out = redactDecisionReceipts(input, 'basic') as Record<string, unknown>;
+      const out = redactedReceipts(input, 'basic');
       const r = out.receipts[0] as Record<string, unknown>;
       expect(r.decidedBy).toBe('[REDACTED]');
       expect(r.rationale).toBe('[REDACTED]');
@@ -392,7 +404,7 @@ describe('redaction/export-redaction', () => {
           },
         ],
       };
-      const out = redactDecisionReceipts(raw, 'strict') as Record<string, unknown>;
+      const out = redactedReceipts(raw, 'strict');
       const r = out.receipts[0] as Record<string, unknown>;
       const decidedByStr = String(r.decidedBy);
       const rationaleStr = String(r.rationale);
@@ -414,7 +426,7 @@ describe('redaction/export-redaction', () => {
           },
         ],
       };
-      const out = redactDecisionReceipts(input, 'basic') as Record<string, unknown>;
+      const out = redactedReceipts(input, 'basic');
       const r = out.receipts[0] as Record<string, unknown>;
       expect(r.decisionId).toBe('DEC-999');
       expect(r.nonSensitiveField).toBe('kept as-is');

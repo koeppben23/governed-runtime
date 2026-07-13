@@ -47,6 +47,18 @@ import {
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import type { ToolDefinition, ToolResult } from './tools/helpers.js';
+
+type StatusResult = {
+  phase: string | null;
+  error?: boolean;
+  code?: string;
+  message?: string;
+  status: { phase?: string; policyMode?: string };
+  appliedPolicy: { effectiveMode?: string; effectiveGateBehavior?: string };
+  completeness: { overallComplete?: boolean; fourEyes?: unknown; summary?: unknown };
+  nextAction?: unknown;
+};
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -123,11 +135,7 @@ afterEach(async () => {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-async function callOk(
-  tool: { execute: (args: unknown, ctx: TestToolContext) => Promise<string> },
-  args: unknown,
-  context: TestToolContext = ctx,
-) {
+async function callOk(tool: ToolDefinition, args: unknown, context: TestToolContext = ctx) {
   const finalArgs = await withStrictReviewFindings(await getSessDir(context), args);
   recordDecisionIntentForTool(tool, finalArgs, context);
   const raw = await tool.execute(finalArgs, context);
@@ -141,7 +149,7 @@ async function callOk(
 async function executeDecision(args: {
   verdict: 'approve' | 'changes_requested' | 'reject';
   rationale: string;
-}): Promise<string> {
+}): Promise<ToolResult> {
   recordUserDecisionIntent({
     sessionId: ctx.sessionID,
     command: '/review-decision',
@@ -151,7 +159,7 @@ async function executeDecision(args: {
 }
 
 function recordDecisionIntentForTool(
-  tool: { execute: (args: unknown, ctx: TestToolContext) => Promise<string> },
+  tool: ToolDefinition,
   args: unknown,
   context: TestToolContext = ctx,
 ): void {
@@ -215,7 +223,7 @@ async function driveToComplete(context: TestToolContext = ctx): Promise<string> 
 describe('HAPPY: status JSON shape is stable', () => {
   it('status at READY has required fields', async () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
-    const result = parseToolResult(await status.execute({}, ctx));
+    const result = parseToolResult<StatusResult>(await status.execute({}, ctx));
 
     expect(result.phase).toBe('READY');
     expect(result.status).toBeDefined();
@@ -228,7 +236,7 @@ describe('HAPPY: status JSON shape is stable', () => {
   it('status at TICKET has required fields', async () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Status test', source: 'user' });
-    const result = parseToolResult(await status.execute({}, ctx));
+    const result = parseToolResult<StatusResult>(await status.execute({}, ctx));
 
     expect(result.phase).toBe('TICKET');
     expect(result.status).toBeDefined();
@@ -241,7 +249,7 @@ describe('HAPPY: status JSON shape is stable', () => {
     await callOk(ticket, { text: 'Team status test', source: 'user' });
     await callOk(plan, { planText: '## Plan\nTest' });
     await callOk(plan, { reviewVerdict: 'accept' });
-    const result = parseToolResult(await status.execute({}, ctx));
+    const result = parseToolResult<StatusResult>(await status.execute({}, ctx));
 
     expect(result.phase).toBe('PLAN_REVIEW');
     expect(result.appliedPolicy).toBeDefined();
@@ -266,7 +274,7 @@ describe('HAPPY: status JSON shape is stable', () => {
     }
     await callOk(implement, {});
 
-    const result = parseToolResult(await status.execute({}, ctx));
+    const result = parseToolResult<StatusResult>(await status.execute({}, ctx));
     expect(result.phase).toBe('IMPL_REVIEW');
     expect(result.status).toBeDefined();
   });
@@ -278,7 +286,7 @@ describe('HAPPY: blocked/error output has stable structure', () => {
   it('decision blocked at wrong phase returns error shape', async () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     const raw = await decision.execute({ verdict: 'approve', rationale: 'Wrong phase' }, ctx);
-    const result = parseToolResult(raw);
+    const result = parseToolResult<StatusResult>(raw);
 
     expect(result.error).toBe(true);
     expect(result.code).toBeDefined();
@@ -504,7 +512,7 @@ describe('CORNER: CLI edge cases', () => {
 
   it('appliedPolicy includes stable fields from state', async () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
-    const result = parseToolResult(await status.execute({}, ctx));
+    const result = parseToolResult<StatusResult>(await status.execute({}, ctx));
 
     expect(result.appliedPolicy).toBeDefined();
     expect(result.appliedPolicy.effectiveMode).toBeDefined();
@@ -529,7 +537,7 @@ describe('EDGE: policy mode affects CLI output', () => {
   it('solo mode shows effectiveMode=solo in appliedPolicy', async () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Solo CLI test', source: 'user' });
-    const result = parseToolResult(await status.execute({}, ctx));
+    const result = parseToolResult<StatusResult>(await status.execute({}, ctx));
 
     expect(result.appliedPolicy.effectiveMode).toBe('solo');
     expect(result.appliedPolicy.effectiveGateBehavior).toBe('auto_approve');
@@ -545,7 +553,7 @@ describe('EDGE: policy mode affects CLI output', () => {
     });
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     await callOk(ticket, { text: 'Regulated CLI test', source: 'user' });
-    const result = parseToolResult(await status.execute({}, ctx));
+    const result = parseToolResult<StatusResult>(await status.execute({}, ctx));
 
     expect(result.appliedPolicy.effectiveMode).toBe('regulated');
   });
@@ -570,7 +578,7 @@ describe('EDGE: policy mode affects CLI output', () => {
 
   it('status completeness matrix is present', async () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
-    const result = parseToolResult(await status.execute({}, ctx));
+    const result = parseToolResult<StatusResult>(await status.execute({}, ctx));
 
     expect(result.completeness).toBeDefined();
     expect(result.completeness.overallComplete).toBeDefined();

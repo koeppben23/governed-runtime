@@ -16,6 +16,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { buildCompactionContext, type CompactionDeps } from './plugin-compaction.js';
+import { makeState } from '../fixtures.js';
 
 // ÔöÇÔöÇÔöÇ Mock readState ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
 
@@ -48,15 +49,7 @@ function createMockDeps(sessionDirMap: Record<string, string> = {}): CompactionD
 }
 
 function createMockState(overrides: Record<string, unknown> = {}) {
-  return {
-    id: 'test-session-id',
-    phase: 'PLAN',
-    policySnapshot: { mode: 'team' },
-    ticket: null,
-    plan: null,
-    reviewAssurance: { obligations: [] },
-    ...overrides,
-  };
+  return Object.assign(makeState('PLAN'), overrides);
 }
 
 // ÔöÇÔöÇÔöÇ Tests ÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇÔöÇ
@@ -176,8 +169,8 @@ describe('integration/plugin-compaction', () => {
 
       expect(result).toBeNull();
       expect(deps.warnings).toHaveLength(1);
-      expect(deps.warnings[0].message).toBe('failed to build compaction context');
-      expect(deps.warnings[0].extra.error).toMatchObject({
+      expect(deps.warnings[0]?.message).toBe('failed to build compaction context');
+      expect(deps.warnings[0]?.extra.error).toMatchObject({
         name: 'Error',
         message: 'disk failure',
       });
@@ -190,7 +183,7 @@ describe('integration/plugin-compaction', () => {
       const result = await buildCompactionContext(deps, 'sess-str');
 
       expect(result).toBeNull();
-      expect(deps.warnings[0].extra.error).toMatchObject({
+      expect(deps.warnings[0]?.extra.error).toMatchObject({
         name: 'Error',
         message: 'string error',
       });

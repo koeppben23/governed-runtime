@@ -437,7 +437,6 @@ describe('cli/templates/verification-output-contract', () => {
           state: {
             policySnapshot: {
               mode: 'regulated',
-              requireHumanGates: true,
             },
           },
           configDefaultMode: 'solo',

@@ -8,6 +8,7 @@ import { describe, it, expect, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { existsSync, mkdirSync } from 'node:fs';
+import type { ExecSyncOptions } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
 import { install, uninstall, mergeReviewerTaskPermission } from './install.js';
@@ -462,7 +463,7 @@ describe('cli/install', () => {
     it('BAD: reports error when package manager install fails', async () => {
       const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: Record<string, unknown>) => {
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
         if (typeof cmd === 'string' && cmd.includes('install'))
           throw new Error('ENOMEM: not enough memory');
         return originalImpl(cmd, opts);
@@ -500,8 +501,11 @@ describe('cli/install', () => {
       const { execSync: mockExec } = await import('node:child_process');
       const calls: string[] = [];
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: Record<string, unknown>) => {
-        if (typeof cmd === 'string' && cmd.includes('install')) calls.push(cmd.split(' ')[0]);
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
+        if (typeof cmd === 'string' && cmd.includes('install')) {
+          const [packageManager] = cmd.split(' ');
+          if (packageManager) calls.push(packageManager);
+        }
         return originalImpl(cmd, opts);
       });
 
@@ -518,7 +522,7 @@ describe('cli/install', () => {
       const { execSync: mockExec } = await import('node:child_process');
       const installCalls: Array<{ cmd: string; timeout?: number }> = [];
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: Record<string, unknown>) => {
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
         if (cmd === 'bun --version') throw new Error('bun unavailable');
         if (cmd === 'npm --version') return Buffer.from('10.0.0\n');
         if (typeof cmd === 'string' && cmd.includes('install')) {
@@ -595,7 +599,7 @@ describe('cli/install', () => {
       // Simulate npm install failure
       const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
         if (typeof cmd === 'string' && cmd.includes('install')) {
           throw new Error('Simulated npm install failure');
         }
@@ -631,7 +635,7 @@ describe('cli/install', () => {
     it('rollback removes newly created Claude Code plugin artifacts', async () => {
       const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
         if (typeof cmd === 'string' && cmd.includes('install')) {
           throw new Error('Simulated Claude plugin install failure');
         }
@@ -681,7 +685,7 @@ describe('cli/install', () => {
 
       const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
         if (typeof cmd === 'string' && cmd.includes('install')) {
           throw new Error('Simulated Codex plugin install failure');
         }
@@ -727,7 +731,7 @@ describe('cli/install', () => {
 
       const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
         if (typeof cmd === 'string' && cmd.includes('install')) {
           throw new Error('Simulated npm install failure');
         }
@@ -757,7 +761,7 @@ describe('cli/install', () => {
 
       const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
         if (typeof cmd === 'string' && cmd.includes('install')) {
           throw new Error('Simulated npm install failure');
         }
@@ -797,7 +801,7 @@ describe('cli/install', () => {
       // Phase 2: Failed reinstall (npm install fails)
       const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
         if (typeof cmd === 'string' && cmd.includes('install')) {
           throw new Error('Simulated reinstall failure');
         }
@@ -839,7 +843,7 @@ describe('cli/install', () => {
 
       const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
         if (typeof cmd === 'string' && cmd.includes('install')) {
           throw new Error('Simulated npm install failure');
         }
@@ -865,7 +869,7 @@ describe('cli/install', () => {
 
       const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
         if (typeof cmd === 'string' && cmd.includes('install')) {
           // Simulate partial npm install that creates something then throws
           const cwd =
@@ -904,7 +908,7 @@ describe('cli/install', () => {
 
       const { execSync: mockExec } = await import('node:child_process');
       const originalImpl = vi.mocked(mockExec).getMockImplementation()!;
-      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: unknown) => {
+      vi.mocked(mockExec).mockImplementation((cmd: string, opts?: ExecSyncOptions) => {
         if (typeof cmd === 'string' && cmd.includes('install')) {
           throw new Error('Simulated npm install failure');
         }

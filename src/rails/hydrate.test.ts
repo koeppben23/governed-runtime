@@ -239,7 +239,9 @@ describe('hydrate rail unit tests', () => {
       const idpConfig = {
         issuer: 'https://idp.example.com',
         audience: ['my-app'],
-        jwksSource: { type: 'local' as const, keys: [] },
+        mode: 'jwks' as const,
+        jwksPath: '/tmp/idp-jwks.json',
+        cacheTtlSeconds: 300,
         claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
       };
       const result = hydrateNew(minimalInput({ policy: { identityProvider: idpConfig } }));
@@ -251,7 +253,9 @@ describe('hydrate rail unit tests', () => {
       const idpConfig = {
         issuer: 'https://base-idp.example.com',
         audience: ['base-app'],
-        jwksSource: { type: 'local' as const, keys: [] },
+        mode: 'jwks' as const,
+        jwksPath: '/tmp/base-idp-jwks.json',
+        cacheTtlSeconds: 300,
         claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
       };
       const basePolicy = { ...getPolicyPreset('solo'), identityProvider: idpConfig };

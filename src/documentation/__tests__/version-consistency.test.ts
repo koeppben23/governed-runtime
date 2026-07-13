@@ -142,6 +142,7 @@ describe('documentation/version-consistency', () => {
       const match = content.match(/\*\*Version:\*\* ([\d.]+(?:-[a-zA-Z0-9.]+)?)/);
       if (match) {
         const extracted = match[1];
+        if (!extracted) throw new TypeError('missing product version');
         expect(extracted).toBe(extracted.trim());
       }
     });

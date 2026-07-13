@@ -87,7 +87,7 @@ describe('VerificationCandidatesSchema', () => {
       },
     ]);
     expect(result).toHaveLength(1);
-    expect(result[0].kind).toBe('build');
+    expect(result[0]?.kind).toBe('build');
   });
 });
 

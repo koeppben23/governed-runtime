@@ -13,7 +13,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 import * as crypto from 'node:crypto';
-import { SignJWT } from 'jose';
+import { SignJWT, type JWTHeaderParameters } from 'jose';
 import { JwtStaticTokenVerifier } from './token-verifier.js';
 import { StaticKeyResolver } from './key-resolver.js';
 import { IdpError } from './errors.js';
@@ -43,7 +43,7 @@ function base64url(obj: unknown): string {
 }
 
 async function signJwt(
-  header: Record<string, unknown>,
+  header: JWTHeaderParameters,
   payload: Record<string, unknown>,
   privateKey: crypto.KeyObject,
 ): Promise<string> {

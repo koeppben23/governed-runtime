@@ -204,7 +204,7 @@ async function driveCaptureThroughHooks(
   const afterHook = hooks['tool.execute.after']!;
   await afterHook(
     { tool: 'flowguard_plan', sessionID: PARENT_SESSION, callID: 'c-plan', args: {} },
-    planModeAOutput(),
+    { title: 'Plan', ...planModeAOutput() },
   );
   await afterHook(
     {
@@ -218,7 +218,7 @@ async function driveCaptureThroughHooks(
           'Return structured ReviewFindings JSON with your verdict.',
       },
     },
-    reviewerTaskOutput(opts),
+    { title: 'Reviewer task', ...reviewerTaskOutput(opts) },
   );
 }
 
@@ -418,7 +418,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     // (host-task handshake) on the SAME output the tool returned.
     await afterHook(
       { tool: 'flowguard_review', sessionID: PARENT_SESSION, callID: 'c-review', args: {} },
-      { output: String(call1Raw), metadata: {} },
+      { title: 'Review', output: String(call1Raw), metadata: {} },
     );
 
     // The obligation must STILL be pending after the handshake (the log shows it
@@ -444,6 +444,7 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
         },
       },
       {
+        title: 'Reviewer task',
         output: JSON.stringify({
           iteration: 1,
           planVersion: 1,

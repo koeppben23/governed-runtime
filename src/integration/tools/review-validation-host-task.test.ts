@@ -10,6 +10,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from '../review/assurance.js';
+import type { ReviewInvocationEvidence, ReviewObligation } from '../../state/evidence-review.js';
 
 // ═════════════════════════════════════════════════════════════════════════════
 // resolveHostTaskFindings — BUG-15 Stufe 2
@@ -34,7 +35,7 @@ describe('resolveHostTaskFindings', () => {
     reviewedAt: now,
   };
 
-  function makeObligation(overrides: Record<string, unknown> = {}) {
+  function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObligation {
     return {
       obligationId: OBLIGATION_ID,
       obligationType: 'plan' as const,
@@ -53,7 +54,9 @@ describe('resolveHostTaskFindings', () => {
     };
   }
 
-  function makeHostTaskInvocation(overrides: Record<string, unknown> = {}) {
+  function makeHostTaskInvocation(
+    overrides: Partial<ReviewInvocationEvidence> = {},
+  ): ReviewInvocationEvidence {
     return {
       invocationId: INVOCATION_ID,
       obligationId: OBLIGATION_ID,
@@ -72,6 +75,9 @@ describe('resolveHostTaskFindings', () => {
       consumedByObligationId: null,
       capturedVerdict: 'accept',
       capturedRawFindings: validRawFindings,
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
       ...overrides,
     };
   }

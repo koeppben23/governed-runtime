@@ -12,6 +12,8 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeState, TICKET } from '../../fixtures.js';
+import { TEAM_POLICY } from '../../config/policy-presets.js';
+import type { SessionState } from '../../state/schema.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -22,12 +24,17 @@ import {
 
 const mocks = vi.hoisted(() => {
   return {
-    state: null as unknown,
+    state: null as SessionState | null,
     isCommandAllowed: vi.fn(() => true),
     autoAdvance: vi.fn(),
-    resolveWorkspacePaths: vi.fn(async () => ({ sessDir: '/tmp/session' })),
+    resolveWorkspacePaths: vi.fn(async () => ({
+      worktree: '/tmp/test',
+      fingerprint: 'test',
+      sessDir: '/tmp/session',
+      wsDir: '/tmp/ws',
+    })),
     requireStateForMutation: vi.fn(async () => makeState('TICKET')),
-    resolvePolicyFromState: vi.fn(() => ({ maxSelfReviewIterations: 3 })),
+    resolvePolicyFromState: vi.fn(() => TEAM_POLICY),
     createPolicyContext: vi.fn(() => ({
       policy: { maxSelfReviewIterations: 3 },
       now: () => '2026-01-01T00:00:00.000Z',
@@ -67,7 +74,7 @@ vi.mock('./helpers.js', () => ({
   appendNextAction: mocks.appendNextAction,
   writeStateWithArtifacts: mocks.writeStateWithArtifacts,
   withMutableSession: vi.fn(async (ctx) => {
-    const paths = await mocks.resolveWorkspacePaths(ctx);
+    const paths = await mocks.resolveWorkspacePaths();
     const state = await mocks.requireStateForMutation();
     const policy = mocks.resolvePolicyFromState();
     const ctx2 = mocks.createPolicyContext();
@@ -82,7 +89,7 @@ vi.mock('./helpers.js', () => ({
     };
   }),
   withMutableSessionTransaction: vi.fn(async (ctx, fn) => {
-    const paths = await mocks.resolveWorkspacePaths(ctx);
+    const paths = await mocks.resolveWorkspacePaths();
     const state = await mocks.requireStateForMutation();
     const policy = mocks.resolvePolicyFromState();
     const ctx2 = mocks.createPolicyContext();
@@ -197,8 +204,11 @@ function manualAttestedInvocation(input: {
     obligationType: input.obligationType,
     parentSessionId: 'ses_parent',
     childSessionId: 'ses_child',
-    agentType: 'flowguard-reviewer',
-    invocationMode: 'manual_attested',
+    agentType: 'flowguard-reviewer' as const,
+    invocationMode: 'manual_attested' as const,
+    reviewOutputMode: 'structured_output' as const,
+    structuredOutputUsed: true,
+    reviewAssuranceLevel: 'structured_high' as const,
     hostVisible: false,
     promptHash: 'abc',
     mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -207,7 +217,7 @@ function manualAttestedInvocation(input: {
     invokedAt: now,
     fulfilledAt: now,
     consumedByObligationId: null,
-    source: 'agent-submitted-attested',
+    source: 'agent-submitted-attested' as const,
   };
 }
 
@@ -272,6 +282,9 @@ function planStateWithEvidence(verdict: 'accept' | 'changes_requested' = 'accept
           childSessionId: 'ses_child',
           agentType: 'flowguard-reviewer',
           invocationMode: 'host_subagent_task',
+          reviewOutputMode: 'structured_output',
+          structuredOutputUsed: true,
+          reviewAssuranceLevel: 'structured_high',
           hostVisible: true,
           promptHash: 'abc',
           mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -310,6 +323,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
     mocks.state = planStateWithEvidence('accept');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -332,6 +346,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
     mocks.state = planStateWithEvidence('accept');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -393,6 +408,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
     mocks.state = stateNoEvidence;
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -411,6 +427,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
     mocks.state = planStateWithEvidence('accept');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'host_task_required',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -441,6 +458,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
     mocks.state = planStateWithEvidence('accept');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'sdk_allowed',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
@@ -499,6 +517,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
       maxSelfReviewIterations: 3,
       reviewInvocationPolicy: 'sdk_allowed',
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: true },

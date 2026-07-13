@@ -34,6 +34,7 @@ import {
 } from './test-helpers.js';
 import { hydrate, ticket, plan, decision, status } from './tools/index.js';
 import { readState, writeState } from '../adapters/persistence.js';
+import { getPolicyPreset } from '../config/policy.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
 
 // ─── Git Mock ────────────────────────────────────────────────────────────────
@@ -175,7 +176,7 @@ async function resolveSessionDirFor(sessionId: string): Promise<string> {
 async function executeDecision(args: {
   verdict: 'approve' | 'changes_requested' | 'reject';
   rationale: string;
-}): Promise<string> {
+}): Promise<Awaited<ReturnType<typeof decision.execute>>> {
   recordUserDecisionIntent({
     sessionId: ctx.sessionID,
     command: '/review-decision',
@@ -692,21 +693,8 @@ describe('identity-policy-e2e', () => {
 
       await expect(
         resolveActorForPolicy('/fake/worktree', {
-          mode: 'team',
-          requireHumanGates: true,
-          maxSelfReviewIterations: 3,
-          maxImplReviewIterations: 3,
-          allowSelfApproval: true,
-          selfReview: { subagentEnabled: false, fallbackToSelf: false },
-          audit: {
-            emitTransitions: true,
-            emitToolCalls: true,
-            enableChainHash: true,
-          },
-          actorClassification: {},
-          minimumActorAssuranceForApproval: 'best_effort',
-          requireVerifiedActorsForApproval: false,
-          identityProvider: {} as unknown as undefined,
+          ...getPolicyPreset('team'),
+          identityProvider: undefined,
           identityProviderMode: 'required',
         }),
       ).rejects.toThrow(ActorIdentityError);

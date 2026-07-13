@@ -42,6 +42,7 @@ import {
   sessionDir as resolveSessionDir,
 } from '../adapters/workspace/index.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import type { ToolDefinition } from './tools/helpers.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -140,10 +141,7 @@ afterEach(async () => {
   await ws.cleanup();
 });
 
-async function callOk(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): Promise<Record<string, unknown>> {
+async function callOk(tool: ToolDefinition, args: unknown): Promise<Record<string, unknown>> {
   const { sessDir } = await workspaceIds();
   const finalArgs = await withStrictReviewFindings(sessDir, args);
   recordDecisionIntentForTool(tool, finalArgs);
@@ -154,10 +152,7 @@ async function callOk(
   return result;
 }
 
-function recordDecisionIntentForTool(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): void {
+function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void {
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;

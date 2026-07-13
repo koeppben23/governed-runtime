@@ -351,6 +351,12 @@ describe('guards', () => {
             passed: true,
             detail: 'ok',
             executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
           },
         ],
       });
@@ -376,7 +382,20 @@ describe('guards', () => {
     it('checkFailed returns false when all executed checks passed but others are pending (#502)', () => {
       const state = makeState('VALIDATION', {
         activeChecks: ['test', 'lint'],
-        validation: [{ checkId: 'test', passed: true, detail: 'ok', executedAt: FIXED_TIME }],
+        validation: [
+          {
+            checkId: 'test',
+            passed: true,
+            detail: 'ok',
+            executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+          },
+        ],
       });
       expect(checkFailed(state)).toBe(false);
     });
@@ -385,7 +404,20 @@ describe('guards', () => {
     it('partial check pass: allValidationsPassed === false AND checkFailed === false (#502)', () => {
       const state = makeState('VALIDATION', {
         activeChecks: ['test', 'lint'],
-        validation: [{ checkId: 'test', passed: true, detail: 'ok', executedAt: FIXED_TIME }],
+        validation: [
+          {
+            checkId: 'test',
+            passed: true,
+            detail: 'ok',
+            executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+          },
+        ],
       });
       expect(allValidationsPassed(state)).toBe(false);
       expect(checkFailed(state)).toBe(false);
@@ -395,7 +427,20 @@ describe('guards', () => {
     it('checkFailed returns true when at least one executed check failed (#502 regression)', () => {
       const state = makeState('VALIDATION', {
         activeChecks: ['test', 'lint'],
-        validation: [{ checkId: 'test', passed: false, detail: 'fail', executedAt: FIXED_TIME }],
+        validation: [
+          {
+            checkId: 'test',
+            passed: false,
+            detail: 'fail',
+            executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 1,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+          },
+        ],
       });
       expect(checkFailed(state)).toBe(true);
     });
@@ -449,18 +494,36 @@ describe('guards', () => {
             passed: true,
             detail: 'ok',
             executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
           },
           {
             checkId: 'test_quality',
             passed: true,
             detail: 'ok2',
             executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
           },
           {
             checkId: 'rollback_safety',
             passed: true,
             detail: 'ok',
             executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
           },
         ],
       });
@@ -476,12 +539,24 @@ describe('guards', () => {
             passed: true,
             detail: 'ok',
             executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
           },
           {
             checkId: 'rollback_safety',
             passed: false,
             detail: 'fail',
             executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 1,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
           },
         ],
       });

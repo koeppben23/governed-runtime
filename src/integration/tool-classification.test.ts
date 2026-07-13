@@ -127,7 +127,8 @@ describe('tool-classification', () => {
     it('all TOOL_FLOWGUARD_* names from tool-names.ts are classified', () => {
       const canonicalTools = Object.entries(ToolNames)
         .filter(([name]) => name.startsWith('TOOL_FLOWGUARD_'))
-        .map(([, value]) => value);
+        .map(([, value]) => value)
+        .filter((value) => typeof value === 'string');
 
       for (const tool of canonicalTools) {
         expect(() => getToolClassification(tool)).not.toThrow();

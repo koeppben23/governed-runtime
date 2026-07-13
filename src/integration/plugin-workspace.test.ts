@@ -30,8 +30,6 @@ vi.mock('../adapters/persistence.js', async (importOriginal) => {
     withSessionWriteLock: mockWithSessionWriteLock,
     readState: mockReadState,
     writeStateAlreadyLocked: vi.fn(),
-    appendAuditEvent: actual.appendAuditEvent,
-    readAuditTrail: actual.readAuditTrail,
   };
 });
 

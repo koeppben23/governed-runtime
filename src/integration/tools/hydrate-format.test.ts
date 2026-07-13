@@ -13,6 +13,7 @@ import {
 } from './hydrate-format.js';
 import type { HydratePolicyResolution } from './hydrate.js';
 import type { PolicyMode } from '../../state/policy-mode.js';
+import { DEFAULT_CONFIG } from '../../config/flowguard-config.js';
 
 // ─── Minimal Fixtures ─────────────────────────────────────────────────────────
 
@@ -27,6 +28,7 @@ const EXISTING = {
 
 function policyResolution(overrides = {}): HydratePolicyResolution {
   return {
+    ...DEFAULT_CONFIG,
     effectiveMode: 'team' as PolicyMode,
     requestedMode: 'team' as PolicyMode,
     effectiveSource: 'default' as const,
@@ -40,21 +42,7 @@ function policyResolution(overrides = {}): HydratePolicyResolution {
 
 function hydrateConfig(overrides = {}) {
   return {
-    idp: null,
-    trustAnchors: [],
-    tsaUrl: '',
-    profile: { defaultId: '', activeChecks: [] },
-    policy: {
-      maxSelfReviewIterations: 3,
-      maxImplReviewIterations: 5,
-      requireVerifiedActorsForApproval: false,
-      identityProvider: null,
-      identityProviderMode: 'optional' as const,
-      minimumActorAssuranceForApproval: null,
-      enforceRiskClassification: false,
-      allowRiskDowngradeOverride: false,
-      allowReducedCeremony: false,
-    },
+    ...DEFAULT_CONFIG,
     ...overrides,
   };
 }

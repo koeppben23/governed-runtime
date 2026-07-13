@@ -42,9 +42,11 @@ describe('checkBuildInfo (stale-dist guard)', () => {
       );
       const checks = checkBuildInfo(root);
       expect(checks).toHaveLength(1);
-      expect(checks[0].status).toBe('ok');
-      expect(checks[0].check).toBe(BUILD_INFO_CHECK);
-      expect(checks[0].detail).toContain('gitSha=abc123');
+      const [check] = checks;
+      if (!check) throw new TypeError('expected build-info check');
+      expect(check.status).toBe('ok');
+      expect(check.check).toBe(BUILD_INFO_CHECK);
+      expect(check.detail).toContain('gitSha=abc123');
     });
   });
 
@@ -59,16 +61,20 @@ describe('checkBuildInfo (stale-dist guard)', () => {
         }),
       );
       const checks = checkBuildInfo(root);
-      expect(checks[0].status).toBe('version_mismatch');
-      expect(checks[0].check).toBe(BUILD_INFO_CHECK);
-      expect(checks[0].detail).toContain('stale dist');
+      const [check] = checks;
+      if (!check) throw new TypeError('expected build-info check');
+      expect(check.status).toBe('version_mismatch');
+      expect(check.check).toBe(BUILD_INFO_CHECK);
+      expect(check.detail).toContain('stale dist');
     });
 
     it('flags a missing build-info.json as version_mismatch (predates stamping)', () => {
       // No file written.
       const checks = checkBuildInfo(root);
-      expect(checks[0].status).toBe('version_mismatch');
-      expect(checks[0].detail).toContain('missing');
+      const [check] = checks;
+      if (!check) throw new TypeError('expected build-info check');
+      expect(check.status).toBe('version_mismatch');
+      expect(check.detail).toContain('missing');
     });
   });
 
@@ -76,15 +82,19 @@ describe('checkBuildInfo (stale-dist guard)', () => {
     it('flags unparseable JSON as an error', () => {
       writeBuildInfo('{ not json');
       const checks = checkBuildInfo(root);
-      expect(checks[0].status).toBe('error');
-      expect(checks[0].detail).toContain('not valid JSON');
+      const [check] = checks;
+      if (!check) throw new TypeError('expected build-info check');
+      expect(check.status).toBe('error');
+      expect(check.detail).toContain('not valid JSON');
     });
 
     it('flags a build-info without a string version as an error', () => {
       writeBuildInfo(JSON.stringify({ gitSha: 'x', builtAt: 'y' }));
       const checks = checkBuildInfo(root);
-      expect(checks[0].status).toBe('error');
-      expect(checks[0].detail).toContain('version');
+      const [check] = checks;
+      if (!check) throw new TypeError('expected build-info check');
+      expect(check.status).toBe('error');
+      expect(check.detail).toContain('version');
     });
   });
 
@@ -93,8 +103,10 @@ describe('checkBuildInfo (stale-dist guard)', () => {
       writeBuildInfo(JSON.stringify({ version: '0.0.0-stale' }));
       const checks = checkBuildInfo(root);
       // Doctor exit logic fails on any status !== 'ok' && !== 'warn'.
-      expect(checks[0].status).not.toBe('ok');
-      expect(checks[0].status).not.toBe('warn');
+      const [check] = checks;
+      if (!check) throw new TypeError('expected build-info check');
+      expect(check.status).not.toBe('ok');
+      expect(check.status).not.toBe('warn');
     });
   });
 });

@@ -44,20 +44,27 @@ function makeId(chainSeed: number, idx: number): string {
 }
 
 function buildEvent(id: string, prevHash: string, idx: number): ChainedRecord {
-  const body: Omit<ChainedRecord, 'chainHash'> = {
+  const body = {
     id,
     sessionId: 'aaaaaaaa-0000-4000-8000-000000000001',
     phase: 'PLAN',
-    event: `transition:STEP_${idx}`,
+    event: 'transition:PLAN_READY',
     timestamp: `2026-01-01T00:${String(idx).padStart(2, '0')}:00.000Z`,
     actor: 'machine',
     auditFormatVersion: CURRENT_AUDIT_FORMAT_VERSION,
-    detail: { kind: 'transition', from: 'TICKET', to: 'PLAN', idx },
+    detail: {
+      kind: 'transition' as const,
+      from: 'TICKET' as const,
+      to: 'PLAN' as const,
+      event: 'PLAN_READY' as const,
+      autoAdvanced: false,
+      chainIndex: idx,
+    },
     prevHash,
-  };
+  } satisfies Omit<ChainedAuditEvent, 'chainHash'>;
   return {
     ...body,
-    chainHash: computeChainHash(prevHash, body as unknown as Omit<ChainedAuditEvent, 'chainHash'>),
+    chainHash: computeChainHash(prevHash, body),
   };
 }
 

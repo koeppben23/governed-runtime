@@ -41,6 +41,7 @@ import type {
   ReviewFindings,
   ReviewObligation,
   ReviewInvocationEvidence,
+  ReviewAssuranceState,
 } from '../state/evidence.js';
 import {
   validateReviewFindings,
@@ -135,13 +136,16 @@ function buildHostInvocation(
     fulfilledAt: NOW,
     consumedByObligationId: null,
     capturedVerdict: style === 'plugin_handshake' ? 'approve' : undefined,
+    reviewOutputMode: 'structured_output',
+    structuredOutputUsed: true,
+    reviewAssuranceLevel: 'structured_high',
   };
 }
 
 function pluginHandshakeAssurance(
   findings: ReviewFindings,
   obligationType: (typeof ALL_OBLIGATION_TYPES)[number],
-) {
+): ReviewAssuranceState {
   return {
     obligations: [
       {
@@ -178,6 +182,9 @@ function pluginHandshakeAssurance(
         fulfilledAt: NOW,
         consumedByObligationId: null,
         capturedVerdict: 'accept',
+        reviewOutputMode: 'structured_output',
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high',
       },
     ],
   };

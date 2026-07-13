@@ -112,20 +112,20 @@ describe('SDK Contract: HAI governance surface', () => {
     it('platform enum has all 3 supported hosts', () => {
       const schema = loadSchema('host-adapter-interface.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.platform.enum).toEqual(['opencode', 'claude-code', 'codex']);
+      expect(props.platform!.enum).toEqual(['opencode', 'claude-code', 'codex']);
     });
 
     it('enforcementLevel enum has 3 levels', () => {
       const schema = loadSchema('host-adapter-interface.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.enforcementLevel.enum).toEqual(['synchronous', 'hook_gated', 'advisory']);
+      expect(props.enforcementLevel!.enum).toEqual(['synchronous', 'hook_gated', 'advisory']);
     });
 
     it('HostCapabilities has all 6 boolean fields', () => {
       const schema = loadSchema('host-adapter-interface.json');
       const defs = schema.$defs as Record<string, Record<string, unknown>>;
       const capSchema = defs.HostCapabilities;
-      const capRequired = capSchema.required as string[];
+      const capRequired = capSchema!.required as string[];
       expect(capRequired).toContain('preToolBlock');
       expect(capRequired).toContain('argMutation');
       expect(capRequired).toContain('outputReplacement');
@@ -182,15 +182,15 @@ describe('SDK Contract: HAI governance surface', () => {
     it('haltReason is nullable string', () => {
       const schema = loadSchema('governance-state-projection.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.haltReason.type).toContain('null');
-      expect(props.haltReason.type).toContain('string');
+      expect(props.haltReason!.type).toContain('null');
+      expect(props.haltReason!.type).toContain('string');
     });
 
     it('riskGate is nullable with status enum', () => {
       const schema = loadSchema('governance-state-projection.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
       const riskGate = props.riskGate;
-      expect(riskGate.oneOf).toBeDefined();
+      expect(riskGate!.oneOf).toBeDefined();
     });
   });
 
@@ -226,7 +226,7 @@ describe('SDK Contract: HAI governance surface', () => {
       // synchronous enforcement = guaranteed block before tool runs
       const schema = loadSchema('host-adapter-interface.json');
       const defs = schema.$defs as Record<string, Record<string, unknown>>;
-      const capProps = defs.HostCapabilities.properties as Record<string, unknown>;
+      const capProps = defs.HostCapabilities!.properties as Record<string, unknown>;
       expect(capProps).toHaveProperty('preToolBlock');
     });
   });

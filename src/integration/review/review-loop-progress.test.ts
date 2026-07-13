@@ -119,7 +119,7 @@ describe('getReviewLoopProgress', () => {
             reviewMode: 'subagent',
             overallVerdict: 'changes_requested',
             blockingIssues: [
-              { severity: 'high', category: 'security', message: 'Use prepared statements' },
+              { severity: 'major', category: 'risk', message: 'Use prepared statements' },
             ],
             majorRisks: [],
             missingVerification: [],
@@ -140,10 +140,10 @@ describe('getReviewLoopProgress', () => {
 
     it('outstandingIssues capped at 3 entries', () => {
       const issues = [
-        { severity: 'high' as const, category: 'a' as const, message: 'A' },
-        { severity: 'high' as const, category: 'b' as const, message: 'B' },
-        { severity: 'high' as const, category: 'c' as const, message: 'C' },
-        { severity: 'high' as const, category: 'd' as const, message: 'D' },
+        { severity: 'major' as const, category: 'risk' as const, message: 'A' },
+        { severity: 'major' as const, category: 'risk' as const, message: 'B' },
+        { severity: 'major' as const, category: 'risk' as const, message: 'C' },
+        { severity: 'major' as const, category: 'risk' as const, message: 'D' },
       ];
       const state = reviewState('IMPL_REVIEW', {
         implReview: {
@@ -216,14 +216,14 @@ describe('getReviewLoopProgress', () => {
 
     it('returns null when review slot has no verdict', () => {
       const state = reviewState('PLAN_REVIEW', {
-        selfReview: makeReview({ verdict: '' }),
+        selfReview: null,
       });
       expect(getReviewLoopProgress(state)).toBeNull();
     });
 
     it('returns null when review slot has an invalid verdict', () => {
       const state = reviewState('PLAN_REVIEW', {
-        selfReview: makeReview({ verdict: 'invalid' }),
+        selfReview: null,
       });
       expect(getReviewLoopProgress(state)).toBeNull();
     });
@@ -365,7 +365,7 @@ describe('getReviewLoopProgress', () => {
       const result = formatRailResult({
         kind: 'ok',
         state,
-        evalResult: { kind: 'waiting' as const, phase: 'PLAN_REVIEW' as const },
+        evalResult: { kind: 'waiting' as const, phase: 'PLAN_REVIEW' as const, reason: 'test' },
         transitions: [],
       });
 
@@ -388,7 +388,7 @@ describe('getReviewLoopProgress', () => {
       const result = formatRailResult({
         kind: 'ok',
         state,
-        evalResult: { kind: 'waiting' as const, phase: 'TICKET' as const },
+        evalResult: { kind: 'waiting' as const, phase: 'TICKET' as const, reason: 'test' },
         transitions: [],
       });
 

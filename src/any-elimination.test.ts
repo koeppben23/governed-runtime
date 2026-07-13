@@ -43,11 +43,11 @@ describe('plugin-logging.ts', () => {
       const config = {
         logging: {
           mode: 'both' as const,
-          level: 'info',
+          level: 'info' as const,
           retentionDays: 7,
           consoleFormat: 'text' as const,
           maxFileSizeMb: 10,
-          otlp: { enabled: false },
+          otlp: { enabled: false, allowInsecure: false },
         },
       };
       const client = {

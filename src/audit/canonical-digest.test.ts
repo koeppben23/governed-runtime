@@ -7,6 +7,7 @@ import {
   createTransitionEvent,
 } from './types.js';
 import type { ChainedAuditEvent } from './types.js';
+import type { Event, Phase } from '../state/schema.js';
 
 describe('canonicalEventDigest', () => {
   it('produces deterministic digest for same event', () => {
@@ -88,17 +89,17 @@ describe('canonicalEventDigest', () => {
 });
 
 function buildEvent(
-  from: string,
-  to: string,
-  eventName: string,
+  from: Phase,
+  to: Phase,
+  eventName: Event,
 ): Omit<ChainedAuditEvent, 'chainHash'> {
   const evt = createTransitionEvent(
     'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
-    to as Parameters<typeof createTransitionEvent>[1],
+    to,
     {
-      from: from as Parameters<typeof createTransitionEvent>[2]['from'],
-      to: to as Parameters<typeof createTransitionEvent>[2]['to'],
-      event: eventName as Parameters<typeof createTransitionEvent>[2]['event'],
+      from,
+      to,
+      event: eventName,
       autoAdvanced: false,
       chainIndex: -1,
     },

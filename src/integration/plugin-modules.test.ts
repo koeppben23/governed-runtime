@@ -20,6 +20,7 @@ import {
 import { updateObligation, blockObligation } from './review/obligation-state.js';
 import { trackFlowGuardEnforcement, trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import * as reviewEnforcement from './review/enforcement/enforcement.js';
+import type { SessionEnforcementState } from './review/enforcement/types.js';
 
 vi.mock('./review/enforcement/enforcement.js', () => ({
   onFlowGuardToolAfter: vi.fn(),
@@ -168,9 +169,7 @@ describe('plugin-review-state', () => {
 
 describe('plugin-enforcement-tracking', () => {
   it('trackFlowGuardEnforcement delegates to enforcement module', () => {
-    const eState = {} as NonNullable<
-      ReturnType<typeof reviewEnforcement.resolveSessionEnforcementState>
-    >;
+    const eState = {} as SessionEnforcementState;
     trackFlowGuardEnforcement(
       eState,
       'flowguard_status',
@@ -182,9 +181,7 @@ describe('plugin-enforcement-tracking', () => {
   });
 
   it('trackTaskEnforcement delegates to enforcement module', () => {
-    const eState = {} as NonNullable<
-      ReturnType<typeof reviewEnforcement.resolveSessionEnforcementState>
-    >;
+    const eState = {} as SessionEnforcementState;
     trackTaskEnforcement(
       eState,
       { args: { subagent_type: 'flowguard-reviewer' } },

@@ -8,7 +8,13 @@ import {
   DEFAULT_MAX_REVIEW_ITERATIONS,
   MAX_AUTO_ADVANCE_STEPS,
 } from '../rails/types.js';
-import type { RailContext, ConvergenceResult, IterationResult } from '../rails/types.js';
+import type {
+  AutoAdvanceAdvanced,
+  ConvergedResult,
+  RailContext,
+  ConvergenceResult,
+  IterationResult,
+} from '../rails/types.js';
 import { evaluate } from '../machine/evaluate.js';
 import type { EvalResult } from '../machine/evaluate.js';
 import type { SessionState } from '../state/schema.js';
@@ -24,8 +30,19 @@ import {
 } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { createTestContext } from '../testing.js';
+import { TEAM_POLICY } from '../config/policy.js';
 
 const ctx = createTestContext();
+
+function advanced(result: ReturnType<typeof autoAdvance>): AutoAdvanceAdvanced {
+  if (result.kind !== 'advanced') throw new Error('expected advanced result');
+  return result;
+}
+
+function converged<T>(result: ConvergenceResult<T>): ConvergedResult<T> {
+  if (result.kind !== 'converged') throw new Error('expected converged result');
+  return result;
+}
 
 describe('rails/types', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -72,7 +89,7 @@ describe('rails/types', () => {
       // TICKET with ticket+plan → should advance to PLAN via PLAN_READY
       const state = makeState('TICKET', { ticket: TICKET, plan: PLAN_RECORD });
       const evalFn = (s: typeof state) => evaluate(s);
-      const result = autoAdvance(state, evalFn, ctx);
+      const result = advanced(autoAdvance(state, evalFn, ctx));
       expect(result.state.phase).toBe('PLAN');
       expect(result.transitions.length).toBeGreaterThanOrEqual(1);
       expect(result.transitions[0]?.event).toBe('PLAN_READY');
@@ -86,7 +103,7 @@ describe('rails/types', () => {
         selfReview: SELF_REVIEW_CONVERGED,
       });
       const evalFn = (s: typeof state) => evaluate(s);
-      const result = autoAdvance(state, evalFn, ctx);
+      const result = advanced(autoAdvance(state, evalFn, ctx));
       expect(result.state.phase).toBe('PLAN_REVIEW');
       expect(result.evalResult.kind).toBe('waiting');
     });
@@ -94,7 +111,7 @@ describe('rails/types', () => {
     it('autoAdvance stops at terminal', () => {
       const state = makeProgressedState('COMPLETE');
       const evalFn = (s: typeof state) => evaluate(s);
-      const result = autoAdvance(state, evalFn, ctx);
+      const result = advanced(autoAdvance(state, evalFn, ctx));
       expect(result.state.phase).toBe('COMPLETE');
       expect(result.evalResult.kind).toBe('terminal');
       expect(result.transitions.length).toBe(0);
@@ -108,13 +125,12 @@ describe('rails/types', () => {
       const policyCtx: RailContext = {
         ...ctx,
         policy: {
+          ...TEAM_POLICY,
           mode: 'solo',
           requireHumanGates: false,
           maxSelfReviewIterations: 1,
           maxImplReviewIterations: 1,
           allowSelfApproval: true,
-          audit: { emitTransitions: true, emitToolCalls: true, enableChainHash: false },
-          actorClassification: {},
         },
       };
       const evalFn = createPolicyEvalFn(policyCtx);
@@ -130,7 +146,7 @@ describe('rails/types', () => {
     it('autoAdvance with no transitions returns empty transitions array', () => {
       const state = makeState('TICKET'); // No evidence → pending
       const evalFn = (s: typeof state) => evaluate(s);
-      const result = autoAdvance(state, evalFn, ctx);
+      const result = advanced(autoAdvance(state, evalFn, ctx));
       expect(result.transitions.length).toBe(0);
       expect(result.evalResult.kind).toBe('pending');
     });
@@ -153,7 +169,7 @@ describe('rails/types', () => {
         },
       });
       const evalFn = (s: typeof state) => evaluate(s);
-      const result = autoAdvance(state, evalFn, ctx);
+      const result = advanced(autoAdvance(state, evalFn, ctx));
       // Should stop because SELF_REVIEW_PENDING → PLAN is a self-loop
       expect(result.state.phase).toBe('PLAN');
       expect(result.transitions.length).toBe(0);
@@ -177,15 +193,17 @@ describe('rails/types', () => {
       expect(typeof result.phase).toBe('string');
       // Fail-closed contract: the overflow variant carries NO advanced state or
       // evalResult, so no caller can persist a partially-advanced session.
-      expect((result as Record<string, unknown>).state).toBeUndefined();
-      expect((result as Record<string, unknown>).evalResult).toBeUndefined();
+      expect('state' in result).toBe(false);
+      expect('evalResult' in result).toBe(false);
     });
 
     it('runConvergenceLoop converges on first iteration when approved+none', async () => {
       const initial = { digest: 'd1', value: 'original' };
-      const result = await runConvergenceLoop(initial, 3, async () => {
-        return { verdict: 'accept' as const };
-      });
+      const result = converged(
+        await runConvergenceLoop(initial, 3, async () => {
+          return { verdict: 'accept' as const };
+        }),
+      );
       expect(result.iteration).toBe(1);
       expect(result.revisionDelta).toBe('none');
       expect(result.verdict).toBe('accept');
@@ -195,13 +213,15 @@ describe('rails/types', () => {
     it('runConvergenceLoop stops at maxIterations', async () => {
       let count = 0;
       const initial = { digest: 'd1' };
-      const result = await runConvergenceLoop(initial, 2, async (_current, _iter) => {
-        count++;
-        return {
-          verdict: 'changes_requested' as const,
-          updated: { digest: `d${count + 1}` },
-        };
-      });
+      const result = converged(
+        await runConvergenceLoop(initial, 2, async (_current, _iter) => {
+          count++;
+          return {
+            verdict: 'changes_requested' as const,
+            updated: { digest: `d${count + 1}` },
+          };
+        }),
+      );
       expect(result.iteration).toBe(2);
       expect(count).toBe(2);
     });
@@ -211,9 +231,11 @@ describe('rails/types', () => {
   describe('EDGE', () => {
     it('runSingleIteration at maxIterations returns immediately', async () => {
       const current = { digest: 'd1' };
-      const result = await runSingleIteration(current, 3, 3, async () => {
-        throw new Error('should not be called');
-      });
+      const result = converged(
+        await runSingleIteration(current, 3, 3, async () => {
+          throw new Error('should not be called');
+        }),
+      );
       expect(result.iteration).toBe(3);
       expect(result.verdict).toBe('changes_requested');
       expect(result.revisionDelta).toBe('none');
@@ -232,15 +254,17 @@ describe('rails/types', () => {
 
     it('runConvergenceLoop tracks prevDigest correctly', async () => {
       const initial = { digest: 'd0' };
-      const result = await runConvergenceLoop(initial, 3, async (current, iter) => {
-        if (iter < 3) {
-          return {
-            verdict: 'changes_requested' as const,
-            updated: { digest: `d${iter}` },
-          };
-        }
-        return { verdict: 'accept' as const };
-      });
+      const result = converged(
+        await runConvergenceLoop(initial, 3, async (current, iter) => {
+          if (iter < 3) {
+            return {
+              verdict: 'changes_requested' as const,
+              updated: { digest: `d${iter}` },
+            };
+          }
+          return { verdict: 'accept' as const };
+        }),
+      );
       // Last iteration should have prevDigest from previous iteration
       expect(result.prevDigest).toBeDefined();
     });

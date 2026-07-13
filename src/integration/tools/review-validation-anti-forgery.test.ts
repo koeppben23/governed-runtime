@@ -4,6 +4,7 @@ import {
   type ReviewFindingsValidationContext,
 } from './review-validation.js';
 import type { ReviewFindings } from '../../state/evidence.js';
+import type { ReviewInvocationEvidence, ReviewObligation } from '../../state/evidence-review.js';
 import {
   hashFindings,
   REVIEW_CRITERIA_VERSION,
@@ -74,7 +75,14 @@ function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings
   });
 }
 
-function strictAssuranceFixture(findings: ReviewFindings = strictFindings()) {
+type ReviewAssuranceFixture = {
+  obligations: ReviewObligation[];
+  invocations: ReviewInvocationEvidence[];
+};
+
+function strictAssuranceFixture(
+  findings: ReviewFindings = strictFindings(),
+): ReviewAssuranceFixture {
   return {
     obligations: [
       {
@@ -110,6 +118,9 @@ function strictAssuranceFixture(findings: ReviewFindings = strictFindings()) {
         invokedAt: new Date().toISOString(),
         fulfilledAt: new Date().toISOString(),
         consumedByObligationId: null,
+        reviewOutputMode: 'structured_output',
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high',
       },
     ],
   };

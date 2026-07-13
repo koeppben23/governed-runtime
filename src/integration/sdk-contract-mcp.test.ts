@@ -62,8 +62,8 @@ describe('SDK Contract: MCP tool registry', () => {
     it('version.json exists and records server metadata', () => {
       const version = loadSchema('version.json');
       expect(version.platform).toBe('mcp');
-      expect((version as Record<string, Record<string, unknown>>).server.name).toBe('flowguard');
-      expect((version as Record<string, Record<string, unknown>>).server.version).toBe(
+      expect((version as Record<string, Record<string, unknown>>).server!.name).toBe('flowguard');
+      expect((version as Record<string, Record<string, unknown>>).server!.version).toBe(
         '1.2.0-tp.1',
       );
     });
@@ -139,31 +139,31 @@ describe('SDK Contract: MCP tool registry', () => {
     it('flowguard_hydrate policyMode enum has 4 values', () => {
       const schema = loadSchema('flowguard_hydrate.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.policyMode.enum).toEqual(['solo', 'team', 'team-ci', 'regulated']);
+      expect(props.policyMode!.enum).toEqual(['solo', 'team', 'team-ci', 'regulated']);
     });
 
     it('flowguard_hydrate claimedTaskClass enum has 3 values', () => {
       const schema = loadSchema('flowguard_hydrate.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.claimedTaskClass.enum).toEqual(['TRIVIAL', 'STANDARD', 'HIGH-RISK']);
+      expect(props.claimedTaskClass!.enum).toEqual(['TRIVIAL', 'STANDARD', 'HIGH-RISK']);
     });
 
     it('flowguard_decision verdict enum has 3 values', () => {
       const schema = loadSchema('flowguard_decision.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.verdict.enum).toEqual(['approve', 'changes_requested', 'reject']);
+      expect(props.verdict!.enum).toEqual(['approve', 'changes_requested', 'reject']);
     });
 
     it('flowguard_plan reviewVerdict enum has 2 values', () => {
       const schema = loadSchema('flowguard_plan.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.reviewVerdict.enum).toEqual(['accept', 'changes_requested']);
+      expect(props.reviewVerdict!.enum).toEqual(['accept', 'changes_requested']);
     });
 
     it('flowguard_review_implementation reviewVerdict enum has 2 values', () => {
       const schema = loadSchema('flowguard_review_implementation.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;
-      expect(props.reviewVerdict.enum).toEqual(['accept', 'changes_requested']);
+      expect(props.reviewVerdict!.enum).toEqual(['accept', 'changes_requested']);
     });
   });
 

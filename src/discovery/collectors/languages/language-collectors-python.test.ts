@@ -41,7 +41,7 @@ describe('languages/python', () => {
         [],
         [],
       );
-      expect(languages[0].version).toBe('3.12.2');
+      expect(languages[0]!.version).toBe('3.12.2');
     });
   });
 
@@ -56,7 +56,7 @@ describe('languages/python', () => {
         [],
         [],
       );
-      expect(languages[0].version).toBe('3.11.9');
+      expect(languages[0]!.version).toBe('3.11.9');
     });
 
     it('handles .python-version with trailing whitespace', async () => {
@@ -69,7 +69,7 @@ describe('languages/python', () => {
         [],
         [],
       );
-      expect(languages[0].version).toBe('3.10.8');
+      expect(languages[0]!.version).toBe('3.10.8');
     });
 
     it('does nothing when .python-version has no recognizable version', async () => {
@@ -83,7 +83,7 @@ describe('languages/python', () => {
         [],
         [],
       );
-      expect(languages[0].version).toBeUndefined();
+      expect(languages[0]!.version).toBeUndefined();
     });
 
     it('detects black as quality tool from requirements.txt', async () => {
@@ -126,7 +126,7 @@ describe('languages/python', () => {
         [],
         [],
       );
-      expect(languages[0].version).toBe('3.9');
+      expect(languages[0]!.version).toBe('3.9');
     });
 
     it('skips non-root files for detection', async () => {

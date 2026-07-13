@@ -341,7 +341,20 @@ describe('evaluate', () => {
     it('VALIDATION with only some checks passed → pending, not CHECK_FAILED (#502)', () => {
       const state = makeState('VALIDATION', {
         activeChecks: ['test', 'lint'],
-        validation: [{ checkId: 'test', passed: true, detail: 'ok', executedAt: FIXED_TIME }],
+        validation: [
+          {
+            checkId: 'test',
+            passed: true,
+            detail: 'ok',
+            executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+          },
+        ],
       });
       const result = evaluate(state);
       expect(result.kind).toBe('pending');

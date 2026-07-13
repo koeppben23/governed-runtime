@@ -244,6 +244,7 @@ describe('hydrate rail', () => {
     it('freezes snapshot from policyResolution when provided', () => {
       const policyResolution: HydratePolicyResolution = {
         requestedMode: 'team-ci',
+        requestedSource: 'explicit',
         effectiveMode: 'team',
         effectiveGateBehavior: 'human_gated',
         degradedReason: 'ci_context_missing',

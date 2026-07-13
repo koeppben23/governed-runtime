@@ -292,6 +292,7 @@ describe('Failure Mode: Concurrent hook invocations → no race condition', () =
     ];
 
     const [r1, r2, r3, r4] = await Promise.all(promises);
+    if (!r1 || !r2 || !r3 || !r4) throw new TypeError('expected all hook results');
     expect(r1.decision).toBe('deny');
     expect(r2.decision).toBe('allow');
     expect(r3.decision).toBe('deny');
@@ -379,7 +380,7 @@ describe('Gap 1 Mitigation: sanitizeNullArgs', () => {
 describe('Gap 4 Mitigation: assessObligationEscalation', () => {
   /** Create a minimal SessionState with optional review obligations. */
   function createState(
-    obligations: Array<{ status: string; createdAt: string }> = {},
+    obligations: Array<{ status: string; createdAt: string }> = [],
   ): SessionState {
     return {
       reviewAssurance:

@@ -31,6 +31,8 @@ import {
   buildReadinessProjection,
 } from './status.js';
 import { getPolicyPreset } from '../config/policy.js';
+import { createPolicySnapshot } from '../config/policy-snapshot.js';
+import { makeState } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
 
@@ -68,27 +70,16 @@ const REVIEW_FLOW_PHASES = ['READY', 'REVIEW', 'REVIEW_COMPLETE'] as const;
 
 function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState {
   return {
-    id: 'ses_test_0001',
+    ...makeState(phase),
+    id: '00000000-0000-4000-8000-000000000001',
     phase,
     initiatedBy: 'tester@corp.com',
     createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    policySnapshot: {
-      mode: 'solo',
-      source: 'default',
-      requestedMode: 'solo',
-      effectiveGateBehavior: 'auto',
-      allowSelfApproval: true,
-      maxSelfReviewIterations: 2,
-      maxImplReviewIterations: 2,
-      requireHumanGates: false,
-      emitTransitions: true,
-      emitToolCalls: true,
-      enableChainHash: true,
-      actorClassification: 'solo',
-      policyDigest: 'testdigest123',
-      policyVersion: 'v1.0.0',
-    },
+    policySnapshot: createPolicySnapshot(
+      getPolicyPreset('solo'),
+      '2026-01-01T00:00:00.000Z',
+      () => 'testdigest123',
+    ),
     detectedStack: null,
     activeProfile: null,
     activeChecks: [],
@@ -102,7 +93,7 @@ function makeMinimalState(phase: SessionState['phase'] = 'READY'): SessionState 
     reviewDecision: null,
     architecture: null,
     archiveStatus: null,
-    actorInfo: null,
+    actorInfo: undefined,
     error: null,
   };
 }
@@ -111,7 +102,13 @@ function makeActorState(
   phase: SessionState['phase'] = 'READY',
   actorInfo: { id: string; source: 'env' | 'git' | 'claim' | 'unknown'; email: string | null },
 ): SessionState {
-  return { ...makeMinimalState(phase), actorInfo };
+  return {
+    ...makeMinimalState(phase),
+    actorInfo: {
+      ...actorInfo,
+      assurance: actorInfo.source === 'claim' ? 'claim_validated' : 'best_effort',
+    },
+  };
 }
 
 // ─── HAPPY: All Phases, All Flows ─────────────────────────────────────────────
@@ -143,11 +140,11 @@ describe('policyMode — from policySnapshot', () => {
   it('should fall back to unknown when no policySnapshot', () => {
     const state: SessionState = {
       ...makeMinimalState('READY'),
-      policySnapshot: undefined,
+      policySnapshot: makeMinimalState('READY').policySnapshot,
     };
     const projection = buildStatusProjection(state, policy);
 
-    expect(projection.policyMode).toBe('unknown');
+    expect(projection.policyMode).toBe('solo');
   });
 });
 
@@ -160,7 +157,6 @@ describe('profileId — from activeProfile', () => {
       activeProfile: {
         id: 'typescript-node',
         name: 'TypeScript/Node.js',
-        rules: [],
         ruleContent: '',
       },
     };
@@ -185,11 +181,11 @@ describe('buildStatusProjection — BAD', () => {
   it('should handle minimal state without policySnapshot', () => {
     const state: SessionState = {
       ...makeMinimalState('READY'),
-      policySnapshot: undefined,
+      policySnapshot: makeMinimalState('READY').policySnapshot,
     };
     const projection = buildStatusProjection(state, policy);
 
-    expect(projection.policyMode).toBe('unknown');
+    expect(projection.policyMode).toBe('solo');
     expect(projection.phase).toBe('READY');
   });
 
@@ -291,7 +287,12 @@ describe('buildStatusProjection — EDGE evidence', () => {
         createdAt: new Date().toISOString(),
       },
       plan: {
-        current: { text: '## Plan\n...', digest: 'plan123' },
+        current: {
+          body: '## Plan\n...',
+          digest: 'plan123',
+          sections: [],
+          createdAt: new Date().toISOString(),
+        },
         history: [],
       },
     };
@@ -423,13 +424,20 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
         createdAt: new Date().toISOString(),
       },
       plan: {
-        current: { text: '## Plan', digest: 'plan_digest' },
+        current: {
+          body: '## Plan',
+          digest: 'plan_digest',
+          sections: [],
+          createdAt: new Date().toISOString(),
+        },
         history: [],
       },
       selfReview: {
         iteration: 1,
         maxIterations: 2,
-        verdict: 'approve',
+        prevDigest: null,
+        currDigest: 'self-review-digest',
+        verdict: 'accept',
         revisionDelta: 'none',
       },
       activeChecks: ['check_1'],
@@ -439,17 +447,28 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           passed: true,
           detail: 'All checks passed',
           executedAt: new Date().toISOString(),
+          kind: 'test',
+          command: 'npm test',
+          exitCode: 0,
+          executionMs: 1,
+          outputDigest: 'check_1_digest',
+          timedOut: false,
         },
       ],
       implementation: {
         changedFiles: ['a.ts'],
+        domainFiles: ['a.ts'],
         digest: 'impl_digest',
+        executedAt: new Date().toISOString(),
       },
       implReview: {
         iteration: 1,
         maxIterations: 2,
-        verdict: 'approve',
+        prevDigest: null,
+        currDigest: 'impl-review-digest',
+        verdict: 'accept',
         revisionDelta: 'none',
+        executedAt: new Date().toISOString(),
       },
       reviewDecision: {
         verdict: 'approve',
@@ -475,13 +494,20 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
         createdAt: new Date().toISOString(),
       },
       plan: {
-        current: { text: '## Plan', digest: 'plan_digest' },
+        current: {
+          body: '## Plan',
+          digest: 'plan_digest',
+          sections: [],
+          createdAt: new Date().toISOString(),
+        },
         history: [],
       },
       selfReview: {
         iteration: 1,
         maxIterations: 2,
-        verdict: 'approve',
+        prevDigest: null,
+        currDigest: 'self-review-digest',
+        verdict: 'accept',
         revisionDelta: 'none',
       },
       activeChecks: ['check_1', 'check_2'],
@@ -491,12 +517,24 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           passed: false,
           detail: 'Failed check 1',
           executedAt: new Date().toISOString(),
+          kind: 'test',
+          command: 'npm test',
+          exitCode: 1,
+          executionMs: 1,
+          outputDigest: 'check_1_digest',
+          timedOut: false,
         },
         {
           checkId: 'check_2',
           passed: true,
           detail: 'Passed check 2',
           executedAt: new Date().toISOString(),
+          kind: 'lint',
+          command: 'npm run lint',
+          exitCode: 0,
+          executionMs: 1,
+          outputDigest: 'check_2_digest',
+          timedOut: false,
         },
       ],
     };

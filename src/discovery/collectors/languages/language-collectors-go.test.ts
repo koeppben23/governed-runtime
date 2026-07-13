@@ -29,8 +29,8 @@ describe('languages/go', () => {
       await extractFromGoMod(mockReadFile({ 'go.mod': 'module example\n\ngo 1.23\n' }), languages, [
         'go.mod',
       ]);
-      expect(languages[0].version).toBe('1.23');
-      expect(languages[0].versionEvidence).toBe('go.mod:go');
+      expect(languages[0]!.version).toBe('1.23');
+      expect(languages[0]!.versionEvidence).toBe('go.mod:go');
     });
   });
 
@@ -39,7 +39,7 @@ describe('languages/go', () => {
       // Covers line 24: if (!goVer) return
       const languages: DetectedItem[] = [makeItem('go')];
       await extractFromGoMod(mockReadFile({ 'go.mod': 'module example\n' }), languages, ['go.mod']);
-      expect(languages[0].version).toBeUndefined();
+      expect(languages[0]!.version).toBeUndefined();
     });
 
     it('does not overwrite existing go version', async () => {
@@ -50,7 +50,7 @@ describe('languages/go', () => {
       await extractFromGoMod(mockReadFile({ 'go.mod': 'module example\n\ngo 1.23\n' }), languages, [
         'go.mod',
       ]);
-      expect(languages[0].version).toBe('1.22');
+      expect(languages[0]!.version).toBe('1.22');
     });
   });
 
@@ -87,7 +87,7 @@ describe('languages/go', () => {
         [],
         [],
       );
-      expect(languages[0].version).toBeUndefined();
+      expect(languages[0]!.version).toBeUndefined();
     });
 
     it('does nothing when rust-toolchain.toml has no components block', async () => {
@@ -134,7 +134,7 @@ components = ["rustfmt"]
         [],
         [],
       );
-      expect(languages[0].version).toBeUndefined();
+      expect(languages[0]!.version).toBeUndefined();
     });
 
     it('does not overwrite rust version when already set from toolchain', async () => {
@@ -153,7 +153,7 @@ channel = "1.77.0"
         [],
         [],
       );
-      expect(languages[0].version).toBe('1.76.0');
+      expect(languages[0]!.version).toBe('1.76.0');
     });
   });
 });

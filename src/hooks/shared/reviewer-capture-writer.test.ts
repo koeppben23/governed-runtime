@@ -125,7 +125,7 @@ describe('writeReviewerCapture', () => {
     const result = await writeReviewerCapture(
       sessionDir,
       {
-        source: 'post-tool-use',
+        source: 'post_tool_use_hook',
         sessionId: 'sess-1',
         agentId: 'agent-1',
         agentType: 'coder',
@@ -140,7 +140,7 @@ describe('writeReviewerCapture', () => {
     const result = await writeReviewerCapture(
       sessionDir,
       {
-        source: 'post-tool-use',
+        source: 'post_tool_use_hook',
         sessionId: 'sess-1',
         agentId: undefined,
         agentType: 'flowguard-reviewer',
@@ -154,7 +154,7 @@ describe('writeReviewerCapture', () => {
     const result = await writeReviewerCapture(
       sessionDir,
       {
-        source: 'post-tool-use',
+        source: 'post_tool_use_hook',
         sessionId: 'sess-1',
         agentId: 'agent-1',
         agentType: undefined,

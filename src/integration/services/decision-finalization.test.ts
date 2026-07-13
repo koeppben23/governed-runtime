@@ -70,7 +70,7 @@ function makeOkResult(state: ReturnType<typeof makeState>): RailResult {
   return {
     kind: 'ok',
     state,
-    evalResult: { kind: 'awaiting_input', phase: state.phase, prompt: '' },
+    evalResult: { kind: 'waiting', phase: state.phase, reason: 'test fixture' },
     transitions: [],
   };
 }

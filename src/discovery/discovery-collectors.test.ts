@@ -246,7 +246,7 @@ describe('discovery/collectors/domain-signals', () => {
       const result = await collectDomainSignals(TS_PROJECT_INPUT);
       const keywords = result.data.keywords;
       for (let i = 1; i < keywords.length; i++) {
-        expect(keywords[i - 1].occurrences).toBeGreaterThanOrEqual(keywords[i].occurrences);
+        expect(keywords[i - 1]!.occurrences).toBeGreaterThanOrEqual(keywords[i]!.occurrences);
       }
     });
   });

@@ -319,6 +319,7 @@ describe('config/policy', () => {
           audience: ['flowguard'],
           claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
           jwksPath: '/etc/jwks.json',
+          cacheTtlSeconds: 300,
         },
         configIdentityProviderMode: 'required',
       });
@@ -379,8 +380,9 @@ describe('config/policy', () => {
           mode: 'jwks',
           issuer: 'https://idp',
           audience: ['fg'],
-          claimMapping: { subjectClaim: 'sub' },
+          claimMapping: { subjectClaim: 'sub', emailClaim: 'email', nameClaim: 'name' },
           jwksPath: '/etc/jwks.json',
+          cacheTtlSeconds: 300,
         },
       });
       expect(result.policy.identityProvider).toBeDefined();

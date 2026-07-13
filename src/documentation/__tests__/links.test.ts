@@ -46,6 +46,7 @@ function extractLinks(content: string, filePath: string): Link[] {
     let match;
     while ((match = mdLinkRegex.exec(line)) !== null) {
       const url = match[2];
+      if (!url) continue;
       if (url.startsWith('http://') || url.startsWith('https://')) {
         continue;
       }

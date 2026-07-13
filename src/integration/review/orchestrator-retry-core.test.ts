@@ -16,7 +16,11 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { invokeReviewer, type OrchestratorClient } from './orchestrator.js';
+import {
+  invokeReviewer,
+  type OrchestratorClient,
+  type ReviewerSuccessResult,
+} from './orchestrator.js';
 import {
   _resetAgentResolutionCache,
   REVIEWER_AGENT_FALLBACK,
@@ -37,6 +41,21 @@ const mockSleep = vi.fn<(ms: number) => Promise<void>>().mockResolvedValue(undef
 
 /** Default test options: SDK allowed for deterministic tests + mock sleep */
 const TEST_OPTS = { _sleepFn: mockSleep } as const;
+
+function expectReviewerSuccess(
+  result: Awaited<ReturnType<typeof invokeReviewer>>,
+): ReviewerSuccessResult {
+  expect(result && !result.blocked).toBe(true);
+  if (!result || result.blocked) throw new Error('Expected reviewer success result');
+  return result;
+}
+
+function makeRetryClient(session: OrchestratorClient['session']): OrchestratorClient {
+  return {
+    app: { agents: vi.fn().mockResolvedValue({ data: [{ id: 'flowguard-reviewer' }] }) },
+    session,
+  };
+}
 
 function validFindings(): Record<string, unknown> {
   return {
@@ -126,53 +145,46 @@ describe('invokeReviewer — retry logic', () => {
 
   describe('HAPPY: transient recovery', () => {
     it('succeeds on first attempt without retries (baseline)', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi.fn().mockResolvedValue(successCreateResult()),
-          prompt: vi.fn().mockResolvedValue(successPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi.fn().mockResolvedValue(successCreateResult()),
+        prompt: vi.fn().mockResolvedValue(successPromptResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
-      expect(result).not.toBeNull();
-      expect(result!.sessionId).toBe('child-session-1');
-      expect(result!.findings!.overallVerdict).toBe('accept');
+      const successfulResult = expectReviewerSuccess(result);
+      expect(successfulResult.sessionId).toBe('child-session-1');
+      expect(successfulResult.findings?.overallVerdict).toBe('accept');
       expect(client.session.create).toHaveBeenCalledTimes(1);
       expect(client.session.prompt).toHaveBeenCalledTimes(1);
       expect(mockSleep).not.toHaveBeenCalled();
     });
 
     it('recovers after 1 session.create failure', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi
-            .fn()
-            .mockResolvedValueOnce(failCreateResult())
-            .mockResolvedValueOnce(successCreateResult()),
-          prompt: vi.fn().mockResolvedValue(successPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi
+          .fn()
+          .mockResolvedValueOnce(failCreateResult())
+          .mockResolvedValueOnce(successCreateResult()),
+        prompt: vi.fn().mockResolvedValue(successPromptResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
-      expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('accept');
+      expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
       expect(client.session.create).toHaveBeenCalledTimes(2);
       expect(mockSleep).toHaveBeenCalledTimes(1);
     });
 
     it('recovers after 2 session.create failures (max retries default=2)', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi
-            .fn()
-            .mockResolvedValueOnce(failCreateResult())
-            .mockResolvedValueOnce(failCreateResult())
-            .mockResolvedValueOnce(successCreateResult()),
-          prompt: vi.fn().mockResolvedValue(successPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi
+          .fn()
+          .mockResolvedValueOnce(failCreateResult())
+          .mockResolvedValueOnce(failCreateResult())
+          .mockResolvedValueOnce(successCreateResult()),
+        prompt: vi.fn().mockResolvedValue(successPromptResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
@@ -182,15 +194,13 @@ describe('invokeReviewer — retry logic', () => {
     });
 
     it('recovers after 1 session.prompt failure', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi.fn().mockResolvedValue(successCreateResult()),
-          prompt: vi
-            .fn()
-            .mockResolvedValueOnce(failPromptResult())
-            .mockResolvedValueOnce(successPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi.fn().mockResolvedValue(successCreateResult()),
+        prompt: vi
+          .fn()
+          .mockResolvedValueOnce(failPromptResult())
+          .mockResolvedValueOnce(successPromptResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
@@ -201,20 +211,17 @@ describe('invokeReviewer — retry logic', () => {
     });
 
     it('recovers after missing structured_output on first attempt', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi.fn().mockResolvedValue(successCreateResult()),
-          prompt: vi
-            .fn()
-            .mockResolvedValueOnce(noStructuredOutputResult())
-            .mockResolvedValueOnce(successPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi.fn().mockResolvedValue(successCreateResult()),
+        prompt: vi
+          .fn()
+          .mockResolvedValueOnce(noStructuredOutputResult())
+          .mockResolvedValueOnce(successPromptResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
-      expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('accept');
+      expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
     });
   });
 
@@ -222,12 +229,10 @@ describe('invokeReviewer — retry logic', () => {
 
   describe('BAD: retries exhausted', () => {
     it('returns null after all create attempts fail (default 3 total)', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi.fn().mockResolvedValue(failCreateResult()),
-          prompt: vi.fn().mockResolvedValue(successPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi.fn().mockResolvedValue(failCreateResult()),
+        prompt: vi.fn().mockResolvedValue(successPromptResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
@@ -237,12 +242,10 @@ describe('invokeReviewer — retry logic', () => {
     });
 
     it('returns null after all prompt attempts fail (default 3 total)', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi.fn().mockResolvedValue(successCreateResult()),
-          prompt: vi.fn().mockResolvedValue(failPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi.fn().mockResolvedValue(successCreateResult()),
+        prompt: vi.fn().mockResolvedValue(failPromptResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
@@ -252,12 +255,10 @@ describe('invokeReviewer — retry logic', () => {
     });
 
     it('returns null after all attempts have no structured_output', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi.fn().mockResolvedValue(successCreateResult()),
-          prompt: vi.fn().mockResolvedValue(noStructuredOutputResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi.fn().mockResolvedValue(successCreateResult()),
+        prompt: vi.fn().mockResolvedValue(noStructuredOutputResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
@@ -270,12 +271,10 @@ describe('invokeReviewer — retry logic', () => {
 
   describe('EDGE: StructuredOutputError (deterministic, no retry)', () => {
     it('returns null immediately without retrying on StructuredOutputError', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi.fn().mockResolvedValue(successCreateResult()),
-          prompt: vi.fn().mockResolvedValue(structuredOutputErrorResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi.fn().mockResolvedValue(successCreateResult()),
+        prompt: vi.fn().mockResolvedValue(structuredOutputErrorResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
@@ -291,12 +290,10 @@ describe('invokeReviewer — retry logic', () => {
 
   describe('CORNER: custom retry options', () => {
     it('respects maxRetries=0 (no retries)', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi.fn().mockResolvedValue(failCreateResult()),
-          prompt: vi.fn().mockResolvedValue(successPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi.fn().mockResolvedValue(failCreateResult()),
+        prompt: vi.fn().mockResolvedValue(successPromptResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, {
         maxRetries: 0,
@@ -309,19 +306,17 @@ describe('invokeReviewer — retry logic', () => {
     });
 
     it('respects maxRetries=5 (5 retries = 6 total attempts)', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi
-            .fn()
-            .mockResolvedValueOnce(failCreateResult())
-            .mockResolvedValueOnce(failCreateResult())
-            .mockResolvedValueOnce(failCreateResult())
-            .mockResolvedValueOnce(failCreateResult())
-            .mockResolvedValueOnce(failCreateResult())
-            .mockResolvedValueOnce(successCreateResult()),
-          prompt: vi.fn().mockResolvedValue(successPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi
+          .fn()
+          .mockResolvedValueOnce(failCreateResult())
+          .mockResolvedValueOnce(failCreateResult())
+          .mockResolvedValueOnce(failCreateResult())
+          .mockResolvedValueOnce(failCreateResult())
+          .mockResolvedValueOnce(failCreateResult())
+          .mockResolvedValueOnce(successCreateResult()),
+        prompt: vi.fn().mockResolvedValue(successPromptResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, {
         maxRetries: 5,
@@ -333,16 +328,14 @@ describe('invokeReviewer — retry logic', () => {
     });
 
     it('uses custom baseDelayMs for backoff', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi
-            .fn()
-            .mockResolvedValueOnce(failCreateResult())
-            .mockResolvedValueOnce(failCreateResult())
-            .mockResolvedValueOnce(successCreateResult()),
-          prompt: vi.fn().mockResolvedValue(successPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi
+          .fn()
+          .mockResolvedValueOnce(failCreateResult())
+          .mockResolvedValueOnce(failCreateResult())
+          .mockResolvedValueOnce(successCreateResult()),
+        prompt: vi.fn().mockResolvedValue(successPromptResult()),
+      });
 
       await invokeReviewer(client, PROMPT, PARENT_ID, { baseDelayMs: 500, _sleepFn: mockSleep });
 
@@ -357,12 +350,10 @@ describe('invokeReviewer — retry logic', () => {
 
   describe('CORNER: exponential backoff timing', () => {
     it('applies exponential backoff with default baseDelayMs=1000', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi.fn().mockResolvedValue(failCreateResult()),
-          prompt: vi.fn().mockResolvedValue(successPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi.fn().mockResolvedValue(failCreateResult()),
+        prompt: vi.fn().mockResolvedValue(successPromptResult()),
+      });
 
       await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
@@ -379,38 +370,33 @@ describe('invokeReviewer — retry logic', () => {
 
   describe('EDGE: mixed failure modes', () => {
     it('create fails then prompt fails then succeeds', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi
-            .fn()
-            .mockResolvedValueOnce(failCreateResult())
-            .mockResolvedValueOnce(successCreateResult())
-            .mockResolvedValueOnce(successCreateResult()),
-          prompt: vi
-            .fn()
-            .mockResolvedValueOnce(failPromptResult())
-            .mockResolvedValueOnce(successPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi
+          .fn()
+          .mockResolvedValueOnce(failCreateResult())
+          .mockResolvedValueOnce(successCreateResult())
+          .mockResolvedValueOnce(successCreateResult()),
+        prompt: vi
+          .fn()
+          .mockResolvedValueOnce(failPromptResult())
+          .mockResolvedValueOnce(successPromptResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
-      expect(result).not.toBeNull();
-      expect(result!.findings!.overallVerdict).toBe('accept');
+      expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('accept');
     });
 
     it('StructuredOutputError on second attempt after transient failure returns null immediately', async () => {
       // First attempt: transient create failure (retryable)
       // Second attempt: create succeeds, prompt returns StructuredOutputError (not retryable)
-      const client: OrchestratorClient = {
-        session: {
-          create: vi
-            .fn()
-            .mockResolvedValueOnce(failCreateResult())
-            .mockResolvedValueOnce(successCreateResult()),
-          prompt: vi.fn().mockResolvedValue(structuredOutputErrorResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi
+          .fn()
+          .mockResolvedValueOnce(failCreateResult())
+          .mockResolvedValueOnce(successCreateResult()),
+        prompt: vi.fn().mockResolvedValue(structuredOutputErrorResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID, TEST_OPTS);
 
@@ -425,32 +411,26 @@ describe('invokeReviewer — retry logic', () => {
 
   describe('EDGE: backward compatibility', () => {
     it('works without options parameter (uses defaults)', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi.fn().mockResolvedValue(successCreateResult()),
-          prompt: vi.fn().mockResolvedValue(successPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi.fn().mockResolvedValue(successCreateResult()),
+        prompt: vi.fn().mockResolvedValue(successPromptResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID);
 
-      expect(result).not.toBeNull();
-      expect(result!.sessionId).toBe('child-session-1');
+      expect(expectReviewerSuccess(result).sessionId).toBe('child-session-1');
     });
 
     it('injects authoritative sessionId into findings.reviewedBy', async () => {
-      const client: OrchestratorClient = {
-        session: {
-          create: vi.fn().mockResolvedValue(successCreateResult()),
-          prompt: vi.fn().mockResolvedValue(successPromptResult()),
-        },
-      };
+      const client = makeRetryClient({
+        create: vi.fn().mockResolvedValue(successCreateResult()),
+        prompt: vi.fn().mockResolvedValue(successPromptResult()),
+      });
 
       const result = await invokeReviewer(client, PROMPT, PARENT_ID);
 
-      expect(result).not.toBeNull();
-      const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
-      expect(reviewedBy.sessionId).toBe('child-session-1');
+      const reviewedBy = expectReviewerSuccess(result).findings?.reviewedBy;
+      expect(reviewedBy).toEqual({ sessionId: 'child-session-1' });
     });
   });
 });

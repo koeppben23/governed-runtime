@@ -34,6 +34,7 @@ import {
   extractReviewContext,
   REVIEW_COMPLETED_PREFIX,
   type OrchestratorClient,
+  type ReviewerResult,
   type ReviewerSuccessResult,
 } from './orchestrator.js';
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
@@ -67,6 +68,13 @@ function validFindings(overrides: Record<string, unknown> = {}): string {
     },
     ...overrides,
   });
+}
+
+function assertSuccessfulResult(
+  result: ReviewerResult | null,
+): asserts result is ReviewerSuccessResult {
+  expect(result).not.toBeNull();
+  if (!result || result.blocked) throw new TypeError('Expected reviewer invocation to succeed');
 }
 
 /** Build a mock OpenCode SDK client. */
@@ -156,6 +164,7 @@ describe('MUTATION_KILL: buildStackProfileSection via buildPlanReviewPrompt', ()
     obligationId: 'obl-1',
     criteriaVersion: 'v1',
     mandateDigest: 'digest-1',
+    discoveryContext: {},
   };
 
   it('includes stack profile section when profileName is provided', () => {
@@ -221,7 +230,7 @@ describe('MUTATION_KILL: invokeReviewer StructuredOutputError with structured_ou
       },
     });
     const result = await invokeReviewer(client, 'test prompt', 'parent-1');
-    expect(result).not.toBeNull();
+    assertSuccessfulResult(result);
     expect(result!.findings).not.toBeNull();
   });
 });
@@ -237,7 +246,7 @@ describe('MUTATION_KILL: invokeReviewer reviewedBy injection edge cases', () => 
       },
     });
     const result = await invokeReviewer(client, 'test prompt', 'parent-1');
-    expect(result).not.toBeNull();
+    assertSuccessfulResult(result);
     const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
     expect(reviewedBy.sessionId).toBe('child-session-1');
   });
@@ -252,7 +261,7 @@ describe('MUTATION_KILL: invokeReviewer reviewedBy injection edge cases', () => 
       },
     });
     const result = await invokeReviewer(client, 'test prompt', 'parent-1');
-    expect(result).not.toBeNull();
+    assertSuccessfulResult(result);
     const reviewedBy = result!.findings!.reviewedBy as Record<string, unknown>;
     expect(reviewedBy.sessionId).toBe('child-session-1');
   });
@@ -404,7 +413,7 @@ describe('M2 — retryCount in format object', () => {
     const client = mockClient();
     _resetAgentResolutionCache();
     await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: async () => {} });
-    const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
     expect(call.body.format.retryCount).toBe(1);
   });
 
@@ -412,7 +421,7 @@ describe('M2 — retryCount in format object', () => {
     const client = mockClient();
     _resetAgentResolutionCache();
     await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: async () => {} });
-    const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
     expect(call.body.format.retryCount).not.toBe(0);
   });
 
@@ -420,7 +429,7 @@ describe('M2 — retryCount in format object', () => {
     const client = mockClient();
     _resetAgentResolutionCache();
     await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: async () => {} });
-    const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
     expect(Number.isInteger(call.body.format.retryCount)).toBe(true);
     expect(call.body.format.retryCount).toBeGreaterThan(0);
   });
@@ -429,7 +438,7 @@ describe('M2 — retryCount in format object', () => {
     const client = mockClient();
     _resetAgentResolutionCache();
     await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: async () => {} });
-    const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    const call = (client.session.prompt as ReturnType<typeof vi.fn>).mock.calls[0]![0]!;
     expect(call.body.format.type).toBe('json_schema');
     expect(call.body.format).toHaveProperty('schema');
     expect(call.body.format).toHaveProperty('retryCount', 1);

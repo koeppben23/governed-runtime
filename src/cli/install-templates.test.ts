@@ -486,6 +486,12 @@ describe('reviewCard presentation mandate', () => {
   // These four commands produce reviewCard fields in their tool responses.
   const REVIEW_CARD_COMMANDS = ['plan.md', 'implement.md', 'architecture.md', 'review.md'] as const;
 
+  function commandContent(command: keyof typeof COMMANDS): string {
+    const content = COMMANDS[command];
+    if (!content) throw new TypeError(`missing ${command} template`);
+    return content;
+  }
+
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
     for (const cmd of REVIEW_CARD_COMMANDS) {
@@ -494,7 +500,7 @@ describe('reviewCard presentation mandate', () => {
       });
 
       it(`${cmd} Presentation section mandates verbatim reviewCard display`, () => {
-        const content = COMMANDS[cmd];
+        const content = commandContent(cmd);
         const presIdx = content.indexOf('## Presentation');
         const presSection = content.substring(presIdx);
         expect(presSection, `${cmd} Presentation missing 'reviewCard'`).toContain('reviewCard');
@@ -502,7 +508,7 @@ describe('reviewCard presentation mandate', () => {
       });
 
       it(`${cmd} Done-when section includes reviewCard mandate`, () => {
-        const content = COMMANDS[cmd];
+        const content = commandContent(cmd);
         const doneIdx = content.indexOf('## Done-when');
         const doneSection = content.substring(doneIdx);
         expect(doneSection, `${cmd} Done-when missing reviewCard`).toContain('reviewCard');
@@ -515,14 +521,14 @@ describe('reviewCard presentation mandate', () => {
   describe('BAD', () => {
     for (const cmd of REVIEW_CARD_COMMANDS) {
       it(`${cmd} Presentation does NOT allow summarizing reviewCard`, () => {
-        const content = COMMANDS[cmd];
+        const content = commandContent(cmd);
         const presIdx = content.indexOf('## Presentation');
         const presSection = content.substring(presIdx);
         expect(presSection, `${cmd} allows summarizing`).toContain('never summarize');
       });
 
       it(`${cmd} Presentation does NOT allow truncating reviewCard`, () => {
-        const content = COMMANDS[cmd];
+        const content = commandContent(cmd);
         const presIdx = content.indexOf('## Presentation');
         const presSection = content.substring(presIdx);
         expect(presSection, `${cmd} allows truncating`).toContain(
@@ -550,7 +556,7 @@ describe('reviewCard presentation mandate', () => {
       // review.md is excluded — its Presentation is part of the Steps flow (before Governance).
       const loopCommands = ['plan.md', 'implement.md', 'architecture.md'] as const;
       for (const cmd of loopCommands) {
-        const content = COMMANDS[cmd];
+        const content = commandContent(cmd);
         const govIdx = content.indexOf('## Governance rules');
         const presIdx = content.indexOf('## Presentation');
         expect(presIdx, `${cmd}: Presentation should be after Governance rules`).toBeGreaterThan(
@@ -561,7 +567,7 @@ describe('reviewCard presentation mandate', () => {
 
     it('Presentation section appears BEFORE Done-when in all reviewCard commands', () => {
       for (const cmd of REVIEW_CARD_COMMANDS) {
-        const content = COMMANDS[cmd];
+        const content = commandContent(cmd);
         const presIdx = content.indexOf('## Presentation');
         const doneIdx = content.indexOf('## Done-when');
         expect(presIdx, `${cmd}: Presentation should be before Done-when`).toBeLessThan(doneIdx);
@@ -573,7 +579,7 @@ describe('reviewCard presentation mandate', () => {
   describe('EDGE', () => {
     for (const cmd of REVIEW_CARD_COMMANDS) {
       it(`${cmd} Presentation declares reviewCard as mandatory output`, () => {
-        const content = COMMANDS[cmd];
+        const content = commandContent(cmd);
         const presIdx = content.indexOf('## Presentation');
         const nextSectionIdx = content.indexOf('\n## ', presIdx + 1);
         const presSection =
@@ -586,7 +592,7 @@ describe('reviewCard presentation mandate', () => {
 
     it('all four reviewCard commands use identical Presentation structure (3 bullet points)', () => {
       for (const cmd of REVIEW_CARD_COMMANDS) {
-        const content = COMMANDS[cmd];
+        const content = commandContent(cmd);
         const presIdx = content.indexOf('## Presentation');
         const nextSectionIdx = content.indexOf('\n## ', presIdx + 1);
         const presSection =
@@ -617,7 +623,7 @@ describe('reviewCard presentation mandate', () => {
   // ─── E2E SMOKE ─────────────────────────────────────────────
   describe('E2E SMOKE', () => {
     it('plan.md complete reviewCard contract: Presentation + Done-when + review-loop cross-ref', () => {
-      const content = COMMANDS['plan.md'];
+      const content = commandContent('plan.md');
       // 1. Dedicated Presentation section exists
       expect(content).toContain('## Presentation');
       // 2. Presentation mandates verbatim with prohibition
@@ -635,7 +641,7 @@ describe('reviewCard presentation mandate', () => {
     });
 
     it('implement.md complete reviewCard contract: Presentation + Done-when + review-loop cross-ref', () => {
-      const content = COMMANDS['implement.md'];
+      const content = commandContent('implement.md');
       expect(content).toContain('## Presentation');
       expect(content).toContain(
         'display its markdown verbatim — never summarize, truncate, or omit',
@@ -647,7 +653,7 @@ describe('reviewCard presentation mandate', () => {
     });
 
     it('architecture.md complete reviewCard contract: Presentation strengthened + Done-when added', () => {
-      const content = COMMANDS['architecture.md'];
+      const content = commandContent('architecture.md');
       expect(content).toContain('## Presentation');
       expect(content).toContain('never summarize, truncate, or omit');
       const doneSection = content.substring(content.indexOf('## Done-when'));
@@ -656,7 +662,7 @@ describe('reviewCard presentation mandate', () => {
     });
 
     it('review.md complete reviewCard contract: Presentation refactored + Done-when added', () => {
-      const content = COMMANDS['review.md'];
+      const content = commandContent('review.md');
       expect(content).toContain('## Presentation');
       expect(content).toContain('never summarize, truncate, or omit');
       const doneSection = content.substring(content.indexOf('## Done-when'));

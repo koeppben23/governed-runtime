@@ -20,24 +20,31 @@ import {
 } from '../fixtures.js';
 import type { RailContext } from './types.js';
 import type { PlanRecord } from '../state/evidence.js';
+import { TEAM_POLICY } from '../config/policy.js';
 
 const ctx: RailContext = {
   now: () => FIXED_TIME,
   digest: (s: string) => `sha256:${s.length}`,
-  policy: { maxSelfReviewIterations: 3, maxImplReviewIterations: 3 },
+  policy: { ...TEAM_POLICY, maxSelfReviewIterations: 3, maxImplReviewIterations: 3 },
 };
 
 function makeExecutors(overrides?: Partial<ContinueExecutors>): ContinueExecutors {
   return {
-    runCheck: vi.fn(async (checkId) => ({
+    runCheck: vi.fn(async (checkId, _state) => ({
       checkId,
       passed: true,
       detail: 'OK',
       executedAt: FIXED_TIME,
+      kind: 'test' as const,
+      command: 'npm test',
+      exitCode: 0,
+      executionMs: 1,
+      outputDigest: 'a'.repeat(64),
+      timedOut: false,
     })),
-    selfReview: vi.fn().mockResolvedValue({ verdict: 'converged' as const }),
-    implReview: vi.fn().mockResolvedValue({ verdict: 'converged' as const }),
-    architectureReview: vi.fn().mockResolvedValue({ verdict: 'converged' as const }),
+    selfReview: vi.fn().mockResolvedValue({ verdict: 'accept' as const }),
+    implReview: vi.fn().mockResolvedValue({ verdict: 'accept' as const }),
+    architectureReview: vi.fn().mockResolvedValue({ verdict: 'accept' as const }),
     ...overrides,
   };
 }
@@ -69,7 +76,8 @@ describe('continue rail', () => {
           verdict: 'approve',
           decidedBy: 'r',
           decidedAt: FIXED_TIME,
-          decidedByIdentity: {
+          rationale: 'approved',
+          decisionIdentity: {
             actorId: 'r',
             actorEmail: 'r@t.com',
             actorSource: 'env' as const,
@@ -82,7 +90,7 @@ describe('continue rail', () => {
           prevDigest: null,
           currDigest: 'd',
           revisionDelta: 'none' as const,
-          verdict: 'converged' as const,
+          verdict: 'accept' as const,
         },
       });
       const result = await executeContinue(state, ctx, makeExecutors());
@@ -169,7 +177,8 @@ describe('continue rail', () => {
           verdict: 'approve',
           decidedBy: 'r',
           decidedAt: FIXED_TIME,
-          decidedByIdentity: {
+          rationale: 'approved',
+          decisionIdentity: {
             actorId: 'r',
             actorEmail: 'r@t.com',
             actorSource: 'env' as const,
@@ -182,7 +191,7 @@ describe('continue rail', () => {
           prevDigest: null,
           currDigest: 'd',
           revisionDelta: 'none' as const,
-          verdict: 'converged' as const,
+          verdict: 'accept' as const,
         },
       });
       const result = await executeContinue(state, ctx, makeExecutors());

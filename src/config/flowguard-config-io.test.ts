@@ -109,8 +109,9 @@ describe('readConfig', () => {
 
   it('reads and parses a valid config file', async () => {
     const custom: FlowGuardConfig = {
+      ...DEFAULT_CONFIG,
       schemaVersion: 'v1',
-      logging: { level: 'debug' },
+      logging: { ...DEFAULT_CONFIG.logging, level: 'debug' },
       policy: { defaultMode: 'regulated' },
       profile: { defaultId: 'typescript' },
       archive: { redaction: { mode: 'basic', includeRaw: false } },
@@ -298,16 +299,18 @@ describe('readConfig — precedence', () => {
   }
 
   const REPO_CUSTOM: FlowGuardConfig = {
+    ...DEFAULT_CONFIG,
     schemaVersion: 'v1',
-    logging: { level: 'debug' },
+    logging: { ...DEFAULT_CONFIG.logging, level: 'debug' },
     policy: { defaultMode: 'regulated' },
     profile: {},
     archive: { redaction: { mode: 'basic', includeRaw: false } },
   };
 
   const GLOBAL_CUSTOM: FlowGuardConfig = {
+    ...DEFAULT_CONFIG,
     schemaVersion: 'v1',
-    logging: { level: 'warn' },
+    logging: { ...DEFAULT_CONFIG.logging, level: 'warn' },
     policy: {},
     profile: { defaultId: 'global-profile' },
     archive: { redaction: { mode: 'basic', includeRaw: false } },

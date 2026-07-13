@@ -61,6 +61,8 @@ describe('mergeCentralEvidence', () => {
       version: 'c-version',
       pathHint: '~/.flowguard/policy.json',
     });
+    expect(merged).not.toBeNull();
+    if (!merged) return;
     expect(merged.policySnapshot.centralMinimumMode).toBe('regulated');
     expect(merged.policySnapshot.policyDigest).toBe('c-digest');
     expect(merged.policySnapshot.policyVersion).toBe('c-version');
@@ -69,6 +71,8 @@ describe('mergeCentralEvidence', () => {
   it('returns existing unchanged when central evidence is undefined', () => {
     const s = existing();
     const merged = mergeCentralEvidence(s, undefined);
+    expect(merged).not.toBeNull();
+    if (!merged) return;
     expect(merged.policySnapshot.mode).toBe('team');
     expect(merged.policySnapshot.centralMinimumMode).toBeUndefined();
   });

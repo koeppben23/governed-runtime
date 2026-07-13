@@ -13,6 +13,7 @@ import {
   buildArchitectureReviewInstruction,
 } from './architecture-shared.js';
 import type { SessionState, Phase } from '../../state/schema.js';
+import { TEAM_POLICY } from '../../config/policy-presets.js';
 
 vi.mock('../review/orchestration-mode.js', () => ({
   resolveRuntimeReviewPlatform: vi.fn(() => 'unknown'),
@@ -158,8 +159,9 @@ describe('buildArchitectureReviewInstruction', () => {
   it('subagentEnabled=false => self-review text prompt', () => {
     const result = buildArchitectureReviewInstruction({
       policy: {
-        reviewInvocationPolicy: 'self',
-      } as SessionState['policySnapshot'],
+        ...TEAM_POLICY,
+        reviewInvocationPolicy: 'sdk_allowed',
+      },
       subagentEnabled: false,
       obligation: null,
       iteration: 0,
@@ -173,8 +175,9 @@ describe('buildArchitectureReviewInstruction', () => {
   it('subagentEnabled=true => returns next + reviewInvocation', () => {
     const result = buildArchitectureReviewInstruction({
       policy: {
-        reviewInvocationPolicy: 'self',
-      } as SessionState['policySnapshot'],
+        ...TEAM_POLICY,
+        reviewInvocationPolicy: 'sdk_allowed',
+      },
       subagentEnabled: true,
       obligation: null,
       iteration: 0,

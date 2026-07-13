@@ -23,6 +23,7 @@ import {
   buildDiscoveryContextSection,
   type DiscoveryReviewContext,
 } from './discovery-context-prompt.js';
+import type { ImplementationGuidanceItem } from '../implementation-guidance.js';
 import { buildReviewDiscoveryContextForPipeline } from './shared-helpers.js';
 import type { PipelineContext } from './pipeline-types.js';
 
@@ -124,10 +125,20 @@ describe('buildDiscoveryContextSection', () => {
   it('renders degraded and drifted Discovery as review risk', () => {
     const section = buildDiscoveryContextSection({
       health: {
-        ...BASE_CONTEXT.health!,
+        kind: 'derived_discovery_health',
+        advisory: true,
+        source: 'persisted_discovery_result',
+        status: 'available',
         healthy: false,
+        completeCollectors: 4,
+        partialCollectors: 0,
         failedCollectors: 1,
         failedCollectorNames: ['code-surface-analysis'],
+        hasBudgetExhaustion: false,
+        readFailureCount: 0,
+        codeSurfaceStatus: 'ok',
+        collectedAt: '2026-01-01T00:00:00.000Z',
+        ageWarning: null,
       },
       drift: {
         ...BASE_CONTEXT.drift!,
@@ -244,7 +255,7 @@ describe('review prompt Discovery context loading', () => {
     expect(archPrompt).toContain('Set attestation.mandateDigest=test-digest.');
   });
 
-  it('plan prompt without discovery context omits Discovery Context but preserves attestation', () => {
+  it('plan prompt with an unavailable discovery context renders NOT_VERIFIED and preserves attestation', () => {
     const prompt = buildPlanReviewPrompt({
       planText: PLAN_RECORD.current.body,
       ticketText: TICKET.text,
@@ -253,16 +264,19 @@ describe('review prompt Discovery context loading', () => {
       obligationId: '11111111-1111-4111-8111-111111111111',
       criteriaVersion: 'p37-v1',
       mandateDigest: 'test-digest',
+      discoveryContext: {},
     });
 
-    expect(prompt).not.toContain('## Discovery Context');
+    expect(prompt).toContain('## Discovery Context');
+    expect(prompt).toContain('status: unavailable');
+    expect(prompt).toContain('NOT_VERIFIED');
     expect(prompt).toContain(
       'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
     );
     expect(prompt).toContain('Set attestation.mandateDigest=test-digest.');
   });
 
-  it('impl prompt without discovery context omits Discovery Context but preserves attestation', () => {
+  it('impl prompt with an unavailable discovery context renders NOT_VERIFIED and preserves attestation', () => {
     const prompt = buildImplReviewPrompt({
       changedFiles: ['src/auth.ts'],
       planText: PLAN_RECORD.current.body,
@@ -272,9 +286,12 @@ describe('review prompt Discovery context loading', () => {
       obligationId: '11111111-1111-4111-8111-111111111111',
       criteriaVersion: 'p37-v1',
       mandateDigest: 'test-digest',
+      discoveryContext: {},
     });
 
-    expect(prompt).not.toContain('## Discovery Context');
+    expect(prompt).toContain('## Discovery Context');
+    expect(prompt).toContain('status: unavailable');
+    expect(prompt).toContain('NOT_VERIFIED');
     expect(prompt).toContain(
       'Set attestation.toolObligationId=11111111-1111-4111-8111-111111111111.',
     );
@@ -411,7 +428,7 @@ describe('review prompt Discovery context loading', () => {
           {
             label: 'auth',
             path: 'src/auth.ts',
-            source: 'code-surface-analysis',
+            source: 'persisted_discovery_result',
             confidence: 'high',
             evidence: [],
           },
@@ -420,7 +437,7 @@ describe('review prompt Discovery context loading', () => {
           {
             label: 'auth-module',
             path: 'src/auth/index.ts',
-            source: 'code-surface-analysis',
+            source: 'persisted_discovery_result',
             confidence: 'medium',
             evidence: [],
           },
@@ -437,17 +454,17 @@ describe('review prompt Discovery context loading', () => {
   });
 
   it('bounds surfaces and modules to configured limits', () => {
-    const manySurfaces = Array.from({ length: 10 }, (_, i) => ({
+    const manySurfaces: ImplementationGuidanceItem[] = Array.from({ length: 10 }, (_, i) => ({
       label: `surface-${i}`,
       path: `src/${i}.ts`,
-      source: 'analysis',
+      source: 'persisted_discovery_result',
       confidence: 'medium' as const,
       evidence: [],
     }));
-    const manyModules = Array.from({ length: 10 }, (_, i) => ({
+    const manyModules: ImplementationGuidanceItem[] = Array.from({ length: 10 }, (_, i) => ({
       label: `module-${i}`,
       path: `src/mod/${i}.ts`,
-      source: 'analysis',
+      source: 'persisted_discovery_result',
       confidence: 'medium' as const,
       evidence: [],
     }));

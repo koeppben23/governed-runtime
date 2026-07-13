@@ -34,6 +34,7 @@ import {
   extractReviewContext,
   REVIEW_COMPLETED_PREFIX,
   type OrchestratorClient,
+  type ReviewerResult,
   type ReviewerSuccessResult,
 } from './orchestrator.js';
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
@@ -67,6 +68,13 @@ function validFindings(overrides: Record<string, unknown> = {}): string {
     },
     ...overrides,
   });
+}
+
+function assertSuccessfulResult(
+  result: ReviewerResult | null,
+): asserts result is ReviewerSuccessResult {
+  expect(result).not.toBeNull();
+  if (!result || result.blocked) throw new TypeError('Expected reviewer invocation to succeed');
 }
 
 /** Build a mock OpenCode SDK client. */
@@ -357,15 +365,16 @@ describe('end-to-end orchestration flow', () => {
       obligationId: ctx!.obligationId,
       criteriaVersion: ctx!.criteriaVersion,
       mandateDigest: ctx!.mandateDigest,
+      discoveryContext: {},
     });
 
     // Step 4: Invoke reviewer
     const client = mockClient();
     const result = await invokeReviewer(client, prompt, 'parent-session');
-    expect(result).not.toBeNull();
+    assertSuccessfulResult(result);
 
     // Step 5: Mutate output
-    const mutated = buildMutatedOutput(original, result!);
+    const mutated = buildMutatedOutput(original, result);
     expect(mutated).not.toBeNull();
 
     // Verify mutated output
@@ -490,7 +499,9 @@ describe('buildReviewContentMutatedOutput', () => {
     const result = buildReviewContentMutatedOutput('{}', {
       sessionId: 'child-1',
       findings: null as never,
-      rawResponse: '',
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     });
     expect(result).toBeNull();
   });
@@ -499,7 +510,9 @@ describe('buildReviewContentMutatedOutput', () => {
     const result = buildReviewContentMutatedOutput('{}', {
       sessionId: 'child-1',
       findings,
-      rawResponse: '',
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     });
     expect(result).toBeDefined();
     const parsed = JSON.parse(result!);
@@ -514,7 +527,9 @@ describe('buildReviewContentMutatedOutput', () => {
     const result = buildReviewContentMutatedOutput('{}', {
       sessionId: 'child-1',
       findings,
-      rawResponse: '',
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     });
     const parsed = JSON.parse(result!);
     expect(parsed.next).not.toContain('flowguard_plan');
@@ -525,7 +540,9 @@ describe('buildReviewContentMutatedOutput', () => {
     const result = buildReviewContentMutatedOutput('not-json', {
       sessionId: 'child-1',
       findings,
-      rawResponse: '',
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     });
     expect(result).toBeNull();
   });
@@ -561,7 +578,9 @@ describe('buildReviewContentMutatedOutput', () => {
           reviewedBy: 'flowguard-reviewer',
         },
       },
-      rawResponse: '{}',
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     });
     expect(result).not.toBeNull();
     const parsed = JSON.parse(result!);
@@ -779,7 +798,9 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
     const result = buildReviewContentMutatedOutput(original, {
       sessionId: 's1',
       findings,
-      rawResponse: '',
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     });
     const parsed = JSON.parse(result!);
     expect(parsed.code).toBe('CONTENT_ANALYSIS_REQUIRED');
@@ -790,7 +811,9 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
     const result = buildReviewContentMutatedOutput('{}', {
       sessionId: 's1',
       findings,
-      rawResponse: '',
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     });
     const parsed = JSON.parse(result!);
     expect(parsed.next).toContain('reviewFindings');
@@ -801,7 +824,9 @@ describe('buildReviewContentMutatedOutput edge cases', () => {
     const result = buildReviewContentMutatedOutput('{}', {
       sessionId: 'child-session-xyz',
       findings,
-      rawResponse: '',
+      reviewOutputMode: 'structured_output',
+      structuredOutputUsed: true,
+      reviewAssuranceLevel: 'structured_high',
     });
     const parsed = JSON.parse(result!);
     expect(parsed._pluginReviewSessionId).toBe('child-session-xyz');

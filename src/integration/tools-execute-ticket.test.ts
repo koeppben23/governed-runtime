@@ -39,7 +39,6 @@ import {
   architecture,
   decision,
   implement,
-  validate,
   review,
   abort_session,
   archive,

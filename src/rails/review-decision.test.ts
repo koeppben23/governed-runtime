@@ -7,11 +7,24 @@ import {
   PLAN_RECORD,
   FIXED_TIME,
 } from '../fixtures.js';
+import { TEAM_POLICY } from '../config/policy.js';
+import type { FlowGuardPolicy } from '../config/policy.js';
 
 const baseCtx = {
   now: () => FIXED_TIME,
-  policy: {},
+  digest: (text: string) => `sha256:${text.length}`,
+  policy: TEAM_POLICY,
 };
+
+function withPolicy(overrides: Partial<FlowGuardPolicy>): FlowGuardPolicy {
+  return { ...TEAM_POLICY, ...overrides };
+}
+
+function identityWithoutAssurance(): typeof reviewerIdentity {
+  const identity = { ...reviewerIdentity };
+  Reflect.deleteProperty(identity, 'actorAssurance');
+  return identity;
+}
 
 const initiatorIdentity = {
   actorId: 'initiator-1',
@@ -33,7 +46,10 @@ const reviewerIdentity = {
 const CONVERGED_SELF_REVIEW = {
   iteration: 1,
   maxIterations: 3,
-  verdict: 'converged' as const,
+  prevDigest: null,
+  currDigest: 'review-digest',
+  revisionDelta: 'none' as const,
+  verdict: 'accept' as const,
   decidedAt: FIXED_TIME,
 };
 
@@ -47,7 +63,7 @@ describe('review-decision rail', () => {
         prevDigest: null,
         currDigest: ARCHITECTURE_DECISION.digest,
         revisionDelta: 'none',
-        verdict: 'approve',
+        verdict: 'accept',
       },
     });
 
@@ -79,7 +95,7 @@ describe('review-decision rail', () => {
         prevDigest: null,
         currDigest: IMPL_EVIDENCE.digest,
         revisionDelta: 'none',
-        verdict: 'approve',
+        verdict: 'accept',
         executedAt: FIXED_TIME,
       },
     });
@@ -111,7 +127,7 @@ describe('review-decision rail', () => {
         prevDigest: null,
         currDigest: ARCHITECTURE_DECISION.digest,
         revisionDelta: 'none',
-        verdict: 'approve',
+        verdict: 'accept',
       },
     });
 
@@ -133,7 +149,7 @@ describe('review-decision rail', () => {
 
   it('regulated approve requires structured identities', () => {
     const state = makeState('PLAN_REVIEW', {
-      initiatedByIdentity: null,
+      initiatedByIdentity: undefined,
     });
 
     const result = executeReviewDecision(
@@ -145,7 +161,7 @@ describe('review-decision rail', () => {
       },
       {
         ...baseCtx,
-        policy: { allowSelfApproval: false },
+        policy: { ...TEAM_POLICY, allowSelfApproval: false },
       },
     );
 
@@ -175,7 +191,7 @@ describe('review-decision rail', () => {
       },
       {
         ...baseCtx,
-        policy: { allowSelfApproval: false },
+        policy: { ...TEAM_POLICY, allowSelfApproval: false },
       },
     );
 
@@ -205,7 +221,7 @@ describe('review-decision rail', () => {
       },
       {
         ...baseCtx,
-        policy: { requireVerifiedActorsForApproval: true },
+        policy: withPolicy({ requireVerifiedActorsForApproval: true }),
       },
     );
 
@@ -234,7 +250,7 @@ describe('review-decision rail', () => {
       },
       {
         ...baseCtx,
-        policy: { minimumActorAssuranceForApproval: 'idp_verified' },
+        policy: withPolicy({ minimumActorAssuranceForApproval: 'idp_verified' }),
       },
     );
 
@@ -273,7 +289,7 @@ describe('review-decision rail', () => {
         decidedBy: 'reviewer-1',
         decisionIdentity: reviewerIdentity,
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -294,7 +310,7 @@ describe('review-decision rail', () => {
         decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorSource: 'unknown' as const },
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -315,7 +331,7 @@ describe('review-decision rail', () => {
         decidedBy: 'initiator-1',
         decisionIdentity: { ...reviewerIdentity, actorId: 'initiator-1' },
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -336,7 +352,7 @@ describe('review-decision rail', () => {
         decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorId: '   ' },
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -356,7 +372,7 @@ describe('review-decision rail', () => {
         decidedBy: 'reviewer-1',
         decisionIdentity: reviewerIdentity,
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -376,7 +392,7 @@ describe('review-decision rail', () => {
         decidedBy: 'cafe\u0301',
         decisionIdentity: { ...reviewerIdentity, actorId: 'cafe\u0301' },
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -396,7 +412,7 @@ describe('review-decision rail', () => {
         decidedBy: 'reviewer-1',
         decisionIdentity: reviewerIdentity,
       },
-      { ...baseCtx, policy: { allowSelfApproval: false } },
+      { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
     );
     expect(result.kind).toBe('ok');
   });
@@ -413,7 +429,7 @@ describe('review-decision rail', () => {
         decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
       },
-      { ...baseCtx, policy: { requireVerifiedActorsForApproval: true } },
+      { ...baseCtx, policy: withPolicy({ requireVerifiedActorsForApproval: true }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -435,7 +451,7 @@ describe('review-decision rail', () => {
         decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorAssurance: 'best_effort' as const },
       },
-      { ...baseCtx, policy: { minimumActorAssuranceForApproval: 'idp_verified' } },
+      { ...baseCtx, policy: withPolicy({ minimumActorAssuranceForApproval: 'idp_verified' }) },
     );
     expect(result.kind).toBe('blocked');
     if (result.kind === 'blocked') {
@@ -454,7 +470,7 @@ describe('review-decision rail', () => {
         prevDigest: null,
         currDigest: ARCHITECTURE_DECISION.digest,
         revisionDelta: 'none',
-        verdict: 'approve',
+        verdict: 'accept',
       },
     });
     const result = executeReviewDecision(
@@ -488,7 +504,7 @@ describe('review-decision rail', () => {
         prevDigest: null,
         currDigest: IMPL_EVIDENCE.digest,
         revisionDelta: 'none',
-        verdict: 'approve',
+        verdict: 'accept',
         executedAt: FIXED_TIME,
       },
     });
@@ -528,7 +544,7 @@ describe('review-decision rail', () => {
         prevDigest: null,
         currDigest: IMPL_EVIDENCE.digest,
         revisionDelta: 'none',
-        verdict: 'approve',
+        verdict: 'accept',
         executedAt: FIXED_TIME,
       },
     });
@@ -604,7 +620,7 @@ describe('review-decision rail', () => {
         decidedBy: 'reviewer-1',
         decisionIdentity: { ...reviewerIdentity, actorAssurance: 'idp_verified' as const },
       },
-      { ...baseCtx, policy: { requireVerifiedActorsForApproval: true } },
+      { ...baseCtx, policy: withPolicy({ requireVerifiedActorsForApproval: true }) },
     );
     // idp_verified meets the threshold — should NOT be blocked
     expect(result.kind).toBe('ok');
@@ -680,7 +696,7 @@ describe('review-decision rail', () => {
           decidedBy: 'same-person',
           decisionIdentity: { ...reviewerIdentity, actorId: 'same-person' },
         },
-        { ...baseCtx, policy: { allowSelfApproval: false } },
+        { ...baseCtx, policy: withPolicy({ allowSelfApproval: false }) },
       );
       // Should NOT be blocked (four-eyes only applies to approve)
       expect(result.kind).toBe('ok');
@@ -703,10 +719,10 @@ describe('review-decision rail', () => {
         },
         {
           ...baseCtx,
-          policy: {
+          policy: withPolicy({
             minimumActorAssuranceForApproval: 'claim_validated',
             // NOT using legacy requireVerifiedActorsForApproval
-          },
+          }),
         },
       );
       expect(result.kind).toBe('blocked');
@@ -732,9 +748,9 @@ describe('review-decision rail', () => {
         },
         {
           ...baseCtx,
-          policy: {
+          policy: withPolicy({
             minimumActorAssuranceForApproval: 'idp_verified',
-          },
+          }),
         },
       );
       expect(result.kind).toBe('blocked');
@@ -760,9 +776,9 @@ describe('review-decision rail', () => {
         },
         {
           ...baseCtx,
-          policy: {
+          policy: withPolicy({
             minimumActorAssuranceForApproval: 'claim_validated',
-          },
+          }),
         },
       );
       expect(result.kind).toBe('ok');
@@ -785,9 +801,9 @@ describe('review-decision rail', () => {
         },
         {
           ...baseCtx,
-          policy: {
+          policy: withPolicy({
             minimumActorAssuranceForApproval: 'idp_verified',
-          },
+          }),
         },
       );
       expect(result.kind).toBe('ok');
@@ -810,9 +826,9 @@ describe('review-decision rail', () => {
         },
         {
           ...baseCtx,
-          policy: {
+          policy: withPolicy({
             // Neither requireVerifiedActorsForApproval nor minimumActorAssuranceForApproval set
-          },
+          }),
         },
       );
       expect(result.kind).toBe('ok');
@@ -863,7 +879,7 @@ describe('review-decision rail', () => {
           prevDigest: IMPL_EVIDENCE.digest,
           currDigest: IMPL_EVIDENCE.digest,
           revisionDelta: 'none',
-          verdict: 'approve',
+          verdict: 'accept',
           executedAt: FIXED_TIME,
         },
       });
@@ -943,16 +959,11 @@ describe('review-decision rail', () => {
           verdict: 'approve',
           rationale: 'ok',
           decidedBy: 'reviewer-1',
-          decisionIdentity: {
-            actorId: 'reviewer-1',
-            actorEmail: 'r@e.com',
-            actorSource: 'claim',
-            actorAssurance: undefined as unknown as 'claim_validated', // Test fallback
-          },
+          decisionIdentity: identityWithoutAssurance(),
         },
         {
           ...baseCtx,
-          policy: { requireVerifiedActorsForApproval: true },
+          policy: withPolicy({ requireVerifiedActorsForApproval: true }),
         },
       );
       // Should still work since undefined falls back to 'best_effort' which fails requirement
@@ -977,16 +988,11 @@ describe('review-decision rail', () => {
           verdict: 'approve',
           rationale: 'ok',
           decidedBy: 'reviewer-1',
-          decisionIdentity: {
-            actorId: 'reviewer-1',
-            actorEmail: 'r@e.com',
-            actorSource: 'claim',
-            actorAssurance: undefined as unknown as 'claim_validated',
-          },
+          decisionIdentity: identityWithoutAssurance(),
         },
         {
           ...baseCtx,
-          policy: { minimumActorAssuranceForApproval: 'claim_validated' },
+          policy: withPolicy({ minimumActorAssuranceForApproval: 'claim_validated' }),
         },
       );
       expect(result.kind).toBe('blocked');

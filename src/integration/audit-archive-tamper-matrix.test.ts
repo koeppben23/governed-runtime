@@ -30,6 +30,7 @@ import { computeCanonicalEventDigest } from '../audit/canonical-digest.js';
 import { computeChainHash, type ChainedAuditEvent } from '../audit/types.js';
 import { runWithAdapterLoggerAsync, type AdapterLogger } from '../logging/adapter-logger.js';
 import { clearUserDecisionIntents, recordUserDecisionIntent } from './user-decision-intent.js';
+import type { ToolDefinition } from './tools/helpers.js';
 
 vi.mock('../adapters/git', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/git.js')>();
@@ -80,10 +81,7 @@ const tarOk = await isTarAvailable();
 let ws: TestWorkspace;
 let ctx: TestToolContext;
 
-async function callOk(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): Promise<Record<string, unknown>> {
+async function callOk(tool: ToolDefinition, args: unknown): Promise<Record<string, unknown>> {
   const { sessDir } = await getSessionPaths();
   const finalArgs = await withStrictReviewFindings(sessDir, args);
   recordDecisionIntentForTool(tool, finalArgs);
@@ -94,10 +92,7 @@ async function callOk(
   return result;
 }
 
-function recordDecisionIntentForTool(
-  tool: { execute: (args: unknown, context: TestToolContext) => Promise<string> },
-  args: unknown,
-): void {
+function recordDecisionIntentForTool(tool: ToolDefinition, args: unknown): void {
   if (tool !== decision || typeof args !== 'object' || args === null) return;
   const verdict = (args as { verdict?: unknown }).verdict;
   if (verdict !== 'approve' && verdict !== 'changes_requested' && verdict !== 'reject') return;
@@ -305,7 +300,7 @@ describe('audit/archive tamper matrix', () => {
       const lines = await readAuditLines(ids.sessDir);
       const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
       const last = events[events.length - 1]! as unknown as ChainedAuditEvent;
-      const originalDigest = computeCanonicalEventDigest(last);
+      const originalDigest = computeCanonicalEventDigest(Object.fromEntries(Object.entries(last)));
       const { chainHash: _originalChainHash, ...lastWithoutHash } = last;
       const stampedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
         ...lastWithoutHash,
@@ -395,7 +390,7 @@ describe('audit/archive tamper matrix', () => {
       const lines = await readAuditLines(ids.sessDir);
       const events = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
       const last = events[events.length - 1]! as unknown as ChainedAuditEvent;
-      const originalDigest = computeCanonicalEventDigest(last);
+      const originalDigest = computeCanonicalEventDigest(Object.fromEntries(Object.entries(last)));
       const { chainHash: _originalChainHash, ...lastWithoutHash } = last;
       const stampedBody: Omit<ChainedAuditEvent, 'chainHash'> = {
         ...lastWithoutHash,
@@ -426,18 +421,13 @@ describe('audit/archive tamper matrix', () => {
         },
       };
       const attackerDigest = computeCanonicalEventDigest(tamperedBody);
-      const evidence = (stamped as Record<string, unknown>).timestampEvidence as Record<
-        string,
-        unknown
-      >;
-      const tsaObj = evidence.tsa as Record<string, unknown>;
-      const coordinatedTamper = {
+      const coordinatedTamper: Omit<ChainedAuditEvent, 'chainHash'> = {
         ...tamperedBody,
         canonicalEventDigest: attackerDigest,
         timestampEvidence: {
-          ...evidence,
+          ...stampedBody.timestampEvidence!,
           tsa: {
-            ...tsaObj,
+            ...stampedBody.timestampEvidence!.tsa!,
             messageImprint: attackerDigest,
           },
         },

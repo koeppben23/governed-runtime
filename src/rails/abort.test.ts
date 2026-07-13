@@ -11,11 +11,12 @@ import { describe, expect, it } from 'vitest';
 import { executeAbort, type AbortInput } from './abort.js';
 import { makeState, makeProgressedState, FIXED_TIME } from '../fixtures.js';
 import type { RailContext } from './types.js';
+import { TEAM_POLICY } from '../config/policy.js';
 
 const ctx: RailContext = {
   now: () => FIXED_TIME,
   digest: (s: string) => `sha256:${s.length}`,
-  policy: {},
+  policy: TEAM_POLICY,
 };
 
 const ABORT_INPUT: AbortInput = { reason: 'Testing abort', actor: 'test-runner' };
@@ -31,9 +32,9 @@ describe('abort rail', () => {
         expect(result.state.phase).toBe('COMPLETE');
         expect(result.state.error?.code).toBe('ABORTED');
         expect(result.state.error?.message).toBe('Testing abort');
-        expect(result.transitions[0].event).toBe('ABORT');
-        expect(result.transitions[0].from).toBe('TICKET');
-        expect(result.transitions[0].to).toBe('COMPLETE');
+        expect(result.transitions[0]!.event).toBe('ABORT');
+        expect(result.transitions[0]!.from).toBe('TICKET');
+        expect(result.transitions[0]!.to).toBe('COMPLETE');
       }
     });
 

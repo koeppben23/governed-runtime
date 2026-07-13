@@ -66,10 +66,13 @@ describe('mandate authority guard', () => {
     for (const [index, position] of positions.entries()) {
       expect(position, `Expected mandate section "${MANDATE_SECTIONS[index]}"`).toBeGreaterThan(-1);
       if (index > 0) {
+        const previousPosition = positions[index - 1];
+        if (previousPosition === undefined)
+          throw new TypeError('missing previous mandate position');
         expect(
           position,
           `Expected "${MANDATE_SECTIONS[index]}" after previous section`,
-        ).toBeGreaterThan(positions[index - 1]);
+        ).toBeGreaterThan(previousPosition);
       }
     }
   });

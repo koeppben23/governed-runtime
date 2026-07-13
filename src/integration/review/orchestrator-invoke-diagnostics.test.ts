@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { _resetAgentResolutionCache } from './agent-resolution.js';
-import { invokeReviewer } from './orchestrator.js';
+import { invokeReviewer, type ReviewerResult, type ReviewerSuccessResult } from './orchestrator.js';
 import {
   validFindings,
   NO_SLEEP,
@@ -8,6 +8,13 @@ import {
   makeClient,
   PROMPT,
 } from './orchestrator-test-helpers.js';
+
+function assertSuccessfulResult(
+  result: ReviewerResult | null,
+): asserts result is ReviewerSuccessResult {
+  expect(result).not.toBeNull();
+  if (!result || result.blocked) throw new TypeError('Expected reviewer invocation to succeed');
+}
 describe('invokeReviewer — diagnostics contract', () => {
   beforeEach(() => {
     _resetAgentResolutionCache();
@@ -267,7 +274,7 @@ describe('invokeReviewer — diagnostics contract', () => {
       expect(diagnostics).toHaveLength(1);
       expect(diagnostics[0]!.step).toBe('info_error');
       // But findings are still returned successfully (error doesn't block valid output)
-      expect(result).not.toBeNull();
+      assertSuccessfulResult(result);
       expect(result!.findings).toBeTruthy();
       expect(result!.findings!.overallVerdict).toBe(findings.overallVerdict);
     });

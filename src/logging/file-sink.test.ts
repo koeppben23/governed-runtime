@@ -62,7 +62,9 @@ describe('createFileSink', () => {
       await sink({ level: 'error', service: 'core', message: 'oops', extra: { code: 'E1' } });
 
       const files = await readdir(join(testDir, '.opencode/logs'));
-      const content = await readFile(join(testDir, '.opencode/logs', files[0]), 'utf-8');
+      const [logFile] = files;
+      if (!logFile) throw new TypeError('expected log file');
+      const content = await readFile(join(testDir, '.opencode/logs', logFile), 'utf-8');
       const lines = content.trim().split('\n');
       expect(lines.length).toBe(2);
 
@@ -103,7 +105,9 @@ describe('createFileSink', () => {
       });
 
       const files = await readdir(join(testDir, '.opencode/logs'));
-      const content = await readFile(join(testDir, '.opencode/logs', files[0]), 'utf-8');
+      const [logFile] = files;
+      if (!logFile) throw new TypeError('expected log file');
+      const content = await readFile(join(testDir, '.opencode/logs', logFile), 'utf-8');
       const lines = content.trim().split('\n');
 
       // Entry with both
@@ -129,7 +133,9 @@ describe('createFileSink', () => {
       await sink({ level: 'info', service: 'test', message: 'second' });
 
       const files = await readdir(join(testDir, '.opencode/logs'));
-      const content = await readFile(join(testDir, '.opencode/logs', files[0]), 'utf-8');
+      const [logFile] = files;
+      if (!logFile) throw new TypeError('expected log file');
+      const content = await readFile(join(testDir, '.opencode/logs', logFile), 'utf-8');
       const lines = content.trim().split('\n');
       expect(lines).toHaveLength(2);
     });
@@ -211,7 +217,9 @@ describe('createFileSink', () => {
 
       const files = await readdir(join(testDir, '.opencode/logs'));
       expect(files.length).toBe(1);
-      const content = await readFile(join(testDir, '.opencode/logs', files[0]), 'utf-8');
+      const [logFile] = files;
+      if (!logFile) throw new TypeError('expected log file');
+      const content = await readFile(join(testDir, '.opencode/logs', logFile), 'utf-8');
       const lines = content.trim().split('\n').filter(Boolean);
       expect(lines).toHaveLength(20);
     });

@@ -105,8 +105,8 @@ describe('StaticKeyResolver', () => {
         alg: 'RS256',
         jwk: {
           kty: 'RSA' as const,
-          n: RSA_JWK.n,
-          e: RSA_JWK.e,
+          n: 'n' in RSA_JWK ? RSA_JWK.n : '',
+          e: 'e' in RSA_JWK ? RSA_JWK.e : '',
         },
       };
       const resolver = new StaticKeyResolver([jwkKey]);

@@ -61,7 +61,9 @@ function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings
   });
 }
 
-function strictAssuranceFixture(findings: ReviewFindings = strictFindings()) {
+function strictAssuranceFixture(
+  findings: ReviewFindings = strictFindings(),
+): NonNullable<ReviewFindingsValidationContext['assurance']> {
   return {
     obligations: [
       {
@@ -89,6 +91,9 @@ function strictAssuranceFixture(findings: ReviewFindings = strictFindings()) {
         childSessionId: 'ses_child',
         agentType: 'flowguard-reviewer' as const,
         invocationMode: 'sdk_session_prompt' as const,
+        reviewOutputMode: 'structured_output' as const,
+        structuredOutputUsed: true,
+        reviewAssuranceLevel: 'structured_high' as const,
         hostVisible: false,
         promptHash: 'abc',
         mandateDigest: REVIEW_MANDATE_DIGEST,

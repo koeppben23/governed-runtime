@@ -87,23 +87,25 @@ describe('REVIEWER_AGENT template: steps limit (M1)', () => {
 
   it('CORNER — steps value is a positive integer', () => {
     const match = REVIEWER_AGENT.match(/^steps:\s*(\d+)$/m);
-    expect(match).not.toBeNull();
-    const steps = parseInt(match![1], 10);
+    const stepsText = match?.[1];
+    if (!stepsText) throw new TypeError('missing reviewer steps');
+    const steps = parseInt(stepsText, 10);
     expect(steps).toBeGreaterThan(0);
     expect(Number.isInteger(steps)).toBe(true);
   });
 
   it('BAD — steps is not zero or negative', () => {
     const match = REVIEWER_AGENT.match(/^steps:\s*(\d+)$/m);
-    expect(match).not.toBeNull();
-    expect(parseInt(match![1], 10)).toBeGreaterThanOrEqual(1);
+    const stepsText = match?.[1];
+    if (!stepsText) throw new TypeError('missing reviewer steps');
+    expect(parseInt(stepsText, 10)).toBeGreaterThanOrEqual(1);
   });
 
   it('EDGE — steps appears exactly once in frontmatter section', () => {
     // Frontmatter is between the first two '---' delimiters
     const fmMatch = REVIEWER_AGENT.match(/^---\n([\s\S]*?)\n---/);
-    expect(fmMatch).not.toBeNull();
-    const frontmatter = fmMatch![1];
+    const frontmatter = fmMatch?.[1];
+    if (!frontmatter) throw new TypeError('missing reviewer frontmatter');
     const stepsOccurrences = (frontmatter.match(/^steps:/gm) || []).length;
     expect(stepsOccurrences).toBe(1);
   });

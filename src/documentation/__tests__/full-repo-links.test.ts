@@ -66,7 +66,8 @@ function extractMarkdownLinks(filePath: string): MarkdownLink[] {
 
   lines.forEach((line, index) => {
     for (const match of line.matchAll(/(?<!!)[^[]*\[[^\]]+\]\(([^)]+)\)/g)) {
-      const target = match[1].trim();
+      const target = match[1]?.trim();
+      if (!target) continue;
       if (target.length > 0) {
         links.push({ source: filePath, line: index + 1, target });
       }
