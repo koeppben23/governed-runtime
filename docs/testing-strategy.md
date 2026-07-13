@@ -66,14 +66,14 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 35 security-critical
+The `mutation` job runs StrykerJS mutation testing against 36 security-critical
 files spanning adapters (persistence-lock + host-adapter), archive digesting,
 audit (integrity + completeness), config (policy + reasons + profile), hooks (HTTP hook server + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
 (command-aliases, tool-classification, review-validation-mode,
 plugin-audit-lifecycle-reason, review enforcement, review orchestrator,
 orchestrator detection/output, and agent resolution), logging (error-serialize),
-templates (codex-plugin),
+templates (codex-plugin, claude-code-plugin),
 shared canonical JSON, machine (commands, evaluate, guards, next-action), and
 rails (architecture, hydrate, review, review-decision, ticket). It uploads a
 mutation report artifact (`reports/mutation/`) and enforces the `break: 80`
@@ -154,9 +154,23 @@ FlowGuard uses [StrykerJS](https://stryker-mutator.io/) (v9.6.1) for mutation te
 on security-critical code paths. Mutation testing validates that tests actually
 detect semantic errors, not just that code is executed (coverage alone cannot prove this).
 
+### Threshold And Admission Rule
+
+The canonical Stryker gate applies an aggregate `break: 80` threshold across all
+mutated modules (`stryker.conf.json`). There are no per-area lower thresholds.
+
+For integrity-critical modules, FlowGuard additionally requires an individual
+targeted score of at least 80 before a module is admitted to the canonical
+mutate scope. This admission rule is verified through a targeted `--mutate` run;
+it is not a separate Stryker configuration or a lower per-area threshold.
+
+`StringLiteral` and `ArrayDeclaration` mutators are excluded globally because
+they produce low-signal literal churn in governance template and schema code;
+they are not a per-area carve-out.
+
 ### Scope
 
-35 files are mutated, covering the fail-closed governance core
+36 files are mutated, covering the fail-closed governance core
 (see `stryker.conf.json` for the canonical list):
 
 | Area                                                                                                                                                                                 | Files  | Representative score            |
@@ -168,12 +182,12 @@ detect semantic errors, not just that code is executed (coverage alone cannot pr
 | Hooks (`http-server`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                                                              | 3      | (see latest report)             |
 | Identity (`token-verifier`, `key-resolver`)                                                                                                                                          | 2      | (see latest report)             |
 | Integration (`command-aliases`, `tool-classification`, `tools/review-validation-mode`, `plugin-audit-lifecycle-reason`, review enforcement/orchestrator/detection/output/resolution) | 9      | (see latest report)             |
-| Templates (`codex-plugin`)                                                                                                                                                           | 1      | (see latest report)             |
+| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                                     | 2      | (see latest report)             |
 | Shared (`canonical-json`)                                                                                                                                                            | 1      | (see latest report)             |
 | Logging (`error-serialize`)                                                                                                                                                          | 1      | (see latest report)             |
 | Machine (`commands`, `evaluate`, `guards`, `next-action`)                                                                                                                            | 4      | (see latest report)             |
 | Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`)                                                                                                             | 5      | (see latest report)             |
-| **Total**                                                                                                                                                                            | **35** | uploaded as `reports/mutation/` |
+| **Total**                                                                                                                                                                            | **36** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.
