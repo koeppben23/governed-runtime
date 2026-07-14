@@ -369,6 +369,18 @@ describe('audit types', () => {
       expect(result.message).not.toContain('/v2');
     });
 
+    it('summarizeArgs sanitizes before truncating so truncated secrets still match regex minimums', () => {
+      const prefix = 'x'.repeat(80);
+      const secret = 'Bearer ghp_abcdefghijklmnopqrstuvwxyz123456';
+      const long = `${prefix} ${secret}`;
+      expect(long.length).toBeGreaterThan(100);
+
+      const result = summarizeArgs({ value: long });
+      expect(result.value).not.toContain('ghp_');
+      expect(result.value).not.toContain('Bearer');
+      expect(result.value!.length).toBe(103);
+    });
+
     it("GENESIS_HASH is 'genesis'", () => {
       expect(GENESIS_HASH).toBe('genesis');
     });

@@ -574,11 +574,11 @@ export function summarizeArgs(args: Record<string, unknown>): Record<string, str
     } else if (value === null || value === undefined) {
       summary[key] = 'null';
     } else if (typeof value === 'string') {
-      const truncated =
-        value.length > ARG_SUMMARY_TRUNCATION_LIMIT
-          ? value.slice(0, ARG_SUMMARY_TRUNCATION_LIMIT) + '...'
-          : value;
-      summary[key] = sanitizeDiagnosticString(truncated);
+      const sanitized = sanitizeDiagnosticString(value);
+      summary[key] =
+        sanitized.length > ARG_SUMMARY_TRUNCATION_LIMIT
+          ? sanitized.slice(0, ARG_SUMMARY_TRUNCATION_LIMIT) + '...'
+          : sanitized;
     } else if (typeof value === 'number' || typeof value === 'boolean') {
       summary[key] = String(value);
     } else if (Array.isArray(value)) {
