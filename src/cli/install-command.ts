@@ -47,9 +47,12 @@ const LOCK_PATH = process.env['FLOWGUARD_INSTALL_LOCK_PATH'] ?? DEFAULT_LOCK;
 async function acquireInstallLock(): Promise<{ release(): void }> {
   const token = randomUUID();
   const lock = { pid: process.pid, token, createdAt: new Date().toISOString() };
+  // Ensure lock parent exists, fail-closed on unexpected errors
   try {
     await mkdir(dirname(LOCK_PATH), { recursive: true });
-  } catch {}
+  } catch (err) {
+    if (!(err instanceof Error && 'code' in err && err.code === 'EEXIST')) throw err;
+  }
   try {
     await writeFile(LOCK_PATH, JSON.stringify(lock), { flag: 'wx' });
   } catch (err) {
@@ -75,8 +78,18 @@ async function acquireInstallLock(): Promise<{ release(): void }> {
     process.removeListener('exit', release);
     try {
       const raw = readFileSync(LOCK_PATH, 'utf-8');
-      if (JSON.parse(raw).token === token) unlinkSync(LOCK_PATH);
-    } catch {}
+      if (JSON.parse(raw).token === token) {
+        unlinkSync(LOCK_PATH);
+        return;
+      }
+    } catch (err) {
+      if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) {
+        getAdapterLogger().warn('cli', 'lock release failed', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        return;
+      }
+    }
   };
   process.on('exit', release);
   return { release };
@@ -153,8 +166,9 @@ async function doInstall(args: CliArgs, lock: { release(): void }): Promise<CliR
 
   const ctx = initInstallContext(args);
 
-  // Crash recovery
-  await recoverOrAbort(ctx.target);
+  // Crash recovery — use same configTargetDir as buildRollbackSnapshot
+  const configTargetDir = ctx.target; // configTargetDir === target for most platforms
+  await recoverOrAbort(configTargetDir);
 
   // Existing installation check
   const cfgPath = join(ctx.target, 'flowguard.json');

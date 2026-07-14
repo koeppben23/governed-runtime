@@ -59,6 +59,7 @@ export interface DependencyTransaction {
   hadOriginal: boolean;
   liveWasIsolated: boolean;
   journalPath: string;
+  vendorTarballPath: string;
   startedAt: string;
 }
 
@@ -283,6 +284,7 @@ export async function createDependencyTransaction(
     hadOriginal: false,
     liveWasIsolated: false,
     journalPath,
+    vendorTarballPath,
     startedAt: new Date().toISOString(),
   };
 }
@@ -301,7 +303,7 @@ export async function executeDependencyTransaction(tx: DependencyTransaction): P
   await mkdir(tx.stagingRoot);
   await writeFile(
     join(tx.stagingRoot, 'package.json'),
-    JSON.stringify({ dependencies: { '@flowguard/core': `${tx.stagingRoot}` } }),
+    JSON.stringify({ dependencies: { '@flowguard/core': tx.vendorTarballPath } }),
     { flag: 'w' },
   );
 
@@ -319,15 +321,15 @@ export async function executeDependencyTransaction(tx: DependencyTransaction): P
   tx.phase = TransactionPhase.SavingOld;
   await persistJournal(tx);
 
-  const liveExists = existsSync(tx.liveModulesPath);
-  const savedExists = existsSync(tx.savedPath);
+  const livePresent = await pathExistsNoFollow(tx.liveModulesPath);
+  const savedPresent = await pathExistsNoFollow(tx.savedPath);
 
-  if (liveExists && !savedExists) {
+  if (livePresent && !savedPresent) {
     await rename(tx.liveModulesPath, tx.savedPath);
     tx.hadOriginal = true;
-  } else if (!liveExists && savedExists) {
+  } else if (!livePresent && savedPresent) {
     tx.hadOriginal = true;
-  } else if (liveExists && savedExists) {
+  } else if (livePresent && savedPresent) {
     throw new Error('Ambiguous save-old: both live and saved exist');
   } else {
     tx.hadOriginal = false;

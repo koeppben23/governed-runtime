@@ -219,7 +219,11 @@ export async function buildRollbackSnapshot(
   const reviewerDefinition = reviewerDefinitionForPlatform(installPlatform);
   const reviewerPath = join(target, reviewerDefinition.relativePath);
 
+  // Directories first (file entries after — reverse processes files before dirs)
+  const dirEntries = await buildDirectorySnapshots(target, configTargetDir, installPlatform);
+
   const rollbackEntries: RollbackEntry[] = [
+    ...dirEntries,
     // Files
     await snapshotForRollback(pkgPath, 'file'),
     ...(opencodeJsonPath ? [await snapshotForRollback(opencodeJsonPath, 'file')] : []),
@@ -244,8 +248,6 @@ export async function buildRollbackSnapshot(
               ),
             )),
           ]),
-    // Directories
-    ...(await buildDirectorySnapshots(target, configTargetDir, installPlatform)),
   ];
 
   return {

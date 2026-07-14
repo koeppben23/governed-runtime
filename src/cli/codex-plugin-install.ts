@@ -100,7 +100,9 @@ async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise
     try {
       const raw = readFileSync(lockPath, 'utf-8');
       if (JSON.parse(raw).token === token) unlinkSync(lockPath);
-    } catch {}
+    } catch (err) {
+      if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) throw err;
+    }
   }
 }
 
@@ -119,24 +121,41 @@ async function doRegister(marketplacePath: string, scope: InstallScope): Promise
 
   let marketplace: CodexMarketplace = { plugins: [] };
   let action: FileOp['action'] = 'written';
-  let originalContent = '';
+  let originalContent: string | null = null;
 
+  // Read raw first, then parse separately
   try {
     originalContent = await readFile(marketplacePath, 'utf-8');
-    marketplace =
-      originalContent.trim().length > 0
-        ? (JSON.parse(originalContent) as CodexMarketplace)
-        : { plugins: [] };
-    action = 'merged';
   } catch (err) {
     if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) throw err;
+  }
+
+  if (originalContent !== null) {
+    try {
+      marketplace =
+        originalContent.trim().length > 0
+          ? (JSON.parse(originalContent) as CodexMarketplace)
+          : { plugins: [] };
+      action = 'merged';
+    } catch {
+      // Corrupted JSON — save raw backup and abort
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      await writeFile(
+        `${marketplacePath}.flowguard-corrupted-backup-${timestamp}-${randomUUID()}`,
+        originalContent,
+        { flag: 'wx' },
+      );
+      throw new Error(
+        'Marketplace JSON is corrupted. A raw backup was saved. Inspect the backup before retrying.',
+      );
+    }
   }
 
   if (isAlreadyRegistered(marketplace, scope)) {
     return { path: marketplacePath, action: 'skipped', reason: 'already registered' };
   }
 
-  if (originalContent.length > 0) {
+  if (originalContent !== null && originalContent.length > 0) {
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
     await writeFile(
       `${marketplacePath}.flowguard-backup-${timestamp}-${randomUUID()}`,
