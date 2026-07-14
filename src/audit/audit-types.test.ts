@@ -238,6 +238,46 @@ describe('audit types', () => {
       expect(result.obj).toBe('[Object]');
       expect(result.emptyArr).toBe('[Array(0)]');
     });
+
+    it('summarizeArgs redacts scalar string values on secret-bearing keys', () => {
+      const result = summarizeArgs({
+        api_key: 'sk-abc123def456',
+        token: 'ghp_secret123',
+        password: 'hunter2',
+        secret: 'my-secret-value',
+        credential: 'creds-xyz',
+        authorization: 'Bearer tok123',
+        access_key: 'AKIA123',
+        private_key: '-----BEGIN RSA PRIVATE KEY-----',
+        passphrase: 'correct horse battery staple',
+        aws_access_key_id: 'AKIAIOSFODNN7EXAMPLE',
+        client_secret_value: 'shhh',
+        github_token_value: 'gh_token',
+      });
+      expect(result.api_key).toBe('[REDACTED]');
+      expect(result.token).toBe('[REDACTED]');
+      expect(result.password).toBe('[REDACTED]');
+      expect(result.secret).toBe('[REDACTED]');
+      expect(result.credential).toBe('[REDACTED]');
+      expect(result.authorization).toBe('[REDACTED]');
+      expect(result.access_key).toBe('[REDACTED]');
+      expect(result.private_key).toBe('[REDACTED]');
+      expect(result.passphrase).toBe('[REDACTED]');
+      expect(result.aws_access_key_id).toBe('[REDACTED]');
+      expect(result.client_secret_value).toBe('[REDACTED]');
+      expect(result.github_token_value).toBe('[REDACTED]');
+    });
+
+    it('summarizeArgs redacts non-string values on secret-bearing keys', () => {
+      const result = summarizeArgs({
+        api_key: true,
+        token: 12345,
+        password: null as unknown,
+      });
+      expect(result.api_key).toBe('[REDACTED]');
+      expect(result.token).toBe('[REDACTED]');
+      expect(result.password).toBe('[REDACTED]');
+    });
   });
 
   // ─── CORNER ─────────────────────────────────────────────────
@@ -251,6 +291,47 @@ describe('audit types', () => {
 
     it('summarizeArgs handles empty args', () => {
       expect(summarizeArgs({})).toEqual({});
+    });
+
+    it('summarizeArgs redacts only secret-bearing keys, preserving non-secret keys', () => {
+      const result = summarizeArgs({
+        prompt: 'write a function',
+        file: 'src/main.ts',
+        language: 'typescript',
+        api_key: 'sk-abc',
+        token: 'ghp_xyz',
+      });
+      expect(result.prompt).toBe('write a function');
+      expect(result.file).toBe('src/main.ts');
+      expect(result.language).toBe('typescript');
+      expect(result.api_key).toBe('[REDACTED]');
+      expect(result.token).toBe('[REDACTED]');
+    });
+
+    it('summarizeArgs secret-key detection is case-insensitive', () => {
+      const result = summarizeArgs({
+        Api_Key: 'val1',
+        API_KEY: 'val2',
+        api_key: 'val3',
+        TOKEN: 'val4',
+      });
+      expect(result.Api_Key).toBe('[REDACTED]');
+      expect(result.API_KEY).toBe('[REDACTED]');
+      expect(result.api_key).toBe('[REDACTED]');
+      expect(result.TOKEN).toBe('[REDACTED]');
+    });
+
+    it('summarizeArgs does not redact false-positive key names', () => {
+      const result = summarizeArgs({
+        monkey: 'a monkey value',
+        keyboard_layout: 'qwerty',
+        api_keywords: 'not a secret key name',
+        donkey: 'not an api key',
+      });
+      expect(result.monkey).toBe('a monkey value');
+      expect(result.keyboard_layout).toBe('qwerty');
+      expect(result.api_keywords).toBe('not a secret key name');
+      expect(result.donkey).toBe('not an api key');
     });
 
     it("GENESIS_HASH is 'genesis'", () => {

@@ -76,10 +76,10 @@ FlowGuard processes data in two contexts:
 
 FlowGuard preserves raw runtime and audit state internally; redaction is applied only to export artifacts according to the configured archive policy.
 
-**Scope of redaction:** Only `decision-receipts.*.json` and `review-report.*.json` are subject to export redaction. The following are always included as raw and are never redacted:
+**Scope of redaction:** `decision-receipts.*.json`, `review-report.*.json`, `session-state.json`, and `audit.jsonl` are subject to export redaction. The following are always included as raw and are never redacted:
 
-- `session-state.json` — raw session state (internal SSOT)
-- `audit.jsonl` — raw append-only audit chain (integrity chain artifact)
+- `archive-manifest.json` — structural metadata only (file inventory, digests, audit anchors, redaction metadata)
+- Evidence artifacts under `artifacts/` — original evidence files
 
 External references recorded on `/ticket` are stored in `session-state.json` and remain raw for authority/traceability reasons. This includes ticket URLs, tracker IDs, branch names, and similar reference metadata.
 

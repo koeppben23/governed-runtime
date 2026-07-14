@@ -536,15 +536,48 @@ export function createDecisionEvent(input: DecisionEventInput): ChainedAuditEven
 /** Maximum string length before truncation in arg summaries. */
 const ARG_SUMMARY_TRUNCATION_LIMIT = 100;
 
+const SECRET_BEARING_PATTERNS = [
+  'secret',
+  'token',
+  'password',
+  'passphrase',
+  'credential',
+  'authorization',
+] as const;
+
+const DELIMITED_SECRET_PATTERNS = ['api_key', 'apikey', 'access_key', 'private_key'] as const;
+
+function isSecretBearingKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  return (
+    SECRET_BEARING_PATTERNS.some((pattern) => normalized.includes(pattern)) ||
+    DELIMITED_SECRET_PATTERNS.some((pattern) => isDelimitedMatch(normalized, pattern)) ||
+    /(^|[_-])key($|[_-])/.test(normalized)
+  );
+}
+
+function isDelimitedMatch(haystack: string, needle: string): boolean {
+  const idx = haystack.indexOf(needle);
+  if (idx === -1) return false;
+  const before = idx === 0 || haystack[idx - 1] === '_' || haystack[idx - 1] === '-';
+  const after =
+    idx + needle.length === haystack.length ||
+    haystack[idx + needle.length] === '_' ||
+    haystack[idx + needle.length] === '-';
+  return before && after;
+}
+
 /**
- * Summarize tool args for audit (no sensitive data).
- * Only includes keys and scalar values (strings truncated to ARG_SUMMARY_TRUNCATION_LIMIT chars).
- * Objects/arrays are replaced with type indicator.
+ * Summarize tool args for audit, redacting values on secret-bearing keys.
+ * Scalar strings are truncated to ARG_SUMMARY_TRUNCATION_LIMIT chars.
+ * Objects/arrays are replaced with type indicators.
  */
 export function summarizeArgs(args: Record<string, unknown>): Record<string, string> {
   const summary: Record<string, string> = {};
   for (const [key, value] of Object.entries(args)) {
-    if (value === null || value === undefined) {
+    if (isSecretBearingKey(key)) {
+      summary[key] = '[REDACTED]';
+    } else if (value === null || value === undefined) {
       summary[key] = 'null';
     } else if (typeof value === 'string') {
       summary[key] =

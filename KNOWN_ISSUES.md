@@ -76,7 +76,7 @@ disproven, update the status and link the evidence."
 | A       | P1       | Partially Fixed | G1, G2, G24, G25, G26                          | Four-eyes and identity normalization/reporting. G1/G2/G24/G25 fixed; G26 remains open.                                                                                             |
 | B       | P1       | Partially Fixed | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2            | Hash-chain, canonical digest, TSA, and NTP hardening. AC1 fixed; AC2–AC5, TSA1–TSA2 remain open. AC3 also tracked in Package D (audit summarization redaction spans both domains). |
 | C       | P1       | Partially Fixed | AR1, AR2, AUD2                                 | Archive integrity and audit write-lock recovery. AR1 fixed; AR2, AUD2 remain open.                                                                                                 |
-| D       | P1       | Partially Fixed | R1, R2, R3, R4, R5, AC3                        | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 remain open.                                                                           |
+| D       | P1       | Fixed | R1, R2, R3, R4, R5, AC3                        | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                           |
 | E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H4 fixed; H2, C3, M3, and I4 partially fixed; H1, C1–C2, C4–C5, M1–M2 remain open.                               |
 | F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13            | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421; G15, AC6–AC7, and G12–G13 remain open.                                    |
 
@@ -85,7 +85,7 @@ disproven, update the status and link the evidence."
 | ID   | Severity | Status          | Summary                                                                                                           |
 | ---- | -------- | --------------- | ----------------------------------------------------------------------------------------------------------------- |
 | AC2  | HIGH     | Open            | Timestamp verification must not trust downgraded status when stronger evidence is present.                        |
-| AC3  | HIGH     | Open            | Audit argument summarization can expose scalar secrets and needs redaction hardening.                             |
+| AC3  | HIGH     | Fixed           | Audit argument summarization can expose scalar secrets and needs redaction hardening.                             |
 | AC4  | HIGH     | Open            | NTP offset/delay calculation needs RFC-aligned correction.                                                        |
 | AC5  | HIGH     | Open            | NTP response validation needs stricter checks.                                                                    |
 | H1   | HIGH     | Open            | HTTP hook server needs an explicit trust/auth/origin boundary.                                                    |
@@ -100,9 +100,9 @@ disproven, update the status and link the evidence."
 | C4   | HIGH     | Open            | Codex marketplace registration needs atomic/locked update semantics.                                              |
 | C5   | HIGH     | Open            | Rollback removal needs symlink/TOCTOU hardening.                                                                  |
 | I4   | HIGH     | Partially Fixed | Strict state-read failures block enforcement; missing session-directory mapping still needs fail-closed handling. |
-| R1   | HIGH     | Open            | Export redaction should not default-allow unknown fields.                                                         |
-| R2   | HIGH     | Open            | Archive export must respect redaction mode for audit/state/raw artifacts.                                         |
-| R4   | HIGH     | Open            | Telemetry error/status export needs scrubbing.                                                                    |
+| R1   | HIGH     | Fixed           | Export redaction should not default-allow unknown fields.                                                         |
+| R2   | HIGH     | Fixed           | Archive export must respect redaction mode for audit/state/raw artifacts.                                         |
+| R4   | HIGH     | Fixed           | Telemetry error/status export needs scrubbing.                                                                    |
 | AUD2 | HIGH     | Open            | Audit write lock needs stale-lock recovery.                                                                       |
 
 ## Outstanding Medium-Priority Findings

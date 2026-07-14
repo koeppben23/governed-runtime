@@ -225,16 +225,11 @@ describe('verifyArchive', () => {
   it('reports missing_file when a listed file is deleted', async () => {
     const { fingerprint, sessionId, sessDir } = await createArchivedSession();
 
-    // Read manifest to find what files are listed
-    const manifestPath = path.join(sessDir, 'archive-manifest.json');
-    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
-
-    // Delete session-state.json (which is in includedFiles)
+    await fs.unlink(path.join(sessDir, 'decision-receipts.redacted.v1.json'));
     await fs.unlink(path.join(sessDir, 'session-state.json'));
 
     const result = await verifyArchive(fingerprint, sessionId);
 
-    // Should report both missing_file and state_missing
     expect(result.passed).toBe(false);
     const codes = result.findings.map((f) => f.code);
     expect(codes).toContain('missing_file');
@@ -261,10 +256,9 @@ describe('verifyArchive', () => {
   it('reports file_digest_mismatch when file content is tampered', async () => {
     const { fingerprint, sessionId, sessDir } = await createArchivedSession();
 
-    // Tamper with session-state.json content (manifest still has old digest)
     await fs.writeFile(
-      path.join(sessDir, 'session-state.json'),
-      JSON.stringify({ phase: 'TAMPERED', evil: true }),
+      path.join(sessDir, 'decision-receipts.redacted.v1.json'),
+      JSON.stringify({ schemaVersion: 'tampered', receipts: [] }),
       'utf-8',
     );
 
@@ -298,7 +292,7 @@ describe('verifyArchive', () => {
 
     const manifestPath = path.join(sessDir, 'archive-manifest.json');
     const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
-    delete manifest.fileDigests['session-state.json'];
+    delete manifest.fileDigests['decision-receipts.redacted.v1.json'];
     await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
 
     const result = await verifyArchive(fingerprint, sessionId);
@@ -972,7 +966,7 @@ describe('EDGE', () => {
       expect(stats.size).toBeGreaterThan(0);
     });
 
-    it('succeeds with corrupt audit.jsonl (malformed lines skipped, no receipts)', async () => {
+    it('fails with corrupt audit.jsonl (fail-closed redaction)', async () => {
       const worktree = path.resolve('.');
       const sessionId = 'edge-corrupt-audit';
       const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
@@ -980,14 +974,7 @@ describe('EDGE', () => {
       await writeState(sessDir, makeState('COMPLETE'));
       await fs.writeFile(path.join(sessDir, 'audit.jsonl'), 'NOT JSON{{{\nALSO BAD{{{', 'utf-8');
 
-      const archivePath = await archiveSession(fingerprint, sessionId);
-      expect(archivePath).toContain('.tar.gz');
-
-      const receipts = JSON.parse(
-        await fs.readFile(path.join(sessDir, 'decision-receipts.v1.json'), 'utf-8'),
-      );
-      expect(receipts.count).toBe(0);
-      expect(receipts.receipts).toHaveLength(0);
+      await expect(archiveSession(fingerprint, sessionId)).rejects.toThrow('ARCHIVE_FAILED');
     });
 
     it('fails with corrupt flowguard.json in workspace (fail-closed)', async () => {
