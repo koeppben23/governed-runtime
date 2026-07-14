@@ -626,7 +626,7 @@ describe('audit/archive tamper matrix', () => {
   it.skipIf(!tarOk)('evidence file tamper after archive -> verify fail', async () => {
     const ids = await completeRegulatedSession();
     await fs.appendFile(
-      path.join(ids.sessDir, 'session-state.json'),
+      path.join(ids.sessDir, 'archive-manifest.json'),
       '\n{"tampered":true}\n',
       'utf-8',
     );
