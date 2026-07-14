@@ -711,7 +711,8 @@ describe('archiveSession failure paths', () => {
   });
 
   // fs.chmod does not enforce POSIX permissions on Windows NTFS — skip on win32
-  it.skipIf(process.platform === 'win32')(
+  // or when running as root (UID 0 bypasses permission checks)
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
     'fails closed when redaction source read fails',
     async () => {
       const worktree = path.resolve('.');
