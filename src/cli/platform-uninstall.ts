@@ -4,6 +4,7 @@
  */
 
 import { readFile, rm, writeFile, rename, unlink } from 'node:fs/promises';
+import { readFileSync, unlinkSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { dirname } from 'node:path';
 import type { FileOp, InstallScope } from './install-helpers.js';
@@ -47,10 +48,9 @@ async function removeCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp>
   // Lock
   await ensureDir(dirname(marketplacePath));
   const lockPath = `${marketplacePath}.flowguard.lock`;
+  const token = randomUUID();
   try {
-    await writeFile(lockPath, JSON.stringify({ pid: process.pid, token: randomUUID() }), {
-      flag: 'wx',
-    });
+    await writeFile(lockPath, JSON.stringify({ pid: process.pid, token }), { flag: 'wx' });
   } catch (err) {
     if (err instanceof Error && 'code' in err && err.code === 'EEXIST') {
       throw new Error('Codex marketplace is locked by another process.');
@@ -100,10 +100,9 @@ async function removeCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp>
     throw err;
   } finally {
     try {
-      await unlink(lockPath);
-    } catch {
-      /* ok */
-    }
+      const raw = readFileSync(lockPath, 'utf-8');
+      if (JSON.parse(raw).token === token) unlinkSync(lockPath);
+    } catch {}
   }
 }
 

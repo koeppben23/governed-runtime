@@ -3,7 +3,7 @@
  * @description Codex plugin tree and marketplace registration installer.
  */
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { chmod, readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -85,10 +85,9 @@ export async function installCodexPlugin(
 async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise<T>): Promise<T> {
   await ensureDir(dirname(marketplacePath));
   const lockPath = `${marketplacePath}.flowguard.lock`;
+  const token = randomUUID();
   try {
-    await writeFile(lockPath, JSON.stringify({ pid: process.pid, token: randomUUID() }), {
-      flag: 'wx',
-    });
+    await writeFile(lockPath, JSON.stringify({ pid: process.pid, token }), { flag: 'wx' });
   } catch (err) {
     if (err instanceof Error && 'code' in err && err.code === 'EEXIST') {
       throw new Error('Codex marketplace is locked by another process.');
@@ -99,10 +98,9 @@ async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise
     return await fn();
   } finally {
     try {
-      await unlink(lockPath);
-    } catch {
-      /* ok */
-    }
+      const raw = readFileSync(lockPath, 'utf-8');
+      if (JSON.parse(raw).token === token) unlinkSync(lockPath);
+    } catch {}
   }
 }
 

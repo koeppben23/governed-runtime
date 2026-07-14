@@ -2,11 +2,11 @@
  * @module cli/install-command
  * @description FlowGuard install command implementation.
  *
- * @version v4
+ * @version v5
  */
 
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -23,10 +23,12 @@ import {
 } from './install-steps.js';
 import { rollbackArtifacts } from './install-helpers.js';
 import {
-  installDependenciesStaged,
+  createDependencyTransaction,
+  executeDependencyTransaction,
   commitDependencyTransaction,
   rollbackDependencyTransaction,
   isRollbackPossible,
+  recoverOrAbort,
   type DependencyTransaction,
 } from './install-transaction.js';
 
@@ -37,15 +39,17 @@ export {
   snapshotForRollback,
 } from './install-helpers.js';
 
-const DEFAULT_LOCK_PATH = join(homedir(), '.config', 'opencode', '.flowguard-install.lock');
-const LOCK_PATH = process.env['FLOWGUARD_INSTALL_LOCK_PATH'] ?? DEFAULT_LOCK_PATH;
+const DEFAULT_LOCK = join(homedir(), '.config', 'opencode', '.flowguard-install.lock');
+const LOCK_PATH = process.env['FLOWGUARD_INSTALL_LOCK_PATH'] ?? DEFAULT_LOCK;
 
 // ─── Lock ─────────────────────────────────────────────────────────────────────
 
 async function acquireInstallLock(): Promise<{ release(): void }> {
   const token = randomUUID();
   const lock = { pid: process.pid, token, createdAt: new Date().toISOString() };
-
+  try {
+    await mkdir(dirname(LOCK_PATH), { recursive: true });
+  } catch {}
   try {
     await writeFile(LOCK_PATH, JSON.stringify(lock), { flag: 'wx' });
   } catch (err) {
@@ -57,8 +61,8 @@ async function acquireInstallLock(): Promise<{ release(): void }> {
         throw new Error(`Install lock exists but is unreadable. Remove ${LOCK_PATH} manually.`);
       }
       throw new Error(
-        `Install already in progress or a stale lock exists (PID: ${existing.pid}).\n` +
-          `If no install process is running, remove ${LOCK_PATH} manually.`,
+        `Install already in progress or stale lock (PID: ${existing.pid}).\n` +
+          `If no install runs, remove ${LOCK_PATH} manually.`,
       );
     }
     throw err;
@@ -71,11 +75,8 @@ async function acquireInstallLock(): Promise<{ release(): void }> {
     process.removeListener('exit', release);
     try {
       const raw = readFileSync(LOCK_PATH, 'utf-8');
-      const current = JSON.parse(raw);
-      if (current.token === token) unlinkSync(LOCK_PATH);
-    } catch {
-      // best-effort
-    }
+      if (JSON.parse(raw).token === token) unlinkSync(LOCK_PATH);
+    } catch {}
   };
   process.on('exit', release);
   return { release };
@@ -84,25 +85,19 @@ async function acquireInstallLock(): Promise<{ release(): void }> {
 // ─── Preflight ────────────────────────────────────────────────────────────────
 
 async function probeWritable(dir: string): Promise<void> {
-  const probePath = join(dir, `.flowguard-write-test.${randomUUID()}`);
+  const probe = join(dir, `.flowguard-write-test.${randomUUID()}`);
   let created = false;
   try {
-    await writeFile(probePath, '', { flag: 'wx' });
+    await writeFile(probe, '', { flag: 'wx' });
     created = true;
   } catch (err) {
-    if (err instanceof Error && 'code' in err && err.code === 'EEXIST') {
-      created = true;
-    } else {
-      throw err;
-    }
+    if (!(err instanceof Error && 'code' in err && err.code === 'EEXIST')) throw err;
+    created = true;
   } finally {
-    if (created) {
+    if (created)
       try {
-        unlinkSync(probePath);
-      } catch {
-        /* ok */
-      }
-    }
+        unlinkSync(probe);
+      } catch {}
   }
 }
 
@@ -117,7 +112,7 @@ async function rollbackDeps(tx: DependencyTransaction | null, errors: string[]):
   }
 }
 
-async function rollbackSnapshot(
+async function rollbackSnap(
   snapshot: SnapshotResult | null,
   ops: FileOp[],
   errors: string[],
@@ -133,9 +128,6 @@ async function rollbackSnapshot(
 // ─── Install orchestrator ─────────────────────────────────────────────────────
 
 export async function install(args: CliArgs): Promise<CliResult> {
-  let snapshot: SnapshotResult | null = null;
-  let tx: DependencyTransaction | null = null;
-
   let lock: { release(): void } | null = null;
   try {
     lock = await acquireInstallLock();
@@ -148,12 +140,25 @@ export async function install(args: CliArgs): Promise<CliResult> {
     };
   }
 
+  try {
+    return await doInstall(args, lock);
+  } finally {
+    lock.release();
+  }
+}
+
+async function doInstall(args: CliArgs, lock: { release(): void }): Promise<CliResult> {
+  let snapshot: SnapshotResult | null = null;
+  let tx: DependencyTransaction | null = null;
+
   const ctx = initInstallContext(args);
+
+  // Crash recovery
+  await recoverOrAbort(ctx.target);
 
   // Existing installation check
   const cfgPath = join(ctx.target, 'flowguard.json');
   if (existsSync(cfgPath) && !args.force) {
-    lock.release();
     return {
       target: ctx.target,
       ops: [],
@@ -162,33 +167,31 @@ export async function install(args: CliArgs): Promise<CliResult> {
     };
   }
 
-  // Writability preflight
-  if (existsSync(dirname(ctx.target))) {
-    await probeWritable(dirname(ctx.target));
-  }
+  // Writability preflight — check all relevant parents
+  const parents = new Set<string>();
+  if (existsSync(dirname(ctx.target))) parents.add(dirname(ctx.target));
+  for (const p of parents) await probeWritable(p);
 
   try {
     const tarball = await validateTarball(ctx);
-    if (!tarball) {
-      lock.release();
+    if (!tarball)
       return { target: ctx.target, ops: ctx.ops, errors: ctx.errors, warnings: ctx.warnings };
-    }
 
     snapshot = await buildRollbackSnapshot(ctx, tarball.name);
     await writeArtifacts(ctx, tarball, snapshot);
     await writeConfigFiles(ctx, snapshot);
 
-    tx = await installDependenciesStaged(ctx, snapshot, snapshot.vendorTarballPath);
+    // Create transaction before any dependency mutations
+    tx = await createDependencyTransaction(ctx, snapshot, snapshot.vendorTarballPath);
+    await executeDependencyTransaction(tx);
     await commitDependencyTransaction(tx, ctx);
 
-    lock.release();
     emitPostInstallWarnings(ctx);
     return { target: ctx.target, ops: ctx.ops, errors: ctx.errors, warnings: ctx.warnings };
   } catch (err) {
     ctx.errors.push(err instanceof Error ? err.message : String(err));
     await rollbackDeps(tx, ctx.errors);
-    await rollbackSnapshot(snapshot, ctx.ops, ctx.errors);
-    lock.release();
+    await rollbackSnap(snapshot, ctx.ops, ctx.errors);
     getAdapterLogger().error('cli', 'install command failed', {
       error: err instanceof Error ? err.message : String(err),
     });

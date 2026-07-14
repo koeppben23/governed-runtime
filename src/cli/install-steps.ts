@@ -156,28 +156,33 @@ export async function validateTarball(ctx: InstallContext): Promise<ValidatedTar
 
 // ─── Step: Rollback snapshot ─────────────────────────────────────────────────
 
-function dirEntry(path: string): RollbackEntry {
-  return { path, existed: existsSync(path), expectedKind: 'directory', sequence: 0 };
-}
-
-function buildDirectorySnapshots(
+async function buildDirectorySnapshots(
   target: string,
   configTargetDir: string,
   installPlatform: InstallPlatform,
-): RollbackEntry[] {
-  const entries: RollbackEntry[] = [dirEntry(join(configTargetDir, 'node_modules'))];
+): Promise<RollbackEntry[]> {
+  // Parent-last: children first, parent at the end (reverse gives parent before children on rollback? No:
+  // rollbackArtifacts reverses the array. So we want children first in the array, parents last.
+  // After reverse: parents are first, children are last. But we want to delete children BEFORE parents.
+  // So: put parents FIRST in the snapshot array, children LAST.
+  // After reverse: children first (deleted first), parents last (deleted last after children are gone).
+  //
+  // Parent-first order: target → vendor → agents/commands/plugins/tools → node_modules
+  // After reverse: node_modules first → tools/plugins/commands/agents last → vendor → target
+  const entries: RollbackEntry[] = [];
+
+  // Target (outermost) — first in array, last in rollback
+  entries.push(await snapshotForRollback(target, 'directory'));
 
   if (installPlatform !== 'claude-code' && installPlatform !== 'codex') {
-    entries.push(
-      dirEntry(join(target, 'agents')),
-      dirEntry(join(target, 'commands')),
-      dirEntry(join(target, 'plugins')),
-      dirEntry(join(target, 'tools')),
-      dirEntry(join(target, 'vendor')),
-    );
+    entries.push(await snapshotForRollback(join(target, 'vendor'), 'directory'));
+    entries.push(await snapshotForRollback(join(target, 'agents'), 'directory'));
+    entries.push(await snapshotForRollback(join(target, 'commands'), 'directory'));
+    entries.push(await snapshotForRollback(join(target, 'plugins'), 'directory'));
+    entries.push(await snapshotForRollback(join(target, 'tools'), 'directory'));
   }
 
-  entries.push(dirEntry(target));
+  entries.push(await snapshotForRollback(join(configTargetDir, 'node_modules'), 'directory'));
   return entries;
 }
 
@@ -240,7 +245,7 @@ export async function buildRollbackSnapshot(
             )),
           ]),
     // Directories
-    ...buildDirectorySnapshots(target, configTargetDir, installPlatform),
+    ...(await buildDirectorySnapshots(target, configTargetDir, installPlatform)),
   ];
 
   return {
