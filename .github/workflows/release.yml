@@ -98,7 +98,7 @@ jobs:
           node-version: ${{ matrix.node }}
 
       - name: Download release tarball
-        uses: actions/download-artifact@d3de7924c60c0732e7dfdb0ad8d9cddc3db974f4 # actions/download-artifact v5.0.0
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # actions/download-artifact v5.0.0
         with:
           name: flowguard-release-tarball
 
