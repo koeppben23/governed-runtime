@@ -189,6 +189,9 @@ jobs:
     name: sdk-baseline
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # actions/checkout v7.0.0
@@ -202,6 +205,19 @@ jobs:
         run: npm ci
       - name: SDK type drift check
         run: node scripts/sdk-type-snapshot.mjs
+      - name: Trigger SDK update on version mismatch
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          baseline_version=$(node -p "JSON.parse(require('fs').readFileSync('.sdk-baselines/opencode/version.json','utf8')).version")
+          installed_version=$(node -p "JSON.parse(require('fs').readFileSync('node_modules/@opencode-ai/plugin/package.json','utf8')).version")
+          if [ "$baseline_version" != "$installed_version" ]; then
+            echo "SDK version mismatch: baseline=$baseline_version installed=$installed_version"
+            gh workflow run opencode-sdk-update.yml
+          else
+            echo "SDK type drift detected but versions match ($baseline_version); skipping auto-update."
+          fi
 
   lint:
     name: lint
