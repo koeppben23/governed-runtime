@@ -377,7 +377,7 @@ describe('audit types', () => {
 
       const result = summarizeArgs({ value: long });
       expect(result.value).not.toContain('ghp_');
-      expect(result.value).not.toContain('Bearer');
+      expect(result.value).toContain('Bearer [redacted]');
       expect(result.value!.length).toBe(103);
     });
 
