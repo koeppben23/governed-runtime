@@ -5,6 +5,7 @@
 
 import { readFile, rm, writeFile, rename, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
+import { dirname } from 'node:path';
 import type { FileOp, InstallScope } from './install-helpers.js';
 import { resolveClaudeCodePluginRoot } from './claude-code-plugin-install.js';
 import { resolveCodexMarketplacePath, resolveCodexPluginRoot } from './codex-plugin-install.js';

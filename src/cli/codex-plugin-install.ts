@@ -108,58 +108,56 @@ async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise
 
 async function registerCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp> {
   const marketplacePath = resolveCodexMarketplacePath(scope);
-  return withMarketplaceLock(marketplacePath, async () => {
-    const entry: CodexMarketplaceEntry = {
-      name: CODEX_PLUGIN_NAME,
-      source: { source: 'local', path: codexMarketplaceSourcePath(scope) },
-      policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
-      category: 'Productivity',
-    };
+  return withMarketplaceLock(marketplacePath, () => doRegister(marketplacePath, scope));
+}
 
-    let marketplace: CodexMarketplace = { plugins: [] };
-    let action: FileOp['action'] = 'written';
-    let originalContent = '';
+async function doRegister(marketplacePath: string, scope: InstallScope): Promise<FileOp> {
+  const entry: CodexMarketplaceEntry = {
+    name: CODEX_PLUGIN_NAME,
+    source: { source: 'local', path: codexMarketplaceSourcePath(scope) },
+    policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+    category: 'Productivity',
+  };
 
-    try {
-      originalContent = await readFile(marketplacePath, 'utf-8');
-      marketplace =
-        originalContent.trim().length > 0
-          ? (JSON.parse(originalContent) as CodexMarketplace)
-          : { plugins: [] };
-      action = 'merged';
-    } catch (err) {
-      if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) throw err;
-    }
+  let marketplace: CodexMarketplace = { plugins: [] };
+  let action: FileOp['action'] = 'written';
+  let originalContent = '';
 
-    const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
-    const existingIdx = plugins.findIndex((plugin) => plugin.name === CODEX_PLUGIN_NAME);
-    if (
-      existingIdx >= 0 &&
-      plugins[existingIdx]?.source?.path === codexMarketplaceSourcePath(scope)
-    ) {
-      return { path: marketplacePath, action: 'skipped', reason: 'already registered' };
-    }
+  try {
+    originalContent = await readFile(marketplacePath, 'utf-8');
+    marketplace =
+      originalContent.trim().length > 0
+        ? (JSON.parse(originalContent) as CodexMarketplace)
+        : { plugins: [] };
+    action = 'merged';
+  } catch (err) {
+    if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) throw err;
+  }
 
-    if (originalContent.length > 0) {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      await writeFile(
-        `${marketplacePath}.flowguard-backup-${timestamp}-${randomUUID()}`,
-        originalContent,
-        { flag: 'wx' },
-      );
-    }
+  if (isAlreadyRegistered(marketplace, scope)) {
+    return { path: marketplacePath, action: 'skipped', reason: 'already registered' };
+  }
 
-    const filtered = plugins.filter((plugin) => plugin.name !== CODEX_PLUGIN_NAME);
-    if (!marketplace.name) marketplace.name = CODEX_PLUGIN_NAME;
-    marketplace.plugins = [...filtered, entry];
+  if (originalContent.length > 0) {
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    await writeFile(
+      `${marketplacePath}.flowguard-backup-${timestamp}-${randomUUID()}`,
+      originalContent,
+      { flag: 'wx' },
+    );
+  }
 
-    await atomicWriteJson(marketplacePath, marketplace);
-    return {
-      path: marketplacePath,
-      action,
-      reason: 'FlowGuard Codex marketplace entry registered',
-    };
-  });
+  const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
+  const filtered = plugins.filter((plugin) => plugin.name !== CODEX_PLUGIN_NAME);
+  if (!marketplace.name) marketplace.name = CODEX_PLUGIN_NAME;
+  marketplace.plugins = [...filtered, entry];
+
+  await atomicWriteJson(marketplacePath, marketplace);
+  return {
+    path: marketplacePath,
+    action,
+    reason: 'FlowGuard Codex marketplace entry registered',
+  };
 }
 
 async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {
@@ -175,6 +173,12 @@ async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {
     }
     throw err;
   }
+}
+
+function isAlreadyRegistered(marketplace: CodexMarketplace, scope: InstallScope): boolean {
+  const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
+  const idx = plugins.findIndex((plugin) => plugin.name === CODEX_PLUGIN_NAME);
+  return idx >= 0 && plugins[idx]?.source?.path === codexMarketplaceSourcePath(scope);
 }
 
 function isRegisteredFlowGuardEntry(
