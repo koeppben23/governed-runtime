@@ -173,8 +173,8 @@ async function doInstall(args: CliArgs, lock: { release(): void }): Promise<CliR
   const configTargetDir = resolveConfigTargetDir(ctx);
   await recoverOrAbort(configTargetDir);
 
-  // Existing installation check
-  const cfgPath = join(ctx.target, 'flowguard.json');
+  // Existing installation check — use configTargetDir (same path as buildRollbackSnapshot)
+  const cfgPath = join(configTargetDir, 'flowguard.json');
   if (existsSync(cfgPath) && !args.force) {
     return {
       target: ctx.target,
@@ -184,11 +184,13 @@ async function doInstall(args: CliArgs, lock: { release(): void }): Promise<CliR
     };
   }
 
-  // Writability preflight — check target parent and the target itself if it exists
+  // Writability preflight — check all relevant paths
   const parents = new Set<string>();
   const targetParent = dirname(ctx.target);
   if (existsSync(targetParent)) parents.add(targetParent);
   if (existsSync(ctx.target)) parents.add(ctx.target);
+  if (existsSync(configTargetDir)) parents.add(configTargetDir);
+  else parents.add(dirname(configTargetDir));
   for (const p of parents) await probeWritable(p);
 
   try {

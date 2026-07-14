@@ -6,7 +6,6 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
 import { lstatSync, realpathSync } from 'node:fs';
 import { mkdir, readFile, rename, rm, unlink, writeFile, lstat, readdir } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
@@ -99,8 +98,8 @@ async function observePath(
 async function safeUnlink(p: string): Promise<void> {
   try {
     await unlink(p);
-  } catch {
-    /* ok */
+  } catch (err) {
+    if (!isEnoent(err)) throw err;
   }
 }
 
@@ -325,27 +324,28 @@ export async function executeDependencyTransaction(tx: DependencyTransaction): P
 
   doPackageInstall(pm, tx.stagingRoot);
 
-  if (!existsSync(tx.stagingModules)) throw new Error('Staging: node_modules not created.');
-  if (!existsSync(join(tx.stagingModules, '@flowguard', 'core')))
+  if ((await observePath(tx.stagingModules, 'directory')) !== 'present')
+    throw new Error('Staging: node_modules not created.');
+  if ((await observePath(join(tx.stagingModules, '@flowguard', 'core'), 'directory')) !== 'present')
     throw new Error('Staging: @flowguard/core not found.');
 
   tx.phase = TransactionPhase.StagingValidated;
   await persistJournal(tx);
 
-  // --- SavingOld (observation-based) ---
+  // --- SavingOld (observation-based, typed) ---
   tx.savedPath = join(tx.configTargetDir, `node_modules.saved.${tx.transactionId}`);
   tx.phase = TransactionPhase.SavingOld;
   await persistJournal(tx);
 
-  const livePresent = await pathExistsNoFollow(tx.liveModulesPath);
-  const savedPresent = await pathExistsNoFollow(tx.savedPath);
+  const livePres = await observePath(tx.liveModulesPath, 'directory');
+  const savedPres = await observePath(tx.savedPath, 'directory');
 
-  if (livePresent && !savedPresent) {
+  if (livePres === 'present' && savedPres === 'absent') {
     await rename(tx.liveModulesPath, tx.savedPath);
     tx.hadOriginal = true;
-  } else if (!livePresent && savedPresent) {
+  } else if (livePres === 'absent' && savedPres === 'present') {
     tx.hadOriginal = true;
-  } else if (livePresent && savedPresent) {
+  } else if (livePres === 'present' && savedPres === 'present') {
     throw new Error('Ambiguous save-old: both live and saved exist');
   } else {
     tx.hadOriginal = false;
