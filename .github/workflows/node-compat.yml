@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  issues: write
 
 concurrency:
   group: ${{ github.workflow }}
@@ -96,4 +97,23 @@ jobs:
           "
           npx flowguard --help >/dev/null 2>&1
           echo "ok: artifact install and import on Node ${{ matrix.node }} (status: ${{ matrix.status }})"
+
+      - name: Report failure
+        if: failure()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          title="Scheduled workflow failed: ${{ github.workflow }}"
+          existing=$(gh issue list --state open --limit 100 --json number,title \
+            --jq ".[] | select(.title == \"$title\") | .number" | head -n 1)
+          if [ -z "$existing" ]; then
+            gh issue create --title "$title" --body "## Scheduled workflow failure
+
+          The scheduled \`${{ github.workflow }}\` workflow run failed.
+
+          **Run**: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+          Review the failed step for root cause."
+          fi
         continue-on-error: ${{ matrix.continue-on-error }}
