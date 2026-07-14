@@ -132,7 +132,7 @@ export async function validateTarball(ctx: InstallContext): Promise<ValidatedTar
   }
 
   if (args.allowUnverifiedTarball) {
-    ctx.warnings.push(
+    ctx.errors.push(
       'Tarball integrity verification explicitly skipped via --allow-unverified-tarball. ' +
         'This supply-chain opt-out is not recommended.',
     );
@@ -191,28 +191,34 @@ export async function buildRollbackSnapshot(
   const reviewerPath = join(target, reviewerDefinition.relativePath);
 
   const rollbackEntries: RollbackEntry[] = [
-    await snapshotForRollback(pkgPath),
-    ...(opencodeJsonPath ? [await snapshotForRollback(opencodeJsonPath)] : []),
-    await snapshotForRollback(cfgPath),
-    await snapshotForRollback(mandatesPath),
-    await snapshotForRollback(vendorTarballPath),
+    await snapshotForRollback(pkgPath, 'file'),
+    ...(opencodeJsonPath ? [await snapshotForRollback(opencodeJsonPath, 'file')] : []),
+    await snapshotForRollback(cfgPath, 'file'),
+    await snapshotForRollback(mandatesPath, 'file'),
+    await snapshotForRollback(vendorTarballPath, 'file'),
     ...(installPlatform === 'claude-code'
-      ? await Promise.all(claudeCodePluginSnapshotPaths(target).map(snapshotForRollback))
+      ? await Promise.all(
+          claudeCodePluginSnapshotPaths(target).map((p) => snapshotForRollback(p, 'file')),
+        )
       : installPlatform === 'codex'
-        ? await Promise.all(codexPluginSnapshotPaths(args.installScope).map(snapshotForRollback))
+        ? await Promise.all(
+            codexPluginSnapshotPaths(args.installScope).map((p) => snapshotForRollback(p, 'file')),
+          )
         : [
-            await snapshotForRollback(join(target, 'tools', 'flowguard.ts')),
-            await snapshotForRollback(join(target, 'plugins', 'flowguard-audit.ts')),
-            await snapshotForRollback(reviewerPath),
+            await snapshotForRollback(join(target, 'tools', 'flowguard.ts'), 'file'),
+            await snapshotForRollback(join(target, 'plugins', 'flowguard-audit.ts'), 'file'),
+            await snapshotForRollback(reviewerPath, 'file'),
             ...(await Promise.all(
               Object.keys(COMMANDS).map((name) =>
-                snapshotForRollback(join(target, 'commands', name)),
+                snapshotForRollback(join(target, 'commands', name), 'file'),
               ),
             )),
           ]),
     {
       path: join(configTargetDir, 'node_modules'),
       existed: existsSync(join(configTargetDir, 'node_modules')),
+      expectedKind: 'directory' as const,
+      sequence: 0,
     },
   ];
 
@@ -397,7 +403,7 @@ export async function installDependencies(
 ): Promise<void> {
   const pm = detectPackageManager();
   if (pm === null) {
-    await rollbackArtifacts(snapshot.rollbackEntries, ctx.ops, ctx.warnings);
+    await rollbackArtifacts(snapshot.rollbackEntries, ctx.ops, ctx.errors);
     ctx.errors.push(
       'ERROR: Neither bun nor npm found in PATH.\n' +
         `  FlowGuard artifacts were rolled back. Recovery:\n` +
@@ -417,14 +423,14 @@ export async function installDependencies(
 
     const corePath = join(snapshot.configTargetDir, 'node_modules', '@flowguard', 'core');
     if (!existsSync(corePath)) {
-      await rollbackArtifacts(snapshot.rollbackEntries, ctx.ops, ctx.warnings);
+      await rollbackArtifacts(snapshot.rollbackEntries, ctx.ops, ctx.errors);
       ctx.errors.push(
         'ERROR: Dependencies installed but @flowguard/core not found.\n' +
           '  FlowGuard artifacts were rolled back. The package.json may need manual review.',
       );
     }
   } catch (err) {
-    await rollbackArtifacts(snapshot.rollbackEntries, ctx.ops, ctx.warnings);
+    await rollbackArtifacts(snapshot.rollbackEntries, ctx.ops, ctx.errors);
     ctx.errors.push(
       `ERROR: Dependency install failed: ${err instanceof Error ? err.message : String(err)}\n` +
         '  FlowGuard artifacts were rolled back. Recovery: re-run `flowguard install --force`.',
