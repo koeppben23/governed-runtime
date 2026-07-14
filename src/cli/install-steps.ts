@@ -156,6 +156,31 @@ export async function validateTarball(ctx: InstallContext): Promise<ValidatedTar
 
 // ─── Step: Rollback snapshot ─────────────────────────────────────────────────
 
+function dirEntry(path: string): RollbackEntry {
+  return { path, existed: existsSync(path), expectedKind: 'directory', sequence: 0 };
+}
+
+function buildDirectorySnapshots(
+  target: string,
+  configTargetDir: string,
+  installPlatform: InstallPlatform,
+): RollbackEntry[] {
+  const entries: RollbackEntry[] = [dirEntry(join(configTargetDir, 'node_modules'))];
+
+  if (installPlatform !== 'claude-code' && installPlatform !== 'codex') {
+    entries.push(
+      dirEntry(join(target, 'agents')),
+      dirEntry(join(target, 'commands')),
+      dirEntry(join(target, 'plugins')),
+      dirEntry(join(target, 'tools')),
+      dirEntry(join(target, 'vendor')),
+    );
+  }
+
+  entries.push(dirEntry(target));
+  return entries;
+}
+
 export interface SnapshotResult {
   rollbackEntries: RollbackEntry[];
   vendorTarballPath: string;
@@ -190,6 +215,7 @@ export async function buildRollbackSnapshot(
   const reviewerPath = join(target, reviewerDefinition.relativePath);
 
   const rollbackEntries: RollbackEntry[] = [
+    // Files
     await snapshotForRollback(pkgPath, 'file'),
     ...(opencodeJsonPath ? [await snapshotForRollback(opencodeJsonPath, 'file')] : []),
     await snapshotForRollback(cfgPath, 'file'),
@@ -213,12 +239,8 @@ export async function buildRollbackSnapshot(
               ),
             )),
           ]),
-    {
-      path: join(configTargetDir, 'node_modules'),
-      existed: existsSync(join(configTargetDir, 'node_modules')),
-      expectedKind: 'directory' as const,
-      sequence: 0,
-    },
+    // Directories
+    ...buildDirectorySnapshots(target, configTargetDir, installPlatform),
   ];
 
   return {

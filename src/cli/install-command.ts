@@ -37,7 +37,8 @@ export {
   snapshotForRollback,
 } from './install-helpers.js';
 
-const LOCK_PATH = join(homedir(), '.config', 'opencode', '.flowguard-install.lock');
+const DEFAULT_LOCK_PATH = join(homedir(), '.config', 'opencode', '.flowguard-install.lock');
+const LOCK_PATH = process.env['FLOWGUARD_INSTALL_LOCK_PATH'] ?? DEFAULT_LOCK_PATH;
 
 // ─── Lock ─────────────────────────────────────────────────────────────────────
 
