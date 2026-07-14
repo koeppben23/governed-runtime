@@ -167,9 +167,11 @@ async function doInstall(args: CliArgs, lock: { release(): void }): Promise<CliR
     };
   }
 
-  // Writability preflight — check all relevant parents
+  // Writability preflight — check target parent and the target itself if it exists
   const parents = new Set<string>();
-  if (existsSync(dirname(ctx.target))) parents.add(dirname(ctx.target));
+  const targetParent = dirname(ctx.target);
+  if (existsSync(targetParent)) parents.add(targetParent);
+  if (existsSync(ctx.target)) parents.add(ctx.target);
   for (const p of parents) await probeWritable(p);
 
   try {
