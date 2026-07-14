@@ -57,7 +57,7 @@ jobs:
           retention-days: 1
 
       - name: Report failure
-        if: failure()
+        if: github.event_name == 'schedule' && failure()
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
