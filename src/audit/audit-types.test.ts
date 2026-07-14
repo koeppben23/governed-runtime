@@ -377,7 +377,13 @@ describe('audit types', () => {
 
       const result = summarizeArgs({ value: long });
       expect(result.value).not.toContain('ghp_');
-      expect(result.value).toContain('Bearer [redacted]');
+      expect(result.value).toContain('[redacted]');
+    });
+
+    it('summarizeArgs sanitizes then truncates when result still exceeds limit', () => {
+      const longPlain = 'y'.repeat(120);
+      const result = summarizeArgs({ value: longPlain });
+      expect(result.value).toBe('y'.repeat(100) + '...');
       expect(result.value!.length).toBe(103);
     });
 
