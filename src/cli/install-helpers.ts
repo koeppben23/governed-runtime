@@ -551,7 +551,6 @@ export async function rollbackArtifacts(
 }
 
 async function restoreFileFromSnapshot(entry: RollbackEntry, ops: FileOp[]): Promise<void> {
-  let targetExists = true;
   try {
     const stat = await lstat(entry.path);
     if (stat.isSymbolicLink()) {
@@ -561,11 +560,8 @@ async function restoreFileFromSnapshot(entry: RollbackEntry, ops: FileOp[]): Pro
       throw new Error(`Rollback restore target type changed: ${entry.path} (expected file)`);
     }
   } catch (err) {
-    if (isEnoent(err)) {
-      targetExists = false;
-    } else {
-      throw err;
-    }
+    if (!isEnoent(err)) throw err;
+    // File was deleted — atomic recreate via temp+rename below restores it
   }
 
   const tmpPath = `${entry.path}.rollback.${process.pid}.${randomUUID()}`;

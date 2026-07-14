@@ -49,7 +49,6 @@ import {
   reviewerDefinitionForPlatform,
   resolveOpencodeConfigPath,
   resolveTarget,
-  rollbackArtifacts,
   snapshotForRollback,
   verifyTarballChecksum,
   writeIfAbsent,
@@ -390,12 +389,7 @@ async function mergeExistingOpencodeConfig(
   });
 }
 
-// ─── Step: Install dependencies ──────────────────────────────────────────────
-
-function dependencyInstallCommand(pm: 'bun' | 'npm'): string {
-  if (pm === 'npm') return 'npm install --no-audit --no-fund';
-  return 'bun install';
-}
+// ─── Step: Install dependencies (legacy — throws only, top-level handles rollback) ─
 
 export async function installDependencies(
   ctx: InstallContext,
@@ -403,18 +397,13 @@ export async function installDependencies(
 ): Promise<void> {
   const pm = detectPackageManager();
   if (pm === null) {
-    await rollbackArtifacts(snapshot.rollbackEntries, ctx.ops, ctx.errors);
-    ctx.errors.push(
-      'ERROR: Neither bun nor npm found in PATH.\n' +
-        `  FlowGuard artifacts were rolled back. Recovery:\n` +
-        `    1. Install bun (https://bun.sh) or Node.js/npm.\n` +
-        `    2. Re-run: flowguard install --force`,
+    throw new Error(
+      'Neither bun nor npm found in PATH. Install bun (https://bun.sh) or Node.js/npm.',
     );
-    return;
   }
 
   try {
-    execSync(dependencyInstallCommand(pm), {
+    execSync(pm === 'npm' ? 'npm install --no-audit --no-fund' : 'bun install', {
       cwd: snapshot.configTargetDir,
       stdio: 'pipe',
       timeout: DEPENDENCY_INSTALL_TIMEOUT_MS,
@@ -423,17 +412,11 @@ export async function installDependencies(
 
     const corePath = join(snapshot.configTargetDir, 'node_modules', '@flowguard', 'core');
     if (!existsSync(corePath)) {
-      await rollbackArtifacts(snapshot.rollbackEntries, ctx.ops, ctx.errors);
-      ctx.errors.push(
-        'ERROR: Dependencies installed but @flowguard/core not found.\n' +
-          '  FlowGuard artifacts were rolled back. The package.json may need manual review.',
-      );
+      throw new Error('Dependencies installed but @flowguard/core not found.');
     }
   } catch (err) {
-    await rollbackArtifacts(snapshot.rollbackEntries, ctx.ops, ctx.errors);
-    ctx.errors.push(
-      `ERROR: Dependency install failed: ${err instanceof Error ? err.message : String(err)}\n` +
-        '  FlowGuard artifacts were rolled back. Recovery: re-run `flowguard install --force`.',
+    throw new Error(
+      `Dependency install failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 }

@@ -4,9 +4,10 @@
  */
 
 import { existsSync, readFileSync } from 'node:fs';
-import { chmod, readFile, writeFile } from 'node:fs/promises';
+import { chmod, readFile, writeFile, rename, unlink } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import type { FileOp, InstallScope } from './install-helpers.js';
 import { writeIfAbsent } from './install-helpers.js';
 import { ensureDir } from '../adapters/persistence.js';
@@ -81,40 +82,99 @@ export async function installCodexPlugin(
   return ops;
 }
 
-async function registerCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp> {
-  const marketplacePath = resolveCodexMarketplacePath(scope);
+async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise<T>): Promise<T> {
   await ensureDir(dirname(marketplacePath));
-
-  const entry: CodexMarketplaceEntry = {
-    name: CODEX_PLUGIN_NAME,
-    source: { source: 'local', path: codexMarketplaceSourcePath(scope) },
-    policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
-    category: 'Productivity',
-  };
-
-  let marketplace: CodexMarketplace = { plugins: [] };
-  let action: FileOp['action'] = 'written';
-
+  const lockPath = `${marketplacePath}.flowguard.lock`;
   try {
-    const content = await readFile(marketplacePath, 'utf-8');
-    marketplace =
-      content.trim().length > 0 ? (JSON.parse(content) as CodexMarketplace) : { plugins: [] };
-    action = 'merged';
+    await writeFile(lockPath, JSON.stringify({ pid: process.pid, token: randomUUID() }), {
+      flag: 'wx',
+    });
   } catch (err) {
-    if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) {
-      throw err;
+    if (err instanceof Error && 'code' in err && err.code === 'EEXIST') {
+      throw new Error('Codex marketplace is locked by another process.');
+    }
+    throw err;
+  }
+  try {
+    return await fn();
+  } finally {
+    try {
+      await unlink(lockPath);
+    } catch {
+      /* ok */
     }
   }
+}
 
-  const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
-  const filtered = plugins.filter((plugin) => plugin.name !== CODEX_PLUGIN_NAME);
-  if (!marketplace.name) {
-    marketplace.name = CODEX_PLUGIN_NAME;
+async function registerCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp> {
+  const marketplacePath = resolveCodexMarketplacePath(scope);
+  return withMarketplaceLock(marketplacePath, async () => {
+    const entry: CodexMarketplaceEntry = {
+      name: CODEX_PLUGIN_NAME,
+      source: { source: 'local', path: codexMarketplaceSourcePath(scope) },
+      policy: { installation: 'AVAILABLE', authentication: 'ON_INSTALL' },
+      category: 'Productivity',
+    };
+
+    let marketplace: CodexMarketplace = { plugins: [] };
+    let action: FileOp['action'] = 'written';
+    let originalContent = '';
+
+    try {
+      originalContent = await readFile(marketplacePath, 'utf-8');
+      marketplace =
+        originalContent.trim().length > 0
+          ? (JSON.parse(originalContent) as CodexMarketplace)
+          : { plugins: [] };
+      action = 'merged';
+    } catch (err) {
+      if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) throw err;
+    }
+
+    const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
+    const existingIdx = plugins.findIndex((plugin) => plugin.name === CODEX_PLUGIN_NAME);
+    if (
+      existingIdx >= 0 &&
+      plugins[existingIdx]?.source?.path === codexMarketplaceSourcePath(scope)
+    ) {
+      return { path: marketplacePath, action: 'skipped', reason: 'already registered' };
+    }
+
+    if (originalContent.length > 0) {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      await writeFile(
+        `${marketplacePath}.flowguard-backup-${timestamp}-${randomUUID()}`,
+        originalContent,
+        { flag: 'wx' },
+      );
+    }
+
+    const filtered = plugins.filter((plugin) => plugin.name !== CODEX_PLUGIN_NAME);
+    if (!marketplace.name) marketplace.name = CODEX_PLUGIN_NAME;
+    marketplace.plugins = [...filtered, entry];
+
+    await atomicWriteJson(marketplacePath, marketplace);
+    return {
+      path: marketplacePath,
+      action,
+      reason: 'FlowGuard Codex marketplace entry registered',
+    };
+  });
+}
+
+async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {
+  const tmpPath = `${filePath}.tmp.${process.pid}.${randomUUID()}`;
+  try {
+    await writeFile(tmpPath, JSON.stringify(data, null, 2) + '\n', { flag: 'wx' });
+    await rename(tmpPath, filePath);
+  } catch (err) {
+    try {
+      await unlink(tmpPath);
+    } catch {
+      /* ok */
+    }
+    throw err;
   }
-  marketplace.plugins = [...filtered, entry];
-
-  await writeFile(marketplacePath, JSON.stringify(marketplace, null, 2) + '\n', 'utf-8');
-  return { path: marketplacePath, action, reason: 'FlowGuard Codex marketplace entry registered' };
 }
 
 function isRegisteredFlowGuardEntry(
