@@ -38,6 +38,7 @@ From `.github/workflows/ci.yml`:
 - `format`
 - `architecture`
 - `build`
+- `build-clean`
 - `actionlint`
 - `secrets-scan`
 - `security-policy`
