@@ -314,6 +314,13 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+      - name: Upload dist artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact v7.0.1
+        with:
+          name: dist
+          path: dist/
+          retention-days: 1
+
   install-verify:
     name: install-verify (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -337,10 +344,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build package
-        run: npm run build
-        env:
-          FORCE_COLOR: 0
+      - name: Download built dist
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # actions/download-artifact v5.0.0
+        with:
+          name: dist
+          path: dist/
+
+      - name: Restore executable permissions
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { chmodSync } = require('node:fs');
+          const pkg = require('./package.json');
+
+          const bins =
+            typeof pkg.bin === 'string'
+              ? [pkg.bin]
+              : Object.values(pkg.bin ?? {});
+
+          if (bins.length === 0) {
+            throw new Error('package.json declares no shipped binaries');
+          }
+
+          for (const binPath of bins) {
+            chmodSync(binPath, 0o755);
+          }
+          NODE
 
       - name: Run install-verify smoke tests
         run: npm run test:install-verify
@@ -366,10 +395,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build package
-        run: npm run build
-        env:
-          FORCE_COLOR: 0
+      - name: Download built dist
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # actions/download-artifact v5.0.0
+        with:
+          name: dist
+          path: dist/
+
+      - name: Restore executable permissions
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { chmodSync } = require('node:fs');
+          const pkg = require('./package.json');
+
+          const bins =
+            typeof pkg.bin === 'string'
+              ? [pkg.bin]
+              : Object.values(pkg.bin ?? {});
+
+          if (bins.length === 0) {
+            throw new Error('package.json declares no shipped binaries');
+          }
+
+          for (const binPath of bins) {
+            chmodSync(binPath, 0o755);
+          }
+          NODE
 
       - name: Install OpenCode CLI
         run: |
@@ -412,8 +463,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build package for runtime install
-        run: npm run build
+      - name: Download built dist
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # actions/download-artifact v5.0.0
+        with:
+          name: dist
+          path: dist/
+
+      - name: Restore executable permissions
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { chmodSync } = require('node:fs');
+          const pkg = require('./package.json');
+
+          const bins =
+            typeof pkg.bin === 'string'
+              ? [pkg.bin]
+              : Object.values(pkg.bin ?? {});
+
+          if (bins.length === 0) {
+            throw new Error('package.json declares no shipped binaries');
+          }
+
+          for (const binPath of bins) {
+            chmodSync(binPath, 0o755);
+          }
+          NODE
 
       - name: Install OpenCode CLI
         run: |
@@ -511,6 +586,7 @@ jobs:
   install:
     name: install (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: build
     timeout-minutes: 20
     strategy:
       fail-fast: false
@@ -530,8 +606,32 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build package
-        run: npm run build
+      - name: Download built dist
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # actions/download-artifact v5.0.0
+        with:
+          name: dist
+          path: dist/
+
+      - name: Restore executable permissions
+        shell: bash
+        run: |
+          node <<'NODE'
+          const { chmodSync } = require('node:fs');
+          const pkg = require('./package.json');
+
+          const bins =
+            typeof pkg.bin === 'string'
+              ? [pkg.bin]
+              : Object.values(pkg.bin ?? {});
+
+          if (bins.length === 0) {
+            throw new Error('package.json declares no shipped binaries');
+          }
+
+          for (const binPath of bins) {
+            chmodSync(binPath, 0o755);
+          }
+          NODE
 
       - name: Pack real release tarball for testing
         id: tarball
