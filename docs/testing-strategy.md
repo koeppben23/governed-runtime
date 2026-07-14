@@ -37,14 +37,15 @@ enforcement chain (actor resolution, assurance tiers, policy snapshot flow-throu
 
 Each CI job maps to exactly one npm script for clear diagnosis:
 
-| CI Job              | npm Script                     | Scope                                                                                   | Requires Build |
-| ------------------- | ------------------------------ | --------------------------------------------------------------------------------------- | -------------- |
-| **unit**            | `npm run test:unit`            | All `*.test.ts` outside `integration/`, including T1 and T2                             | No             |
-| **coverage**        | `npm run test:coverage:ci`     | Unit + integration under v8 coverage; enforces aggregate 80% threshold                  | No             |
-| **smoke**           | `npm run test:smoke`           | Built CLI contract smoke and ACP smoke                                                  | Yes            |
-| **install-verify**  | `npm run test:install-verify`  | Tarball pack/install/doctor verification                                                | Yes            |
-| **mutation**        | `npm run mutation`             | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence | No             |
-| **actions-pinning** | `npm run check:actions-pinned` | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests             | No             |
+| CI Job               | npm Script                                                      | Scope                                                                                   | Requires Build |
+| -------------------- | --------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------- |
+| **unit**             | `npm run test:unit`                                             | All `*.test.ts` outside `integration/`, including T1 and T2                             | No             |
+| **coverage**         | `npm run test:coverage:ci`                                      | Unit + integration under v8 coverage; enforces aggregate 80% threshold                  | No             |
+| **integration-perf** | `npx vitest run --project integration --testNamePattern 'PERF'` | All integration PERF tests without v8 instrumentation                                   | No             |
+| **smoke**            | `npm run test:smoke`                                            | Built CLI contract smoke and ACP smoke                                                  | Yes            |
+| **install-verify**   | `npm run test:install-verify`                                   | Tarball pack/install/doctor verification                                                | Yes            |
+| **mutation**         | `npm run mutation`                                              | StrykerJS mutation testing for security-critical paths on weekly/release/manual cadence | No             |
+| **actions-pinning**  | `npm run check:actions-pinned`                                  | Workflow and local-action `uses:` refs are immutable SHAs or Docker digests             | No             |
 
 The `smoke` job also requires the OpenCode CLI (`opencode-ai`) for ACP tests.
 The `install-verify` job runs cross-platform (Linux, macOS, Windows).
