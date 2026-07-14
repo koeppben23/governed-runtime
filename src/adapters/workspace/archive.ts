@@ -39,8 +39,12 @@ import { decisionReceipts } from '../../audit/query.js';
 import {
   redactDecisionReceipts,
   redactReviewReport,
+  redactSessionState,
+  redactAuditDetail,
+  stableMask,
   type RedactionMode,
 } from '../../redaction/export-redaction.js';
+import { summarizeArgs } from '../../audit/types.js';
 
 import { WorkspaceError, validateFingerprint, validateSessionId } from './types.js';
 import { workspacesHome, sessionDir } from './init.js';
@@ -218,6 +222,26 @@ async function applyArchiveRedaction(
       redactedArtifacts.push('review-report.redacted.json');
       if (!includeRaw) excludedFiles.push('review-report.json');
     }
+
+    const statePath = path.join(sessDir, 'session-state.json');
+    if (await fileExists(statePath)) {
+      await writeRedactedExportArtifact(
+        sessDir,
+        'session-state.json',
+        'session-state.redacted.json',
+        redactionMode as RedactionMode,
+        redactSessionState,
+      );
+      redactedArtifacts.push('session-state.redacted.json');
+      if (!includeRaw) excludedFiles.push('session-state.json');
+    }
+
+    const auditPath = path.join(sessDir, 'audit.jsonl');
+    if (await fileExists(auditPath)) {
+      await writeRedactedJsonlArtifact(sessDir, redactionMode as RedactionMode);
+      redactedArtifacts.push('audit.redacted.jsonl');
+      if (!includeRaw) excludedFiles.push('audit.jsonl');
+    }
   }
 
   if (includeRaw) {
@@ -225,6 +249,77 @@ async function applyArchiveRedaction(
   }
 
   return { redactedArtifacts, excludedFiles, riskFlags };
+}
+
+function isToolCallAuditEvent(event: Record<string, unknown>): boolean {
+  const detail = event.detail;
+  if (!detail || typeof detail !== 'object') return false;
+  return (detail as Record<string, unknown>).kind === 'tool_call';
+}
+
+function redactIdentityValues(obj: Record<string, unknown>, mode: RedactionMode): void {
+  for (const [key, val] of Object.entries(obj)) {
+    if (typeof val === 'string') {
+      obj[key] = stableMask(val, mode);
+    }
+  }
+}
+
+async function writeRedactedJsonlArtifact(sessDir: string, mode: RedactionMode): Promise<void> {
+  const rawPath = path.join(sessDir, 'audit.jsonl');
+  const redactedPath = path.join(sessDir, 'audit.redacted.jsonl');
+
+  let rawContent: string;
+  try {
+    rawContent = await fs.readFile(rawPath, 'utf-8');
+  } catch (err) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      `Audit trail read failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  const lines = rawContent.split('\n').filter((line) => line.trim());
+  const redactedLines: string[] = [];
+
+  for (const line of lines) {
+    redactedLines.push(redactAuditEvent(line, mode));
+  }
+
+  await atomicWrite(redactedPath, redactedLines.join('\n') + '\n');
+}
+
+function redactAuditEvent(line: string, mode: RedactionMode): string {
+  let event: Record<string, unknown>;
+  try {
+    event = JSON.parse(line) as Record<string, unknown>;
+  } catch {
+    throw new WorkspaceError('ARCHIVE_FAILED', 'Audit trail contains unparseable JSON');
+  }
+
+  if (typeof event.actor === 'string') {
+    event.actor = stableMask(event.actor, mode);
+  }
+  if (event.actorInfo && typeof event.actorInfo === 'object') {
+    redactIdentityValues(event.actorInfo as Record<string, unknown>, mode);
+  }
+
+  const detail = event.detail;
+  if (detail && typeof detail === 'object') {
+    const detailRecord = detail as Record<string, unknown>;
+
+    if (
+      isToolCallAuditEvent(event) &&
+      detailRecord.argsSummary &&
+      typeof detailRecord.argsSummary === 'object'
+    ) {
+      detailRecord.argsSummary = summarizeArgs(detailRecord.argsSummary as Record<string, unknown>);
+    }
+
+    event.detail = redactAuditDetail(detailRecord, mode);
+  }
+
+  return JSON.stringify(event);
 }
 
 async function appendArtifactBindingAuditEvent(

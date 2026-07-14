@@ -272,7 +272,7 @@ describe('audit and archive integrity fail-closed behavior', () => {
     async () => {
       const ids = await completeRegulatedSession();
       await fs.appendFile(
-        path.join(ids.sessDir, 'session-state.json'),
+        path.join(ids.sessDir, 'archive-manifest.json'),
         '\n{"tampered":true}\n',
         'utf-8',
       );

@@ -170,6 +170,46 @@ describe('telemetry', () => {
       vi.resetModules();
     });
   });
+
+  // ─── SECURITY: ERROR SCRUBBING ──────────────────────────────────────
+
+  describe('SECURITY: ERROR SCRUBBING', () => {
+    it('withSpan catches and rethrows errors (scrubbed internally)', async () => {
+      const { withSpan } = await import('./index.js');
+      await expect(
+        withSpan('test.op', async () => {
+          throw new Error('/home/user/.ssh/id_rsa: EACCES');
+        }),
+      ).rejects.toThrow('/home/user/.ssh/id_rsa');
+    });
+
+    it('withSpanSync catches and rethrows errors (scrubbed internally)', async () => {
+      const { withSpanSync } = await import('./index.js');
+      expect(() => {
+        withSpanSync('test.op', () => {
+          throw new Error('/etc/ssl/private/key.pem: permission denied');
+        });
+      }).toThrow();
+    });
+
+    it('withSpan handles non-Error throws', async () => {
+      const { withSpan } = await import('./index.js');
+      await expect(
+        withSpan('test.op', async () => {
+          throw 'raw string error';
+        }),
+      ).rejects.toBe('raw string error');
+    });
+
+    it('withSpanSync handles non-Error throws', async () => {
+      const { withSpanSync } = await import('./index.js');
+      expect(() => {
+        withSpanSync('test.op', () => {
+          throw { message: '/home/user/config: not found' };
+        });
+      }).toThrow();
+    });
+  });
 });
 
 describe('SpanStatusCode', () => {

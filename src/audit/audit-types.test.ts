@@ -12,6 +12,7 @@ import {
   type ChainedAuditEvent,
   type ActorInfo,
 } from './types.js';
+import { verifyChain } from './integrity.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { SESSION_ID, TS1, TS2, TS3 } from './audit-test-helpers.js';
 describe('audit types', () => {
@@ -238,6 +239,46 @@ describe('audit types', () => {
       expect(result.obj).toBe('[Object]');
       expect(result.emptyArr).toBe('[Array(0)]');
     });
+
+    it('summarizeArgs redacts scalar string values on secret-bearing keys', () => {
+      const result = summarizeArgs({
+        api_key: 'sk-abc123def456',
+        token: 'ghp_secret123',
+        password: 'hunter2',
+        secret: 'my-secret-value',
+        credential: 'creds-xyz',
+        authorization: 'Bearer tok123',
+        access_key: 'AKIA123',
+        private_key: '-----BEGIN RSA PRIVATE KEY-----',
+        passphrase: 'correct horse battery staple',
+        aws_access_key_id: 'AKIAIOSFODNN7EXAMPLE',
+        client_secret_value: 'shhh',
+        github_token_value: 'gh_token',
+      });
+      expect(result.api_key).toBe('[REDACTED]');
+      expect(result.token).toBe('[REDACTED]');
+      expect(result.password).toBe('[REDACTED]');
+      expect(result.secret).toBe('[REDACTED]');
+      expect(result.credential).toBe('[REDACTED]');
+      expect(result.authorization).toBe('[REDACTED]');
+      expect(result.access_key).toBe('[REDACTED]');
+      expect(result.private_key).toBe('[REDACTED]');
+      expect(result.passphrase).toBe('[REDACTED]');
+      expect(result.aws_access_key_id).toBe('[REDACTED]');
+      expect(result.client_secret_value).toBe('[REDACTED]');
+      expect(result.github_token_value).toBe('[REDACTED]');
+    });
+
+    it('summarizeArgs redacts non-string values on secret-bearing keys', () => {
+      const result = summarizeArgs({
+        api_key: true,
+        token: 12345,
+        password: null as unknown,
+      });
+      expect(result.api_key).toBe('[REDACTED]');
+      expect(result.token).toBe('[REDACTED]');
+      expect(result.password).toBe('[REDACTED]');
+    });
   });
 
   // ─── CORNER ─────────────────────────────────────────────────
@@ -251,6 +292,99 @@ describe('audit types', () => {
 
     it('summarizeArgs handles empty args', () => {
       expect(summarizeArgs({})).toEqual({});
+    });
+
+    it('summarizeArgs redacts only secret-bearing keys, preserving non-secret keys', () => {
+      const result = summarizeArgs({
+        prompt: 'write a function',
+        file: 'src/main.ts',
+        language: 'typescript',
+        api_key: 'sk-abc',
+        token: 'ghp_xyz',
+      });
+      expect(result.prompt).toBe('write a function');
+      expect(result.file).toBe('src/main.ts');
+      expect(result.language).toBe('typescript');
+      expect(result.api_key).toBe('[REDACTED]');
+      expect(result.token).toBe('[REDACTED]');
+    });
+
+    it('summarizeArgs secret-key detection is case-insensitive', () => {
+      const result = summarizeArgs({
+        Api_Key: 'val1',
+        API_KEY: 'val2',
+        api_key: 'val3',
+        TOKEN: 'val4',
+      });
+      expect(result.Api_Key).toBe('[REDACTED]');
+      expect(result.API_KEY).toBe('[REDACTED]');
+      expect(result.api_key).toBe('[REDACTED]');
+      expect(result.TOKEN).toBe('[REDACTED]');
+    });
+
+    it('summarizeArgs does not redact false-positive key names', () => {
+      const result = summarizeArgs({
+        monkey: 'a monkey value',
+        keyboard_layout: 'qwerty',
+        donkey: 'not an api key',
+      });
+      expect(result.monkey).toBe('a monkey value');
+      expect(result.keyboard_layout).toBe('qwerty');
+      expect(result.donkey).toBe('not an api key');
+    });
+
+    it('summarizeArgs redacts camelCase secret-bearing keys via contains', () => {
+      const result = summarizeArgs({
+        clientApiKey: 'sk-abc',
+        myAccessKey: 'AKIA123',
+        signingPrivateKey: '-----BEGIN KEY-----',
+        githubToken: 'ghp_xyz',
+      });
+      expect(result.clientApiKey).toBe('[REDACTED]');
+      expect(result.myAccessKey).toBe('[REDACTED]');
+      expect(result.signingPrivateKey).toBe('[REDACTED]');
+      expect(result.githubToken).toBe('[REDACTED]');
+    });
+
+    it('summarizeArgs scrubs content-level secrets on non-secret keys via sanitizeDiagnosticString', () => {
+      const result = summarizeArgs({
+        notes: 'token: sk-live-abc123 and Bearer ghp_def456',
+        description: 'key at /home/user/.ssh/id_rsa with password=secret123',
+      });
+      expect(result.notes).not.toContain('sk-live-abc123');
+      expect(result.notes).not.toContain('ghp_def456');
+      expect(result.notes).toContain('[redacted]');
+      expect(result.description).toContain('[path:id_rsa]');
+      expect(result.description).toContain('password=[redacted]');
+      expect(result.description).not.toContain('secret123');
+    });
+
+    it('summarizeArgs preserves diagnostic context after content scrubbing', () => {
+      const result = summarizeArgs({
+        message: 'Connection to https://api.example.com/v2 failed at file: /app/config.ts:42:15',
+      });
+      expect(result.message).toContain('[url:api.example.com]');
+      expect(result.message).toContain('[path:config.ts]');
+      expect(result.message).not.toContain('/app/config.ts');
+      expect(result.message).not.toContain('/v2');
+    });
+
+    it('summarizeArgs sanitizes before truncating so truncated secrets still match regex minimums', () => {
+      const prefix = 'x'.repeat(80);
+      const secret = 'Bearer ghp_abcdefghijklmnopqrstuvwxyz123456';
+      const long = `${prefix} ${secret}`;
+      expect(long.length).toBeGreaterThan(100);
+
+      const result = summarizeArgs({ value: long });
+      expect(result.value).not.toContain('ghp_');
+      expect(result.value).toContain('[redacted]');
+    });
+
+    it('summarizeArgs sanitizes then truncates when result still exceeds limit', () => {
+      const longPlain = 'y'.repeat(120);
+      const result = summarizeArgs({ value: longPlain });
+      expect(result.value).toBe('y'.repeat(100) + '...');
+      expect(result.value!.length).toBe(103);
     });
 
     it("GENESIS_HASH is 'genesis'", () => {
@@ -452,6 +586,74 @@ describe('audit types', () => {
       };
       const { p99Ms } = benchmarkSync(() => computeChainHash(GENESIS_HASH, base), 200, 50);
       expect(p99Ms).toBeLessThan(PERF_BUDGETS.evaluateSingleMs); // 1ms
+    });
+  });
+
+  // ─── AC3: Audit chain integrity after secret-key redaction ─────────
+
+  describe('AUDIT CHAIN INTEGRITY', () => {
+    it('chain remains valid after summarizeArgs redacts secret-bearing keys', () => {
+      const canary = 'sk-canary-audit-chain-test';
+
+      const event = createToolCallEvent({
+        sessionId: SESSION_ID,
+        phase: 'PLAN',
+        detail: {
+          tool: 'bash',
+          argsSummary: summarizeArgs({ api_key: canary, prompt: 'hello' }),
+          success: true,
+          transitionCount: 1,
+        },
+        timestamp: TS1,
+        actor: 'human',
+        prevHash: GENESIS_HASH,
+      });
+
+      expect((event.detail.argsSummary as Record<string, string>).api_key).toBe('[REDACTED]');
+      expect(JSON.stringify(event)).not.toContain(canary);
+
+      const result = verifyChain([event as unknown as Record<string, unknown>]);
+      expect(result.valid).toBe(true);
+    });
+
+    it('multi-event chain with secret-bearing args remains valid', () => {
+      const event1 = createToolCallEvent({
+        sessionId: SESSION_ID,
+        phase: 'PLAN',
+        detail: {
+          tool: 'bash',
+          argsSummary: summarizeArgs({ token: 'ghp_secret', prompt: 'plan' }),
+          success: true,
+          transitionCount: 1,
+        },
+        timestamp: TS1,
+        actor: 'human',
+        prevHash: GENESIS_HASH,
+      });
+
+      const event2 = createToolCallEvent({
+        sessionId: SESSION_ID,
+        phase: 'IMPLEMENTATION',
+        detail: {
+          tool: 'write_file',
+          argsSummary: summarizeArgs({ file: 'src/app.ts', api_key: 'sk-abc' }),
+          success: true,
+          transitionCount: 2,
+        },
+        timestamp: TS2,
+        actor: 'human',
+        prevHash: event1.chainHash,
+      });
+
+      expect((event1.detail.argsSummary as Record<string, string>).token).toBe('[REDACTED]');
+      expect(JSON.stringify(event1)).not.toContain('ghp_secret');
+      expect((event2.detail.argsSummary as Record<string, string>).api_key).toBe('[REDACTED]');
+
+      const result = verifyChain([
+        event1 as unknown as Record<string, unknown>,
+        event2 as unknown as Record<string, unknown>,
+      ]);
+      expect(result.valid).toBe(true);
     });
   });
 });

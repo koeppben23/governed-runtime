@@ -13,6 +13,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `devEngines` define the dev baseline; runtime support narrowed from `>=20` to
   `^20.0.0 || ^22.0.0 || ^24.0.0` and verified via artifact consumer jobs.
 
+- **Typecheck all test sources (#652).** `tsconfig.test.json` coverage expanded
+  to include all test files; 114 type errors resolved across test suites.
+
+- **CI workflows hardened from lead-level audit (#661).** Scan for
+  unconfigured/unpin actions and platform configuration gaps; multi-OS install
+  verification gated on clean build; concurrency groups, timeouts, and
+  least-privilege permissions audited and corrected across all 12 workflows.
+
+- **GitHub Actions SHA-pinning verified against upstream (#658).**
+  `check:actions-pinned` now resolves each pinned SHA against the upstream
+  repository to catch force-pushed or deleted refs before they break CI.
+
+- **Integration PERF gate restored with dedicated CI job (#664).**
+  Non-instrumented integration performance testing moved to a dedicated job,
+  keeping coverage instrumentation out of the perf measurement path.
+
+- **Integration execution deduplicated (#663).** Integration tests run once
+  in the `coverage` job (v8-instrumented) instead of twice across separate
+  `unit` and `integration` jobs.
+
+- **SDK updater uses gh CLI for PR management (#656).** Scheduled
+  `opencode-sdk-update` workflow now creates and updates PRs via `gh pr` CLI
+  instead of raw API calls; successful runs auto-close stale drift issues.
+
+### Fixed
+
+- **Redaction fail-closed for archive export, audit summarization, and
+  telemetry payloads (#666).** Fixed four HIGH-severity secret-leak paths
+  (AC3, R1, R2, R4) from the 2026-06 integrity analysis.
+  - AC3: `summarizeArgs()` now masks scalar values on secret-bearing keys
+    (`api_key`, `token`, `password`, etc.) with substring and
+    delimiter-boundary detection before audit trail persistence.
+  - R1: Export redaction switched from default-allow whitelist to
+    default-deny deep walk with context-specific allow-lists; active-path
+    cycle detection fails closed on circular references.
+  - R2: Archive pipeline extended to produce `session-state.redacted.json`
+    and `audit.redacted.jsonl`; raw originals excluded by default
+    (`includeRaw: false`).
+  - R4: Telemetry span error status and recorded exceptions use
+    `serializeError()` + `sanitizeDiagnosticString()` instead of raw
+    `err.message` and `Error` objects.
+
+- **Download-artifact action pinned SHA corrected (#657).** Fixed an invalid
+  SHA reference for `actions/download-artifact` that pointed to a
+  non-existent v5 commit.
+
+- **devEngines runtime version relaxed to >=22.22.2.** `devEngines.runtime`
+  onFail behavior changed from `error` at exact pin to `>=22.22.2` minimum,
+  allowing forward-compatible runtime versions.
+
+- **Claude Code plugin mutation score hardened (#653).** Added 320 mutation
+  tests to the Claude Code plugin template, bringing the per-template
+  mutation score to 100% for all governed hook entrypoints.
+
+- **Java Task Manager demo pitch flow hardened.** Pre-flight and pitch flow
+  assertion gaps fixed; demo boundary protections restored.
+
+### Security
+
+- **OpenCode SDK and host baselines updated (#655).** `@opencode-ai/plugin`
+  and host version baselines bumped with contract, integration, smoke, and
+  end-to-end verification.
+
+- **Known issues inventory re-triaged (#651).** Static-analysis findings
+  re-verified against develop; three previously-open findings confirmed
+  fixed in existing code, one merged fix confirmed, four partial fixes
+  documented. `KNOWN_ISSUES.md` updated as authoritative inventory.
+
 ## [1.2.0-tp.2] - 2026-07-08
 
 ### Added

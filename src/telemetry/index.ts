@@ -19,6 +19,8 @@
 import { createRequire } from 'node:module';
 import { SpanStatusCode, type Tracer, type Span } from '@opentelemetry/api';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
+import { sanitizeDiagnosticString } from '../logging/redact.js';
+import { serializeError } from '../logging/error-serialize.js';
 
 const _require = createRequire(import.meta.url);
 
@@ -133,11 +135,23 @@ export async function withSpan<T>(
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
+        const serialized = serializeError(err);
+        const sanitizedMessage = sanitizeDiagnosticString(serialized.message);
+        const sanitizedStack = serialized.stack
+          ? sanitizeDiagnosticString(serialized.stack)
+          : undefined;
+
         span.setStatus({
           code: SpanStatusCode.ERROR,
-          message: err instanceof Error ? err.message : String(err),
+          message: sanitizedMessage,
         });
-        span.recordException(err instanceof Error ? err : new Error(String(err)));
+
+        span.recordException({
+          name: serialized.name,
+          message: sanitizedMessage,
+          stack: sanitizedStack,
+          code: serialized.code,
+        });
         throw err;
       } finally {
         span.end();
@@ -177,11 +191,23 @@ export function withSpanSync<T>(
     return result;
   } catch (err) {
     if (span) {
+      const serialized = serializeError(err);
+      const sanitizedMessage = sanitizeDiagnosticString(serialized.message);
+      const sanitizedStack = serialized.stack
+        ? sanitizeDiagnosticString(serialized.stack)
+        : undefined;
+
       span.setStatus({
         code: SpanStatusCode.ERROR,
-        message: err instanceof Error ? err.message : String(err),
+        message: sanitizedMessage,
       });
-      span.recordException(err instanceof Error ? err : new Error(String(err)));
+
+      span.recordException({
+        name: serialized.name,
+        message: sanitizedMessage,
+        stack: sanitizedStack,
+        code: serialized.code,
+      });
     }
     throw err;
   } finally {

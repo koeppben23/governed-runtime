@@ -19,6 +19,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import {
   canonicalizeOriginUrl,
   normalizeForFingerprint,
@@ -544,6 +545,143 @@ describe('archiveSession failure paths', () => {
     expect(verification.findings.some((f) => f.code === 'missing_file')).toBe(false);
   });
 
+  // ── R2: Archive redaction coverage ──────────────────────────────────────
+
+  it('default archive produces redacted session-state and audit artifacts', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = 'archive-test-redacted-artifacts';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await writeState(sessDir, makeState('COMPLETE'));
+    await fs.writeFile(
+      path.join(sessDir, 'audit.jsonl'),
+      JSON.stringify({
+        id: 'evt-1',
+        sessionId,
+        phase: 'PLAN',
+        event: 'tool_call:bash',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        actor: 'alice',
+        auditFormatVersion: 'v1',
+        detail: { kind: 'tool_call', tool: 'bash', success: true },
+        prevHash: GENESIS_HASH,
+      }) + '\n',
+      'utf-8',
+    );
+
+    await archiveSession(fingerprint, sessionId);
+
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(sessDir, 'archive-manifest.json'), 'utf-8'),
+    );
+    expect(manifest.redactedArtifacts).toContain('audit.redacted.jsonl');
+    expect(manifest.redactedArtifacts).toContain('session-state.redacted.json');
+    expect(manifest.excludedFiles).toContain('audit.jsonl');
+    expect(manifest.excludedFiles).toContain('session-state.json');
+
+    const redactedAudit = await fs.readFile(path.join(sessDir, 'audit.redacted.jsonl'), 'utf-8');
+    const redactedEvent = JSON.parse(redactedAudit.trim());
+    expect(redactedEvent.actor).toBe('[REDACTED]');
+    expect(redactedEvent.detail.kind).toBe('tool_call');
+  });
+
+  it('strict mode audit redaction uses deterministic tokens', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = 'archive-test-strict-tokens';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await writeState(sessDir, makeState('COMPLETE'));
+    await fs.writeFile(
+      path.join(sessDir, 'audit.jsonl'),
+      JSON.stringify({
+        id: 'evt-1',
+        sessionId,
+        phase: 'PLAN',
+        event: 'tool_call:bash',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        actor: 'alice',
+        auditFormatVersion: 'v1',
+        detail: {
+          kind: 'tool_call',
+          tool: 'bash',
+          success: true,
+          argsSummary: { api_key: 'sk-abc' },
+        },
+        prevHash: GENESIS_HASH,
+      }) + '\n',
+      'utf-8',
+    );
+    await fs.writeFile(
+      path.join(process.env.OPENCODE_CONFIG_DIR!, 'flowguard.json'),
+      JSON.stringify({ schemaVersion: 'v1', archive: { redaction: { mode: 'strict' } } }),
+      'utf-8',
+    );
+
+    await archiveSession(fingerprint, sessionId);
+
+    const redactedAudit = await fs.readFile(path.join(sessDir, 'audit.redacted.jsonl'), 'utf-8');
+    const redactedEvent = JSON.parse(redactedAudit.trim());
+    expect(redactedEvent.actor).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+  });
+
+  it('canary E2E: secret value absent from actual tar.gz archive contents', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = 'archive-canary-649';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await writeState(sessDir, makeState('COMPLETE'));
+    await fs.writeFile(
+      path.join(sessDir, 'audit.jsonl'),
+      JSON.stringify({
+        id: 'evt-1',
+        sessionId,
+        phase: 'PLAN',
+        event: 'tool_call:bash',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        actor: 'alice',
+        auditFormatVersion: 'v1',
+        detail: {
+          kind: 'tool_call',
+          tool: 'bash',
+          success: true,
+          argsSummary: { api_key: 'sk-archive-leak-canary-649' },
+        },
+        prevHash: GENESIS_HASH,
+      }) + '\n',
+      'utf-8',
+    );
+
+    const archivePath = await archiveSession(fingerprint, sessionId);
+
+    const listing = execFileSync('tar', ['tzf', archivePath], {
+      encoding: 'utf-8',
+      timeout: 10_000,
+    });
+    const archivedFiles = listing.trim().split('\n').filter(Boolean);
+
+    expect(archivedFiles).not.toContain(`${sessionId}/audit.jsonl`);
+    expect(archivedFiles).not.toContain(`${sessionId}/session-state.json`);
+    expect(archivedFiles).toContain(`${sessionId}/audit.redacted.jsonl`);
+    expect(archivedFiles).toContain(`${sessionId}/session-state.redacted.json`);
+
+    const canary = 'sk-archive-leak-canary-649';
+    for (const file of archivedFiles) {
+      let content: string;
+      try {
+        content = execFileSync('tar', ['xzfO', archivePath, file], {
+          encoding: 'utf-8',
+          timeout: 10_000,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+      } catch {
+        continue;
+      }
+      expect(content, `secret canary leaked in ${file}`).not.toContain(canary);
+    }
+  });
+
+  // ── End R2 ─────────────────────────────────────────────────────────────
+
   it('fails closed when redaction transform throws non-Error value', async () => {
     const worktree = path.resolve('.');
     const sessionId = '550e8400-e29b-41d4-a716-446655440104';
@@ -573,7 +711,8 @@ describe('archiveSession failure paths', () => {
   });
 
   // fs.chmod does not enforce POSIX permissions on Windows NTFS — skip on win32
-  it.skipIf(process.platform === 'win32')(
+  // or when running as root (UID 0 bypasses permission checks)
+  it.skipIf(process.platform === 'win32' || process.getuid?.() === 0)(
     'fails closed when redaction source read fails',
     async () => {
       const worktree = path.resolve('.');
