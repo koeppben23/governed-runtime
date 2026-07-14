@@ -97,6 +97,7 @@ jobs:
           "
           npx flowguard --help >/dev/null 2>&1
           echo "ok: artifact install and import on Node ${{ matrix.node }} (status: ${{ matrix.status }})"
+        continue-on-error: ${{ matrix.continue-on-error }}
 
       - name: Report failure
         if: failure()
@@ -116,4 +117,3 @@ jobs:
 
           Review the failed step for root cause."
           fi
-        continue-on-error: ${{ matrix.continue-on-error }}
