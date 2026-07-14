@@ -197,6 +197,15 @@ export interface SnapshotResult {
   reviewerPath: string;
 }
 
+export function resolveConfigTargetDir(ctx: InstallContext): string {
+  const { target, installPlatform, args } = ctx;
+  return installPlatform === 'opencode'
+    ? args.installScope === 'global'
+      ? dirname(globalConfigPath())
+      : join(resolve('.'), '.opencode')
+    : target;
+}
+
 export async function buildRollbackSnapshot(
   ctx: InstallContext,
   tarballName: string,
@@ -206,12 +215,7 @@ export async function buildRollbackSnapshot(
   const vendorTarballPath = join(vendorPath, tarballName);
   const mandatesPath = join(target, MANDATES_FILENAME);
 
-  const configTargetDir =
-    installPlatform === 'opencode'
-      ? args.installScope === 'global'
-        ? dirname(globalConfigPath())
-        : join(resolve('.'), '.opencode')
-      : target;
+  const configTargetDir = resolveConfigTargetDir(ctx);
   const pkgPath = join(target, 'package.json');
   const opencodeJsonPath =
     installPlatform === 'opencode' ? resolveOpencodeConfigPath(args.installScope, target) : null;

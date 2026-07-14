@@ -80,6 +80,22 @@ async function pathExistsNoFollow(p: string | null): Promise<boolean> {
   }
 }
 
+async function observePath(
+  p: string | null,
+  expectedKind: 'directory',
+): Promise<'absent' | 'present'> {
+  if (!p) return 'absent';
+  try {
+    const stat = await lstat(p);
+    if (stat.isSymbolicLink()) throw new Error(`Symlink not allowed: ${p}`);
+    if (!stat.isDirectory()) throw new Error(`Expected directory, found other type: ${p}`);
+    return 'present';
+  } catch (err) {
+    if (isEnoent(err)) return 'absent';
+    throw err;
+  }
+}
+
 async function safeUnlink(p: string): Promise<void> {
   try {
     await unlink(p);
@@ -410,13 +426,28 @@ export async function rollbackDependencyTransaction(tx: DependencyTransaction): 
   }
 
   const recoveryPhase = tx.rollbackFromPhase ?? tx.phase;
-  const hadLiveSwap = recoveryPhase >= TransactionPhase.Swapped;
-  const hadSavedOriginal = tx.hadOriginal && recoveryPhase >= TransactionPhase.OldSaved;
 
-  if (hadLiveSwap && tx.phase < TransactionPhase.LiveIsolated) {
+  // Observation-based rollback: check filesystem, not just journal
+  const livePresent = await observePath(tx.liveModulesPath, 'directory');
+  const stagingModPresent = await observePath(tx.stagingModules, 'directory');
+  const savedPresent = await observePath(tx.savedPath, 'directory');
+
+  // Detect if swap already happened (rename stagingModules → liveModulesPath)
+  const swapHappened =
+    livePresent === 'present' &&
+    stagingModPresent === 'absent' &&
+    recoveryPhase >= TransactionPhase.Swapping;
+
+  // Detect if save already happened (rename liveModulesPath → savedPath)
+  const saveHappened =
+    savedPresent === 'present' || (tx.hadOriginal && recoveryPhase >= TransactionPhase.OldSaved);
+
+  if (swapHappened && tx.phase < TransactionPhase.LiveIsolated) {
     await isolateLive(tx);
   }
-  if (hadSavedOriginal && tx.phase < TransactionPhase.OriginalRestored) {
+  if (saveHappened && tx.savedPath && tx.phase < TransactionPhase.OriginalRestored) {
+    // Set hadOriginal from observation before restore
+    tx.hadOriginal = savedPresent === 'present';
     await restoreOriginal(tx);
   }
   await cleanupRollbackArtifacts(tx);

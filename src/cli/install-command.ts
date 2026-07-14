@@ -20,6 +20,7 @@ import {
   writeArtifacts,
   writeConfigFiles,
   emitPostInstallWarnings,
+  resolveConfigTargetDir,
 } from './install-steps.js';
 import { rollbackArtifacts } from './install-helpers.js';
 import {
@@ -110,7 +111,9 @@ async function probeWritable(dir: string): Promise<void> {
     if (created)
       try {
         unlinkSync(probe);
-      } catch {}
+      } catch (err) {
+        if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) throw err;
+      }
   }
 }
 
@@ -167,7 +170,7 @@ async function doInstall(args: CliArgs, lock: { release(): void }): Promise<CliR
   const ctx = initInstallContext(args);
 
   // Crash recovery — use same configTargetDir as buildRollbackSnapshot
-  const configTargetDir = ctx.target; // configTargetDir === target for most platforms
+  const configTargetDir = resolveConfigTargetDir(ctx);
   await recoverOrAbort(configTargetDir);
 
   // Existing installation check
