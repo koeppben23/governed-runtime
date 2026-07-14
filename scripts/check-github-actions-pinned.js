@@ -8,6 +8,10 @@ const ACTIONS_DIR = path.join(process.cwd(), '.github', 'actions');
 const COMMIT_SHA_PATTERN = /^[a-f0-9]{40}$/;
 const DOCKER_DIGEST_PATTERN = /^docker:\/\/.+@sha256:[a-f0-9]{64}$/;
 const EXTERNAL_ACTION_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/;
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN ?? null;
+const GITHUB_API = process.env.GITHUB_API_URL ?? 'https://api.github.com';
+
+const shaExistsCache = new Map();
 
 function stripInlineComment(value) {
   let inSingleQuote = false;
@@ -69,6 +73,56 @@ export function validateUsesReference(value) {
   return 'External actions must be pinned to a full 40-character lowercase commit SHA';
 }
 
+export function parseActionRef(value) {
+  if (value.startsWith('./') || value.startsWith('docker://')) return null;
+
+  const atIndex = value.lastIndexOf('@');
+  if (atIndex === -1) return null;
+
+  const action = value.slice(0, atIndex);
+  const ref = value.slice(atIndex + 1);
+
+  if (!EXTERNAL_ACTION_PATTERN.test(action) || !COMMIT_SHA_PATTERN.test(ref)) return null;
+
+  return { action, sha: ref };
+}
+
+async function verifyShaExists(owner, repo, sha) {
+  const cacheKey = `${owner}/${repo}@${sha}`;
+  if (shaExistsCache.has(cacheKey)) return shaExistsCache.get(cacheKey);
+
+  const headers = {
+    Accept: 'application/vnd.github.v3+json',
+    'User-Agent': 'flowguard-actions-pinning/1.0',
+  };
+  if (GITHUB_TOKEN) {
+    headers.Authorization = `Bearer ${GITHUB_TOKEN}`;
+  }
+
+  try {
+    const url = `${GITHUB_API}/repos/${owner}/${repo}/git/commits/${sha}`;
+    const response = await fetch(url, { method: 'GET', headers });
+    const exists = response.ok;
+    shaExistsCache.set(cacheKey, exists);
+    if (!exists && response.status === 404) {
+      shaExistsCache.set(cacheKey, false);
+      return false;
+    }
+    if (response.status === 403 || response.status === 429) {
+      process.stderr.write(
+        `WARN: Rate-limited verifying ${cacheKey} (HTTP ${response.status}). Skipping existence check.\n`,
+      );
+      shaExistsCache.set(cacheKey, true);
+      return true;
+    }
+    return exists;
+  } catch (err) {
+    process.stderr.write(`WARN: Network error verifying ${cacheKey}: ${err.message}. Skipping.\n`);
+    shaExistsCache.set(cacheKey, true);
+    return true;
+  }
+}
+
 function listYamlFiles(directory) {
   if (!fs.existsSync(directory)) return [];
 
@@ -99,21 +153,85 @@ export function checkWorkflowFiles(files) {
   return findings;
 }
 
-function main() {
+export function collectActionRefs(files) {
+  const refs = new Map();
+
+  for (const file of files) {
+    const content = fs.readFileSync(file, 'utf8');
+    for (const reference of parseUsesReferences(content)) {
+      const parsed = parseActionRef(reference.value);
+      if (parsed) {
+        const key = `${parsed.action}@${parsed.sha}`;
+        if (!refs.has(key)) {
+          refs.set(key, { ...parsed, files: [] });
+        }
+        refs.get(key).files.push({ file, line: reference.line });
+      }
+    }
+  }
+
+  return [...refs.values()];
+}
+
+async function main() {
   const checkedFiles = [...listYamlFiles(WORKFLOWS_DIR), ...listYamlFiles(ACTIONS_DIR)];
   const findings = checkWorkflowFiles(checkedFiles);
 
-  if (findings.length === 0) {
-    console.log(`GitHub Actions pinning check passed (${checkedFiles.length} YAML files).`);
+  if (findings.length > 0) {
+    console.error('GitHub Actions pinning check failed:');
+    for (const finding of findings) {
+      const relativeFile = path.relative(process.cwd(), finding.file).replace(/\\/g, '/');
+      console.error(`- ${relativeFile}:${finding.line} uses ${finding.value}: ${finding.reason}`);
+    }
+    process.exitCode = 1;
     return;
   }
 
-  console.error('GitHub Actions pinning check failed:');
-  for (const finding of findings) {
-    const relativeFile = path.relative(process.cwd(), finding.file).replace(/\\/g, '/');
-    console.error(`- ${relativeFile}:${finding.line} uses ${finding.value}: ${finding.reason}`);
+  const refs = collectActionRefs(checkedFiles);
+  if (refs.length === 0) {
+    console.log(
+      `GitHub Actions pinning check passed (${checkedFiles.length} YAML files, no external refs).`,
+    );
+    return;
   }
-  process.exitCode = 1;
+
+  let invalidCount = 0;
+  const dedupRefs = [];
+  const seen = new Set();
+  for (const ref of refs) {
+    const key = `${ref.action}@${ref.sha}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      dedupRefs.push(ref);
+    }
+  }
+
+  for (const ref of dedupRefs) {
+    const [owner, repo] = ref.action.split('/');
+    if (!owner || !repo) continue;
+
+    const exists = await verifyShaExists(owner, repo, ref.sha);
+    if (!exists) {
+      for (const loc of ref.files) {
+        const relativeFile = path.relative(process.cwd(), loc.file).replace(/\\/g, '/');
+        console.error(
+          `- ${relativeFile}:${loc.line} uses ${ref.action}@${ref.sha}: SHA does not exist in ${owner}/${repo}`,
+        );
+      }
+      invalidCount += 1;
+    }
+  }
+
+  if (invalidCount > 0) {
+    console.error(
+      `GitHub Actions pinning check failed: ${invalidCount} SHA(s) do not exist in upstream repos.`,
+    );
+    process.exitCode = 1;
+  } else {
+    console.log(
+      `GitHub Actions pinning check passed (${checkedFiles.length} YAML files, ${dedupRefs.length} external refs verified).`,
+    );
+  }
 }
 
 if (
