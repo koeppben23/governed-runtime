@@ -13,6 +13,7 @@ import { existsSync } from 'node:fs';
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { InstallError } from './install-helpers.js';
+import { MutationJournal } from './install-transaction.js';
 import { globalConfigPath, ensureDir } from '../adapters/persistence.js';
 import { readConfig, writeGlobalConfig, writeRepoConfig } from '../adapters/persistence-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
@@ -160,29 +161,27 @@ async function buildDirectorySnapshots(
   target: string,
   configTargetDir: string,
   installPlatform: InstallPlatform,
+  journal: MutationJournal,
 ): Promise<RollbackEntry[]> {
-  // Parent-last: children first, parent at the end (reverse gives parent before children on rollback? No:
-  // rollbackArtifacts reverses the array. So we want children first in the array, parents last.
-  // After reverse: parents are first, children are last. But we want to delete children BEFORE parents.
-  // So: put parents FIRST in the snapshot array, children LAST.
-  // After reverse: children first (deleted first), parents last (deleted last after children are gone).
-  //
-  // Parent-first order: target → vendor → agents/commands/plugins/tools → node_modules
-  // After reverse: node_modules first → tools/plugins/commands/agents last → vendor → target
   const entries: RollbackEntry[] = [];
 
-  // Target (outermost) — first in array, last in rollback
-  entries.push(await snapshotForRollback(target, 'directory'));
+  entries.push(journal.record(await snapshotForRollback(target, 'directory')));
 
-  if (installPlatform !== 'claude-code' && installPlatform !== 'codex') {
-    entries.push(await snapshotForRollback(join(target, 'vendor'), 'directory'));
-    entries.push(await snapshotForRollback(join(target, 'agents'), 'directory'));
-    entries.push(await snapshotForRollback(join(target, 'commands'), 'directory'));
-    entries.push(await snapshotForRollback(join(target, 'plugins'), 'directory'));
-    entries.push(await snapshotForRollback(join(target, 'tools'), 'directory'));
+  if (configTargetDir !== target) {
+    entries.push(journal.record(await snapshotForRollback(configTargetDir, 'directory')));
   }
 
-  entries.push(await snapshotForRollback(join(configTargetDir, 'node_modules'), 'directory'));
+  if (installPlatform !== 'claude-code' && installPlatform !== 'codex') {
+    entries.push(journal.record(await snapshotForRollback(join(target, 'vendor'), 'directory')));
+    entries.push(journal.record(await snapshotForRollback(join(target, 'agents'), 'directory')));
+    entries.push(journal.record(await snapshotForRollback(join(target, 'commands'), 'directory')));
+    entries.push(journal.record(await snapshotForRollback(join(target, 'plugins'), 'directory')));
+    entries.push(journal.record(await snapshotForRollback(join(target, 'tools'), 'directory')));
+  }
+
+  entries.push(
+    journal.record(await snapshotForRollback(join(configTargetDir, 'node_modules'), 'directory')),
+  );
   return entries;
 }
 
@@ -195,6 +194,7 @@ export interface SnapshotResult {
   opencodeJsonPath: string | null;
   cfgPath: string;
   reviewerPath: string;
+  mutationJournal: MutationJournal;
 }
 
 export function resolveConfigTargetDir(ctx: InstallContext): string {
@@ -223,32 +223,51 @@ export async function buildRollbackSnapshot(
   const reviewerDefinition = reviewerDefinitionForPlatform(installPlatform);
   const reviewerPath = join(target, reviewerDefinition.relativePath);
 
+  const mutationJournal = new MutationJournal();
+
   // Directories first (file entries after — reverse processes files before dirs)
-  const dirEntries = await buildDirectorySnapshots(target, configTargetDir, installPlatform);
+  const dirEntries = await buildDirectorySnapshots(
+    target,
+    configTargetDir,
+    installPlatform,
+    mutationJournal,
+  );
 
   const rollbackEntries: RollbackEntry[] = [
     ...dirEntries,
     // Files
-    await snapshotForRollback(pkgPath, 'file'),
-    ...(opencodeJsonPath ? [await snapshotForRollback(opencodeJsonPath, 'file')] : []),
-    await snapshotForRollback(cfgPath, 'file'),
-    await snapshotForRollback(mandatesPath, 'file'),
-    await snapshotForRollback(vendorTarballPath, 'file'),
+    mutationJournal.record(await snapshotForRollback(pkgPath, 'file')),
+    ...(opencodeJsonPath
+      ? [mutationJournal.record(await snapshotForRollback(opencodeJsonPath, 'file'))]
+      : []),
+    mutationJournal.record(await snapshotForRollback(cfgPath, 'file')),
+    mutationJournal.record(await snapshotForRollback(mandatesPath, 'file')),
+    mutationJournal.record(await snapshotForRollback(vendorTarballPath, 'file')),
     ...(installPlatform === 'claude-code'
       ? await Promise.all(
-          claudeCodePluginSnapshotPaths(target).map((p) => snapshotForRollback(p, 'file')),
+          claudeCodePluginSnapshotPaths(target).map(async (p) =>
+            mutationJournal.record(await snapshotForRollback(p, 'file')),
+          ),
         )
       : installPlatform === 'codex'
         ? await Promise.all(
-            codexPluginSnapshotPaths(args.installScope).map((p) => snapshotForRollback(p, 'file')),
+            codexPluginSnapshotPaths(args.installScope).map(async (p) =>
+              mutationJournal.record(await snapshotForRollback(p, 'file')),
+            ),
           )
         : [
-            await snapshotForRollback(join(target, 'tools', 'flowguard.ts'), 'file'),
-            await snapshotForRollback(join(target, 'plugins', 'flowguard-audit.ts'), 'file'),
-            await snapshotForRollback(reviewerPath, 'file'),
+            mutationJournal.record(
+              await snapshotForRollback(join(target, 'tools', 'flowguard.ts'), 'file'),
+            ),
+            mutationJournal.record(
+              await snapshotForRollback(join(target, 'plugins', 'flowguard-audit.ts'), 'file'),
+            ),
+            mutationJournal.record(await snapshotForRollback(reviewerPath, 'file')),
             ...(await Promise.all(
-              Object.keys(COMMANDS).map((name) =>
-                snapshotForRollback(join(target, 'commands', name), 'file'),
+              Object.keys(COMMANDS).map(async (name) =>
+                mutationJournal.record(
+                  await snapshotForRollback(join(target, 'commands', name), 'file'),
+                ),
               ),
             )),
           ]),
@@ -263,6 +282,7 @@ export async function buildRollbackSnapshot(
     opencodeJsonPath,
     cfgPath,
     reviewerPath,
+    mutationJournal,
   };
 }
 

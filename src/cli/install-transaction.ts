@@ -81,13 +81,16 @@ async function pathExistsNoFollow(p: string | null): Promise<boolean> {
 
 async function observePath(
   p: string | null,
-  expectedKind: 'directory',
+  expectedKind: 'file' | 'directory',
 ): Promise<'absent' | 'present'> {
   if (!p) return 'absent';
   try {
     const stat = await lstat(p);
     if (stat.isSymbolicLink()) throw new Error(`Symlink not allowed: ${p}`);
-    if (!stat.isDirectory()) throw new Error(`Expected directory, found other type: ${p}`);
+    if (expectedKind === 'directory' && !stat.isDirectory())
+      throw new Error(`Expected directory, found other type: ${p}`);
+    if (expectedKind === 'file' && !stat.isFile())
+      throw new Error(`Expected file, found other type: ${p}`);
     return 'present';
   } catch (err) {
     if (isEnoent(err)) return 'absent';
@@ -186,9 +189,13 @@ async function persistJournal(tx: DependencyTransaction): Promise<void> {
     await ensureDir(dirname(tx.journalPath));
     await writeFile(tmpPath, JSON.stringify(tx, null, 2) + '\n', { flag: 'wx' });
     await rename(tmpPath, tx.journalPath);
-  } catch (err) {
-    await safeUnlink(tmpPath);
-    throw err;
+  } catch (writeErr) {
+    try {
+      await unlink(tmpPath);
+    } catch {
+      /* best-effort, original error takes priority */
+    }
+    throw writeErr;
   }
 }
 

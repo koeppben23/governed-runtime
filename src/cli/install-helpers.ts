@@ -533,7 +533,7 @@ export async function rollbackArtifacts(
   ops: FileOp[],
   errors: string[],
 ): Promise<void> {
-  for (const entry of [...entries].reverse()) {
+  for (const entry of [...entries].sort((a, b) => b.sequence - a.sequence)) {
     try {
       if (entry.existed && entry.originalContent !== undefined) {
         await restoreFileFromSnapshot(entry, ops);
