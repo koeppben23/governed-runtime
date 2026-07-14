@@ -40,6 +40,8 @@ import {
   redactDecisionReceipts,
   redactReviewReport,
   redactSessionState,
+  redactAuditDetail,
+  stableMask,
   type RedactionMode,
 } from '../../redaction/export-redaction.js';
 import { sanitizeDiagnosticString } from '../../logging/redact.js';
@@ -256,19 +258,15 @@ function isToolCallAuditEvent(event: Record<string, unknown>): boolean {
   return (detail as Record<string, unknown>).kind === 'tool_call';
 }
 
-function redactIdentityValues(obj: Record<string, unknown>): void {
+function redactIdentityValues(obj: Record<string, unknown>, mode: RedactionMode): void {
   for (const [key, val] of Object.entries(obj)) {
     if (typeof val === 'string') {
-      obj[key] = isRedactedExportValue(val) ? val : '[REDACTED]';
+      obj[key] = stableMask(val, mode);
     }
   }
 }
 
-function isRedactedExportValue(value: string): boolean {
-  return value === '[REDACTED]' || value.startsWith('[REDACTED:');
-}
-
-async function writeRedactedJsonlArtifact(sessDir: string, _mode: RedactionMode): Promise<void> {
+async function writeRedactedJsonlArtifact(sessDir: string, mode: RedactionMode): Promise<void> {
   const rawPath = path.join(sessDir, 'audit.jsonl');
   const redactedPath = path.join(sessDir, 'audit.redacted.jsonl');
 
@@ -286,13 +284,13 @@ async function writeRedactedJsonlArtifact(sessDir: string, _mode: RedactionMode)
   const redactedLines: string[] = [];
 
   for (const line of lines) {
-    redactedLines.push(redactAuditEvent(line));
+    redactedLines.push(redactAuditEvent(line, mode));
   }
 
   await atomicWrite(redactedPath, redactedLines.join('\n') + '\n');
 }
 
-function redactAuditEvent(line: string): string {
+function redactAuditEvent(line: string, mode: RedactionMode): string {
   let event: Record<string, unknown>;
   try {
     event = JSON.parse(line) as Record<string, unknown>;
@@ -301,11 +299,10 @@ function redactAuditEvent(line: string): string {
   }
 
   if (typeof event.actor === 'string') {
-    const actorVal = event.actor;
-    event.actor = isRedactedExportValue(actorVal) ? actorVal : '[REDACTED]';
+    event.actor = stableMask(event.actor, mode);
   }
   if (event.actorInfo && typeof event.actorInfo === 'object') {
-    redactIdentityValues(event.actorInfo as Record<string, unknown>);
+    redactIdentityValues(event.actorInfo as Record<string, unknown>, mode);
   }
 
   const detail = event.detail;
@@ -323,6 +320,8 @@ function redactAuditEvent(line: string): string {
     ) {
       detailRecord.argsSummary = summarizeArgs(detailRecord.argsSummary as Record<string, unknown>);
     }
+
+    event.detail = redactAuditDetail(detailRecord, mode);
   }
 
   return JSON.stringify(event);

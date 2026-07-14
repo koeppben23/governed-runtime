@@ -543,28 +543,20 @@ const SECRET_BEARING_PATTERNS = [
   'passphrase',
   'credential',
   'authorization',
+  'api_key',
+  'apikey',
+  'access_key',
+  'accesskey',
+  'private_key',
+  'privatekey',
 ] as const;
-
-const DELIMITED_SECRET_PATTERNS = ['api_key', 'apikey', 'access_key', 'private_key'] as const;
 
 function isSecretBearingKey(key: string): boolean {
   const normalized = key.toLowerCase();
   return (
     SECRET_BEARING_PATTERNS.some((pattern) => normalized.includes(pattern)) ||
-    DELIMITED_SECRET_PATTERNS.some((pattern) => isDelimitedMatch(normalized, pattern)) ||
     /(^|[_-])key($|[_-])/.test(normalized)
   );
-}
-
-function isDelimitedMatch(haystack: string, needle: string): boolean {
-  const idx = haystack.indexOf(needle);
-  if (idx === -1) return false;
-  const before = idx === 0 || haystack[idx - 1] === '_' || haystack[idx - 1] === '-';
-  const after =
-    idx + needle.length === haystack.length ||
-    haystack[idx + needle.length] === '_' ||
-    haystack[idx + needle.length] === '-';
-  return before && after;
 }
 
 /**

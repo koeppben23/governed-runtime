@@ -3,6 +3,7 @@ import {
   redactDecisionReceipts,
   redactReviewReport,
   redactSessionState,
+  redactAuditDetail,
 } from './export-redaction.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
@@ -766,6 +767,87 @@ describe('redaction/export-redaction', () => {
       );
       expect(result.phase).toBe('PLAN');
       expect(result.injectedSecret).toBe('[REDACTED]');
+    });
+  });
+
+  // ─── SENTINEL INTEGRITY ───────────────────────────────────────────────
+
+  describe('SENTINEL INTEGRITY', () => {
+    it('malformed strict sentinel is not treated as pre-redacted', () => {
+      const input = {
+        receipts: [
+          {
+            decisionId: 'DEC-001',
+            decidedBy: '[REDACTED:malformed',
+            rationale: '[REDACTED:not-a-real-hash',
+          },
+        ],
+      };
+      const out = redactedReceipts(input, 'basic');
+      const r = out.receipts[0] as Record<string, unknown>;
+      expect(r.decidedBy).toBe('[REDACTED]');
+      expect(r.rationale).toBe('[REDACTED]');
+    });
+
+    it('[REDACTED: followed by arbitrary payload is redacted', () => {
+      const input = {
+        receipts: [
+          {
+            decidedBy: '[REDACTED:actual-secret-text',
+          },
+        ],
+      };
+      const out = redactedReceipts(input, 'strict');
+      const r = out.receipts[0] as Record<string, unknown>;
+      expect(r.decidedBy).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+      expect(r.decidedBy).not.toContain('actual-secret-text');
+    });
+
+    it('valid strict sentinel passes through idempotently', () => {
+      const valid = '[REDACTED:abcdef012345]';
+      const input = { receipts: [{ decidedBy: valid }] };
+      const out = redactedReceipts(input, 'basic');
+      const r = out.receipts[0] as Record<string, unknown>;
+      expect(r.decidedBy).toBe('[REDACTED]');
+    });
+  });
+
+  // ─── AUDIT-DETAIL REDACTION ────────────────────────────────────────────
+
+  describe('AUDIT-DETAIL REDACTION', () => {
+    it('preserves structural audit detail fields', () => {
+      const result = redactAuditDetail(
+        {
+          kind: 'tool_call',
+          tool: 'bash',
+          success: true,
+          errorPhase: 'IMPLEMENTATION',
+          event: 'APPROVE',
+          verdict: 'approve',
+        },
+        'basic',
+      );
+      expect(result.kind).toBe('tool_call');
+      expect(result.tool).toBe('bash');
+      expect(result.event).toBe('APPROVE');
+      expect(result.verdict).toBe('approve');
+    });
+
+    it('redacts unknown string fields in audit detail', () => {
+      const result = redactAuditDetail(
+        { kind: 'tool_call', injectedSecret: 'leaked', diagnostic: '/home/user/secret' },
+        'basic',
+      );
+      expect(result.kind).toBe('tool_call');
+      expect(result.injectedSecret).toBe('[REDACTED]');
+      expect(result.diagnostic).toBe('[REDACTED]');
+    });
+
+    it('preserves errorMessage after mandatory sanitization', () => {
+      const sanitized = '[path:id_rsa]: EACCES';
+      const result = redactAuditDetail({ kind: 'error', errorMessage: sanitized }, 'strict');
+      expect(result.errorMessage).toBe(sanitized);
+      expect((result as Record<string, unknown>).errorMessage).not.toMatch(/^\[REDACTED/);
     });
   });
 

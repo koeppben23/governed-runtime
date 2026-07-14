@@ -19,7 +19,7 @@ export interface RedactionOutcome {
   readonly rawPath: string;
 }
 
-function stableMask(value: string, mode: RedactionMode): string {
+export function stableMask(value: string, mode: RedactionMode): string {
   if (mode === 'none') return value;
   if (mode === 'basic') return '[REDACTED]';
   const token = hashTextShort(value, 12);
@@ -27,7 +27,7 @@ function stableMask(value: string, mode: RedactionMode): string {
 }
 
 function isRedactedExportValue(value: string): boolean {
-  return value === '[REDACTED]' || value.startsWith('[REDACTED:');
+  return value === '[REDACTED]' || /^\[REDACTED:[a-f0-9]{12}\]$/.test(value);
 }
 
 function isPathBearingKey(key: string): boolean {
@@ -310,6 +310,38 @@ export function redactSessionState(
   }
 
   return redactUnknownStrings(out, mode, SESSION_STATE_STRING_ALLOW_LIST) as Record<
+    string,
+    unknown
+  >;
+}
+
+// ─── Audit-Detail Redaction ──────────────────────────────────────────────
+
+const AUDIT_DETAIL_STRING_ALLOW_LIST = new Set([
+  ...EXPORT_BASE_STRING_ALLOW_LIST,
+  'tool',
+  'verdict',
+  'gatePhase',
+  'fromPhase',
+  'toPhase',
+  'event',
+  'policyMode',
+  'errorPhase',
+  'action',
+  'finalPhase',
+  'errorMessage',
+]);
+
+/**
+ * Redact an audit event detail record for JSONL export.
+ * errorMessage is preserved ONLY because the caller must sanitize it
+ * via sanitizeDiagnosticString() before calling this function.
+ */
+export function redactAuditDetail(
+  detail: Record<string, unknown>,
+  mode: RedactionMode,
+): Record<string, unknown> {
+  return redactUnknownStrings(detail, mode, AUDIT_DETAIL_STRING_ALLOW_LIST) as Record<
     string,
     unknown
   >;

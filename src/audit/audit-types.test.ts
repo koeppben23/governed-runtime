@@ -325,13 +325,24 @@ describe('audit types', () => {
       const result = summarizeArgs({
         monkey: 'a monkey value',
         keyboard_layout: 'qwerty',
-        api_keywords: 'not a secret key name',
         donkey: 'not an api key',
       });
       expect(result.monkey).toBe('a monkey value');
       expect(result.keyboard_layout).toBe('qwerty');
-      expect(result.api_keywords).toBe('not a secret key name');
       expect(result.donkey).toBe('not an api key');
+    });
+
+    it('summarizeArgs redacts camelCase secret-bearing keys via contains', () => {
+      const result = summarizeArgs({
+        clientApiKey: 'sk-abc',
+        myAccessKey: 'AKIA123',
+        signingPrivateKey: '-----BEGIN KEY-----',
+        githubToken: 'ghp_xyz',
+      });
+      expect(result.clientApiKey).toBe('[REDACTED]');
+      expect(result.myAccessKey).toBe('[REDACTED]');
+      expect(result.signingPrivateKey).toBe('[REDACTED]');
+      expect(result.githubToken).toBe('[REDACTED]');
     });
 
     it("GENESIS_HASH is 'genesis'", () => {

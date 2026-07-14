@@ -544,6 +544,126 @@ describe('archiveSession failure paths', () => {
     expect(verification.findings.some((f) => f.code === 'missing_file')).toBe(false);
   });
 
+  // ── R2: Archive redaction coverage ──────────────────────────────────────
+
+  it('default archive produces redacted session-state and audit artifacts', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = 'archive-test-redacted-artifacts';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await writeState(sessDir, makeState('COMPLETE'));
+    await fs.writeFile(
+      path.join(sessDir, 'audit.jsonl'),
+      JSON.stringify({
+        id: 'evt-1',
+        sessionId,
+        phase: 'PLAN',
+        event: 'tool_call:bash',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        actor: 'alice',
+        auditFormatVersion: 'v1',
+        detail: { kind: 'tool_call', tool: 'bash', success: true },
+        prevHash: GENESIS_HASH,
+      }) + '\n',
+      'utf-8',
+    );
+
+    await archiveSession(fingerprint, sessionId);
+
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(sessDir, 'archive-manifest.json'), 'utf-8'),
+    );
+    expect(manifest.redactedArtifacts).toContain('audit.redacted.jsonl');
+    expect(manifest.redactedArtifacts).toContain('session-state.redacted.json');
+    expect(manifest.excludedFiles).toContain('audit.jsonl');
+    expect(manifest.excludedFiles).toContain('session-state.json');
+
+    const redactedAudit = await fs.readFile(path.join(sessDir, 'audit.redacted.jsonl'), 'utf-8');
+    const redactedEvent = JSON.parse(redactedAudit.trim());
+    expect(redactedEvent.actor).toBe('[REDACTED]');
+    expect(redactedEvent.detail.kind).toBe('tool_call');
+  });
+
+  it('strict mode audit redaction uses deterministic tokens', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = 'archive-test-strict-tokens';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await writeState(sessDir, makeState('COMPLETE'));
+    await fs.writeFile(
+      path.join(sessDir, 'audit.jsonl'),
+      JSON.stringify({
+        id: 'evt-1',
+        sessionId,
+        phase: 'PLAN',
+        event: 'tool_call:bash',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        actor: 'alice',
+        auditFormatVersion: 'v1',
+        detail: {
+          kind: 'tool_call',
+          tool: 'bash',
+          success: true,
+          argsSummary: { api_key: 'sk-abc' },
+        },
+        prevHash: GENESIS_HASH,
+      }) + '\n',
+      'utf-8',
+    );
+    await fs.writeFile(
+      path.join(process.env.OPENCODE_CONFIG_DIR!, 'flowguard.json'),
+      JSON.stringify({ schemaVersion: 'v1', archive: { redaction: { mode: 'strict' } } }),
+      'utf-8',
+    );
+
+    await archiveSession(fingerprint, sessionId);
+
+    const redactedAudit = await fs.readFile(path.join(sessDir, 'audit.redacted.jsonl'), 'utf-8');
+    const redactedEvent = JSON.parse(redactedAudit.trim());
+    expect(redactedEvent.actor).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+  });
+
+  it('canary E2E: secret value absent from all default archive artifacts', async () => {
+    const worktree = path.resolve('.');
+    const sessionId = 'archive-canary-649';
+    const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
+
+    await writeState(sessDir, makeState('COMPLETE'));
+    await fs.writeFile(
+      path.join(sessDir, 'audit.jsonl'),
+      JSON.stringify({
+        id: 'evt-1',
+        sessionId,
+        phase: 'PLAN',
+        event: 'tool_call:bash',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        actor: 'alice',
+        auditFormatVersion: 'v1',
+        detail: {
+          kind: 'tool_call',
+          tool: 'bash',
+          success: true,
+          argsSummary: { api_key: 'sk-archive-leak-canary-649' },
+        },
+        prevHash: GENESIS_HASH,
+      }) + '\n',
+      'utf-8',
+    );
+
+    await archiveSession(fingerprint, sessionId);
+
+    const canary = 'sk-archive-leak-canary-649';
+    const manifest = JSON.parse(
+      await fs.readFile(path.join(sessDir, 'archive-manifest.json'), 'utf-8'),
+    );
+    for (const file of manifest.includedFiles) {
+      const content = await fs.readFile(path.join(sessDir, file), 'utf-8');
+      expect(content).not.toContain(canary);
+    }
+  });
+
+  // ── End R2 ─────────────────────────────────────────────────────────────
+
   it('fails closed when redaction transform throws non-Error value', async () => {
     const worktree = path.resolve('.');
     const sessionId = '550e8400-e29b-41d4-a716-446655440104';
