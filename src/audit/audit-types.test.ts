@@ -12,6 +12,7 @@ import {
   type ChainedAuditEvent,
   type ActorInfo,
 } from './types.js';
+import { verifyChain } from './integrity.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import { SESSION_ID, TS1, TS2, TS3 } from './audit-test-helpers.js';
 describe('audit types', () => {
@@ -544,6 +545,74 @@ describe('audit types', () => {
       };
       const { p99Ms } = benchmarkSync(() => computeChainHash(GENESIS_HASH, base), 200, 50);
       expect(p99Ms).toBeLessThan(PERF_BUDGETS.evaluateSingleMs); // 1ms
+    });
+  });
+
+  // ─── AC3: Audit chain integrity after secret-key redaction ─────────
+
+  describe('AUDIT CHAIN INTEGRITY', () => {
+    it('chain remains valid after summarizeArgs redacts secret-bearing keys', () => {
+      const canary = 'sk-canary-audit-chain-test';
+
+      const event = createToolCallEvent({
+        sessionId: SESSION_ID,
+        phase: 'PLAN',
+        detail: {
+          tool: 'bash',
+          argsSummary: summarizeArgs({ api_key: canary, prompt: 'hello' }),
+          success: true,
+          transitionCount: 1,
+        },
+        timestamp: TS1,
+        actor: 'human',
+        prevHash: GENESIS_HASH,
+      });
+
+      expect((event.detail.argsSummary as Record<string, string>).api_key).toBe('[REDACTED]');
+      expect(JSON.stringify(event)).not.toContain(canary);
+
+      const result = verifyChain([event as unknown as Record<string, unknown>]);
+      expect(result.valid).toBe(true);
+    });
+
+    it('multi-event chain with secret-bearing args remains valid', () => {
+      const event1 = createToolCallEvent({
+        sessionId: SESSION_ID,
+        phase: 'PLAN',
+        detail: {
+          tool: 'bash',
+          argsSummary: summarizeArgs({ token: 'ghp_secret', prompt: 'plan' }),
+          success: true,
+          transitionCount: 1,
+        },
+        timestamp: TS1,
+        actor: 'human',
+        prevHash: GENESIS_HASH,
+      });
+
+      const event2 = createToolCallEvent({
+        sessionId: SESSION_ID,
+        phase: 'IMPLEMENTATION',
+        detail: {
+          tool: 'write_file',
+          argsSummary: summarizeArgs({ file: 'src/app.ts', api_key: 'sk-abc' }),
+          success: true,
+          transitionCount: 2,
+        },
+        timestamp: TS2,
+        actor: 'human',
+        prevHash: event1.chainHash,
+      });
+
+      expect((event1.detail.argsSummary as Record<string, string>).token).toBe('[REDACTED]');
+      expect(JSON.stringify(event1)).not.toContain('ghp_secret');
+      expect((event2.detail.argsSummary as Record<string, string>).api_key).toBe('[REDACTED]');
+
+      const result = verifyChain([
+        event1 as unknown as Record<string, unknown>,
+        event2 as unknown as Record<string, unknown>,
+      ]);
+      expect(result.valid).toBe(true);
     });
   });
 });

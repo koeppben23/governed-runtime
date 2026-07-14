@@ -44,7 +44,6 @@ import {
   stableMask,
   type RedactionMode,
 } from '../../redaction/export-redaction.js';
-import { sanitizeDiagnosticString } from '../../logging/redact.js';
 import { summarizeArgs } from '../../audit/types.js';
 
 import { WorkspaceError, validateFingerprint, validateSessionId } from './types.js';
@@ -308,10 +307,6 @@ function redactAuditEvent(line: string, mode: RedactionMode): string {
   const detail = event.detail;
   if (detail && typeof detail === 'object') {
     const detailRecord = detail as Record<string, unknown>;
-
-    if (typeof detailRecord.errorMessage === 'string') {
-      detailRecord.errorMessage = sanitizeDiagnosticString(detailRecord.errorMessage);
-    }
 
     if (
       isToolCallAuditEvent(event) &&

@@ -577,13 +577,11 @@ describe('redaction/export-redaction', () => {
       expect(redactDecisionReceipts(null as unknown as Record<string, unknown>, 'none')).toBe(null);
       expect(redactReviewReport(null as unknown as Record<string, unknown>, 'none')).toBe(null);
 
-      // mode !== none on null → TypeError (structuredClone(null) = null, then .receipts/.findings fails)
-      expect(() =>
-        redactDecisionReceipts(null as unknown as Record<string, unknown>, 'basic'),
-      ).toThrow(TypeError);
-      expect(() => redactReviewReport(null as unknown as Record<string, unknown>, 'basic')).toThrow(
-        TypeError,
+      // mode !== none on null → returns null (no fields to redact)
+      expect(redactDecisionReceipts(null as unknown as Record<string, unknown>, 'basic')).toBe(
+        null,
       );
+      expect(redactReviewReport(null as unknown as Record<string, unknown>, 'basic')).toBe(null);
 
       // string primitive: structuredClone returns the string, deep walk
       // treats it as a value to redact (default-deny for unknown strings).
@@ -654,32 +652,56 @@ describe('redaction/export-redaction', () => {
     });
   });
 
-  // ─── IDEMPOTENCY ───────────────────────────────────────────────────────
+  // ─── STRUCTURAL REDACTION ──────────────────────────────────────────────
 
-  describe('IDEMPOTENCY', () => {
-    it('does not re-mask basic [REDACTED] sentinel', () => {
-      const input = { receipts: [{ decidedBy: 'alice', rationale: '[REDACTED]' }] };
-      const out = redactedReceipts(input, 'basic');
-      const r = out.receipts[0] as Record<string, unknown>;
-      expect(r.decidedBy).toBe('[REDACTED]');
-      expect(r.rationale).toBe('[REDACTED]');
-    });
-
-    it('does not re-mask known strict-redacted review report fields', () => {
+  describe('STRUCTURAL REDACTION', () => {
+    it('sensitive keys are masked exactly once in strict mode', () => {
       const result = redactReviewReport({ findings: [{ message: 'secret finding' }] }, 'strict');
       const message = (result.findings as Array<Record<string, unknown>>)[0]?.message;
-      expect(message).toMatch(/^\[REDACTED:/);
+      expect(message).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
     });
 
-    it('does not re-mask known strict-redacted decision receipt fields', () => {
+    it('sensitive keys in decision receipts are masked once', () => {
       const result = redactDecisionReceipts(
         { receipts: [{ decidedBy: 'alice', rationale: 'secret rationale' }] },
         'strict',
       );
       const r = (result.receipts as Array<Record<string, unknown>>)[0]!;
-      expect(r.decidedBy).toMatch(/^\[REDACTED:/);
-      expect(r.rationale).toMatch(/^\[REDACTED:/);
+      expect(r.decidedBy).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+      expect(r.rationale).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
       expect(String(r.decidedBy)).not.toContain('alice');
+    });
+
+    it('sentinel-shaped value on unknown field is redacted', () => {
+      const result = redactReviewReport({ injectedSecret: '[REDACTED:deadbeefcafe]' }, 'strict');
+      expect(result.injectedSecret).not.toBe('[REDACTED:deadbeefcafe]');
+      expect(result.injectedSecret).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+    });
+
+    it('sentinel-shaped value on unknown field in receipts is redacted', () => {
+      const out = redactedReceipts(
+        {
+          receipts: [
+            {
+              decisionId: 'x',
+              decidedBy: 'alice',
+              rationale: 'ok',
+              injectedSecret: '[REDACTED:deadbeefcafe]',
+            },
+          ],
+        },
+        'basic',
+      );
+      const r = out.receipts[0] as Record<string, unknown>;
+      expect(r.injectedSecret).toBe('[REDACTED]');
+    });
+
+    it('sentinel-shaped value on unknown audit detail field is redacted', () => {
+      const result = redactAuditDetail(
+        { kind: 'tool_call', injected: '[REDACTED:deadbeefcafe]' },
+        'basic',
+      );
+      expect(result.injected).toBe('[REDACTED]');
     });
   });
 
@@ -770,48 +792,6 @@ describe('redaction/export-redaction', () => {
     });
   });
 
-  // ─── SENTINEL INTEGRITY ───────────────────────────────────────────────
-
-  describe('SENTINEL INTEGRITY', () => {
-    it('malformed strict sentinel is not treated as pre-redacted', () => {
-      const input = {
-        receipts: [
-          {
-            decisionId: 'DEC-001',
-            decidedBy: '[REDACTED:malformed',
-            rationale: '[REDACTED:not-a-real-hash',
-          },
-        ],
-      };
-      const out = redactedReceipts(input, 'basic');
-      const r = out.receipts[0] as Record<string, unknown>;
-      expect(r.decidedBy).toBe('[REDACTED]');
-      expect(r.rationale).toBe('[REDACTED]');
-    });
-
-    it('[REDACTED: followed by arbitrary payload is redacted', () => {
-      const input = {
-        receipts: [
-          {
-            decidedBy: '[REDACTED:actual-secret-text',
-          },
-        ],
-      };
-      const out = redactedReceipts(input, 'strict');
-      const r = out.receipts[0] as Record<string, unknown>;
-      expect(r.decidedBy).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
-      expect(r.decidedBy).not.toContain('actual-secret-text');
-    });
-
-    it('valid strict sentinel passes through idempotently', () => {
-      const valid = '[REDACTED:abcdef012345]';
-      const input = { receipts: [{ decidedBy: valid }] };
-      const out = redactedReceipts(input, 'basic');
-      const r = out.receipts[0] as Record<string, unknown>;
-      expect(r.decidedBy).toBe('[REDACTED]');
-    });
-  });
-
   // ─── AUDIT-DETAIL REDACTION ────────────────────────────────────────────
 
   describe('AUDIT-DETAIL REDACTION', () => {
@@ -843,11 +823,14 @@ describe('redaction/export-redaction', () => {
       expect(result.diagnostic).toBe('[REDACTED]');
     });
 
-    it('preserves errorMessage after mandatory sanitization', () => {
-      const sanitized = '[path:id_rsa]: EACCES';
-      const result = redactAuditDetail({ kind: 'error', errorMessage: sanitized }, 'strict');
-      expect(result.errorMessage).toBe(sanitized);
-      expect((result as Record<string, unknown>).errorMessage).not.toMatch(/^\[REDACTED/);
+    it('sanitizes and preserves errorMessage', () => {
+      const result = redactAuditDetail(
+        { kind: 'error', errorMessage: '/home/user/.ssh/id_rsa: EACCES' },
+        'strict',
+      );
+      expect(result.errorMessage).toContain('[path:id_rsa]');
+      expect(result.errorMessage).not.toContain('/home/user');
+      expect(result.errorMessage).not.toMatch(/^\[REDACTED/);
     });
   });
 
