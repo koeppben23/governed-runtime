@@ -296,7 +296,10 @@ describe('SDK Contract: Type baseline infrastructure', () => {
     const meta = JSON.parse(readFileSync(versionPath, 'utf-8'));
     // Version integrity is enforced by the update:opencode-sdk workflow (which
     // validates full consistency between package.json, lockfile, and baseline).
-    // This test only checks that the baseline has a valid, non-empty version.
+    // This test checks that the baseline has a valid, non-empty version.
+    expect(typeof meta.version).toBe('string');
+    expect(meta.version.length).toBeGreaterThan(0);
+
     expect(meta.files).toHaveLength(2);
     expect(meta.files[0].label).toBe('plugin/dist/index.d.ts');
     expect(meta.files[1].label).toBe('plugin/dist/tool.d.ts');
