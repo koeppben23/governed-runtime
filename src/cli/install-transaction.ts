@@ -114,8 +114,8 @@ function assertOwnedTransactionPath(
     if (realDir !== realParent) {
       throw new Error(`Transaction path's real parent differs from config target: ${candidate}`);
     }
-  } catch {
-    // ENOENT ok — we are cleaning up and the dir may already be gone
+  } catch (err) {
+    if (!isEnoent(err)) throw err;
   }
 
   const allowed = new Set([
@@ -132,8 +132,8 @@ function assertOwnedTransactionPath(
     if (targetStat.isSymbolicLink()) {
       throw new Error(`Config target directory is a symlink: ${configTargetDir}`);
     }
-  } catch {
-    // ENOENT ok
+  } catch (err) {
+    if (!isEnoent(err)) throw err;
   }
 }
 
@@ -354,19 +354,23 @@ export async function installDependenciesStaged(
   tx.phase = TransactionPhase.StagingValidated;
   await persistJournal(tx);
 
-  // Save old node_modules
+  // Save old node_modules (write-ahead: savedPath journalized before rename)
+  tx.savedPath = join(configTargetDir, `node_modules.saved.${transactionId}`);
   tx.phase = TransactionPhase.SavingOld;
   await persistJournal(tx);
 
-  tx.savedPath = join(configTargetDir, `node_modules.saved.${transactionId}`);
-  try {
+  const liveExists = existsSync(liveModulesPath);
+  const savedExists = existsSync(tx.savedPath);
+
+  if (liveExists && !savedExists) {
     await rename(liveModulesPath, tx.savedPath);
     tx.hadOriginal = true;
-  } catch (err) {
-    if (!isEnoent(err)) {
-      await removeOwnedStagingTree(stagingRoot, configTargetDir, transactionId);
-      throw err;
-    }
+  } else if (!liveExists && savedExists) {
+    tx.hadOriginal = true;
+  } else if (liveExists && savedExists) {
+    await removeOwnedStagingTree(stagingRoot, configTargetDir, transactionId);
+    throw new Error('Ambiguous save-old state: both live and saved exist');
+  } else {
     tx.hadOriginal = false;
     tx.savedPath = null;
   }

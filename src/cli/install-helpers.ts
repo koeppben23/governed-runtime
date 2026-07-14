@@ -551,17 +551,28 @@ export async function rollbackArtifacts(
 }
 
 async function restoreFileFromSnapshot(entry: RollbackEntry, ops: FileOp[]): Promise<void> {
-  const stat = await lstat(entry.path);
-  if (stat.isSymbolicLink()) {
-    throw new Error(`Rollback restore target was replaced by a symlink: ${entry.path}`);
+  let targetExists = true;
+  try {
+    const stat = await lstat(entry.path);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`Rollback restore target was replaced by a symlink: ${entry.path}`);
+    }
+    if (!stat.isFile()) {
+      throw new Error(`Rollback restore target type changed: ${entry.path} (expected file)`);
+    }
+  } catch (err) {
+    if (isEnoent(err)) {
+      targetExists = false;
+    } else {
+      throw err;
+    }
   }
-  if (!stat.isFile()) {
-    throw new Error(`Rollback restore target type changed: ${entry.path} (expected file)`);
-  }
+
   const tmpPath = `${entry.path}.rollback.${process.pid}.${randomUUID()}`;
   try {
     await writeFile(tmpPath, entry.originalContent!, { flag: 'wx' });
     await rename(tmpPath, entry.path);
+    ops.push({ path: entry.path, action: 'written', reason: 'restored pre-install content' });
   } catch (rwErr) {
     try {
       await unlink(tmpPath);
@@ -570,7 +581,6 @@ async function restoreFileFromSnapshot(entry: RollbackEntry, ops: FileOp[]): Pro
     }
     throw rwErr;
   }
-  ops.push({ path: entry.path, action: 'written', reason: 'restored pre-install content' });
 }
 
 async function removeNewlyCreatedEntry(entry: RollbackEntry, ops: FileOp[]): Promise<void> {

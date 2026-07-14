@@ -132,7 +132,7 @@ export async function validateTarball(ctx: InstallContext): Promise<ValidatedTar
   }
 
   if (args.allowUnverifiedTarball) {
-    ctx.errors.push(
+    ctx.warnings.push(
       'Tarball integrity verification explicitly skipped via --allow-unverified-tarball. ' +
         'This supply-chain opt-out is not recommended.',
     );
