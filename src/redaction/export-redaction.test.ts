@@ -4,6 +4,7 @@ import {
   redactReviewReport,
   redactSessionState,
   redactAuditDetail,
+  stableMask,
 } from './export-redaction.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 
@@ -727,17 +728,20 @@ describe('redaction/export-redaction', () => {
       expect(ai.email).toBe('[REDACTED]');
     });
 
-    it('strict identity masking remains stable through the deep walk', () => {
+    it('strict identity fields are masked exactly once from original values', () => {
       const result = redactSessionState(
         {
           initiatedBy: 'alice',
-          actorInfo: { id: 'actor-1', email: 'alice@example.test' },
+          actorInfo: { id: 'actor-1', displayName: 'Alice', email: 'alice@example.test' },
         },
         'strict',
       );
       expect(result.initiatedBy).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+
       const ai = result.actorInfo as Record<string, unknown>;
-      expect(ai.id).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
+      expect(ai.id).toBe(stableMask('actor-1', 'strict'));
+      expect(ai.displayName).toBe(stableMask('Alice', 'strict'));
+      expect(ai.email).toBe(stableMask('alice@example.test', 'strict'));
     });
 
     it('redacts path-bearing fields in session state', () => {

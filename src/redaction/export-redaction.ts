@@ -216,31 +216,38 @@ export function redactSessionState(
   mode: RedactionMode,
 ): Record<string, unknown> {
   if (mode === 'none') return payload;
-  const out = structuredClone(payload);
+  const source = structuredClone(payload);
 
-  redactIdentitySubObject(out, 'actorInfo', mode);
-  redactIdentitySubObject(out, 'initiatedByIdentity', mode);
-
-  return redactUnknownStrings(
-    out,
+  const result = redactUnknownStrings(
+    source,
     mode,
     SESSION_STATE_STRING_ALLOW_LIST,
     SESSION_STATE_SENSITIVE_KEYS,
   ) as Record<string, unknown>;
+
+  maskIdentityFromSource(source, result, 'actorInfo', mode);
+  maskIdentityFromSource(source, result, 'initiatedByIdentity', mode);
+
+  return result;
 }
 
-function redactIdentitySubObject(
-  root: Record<string, unknown>,
+function maskIdentityFromSource(
+  source: Record<string, unknown>,
+  result: Record<string, unknown>,
   key: string,
   mode: RedactionMode,
 ): void {
-  const obj = root[key];
-  if (!obj || typeof obj !== 'object') return;
-  const record = obj as Record<string, unknown>;
-  if (typeof record.id === 'string') record.id = stableMask(record.id, mode);
-  if (typeof record.displayName === 'string')
-    record.displayName = stableMask(record.displayName, mode);
-  if (typeof record.email === 'string') record.email = stableMask(record.email, mode);
+  const srcObj = source[key];
+  if (!srcObj || typeof srcObj !== 'object') return;
+  const srcRecord = srcObj as Record<string, unknown>;
+  const resultObj = result[key];
+  if (!resultObj || typeof resultObj !== 'object') return;
+  const resultRecord = resultObj as Record<string, unknown>;
+
+  if (typeof srcRecord.id === 'string') resultRecord.id = stableMask(srcRecord.id, mode);
+  if (typeof srcRecord.displayName === 'string')
+    resultRecord.displayName = stableMask(srcRecord.displayName, mode);
+  if (typeof srcRecord.email === 'string') resultRecord.email = stableMask(srcRecord.email, mode);
 }
 
 export function redactAuditDetail(

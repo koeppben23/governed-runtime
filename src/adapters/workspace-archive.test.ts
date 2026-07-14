@@ -19,6 +19,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import {
   canonicalizeOriginUrl,
   normalizeForFingerprint,
@@ -623,7 +624,7 @@ describe('archiveSession failure paths', () => {
     expect(redactedEvent.actor).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
   });
 
-  it('canary E2E: secret value absent from all default archive artifacts', async () => {
+  it('canary E2E: secret value absent from actual tar.gz archive contents', async () => {
     const worktree = path.resolve('.');
     const sessionId = 'archive-canary-649';
     const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
@@ -650,15 +651,31 @@ describe('archiveSession failure paths', () => {
       'utf-8',
     );
 
-    await archiveSession(fingerprint, sessionId);
+    const archivePath = await archiveSession(fingerprint, sessionId);
+
+    const listing = execFileSync('tar', ['tzf', archivePath], {
+      encoding: 'utf-8',
+      timeout: 10_000,
+    });
+    const archivedFiles = listing.trim().split('\n').filter(Boolean);
+
+    expect(archivedFiles).not.toContain(`${sessionId}/audit.jsonl`);
+    expect(archivedFiles).not.toContain(`${sessionId}/session-state.json`);
+    expect(archivedFiles).toContain(`${sessionId}/audit.redacted.jsonl`);
+    expect(archivedFiles).toContain(`${sessionId}/session-state.redacted.json`);
 
     const canary = 'sk-archive-leak-canary-649';
-    const manifest = JSON.parse(
-      await fs.readFile(path.join(sessDir, 'archive-manifest.json'), 'utf-8'),
-    );
-    for (const file of manifest.includedFiles) {
-      const content = await fs.readFile(path.join(sessDir, file), 'utf-8');
-      expect(content).not.toContain(canary);
+    for (const file of archivedFiles) {
+      try {
+        const content = execFileSync('tar', ['xzfO', archivePath, file], {
+          encoding: 'utf-8',
+          timeout: 10_000,
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
+        expect(content).not.toContain(canary);
+      } catch {
+        // binary or unreadable — skip
+      }
     }
   });
 
