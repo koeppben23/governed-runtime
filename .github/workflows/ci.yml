@@ -140,7 +140,7 @@ jobs:
       - name: Run integration PERF tests
         run: |
           echo "FLOWGUARD_PERF=$FLOWGUARD_PERF"
-          npx vitest run --project integration --testNamePattern 'PERF'
+          npm run test:integration:perf
         env:
           FORCE_COLOR: 0
           FLOWGUARD_PERF: '1'
