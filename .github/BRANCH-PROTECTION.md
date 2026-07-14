@@ -12,18 +12,18 @@ protected integration branch for main-ready work before a release cut.
 
 ## Required Protection Settings
 
-| Setting                                      | Value     |
-| -------------------------------------------- | --------- |
-| Require a pull request before merging        | Enabled   |
-| Required approvals                           | 0         |
-| Dismiss stale reviews                        | Enabled   |
-| Require review thread resolution             | Enabled   |
-| Require status checks to pass before merging | Enabled   |
-| Require branch to be up to date before merge | Enabled   |
-| Require linear history                       | Enabled   |
-| Do not allow bypassing the above settings    | Enabled   |
-| Do not allow force pushes                    | Enabled   |
-| Do not allow deletion                        | Enabled   |
+| Setting                                      | Value   |
+| -------------------------------------------- | ------- |
+| Require a pull request before merging        | Enabled |
+| Required approvals                           | 0       |
+| Dismiss stale reviews                        | Enabled |
+| Require review thread resolution             | Enabled |
+| Require status checks to pass before merging | Enabled |
+| Require branch to be up to date before merge | Enabled |
+| Require linear history                       | Enabled |
+| Do not allow bypassing the above settings    | Enabled |
+| Do not allow force pushes                    | Enabled |
+| Do not allow deletion                        | Enabled |
 
 ## Required Status Checks
 
@@ -75,15 +75,16 @@ From `.github/workflows/security.yml`:
 
 The following jobs run but are intentionally **not** required by the live ruleset:
 
-| Job                   | Why non-blocking                                                                                                                                                                                                                                                                                      |
-| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `unit`                | Runs as a direct job, but the required `ci-gate` aggregator is the branch-protection check. |
-| `coverage`            | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                                                                                    |
-| `sdk-baseline`        | Snapshot comparison against upstream SDK/host baselines; drift is informational and acted on via a separate update workflow (`scripts/check-opencode-host-drift.mjs`).                                                                                                                                |
-| `unused-dependencies` | `knip --dependencies`; a false positive should not block a release. Review the diff manually.                                                                                                                                                                                                         |
-| `fuzz`                | `fast-check` property tests with a fixed seed. Deep fuzzing runs on the nightly schedule (`fuzz-nightly.yml`); regressions block via the nightly cadence, not the PR.                                                                                                                                 |
-| `mutation`            | Stryker runs on the nightly/release cadence (`mutation.yml`), not per-PR. A reliable per-PR incremental gate is not achievable with the current perTest + vitest-runner setup (see the workflow rationale); it is therefore not a required check.                                                     |
-| `dependency-review`   | `fail-on-severity: high` is configured; runs as advisory (`continue-on-error: true`) because Dependency Graph is not yet enabled for this repository. Will become a required check after the repo setting is toggled on.                                                                               |
+| Job                   | Why non-blocking                                                                                                                                                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `unit`                | Runs as a direct job, but the required `ci-gate` aggregator is the branch-protection check.                                                                                                                                                       |
+| `coverage`            | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                             |
+| `integration-perf`    | Not configured as a direct required check, but transitively merge-blocking through the required `ci-gate` aggregator.                                                                                                                             |
+| `sdk-baseline`        | Snapshot comparison against upstream SDK/host baselines; drift is informational and acted on via a separate update workflow (`scripts/check-opencode-host-drift.mjs`).                                                                            |
+| `unused-dependencies` | `knip --dependencies`; a false positive should not block a release. Review the diff manually.                                                                                                                                                     |
+| `fuzz`                | `fast-check` property tests with a fixed seed. Deep fuzzing runs on the nightly schedule (`fuzz-nightly.yml`); regressions block via the nightly cadence, not the PR.                                                                             |
+| `mutation`            | Stryker runs on the nightly/release cadence (`mutation.yml`), not per-PR. A reliable per-PR incremental gate is not achievable with the current perTest + vitest-runner setup (see the workflow rationale); it is therefore not a required check. |
+| `dependency-review`   | `fail-on-severity: high` is configured; runs as advisory (`continue-on-error: true`) because Dependency Graph is not yet enabled for this repository. Will become a required check after the repo setting is toggled on.                          |
 
 If any of these is promoted to merge-blocking, move it to the required list
 above in the same PR that flips the ruleset setting.
