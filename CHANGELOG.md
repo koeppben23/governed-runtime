@@ -76,12 +76,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and host version baselines bumped with contract, integration, smoke, and
   end-to-end verification.
 
-### Documentation
-
 - **Known issues inventory re-triaged (#651).** Static-analysis findings
   re-verified against develop; three previously-open findings confirmed
   fixed in existing code, one merged fix confirmed, four partial fixes
   documented. `KNOWN_ISSUES.md` updated as authoritative inventory.
+
+## [1.2.0-tp.2] - 2026-07-08
 
 ## [1.2.0-tp.2] - 2026-07-08
 
