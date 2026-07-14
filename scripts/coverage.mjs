@@ -1,8 +1,13 @@
 // Coverage runner: enforces the 80% global gate over unit + integration.
 //
-// PERF budgets are disabled here (FLOWGUARD_PERF=0): v8 instrumentation inflates
-// timings beyond any reasonable budget and v8 skips the report on test failure.
-// PERF budgets are enforced in the non-coverage `test`/`integration` jobs.
+// FLOWGUARD_PERF=0 requests coverage-safe execution because v8 instrumentation
+// inflates timings and v8 may skip report generation after test failures.
+// Integration PERF handling is currently mixed:
+// - some PERF tests or assertions are skipped or degraded when PERF is disabled;
+// - four suites retain generous coverage-tolerant timing assertions.
+// Unit PERF budgets are enforced separately by the non-coverage `unit` CI job.
+// Strict non-instrumented integration PERF enforcement is temporarily absent
+// from the pull-request gate; see #662.
 //
 // Usage:
 //   node scripts/coverage.mjs        # local: text + html + json-summary
