@@ -173,8 +173,8 @@ checksums:
 ```
 /artifact-store/
 ├── flowguard-core-1.2.0-tp.2.tgz   (current)
-├── flowguard-core-1.2.0-tp.1.tgz   (previous)
-├── flowguard-core-1.1.0.tgz        (rollback target)
+├── flowguard-core-1.2.0-tp.2.tgz   (previous)
+├── flowguard-core-1.2.0-tp.2.tgz        (rollback target)
 └── checksums.sha256
 ```
 

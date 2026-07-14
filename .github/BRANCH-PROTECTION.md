@@ -32,12 +32,13 @@ names exactly in the `Protect main and develop` ruleset.
 
 From `.github/workflows/ci.yml`:
 
-- `test`
+- `ci-gate` (aggregates `unit` + `integration`)
 - `typecheck`
 - `lint`
 - `format`
 - `architecture`
 - `build`
+- `build-clean`
 - `actionlint`
 - `secrets-scan`
 - `security-policy`
@@ -76,8 +77,8 @@ The following jobs run but are intentionally **not** required by the live rulese
 
 | Job                   | Why non-blocking                                                                                                                                                                                                                                                                                      |
 | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `unit`                | Runs as a direct job, but the required `test` aggregator is the branch-protection check.                                                                                                                                                                                                               |
-| `integration`         | Runs as a direct job, but the required `test` aggregator is the branch-protection check.                                                                                                                                                                                                               |
+| `unit`                | Runs as a direct job, but the required `ci-gate` aggregator is the branch-protection check. |
+| `integration`         | Runs as a direct job, but the required `ci-gate` aggregator is the branch-protection check. |
 | `sdk-baseline`        | Snapshot comparison against upstream SDK/host baselines; drift is informational and acted on via a separate update workflow (`scripts/check-opencode-host-drift.mjs`).                                                                                                                                |
 | `unused-dependencies` | `knip --dependencies`; a false positive should not block a release. Review the diff manually.                                                                                                                                                                                                         |
 | `fuzz`                | `fast-check` property tests with a fixed seed. Deep fuzzing runs on the nightly schedule (`fuzz-nightly.yml`); regressions block via the nightly cadence, not the PR.                                                                                                                                 |

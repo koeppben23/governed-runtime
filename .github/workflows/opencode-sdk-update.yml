@@ -20,7 +20,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: ${{ github.workflow }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -153,26 +153,24 @@ jobs:
         run: |
           set -euo pipefail
 
-          body=$(cat <<'EOF'
-          Updates OpenCode compatibility baselines and verifies both SDK and Desktop/host surfaces.
-
-          Versions:
-          - @opencode-ai/plugin: $CURRENT_SDK -> $TARGET_SDK
-          - opencode-ai host/Desktop: $CURRENT_HOST -> $TARGET_HOST
-
-          Verification in workflow:
-          - npm run check
-          - node scripts/sdk-type-snapshot.mjs --platform opencode
-          - npm run test:sdk-contract:all
-          - npm run test:integration
-          - npm run lint
-          - npm run build
-          - npm run test:smoke with RUN_OPENCODE_ACP_TESTS=1
-          - npm run test:independent-review-e2e
-
-          Workflow run: $RUN_LINK
-          EOF
-          )
+          body=$(printf '%s\n' \
+            'Updates OpenCode compatibility baselines and verifies both SDK and Desktop/host surfaces.' \
+            '' \
+            'Versions:' \
+            "- @opencode-ai/plugin: $CURRENT_SDK -> $TARGET_SDK" \
+            "- opencode-ai host/Desktop: $CURRENT_HOST -> $TARGET_HOST" \
+            '' \
+            'Verification in workflow:' \
+            '- npm run check' \
+            '- node scripts/sdk-type-snapshot.mjs --platform opencode' \
+            '- npm run test:sdk-contract:all' \
+            '- npm run test:integration' \
+            '- npm run lint' \
+            '- npm run build' \
+            '- npm run test:smoke with RUN_OPENCODE_ACP_TESTS=1' \
+            '- npm run test:independent-review-e2e' \
+            '' \
+            "Workflow run: $RUN_LINK")
 
           existing=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number')
           if [ -n "$existing" ]; then
