@@ -70,6 +70,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Java Task Manager demo pitch flow hardened.** Pre-flight and pitch flow
   assertion gaps fixed; demo boundary protections restored.
 
+- **Installer transactional dependency install, hardened rollback, and atomic
+  writes (#667).** Fixed four HIGH-severity installer safety gaps (C2, C3, C4,
+  C5) from the 2026-06 integrity analysis.
+  - C2: Install lock with ownership-token-based release; pre-flight check for
+    existing installation.
+  - C3: Journal-based write-ahead dependency transaction with staging directory,
+    atomic `rename()` swap, and granular crash-recoverable rollback phases.
+  - C4: Marketplace lock for mutual exclusion on `marketplace.json` read-modify-write.
+  - C5: `snapshotForRollback()` uses O_NOFOLLOW with type coherence fail-closed;
+    `rollbackArtifacts()` uses `lstat`-based symlink rejection, temp+rename atomic
+    restore; `writeIfAbsent()` uses `wx` exclusive-create for `force=false`.
+
 ### Security
 
 - **OpenCode SDK and host baselines updated (#655).** `@opencode-ai/plugin`
