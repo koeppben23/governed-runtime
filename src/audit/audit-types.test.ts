@@ -346,6 +346,29 @@ describe('audit types', () => {
       expect(result.githubToken).toBe('[REDACTED]');
     });
 
+    it('summarizeArgs scrubs content-level secrets on non-secret keys via sanitizeDiagnosticString', () => {
+      const result = summarizeArgs({
+        notes: 'token: sk-live-abc123 and Bearer ghp_def456',
+        description: 'key at /home/user/.ssh/id_rsa with password=secret123',
+      });
+      expect(result.notes).not.toContain('sk-live-abc123');
+      expect(result.notes).not.toContain('ghp_def456');
+      expect(result.notes).toContain('[redacted]');
+      expect(result.description).toContain('[path:id_rsa]');
+      expect(result.description).toContain('password=[redacted]');
+      expect(result.description).not.toContain('secret123');
+    });
+
+    it('summarizeArgs preserves diagnostic context after content scrubbing', () => {
+      const result = summarizeArgs({
+        message: 'Connection to https://api.example.com/v2 failed at file: /app/config.ts:42:15',
+      });
+      expect(result.message).toContain('[url:api.example.com]');
+      expect(result.message).toContain('[path:config.ts]');
+      expect(result.message).not.toContain('/app/config.ts');
+      expect(result.message).not.toContain('/v2');
+    });
+
     it("GENESIS_HASH is 'genesis'", () => {
       expect(GENESIS_HASH).toBe('genesis');
     });

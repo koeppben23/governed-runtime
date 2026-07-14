@@ -27,6 +27,7 @@ import { hashText } from '../shared/hashing.js';
 import type { Phase, Event } from '../state/schema.js';
 import type { ReviewVerdict, TimestampEvidence } from '../state/evidence.js';
 import { canonicalJsonStringify, computeCanonicalEventDigest } from './canonical-digest.js';
+import { sanitizeDiagnosticString } from '../logging/redact.js';
 
 // P2b: Canonical ActorInfo and ActorVerificationMeta live in state/evidence.ts (Zod SSOT).
 // Re-exported here for backward compatibility — all existing consumers continue to work.
@@ -560,7 +561,8 @@ function isSecretBearingKey(key: string): boolean {
 }
 
 /**
- * Summarize tool args for audit, redacting values on secret-bearing keys.
+ * Summarize tool args for audit, redacting values on secret-bearing keys
+ * and content-level secret patterns in all scalar strings via sanitizeDiagnosticString.
  * Scalar strings are truncated to ARG_SUMMARY_TRUNCATION_LIMIT chars.
  * Objects/arrays are replaced with type indicators.
  */
@@ -572,10 +574,11 @@ export function summarizeArgs(args: Record<string, unknown>): Record<string, str
     } else if (value === null || value === undefined) {
       summary[key] = 'null';
     } else if (typeof value === 'string') {
-      summary[key] =
+      const truncated =
         value.length > ARG_SUMMARY_TRUNCATION_LIMIT
           ? value.slice(0, ARG_SUMMARY_TRUNCATION_LIMIT) + '...'
           : value;
+      summary[key] = sanitizeDiagnosticString(truncated);
     } else if (typeof value === 'number' || typeof value === 'boolean') {
       summary[key] = String(value);
     } else if (Array.isArray(value)) {
