@@ -166,12 +166,16 @@ export const PERF_BUDGETS = {
 /**
  * Whether PERF budgets are enforced this run.
  *
- * Default: enforced. The non-coverage `test`/`integration` jobs enforce budgets
- * (with CI multipliers, see PERF_BUDGETS). Coverage runs set `FLOWGUARD_PERF=0`
- * because v8 instrumentation inflates timings far beyond any reasonable budget
- * AND v8 skips writing the report when any test fails. When disabled, benchmark
- * helpers still execute the function once (so the code path is covered) but
- * report 0ms so the call-site budget assertion passes without measuring.
+/**
+ * Whether PERF budgets are enforced this run.
+ *
+ * Default: enforced. The non-coverage `unit` and `integration-perf` CI jobs
+ * enforce timing budgets with CI multipliers (see PERF_BUDGETS). Coverage runs
+ * set `FLOWGUARD_PERF=0` because v8 instrumentation inflates timings far beyond
+ * any reasonable budget AND v8 skips writing the report when any test fails.
+ *
+ * When disabled, suites may skip timing-only tests and benchmark helpers execute
+ * the covered operation once while returning zero-valued measurements.
  */
 export const PERF_ENABLED = process.env.FLOWGUARD_PERF !== '0';
 

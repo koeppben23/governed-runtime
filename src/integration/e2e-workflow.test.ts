@@ -13,6 +13,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { PERF_ENABLED } from '../test-policy.js';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import {
@@ -1075,7 +1076,7 @@ describe('e2e-workflow', () => {
 
   // ─── PERF ──────────────────────────────────────────────────
 
-  describe('PERF', () => {
+  describe.skipIf(!PERF_ENABLED)('PERF', () => {
     it('complete solo workflow through COMPLETE < 5s', async () => {
       const start = Date.now();
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });

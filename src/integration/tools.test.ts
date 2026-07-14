@@ -16,6 +16,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { PERF_ENABLED } from '../test-policy.js';
 import {
   status,
   hydrate,
@@ -168,9 +169,16 @@ describe('integration/tools', () => {
       const h = TOOLS.hydrate as Record<string, unknown>;
       const args = h.args as Record<string, unknown>;
       const policyMode = args.policyMode as Record<string, unknown>;
-      // policyMode is optional — resolved via config fallback chain, not Zod default.
-      // The description should mention the fail-closed fallback to 'team'.
       expect(h.description).toContain('team');
+    });
+
+    it('tool description strings are interned (same reference across accesses)', () => {
+      for (const name of TOOL_NAMES) {
+        const tool = TOOLS[name] as Record<string, unknown>;
+        const desc1 = tool.description;
+        const desc2 = tool.description;
+        expect(desc1).toBe(desc2);
+      }
     });
   });
 
@@ -312,7 +320,7 @@ describe('integration/tools', () => {
   });
 
   // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
+  describe.skipIf(!PERF_ENABLED)('PERF', () => {
     it('importing all tools is effectively free (no side effects)', () => {
       // Tools are just objects with description, args, execute.
       // No database connections, no file reads, no network calls on import.
@@ -328,15 +336,6 @@ describe('integration/tools', () => {
       const elapsed = performance.now() - start;
       // 9000 property accesses in < 10ms
       expect(elapsed).toBeLessThan(10);
-    });
-
-    it('tool description strings are interned (same reference across accesses)', () => {
-      for (const name of TOOL_NAMES) {
-        const tool = TOOLS[name] as Record<string, unknown>;
-        const desc1 = tool.description;
-        const desc2 = tool.description;
-        expect(desc1).toBe(desc2); // Same reference, not a new string each time
-      }
     });
   });
 });

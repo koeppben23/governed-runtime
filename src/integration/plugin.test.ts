@@ -14,6 +14,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { PERF_ENABLED } from '../test-policy.js';
 import * as crypto from 'node:crypto';
 import { FlowGuardAuditPlugin, isUsableWorktree } from './plugin.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
@@ -738,7 +739,7 @@ describe('integration/plugin', () => {
   });
 
   // ─── PERF ──────────────────────────────────────────────────
-  describe('PERF', () => {
+  describe.skipIf(!PERF_ENABLED)('PERF', () => {
     it('plugin initialization completes in < 20ms', async () => {
       const start = performance.now();
       for (let i = 0; i < 100; i++) {

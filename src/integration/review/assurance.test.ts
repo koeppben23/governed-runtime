@@ -10,6 +10,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { PERF_ENABLED } from '../../test-policy.js';
 import {
   emptyReviewAssurance,
   ensureReviewAssurance,
@@ -637,7 +638,7 @@ describe('integration/review-assurance', () => {
       });
     });
 
-    describe('PERF', () => {
+    describe.skipIf(!PERF_ENABLED)('PERF', () => {
       it('completes in < 1ms for 1000 invocations', () => {
         const invocations = Array.from({ length: 1000 }, (_, i) =>
           makeInvocation({ childSessionId: `child-${i}` }),
