@@ -666,16 +666,17 @@ describe('archiveSession failure paths', () => {
 
     const canary = 'sk-archive-leak-canary-649';
     for (const file of archivedFiles) {
+      let content: string;
       try {
-        const content = execFileSync('tar', ['xzfO', archivePath, file], {
+        content = execFileSync('tar', ['xzfO', archivePath, file], {
           encoding: 'utf-8',
           timeout: 10_000,
           stdio: ['ignore', 'pipe', 'ignore'],
         });
-        expect(content).not.toContain(canary);
       } catch {
-        // binary or unreadable — skip
+        continue;
       }
+      expect(content, `secret canary leaked in ${file}`).not.toContain(canary);
     }
   });
 
