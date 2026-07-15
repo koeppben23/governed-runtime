@@ -31,6 +31,7 @@ export async function installClaudeCodePlugin(
   target: string,
   version: string,
   force: boolean,
+  onFileWritten?: (path: string) => void,
 ): Promise<FileOp[]> {
   const pluginRoot = resolveClaudeCodePluginRoot(target);
   const ops: FileOp[] = [];
@@ -40,7 +41,9 @@ export async function installClaudeCodePlugin(
   for (const [relativePath, content] of Object.entries(claudeCodePluginFiles(version))) {
     const filePath = join(pluginRoot, relativePath);
     await ensureDir(dirname(filePath));
-    ops.push(await writeIfAbsent(filePath, content, force));
+    const op = await writeIfAbsent(filePath, content, force);
+    ops.push(op);
+    if (op.action !== 'skipped' && onFileWritten) onFileWritten(filePath);
 
     if (relativePath.startsWith('dist/') && ops[ops.length - 1]?.action === 'written') {
       await chmod(filePath, 0o755);

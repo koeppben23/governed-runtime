@@ -62,6 +62,7 @@ export async function installCodexPlugin(
   scope: InstallScope,
   version: string,
   force: boolean,
+  onFileWritten?: (path: string) => void,
 ): Promise<FileOp[]> {
   const pluginRoot = resolveCodexPluginRoot(scope);
   const ops: FileOp[] = [];
@@ -71,7 +72,9 @@ export async function installCodexPlugin(
   for (const [relativePath, content] of Object.entries(codexPluginFiles(version))) {
     const filePath = join(pluginRoot, relativePath);
     await ensureDir(dirname(filePath));
-    ops.push(await writeIfAbsent(filePath, content, force));
+    const op = await writeIfAbsent(filePath, content, force);
+    ops.push(op);
+    if (op.action !== 'skipped' && onFileWritten) onFileWritten(filePath);
 
     if (relativePath.startsWith('dist/') && ops[ops.length - 1]?.action === 'written') {
       await chmod(filePath, 0o755);
@@ -80,6 +83,14 @@ export async function installCodexPlugin(
 
   ops.push(await registerCodexMarketplaceEntry(scope));
   return ops;
+}
+
+export function codexPluginFilePaths(scope: InstallScope): string[] {
+  const pluginRoot = resolveCodexPluginRoot(scope);
+  return [
+    pluginRoot,
+    ...CODEX_PLUGIN_RELATIVE_FILES.map((relativePath) => join(pluginRoot, relativePath)),
+  ];
 }
 
 async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise<T>): Promise<T> {

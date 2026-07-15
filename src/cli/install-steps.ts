@@ -320,16 +320,18 @@ export async function writeArtifacts(
   // Platform-specific artifacts
   if (installPlatform === 'claude-code') {
     await ensureDirTracked(join(target, 'flowguard-plugin'), journal);
-    const claudePaths = claudeCodePluginSnapshotPaths(target);
-    ctx.ops.push(...(await installClaudeCodePlugin(target, PACKAGE_VERSION(), args.force)));
+    const onWrite = (p: string) => journal.record(findPreState(snapshot.preStateEntries, p));
+    ctx.ops.push(
+      ...(await installClaudeCodePlugin(target, PACKAGE_VERSION(), args.force, onWrite)),
+    );
     ctx.ops.push(await writeClaudeCodePluginInstallHint(target));
-    for (const p of claudePaths) journal.record(findPreState(snapshot.preStateEntries, p));
   } else if (installPlatform === 'codex') {
     const codexPluginRoot = resolveCodexPluginRoot(args.installScope);
     await ensureDirTracked(codexPluginRoot, journal);
-    const codexPaths = codexPluginSnapshotPaths(args.installScope);
-    ctx.ops.push(...(await installCodexPlugin(args.installScope, PACKAGE_VERSION(), args.force)));
-    for (const p of codexPaths) journal.record(findPreState(snapshot.preStateEntries, p));
+    const onWrite = (p: string) => journal.record(findPreState(snapshot.preStateEntries, p));
+    ctx.ops.push(
+      ...(await installCodexPlugin(args.installScope, PACKAGE_VERSION(), args.force, onWrite)),
+    );
   } else {
     const reviewerDefinition = reviewerDefinitionForPlatform(installPlatform);
     const reviewerPath = join(target, reviewerDefinition.relativePath);
