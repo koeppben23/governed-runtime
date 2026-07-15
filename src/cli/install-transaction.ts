@@ -637,15 +637,25 @@ export class MutationJournal {
 }
 
 export async function ensureDirTracked(dir: string, journal: MutationJournal): Promise<void> {
-  try {
-    await mkdir(dir);
-    journal.record({ path: dir, existed: false, expectedKind: 'directory' });
-  } catch (err) {
-    if (!isEnoent(err) && !(err instanceof Error && 'code' in err && err.code === 'EEXIST'))
-      throw err;
-    const dirStat = await lstat(dir);
-    if (!dirStat.isDirectory() || dirStat.isSymbolicLink())
-      throw new Error(`Expected directory: ${dir}`);
-    journal.record({ path: dir, existed: true, expectedKind: 'directory' });
+  // Walk up to find the deepest existing ancestor, collecting missing parents
+  const missing: string[] = [];
+  let current = dir;
+  while (true) {
+    try {
+      const stat = await lstat(current);
+      if (stat.isSymbolicLink()) throw new Error(`Symlink not allowed: ${current}`);
+      if (!stat.isDirectory()) throw new Error(`Expected directory: ${current}`);
+      break; // found existing directory — ancestors exist
+    } catch (err) {
+      if (!isEnoent(err)) throw err;
+      missing.push(current);
+      current = dirname(current);
+    }
+  }
+
+  // Create missing directories bottom-up (parent-first), journal each
+  for (const path of missing.reverse()) {
+    await mkdir(path);
+    journal.record({ path, existed: false, expectedKind: 'directory' });
   }
 }

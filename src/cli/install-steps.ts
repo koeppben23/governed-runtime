@@ -333,25 +333,34 @@ export async function writeArtifacts(
   } else {
     const reviewerDefinition = reviewerDefinitionForPlatform(installPlatform);
     const reviewerPath = join(target, reviewerDefinition.relativePath);
-    ctx.ops.push(
-      await writeIfAbsent(join(target, 'tools', 'flowguard.ts'), TOOL_WRAPPER, args.force),
+    const toolOp = await writeIfAbsent(
+      join(target, 'tools', 'flowguard.ts'),
+      TOOL_WRAPPER,
+      args.force,
     );
-    journal.record(findPreState(snapshot.preStateEntries, join(target, 'tools', 'flowguard.ts')));
-    ctx.ops.push(
-      await writeIfAbsent(
-        join(target, 'plugins', 'flowguard-audit.ts'),
-        PLUGIN_WRAPPER,
-        args.force,
-      ),
+    ctx.ops.push(toolOp);
+    if (toolOp.action !== 'skipped')
+      journal.record(findPreState(snapshot.preStateEntries, join(target, 'tools', 'flowguard.ts')));
+    const pluginOp = await writeIfAbsent(
+      join(target, 'plugins', 'flowguard-audit.ts'),
+      PLUGIN_WRAPPER,
+      args.force,
     );
-    journal.record(
-      findPreState(snapshot.preStateEntries, join(target, 'plugins', 'flowguard-audit.ts')),
-    );
+    ctx.ops.push(pluginOp);
+    if (pluginOp.action !== 'skipped')
+      journal.record(
+        findPreState(snapshot.preStateEntries, join(target, 'plugins', 'flowguard-audit.ts')),
+      );
     for (const [name, content] of Object.entries(COMMANDS)) {
-      ctx.ops.push(await writeIfAbsent(join(target, 'commands', name), content, args.force));
-      journal.record(findPreState(snapshot.preStateEntries, join(target, 'commands', name)));
+      const cmdOp = await writeIfAbsent(join(target, 'commands', name), content, args.force);
+      ctx.ops.push(cmdOp);
+      if (cmdOp.action !== 'skipped')
+        journal.record(findPreState(snapshot.preStateEntries, join(target, 'commands', name)));
     }
-    ctx.ops.push(await writeIfAbsent(reviewerPath, reviewerDefinition.content, args.force));
+    const revOp = await writeIfAbsent(reviewerPath, reviewerDefinition.content, args.force);
+    ctx.ops.push(revOp);
+    if (revOp.action !== 'skipped')
+      journal.record(findPreState(snapshot.preStateEntries, reviewerPath));
     journal.record(findPreState(snapshot.preStateEntries, reviewerPath));
   }
 }
@@ -363,13 +372,20 @@ export async function writeConfigFiles(
   snapshot: SnapshotResult,
 ): Promise<void> {
   const { installPlatform, args } = ctx;
+  const journal = snapshot.mutationJournal;
 
   // package.json merge
-  ctx.ops.push(await mergePackageJson(snapshot.pkgPath, PACKAGE_VERSION()));
+  const pkgOp = await mergePackageJson(snapshot.pkgPath, PACKAGE_VERSION());
+  ctx.ops.push(pkgOp);
+  if (pkgOp.action !== 'skipped')
+    journal.record(findPreState(snapshot.preStateEntries, snapshot.pkgPath));
 
   // opencode.json (OpenCode only)
   if (snapshot.opencodeJsonPath) {
-    ctx.ops.push(await mergeOpencodeJson(snapshot.opencodeJsonPath, args.installScope));
+    const ocOp = await mergeOpencodeJson(snapshot.opencodeJsonPath, args.installScope);
+    ctx.ops.push(ocOp);
+    if (ocOp.action !== 'skipped')
+      journal.record(findPreState(snapshot.preStateEntries, snapshot.opencodeJsonPath));
   }
 
   // flowguard.json
@@ -390,13 +406,14 @@ async function writeNonOpencodeConfig(
     ...DEFAULT_CONFIG,
     policy: { ...DEFAULT_CONFIG.policy, defaultMode: ctx.args.policyMode },
   };
-  await ensureDir(dirname(snapshot.cfgPath));
+  await ensureDirTracked(dirname(snapshot.cfgPath), snapshot.mutationJournal);
   try {
     await writeFile(snapshot.cfgPath, JSON.stringify(config, null, 2) + '\n', {
       encoding: 'utf-8',
       flag: 'wx',
     });
     ctx.ops.push({ path: snapshot.cfgPath, action: 'written' });
+    snapshot.mutationJournal.record(findPreState(snapshot.preStateEntries, snapshot.cfgPath));
   } catch (err) {
     if (!(err instanceof Error && 'code' in err && err.code === 'EEXIST') || !ctx.args.force) {
       if (err instanceof Error && 'code' in err && err.code === 'EEXIST') {
@@ -413,6 +430,7 @@ async function writeNonOpencodeConfig(
         action: 'merged',
         reason: 'policy mode updated via --force',
       });
+      snapshot.mutationJournal.record(findPreState(snapshot.preStateEntries, snapshot.cfgPath));
     }
   }
 }
@@ -437,6 +455,7 @@ async function writeNewOpencodeConfig(
     );
   }
   ctx.ops.push({ path: snapshot.cfgPath, action: 'written' });
+  snapshot.mutationJournal.record(findPreState(snapshot.preStateEntries, snapshot.cfgPath));
 }
 
 async function mergeExistingOpencodeConfig(
@@ -455,6 +474,7 @@ async function mergeExistingOpencodeConfig(
     action: 'merged',
     reason: 'policy mode updated via --force',
   });
+  snapshot.mutationJournal.record(findPreState(snapshot.preStateEntries, snapshot.cfgPath));
 }
 
 // ─── Step: Install dependencies (legacy — throws only, top-level handles rollback) ─
