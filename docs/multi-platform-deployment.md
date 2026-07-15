@@ -94,7 +94,11 @@ HTTP hooks provide sub-20ms latency via a persistent server process.
 #### 1. Start the hook server
 
 ```bash
-# Start the FlowGuard HTTP hook server (background)
+# Generate once per local deployment. Keep the token in the environment inherited
+# by both Claude Code and the HTTP hook server; never commit it to hooks.json.
+export FLOWGUARD_HOOK_TOKEN="$(openssl rand -hex 32)"
+
+# Start the FlowGuard HTTP hook server (background).
 flowguard-hook-server &
 
 # Or with a custom port:
@@ -102,10 +106,20 @@ FLOWGUARD_HOOK_PORT=18462 flowguard-hook-server &
 
 # Verify:
 curl http://127.0.0.1:18462/health
-# → {"status":"ok","port":18462,"pid":...}
+# → {"status":"ok"}
 ```
 
-The listener binds to `127.0.0.1` by default (`FLOWGUARD_HOOK_HOST`).
+`FLOWGUARD_HOOK_TOKEN` is mandatory, must contain at least 32 non-whitespace
+characters, and is never logged by FlowGuard. Start Claude Code from the same
+shell or service environment so it inherits this variable. The HTTP hook
+configuration expands it only when it is listed in `allowedEnvVars` below.
+
+The listener binds to `127.0.0.1` by default (`FLOWGUARD_HOOK_HOST`). Only
+`127.0.0.1` and `::1` are accepted without explicit remote opt-in. Remote
+binding requires `FLOWGUARD_HOOK_ALLOW_REMOTE=1` as well as the token. It does
+not add TLS: use remote HTTP only behind a trusted network boundary or a
+TLS-terminating reverse proxy, because bearer tokens sent over HTTP can be
+observed on the network.
 
 #### 2. Configure hooks.json
 
@@ -118,6 +132,8 @@ Place in `.claude/hooks.json` at workspace root:
       {
         "type": "http",
         "url": "http://127.0.0.1:18462/hooks/pre-tool-use",
+        "headers": { "Authorization": "Bearer ${FLOWGUARD_HOOK_TOKEN}" },
+        "allowedEnvVars": ["FLOWGUARD_HOOK_TOKEN"],
         "matcher": "Bash|Edit|Write",
         "timeout": 10000
       }
@@ -126,6 +142,8 @@ Place in `.claude/hooks.json` at workspace root:
       {
         "type": "http",
         "url": "http://127.0.0.1:18462/hooks/post-tool-use",
+        "headers": { "Authorization": "Bearer ${FLOWGUARD_HOOK_TOKEN}" },
+        "allowedEnvVars": ["FLOWGUARD_HOOK_TOKEN"],
         "matcher": "Bash|Edit|Write|mcp__flowguard__.*",
         "timeout": 30000
       }
@@ -134,6 +152,8 @@ Place in `.claude/hooks.json` at workspace root:
       {
         "type": "http",
         "url": "http://127.0.0.1:18462/hooks/session-start",
+        "headers": { "Authorization": "Bearer ${FLOWGUARD_HOOK_TOKEN}" },
+        "allowedEnvVars": ["FLOWGUARD_HOOK_TOKEN"],
         "matcher": "startup"
       }
     ],
@@ -141,6 +161,8 @@ Place in `.claude/hooks.json` at workspace root:
       {
         "type": "http",
         "url": "http://127.0.0.1:18462/hooks/stop",
+        "headers": { "Authorization": "Bearer ${FLOWGUARD_HOOK_TOKEN}" },
+        "allowedEnvVars": ["FLOWGUARD_HOOK_TOKEN"],
         "timeout": 15000
       }
     ]
@@ -215,7 +237,9 @@ curl -s http://127.0.0.1:18462/health | jq .
 
 # Test pre-tool-use deny (investigation phase)
 echo '{"tool_name":"Bash","tool_input":{"command":"rm -rf /"},"session_id":"test","cwd":"/project"}' \
-  | curl -s -X POST http://127.0.0.1:18462/hooks/pre-tool-use -d @-
+  | curl -s -X POST http://127.0.0.1:18462/hooks/pre-tool-use \
+      -H "Authorization: Bearer ${FLOWGUARD_HOOK_TOKEN}" \
+      -H 'Content-Type: application/json' --data-binary @-
 
 # Test MCP server
 echo '{"jsonrpc":"2.0","method":"tools/list","id":1}' | flowguard-mcp

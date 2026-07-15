@@ -5,6 +5,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const mockReadStdin = vi.hoisted(() => vi.fn());
 const mockResolveSession = vi.hoisted(() => vi.fn());
 
+vi.mock('node:http', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:http')>();
+  return {
+    ...actual,
+    createServer: vi.fn(() => ({ listen: vi.fn(), close: vi.fn() })),
+  };
+});
+
 vi.mock('./shared/stdin-reader.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./shared/stdin-reader.js')>();
   return { ...actual, readStdin: (...args: unknown[]) => mockReadStdin(...args) };
@@ -16,6 +24,7 @@ vi.mock('./shared/session-resolver.js', () => ({
 
 const originalStdoutWrite = process.stdout.write;
 const originalStderrWrite = process.stderr.write;
+const TEST_HOOK_TOKEN = 'test-hook-token-with-at-least-thirty-two-characters';
 
 async function runPreToolUse(payload: Record<string, unknown>): Promise<string> {
   let stdout = '';
@@ -44,6 +53,7 @@ describe('pre-tool-use review obligation enforcement', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();
+    process.env['FLOWGUARD_HOOK_TOKEN'] = TEST_HOOK_TOKEN;
     process.exitCode = undefined;
   });
 
@@ -51,6 +61,7 @@ describe('pre-tool-use review obligation enforcement', () => {
     process.stdout.write = originalStdoutWrite;
     process.stderr.write = originalStderrWrite;
     vi.restoreAllMocks();
+    delete process.env['FLOWGUARD_HOOK_TOKEN'];
     process.exitCode = undefined;
   });
 
@@ -80,6 +91,37 @@ describe('pre-tool-use review obligation enforcement', () => {
     );
     expect(output.hookSpecificOutput.permissionDecisionReason).toContain(
       'a-obligation, b-obligation',
+    );
+  });
+
+  it('matches the HTTP denial code and reason for the same unresolved obligations', async () => {
+    const state = {
+      phase: 'IMPLEMENTATION',
+      reviewAssurance: {
+        obligations: [
+          { obligationId: 'b-obligation', status: 'pending', consumedAt: null },
+          { obligationId: 'a-obligation', status: 'pending', consumedAt: null },
+        ],
+      },
+    };
+    mockResolveSession.mockResolvedValue({ ok: true, sessionDir: '/sessions/sess_test', state });
+    const { handlePreToolUse } = await import('./http-server.js');
+    const httpDecision = await handlePreToolUse(payload);
+
+    const stdout = await runPreToolUse(payload);
+    const commandOutput = JSON.parse(stdout) as {
+      hookSpecificOutput: { permissionDecision: string; permissionDecisionReason: string };
+    };
+
+    expect(httpDecision).toEqual({
+      decision: 'deny',
+      code: 'REVIEW_OBLIGATION_UNRESOLVED',
+      reason:
+        '2 unresolved review obligation(s) block mutating host tool use: a-obligation, b-obligation',
+    });
+    expect(commandOutput.hookSpecificOutput.permissionDecision).toBe('deny');
+    expect(commandOutput.hookSpecificOutput.permissionDecisionReason).toBe(
+      `${httpDecision.code}: ${httpDecision.reason}`,
     );
   });
 

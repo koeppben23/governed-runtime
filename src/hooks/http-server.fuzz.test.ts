@@ -93,7 +93,15 @@ beforeEach(async () => {
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function makeRequest(body: string | Buffer, opts?: { contentLength?: string; url?: string }) {
+function makeRequest(
+  body: string | Buffer,
+  opts?: {
+    contentLength?: string;
+    url?: string;
+    headers?: Record<string, string>;
+    rawHeaders?: string[];
+  },
+) {
   const buf = typeof body === 'string' ? body : Buffer.from(body);
   const req = new Readable({
     read() {
@@ -112,8 +120,9 @@ function makeRequest(body: string | Buffer, opts?: { contentLength?: string; url
     authorization: `Bearer ${TEST_HOOK_TOKEN}`,
     'content-type': 'application/json',
     ...(opts?.contentLength ? { 'content-length': opts.contentLength } : {}),
+    ...opts?.headers,
   };
-  req.rawHeaders = [];
+  req.rawHeaders = opts?.rawHeaders ?? [];
   return req;
 }
 
@@ -136,6 +145,76 @@ function makeResponse() {
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 describe('HTTP hook fuzz', () => {
+  it('malformed authorization values never invoke governance', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.string(), async (suffix) => {
+        const req = makeRequest('{}', {
+          headers: { authorization: `Invalid ${suffix}` },
+        });
+        const res = makeResponse();
+
+        await handleHttpRequest(req as never, res as never);
+
+        expect(res.status).toBe(401);
+        expect(mockResolveSession).not.toHaveBeenCalled();
+      }),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '646'),
+        endOnFailure: true,
+      },
+    );
+  });
+
+  it('malformed content types never invoke governance after successful authentication', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.string(), async (suffix) => {
+        const req = makeRequest('{}', {
+          headers: { 'content-type': `invalid/${suffix}` },
+        });
+        const res = makeResponse();
+
+        await handleHttpRequest(req as never, res as never);
+
+        expect(res.status).toBe(415);
+        expect(mockResolveSession).not.toHaveBeenCalled();
+      }),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '648'),
+        endOnFailure: true,
+      },
+    );
+  });
+
+  it('duplicate auth or content-type headers are rejected before governance processing', async () => {
+    await fc.assert(
+      fc.asyncProperty(fc.string(), fc.string(), async (first, second) => {
+        const req = makeRequest('{}', {
+          rawHeaders: [
+            'Authorization',
+            first,
+            'Authorization',
+            second,
+            'Content-Type',
+            'application/json',
+          ],
+        });
+        const res = makeResponse();
+
+        await handleHttpRequest(req as never, res as never);
+
+        expect(res.status).toBe(401);
+        expect(mockResolveSession).not.toHaveBeenCalled();
+      }),
+      {
+        numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,
+        seed: Number(process.env.FAST_CHECK_SEED ?? '647'),
+        endOnFailure: true,
+      },
+    );
+  });
+
   it('handleHttpRequest never throws on arbitrary bodies', async () => {
     await fc.assert(
       fc.asyncProperty(
