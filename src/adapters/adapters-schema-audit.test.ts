@@ -406,6 +406,17 @@ describe('persistence', () => {
 
     // ── CORNER ──────────────────────────────────────────────
 
+    it('recovers a dead-process audit lock before appending', async () => {
+      const lockPath = path.join(tmpDir, 'audit.jsonl.lock');
+      await fs.writeFile(lockPath, 'pid=999999999\ntoken=dead-token\n', 'utf-8');
+
+      await appendAuditEvent(tmpDir, makeValidAuditEvent());
+
+      const { events } = await readAuditTrail(tmpDir);
+      expect(events).toHaveLength(1);
+      expect(existsSync(lockPath)).toBe(false);
+    });
+
     it('re-throws raw error and preserves existing trail on atomic rename failure', async () => {
       await appendAuditEvent(tmpDir, makeValidAuditEvent({ id: crypto.randomUUID() }));
       vi.mocked(fs.rename).mockRejectedValueOnce(

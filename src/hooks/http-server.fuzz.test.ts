@@ -327,7 +327,7 @@ describe('HTTP hook fuzz', () => {
     );
   });
 
-  it('non-POST methods on hook routes return 405, never crash', async () => {
+  it('unauthenticated non-POST methods on hook routes return 401, never crash', async () => {
     await fc.assert(
       fc.asyncProperty(
         fc.constantFrom('GET', 'DELETE', 'PUT', 'PATCH', 'OPTIONS'),
@@ -349,7 +349,7 @@ describe('HTTP hook fuzz', () => {
           const res = makeResponse();
 
           await handleHttpRequest(req as never, res as never);
-          expect(res.status).toBe(405);
+          expect(res.status).toBe(401);
         },
       ),
       {
