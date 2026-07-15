@@ -184,25 +184,130 @@ describe('persistence-lock', () => {
     await expect(fs.readFile(lockPath, 'utf-8')).resolves.toContain('unreadable-token');
   });
 
-  it('BAD: stale lock replaced by a fresh foreign lock before unlink is not deleted', async () => {
-    const stalePid = 424_242;
+  it('CORNER: snapshot mismatch that resolves lets acquisition succeed with waited=true', async () => {
+    const stalePid = 727_272;
+    const lockPath = sessionLockPath(sessionDir);
+    await fs.writeFile(lockPath, `pid=${stalePid}\ntoken=dead-token\n`);
+    vi.spyOn(process, 'kill').mockImplementation((() => {
+      throw errno('ESRCH', 'dead');
+    }) as typeof process.kill);
+
+    // Iteration 1: snapshot=dead, re-verify=changed → poll path (waited=true).
+    // Then the churning process's lock disappears, so iteration 2 acquires.
+    let reads = 0;
+    vi.mocked(fs.readFile).mockImplementation((async (
+      file: Parameters<typeof fs.readFile>[0],
+      ...args: [options?: Parameters<typeof fs.readFile>[1]]
+    ) => {
+      if (String(file) === lockPath) {
+        reads += 1;
+        if (reads === 1) return `pid=${stalePid}\ntoken=dead-token\n`;
+        // Re-verify differs → mismatch path; then remove the file so the next
+        // writeFile(wx) succeeds.
+        await actualFs().unlink(lockPath);
+        return `pid=${stalePid}\ntoken=changed\n`;
+      }
+      return actualFs().readFile(file, args[0]);
+    }) as typeof fs.readFile);
+
+    const lock = await acquireSessionWriteLock(sessionDir, 1000);
+    expect(lock.waited).toBe(true);
+
+    restoreFsMocks();
+    await lock.release();
+  });
+
+  it('CORNER: stale unlink ENOENT (already removed) is tolerated and acquisition proceeds', async () => {
+    const stalePid = 838_383;
     const lockPath = sessionLockPath(sessionDir);
     await fs.writeFile(lockPath, `pid=${stalePid}\ntoken=dead-token\n`);
     mockProcessKillOnce('ESRCH', stalePid);
 
-    // First read (staleness snapshot) sees the dead lock; the re-verify read
-    // immediately before unlink sees a DIFFERENT, freshly-acquired foreign lock.
-    const foreign = `pid=${process.pid}\ntoken=fresh-foreign\n`;
-    let reads = 0;
+    // Snapshot and re-verify match (stale), but the unlink races with another
+    // remover and returns ENOENT. This must NOT throw; acquisition proceeds.
+    vi.mocked(fs.unlink).mockImplementationOnce((async (file: Parameters<typeof fs.unlink>[0]) => {
+      if (String(file) === lockPath) {
+        await actualFs().unlink(lockPath);
+        throw errno('ENOENT', 'already gone');
+      }
+      return actualFs().unlink(file);
+    }) as typeof fs.unlink);
+
+    const lock = await acquireSessionWriteLock(sessionDir, 1000);
+    const raw = await fs.readFile(lockPath, 'utf-8');
+    expect(raw).toContain(`pid=${process.pid}\n`);
+
+    await lock.release();
+  });
+
+  it('BAD: repeated stale-snapshot churn honours the timeout and polls (no busy loop)', async () => {
+    const stalePid = 616_161;
+    const lockPath = sessionLockPath(sessionDir);
+    await fs.writeFile(lockPath, `pid=${stalePid}\ntoken=dead-token\n`);
+    // Every liveness probe reports dead, so each iteration re-enters recovery.
+    vi.spyOn(process, 'kill').mockImplementation((() => {
+      throw errno('ESRCH', 'dead');
+    }) as typeof process.kill);
+
     const unlinkSpy = vi.mocked(fs.unlink);
+    // Each acquisition iteration reads twice (snapshot, then re-verify). Return a
+    // DIFFERENT body on every read so the re-verify never matches the snapshot,
+    // forcing the churn path indefinitely — bounded only by the timeout.
+    let reads = 0;
     vi.mocked(fs.readFile).mockImplementation(((
       file: Parameters<typeof fs.readFile>[0],
       ...args: [options?: Parameters<typeof fs.readFile>[1]]
     ) => {
       if (String(file) === lockPath) {
         reads += 1;
-        if (reads === 1) return Promise.resolve(`pid=${stalePid}\ntoken=dead-token\n`);
-        return Promise.resolve(foreign);
+        return Promise.resolve(`pid=${stalePid}\ntoken=churn-${reads}\n`);
+      }
+      return actualFs().readFile(file, args[0]);
+    }) as typeof fs.readFile);
+
+    const timerSpy = vi.spyOn(global, 'setTimeout');
+
+    const start = Date.now();
+    await expect(acquireSessionWriteLock(sessionDir, 250)).rejects.toMatchObject({
+      code: 'LOCK_TIMEOUT',
+    });
+    const elapsed = Date.now() - start;
+
+    // Timeout was actually enforced (did not return immediately, did not hang).
+    expect(elapsed).toBeGreaterThanOrEqual(200);
+    expect(elapsed).toBeLessThan(5_000);
+    // Never deleted the churning foreign lock.
+    expect(unlinkSpy.mock.calls.filter((c) => String(c[0]) === lockPath)).toHaveLength(0);
+    // At least one poll delay was used (proves the churn path went through poll,
+    // not a tight continue loop).
+    const pollCalls = timerSpy.mock.calls.filter(([, delay]) => delay === 100);
+    expect(pollCalls.length).toBeGreaterThanOrEqual(1);
+
+    restoreFsMocks();
+  });
+
+  it('BAD: stale lock replaced by a fresh foreign lock before unlink is not deleted', async () => {
+    const stalePid = 424_242;
+    const lockPath = sessionLockPath(sessionDir);
+    await fs.writeFile(lockPath, `pid=${stalePid}\ntoken=dead-token\n`);
+    mockProcessKillOnce('ESRCH', stalePid);
+
+    // First read (staleness snapshot) sees the dead lock. Between snapshot and
+    // re-verify, materialize a real foreign lock on disk so the second read
+    // observes the actual replaced content — then assert it survives.
+    const foreign = `pid=${process.pid}\ntoken=fresh-foreign\n`;
+    let reads = 0;
+    const unlinkSpy = vi.mocked(fs.unlink);
+    vi.mocked(fs.readFile).mockImplementation((async (
+      file: Parameters<typeof fs.readFile>[0],
+      ...args: [options?: Parameters<typeof fs.readFile>[1]]
+    ) => {
+      if (String(file) === lockPath) {
+        reads += 1;
+        if (reads === 1) return `pid=${stalePid}\ntoken=dead-token\n`;
+        // Actually replace the file on disk before returning the fresh body.
+        await actualFs().writeFile(lockPath, foreign, 'utf-8');
+        return foreign;
       }
       return actualFs().readFile(file, args[0]);
     }) as typeof fs.readFile);
@@ -215,7 +320,8 @@ describe('persistence-lock', () => {
     expect(unlinkSpy.mock.calls.filter((c) => String(c[0]) === lockPath)).toHaveLength(0);
 
     restoreFsMocks();
-    await expect(fs.readFile(lockPath, 'utf-8')).resolves.toContain('dead-token');
+    // The freshly-materialized foreign lock is intact and untouched.
+    await expect(fs.readFile(lockPath, 'utf-8')).resolves.toBe(foreign);
   });
 
   it('BAD: stale lock that becomes unreadable at re-verify is not deleted', async () => {
