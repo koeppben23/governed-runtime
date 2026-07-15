@@ -10,6 +10,7 @@ import { lstatSync, realpathSync } from 'node:fs';
 import { mkdir, readFile, rename, rm, unlink, writeFile, lstat, readdir } from 'node:fs/promises';
 import { execFileSync, execSync, type ExecSyncOptions } from 'node:child_process';
 import { dirname, join, relative, basename } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { ensureDir } from '../adapters/persistence.js';
 import type { FileOp } from './install-types.js';
 import type { RollbackEntry } from './install-helpers.js';
@@ -362,7 +363,9 @@ export async function executeDependencyTransaction(tx: DependencyTransaction): P
   await mkdir(tx.stagingRoot);
   await writeFile(
     join(tx.stagingRoot, 'package.json'),
-    JSON.stringify({ dependencies: { '@flowguard/core': tx.vendorTarballPath } }),
+    JSON.stringify({
+      dependencies: { '@flowguard/core': pathToFileURL(tx.vendorTarballPath).href },
+    }),
     { flag: 'w' },
   );
 
