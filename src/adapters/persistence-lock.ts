@@ -52,16 +52,34 @@ function buildLockContent(token: string): string {
   return `pid=${process.pid}\ntoken=${token}\n`;
 }
 
-async function isLockStale(lockPath: string): Promise<boolean> {
-  let raw: string;
+async function readLockContent(lockPath: string): Promise<string | undefined> {
   try {
-    raw = await fs.readFile(lockPath, 'utf-8');
+    return await fs.readFile(lockPath, 'utf-8');
   } catch (err) {
-    if (isEnoent(err)) return true; // lockfile disappeared — effectively stale
-    return false; // EACCES or other — fail-closed: treat as alive
+    if (isEnoent(err)) return undefined; // lockfile disappeared
+    return LOCK_UNREADABLE; // EACCES or other — caller must fail closed
   }
+}
+
+/** Sentinel distinguishing "unreadable" from "missing" without throwing. */
+const LOCK_UNREADABLE = '\u0000unreadable';
+
+/**
+ * Decide staleness from an already-read lock body.
+ *
+ * - `undefined` body → the lockfile disappeared → effectively stale.
+ * - unreadable/malformed body → fail-closed: treat as alive (never auto-delete).
+ * - parseable PID → stale iff the process is not alive.
+ *
+ * The `LOCK_UNREADABLE` guard is defensive and behaviourally equivalent to the
+ * malformed-body fallthrough (the sentinel contains no `pid=`), so a mutation
+ * removing it survives as an equivalent mutant.
+ */
+function isBodyStale(raw: string | undefined): boolean {
+  if (raw === undefined) return true;
+  if (raw === LOCK_UNREADABLE) return false;
   const pidMatch = raw.match(/^pid=(\d+)/m);
-  if (!pidMatch) return false; // malformed lock — do not auto-delete
+  if (!pidMatch) return false;
   const pid = Number(pidMatch[1]);
   return !isProcessAlive(pid);
 }
@@ -123,7 +141,19 @@ export async function acquireNamedWriteLock(
       if (!isEexist(err)) throw err;
     }
 
-    if (await isLockStale(lockPath)) {
+    // Read the lock body once, then decide staleness from that snapshot.
+    const observed = await readLockContent(lockPath);
+    if (isBodyStale(observed)) {
+      // Re-verify the body is unchanged immediately before unlink. If another
+      // process replaced (or removed) the stale lock in the meantime, the
+      // content differs and we must NOT delete their lock — retry instead. This
+      // closes the check→unlink TOCTOU window (does not fully eliminate it
+      // without an OS-atomic primitive; see KNOWN_ISSUES.md). A disappeared lock
+      // reads as `undefined`, which likewise differs from the observed body.
+      const confirm = await readLockContent(lockPath);
+      if (confirm !== observed) {
+        continue; // lock changed or vanished under us — never delete a foreign lock
+      }
       try {
         await fs.unlink(lockPath);
       } catch (err) {

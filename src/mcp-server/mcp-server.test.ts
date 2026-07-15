@@ -187,6 +187,29 @@ describe('Tool Adapter Session Identity', () => {
     },
   );
 
+  it('rejects a safe-integer timeout above the timer maximum but accepts the boundary', () => {
+    // 2_147_483_648 is a safe integer but exceeds the Node timer max, so it must
+    // be rejected specifically by the upper-bound check (not the safe-integer
+    // check). The exact maximum must be accepted.
+    expect(() => readMcpExecutionLimits({ FLOWGUARD_MCP_TOOL_TIMEOUT_MS: '2147483648' })).toThrow(
+      'within supported bounds',
+    );
+    expect(readMcpExecutionLimits({ FLOWGUARD_MCP_TOOL_TIMEOUT_MS: '2147483647' }).timeoutMs).toBe(
+      2_147_483_647,
+    );
+  });
+
+  it('accepts concurrency and throughput up to MAX_SAFE_INTEGER', () => {
+    // maxConcurrent/maxPerSecond have no timer bound; the safe-integer maximum
+    // is accepted, proving the default `maximum` is MAX_SAFE_INTEGER.
+    const limits = readMcpExecutionLimits({
+      FLOWGUARD_MCP_MAX_CONCURRENT: String(Number.MAX_SAFE_INTEGER),
+      FLOWGUARD_MCP_MAX_PER_SECOND: String(Number.MAX_SAFE_INTEGER),
+    });
+    expect(limits.maxConcurrent).toBe(Number.MAX_SAFE_INTEGER);
+    expect(limits.maxPerSecond).toBe(Number.MAX_SAFE_INTEGER);
+  });
+
   it('BAD: reuses stable sessionID across calls and creates unique messageIDs', async () => {
     const contexts: ToolContext[] = [];
     let handler:
@@ -517,6 +540,90 @@ describe('Tool Adapter Session Identity', () => {
       denied: true,
     });
     release();
+  });
+
+  it('does not emit an unhandledRejection when the executor rejects after the deadline', async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onUnhandled);
+
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      // Rejects strictly AFTER the 1ms deadline has already resolved the race.
+      async execute() {
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        throw new Error('late executor failure /home/secret/token.txt');
+      },
+    };
+    registerAllTools(
+      fakeServer,
+      { test: tool },
+      () => ({ sessionId: 'mcp-session', directory: '/tmp/project', worktree: '/tmp/project' }),
+      new McpExecutionLimiter({ timeoutMs: 1, maxConcurrent: 5, maxPerSecond: 50 }),
+    );
+
+    const result = (await handler!({}, {})) as { content: { text: string }[] };
+    expect(JSON.parse(result.content[0]!.text).code).toBe('MCP_TOOL_TIMEOUT');
+
+    // Allow the late rejection to occur and any microtasks to flush.
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    process.off('unhandledRejection', onUnhandled);
+    expect(unhandled).toEqual([]);
+  });
+});
+
+describe('McpExecutionLimiter slot handle', () => {
+  it('double release frees a slot only once', () => {
+    const limiter = new McpExecutionLimiter({
+      timeoutMs: 1000,
+      maxConcurrent: 1,
+      maxPerSecond: 50,
+    });
+    const slot = limiter.tryAcquire();
+    expect(slot).not.toBeNull();
+    // Second acquire is rejected while the slot is held.
+    expect(limiter.tryAcquire()).toBeNull();
+
+    slot!.release();
+    slot!.release(); // idempotent: must not free a second, non-existent slot
+
+    // Exactly one slot is free again; a single acquire succeeds, a second fails.
+    expect(limiter.tryAcquire()).not.toBeNull();
+    expect(limiter.tryAcquire()).toBeNull();
+  });
+
+  it('a rejected throughput acquisition consumes no start budget', () => {
+    // High concurrency so only the rolling throughput window can reject.
+    const limiter = new McpExecutionLimiter({
+      timeoutMs: 1000,
+      maxConcurrent: 100,
+      maxPerSecond: 2,
+    });
+    const a = limiter.tryAcquire(1000);
+    const b = limiter.tryAcquire(1000);
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    // Window is full (2 starts) → rejected, and the rejection records no start.
+    expect(limiter.tryAcquire(1000)).toBeNull();
+    expect(limiter.tryAcquire(1000)).toBeNull();
+    // Releasing does not add throughput budget back within the same window.
+    a!.release();
+    expect(limiter.tryAcquire(1000)).toBeNull();
+    // Advancing past the rolling window frees exactly the original budget again.
+    expect(limiter.tryAcquire(2000)).not.toBeNull();
+    expect(limiter.tryAcquire(2000)).not.toBeNull();
+    expect(limiter.tryAcquire(2000)).toBeNull();
   });
 });
 

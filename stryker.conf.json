@@ -12,6 +12,7 @@
   "mutate": [
     "src/adapters/persistence-lock.ts",
     "src/adapters/host-adapter.ts",
+    "src/mcp-server/execution-limiter.ts",
 
     "src/archive/content-digest.ts",
 

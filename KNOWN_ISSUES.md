@@ -82,28 +82,29 @@ disproven, update the status and link the evidence."
 
 ## Outstanding High-Priority Findings
 
-| ID   | Severity | Status          | Summary                                                                                                           |
-| ---- | -------- | --------------- | ----------------------------------------------------------------------------------------------------------------- |
-| AC2  | HIGH     | Open            | Timestamp verification must not trust downgraded status when stronger evidence is present.                        |
-| AC3  | HIGH     | Fixed           | Audit argument summarization can expose scalar secrets and needs redaction hardening.                             |
-| AC4  | HIGH     | Open            | NTP offset/delay calculation needs RFC-aligned correction.                                                        |
-| AC5  | HIGH     | Open            | NTP response validation needs stricter checks.                                                                    |
-| H1   | HIGH     | Fixed           | HTTP governance routes require bearer authentication; non-loopback binds need explicit opt-in and token auth.     |
-| H2   | HIGH     | Fixed           | HTTP and command hooks both block mutating tools while review obligations remain unresolved.                      |
-| H3   | HIGH     | Open            | Session ID validation needs Windows/reserved-name hardening.                                                      |
-| M1   | HIGH     | Fixed           | MCP tool execution uses server-scoped response deadlines and admission limits (#645).                             |
-| M2   | HIGH     | Open            | MCP session/project directory environment inputs need validation.                                                 |
-| M3   | HIGH     | Fixed           | MCP errors use trusted boundary codes and do not reflect arbitrary executor messages (#645).                      |
-| C1   | HIGH     | Open            | Non-OpenCode config install skip/error handling needs explicit surfacing.                                         |
-| C2   | HIGH     | Fixed           | Exclusive install lock, preflight, and existing-install protection implemented by #667.                           |
-| C3   | HIGH     | Fixed           | Install mutations use top-level rollback plus crash-recoverable dependency transactions in #667.                  |
-| C4   | HIGH     | Fixed           | Codex marketplace install and uninstall use locked atomic read-modify-write in #667.                              |
-| C5   | HIGH     | Fixed           | Snapshot and rollback paths reject symlinks and use TOCTOU-hardened operations in #667.                           |
-| I4   | HIGH     | Partially Fixed | Strict state-read failures block enforcement; missing session-directory mapping still needs fail-closed handling. |
-| R1   | HIGH     | Fixed           | Export redaction should not default-allow unknown fields.                                                         |
-| R2   | HIGH     | Fixed           | Archive export must respect redaction mode for audit/state/raw artifacts.                                         |
-| R4   | HIGH     | Fixed           | Telemetry error/status export needs scrubbing.                                                                    |
-| AUD2 | HIGH     | Fixed           | Audit write lock safely recovers dead-process stale locks while failing closed for unsafe lock states (#670).     |
+| ID   | Severity | Status          | Summary                                                                                                                                                                   |
+| ---- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AC2  | HIGH     | Open            | Timestamp verification must not trust downgraded status when stronger evidence is present.                                                                                |
+| AC3  | HIGH     | Fixed           | Audit argument summarization can expose scalar secrets and needs redaction hardening.                                                                                     |
+| AC4  | HIGH     | Open            | NTP offset/delay calculation needs RFC-aligned correction.                                                                                                                |
+| AC5  | HIGH     | Open            | NTP response validation needs stricter checks.                                                                                                                            |
+| H1   | HIGH     | Fixed           | HTTP governance routes require bearer authentication; non-loopback binds need explicit opt-in and token auth.                                                             |
+| H2   | HIGH     | Fixed           | HTTP and command hooks both block mutating tools while review obligations remain unresolved.                                                                              |
+| H3   | HIGH     | Open            | Session ID validation needs Windows/reserved-name hardening.                                                                                                              |
+| M1   | HIGH     | Fixed           | MCP tool execution uses server-scoped response deadlines and admission limits (#645).                                                                                     |
+| M2   | HIGH     | Open            | MCP session/project directory environment inputs need validation.                                                                                                         |
+| M3   | HIGH     | Fixed           | MCP errors use trusted boundary codes and do not reflect arbitrary executor messages (#645).                                                                              |
+| C1   | HIGH     | Open            | Non-OpenCode config install skip/error handling needs explicit surfacing.                                                                                                 |
+| C2   | HIGH     | Fixed           | Exclusive install lock, preflight, and existing-install protection implemented by #667.                                                                                   |
+| C3   | HIGH     | Fixed           | Install mutations use top-level rollback plus crash-recoverable dependency transactions in #667.                                                                          |
+| C4   | HIGH     | Fixed           | Codex marketplace install and uninstall use locked atomic read-modify-write in #667.                                                                                      |
+| C5   | HIGH     | Fixed           | Snapshot and rollback paths reject symlinks and use TOCTOU-hardened operations in #667.                                                                                   |
+| I4   | HIGH     | Partially Fixed | Strict state-read failures block enforcement; missing session-directory mapping still needs fail-closed handling.                                                         |
+| R1   | HIGH     | Fixed           | Export redaction should not default-allow unknown fields.                                                                                                                 |
+| R2   | HIGH     | Fixed           | Archive export must respect redaction mode for audit/state/raw artifacts.                                                                                                 |
+| R4   | HIGH     | Fixed           | Telemetry error/status export needs scrubbing.                                                                                                                            |
+| AUD2 | HIGH     | Fixed           | Audit write lock safely recovers dead-process stale locks while failing closed for unsafe lock states (#670).                                                             |
+| LK1  | LOW      | Mitigated       | Stale-lock recovery re-verifies content before unlink to avoid deleting a foreign fresh lock; a residual sub-`unlink` OS race remains without an atomic primitive (#673). |
 
 ## Outstanding Medium-Priority Findings
 

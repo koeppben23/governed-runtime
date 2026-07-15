@@ -184,6 +184,71 @@ describe('persistence-lock', () => {
     await expect(fs.readFile(lockPath, 'utf-8')).resolves.toContain('unreadable-token');
   });
 
+  it('BAD: stale lock replaced by a fresh foreign lock before unlink is not deleted', async () => {
+    const stalePid = 424_242;
+    const lockPath = sessionLockPath(sessionDir);
+    await fs.writeFile(lockPath, `pid=${stalePid}\ntoken=dead-token\n`);
+    mockProcessKillOnce('ESRCH', stalePid);
+
+    // First read (staleness snapshot) sees the dead lock; the re-verify read
+    // immediately before unlink sees a DIFFERENT, freshly-acquired foreign lock.
+    const foreign = `pid=${process.pid}\ntoken=fresh-foreign\n`;
+    let reads = 0;
+    const unlinkSpy = vi.mocked(fs.unlink);
+    vi.mocked(fs.readFile).mockImplementation(((
+      file: Parameters<typeof fs.readFile>[0],
+      ...args: [options?: Parameters<typeof fs.readFile>[1]]
+    ) => {
+      if (String(file) === lockPath) {
+        reads += 1;
+        if (reads === 1) return Promise.resolve(`pid=${stalePid}\ntoken=dead-token\n`);
+        return Promise.resolve(foreign);
+      }
+      return actualFs().readFile(file, args[0]);
+    }) as typeof fs.readFile);
+
+    // Zero-timeout: after refusing to delete the foreign lock, acquisition must
+    // fail closed rather than clobber it.
+    await expect(acquireSessionWriteLock(sessionDir, 0)).rejects.toMatchObject({
+      code: 'LOCK_TIMEOUT',
+    });
+    expect(unlinkSpy.mock.calls.filter((c) => String(c[0]) === lockPath)).toHaveLength(0);
+
+    restoreFsMocks();
+    await expect(fs.readFile(lockPath, 'utf-8')).resolves.toContain('dead-token');
+  });
+
+  it('BAD: stale lock that becomes unreadable at re-verify is not deleted', async () => {
+    const stalePid = 515_151;
+    const lockPath = sessionLockPath(sessionDir);
+    await fs.writeFile(lockPath, `pid=${stalePid}\ntoken=dead-token\n`);
+    mockProcessKillOnce('ESRCH', stalePid);
+
+    const unlinkSpy = vi.mocked(fs.unlink);
+    let reads = 0;
+    vi.mocked(fs.readFile).mockImplementation(((
+      file: Parameters<typeof fs.readFile>[0],
+      ...args: [options?: Parameters<typeof fs.readFile>[1]]
+    ) => {
+      if (String(file) === lockPath) {
+        reads += 1;
+        // Snapshot read sees the dead lock; the re-verify read fails EACCES,
+        // which must be treated as "alive/unknown" → do not unlink.
+        if (reads === 1) return Promise.resolve(`pid=${stalePid}\ntoken=dead-token\n`);
+        return Promise.reject(errno('EACCES', 'permission denied'));
+      }
+      return actualFs().readFile(file, args[0]);
+    }) as typeof fs.readFile);
+
+    await expect(acquireSessionWriteLock(sessionDir, 0)).rejects.toMatchObject({
+      code: 'LOCK_TIMEOUT',
+    });
+    expect(unlinkSpy.mock.calls.filter((c) => String(c[0]) === lockPath)).toHaveLength(0);
+
+    restoreFsMocks();
+    await expect(fs.readFile(lockPath, 'utf-8')).resolves.toContain('dead-token');
+  });
+
   it('BAD: stale lock unlink EACCES returns LOCK_TIMEOUT instead of falling back', async () => {
     const stalePid = 135_791;
     const lockPath = sessionLockPath(sessionDir);
