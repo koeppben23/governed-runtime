@@ -34,6 +34,18 @@ const ENV_PROJECT_DIR = 'FLOWGUARD_PROJECT_DIR';
 /** Governance denial code emitted when no session source can be resolved. */
 export const SESSION_UNRESOLVABLE_CODE = 'SESSION_UNRESOLVABLE';
 
+/** Trusted fail-closed error produced only by this resolver boundary. */
+export class McpSessionResolutionError extends Error {
+  readonly code = SESSION_UNRESOLVABLE_CODE;
+
+  constructor() {
+    super(
+      `[${SESSION_UNRESOLVABLE_CODE}] No session source: set ${ENV_SESSION_DIR} or ${ENV_PROJECT_DIR}, or advertise MCP roots.`,
+    );
+    this.name = 'McpSessionResolutionError';
+  }
+}
+
 /**
  * Resolved session context for an MCP tool call.
  * Contains all paths needed by ToolContext.
@@ -86,9 +98,5 @@ export function resolveSessionContext(
   }
 
   // Priority 4: Fail closed — no host-advertised working directory available.
-  const err = new Error(
-    `[${SESSION_UNRESOLVABLE_CODE}] No session source: set ${ENV_SESSION_DIR} or ${ENV_PROJECT_DIR}, or advertise MCP roots.`,
-  );
-  (err as { code?: string }).code = SESSION_UNRESOLVABLE_CODE;
-  throw err;
+  throw new McpSessionResolutionError();
 }

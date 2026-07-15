@@ -78,7 +78,7 @@ export interface ToolContext {
   agent: string;
   directory: string;
   worktree: string;
-  abort: AbortSignal;
+  abort: AbortSignal | undefined;
   metadata(input: { title?: string; metadata?: Record<string, unknown> }): void;
 }
 

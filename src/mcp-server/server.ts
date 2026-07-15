@@ -22,6 +22,7 @@ import { resolveSessionContext } from './session-resolver.js';
 import { installStdoutGuard } from './stdout-guard.js';
 import { PACKAGE_VERSION } from '../shared/package-version.js';
 import { mcpLogger } from './mcp-logger.js';
+import { McpExecutionLimiter, readMcpExecutionLimits } from './execution-limiter.js';
 
 // --- Tool Imports ---
 
@@ -79,16 +80,22 @@ export function createMcpServer(): McpServer {
       },
     },
   );
+  const limiter = new McpExecutionLimiter(readMcpExecutionLimits());
 
   // Register all 13 FlowGuard tools
-  registerAllTools(server, FLOWGUARD_TOOLS, () => {
-    // Resolve session context fresh for each tool call from host-advertised
-    // sources (FLOWGUARD_SESSION_DIR / FLOWGUARD_PROJECT_DIR env, or MCP roots).
-    // MCP roots/list is not wired here yet, so roots are passed as undefined and
-    // the env sources carry resolution. When no source is present the resolver
-    // fails closed (SESSION_UNRESOLVABLE) — never a cwd guess.
-    return resolveSessionContext(undefined, sessionId);
-  });
+  registerAllTools(
+    server,
+    FLOWGUARD_TOOLS,
+    () => {
+      // Resolve session context fresh for each tool call from host-advertised
+      // sources (FLOWGUARD_SESSION_DIR / FLOWGUARD_PROJECT_DIR env, or MCP roots).
+      // MCP roots/list is not wired here yet, so roots are passed as undefined and
+      // the env sources carry resolution. When no source is present the resolver
+      // fails closed (SESSION_UNRESOLVABLE) — never a cwd guess.
+      return resolveSessionContext(undefined, sessionId);
+    },
+    limiter,
+  );
 
   return server;
 }

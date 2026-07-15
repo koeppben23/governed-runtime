@@ -19,7 +19,11 @@ import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
 import type { ToolDefinition, ToolContext, ToolResult } from '../integration/tools/helpers.js';
 import { convertArgsToInputSchema } from './schema-converter.js';
-import { SESSION_UNRESOLVABLE_CODE, type McpSessionContext } from './session-resolver.js';
+import {
+  McpSessionResolutionError,
+  SESSION_UNRESOLVABLE_CODE,
+  type McpSessionContext,
+} from './session-resolver.js';
 import { mcpLogger } from './mcp-logger.js';
 import {
   getLogTraceFields,
@@ -27,6 +31,7 @@ import {
   toAdapterLogger,
 } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
+import { McpExecutionLimiter } from './execution-limiter.js';
 
 // --- Tool Registry ---
 
@@ -92,10 +97,13 @@ function toHandledToolError(
   mcpName: string,
   sessionId: string | undefined,
 ): CallToolResult {
-  const message = err instanceof Error ? err.message : String(err);
-
-  // Extract FlowGuard error code if available
+  // Only boundary-produced errors may select a public diagnostic code. Never
+  // reflect arbitrary executor messages or codes into the MCP response.
   const code = extractErrorCode(err) ?? 'TOOL_EXECUTION_ERROR';
+  let message = 'Tool execution failed';
+  if (code === SESSION_UNRESOLVABLE_CODE && err instanceof Error) {
+    message = err.message;
+  }
 
   // Fail-closed session resolution: emit a minimal boundary diagnostic.
   if (code === SESSION_UNRESOLVABLE_CODE) {
@@ -204,6 +212,7 @@ export function registerAllTools(
   server: McpServer,
   tools: FlowGuardToolRegistry,
   resolveContext: () => McpSessionContext,
+  limiter = new McpExecutionLimiter({ timeoutMs: 30_000, maxConcurrent: 10, maxPerSecond: 50 }),
 ): void {
   for (const [name, toolDef] of Object.entries(tools)) {
     const mcpName = `flowguard_${name}`;
@@ -238,7 +247,7 @@ export function registerAllTools(
                   agent: 'mcp-client',
                   directory: sessionCtx.directory,
                   worktree: sessionCtx.worktree,
-                  abort: extra.signal ?? new AbortController().signal,
+                  abort: extra.signal,
                   metadata: () => {
                     /* MCP: metadata is embedded in text output */
                   },
@@ -250,10 +259,26 @@ export function registerAllTools(
                   ...getLogTraceFields(),
                 });
 
-                const result = await runWithAdapterLoggerAsync(toAdapterLogger(mcpLogger), () =>
+                if (!limiter.tryAcquire())
+                  return toMcpError('MCP_RATE_LIMITED', 'MCP tool execution limit reached');
+                const execution = runWithAdapterLoggerAsync(toAdapterLogger(mcpLogger), () =>
                   toolDef.execute(cleanArgs, toolContext),
                 );
-                return toMcpResult(result);
+                // A deadline responds to the host; it never cancels or releases a live executor.
+                const timeout = new Promise<CallToolResult>((resolve) => {
+                  const timer = setTimeout(
+                    () =>
+                      resolve(
+                        toMcpError('MCP_TOOL_TIMEOUT', 'MCP tool response deadline exceeded'),
+                      ),
+                    limiter.limits.timeoutMs,
+                  );
+                  timer.unref();
+                  execution.finally(() => clearTimeout(timer)).catch(() => undefined);
+                });
+                execution.finally(() => limiter.release()).catch(() => undefined);
+                const result = await Promise.race([execution.then(toMcpResult), timeout]);
+                return result;
               } catch (err: unknown) {
                 return toHandledToolError(err, mcpName, sessionId);
               }
@@ -275,14 +300,8 @@ export function registerAllTools(
  */
 function extractErrorCode(err: unknown): string | undefined {
   if (err === null || err === undefined) return undefined;
-  if (typeof err === 'object') {
-    const record = err as Record<string, unknown>;
-    if (typeof record['code'] === 'string') return record['code'];
-  }
-  if (err instanceof Error) {
-    // FlowGuard errors often contain [CODE] prefix in message
-    const match = /\[([A-Z_]+)\]/.exec(err.message);
-    if (match) return match[1];
+  if (err instanceof McpSessionResolutionError) {
+    return err.code;
   }
   return undefined;
 }

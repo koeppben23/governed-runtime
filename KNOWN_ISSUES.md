@@ -14,7 +14,7 @@ findings previously marked `Open` were already satisfied in code at the analysis
 baseline (I1, I2, I3, G9 — see "Re-Triaged" below) and added three new findings
 from a mutation-scope and file-size audit (MUT1, SZ1, SZ2). A 2026-07-10
 re-triage confirmed two additional pre-existing fixes (G3, C7), one merged fix
-(G7), and four partial fixes (H2, M3, C3, I4).
+(G7), and three partial fixes (H2, C3, I4).
 
 ## Status Legend
 
@@ -77,7 +77,7 @@ disproven, update the status and link the evidence."
 | B       | P1       | Partially Fixed | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2            | Hash-chain, canonical digest, TSA, and NTP hardening. AC1 fixed; AC2–AC5, TSA1–TSA2 remain open. AC3 also tracked in Package D (audit summarization redaction spans both domains). |
 | C       | P1       | Partially Fixed | AR1, AR2, AUD2                                 | Archive integrity and audit write-lock recovery. AR1 fixed; AR2, AUD2 remain open.                                                                                                 |
 | D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                        | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                         |
-| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4 and C2–C5 fixed (#646, #667); M3 and I4 partially fixed; C1 and M1–M2 remain open.                    |
+| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); I4 partially fixed; C1 and M2 remain open.                |
 | F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13            | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421; G15, AC6–AC7, and G12–G13 remain open.                                    |
 
 ## Outstanding High-Priority Findings
@@ -91,9 +91,9 @@ disproven, update the status and link the evidence."
 | H1   | HIGH     | Fixed           | HTTP governance routes require bearer authentication; non-loopback binds need explicit opt-in and token auth.     |
 | H2   | HIGH     | Fixed           | HTTP and command hooks both block mutating tools while review obligations remain unresolved.                      |
 | H3   | HIGH     | Open            | Session ID validation needs Windows/reserved-name hardening.                                                      |
-| M1   | HIGH     | Open            | MCP tool execution needs timeout/rate-limit hardening.                                                            |
+| M1   | HIGH     | Fixed           | MCP tool execution uses server-scoped response deadlines and admission limits (#645).                             |
 | M2   | HIGH     | Open            | MCP session/project directory environment inputs need validation.                                                 |
-| M3   | HIGH     | Partially Fixed | Missing-root diagnostics omit paths; ordinary MCP failures can still return raw error messages.                   |
+| M3   | HIGH     | Fixed           | MCP errors use trusted boundary codes and do not reflect arbitrary executor messages (#645).                      |
 | C1   | HIGH     | Open            | Non-OpenCode config install skip/error handling needs explicit surfacing.                                         |
 | C2   | HIGH     | Fixed           | Exclusive install lock, preflight, and existing-install protection implemented by #667.                           |
 | C3   | HIGH     | Fixed           | Install mutations use top-level rollback plus crash-recoverable dependency transactions in #667.                  |

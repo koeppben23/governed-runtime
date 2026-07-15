@@ -17,10 +17,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { resolveSessionContext } from './session-resolver.js';
+import { McpSessionResolutionError, resolveSessionContext } from './session-resolver.js';
 import { convertArgsToInputSchema } from './schema-converter.js';
 import { installStdoutGuard } from './stdout-guard.js';
 import { registerAllTools, isGovernanceDenialCode } from './tool-adapter.js';
+import { McpExecutionLimiter, readMcpExecutionLimits } from './execution-limiter.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolContext, ToolDefinition } from '../integration/tools/helpers.js';
 import { getAdapterLogger, getLogTraceFields } from '../logging/adapter-logger.js';
@@ -172,6 +173,12 @@ describe('Session Resolver', () => {
 });
 
 describe('Tool Adapter Session Identity', () => {
+  it('rejects invalid MCP execution limit configuration', () => {
+    expect(() => readMcpExecutionLimits({ FLOWGUARD_MCP_MAX_CONCURRENT: '0' })).toThrow(
+      'FLOWGUARD_MCP_MAX_CONCURRENT must be a positive integer',
+    );
+  });
+
   it('BAD: reuses stable sessionID across calls and creates unique messageIDs', async () => {
     const contexts: ToolContext[] = [];
     let handler:
@@ -241,7 +248,7 @@ describe('Tool Adapter Session Identity', () => {
     expect(observed[0]!.durationMs).toBeUndefined();
   });
 
-  it('governance denial returns isError:false with governance:true in content', async () => {
+  it('untrusted error codes return sanitized execution errors', async () => {
     let handler:
       ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
     const fakeServer = {
@@ -266,13 +273,12 @@ describe('Tool Adapter Session Identity', () => {
     }));
 
     const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
-    expect(result.isError).toBe(false);
+    expect(result.isError).toBe(true);
     const [content] = result.content;
     if (!content) throw new TypeError('expected MCP response content');
     const parsed = JSON.parse(content.text);
-    expect(parsed.governance).toBe(true);
-    expect(parsed.denied).toBe(true);
-    expect(parsed.code).toBe('PHASE_GATE_BLOCKED');
+    expect(parsed.governance).toBeUndefined();
+    expect(parsed.code).toBe('TOOL_EXECUTION_ERROR');
   });
 
   // #422 negative-first: a fail-closed session resolution (resolveContext
@@ -304,9 +310,7 @@ describe('Tool Adapter Session Identity', () => {
 
     try {
       registerAllTools(fakeServer, { test: tool }, () => {
-        const err = new Error('[SESSION_UNRESOLVABLE] no session source');
-        (err as unknown as Record<string, unknown>).code = 'SESSION_UNRESOLVABLE';
-        throw err;
+        throw new McpSessionResolutionError();
       });
 
       const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
@@ -365,6 +369,99 @@ describe('Tool Adapter Session Identity', () => {
     expect(parsed.error).toBe(true);
     expect(parsed.governance).toBeUndefined();
     expect(parsed.code).toBe('TOOL_EXECUTION_ERROR');
+  });
+
+  it('passes the SDK abort signal through unchanged', async () => {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    const signal = new AbortController().signal;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute(_args, context) {
+        expect(context.abort).toBe(signal);
+        return 'ok';
+      },
+    };
+    registerAllTools(fakeServer, { test: tool }, () => ({
+      sessionId: 'mcp-session',
+      directory: '/tmp/project',
+      worktree: '/tmp/project',
+    }));
+    await handler!({}, { signal });
+  });
+
+  it('rejects calls over the shared concurrency limit without invoking the executor', async () => {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    let release!: () => void;
+    let calls = 0;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        calls += 1;
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return 'ok';
+      },
+    };
+    registerAllTools(
+      fakeServer,
+      { test: tool },
+      () => ({ sessionId: 'mcp-session', directory: '/tmp/project', worktree: '/tmp/project' }),
+      new McpExecutionLimiter({ timeoutMs: 1_000, maxConcurrent: 1, maxPerSecond: 10 }),
+    );
+    const first = handler!({}, {});
+    await Promise.resolve();
+    const result = (await handler!({}, {})) as { content: { text: string }[] };
+    expect(JSON.parse(result.content[0]!.text).code).toBe('MCP_RATE_LIMITED');
+    expect(calls).toBe(1);
+    release();
+    await first;
+  });
+
+  it('returns a timeout while keeping a live executor in its concurrency slot', async () => {
+    let handler:
+      ((args: Record<string, unknown>, extra: { signal?: AbortSignal }) => unknown) | null = null;
+    let release!: () => void;
+    const fakeServer = {
+      registerTool: (_name: string, _config: unknown, registered: typeof handler) => {
+        handler = registered;
+      },
+    } as unknown as McpServer;
+    const tool: ToolDefinition = {
+      description: 'test tool',
+      args: {},
+      async execute() {
+        await new Promise<void>((resolve) => {
+          release = resolve;
+        });
+        return 'ok';
+      },
+    };
+    registerAllTools(
+      fakeServer,
+      { test: tool },
+      () => ({ sessionId: 'mcp-session', directory: '/tmp/project', worktree: '/tmp/project' }),
+      new McpExecutionLimiter({ timeoutMs: 1, maxConcurrent: 1, maxPerSecond: 10 }),
+    );
+    const timedOut = (await handler!({}, {})) as { content: { text: string }[] };
+    expect(JSON.parse(timedOut.content[0]!.text).code).toBe('MCP_TOOL_TIMEOUT');
+    const rejected = (await handler!({}, {})) as { content: { text: string }[] };
+    expect(JSON.parse(rejected.content[0]!.text).code).toBe('MCP_RATE_LIMITED');
+    release();
   });
 });
 
