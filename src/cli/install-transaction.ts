@@ -264,6 +264,10 @@ async function findTransactionArtifacts(configTargetDir: string): Promise<string
 
 // ─── Package Manager ────────────────────────────────────────────────────
 
+function npmCommand(): string {
+  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+}
+
 function detectPackageManager(): 'bun' | 'npm' | null {
   try {
     execFileSync('bun', ['--version'], { stdio: 'ignore', timeout: 5000 });
@@ -272,7 +276,7 @@ function detectPackageManager(): 'bun' | 'npm' | null {
     // Try npm when bun is unavailable.
   }
   try {
-    execFileSync('npm', ['--version'], { stdio: 'ignore', timeout: 5000 });
+    execFileSync(npmCommand(), ['--version'], { stdio: 'ignore', timeout: 5000 });
     return 'npm';
   } catch {
     // No supported package manager is available.
@@ -286,7 +290,7 @@ function doPackageInstall(pm: 'npm' | 'bun', stagingRoot: string): void {
   try {
     if (pm === 'npm') {
       execFileSync(
-        'npm',
+        npmCommand(),
         ['install', '--prefix', '.', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=dev'],
         {
           cwd: stagingRoot,
