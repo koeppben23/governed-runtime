@@ -15,10 +15,8 @@
  */
 
 import { startMcpServer } from './server.js';
+import { reportMcpFatalError } from './fatal-error.js';
 
 startMcpServer().catch((err: unknown) => {
-  process.stderr.write(
-    `[FlowGuard MCP] Fatal error: ${err instanceof Error ? err.message : String(err)}\n`,
-  );
-  process.exitCode = 1;
+  reportMcpFatalError(err);
 });

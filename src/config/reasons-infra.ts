@@ -8,6 +8,24 @@ import type { BlockedReason } from './reasons-types.js';
 
 export const INFRA_REASONS: readonly BlockedReason[] = [
   {
+    code: 'MCP_TOOL_TIMEOUT',
+    category: 'adapter',
+    messageTemplate: 'MCP tool response deadline exceeded.',
+    recoverySteps: [
+      'Retry the tool call',
+      'Increase FLOWGUARD_MCP_TOOL_TIMEOUT_MS if the host permits it',
+    ],
+  },
+  {
+    code: 'MCP_RATE_LIMITED',
+    category: 'adapter',
+    messageTemplate: 'MCP tool execution limit reached.',
+    recoverySteps: [
+      'Retry after active tool calls complete',
+      'Adjust MCP execution limits if appropriate',
+    ],
+  },
+  {
     code: 'DISCOVERY_RESULT_MISSING',
     category: 'adapter',
     messageTemplate: 'Discovery did not produce a valid result: {message}',

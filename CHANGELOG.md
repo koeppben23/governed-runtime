@@ -39,6 +39,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **MCP execution boundaries hardened (#645).** Server-scoped admission limits
+  and response deadlines protect tool execution without cancelling live work;
+  arbitrary executor errors are mapped to sanitized MCP diagnostics.
+
 - **HTTP hook trust boundary and command-hook obligation parity (#646).** HTTP
   governance routes require a configured bearer token and JSON content type;
   non-loopback listeners require explicit opt-in. Command hooks now deny

@@ -2,6 +2,16 @@
 
 ## Common Issues
 
+### MCP Tool Limits
+
+MCP calls use a response deadline (`FLOWGUARD_MCP_TOOL_TIMEOUT_MS`, default 30000 ms),
+a shared concurrency limit (`FLOWGUARD_MCP_MAX_CONCURRENT`, default 10), and a rolling
+per-second limit (`FLOWGUARD_MCP_MAX_PER_SECOND`, default 50). Invalid values prevent
+the MCP server from starting. `MCP_TOOL_TIMEOUT` means the host response deadline elapsed;
+the underlying operation is not cancelled and continues to occupy its concurrency slot.
+`MCP_RATE_LIMITED` means retry after active work completes or the rolling one-second
+start window advances.
+
 ### Tools Not Discovered
 
 **Symptom:** FlowGuard commands not available in OpenCode.
@@ -294,6 +304,8 @@ INVALID_PROFILE
 INVALID_TRANSITION
 INVALID_VERDICT
 LOCK_TIMEOUT_EXHAUSTED
+MCP_RATE_LIMITED
+MCP_TOOL_TIMEOUT
 MISSING_ADR_SECTIONS
 MISSING_CHECKS
 MISSING_SESSION_ID
