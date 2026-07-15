@@ -38,6 +38,7 @@ import {
   FLOWGUARD_REVIEWER_MODEL_ENV,
   FLOWGUARD_REVIEWER_EFFORT_ENV,
   verifyTarballChecksum,
+  rollbackArtifacts,
 } from './install-helpers.js';
 
 describe('install-helpers', () => {
@@ -248,6 +249,82 @@ describe('install-helpers', () => {
       } finally {
         vi.mocked(fs.readFile).mockImplementation(realImpl);
       }
+    });
+  });
+
+  describe('rollbackArtifacts', () => {
+    it('removes a newly created directory tree using explicit recursion', async () => {
+      const rollbackRoot = path.join(tmpDir, 'created');
+      await fs.mkdir(path.join(rollbackRoot, 'nested'), { recursive: true });
+      await fs.writeFile(path.join(rollbackRoot, 'nested', 'artifact.txt'), 'artifact', 'utf-8');
+      const ops: Array<{ path: string; action: 'removed'; reason: string }> = [];
+      const errors: string[] = [];
+
+      await rollbackArtifacts(
+        [
+          {
+            path: rollbackRoot,
+            existed: false,
+            expectedKind: 'directory',
+            sequence: 1,
+          },
+        ],
+        ops,
+        errors,
+      );
+
+      await expect(fs.lstat(rollbackRoot)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(errors).toEqual([]);
+      expect(ops).toHaveLength(1);
+    });
+
+    it('rejects a symlink swapped into a newly created rollback target', async () => {
+      const externalFile = path.join(tmpDir, 'external.txt');
+      const rollbackPath = path.join(tmpDir, 'created.txt');
+      await fs.writeFile(externalFile, 'must remain intact', 'utf-8');
+      await fs.symlink(externalFile, rollbackPath);
+      const errors: string[] = [];
+
+      await rollbackArtifacts(
+        [
+          {
+            path: rollbackPath,
+            existed: false,
+            expectedKind: 'file',
+            sequence: 1,
+          },
+        ],
+        [],
+        errors,
+      );
+
+      expect(errors.join('\n')).toContain('replaced by a symlink');
+      await expect(fs.readFile(externalFile, 'utf-8')).resolves.toBe('must remain intact');
+    });
+
+    it('rejects a symlink inside a newly created rollback directory', async () => {
+      const rollbackRoot = path.join(tmpDir, 'created');
+      const externalFile = path.join(tmpDir, 'external.txt');
+      await fs.mkdir(rollbackRoot);
+      await fs.writeFile(externalFile, 'must remain intact', 'utf-8');
+      await fs.symlink(externalFile, path.join(rollbackRoot, 'link.txt'));
+      const errors: string[] = [];
+
+      await rollbackArtifacts(
+        [
+          {
+            path: rollbackRoot,
+            existed: false,
+            expectedKind: 'directory',
+            sequence: 1,
+          },
+        ],
+        [],
+        errors,
+      );
+
+      expect(errors.join('\n')).toContain('contains a symlink');
+      await expect(fs.readFile(externalFile, 'utf-8')).resolves.toBe('must remain intact');
     });
   });
 

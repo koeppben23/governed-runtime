@@ -620,6 +620,18 @@ describe('cli/install', () => {
 
   // ─── BAD ───────────────────────────────────────────────────
   describe('BAD', () => {
+    it('rejects concurrent installation with the lock owner PID', async () => {
+      await fs.writeFile(path.join(tmpDir, '.install.lock'), JSON.stringify({ pid: 12345 }));
+
+      const result = await install(repoArgs());
+
+      expect(result.errors).toContain(
+        'Install already in progress (PID: 12345).\n' +
+          `The lock may be stale if the previous process was interrupted.\n` +
+          `If no install runs, remove ${path.join(tmpDir, '.install.lock')} manually.`,
+      );
+    });
+
     it('returns multiple recovery journals as a CLI error and releases the install lock', async () => {
       const configDir = path.join(tmpDir, '.opencode');
       await fs.mkdir(configDir, { recursive: true });

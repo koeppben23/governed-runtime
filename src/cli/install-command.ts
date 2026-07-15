@@ -69,7 +69,8 @@ async function acquireInstallLock(): Promise<{ release(): void }> {
         throw new Error(`Install lock exists but is unreadable. Remove ${lockPath} manually.`);
       }
       throw new Error(
-        `Install already in progress or stale lock (PID: ${existing.pid}).\n` +
+        `Install already in progress (PID: ${existing.pid}).\n` +
+          'The lock may be stale if the previous process was interrupted.\n' +
           `If no install runs, remove ${lockPath} manually.`,
       );
     }

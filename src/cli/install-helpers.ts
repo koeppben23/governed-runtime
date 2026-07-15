@@ -10,7 +10,7 @@
 
 import { execSync } from 'node:child_process';
 import { existsSync, readFileSync, constants as fsConstants } from 'node:fs';
-import { readFile, writeFile, unlink, open, lstat, rename, rmdir } from 'node:fs/promises';
+import { readFile, writeFile, unlink, open, lstat, rename, rmdir, readdir } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { ensureDir } from '../adapters/persistence.js';
@@ -598,9 +598,29 @@ async function removeNewlyCreatedEntry(entry: RollbackEntry, ops: FileOp[]): Pro
     throw new Error(`Rollback target type changed: ${entry.path} (expected directory)`);
   }
   if (entry.expectedKind === 'directory') {
-    await rmdir(entry.path);
+    await removeDirectoryRecursively(entry.path);
   } else {
     await unlink(entry.path);
   }
   ops.push({ path: entry.path, action: 'removed', reason: 'rollback after failure' });
+}
+
+/** Remove only regular files and directories; never traverse a symlink during rollback. */
+async function removeDirectoryRecursively(directoryPath: string): Promise<void> {
+  for (const name of await readdir(directoryPath)) {
+    const childPath = join(directoryPath, name);
+    const childStat = await lstat(childPath);
+    if (childStat.isSymbolicLink()) {
+      throw new Error(`Rollback target contains a symlink: ${childPath}`);
+    }
+    if (childStat.isDirectory()) {
+      await removeDirectoryRecursively(childPath);
+      continue;
+    }
+    if (!childStat.isFile()) {
+      throw new Error(`Unsupported rollback target type: ${childPath}`);
+    }
+    await unlink(childPath);
+  }
+  await rmdir(directoryPath);
 }
