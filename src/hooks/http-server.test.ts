@@ -397,6 +397,25 @@ describe('handleHttpRequest', () => {
     expect(mockAppendAuditEvent).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { method: 'GET', url: '/hooks/pre-tool-use' },
+    { method: 'POST', url: '/hooks/unknown' },
+    { method: 'OPTIONS', url: '/hooks/unknown' },
+  ])(
+    'BAD: unauthenticated $method $url returns 401 without route enumeration',
+    async ({ method, url }) => {
+      const req = makeRequest({ method, url, body: '', headers: { authorization: '' } });
+      const res = makeResponse();
+
+      await handleHttpRequest(req as never, res as never);
+
+      expect(res.status).toBe(401);
+      expect(JSON.parse(res.body)).toEqual({ error: 'Unauthorized' });
+      expect(mockResolveSession).not.toHaveBeenCalled();
+      expect(mockAppendAuditEvent).not.toHaveBeenCalled();
+    },
+  );
+
   it('BAD: duplicate authorization headers return 401 before body processing', async () => {
     const req = makeRequest({
       body: '{}',
@@ -442,7 +461,7 @@ describe('handleHttpRequest', () => {
     expect(res.status).toBe(200);
   });
 
-  it('BAD: OPTIONS on a hook route returns 405', async () => {
+  it('BAD: authenticated OPTIONS on a hook route returns 405', async () => {
     const req = makeRequest({ method: 'OPTIONS', body: '' });
     const res = makeResponse();
 
@@ -451,7 +470,7 @@ describe('handleHttpRequest', () => {
     expect(res.status).toBe(405);
   });
 
-  it('BAD: non-POST non-health requests return 405 without resolving a session', async () => {
+  it('BAD: authenticated non-POST non-health requests return 405 without resolving a session', async () => {
     const req = makeRequest({ method: 'GET', url: '/hooks/pre-tool-use', body: '' });
     const res = makeResponse();
 
@@ -462,7 +481,7 @@ describe('handleHttpRequest', () => {
     expect(mockResolveSession).not.toHaveBeenCalled();
   });
 
-  it('BAD: unknown POST route returns 404 without resolving a session', async () => {
+  it('BAD: authenticated unknown POST route returns 404 without resolving a session', async () => {
     const req = makeRequest({ url: '/hooks/unknown', body: '{}' });
     const res = makeResponse();
 

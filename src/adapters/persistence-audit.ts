@@ -20,10 +20,10 @@ import {
   CURRENT_AUDIT_FORMAT_VERSION,
   type ChainedAuditEvent,
 } from '../audit/types.js';
+import { acquireNamedWriteLock } from './persistence-lock.js';
 
 const AUDIT_LOCK_FILE = 'audit.jsonl.lock';
 const AUDIT_LOCK_TIMEOUT_MS = 10_000;
-const AUDIT_LOCK_POLL_MS = 100;
 
 /**
  * Append a single audit event to the JSONL audit trail.
@@ -163,37 +163,13 @@ async function withAuditWriteLock<T>(sessionDir: string, fn: () => Promise<T>): 
 }
 
 async function acquireAuditWriteLock(sessionDir: string): Promise<() => Promise<void>> {
-  await ensureDir(sessionDir);
-  const lockPath = path.join(sessionDir, AUDIT_LOCK_FILE);
-  const token = crypto.randomUUID();
-  const deadline = Date.now() + AUDIT_LOCK_TIMEOUT_MS;
-
-  while (true) {
-    try {
-      await fs.writeFile(lockPath, `pid=${process.pid}\ntoken=${token}\n`, {
-        encoding: 'utf-8',
-        flag: 'wx',
-        mode: 0o600,
-      });
-      return async () => {
-        try {
-          const current = await fs.readFile(lockPath, 'utf-8');
-          if (current.split('\n').includes(`token=${token}`)) await fs.unlink(lockPath);
-        } catch (err) {
-          if (!isEnoent(err)) throw err;
-        }
-      };
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
-      if (Date.now() >= deadline) {
-        throw new PersistenceError(
-          'LOCK_TIMEOUT',
-          `Could not acquire audit write lock within ${AUDIT_LOCK_TIMEOUT_MS}ms.\n  Lock file: ${lockPath}`,
-        );
-      }
-      await new Promise((resolve) => setTimeout(resolve, AUDIT_LOCK_POLL_MS));
-    }
-  }
+  const lock = await acquireNamedWriteLock(
+    sessionDir,
+    AUDIT_LOCK_FILE,
+    'audit write',
+    AUDIT_LOCK_TIMEOUT_MS,
+  );
+  return lock.release;
 }
 
 /**

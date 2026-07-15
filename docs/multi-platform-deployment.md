@@ -113,6 +113,8 @@ curl http://127.0.0.1:18462/health
 characters, and is never logged by FlowGuard. Start Claude Code from the same
 shell or service environment so it inherits this variable. The HTTP hook
 configuration expands it only when it is listed in `allowedEnvVars` below.
+`GET /health` is the sole unauthenticated endpoint. Every other request is
+authenticated before FlowGuard evaluates its method or route.
 
 The listener binds to `127.0.0.1` by default (`FLOWGUARD_HOOK_HOST`). Only
 `127.0.0.1` and `::1` are accepted without explicit remote opt-in. Remote

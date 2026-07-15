@@ -101,6 +101,65 @@ export interface SessionWriteLock {
   waited: boolean;
 }
 
+/** Acquire a named lockfile using the canonical stale-lock recovery policy. */
+export async function acquireNamedWriteLock(
+  sessionDir: string,
+  lockFile: string,
+  lockLabel: string,
+  timeoutMs: number = DEFAULT_LOCK_TIMEOUT_MS,
+): Promise<SessionWriteLock> {
+  await ensureDir(sessionDir);
+  const lockPath = path.join(sessionDir, lockFile);
+  const token = crypto.randomUUID();
+  const content = buildLockContent(token);
+  const deadline = Date.now() + timeoutMs;
+  let waited = false;
+
+  while (true) {
+    try {
+      await fs.writeFile(lockPath, content, { encoding: 'utf-8', flag: 'wx', mode: 0o600 });
+      return { release: () => releaseLock(lockPath, token), waited };
+    } catch (err) {
+      if (!isEexist(err)) throw err;
+    }
+
+    if (await isLockStale(lockPath)) {
+      try {
+        await fs.unlink(lockPath);
+      } catch (err) {
+        if (!isEnoent(err)) {
+          throw new PersistenceError(
+            'LOCK_TIMEOUT',
+            `Cannot remove stale lock file: ${err instanceof Error ? err.message : String(err)}. ` +
+              `Lock file: ${lockPath}`,
+          );
+        }
+      }
+      continue;
+    }
+
+    waited = true;
+    if (Date.now() >= deadline) {
+      let blockingPid: number | undefined;
+      try {
+        const raw = await fs.readFile(lockPath, 'utf-8');
+        const match = raw.match(/^pid=(\d+)/m);
+        if (match) blockingPid = Number(match[1]);
+      } catch {
+        // Best-effort only; the lock may have changed at the deadline.
+      }
+      throw new PersistenceError(
+        'LOCK_TIMEOUT',
+        `Could not acquire ${lockLabel} lock within ${timeoutMs}ms.` +
+          (blockingPid === undefined
+            ? `\n  Lock file: ${lockPath}`
+            : `\n  Blocking PID: ${blockingPid}\n  Lock file: ${lockPath}`),
+      );
+    }
+    await new Promise((r) => setTimeout(r, LOCK_POLL_INTERVAL_MS));
+  }
+}
+
 /**
  * Acquire an exclusive session write lock via lockfile.
  *
@@ -120,63 +179,7 @@ export async function acquireSessionWriteLock(
   sessionDir: string,
   timeoutMs: number = DEFAULT_LOCK_TIMEOUT_MS,
 ): Promise<SessionWriteLock> {
-  await ensureDir(sessionDir);
-  const lockPath = sessionLockPath(sessionDir);
-  const token = crypto.randomUUID();
-  const content = buildLockContent(token);
-  const deadline = Date.now() + timeoutMs;
-  let waited = false;
-
-  while (true) {
-    try {
-      await fs.writeFile(lockPath, content, { encoding: 'utf-8', flag: 'wx', mode: 0o600 });
-      return { release: () => releaseLock(lockPath, token), waited };
-    } catch (err) {
-      if (!isEexist(err)) throw err;
-    }
-
-    // Lock exists — check if stale
-    const stale = await isLockStale(lockPath);
-    if (stale) {
-      try {
-        await fs.unlink(lockPath);
-      } catch (err) {
-        if (!isEnoent(err)) {
-          // unlink failed with EACCES/etc. — fail-closed
-          throw new PersistenceError(
-            'LOCK_TIMEOUT',
-            `Cannot remove stale lock file: ${err instanceof Error ? err.message : String(err)}. ` +
-              `Lock file: ${lockPath}`,
-          );
-        }
-      }
-      continue;
-    }
-
-    // A live holder is blocking us; we are about to poll → real contention.
-    waited = true;
-
-    if (Date.now() >= deadline) {
-      let blockingPid: number | undefined;
-      try {
-        const raw = await fs.readFile(lockPath, 'utf-8');
-        const m = raw.match(/^pid=(\d+)/m);
-        if (m) blockingPid = Number(m[1]);
-      } catch {
-        // Best-effort — lock file may have been removed
-      }
-      throw new PersistenceError(
-        'LOCK_TIMEOUT',
-        `Could not acquire session write lock within ${timeoutMs}ms.` +
-          (blockingPid !== undefined
-            ? `\n  Blocking PID: ${blockingPid}\n  Lock file: ${lockPath}\n` +
-              `  If process ${blockingPid} is not running, delete the lock file manually.`
-            : `\n  Lock file: ${lockPath}`),
-      );
-    }
-
-    await new Promise((r) => setTimeout(r, LOCK_POLL_INTERVAL_MS));
-  }
+  return acquireNamedWriteLock(sessionDir, SESSION_LOCK_FILE, 'session write', timeoutMs);
 }
 
 /**

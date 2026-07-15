@@ -428,6 +428,13 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
     return;
   }
 
+  // All governance requests authenticate before dispatch so callers without a
+  // token cannot distinguish routes or supported methods.
+  if (serverConfig === undefined || !isAuthorizedHookRequest(req, serverConfig.token)) {
+    jsonResponse(res, 401, { error: 'Unauthorized' });
+    return;
+  }
+
   // Only POST for hook endpoints.
   if (method !== 'POST') {
     jsonResponse(res, 405, { error: 'Method not allowed' });
@@ -437,12 +444,6 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
   const handler = ROUTES[url];
   if (!handler) {
     jsonResponse(res, 404, { error: `Unknown route: ${url}` });
-    return;
-  }
-
-  // Authentication precedes all body, state, and persistence work.
-  if (serverConfig === undefined || !isAuthorizedHookRequest(req, serverConfig.token)) {
-    jsonResponse(res, 401, { error: 'Unauthorized' });
     return;
   }
 

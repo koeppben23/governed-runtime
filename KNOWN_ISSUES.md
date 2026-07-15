@@ -103,7 +103,7 @@ disproven, update the status and link the evidence."
 | R1   | HIGH     | Fixed           | Export redaction should not default-allow unknown fields.                                                         |
 | R2   | HIGH     | Fixed           | Archive export must respect redaction mode for audit/state/raw artifacts.                                         |
 | R4   | HIGH     | Fixed           | Telemetry error/status export needs scrubbing.                                                                    |
-| AUD2 | HIGH     | Open            | Audit write lock needs stale-lock recovery.                                                                       |
+| AUD2 | HIGH     | Fixed           | Audit write lock safely recovers dead-process stale locks while failing closed for unsafe lock states (#670).     |
 
 ## Outstanding Medium-Priority Findings
 
