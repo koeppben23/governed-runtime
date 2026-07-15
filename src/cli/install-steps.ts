@@ -13,7 +13,7 @@ import { existsSync } from 'node:fs';
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { InstallError } from './install-helpers.js';
-import { MutationJournal } from './install-transaction.js';
+import { ensureDirTracked, MutationJournal } from './install-transaction.js';
 import { globalConfigPath, ensureDir } from '../adapters/persistence.js';
 import { readConfig, writeGlobalConfig, writeRepoConfig } from '../adapters/persistence-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
@@ -161,34 +161,31 @@ async function buildDirectorySnapshots(
   target: string,
   configTargetDir: string,
   installPlatform: InstallPlatform,
-  journal: MutationJournal,
 ): Promise<RollbackEntry[]> {
   const entries: RollbackEntry[] = [];
 
-  entries.push(journal.record(await snapshotForRollback(target, 'directory')));
+  entries.push(await snapshotForRollback(target, 'directory'));
 
   if (configTargetDir !== target) {
-    entries.push(journal.record(await snapshotForRollback(configTargetDir, 'directory')));
+    entries.push(await snapshotForRollback(configTargetDir, 'directory'));
   }
 
   if (installPlatform !== 'claude-code' && installPlatform !== 'codex') {
-    entries.push(journal.record(await snapshotForRollback(join(target, 'vendor'), 'directory')));
-    entries.push(journal.record(await snapshotForRollback(join(target, 'agents'), 'directory')));
-    entries.push(journal.record(await snapshotForRollback(join(target, 'commands'), 'directory')));
-    entries.push(journal.record(await snapshotForRollback(join(target, 'plugins'), 'directory')));
-    entries.push(journal.record(await snapshotForRollback(join(target, 'tools'), 'directory')));
+    entries.push(await snapshotForRollback(join(target, 'vendor'), 'directory'));
+    entries.push(await snapshotForRollback(join(target, 'agents'), 'directory'));
+    entries.push(await snapshotForRollback(join(target, 'commands'), 'directory'));
+    entries.push(await snapshotForRollback(join(target, 'plugins'), 'directory'));
+    entries.push(await snapshotForRollback(join(target, 'tools'), 'directory'));
   } else {
-    entries.push(journal.record(await snapshotForRollback(join(target, 'vendor'), 'directory')));
+    entries.push(await snapshotForRollback(join(target, 'vendor'), 'directory'));
   }
 
-  entries.push(
-    journal.record(await snapshotForRollback(join(configTargetDir, 'node_modules'), 'directory')),
-  );
+  entries.push(await snapshotForRollback(join(configTargetDir, 'node_modules'), 'directory'));
   return entries;
 }
 
 export interface SnapshotResult {
-  rollbackEntries: RollbackEntry[];
+  preStateEntries: RollbackEntry[];
   vendorTarballPath: string;
   mandatesPath: string;
   configTargetDir: string;
@@ -197,6 +194,12 @@ export interface SnapshotResult {
   cfgPath: string;
   reviewerPath: string;
   mutationJournal: MutationJournal;
+}
+
+function findPreState(entries: RollbackEntry[], path: string): RollbackEntry {
+  const entry = entries.find((e) => e.path === path);
+  if (!entry) throw new Error(`Pre-state entry not found: ${path}`);
+  return entry;
 }
 
 export function resolveConfigTargetDir(ctx: InstallContext): string {
@@ -225,60 +228,46 @@ export async function buildRollbackSnapshot(
   const reviewerDefinition = reviewerDefinitionForPlatform(installPlatform);
   const reviewerPath = join(target, reviewerDefinition.relativePath);
 
-  // MutationJournal records all entries that will be restored on rollback.
-  // Each entry gets a monotonically increasing sequence for correct reverse order.
+  // MutationJournal starts empty — populated by writeArtifacts/writeConfigFiles
+  // after each successful mutation. Provides deterministic rollback ordering.
   const mutationJournal = new MutationJournal();
 
-  // Directories first (file entries after — reverse processes files before dirs)
-  const dirEntries = await buildDirectorySnapshots(
-    target,
-    configTargetDir,
-    installPlatform,
-    mutationJournal,
-  );
+  // Pre-state snapshots (not journal entries — journal is populated after mutations)
+  const dirEntries = await buildDirectorySnapshots(target, configTargetDir, installPlatform);
 
-  const rollbackEntries: RollbackEntry[] = [
+  const preStateEntries: RollbackEntry[] = [
     ...dirEntries,
-    // Files
-    mutationJournal.record(await snapshotForRollback(pkgPath, 'file')),
-    ...(opencodeJsonPath
-      ? [mutationJournal.record(await snapshotForRollback(opencodeJsonPath, 'file'))]
-      : []),
-    mutationJournal.record(await snapshotForRollback(cfgPath, 'file')),
-    mutationJournal.record(await snapshotForRollback(mandatesPath, 'file')),
-    mutationJournal.record(await snapshotForRollback(vendorTarballPath, 'file')),
+    await snapshotForRollback(pkgPath, 'file'),
+    ...(opencodeJsonPath ? [await snapshotForRollback(opencodeJsonPath, 'file')] : []),
+    await snapshotForRollback(cfgPath, 'file'),
+    await snapshotForRollback(mandatesPath, 'file'),
+    await snapshotForRollback(vendorTarballPath, 'file'),
     ...(installPlatform === 'claude-code'
       ? await Promise.all(
-          claudeCodePluginSnapshotPaths(target).map(async (p) =>
-            mutationJournal.record(await snapshotForRollback(p, 'file')),
+          claudeCodePluginSnapshotPaths(target).map(
+            async (p) => await snapshotForRollback(p, 'file'),
           ),
         )
       : installPlatform === 'codex'
         ? await Promise.all(
-            codexPluginSnapshotPaths(args.installScope).map(async (p) =>
-              mutationJournal.record(await snapshotForRollback(p, 'file')),
+            codexPluginSnapshotPaths(args.installScope).map(
+              async (p) => await snapshotForRollback(p, 'file'),
             ),
           )
         : [
-            mutationJournal.record(
-              await snapshotForRollback(join(target, 'tools', 'flowguard.ts'), 'file'),
-            ),
-            mutationJournal.record(
-              await snapshotForRollback(join(target, 'plugins', 'flowguard-audit.ts'), 'file'),
-            ),
-            mutationJournal.record(await snapshotForRollback(reviewerPath, 'file')),
+            await snapshotForRollback(join(target, 'tools', 'flowguard.ts'), 'file'),
+            await snapshotForRollback(join(target, 'plugins', 'flowguard-audit.ts'), 'file'),
+            await snapshotForRollback(reviewerPath, 'file'),
             ...(await Promise.all(
-              Object.keys(COMMANDS).map(async (name) =>
-                mutationJournal.record(
-                  await snapshotForRollback(join(target, 'commands', name), 'file'),
-                ),
+              Object.keys(COMMANDS).map(
+                async (name) => await snapshotForRollback(join(target, 'commands', name), 'file'),
               ),
             )),
           ]),
   ];
 
   return {
-    rollbackEntries,
+    preStateEntries,
     vendorTarballPath,
     mandatesPath,
     configTargetDir,
@@ -298,39 +287,47 @@ export async function writeArtifacts(
   snapshot: SnapshotResult,
 ): Promise<void> {
   const { target, installPlatform, args } = ctx;
+  const journal = snapshot.mutationJournal;
 
   // Directory scaffolding for OpenCode platform
   if (installPlatform !== 'claude-code' && installPlatform !== 'codex') {
-    await ensureDir(join(target, 'tools'));
-    await ensureDir(join(target, 'plugins'));
-    await ensureDir(join(target, 'commands'));
-    await ensureDir(join(target, 'agents'));
+    await ensureDirTracked(join(target, 'tools'), journal);
+    await ensureDirTracked(join(target, 'plugins'), journal);
+    await ensureDirTracked(join(target, 'commands'), journal);
+    await ensureDirTracked(join(target, 'agents'), journal);
   }
 
   // Vendor tarball
-  await ensureDir(dirname(snapshot.vendorTarballPath));
+  await ensureDirTracked(dirname(snapshot.vendorTarballPath), journal);
   await copyFile(tarball.path, snapshot.vendorTarballPath);
+  journal.record(findPreState(snapshot.preStateEntries, snapshot.vendorTarballPath));
   ctx.ops.push({ path: snapshot.vendorTarballPath, action: 'written' });
 
   // Mandates file
   const digest = computeMandatesDigest();
   const mandatesContent = buildMandatesContent(PACKAGE_VERSION(), digest);
-  await ensureDir(dirname(snapshot.mandatesPath));
+  await ensureDirTracked(dirname(snapshot.mandatesPath), journal);
   await writeFile(snapshot.mandatesPath, mandatesContent, 'utf-8');
+  journal.record(findPreState(snapshot.preStateEntries, snapshot.mandatesPath));
   ctx.ops.push({ path: snapshot.mandatesPath, action: 'written' });
 
   // Platform-specific artifacts
   if (installPlatform === 'claude-code') {
+    const claudePaths = claudeCodePluginSnapshotPaths(target);
     ctx.ops.push(...(await installClaudeCodePlugin(target, PACKAGE_VERSION(), args.force)));
     ctx.ops.push(await writeClaudeCodePluginInstallHint(target));
+    for (const p of claudePaths) journal.record(findPreState(snapshot.preStateEntries, p));
   } else if (installPlatform === 'codex') {
+    const codexPaths = codexPluginSnapshotPaths(args.installScope);
     ctx.ops.push(...(await installCodexPlugin(args.installScope, PACKAGE_VERSION(), args.force)));
+    for (const p of codexPaths) journal.record(findPreState(snapshot.preStateEntries, p));
   } else {
     const reviewerDefinition = reviewerDefinitionForPlatform(installPlatform);
     const reviewerPath = join(target, reviewerDefinition.relativePath);
     ctx.ops.push(
       await writeIfAbsent(join(target, 'tools', 'flowguard.ts'), TOOL_WRAPPER, args.force),
     );
+    journal.record(findPreState(snapshot.preStateEntries, join(target, 'tools', 'flowguard.ts')));
     ctx.ops.push(
       await writeIfAbsent(
         join(target, 'plugins', 'flowguard-audit.ts'),
@@ -338,10 +335,15 @@ export async function writeArtifacts(
         args.force,
       ),
     );
+    journal.record(
+      findPreState(snapshot.preStateEntries, join(target, 'plugins', 'flowguard-audit.ts')),
+    );
     for (const [name, content] of Object.entries(COMMANDS)) {
       ctx.ops.push(await writeIfAbsent(join(target, 'commands', name), content, args.force));
+      journal.record(findPreState(snapshot.preStateEntries, join(target, 'commands', name)));
     }
     ctx.ops.push(await writeIfAbsent(reviewerPath, reviewerDefinition.content, args.force));
+    journal.record(findPreState(snapshot.preStateEntries, reviewerPath));
   }
 }
 
