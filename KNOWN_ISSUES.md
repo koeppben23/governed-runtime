@@ -77,7 +77,7 @@ disproven, update the status and link the evidence."
 | B       | P1       | Partially Fixed | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2            | Hash-chain, canonical digest, TSA, and NTP hardening. AC1 fixed; AC2–AC5, TSA1–TSA2 remain open. AC3 also tracked in Package D (audit summarization redaction spans both domains). |
 | C       | P1       | Partially Fixed | AR1, AR2, AUD2                                 | Archive integrity and audit write-lock recovery. AR1 fixed; AR2, AUD2 remain open.                                                                                                 |
 | D       | P1       | Fixed | R1, R2, R3, R4, R5, AC3                        | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                           |
-| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H4 fixed; C2–C5 tracked (#667); H2, C3, M3, and I4 partially fixed; H1, C1, M1–M2 remain open.                               |
+| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H4 and C2–C5 fixed (#667); H2, M3, and I4 partially fixed; H1, C1, M1–M2 remain open.                                   |
 | F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13            | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421; G15, AC6–AC7, and G12–G13 remain open.                                    |
 
 ## Outstanding High-Priority Findings
@@ -95,10 +95,10 @@ disproven, update the status and link the evidence."
 | M2   | HIGH     | Open            | MCP session/project directory environment inputs need validation.                                                 |
 | M3   | HIGH     | Partially Fixed | Missing-root diagnostics omit paths; ordinary MCP failures can still return raw error messages.                   |
 | C1   | HIGH     | Open            | Non-OpenCode config install skip/error handling needs explicit surfacing.                                         |
-| C2   | HIGH     | Tracked         | Installer auto-run guard needs stricter entrypoint detection. #667                                                |
-| C3   | HIGH     | Tracked         | Dependency-install failure invokes rollback, but installation and rollback are not transactionally isolated. #667 |
-| C4   | HIGH     | Tracked         | Codex marketplace registration needs atomic/locked update semantics. #667                                         |
-| C5   | HIGH     | Tracked         | Rollback removal needs symlink/TOCTOU hardening. #667                                                             |
+| C2   | HIGH     | Fixed           | Exclusive install lock, preflight, and existing-install protection implemented by #667.                           |
+| C3   | HIGH     | Fixed           | Install mutations use top-level rollback plus crash-recoverable dependency transactions in #667.                  |
+| C4   | HIGH     | Fixed           | Codex marketplace install and uninstall use locked atomic read-modify-write in #667.                              |
+| C5   | HIGH     | Fixed           | Snapshot and rollback paths reject symlinks and use TOCTOU-hardened operations in #667.                            |
 | I4   | HIGH     | Partially Fixed | Strict state-read failures block enforcement; missing session-directory mapping still needs fail-closed handling. |
 | R1   | HIGH     | Fixed           | Export redaction should not default-allow unknown fields.                                                         |
 | R2   | HIGH     | Fixed           | Archive export must respect redaction mode for audit/state/raw artifacts.                                         |

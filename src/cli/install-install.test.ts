@@ -35,7 +35,10 @@ import {
   setupCliTestEnvironment,
 } from './install-test-helpers.test.js';
 
-const fsMockState = vi.hoisted(() => ({ failMarketplaceLockCleanup: false }));
+const fsMockState = vi.hoisted(() => ({
+  failMarketplaceLockCleanup: false,
+  failMarketplaceRename: false,
+}));
 
 // ─── Mock: child_process ──────────────────────────────────────────────────────
 vi.mock('node:child_process', async (importOriginal) => {
@@ -99,6 +102,12 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     ...actual,
     readFile: vi.fn((...args: Parameters<typeof actual.readFile>) => actual.readFile(...args)),
     writeFile: vi.fn((...args: Parameters<typeof actual.writeFile>) => actual.writeFile(...args)),
+    rename: vi.fn((...args: Parameters<typeof actual.rename>) => {
+      if (fsMockState.failMarketplaceRename && args[1].toString().endsWith('marketplace.json')) {
+        throw new Error('Simulated marketplace rename failure');
+      }
+      return actual.rename(...args);
+    }),
     unlink: vi.fn((...args: Parameters<typeof actual.unlink>) => actual.unlink(...args)),
   };
 });
@@ -252,6 +261,38 @@ describe('cli/install', () => {
       );
       expect(marketplace.name).toBe('local-dev');
       expect(marketplace.plugins).toEqual([CODEX_MARKETPLACE_ENTRY_REPO]);
+    });
+
+    it('backs up a valid existing marketplace byte-for-byte before updating it', async () => {
+      const marketplacePath = path.join(tmpDir, '.agents', 'plugins', 'marketplace.json');
+      const originalMarketplace = '{\n  "name": "local-dev",\n  "plugins": []\n}\n';
+      await fs.mkdir(path.dirname(marketplacePath), { recursive: true });
+      await fs.writeFile(marketplacePath, originalMarketplace, 'utf-8');
+
+      const tarball = await createMockTarball();
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }),
+      );
+
+      expect(result.errors).toEqual([]);
+      const backupPath = await findBackupFor(marketplacePath);
+      expect(backupPath).not.toBeNull();
+      expect(await fs.readFile(backupPath!, 'utf-8')).toBe(originalMarketplace);
+      const backups = (await fs.readdir(path.dirname(marketplacePath))).filter((entry) =>
+        entry.startsWith(`${path.basename(marketplacePath)}.flowguard-backup-`),
+      );
+      expect(backups).toHaveLength(1);
+    });
+
+    it('does not create a marketplace backup when registering a new marketplace', async () => {
+      const tarball = await createMockTarball();
+      const result = await install(
+        repoArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }),
+      );
+
+      expect(result.errors).toEqual([]);
+      const marketplacePath = path.join(tmpDir, '.agents', 'plugins', 'marketplace.json');
+      expect(await findBackupFor(marketplacePath)).toBeNull();
     });
 
     it('installs global Codex plugin at ~/.codex/plugins/flowguard and registers ./.codex/plugins/flowguard', async () => {
@@ -818,9 +859,34 @@ describe('cli/install', () => {
 
         expect(result.errors).toContain('Simulated marketplace lock cleanup failure');
         expect(await fs.readFile(marketplacePath, 'utf-8')).toBe(originalMarketplace);
-        expect(await findBackupFor(marketplacePath)).toBeNull();
+        const backupPath = await findBackupFor(marketplacePath);
+        expect(backupPath).not.toBeNull();
+        expect(await fs.readFile(backupPath!, 'utf-8')).toBe(originalMarketplace);
       } finally {
         fsMockState.failMarketplaceLockCleanup = false;
+      }
+    });
+
+    it('retains the marketplace backup when the atomic rename fails', async () => {
+      const marketplacePath = path.join(tmpDir, '.agents', 'plugins', 'marketplace.json');
+      const originalMarketplace = '{\n  "name": "local-dev",\n  "plugins": []\n}\n';
+      await fs.mkdir(path.dirname(marketplacePath), { recursive: true });
+      await fs.writeFile(marketplacePath, originalMarketplace, 'utf-8');
+      fsMockState.failMarketplaceRename = true;
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(
+          repoArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }),
+        );
+
+        expect(result.errors).toContain('Simulated marketplace rename failure');
+        expect(await fs.readFile(marketplacePath, 'utf-8')).toBe(originalMarketplace);
+        const backupPath = await findBackupFor(marketplacePath);
+        expect(backupPath).not.toBeNull();
+        expect(await fs.readFile(backupPath!, 'utf-8')).toBe(originalMarketplace);
+      } finally {
+        fsMockState.failMarketplaceRename = false;
       }
     });
 

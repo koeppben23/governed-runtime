@@ -202,6 +202,7 @@ async function doRegister(
   if (!marketplace.name) marketplace.name = CODEX_PLUGIN_NAME;
   marketplace.plugins = [...filtered, entry];
 
+  await backupMarketplace(marketplacePath, originalContent);
   await atomicWriteJson(marketplacePath, marketplace);
   await mutations.recordFile(marketplacePath);
   return {
@@ -209,6 +210,19 @@ async function doRegister(
     action,
     reason: 'FlowGuard Codex marketplace entry registered',
   };
+}
+
+async function backupMarketplace(
+  marketplacePath: string,
+  originalContent: string | null,
+): Promise<void> {
+  if (originalContent === null || originalContent.length === 0) return;
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  await writeFile(
+    `${marketplacePath}.flowguard-backup-${timestamp}-${randomUUID()}`,
+    originalContent,
+    { flag: 'wx' },
+  );
 }
 
 async function atomicWriteJson(filePath: string, data: unknown): Promise<void> {
