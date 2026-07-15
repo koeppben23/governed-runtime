@@ -377,12 +377,14 @@ cat .codex/mcp.json
 
 ## Environment Variables (All Platforms)
 
-| Variable                | Default     | Description                                                                                           |
-| ----------------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
-| `FLOWGUARD_HOOK_PORT`   | `18462`     | HTTP hook server port (Claude Code)                                                                   |
-| `FLOWGUARD_HOOK_HOST`   | `127.0.0.1` | HTTP hook server bind address                                                                         |
-| `FLOWGUARD_SESSION_DIR` | (none)      | Explicit session directory override; consumed by both hook scripts and the MCP session resolver       |
-| `FLOWGUARD_PROJECT_DIR` | (none)      | Host-advertised project dir for MCP (Claude Code MCP template sets this from `${CLAUDE_PROJECT_DIR}`) |
+| Variable                      | Default     | Description                                                                                           |
+| ----------------------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
+| `FLOWGUARD_HOOK_PORT`         | `18462`     | HTTP hook server port (Claude Code)                                                                   |
+| `FLOWGUARD_HOOK_HOST`         | `127.0.0.1` | HTTP hook server bind address                                                                         |
+| `FLOWGUARD_HOOK_TOKEN`        | Required    | Bearer token for all HTTP governance routes; never commit or log it                                   |
+| `FLOWGUARD_HOOK_ALLOW_REMOTE` | Unset       | Set exactly to `1` to permit a non-loopback HTTP bind; does not enable TLS                            |
+| `FLOWGUARD_SESSION_DIR`       | (none)      | Explicit session directory override; consumed by both hook scripts and the MCP session resolver       |
+| `FLOWGUARD_PROJECT_DIR`       | (none)      | Host-advertised project dir for MCP (Claude Code MCP template sets this from `${CLAUDE_PROJECT_DIR}`) |
 
 > **MCP session resolution is fail-closed.** The MCP server resolves the
 > project directory from `FLOWGUARD_SESSION_DIR`, then `FLOWGUARD_PROJECT_DIR`,

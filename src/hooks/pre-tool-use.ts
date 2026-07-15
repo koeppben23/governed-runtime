@@ -33,6 +33,10 @@ import {
   isHostToolAllowedInPhase,
   isSubagentAuthorized,
 } from './shared/phase-gate.js';
+import {
+  formatUnresolvedBlockingObligationReason,
+  unresolvedBlockingObligations,
+} from './shared/obligation-tracker.js';
 
 // ─── Main ────────────────────────────────────────────────────────────────────
 
@@ -125,6 +129,14 @@ async function main(): Promise<void> {
     }
 
     const { state } = resolution;
+    const unresolved = unresolvedBlockingObligations(state);
+    if (unresolved.length > 0) {
+      const reason = formatUnresolvedBlockingObligationReason(unresolved);
+      writeLog(`DENY (review obligation): ${reason}`);
+      await deny('REVIEW_OBLIGATION_UNRESOLVED', reason);
+      return;
+    }
+
     const gateResult = isHostToolAllowedInPhase(toolNameLower, state.phase);
 
     if (!gateResult.allowed) {

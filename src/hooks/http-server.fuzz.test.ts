@@ -53,6 +53,12 @@ vi.mock('../../adapters/persistence-audit.js', () => ({
 
 vi.mock('./shared/obligation-tracker.js', () => ({
   unresolvedBlockingObligations: (...args: unknown[]) => mockUnresolvedBlockingObligations(...args),
+  formatUnresolvedBlockingObligationReason: (obligations: Array<{ obligationId: string }>) =>
+    `${obligations.length} unresolved review obligation(s) block mutating host tool use: ` +
+    obligations
+      .map((obligation) => obligation.obligationId)
+      .sort()
+      .join(', '),
 }));
 
 vi.mock('../../adapters/workspace/index.js', () => ({
@@ -64,9 +70,11 @@ vi.mock('../../adapters/workspace/index.js', () => ({
 // ─── Imports after mocks ─────────────────────────────────────────────────────
 
 let handleHttpRequest: (typeof import('./http-server.js'))['handleHttpRequest'];
+const TEST_HOOK_TOKEN = 'test-hook-token-with-at-least-thirty-two-characters';
 
 beforeEach(async () => {
   vi.resetModules();
+  process.env['FLOWGUARD_HOOK_TOKEN'] = TEST_HOOK_TOKEN;
   mockResolveSession.mockReset();
   mockAppendAuditEvent.mockReset();
   mockUnresolvedBlockingObligations.mockReset();
@@ -92,10 +100,20 @@ function makeRequest(body: string | Buffer, opts?: { contentLength?: string; url
       this.push(buf);
       this.push(null);
     },
-  }) as Readable & { method?: string; url?: string; headers: Record<string, string> };
+  }) as Readable & {
+    method?: string;
+    url?: string;
+    headers: Record<string, string>;
+    rawHeaders: string[];
+  };
   req.method = 'POST';
   req.url = opts?.url ?? '/hooks/pre-tool-use';
-  req.headers = opts?.contentLength ? { 'content-length': opts.contentLength } : {};
+  req.headers = {
+    authorization: `Bearer ${TEST_HOOK_TOKEN}`,
+    'content-type': 'application/json',
+    ...(opts?.contentLength ? { 'content-length': opts.contentLength } : {}),
+  };
+  req.rawHeaders = [];
   return req;
 }
 

@@ -20,6 +20,8 @@
  * Configuration:
  * - FLOWGUARD_HOOK_PORT (env): port number (default: 18462)
  * - FLOWGUARD_HOOK_HOST (env): bind address (default: 127.0.0.1)
+ * - FLOWGUARD_HOOK_TOKEN (env): required bearer token for governance routes
+ * - FLOWGUARD_HOOK_ALLOW_REMOTE (env): set to 1 to allow a non-loopback bind
  *
  * @see https://docs.anthropic.com/en/docs/claude-code/hooks (HTTP hook mode)
  * @see https://github.com/koeppben23/governed-runtime/issues/244
@@ -27,7 +29,7 @@
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { resolveSession } from './shared/session-resolver.js';
 import { detectPlatform } from './shared/platform-detect.js';
 import { formatDenyOutput } from './shared/stdout-writer.js';
@@ -39,6 +41,7 @@ import {
 } from './shared/phase-gate.js';
 import {
   assessObligationEscalation,
+  formatUnresolvedBlockingObligationReason,
   unresolvedBlockingObligations,
 } from './shared/obligation-tracker.js';
 import { appendAuditEvent } from '../adapters/persistence-audit.js';
@@ -51,9 +54,67 @@ import type { HookEventName, HttpHookResponse } from './shared/types.js';
 const DEFAULT_PORT = 18462;
 const DEFAULT_HOST = '127.0.0.1';
 export const MAX_HOOK_BODY_BYTES = 1_048_576;
+const MINIMUM_HOOK_TOKEN_LENGTH = 32;
 
-const PORT = parseInt(process.env['FLOWGUARD_HOOK_PORT'] ?? '', 10) || DEFAULT_PORT;
-const HOST = process.env['FLOWGUARD_HOOK_HOST'] ?? DEFAULT_HOST;
+export type HttpHookServerConfig =
+  | {
+      readonly binding: 'loopback';
+      readonly host: '127.0.0.1' | '::1';
+      readonly port: number;
+      readonly token: string;
+    }
+  | {
+      readonly binding: 'remote';
+      readonly host: string;
+      readonly port: number;
+      readonly token: string;
+      readonly allowRemote: true;
+    };
+
+function parsePort(rawPort: string | undefined): number {
+  if (rawPort === undefined) return DEFAULT_PORT;
+  if (!/^[0-9]+$/.test(rawPort)) {
+    throw new TypeError('FLOWGUARD_HOOK_PORT must be an integer from 1 through 65535');
+  }
+  const port = Number(rawPort);
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65535) {
+    throw new TypeError('FLOWGUARD_HOOK_PORT must be an integer from 1 through 65535');
+  }
+  return port;
+}
+
+/** Validates all externally supplied HTTP listener configuration before binding. */
+export function readHttpHookServerConfig(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): HttpHookServerConfig {
+  const host = env['FLOWGUARD_HOOK_HOST'] ?? DEFAULT_HOST;
+  if (host.length === 0) throw new TypeError('FLOWGUARD_HOOK_HOST must not be empty');
+
+  const token = env['FLOWGUARD_HOOK_TOKEN'];
+  if (token === undefined || token.trim().length < MINIMUM_HOOK_TOKEN_LENGTH || /\s/.test(token)) {
+    throw new TypeError(
+      'FLOWGUARD_HOOK_TOKEN must contain at least 32 non-whitespace characters and is required',
+    );
+  }
+
+  const allowRemoteRaw = env['FLOWGUARD_HOOK_ALLOW_REMOTE'];
+  if (allowRemoteRaw !== undefined && allowRemoteRaw !== '' && allowRemoteRaw !== '1') {
+    throw new TypeError('FLOWGUARD_HOOK_ALLOW_REMOTE must be exactly 1 when set');
+  }
+
+  const port = parsePort(env['FLOWGUARD_HOOK_PORT']);
+  if (host === '127.0.0.1' || host === '::1') {
+    return { binding: 'loopback', host, port, token };
+  }
+  if (allowRemoteRaw !== '1') {
+    throw new TypeError(
+      'FLOWGUARD_HOOK_HOST is non-loopback; set FLOWGUARD_HOOK_ALLOW_REMOTE=1 with an explicit token to allow it',
+    );
+  }
+  return { binding: 'remote', host, port, token, allowRemote: true };
+}
+
+let serverConfig: HttpHookServerConfig | undefined;
 
 // ─── Request Handling ────────────────────────────────────────────────────────
 
@@ -93,6 +154,39 @@ function jsonResponse(res: ServerResponse, status: number, body: unknown): void 
   res.end(json);
 }
 
+function headerValues(req: IncomingMessage, name: string): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < req.rawHeaders.length; index += 2) {
+    if (req.rawHeaders[index]?.toLowerCase() === name) values.push(req.rawHeaders[index + 1] ?? '');
+  }
+  if (values.length > 0) return values;
+
+  const value = req.headers[name];
+  if (typeof value === 'string') return [value];
+  return Array.isArray(value) ? value : [];
+}
+
+function secureTokenEquals(actual: string, expected: string): boolean {
+  const actualBuffer = Buffer.from(actual, 'utf8');
+  const expectedBuffer = Buffer.from(expected, 'utf8');
+  return (
+    actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer)
+  );
+}
+
+function isAuthorizedHookRequest(req: IncomingMessage, token: string): boolean {
+  const authorization = headerValues(req, 'authorization');
+  if (authorization.length !== 1) return false;
+  const match = /^Bearer ([^\s]+)$/i.exec(authorization[0]!);
+  return match !== null && secureTokenEquals(match[1]!, token);
+}
+
+function hasJsonContentType(req: IncomingMessage): boolean {
+  const contentTypes = headerValues(req, 'content-type');
+  if (contentTypes.length !== 1) return false;
+  return contentTypes[0]!.split(';', 1)[0]!.trim().toLowerCase() === 'application/json';
+}
+
 function log(message: string): void {
   process.stderr.write(`[FlowGuard HTTP Hook] ${message}\n`);
 }
@@ -128,9 +222,7 @@ export async function handlePreToolUse(
     return {
       decision: 'deny',
       code: 'REVIEW_OBLIGATION_UNRESOLVED',
-      reason:
-        `${unresolved.length} unresolved review obligation(s) block mutating host tool use: ` +
-        unresolved.map((ob) => ob.obligationId).join(', '),
+      reason: formatUnresolvedBlockingObligationReason(unresolved),
     };
   }
 
@@ -332,7 +424,7 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
 
   // Health check.
   if (method === 'GET' && url === '/health') {
-    jsonResponse(res, 200, { status: 'ok', port: PORT, pid: process.pid });
+    jsonResponse(res, 200, { status: 'ok' });
     return;
   }
 
@@ -345,6 +437,17 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
   const handler = ROUTES[url];
   if (!handler) {
     jsonResponse(res, 404, { error: `Unknown route: ${url}` });
+    return;
+  }
+
+  // Authentication precedes all body, state, and persistence work.
+  if (serverConfig === undefined || !isAuthorizedHookRequest(req, serverConfig.token)) {
+    jsonResponse(res, 401, { error: 'Unauthorized' });
+    return;
+  }
+
+  if (!hasJsonContentType(req)) {
+    jsonResponse(res, 415, { error: 'Content-Type must be application/json' });
     return;
   }
 
@@ -404,11 +507,23 @@ export async function handleHttpRequest(req: IncomingMessage, res: ServerRespons
 
 const server = createServer(handleHttpRequest);
 
-server.listen(PORT, HOST, () => {
-  log(`listening on ${HOST}:${PORT}`);
-  log(`PID: ${process.pid}`);
-  log(`routes: ${Object.keys(ROUTES).join(', ')}`);
-});
+function startServer(): void {
+  try {
+    serverConfig = readHttpHookServerConfig();
+  } catch (err) {
+    log(`ERROR: invalid configuration: ${err instanceof Error ? err.message : String(err)}`);
+    process.exitCode = 1;
+    return;
+  }
+
+  server.listen(serverConfig.port, serverConfig.host, () => {
+    log(`listening on ${serverConfig!.host}:${serverConfig!.port}`);
+    log(`PID: ${process.pid}`);
+    log(`routes: ${Object.keys(ROUTES).join(', ')}`);
+  });
+}
+
+startServer();
 
 // Graceful shutdown.
 function shutdown(): void {
