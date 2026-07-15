@@ -12,7 +12,7 @@ import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import type { CliArgs, CliResult, FileOp } from './install-helpers.js';
-import type { SnapshotResult } from './install-steps.js';
+import type { InstallContext, SnapshotResult } from './install-steps.js';
 import {
   initInstallContext,
   validateTarball,
@@ -135,6 +135,26 @@ function nearestExistingDirectory(path: string): string {
   return current;
 }
 
+function formatInstallError(error: unknown): string {
+  if (error instanceof AggregateError) {
+    const causes = error.errors.map(
+      (cause, index) => `  ${index + 1}. ${cause instanceof Error ? cause.message : String(cause)}`,
+    );
+    return [error.message, ...causes].join('\n');
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function runInstallPreflight(ctx: InstallContext, configTargetDir: string): Promise<void> {
+  const parents = new Set<string>();
+  const targetParent = dirname(ctx.target);
+  if (existsSync(targetParent)) parents.add(targetParent);
+  if (existsSync(ctx.target)) parents.add(ctx.target);
+  if (existsSync(configTargetDir)) parents.add(configTargetDir);
+  else parents.add(nearestExistingDirectory(configTargetDir));
+  for (const path of parents) await probeWritable(path);
+}
+
 // ─── Rollback helpers ────────────────────────────────────────────────────────
 
 async function rollbackDeps(tx: DependencyTransaction | null, errors: string[]): Promise<void> {
@@ -187,31 +207,22 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
 
   const ctx = initInstallContext(args);
 
-  // Crash recovery — use same configTargetDir as buildRollbackSnapshot
-  const configTargetDir = resolveConfigTargetDir(ctx);
-  await recoverOrAbort(configTargetDir);
-
-  // Existing installation check — use configTargetDir (same path as buildRollbackSnapshot)
-  const cfgPath = join(configTargetDir, 'flowguard.json');
-  if (existsSync(cfgPath) && !args.force) {
-    return {
-      target: ctx.target,
-      ops: [],
-      errors: ['FlowGuard is already installed. Use --force to reinstall.'],
-      warnings: [],
-    };
-  }
-
-  // Writability preflight — check all relevant paths
-  const parents = new Set<string>();
-  const targetParent = dirname(ctx.target);
-  if (existsSync(targetParent)) parents.add(targetParent);
-  if (existsSync(ctx.target)) parents.add(ctx.target);
-  if (existsSync(configTargetDir)) parents.add(configTargetDir);
-  else parents.add(nearestExistingDirectory(configTargetDir));
-  for (const p of parents) await probeWritable(p);
-
   try {
+    const configTargetDir = resolveConfigTargetDir(ctx);
+    await recoverOrAbort(configTargetDir);
+
+    const cfgPath = join(configTargetDir, 'flowguard.json');
+    if (existsSync(cfgPath) && !args.force) {
+      return {
+        target: ctx.target,
+        ops: [],
+        errors: ['FlowGuard is already installed. Use --force to reinstall.'],
+        warnings: [],
+      };
+    }
+
+    await runInstallPreflight(ctx, configTargetDir);
+
     const tarball = await validateTarball(ctx);
     if (!tarball)
       return { target: ctx.target, ops: ctx.ops, errors: ctx.errors, warnings: ctx.warnings };
@@ -227,12 +238,13 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
 
     emitPostInstallWarnings(ctx);
     return { target: ctx.target, ops: ctx.ops, errors: ctx.errors, warnings: ctx.warnings };
-  } catch (err) {
-    ctx.errors.push(err instanceof Error ? err.message : String(err));
+  } catch (error) {
+    const formattedError = formatInstallError(error);
+    ctx.errors.push(formattedError);
     await rollbackDeps(tx, ctx.errors);
     await rollbackSnap(snapshot, ctx.ops, ctx.errors);
     getAdapterLogger().error('cli', 'install command failed', {
-      error: err instanceof Error ? err.message : String(err),
+      error: formattedError,
     });
     return { target: ctx.target, ops: ctx.ops, errors: ctx.errors, warnings: ctx.warnings };
   }

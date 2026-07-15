@@ -579,6 +579,56 @@ describe('cli/install', () => {
 
   // ─── BAD ───────────────────────────────────────────────────
   describe('BAD', () => {
+    it('returns multiple recovery journals as a CLI error and releases the install lock', async () => {
+      const configDir = path.join(tmpDir, '.opencode');
+      await fs.mkdir(configDir, { recursive: true });
+      await Promise.all(
+        ['first', 'second'].map(async (id) => {
+          await fs.writeFile(
+            path.join(configDir, `.flowguard-dependency-transaction.${id}.json`),
+            '{}',
+            'utf-8',
+          );
+        }),
+      );
+
+      const result = await install(repoArgs());
+
+      expect(result.errors.join('\n')).toContain('Multiple incomplete transactions');
+      expect(existsSync(path.join(tmpDir, '.install.lock'))).toBe(false);
+    });
+
+    it('returns preflight permission failures as a CLI error and releases the install lock', async () => {
+      const realImpl = vi.mocked(fs.writeFile).getMockImplementation()!;
+      vi.mocked(fs.writeFile).mockImplementation(
+        async (...args: Parameters<typeof fs.writeFile>) => {
+          if (args[0].toString().includes('.flowguard-write-test.')) {
+            throw Object.assign(new Error('EACCES: preflight permission denied'), {
+              code: 'EACCES',
+            });
+          }
+          return realImpl(...args);
+        },
+      );
+
+      try {
+        const result = await install(repoArgs());
+        expect(result.errors.join('\n')).toContain('EACCES: preflight permission denied');
+        expect(existsSync(path.join(tmpDir, '.install.lock'))).toBe(false);
+      } finally {
+        vi.mocked(fs.writeFile).mockImplementation(realImpl);
+      }
+    });
+
+    it('returns an invalid config target path as a CLI error and releases the install lock', async () => {
+      await fs.writeFile(path.join(tmpDir, '.opencode'), 'not a directory', 'utf-8');
+
+      const result = await install(repoArgs());
+
+      expect(result.errors.length).toBeGreaterThan(0);
+      expect(existsSync(path.join(tmpDir, '.install.lock'))).toBe(false);
+    });
+
     it('install without --core-tarball returns error', async () => {
       const result = await install(repoArgs());
       expect(result.errors.length).toBeGreaterThan(0);
@@ -786,7 +836,9 @@ describe('cli/install', () => {
           repoArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }),
         );
 
-        expect(result.errors).toContain('Marketplace operation and lock cleanup failed.');
+        const combined = result.errors.join('\n');
+        expect(combined).toContain('Marketplace JSON is corrupted');
+        expect(combined).toContain('Simulated marketplace lock cleanup failure');
       } finally {
         fsMockState.failMarketplaceLockCleanup = false;
       }

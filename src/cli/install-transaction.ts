@@ -180,15 +180,6 @@ async function inspectTransactionArtifacts(tx: DependencyTransaction): Promise<s
   return residuals;
 }
 
-async function inspectPaths(tx: DependencyTransaction) {
-  return {
-    livePresent: await pathExistsNoFollow(tx.liveModulesPath),
-    savedPresent: await pathExistsNoFollow(tx.savedPath),
-    stagingPresent: await pathExistsNoFollow(tx.stagingRoot),
-    failedPresent: await pathExistsNoFollow(tx.failedPath),
-  };
-}
-
 // ─── Journal ────────────────────────────────────────────────────────────
 
 async function persistJournal(tx: DependencyTransaction): Promise<void> {
@@ -566,28 +557,30 @@ export async function recoverOrAbort(configTargetDir: string): Promise<void> {
     throw new Error(`Cannot load journal: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  if (
-    journal.phase >= TransactionPhase.RollbackStarted &&
-    journal.phase < TransactionPhase.RolledBack
-  ) {
-    await rollbackDependencyTransaction(journal);
-    return;
-  }
-  if (journal.phase === TransactionPhase.DeletingOriginal) {
-    await continueCommitCleanup(journal);
-    return;
-  }
   if (journal.phase === TransactionPhase.Committed) {
     await cleanupOrphanedArtifacts(journal);
     await safeUnlink(journal.journalPath);
     return;
   }
 
-  const observed = await inspectPaths(journal);
-  const hints = buildRecoveryHints(journal, observed);
-  throw new Error(
-    `Incomplete transaction.\nPhase: ${TransactionPhase[journal.phase]}.\nTransactionId: ${journal.transactionId}.\n${hints}`,
-  );
+  if (
+    journal.phase >= TransactionPhase.DeletingOriginal &&
+    journal.phase < TransactionPhase.Committed
+  ) {
+    await continueCommitCleanup(journal);
+    return;
+  }
+
+  if (
+    journal.phase >= TransactionPhase.StagingActive &&
+    journal.phase < TransactionPhase.DeletingOriginal
+  ) {
+    journal.rollbackFromPhase = journal.phase;
+    await rollbackDependencyTransaction(journal);
+    return;
+  }
+
+  throw new Error(`Unsupported recovery phase: ${TransactionPhase[journal.phase]}`);
 }
 
 async function continueCommitCleanup(journal: DependencyTransaction): Promise<void> {
@@ -607,27 +600,6 @@ async function cleanupOrphanedArtifacts(journal: DependencyTransaction): Promise
   for (const p of [journal.stagingRoot, journal.savedPath, journal.failedPath]) {
     if (p) await removeOwnedStagingTree(p, journal.configTargetDir, journal.transactionId);
   }
-}
-
-function buildRecoveryHints(
-  journal: DependencyTransaction,
-  observed: {
-    livePresent: boolean;
-    savedPresent: boolean;
-    stagingPresent: boolean;
-    failedPresent: boolean;
-  },
-): string {
-  const lines: string[] = [];
-  lines.push(`Live: ${observed.livePresent ? 'present' : 'absent'}`);
-  if (journal.savedPath)
-    lines.push(`Saved: ${observed.savedPresent ? journal.savedPath : 'absent'}`);
-  lines.push(`Staging: ${observed.stagingPresent ? journal.stagingRoot : 'absent'}`);
-  lines.push(`Journal: ${journal.journalPath}`);
-  if (journal.phase === TransactionPhase.SavingOld || journal.phase === TransactionPhase.OldSaved) {
-    lines.push(`Restore: mv ${journal.savedPath} ${journal.liveModulesPath}`);
-  }
-  return lines.join('\n');
 }
 
 // ─── MutationJournal ────────────────────────────────────────────────────
