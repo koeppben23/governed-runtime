@@ -10,7 +10,7 @@ import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { FileOp, InstallScope } from './install-helpers.js';
 import { writeIfAbsent } from './install-helpers.js';
-import type { InstallMutationSink } from './install-steps.js';
+import type { InstallMutationSink } from './install-mutation-types.js';
 import { ensureDir } from '../adapters/persistence.js';
 import { CODEX_PLUGIN_NAME, CODEX_PLUGIN_RELATIVE_FILES, codexPluginFiles } from './templates.js';
 
@@ -53,7 +53,6 @@ function codexMarketplaceSourcePath(scope: InstallScope): string {
 export function codexPluginSnapshotPaths(scope: InstallScope): string[] {
   const pluginRoot = resolveCodexPluginRoot(scope);
   return [
-    pluginRoot,
     resolveCodexMarketplacePath(scope),
     ...CODEX_PLUGIN_RELATIVE_FILES.map((relativePath) => join(pluginRoot, relativePath)),
   ];
@@ -82,10 +81,13 @@ export async function installCodexPlugin(
     }
   }
 
+  const marketplacePath = resolveCodexMarketplacePath(scope);
+  await mutations.ensureDir(dirname(marketplacePath));
+
   const marketplaceOp = await registerCodexMarketplaceEntry(scope);
   ops.push(marketplaceOp);
   if (marketplaceOp.action !== 'skipped') {
-    await mutations.recordFile(resolveCodexMarketplacePath(scope));
+    await mutations.recordFile(marketplacePath);
   }
 
   return ops;
@@ -93,14 +95,11 @@ export async function installCodexPlugin(
 
 export function codexPluginFilePaths(scope: InstallScope): string[] {
   const pluginRoot = resolveCodexPluginRoot(scope);
-  return [
-    pluginRoot,
-    ...CODEX_PLUGIN_RELATIVE_FILES.map((relativePath) => join(pluginRoot, relativePath)),
-  ];
+  return [...CODEX_PLUGIN_RELATIVE_FILES.map((relativePath) => join(pluginRoot, relativePath))];
 }
 
 async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise<T>): Promise<T> {
-  await ensureDir(dirname(marketplacePath));
+  // Precondition: parent of marketplacePath must already exist
   const lockPath = `${marketplacePath}.flowguard.lock`;
   const token = randomUUID();
   try {

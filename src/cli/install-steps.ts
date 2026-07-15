@@ -14,6 +14,7 @@ import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { InstallError } from './install-helpers.js';
 import { ensureDirTracked, MutationJournal } from './install-transaction.js';
+import type { InstallMutationSink } from './install-mutation-types.js';
 import { globalConfigPath, ensureDir } from '../adapters/persistence.js';
 import { readConfig, writeGlobalConfig, writeRepoConfig } from '../adapters/persistence-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
@@ -206,11 +207,6 @@ function findPreState(entries: RollbackEntry[], path: string): RollbackEntry {
   const entry = entries.find((e) => e.path === path);
   if (!entry) throw new Error(`Pre-state entry not found: ${path}`);
   return entry;
-}
-
-export interface InstallMutationSink {
-  ensureDir(path: string): Promise<void>;
-  recordFile(path: string): void | Promise<void>;
 }
 
 export function resolveConfigTargetDir(ctx: InstallContext): string {

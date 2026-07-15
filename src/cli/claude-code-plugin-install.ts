@@ -7,7 +7,7 @@ import { chmod, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { FileOp } from './install-helpers.js';
 import { writeIfAbsent } from './install-helpers.js';
-import type { InstallMutationSink } from './install-steps.js';
+import type { InstallMutationSink } from './install-mutation-types.js';
 import {
   CLAUDE_CODE_PLUGIN_DIR,
   CLAUDE_CODE_PLUGIN_RELATIVE_FILES,
@@ -21,7 +21,6 @@ export function resolveClaudeCodePluginRoot(target: string): string {
 export function claudeCodePluginSnapshotPaths(target: string): string[] {
   const pluginRoot = resolveClaudeCodePluginRoot(target);
   return [
-    pluginRoot,
     join(pluginRoot, 'INSTALL.md'),
     ...CLAUDE_CODE_PLUGIN_RELATIVE_FILES.map((relativePath) => join(pluginRoot, relativePath)),
   ];
