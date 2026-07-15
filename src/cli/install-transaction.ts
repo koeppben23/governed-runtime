@@ -51,6 +51,28 @@ const VALID_PHASES = new Set<number>(
   Object.values(TransactionPhase).filter((v): v is number => typeof v === 'number'),
 );
 
+export type RecoveryAction =
+  | 'rollback'
+  | 'continue-rollback'
+  | 'continue-commit'
+  | 'cleanup-committed'
+  | 'cleanup-rolled-back';
+
+export function recoveryActionForPhase(phase: TransactionPhase): RecoveryAction {
+  if (phase === TransactionPhase.RolledBack) return 'cleanup-rolled-back';
+  if (phase >= TransactionPhase.RollbackStarted && phase < TransactionPhase.RolledBack) {
+    return 'continue-rollback';
+  }
+  if (phase === TransactionPhase.Committed) return 'cleanup-committed';
+  if (phase >= TransactionPhase.DeletingOriginal && phase < TransactionPhase.Committed) {
+    return 'continue-commit';
+  }
+  if (phase >= TransactionPhase.StagingActive && phase < TransactionPhase.DeletingOriginal) {
+    return 'rollback';
+  }
+  throw new Error(`Unsupported recovery phase: ${TransactionPhase[phase]}`);
+}
+
 // ─── Dependency Transaction ─────────────────────────────────────────────
 
 export interface DependencyTransaction {
@@ -557,30 +579,23 @@ export async function recoverOrAbort(configTargetDir: string): Promise<void> {
     throw new Error(`Cannot load journal: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  if (journal.phase === TransactionPhase.Committed) {
-    await cleanupOrphanedArtifacts(journal);
-    await safeUnlink(journal.journalPath);
-    return;
+  switch (recoveryActionForPhase(journal.phase)) {
+    case 'cleanup-rolled-back':
+    case 'cleanup-committed':
+      await cleanupOrphanedArtifacts(journal);
+      await safeUnlink(journal.journalPath);
+      return;
+    case 'continue-rollback':
+      await rollbackDependencyTransaction(journal);
+      return;
+    case 'continue-commit':
+      await continueCommitCleanup(journal);
+      return;
+    case 'rollback':
+      journal.rollbackFromPhase = journal.phase;
+      await rollbackDependencyTransaction(journal);
+      return;
   }
-
-  if (
-    journal.phase >= TransactionPhase.DeletingOriginal &&
-    journal.phase < TransactionPhase.Committed
-  ) {
-    await continueCommitCleanup(journal);
-    return;
-  }
-
-  if (
-    journal.phase >= TransactionPhase.StagingActive &&
-    journal.phase < TransactionPhase.DeletingOriginal
-  ) {
-    journal.rollbackFromPhase = journal.phase;
-    await rollbackDependencyTransaction(journal);
-    return;
-  }
-
-  throw new Error(`Unsupported recovery phase: ${TransactionPhase[journal.phase]}`);
 }
 
 async function continueCommitCleanup(journal: DependencyTransaction): Promise<void> {

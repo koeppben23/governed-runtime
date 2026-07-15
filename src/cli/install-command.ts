@@ -138,7 +138,7 @@ function nearestExistingDirectory(path: string): string {
 function formatInstallError(error: unknown): string {
   if (error instanceof AggregateError) {
     const causes = error.errors.map(
-      (cause, index) => `  ${index + 1}. ${cause instanceof Error ? cause.message : String(cause)}`,
+      (cause, index) => `  ${index + 1}. ${formatInstallError(cause).replace(/\n/g, '\n     ')}`,
     );
     return [error.message, ...causes].join('\n');
   }
