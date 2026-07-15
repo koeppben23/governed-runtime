@@ -31,6 +31,7 @@ import {
   toAdapterLogger,
 } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
+import { sanitizeDiagnosticString } from '../logging/redact.js';
 import { McpExecutionLimiter } from './execution-limiter.js';
 
 // --- Tool Registry ---
@@ -100,10 +101,8 @@ function toHandledToolError(
   // Only boundary-produced errors may select a public diagnostic code. Never
   // reflect arbitrary executor messages or codes into the MCP response.
   const code = extractErrorCode(err) ?? 'TOOL_EXECUTION_ERROR';
-  let message = 'Tool execution failed';
-  if (code === SESSION_UNRESOLVABLE_CODE && err instanceof Error) {
-    message = err.message;
-  }
+  const rawMessage = err instanceof Error ? err.message : stringifyDiagnostic(err);
+  const message = sanitizeDiagnosticString(rawMessage);
 
   // Fail-closed session resolution: emit a minimal boundary diagnostic.
   if (code === SESSION_UNRESOLVABLE_CODE) {
@@ -260,7 +259,7 @@ export function registerAllTools(
                 });
 
                 if (!limiter.tryAcquire())
-                  return toMcpError('MCP_RATE_LIMITED', 'MCP tool execution limit reached');
+                  return toMcpDenial('MCP_RATE_LIMITED', 'MCP tool execution limit reached');
                 const execution = runWithAdapterLoggerAsync(toAdapterLogger(mcpLogger), () =>
                   toolDef.execute(cleanArgs, toolContext),
                 );
@@ -269,7 +268,7 @@ export function registerAllTools(
                   const timer = setTimeout(
                     () =>
                       resolve(
-                        toMcpError('MCP_TOOL_TIMEOUT', 'MCP tool response deadline exceeded'),
+                        toMcpDenial('MCP_TOOL_TIMEOUT', 'MCP tool response deadline exceeded'),
                       ),
                     limiter.limits.timeoutMs,
                   );
@@ -304,4 +303,12 @@ function extractErrorCode(err: unknown): string | undefined {
     return err.code;
   }
   return undefined;
+}
+
+function stringifyDiagnostic(value: unknown): string {
+  try {
+    return String(value);
+  } catch {
+    return '[unprintable]';
+  }
 }

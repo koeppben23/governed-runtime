@@ -12,12 +12,15 @@ export const DEFAULT_MCP_EXECUTION_LIMITS: McpExecutionLimits = {
   maxPerSecond: 50,
 };
 
+const MAX_TIMEOUT_MS = 2_147_483_647;
+
 export function readMcpExecutionLimits(env = process.env): McpExecutionLimits {
   return {
     timeoutMs: readPositiveInteger(
       env['FLOWGUARD_MCP_TOOL_TIMEOUT_MS'],
       'FLOWGUARD_MCP_TOOL_TIMEOUT_MS',
       30_000,
+      MAX_TIMEOUT_MS,
     ),
     maxConcurrent: readPositiveInteger(
       env['FLOWGUARD_MCP_MAX_CONCURRENT'],
@@ -32,12 +35,21 @@ export function readMcpExecutionLimits(env = process.env): McpExecutionLimits {
   };
 }
 
-function readPositiveInteger(value: string | undefined, name: string, fallback: number): number {
+function readPositiveInteger(
+  value: string | undefined,
+  name: string,
+  fallback: number,
+  maximum = Number.MAX_SAFE_INTEGER,
+): number {
   if (value === undefined) return fallback;
   if (!/^[1-9]\d*$/.test(value)) {
     throw new TypeError(`${name} must be a positive integer`);
   }
-  return Number(value);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed > maximum) {
+    throw new TypeError(`${name} must be a positive safe integer within supported bounds`);
+  }
+  return parsed;
 }
 
 export class McpExecutionLimiter {

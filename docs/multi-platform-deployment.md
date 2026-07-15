@@ -401,14 +401,17 @@ cat .codex/mcp.json
 
 ## Environment Variables (All Platforms)
 
-| Variable                      | Default     | Description                                                                                           |
-| ----------------------------- | ----------- | ----------------------------------------------------------------------------------------------------- |
-| `FLOWGUARD_HOOK_PORT`         | `18462`     | HTTP hook server port (Claude Code)                                                                   |
-| `FLOWGUARD_HOOK_HOST`         | `127.0.0.1` | HTTP hook server bind address                                                                         |
-| `FLOWGUARD_HOOK_TOKEN`        | Required    | Bearer token for all HTTP governance routes; never commit or log it                                   |
-| `FLOWGUARD_HOOK_ALLOW_REMOTE` | Unset       | Set exactly to `1` to permit a non-loopback HTTP bind; does not enable TLS                            |
-| `FLOWGUARD_SESSION_DIR`       | (none)      | Explicit session directory override; consumed by both hook scripts and the MCP session resolver       |
-| `FLOWGUARD_PROJECT_DIR`       | (none)      | Host-advertised project dir for MCP (Claude Code MCP template sets this from `${CLAUDE_PROJECT_DIR}`) |
+| Variable                        | Default       | Description                                                                                                  |
+| ------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------ |
+| `FLOWGUARD_HOOK_PORT`           | `18462`       | HTTP hook server port (Claude Code)                                                                          |
+| `FLOWGUARD_HOOK_HOST`           | `127.0.0.1`   | HTTP hook server bind address                                                                                |
+| `FLOWGUARD_HOOK_TOKEN`          | Required      | Bearer token for all HTTP governance routes; never commit or log it                                          |
+| `FLOWGUARD_HOOK_ALLOW_REMOTE`   | Unset         | Set exactly to `1` to permit a non-loopback HTTP bind; does not enable TLS                                   |
+| `FLOWGUARD_SESSION_DIR`         | (none)        | Explicit session directory override; consumed by both hook scripts and the MCP session resolver              |
+| `FLOWGUARD_PROJECT_DIR`         | (none)        | Host-advertised project dir for MCP (Claude Code MCP template sets this from `${CLAUDE_PROJECT_DIR}`)        |
+| `FLOWGUARD_MCP_TOOL_TIMEOUT_MS` | `30000` ms    | Per-call MCP response deadline; a timed-out execution is not cancelled and retains its slot until settlement |
+| `FLOWGUARD_MCP_MAX_CONCURRENT`  | `10`          | Maximum active MCP tool executions shared by all tools in one MCP server process                             |
+| `FLOWGUARD_MCP_MAX_PER_SECOND`  | `50` starts/s | Maximum tool starts in a rolling one-second window, shared by all tools in one MCP server process            |
 
 > **MCP session resolution is fail-closed.** The MCP server resolves the
 > project directory from `FLOWGUARD_SESSION_DIR`, then `FLOWGUARD_PROJECT_DIR`,
@@ -419,6 +422,12 @@ cat .codex/mcp.json
 > advertise neither an env source nor MCP roots (currently the Codex MCP
 > template) must set `FLOWGUARD_SESSION_DIR` or `FLOWGUARD_PROJECT_DIR` for
 > MCP tool calls to resolve.
+
+> **MCP execution limits are fail-closed.** All limit values must be positive,
+> safe integers; invalid or timer-unsupported values prevent server startup.
+> `MCP_TOOL_TIMEOUT` and `MCP_RATE_LIMITED` are structured non-error governance
+> denials. Retry after active executions settle or the rolling one-second start
+> window has advanced.
 
 `FLOWGUARD_LOG_LEVEL` is **not** consumed by the runtime; the log level is
 sourced exclusively from `config.logging.level` (see `docs/configuration.md`).
