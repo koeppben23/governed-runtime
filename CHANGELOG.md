@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HTTP hook trust boundary and command-hook obligation parity (#646).** HTTP
+  governance routes require a configured bearer token and JSON content type;
+  non-loopback listeners require explicit opt-in. Command hooks now deny
+  mutating tools with unresolved review obligations identically to HTTP hooks.
+
 - **Redaction fail-closed for archive export, audit summarization, and
   telemetry payloads (#666).** Fixed four HIGH-severity secret-leak paths
   (AC3, R1, R2, R4) from the 2026-06 integrity analysis.

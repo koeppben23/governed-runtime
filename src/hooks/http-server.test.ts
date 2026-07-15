@@ -55,6 +55,12 @@ vi.mock('./shared/session-resolver.js', () => ({
 // Mock obligation-tracker.
 vi.mock('./shared/obligation-tracker.js', () => ({
   assessObligationEscalation: vi.fn(() => ({ message: null })),
+  formatUnresolvedBlockingObligationReason: (obligations: Array<{ obligationId: string }>) =>
+    `${obligations.length} unresolved review obligation(s) block mutating host tool use: ` +
+    obligations
+      .map((obligation) => obligation.obligationId)
+      .sort()
+      .join(', '),
   unresolvedBlockingObligations: (state: {
     reviewAssurance?: { obligations?: Array<{ status: string; consumedAt: string | null }> };
   }) =>
@@ -67,14 +73,21 @@ vi.mock('./shared/obligation-tracker.js', () => ({
 
 let handleSessionStart: (typeof import('./http-server.js'))['handleSessionStart'];
 let handleHttpRequest: (typeof import('./http-server.js'))['handleHttpRequest'];
+let readHttpHookServerConfig: (typeof import('./http-server.js'))['readHttpHookServerConfig'];
 let signalListenerBaseline: {
   sigterm: NodeJS.SignalsListener[];
   sigint: NodeJS.SignalsListener[];
 };
 
+const TEST_HOOK_TOKEN = 'test-hook-token-with-at-least-thirty-two-characters';
+
 beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
+  process.env['FLOWGUARD_HOOK_TOKEN'] = TEST_HOOK_TOKEN;
+  delete process.env['FLOWGUARD_HOOK_HOST'];
+  delete process.env['FLOWGUARD_HOOK_PORT'];
+  delete process.env['FLOWGUARD_HOOK_ALLOW_REMOTE'];
   signalListenerBaseline = {
     sigterm: process.listeners('SIGTERM') as NodeJS.SignalsListener[],
     sigint: process.listeners('SIGINT') as NodeJS.SignalsListener[],
@@ -100,6 +113,12 @@ beforeEach(async () => {
   }));
   vi.doMock('./shared/obligation-tracker.js', () => ({
     assessObligationEscalation: vi.fn(() => ({ message: null })),
+    formatUnresolvedBlockingObligationReason: (obligations: Array<{ obligationId: string }>) =>
+      `${obligations.length} unresolved review obligation(s) block mutating host tool use: ` +
+      obligations
+        .map((obligation) => obligation.obligationId)
+        .sort()
+        .join(', '),
     unresolvedBlockingObligations: (state: {
       reviewAssurance?: { obligations?: Array<{ status: string; consumedAt: string | null }> };
     }) =>
@@ -112,12 +131,18 @@ beforeEach(async () => {
   handleSessionStart = mod.handleSessionStart;
   handlePreToolUse = mod.handlePreToolUse;
   handleHttpRequest = mod.handleHttpRequest;
+  readHttpHookServerConfig = mod.readHttpHookServerConfig;
 });
 
 afterEach(() => {
   for (const listener of process.listeners('SIGTERM') as NodeJS.SignalsListener[]) {
     if (!signalListenerBaseline.sigterm.includes(listener)) process.off('SIGTERM', listener);
   }
+  delete process.env['FLOWGUARD_HOOK_TOKEN'];
+  delete process.env['FLOWGUARD_HOOK_HOST'];
+  delete process.env['FLOWGUARD_HOOK_PORT'];
+  delete process.env['FLOWGUARD_HOOK_ALLOW_REMOTE'];
+  process.exitCode = undefined;
   for (const listener of process.listeners('SIGINT') as NodeJS.SignalsListener[]) {
     if (!signalListenerBaseline.sigint.includes(listener)) process.off('SIGINT', listener);
   }
@@ -130,16 +155,29 @@ function makeRequest(input: {
   url?: string;
   body: string;
   contentLength?: string;
+  headers?: Record<string, string>;
+  rawHeaders?: string[];
 }) {
   const req = new Readable({
     read() {
       this.push(input.body);
       this.push(null);
     },
-  }) as Readable & { method?: string; url?: string; headers: Record<string, string> };
+  }) as Readable & {
+    method?: string;
+    url?: string;
+    headers: Record<string, string>;
+    rawHeaders: string[];
+  };
   req.method = input.method ?? 'POST';
   req.url = input.url ?? '/hooks/pre-tool-use';
-  req.headers = input.contentLength ? { 'content-length': input.contentLength } : {};
+  req.headers = {
+    authorization: `Bearer ${TEST_HOOK_TOKEN}`,
+    'content-type': 'application/json',
+    ...(input.contentLength ? { 'content-length': input.contentLength } : {}),
+    ...input.headers,
+  };
+  req.rawHeaders = input.rawHeaders ?? [];
   return req;
 }
 
@@ -335,9 +373,82 @@ describe('handleHttpRequest', () => {
     await handleHttpRequest(req as never, res as never);
 
     expect(res.status).toBe(200);
-    expect(JSON.parse(res.body)).toEqual(
-      expect.objectContaining({ status: 'ok', pid: expect.any(Number) }),
-    );
+    expect(JSON.parse(res.body)).toEqual({ status: 'ok' });
+    expect(res.headers).not.toHaveProperty('Access-Control-Allow-Origin');
+    expect(res.headers).not.toHaveProperty('Access-Control-Allow-Credentials');
+    expect(res.headers).not.toHaveProperty('Access-Control-Allow-Headers');
+    expect(res.headers).not.toHaveProperty('Access-Control-Allow-Methods');
+  });
+
+  it.each([
+    { label: 'missing authorization', headers: { authorization: '' } },
+    { label: 'wrong token', headers: { authorization: 'Bearer wrong-token' } },
+    { label: 'wrong scheme', headers: { authorization: `Basic ${TEST_HOOK_TOKEN}` } },
+    { label: 'extra token part', headers: { authorization: `Bearer ${TEST_HOOK_TOKEN} extra` } },
+  ])('BAD: $label returns 401 before state resolution', async ({ headers }) => {
+    const req = makeRequest({ body: '{}', headers });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(401);
+    expect(JSON.parse(res.body)).toEqual({ error: 'Unauthorized' });
+    expect(mockResolveSession).not.toHaveBeenCalled();
+    expect(mockAppendAuditEvent).not.toHaveBeenCalled();
+  });
+
+  it('BAD: duplicate authorization headers return 401 before body processing', async () => {
+    const req = makeRequest({
+      body: '{}',
+      rawHeaders: [
+        'Authorization',
+        `Bearer ${TEST_HOOK_TOKEN}`,
+        'Authorization',
+        `Bearer ${TEST_HOOK_TOKEN}`,
+        'Content-Type',
+        'application/json',
+      ],
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(401);
+    expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { label: 'missing content type', headers: { 'content-type': '' } },
+    { label: 'wrong content type', headers: { 'content-type': 'text/json' } },
+  ])('BAD: $label returns 415 before state resolution', async ({ headers }) => {
+    const req = makeRequest({ body: '{}', headers });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(415);
+    expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+
+  it('HAPPY: application/json with charset is accepted', async () => {
+    const req = makeRequest({
+      body: JSON.stringify({ tool_name: 'Read', tool_input: {}, session_id: 's', cwd: '/tmp' }),
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+    });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(200);
+  });
+
+  it('BAD: OPTIONS on a hook route returns 405', async () => {
+    const req = makeRequest({ method: 'OPTIONS', body: '' });
+    const res = makeResponse();
+
+    await handleHttpRequest(req as never, res as never);
+
+    expect(res.status).toBe(405);
   });
 
   it('BAD: non-POST non-health requests return 405 without resolving a session', async () => {
@@ -689,5 +800,43 @@ describe('handleHttpRequest', () => {
     expect(res.status).toBe(413);
     expect(JSON.parse(res.body)).toEqual({ error: 'Request body too large' });
     expect(mockResolveSession).not.toHaveBeenCalled();
+  });
+});
+
+describe('readHttpHookServerConfig', () => {
+  it('uses the secure loopback defaults with an explicit token', () => {
+    expect(readHttpHookServerConfig({ FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN })).toEqual({
+      binding: 'loopback',
+      host: '127.0.0.1',
+      port: 18462,
+      token: TEST_HOOK_TOKEN,
+    });
+  });
+
+  it('permits IPv6 loopback and remote binds only with explicit opt-in', () => {
+    expect(
+      readHttpHookServerConfig({
+        FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN,
+        FLOWGUARD_HOOK_HOST: '::1',
+      }),
+    ).toMatchObject({ binding: 'loopback', host: '::1' });
+    expect(
+      readHttpHookServerConfig({
+        FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN,
+        FLOWGUARD_HOOK_HOST: '0.0.0.0',
+        FLOWGUARD_HOOK_ALLOW_REMOTE: '1',
+      }),
+    ).toMatchObject({ binding: 'remote', allowRemote: true });
+  });
+
+  it.each([
+    {},
+    { FLOWGUARD_HOOK_TOKEN: 'short' },
+    { FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN, FLOWGUARD_HOOK_HOST: '0.0.0.0' },
+    { FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN, FLOWGUARD_HOOK_HOST: 'localhost' },
+    { FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN, FLOWGUARD_HOOK_PORT: '0' },
+    { FLOWGUARD_HOOK_TOKEN: TEST_HOOK_TOKEN, FLOWGUARD_HOOK_PORT: '18462abc' },
+  ])('rejects unsafe or malformed configuration: %o', (env) => {
+    expect(() => readHttpHookServerConfig(env)).toThrow(TypeError);
   });
 });

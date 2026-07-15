@@ -23,6 +23,7 @@
     "src/config/profile.ts",
 
     "src/hooks/http-server.ts",
+    "src/hooks/pre-tool-use.ts",
 
     "src/identity/token-verifier.ts",
     "src/identity/key-resolver.ts",

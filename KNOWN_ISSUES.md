@@ -76,8 +76,8 @@ disproven, update the status and link the evidence."
 | A       | P1       | Partially Fixed | G1, G2, G24, G25, G26                          | Four-eyes and identity normalization/reporting. G1/G2/G24/G25 fixed; G26 remains open.                                                                                             |
 | B       | P1       | Partially Fixed | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2            | Hash-chain, canonical digest, TSA, and NTP hardening. AC1 fixed; AC2–AC5, TSA1–TSA2 remain open. AC3 also tracked in Package D (audit summarization redaction spans both domains). |
 | C       | P1       | Partially Fixed | AR1, AR2, AUD2                                 | Archive integrity and audit write-lock recovery. AR1 fixed; AR2, AUD2 remain open.                                                                                                 |
-| D       | P1       | Fixed | R1, R2, R3, R4, R5, AC3                        | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                           |
-| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H4 and C2–C5 fixed (#667); H2, M3, and I4 partially fixed; H1, C1, M1–M2 remain open.                                   |
+| D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                        | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                         |
+| E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4 and C2–C5 fixed (#646, #667); M3 and I4 partially fixed; C1 and M1–M2 remain open.                    |
 | F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13            | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421; G15, AC6–AC7, and G12–G13 remain open.                                    |
 
 ## Outstanding High-Priority Findings
@@ -88,8 +88,8 @@ disproven, update the status and link the evidence."
 | AC3  | HIGH     | Fixed           | Audit argument summarization can expose scalar secrets and needs redaction hardening.                             |
 | AC4  | HIGH     | Open            | NTP offset/delay calculation needs RFC-aligned correction.                                                        |
 | AC5  | HIGH     | Open            | NTP response validation needs stricter checks.                                                                    |
-| H1   | HIGH     | Open            | HTTP hook server needs an explicit trust/auth/origin boundary.                                                    |
-| H2   | HIGH     | Partially Fixed | HTTP hook blocks unresolved obligations; command-hook enforcement still needs equivalent obligation handling.     |
+| H1   | HIGH     | Fixed           | HTTP governance routes require bearer authentication; non-loopback binds need explicit opt-in and token auth.     |
+| H2   | HIGH     | Fixed           | HTTP and command hooks both block mutating tools while review obligations remain unresolved.                      |
 | H3   | HIGH     | Open            | Session ID validation needs Windows/reserved-name hardening.                                                      |
 | M1   | HIGH     | Open            | MCP tool execution needs timeout/rate-limit hardening.                                                            |
 | M2   | HIGH     | Open            | MCP session/project directory environment inputs need validation.                                                 |
@@ -98,7 +98,7 @@ disproven, update the status and link the evidence."
 | C2   | HIGH     | Fixed           | Exclusive install lock, preflight, and existing-install protection implemented by #667.                           |
 | C3   | HIGH     | Fixed           | Install mutations use top-level rollback plus crash-recoverable dependency transactions in #667.                  |
 | C4   | HIGH     | Fixed           | Codex marketplace install and uninstall use locked atomic read-modify-write in #667.                              |
-| C5   | HIGH     | Fixed           | Snapshot and rollback paths reject symlinks and use TOCTOU-hardened operations in #667.                            |
+| C5   | HIGH     | Fixed           | Snapshot and rollback paths reject symlinks and use TOCTOU-hardened operations in #667.                           |
 | I4   | HIGH     | Partially Fixed | Strict state-read failures block enforcement; missing session-directory mapping still needs fail-closed handling. |
 | R1   | HIGH     | Fixed           | Export redaction should not default-allow unknown fields.                                                         |
 | R2   | HIGH     | Fixed           | Archive export must respect redaction mode for audit/state/raw artifacts.                                         |
