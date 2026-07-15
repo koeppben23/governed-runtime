@@ -294,14 +294,11 @@ const INSTALL_TIMEOUT = 5 * 60 * 1000;
 function doPackageInstall(pm: 'npm' | 'bun', stagingRoot: string): void {
   try {
     if (pm === 'npm') {
-      executeNpm(
-        ['install', '--prefix', '.', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=dev'],
-        {
-          cwd: stagingRoot,
-          stdio: 'pipe',
-          timeout: INSTALL_TIMEOUT,
-        },
-      );
+      executeNpm(['install', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=dev'], {
+        cwd: stagingRoot,
+        stdio: 'pipe',
+        timeout: INSTALL_TIMEOUT,
+      });
     } else {
       execFileSync('bun', ['install', '--cwd', '.', '--ignore-scripts', '--production'], {
         cwd: stagingRoot,

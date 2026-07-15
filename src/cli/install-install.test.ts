@@ -608,7 +608,7 @@ describe('cli/install', () => {
         expect(result.errors).toEqual([]);
         expect(installCalls).toEqual([
           {
-            cmd: 'npm install --prefix . --ignore-scripts --no-audit --no-fund --omit=dev',
+            cmd: 'npm install --ignore-scripts --no-audit --no-fund --omit=dev',
             timeout: 300_000,
           },
         ]);
