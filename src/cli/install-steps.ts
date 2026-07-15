@@ -15,7 +15,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { InstallError } from './install-helpers.js';
 import { ensureDirTracked, MutationJournal } from './install-transaction.js';
 import type { InstallMutationSink } from './install-mutation-types.js';
-import { globalConfigPath, ensureDir } from '../adapters/persistence.js';
+import { globalConfigPath } from '../adapters/persistence.js';
 import { readConfig, writeGlobalConfig, writeRepoConfig } from '../adapters/persistence-config.js';
 import { DEFAULT_CONFIG } from '../config/flowguard-config.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
@@ -288,6 +288,7 @@ export async function buildRollbackSnapshot(
 
 // ─── Step: Write artifacts (tarball + mandates + platform plugins) ────────────
 
+// eslint-disable-next-line max-lines-per-function
 export async function writeArtifacts(
   ctx: InstallContext,
   tarball: ValidatedTarball,

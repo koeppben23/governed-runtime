@@ -42,6 +42,7 @@ async function removePluginTree(pluginRoot: string, reason: string): Promise<Fil
   }
 }
 
+// eslint-disable-next-line complexity
 async function removeCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp> {
   const marketplacePath = resolveCodexMarketplacePath(scope);
 
@@ -102,7 +103,9 @@ async function removeCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp>
     try {
       const raw = readFileSync(lockPath, 'utf-8');
       if (JSON.parse(raw).token === token) unlinkSync(lockPath);
-    } catch {}
+    } catch {
+      // Lock cleanup is best effort during uninstall.
+    }
   }
 }
 

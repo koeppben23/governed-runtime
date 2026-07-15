@@ -41,32 +41,36 @@ export {
 } from './install-helpers.js';
 
 const DEFAULT_LOCK = join(homedir(), '.config', 'opencode', '.flowguard-install.lock');
-const LOCK_PATH = process.env['FLOWGUARD_INSTALL_LOCK_PATH'] ?? DEFAULT_LOCK;
+
+function installLockPath(): string {
+  return process.env['FLOWGUARD_INSTALL_LOCK_PATH'] ?? DEFAULT_LOCK;
+}
 
 // ─── Lock ─────────────────────────────────────────────────────────────────────
 
 async function acquireInstallLock(): Promise<{ release(): void }> {
+  const lockPath = installLockPath();
   const token = randomUUID();
   const lock = { pid: process.pid, token, createdAt: new Date().toISOString() };
   // Ensure lock parent exists, fail-closed on unexpected errors
   try {
-    await mkdir(dirname(LOCK_PATH), { recursive: true });
+    await mkdir(dirname(lockPath), { recursive: true });
   } catch (err) {
     if (!(err instanceof Error && 'code' in err && err.code === 'EEXIST')) throw err;
   }
   try {
-    await writeFile(LOCK_PATH, JSON.stringify(lock), { flag: 'wx' });
+    await writeFile(lockPath, JSON.stringify(lock), { flag: 'wx' });
   } catch (err) {
     if (err instanceof Error && 'code' in err && err.code === 'EEXIST') {
       let existing: { pid: number };
       try {
-        existing = JSON.parse(readFileSync(LOCK_PATH, 'utf-8'));
+        existing = JSON.parse(readFileSync(lockPath, 'utf-8'));
       } catch {
-        throw new Error(`Install lock exists but is unreadable. Remove ${LOCK_PATH} manually.`);
+        throw new Error(`Install lock exists but is unreadable. Remove ${lockPath} manually.`);
       }
       throw new Error(
         `Install already in progress or stale lock (PID: ${existing.pid}).\n` +
-          `If no install runs, remove ${LOCK_PATH} manually.`,
+          `If no install runs, remove ${lockPath} manually.`,
       );
     }
     throw err;
@@ -78,9 +82,9 @@ async function acquireInstallLock(): Promise<{ release(): void }> {
     released = true;
     process.removeListener('exit', release);
     try {
-      const raw = readFileSync(LOCK_PATH, 'utf-8');
+      const raw = readFileSync(lockPath, 'utf-8');
       if (JSON.parse(raw).token === token) {
-        unlinkSync(LOCK_PATH);
+        unlinkSync(lockPath);
         return;
       }
     } catch (err) {
@@ -112,9 +116,23 @@ async function probeWritable(dir: string): Promise<void> {
       try {
         unlinkSync(probe);
       } catch (err) {
-        if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) throw err;
+        if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) {
+          getAdapterLogger().warn('cli', 'writability probe cleanup failed', {
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
       }
   }
+}
+
+function nearestExistingDirectory(path: string): string {
+  let current = path;
+  while (!existsSync(current)) {
+    const parent = dirname(current);
+    if (parent === current) break;
+    current = parent;
+  }
+  return current;
 }
 
 // ─── Rollback helpers ────────────────────────────────────────────────────────
@@ -157,13 +175,13 @@ export async function install(args: CliArgs): Promise<CliResult> {
   }
 
   try {
-    return await doInstall(args, lock);
+    return await doInstall(args);
   } finally {
     lock.release();
   }
 }
 
-async function doInstall(args: CliArgs, lock: { release(): void }): Promise<CliResult> {
+async function doInstall(args: CliArgs): Promise<CliResult> {
   let snapshot: SnapshotResult | null = null;
   let tx: DependencyTransaction | null = null;
 
@@ -190,7 +208,7 @@ async function doInstall(args: CliArgs, lock: { release(): void }): Promise<CliR
   if (existsSync(targetParent)) parents.add(targetParent);
   if (existsSync(ctx.target)) parents.add(ctx.target);
   if (existsSync(configTargetDir)) parents.add(configTargetDir);
-  else parents.add(dirname(configTargetDir));
+  else parents.add(nearestExistingDirectory(configTargetDir));
   for (const p of parents) await probeWritable(p);
 
   try {
@@ -203,7 +221,7 @@ async function doInstall(args: CliArgs, lock: { release(): void }): Promise<CliR
     await writeConfigFiles(ctx, snapshot);
 
     // Create transaction before any dependency mutations
-    tx = await createDependencyTransaction(ctx, snapshot, snapshot.vendorTarballPath);
+    tx = await createDependencyTransaction(snapshot, snapshot.vendorTarballPath);
     await executeDependencyTransaction(tx);
     await commitDependencyTransaction(tx, ctx);
 

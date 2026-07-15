@@ -132,6 +132,7 @@ export function setupCliTestEnvironment(): void {
     restoreEnv = withTestEnv({
       OPENCODE_CONFIG_DIR: tmpDir,
       FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+      FLOWGUARD_INSTALL_LOCK_PATH: path.join(tmpDir, '.install.lock'),
     });
   });
 

@@ -11,9 +11,17 @@ import { mkdir, readFile, rename, rm, unlink, writeFile, lstat, readdir } from '
 import { execFileSync } from 'node:child_process';
 import { dirname, join, relative, basename } from 'node:path';
 import { ensureDir } from '../adapters/persistence.js';
-import type { FileOp, CliArgs } from './install-types.js';
+import type { FileOp } from './install-types.js';
 import type { RollbackEntry } from './install-helpers.js';
-import type { InstallContext, SnapshotResult } from './install-steps.js';
+
+interface DependencyTransactionContext {
+  warnings: string[];
+  ops: FileOp[];
+}
+
+interface DependencyTransactionSnapshot {
+  configTargetDir: string;
+}
 
 // ─── Transaction Phase ──────────────────────────────────────────────────
 
@@ -247,41 +255,50 @@ function detectPackageManager(): 'bun' | 'npm' | null {
   try {
     execFileSync('bun', ['--version'], { stdio: 'ignore', timeout: 5000 });
     return 'bun';
-  } catch {}
+  } catch {
+    // Try npm when bun is unavailable.
+  }
   try {
     execFileSync('npm', ['--version'], { stdio: 'ignore', timeout: 5000 });
     return 'npm';
-  } catch {}
+  } catch {
+    // No supported package manager is available.
+  }
   return null;
 }
 
 const INSTALL_TIMEOUT = 5 * 60 * 1000;
 
 function doPackageInstall(pm: 'npm' | 'bun', stagingRoot: string): void {
-  if (pm === 'npm') {
-    execFileSync(
-      'npm',
-      ['install', '--prefix', '.', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=dev'],
-      {
+  try {
+    if (pm === 'npm') {
+      execFileSync(
+        'npm',
+        ['install', '--prefix', '.', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=dev'],
+        {
+          cwd: stagingRoot,
+          stdio: 'pipe',
+          timeout: INSTALL_TIMEOUT,
+        },
+      );
+    } else {
+      execFileSync('bun', ['install', '--cwd', '.', '--ignore-scripts', '--production'], {
         cwd: stagingRoot,
         stdio: 'pipe',
         timeout: INSTALL_TIMEOUT,
-      },
+      });
+    }
+  } catch (error) {
+    throw new Error(
+      `Dependency install failed: ${error instanceof Error ? error.message : String(error)}`,
     );
-  } else {
-    execFileSync('bun', ['install', '--cwd', '.', '--ignore-scripts', '--production'], {
-      cwd: stagingRoot,
-      stdio: 'pipe',
-      timeout: INSTALL_TIMEOUT,
-    });
   }
 }
 
 // ─── Create Transaction (no mutations) ──────────────────────────────────
 
 export async function createDependencyTransaction(
-  ctx: InstallContext,
-  snapshot: SnapshotResult,
+  snapshot: DependencyTransactionSnapshot,
   vendorTarballPath: string,
 ): Promise<DependencyTransaction> {
   const transactionId = randomUUID();
@@ -376,7 +393,7 @@ export async function executeDependencyTransaction(tx: DependencyTransaction): P
 
 export async function commitDependencyTransaction(
   tx: DependencyTransaction,
-  ctx: InstallContext,
+  ctx: DependencyTransactionContext,
 ): Promise<void> {
   tx.phase = TransactionPhase.CleaningStaging;
   await persistJournal(tx);
@@ -410,6 +427,7 @@ export async function commitDependencyTransaction(
   tx.phase = TransactionPhase.Committed;
   await persistJournal(tx);
   await safeUnlink(tx.journalPath);
+  ctx.ops.push({ path: tx.liveModulesPath, action: 'written' });
 }
 
 // ─── Rollback ───────────────────────────────────────────────────────────
@@ -419,6 +437,7 @@ export function isRollbackPossible(tx: DependencyTransaction): boolean {
   return tx.phase < TransactionPhase.DeletingOriginal;
 }
 
+// eslint-disable-next-line complexity
 export async function rollbackDependencyTransaction(tx: DependencyTransaction): Promise<void> {
   try {
     const fresh = await loadJournal(tx.journalPath);
@@ -627,8 +646,10 @@ export class MutationJournal {
     const byPath = new Map<string, RollbackEntry>();
     for (const entry of this.entries) {
       const existing = byPath.get(entry.path);
-      if (existing?.expectedKind !== entry.expectedKind)
-        throw new Error(`Type conflict: ${entry.path}`);
+      if (existing && existing.expectedKind !== entry.expectedKind)
+        throw new Error(
+          `Type conflict: ${entry.path} (${existing.expectedKind}, ${entry.expectedKind})`,
+        );
       if (existing) continue;
       byPath.set(entry.path, entry);
     }

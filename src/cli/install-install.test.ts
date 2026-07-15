@@ -35,6 +35,8 @@ import {
   setupCliTestEnvironment,
 } from './install-test-helpers.test.js';
 
+const fsMockState = vi.hoisted(() => ({ failMarketplaceLockCleanup: false }));
+
 // ─── Mock: child_process ──────────────────────────────────────────────────────
 vi.mock('node:child_process', async (importOriginal) => {
   const original = await importOriginal<typeof import('node:child_process')>();
@@ -57,10 +59,37 @@ vi.mock('node:child_process', async (importOriginal) => {
     }
     return Buffer.from('');
   };
+  const execSync = vi.fn(mockImpl);
+  const execFileSync = vi.fn(
+    (
+      command: string,
+      args: string[],
+      options?: { cwd?: string; stdio?: unknown; timeout?: number },
+    ) => execSync(`${command} ${args.join(' ')}`, options),
+  );
   return {
     ...original,
-    execFileSync: vi.fn(mockImpl),
-    execSync: vi.fn(mockImpl),
+    execFileSync,
+    execSync,
+  };
+});
+
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return {
+    ...actual,
+    unlinkSync: vi.fn((...args: Parameters<typeof actual.unlinkSync>) => {
+      if (
+        fsMockState.failMarketplaceLockCleanup &&
+        args[0].toString().endsWith('.flowguard.lock')
+      ) {
+        const error = Object.assign(new Error('Simulated marketplace lock cleanup failure'), {
+          code: 'EACCES',
+        });
+        throw error;
+      }
+      return actual.unlinkSync(...args);
+    }),
   };
 });
 
@@ -537,7 +566,10 @@ describe('cli/install', () => {
 
         expect(result.errors).toEqual([]);
         expect(installCalls).toEqual([
-          { cmd: 'npm install --no-audit --no-fund', timeout: 300_000 },
+          {
+            cmd: 'npm install --prefix . --ignore-scripts --no-audit --no-fund --omit=dev',
+            timeout: 300_000,
+          },
         ]);
       } finally {
         vi.mocked(mockExec).mockImplementation(originalImpl);
@@ -720,6 +752,46 @@ describe('cli/install', () => {
       expect(await fs.readFile(marketplacePath, 'utf-8')).toBe(malformed);
     });
 
+    it('rolls back a journaled marketplace write when lock cleanup fails', async () => {
+      const marketplacePath = path.join(tmpDir, '.agents', 'plugins', 'marketplace.json');
+      const originalMarketplace =
+        JSON.stringify({ name: 'local-dev', plugins: [] }, null, 2) + '\n';
+      await fs.mkdir(path.dirname(marketplacePath), { recursive: true });
+      await fs.writeFile(marketplacePath, originalMarketplace, 'utf-8');
+      fsMockState.failMarketplaceLockCleanup = true;
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(
+          repoArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }),
+        );
+
+        expect(result.errors).toContain('Simulated marketplace lock cleanup failure');
+        expect(await fs.readFile(marketplacePath, 'utf-8')).toBe(originalMarketplace);
+        expect(await findBackupFor(marketplacePath)).toBeNull();
+      } finally {
+        fsMockState.failMarketplaceLockCleanup = false;
+      }
+    });
+
+    it('retains both marketplace and cleanup failures', async () => {
+      const marketplacePath = path.join(tmpDir, '.agents', 'plugins', 'marketplace.json');
+      await fs.mkdir(path.dirname(marketplacePath), { recursive: true });
+      await fs.writeFile(marketplacePath, 'not valid JSON\n', 'utf-8');
+      fsMockState.failMarketplaceLockCleanup = true;
+
+      try {
+        const tarball = await createMockTarball();
+        const result = await install(
+          repoArgs({ coreTarball: tarball, installPlatform: 'codex', force: true }),
+        );
+
+        expect(result.errors).toContain('Marketplace operation and lock cleanup failed.');
+      } finally {
+        fsMockState.failMarketplaceLockCleanup = false;
+      }
+    });
+
     it('restores pre-existing tarball byte-for-byte on rollback', async () => {
       // Create pre-existing vendor tarball with binary-ish bytes
       const vendorDir = path.join(tmpDir, '.opencode', 'vendor');
@@ -810,7 +882,7 @@ describe('cli/install', () => {
 
       const tarball2 = await createMockTarball();
       try {
-        const result = await install(repoArgs({ coreTarball: tarball2 }));
+        const result = await install(repoArgs({ coreTarball: tarball2, force: true }));
         expect(result.errors.length).toBeGreaterThan(0);
 
         // Managed files must still exist with their ORIGINAL content
@@ -1095,12 +1167,11 @@ describe('cli/install', () => {
 
   // ─── CORNER ────────────────────────────────────────────────
   describe('CORNER', () => {
-    it('idempotent: second install skips existing wrappers (no --force)', async () => {
+    it('rejects a second install without --force', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const result2 = await install(repoArgs({ coreTarball: tarball }));
-      const skipped = result2.ops.filter((op) => op.action === 'skipped');
-      expect(skipped.length).toBeGreaterThan(0);
+      expect(result2.errors).toContain('FlowGuard is already installed. Use --force to reinstall.');
     });
 
     it('flowguard-mandates.md is ALWAYS replaced even without --force', async () => {

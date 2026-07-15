@@ -11,7 +11,6 @@ import { randomUUID } from 'node:crypto';
 import type { FileOp, InstallScope } from './install-helpers.js';
 import { writeIfAbsent } from './install-helpers.js';
 import type { InstallMutationSink } from './install-mutation-types.js';
-import { ensureDir } from '../adapters/persistence.js';
 import { CODEX_PLUGIN_NAME, CODEX_PLUGIN_RELATIVE_FILES, codexPluginFiles } from './templates.js';
 
 interface CodexMarketplaceEntry {
@@ -84,11 +83,8 @@ export async function installCodexPlugin(
   const marketplacePath = resolveCodexMarketplacePath(scope);
   await mutations.ensureDir(dirname(marketplacePath));
 
-  const marketplaceOp = await registerCodexMarketplaceEntry(scope);
+  const marketplaceOp = await registerCodexMarketplaceEntry(scope, mutations);
   ops.push(marketplaceOp);
-  if (marketplaceOp.action !== 'skipped') {
-    await mutations.recordFile(marketplacePath);
-  }
 
   return ops;
 }
@@ -98,6 +94,7 @@ export function codexPluginFilePaths(scope: InstallScope): string[] {
   return [...CODEX_PLUGIN_RELATIVE_FILES.map((relativePath) => join(pluginRoot, relativePath))];
 }
 
+// eslint-disable-next-line complexity
 async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise<T>): Promise<T> {
   // Precondition: parent of marketplacePath must already exist
   const lockPath = `${marketplacePath}.flowguard.lock`;
@@ -110,24 +107,53 @@ async function withMarketplaceLock<T>(marketplacePath: string, fn: () => Promise
     }
     throw err;
   }
+  let result: T | undefined;
+  let operationError: unknown;
   try {
-    return await fn();
-  } finally {
-    try {
-      const raw = readFileSync(lockPath, 'utf-8');
-      if (JSON.parse(raw).token === token) unlinkSync(lockPath);
-    } catch (err) {
-      if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) throw err;
+    result = await fn();
+  } catch (error) {
+    operationError = error;
+  }
+
+  let cleanupError: unknown;
+  try {
+    const raw = readFileSync(lockPath, 'utf-8');
+    const lock = JSON.parse(raw) as { token?: string };
+    if (lock.token !== token) {
+      throw new Error('Codex marketplace lock ownership changed.');
+    }
+    unlinkSync(lockPath);
+  } catch (error) {
+    if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) {
+      cleanupError = error;
     }
   }
+
+  if (operationError && cleanupError) {
+    throw new AggregateError(
+      [operationError, cleanupError],
+      'Marketplace operation and lock cleanup failed.',
+    );
+  }
+
+  if (operationError) throw operationError;
+  if (cleanupError) throw cleanupError;
+  return result as T;
 }
 
-async function registerCodexMarketplaceEntry(scope: InstallScope): Promise<FileOp> {
+async function registerCodexMarketplaceEntry(
+  scope: InstallScope,
+  mutations: InstallMutationSink,
+): Promise<FileOp> {
   const marketplacePath = resolveCodexMarketplacePath(scope);
-  return withMarketplaceLock(marketplacePath, () => doRegister(marketplacePath, scope));
+  return withMarketplaceLock(marketplacePath, () => doRegister(marketplacePath, scope, mutations));
 }
 
-async function doRegister(marketplacePath: string, scope: InstallScope): Promise<FileOp> {
+async function doRegister(
+  marketplacePath: string,
+  scope: InstallScope,
+  mutations: InstallMutationSink,
+): Promise<FileOp> {
   const entry: CodexMarketplaceEntry = {
     name: CODEX_PLUGIN_NAME,
     source: { source: 'local', path: codexMarketplaceSourcePath(scope) },
@@ -171,21 +197,13 @@ async function doRegister(marketplacePath: string, scope: InstallScope): Promise
     return { path: marketplacePath, action: 'skipped', reason: 'already registered' };
   }
 
-  if (originalContent !== null && originalContent.length > 0) {
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    await writeFile(
-      `${marketplacePath}.flowguard-backup-${timestamp}-${randomUUID()}`,
-      originalContent,
-      { flag: 'wx' },
-    );
-  }
-
   const plugins = Array.isArray(marketplace.plugins) ? marketplace.plugins : [];
   const filtered = plugins.filter((plugin) => plugin.name !== CODEX_PLUGIN_NAME);
   if (!marketplace.name) marketplace.name = CODEX_PLUGIN_NAME;
   marketplace.plugins = [...filtered, entry];
 
   await atomicWriteJson(marketplacePath, marketplace);
+  await mutations.recordFile(marketplacePath);
   return {
     path: marketplacePath,
     action,
