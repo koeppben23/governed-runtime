@@ -459,7 +459,7 @@ describe('Tool Adapter Session Identity', () => {
     );
     const first = handler!({}, {});
     await Promise.resolve();
-    const result = (await handler!({}, {})) as { content: { text: string }[] };
+    const result = (await handler!({}, {})) as { isError: boolean; content: { text: string }[] };
     expect(result.isError).toBe(false);
     expect(JSON.parse(result.content[0]!.text)).toMatchObject({
       code: 'MCP_RATE_LIMITED',
@@ -496,14 +496,20 @@ describe('Tool Adapter Session Identity', () => {
       () => ({ sessionId: 'mcp-session', directory: '/tmp/project', worktree: '/tmp/project' }),
       new McpExecutionLimiter({ timeoutMs: 1, maxConcurrent: 1, maxPerSecond: 10 }),
     );
-    const timedOut = (await handler!({}, {})) as { content: { text: string }[] };
+    const timedOut = (await handler!({}, {})) as {
+      isError: boolean;
+      content: { text: string }[];
+    };
     expect(timedOut.isError).toBe(false);
     expect(JSON.parse(timedOut.content[0]!.text)).toMatchObject({
       code: 'MCP_TOOL_TIMEOUT',
       governance: true,
       denied: true,
     });
-    const rejected = (await handler!({}, {})) as { content: { text: string }[] };
+    const rejected = (await handler!({}, {})) as {
+      isError: boolean;
+      content: { text: string }[];
+    };
     expect(rejected.isError).toBe(false);
     expect(JSON.parse(rejected.content[0]!.text)).toMatchObject({
       code: 'MCP_RATE_LIMITED',
