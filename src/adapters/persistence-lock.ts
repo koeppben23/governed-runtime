@@ -52,16 +52,34 @@ function buildLockContent(token: string): string {
   return `pid=${process.pid}\ntoken=${token}\n`;
 }
 
-async function isLockStale(lockPath: string): Promise<boolean> {
-  let raw: string;
+async function readLockContent(lockPath: string): Promise<string | undefined> {
   try {
-    raw = await fs.readFile(lockPath, 'utf-8');
+    return await fs.readFile(lockPath, 'utf-8');
   } catch (err) {
-    if (isEnoent(err)) return true; // lockfile disappeared — effectively stale
-    return false; // EACCES or other — fail-closed: treat as alive
+    if (isEnoent(err)) return undefined; // lockfile disappeared
+    return LOCK_UNREADABLE; // EACCES or other — caller must fail closed
   }
+}
+
+/** Sentinel distinguishing "unreadable" from "missing" without throwing. */
+const LOCK_UNREADABLE = '\u0000unreadable';
+
+/**
+ * Decide staleness from an already-read lock body.
+ *
+ * - `undefined` body → the lockfile disappeared → effectively stale.
+ * - unreadable/malformed body → fail-closed: treat as alive (never auto-delete).
+ * - parseable PID → stale iff the process is not alive.
+ *
+ * The `LOCK_UNREADABLE` guard is defensive and behaviourally equivalent to the
+ * malformed-body fallthrough (the sentinel contains no `pid=`), so a mutation
+ * removing it survives as an equivalent mutant.
+ */
+function isBodyStale(raw: string | undefined): boolean {
+  if (raw === undefined) return true;
+  if (raw === LOCK_UNREADABLE) return false;
   const pidMatch = raw.match(/^pid=(\d+)/m);
-  if (!pidMatch) return false; // malformed lock — do not auto-delete
+  if (!pidMatch) return false;
   const pid = Number(pidMatch[1]);
   return !isProcessAlive(pid);
 }
@@ -123,7 +141,29 @@ export async function acquireNamedWriteLock(
       if (!isEexist(err)) throw err;
     }
 
-    if (await isLockStale(lockPath)) {
+    // Read the lock body once, then decide staleness from that snapshot.
+    const observed = await readLockContent(lockPath);
+    if (observed === undefined) {
+      // Lockfile vanished before we could inspect it — retry acquisition
+      // immediately; there is nothing to wait for or delete. This early exit is
+      // a fast path: removing it is behaviourally equivalent (the stale +
+      // re-verify + ENOENT-tolerant unlink below also loops), so a mutation
+      // deleting it survives as an equivalent mutant.
+      continue;
+    }
+    if (isBodyStale(observed)) {
+      // Re-verify the body is unchanged immediately before unlink. If another
+      // process replaced (or removed) the stale lock in the meantime, the
+      // content differs and we must NOT delete their lock. Such a snapshot
+      // change is treated exactly like live contention: it goes through the
+      // shared deadline + poll path so the timeout is always honoured and a
+      // lock churned by another process cannot force an unbounded busy loop.
+      const confirm = await readLockContent(lockPath);
+      if (confirm !== observed) {
+        waited = true;
+        await enforceDeadlineThenPoll(lockPath, lockLabel, timeoutMs, deadline);
+        continue;
+      }
       try {
         await fs.unlink(lockPath);
       } catch (err) {
@@ -139,25 +179,40 @@ export async function acquireNamedWriteLock(
     }
 
     waited = true;
-    if (Date.now() >= deadline) {
-      let blockingPid: number | undefined;
-      try {
-        const raw = await fs.readFile(lockPath, 'utf-8');
-        const match = raw.match(/^pid=(\d+)/m);
-        if (match) blockingPid = Number(match[1]);
-      } catch {
-        // Best-effort only; the lock may have changed at the deadline.
-      }
-      throw new PersistenceError(
-        'LOCK_TIMEOUT',
-        `Could not acquire ${lockLabel} lock within ${timeoutMs}ms.` +
-          (blockingPid === undefined
-            ? `\n  Lock file: ${lockPath}`
-            : `\n  Blocking PID: ${blockingPid}\n  Lock file: ${lockPath}`),
-      );
-    }
-    await new Promise((r) => setTimeout(r, LOCK_POLL_INTERVAL_MS));
+    await enforceDeadlineThenPoll(lockPath, lockLabel, timeoutMs, deadline);
   }
+}
+
+/**
+ * Shared wait step for a contended acquisition: throw `LOCK_TIMEOUT` when the
+ * deadline has passed, otherwise sleep one poll interval before the next
+ * attempt. Used for both a live holder and a churning snapshot mismatch so the
+ * configured timeout is always enforced and neither path can busy-loop.
+ */
+async function enforceDeadlineThenPoll(
+  lockPath: string,
+  lockLabel: string,
+  timeoutMs: number,
+  deadline: number,
+): Promise<void> {
+  if (Date.now() >= deadline) {
+    let blockingPid: number | undefined;
+    try {
+      const raw = await fs.readFile(lockPath, 'utf-8');
+      const match = raw.match(/^pid=(\d+)/m);
+      if (match) blockingPid = Number(match[1]);
+    } catch {
+      // Best-effort only; the lock may have changed at the deadline.
+    }
+    throw new PersistenceError(
+      'LOCK_TIMEOUT',
+      `Could not acquire ${lockLabel} lock within ${timeoutMs}ms.` +
+        (blockingPid === undefined
+          ? `\n  Lock file: ${lockPath}`
+          : `\n  Blocking PID: ${blockingPid}\n  Lock file: ${lockPath}`),
+    );
+  }
+  await new Promise((r) => setTimeout(r, LOCK_POLL_INTERVAL_MS));
 }
 
 /**

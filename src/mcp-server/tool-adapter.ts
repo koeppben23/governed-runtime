@@ -32,7 +32,7 @@ import {
 } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
 import { sanitizeDiagnosticString } from '../logging/redact.js';
-import { McpExecutionLimiter } from './execution-limiter.js';
+import { McpExecutionLimiter, type McpExecutionSlot } from './execution-limiter.js';
 
 // --- Tool Registry ---
 
@@ -192,6 +192,59 @@ export function sanitizeNullArgs(args: Record<string, unknown>): Record<string, 
   return sanitized;
 }
 
+// --- Execution Deadline ---
+
+/**
+ * Run a tool executor under a host-facing response deadline.
+ *
+ * Design invariants:
+ * - The deadline only bounds the *response* to the host. It never cancels the
+ *   underlying executor and never frees the concurrency slot early.
+ * - The slot is released exactly once, when the real executor settles — not
+ *   when the deadline fires. `McpExecutionSlot.release()` is idempotent.
+ * - The executor promise is awaited through a single settled wrapper, so a late
+ *   rejection (after the deadline already won the race) is always observed and
+ *   cannot surface as an `unhandledRejection`.
+ */
+async function runExecutionWithDeadline(
+  toolDef: ToolDefinition,
+  cleanArgs: Record<string, unknown>,
+  toolContext: ToolContext,
+  slot: McpExecutionSlot,
+  timeoutMs: number,
+  mcpName: string,
+  sessionId: string | undefined,
+): Promise<CallToolResult> {
+  // Single handled chain: normalizes success and failure, and owns slot release
+  // plus timer cleanup. The executor result is mapped to an MCP result; failures
+  // are mapped to a handled MCP error here so the chain never rejects. This
+  // guarantees a late settlement (after the deadline already won the race)
+  // cannot surface as an `unhandledRejection`.
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const settled: Promise<CallToolResult> = runWithAdapterLoggerAsync(
+    toAdapterLogger(mcpLogger),
+    () => toolDef.execute(cleanArgs, toolContext),
+  )
+    .then(
+      (result): CallToolResult => toMcpResult(result),
+      (err: unknown): CallToolResult => toHandledToolError(err, mcpName, sessionId),
+    )
+    .finally(() => {
+      slot.release();
+      if (timer) clearTimeout(timer);
+    });
+
+  const timeout = new Promise<CallToolResult>((resolve) => {
+    timer = setTimeout(
+      () => resolve(toMcpDenial('MCP_TOOL_TIMEOUT', 'MCP tool response deadline exceeded')),
+      timeoutMs,
+    );
+    timer.unref();
+  });
+
+  return Promise.race([settled, timeout]);
+}
+
 // --- Tool Registration ---
 
 /**
@@ -258,26 +311,18 @@ export function registerAllTools(
                   ...getLogTraceFields(),
                 });
 
-                if (!limiter.tryAcquire())
+                const slot = limiter.tryAcquire();
+                if (!slot)
                   return toMcpDenial('MCP_RATE_LIMITED', 'MCP tool execution limit reached');
-                const execution = runWithAdapterLoggerAsync(toAdapterLogger(mcpLogger), () =>
-                  toolDef.execute(cleanArgs, toolContext),
+                return await runExecutionWithDeadline(
+                  toolDef,
+                  cleanArgs,
+                  toolContext,
+                  slot,
+                  limiter.limits.timeoutMs,
+                  mcpName,
+                  sessionId,
                 );
-                // A deadline responds to the host; it never cancels or releases a live executor.
-                const timeout = new Promise<CallToolResult>((resolve) => {
-                  const timer = setTimeout(
-                    () =>
-                      resolve(
-                        toMcpDenial('MCP_TOOL_TIMEOUT', 'MCP tool response deadline exceeded'),
-                      ),
-                    limiter.limits.timeoutMs,
-                  );
-                  timer.unref();
-                  execution.finally(() => clearTimeout(timer)).catch(() => undefined);
-                });
-                execution.finally(() => limiter.release()).catch(() => undefined);
-                const result = await Promise.race([execution.then(toMcpResult), timeout]);
-                return result;
               } catch (err: unknown) {
                 return toHandledToolError(err, mcpName, sessionId);
               }

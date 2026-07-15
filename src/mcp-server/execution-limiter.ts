@@ -52,26 +52,52 @@ function readPositiveInteger(
   return parsed;
 }
 
+/**
+ * A single admitted execution slot.
+ *
+ * `release()` is idempotent: it decrements the active count exactly once,
+ * regardless of how many times it is called. This makes accidental
+ * double-release structurally harmless and prevents `active` from drifting
+ * below zero (which would silently raise the effective concurrency bound).
+ */
+export interface McpExecutionSlot {
+  release(): void;
+}
+
 export class McpExecutionLimiter {
   private active = 0;
   private readonly starts: number[] = [];
 
   constructor(readonly limits: McpExecutionLimits) {}
 
-  tryAcquire(now = Date.now()): boolean {
+  /**
+   * Atomically admit one execution, or return `null` when a limit is reached.
+   *
+   * Admission is synchronous and side-effect-free on rejection: a rejected
+   * call consumes neither a concurrency slot nor throughput budget. On success
+   * it returns a slot whose `release()` is the only way to free the slot.
+   */
+  tryAcquire(now = Date.now()): McpExecutionSlot | null {
     while (this.starts[0] !== undefined && this.starts[0] <= now - 1_000) this.starts.shift();
     if (
       this.active >= this.limits.maxConcurrent ||
       this.starts.length >= this.limits.maxPerSecond
     ) {
-      return false;
+      return null;
     }
     this.active += 1;
     this.starts.push(now);
-    return true;
+    return this.makeSlot();
   }
 
-  release(): void {
-    this.active -= 1;
+  private makeSlot(): McpExecutionSlot {
+    let released = false;
+    return {
+      release: () => {
+        if (released) return;
+        released = true;
+        this.active -= 1;
+      },
+    };
   }
 }

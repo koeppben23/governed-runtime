@@ -9,6 +9,11 @@ a shared concurrency limit (`FLOWGUARD_MCP_MAX_CONCURRENT`, default 10), and a r
 per-second limit (`FLOWGUARD_MCP_MAX_PER_SECOND`, default 50). Invalid values prevent
 the MCP server from starting. `MCP_TOOL_TIMEOUT` means the host response deadline elapsed;
 the underlying operation is not cancelled and continues to occupy its concurrency slot.
+Because a timed-out executor keeps its slot until it actually settles, enough
+simultaneously hung tool calls can permanently exhaust `FLOWGUARD_MCP_MAX_CONCURRENT`.
+After that point every further call returns `MCP_RATE_LIMITED` and the server does
+not self-heal, because MCP hosts provide no reliable cancellation contract. Restart
+the MCP server to clear stuck slots.
 `MCP_RATE_LIMITED` means retry after active work completes or the rolling one-second
 start window advances.
 
