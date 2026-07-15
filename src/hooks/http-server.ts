@@ -156,8 +156,9 @@ function jsonResponse(res: ServerResponse, status: number, body: unknown): void 
 
 function headerValues(req: IncomingMessage, name: string): string[] {
   const values: string[] = [];
-  for (let index = 0; index < req.rawHeaders.length; index += 2) {
-    if (req.rawHeaders[index]?.toLowerCase() === name) values.push(req.rawHeaders[index + 1] ?? '');
+  const rawHeaders = req.rawHeaders ?? [];
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    if (rawHeaders[index]?.toLowerCase() === name) values.push(rawHeaders[index + 1] ?? '');
   }
   if (values.length > 0) return values;
 
