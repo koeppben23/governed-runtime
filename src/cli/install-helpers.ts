@@ -9,8 +9,10 @@
  */
 
 import { execSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { readFile, writeFile, unlink, rm } from 'node:fs/promises';
+import { existsSync, readFileSync, constants as fsConstants } from 'node:fs';
+import { readFile, writeFile, unlink, open, lstat, rename, rmdir, readdir } from 'node:fs/promises';
+import type { FileHandle } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
 import { ensureDir } from '../adapters/persistence.js';
 import { join, resolve, dirname, basename } from 'node:path';
 import { homedir } from 'node:os';
@@ -395,12 +397,34 @@ export async function writeIfAbsent(
   content: string,
   force: boolean,
 ): Promise<FileOp> {
-  if (!force && existsSync(filePath)) {
-    return { path: filePath, action: 'skipped', reason: 'already exists' };
+  if (!force) {
+    try {
+      const dir = dirname(filePath);
+      if (dir) await ensureDir(dir);
+      await writeFile(filePath, content, { encoding: 'utf-8', flag: 'wx' });
+      return { path: filePath, action: 'written' };
+    } catch (err) {
+      if (err instanceof Error && 'code' in err && err.code === 'EEXIST') {
+        return { path: filePath, action: 'skipped', reason: 'already exists' };
+      }
+      throw err;
+    }
   }
+
+  const tmpPath = `${filePath}.tmp.${process.pid}.${randomUUID()}`;
   const dir = dirname(filePath);
   if (dir) await ensureDir(dir);
-  await writeFile(filePath, content, 'utf-8');
+  try {
+    await writeFile(tmpPath, content, { encoding: 'utf-8', flag: 'wx' });
+    await rename(tmpPath, filePath);
+  } catch (err) {
+    try {
+      await unlink(tmpPath);
+    } catch {
+      /* ok */
+    }
+    throw err;
+  }
   return { path: filePath, action: 'written' };
 }
 
@@ -428,53 +452,175 @@ export function detectPackageManager(): 'bun' | 'npm' | null {
 export interface RollbackEntry {
   path: string;
   existed: boolean;
+  expectedKind: 'file' | 'directory';
   originalContent?: Buffer;
+  sequence: number;
 }
 
 /**
  * Snapshot a file path before any modification.
- * Reads original content as Buffer so binary artifacts (e.g. tarball) are preserved exactly.
+ * Reads original content as Buffer so binary artifacts are preserved exactly.
+ * Rejects symlinks and enforces expected type coherence.
  */
-export async function snapshotForRollback(filePath: string): Promise<RollbackEntry> {
-  if (existsSync(filePath)) {
-    try {
-      const content = await readFile(filePath);
-      return { path: filePath, existed: true, originalContent: content };
-    } catch {
-      return { path: filePath, existed: true };
+export async function snapshotForRollback(
+  filePath: string,
+  expectedKind: 'file' | 'directory',
+): Promise<RollbackEntry> {
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(filePath, fsConstants.O_RDONLY | fsConstants.O_NOFOLLOW);
+    return await snapshotFromHandle(handle, filePath, expectedKind);
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') {
+      return { path: filePath, existed: false, expectedKind, sequence: 0 };
     }
+    if (err instanceof Error && 'code' in err && err.code === 'ELOOP') {
+      throw new Error(`Refusing to snapshot symlink: ${filePath}`);
+    }
+    throw err;
+  } finally {
+    await handle?.close();
   }
-  return { path: filePath, existed: false };
+}
+
+async function snapshotFromHandle(
+  handle: FileHandle,
+  filePath: string,
+  expectedKind: 'file' | 'directory',
+): Promise<RollbackEntry> {
+  const stat = await handle.stat();
+
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Refusing to snapshot symlink: ${filePath}`);
+  }
+  if (stat.isDirectory()) {
+    if (expectedKind !== 'directory') {
+      throw new Error(
+        `Rollback target type mismatch: ${filePath} (expected ${expectedKind}, found directory)`,
+      );
+    }
+    return { path: filePath, existed: true, expectedKind: 'directory', sequence: 0 };
+  }
+  if (!stat.isFile()) {
+    throw new Error(`Unsupported rollback target type: ${filePath}`);
+  }
+  if (expectedKind !== 'file') {
+    throw new Error(
+      `Rollback target type mismatch: ${filePath} (expected ${expectedKind}, found file)`,
+    );
+  }
+
+  const content = await handle.readFile();
+  return {
+    path: filePath,
+    existed: true,
+    expectedKind: 'file',
+    originalContent: content,
+    sequence: 0,
+  };
 }
 
 /**
  * Rollback install artifacts after a failed auto-install step.
  *
  * Uniform semantics:
- * - existed before install (has originalContent) -> restore original content
+ * - existed before install (has originalContent) -> restore via temp+rename
  * - existed before install (no content, e.g. directory) -> leave untouched
- * - did not exist before install -> delete (remove file/directory)
+ * - did not exist before install -> delete via unlink/rmdir
  */
 export async function rollbackArtifacts(
   entries: RollbackEntry[],
   ops: FileOp[],
-  warnings: string[],
+  errors: string[],
 ): Promise<void> {
-  for (const entry of [...entries].reverse()) {
+  for (const entry of [...entries].sort((a, b) => b.sequence - a.sequence)) {
     try {
       if (entry.existed && entry.originalContent !== undefined) {
-        await writeFile(entry.path, entry.originalContent);
-        ops.push({ path: entry.path, action: 'written', reason: 'restored pre-install content' });
-      } else if (entry.existed) {
+        await restoreFileFromSnapshot(entry, ops);
         continue;
-      } else if (existsSync(entry.path)) {
-        await rm(entry.path, { recursive: true, force: true });
-        ops.push({ path: entry.path, action: 'removed', reason: 'rollback after failure' });
       }
+      if (entry.existed) continue;
+
+      await removeNewlyCreatedEntry(entry, ops);
     } catch (rollbackErr) {
-      warnings.push(
+      errors.push(
         `Rollback failed for ${entry.path}: ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
       );
     }
   }
+}
+
+async function restoreFileFromSnapshot(entry: RollbackEntry, ops: FileOp[]): Promise<void> {
+  try {
+    const stat = await lstat(entry.path);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`Rollback restore target was replaced by a symlink: ${entry.path}`);
+    }
+    if (!stat.isFile()) {
+      throw new Error(`Rollback restore target type changed: ${entry.path} (expected file)`);
+    }
+  } catch (err) {
+    if (!isEnoent(err)) throw err;
+    // File was deleted — atomic recreate via temp+rename below restores it
+  }
+
+  const tmpPath = `${entry.path}.rollback.${process.pid}.${randomUUID()}`;
+  try {
+    await writeFile(tmpPath, entry.originalContent!, { flag: 'wx' });
+    await rename(tmpPath, entry.path);
+    ops.push({ path: entry.path, action: 'written', reason: 'restored pre-install content' });
+  } catch (rwErr) {
+    try {
+      await unlink(tmpPath);
+    } catch {
+      /* ok */
+    }
+    throw rwErr;
+  }
+}
+
+async function removeNewlyCreatedEntry(entry: RollbackEntry, ops: FileOp[]): Promise<void> {
+  try {
+    await lstat(entry.path);
+  } catch (err) {
+    if (err instanceof Error && 'code' in err && err.code === 'ENOENT') return;
+    throw err;
+  }
+
+  const stat = await lstat(entry.path);
+  if (stat.isSymbolicLink()) {
+    throw new Error(`Rollback target was replaced by a symlink: ${entry.path}`);
+  }
+  if (entry.expectedKind === 'file' && !stat.isFile()) {
+    throw new Error(`Rollback target type changed: ${entry.path} (expected file)`);
+  }
+  if (entry.expectedKind === 'directory' && !stat.isDirectory()) {
+    throw new Error(`Rollback target type changed: ${entry.path} (expected directory)`);
+  }
+  if (entry.expectedKind === 'directory') {
+    await removeDirectoryRecursively(entry.path);
+  } else {
+    await unlink(entry.path);
+  }
+  ops.push({ path: entry.path, action: 'removed', reason: 'rollback after failure' });
+}
+
+/** Remove only regular files and directories; never traverse a symlink during rollback. */
+async function removeDirectoryRecursively(directoryPath: string): Promise<void> {
+  for (const name of await readdir(directoryPath)) {
+    const childPath = join(directoryPath, name);
+    const childStat = await lstat(childPath);
+    if (childStat.isSymbolicLink()) {
+      throw new Error(`Rollback target contains a symlink: ${childPath}`);
+    }
+    if (childStat.isDirectory()) {
+      await removeDirectoryRecursively(childPath);
+      continue;
+    }
+    if (!childStat.isFile()) {
+      throw new Error(`Unsupported rollback target type: ${childPath}`);
+    }
+    await unlink(childPath);
+  }
+  await rmdir(directoryPath);
 }
