@@ -177,6 +177,8 @@ async function buildDirectorySnapshots(
     entries.push(journal.record(await snapshotForRollback(join(target, 'commands'), 'directory')));
     entries.push(journal.record(await snapshotForRollback(join(target, 'plugins'), 'directory')));
     entries.push(journal.record(await snapshotForRollback(join(target, 'tools'), 'directory')));
+  } else {
+    entries.push(journal.record(await snapshotForRollback(join(target, 'vendor'), 'directory')));
   }
 
   entries.push(
@@ -223,6 +225,8 @@ export async function buildRollbackSnapshot(
   const reviewerDefinition = reviewerDefinitionForPlatform(installPlatform);
   const reviewerPath = join(target, reviewerDefinition.relativePath);
 
+  // MutationJournal records all entries that will be restored on rollback.
+  // Each entry gets a monotonically increasing sequence for correct reverse order.
   const mutationJournal = new MutationJournal();
 
   // Directories first (file entries after — reverse processes files before dirs)

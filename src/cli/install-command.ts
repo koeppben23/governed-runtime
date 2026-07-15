@@ -135,7 +135,7 @@ async function rollbackSnap(
 ): Promise<void> {
   if (!snapshot) return;
   try {
-    await rollbackArtifacts(snapshot.rollbackEntries, ops, errors);
+    await rollbackArtifacts(snapshot.mutationJournal.deduplicated(), ops, errors);
   } catch (err) {
     errors.push(`Artifact rollback failed: ${err instanceof Error ? err.message : String(err)}`);
   }
