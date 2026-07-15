@@ -39,6 +39,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **HTTP dispatch and audit-lock recovery hardened (#670, #672).** `GET /health`
+  remains public while all other hook requests authenticate before route or method
+  dispatch. Audit writes now recover dead-process lockfiles without weakening
+  fail-closed handling for live, malformed, or undeletable locks.
+
 - **MCP execution boundaries hardened (#645).** Server-scoped admission limits
   and response deadlines protect tool execution without cancelling live work;
   arbitrary executor errors are mapped to sanitized MCP diagnostics.
