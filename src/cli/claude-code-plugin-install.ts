@@ -7,7 +7,7 @@ import { chmod, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { FileOp } from './install-helpers.js';
 import { writeIfAbsent } from './install-helpers.js';
-import { ensureDir } from '../adapters/persistence.js';
+import type { InstallMutationSink } from './install-steps.js';
 import {
   CLAUDE_CODE_PLUGIN_DIR,
   CLAUDE_CODE_PLUGIN_RELATIVE_FILES,
@@ -31,19 +31,19 @@ export async function installClaudeCodePlugin(
   target: string,
   version: string,
   force: boolean,
-  onFileWritten?: (path: string) => void,
+  mutations: InstallMutationSink,
 ): Promise<FileOp[]> {
   const pluginRoot = resolveClaudeCodePluginRoot(target);
   const ops: FileOp[] = [];
 
-  await ensureDir(pluginRoot);
+  await mutations.ensureDir(pluginRoot);
 
   for (const [relativePath, content] of Object.entries(claudeCodePluginFiles(version))) {
     const filePath = join(pluginRoot, relativePath);
-    await ensureDir(dirname(filePath));
+    await mutations.ensureDir(dirname(filePath));
     const op = await writeIfAbsent(filePath, content, force);
     ops.push(op);
-    if (op.action !== 'skipped' && onFileWritten) onFileWritten(filePath);
+    if (op.action !== 'skipped') await mutations.recordFile(filePath);
 
     if (relativePath.startsWith('dist/') && ops[ops.length - 1]?.action === 'written') {
       await chmod(filePath, 0o755);

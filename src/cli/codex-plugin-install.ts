@@ -10,6 +10,7 @@ import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { FileOp, InstallScope } from './install-helpers.js';
 import { writeIfAbsent } from './install-helpers.js';
+import type { InstallMutationSink } from './install-steps.js';
 import { ensureDir } from '../adapters/persistence.js';
 import { CODEX_PLUGIN_NAME, CODEX_PLUGIN_RELATIVE_FILES, codexPluginFiles } from './templates.js';
 
@@ -62,26 +63,31 @@ export async function installCodexPlugin(
   scope: InstallScope,
   version: string,
   force: boolean,
-  onFileWritten?: (path: string) => void,
+  mutations: InstallMutationSink,
 ): Promise<FileOp[]> {
   const pluginRoot = resolveCodexPluginRoot(scope);
   const ops: FileOp[] = [];
 
-  await ensureDir(pluginRoot);
+  await mutations.ensureDir(pluginRoot);
 
   for (const [relativePath, content] of Object.entries(codexPluginFiles(version))) {
     const filePath = join(pluginRoot, relativePath);
-    await ensureDir(dirname(filePath));
+    await mutations.ensureDir(dirname(filePath));
     const op = await writeIfAbsent(filePath, content, force);
     ops.push(op);
-    if (op.action !== 'skipped' && onFileWritten) onFileWritten(filePath);
+    if (op.action !== 'skipped') await mutations.recordFile(filePath);
 
     if (relativePath.startsWith('dist/') && ops[ops.length - 1]?.action === 'written') {
       await chmod(filePath, 0o755);
     }
   }
 
-  ops.push(await registerCodexMarketplaceEntry(scope));
+  const marketplaceOp = await registerCodexMarketplaceEntry(scope);
+  ops.push(marketplaceOp);
+  if (marketplaceOp.action !== 'skipped') {
+    await mutations.recordFile(resolveCodexMarketplacePath(scope));
+  }
+
   return ops;
 }
 

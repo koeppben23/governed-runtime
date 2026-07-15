@@ -208,6 +208,11 @@ function findPreState(entries: RollbackEntry[], path: string): RollbackEntry {
   return entry;
 }
 
+export interface InstallMutationSink {
+  ensureDir(path: string): Promise<void>;
+  recordFile(path: string): void | Promise<void>;
+}
+
 export function resolveConfigTargetDir(ctx: InstallContext): string {
   const { target, installPlatform, args } = ctx;
   return installPlatform === 'opencode'
@@ -320,17 +325,29 @@ export async function writeArtifacts(
   // Platform-specific artifacts
   if (installPlatform === 'claude-code') {
     await ensureDirTracked(join(target, 'flowguard-plugin'), journal);
-    const onWrite = (p: string) => journal.record(findPreState(snapshot.preStateEntries, p));
+    const mutations: InstallMutationSink = {
+      ensureDir: async (path) => await ensureDirTracked(path, journal),
+      recordFile: (path) => {
+        journal.record(findPreState(snapshot.preStateEntries, path));
+      },
+    };
     ctx.ops.push(
-      ...(await installClaudeCodePlugin(target, PACKAGE_VERSION(), args.force, onWrite)),
+      ...(await installClaudeCodePlugin(target, PACKAGE_VERSION(), args.force, mutations)),
     );
-    ctx.ops.push(await writeClaudeCodePluginInstallHint(target));
+    const hintOp = await writeClaudeCodePluginInstallHint(target);
+    ctx.ops.push(hintOp);
+    if (hintOp.action !== 'skipped')
+      journal.record(findPreState(snapshot.preStateEntries, hintOp.path));
   } else if (installPlatform === 'codex') {
-    const codexPluginRoot = resolveCodexPluginRoot(args.installScope);
-    await ensureDirTracked(codexPluginRoot, journal);
-    const onWrite = (p: string) => journal.record(findPreState(snapshot.preStateEntries, p));
+    await ensureDirTracked(resolveCodexPluginRoot(args.installScope), journal);
+    const mutations: InstallMutationSink = {
+      ensureDir: async (path) => await ensureDirTracked(path, journal),
+      recordFile: (path) => {
+        journal.record(findPreState(snapshot.preStateEntries, path));
+      },
+    };
     ctx.ops.push(
-      ...(await installCodexPlugin(args.installScope, PACKAGE_VERSION(), args.force, onWrite)),
+      ...(await installCodexPlugin(args.installScope, PACKAGE_VERSION(), args.force, mutations)),
     );
   } else {
     const reviewerDefinition = reviewerDefinitionForPlatform(installPlatform);
@@ -363,7 +380,6 @@ export async function writeArtifacts(
     ctx.ops.push(revOp);
     if (revOp.action !== 'skipped')
       journal.record(findPreState(snapshot.preStateEntries, reviewerPath));
-    journal.record(findPreState(snapshot.preStateEntries, reviewerPath));
   }
 }
 
