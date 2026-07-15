@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import { lstatSync, realpathSync } from 'node:fs';
 import { mkdir, readFile, rename, rm, unlink, writeFile, lstat, readdir } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync, type ExecSyncOptions } from 'node:child_process';
 import { dirname, join, relative, basename } from 'node:path';
 import { ensureDir } from '../adapters/persistence.js';
 import type { FileOp } from './install-types.js';
@@ -264,8 +264,12 @@ async function findTransactionArtifacts(configTargetDir: string): Promise<string
 
 // ─── Package Manager ────────────────────────────────────────────────────
 
-function npmCommand(): string {
-  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+function executeNpm(args: string[], options: ExecSyncOptions): void {
+  if (process.platform === 'win32') {
+    execSync(`npm ${args.join(' ')}`, options);
+    return;
+  }
+  execFileSync('npm', args, options);
 }
 
 function detectPackageManager(): 'bun' | 'npm' | null {
@@ -276,7 +280,7 @@ function detectPackageManager(): 'bun' | 'npm' | null {
     // Try npm when bun is unavailable.
   }
   try {
-    execFileSync(npmCommand(), ['--version'], { stdio: 'ignore', timeout: 5000 });
+    executeNpm(['--version'], { stdio: 'ignore', timeout: 5000 });
     return 'npm';
   } catch {
     // No supported package manager is available.
@@ -289,8 +293,7 @@ const INSTALL_TIMEOUT = 5 * 60 * 1000;
 function doPackageInstall(pm: 'npm' | 'bun', stagingRoot: string): void {
   try {
     if (pm === 'npm') {
-      execFileSync(
-        npmCommand(),
+      executeNpm(
         ['install', '--prefix', '.', '--ignore-scripts', '--no-audit', '--no-fund', '--omit=dev'],
         {
           cwd: stagingRoot,
