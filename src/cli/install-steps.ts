@@ -35,6 +35,7 @@ import {
   codexPluginSnapshotPaths,
   installCodexPlugin,
   resolveCodexMarketplacePath,
+  resolveCodexPluginRoot,
 } from './codex-plugin-install.js';
 import {
   type CliArgs,
@@ -178,6 +179,11 @@ async function buildDirectorySnapshots(
     entries.push(await snapshotForRollback(join(target, 'tools'), 'directory'));
   } else {
     entries.push(await snapshotForRollback(join(target, 'vendor'), 'directory'));
+    // Platform-specific plugin roots
+    if (installPlatform === 'claude-code') {
+      entries.push(await snapshotForRollback(join(target, 'flowguard-plugin'), 'directory'));
+    }
+    // Codex plugin root is captured via codexPluginSnapshotPaths
   }
 
   entries.push(await snapshotForRollback(join(configTargetDir, 'node_modules'), 'directory'));
@@ -313,11 +319,14 @@ export async function writeArtifacts(
 
   // Platform-specific artifacts
   if (installPlatform === 'claude-code') {
+    await ensureDirTracked(join(target, 'flowguard-plugin'), journal);
     const claudePaths = claudeCodePluginSnapshotPaths(target);
     ctx.ops.push(...(await installClaudeCodePlugin(target, PACKAGE_VERSION(), args.force)));
     ctx.ops.push(await writeClaudeCodePluginInstallHint(target));
     for (const p of claudePaths) journal.record(findPreState(snapshot.preStateEntries, p));
   } else if (installPlatform === 'codex') {
+    const codexPluginRoot = resolveCodexPluginRoot(args.installScope);
+    await ensureDirTracked(codexPluginRoot, journal);
     const codexPaths = codexPluginSnapshotPaths(args.installScope);
     ctx.ops.push(...(await installCodexPlugin(args.installScope, PACKAGE_VERSION(), args.force)));
     for (const p of codexPaths) journal.record(findPreState(snapshot.preStateEntries, p));
