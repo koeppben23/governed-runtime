@@ -45,7 +45,7 @@ describe('audit completeness', () => {
       const report = evaluateCompleteness(state);
       expect(report.phase).toBe('COMPLETE');
       expect(report.overallComplete).toBe(true);
-      expect(report.summary.complete).toBe(8); // All 8 slots
+      expect(report.summary.complete).toBe(9); // All 9 slots
       expect(report.summary.missing).toBe(0);
       expect(report.summary.failed).toBe(0);
     });
@@ -325,7 +325,7 @@ describe('audit completeness', () => {
       const report = evaluateCompleteness(state);
       const { complete, missing, notYetRequired, failed } = report.summary;
       expect(complete + missing + notYetRequired + failed).toBe(report.summary.total);
-      expect(report.summary.total).toBe(8);
+      expect(report.summary.total).toBe(9);
     });
 
     it('architecture flow evaluates arch-specific slots', () => {
@@ -405,15 +405,16 @@ describe('audit completeness', () => {
         expectedRequired: number;
         expectedTotal: number;
       }> = [
-        { phase: 'READY', expectedRequired: 0, expectedTotal: 8 },
-        { phase: 'TICKET', expectedRequired: 1, expectedTotal: 8 }, // ticket
-        { phase: 'PLAN', expectedRequired: 2, expectedTotal: 8 }, // ticket, plan
-        { phase: 'PLAN_REVIEW', expectedRequired: 3, expectedTotal: 8 }, // +selfReview
-        { phase: 'VALIDATION', expectedRequired: 4, expectedTotal: 8 }, // +planReviewDecision
-        { phase: 'IMPLEMENTATION', expectedRequired: 5, expectedTotal: 8 }, // +validation
-        { phase: 'IMPL_REVIEW', expectedRequired: 6, expectedTotal: 8 }, // +implementation
-        { phase: 'EVIDENCE_REVIEW', expectedRequired: 7, expectedTotal: 8 }, // +implReview
-        { phase: 'COMPLETE', expectedRequired: 8, expectedTotal: 8 }, // +evidenceReviewDecision
+        { phase: 'READY', expectedRequired: 0, expectedTotal: 9 },
+        { phase: 'TICKET', expectedRequired: 1, expectedTotal: 9 }, // ticket
+        { phase: 'PLAN', expectedRequired: 2, expectedTotal: 9 }, // ticket, plan
+        { phase: 'PLAN_REVIEW', expectedRequired: 3, expectedTotal: 9 }, // +selfReview
+        { phase: 'VALIDATION', expectedRequired: 4, expectedTotal: 9 }, // +planReviewDecision
+        { phase: 'IMPLEMENTATION', expectedRequired: 5, expectedTotal: 9 }, // +validation
+        { phase: 'IMPL_VALIDATION', expectedRequired: 6, expectedTotal: 9 }, // +implementation
+        { phase: 'IMPL_REVIEW', expectedRequired: 7, expectedTotal: 9 }, // +implValidation
+        { phase: 'EVIDENCE_REVIEW', expectedRequired: 8, expectedTotal: 9 }, // +implReview
+        { phase: 'COMPLETE', expectedRequired: 9, expectedTotal: 9 }, // +evidenceReviewDecision
       ];
       for (const { phase, expectedRequired } of phases) {
         const state =
