@@ -33,7 +33,8 @@ describe('buildProductNextAction', () => {
     it('SESSION_COMPLETE (COMPLETE) gets phase-enriched text', () => {
       const action = resolveNextAction('COMPLETE', makeProgressedState('COMPLETE'));
       const product = buildProductNextAction(action, 'COMPLETE');
-      expect(product.commands).toEqual(['/export']);
+      expect(product.commands).toEqual(['/finish', '/export']);
+      expect(product.text).toContain('/finish');
       expect(product.text).toContain('/export');
       expect(product.text).toContain('Complete');
       // Canonical action has no commands
@@ -65,14 +66,16 @@ describe('buildProductNextAction', () => {
     it('SESSION_COMPLETE (ARCH_COMPLETE) gets phase-enriched text', () => {
       const action = resolveNextAction('ARCH_COMPLETE', makeProgressedState('ARCH_COMPLETE'));
       const product = buildProductNextAction(action, 'ARCH_COMPLETE');
-      expect(product.commands).toEqual(['/export']);
+      expect(product.commands).toEqual(['/finish', '/export']);
+      expect(product.text).toContain('/finish');
       expect(product.text).toContain('Architecture complete');
     });
 
     it('SESSION_COMPLETE (REVIEW_COMPLETE) gets phase-enriched text', () => {
       const action = resolveNextAction('REVIEW_COMPLETE', makeProgressedState('REVIEW_COMPLETE'));
       const product = buildProductNextAction(action, 'REVIEW_COMPLETE');
-      expect(product.commands).toEqual(['/export']);
+      expect(product.commands).toEqual(['/finish', '/export']);
+      expect(product.text).toContain('/finish');
       expect(product.text).toContain('Review complete');
     });
   });
@@ -143,8 +146,10 @@ describe('buildProductNextAction', () => {
     it('SESSION_COMPLETE text enriched with phase label', () => {
       const action = { code: 'SESSION_COMPLETE', text: '', commands: [] as string[] };
       const product = buildProductNextAction(action, 'COMPLETE');
-      expect(product.text).toBe('Complete. Run /export to create a verifiable audit package.');
-      expect(product.commands).toEqual(['/export']);
+      expect(product.text).toBe(
+        'Complete. Review readiness with /finish, then run /export to create a verifiable audit package.',
+      );
+      expect(product.commands).toEqual(['/finish', '/export']);
     });
 
     it('RUN_ARCHITECTURE text and commands are exact', () => {

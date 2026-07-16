@@ -89,6 +89,40 @@ export function recordUserDecisionIntentFromCommand(input: {
   });
 }
 
+/**
+ * Non-destructive gate check for a recorded user-decision intent.
+ *
+ * Unlike {@link consumeUserDecisionIntent}, a *valid* intent is left in place so
+ * a decision call that fails at a later, independent stage (schema validation,
+ * actor assurance, etc.) can be retried without the user re-issuing the command.
+ * The valid intent is only removed once the decision is actually processed — see
+ * {@link consumeUserDecisionIntent}, which the decision tool calls on success.
+ *
+ * Anti-replay is preserved for the terminal rejection reasons: an `expired` or
+ * `verdict_mismatch` intent IS deleted here so a stale or wrong-verdict command
+ * can never become an implicit approval cache for a later tool call. A `missing`
+ * intent has nothing to delete.
+ */
+export function peekUserDecisionIntent(input: {
+  readonly sessionId: string;
+  readonly verdict: ReviewVerdict;
+  readonly nowMs?: number;
+}): UserDecisionIntentConsumeResult {
+  const intent = intents.get(input.sessionId);
+  if (!intent) return { ok: false, reason: 'missing' };
+
+  const nowMs = input.nowMs ?? Date.now();
+  if (Date.parse(intent.expiresAt) <= nowMs) {
+    intents.delete(input.sessionId);
+    return { ok: false, reason: 'expired' };
+  }
+  if (intent.expectedVerdict !== input.verdict) {
+    intents.delete(input.sessionId);
+    return { ok: false, reason: 'verdict_mismatch' };
+  }
+  return { ok: true, intent };
+}
+
 export function consumeUserDecisionIntent(input: {
   readonly sessionId: string;
   readonly verdict: ReviewVerdict;
