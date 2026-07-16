@@ -21,6 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **VALIDATION fails closed when a stack is detected but no checks are derived (F4).**
+  Under lenient validation-evidence enforcement (`off`/`advisory` — e.g. the default
+  `team` mode), an empty active-check list previously passed VALIDATION vacuously.
+  When Discovery has detected a technology stack, that empty list is now treated as a
+  mis-detection hazard and blocks with `VALIDATION_EVIDENCE_STACK_NO_COMMANDS`. The
+  sole opt-out is the explicit `validationEvidence.allowNoCommands=true` policy flag;
+  the stricter `required` path (regulated/team-ci) is unchanged. `validation-evidence.ts`
+  is now mutation-covered.
+
 - **Node toolchain reproducible at 22.22.2 (#619).** `.node-version` and
   `devEngines` define the dev baseline; runtime support narrowed from `>=20` to
   `^20.0.0 || ^22.0.0 || ^24.0.0` and verified via artifact consumer jobs.

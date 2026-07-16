@@ -50,6 +50,7 @@
     "src/machine/evaluate.ts",
     "src/machine/guards.ts",
     "src/machine/next-action.ts",
+    "src/machine/validation-evidence.ts",
 
     "src/rails/architecture.ts",
     "src/rails/hydrate.ts",

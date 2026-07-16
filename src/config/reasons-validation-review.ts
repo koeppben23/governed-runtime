@@ -388,6 +388,18 @@ export const REVIEW_VALIDATION_REASONS = [
     ],
   },
 
+  {
+    code: 'VALIDATION_EVIDENCE_STACK_NO_COMMANDS',
+    category: 'admissibility',
+    messageTemplate:
+      'Discovery detected a technology stack for this repository, but no verification commands were derived, so VALIDATION cannot pass vacuously. A detected stack with zero active checks is treated as a mis-detection hazard, not a verified "no commands" property.',
+    recoverySteps: [
+      'Re-run flowguard_hydrate so repo-native verification commands (build/test/lint) are detected from the stack',
+      'Ensure the stack wrapper/manifest (package.json scripts, mvnw/gradlew, pyproject) is at the resolved worktree root',
+      'If this stack genuinely has no verification commands, set validationEvidence.allowNoCommands=true in policy with explicit governance approval (the only sanctioned exception)',
+    ],
+  },
+
   // ─── Auto-Advance Safety Guard (#428) ───────────────────────────────────────
 
   {

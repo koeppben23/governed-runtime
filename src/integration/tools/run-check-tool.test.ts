@@ -325,6 +325,10 @@ describe('BAD', () => {
     await writeState(sd, {
       ...state!,
       activeChecks: [],
+      // No detected stack → exercises the genuine NO_ACTIVE_CHECKS path (not F4's
+      // stack-detected-but-no-commands block).
+      discoverySummary: null,
+      detectedStack: null,
       policySnapshot: {
         ...state!.policySnapshot,
         validationEvidence: { enforcement: 'off', allowNoCommands: false },
@@ -690,6 +694,10 @@ describe('STALE_STATE', () => {
       await writeState(sd, {
         ...(await readState(sd))!,
         activeChecks: [],
+        // No detected stack → the mid-flight clear yields NO_ACTIVE_CHECKS rather
+        // than F4's stack-detected-but-no-commands block.
+        discoverySummary: null,
+        detectedStack: null,
       });
       return {
         kind: input.kind,

@@ -164,10 +164,11 @@ real, registered reason.
 
 ### Validation Evidence
 
-| Code                             | Description                                                                                   | Solution                                                                                                                             |
-| -------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `VALIDATION_EVIDENCE_REQUIRED`   | Policy requires validation evidence but no Discovery-derived verification commands are active | Re-run discovery and `/hydrate` to detect repo-native checks, or set `validationEvidence.allowNoCommands=true` (governance approval) |
-| `VALIDATION_EVIDENCE_UNVERIFIED` | Policy requires validation evidence but Discovery is not trustworthy (NOT_VERIFIED)           | Run `/hydrate` to restore healthy Discovery and clear any blocked discovery health gate before retrying VALIDATION                   |
+| Code                                    | Description                                                                                                                           | Solution                                                                                                                             |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `VALIDATION_EVIDENCE_REQUIRED`          | Policy requires validation evidence but no Discovery-derived verification commands are active                                         | Re-run discovery and `/hydrate` to detect repo-native checks, or set `validationEvidence.allowNoCommands=true` (governance approval) |
+| `VALIDATION_EVIDENCE_UNVERIFIED`        | Policy requires validation evidence but Discovery is not trustworthy (NOT_VERIFIED)                                                   | Run `/hydrate` to restore healthy Discovery and clear any blocked discovery health gate before retrying VALIDATION                   |
+| `VALIDATION_EVIDENCE_STACK_NO_COMMANDS` | Discovery detected a technology stack but derived no verification commands; VALIDATION will not pass vacuously (mis-detection hazard) | Re-run `/hydrate` so repo-native checks are detected, or set `validationEvidence.allowNoCommands=true` (governance approval)         |
 
 ### Evidence Integrity
 
@@ -382,6 +383,7 @@ SUBAGENT_UNABLE_TO_REVIEW
 TICKET_REQUIRED
 TOOL_ERROR
 VALIDATION_EVIDENCE_REQUIRED
+VALIDATION_EVIDENCE_STACK_NO_COMMANDS
 VALIDATION_EVIDENCE_UNVERIFIED
 VALIDATION_INCOMPLETE
 VERIFIED_ACTOR_REQUIRED
