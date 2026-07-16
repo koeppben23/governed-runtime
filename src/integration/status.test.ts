@@ -455,6 +455,20 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           timedOut: false,
         },
       ],
+      implValidation: [
+        {
+          checkId: 'check_1',
+          passed: true,
+          detail: 'Post-impl checks passed',
+          executedAt: new Date().toISOString(),
+          kind: 'test',
+          command: 'npm test',
+          exitCode: 0,
+          executionMs: 1,
+          outputDigest: 'check_1_digest',
+          timedOut: false,
+        },
+      ],
       implementation: {
         changedFiles: ['a.ts'],
         domainFiles: ['a.ts'],
