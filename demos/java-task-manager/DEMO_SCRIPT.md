@@ -141,7 +141,17 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 10 — Export the Evidence
+## Step 10 — Finish Card: Readiness Check Before Export
+
+| Action                     | What I Say                                                                                                                                                                                                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/finish`                  | "Bevor ich exportiere, hole ich mit `/finish` die Finish Card — eine read-only Übersicht der Session-Readiness. `/finish` ist ein Status-Aggregator, kein Approval: es approbiert nichts, verbraucht keine Obligations, ändert keinen State und löst kein `/export` aus." |
+| Show `/finish` response    | "Die Card zeigt `overallStatus` (hier `READY`), die Evidence-Vollständigkeit, Warnungen und eine **nicht-normative** Action-Guidance (`recommended` / `not_recommended` / `not_verified`). Fehlende Evidence wäre `NOT_VERIFIED`, niemals ein fälschliches Pass."         |
+| Point out `actionGuidance` | "`create PR` und `export evidence` sind hier `recommended`. Das sind reine Präsentations-Hinweise — keine Freigabe. Die eigentliche Fail-Closed-Durchsetzung bleibt bei `/export` und den Gates. `abandon` erscheint als Exit-Option, nie als verboten."                  |
+
+---
+
+## Step 11 — Export the Evidence
 
 | Action                                      | What I Say                                                                                                                                                                            |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -246,11 +256,12 @@ git diff --name-only main...feature/add-due-date
 FlowGuard ships near-synonym commands; the script picks one of each on purpose.
 If someone in the audience knows the other name, this is why both exist:
 
-| Used in demo | Sibling            | Difference                                                                                                                                                                                                           |
-| ------------ | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/check`     | `/validate`        | Both call `flowguard_run_check`. `/check` is generic; `/validate` is the VALIDATION-phase-specific variant.                                                                                                          |
-| `/export`    | `/archive`         | Both call `flowguard_archive`. `/export` reads as the user-facing "give me the evidence package" verb.                                                                                                               |
-| `/approve`   | `/review-decision` | `/approve` always submits `approve`. `/review-decision` is the general gate command (`approve` \| `changes_requested` \| `reject`). Both route to `flowguard_decision` and both require a human origin under `team`. |
+| Used in demo | Sibling               | Difference                                                                                                                                                                                                                                                                     |
+| ------------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/check`     | `/validate`           | Both call `flowguard_run_check`. `/check` is generic; `/validate` is the VALIDATION-phase-specific variant.                                                                                                                                                                    |
+| `/export`    | `/archive`            | Both call `flowguard_archive`. `/export` reads as the user-facing "give me the evidence package" verb.                                                                                                                                                                         |
+| `/finish`    | `/status --readiness` | Both are read-only and call `flowguard_status`. `/status --readiness` returns the compact readiness projection; `/finish` additionally derives one `overallStatus`, non-normative action guidance, and exit options as a pre-export Finish Card. Neither approves or enforces. |
+| `/approve`   | `/review-decision`    | `/approve` always submits `approve`. `/review-decision` is the general gate command (`approve` \| `changes_requested` \| `reject`). Both route to `flowguard_decision` and both require a human origin under `team`.                                                           |
 
 ---
 
