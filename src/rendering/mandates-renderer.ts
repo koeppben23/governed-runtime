@@ -30,9 +30,7 @@ import {
 } from '../templates/mandates.js';
 
 export type MandatesRenderErrorCode =
-  | 'MANDATES_SECTION_NOT_FOUND'
-  | 'MANDATES_SAFETY_CRITICAL_OMITTED'
-  | 'MANDATES_ANCHOR_MISSING';
+  'MANDATES_SECTION_NOT_FOUND' | 'MANDATES_SAFETY_CRITICAL_OMITTED' | 'MANDATES_ANCHOR_MISSING';
 
 export class MandatesRenderError extends Error {
   readonly code: MandatesRenderErrorCode;
@@ -45,12 +43,7 @@ export class MandatesRenderError extends Error {
 }
 
 export type MandatesRenderPhase =
-  | 'PRE_SESSION'
-  | 'INVESTIGATION'
-  | 'PLAN'
-  | 'IMPLEMENTATION'
-  | 'REVIEW'
-  | 'ALL_PHASES';
+  'PRE_SESSION' | 'INVESTIGATION' | 'PLAN' | 'IMPLEMENTATION' | 'REVIEW' | 'ALL_PHASES';
 
 export type MandatesVerbosity = 'explicit' | 'concise' | 'diagnosticSummary';
 
