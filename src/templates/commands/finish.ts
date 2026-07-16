@@ -19,7 +19,9 @@ approval, merge, or archive-finalization command.
 2. If no session exists: report this and recommend \`/hydrate\`. Stop.
 3. Report the Finish Card concisely:
    - overallStatus (READY, READY_WITH_WARNINGS, BLOCKED, NOT_VERIFIED)
-   - blockers and warnings
+   - blockers from the \`blocker\` field (reason code/text, missing evidence,
+     next resolvable command) and warnings — render the \`blocker\` field verbatim;
+     do not reconstruct blockers from overallStatus, evidence, or nextAction
    - evidence completeness (missing/failed shown as NOT_VERIFIED, never as pass)
    - actionGuidance (recommended / not_recommended / not_verified)
    - exitOptions

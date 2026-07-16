@@ -239,6 +239,13 @@ export interface FinishCard {
     primaryCommand: string | null;
     summary: string;
   };
+  /**
+   * Canonical blocker detail, copied verbatim from buildBlockedProjection.
+   * Explains WHY the session is blocked (reason code/text, missing evidence,
+   * next resolvable command) rather than only that it is blocked. Composition
+   * only — no independent blocker logic is invented here.
+   */
+  blocker: BlockedProjection;
   /** Configuration warnings surfaced by the readiness projection. */
   warnings: string[];
   /**
@@ -635,6 +642,7 @@ function buildFinishActionGuidance(overallStatus: FinishOverallStatus): FinishAc
 export function buildFinishCard(state: SessionState, policy: FlowGuardPolicy): FinishCard {
   const readiness = buildReadinessProjection(state, policy);
   const evidence = buildEvidenceDetailProjection(state);
+  const blocker = buildBlockedProjection(state, policy);
   const next = resolveNextAction(state.phase, state);
   const overallStatus = deriveFinishOverallStatus(readiness, evidence);
 
@@ -647,6 +655,7 @@ export function buildFinishCard(state: SessionState, policy: FlowGuardPolicy): F
       primaryCommand: next.commands[0] ?? null,
       summary: next.text,
     },
+    blocker,
     warnings: readiness.warnings,
     actionGuidance: buildFinishActionGuidance(overallStatus),
     exitOptions: [...FINISH_EXIT_OPTIONS],

@@ -165,9 +165,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for #520: added the read-only /finish command (finish.md), a
     // status aggregator that renders the Finish Card via flowguard_status
     // { finish: true }. New command body changes the COMMANDS hash.
+    // Refreshed for #520 review: /finish template now renders the canonical
+    // blocker field verbatim (buildBlockedProjection) instead of unspecified
+    // "blockers and warnings", changing the /finish body and COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'cfc6006718b6ec37fa54bf7a055fe4d1e440edbc5446cac6626fdc9ab4a412d0',
+      '9b097655dbf8f51cc3df5f7052e7391c5e7fdc6152cd1d45e642470facc499f6',
     );
   });
 
