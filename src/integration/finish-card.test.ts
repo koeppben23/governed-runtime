@@ -26,6 +26,7 @@ import {
   deriveFinishOverallStatus,
   buildReadinessProjection,
   buildEvidenceDetailProjection,
+  buildBlockedProjection,
 } from './status.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { resolveNextAction } from '../machine/next-action.js';
@@ -103,6 +104,16 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
     expect(buildFinishCard(state, policy).overallStatus).toBe('BLOCKED');
   });
 
+  it('exposes canonical blocker detail (blocked=true) when BLOCKED', () => {
+    const state = makeBlockedIncompleteState();
+    const card = buildFinishCard(state, policy);
+    expect(card.overallStatus).toBe('BLOCKED');
+    expect(card.blocker.blocked).toBe(true);
+    // Missing required evidence is surfaced in the canonical blocker projection,
+    // not reconstructed by the card.
+    expect(card.blocker.missingEvidence.length).toBeGreaterThan(0);
+  });
+
   it('never reports READY prematurely in an early phase', () => {
     const card = buildFinishCard(makeProgressedState('TICKET'), policy);
     expect(card.overallStatus).not.toBe('READY');
@@ -133,6 +144,10 @@ describe('buildFinishCard — composition-only (no independent evaluation)', () 
 
   it('evidence equals buildEvidenceDetailProjection verbatim', () => {
     expect(buildFinishCard(state, policy).evidence).toEqual(buildEvidenceDetailProjection(state));
+  });
+
+  it('blocker equals buildBlockedProjection verbatim', () => {
+    expect(buildFinishCard(state, policy).blocker).toEqual(buildBlockedProjection(state, policy));
   });
 
   it('nextAction.primaryCommand equals resolveNextAction commands[0] ?? null', () => {

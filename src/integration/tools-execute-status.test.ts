@@ -549,6 +549,7 @@ describe('status', () => {
       );
       expect(finish.readiness).toBeDefined();
       expect(finish.evidence).toBeDefined();
+      expect(finish.blocker).toBeDefined();
       expect(finish.nextAction).toBeDefined();
       // Non-normative action framing + exit options.
       expect(Array.isArray(finish.actionGuidance)).toBe(true);
@@ -578,6 +579,22 @@ describe('status', () => {
       await status.execute({ finish: true }, ctx);
       const after = await readState(sessDir);
       expect(after).toEqual(before);
+    });
+
+    it('returns a blocked error (no card) when session state is unreadable', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      // Corrupt the persisted state so readState throws before any card is built.
+      await fs.writeFile(statePath(sessDir), '{ this is not valid json', 'utf-8');
+
+      const result = parseToolResult(await status.execute({ finish: true }, ctx));
+      // No Finish Card is produced for an unreadable state; the failure is
+      // surfaced as a blocked result carrying the persistence error code.
+      expect(result.finish).toBeUndefined();
+      expect(result.code).toBe('PARSE_FAILED');
     });
   });
 
