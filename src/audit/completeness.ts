@@ -234,11 +234,30 @@ const SLOT_ARTIFACT_KIND: Readonly<Record<string, string>> = {
 // ─── Slot Evaluation ──────────────────────────────────────────────────────────
 
 /**
+ * Whether validation-like evidence is complete for a set of results.
+ * Handles the zero-check policy path: when activeChecks.length === 0 and
+ * allowNoCommands === true (explicit opt-out), the vacuous truth from the
+ * machine's auto-advance is mirrored here so a session that is validly empty
+ * does not appear permanently incomplete without a fabricated result entry.
+ * The canonical allowNoCommands flag lives in the policy snapshot.
+ */
+function checksComplete(
+  state: SessionState,
+  results: ReadonlyArray<{ checkId: string; passed: boolean }>,
+): boolean {
+  if (state.activeChecks.length === 0) {
+    return state.policySnapshot?.validationEvidence?.allowNoCommands === true;
+  }
+  return state.activeChecks.every((id) => results.some((v) => v.checkId === id && v.passed));
+}
+
+/**
  * Check if an evidence slot has valid data present in state.
  *
  * Special cases:
  * - planReviewDecision: verified by topology invariant (phase >= VALIDATION)
- * - validation: all active checks must pass (not just "some results exist")
+ * - validation: checksComplete — zero-check vacuous truth per policy, or all activeChecks passed
+ * - implValidation: checksComplete — same semantics, separate post-implementation slot
  * - evidenceReviewDecision: COMPLETE phase with no error
  */
 const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phaseOrd: number) => boolean> = {
@@ -247,15 +266,9 @@ const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phaseOrd: number
   plan: (s) => s.plan !== null,
   selfReview: (s) => s.selfReview !== null,
   planReviewDecision: (_s, phaseOrd) => phaseOrd >= PHASE_ORDER['VALIDATION'],
-  validation: (s) =>
-    s.validation.length > 0 &&
-    s.activeChecks.length > 0 &&
-    s.activeChecks.every((id) => s.validation.some((v) => v.checkId === id && v.passed)),
+  validation: (s) => checksComplete(s, s.validation),
   implementation: (s) => s.implementation !== null,
-  implValidation: (s) =>
-    s.implValidation.length > 0 &&
-    s.activeChecks.length > 0 &&
-    s.activeChecks.every((id) => s.implValidation.some((v) => v.checkId === id && v.passed)),
+  implValidation: (s) => checksComplete(s, s.implValidation),
   implReview: (s) => s.implReview !== null,
   evidenceReviewDecision: (s) => s.phase === 'COMPLETE' && s.error === null,
   archReviewDecision: (s) => s.phase === 'ARCH_COMPLETE' && s.error === null,

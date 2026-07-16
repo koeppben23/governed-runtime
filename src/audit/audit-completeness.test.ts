@@ -847,6 +847,80 @@ describe('audit completeness', () => {
     });
   });
 
+  describe('Zero-check completeness (allowNoCommands)', () => {
+    it('vacuous pass: validation + implValidation are complete with allowNoCommands=true', () => {
+      const state = makeProgressedState('COMPLETE');
+      const stateWithPolicy = {
+        ...state,
+        activeChecks: [],
+        validation: [],
+        implValidation: [],
+        policySnapshot: {
+          ...state.policySnapshot,
+          validationEvidence: { allowNoCommands: true },
+        },
+      };
+      const report = evaluateCompleteness(stateWithPolicy);
+      expect(report.overallComplete).toBe(true);
+      const valSlot = report.slots.find((s) => s.slot === 'validation')!;
+      expect(valSlot.status).toBe('complete');
+      const implValSlot = report.slots.find((s) => s.slot === 'implValidation')!;
+      expect(implValSlot.status).toBe('complete');
+    });
+
+    it('missing: validation incomplete when activeChecks exist but no results', () => {
+      const state = makeProgressedState('IMPLEMENTATION');
+      const stateWithChecks = {
+        ...state,
+        activeChecks: ['test'],
+        validation: [],
+      };
+      const report = evaluateCompleteness(stateWithChecks);
+      const valSlot = report.slots.find((s) => s.slot === 'validation')!;
+      expect(valSlot.status).toBe('missing');
+    });
+
+    it('missing: implValidation incomplete when activeChecks exist but no results', () => {
+      const state = makeProgressedState('IMPL_REVIEW');
+      const stateWithChecks = {
+        ...state,
+        activeChecks: ['test'],
+        validation: [
+          {
+            checkId: 'test',
+            passed: true,
+            detail: '',
+            executedAt: '',
+            kind: 'test' as const,
+            command: '',
+            exitCode: 0,
+            executionMs: 1,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+          },
+        ],
+        implValidation: [],
+      };
+      const report = evaluateCompleteness(stateWithChecks);
+      const implValSlot = report.slots.find((s) => s.slot === 'implValidation')!;
+      expect(implValSlot.status).toBe('missing');
+    });
+
+    it('blocked: zero checks without allowNoCommands is not a vacuous pass', () => {
+      const state = makeProgressedState('COMPLETE');
+      // Default policySnapshot has no validationEvidence field — allowNoCommands is not truthy.
+      const stateWithoutPolicy = {
+        ...state,
+        activeChecks: [],
+        validation: [],
+        implValidation: [],
+      };
+      const report = evaluateCompleteness(stateWithoutPolicy);
+      const valSlot = report.slots.find((s) => s.slot === 'validation')!;
+      expect(valSlot.status).not.toBe('complete');
+    });
+  });
+
   // ─── PERF ───────────────────────────────────────────────────
   describe('PERF', () => {
     it('evaluateCompleteness < 2ms (p99 over 200 iterations)', () => {
