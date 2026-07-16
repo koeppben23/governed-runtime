@@ -185,6 +185,7 @@ const SLOT_REQUIRED_FROM: Readonly<Record<string, number>> = {
   planReviewDecision: 3, // VALIDATION
   validation: 4, // IMPLEMENTATION
   implementation: 5, // IMPL_VALIDATION
+  implValidation: 6, // IMPL_REVIEW
   implReview: 7, // EVIDENCE_REVIEW
   evidenceReviewDecision: 8, // COMPLETE
 };
@@ -197,6 +198,7 @@ const ALL_SLOTS = [
   'planReviewDecision',
   'validation',
   'implementation',
+  'implValidation',
   'implReview',
   'evidenceReviewDecision',
 ] as const;
@@ -209,6 +211,7 @@ const SLOT_LABELS: Readonly<Record<string, string>> = {
   planReviewDecision: 'Plan Review Decision',
   validation: 'Validation Results',
   implementation: 'Implementation Evidence',
+  implValidation: 'Post-Implementation Validation',
   implReview: 'Implementation Review',
   evidenceReviewDecision: 'Evidence Review Decision',
 };
@@ -221,6 +224,7 @@ const SLOT_ARTIFACT_KIND: Readonly<Record<string, string>> = {
   planReviewDecision: 'review_decision',
   validation: 'validation_results',
   implementation: 'implementation_evidence',
+  implValidation: 'implementation_validation_results',
   implReview: 'implementation_review',
   evidenceReviewDecision: 'review_decision',
   architecture: 'architecture_decision',
@@ -248,6 +252,10 @@ const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phaseOrd: number
     s.activeChecks.length > 0 &&
     s.activeChecks.every((id) => s.validation.some((v) => v.checkId === id && v.passed)),
   implementation: (s) => s.implementation !== null,
+  implValidation: (s) =>
+    s.implValidation.length > 0 &&
+    s.activeChecks.length > 0 &&
+    s.activeChecks.every((id) => s.implValidation.some((v) => v.checkId === id && v.passed)),
   implReview: (s) => s.implReview !== null,
   evidenceReviewDecision: (s) => s.phase === 'COMPLETE' && s.error === null,
   archReviewDecision: (s) => s.phase === 'ARCH_COMPLETE' && s.error === null,
@@ -266,6 +274,9 @@ function isSlotPresent(state: SessionState, slot: string): boolean {
 function isSlotFailed(state: SessionState, slot: string): boolean {
   if (slot === 'validation') {
     return state.validation.length > 0 && state.validation.some((v) => !v.passed);
+  }
+  if (slot === 'implValidation') {
+    return state.implValidation.length > 0 && state.implValidation.some((v) => !v.passed);
   }
   return false;
 }
@@ -298,6 +309,15 @@ const SLOT_DETAIL_FNS: Record<
     return failedIds.length > 0
       ? `${passed}/${total} passed, failed: ${failedIds.join(', ')}`
       : `${passed}/${total} passed`;
+  },
+  implValidation: (s) => {
+    if (s.implValidation.length === 0) return undefined;
+    const passed = s.implValidation.filter((v) => v.passed).length;
+    const total = s.implValidation.length;
+    const failedIds = s.implValidation.filter((v) => !v.passed).map((v) => v.checkId);
+    return failedIds.length > 0
+      ? `post-impl ${passed}/${total} passed, failed: ${failedIds.join(', ')}`
+      : `post-impl ${passed}/${total} passed`;
   },
   implementation: (s) =>
     s.implementation

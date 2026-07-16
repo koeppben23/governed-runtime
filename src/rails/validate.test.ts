@@ -181,4 +181,122 @@ describe('validate rail', () => {
       await expect(executeValidate(state, ctx, executors)).rejects.toThrow('executor crashed');
     });
   });
+
+  // ── IMPL_VALIDATION ────────────────────────────────────────────────────
+  describe('IMPL_VALIDATION', () => {
+    function implValidationState(overrides?: Record<string, unknown>) {
+      return makeState('IMPL_VALIDATION', {
+        ticket: TICKET,
+        plan: planWith('## Plan\nTest'),
+        reviewDecision: {
+          verdict: 'approve',
+          rationale: 'approved',
+          decidedBy: 'r1',
+          decidedAt: FIXED_TIME,
+          decisionIdentity: {
+            actorId: 'r1',
+            actorEmail: 'r@t.com',
+            actorSource: 'env' as const,
+            actorAssurance: 'best_effort' as const,
+          },
+        },
+        selfReview: {
+          iteration: 1,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: 'd1',
+          revisionDelta: 'none' as const,
+          verdict: 'accept' as const,
+        },
+        implementation: {
+          changedFiles: ['src/auth.ts'],
+          domainFiles: ['src/auth.ts'],
+          digest: 'impl-d',
+          executedAt: FIXED_TIME,
+        },
+        ...overrides,
+      });
+    }
+
+    it('ALL_PASSED writes to implValidation and advances to IMPL_REVIEW', async () => {
+      const state = implValidationState({ activeChecks: ['test', 'lint'] });
+      const executors = makeExecutors([
+        { checkId: 'test', passed: true, detail: 'OK' },
+        { checkId: 'lint', passed: true, detail: 'OK' },
+      ]);
+      const result = await executeValidate(state, ctx, executors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.phase).toBe('IMPL_REVIEW');
+        // Results land in implValidation, not validation
+        expect(result.state.implValidation).toHaveLength(2);
+        expect(result.state.validation).toHaveLength(0);
+        // Plan and self-review evidence must be preserved
+        expect(result.state.plan).not.toBeNull();
+        expect(result.state.selfReview).not.toBeNull();
+        expect(result.state.reviewDecision).not.toBeNull();
+      }
+    });
+
+    it('genuine failure clears implementation and routes to IMPLEMENTATION', async () => {
+      const state = implValidationState({ activeChecks: ['test'] });
+      const executors = makeExecutors([{ checkId: 'test', passed: false, detail: 'FAIL' }]);
+      const result = await executeValidate(state, ctx, executors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.phase).toBe('IMPLEMENTATION');
+        expect(result.state.implValidation).toHaveLength(1);
+        // Implementation cleared so agent must re-run /implement.
+        expect(result.state.implementation).toBeNull();
+        // Plan must survive — the code is wrong, not the plan.
+        expect(result.state.plan).not.toBeNull();
+        expect(result.state.selfReview).not.toBeNull();
+        expect(result.state.reviewDecision).not.toBeNull();
+      }
+    });
+
+    it('execution error (timedOut) keeps implValidation and plan intact', async () => {
+      const state = implValidationState({ activeChecks: ['test'] });
+      const executors = {
+        runCheck: vi.fn(async () => ({
+          checkId: 'test',
+          passed: false,
+          detail: 'Timeout',
+          executedAt: FIXED_TIME,
+          kind: 'test' as const,
+          command: 'npm test',
+          exitCode: 124,
+          executionMs: 300_000,
+          outputDigest: 'a'.repeat(64),
+          timedOut: true,
+        })),
+      };
+      const result = await executeValidate(state, ctx, executors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        // Stays in IMPL_VALIDATION for retry.
+        expect(result.state.phase).toBe('IMPL_VALIDATION');
+        expect(result.state.implValidation).toHaveLength(1);
+        // Implementation and plan survive.
+        expect(result.state.implementation).not.toBeNull();
+        expect(result.state.plan).not.toBeNull();
+      }
+    });
+
+    it('keeps pre-implementation validation separate from implValidation', async () => {
+      const state = implValidationState({
+        activeChecks: ['test'],
+        validation: [makeValidationResult('test', true, 'pre-impl')],
+      });
+      const executors = makeExecutors([{ checkId: 'test', passed: true, detail: 'post-impl' }]);
+      const result = await executeValidate(state, ctx, executors);
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        // pre-implementation validation untouched
+        expect(result.state.validation).toHaveLength(1);
+        // post-implementation validation recorded separately
+        expect(result.state.implValidation).toHaveLength(1);
+      }
+    });
+  });
 });
