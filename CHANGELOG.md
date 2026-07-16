@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Read-only `/finish` Finish Card (#520).** New read-only command that renders
+  a curated readiness overview before `/export`, PR, or archive decisions. It is
+  a status aggregator — never approves, never consumes obligations, never writes
+  state, and never triggers `/export`. Implemented as a thin presentation wrapper
+  (`flowguard_status` `{ finish: true }`) composing the existing readiness,
+  evidence-completeness, and next-action authorities; the only new logic is a
+  single non-normative overall-status classifier (`READY`, `READY_WITH_WARNINGS`,
+  `BLOCKED`, `NOT_VERIFIED`) plus non-normative action guidance and exit options.
+  Available in all phases including terminal phases.
+
 ### Changed
 
 - **Node toolchain reproducible at 22.22.2 (#619).** `.node-version` and

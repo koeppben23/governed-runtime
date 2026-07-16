@@ -54,6 +54,7 @@ import {
   buildBlockedProjection,
   buildContextProjection,
   buildReadinessProjection,
+  buildFinishCard,
 } from '../status.js';
 import { buildImplementationGuidance } from '../implementation-guidance.js';
 import type { DiscoveryDriftStatusProjection } from '../discovery-drift-status.js';
@@ -84,6 +85,7 @@ interface StatusArgs {
   evidence?: boolean;
   context?: boolean;
   readiness?: boolean;
+  finish?: boolean;
 }
 
 /**
@@ -123,6 +125,21 @@ function resolveProjection(
   policy: FlowGuardPolicy,
 ): string | null {
   const checkFields = buildCheckProjectionFields(state);
+  // /finish is the most comprehensive focused projection and is placed first so
+  // its own template call is never shadowed by a stray additional flag. This
+  // preserves the existing first-match dispatch semantics for all other flags.
+  if (args.finish) {
+    const finishCard = buildFinishCard(state, policy);
+    return appendNextAction(
+      JSON.stringify({
+        phase: state.phase,
+        sessionId: state.id,
+        finish: finishCard,
+        ...checkFields,
+      }),
+      state,
+    );
+  }
   if (args.whyBlocked) {
     const blocked = buildBlockedProjection(state, policy);
     return appendNextAction(
@@ -503,6 +520,13 @@ export const status: ToolDefinition = {
       .describe('Return per-slot evidence detail from the session completeness check.'),
     context: z.boolean().optional().describe('Return actor/policy/archive context projection.'),
     readiness: z.boolean().optional().describe('Return compact operational readiness projection.'),
+    finish: z
+      .boolean()
+      .optional()
+      .describe(
+        'Return the read-only Finish Card: overall status, readiness, evidence, ' +
+          'non-normative action guidance, and exit options. Never approves or mutates.',
+      ),
   },
   async execute(_args, context) {
     try {
