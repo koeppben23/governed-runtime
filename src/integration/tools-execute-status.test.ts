@@ -530,6 +530,57 @@ describe('status', () => {
     });
   });
 
+  describe('finish flag (#520 — read-only Finish Card)', () => {
+    it('returns no-session guidance instead of a card when no session exists', async () => {
+      const result = parseToolResult(await status.execute({ finish: true }, ctx));
+      expect(result.phase).toBeNull();
+      expect(result.finish).toBeUndefined();
+      expect(result.status).toContain('No FlowGuard session');
+      expect(result.next).toBe('Run /hydrate to bootstrap a session.');
+    });
+
+    it('returns a Finish Card projection for an existing session', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ finish: true }, ctx));
+      const finish = result.finish as Record<string, unknown>;
+      expect(finish).toBeDefined();
+      expect(['READY', 'READY_WITH_WARNINGS', 'BLOCKED', 'NOT_VERIFIED']).toContain(
+        finish.overallStatus,
+      );
+      expect(finish.readiness).toBeDefined();
+      expect(finish.evidence).toBeDefined();
+      expect(finish.nextAction).toBeDefined();
+      // Non-normative action framing + exit options.
+      expect(Array.isArray(finish.actionGuidance)).toBe(true);
+      expect(finish.exitOptions).toContain('abandon');
+      // Constant read-only guarantees.
+      expect(finish.guarantees).toEqual({
+        readOnly: true,
+        approves: false,
+        consumesObligations: false,
+        triggersExport: false,
+      });
+    });
+
+    it('carries verification-check fields like other focused projections', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ finish: true }, ctx));
+      expect(Array.isArray(result.activeChecks)).toBe(true);
+    });
+
+    it('does not mutate persisted state (read-only)', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const before = await readState(sessDir);
+      await status.execute({ finish: true }, ctx);
+      const after = await readState(sessDir);
+      expect(after).toEqual(before);
+    });
+  });
+
   describe('CORNER', () => {
     it('reflects ticket state after ticket is recorded', async () => {
       await hydrateAndTicket();

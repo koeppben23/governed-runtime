@@ -32,6 +32,7 @@ import { REJECT_COMMAND } from './reject.js';
 import { CHECK_COMMAND } from './check.js';
 import { EXPORT_COMMAND } from './export.js';
 import { WHY_COMMAND } from './why.js';
+import { FINISH_COMMAND } from './finish.js';
 
 export { GOVERNANCE_RULES } from './shared-rules.js';
 
@@ -56,4 +57,5 @@ export const COMMANDS: Record<string, string> = {
   'check.md': CHECK_COMMAND,
   'export.md': EXPORT_COMMAND,
   'why.md': WHY_COMMAND,
+  'finish.md': FINISH_COMMAND,
 };

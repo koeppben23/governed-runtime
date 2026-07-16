@@ -90,9 +90,29 @@ Optional focused views:
 - `/status --context` — actor/policy/archive context projection
 - `/status --readiness` — compact operational readiness projection
 
-When multiple flags are provided simultaneously, flag precedence is deterministic: `--why-blocked` > `--evidence` > `--context` > `--readiness`. Only the highest-precedence matching flag is applied.
+When multiple flags are provided simultaneously, flag precedence is deterministic: `--finish` > `--why-blocked` > `--evidence` > `--context` > `--readiness`. Only the highest-precedence matching flag is applied.
 
 `/status` maps internally to `flowguard_status`.
+
+### /finish
+
+Read-only readiness overview rendered before `/export`, PR, or archive decisions.
+
+`/finish` is a **status aggregator, not an approval, merge, or archive-finalization command**. It never approves anything, never consumes review obligations, never writes state, and never triggers `/export`. It only reports and recommends; the user decides.
+
+It composes existing authorities (the readiness projection, evidence completeness, and the canonical next action) and renders a Finish Card:
+
+- `overallStatus` — one of `READY`, `READY_WITH_WARNINGS`, `BLOCKED`, or `NOT_VERIFIED`. Missing or failed required evidence is reported as `NOT_VERIFIED`, never as a pass. `BLOCKED` takes precedence over `NOT_VERIFIED`.
+- `readiness`, `evidence`, `warnings` — the underlying projection results, unmodified.
+- `nextAction` — the canonical next action.
+- `actionGuidance` — non-normative labels (`recommended` / `not_recommended` / `not_verified`) for candidate actions (create PR, export evidence, keep branch). These are presentation labels only; they are **not** command-policy decisions and must not be consumed for enforcement.
+- `exitOptions` — user-owned exit choices such as `abandon`, which are never rendered as forbidden.
+
+Difference from `/status --readiness`: `/status --readiness` returns the compact readiness projection; `/finish` additionally derives the single `overallStatus`, the non-normative action guidance, and the exit options as a curated pre-export card. Fail-closed enforcement remains with `/export` and the existing gates — `/finish` reports a blocker, it does not enforce one.
+
+Available in any phase, including terminal phases (`COMPLETE`, `ARCH_COMPLETE`, `REVIEW_COMPLETE`). When no session exists, `/finish` reports this and recommends `/hydrate`.
+
+`/finish` maps internally to `flowguard_status` with `{ finish: true }`.
 
 ### /hydrate
 

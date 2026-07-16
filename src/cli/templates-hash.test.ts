@@ -162,13 +162,16 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // deep-module step guidance plus a "Planning discipline" section, and
     // /validate gained an advisory "Test quality" section. These change the
     // /plan and /validate command bodies and therefore the COMMANDS hash.
+    // Refreshed for #520: added the read-only /finish command (finish.md), a
+    // status aggregator that renders the Finish Card via flowguard_status
+    // { finish: true }. New command body changes the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '67f059101732eec98b74874fea55f26096e1b70c529b4277864d91a35c914f11',
+      'cfc6006718b6ec37fa54bf7a055fe4d1e440edbc5446cac6626fdc9ab4a412d0',
     );
   });
 
-  it('all 20 commands present', () => {
+  it('all 21 commands present', () => {
     const expected = [
       'abort.md',
       'approve.md',
@@ -177,6 +180,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       'check.md',
       'continue.md',
       'export.md',
+      'finish.md',
       'hydrate.md',
       'implement.md',
       'plan.md',
