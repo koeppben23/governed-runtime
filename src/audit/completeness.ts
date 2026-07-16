@@ -42,6 +42,7 @@
 import { z } from 'zod';
 import { compareActorIdentity } from '../identity/actor-info.js';
 import type { ActorIdentityComparison } from '../identity/actor-info.js';
+import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import type { SessionState, Phase } from '../state/schema.js';
 
 // ─── Zod Schemas for ReviewReport ────────────────────────────────────
@@ -235,18 +236,17 @@ const SLOT_ARTIFACT_KIND: Readonly<Record<string, string>> = {
 
 /**
  * Whether validation-like evidence is complete for a set of results.
- * Handles the zero-check policy path: when activeChecks.length === 0 and
- * allowNoCommands === true (explicit opt-out), the vacuous truth from the
- * machine's auto-advance is mirrored here so a session that is validly empty
- * does not appear permanently incomplete without a fabricated result entry.
- * The canonical allowNoCommands flag lives in the policy snapshot.
+ *
+ * For zero active checks, the validation-evidence authority decides whether
+ * vacuous advancement is admissible. This keeps audit completeness aligned
+ * with machine guards without reimplementing policy semantics.
  */
 function checksComplete(
   state: SessionState,
   results: ReadonlyArray<{ checkId: string; passed: boolean }>,
 ): boolean {
   if (state.activeChecks.length === 0) {
-    return state.policySnapshot?.validationEvidence?.allowNoCommands === true;
+    return !evaluateValidationEvidence(state).blocked;
   }
   return state.activeChecks.every((id) => results.some((v) => v.checkId === id && v.passed));
 }
@@ -256,8 +256,8 @@ function checksComplete(
  *
  * Special cases:
  * - planReviewDecision: verified by topology invariant (phase >= VALIDATION)
- * - validation: checksComplete — zero-check vacuous truth per policy, or all activeChecks passed
- * - implValidation: checksComplete — same semantics, separate post-implementation slot
+ * - validation: checksComplete - policy-admissible zero checks, or all active checks passed
+ * - implValidation: checksComplete - same semantics, separate post-implementation slot
  * - evidenceReviewDecision: COMPLETE phase with no error
  */
 const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phaseOrd: number) => boolean> = {

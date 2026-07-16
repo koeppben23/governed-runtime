@@ -3,6 +3,7 @@ import { evaluateCompleteness } from './completeness.js';
 import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import type { ValidationResult } from '../state/evidence.js';
+import type { SessionState } from '../state/schema.js';
 
 function validationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
   return {
@@ -16,6 +17,16 @@ function validationResult(checkId: string, passed: boolean, detail: string): Val
     executionMs: 1,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
+  };
+}
+
+function zeroCheckCompleteState(overrides: Partial<SessionState> = {}): SessionState {
+  return {
+    ...makeProgressedState('COMPLETE'),
+    activeChecks: [],
+    validation: [],
+    implValidation: [],
+    ...overrides,
   };
 }
 
@@ -666,11 +677,20 @@ describe('audit completeness', () => {
       expect(slot?.status).toBe('missing');
     });
 
-    it('validation: empty activeChecks means NOT present even with validation results', () => {
+    it('validation: blocked zero-check policy remains NOT present even with validation results', () => {
+      const progressed = makeProgressedState('IMPLEMENTATION');
       const state = makeState('IMPLEMENTATION', {
-        ...makeProgressedState('IMPLEMENTATION'),
+        ...progressed,
         validation: [validationResult('test_quality', true, 'ok')],
         activeChecks: [],
+        policySnapshot: {
+          ...progressed.policySnapshot,
+          validationEvidence: {
+            ...progressed.policySnapshot.validationEvidence,
+            enforcement: 'required',
+            allowNoCommands: false,
+          },
+        },
       });
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'validation');
@@ -848,24 +868,31 @@ describe('audit completeness', () => {
   });
 
   describe('Zero-check completeness (allowNoCommands)', () => {
-    it('vacuous pass: validation + implValidation are complete with allowNoCommands=true', () => {
-      const state = makeProgressedState('COMPLETE');
-      const stateWithPolicy = {
+    it('vacuous pass: explicit allowNoCommands completes both validation slots', () => {
+      const state = zeroCheckCompleteState();
+      const report = evaluateCompleteness({
         ...state,
-        activeChecks: [],
-        validation: [],
-        implValidation: [],
         policySnapshot: {
           ...state.policySnapshot,
-          validationEvidence: { allowNoCommands: true },
+          validationEvidence: {
+            ...state.policySnapshot.validationEvidence,
+            enforcement: 'required',
+            allowNoCommands: true,
+          },
         },
-      };
-      const report = evaluateCompleteness(stateWithPolicy);
+      });
       expect(report.overallComplete).toBe(true);
       const valSlot = report.slots.find((s) => s.slot === 'validation')!;
       expect(valSlot.status).toBe('complete');
       const implValSlot = report.slots.find((s) => s.slot === 'implValidation')!;
       expect(implValSlot.status).toBe('complete');
+    });
+
+    it('vacuous pass: lenient policy with no detected stack completes both validation slots', () => {
+      const report = evaluateCompleteness(zeroCheckCompleteState());
+      expect(report.overallComplete).toBe(true);
+      expect(report.slots.find((s) => s.slot === 'validation')?.status).toBe('complete');
+      expect(report.slots.find((s) => s.slot === 'implValidation')?.status).toBe('complete');
     });
 
     it('missing: validation incomplete when activeChecks exist but no results', () => {
@@ -885,20 +912,7 @@ describe('audit completeness', () => {
       const stateWithChecks = {
         ...state,
         activeChecks: ['test'],
-        validation: [
-          {
-            checkId: 'test',
-            passed: true,
-            detail: '',
-            executedAt: '',
-            kind: 'test' as const,
-            command: '',
-            exitCode: 0,
-            executionMs: 1,
-            outputDigest: 'a'.repeat(64),
-            timedOut: false,
-          },
-        ],
+        validation: [validationResult('test', true, 'passed')],
         implValidation: [],
       };
       const report = evaluateCompleteness(stateWithChecks);
@@ -906,18 +920,25 @@ describe('audit completeness', () => {
       expect(implValSlot.status).toBe('missing');
     });
 
-    it('blocked: zero checks without allowNoCommands is not a vacuous pass', () => {
-      const state = makeProgressedState('COMPLETE');
-      // Default policySnapshot has no validationEvidence field — allowNoCommands is not truthy.
-      const stateWithoutPolicy = {
-        ...state,
-        activeChecks: [],
-        validation: [],
-        implValidation: [],
-      };
-      const report = evaluateCompleteness(stateWithoutPolicy);
+    it('missing: detected stack with no commands and no opt-out blocks both validation slots', () => {
+      const state = zeroCheckCompleteState({
+        discoverySummary: {
+          primaryLanguages: ['typescript'],
+          frameworks: [],
+          topologyKind: 'single-project',
+          moduleCount: 1,
+          hasApiSurface: false,
+          hasPersistenceSurface: false,
+          hasCiCd: false,
+          hasSecuritySurface: false,
+        },
+      });
+      const report = evaluateCompleteness(state);
+      expect(report.overallComplete).toBe(false);
       const valSlot = report.slots.find((s) => s.slot === 'validation')!;
-      expect(valSlot.status).not.toBe('complete');
+      expect(valSlot.status).toBe('missing');
+      const implValSlot = report.slots.find((s) => s.slot === 'implValidation')!;
+      expect(implValSlot.status).toBe('missing');
     });
   });
 
