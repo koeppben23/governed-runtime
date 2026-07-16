@@ -31,6 +31,7 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 - `git diff` of the fix
 - `/approve` → COMPLETE
 - `./mvnw test` — 16 green, 0 skipped
+- `/finish` Finish Card (`overallStatus: READY`, non-normative `actionGuidance`, `exitOptions`)
 - `/export` response (`archiveStatus: verified`, `Session archived and verified.`)
 
 ### 2. Screen Recording — Optional Appendix (~3–5 min)
