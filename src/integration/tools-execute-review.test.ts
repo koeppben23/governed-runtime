@@ -61,6 +61,7 @@ import { resolvePolicyFromState, writeStateWithArtifacts } from './tools/helpers
 import { TEAM_POLICY } from '../config/policy.js';
 import {
   clearUserDecisionIntents,
+  peekUserDecisionIntent,
   recordUserDecisionIntent,
   recordUserDecisionIntentFromCommand,
 } from './user-decision-intent.js';
@@ -741,6 +742,111 @@ describe('decision', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('ACTOR_ASSURANCE_INSUFFICIENT');
+    });
+  });
+
+  // ── Intent survival across independent pre-persistence failures ──
+  // Regression for the double-/approve bug: the user-decision intent must NOT be
+  // burned when a decision call fails at a stage AFTER the human-origin gate but
+  // BEFORE the decision is persisted (schema validation, actor resolution). The
+  // user must be able to retry without re-issuing the /approve command.
+  describe('INTENT_SURVIVAL', () => {
+    it('preserves intent when actor resolution fails, allowing retry without a new command', async () => {
+      const { ActorClaimError } = actorMock;
+      await reachPlanReview();
+      recordUserDecision('approve');
+
+      // First attempt fails AFTER the human-origin gate (actor resolution throws).
+      vi.mocked(actorMock.resolveActor).mockRejectedValueOnce(
+        new ActorClaimError('ACTOR_CLAIM_EXPIRED', 'claim expired'),
+      );
+      const firstRaw = await decision.execute({ verdict: 'approve', rationale: 'Proceed' }, ctx);
+      const first = parseToolResult(firstRaw);
+      expect(first.error).toBe(true);
+      expect(first.code).toBe('ACTOR_CLAIM_EXPIRED');
+
+      // Retry WITHOUT recording a new intent — the original must still be valid.
+      const secondRaw = await decision.execute({ verdict: 'approve', rationale: 'Proceed' }, ctx);
+      const second = parseToolResult(secondRaw);
+      expect(second.error).toBeUndefined();
+      expect(second.phase).toBe('VALIDATION');
+    });
+
+    it('does not burn the intent when a decision fails before persistence (artifacts missing)', async () => {
+      await reachPlanReview();
+      recordUserDecision('approve');
+
+      // Remove derived plan artifacts so the decision fails at the
+      // artifact/persistence stage rather than completing.
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      await fs.rm(`${sessDir}/artifacts`, { recursive: true, force: true });
+
+      const firstRaw = await decision.execute({ verdict: 'approve', rationale: 'Proceed' }, ctx);
+      const first = parseToolResult(firstRaw);
+      expect(first.error).toBe(true);
+      expect(first.code).toBe('EVIDENCE_ARTIFACT_MISSING');
+
+      // A failed decision must never burn the intent: the intent is only consumed
+      // once finalResult.kind === 'ok'. Inspect the store non-destructively.
+      expect(
+        peekUserDecisionIntent({ sessionId: ctx.sessionID, verdict: 'approve' }),
+      ).toMatchObject({ ok: true });
+    });
+
+    it('burns intent exactly once on success (no replay after a successful decision)', async () => {
+      await reachPlanReview();
+      recordUserDecision('approve');
+
+      const first = parseToolResult(
+        await decision.execute({ verdict: 'approve', rationale: 'Looks good' }, ctx),
+      );
+      expect(first.error).toBeUndefined();
+      expect(first.phase).toBe('VALIDATION');
+
+      // Force the gate back to PLAN_REVIEW and replay: the consumed intent is gone.
+      const state = await readState(await currentSessionDir());
+      await writeState(await currentSessionDir(), { ...state!, phase: 'PLAN_REVIEW' });
+      const second = parseToolResult(
+        await decision.execute({ verdict: 'approve', rationale: 'Replay' }, ctx),
+      );
+      expect(second.error).toBe(true);
+      expect(second.code).toBe('HUMAN_DECISION_REQUIRED');
+    });
+
+    it('consumes intent at the correct time for changes_requested (returns to PLAN)', async () => {
+      await reachPlanReview();
+      recordUserDecision('changes_requested');
+      const first = parseToolResult(
+        await decision.execute(
+          { verdict: 'changes_requested', rationale: 'More detail needed' },
+          ctx,
+        ),
+      );
+      expect(first.error).toBeUndefined();
+      expect(first.phase).toBe('PLAN');
+
+      // Intent was consumed on success — a replay at PLAN_REVIEW is blocked.
+      const state = await readState(await currentSessionDir());
+      await writeState(await currentSessionDir(), { ...state!, phase: 'PLAN_REVIEW' });
+      const second = parseToolResult(
+        await decision.execute({ verdict: 'changes_requested', rationale: 'Replay' }, ctx),
+      );
+      expect(second.error).toBe(true);
+      expect(second.code).toBe('HUMAN_DECISION_REQUIRED');
+    });
+
+    it('persists an empty-string rationale when rationale is omitted (null-strip safety)', async () => {
+      await reachPlanReview();
+      recordUserDecision('approve');
+      // Simulate the MCP boundary having stripped a null rationale: the key is absent.
+      const raw = await decision.execute({ verdict: 'approve' } as { verdict: ReviewVerdict }, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('VALIDATION');
+      expect(result.reviewDecision).toMatchObject({ rationale: '' });
     });
   });
 });

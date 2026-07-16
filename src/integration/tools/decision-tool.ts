@@ -35,7 +35,7 @@ import { ActorIdentityError } from '../../adapters/actor.js';
 
 // Finalization service
 import { finalizeDecision } from '../services/decision-finalization.js';
-import { consumeUserDecisionIntent } from '../user-decision-intent.js';
+import { consumeUserDecisionIntent, peekUserDecisionIntent } from '../user-decision-intent.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_decision — Human Verdict at User Gates
@@ -47,13 +47,18 @@ function requireHumanDecisionIntent(input: {
   readonly requireHumanGates: boolean;
 }): string | null {
   if (!input.requireHumanGates) return null;
-  const consumed = consumeUserDecisionIntent({
+  // Non-destructive gate: a valid intent is left in place so that a decision
+  // failing at a later, independent stage (schema validation, actor assurance)
+  // can be retried without the user re-issuing the /approve command. The intent
+  // is only consumed once the decision is actually processed (see execute()).
+  // Anti-replay for expired/verdict_mismatch is still enforced inside peek.
+  const gate = peekUserDecisionIntent({
     sessionId: input.sessionId,
     verdict: input.verdict,
   });
-  if (consumed.ok) return null;
+  if (gate.ok) return null;
   return formatBlocked('HUMAN_DECISION_REQUIRED', {
-    reason: consumed.reason,
+    reason: gate.reason,
   });
 }
 
@@ -76,10 +81,11 @@ export const decision: ToolDefinition = {
   async execute(args, context) {
     try {
       const probe = await withMutableSession(context);
+      const requireHumanGates = probe.policy.requireHumanGates === true;
       const humanOriginBlocked = requireHumanDecisionIntent({
         sessionId: context.sessionID,
         verdict: args.verdict,
-        requireHumanGates: probe.policy.requireHumanGates === true,
+        requireHumanGates,
       });
       if (humanOriginBlocked) {
         getAdapterLogger().warn('tool', 'decision_origin_missing', {
@@ -112,7 +118,13 @@ export const decision: ToolDefinition = {
             state,
             {
               verdict: args.verdict,
-              rationale: args.rationale,
+              // Fall back to an empty string here rather than relying on the Zod
+              // `.default('')`: the MCP boundary strips null-valued args (some
+              // models inject `rationale: null`), which removes the key entirely
+              // and leaves the value undefined by the time it reaches state
+              // serialization. Without this guard SessionState.safeParse rejects
+              // the decision with SCHEMA_VALIDATION_FAILED.
+              rationale: args.rationale ?? '',
               decidedBy: actorInfo.id,
               decisionIdentity,
             },
@@ -130,6 +142,21 @@ export const decision: ToolDefinition = {
           });
 
           const persisted = await persistAndFormat(sessDir, finalResult);
+
+          // Consume the user-decision intent ONLY on a fully successful decision,
+          // and only in human-gated mode. Placing this after finalizeDecision (and
+          // after persistAndFormat) guarantees that any failure which produces a
+          // non-ok result or throws before this point — schema validation, actor
+          // assurance, missing evidence artifacts — leaves the intent intact for
+          // retry. A successful decision still burns it exactly once, preserving
+          // anti-replay. The consume is in-memory and cannot fail.
+          if (requireHumanGates && finalResult.kind === 'ok') {
+            consumeUserDecisionIntent({
+              sessionId: context.sessionID,
+              verdict: args.verdict,
+            });
+          }
+
           if (finalResult.kind === 'ok') {
             getAdapterLogger().info('tool', 'decision_persisted', {
               sessionId: context.sessionID,

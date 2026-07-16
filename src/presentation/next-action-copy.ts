@@ -68,8 +68,8 @@ const PRODUCT_GUIDANCE = {
     commands: ['/implement'],
   },
   SESSION_COMPLETE: {
-    text: 'Workflow complete. Run /export to create a verifiable audit package.',
-    commands: ['/export'],
+    text: 'Workflow complete. Review readiness with /finish, then run /export to create a verifiable audit package.',
+    commands: ['/finish', '/export'],
   },
   RUN_ARCHITECTURE: {
     text: 'Submit your Architecture Decision Record with /architecture',
@@ -100,10 +100,13 @@ export function buildProductNextAction(
 
   const phaseLabel = PHASE_LABELS[phase];
 
-  // Enrich terminal messages with the phase label for context
+  // Enrich terminal messages with the phase label for context.
+  // /finish is a read-only readiness aggregator that works in every terminal
+  // phase (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE), so it is offered before
+  // /export across all three flows.
   if (action.code === 'SESSION_COMPLETE') {
     return {
-      text: `${phaseLabel}. Run /export to create a verifiable audit package.`,
+      text: `${phaseLabel}. Review readiness with /finish, then run /export to create a verifiable audit package.`,
       commands: guidance.commands,
     };
   }
