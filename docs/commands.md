@@ -241,9 +241,10 @@ Execute the implementation plan.
 
 **Allowed in:** IMPLEMENTATION
 
-The convergence event fired by the machine is `REVIEW_MET`; the human-visible
-verdict surface is still `approve` / `changes_requested`. See
-`docs/phases.md#review-loop` for the loop semantics.
+The convergence event fired by the machine is `REVIEW_MET`; the reviewer
+subagent's loop verdict is `accept` / `changes_requested` (the human
+EVIDENCE_REVIEW gate separately uses `approve` / `changes_requested` / `reject`).
+See `docs/phases.md#review-loop` for the loop semantics.
 
 ### /architecture
 

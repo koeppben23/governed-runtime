@@ -259,7 +259,7 @@ Independent subagent review is the default FlowGuard policy configuration:
   iteration:            number    // 0-based, must match expected iteration
   planVersion:          number    // positive integer, must match current plan version
   reviewMode:           'subagent'
-  overallVerdict:       'approve' | 'changes_requested' | 'unable_to_review'
+  overallVerdict:       'accept' | 'changes_requested' | 'unable_to_review'
   blockingIssues:       Finding[] // severity: critical|major|minor
   majorRisks:           Finding[] // category: completeness|correctness|feasibility|risk|quality
   missingVerification:  string[]

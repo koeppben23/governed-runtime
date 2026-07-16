@@ -43,7 +43,7 @@ export const hasPlanReady: GuardFn = (s) => s.ticket !== null && s.plan !== null
  *
  * Converged when:
  *   iteration >= maxIterations (force-convergence)
- *   OR (revisionDelta === "none" AND verdict === "approve") (stable approval)
+ *   OR (revisionDelta === "none" AND verdict === "accept") (stable approval)
  *
  * Special case (P1.3 — third LoopVerdict):
  *   verdict === "unable_to_review" returns false UNCONDITIONALLY.
@@ -52,7 +52,7 @@ export const hasPlanReady: GuardFn = (s) => s.ticket !== null && s.plan !== null
  * subagent (see src/templates/mandates.ts validity-conditions whitelist).
  * It MUST NOT count as convergence on either disjunct:
  *
- * 1. The "stable approval" disjunct does not apply (verdict !== "approve").
+ * 1. The "stable approval" disjunct does not apply (verdict !== "accept").
  * 2. The "iteration >= maxIterations" force-convergence disjunct WOULD
  *    otherwise force-converge an unreviewable submission, which is
  *    exactly the failure mode this slice prevents. A reviewer that has

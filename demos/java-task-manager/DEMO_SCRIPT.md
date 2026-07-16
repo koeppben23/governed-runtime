@@ -92,9 +92,9 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ## Step 5 — Validate (all tests pass, disabled test does not block)
 
-| Action   | Phase                       | What I Say                                                                                                                                                                                                           |
-| -------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/check` | VALIDATION → IMPLEMENTATION | "FlowGuard führt die Validierung durch: `./mvnw test`. Alle aktiven Tests sind grün — der `@Disabled`-Test läuft nicht mit. Deshalb ist die Validation erfolgreich und FlowGuard erlaubt jetzt die Implementierung." |
+| Action   | Phase                       | What I Say                                                                                                                                                                                                                                                                                                                      |
+| -------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/check` | VALIDATION → IMPLEMENTATION | "FlowGuard führt die Validierung durch: `./mvnw verify` (der aus den Repo-Wrappern erkannte Verifikationsbefehl — ein Superset, das die Test-Phase mit ausführt). Alle aktiven Tests sind grün — der `@Disabled`-Test läuft nicht mit. Deshalb ist die Validation erfolgreich und FlowGuard erlaubt jetzt die Implementierung." |
 
 ---
 

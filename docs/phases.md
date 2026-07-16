@@ -263,7 +263,7 @@ include `## Context`, `## Decision`, and `## Consequences` sections. The ADR
 review loop runs through the **same plugin-orchestrated subagent pipeline** as
 PLAN and IMPL_REVIEW (F13 parity): the reviewer evaluates Context completeness,
 Decision concreteness, Consequences honesty, and MADR structure. Three
-verdicts (`approve`, `changes_requested`, `unable_to_review`) follow uniform
+verdicts (`accept`, `changes_requested`, `unable_to_review`) follow uniform
 semantics; `unable_to_review` consumes the obligation and BLOCKS via
 `SUBAGENT_UNABLE_TO_REVIEW`.
 

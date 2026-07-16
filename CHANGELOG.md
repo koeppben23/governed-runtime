@@ -51,6 +51,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reviewer loop-verdict documentation corrected to `accept`.** Independent-review,
+  phases, commands, and agent-guidance docs (plus internal convergence comments)
+  now describe the reviewer subagent's `LoopVerdict` as `accept` (not the stale
+  `approve`), matching the runtime enum and installed reviewer prompt. The human
+  EVIDENCE_REVIEW gate keeps its distinct `approve` / `changes_requested` / `reject`
+  verdict. Also aligned the Java demo `/check` narration to the command FlowGuard
+  actually executes (`./mvnw verify`, a superset that includes the test phase).
+
 - **HTTP dispatch and audit-lock recovery hardened (#670, #672).** `GET /health`
   remains public while all other hook requests authenticate before route or method
   dispatch. Audit writes now recover dead-process lockfiles without weakening
