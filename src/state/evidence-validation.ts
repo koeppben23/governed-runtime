@@ -113,3 +113,22 @@ export const ValidationResult = z
   })
   .readonly();
 export type ValidationResult = z.infer<typeof ValidationResult>;
+
+/**
+ * Whether a validation result represents an EXECUTION error (the check could not
+ * be run to a verdict) rather than a genuine check FAILURE (the check ran and the
+ * code did not pass). Execution errors are:
+ *  - a timeout (the executor kills the process; exitCode 124), or
+ *  - the command could not be executed at all (not found; exitCode 127).
+ *
+ * F5: execution errors must NOT be treated like a failing check. A failing check
+ * routes VALIDATION → PLAN (the plan is deficient) and clears the approved plan,
+ * whereas an execution error is an infrastructure/transient condition that should
+ * keep the session in VALIDATION for a retry WITHOUT invalidating plan approval.
+ */
+export function isExecutionError(result: {
+  readonly timedOut: boolean;
+  readonly exitCode: number;
+}): boolean {
+  return result.timedOut || result.exitCode === 124 || result.exitCode === 127;
+}

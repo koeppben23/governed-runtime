@@ -199,6 +199,9 @@ export const Event = z.enum([
   'ALL_PASSED',
   'CHECK_FAILED',
 
+  // VALIDATION execution error (timeout / command-not-found): retry, do NOT re-plan
+  'CHECK_ERRORED',
+
   // IMPLEMENTATION → IMPL_REVIEW
   'IMPL_COMPLETE',
 

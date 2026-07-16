@@ -33,6 +33,10 @@ describe('topology', () => {
       expect(resolveTransition('VALIDATION', 'ALL_PASSED')).toBe('IMPLEMENTATION');
     });
 
+    it('resolves VALIDATION + CHECK_ERRORED → VALIDATION (retry, not re-plan)', () => {
+      expect(resolveTransition('VALIDATION', 'CHECK_ERRORED')).toBe('VALIDATION');
+    });
+
     it('resolves IMPLEMENTATION + IMPL_COMPLETE → IMPL_REVIEW', () => {
       expect(resolveTransition('IMPLEMENTATION', 'IMPL_COMPLETE')).toBe('IMPL_REVIEW');
     });
@@ -113,6 +117,7 @@ describe('topology', () => {
         'REJECT',
         'ALL_PASSED',
         'CHECK_FAILED',
+        'CHECK_ERRORED',
         'IMPL_COMPLETE',
         'REDUCED_CEREMONY',
         'REVIEW_MET',

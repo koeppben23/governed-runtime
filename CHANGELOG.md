@@ -60,6 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **VALIDATION timeouts and executor errors no longer invalidate the plan (F5).**
+  A verification command that times out or cannot be executed (command-not-found,
+  exit 124/127) is now classified as an execution error (`CHECK_ERRORED`) that keeps
+  the session in VALIDATION for a retry, instead of being treated as a failing check
+  that routes to PLAN and clears the approved plan and self-review evidence. Genuine
+  check failures (non-zero exit) still route to PLAN as before.
+
 - **Reviewer loop-verdict documentation corrected to `accept`.** Independent-review,
   phases, commands, and agent-guidance docs (plus internal convergence comments)
   now describe the reviewer subagent's `LoopVerdict` as `accept` (not the stale

@@ -57,6 +57,7 @@ import { deriveRepairGuidance } from '../../verification/repair-guidance.js';
 
 // Evidence types
 import type { ValidationResult } from '../../state/evidence-validation.js';
+import { isExecutionError } from '../../state/evidence-validation.js';
 
 // Adapter — lock retry
 import { withSessionWriteLockRetry, PersistenceError } from '../../adapters/lock-retry.js';
@@ -319,11 +320,16 @@ function buildNextValidationState(
   passedIds: Set<string>,
 ): SessionState {
   const allPassed = state.activeChecks.every((id) => passedIds.has(id));
+  // F5: preserve plan evidence when the non-pass is an execution error (timeout /
+  // command-not-found). The machine stays in VALIDATION (CHECK_ERRORED) for a retry
+  // rather than routing to PLAN, so the approved plan must survive.
+  const hasExecutionError = validation.some(isExecutionError);
+  const clearPlanEvidence = !allPassed && !hasExecutionError;
   return {
     ...state,
     validation,
     error: null,
-    ...(allPassed ? {} : { selfReview: null, reviewDecision: null }),
+    ...(clearPlanEvidence ? { selfReview: null, reviewDecision: null } : {}),
   };
 }
 

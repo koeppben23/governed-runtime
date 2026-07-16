@@ -17,6 +17,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { ValidationResult } from '../state/evidence-validation.js';
+import { isExecutionError } from '../state/evidence-validation.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext } from './types.js';
 import { autoAdvance, createPolicyEvalFn } from './types.js';
@@ -83,17 +84,22 @@ export async function executeValidate(
   // re-approved (CHECK_FAILED → PLAN). Without clearing, autoAdvance would see
   // stale self-review/reviewDecision and skip past PLAN immediately.
   const allPassed = results.every((r) => r.passed);
+  // F5: an execution error (timeout / command-not-found) is not a plan deficiency.
+  // Keep the approved plan intact and stay in VALIDATION for a retry (CHECK_ERRORED)
+  // instead of clearing plan evidence and routing to PLAN (CHECK_FAILED).
+  const hasExecutionError = results.some(isExecutionError);
+  const clearPlanEvidence = !allPassed && !hasExecutionError;
   const nextState: SessionState = {
     ...state,
     validation: results,
     error: null,
-    ...(allPassed
-      ? {}
-      : {
+    ...(clearPlanEvidence
+      ? {
           selfReview: null,
           reviewDecision: null,
           plan: state.plan ? { ...state.plan, reviewFindings: undefined } : null,
-        }),
+        }
+      : {}),
   };
 
   // 5. Auto-advance (ALL_PASSED → IMPLEMENTATION, or CHECK_FAILED → PLAN) — policy-aware

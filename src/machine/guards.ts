@@ -17,6 +17,7 @@
 
 import type { LoopVerdict } from '../state/evidence.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
+import { isExecutionError } from '../state/evidence-validation.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -128,6 +129,15 @@ export const allValidationsPassed: GuardFn = (s) => {
 /** At least one validation check has an explicit failure (passed: false). */
 export const checkFailed: GuardFn = (s) => s.validation.some((v) => !v.passed);
 
+/**
+ * At least one validation check ERRORED during execution (timeout / command
+ * not-found) rather than failing a verdict. Fires CHECK_ERRORED, which keeps the
+ * session in VALIDATION for a retry and preserves plan approval — unlike
+ * CHECK_FAILED, which routes to PLAN. Evaluated BEFORE checkFailed so a transient
+ * execution error is never misread as a deficient plan.
+ */
+export const checkErrored: GuardFn = (s) => s.validation.some(isExecutionError);
+
 /** Implementation evidence is present. */
 export const implComplete: GuardFn = (s) => s.implementation !== null;
 
@@ -194,6 +204,7 @@ export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<
     'VALIDATION',
     [
       { event: 'ERROR', guard: hasError },
+      { event: 'CHECK_ERRORED', guard: checkErrored },
       { event: 'ALL_PASSED', guard: allValidationsPassed },
       { event: 'CHECK_FAILED', guard: checkFailed },
     ],

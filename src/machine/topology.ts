@@ -90,11 +90,15 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
   // ── VALIDATION ──────────────────────────────────────────────
   // Runs N checks in one phase (not N separate phases).
   // CHECK_FAILED → PLAN: failed validation means the plan is deficient.
+  // CHECK_ERRORED → VALIDATION: a check could not be executed (timeout /
+  // command-not-found) — a transient/infra condition, not a plan deficiency.
+  // Stay in VALIDATION for a retry and keep the approved plan intact.
   [
     'VALIDATION',
     new Map<Event, Phase>([
       ['ALL_PASSED', 'IMPLEMENTATION'],
       ['CHECK_FAILED', 'PLAN'],
+      ['CHECK_ERRORED', 'VALIDATION'],
       ['ERROR', 'VALIDATION'],
     ]),
   ],

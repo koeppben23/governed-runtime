@@ -6,6 +6,7 @@ import {
   selfReviewPending,
   allValidationsPassed,
   checkFailed,
+  checkErrored,
   implComplete,
   implReviewMet,
   implReviewPending,
@@ -60,6 +61,23 @@ describe('guards', () => {
 
     it('checkFailed fires when some checks fail', () => {
       expect(checkFailed(makeState('VALIDATION', { validation: VALIDATION_FAILED }))).toBe(true);
+    });
+
+    it('checkErrored fires when a check timed out', () => {
+      const timedOut = [{ ...VALIDATION_FAILED[0]!, passed: false, timedOut: true, exitCode: 124 }];
+      expect(checkErrored(makeState('VALIDATION', { validation: timedOut }))).toBe(true);
+    });
+
+    it('checkErrored fires when a check command was not found (exit 127)', () => {
+      const notFound = [
+        { ...VALIDATION_FAILED[0]!, passed: false, timedOut: false, exitCode: 127 },
+      ];
+      expect(checkErrored(makeState('VALIDATION', { validation: notFound }))).toBe(true);
+    });
+
+    it('checkErrored does NOT fire for an ordinary check failure (exit 1)', () => {
+      // VALIDATION_FAILED has exitCode 1, timedOut false → a genuine failure, not an execution error.
+      expect(checkErrored(makeState('VALIDATION', { validation: VALIDATION_FAILED }))).toBe(false);
     });
 
     it('implComplete fires when implementation is present', () => {
@@ -583,9 +601,10 @@ describe('guards', () => {
       ]);
     });
 
-    it('VALIDATION guards contain exactly ERROR, ALL_PASSED, CHECK_FAILED', () => {
+    it('VALIDATION guards contain exactly ERROR, CHECK_ERRORED, ALL_PASSED, CHECK_FAILED', () => {
       expect(GUARDS.get('VALIDATION')!.map((g) => g.event)).toEqual([
         'ERROR',
+        'CHECK_ERRORED',
         'ALL_PASSED',
         'CHECK_FAILED',
       ]);
