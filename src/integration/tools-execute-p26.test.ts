@@ -407,6 +407,16 @@ describe('P26: regulated archive completion', () => {
         }
       }
       await implement.execute({}, ctx);
+      // IMPL_VALIDATION: re-run the active checks against the implemented code.
+      {
+        const sd = await currentSessDir();
+        const st = await readState(sd);
+        if (st && st.activeChecks.length > 0) {
+          for (const kind of st.activeChecks) {
+            await run_check.execute({ kind }, ctx);
+          }
+        }
+      }
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));
         if (s.phase === 'EVIDENCE_REVIEW') break;
@@ -443,6 +453,16 @@ describe('P26: regulated archive completion', () => {
         }
       }
       await implement.execute({}, ctx);
+      // IMPL_VALIDATION: re-run the active checks against the implemented code.
+      {
+        const sessDir2 = await currentSessDir();
+        const state2 = await readState(sessDir2);
+        if (state2 && state2.activeChecks.length > 0) {
+          for (const kind of state2.activeChecks) {
+            await run_check.execute({ kind }, ctx);
+          }
+        }
+      }
       await executeWithStrictReview(review_implementation, { reviewVerdict: 'accept' });
 
       // Verify we're at COMPLETE (solo auto-approves EVIDENCE_REVIEW)

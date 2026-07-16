@@ -46,7 +46,7 @@ const COMMAND_POLICY: ReadonlyMap<Command, AllowedIn> = new Map<Command, Allowed
   [Command.CONTINUE, '*'],
   [Command.IMPLEMENT, new Set<Phase>(['IMPLEMENTATION'])],
   [Command.REVIEW_DECISION, new Set<Phase>(['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'])],
-  [Command.VALIDATE, new Set<Phase>(['VALIDATION'])],
+  [Command.VALIDATE, new Set<Phase>(['VALIDATION', 'IMPL_VALIDATION'])],
   [Command.REVIEW, new Set<Phase>(['READY'])],
   [Command.ARCHITECTURE, new Set<Phase>(['READY', 'ARCHITECTURE'])],
   [Command.ABORT, '*'],

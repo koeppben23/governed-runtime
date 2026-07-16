@@ -24,7 +24,7 @@ Reference for all FlowGuard commands.
 
 ### [Phases](./phases.md)
 
-Understanding the 14 workflow phases across 3 flows.
+Understanding the 15 workflow phases across 3 flows.
 
 ### [Policies](./policies.md)
 

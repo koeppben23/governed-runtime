@@ -6,7 +6,7 @@
  * Three standalone flows from READY:
  *
  * Ticket flow:
- *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+ *   READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
  *   Reduced ceremony: IMPLEMENTATION → EVIDENCE_REVIEW only via explicit REDUCED_CEREMONY transition.
  *
  * Architecture flow:
@@ -104,12 +104,31 @@ export const TRANSITIONS: ReadonlyMap<Phase, ReadonlyMap<Event, Phase>> = new Ma
   ],
 
   // ── IMPLEMENTATION ──────────────────────────────────────────
+  // IMPL_COMPLETE → IMPL_VALIDATION: the fixed code is re-validated (checks
+  // re-run against the implementation) before the independent review. Reduced
+  // ceremony still bypasses straight to EVIDENCE_REVIEW (disabled under team).
   [
     'IMPLEMENTATION',
     new Map<Event, Phase>([
       ['REDUCED_CEREMONY', 'EVIDENCE_REVIEW'],
-      ['IMPL_COMPLETE', 'IMPL_REVIEW'],
+      ['IMPL_COMPLETE', 'IMPL_VALIDATION'],
       ['ERROR', 'IMPLEMENTATION'],
+    ]),
+  ],
+
+  // ── IMPL_VALIDATION ─────────────────────────────────────────
+  // Re-runs the active verification checks against the IMPLEMENTED code (the
+  // post-fix run), recorded in `implValidation` (distinct from the pre-impl
+  // `validation`). ALL_PASSED → IMPL_REVIEW; CHECK_FAILED → IMPLEMENTATION
+  // (the CODE is wrong, not the plan); CHECK_ERRORED → self (timeout/executor
+  // error retry, mirrors VALIDATION); ERROR → self.
+  [
+    'IMPL_VALIDATION',
+    new Map<Event, Phase>([
+      ['ALL_PASSED', 'IMPL_REVIEW'],
+      ['CHECK_FAILED', 'IMPLEMENTATION'],
+      ['CHECK_ERRORED', 'IMPL_VALIDATION'],
+      ['ERROR', 'IMPL_VALIDATION'],
     ]),
   ],
 

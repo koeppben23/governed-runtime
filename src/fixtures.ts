@@ -274,6 +274,7 @@ export function makeState(
     plan: null,
     selfReview: null,
     validation: [],
+    implValidation: [],
     implementation: null,
     reducedCeremony: null,
     implReview: null,
@@ -324,6 +325,17 @@ export function makeProgressedState(phase: Phase): SessionState {
         reviewDecision: REVIEW_APPROVE,
         validation: VALIDATION_PASSED,
       });
+    case 'IMPL_VALIDATION':
+      return makeState('IMPL_VALIDATION', {
+        ticket: TICKET,
+        plan: PLAN_RECORD,
+        selfReview: SELF_REVIEW_CONVERGED,
+        reviewDecision: REVIEW_APPROVE,
+        validation: VALIDATION_PASSED,
+        implementation: IMPL_EVIDENCE,
+        // Just entered IMPL_VALIDATION; post-impl checks not yet re-run (awaiting /check).
+        implValidation: [],
+      });
     case 'IMPL_REVIEW':
       return makeState('IMPL_REVIEW', {
         ticket: TICKET,
@@ -332,6 +344,7 @@ export function makeProgressedState(phase: Phase): SessionState {
         reviewDecision: REVIEW_APPROVE,
         validation: VALIDATION_PASSED,
         implementation: IMPL_EVIDENCE,
+        implValidation: VALIDATION_PASSED,
       });
     case 'EVIDENCE_REVIEW':
       return makeState('EVIDENCE_REVIEW', {
@@ -341,6 +354,7 @@ export function makeProgressedState(phase: Phase): SessionState {
         reviewDecision: REVIEW_APPROVE,
         validation: VALIDATION_PASSED,
         implementation: IMPL_EVIDENCE,
+        implValidation: VALIDATION_PASSED,
         implReview: IMPL_REVIEW_CONVERGED,
       });
     case 'COMPLETE':
@@ -351,6 +365,7 @@ export function makeProgressedState(phase: Phase): SessionState {
         reviewDecision: REVIEW_APPROVE,
         validation: VALIDATION_PASSED,
         implementation: IMPL_EVIDENCE,
+        implValidation: VALIDATION_PASSED,
         implReview: IMPL_REVIEW_CONVERGED,
       });
     case 'ARCHITECTURE':

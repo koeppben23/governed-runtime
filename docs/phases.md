@@ -1,13 +1,13 @@
 # Phases
 
-FlowGuard uses 14 explicit workflow phases across 3 independent flows. Every session starts at the **READY** phase after `/hydrate`.
+FlowGuard uses 15 explicit workflow phases across 3 independent flows. Every session starts at the **READY** phase after `/hydrate`.
 
 ## Flows
 
 ### Ticket Flow (Full Development Lifecycle)
 
 ```
-READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
 ```
 
 ### Architecture Flow (ADR Creation)
@@ -121,6 +121,7 @@ approve │     │    │ reject
 | PLAN_REVIEW     | Human approves plan                         | **User Gate**                  |
 | VALIDATION      | Run validation checks                       | Automatic                      |
 | IMPLEMENTATION  | Execute plan                                | Automatic                      |
+| IMPL_VALIDATION | Re-run checks against the implemented code  | Automatic                      |
 | IMPL_REVIEW     | Subagent reviews implementation             | Automatic (independent review) |
 | EVIDENCE_REVIEW | Human reviews evidence                      | **User Gate**                  |
 | COMPLETE        | Session complete                            | Terminal                       |
@@ -215,24 +216,36 @@ Use `/check` to execute the active verification candidates.
 ### IMPLEMENTATION
 
 **Entry:** Automatic from VALIDATION (all checks passed)
-**Exit:** Automatic (auto-advances to IMPL_REVIEW)
+**Exit:** Automatic (auto-advances to IMPL_VALIDATION)
 
 AI implements the plan using OpenCode tools. Changed files are automatically tracked via git.
 
-When `policy.allowReducedCeremony` is enabled, FlowGuard may reduce only the implementation-review ceremony after implementation evidence is recorded. The machine still uses explicit transitions (`IMPLEMENTATION → EVIDENCE_REVIEW` via `REDUCED_CEREMONY`, then the normal evidence gate). Reduction is evidenced in `state.reducedCeremony`; FlowGuard does not synthesize `implReview` evidence. Reduction is allowed only for a `TRIVIAL` claim, runtime-computed `TRIVIAL` changed files, clear `riskGate`, complete passing validation evidence, no sensitive surfaces, no policy-required host review, and no outstanding review obligation. Otherwise the full IMPL_REVIEW path remains unchanged.
+When `policy.allowReducedCeremony` is enabled, FlowGuard may reduce only the implementation-review ceremony after implementation evidence is recorded. The machine still uses explicit transitions (`IMPLEMENTATION → EVIDENCE_REVIEW` via `REDUCED_CEREMONY`, then the normal evidence gate). Reduction is evidenced in `state.reducedCeremony`; FlowGuard does not synthesize `implReview` evidence. Reduction is allowed only for a `TRIVIAL` claim, runtime-computed `TRIVIAL` changed files, clear `riskGate`, complete passing validation evidence, no sensitive surfaces, no policy-required host review, and no outstanding review obligation. Otherwise the full IMPL_VALIDATION → IMPL_REVIEW path remains unchanged.
 Use `/implement` to record evidence and auto-advance.
+
+### IMPL_VALIDATION
+
+**Entry:** Automatic from IMPLEMENTATION (after `/implement` records evidence)
+**Exit:** Automatic (all post-fix checks passed → IMPL_REVIEW; any check failed → back to IMPLEMENTATION)
+
+Re-runs the active verification checks against the **implemented** code (recorded in
+`implValidation`, distinct from the pre-implementation `validation` baseline). Use
+`/check` to execute the checks. A genuine failure routes back to IMPLEMENTATION (the
+delivered code is wrong, not the plan); a timeout or executor error retries in
+IMPL_VALIDATION without invalidating the approved plan. Reduced ceremony bypasses this
+phase along with IMPL_REVIEW.
 
 ### IMPL_REVIEW
 
-**Entry:** Automatic from IMPLEMENTATION (after `/implement`)
+**Entry:** Automatic from IMPL_VALIDATION (post-implementation checks passed)
 **Exit:** Automatic (review convergence)
 
 The reviewer subagent reviews the implementation against the plan. This is an
 **independent review gate, not a human gate** (USER_GATES = {PLAN_REVIEW,
 EVIDENCE_REVIEW, ARCH_REVIEW}). The LLM records evidence with `flowguard_implement` and submits the reviewer verdict via
 `flowguard_review_implementation`. The reviewer's three verdicts
-(`approve`, `changes_requested`, `unable_to_review`) follow the same semantics
-as the PLAN loop. On `approve` convergence, auto-advances to EVIDENCE_REVIEW;
+(`accept`, `changes_requested`, `unable_to_review`) follow the same semantics
+as the PLAN loop. On `accept` convergence, auto-advances to EVIDENCE_REVIEW;
 on `unable_to_review`, BLOCKED via `SUBAGENT_UNABLE_TO_REVIEW`.
 
 ### EVIDENCE_REVIEW

@@ -230,7 +230,13 @@ async function handleChangesRequestedReview(input: {
 
   const at = input.runtime.ctx.now();
   const finalState = applyTransition(
-    { ...input.reviewedState, implementation: null, implReview: null, reducedCeremony: null },
+    {
+      ...input.reviewedState,
+      implementation: null,
+      implValidation: [],
+      implReview: null,
+      reducedCeremony: null,
+    },
     input.runtime.state.phase,
     target,
     'CHANGES_REQUESTED',

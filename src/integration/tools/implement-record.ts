@@ -338,6 +338,10 @@ export async function handleImplRecord(
   const nextState: SessionState = {
     ...input.state,
     implementation: implEvidence,
+    // Fresh implementation invalidates any prior post-implementation checks; the
+    // machine advances to IMPL_VALIDATION where the checks are re-run against the
+    // new code (prevents a stale IMPL_VALIDATION failure from looping).
+    implValidation: [],
     reducedCeremony: reducedCeremony
       ? {
           profile: 'reduced',

@@ -27,7 +27,7 @@ FlowGuard governs the engineering process _around_ AI-assisted development — i
 ### Deterministic Workflows
 
 - Three independent flows: Ticket (full dev lifecycle), Architecture (ADR creation, ARCH_REVIEW → ARCH_COMPLETE), Review (content-aware, obligation-bound)
-- 14 explicit phases with computed next actions
+- 15 explicit phases with computed next actions
 - Explicit `/status` orientation surface (compact + focused detail views)
 - Phase gates require evidence before progression
 - Fail-closed enforcement: execution blocks when evidence or state is invalid. Enforcement strength is host-dependent: synchronous (in-process block) on OpenCode; best-effort fail-closed on hook-gated hosts (Claude Code, Codex).

@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Post-implementation validation gate: `IMPL_VALIDATION` phase (F1).** The ticket
+  flow now re-runs the verification checks against the IMPLEMENTED code before the
+  independent review and the human evidence gate, closing the gap where validation
+  only ran on the pre-fix baseline. `/implement` records evidence and advances to the
+  new `IMPL_VALIDATION` phase; `/check` (now admissible in `IMPL_VALIDATION`) executes
+  the checks and records them in a separate `implValidation` slot (distinct from the
+  pre-implementation `validation` baseline). Passing checks advance to `IMPL_REVIEW`; a
+  genuine failure routes back to `IMPLEMENTATION` (the code is wrong, not the plan); a
+  timeout/executor error retries in place. Universal across policy modes; reduced
+  ceremony still bypasses. **Forward-only:** rolling back the release abandons any
+  in-flight session sitting at `IMPL_VALIDATION` (the phase is unknown to an older
+  build's fail-closed schema). Workflow phase count 14 → 15.
+
 - **Read-only `/finish` Finish Card (#520).** New read-only command that renders
   a curated readiness overview before `/export`, PR, or archive decisions. It is
   a status aggregator — never approves, never consumes obligations, never writes

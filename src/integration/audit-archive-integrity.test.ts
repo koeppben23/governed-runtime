@@ -194,8 +194,9 @@ async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDi
     assurance: 'claim_validated' as const,
   });
   await callOk(decision, { verdict: 'approve', rationale: 'Plan approved' });
-  // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
-  {
+  // Run all active verification checks for the current phase (VALIDATION baseline or
+  // IMPL_VALIDATION post-implementation). Discovery detects TypeScript → activeChecks=['typecheck'].
+  const runActiveChecks = async (): Promise<void> => {
     const ids = await workspaceIds();
     const st = await readState(ids.sessDir);
     if (st && st.activeChecks.length > 0) {
@@ -203,8 +204,10 @@ async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDi
         await callOk(run_check, { kind });
       }
     }
-  }
+  };
+  await runActiveChecks();
   await callOk(implement, {});
+  await runActiveChecks(); // IMPL_VALIDATION → IMPL_REVIEW
   for (let i = 0; i < 8 && (await phase()) !== 'EVIDENCE_REVIEW'; i++) {
     await callOk(review_implementation, { reviewVerdict: 'accept' });
   }

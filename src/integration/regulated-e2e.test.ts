@@ -176,15 +176,19 @@ async function driveToEvidenceReview(): Promise<void> {
   await approveWithReviewer('plan-reviewer');
   expect(await phase()).toBe('VALIDATION');
   // Discovery detects TypeScript → activeChecks=['typecheck']
-  // Run all active checks to pass VALIDATION
-  const dir = await sessDir();
-  const state = await readState(dir);
-  if (state && state.activeChecks.length > 0) {
-    for (const kind of state.activeChecks) {
-      await callOk(run_check, { kind });
+  // Run all active checks to pass VALIDATION and (post-implementation) IMPL_VALIDATION.
+  const runActiveChecks = async (): Promise<void> => {
+    const dir = await sessDir();
+    const state = await readState(dir);
+    if (state && state.activeChecks.length > 0) {
+      for (const kind of state.activeChecks) {
+        await callOk(run_check, { kind });
+      }
     }
-  }
+  };
+  await runActiveChecks();
   await callOk(implement, {});
+  await runActiveChecks(); // IMPL_VALIDATION → IMPL_REVIEW
   for (let i = 0; i < 8 && (await phase()) !== 'EVIDENCE_REVIEW'; i++) {
     await callOk(review_implementation, { reviewVerdict: 'accept' });
   }

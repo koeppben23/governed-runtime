@@ -140,6 +140,7 @@ describe('phase-aware mandates rendering', () => {
       'PLAN_REVIEW',
       'VALIDATION',
       'IMPLEMENTATION',
+      'IMPL_VALIDATION',
       'IMPL_REVIEW',
       'EVIDENCE_REVIEW',
       'COMPLETE',

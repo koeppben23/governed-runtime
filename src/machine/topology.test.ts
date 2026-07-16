@@ -37,8 +37,20 @@ describe('topology', () => {
       expect(resolveTransition('VALIDATION', 'CHECK_ERRORED')).toBe('VALIDATION');
     });
 
-    it('resolves IMPLEMENTATION + IMPL_COMPLETE → IMPL_REVIEW', () => {
-      expect(resolveTransition('IMPLEMENTATION', 'IMPL_COMPLETE')).toBe('IMPL_REVIEW');
+    it('resolves IMPLEMENTATION + IMPL_COMPLETE → IMPL_VALIDATION', () => {
+      expect(resolveTransition('IMPLEMENTATION', 'IMPL_COMPLETE')).toBe('IMPL_VALIDATION');
+    });
+
+    it('resolves IMPL_VALIDATION + ALL_PASSED → IMPL_REVIEW (post-fix checks passed)', () => {
+      expect(resolveTransition('IMPL_VALIDATION', 'ALL_PASSED')).toBe('IMPL_REVIEW');
+    });
+
+    it('resolves IMPL_VALIDATION + CHECK_FAILED → IMPLEMENTATION (code is wrong, not plan)', () => {
+      expect(resolveTransition('IMPL_VALIDATION', 'CHECK_FAILED')).toBe('IMPLEMENTATION');
+    });
+
+    it('resolves IMPL_VALIDATION + CHECK_ERRORED → IMPL_VALIDATION (retry)', () => {
+      expect(resolveTransition('IMPL_VALIDATION', 'CHECK_ERRORED')).toBe('IMPL_VALIDATION');
     });
 
     it('resolves IMPLEMENTATION + REDUCED_CEREMONY → EVIDENCE_REVIEW', () => {
@@ -187,7 +199,7 @@ describe('topology', () => {
       }
     });
 
-    it('transition table covers all 14 phases', () => {
+    it('transition table covers all 15 phases', () => {
       const phases: Phase[] = [
         'READY',
         'TICKET',
@@ -195,6 +207,7 @@ describe('topology', () => {
         'PLAN_REVIEW',
         'VALIDATION',
         'IMPLEMENTATION',
+        'IMPL_VALIDATION',
         'IMPL_REVIEW',
         'EVIDENCE_REVIEW',
         'COMPLETE',
@@ -207,7 +220,7 @@ describe('topology', () => {
       for (const phase of phases) {
         expect(TRANSITIONS.has(phase)).toBe(true);
       }
-      expect(TRANSITIONS.size).toBe(14);
+      expect(TRANSITIONS.size).toBe(15);
     });
 
     it('self-loop: PLAN + SELF_REVIEW_PENDING → PLAN', () => {

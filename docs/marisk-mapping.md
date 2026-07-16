@@ -42,7 +42,7 @@ MaRisk AT 7.2 requires documented change management processes for IT systems. Th
 
 **Change Enablement:**
 
-- 14 explicit workflow phases across 3 flows with mandatory evidence gates
+- 15 explicit workflow phases across 3 flows with mandatory evidence gates
 - Phase gates that require evidence before progression — no change can bypass required approvals
 - Mandatory independent subagent review loop for plans (configurable iterations based on policy)
 - Independent implementation review loop for code changes

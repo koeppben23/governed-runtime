@@ -308,10 +308,10 @@ function mergeValidationResult(
   state: SessionState,
   validationResult: ValidationResult,
 ): ValidationResult[] {
-  return [
-    ...state.validation.filter((v) => v.checkId !== validationResult.checkId),
-    validationResult,
-  ];
+  // Post-implementation checks (IMPL_VALIDATION) accumulate in implValidation; the
+  // pre-implementation baseline run (VALIDATION) accumulates in validation.
+  const slot = state.phase === 'IMPL_VALIDATION' ? state.implValidation : state.validation;
+  return [...slot.filter((v) => v.checkId !== validationResult.checkId), validationResult];
 }
 
 function buildNextValidationState(
@@ -320,10 +320,26 @@ function buildNextValidationState(
   passedIds: Set<string>,
 ): SessionState {
   const allPassed = state.activeChecks.every((id) => passedIds.has(id));
+  const hasExecutionError = validation.some(isExecutionError);
+
+  if (state.phase === 'IMPL_VALIDATION') {
+    // Post-implementation validation writes to implValidation. A genuine failure
+    // routes IMPL_VALIDATION → IMPLEMENTATION (the delivered CODE is wrong, not the
+    // plan); clear implementation so the agent must re-run /implement and the machine
+    // does not immediately re-fire IMPL_COMPLETE into an advance loop. Execution
+    // errors (timeout/not-found) stay in IMPL_VALIDATION for a retry.
+    const genuinelyFailed = !allPassed && !hasExecutionError;
+    return {
+      ...state,
+      implValidation: validation,
+      error: null,
+      ...(genuinelyFailed ? { implementation: null } : {}),
+    };
+  }
+
   // F5: preserve plan evidence when the non-pass is an execution error (timeout /
   // command-not-found). The machine stays in VALIDATION (CHECK_ERRORED) for a retry
   // rather than routing to PLAN, so the approved plan must survive.
-  const hasExecutionError = validation.some(isExecutionError);
   const clearPlanEvidence = !allPassed && !hasExecutionError;
   return {
     ...state,

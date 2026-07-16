@@ -328,10 +328,25 @@ describe('implement', () => {
     }
   }
 
+  /**
+   * Re-run the active checks in IMPL_VALIDATION (the post-implementation re-run
+   * against the fixed code) to advance IMPL_VALIDATION → IMPL_REVIEW. No-op unless
+   * the session is currently in IMPL_VALIDATION with active checks.
+   */
+  async function passImplValidation(): Promise<void> {
+    const sessDir = await currentSessionDir();
+    const state = await readState(sessDir);
+    if (!state || state.phase !== 'IMPL_VALIDATION' || state.activeChecks.length === 0) return;
+    for (const kind of state.activeChecks) {
+      await run_check.execute({ kind }, ctx);
+    }
+  }
+
   describe('HAPPY', () => {
     it('Mode A: records changed files from git', async () => {
       await reachImplementation();
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.changedFiles).toBeDefined();
@@ -348,6 +363,7 @@ describe('implement', () => {
       vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce(diff);
 
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       expect(parseToolResult(raw).error).toBeUndefined();
 
       const state = await readState(sessDir);
@@ -373,6 +389,7 @@ describe('implement', () => {
       vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce('   \n');
 
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       expect(parseToolResult(raw).error).toBeUndefined();
 
       const impl = (await readState(sessDir))!.implementation!;
@@ -402,6 +419,7 @@ describe('implement', () => {
     it('Mode B: approve review converges in solo', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
+      await passImplValidation();
       const reviewFindings = await fulfillReview('implement', 1, 'accept');
       const raw = await review_implementation.execute(
         { reviewVerdict: 'accept', reviewFindings },
@@ -428,6 +446,7 @@ describe('implement', () => {
 
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['docs/usage-notes.md']);
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       const finalState = await readState(sessDir);
 
@@ -464,6 +483,7 @@ describe('implement', () => {
 
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/security/policy.ts']);
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       const finalState = await readState(sessDir);
 
@@ -484,6 +504,7 @@ describe('implement', () => {
   describe('BAD', () => {
     it('blocks without session', async () => {
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('NO_SESSION');
@@ -492,6 +513,7 @@ describe('implement', () => {
     it('blocks without plan/ticket', async () => {
       await hydrateSession();
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
     });
@@ -506,6 +528,7 @@ describe('implement', () => {
         'node_modules/dep/index.js',
       ]);
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       const domain = result.domainFiles as string[];
       expect(domain).toContain('src/foo.ts');
@@ -523,6 +546,7 @@ describe('implement', () => {
         'tsconfig.json',
       ]);
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       const domain = result.domainFiles as string[];
       const changed = result.changedFiles as string[];
@@ -551,6 +575,7 @@ describe('implement', () => {
         'stale/preexisting.txt',
       ]);
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.baselineScoping).toBe('applied');
@@ -574,6 +599,7 @@ describe('implement', () => {
       });
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/main/Service.java']);
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.baselineScoping).toBe('applied');
@@ -594,6 +620,7 @@ describe('implement', () => {
         'stale/preexisting.txt',
       ]);
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.baselineScoping).toBe('unavailable');
@@ -624,6 +651,7 @@ describe('implement', () => {
         'package.json',
       ]);
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.baselineScoping).toBe('applied');
@@ -647,6 +675,7 @@ describe('implement', () => {
       });
       vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['stale/a.txt', 'stale/b.txt']);
       const raw = await implement.execute({}, ctx);
+      await passImplValidation();
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_EMPTY');
@@ -675,6 +704,7 @@ describe('implement', () => {
     it('Mode B blocks with IMPLEMENTATION_EVIDENCE_REQUIRED when implementation is null', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
+      await passImplValidation();
 
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -742,6 +772,7 @@ describe('implement', () => {
 
     async function enterImplReview(): Promise<void> {
       await implement.execute({}, ctx);
+      await passImplValidation();
     }
 
     it('reviewMode=subagent accepted by mandatory default in Mode B', async () => {
@@ -849,6 +880,7 @@ describe('implement', () => {
     it('Mode B: missing mandatory reviewer findings blocks approve', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
+      await passImplValidation();
       const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
@@ -873,6 +905,7 @@ describe('implement', () => {
     it('Mode B: planVersion mismatch blocked', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
+      await passImplValidation();
 
       const wrongVersion = { ...validReviewFindingsSubagent, iteration: 1, planVersion: 99 };
       const raw = await review_implementation.execute(
@@ -887,6 +920,7 @@ describe('implement', () => {
     it('Mode B: iteration mismatch blocked', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
+      await passImplValidation();
 
       const wrongIteration = { ...validReviewFindingsSubagent, iteration: 99 };
       const raw = await review_implementation.execute(
@@ -901,6 +935,7 @@ describe('implement', () => {
     it('Mode B: reviewVerdict must match reviewFindings overallVerdict', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
+      await passImplValidation();
 
       const changesRequestedFindings = await fulfillReview('implement', 1, 'changes_requested');
       const raw = await review_implementation.execute(
@@ -915,6 +950,7 @@ describe('implement', () => {
     it('Mode B: changes_requested accepted with valid reviewFindings', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
+      await passImplValidation();
 
       const validModeBFindings = await fulfillReview('implement', 1, 'changes_requested');
       const raw = await review_implementation.execute(
@@ -929,6 +965,7 @@ describe('implement', () => {
     it('Mode B: changes_requested returns to IMPLEMENTATION for fresh implementation evidence', async () => {
       await reachImplementation();
       await implement.execute({}, ctx);
+      await passImplValidation();
 
       const validModeBFindings = await fulfillReview('implement', 1, 'changes_requested');
       const reviewRaw = await review_implementation.execute(
@@ -946,9 +983,10 @@ describe('implement', () => {
       expect(afterReviewState?.reducedCeremony).toBeNull();
 
       const recordRaw = await implement.execute({}, ctx);
+      await passImplValidation();
       const recordResult = parseToolResult(recordRaw);
       expect(recordResult.error).toBeUndefined();
-      expect(recordResult.phase).toBe('IMPL_REVIEW');
+      expect(recordResult.phase).toBe('IMPL_VALIDATION');
       expect(recordResult.reviewObligationIteration).toBe(2);
 
       const afterRecordState = await readState(sessDir);
@@ -971,6 +1009,7 @@ describe('implement', () => {
       await reachImplementation();
       await setSelfReviewPolicy(true, false);
       await implement.execute({}, ctx);
+      await passImplValidation();
 
       const raw = await review_implementation.execute({ reviewVerdict: 'accept' }, ctx);
       const result = parseToolResult(raw);
@@ -1002,9 +1041,10 @@ describe('implement', () => {
 
       // Recovery is actually reachable: re-recording implementation works.
       const recordRaw = await implement.execute({}, ctx);
+      await passImplValidation();
       const recordResult = parseToolResult(recordRaw);
       expect(recordResult.error).toBeUndefined();
-      expect(recordResult.phase).toBe('IMPL_REVIEW');
+      expect(recordResult.phase).toBe('IMPL_VALIDATION');
       // No reviewer findings were recorded for the changes_requested cycle, so the
       // next review obligation starts fresh at iteration 1 (not 2).
       expect(recordResult.reviewObligationIteration).toBe(1);

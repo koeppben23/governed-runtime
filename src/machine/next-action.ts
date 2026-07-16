@@ -173,6 +173,19 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
           commands: ['/continue'],
         },
 
+  IMPL_VALIDATION: (state) =>
+    state.implValidation.length === 0
+      ? {
+          code: ACTION_CODES.RUN_VALIDATE,
+          text: 'Implementation recorded. Re-run the verification checks against the fixed code with /check',
+          commands: ['/check'],
+        }
+      : {
+          code: ACTION_CODES.RUN_CONTINUE,
+          text: 'Post-implementation validation complete. Run /continue to advance',
+          commands: ['/continue'],
+        },
+
   IMPL_REVIEW: () => ({
     code: ACTION_CODES.RUN_CONTINUE,
     text: 'Run /continue to advance',

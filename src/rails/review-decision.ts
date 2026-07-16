@@ -79,6 +79,7 @@ const REJECT_CLEAR = {
   plan: null,
   selfReview: null,
   validation: [] as ValidationResult[],
+  implValidation: [] as ValidationResult[],
   implementation: null,
   implReview: null,
   reviewDecision: null,
@@ -93,6 +94,7 @@ const REJECT_CLEAR_FROM_PLAN = {
   plan: null,
   selfReview: null,
   validation: [] as ValidationResult[],
+  implValidation: [] as ValidationResult[],
   implementation: null,
   implReview: null,
   reviewDecision: null,
@@ -149,6 +151,7 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
     return {
       ...state,
       implementation: null,
+      implValidation: [],
       implReview: null,
       reducedCeremony: null,
       reviewDecision: null,

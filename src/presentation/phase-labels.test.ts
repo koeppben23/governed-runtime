@@ -17,6 +17,7 @@ const ALL_PHASES: readonly Phase[] = [
   'PLAN_REVIEW',
   'VALIDATION',
   'IMPLEMENTATION',
+  'IMPL_VALIDATION',
   'IMPL_REVIEW',
   'EVIDENCE_REVIEW',
   'COMPLETE',
@@ -61,6 +62,7 @@ describe('PHASE_LABELS', () => {
     expect(PHASE_LABELS.PLAN_REVIEW).toBe('Ready for plan approval');
     expect(PHASE_LABELS.VALIDATION).toBe('Validation');
     expect(PHASE_LABELS.IMPLEMENTATION).toBe('Implementation in progress');
+    expect(PHASE_LABELS.IMPL_VALIDATION).toBe('Re-validating implementation');
     expect(PHASE_LABELS.IMPL_REVIEW).toBe('Ready for evidence review');
     expect(PHASE_LABELS.EVIDENCE_REVIEW).toBe('Ready for final review');
     expect(PHASE_LABELS.COMPLETE).toBe('Complete');

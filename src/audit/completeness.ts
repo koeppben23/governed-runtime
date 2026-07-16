@@ -162,9 +162,10 @@ const PHASE_ORDER: Readonly<Record<Phase, number>> = {
   PLAN_REVIEW: 2,
   VALIDATION: 3,
   IMPLEMENTATION: 4,
-  IMPL_REVIEW: 5,
-  EVIDENCE_REVIEW: 6,
-  COMPLETE: 7,
+  IMPL_VALIDATION: 5,
+  IMPL_REVIEW: 6,
+  EVIDENCE_REVIEW: 7,
+  COMPLETE: 8,
   ARCHITECTURE: -1,
   ARCH_REVIEW: -1,
   ARCH_COMPLETE: -1,
@@ -183,9 +184,9 @@ const SLOT_REQUIRED_FROM: Readonly<Record<string, number>> = {
   selfReview: 2, // PLAN_REVIEW
   planReviewDecision: 3, // VALIDATION
   validation: 4, // IMPLEMENTATION
-  implementation: 5, // IMPL_REVIEW
-  implReview: 6, // EVIDENCE_REVIEW
-  evidenceReviewDecision: 7, // COMPLETE
+  implementation: 5, // IMPL_VALIDATION
+  implReview: 7, // EVIDENCE_REVIEW
+  evidenceReviewDecision: 8, // COMPLETE
 };
 
 /** All evidence slots in evidence-chain order. */
