@@ -69,11 +69,9 @@ import { isCommandAllowed, Command } from '../../machine/commands.js';
 // Rail helpers
 
 // Adapters
-import { promises as fs } from 'node:fs';
-import { join as pathJoin } from 'node:path';
 import { changedFiles, hashWorktreeFiles, worktreeDiff } from '../../adapters/git.js';
-import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
+import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 
 // Evidence types
 
@@ -266,8 +264,9 @@ async function scopeImplementationFiles(
  * gap where the digest was computed over file NAMES only. The unified diff is written
  * to `<sessDir>/implementation-diff.<diffDigest>.patch` (content-addressed, so
  * identical content is idempotent) and covered by the archive manifest checksums;
- * its digest is bound into the evidence. Diff capture is best-effort: an empty or
- * unavailable diff omits `diffDigest` and never blocks recording.
+ * its digest is bound into the evidence. Diff capture is best-effort: an empty
+ * diff or a write failure omits `diffDigest` and never blocks recording; the digest
+ * is only set when the artifact was successfully written to disk.
  */
 async function buildImplEvidence(
   input: ImplementRuntime,
@@ -283,8 +282,11 @@ async function buildImplEvidence(
   let diffDigest: string | undefined;
   const diffText = await worktreeDiff(input.worktree, sortedFiles);
   if (diffText.trim().length > 0) {
-    diffDigest = input.ctx.digest(diffText);
-    await writeImplementationDiffArtifact(input.sessDir, diffDigest, diffText);
+    const candidateDigest = input.ctx.digest(diffText);
+    const written = await writeImplementationDiffArtifact(input.sessDir, candidateDigest, diffText);
+    if (written) {
+      diffDigest = candidateDigest;
+    }
   }
 
   return {
@@ -294,29 +296,6 @@ async function buildImplEvidence(
     ...(diffDigest ? { diffDigest } : {}),
     executedAt: input.ctx.now(),
   };
-}
-
-/**
- * Write the implementation diff to a content-addressed session file so the exported
- * audit archive contains the actual change (covered by the archive manifest SHA-256
- * and content digest). Content-addressed by `diffDigest`, so identical content is
- * written idempotently. A write failure is logged and swallowed — it must never
- * block implementation recording, and the evidence still carries `diffDigest`.
- */
-async function writeImplementationDiffArtifact(
-  sessDir: string,
-  diffDigest: string,
-  diffText: string,
-): Promise<void> {
-  const file = pathJoin(sessDir, `implementation-diff.${diffDigest}.patch`);
-  try {
-    await fs.writeFile(file, diffText, 'utf8');
-  } catch (err) {
-    getAdapterLogger().warn('tool', 'impl_diff_artifact_write_failed', {
-      diffDigest,
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
 }
 
 export async function handleImplRecord(

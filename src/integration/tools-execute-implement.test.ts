@@ -175,12 +175,23 @@ vi.mock('../verification/executor', () => ({
     })),
 }));
 
+// Transparent pass-through to the real implement-diff-artifact module so
+// writeImplementationDiffArtifact can be selectively intercepted per-test
+// (e.g. the F3 write-failure negative case).
+vi.mock('./tools/implement-diff-artifact.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./tools/implement-diff-artifact.js')>();
+  return {
+    writeImplementationDiffArtifact: vi.fn(actual.writeImplementationDiffArtifact),
+  };
+});
+
 // Lazy import for per-test overrides
 const gitMock = await import('../adapters/git.js');
 const wsMock = await import('../adapters/workspace/index.js');
 const actorMock = await import('../adapters/actor.js');
 const persistenceMock = await import('../adapters/persistence.js');
 const executorMock = await import('../verification/executor.js');
+const diffArtifactMock = await import('./tools/implement-diff-artifact.js');
 
 // ─── Capability Gates ────────────────────────────────────────────────────────
 
@@ -365,6 +376,26 @@ describe('implement', () => {
       expect(parseToolResult(raw).error).toBeUndefined();
 
       const impl = (await readState(sessDir))!.implementation!;
+      expect(impl.diffDigest).toBeUndefined();
+    });
+
+    it('F3: omits diffDigest and never persists a claimed artifact when write fails', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/auth.ts']);
+      vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce(
+        'diff --git a/src/auth.ts b/src/auth.ts\n--- a/src/auth.ts\n+++ b/src/auth.ts',
+      );
+      // Simulate writeImplementationDiffArtifact failing (ENOSPC).
+      vi.mocked(diffArtifactMock.writeImplementationDiffArtifact).mockResolvedValueOnce(false);
+
+      const raw = await implement.execute({}, ctx);
+      expect(parseToolResult(raw).error).toBeUndefined();
+
+      const impl = (await readState(sessDir))!.implementation!;
+      // Implementation recording itself must still succeed (best-effort diff).
+      expect(impl.digest).toBeTruthy();
+      // diffDigest must NOT be set — no artifact was written.
       expect(impl.diffDigest).toBeUndefined();
     });
 
