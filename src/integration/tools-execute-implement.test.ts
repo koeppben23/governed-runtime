@@ -78,6 +78,9 @@ vi.mock('../adapters/git', async (importOriginal) => {
       for (const p of paths) out[p] = `stable:${p}`;
       return out;
     }),
+    // Defaults to the real helper (which returns '' on the non-repo temp worktree);
+    // F3 tests override it per-call to exercise diff-artifact capture.
+    worktreeDiff: vi.fn(original.worktreeDiff),
   };
 });
 
@@ -322,6 +325,47 @@ describe('implement', () => {
       expect(result.error).toBeUndefined();
       expect(result.changedFiles).toBeDefined();
       expect(result.domainFiles).toBeDefined();
+    });
+
+    it('F3: binds a content digest and writes the change diff artifact', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      const diff =
+        'diff --git a/src/auth.ts b/src/auth.ts\n' +
+        '--- a/src/auth.ts\n+++ b/src/auth.ts\n@@ -1 +1 @@\n-old\n+new\n';
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/auth.ts']);
+      vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce(diff);
+
+      const raw = await implement.execute({}, ctx);
+      expect(parseToolResult(raw).error).toBeUndefined();
+
+      const state = await readState(sessDir);
+      const impl = state!.implementation!;
+      // Digest is derived from per-path CONTENT hashes (see hashWorktreeFiles mock),
+      // not a hash of the file-name list — distinct content yields a distinct digest.
+      expect(impl.digest).toBeTruthy();
+      expect(impl.diffDigest).toBeTruthy();
+
+      // The diff artifact is written, content-addressed by diffDigest, and is picked
+      // up by the archive manifest (it lives under the session directory).
+      const patch = await fs.readFile(
+        `${sessDir}/implementation-diff.${impl.diffDigest}.patch`,
+        'utf8',
+      );
+      expect(patch).toBe(diff);
+    });
+
+    it('F3: omits diffDigest and writes no artifact when the diff is empty', async () => {
+      await reachImplementation();
+      const sessDir = await currentSessionDir();
+      vi.mocked(gitMock.changedFiles).mockResolvedValueOnce(['src/auth.ts']);
+      vi.mocked(gitMock.worktreeDiff).mockResolvedValueOnce('   \n');
+
+      const raw = await implement.execute({}, ctx);
+      expect(parseToolResult(raw).error).toBeUndefined();
+
+      const impl = (await readState(sessDir))!.implementation!;
+      expect(impl.diffDigest).toBeUndefined();
     });
 
     it('Mode B: approve review converges in solo', async () => {

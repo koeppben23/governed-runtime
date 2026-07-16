@@ -21,6 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Implementation evidence is content-bound and captures a diff artifact (F3).**
+  `ImplEvidence.digest` now hashes the CURRENT content of each changed file (path +
+  git blob hash) instead of the sorted file-name list, so two different edits to the
+  same file set produce different digests. `/implement` also captures a unified diff
+  of the change to a content-addressed `implementation-diff.<digest>.patch` under the
+  session directory (covered by the archive manifest checksums) and records its hash
+  as the optional, backward-compatible `ImplEvidence.diffDigest`.
+
 - **VALIDATION fails closed when a stack is detected but no checks are derived (F4).**
   Under lenient validation-evidence enforcement (`off`/`advisory` — e.g. the default
   `team` mode), an empty active-check list previously passed VALIDATION vacuously.

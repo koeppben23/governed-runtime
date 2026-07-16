@@ -62,14 +62,17 @@ import {
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';
 import { autoAdvance } from '../../rails/types.js';
-import type { ReviewFindings } from '../../state/evidence.js';
+import type { ReviewFindings, ImplEvidence } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 
 // Rail helpers
 
 // Adapters
-import { changedFiles, hashWorktreeFiles } from '../../adapters/git.js';
+import { promises as fs } from 'node:fs';
+import { join as pathJoin } from 'node:path';
+import { changedFiles, hashWorktreeFiles, worktreeDiff } from '../../adapters/git.js';
+import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 
 // Evidence types
@@ -254,6 +257,68 @@ async function scopeImplementationFiles(
   return { files, baselineScoping: 'applied' };
 }
 
+/**
+ * Build ImplEvidence with a CONTENT-bound digest and capture the change as a diff
+ * artifact.
+ *
+ * The digest hashes each changed file's CURRENT content (path + git blob hash) so
+ * distinct edits to the same file set yield distinct digests — closing the prior
+ * gap where the digest was computed over file NAMES only. The unified diff is written
+ * to `<sessDir>/implementation-diff.<diffDigest>.patch` (content-addressed, so
+ * identical content is idempotent) and covered by the archive manifest checksums;
+ * its digest is bound into the evidence. Diff capture is best-effort: an empty or
+ * unavailable diff omits `diffDigest` and never blocks recording.
+ */
+async function buildImplEvidence(
+  input: ImplementRuntime,
+  files: string[],
+  domainFiles: string[],
+): Promise<ImplEvidence> {
+  const sortedFiles = [...files].sort();
+  const contentHashes = await hashWorktreeFiles(input.worktree, sortedFiles);
+  const digest = input.ctx.digest(
+    sortedFiles.map((f) => `${f}:${contentHashes[f] ?? 'deleted'}`).join('\n'),
+  );
+
+  let diffDigest: string | undefined;
+  const diffText = await worktreeDiff(input.worktree, sortedFiles);
+  if (diffText.trim().length > 0) {
+    diffDigest = input.ctx.digest(diffText);
+    await writeImplementationDiffArtifact(input.sessDir, diffDigest, diffText);
+  }
+
+  return {
+    changedFiles: files,
+    domainFiles,
+    digest,
+    ...(diffDigest ? { diffDigest } : {}),
+    executedAt: input.ctx.now(),
+  };
+}
+
+/**
+ * Write the implementation diff to a content-addressed session file so the exported
+ * audit archive contains the actual change (covered by the archive manifest SHA-256
+ * and content digest). Content-addressed by `diffDigest`, so identical content is
+ * written idempotently. A write failure is logged and swallowed — it must never
+ * block implementation recording, and the evidence still carries `diffDigest`.
+ */
+async function writeImplementationDiffArtifact(
+  sessDir: string,
+  diffDigest: string,
+  diffText: string,
+): Promise<void> {
+  const file = pathJoin(sessDir, `implementation-diff.${diffDigest}.patch`);
+  try {
+    await fs.writeFile(file, diffText, 'utf8');
+  } catch (err) {
+    getAdapterLogger().warn('tool', 'impl_diff_artifact_write_failed', {
+      diffDigest,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 export async function handleImplRecord(
   input: ImplementRuntime,
   changedFilesOverride?: string[],
@@ -273,12 +338,7 @@ export async function handleImplRecord(
   const domainFiles = files.filter(
     (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/') && !isNonDomainConfigPath(f),
   );
-  const implEvidence = {
-    changedFiles: files,
-    domainFiles,
-    digest: input.ctx.digest(files.sort().join('\n')),
-    executedAt: input.ctx.now(),
-  };
+  const implEvidence = await buildImplEvidence(input, files, domainFiles);
   const existingFindings = input.state.implReviewFindings ?? [];
   const newReviewFindings = input.args.reviewFindings
     ? [...existingFindings, input.args.reviewFindings]
