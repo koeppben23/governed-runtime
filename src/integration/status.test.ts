@@ -148,6 +148,32 @@ describe('policyMode — from policySnapshot', () => {
   });
 });
 
+describe('productNextAction — aborted terminal session (governance integrity)', () => {
+  const policy = getPolicyPreset('solo');
+
+  it('redirects an aborted COMPLETE session to /review, never /export', () => {
+    const state: SessionState = {
+      ...makeMinimalState('COMPLETE'),
+      error: {
+        code: 'ABORTED',
+        message: 'Operator aborted',
+        recoveryHint: 'Start a new session with /hydrate',
+        occurredAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+    const projection = buildStatusProjection(state, policy);
+    // An aborted session must not be routed to /export as a verifiable audit package.
+    expect(projection.productNextAction.primaryCommand).toBe('/review');
+    expect(String(projection.productNextAction.summary).toLowerCase()).toContain('aborted');
+    expect(projection.productNextAction.summary).not.toContain('/export');
+  });
+
+  it('a clean COMPLETE session is unaffected (still offers /export)', () => {
+    const projection = buildStatusProjection(makeMinimalState('COMPLETE'), policy);
+    expect(projection.productNextAction.summary).toContain('/export');
+  });
+});
+
 describe('profileId — from activeProfile', () => {
   const policy = getPolicyPreset('solo');
 

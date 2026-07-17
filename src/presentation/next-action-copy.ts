@@ -85,11 +85,16 @@ const PRODUCT_GUIDANCE = {
  *
  * @param action - Canonical next action from the machine layer.
  * @param phase - Current phase for context enrichment.
+ * @param aborted - True when the session reached a terminal phase via /abort
+ *   (state.error.code === 'ABORTED'). An aborted session is terminal but is NOT
+ *   a clean completion, so it must not be guided toward /export as a "verifiable
+ *   audit package"; the user is redirected to /review instead.
  * @returns Product-friendly display guidance.
  */
 export function buildProductNextAction(
   action: NextAction,
   phase: Phase,
+  aborted = false,
 ): { text: string; commands: readonly string[] } {
   const code = action.code as ActionCode;
   const guidance = PRODUCT_GUIDANCE[code];
@@ -99,6 +104,17 @@ export function buildProductNextAction(
   }
 
   const phaseLabel = PHASE_LABELS[phase];
+
+  // Aborted terminal session: do NOT offer /finish + /export. Exporting an
+  // aborted session as a verifiable audit package would misrepresent a
+  // failed/abandoned session as a clean completion (the /export path itself is
+  // fail-closed against this in archive-tool.ts). Redirect to inspection.
+  if (action.code === 'SESSION_COMPLETE' && aborted) {
+    return {
+      text: 'Session aborted — not a clean completion and not exportable as a verifiable audit package. Inspect it with /review (it is preserved in the audit trail).',
+      commands: ['/review'],
+    };
+  }
 
   // Enrich terminal messages with the phase label for context.
   // /finish is a read-only readiness aggregator that works in every terminal

@@ -194,7 +194,12 @@ describe('archive', () => {
   describe('HAPPY', () => {
     it.skipIf(!tarOk)('archives a completed session to tar.gz', async () => {
       await hydrateSession();
-      await abort_session.execute({ reason: 'Complete for archive' }, ctx);
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
       const raw = await archive.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
@@ -346,6 +351,19 @@ describe('archive', () => {
         'EVIDENCE_ARTIFACT_MISMATCH',
       ]).toContain(result.code);
     });
+
+    it('blocks /export for an aborted session (not a clean audit package)', async () => {
+      // Governance integrity: an aborted session is terminal (phase=COMPLETE)
+      // but must not be exportable as a "verifiable audit package" — that would
+      // misrepresent a failed/abandoned session as a clean completion. The abort
+      // is already preserved in the audit trail; the user is directed to /review.
+      await hydrateSession();
+      await abort_session.execute({ reason: 'Operator aborted mid-flow' }, ctx);
+      const raw = await archive.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('ABORTED');
+    });
   });
 
   describe('CORNER', () => {
@@ -390,7 +408,12 @@ describe('archive', () => {
 
     it('archive path follows expected pattern', async () => {
       await hydrateSession();
-      await abort_session.execute({ reason: 'Done' }, ctx);
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
       // Even if tar is missing, the tool should at least try and produce
       // a meaningful error or succeed. We test the path structure.
       const raw = await archive.execute({}, ctx);

@@ -252,6 +252,22 @@ describe('flowguard_continue (runtime)', () => {
     expect(parsed.next).toBe('/export');
   });
 
+  it('COMPLETE aborted → redirects to /review, never /export', async () => {
+    // Governance integrity: an aborted terminal session must not be routed to
+    // /export as an audit package.
+    const state = { phase: 'COMPLETE', error: { code: 'ABORTED', message: 'Operator aborted' } };
+    mocks.state = state;
+    mocks.readOnlySession = { state, policy: null };
+    mocks.appendNextAction.mockImplementation((p: string) => p);
+    const { continue_cmd } = await import('./continue-tool.js');
+    const res = await continue_cmd.execute({}, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.phase).toBe('COMPLETE');
+    expect(parsed._continue.action).toBe('terminal');
+    expect(parsed.next).toBe('/review');
+    expect(String(parsed.status).toLowerCase()).toContain('aborted');
+  });
+
   // ── ERROR: catch handler ──────────────────────────────────────────────────
 
   it('returns INTERNAL_ERROR when dependency throws', async () => {

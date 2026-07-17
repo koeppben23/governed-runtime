@@ -294,7 +294,7 @@ export function buildStatusProjection(
   const blocker = buildBlocker(evalResult);
   const policyMode = state.policySnapshot?.mode ?? 'unknown';
   const profileId = state.activeProfile?.id ?? 'none';
-  const productNext = buildProductNextAction(next, state.phase);
+  const productNext = buildProductNextAction(next, state.phase, state.error?.code === 'ABORTED');
 
   const actor = state.actorInfo
     ? {

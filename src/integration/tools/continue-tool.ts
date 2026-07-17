@@ -117,11 +117,15 @@ function formatUserGateGuidance(state: SessionState): string {
 }
 
 function formatTerminalGuidance(state: SessionState): string {
+  // Aborted sessions are terminal (phase=COMPLETE) but are NOT clean
+  // completions: do not route them to /export as an audit package. /export is
+  // additionally fail-closed against aborted sessions in archive-tool.ts.
+  const aborted = state.error?.code === 'ABORTED';
   return appendNextAction(
     JSON.stringify({
       phase: state.phase,
-      status: 'Workflow complete.',
-      next: '/export',
+      status: aborted ? 'Session aborted — not a clean completion.' : 'Workflow complete.',
+      next: aborted ? '/review' : '/export',
       _continue: { action: 'terminal' },
     }),
     state,

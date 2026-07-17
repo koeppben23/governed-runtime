@@ -41,6 +41,25 @@ describe('buildProductNextAction', () => {
       expect(action.commands).toEqual([]);
     });
 
+    it('SESSION_COMPLETE aborted → redirects to /review, never /export', () => {
+      const action = resolveNextAction('COMPLETE', makeProgressedState('COMPLETE'));
+      const product = buildProductNextAction(action, 'COMPLETE', true);
+      // An aborted session must not be guided toward /export as a verifiable
+      // audit package — it is not a clean completion.
+      expect(product.commands).toEqual(['/review']);
+      expect(product.text.toLowerCase()).toContain('aborted');
+      expect(product.text).not.toContain('/export');
+      expect(product.text).not.toContain('/finish');
+    });
+
+    it('SESSION_COMPLETE non-aborted default is unchanged (clean completion)', () => {
+      const action = resolveNextAction('COMPLETE', makeProgressedState('COMPLETE'));
+      // Explicit aborted=false behaves exactly like the 2-arg call.
+      expect(buildProductNextAction(action, 'COMPLETE', false)).toEqual(
+        buildProductNextAction(action, 'COMPLETE'),
+      );
+    });
+
     it('RUN_TICKET (TICKET, no ticket)', () => {
       const action = resolveNextAction('TICKET', makeState('TICKET'));
       const product = buildProductNextAction(action, 'TICKET');

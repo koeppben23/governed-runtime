@@ -20,6 +20,35 @@ import { TERMINAL } from '../../machine/topology.js';
 import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 
+/**
+ * Verify a freshly created archive and derive the reportable status. Isolated
+ * from execute() so the tool's control flow stays within complexity limits.
+ * Verification failure is non-fatal for a manual archive — status stays 'failed'.
+ */
+async function verifyArchiveIntegrity(
+  fingerprint: string,
+  sessionID: string,
+): Promise<{ archiveStatus: 'verified' | 'failed'; status: string }> {
+  try {
+    const verification = await verifyArchive(fingerprint, sessionID);
+    if (verification.passed) {
+      return { archiveStatus: 'verified', status: 'Session archived and verified.' };
+    }
+    const errs = verification.findings.filter((f) => f.severity === 'error');
+    const detail = errs.map((f) => f.code).join(', ') || 'integrity verification failed';
+    return {
+      archiveStatus: 'failed',
+      status: `Session archived, but integrity verification failed: ${detail}.`,
+    };
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    return {
+      archiveStatus: 'failed',
+      status: `Session archived, but integrity verification failed: ${detail}.`,
+    };
+  }
+}
+
 export const archive: ToolDefinition = {
   description:
     'Archive a completed FlowGuard session as a tar.gz file. ' +
@@ -43,6 +72,17 @@ export const archive: ToolDefinition = {
         });
       }
 
+      // Governance integrity: an aborted session reaches phase=COMPLETE via the
+      // /abort escape hatch (error.code='ABORTED'), but it is NOT a clean
+      // completion and must not be exported as a "verifiable audit package" —
+      // that would misrepresent a failed/abandoned session as a successful one.
+      // This mirrors the existing !error invariant that excludes aborted sessions
+      // from the automatic regulated archive (decision-finalization.ts). The abort
+      // itself is already preserved in the audit trail; use /review to inspect it.
+      if (state.error?.code === 'ABORTED') {
+        return formatBlocked('ABORTED', { reason: state.error.message });
+      }
+
       const archivePath = await archiveSession(fingerprint, context.sessionID);
 
       // Verify archive integrity and persist status. /export is an explicit
@@ -52,19 +92,10 @@ export const archive: ToolDefinition = {
       // already-archived session no longer perturbs the audit-trail anchor, so a
       // freshly created valid archive verifies as 'verified' rather than racing
       // to 'failed'.
-      let archiveStatus: 'verified' | 'failed' = 'failed';
-      let verifyError: string | null = null;
-      try {
-        const verification = await verifyArchive(fingerprint, context.sessionID);
-        archiveStatus = verification.passed ? 'verified' : 'failed';
-        if (!verification.passed) {
-          const errs = verification.findings.filter((f) => f.severity === 'error');
-          verifyError = errs.map((f) => f.code).join(', ') || 'integrity verification failed';
-        }
-      } catch (err) {
-        // Verification failure is non-fatal for manual archive — status stays 'failed'.
-        verifyError = err instanceof Error ? err.message : String(err);
-      }
+      const { archiveStatus, status } = await verifyArchiveIntegrity(
+        fingerprint,
+        context.sessionID,
+      );
       const archivedState = { ...state, archiveStatus };
       await writeStateWithArtifacts(sessDir, archivedState);
       getAdapterLogger().info('machine', 'session_archived', {
@@ -73,13 +104,6 @@ export const archive: ToolDefinition = {
         archiveStatus,
         ...getLogTraceFields(),
       });
-
-      // Keep the status string consistent with archiveStatus — never report
-      // success alongside a failed verification (#archive-payload-mismatch).
-      const status =
-        archiveStatus === 'verified'
-          ? 'Session archived and verified.'
-          : `Session archived, but integrity verification failed${verifyError ? `: ${verifyError}` : ''}.`;
 
       return appendNextAction(
         JSON.stringify({
