@@ -23,8 +23,8 @@ FlowGuard supports per-repository configuration via `flowguard.json`.
   "profile": {},
   "archive": {
     "redaction": {
-      "mode": "basic",
-      "includeRaw": false
+      "mode": "none",
+      "includeRaw": true
     }
   }
 }
@@ -401,21 +401,20 @@ legacy-tolerant for backward compatibility.
 
 **Type:** `enum`
 **Values:** `none`, `basic`, `strict`
-**Default:** `basic`
+**Default:** `none`
 
-Controls export-time redaction for archive artifacts.
+Archive Layout v2 requires `none` and exports a complete raw-evidence package.
 
-FlowGuard preserves raw runtime and audit state internally; redaction is applied only to export artifacts according to the configured archive policy.
+`basic` and `strict` are legacy settings. Archive creation fails until they are migrated to `none`. Redacted sharing export is a future, separate feature.
 
 ### archive.redaction.includeRaw
 
 **Type:** `boolean`
-**Default:** `false`
+**Default:** `true`
 
-When `false` (default), only redacted export artifacts are included in archives.
-When `true`, raw artifacts are included alongside redacted artifacts and the archive manifest is marked with a risk flag.
+Archive Layout v2 requires `true` and includes raw evidence. Archive manifests record `rawIncluded: true` and the `raw_audit_evidence_export` risk flag.
 
-**Scope of redaction:** Only `decision-receipts.*.json` and `review-report.*.json` are redacted. `session-state.json` and `audit.jsonl` are always included as raw.
+`false` is a legacy setting and causes archive creation to fail. Migrate it to `true` before creating an archive.
 
 ### Discovery
 
@@ -576,8 +575,8 @@ install, or configure the Codex custom agent directly.
   },
   "archive": {
     "redaction": {
-      "mode": "strict",
-      "includeRaw": false
+      "mode": "none",
+      "includeRaw": true
     }
   }
 }

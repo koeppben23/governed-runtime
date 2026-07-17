@@ -87,7 +87,7 @@ In regulated mode, FlowGuard currently guarantees:
 - Scope boundary: no OIDC discovery and no stale-on-error/last-known-good JWKS fallback.
 - `identityProviderMode: 'required'` blocks fail-closed on IdP configuration/token/verification errors.
 - `identityProviderMode: 'optional'` degrades to claim/env/git/unknown only for typed IdP errors.
-- Export artifacts are redacted by default (`archive.redaction.mode=basic`, `includeRaw=false`). Review report references (URLs, ticket IDs, branch names) are redacted in exported artifacts.
+- Archive Layout v2 exports complete raw evidence by default (`archive.redaction.mode=none`, `includeRaw=true`) for authorized auditors. Legacy archive redaction settings (`basic`, `strict`, or `includeRaw=false`) fail archive creation and must be migrated. Redacted sharing export is a future, separate feature.
 
 These guarantees are scoped to current runtime behavior and local execution model.
 

@@ -74,24 +74,25 @@ FlowGuard manages several types of data with different retention requirements. T
 ```
 {sessionId}.tar.gz
 ├── archive-manifest.json                  # Session metadata, file inventory, digests
-├── session-state.json                     # Final session state (raw)
-├── audit.jsonl                            # Complete audit trail (hash-chained)
-├── discovery-snapshot.json                # Repository discovery snapshot
-├── profile-resolution-snapshot.json       # Profile resolution evidence
-├── decision-receipts.redacted.v1.json     # Redacted decision receipts (default)
-├── review-report.redacted.json            # Redacted review report (when /review ran)
+├── state/session-state.json               # Final session state (raw)
+├── audit/audit.jsonl                      # Complete audit trail (hash-chained)
+├── audit/decision-receipts.v1.json        # Decision receipt projection (raw)
+├── context/discovery-snapshot.json        # Repository discovery snapshot
+├── context/profile-resolution-snapshot.json # Profile resolution evidence
+├── reports/review-report.json             # Review report when /review ran (raw)
 └── artifacts/                             # Append-only evidence artifacts
     ├── ticket.v*.{md,json}
     ├── plan.v*.{md,json}
     └── architecture-review-card.<digest>.{md,json}  # ADR evidence (architecture flow)
 ```
 
-Raw artifacts (`review-report.json`, raw decision receipts) are **excluded by
-default** under `archive.redaction.mode=basic, includeRaw=false`. Setting
-`includeRaw=true` includes them and sets the manifest risk flag
-`raw_export_enabled`. ADRs are emitted as `architecture-review-card.*` evidence
-artifacts under `artifacts/` — there is no top-level `adr/` directory in the
-archive.
+Archive Layout v2 includes complete raw evidence by default under
+`archive.redaction.mode=none, includeRaw=true`; the manifest records
+`rawIncluded: true` and the `raw_audit_evidence_export` risk flag. Legacy
+redaction settings (`basic`, `strict`, or `includeRaw=false`) fail archive
+creation and must be migrated. Redacted sharing export is a future separate
+feature. ADRs are emitted as `architecture-review-card.*` evidence artifacts
+under `artifacts/` — there is no top-level `adr/` directory in the archive.
 
 ### Archive Verification
 

@@ -210,13 +210,13 @@ export const FlowGuardConfigSchema = z.object({
       redaction: z
         .object({
           /** Redaction mode for export artifacts. */
-          mode: z.enum(['none', 'basic', 'strict']).default('basic'),
+          mode: z.enum(['none', 'basic', 'strict']).default('none'),
           /** Include raw artifacts in archive alongside redacted artifacts. */
-          includeRaw: z.boolean().default(false),
+          includeRaw: z.boolean().default(true),
         })
-        .default({ mode: 'basic', includeRaw: false }),
+        .default({ mode: 'none', includeRaw: true }),
     })
-    .default({ redaction: { mode: 'basic', includeRaw: false } }),
+    .default({ redaction: { mode: 'none', includeRaw: true } }),
 });
 
 // ─── Types ───────────────────────────────────────────────────────────────────

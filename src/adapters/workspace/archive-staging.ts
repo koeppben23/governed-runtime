@@ -7,6 +7,8 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { hashBuffer } from '../../shared/hashing.js';
 import { getLastChainHash } from '../../audit/integrity.js';
+import { decisionReceipts } from '../../audit/query.js';
+import type { AuditEvent } from '../../state/evidence.js';
 import {
   ARCHIVE_LAYOUT_VERSION,
   ARCHIVE_MANIFEST_SCHEMA_VERSION,
@@ -69,7 +71,9 @@ async function writeDecisionReceipts(
   sessionId: string,
   events: readonly Record<string, unknown>[],
 ): Promise<void> {
-  const receipts = events.filter((event) => event.event === 'review:decision');
+  const receipts = decisionReceipts(events as AuditEvent[]).filter(
+    (receipt) => receipt.sessionId === sessionId,
+  );
   const target = archivePath(archiveRoot, ARCHIVE_LAYOUT.receipts);
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.writeFile(

@@ -216,8 +216,8 @@ the approver cannot be IdP-verified, returns BLOCKED `ACTOR_IDP_MODE_REQUIRED`.
 See `docs/policies.md` "Actor Identity & Assurance" for configuration.
 
 Every successful `/review-decision` emits a decision receipt in the audit trail
-(`decision:DEC-xxx`) and a redacted-by-default companion artifact
-`decision-receipts.redacted.v1.json` is written on archive.
+(`decision:DEC-xxx`). Archive Layout v2 writes the raw companion projection as
+`audit/decision-receipts.v1.json`.
 
 ### /validate
 
@@ -343,13 +343,16 @@ Archive a completed session as a `.tar.gz` file with integrity verification.
 - `{workspace}/sessions/archive/{sessionId}.tar.gz`
 - `{sessionId}.tar.gz.sha256`
 - `archive-manifest.json`
-- `decision-receipts.redacted.v1.json` (default)
-- `review-report.redacted.json` (when review report exists)
+- `audit/decision-receipts.v1.json`
+- `reports/review-report.json` (when review report exists)
 
-Default export policy is redacted-only (`archive.redaction.mode=basic`, `includeRaw=false`).
-If `includeRaw=true`, raw artifacts are included and manifest risk flag `raw_export_enabled` is set.
+Archive Layout v2 exports complete raw evidence (`archive.redaction.mode=none`,
+`includeRaw=true`) and records `rawIncluded: true` with the
+`raw_audit_evidence_export` manifest risk flag. Legacy redaction settings
+(`basic`, `strict`, or `includeRaw=false`) fail archive creation; migrate them
+before exporting. Redacted sharing export is a future separate feature.
 
-External references recorded via `/ticket` are part of authoritative runtime state and remain raw in `session-state.json` (not redacted). References in `review-report.*.json` are redacted in redacted export artifacts.
+External references recorded via `/ticket` are part of authoritative runtime state and remain raw in `state/session-state.json` and `reports/review-report.json`.
 
 **Verification:** `verifyArchive()` (defined in
 `src/adapters/workspace/archive.ts`) validates integrity. Possible finding

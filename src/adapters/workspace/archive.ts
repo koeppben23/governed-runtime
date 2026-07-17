@@ -12,6 +12,7 @@ import { atomicWrite, readState } from '../persistence.js';
 import { appendAuditEvent, readAuditTrail } from '../persistence-audit.js';
 import { hashBuffer } from '../../shared/hashing.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import { readConfig } from '../persistence-config.js';
 import { verifyEvidenceArtifacts } from './evidence-artifacts.js';
 import { WorkspaceError, validateFingerprint, validateSessionId } from './types.js';
 import { workspacesHome, sessionDir } from './init.js';
@@ -56,6 +57,16 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
 
   const state = await readState(sessDir);
   if (state) await verifyEvidenceArtifacts(sessDir, state);
+  const archiveConfig = await readConfig();
+  if (
+    archiveConfig.archive.redaction.mode !== 'none' ||
+    archiveConfig.archive.redaction.includeRaw !== true
+  ) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      'Archive Layout v2 exports complete raw evidence only. Migrate archive.redaction to { mode: "none", includeRaw: true } before exporting.',
+    );
+  }
   await appendArtifactBindingAuditEvent(sessDir, validSessionId, state);
   const { events, skipped } = await readAuditTrail(sessDir);
   if (skipped > 0) {

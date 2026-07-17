@@ -30,6 +30,11 @@ does not apply redaction or encryption. Store and transfer it as confidential
 material. A future redacted sharing export is a separate product surface and is
 not an audit substitute.
 
+Archive Layout v2 requires `archive.redaction.mode=none` and
+`archive.redaction.includeRaw=true`. These are the defaults. Legacy redaction
+settings (`basic`, `strict`, or `includeRaw=false`) fail archive creation; migrate
+the configuration before exporting.
+
 ## Archive Location
 
 Archives are stored at:
@@ -41,9 +46,9 @@ Archives are stored at:
 ### Configuration Scope
 
 Archive creation calls `readConfig()` without a worktree argument intentionally.
-The originating worktree may no longer exist at archive time. Archive/redaction
-uses global config or default config. Repo config overrides do not apply to
-archives unless a future policy-snapshot change is introduced.
+The originating worktree may no longer exist at archive time. Archive
+configuration uses global config or default config. Repo config overrides do not
+apply to archives unless a future policy-snapshot change is introduced.
 
 ## Manifest
 
