@@ -500,6 +500,71 @@ describe('review (standalone flow)', () => {
       expect(result.code).toBe('SUBAGENT_FINDINGS_VERDICT_MISMATCH');
     });
 
+    it('F12 REGRESSION: host_task_required with accept + blocking issue → blocked, coherent code, not misrouted', async () => {
+      // The standalone /review path calls resolveHostTaskFindings DIRECTLY
+      // (not through resolveHostTaskEffectiveFindings). Before this fix,
+      // the `incoherent` kind fell through to the generic
+      // HOST_SUBAGENT_TASK_REQUIRED catch-all with wrong recovery guidance.
+      // This test proves the standalone path now emits the canonical coherence
+      // code and the verdict-only call does NOT advance to REVIEW_COMPLETE.
+      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
+      const first = parseToolResult(
+        await review.execute({ text: 'manual diff', inputOrigin: 'manual_text' }, ctx),
+      );
+      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+
+      // Seed captured evidence with the exact demo defect: accept verdict
+      // carrying a blocking issue (the reviewer honestly returned a
+      // self-contradictory record).
+      const findings = {
+        iteration: 1,
+        planVersion: 1,
+        reviewMode: 'subagent' as const,
+        overallVerdict: 'accept' as const,
+        blockingIssues: [
+          {
+            severity: 'minor' as const,
+            category: 'quality' as const,
+            message: 'stale comment in test',
+            location: 'src/test/TaskControllerTest.java:108',
+          },
+        ],
+        majorRisks: [],
+        missingVerification: [],
+        scopeCreep: [],
+        unknowns: [],
+        reviewedBy: { sessionId: 'flowguard-reviewer-session-123' },
+        reviewedAt: '2026-01-01T00:00:00.000Z',
+        attestation: {
+          toolObligationId: obligationId,
+          iteration: 1,
+          planVersion: 1,
+          reviewedBy: 'flowguard-reviewer',
+          mandateDigest: REVIEW_MANDATE_DIGEST,
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
+        },
+      };
+      await bindHostTaskReviewEvidence(obligationId, findings as never);
+
+      const result = parseToolResult(
+        await review.execute(
+          { text: 'manual diff', inputOrigin: 'manual_text', reviewVerdict: 'accept' },
+          ctx,
+        ),
+      );
+
+      // 1. Must be blocked with the canonical coherence code — NOT the generic
+      //    HOST_SUBAGENT_TASK_REQUIRED that would claim "evidence is required".
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
+
+      // 2. Must NOT reach REVIEW_COMPLETE (no phase field on a blocked result,
+      //    or phase should NOT be REVIEW_COMPLETE).
+      expect(result.phase).not.toBe('REVIEW_COMPLETE');
+      expect(result.reviewCard).toBeUndefined();
+    });
+
     it('content-aware review with URL succeeds with reviewFindings', async () => {
       const result = await submitContentReview({
         url: 'https://example.com/api-doc',
