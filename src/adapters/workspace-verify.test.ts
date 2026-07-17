@@ -46,7 +46,10 @@ describe('verifyArchive Archive Layout v2', () => {
 
   it('rejects a tampered archive checksum', async () => {
     const { fingerprint, sessionId, archivePath } = await archiveFixture();
-    await fs.appendFile(archivePath, 'tamper');
+    await fs.writeFile(
+      `${archivePath}.sha256`,
+      `${'0'.repeat(64)}  ${path.basename(archivePath)}\n`,
+    );
     const result = await verifyArchive(fingerprint, sessionId);
     expect(result.findings.some((finding) => finding.code === 'archive_checksum_mismatch')).toBe(
       true,

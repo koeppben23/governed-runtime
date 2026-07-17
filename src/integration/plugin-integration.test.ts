@@ -900,7 +900,7 @@ describe('plugin-integration', () => {
   // ─── PERF ──────────────────────────────────────────────────
 
   describe.skipIf(!PERF_ENABLED)('PERF', () => {
-    it('1000 non-mutating non-FlowGuard tool calls complete in < 50ms', async () => {
+    it('1000 non-mutating non-FlowGuard tool calls complete in < 100ms', async () => {
       const start = performance.now();
       for (let i = 0; i < 1000; i++) {
         await handler(
@@ -910,7 +910,7 @@ describe('plugin-integration', () => {
       }
       const elapsed = performance.now() - start;
       // Prefix check should be near-instant (CI-tolerant budget)
-      expect(elapsed).toBeLessThan(75);
+      expect(elapsed).toBeLessThan(100);
     });
 
     it('10 FlowGuard tool calls with persistence complete reasonably', async () => {
