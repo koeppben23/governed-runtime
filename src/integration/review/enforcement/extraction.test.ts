@@ -20,6 +20,7 @@ import {
   LATER,
   modeASubagentResponse,
   taskResultWithFindings,
+  taskResultWithMalformedFindings,
   validSubagentPrompt,
 } from './test-helpers.js';
 
@@ -121,6 +122,92 @@ describe('review-enforcement extraction helpers', () => {
       );
 
       const result = matchPendingReview(state, {
+        prompt: validSubagentPrompt({ iteration: 0, planVersion: 1 }),
+      });
+      expect(result).toBeNull();
+    });
+
+    // ─── Structural re-arm (host-task deadlock recovery) ───────────
+    // A reviewer run that produces an UNPARSEABLE capture must not lock the
+    // obligation. Reproduces the live-demo deadlock where a single mistyped
+    // field (`majorRiskes`) poisoned the review and every re-run was rejected
+    // as duplicate_evidence against the corrupt capture.
+    it('re-arms a called review whose captured findings are unparseable (reviewer typo)', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 0, planVersion: 1 }),
+        NOW,
+      );
+      // First reviewer run: valid JSON, overallVerdict present, but `majorRisks`
+      // mistyped → capturedFindings is non-null yet fails ReviewFindings.safeParse.
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
+        taskResultWithMalformedFindings('child-corrupt'),
+        LATER,
+      );
+      // The obligation must remain matchable so a re-run can replace the capture.
+      const result = matchPendingReview(state, {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
+        prompt: validSubagentPrompt({ iteration: 0, planVersion: 1 }),
+      });
+      expect(result).not.toBeNull();
+      expect(result!.tool).toBe('flowguard_plan');
+    });
+
+    it('re-arms a called review whose reviewer produced no parseable findings', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 0, planVersion: 1 }),
+        NOW,
+      );
+      // Non-JSON reviewer output → capturedFindings is null → still re-armable.
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
+        'This is not JSON at all — the reviewer failed to emit findings.',
+        LATER,
+      );
+      const result = matchPendingReview(state, {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
+        prompt: validSubagentPrompt({ iteration: 0, planVersion: 1 }),
+      });
+      expect(result).not.toBeNull();
+      expect(result!.tool).toBe('flowguard_plan');
+    });
+
+    it('stops re-arming once a valid re-capture replaces the corrupt one', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse({ iteration: 0, planVersion: 1 }),
+        NOW,
+      );
+      // Corrupt first capture...
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
+        taskResultWithMalformedFindings('child-corrupt'),
+        LATER,
+      );
+      // ...replaced by a valid re-run capture (re-arm path overwrites it).
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
+        taskResultWithFindings('child-valid'),
+        LATER,
+      );
+      // Good capture now present → obligation is satisfied, no further re-arm.
+      const result = matchPendingReview(state, {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
         prompt: validSubagentPrompt({ iteration: 0, planVersion: 1 }),
       });
       expect(result).toBeNull();

@@ -25,7 +25,7 @@
  */
 
 import type { SessionState } from '../../../state/schema.js';
-import type { ReviewObligation } from '../../../state/evidence-review.js';
+import { ReviewFindings, type ReviewObligation } from '../../../state/evidence-review.js';
 import {
   type SessionEnforcementState,
   type PendingReview,
@@ -291,27 +291,56 @@ export function onTaskToolAfter(
 }
 
 /**
+ * Whether a pending review already holds a "good" capture — reviewer findings
+ * that parse against the ReviewFindings schema (the SAME schema the verdict-time
+ * resolver applies in resolveHostTaskFindings).
+ *
+ * A capture that is absent (null) or schema-invalid (e.g. the reviewer emitted
+ * non-JSON, or mistyped a required field such as `majorRisks`) is NOT good: it
+ * can never be bound into a parseable invocation, so the verdict submission
+ * fails with HOST_TASK_FINDINGS_UNPARSEABLE. Treating such a capture as
+ * "satisfied" is exactly what deadlocks the obligation — the pending review is
+ * locked (subagentCalled=true) while its only capture is unusable, and a re-run's
+ * evidence is rejected as duplicate_evidence against the corrupt capture.
+ *
+ * Returning false keeps the review re-armable so a subsequent reviewer run can
+ * replace the bad capture (new child session + new findings hash → no duplicate).
+ */
+function hasParseableCapture(pending: PendingReview): boolean {
+  // safeParse(null/undefined) is already a failure, so an absent capture and a
+  // schema-invalid one both correctly resolve to "not parseable" — no separate
+  // null guard needed.
+  return ReviewFindings.safeParse(pending.capturedFindings?.rawFindings).success;
+}
+
+/**
  * Match a Task call to exactly one pending review obligation.
  *
  * Matching strategy (P34 1:1 contract):
- * - 0 pending: null (no obligation to satisfy)
- * - 1 pending: that one (unambiguous — L3 already validated the prompt)
- * - >1 pending: match by contentMeta (iteration + planVersion from prompt)
- * - >1 pending, no contentMeta match: null (fail-closed, ambiguous)
+ * - 0 awaiting capture: null (no obligation to satisfy)
+ * - 1 awaiting capture: that one (unambiguous — L3 already validated the prompt)
+ * - >1 awaiting capture: match by contentMeta (iteration + planVersion from prompt)
+ * - >1 awaiting capture, no contentMeta match: null (fail-closed, ambiguous)
+ *
+ * "Awaiting capture" includes a review that was already called but whose only
+ * capture is unparseable/absent (see hasParseableCapture) — so a reviewer re-run
+ * replaces a corrupt capture instead of deadlocking the obligation.
  */
 export function matchPendingReview(
   state: SessionEnforcementState,
   taskArgs: Record<string, unknown>,
 ): PendingReview | null {
-  const uncalled = [...state.pendingReviews.values()].filter((p) => !p.subagentCalled);
+  const awaitingCapture = [...state.pendingReviews.values()].filter(
+    (p) => !p.subagentCalled || !hasParseableCapture(p),
+  );
 
-  if (uncalled.length === 0) return null;
-  if (uncalled.length === 1) return uncalled[0]!;
+  if (awaitingCapture.length === 0) return null;
+  if (awaitingCapture.length === 1) return awaitingCapture[0]!;
 
-  // Multiple pending — match by contentMeta from prompt
+  // Multiple awaiting capture — match by contentMeta from prompt
   const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';
 
-  for (const pending of uncalled) {
+  for (const pending of awaitingCapture) {
     if (!pending.contentMeta) continue;
 
     const { expectedIteration, expectedPlanVersion } = pending.contentMeta;

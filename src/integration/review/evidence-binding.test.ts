@@ -979,3 +979,110 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
     });
   });
 });
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Host-task deadlock recovery (structural re-arm) — END-TO-END
+//
+// Reproduces the exact live-demo failure and proves it now RECOVERS across the
+// full pipeline: capture (onTaskToolAfter) → bind (buildHostTaskEvidence) →
+// verdict resolution (resolveHostTaskFindings). Before the re-arm fix, the
+// second reviewer run was discarded (write-once lock) and its re-bind was
+// rejected as duplicate_evidence against the corrupt first capture — an
+// unrecoverable deadlock.
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
+  const CHILD_CORRUPT = 'ses_child_corrupt';
+  const CHILD_VALID = 'ses_child_valid';
+
+  /**
+   * Valid JSON with overallVerdict present (so extraction/binding succeed) but a
+   * MISTYPED required field — `majorRiskes` instead of `majorRisks` — so the
+   * captured findings FAIL ReviewFindings.safeParse at verdict time. Mirrors the
+   * reviewer typo that poisoned the demo obligation.
+   */
+  function corruptTaskResult(obligationId: string): string {
+    return JSON.stringify({
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      overallVerdict: 'accept',
+      blockingIssues: [],
+      majorRiskes: [], // typo → required `majorRisks` missing → unparseable at resolve
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: CHILD_CORRUPT },
+      reviewedAt: NOW,
+      attestation: {
+        toolObligationId: obligationId,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        iteration: 0,
+        planVersion: 1,
+        reviewedBy: REVIEWER_SUBAGENT_TYPE,
+      },
+    });
+  }
+
+  it('malformed first capture is recoverable: re-run binds fresh evidence (not duplicate) and the verdict resolves', () => {
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(0, 1), NOW);
+    const obligation = pendingObligation();
+
+    // ── Reviewer run #1: malformed findings ─────────────────────────────────
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+      corruptTaskResult(obligation.obligationId),
+      LATER,
+    );
+
+    // Bind #1 succeeds — binding does NOT validate the ReviewFindings schema
+    // (bind-before-validate), so the corrupt capture becomes a bound invocation.
+    const bindCorrupt = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    expect(bindCorrupt.bindOutcome).toBe('bound');
+    expect(bindCorrupt.evidence).not.toBeNull();
+    expect(bindCorrupt.evidence!.childSessionId).toBe(CHILD_CORRUPT);
+    const invocations: ReviewInvocationEvidence[] = [bindCorrupt.evidence!];
+
+    // Verdict resolution #1 → UNPARSEABLE (majorRisks missing). This is the
+    // state that used to strand the obligation forever.
+    const resolveCorrupt = resolveHostTaskFindings(
+      { obligations: [obligation], invocations },
+      obligation,
+    );
+    expect(resolveCorrupt.kind).toBe('unparseable');
+
+    // ── Reviewer run #2 (re-run): valid findings, NEW child session ──────────
+    const validResult = taskResultWithAttestation(obligation.obligationId, {
+      childSessionId: CHILD_VALID,
+    });
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+      validResult,
+      LATER,
+    );
+
+    // Bind #2 — the re-arm overwrote the corrupt capture with the valid one, so
+    // this binds fresh evidence. New child session + new findings hash → NOT a
+    // duplicate_evidence (this is precisely the deadlock that is now fixed).
+    const bindValid = buildHostTaskEvidence(state, SESSION_ID, [obligation], invocations, LATER);
+    expect(bindValid.bindOutcome).toBe('bound');
+    expect(bindValid.evidence).not.toBeNull();
+    expect(bindValid.evidence!.childSessionId).toBe(CHILD_VALID);
+    invocations.push(bindValid.evidence!);
+
+    // Verdict resolution #2 → RESOLVED. The resolver iterates all invocations,
+    // skips the still-unparseable corrupt one, and returns the valid re-capture.
+    const resolveValid = resolveHostTaskFindings(
+      { obligations: [obligation], invocations },
+      obligation,
+    );
+    expect(resolveValid.kind).toBe('resolved');
+    if (resolveValid.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(resolveValid.findings.overallVerdict).toBe('accept');
+    expect(resolveValid.invocation.childSessionId).toBe(CHILD_VALID);
+  });
+});
