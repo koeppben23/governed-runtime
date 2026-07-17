@@ -128,7 +128,7 @@ function formatTerminalGuidance(state: SessionState): string {
     JSON.stringify({
       phase: state.phase,
       status: aborted ? 'Session aborted — not a clean completion.' : 'Workflow complete.',
-      next: aborted ? '/review' : '/export',
+      next: aborted ? '/status' : '/export',
       _continue: { action: 'terminal' },
     }),
     state,

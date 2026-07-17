@@ -264,7 +264,7 @@ describe('flowguard_continue (runtime)', () => {
     expect(parsed.next).toBe('/export');
   });
 
-  it('COMPLETE aborted → redirects to /review, never /export', async () => {
+  it('COMPLETE aborted → redirects to /status, never /review or /export', async () => {
     // Governance integrity: an aborted terminal session must not be routed to
     // /export as an audit package.
     const state = { phase: 'COMPLETE', error: { code: 'ABORTED', message: 'Operator aborted' } };
@@ -276,7 +276,9 @@ describe('flowguard_continue (runtime)', () => {
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/review');
+    expect(parsed.next).toBe('/status');
+    expect(parsed.next).not.toBe('/review');
+    expect(parsed.next).not.toBe('/export');
     expect(String(parsed.status).toLowerCase()).toContain('aborted');
   });
 
