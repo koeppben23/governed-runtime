@@ -170,7 +170,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // "blockers and warnings", changing the /finish body and COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'b96291e06ebf924a74fc3a41c07004b03f81cf822bb109c4b03f9ad14b02bbff',
+      '0d9b8357bc5627a5c42d2d3690465be155d1a23a2de2624a0c249f4a9430f9b7',
     );
   });
 

@@ -39,6 +39,7 @@ import {
 import type { DiscoveryHealthProjection } from '../../discovery/discovery-health.js';
 import type { DiscoveryResult } from '../../discovery/types.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import { readReport } from '../../adapters/persistence.js';
 
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';
@@ -119,17 +120,19 @@ function buildCheckProjectionFields(state: SessionState): Record<string, unknown
 /**
  * Resolve a focused projection response, or null if no projection flag is set.
  */
-function resolveProjection(
+async function resolveProjection(
   args: StatusArgs,
   state: SessionState,
   policy: FlowGuardPolicy,
-): string | null {
+  sessDir: string,
+): Promise<string | null> {
   const checkFields = buildCheckProjectionFields(state);
   // /finish is the most comprehensive focused projection and is placed first so
   // its own template call is never shadowed by a stray additional flag. This
   // preserves the existing first-match dispatch semantics for all other flags.
   if (args.finish) {
-    const finishCard = buildFinishCard(state, policy);
+    const reviewReport = await readReport(sessDir);
+    const finishCard = buildFinishCard(state, policy, reviewReport);
     return appendNextAction(
       JSON.stringify({
         phase: state.phase,
@@ -531,7 +534,7 @@ export const status: ToolDefinition = {
   async execute(_args, context) {
     try {
       const { wsDir } = await resolveWorkspacePaths(context);
-      const { state, policy } = await withReadOnlySession(context);
+      const { state, policy, sessDir } = await withReadOnlySession(context);
 
       if (!state) {
         return JSON.stringify({
@@ -555,7 +558,7 @@ export const status: ToolDefinition = {
       const completeness = evaluateCompleteness(state);
       const args = _args as StatusArgs;
 
-      const projection = resolveProjection(args, state, policy);
+      const projection = await resolveProjection(args, state, policy, sessDir);
       if (projection !== null) return projection;
 
       const { discovery, discoveryHealth } = await loadDiscoveryStatusContext(wsDir);

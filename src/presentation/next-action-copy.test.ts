@@ -62,6 +62,21 @@ describe('buildProductNextAction', () => {
       );
     });
 
+    it('SESSION_COMPLETE verified archive does not recommend exporting again', () => {
+      const action = resolveNextAction('REVIEW_COMPLETE', makeProgressedState('REVIEW_COMPLETE'));
+      const product = buildProductNextAction(action, 'REVIEW_COMPLETE', false, 'verified');
+      expect(product.commands).toEqual(['/finish', '/status']);
+      expect(product.text).toContain('verified');
+      expect(product.text).not.toContain('/export');
+    });
+
+    it('SESSION_COMPLETE failed archive surfaces recovery', () => {
+      const action = resolveNextAction('COMPLETE', makeProgressedState('COMPLETE'));
+      const product = buildProductNextAction(action, 'COMPLETE', false, 'failed');
+      expect(product.commands).toEqual(['/status', '/export']);
+      expect(product.text).toContain('failed');
+    });
+
     it('RUN_TICKET (TICKET, no ticket)', () => {
       const action = resolveNextAction('TICKET', makeState('TICKET'));
       const product = buildProductNextAction(action, 'TICKET');

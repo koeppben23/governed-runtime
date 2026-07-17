@@ -24,6 +24,7 @@
  */
 
 import type { SessionState } from '../state/schema.js';
+import type { ReviewReport } from '../state/evidence.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import { evaluate } from '../machine/evaluate.js';
 import { resolveNextAction } from '../machine/next-action.js';
@@ -199,7 +200,8 @@ export interface ReadinessProjection {
  * combining existing projection results — it never re-evaluates evidence slots,
  * phases, obligations, or gates.
  */
-export type FinishOverallStatus = 'READY' | 'READY_WITH_WARNINGS' | 'BLOCKED' | 'NOT_VERIFIED';
+export type FinishOverallStatus =
+  'READY' | 'READY_WITH_WARNINGS' | 'CHANGES_REQUIRED' | 'BLOCKED' | 'NOT_VERIFIED';
 
 /** Presentation-only guidance status for a candidate next action. */
 export type FinishActionStatus = 'recommended' | 'not_recommended' | 'not_verified';
@@ -294,7 +296,12 @@ export function buildStatusProjection(
   const blocker = buildBlocker(evalResult);
   const policyMode = state.policySnapshot?.mode ?? 'unknown';
   const profileId = state.activeProfile?.id ?? 'none';
-  const productNext = buildProductNextAction(next, state.phase, state.error?.code === 'ABORTED');
+  const productNext = buildProductNextAction(
+    next,
+    state.phase,
+    state.error?.code === 'ABORTED',
+    state.archiveStatus,
+  );
 
   const actor = state.actorInfo
     ? {
@@ -535,8 +542,9 @@ function hasUnverifiedEvidence(evidence: EvidenceDetailProjection): boolean {
  * Precedence (highest first):
  * 1. BLOCKED             — readiness projection reports blocked (waiting/pending).
  * 2. NOT_VERIFIED        — a required evidence slot is missing or failed.
- * 3. READY_WITH_WARNINGS — not blocked, evidence ok, but warnings present.
- * 4. READY               — otherwise.
+ * 3. CHANGES_REQUIRED    — completed standalone review report has issues.
+ * 4. READY_WITH_WARNINGS — not blocked, evidence ok, but warnings present.
+ * 5. READY               — otherwise.
  *
  * BLOCKED intentionally wins over NOT_VERIFIED so a blocked session is not
  * mislabelled merely because evidence is also incomplete.
@@ -544,9 +552,11 @@ function hasUnverifiedEvidence(evidence: EvidenceDetailProjection): boolean {
 export function deriveFinishOverallStatus(
   readiness: ReadinessProjection,
   evidence: EvidenceDetailProjection,
+  reviewReport: ReviewReport | null = null,
 ): FinishOverallStatus {
   if (readiness.blocked) return 'BLOCKED';
   if (hasUnverifiedEvidence(evidence)) return 'NOT_VERIFIED';
+  if (reviewReport?.overallStatus === 'issues') return 'CHANGES_REQUIRED';
   if (readiness.warnings.length > 0) return 'READY_WITH_WARNINGS';
   return 'READY';
 }
@@ -590,6 +600,18 @@ const FINISH_ACTION_TABLE: Record<
     keep: {
       status: 'not_recommended',
       reason: 'Ready with warnings; keeping the branch open is optional.',
+    },
+  },
+  CHANGES_REQUIRED: {
+    proceed: {
+      status: 'not_recommended',
+      reason:
+        'Review completed with findings that require changes before the artifact can proceed.',
+    },
+    keep: {
+      status: 'recommended',
+      reason:
+        'Keep the artifact available while the documented findings are addressed and reviewed again.',
     },
   },
   NOT_VERIFIED: {
@@ -639,12 +661,16 @@ function buildFinishActionGuidance(overallStatus: FinishOverallStatus): FinishAc
  * buildEvidenceDetailProjection, resolveNextAction, and the single
  * presentation classifier deriveFinishOverallStatus.
  */
-export function buildFinishCard(state: SessionState, policy: FlowGuardPolicy): FinishCard {
+export function buildFinishCard(
+  state: SessionState,
+  policy: FlowGuardPolicy,
+  reviewReport: ReviewReport | null = null,
+): FinishCard {
   const readiness = buildReadinessProjection(state, policy);
   const evidence = buildEvidenceDetailProjection(state);
   const blocker = buildBlockedProjection(state, policy);
   const next = resolveNextAction(state.phase, state);
-  const overallStatus = deriveFinishOverallStatus(readiness, evidence);
+  const overallStatus = deriveFinishOverallStatus(readiness, evidence, reviewReport);
 
   return {
     phase: state.phase,

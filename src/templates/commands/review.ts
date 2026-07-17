@@ -69,7 +69,8 @@ Start the compliance review flow for the current FlowGuard session.
       files absent from the Discovery snapshot, or local Discovery is drifted relative
       to the reviewed branch).
     - Instruct the subagent to return a complete \`ReviewFindings\` JSON object
-    - Parse the response as \`ReviewFindings\` object — preserve all fields
+    - Retain the response unchanged for SDK/manual findings modes. In host-task
+      mode, FlowGuard captures it as Task evidence; do not parse or resubmit it.
     - Set \`attestation.toolObligationId\` to the value from \`requiredReviewAttestation\`
       (FlowGuard provides this UUID for every content-aware /review)
     Strict governance is not satisfied by copied JSON or attestation fields alone.

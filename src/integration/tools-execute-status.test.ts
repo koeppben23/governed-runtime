@@ -32,9 +32,18 @@ import {
   archive,
   architecture,
 } from './tools/index.js';
-import { PersistenceError, readState, statePath, writeState } from '../adapters/persistence.js';
+import {
+  PersistenceError,
+  readState,
+  statePath,
+  writeState,
+  writeReport,
+  reportPath,
+} from '../adapters/persistence.js';
 import { makeProgressedState } from '../fixtures.js';
 import type { Phase } from '../state/schema.js';
+import { evaluateCompleteness } from '../audit/completeness.js';
+import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
 
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
 
@@ -565,9 +574,13 @@ describe('status', () => {
       const result = parseToolResult(await status.execute({ finish: true }, ctx));
       const finish = result.finish as Record<string, unknown>;
       expect(finish).toBeDefined();
-      expect(['READY', 'READY_WITH_WARNINGS', 'BLOCKED', 'NOT_VERIFIED']).toContain(
-        finish.overallStatus,
-      );
+      expect([
+        'READY',
+        'READY_WITH_WARNINGS',
+        'CHANGES_REQUIRED',
+        'BLOCKED',
+        'NOT_VERIFIED',
+      ]).toContain(finish.overallStatus);
       expect(finish.readiness).toBeDefined();
       expect(finish.evidence).toBeDefined();
       expect(finish.blocker).toBeDefined();
@@ -588,6 +601,44 @@ describe('status', () => {
       await hydrateSession();
       const result = parseToolResult(await status.execute({ finish: true }, ctx));
       expect(Array.isArray(result.activeChecks)).toBe(true);
+    });
+
+    it('reports CHANGES_REQUIRED for a completed standalone review with issues', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const current = await readState(sessDir);
+      if (!current) throw new Error('expected hydrated state');
+      const reviewState = {
+        ...current,
+        phase: 'REVIEW_COMPLETE' as const,
+        reviewReportPath: reportPath(sessDir),
+      };
+      await writeState(sessDir, reviewState);
+      await writeReport(sessDir, {
+        schemaVersion: REVIEW_REPORT_SCHEMA_ID,
+        sessionId: reviewState.id,
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        phase: 'REVIEW_COMPLETE',
+        planDigest: null,
+        implDigest: null,
+        validationSummary: [],
+        findings: [{ severity: 'error', category: 'correctness', message: 'Changes required' }],
+        overallStatus: 'issues',
+        completeness: evaluateCompleteness(reviewState),
+      });
+
+      const result = parseToolResult(await status.execute({ finish: true }, ctx));
+      const finish = result.finish as {
+        overallStatus: string;
+        actionGuidance: Array<{ action: string; status: string }>;
+      };
+      expect(finish.overallStatus).toBe('CHANGES_REQUIRED');
+      expect(
+        finish.actionGuidance.find((guidance) => guidance.action === 'create PR')?.status,
+      ).toBe('not_recommended');
     });
 
     it('does not mutate persisted state (read-only)', async () => {

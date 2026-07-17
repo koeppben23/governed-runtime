@@ -91,6 +91,12 @@ function buildHostTaskBlockedOutput(
   policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>,
   attestationMeta: HostTaskAttestationMeta | null,
 ): string {
+  // The original standalone response is CONTENT_ANALYSIS_REQUIRED and carries
+  // manual-findings recovery. Host-task policy replaces that contract entirely:
+  // only captured Task evidence plus a matching verdict can complete this path.
+  result.code = REASON_HOST_SUBAGENT_TASK_REQUIRED;
+  result.message = `Policy requires host-visible Task-tool evidence for ${REVIEWER_SUBAGENT_TYPE}; submit only the captured reviewer verdict after the Task completes.`;
+  result.recovery = [RECOVERY_HOST_SUBAGENT_TASK];
   // BUG-16: Preserve iteration/planVersion so the agent can construct a correct
   // subagent prompt that passes promptContainsValue enforcement. Standalone
   // /review (CONTENT_ANALYSIS_REQUIRED) has no `next`, so the values are sourced

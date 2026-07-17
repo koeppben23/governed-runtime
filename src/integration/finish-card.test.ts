@@ -11,7 +11,7 @@
  *   renders an exit option as forbidden.
  *
  * Test strategy:
- * - MATRIX: READY / READY_WITH_WARNINGS / NOT_VERIFIED / BLOCKED with explicit
+ * - MATRIX: READY / READY_WITH_WARNINGS / CHANGES_REQUIRED / NOT_VERIFIED / BLOCKED with explicit
  *   precedence (BLOCKED wins over NOT_VERIFIED).
  * - COMPOSITION: card fields equal the underlying projection outputs verbatim.
  * - READ-ONLY: state is not mutated by building the card.
@@ -21,6 +21,7 @@
 
 import { describe, it, expect } from 'vitest';
 import type { SessionState } from '../state/schema.js';
+import type { ReviewReport } from '../state/evidence.js';
 import {
   buildFinishCard,
   deriveFinishOverallStatus,
@@ -30,9 +31,25 @@ import {
 } from './status.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { resolveNextAction } from '../machine/next-action.js';
+import { evaluateCompleteness } from '../audit/completeness.js';
 import { makeProgressedState } from '../fixtures.js';
 
 const policy = getPolicyPreset('solo');
+
+function makeReviewReport(overallStatus: ReviewReport['overallStatus']): ReviewReport {
+  return {
+    schemaVersion: 'flowguard-review-report.v1',
+    sessionId: '00000000-0000-4000-8000-000000000001',
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    phase: 'REVIEW_COMPLETE',
+    planDigest: null,
+    implDigest: null,
+    validationSummary: [],
+    findings: [],
+    overallStatus,
+    completeness: evaluateCompleteness(makeProgressedState('REVIEW_COMPLETE')),
+  };
+}
 
 /** COMPLETE terminal state with a legacy selfReview snapshot (produces 1 warning). */
 function makeWarningState(): SessionState {
@@ -129,6 +146,15 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
     } as unknown as ReturnType<typeof buildEvidenceDetailProjection>;
     expect(deriveFinishOverallStatus(readiness, evidence)).toBe('READY');
   });
+
+  it('CHANGES_REQUIRED when a completed standalone review reports issues', () => {
+    const state = makeProgressedState('REVIEW_COMPLETE');
+    const card = buildFinishCard(state, policy, makeReviewReport('issues'));
+    expect(card.overallStatus).toBe('CHANGES_REQUIRED');
+    expect(card.actionGuidance.find((guidance) => guidance.action === 'create PR')?.status).toBe(
+      'not_recommended',
+    );
+  });
 });
 
 // ─── COMPOSITION: card mirrors underlying projections ───────────────────────
@@ -179,9 +205,13 @@ describe('buildFinishCard — terminal phases', () => {
     it(`produces a Finish Card in ${phase}`, () => {
       const card = buildFinishCard(makeProgressedState(phase), policy);
       expect(card.phase).toBe(phase);
-      expect(['READY', 'READY_WITH_WARNINGS', 'BLOCKED', 'NOT_VERIFIED']).toContain(
-        card.overallStatus,
-      );
+      expect([
+        'READY',
+        'READY_WITH_WARNINGS',
+        'CHANGES_REQUIRED',
+        'BLOCKED',
+        'NOT_VERIFIED',
+      ]).toContain(card.overallStatus);
     });
   }
 });

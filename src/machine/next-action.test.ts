@@ -16,6 +16,7 @@ import {
 } from '../fixtures.js';
 import { Phase } from '../state/schema.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
+import { createReviewObligation } from '../integration/review/assurance.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -228,6 +229,22 @@ describe('resolveNextAction', () => {
       const action = resolveNextAction('REVIEW_COMPLETE', state);
       expectAction(action, ACTION_CODES.SESSION_COMPLETE, []);
       expect(action.text).toContain('Review flow complete');
+      expect(action.text).not.toContain('archived');
+    });
+
+    it('READY with a pending standalone review obligation → RUN_REVIEWER_TASK', () => {
+      const obligation = createReviewObligation({
+        obligationType: 'review',
+        iteration: 1,
+        planVersion: 1,
+        now: '2026-01-01T00:00:00.000Z',
+      });
+      const state = makeState('READY', {
+        reviewAssurance: { obligations: [obligation], invocations: [] },
+      });
+      const action = resolveNextAction('READY', state);
+      expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);
+      expect(action.text).toContain('flowguard-reviewer Task');
     });
   });
 

@@ -64,6 +64,25 @@ export function formatBlockedWithAttestation(
   message: string,
   obligationId: string,
 ): string {
+  if (code === 'HOST_SUBAGENT_TASK_REQUIRED') {
+    return JSON.stringify({
+      error: true,
+      code,
+      message,
+      requiredReviewAttestation: {
+        reviewedBy: REVIEWER_SUBAGENT_TYPE,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        toolObligationId: obligationId,
+      },
+      reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
+      recovery: [
+        `Call Task tool with subagent_type: "${REVIEWER_SUBAGENT_TYPE}" and provide the content plus requiredReviewAttestation.`,
+        'After FlowGuard captures the Task evidence, re-run flowguard_review with only reviewVerdict matching the reviewer overallVerdict.',
+        'Do not submit, copy, or alter reviewFindings in host-task mode.',
+      ],
+    });
+  }
   return JSON.stringify({
     error: true,
     code,

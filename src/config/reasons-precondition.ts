@@ -414,7 +414,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       `Call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool`,
       'Pass the plan/implementation text, ticket text, iteration, and planVersion in the prompt',
-      'After the subagent returns ReviewFindings, submit the verdict with reviewFindings',
+      'After the subagent returns, submit only reviewVerdict matching the captured reviewer verdict; do not submit reviewFindings',
     ],
   },
 

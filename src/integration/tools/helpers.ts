@@ -145,7 +145,12 @@ export function formatRailResult(result: RailResult): ToolResult {
   }
   const nextAction = resolveNextAction(result.state.phase, result.state);
   const aborted = result.state.error?.code === 'ABORTED';
-  const productNext = buildProductNextAction(nextAction, result.state.phase, aborted);
+  const productNext = buildProductNextAction(
+    nextAction,
+    result.state.phase,
+    aborted,
+    result.state.archiveStatus ?? null,
+  );
   const reviewDecision = result.state.reviewDecision;
   const { archiveStatus } = result.state;
   const reviewLoop = getReviewLoopProgress(result.state);
@@ -499,6 +504,7 @@ export function appendNextAction(jsonStr: string, state: SessionState): string {
     nextAction,
     state.phase,
     state.error?.code === 'ABORTED',
+    state.archiveStatus ?? null,
   );
   const parsed = JSON.parse(jsonStr);
   parsed.nextAction = nextAction;

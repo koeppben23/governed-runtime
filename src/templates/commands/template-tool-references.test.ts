@@ -116,6 +116,7 @@ describe('check command: implementation review orchestration', () => {
     expect(body).toContain('If the final `flowguard_run_check` response has phase `IMPL_REVIEW`');
     expect(body).toContain('`flowguard-reviewer` via the Task tool');
     expect(body).toContain('`flowguard_review_implementation({ reviewVerdict })`');
+    expect(body).toContain('Never make the subsequent human approval decision.');
   });
 });
 
