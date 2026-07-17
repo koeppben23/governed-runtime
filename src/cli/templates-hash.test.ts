@@ -168,9 +168,14 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for #520 review: /finish template now renders the canonical
     // blocker field verbatim (buildBlockedProjection) instead of unspecified
     // "blockers and warnings", changing the /finish body and COMMANDS hash.
+    // Refreshed for F10: the /review, /check, and shared review-loop templates
+    // now instruct the agent to pass the FlowGuard-provided reviewerTaskPrompt
+    // VERBATIM as the Task tool prompt (canonical copy-prompt) to eliminate the
+    // first-attempt SUBAGENT_PROMPT_MISSING_CONTEXT block. New command bodies
+    // change the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '0d9b8357bc5627a5c42d2d3690465be155d1a23a2de2624a0c249f4a9430f9b7',
+      '39026b714786edc7d5e954f3d85a9e311e30faa978a301a8874789d68989d412',
     );
   });
 

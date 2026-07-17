@@ -47,6 +47,68 @@ export function renderReviewContext(input: {
   return parts.join(', ');
 }
 
+/** Inputs for the canonical, copy-ready reviewer Task prompt (F10). */
+export interface ReviewerTaskPromptInput {
+  readonly iteration: number;
+  readonly planVersion?: number | null;
+  readonly obligationId: string;
+  readonly mandateDigest: string;
+  readonly criteriaVersion: string;
+  /** Short human label of what is under review, e.g. "the plan", "the branch diff". */
+  readonly subjectLabel: string;
+}
+
+/**
+ * Render the canonical, verbatim copy-ready reviewer Task prompt (F10).
+ *
+ * Root-cause fix for the first-attempt SUBAGENT_PROMPT_MISSING_CONTEXT block: in
+ * the host-task path the agent otherwise free-composes the reviewer Task prompt
+ * from prose and routinely omits the literal iteration=/planVersion= tokens the
+ * enforcement matcher (promptContainsValue) requires, forcing a wasted retry.
+ *
+ * FlowGuard now hands the agent a ready-to-paste prompt whose review context is
+ * produced by the SAME renderReviewContext serializer the enforcement matcher
+ * validates against — making the emitter/validator agreement structural rather
+ * than dependent on the agent echoing the values. The agent only appends the
+ * subject content (diff/plan/ADR) to this block.
+ *
+ * The prompt intentionally does NOT include any verdict or findings text
+ * (anti-fabrication) and stays above MIN_SUBAGENT_PROMPT_LENGTH so it clears the
+ * prompt-length gate on its own.
+ */
+export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string {
+  const context = renderReviewContext({
+    iteration: input.iteration,
+    planVersion: input.planVersion,
+  });
+  return [
+    `You are the ${REVIEWER_SUBAGENT_TYPE} subagent performing an independent, ` +
+      `falsification-first review of ${input.subjectLabel}.`,
+    `Review context: ${context}.`,
+    '',
+    'Required attestation (return these exact values in your ReviewFindings.attestation):',
+    `  reviewedBy: "${REVIEWER_SUBAGENT_TYPE}"`,
+    `  toolObligationId: "${input.obligationId}"`,
+    `  mandateDigest: "${input.mandateDigest}"`,
+    `  criteriaVersion: "${input.criteriaVersion}"`,
+    `  iteration: ${input.iteration}`,
+    ...(input.planVersion != null ? [`  planVersion: ${input.planVersion}`] : []),
+    '',
+    'Rules:',
+    `- You MUST NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, ` +
+      `flowguard_review_implementation, flowguard_architecture, flowguard_review) in your session.`,
+    '- Check Discovery health and drift before any repo-dependent quality claim; mark claims',
+    '  NOT_VERIFIED when they cannot be correlated to the local repository Discovery snapshot.',
+    '- Do not fabricate a verdict of convenience; ground every finding in concrete evidence.',
+    '- Return a complete ReviewFindings JSON object with overallVerdict, blockingIssues,',
+    '  majorRisks, missingVerification, scopeCreep, unknowns, reviewedBy, reviewedAt, and',
+    `  attestation set to the values above (iteration=${input.iteration}` +
+      `${input.planVersion != null ? `, planVersion=${input.planVersion}` : ''}).`,
+    '',
+    `Append the ${input.subjectLabel} content to review below this line:`,
+  ].join('\n');
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 /** Options for building a plan review prompt. */

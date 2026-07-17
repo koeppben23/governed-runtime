@@ -10,7 +10,7 @@
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 import type { ReviewHostPlatform, ReviewOrchestrationMode } from './orchestration-mode.js';
-import { renderReviewContext } from './prompt-builders.js';
+import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
 
 export interface PendingReviewInstructionInput {
   readonly mode: ReviewOrchestrationMode;
@@ -40,6 +40,13 @@ export interface PendingReviewInstruction {
     };
   };
   readonly next: string;
+  /**
+   * Canonical, verbatim copy-ready reviewer Task prompt (F10). Present only when
+   * an obligation is available. The agent should paste this as the Task tool
+   * "prompt" argument so the required review context is present on the first
+   * attempt instead of being free-composed and omitted.
+   */
+  readonly reviewerTaskPrompt?: string;
 }
 
 function platformAction(platform: ReviewHostPlatform): string {
@@ -124,15 +131,34 @@ export function buildPendingReviewInstruction(
   // The agent must submit ONLY the verdict; submitting, copying, or altering
   // reviewFindings here causes a session/hash mismatch rejection. The review
   // verdict is the independent reviewer's result, NEVER a user approval.
+  //
+  // F10: when an obligation is available, hand the agent a canonical, verbatim
+  // copy-ready reviewer prompt (built by the same renderReviewContext serializer
+  // the enforcement matcher validates against) so the required context is present
+  // on the first Task attempt instead of being free-composed and omitted.
+  const reviewerTaskPrompt = obligation
+    ? renderReviewerTaskPrompt({
+        iteration: input.iteration,
+        planVersion: input.planVersion,
+        obligationId: obligation.obligationId,
+        mandateDigest: obligation.mandateDigest,
+        criteriaVersion: obligation.criteriaVersion,
+        subjectLabel: input.subjectLabel,
+      })
+    : undefined;
   return {
     reviewInvocation: { ...base, status: 'pending_review' },
     next:
       `INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, you MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool. ` +
       `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes the ${input.subjectLabel}, ` +
       `${renderReviewContext({ iteration: input.iteration, planVersion: input.planVersion })}. ` +
+      (reviewerTaskPrompt
+        ? 'A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it VERBATIM as the Task tool "prompt" argument (append the artifact content), so the required review context is present on the first attempt. '
+        : '') +
       'After the reviewer returns, submit ONLY the verdict via reviewVerdict; the plugin resolves the reviewer findings from captured evidence automatically. ' +
       'Do NOT submit, copy, or alter reviewFindings in host-task mode — hand-edited or mismatched findings are rejected (SUBAGENT_SESSION_MISMATCH / findings hash mismatch). ' +
       'reviewVerdict records the independent reviewer result; it is NOT user approval and only advances to the human review gate. ' +
       'Only the user approves the presented artifact via flowguard_decision (/review-decision).',
+    ...(reviewerTaskPrompt ? { reviewerTaskPrompt } : {}),
   };
 }

@@ -81,6 +81,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reviewer Task prompt is handed to the agent verbatim, eliminating the first-attempt review block (F10).**
+  In the host-task review path the agent had to free-compose the `flowguard-reviewer`
+  Task prompt from prose and routinely omitted the literal `iteration=`/`planVersion=`
+  tokens that enforcement (`promptContainsValue`) requires, so the FIRST Task call was
+  blocked with `SUBAGENT_PROMPT_MISSING_CONTEXT` and only a retry succeeded (reproduced
+  in the standalone `/review` demo run). F9 unified the emitter side but did not remove
+  this root cause. FlowGuard now emits a canonical, copy-ready `reviewerTaskPrompt` in the
+  host-task blocked output (and the pending-review instruction), built by the SAME
+  `renderReviewContext` serializer the enforcement matcher validates against — making the
+  emitter/validator agreement structural rather than dependent on the agent echoing the
+  values. The `/review`, `/check`, and shared review-loop command templates now instruct
+  the agent to paste `reviewerTaskPrompt` verbatim as the Task `prompt`. Enforcement itself
+  is unchanged (not loosened); a free-composed prompt without the context tokens is still
+  blocked. New `renderReviewerTaskPrompt` authority in `prompt-builders.ts`. Changes:
+  `src/integration/review/prompt-builders.ts`, `src/integration/review/host-task-policy.ts`,
+  `src/integration/review/pending-instruction.ts`,
+  `src/templates/commands/{review,check,shared-review-loop}.ts`,
+  `src/cli/templates-hash.test.ts` (expected COMMANDS hash refreshed), plus tests.
+
 - **Reviewer prompt context is emitted from one canonical serializer (F9).**
   The `iteration`/`planVersion` context an agent must echo into the reviewer
   subagent prompt was built by two independent string builders

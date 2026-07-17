@@ -26,6 +26,12 @@ import type { OrchestratorDeps, ToolCallEvent } from './plugin-orchestrator.js';
 import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN, TOOL_FLOWGUARD_IMPLEMENT } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import {
+  createSessionState,
+  onFlowGuardToolAfter,
+  enforceBeforeSubagentCall,
+} from './review/enforcement/enforcement.js';
+import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import type { SessionState } from '../state/schema.js';
 import type { OrchestratorClient } from './review/types.js';
 
@@ -319,5 +325,109 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     expect(parsed.next).toContain('REVIEWER_UNAVAILABLE_STRICT');
     expect(parsed.next).toContain('never approves');
     expect(parsed.next).not.toMatch(/self-review assurance/i);
+  });
+
+  // ─── F10: canonical copy-ready reviewer prompt ─────────────────────────────
+  //
+  // Root-cause fix for the first-attempt SUBAGENT_PROMPT_MISSING_CONTEXT block:
+  // the host-task blocked output now carries a reviewerTaskPrompt the agent can
+  // paste verbatim as the Task prompt, and that prompt is built by the same
+  // renderReviewContext serializer the enforcement matcher validates against.
+  it('F10: host-task output carries a reviewerTaskPrompt with canonical context', async () => {
+    const state = buildState();
+    const stateRef = { current: state };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const deps = buildDeps(stateRef);
+    const output = { output: reviewRequiredOutput(2, 3) };
+    const event: ToolCallEvent = {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Plan text' } },
+      output,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    };
+
+    await runReviewOrchestration(deps, event);
+
+    const parsed = JSON.parse(output.output);
+    expect(typeof parsed.reviewerTaskPrompt).toBe('string');
+    expect(parsed.reviewerTaskPrompt).toContain('iteration=2');
+    expect(parsed.reviewerTaskPrompt).toContain('planVersion=3');
+    expect(parsed.reviewerTaskPrompt).toContain(OBLIGATION_ID);
+    // Anti-fabrication: the canonical prompt must not prefill a verdict.
+    expect(parsed.reviewerTaskPrompt).not.toMatch(/overallVerdict"\s*:\s*"accept/i);
+    // The next prose instructs verbatim use.
+    expect(parsed.next).toContain('reviewerTaskPrompt');
+    expect(parsed.next).toContain('VERBATIM');
+  });
+
+  it('F10: the emitted reviewerTaskPrompt passes enforcement on the FIRST attempt', async () => {
+    // Reproduces the demo-log regression: previously the agent free-composed a
+    // prompt WITHOUT iteration=/planVersion= and was blocked with
+    // SUBAGENT_PROMPT_MISSING_CONTEXT on the first attempt. The canonical
+    // reviewerTaskPrompt must clear enforcement immediately.
+    const state = buildState();
+    const stateRef = { current: state };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const deps = buildDeps(stateRef);
+    const toolOutput = { output: reviewRequiredOutput(2, 3) };
+    const event: ToolCallEvent = {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Plan text' } },
+      output: toolOutput,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    };
+    await runReviewOrchestration(deps, event);
+    const parsed = JSON.parse(toolOutput.output);
+    const reviewerTaskPrompt = parsed.reviewerTaskPrompt as string;
+
+    // Register the pending review from the (mutated) tool output, exactly as the
+    // plugin hook does, then run the real enforcement gate against the canonical
+    // prompt the agent is told to paste.
+    const enfState = createSessionState();
+    onFlowGuardToolAfter(enfState, TOOL_FLOWGUARD_PLAN, {}, toolOutput.output, NOW);
+    const result = enforceBeforeSubagentCall(enfState, {
+      subagent_type: REVIEWER_SUBAGENT_TYPE,
+      prompt: reviewerTaskPrompt,
+    });
+    expect(result.allowed).toBe(true);
+  });
+
+  it('F10: a demo-log-style free-composed prompt (no iteration=/planVersion=) is still blocked', async () => {
+    // Guard the enforcement is genuinely doing its job — the fix works because the
+    // canonical prompt carries the context, NOT because enforcement was loosened.
+    const state = buildState();
+    const stateRef = { current: state };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const deps = buildDeps(stateRef);
+    const toolOutput = { output: reviewRequiredOutput(2, 3) };
+    const event: ToolCallEvent = {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Plan text' } },
+      output: toolOutput,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    };
+    await runReviewOrchestration(deps, event);
+
+    const enfState = createSessionState();
+    onFlowGuardToolAfter(enfState, TOOL_FLOWGUARD_PLAN, {}, toolOutput.output, NOW);
+    // Attestation block present, but iteration=/planVersion= omitted — the exact
+    // shape the agent produced in the failing demo run.
+    const freeComposed =
+      `You are the ${REVIEWER_SUBAGENT_TYPE} reviewer. Required attestation: ` +
+      `toolObligationId=${OBLIGATION_ID}, mandateDigest=${REVIEW_MANDATE_DIGEST}, ` +
+      `criteriaVersion=${REVIEW_CRITERIA_VERSION}. Review the plan for completeness, ` +
+      `correctness, feasibility, risk, and quality, and return ReviewFindings JSON. ` +
+      `Do not call any FlowGuard tools in your session.`;
+    const result = enforceBeforeSubagentCall(enfState, {
+      subagent_type: REVIEWER_SUBAGENT_TYPE,
+      prompt: freeComposed,
+    });
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) {
+      expect(result.code).toBe('SUBAGENT_PROMPT_MISSING_CONTEXT');
+    }
   });
 });

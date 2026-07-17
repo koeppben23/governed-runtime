@@ -58,6 +58,13 @@ Start the compliance review flow for the current FlowGuard session.
     and NO \`pluginReviewFindings\`, manually call the \`${REVIEWER_SUBAGENT_TYPE}\` subagent
     via Task tool:
     - Use \`subagent_type: "${REVIEWER_SUBAGENT_TYPE}"\`
+    - If the response includes a \`reviewerTaskPrompt\` field, pass it VERBATIM as the Task
+      tool "prompt" argument, then append the loaded content and the Discovery context below
+      it. This canonical prompt already carries the required review context (iteration/planVersion)
+      and attestation, so the FIRST Task attempt is not blocked with
+      \`SUBAGENT_PROMPT_MISSING_CONTEXT\`. Only free-compose a prompt if no \`reviewerTaskPrompt\`
+      is provided, in which case you MUST include the \`requiredReviewAttestation\` values AND the
+      literal \`iteration=<n>, planVersion=<n>\` context in the prompt.
     - Pass the loaded content and \`requiredReviewAttestation\` values in the prompt
     - Pass the compact Discovery context captured in step 1 (health, drift,
       detectedStack, verificationCandidates, risk surfaces). This is REQUIRED so the
