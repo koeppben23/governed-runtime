@@ -336,7 +336,15 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     expect(stored.missingVerification).toEqual([]);
     expect(stored.scopeCreep).toEqual([]);
     expect(stored.unknowns).toEqual([]);
-    expect(stored.reviewedBy).toEqual({ sessionId: CHILD_SESSION_ID });
+    // F8: reviewedBy is rebuilt host-authoritatively (full block, not just
+    // sessionId). The reviewer-supplied block is preserved as reviewerClaimedBy.
+    expect(stored.reviewedBy).toEqual({
+      sessionId: CHILD_SESSION_ID,
+      actorId: REVIEWER_SUBAGENT_TYPE,
+      actorSource: 'unknown',
+      actorAssurance: 'best_effort',
+    });
+    expect(stored.reviewerClaimedBy).toEqual({ sessionId: CHILD_SESSION_ID });
     // F8: reviewedAt is host-authoritative — overwritten with the binding time
     // (LATER), not the reviewer-echoed NOW. The reviewer-claimed value diverges
     // from the host time here, so it is retained as untrusted reviewerClaimedAt.

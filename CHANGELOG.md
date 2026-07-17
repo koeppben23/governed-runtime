@@ -174,19 +174,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Reviewer provenance is host-authoritative; malformed findings are assurance-downgraded (F8).**
   The reviewer subagent (an LLM) is no longer treated as an authority for its own
   execution time or session identity. At host-task binding, `normalizeHostTaskFindings`
-  now overwrites `reviewedAt` with the real invocation timestamp and
-  `reviewedBy.sessionId` with the resolved child session id, preserving the model's
-  untrusted originals as diagnostics-only `reviewerClaimedAt` / `reviewerClaimedBy`
-  (new optional Zod fields on `ReviewFindings`, absent from the SDK output schema —
-  documented intentional drift in the findings-schema drift guard). Confabulated
-  values such as `reviewedAt="…T00:00:00Z"` or
-  `reviewedBy.sessionId="flowguard-reviewer-session"` can no longer masquerade as
-  audit-authoritative. Findings recovered only from an embedded/brace-balanced JSON
-  block in mixed model output now bind at a new `structured_recovered` assurance tier
-  (between `structured_high` and `text_compat_lower`) instead of silently claiming
-  `structured_high`; binding still proceeds (downgrade, not fail-closed). Changes:
-  `src/state/evidence-review.ts`, `src/integration/review/evidence-binding.ts`,
-  `src/integration/review/assurance.ts`,
+  now rebuilds the ENTIRE `reviewedBy` block host-authoritatively — `sessionId` from the
+  resolved child session and `actorId`/`actorSource`/`actorAssurance` from host-known
+  neutral values (`flowguard-reviewer` / `unknown` / `best_effort`); no model-supplied
+  actor field is carried into the canonical block, so a reviewer echoing the correct
+  session id can no longer smuggle a fabricated `actorSource`/`actorAssurance`. It also
+  overwrites `reviewedAt` with the real host binding timestamp. The complete original
+  model block is always preserved as diagnostics-only `reviewerClaimedBy`, and the model
+  time as `reviewerClaimedAt` (new optional Zod fields on `ReviewFindings`, intentionally
+  absent from the SDK output schema — documented drift in the findings-schema drift
+  guard). Findings recovered only from an embedded/brace-balanced JSON block in mixed
+  model output now bind at a new `structured_recovered` assurance tier with a consistent
+  transport contract (`reviewOutputMode: text_compat`, `structuredOutputUsed: false`,
+  `extractionMethod: outermost_braces`) instead of silently claiming `structured_high`
+  alongside structured-output defaults; binding still proceeds (downgrade, not
+  fail-closed). Changes: `src/state/evidence-review.ts`,
+  `src/integration/review/evidence-binding.ts`, `src/integration/review/assurance.ts`,
   `src/integration/review/enforcement/extraction.ts`,
   `src/integration/review/enforcement/types.ts`,
   `src/integration/review/findings-schema-drift.test.ts`, plus tests.

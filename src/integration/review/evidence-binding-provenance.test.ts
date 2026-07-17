@@ -55,7 +55,12 @@ function confabulatedTaskResult(
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: CONFABULATED_SESSION, actorSource: 'claim' },
+    reviewedBy: {
+      sessionId: CONFABULATED_SESSION,
+      actorId: 'independent-security-reviewer',
+      actorSource: 'git',
+      actorAssurance: 'idp_verified',
+    },
     reviewedAt: CONFABULATED_AT,
     attestation: {
       toolObligationId: obligationId,
@@ -113,12 +118,89 @@ describe('F8: host-authoritative reviewer provenance', () => {
     expect(reviewedBy.sessionId).not.toBe(CONFABULATED_SESSION);
   });
 
-  it('preserves the guessed reviewedBy as untrusted reviewerClaimedBy', () => {
+  it('builds the ENTIRE reviewedBy block host-authoritatively — no model fields leak through', () => {
+    const { state, obligation } = setupConfabulatedCycle();
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const raw = result.evidence?.capturedRawFindings as Record<string, unknown>;
+    const reviewedBy = raw.reviewedBy as Record<string, unknown>;
+    // The confabulated actorId/actorSource/actorAssurance MUST NOT survive.
+    expect(reviewedBy).toEqual({
+      sessionId: CHILD_SESSION_ID,
+      actorId: REVIEWER_SUBAGENT_TYPE,
+      actorSource: 'unknown',
+      actorAssurance: 'best_effort',
+    });
+    expect(reviewedBy.actorId).not.toBe('independent-security-reviewer');
+    expect(reviewedBy.actorSource).not.toBe('git');
+    expect(reviewedBy.actorAssurance).not.toBe('idp_verified');
+  });
+
+  it('preserves the complete guessed reviewedBy as untrusted reviewerClaimedBy', () => {
     const { state, obligation } = setupConfabulatedCycle();
     const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
     const raw = result.evidence?.capturedRawFindings as Record<string, unknown>;
     const claimedBy = raw.reviewerClaimedBy as Record<string, unknown>;
-    expect(claimedBy.sessionId).toBe(CONFABULATED_SESSION);
+    expect(claimedBy).toEqual({
+      sessionId: CONFABULATED_SESSION,
+      actorId: 'independent-security-reviewer',
+      actorSource: 'git',
+      actorAssurance: 'idp_verified',
+    });
+  });
+
+  it('preserves reviewerClaimedBy even when the claimed sessionId matches the child session', () => {
+    // Regression for the review finding: when the model echoes the correct
+    // sessionId but confabulates actorId/actorSource/actorAssurance, the
+    // original claim must still be retained (not silently dropped) and must not
+    // leak into the canonical block.
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(0, 1), NOW);
+    const obligation = pendingObligation();
+    const taskResult = JSON.stringify({
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      overallVerdict: 'accept',
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: {
+        sessionId: CHILD_SESSION_ID,
+        actorId: 'independent-security-reviewer',
+        actorSource: 'git',
+        actorAssurance: 'idp_verified',
+      },
+      reviewedAt: LATER,
+      attestation: {
+        toolObligationId: obligation.obligationId,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        iteration: 0,
+        planVersion: 1,
+        reviewedBy: REVIEWER_SUBAGENT_TYPE,
+      },
+    });
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt(0, 1) },
+      taskResult,
+      LATER,
+      { metadata: { sessionID: CHILD_SESSION_ID }, callID: 'call_provenance_003' },
+    );
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const raw = result.evidence?.capturedRawFindings as Record<string, unknown>;
+    const reviewedBy = raw.reviewedBy as Record<string, unknown>;
+    expect(reviewedBy.actorSource).toBe('unknown');
+    expect(reviewedBy.actorAssurance).toBe('best_effort');
+    const claimedBy = raw.reviewerClaimedBy as Record<string, unknown>;
+    expect(claimedBy).toEqual({
+      sessionId: CHILD_SESSION_ID,
+      actorId: 'independent-security-reviewer',
+      actorSource: 'git',
+      actorAssurance: 'idp_verified',
+    });
   });
 
   it('produces capturedRawFindings that still satisfy the Zod ReviewFindings schema', () => {
@@ -129,7 +211,7 @@ describe('F8: host-authoritative reviewer provenance', () => {
     expect(parsed.success).toBe(true);
   });
 
-  it('does not add reviewerClaimedAt when the reviewer time already equals the host time', () => {
+  it('omits reviewerClaimedAt when the reviewer time equals the host time, but still rebuilds reviewedBy', () => {
     // When the reviewer echoes a time equal to the binding time there is no
     // divergence to record — reviewerClaimedAt must stay absent.
     const state = createSessionState();
@@ -166,7 +248,17 @@ describe('F8: host-authoritative reviewer provenance', () => {
     const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
     const raw = result.evidence?.capturedRawFindings as Record<string, unknown>;
     expect(raw.reviewedAt).toBe(LATER);
+    // Time matches the host binding time → no divergent claimed time to record.
     expect(raw.reviewerClaimedAt).toBeUndefined();
-    expect(raw.reviewerClaimedBy).toBeUndefined();
+    // The reviewedBy block is still model-supplied, so it is preserved verbatim
+    // as reviewerClaimedBy (the block is always retained when present), while the
+    // canonical reviewedBy is rebuilt host-authoritatively.
+    expect(raw.reviewerClaimedBy).toEqual({ sessionId: CHILD_SESSION_ID });
+    expect(raw.reviewedBy).toEqual({
+      sessionId: CHILD_SESSION_ID,
+      actorId: REVIEWER_SUBAGENT_TYPE,
+      actorSource: 'unknown',
+      actorAssurance: 'best_effort',
+    });
   });
 });
