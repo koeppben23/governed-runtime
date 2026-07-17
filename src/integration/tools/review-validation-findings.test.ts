@@ -140,6 +140,96 @@ describe('validateReviewFindings', () => {
     });
   });
 
+  // ── F12: verdict/blocking-issues coherence (strict emptiness) ──────────
+
+  describe('F12: verdict/blocking-issues coherence', () => {
+    const criticalIssue = {
+      severity: 'critical' as const,
+      category: 'correctness' as const,
+      message: 'contract drift',
+    };
+    const majorIssue = {
+      severity: 'major' as const,
+      category: 'risk' as const,
+      message: 'silent data loss',
+    };
+    const minorIssue = {
+      severity: 'minor' as const,
+      category: 'quality' as const,
+      message: 'stale comment',
+    };
+
+    it('blocks accept with a critical blocking issue', () => {
+      const result = validateReviewFindings(
+        makeFindings({ overallVerdict: 'accept', blockingIssues: [criticalIssue] }),
+        makeCtx(),
+      );
+      expect(result).not.toBeNull();
+      expect(parseBlocked(result!).code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
+    });
+
+    it('blocks accept with a major blocking issue', () => {
+      const result = validateReviewFindings(
+        makeFindings({ overallVerdict: 'accept', blockingIssues: [majorIssue] }),
+        makeCtx(),
+      );
+      expect(parseBlocked(result!).code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
+    });
+
+    it('blocks accept with a MINOR blocking issue (strict emptiness — field name is the contract)', () => {
+      const result = validateReviewFindings(
+        makeFindings({ overallVerdict: 'accept', blockingIssues: [minorIssue] }),
+        makeCtx(),
+      );
+      expect(parseBlocked(result!).code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
+    });
+
+    it('allows accept with empty blockingIssues', () => {
+      const result = validateReviewFindings(
+        makeFindings({ overallVerdict: 'accept', blockingIssues: [] }),
+        makeCtx(),
+      );
+      expect(result).toBeNull();
+    });
+
+    it('allows changes_requested with blocking issues', () => {
+      const result = validateReviewFindings(
+        makeFindings({ overallVerdict: 'changes_requested', blockingIssues: [criticalIssue] }),
+        makeCtx(),
+      );
+      expect(result).toBeNull();
+    });
+
+    it('allows changes_requested with empty blockingIssues', () => {
+      const result = validateReviewFindings(
+        makeFindings({ overallVerdict: 'changes_requested', blockingIssues: [] }),
+        makeCtx(),
+      );
+      expect(result).toBeNull();
+    });
+
+    it('allows accept with advisory-only findings OUTSIDE blockingIssues (majorRisks/missingVerification)', () => {
+      const result = validateReviewFindings(
+        makeFindings({
+          overallVerdict: 'accept',
+          blockingIssues: [],
+          majorRisks: [majorIssue],
+          missingVerification: ['no integration test for the new path'],
+        }),
+        makeCtx(),
+      );
+      expect(result).toBeNull();
+    });
+
+    it('reports unable_to_review via its own SSOT path, not the coherence rule', () => {
+      const result = validateReviewFindings(
+        makeFindings({ overallVerdict: 'unable_to_review', blockingIssues: [] }),
+        makeCtx(),
+      );
+      expect(parseBlocked(result!).code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    });
+  });
+
   // ── Rule 1: mandatory subagent mode ────────────────────────────────────
 
   describe('Rule 1: mandatory subagent mode', () => {

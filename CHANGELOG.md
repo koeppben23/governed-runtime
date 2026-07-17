@@ -203,6 +203,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **Self-contradictory reviewer findings can no longer accept a review gate (F12).**
+  A reviewer verdict of `accept` carrying a non-empty `blockingIssues` array is now
+  rejected fail-closed at every ingestion boundary. Previously the only rule requiring
+  `accept` to be free of blocking issues lived as prose in the reviewer mandate with no
+  runtime enforcement, so a review could converge (and archive) with `blockingIssueCount`
+  greater than zero shown next to an accepted status — the exact contradiction observed
+  in a demo run. The canonical, dependency-free invariant
+  (`validateReviewFindingsConsistency`, strict emptiness) is the single source of truth
+  and is called at both the verdict-submission boundary (`validateReviewFindings`, all
+  four review kinds) and the host-task evidence-resolution boundary
+  (`resolveHostTaskFindings`), plus asserted at the plugin enforcement layer as
+  defense-in-depth — one rule implementation, multiple protection sites. Coherence is
+  checked before anti-tampering, so a contradictory record never masks (or is masked by)
+  a hash/verdict mismatch, and never becomes effective evidence. The runtime is
+  intentionally stricter than the current mandate prose (which still permits minor-only
+  blocking issues); severity-aware separation via a schema change is deferred so the
+  taxonomy becomes structurally guaranteed rather than interpreted. New reason code
+  `SUBAGENT_VERDICT_FINDINGS_INCOHERENT`. The reviewer mandate digest and
+  `criteriaVersion` are deliberately unchanged: this fix does not touch mandate content,
+  so no in-flight obligation is invalidated.
+
 - **Reviewer provenance is host-authoritative; malformed findings are assurance-downgraded (F8).**
   The reviewer subagent (an LLM) is no longer treated as an authority for its own
   execution time or session identity. At host-task binding, `normalizeHostTaskFindings`

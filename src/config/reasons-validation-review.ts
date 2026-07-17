@@ -270,6 +270,18 @@ export const REVIEW_VALIDATION_REASONS = [
   },
 
   {
+    code: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
+    category: 'state',
+    messageTemplate:
+      'overallVerdict "accept" is incoherent with {count} blocking issue(s). An accepted review must contain no blocking issues. Return a non-accept verdict or remove/reclassify the findings after resolving the inconsistency.',
+    recoverySteps: [
+      'Return a non-accept verdict (changes_requested, or unable_to_review where the artifact is genuinely unreviewable) when blocking issues are present',
+      'Or resolve the inconsistency and re-run the review so the reviewer emits coherent findings',
+      'Do not accept a review whose findings still report blocking issues',
+    ],
+  },
+
+  {
     code: 'SUBAGENT_EVIDENCE_REUSED',
     category: 'state',
     messageTemplate:

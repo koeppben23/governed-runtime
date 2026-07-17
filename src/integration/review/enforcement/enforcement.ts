@@ -43,6 +43,7 @@ import {
   resolveSubagentSessionId,
   promptContainsValue,
 } from './extraction.js';
+import { validateReviewFindingsConsistency } from './findings-consistency.js';
 
 import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
 import {
@@ -479,6 +480,31 @@ function checkFindingsMismatch(
   return null;
 }
 
+/**
+ * F12: assert the internal coherence of the captured review record.
+ *
+ * Semantically distinct from checkFindingsMismatch (which is anti-tampering
+ * between submitted and captured findings). This validates the captured record
+ * itself: an `accept` verdict must not carry blocking issues. Kept as its own
+ * check so a later refactor of the mismatch logic cannot silently drop the
+ * coherence invariant. Delegates to the canonical SSOT rule.
+ */
+function checkCapturedFindingsConsistency(captured: {
+  overallVerdict: string;
+  blockingIssuesCount: number;
+}): EnforcementResult | null {
+  const consistency = validateReviewFindingsConsistency({
+    overallVerdict: captured.overallVerdict,
+    blockingIssueCount: captured.blockingIssuesCount,
+  });
+  if (consistency.ok) return null;
+  return {
+    allowed: false,
+    code: consistency.code,
+    reason: `FlowGuard enforcement: overallVerdict "accept" is incoherent with ${consistency.details.blockingIssueCount} blocking issue(s). An accepted review must contain no blocking issues; return a non-accept verdict or reclassify the findings.`,
+  };
+}
+
 function verifyFindingsIntegrity(
   pending: {
     subagentRecord?: { sessionId: string | null } | null;
@@ -490,6 +516,9 @@ function verifyFindingsIntegrity(
   const sessionIssue = checkSessionMismatch(pending, reviewFindings);
   if (sessionIssue) return sessionIssue;
   if (!pending.capturedFindings) return null;
+  // Coherence of the captured record first, then anti-tampering vs submitted.
+  const consistencyIssue = checkCapturedFindingsConsistency(pending.capturedFindings);
+  if (consistencyIssue) return consistencyIssue;
   return checkFindingsMismatch(pending, reviewFindings);
 }
 

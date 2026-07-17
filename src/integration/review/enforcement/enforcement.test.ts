@@ -535,6 +535,43 @@ describe('review-enforcement', () => {
       expect(result).toHaveProperty('code', 'SUBAGENT_FINDINGS_ISSUES_MISMATCH');
     });
 
+    it('F12: blocks verdict when the CAPTURED record is accept + blocking issue (coherence, not tampering)', () => {
+      const state = createSessionState();
+
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+
+      // Subagent itself returns an incoherent record: accept WITH a blocking issue.
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
+        taskResultWithFindings('s1', {
+          verdict: 'accept',
+          blockingIssues: [{ severity: 'minor', description: 'stale comment' }],
+        }),
+        LATER,
+      );
+
+      // Agent faithfully echoes the captured (incoherent) record — no tampering.
+      const result = enforceBeforeVerdict(state, 'flowguard_plan', {
+        reviewVerdict: 'accept',
+        reviewFindings: {
+          overallVerdict: 'accept',
+          blockingIssues: [{ severity: 'minor', description: 'stale comment' }],
+          reviewedBy: { sessionId: 's1' },
+        },
+      });
+
+      expect(result.allowed).toBe(false);
+      // Coherence fires BEFORE the anti-tampering mismatch check.
+      expect(result).toHaveProperty('code', 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
+    });
+
     it('L4: blocks verdict when blockingIssues were added (inflated)', () => {
       const state = createSessionState();
 

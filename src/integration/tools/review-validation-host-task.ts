@@ -23,6 +23,7 @@ import {
   withHostTaskPath,
   type HostTaskFindingsAcceptanceRejection,
 } from './review-validation-acceptance.js';
+import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
 
 /**
  * Result of resolving review findings from host-task invocation evidence.
@@ -40,6 +41,7 @@ export type HostTaskFindingsResolution =
   | ({ readonly kind: 'resolved' } & ResolvedHostTaskFindings)
   | { readonly kind: 'rejected'; readonly rejection: HostTaskFindingsAcceptanceRejection }
   | { readonly kind: 'unparseable'; readonly detail: string }
+  | { readonly kind: 'incoherent'; readonly blockingIssueCount: number }
   | { readonly kind: 'not_found' };
 
 /**
@@ -95,6 +97,19 @@ export function resolveHostTaskFindings(
     // a distinct BLOCKED code (not silent not_found).
     const parsed = ReviewFindingsSchema.safeParse(invocation.capturedRawFindings);
     if (parsed.success) {
+      // F12: coherence of the host-captured record. An `accept` verdict that
+      // still carries blocking issues is self-contradictory and must fail closed
+      // before the findings are treated as valid evidence — this is the host-task
+      // ingestion boundary (verdict-only submission never reaches the tool-layer
+      // validateReviewFindings coherence check). Canonical rule in
+      // findings-consistency.ts.
+      const consistency = validateReviewFindingsConsistency({
+        overallVerdict: parsed.data.overallVerdict,
+        blockingIssueCount: parsed.data.blockingIssues.length,
+      });
+      if (!consistency.ok) {
+        return { kind: 'incoherent', blockingIssueCount: consistency.details.blockingIssueCount };
+      }
       return {
         kind: 'resolved',
         findings: parsed.data,

@@ -119,6 +119,80 @@ describe('resolveHostTaskFindings', () => {
     expect(result.findings.overallVerdict).toBe('changes_requested');
   });
 
+  // ── F12: verdict/blocking-issues coherence at the host-task boundary ────
+  // Reproduces the demo defect: host-captured findings with overallVerdict
+  // 'accept' AND a non-empty blockingIssues array. Verdict-only submission in
+  // host-task mode never reaches the tool-layer coherence check, so the host-
+  // task resolution boundary MUST fail closed here.
+
+  it('BAD: returns incoherent when captured findings are accept + blocking issue (demo shape)', () => {
+    const rawFindings = {
+      ...validRawFindings,
+      overallVerdict: 'accept',
+      blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale comment' }],
+    };
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          capturedVerdict: 'accept',
+          capturedRawFindings: rawFindings,
+          findingsHash: hashFindings(rawFindings),
+        }),
+      ],
+    };
+    const result = resolveHostTaskFindings(assurance, makeObligation());
+
+    expect(result.kind).toBe('incoherent');
+    if (result.kind !== 'incoherent') throw new Error('expected incoherent');
+    expect(result.blockingIssueCount).toBe(1);
+  });
+
+  it('BAD: incoherent for accept + critical/major blocking issues', () => {
+    const rawFindings = {
+      ...validRawFindings,
+      overallVerdict: 'accept',
+      blockingIssues: [
+        { severity: 'critical', category: 'correctness', message: 'contract drift' },
+        { severity: 'major', category: 'risk', message: 'silent data loss' },
+      ],
+    };
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          capturedVerdict: 'accept',
+          capturedRawFindings: rawFindings,
+          findingsHash: hashFindings(rawFindings),
+        }),
+      ],
+    };
+    const result = resolveHostTaskFindings(assurance, makeObligation());
+    expect(result.kind).toBe('incoherent');
+    if (result.kind !== 'incoherent') throw new Error('expected incoherent');
+    expect(result.blockingIssueCount).toBe(2);
+  });
+
+  it('HAPPY: changes_requested + blocking issues resolves normally (no coherence block)', () => {
+    const rawFindings = {
+      ...validRawFindings,
+      overallVerdict: 'changes_requested',
+      blockingIssues: [{ severity: 'critical', category: 'correctness', message: 'bug' }],
+    };
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          capturedVerdict: 'changes_requested',
+          capturedRawFindings: rawFindings,
+          findingsHash: hashFindings(rawFindings),
+        }),
+      ],
+    };
+    const result = resolveHostTaskFindings(assurance, makeObligation());
+    expect(result.kind).toBe('resolved');
+  });
+
   // ── Bad Path ────────────────────────────────────────────────────────────
 
   it('BAD: returns null when assurance is undefined', () => {

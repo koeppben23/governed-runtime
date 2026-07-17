@@ -733,11 +733,38 @@ describe('plan', () => {
           reviewVerdict: 'accept',
           reviewFindings: {
             ...reviewFindings,
+            // Tamper a NON-blocking field so the payload stays internally
+            // coherent (accept + empty blockingIssues) and specifically
+            // exercises hash-mismatch, not the F12 coherence gate.
+            missingVerification: ['tampered: no integration test'],
+          },
+        },
+        ctx,
+      );
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+    });
+
+    it('F12: blocks an accept payload carrying a blocking issue on coherence (precedes hash-mismatch)', async () => {
+      await hydrateAndTicket();
+      await plan.execute({ planText: '## Plan' }, ctx);
+
+      const reviewFindings = await fulfillPlanReview(0, 'accept');
+      // accept + a blocking issue is internally self-contradictory. The F12
+      // coherence gate fails closed BEFORE anti-tampering hash comparison, so a
+      // self-contradictory record never reaches (and cannot be masked by) the
+      // hash-mismatch path.
+      const raw = await plan.execute(
+        {
+          reviewVerdict: 'accept',
+          reviewFindings: {
+            ...reviewFindings,
             blockingIssues: [
               {
                 severity: 'major' as const,
                 category: 'correctness' as const,
-                message: 'tampered issue',
+                message: 'contract drift',
                 location: 'test',
               },
             ],
@@ -747,7 +774,7 @@ describe('plan', () => {
       );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('REVIEW_FINDINGS_HASH_MISMATCH');
+      expect(result.code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
     });
 
     it('Mode B blocks when reviewVerdict does not match reviewFindings.overallVerdict', async () => {

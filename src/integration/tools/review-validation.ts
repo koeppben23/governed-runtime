@@ -37,6 +37,7 @@ import {
   formatHostTaskAcceptanceRejection,
 } from './review-validation-acceptance.js';
 import { resolveHostTaskFindings } from './review-validation-host-task.js';
+import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 
@@ -172,6 +173,21 @@ export function validateReviewFindings(
   if ((findings as { overallVerdict?: unknown }).overallVerdict === 'unable_to_review') {
     return formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
       obligationId: ctx.obligationType ?? 'review',
+    });
+  }
+
+  // F12: verdict/blocking-issues coherence. An `accept` verdict that still
+  // carries blocking issues is internally self-contradictory and must fail
+  // closed regardless of anti-tampering (the reviewer honestly reporting a
+  // contradiction must still be stopped). Canonical rule lives in
+  // findings-consistency.ts; this boundary passes the submitted array length.
+  const consistency = validateReviewFindingsConsistency({
+    overallVerdict: findings.overallVerdict,
+    blockingIssueCount: findings.blockingIssues.length,
+  });
+  if (!consistency.ok) {
+    return formatBlocked(consistency.code, {
+      count: String(consistency.details.blockingIssueCount),
     });
   }
 
@@ -522,6 +538,17 @@ export function resolveHostTaskEffectiveFindings(
       // "reviewer never ran" (REVIEW_FINDINGS_REQUIRED).
       return {
         blocked: formatBlocked('HOST_TASK_FINDINGS_UNPARSEABLE', { message: resolved.detail }),
+      };
+    }
+    if (resolved.kind === 'incoherent') {
+      // F12: the reviewer ran and evidence parsed, but the captured record is
+      // internally self-contradictory (accept + blocking issues). Fail closed at
+      // the host-task ingestion boundary before the findings become effective
+      // evidence, so a contradictory review cannot advance the gate.
+      return {
+        blocked: formatBlocked('SUBAGENT_VERDICT_FINDINGS_INCOHERENT', {
+          count: String(resolved.blockingIssueCount),
+        }),
       };
     }
     if (ctx.input.reviewerUnavailable === true) {

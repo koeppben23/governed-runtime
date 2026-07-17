@@ -221,13 +221,16 @@ function manualAttestedInvocation(input: {
   };
 }
 
-function implStateWithEvidence(verdict: 'accept' | 'changes_requested' = 'accept') {
+function implStateWithEvidence(
+  verdict: 'accept' | 'changes_requested' = 'accept',
+  blockingIssues: unknown[] = [],
+) {
   const rawFindings: Record<string, unknown> = {
     iteration: 1,
     planVersion: 1,
     reviewMode: 'subagent',
     overallVerdict: verdict,
-    blockingIssues: [],
+    blockingIssues,
     majorRisks: [],
     missingVerification: [],
     scopeCreep: [],
@@ -344,6 +347,36 @@ describe('BUG-17: implement evidence-first resolution', () => {
     const res = await review_implementation.execute({ reviewVerdict: 'accept' }, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBeUndefined();
+  });
+
+  it('F12 REGRESSION: host_task_required + captured accept WITH blocking issue → BLOCKED, phase stays IMPL_REVIEW, no persist', async () => {
+    // Exact demo defect path: IMPL_REVIEW → verdict-only accept → would
+    // previously land in EVIDENCE_REVIEW. Captured findings are internally
+    // self-contradictory (accept + blocking issues) — the tool MUST fail
+    // closed at the host-task resolution boundary and MUST NOT advance the
+    // phase or persist any converged state.
+    mocks.state = implStateWithEvidence('accept', [
+      { severity: 'minor', category: 'quality', message: 'stale comment' },
+    ]);
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'host_task_required',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+    });
+
+    const { review_implementation } = await import('./implement.js');
+    const res = await review_implementation.execute({ reviewVerdict: 'accept' }, {} as never);
+    const parsed = JSON.parse(String(res));
+
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
+
+    // No advance, no persist — the block stops before any state materialization.
+    expect(mocks.autoAdvance).not.toHaveBeenCalled();
+    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
+    expect(mocks.appendNextAction).not.toHaveBeenCalled();
   });
 
   it('BAD: host_task_required + no evidence → BLOCKED', async () => {
