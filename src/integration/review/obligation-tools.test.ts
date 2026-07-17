@@ -5,8 +5,14 @@ import {
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_REVIEW,
+  TOOL_FLOWGUARD_RUN_CHECK,
 } from '../tool-names.js';
-import { REVIEWABLE_TOOLS, isReviewableTool, obligationTypeForTool } from './obligation-tools.js';
+import {
+  REVIEWABLE_TOOLS,
+  isReviewableTool,
+  obligationTypeForTool,
+  reviewSignalOwner,
+} from './obligation-tools.js';
 
 describe('review-obligation-tools', () => {
   describe('HAPPY', () => {
@@ -14,6 +20,10 @@ describe('review-obligation-tools', () => {
       expect(obligationTypeForTool(TOOL_FLOWGUARD_PLAN)).toBe('plan');
       expect(obligationTypeForTool(TOOL_FLOWGUARD_IMPLEMENT)).toBe('implement');
       expect(obligationTypeForTool(TOOL_FLOWGUARD_ARCHITECTURE)).toBe('architecture');
+    });
+
+    it('maps post-implementation check review signals to the implementation owner', () => {
+      expect(reviewSignalOwner(TOOL_FLOWGUARD_RUN_CHECK)).toBe(TOOL_FLOWGUARD_IMPLEMENT);
     });
   });
 

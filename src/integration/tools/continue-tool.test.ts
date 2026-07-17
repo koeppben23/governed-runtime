@@ -151,6 +151,18 @@ describe('flowguard_continue (runtime)', () => {
     expect(parsed._continue.action).toBe('deterministic');
   });
 
+  it('IMPL_REVIEW routes to the reviewer task and verdict tool, never /implement', async () => {
+    setPhase('IMPL_REVIEW');
+    mocks.appendNextAction.mockImplementation((p: string) => p);
+    const { continue_cmd } = await import('./continue-tool.js');
+    const res = await continue_cmd.execute({}, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.phase).toBe('IMPL_REVIEW');
+    expect(parsed.next).toContain('flowguard-reviewer');
+    expect(parsed.next).toContain('flowguard_review_implementation');
+    expect(parsed.next).not.toContain('/implement');
+  });
+
   // ── BAD: blocking on ambiguous / unknown ──────────────────────────────────
 
   it('blocks READY phase with CONTINUE_AMBIGUOUS', async () => {

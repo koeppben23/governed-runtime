@@ -46,9 +46,9 @@ import {
 
 import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
 import {
-  isReviewableTool,
   obligationTypeForTool,
   resolveReviewObligationTool,
+  reviewSignalOwner,
   type ReviewableTool,
 } from '../obligation-tools.js';
 import { parseToolResult } from '../../plugin-helpers.js';
@@ -128,17 +128,39 @@ export function onFlowGuardToolAfter(
   output: string,
   now: string,
 ): void {
+  const reviewContext = resolveReviewTrackingContext(toolName);
+  if (!reviewContext) return;
+
+  const parsed = parseToolResult(output);
+  if (!parsed) return;
+
+  clearSubmittedReview(state, reviewContext.obligationTool, args, parsed);
+  trackRequiredReview(state, reviewContext, parsed, now);
+  handleContentAnalysisFlag(state, parsed, toolName, now);
+}
+
+function resolveReviewTrackingContext(toolName: string): {
+  obligationTool: ReviewableTool | undefined;
+  signalOwner: ReviewableTool | undefined;
+  isReviewContent: boolean;
+} | null {
   // The obligation-owning tool for a verdict submission. For
   // flowguard_review_implementation this resolves to flowguard_implement (the
   // tool that created the pending review); for plan/architecture/review it is
   // the tool itself.
   const obligationTool = resolveReviewObligationTool(toolName);
+  const signalOwner = reviewSignalOwner(toolName);
   const isReviewContent = toolName === TOOL_FLOWGUARD_REVIEW;
-  if (obligationTool === undefined && !isReviewContent) return;
+  if (obligationTool === undefined && signalOwner === undefined && !isReviewContent) return null;
+  return { obligationTool, signalOwner, isReviewContent };
+}
 
-  const parsed = parseToolResult(output);
-  if (!parsed) return;
-
+function clearSubmittedReview(
+  state: SessionEnforcementState,
+  obligationTool: ReviewableTool | undefined,
+  args: Record<string, unknown>,
+  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+): void {
   // Verdict submission clears the pending review on the obligation-owning key.
   const hasSelfReviewVerdict =
     typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
@@ -146,18 +168,22 @@ export function onFlowGuardToolAfter(
     const verdictKey: PendingReviewTool = obligationTool ?? TOOL_FLOWGUARD_REVIEW;
     state.pendingReviews.delete(verdictKey);
   }
+}
 
+function trackRequiredReview(
+  state: SessionEnforcementState,
+  context: NonNullable<ReturnType<typeof resolveReviewTrackingContext>>,
+  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+  now: string,
+): void {
   // REVIEW_REQUIRED is emitted by the record/content tool itself, which owns its
   // pending-review key. A verdict-only tool never emits REVIEW_REQUIRED.
-  const recordKey: PendingReviewTool = isReviewContent
+  const recordKey: PendingReviewTool = context.isReviewContent
     ? TOOL_FLOWGUARD_REVIEW
-    : (obligationTool as PendingReviewTool);
+    : (context.signalOwner as PendingReviewTool);
   const next = typeof parsed.next === 'string' ? parsed.next : '';
-  if (next.startsWith(REVIEW_REQUIRED_PREFIX) && isReviewableTool(toolName)) {
+  if (next.startsWith(REVIEW_REQUIRED_PREFIX) && (context.isReviewContent || context.signalOwner))
     trackReviewRequired(state, recordKey, next, now);
-  }
-
-  handleContentAnalysisFlag(state, parsed, toolName, now);
 }
 
 /**

@@ -188,7 +188,7 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
 
   IMPL_REVIEW: () => ({
     code: ACTION_CODES.RUN_CONTINUE,
-    text: 'Run /continue to advance',
+    text: 'Implementation review is pending. Invoke the flowguard-reviewer task, then submit its verdict with flowguard_review_implementation.',
     commands: ['/continue'],
   }),
 

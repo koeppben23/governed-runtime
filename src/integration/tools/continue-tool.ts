@@ -26,7 +26,10 @@ import type { SessionState } from '../../state/schema.js';
 import { bindExternalReviewEvidence } from '../review/transport-evidence.js';
 import { REVIEW_IDENTITY_REJECTION_FIELD } from '../../shared/flowguard-identifiers.js';
 
-const PHASE_GUIDANCE: Record<string, { status: string; command?: string; commands?: string[] }> = {
+const PHASE_GUIDANCE: Record<
+  string,
+  { status: string; command?: string; commands?: string[]; next?: string }
+> = {
   TICKET: {
     status: 'Ticket captured. Continue with /plan.',
     command: '/plan',
@@ -45,8 +48,8 @@ const PHASE_GUIDANCE: Record<string, { status: string; command?: string; command
   },
   IMPL_REVIEW: {
     status:
-      'Implementation review is pending. Use /implement with the required review findings when review evidence is available.',
-    command: '/implement',
+      'Implementation review is pending. Invoke the flowguard-reviewer via the Task tool, then submit its verdict with flowguard_review_implementation.',
+    next: 'Invoke the flowguard-reviewer via the Task tool, then submit its verdict with flowguard_review_implementation.',
   },
   ARCHITECTURE: {
     status:
@@ -134,13 +137,13 @@ function formatTerminalGuidance(state: SessionState): string {
 
 function formatDeterministicGuidance(
   state: SessionState,
-  guidance: { status: string; command?: string; commands?: string[] },
+  guidance: { status: string; command?: string; commands?: string[]; next?: string },
 ): string {
   return appendNextAction(
     JSON.stringify({
       phase: state.phase,
       status: guidance.status,
-      next: guidance.command ?? '',
+      next: guidance.next ?? guidance.command ?? '',
       commands: guidance.commands,
       _continue: { action: 'deterministic' },
     }),

@@ -39,6 +39,11 @@ import {
   taskResultWithEmbeddedFindings,
   validSubagentPrompt,
 } from './test-helpers.js';
+import {
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RUN_CHECK,
+} from '../../tool-names.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tests
@@ -123,6 +128,32 @@ describe('review-enforcement', () => {
       });
 
       expect(result.allowed).toBe(true);
+    });
+
+    it('tracks a post-implementation check review signal under the implementation owner', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        TOOL_FLOWGUARD_RUN_CHECK,
+        { kind: 'build' },
+        modeASubagentResponse({ iteration: 1, planVersion: 2, phase: 'IMPL_REVIEW' }),
+        NOW,
+      );
+
+      const prompt = validSubagentPrompt({ iteration: 1, planVersion: 2 });
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt },
+        taskResultWithFindings('sub-session-check'),
+        LATER,
+      );
+
+      expect(state.pendingReviews.get(TOOL_FLOWGUARD_IMPLEMENT)?.subagentCalled).toBe(true);
+      expect(
+        enforceBeforeVerdict(state, TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION, {
+          reviewVerdict: 'accept',
+        }),
+      ).toEqual({ allowed: true });
     });
 
     it('no enforcement when independent-review marker is absent', () => {
