@@ -207,6 +207,9 @@ describe('validateImplementSequence', () => {
       state('IMPLEMENTATION', { implementation: {} } as Partial<SessionState>),
     );
     expect(result).toContain('IMPLEMENT_REVIEW_LOOP_REQUIRED');
+    expect(result).toContain('flowguard_run_check');
+    expect(result).toContain('IMPL_REVIEW');
+    expect(result).not.toContain('flowguard_implement');
   });
 
   it('valid sequence returns null', () => {

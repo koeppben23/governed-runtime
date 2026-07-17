@@ -10,8 +10,9 @@ import { formatBlocked } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import type { RailContext } from '../../rails/types.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
-import type { ReviewFindings } from '../../state/evidence.js';
+import type { ReviewFindings, ReviewObligation } from '../../state/evidence.js';
 import type { resolveCeremonyProfile } from '../phase-tool-gate.js';
+import { appendReviewObligation, createReviewObligation } from '../review/assurance.js';
 import { classifyToolCallMode } from './review-validation-mode.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -24,6 +25,39 @@ export function nextImplementationReviewIteration(state: SessionState): number {
     latest = Math.max(latest, findings.iteration);
   }
   return latest + 1;
+}
+
+/**
+ * Create the implementation-review obligation only after post-implementation
+ * validation has reached IMPL_REVIEW. Both /implement (vacuous checks) and
+ * /check (executed checks) use this boundary.
+ */
+export function activateImplementationReviewObligation(
+  state: SessionState,
+  input: {
+    subagentEnabled: boolean;
+    iteration: number;
+    planVersion: number;
+    now: string;
+  },
+): { state: SessionState; obligation: ReviewObligation | null } {
+  if (state.phase !== 'IMPL_REVIEW' || state.reducedCeremony !== null || !input.subagentEnabled) {
+    return { state, obligation: null };
+  }
+
+  const obligation = createReviewObligation({
+    obligationType: 'implement',
+    iteration: input.iteration,
+    planVersion: input.planVersion,
+    now: input.now,
+  });
+  return {
+    state: {
+      ...state,
+      reviewAssurance: appendReviewObligation(state.reviewAssurance, obligation),
+    },
+    obligation,
+  };
 }
 
 export type ImplementArgs = {

@@ -61,8 +61,9 @@ import {
 
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';
+import { resolveNextAction } from '../../machine/next-action.js';
 import { autoAdvance } from '../../rails/types.js';
-import type { ReviewFindings, ImplEvidence } from '../../state/evidence.js';
+import type { ReviewFindings, ImplEvidence, ReviewObligation } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 
@@ -77,12 +78,7 @@ import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 
 // Review findings validation (shared with plan.ts)
 import { validateReviewFindings } from './review-validation.js';
-import {
-  appendReviewObligation,
-  createReviewObligation,
-  ensureReviewAssurance,
-  reviewObligationResponseFields,
-} from '../review/assurance.js';
+import { ensureReviewAssurance, reviewObligationResponseFields } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { resolveCeremonyProfile, isNonDomainConfigPath } from '../phase-tool-gate.js';
 import {
@@ -91,7 +87,10 @@ import {
 } from '../review/orchestration-mode.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
 import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
-import { nextImplementationReviewIteration } from './implement-shared.js';
+import {
+  activateImplementationReviewObligation,
+  nextImplementationReviewIteration,
+} from './implement-shared.js';
 // Mode A
 export function validateInitialReviewFindings(input: ImplementRuntime): string | null {
   if (!input.args.reviewFindings) return null;
@@ -147,7 +146,7 @@ function buildImplRecordedResponse(input: {
   domainFiles: string[];
   reviewIteration: number;
   planVersion: number;
-  nextObligation: ReturnType<typeof createReviewObligation> | null;
+  nextObligation: ReviewObligation | null;
   transitions: ReadonlyArray<unknown>;
   reviewFindings: ReviewFindings[];
   ceremony: ImplementationCeremony;
@@ -162,15 +161,18 @@ function buildImplRecordedResponse(input: {
     nativeReviewerAvailable: platform === 'unknown' ? false : true,
     manualAttestedAllowed: input.policy.reviewInvocationPolicy !== 'host_task_required',
   });
-  const instruction = buildPendingReviewInstruction({
-    mode,
-    platform,
-    reviewKind: 'implementation',
-    obligation: input.nextObligation,
-    iteration: input.reviewIteration,
-    planVersion: input.planVersion,
-    subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
-  });
+  const instruction = input.nextObligation
+    ? buildPendingReviewInstruction({
+        mode,
+        platform,
+        reviewKind: 'implementation',
+        obligation: input.nextObligation,
+        iteration: input.reviewIteration,
+        planVersion: input.planVersion,
+        subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
+      })
+    : null;
+  const nextAction = resolveNextAction(input.finalState.phase, input.finalState);
   const response: Record<string, unknown> = {
     phase: input.finalState.phase,
     status: `Implementation recorded. ${input.files.length} files changed, ${input.domainFiles.length} domain files.`,
@@ -184,8 +186,8 @@ function buildImplRecordedResponse(input: {
     ...reviewObligationResponseFields(input.nextObligation),
     next: reduced
       ? 'REDUCED_CEREMONY_APPLIED: Runtime evidence classified the changed files as TRIVIAL after passed validation. Reduced-ceremony evidence was recorded; implementation review evidence was not synthesized.'
-      : instruction.next,
-    ...(reduced ? {} : { reviewInvocation: instruction.reviewInvocation }),
+      : (instruction?.next ?? nextAction.text),
+    ...(instruction ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: input.transitions },
   };
 
@@ -326,15 +328,6 @@ export async function handleImplRecord(
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;
   const ceremony = resolveCeremonyProfile({ state: input.state, changedFiles: files });
   const reducedCeremony = ceremony.profile === 'reduced';
-  const nextObligation =
-    input.subagentEnabled && !reducedCeremony
-      ? createReviewObligation({
-          obligationType: 'implement',
-          iteration: reviewIteration,
-          planVersion,
-          now: input.ctx.now(),
-        })
-      : null;
   const nextState: SessionState = {
     ...input.state,
     implementation: implEvidence,
@@ -354,7 +347,7 @@ export async function handleImplRecord(
       : null,
     implReview: null,
     implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
-    reviewAssurance: appendReviewObligation(input.state.reviewAssurance, nextObligation),
+    reviewAssurance: input.state.reviewAssurance,
     error: null,
   };
   return persistImplRecordAndRespond({
@@ -364,7 +357,6 @@ export async function handleImplRecord(
     domainFiles,
     reviewIteration,
     planVersion,
-    nextObligation,
     reviewFindings: newReviewFindings,
     ceremony,
     baselineScoping,
@@ -378,7 +370,6 @@ interface PersistImplRecordArgs {
   domainFiles: string[];
   reviewIteration: number;
   planVersion: number;
-  nextObligation: ReturnType<typeof createReviewObligation> | null;
   reviewFindings: ReviewFindings[];
   ceremony: ReturnType<typeof resolveCeremonyProfile>;
   baselineScoping: 'applied' | 'unavailable';
@@ -392,17 +383,23 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
     return formatAutoAdvanceOverflow(advanced);
   }
   const { state: finalState, transitions } = advanced;
-  await writeStateWithArtifacts(input.sessDir, finalState);
+  const activated = activateImplementationReviewObligation(finalState, {
+    subagentEnabled: input.subagentEnabled,
+    iteration: reviewIteration,
+    planVersion,
+    now: input.ctx.now(),
+  });
+  await writeStateWithArtifacts(input.sessDir, activated.state);
 
   return appendNextAction(
     JSON.stringify(
       buildImplRecordedResponse({
-        finalState,
+        finalState: activated.state,
         files,
         domainFiles,
         reviewIteration,
         planVersion,
-        nextObligation: args.nextObligation,
+        nextObligation: activated.obligation,
         transitions,
         reviewFindings: args.reviewFindings,
         ceremony: args.ceremony,
@@ -410,6 +407,6 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
         baselineScoping: args.baselineScoping,
       }),
     ),
-    finalState,
+    activated.state,
   );
 }

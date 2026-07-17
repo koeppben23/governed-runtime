@@ -333,16 +333,46 @@ describe('implement', () => {
    * against the fixed code) to advance IMPL_VALIDATION → IMPL_REVIEW. No-op unless
    * the session is currently in IMPL_VALIDATION with active checks.
    */
-  async function passImplValidation(): Promise<void> {
+  async function passImplValidation(): Promise<Record<string, unknown> | null> {
     const sessDir = await currentSessionDir();
     const state = await readState(sessDir);
-    if (!state || state.phase !== 'IMPL_VALIDATION' || state.activeChecks.length === 0) return;
+    if (!state || state.phase !== 'IMPL_VALIDATION' || state.activeChecks.length === 0) return null;
+    let result: Record<string, unknown> | null = null;
     for (const kind of state.activeChecks) {
-      await run_check.execute({ kind }, ctx);
+      result = parseToolResult(await run_check.execute({ kind }, ctx));
     }
+    return result;
   }
 
   describe('HAPPY', () => {
+    it('defers implementation review obligation and invocation until post-implementation checks pass', async () => {
+      await reachImplementation();
+      const recordResult = parseToolResult(await implement.execute({}, ctx));
+      const sessDir = await currentSessionDir();
+
+      expect(recordResult.phase).toBe('IMPL_VALIDATION');
+      expect(recordResult.next).toContain('/check');
+      expect(recordResult.next).not.toContain('INDEPENDENT_REVIEW_REQUIRED');
+      expect(recordResult.reviewObligation).toBeUndefined();
+      expect(recordResult.reviewInvocation).toBeUndefined();
+      expect(
+        (await readState(sessDir))?.reviewAssurance?.obligations.filter(
+          (obligation) => obligation.obligationType === 'implement',
+        ) ?? [],
+      ).toHaveLength(0);
+
+      const validationResult = await passImplValidation();
+      expect(validationResult?.phase).toBe('IMPL_REVIEW');
+      expect(validationResult?.reviewObligation).toBeDefined();
+      expect(validationResult?.reviewInvocation).toBeDefined();
+      expect(String(validationResult?.next)).toContain('INDEPENDENT_REVIEW_REQUIRED');
+      expect(
+        (await readState(sessDir))?.reviewAssurance?.obligations.filter(
+          (obligation) => obligation.obligationType === 'implement',
+        ) ?? [],
+      ).toHaveLength(1);
+    });
+
     it('Mode A: records changed files from git', async () => {
       await reachImplementation();
       const raw = await implement.execute({}, ctx);
@@ -983,11 +1013,12 @@ describe('implement', () => {
       expect(afterReviewState?.reducedCeremony).toBeNull();
 
       const recordRaw = await implement.execute({}, ctx);
-      await passImplValidation();
+      const validationResult = await passImplValidation();
       const recordResult = parseToolResult(recordRaw);
       expect(recordResult.error).toBeUndefined();
       expect(recordResult.phase).toBe('IMPL_VALIDATION');
-      expect(recordResult.reviewObligationIteration).toBe(2);
+      expect(recordResult.reviewObligationIteration).toBeUndefined();
+      expect(validationResult?.reviewObligationIteration).toBe(2);
 
       const afterRecordState = await readState(sessDir);
       expect(afterRecordState?.implementation).not.toBeNull();
@@ -1041,13 +1072,14 @@ describe('implement', () => {
 
       // Recovery is actually reachable: re-recording implementation works.
       const recordRaw = await implement.execute({}, ctx);
-      await passImplValidation();
+      const validationResult = await passImplValidation();
       const recordResult = parseToolResult(recordRaw);
       expect(recordResult.error).toBeUndefined();
       expect(recordResult.phase).toBe('IMPL_VALIDATION');
       // No reviewer findings were recorded for the changes_requested cycle, so the
       // next review obligation starts fresh at iteration 1 (not 2).
-      expect(recordResult.reviewObligationIteration).toBe(1);
+      expect(recordResult.reviewObligationIteration).toBeUndefined();
+      expect(validationResult?.reviewObligationIteration).toBe(1);
     });
 
     it('approve + subagentEnabled=true + valid reviewFindings -> accepted', async () => {

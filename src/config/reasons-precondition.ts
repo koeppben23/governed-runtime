@@ -379,10 +379,10 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'An implementation review verdict requires an active implementation review loop, but the current phase is {phase}.',
     recoverySteps: [
-      'Record implementation evidence first with flowguard_implement({}) and wait for the implementation review obligation',
-      'Then submit the verdict with flowguard_review_implementation({ reviewVerdict }) (in host-task mode the plugin resolves reviewFindings automatically)',
+      'Run the required post-implementation validation with flowguard_run_check({ kind }) for every active check',
+      'After all checks pass and phase becomes IMPL_REVIEW, submit the verdict with flowguard_review_implementation({ reviewVerdict }) (in host-task mode the plugin resolves reviewFindings automatically)',
     ],
-    quickFixCommand: '/implement',
+    quickFixCommand: '/check',
   },
 
   {

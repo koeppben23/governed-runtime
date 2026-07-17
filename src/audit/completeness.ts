@@ -522,6 +522,6 @@ export function evaluateCompleteness(state: SessionState): CompletenessReport {
     overallComplete,
     slots,
     fourEyes,
-    summary: { total: ALL_SLOTS.length, complete, missing, notYetRequired, failed },
+    summary: { total: slots.length, complete, missing, notYetRequired, failed },
   };
 }

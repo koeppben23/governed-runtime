@@ -343,6 +343,7 @@ describe('audit completeness', () => {
       const state = makeState('ARCHITECTURE', { architecture: null });
       const report = evaluateCompleteness(state);
       expect(report.phase).toBe('ARCHITECTURE');
+      expect(report.summary.total).toBe(report.slots.length);
       const archSlot = report.slots.find((s) => s.slot === 'architecture');
       expect(archSlot?.required).toBe(true);
       expect(archSlot?.status).toBe('missing');
@@ -354,6 +355,13 @@ describe('audit completeness', () => {
       expect(report.slots).toHaveLength(0);
       // 0 slots → missing=0, failed=0, phase !== READY → overallComplete is vacuously true
       expect(report.overallComplete).toBe(true);
+      expect(report.summary.total).toBe(0);
+      expect(
+        report.summary.complete +
+          report.summary.missing +
+          report.summary.notYetRequired +
+          report.summary.failed,
+      ).toBe(0);
     });
 
     it('architecture flow at ARCH_COMPLETE with accepted ADR — all complete', () => {
