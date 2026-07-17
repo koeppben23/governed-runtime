@@ -673,7 +673,13 @@ describe('review (standalone flow)', () => {
       expect(result.findings).toBeDefined();
       expect(Array.isArray(result.findings)).toBe(true);
       if (!Array.isArray(result.findings)) throw new TypeError('Expected review findings');
-      expect(result.findings.length).toBeGreaterThan(0);
+      // F11: a standalone content review no longer emits the lifecycle
+      // "No ticket evidence" / "No plan evidence" warnings (they contradicted the
+      // report's own 0/0-complete projection). With no other mechanical findings,
+      // the findings list is legitimately empty for this PR content review.
+      const messages = (result.findings as Array<{ message?: string }>).map((f) => f.message);
+      expect(messages).not.toContain('No ticket evidence');
+      expect(messages).not.toContain('No plan evidence');
       expect(result.inputOrigin).toBe('pr');
     });
   });

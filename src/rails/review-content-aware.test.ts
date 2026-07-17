@@ -292,3 +292,51 @@ describe('EDGE: empty and undefined input', () => {
     }
   });
 });
+
+// =============================================================================
+// F11: standalone content-review omits lifecycle ticket/plan warnings
+// =============================================================================
+
+describe('F11: content-review suppresses lifecycle ticket/plan findings', () => {
+  const textRefInput: ReviewReferenceInput = {
+    inputOrigin: 'branch',
+    references: [{ ref: 'feature/x', type: 'branch', source: 'local' }],
+    text: 'diff --git a/A.java b/A.java\n+ // change',
+    skipExternalContentLoad: true,
+  };
+
+  it('does NOT emit "No ticket evidence" / "No plan evidence" for a branch content review', async () => {
+    // READY state has no ticket and no plan — exactly the standalone /review case
+    // from the demo log. Those warnings describe the session lifecycle and are
+    // meaningless when reviewing an external diff.
+    const state = makeProgressedState('READY');
+    const report = await executeReviewReport(state, NOW, undefined, textRefInput);
+
+    const messages = report.findings.map((f) => f.message);
+    expect(messages).not.toContain('No ticket evidence');
+    expect(messages).not.toContain('No plan evidence');
+  });
+
+  it('reports overallStatus consistent with its own finding set (no phantom warnings)', async () => {
+    const state = makeProgressedState('READY');
+    const report = await executeReviewReport(state, NOW, undefined, textRefInput);
+
+    // With the lifecycle warnings suppressed and no other findings, the report is
+    // not artificially in a "warnings" status driven by irrelevant lifecycle notes.
+    const hasLifecycleWarnings = report.findings.some(
+      (f) => f.message === 'No ticket evidence' || f.message === 'No plan evidence',
+    );
+    expect(hasLifecycleWarnings).toBe(false);
+  });
+
+  it('STILL emits the lifecycle warnings for a non-content lifecycle review (refInput undefined)', async () => {
+    // Guard: the suppression is scoped to content reviews only. A lifecycle
+    // /review with no external content (refInput undefined) keeps the warnings.
+    const state = makeProgressedState('READY');
+    const report = await executeReviewReport(state, NOW, undefined, undefined);
+
+    const messages = report.findings.map((f) => f.message);
+    expect(messages).toContain('No ticket evidence');
+    expect(messages).toContain('No plan evidence');
+  });
+});

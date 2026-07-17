@@ -259,6 +259,7 @@ export interface ReviewReferenceInput {
 function buildMechanicalFindings(
   state: SessionState,
   completeness: ReturnType<typeof evaluateCompleteness>,
+  refInput?: ReviewReferenceInput,
 ): Array<{ severity: 'info' | 'warning' | 'error'; category: string; message: string }> {
   const findings: Array<{
     severity: 'info' | 'warning' | 'error';
@@ -266,11 +267,29 @@ function buildMechanicalFindings(
     message: string;
   }> = [];
 
-  if (!state.ticket) {
-    findings.push({ severity: 'warning', category: 'completeness', message: 'No ticket evidence' });
-  }
-  if (!state.plan) {
-    findings.push({ severity: 'warning', category: 'completeness', message: 'No plan evidence' });
+  // F11: the "No ticket evidence" / "No plan evidence" warnings describe the
+  // session LIFECYCLE and are meaningless for a standalone content review of an
+  // external diff/PR/branch/text (refInput is defined only for content reviews;
+  // see buildReviewReferenceInput). Emitting them there contradicted the report's
+  // own completeness projection (0/0 complete, Overall: Complete) and inflated the
+  // finding/warning count. They are lifecycle findings, not completeness evidence
+  // for the reviewed content, so they are suppressed in content-review mode.
+  const isContentReview = refInput !== undefined;
+  if (!isContentReview) {
+    if (!state.ticket) {
+      findings.push({
+        severity: 'warning',
+        category: 'completeness',
+        message: 'No ticket evidence',
+      });
+    }
+    if (!state.plan) {
+      findings.push({
+        severity: 'warning',
+        category: 'completeness',
+        message: 'No plan evidence',
+      });
+    }
   }
   if (state.error) {
     findings.push({
@@ -446,7 +465,7 @@ export async function executeReview(
   }));
 
   const completeness = evaluateCompleteness(state);
-  const findings = buildMechanicalFindings(state, completeness);
+  const findings = buildMechanicalFindings(state, completeness, refInput);
 
   let externalContent: string | undefined;
   if (refInput && !refInput.skipExternalContentLoad) {

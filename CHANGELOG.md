@@ -81,6 +81,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Standalone content reviews no longer emit lifecycle ticket/plan warnings (F11).**
+  A standalone `/review` of an external branch/PR/text diff previously reported
+  `No ticket evidence` and `No plan evidence` as `completeness`-category warnings
+  even though the same report stated `Overall: Complete` / `0/0 complete, 0 missing` —
+  a self-contradictory presentation that inflated the finding and warning counts.
+  Those two mechanical findings describe the session LIFECYCLE and are meaningless
+  when reviewing external content, so they are now suppressed in content-review mode
+  (`buildMechanicalFindings` receives `refInput`; content reviews are exactly those
+  where `refInput` is defined, per `buildReviewReferenceInput`). Lifecycle `/review`
+  runs with no external content keep the warnings unchanged. No new reason codes or
+  finding categories; presentation-semantics fix only. Changes: `src/rails/review.ts`,
+  `CHANGELOG.md`, plus tests.
+
 - **Reviewer Task prompt is handed to the agent verbatim, eliminating the first-attempt review block (F10).**
   In the host-task review path the agent had to free-compose the `flowguard-reviewer`
   Task prompt from prose and routinely omitted the literal `iteration=`/`planVersion=`
