@@ -233,6 +233,27 @@ describe('status', () => {
       expect(result.next).toBeTruthy();
     });
 
+    it('inspects an aborted terminal session through read-only /status guidance', async () => {
+      await hydrateSession();
+      const aborted = parseToolResult(
+        await abort_session.execute({ reason: 'Operator stopped the session' }, ctx),
+      );
+      expect(aborted.phase).toBe('COMPLETE');
+
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(result.phase).toBe('COMPLETE');
+      const productNext = result.productNextAction as Record<string, unknown>;
+      expect(productNext.commands).toEqual(['/status']);
+      expect(productNext.text).toContain('/status');
+      expect(productNext.text).not.toContain('/finish');
+      expect(productNext.text).not.toContain('/export');
+
+      // /status is read-only and therefore remains executable even though
+      // terminal phases correctly reject every FlowGuard machine command.
+      const statusProjection = result.status as Record<string, unknown>;
+      expect(statusProjection.allowedCommands).toEqual([]);
+    });
+
     it('includes mandates projection and recovery footer without runtime authorization', async () => {
       await hydrateSession();
       const result = parseToolResult(await status.execute({}, ctx));

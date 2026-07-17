@@ -151,7 +151,7 @@ describe('policyMode — from policySnapshot', () => {
 describe('productNextAction — aborted terminal session (governance integrity)', () => {
   const policy = getPolicyPreset('solo');
 
-  it('redirects an aborted COMPLETE session to /review, never /export', () => {
+  it('redirects an aborted COMPLETE session to read-only /status', () => {
     const state: SessionState = {
       ...makeMinimalState('COMPLETE'),
       error: {
@@ -163,9 +163,11 @@ describe('productNextAction — aborted terminal session (governance integrity)'
     };
     const projection = buildStatusProjection(state, policy);
     // An aborted session must not be routed to /export as a verifiable audit package.
-    expect(projection.productNextAction.primaryCommand).toBe('/review');
+    expect(projection.productNextAction.primaryCommand).toBe('/status');
     expect(String(projection.productNextAction.summary).toLowerCase()).toContain('aborted');
     expect(projection.productNextAction.summary).not.toContain('/export');
+    expect(projection.productNextAction.summary).not.toContain('/finish');
+    expect(projection.productNextAction.summary).not.toContain('/review');
   });
 
   it('a clean COMPLETE session is unaffected (still offers /export)', () => {

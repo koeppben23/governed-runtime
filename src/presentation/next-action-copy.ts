@@ -88,7 +88,7 @@ const PRODUCT_GUIDANCE = {
  * @param aborted - True when the session reached a terminal phase via /abort
  *   (state.error.code === 'ABORTED'). An aborted session is terminal but is NOT
  *   a clean completion, so it must not be guided toward /export as a "verifiable
- *   audit package"; the user is redirected to /review instead.
+ *   audit package"; the user is redirected to read-only /status instead.
  * @returns Product-friendly display guidance.
  */
 export function buildProductNextAction(
@@ -111,8 +111,8 @@ export function buildProductNextAction(
   // fail-closed against this in archive-tool.ts). Redirect to inspection.
   if (action.code === 'SESSION_COMPLETE' && aborted) {
     return {
-      text: 'Session aborted — not a clean completion and not exportable as a verifiable audit package. Inspect it with /review (it is preserved in the audit trail).',
-      commands: ['/review'],
+      text: 'Session aborted — not a clean completion and not exportable as a verifiable audit package. Inspect the preserved audit state with /status.',
+      commands: ['/status'],
     };
   }
 

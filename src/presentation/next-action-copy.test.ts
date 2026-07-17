@@ -41,15 +41,17 @@ describe('buildProductNextAction', () => {
       expect(action.commands).toEqual([]);
     });
 
-    it('SESSION_COMPLETE aborted → redirects to /review, never /export', () => {
+    it('SESSION_COMPLETE aborted → redirects to executable read-only /status', () => {
       const action = resolveNextAction('COMPLETE', makeProgressedState('COMPLETE'));
       const product = buildProductNextAction(action, 'COMPLETE', true);
       // An aborted session must not be guided toward /export as a verifiable
       // audit package — it is not a clean completion.
-      expect(product.commands).toEqual(['/review']);
+      expect(product.commands).toEqual(['/status']);
       expect(product.text.toLowerCase()).toContain('aborted');
+      expect(product.text).toContain('/status');
       expect(product.text).not.toContain('/export');
       expect(product.text).not.toContain('/finish');
+      expect(product.text).not.toContain('/review');
     });
 
     it('SESSION_COMPLETE non-aborted default is unchanged (clean completion)', () => {
