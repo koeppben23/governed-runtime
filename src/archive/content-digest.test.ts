@@ -15,6 +15,7 @@ const DIGEST_C = 'c'.repeat(64);
 function baseInput(): ArchiveContentDigestInput {
   return {
     schemaVersion: 'archive-manifest.v2',
+    layoutVersion: 2,
     sessionId: 'ses_test',
     fingerprint: '1234567890abcdef12345678',
     policyMode: 'regulated',
@@ -39,6 +40,7 @@ describe('computeArchiveContentDigest', () => {
 
   it.each([
     ['schemaVersion', { schemaVersion: 'archive-manifest.v3' }],
+    ['layoutVersion', { layoutVersion: 3 }],
     ['sessionId', { sessionId: 'ses_other' }],
     ['fingerprint', { fingerprint: 'fedcba0987654321fedcba09' }],
     ['policyMode', { policyMode: 'team' }],

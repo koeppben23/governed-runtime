@@ -31,6 +31,7 @@ import { FINGERPRINT_PATTERN } from '../shared/flowguard-identifiers.js';
  * truncation anchor. v1 archives fail closed via schema validation.
  */
 export const ARCHIVE_MANIFEST_SCHEMA_VERSION = 'archive-manifest.v2' as const;
+export const ARCHIVE_LAYOUT_VERSION = 2 as const;
 
 /**
  * Manifest policy mode value — a closed, fail-closed vocabulary.
@@ -145,6 +146,8 @@ export type ArchiveFinding = z.infer<typeof ArchiveFindingSchema>;
  */
 export const ArchiveManifestSchema = z.object({
   schemaVersion: z.literal(ARCHIVE_MANIFEST_SCHEMA_VERSION),
+  /** Breaking archive payload layout contract. Only the complete raw-evidence layout is valid. */
+  layoutVersion: z.literal(ARCHIVE_LAYOUT_VERSION),
   createdAt: z.string().datetime(),
   // Session id as recorded by archiveSession (validateSessionId). OpenCode
   // provides opaque ids like "ses_...", not UUIDs, so the manifest must accept

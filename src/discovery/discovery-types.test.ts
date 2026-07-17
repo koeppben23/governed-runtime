@@ -293,6 +293,7 @@ describe('archive/types', () => {
     it('ArchiveManifest validates correct data', () => {
       const result = ArchiveManifestSchema.safeParse({
         schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
+        layoutVersion: 2,
         createdAt: new Date().toISOString(),
         sessionId: crypto.randomUUID(),
         fingerprint: 'abcdef0123456789abcdef01',

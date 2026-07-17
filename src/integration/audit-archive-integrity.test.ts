@@ -12,7 +12,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   createToolContext,
   createTestWorkspace,
@@ -34,7 +37,6 @@ import {
   status,
 } from './tools/index.js';
 import { readState } from '../adapters/persistence.js';
-import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { verifyChain } from '../audit/integrity.js';
 import { computeChainHash, CURRENT_AUDIT_FORMAT_VERSION } from '../audit/types.js';
 import {
@@ -172,6 +174,37 @@ async function workspaceIds(): Promise<{ fingerprint: string; sessDir: string }>
   return { fingerprint: fp.fingerprint, sessDir: resolveSessionDir(fp.fingerprint, ctx.sessionID) };
 }
 
+async function mutateArchive(
+  ids: { fingerprint: string },
+  mutate: (root: string) => Promise<void>,
+): Promise<void> {
+  const archivePath = path.join(
+    process.env.OPENCODE_CONFIG_DIR ?? '',
+    'workspaces',
+    ids.fingerprint,
+    'sessions',
+    'archive',
+    `${ctx.sessionID}.tar.gz`,
+  );
+  const stagingRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-tamper-'));
+  try {
+    await promisify(execFile)('tar', ['xzf', archivePath, '-C', stagingRoot]);
+    await mutate(path.join(stagingRoot, ctx.sessionID));
+    await promisify(execFile)('tar', ['czf', archivePath, '-C', stagingRoot, ctx.sessionID]);
+    const digest = crypto
+      .createHash('sha256')
+      .update(await fs.readFile(archivePath))
+      .digest('hex');
+    await fs.writeFile(
+      `${archivePath}.sha256`,
+      `${digest}  ${path.basename(archivePath)}\n`,
+      'utf-8',
+    );
+  } finally {
+    await fs.rm(stagingRoot, { recursive: true, force: true });
+  }
+}
+
 async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDir: string }> {
   vi.mocked(actorMock.resolveActor).mockResolvedValue({
     id: 'archive-initiator',
@@ -253,10 +286,9 @@ describe('audit and archive integrity fail-closed behavior', () => {
 
   it.skipIf(!tarOk)('regulated archive verification flags malformed audit lines', async () => {
     const ids = await completeRegulatedSession();
-    await fs.appendFile(path.join(ids.sessDir, 'audit.jsonl'), '{not-json}\n', 'utf-8');
-
-    const trail = await readAuditTrail(ids.sessDir);
-    expect(trail.skipped).toBeGreaterThan(0);
+    await mutateArchive(ids, async (root) => {
+      await fs.appendFile(path.join(root, 'audit', 'audit.jsonl'), '{not-json}\n', 'utf-8');
+    });
 
     const verification = await workspaceMock.verifyArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
@@ -274,11 +306,13 @@ describe('audit and archive integrity fail-closed behavior', () => {
     'archive verification detects manifest/file digest mismatch after evidence tamper',
     async () => {
       const ids = await completeRegulatedSession();
-      await fs.appendFile(
-        path.join(ids.sessDir, 'archive-manifest.json'),
-        '\n{"tampered":true}\n',
-        'utf-8',
-      );
+      await mutateArchive(ids, async (root) => {
+        await fs.appendFile(
+          path.join(root, 'archive-manifest.json'),
+          '\n{"tampered":true}\n',
+          'utf-8',
+        );
+      });
 
       const verification = await workspaceMock.verifyArchive(ids.fingerprint, ctx.sessionID);
       expect(verification.passed).toBe(false);
@@ -317,11 +351,13 @@ describe('audit and archive integrity fail-closed behavior', () => {
         actor: 'legacy',
         detail: { source: 'test' },
       };
-      await fs.appendFile(
-        path.join(ids.sessDir, 'audit.jsonl'),
-        `${JSON.stringify(legacyEvent)}\n`,
-        'utf-8',
-      );
+      await mutateArchive(ids, async (root) => {
+        await fs.appendFile(
+          path.join(root, 'audit', 'audit.jsonl'),
+          `${JSON.stringify(legacyEvent)}\n`,
+          'utf-8',
+        );
+      });
 
       const verification = await workspaceMock.verifyArchive(ids.fingerprint, ctx.sessionID);
       expect(verification.passed).toBe(false);

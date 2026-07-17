@@ -16,6 +16,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   createToolContext,
   createTestWorkspace,
@@ -227,17 +229,21 @@ describe('archive', () => {
         const result = parseToolResult(raw);
         expect(result.error).toBeUndefined();
 
-        const manifestRaw = await fs.readFile(`${sessDir}/archive-manifest.json`, 'utf-8');
+        const { stdout: manifestRaw } = await promisify(execFile)('tar', [
+          'xOf',
+          result.archivePath as string,
+          `${ctx.sessionID}/archive-manifest.json`,
+        ]);
         const manifest = JSON.parse(manifestRaw) as {
           includedFiles: string[];
           fileDigests: Record<string, string>;
         };
-        expect(manifest.includedFiles).toContain('artifacts/ticket.v1.md');
-        expect(manifest.includedFiles).toContain('artifacts/ticket.v1.json');
-        expect(manifest.includedFiles).toContain('artifacts/plan.v1.md');
-        expect(manifest.includedFiles).toContain('artifacts/plan.v1.json');
-        expect(manifest.fileDigests['artifacts/ticket.v1.json']).toBeTruthy();
-        expect(manifest.fileDigests['artifacts/plan.v1.json']).toBeTruthy();
+        expect(manifest.includedFiles).toContain('artifacts/ticket/ticket.v1.md');
+        expect(manifest.includedFiles).toContain('artifacts/ticket/ticket.v1.json');
+        expect(manifest.includedFiles).toContain('artifacts/plan/plan.v1.md');
+        expect(manifest.includedFiles).toContain('artifacts/plan/plan.v1.json');
+        expect(manifest.fileDigests['artifacts/ticket/ticket.v1.json']).toBeTruthy();
+        expect(manifest.fileDigests['artifacts/plan/plan.v1.json']).toBeTruthy();
       },
     );
 

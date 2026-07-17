@@ -38,6 +38,8 @@ export interface ArchiveContentDigestInput {
   auditEventCount: number;
   /** Manifest schema version. */
   schemaVersion: string;
+  /** Archive payload layout version. */
+  layoutVersion: number;
   /** Session identifier. */
   sessionId: string;
   /** Workspace fingerprint. */
@@ -68,6 +70,7 @@ export function computeArchiveContentDigest(input: ArchiveContentDigestInput): s
 
   const integrityHeader = JSON.stringify({
     schemaVersion: input.schemaVersion,
+    layoutVersion: input.layoutVersion,
     sessionId: input.sessionId,
     fingerprint: input.fingerprint,
     policyMode: input.policyMode,
