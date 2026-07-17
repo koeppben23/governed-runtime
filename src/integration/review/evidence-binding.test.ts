@@ -36,7 +36,6 @@ import {
   createReviewObligation,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
-  hashFindings,
   buildInvocationEvidence,
   appendInvocationEvidence,
   ensureReviewAssurance,
@@ -217,10 +216,13 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
     it('duplicate_evidence — same childSessionId+findingsHash already exists', () => {
       const { state, obligation } = setupFullCycle();
 
-      // Parse the findings from the task result to compute the hash
-      const taskResult = taskResultWithAttestation(obligation.obligationId);
-      const parsedFindings = JSON.parse(taskResult) as Record<string, unknown>;
-      const fHash = hashFindings(parsedFindings);
+      // F8: buildHostTaskEvidence normalizes findings (host-authoritative
+      // reviewedAt/reviewedBy + attestation consolidation) BEFORE hashing, so
+      // the duplicate hash must be derived from the actually-bound evidence
+      // rather than the raw reviewer findings.
+      const firstBind = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      expect(firstBind.bindOutcome).toBe('bound');
+      const fHash = firstBind.evidence!.findingsHash;
 
       // Pre-existing invocation with same childSessionId + findingsHash
       const existingInvocation = buildInvocationEvidence({

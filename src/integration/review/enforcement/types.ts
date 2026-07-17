@@ -48,6 +48,14 @@ export interface CapturedFindings {
   readonly sessionId: string | null;
   /** Complete parsed ReviewFindings object, when extraction succeeds. */
   readonly rawFindings?: Record<string, unknown> | null;
+  /**
+   * How the findings JSON was obtained from the reviewer's output (F8).
+   * - clean_json: the entire Task output parsed as conforming JSON.
+   * - recovered_block: findings recovered from an embedded/brace-balanced JSON
+   *   block inside mixed model output. Reduced provenance confidence — the
+   *   host downgrades review assurance to 'structured_recovered'.
+   */
+  readonly extractionMethod?: 'clean_json' | 'recovered_block';
 }
 
 /** Per-tool pending review state. */

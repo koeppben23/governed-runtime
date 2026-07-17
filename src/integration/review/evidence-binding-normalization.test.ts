@@ -337,7 +337,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     expect(stored.scopeCreep).toEqual([]);
     expect(stored.unknowns).toEqual([]);
     expect(stored.reviewedBy).toEqual({ sessionId: CHILD_SESSION_ID });
-    expect(stored.reviewedAt).toBe(NOW);
+    // F8: reviewedAt is host-authoritative — overwritten with the binding time
+    // (LATER), not the reviewer-echoed NOW. The reviewer-claimed value diverges
+    // from the host time here, so it is retained as untrusted reviewerClaimedAt.
+    expect(stored.reviewedAt).toBe(LATER);
+    expect(stored.reviewerClaimedAt).toBe(NOW);
     // attestation stripped
     expect(stored.attestation).toBeUndefined();
   });

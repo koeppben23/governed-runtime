@@ -71,6 +71,21 @@ function zodTopLevelKeys(): string[] {
 
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
+/**
+ * Host-authoritative provenance fields (F8) that exist on the Zod ReviewFindings
+ * schema but are intentionally absent from the SDK JSON-Schema.
+ *
+ * These are NEVER produced by the reviewer subagent. The host injects them at
+ * binding time (normalizeHostTaskFindings) to preserve the model's untrusted
+ * original `reviewedAt` / `reviewedBy` after overwriting those fields with the
+ * real invocation timestamp and resolved child-session identity. Emitting them
+ * in the SDK output schema would (a) invite the model to author values it must
+ * not control and (b) collide with `additionalProperties: false`. They are
+ * therefore documented intentional drift, mirroring the `attestation`
+ * required-vs-optional contract below.
+ */
+const HOST_INJECTED_PROVENANCE_FIELDS = ['reviewerClaimedAt', 'reviewerClaimedBy'] as const;
+
 describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () => {
   it('GOOD: every JSON-Schema property is also a Zod property', () => {
     const jsonProps = Object.keys(jsonSchemaProperties());
@@ -79,11 +94,26 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     expect(missing).toEqual([]);
   });
 
-  it('GOOD: every Zod property is also a JSON-Schema property', () => {
+  it('GOOD: every Zod property is a JSON-Schema property, except host-injected provenance', () => {
     const jsonProps = Object.keys(jsonSchemaProperties());
     const zodProps = zodTopLevelKeys();
-    const missing = zodProps.filter((p) => !jsonProps.includes(p));
+    const missing = zodProps.filter(
+      (p) =>
+        !jsonProps.includes(p) &&
+        !HOST_INJECTED_PROVENANCE_FIELDS.includes(
+          p as (typeof HOST_INJECTED_PROVENANCE_FIELDS)[number],
+        ),
+    );
     expect(missing).toEqual([]);
+  });
+
+  it('CONTRACT: host-injected provenance fields are Zod-only and absent from the SDK schema (F8)', () => {
+    const jsonProps = Object.keys(jsonSchemaProperties());
+    const zodProps = zodTopLevelKeys();
+    for (const field of HOST_INJECTED_PROVENANCE_FIELDS) {
+      expect(zodProps).toContain(field);
+      expect(jsonProps).not.toContain(field);
+    }
   });
 
   it('GOOD: overallVerdict enum matches LoopVerdict (accept | changes_requested | unable_to_review)', () => {

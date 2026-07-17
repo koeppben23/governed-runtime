@@ -9,6 +9,7 @@
 import { parseToolResult, getToolOutput } from '../plugin-helpers.js';
 import { extractContentMeta } from './enforcement/extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { renderReviewContext } from './prompt-builders.js';
 import { REVIEW_COMPLETED_PREFIX, extractReviewContext } from './orchestrator.js';
 import {
   REASON_HOST_SUBAGENT_TASK_REQUIRED,
@@ -103,9 +104,10 @@ function buildHostTaskBlockedOutput(
   // from the obligation instead (see resolveHostTaskContext). BUG-18: Instruct
   // the reviewer subagent to NOT call FlowGuard tools in its own session.
   const ctx = resolveHostTaskContext(result, attestationMeta);
-  const iterStr = ctx?.iteration != null ? `iteration=${ctx.iteration}` : '';
-  const versionStr = ctx?.planVersion != null ? `planVersion=${ctx.planVersion}` : '';
-  const contextSuffix = [iterStr, versionStr].filter(Boolean).join(', ');
+  const contextSuffix =
+    ctx?.iteration != null
+      ? renderReviewContext({ iteration: ctx.iteration, planVersion: ctx.planVersion })
+      : '';
 
   // Forward the host-authoritative attestation so the agent passes a concrete
   // toolObligationId (UUID) to the reviewer subagent. Without this the

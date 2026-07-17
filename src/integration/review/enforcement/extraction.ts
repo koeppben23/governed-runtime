@@ -47,16 +47,18 @@ export function extractContentMeta(
  * @returns CapturedFindings or null if extraction fails
  */
 export function extractCapturedFindings(taskResult: string): CapturedFindings | null {
-  // Try direct JSON parse
+  // Try direct JSON parse — clean, conforming structured output (high assurance).
   try {
     const parsed = JSON.parse(taskResult) as unknown;
-    const result = extractFindingsFromObject(parsed);
+    const result = extractFindingsFromObject(parsed, 'clean_json');
     if (result) return result;
   } catch {
     // Not clean JSON — continue to regex extraction
   }
 
-  // Try to find a JSON block containing overallVerdict in the response
+  // Try to find a JSON block containing overallVerdict in the response.
+  // This is a best-effort recovery from mixed model output; the recovered
+  // extraction method downgrades review assurance downstream (F8).
   const jsonMatch = taskResult.match(/\{[^{}]*"overallVerdict"\s*:\s*"[^"]+"/);
   if (jsonMatch) {
     const startIdx = taskResult.indexOf(jsonMatch[0]);
@@ -64,7 +66,7 @@ export function extractCapturedFindings(taskResult: string): CapturedFindings | 
     if (candidate) {
       try {
         const parsed = JSON.parse(candidate) as unknown;
-        const result = extractFindingsFromObject(parsed);
+        const result = extractFindingsFromObject(parsed, 'recovered_block');
         if (result) return result;
       } catch {
         // Parse failed — fall through
@@ -249,7 +251,10 @@ function extractSessionIdFromObject(obj: Record<string, unknown>): string | null
  * Extract CapturedFindings fields from a parsed object.
  * Returns null if the object doesn't contain a valid overallVerdict.
  */
-function extractFindingsFromObject(obj: unknown): CapturedFindings | null {
+function extractFindingsFromObject(
+  obj: unknown,
+  extractionMethod: 'clean_json' | 'recovered_block',
+): CapturedFindings | null {
   if (!obj || typeof obj !== 'object') return null;
 
   const record = obj as Record<string, unknown>;
@@ -264,6 +269,7 @@ function extractFindingsFromObject(obj: unknown): CapturedFindings | null {
     overallVerdict,
     blockingIssuesCount: blockingIssues.length,
     sessionId,
+    extractionMethod,
   };
   Object.defineProperty(captured, 'rawFindings', {
     value: record,

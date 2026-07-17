@@ -18,6 +18,35 @@ import {
   type DiscoveryReviewContext,
 } from './discovery-context-prompt.js';
 
+// ─── Canonical Review Context Serializer ─────────────────────────────────────
+
+/**
+ * Canonical serialization of the review cycle-binding context (F9).
+ *
+ * The `iteration` / `planVersion` values an agent must echo into the reviewer
+ * subagent prompt are emitted by multiple blocked-output builders
+ * (pending-instruction.ts, host-task-policy.ts) and validated by a third code
+ * path (enforcement `promptContainsValue`). Previously each builder produced a
+ * subtly different string ("iteration=X, and planVersion=Y" vs.
+ * "Context: iteration=X, planVersion=Y"), the exact divergence class behind
+ * BUG-16 and the observed first-attempt SUBAGENT_PROMPT_MISSING_CONTEXT block.
+ *
+ * This is the single canonical form. Both builders MUST use it so the emitted
+ * context is byte-identical and always satisfies enforcement on the first
+ * attempt. `planVersion` is optional because standalone /review obligations may
+ * not carry one.
+ */
+export function renderReviewContext(input: {
+  iteration: number;
+  planVersion?: number | null;
+}): string {
+  const parts = [`iteration=${input.iteration}`];
+  if (input.planVersion != null) {
+    parts.push(`planVersion=${input.planVersion}`);
+  }
+  return parts.join(', ');
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 /** Options for building a plan review prompt. */

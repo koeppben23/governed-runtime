@@ -10,6 +10,7 @@
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 import type { ReviewHostPlatform, ReviewOrchestrationMode } from './orchestration-mode.js';
+import { renderReviewContext } from './prompt-builders.js';
 
 export interface PendingReviewInstructionInput {
   readonly mode: ReviewOrchestrationMode;
@@ -128,7 +129,7 @@ export function buildPendingReviewInstruction(
     next:
       `INDEPENDENT_REVIEW_REQUIRED: Before submitting your review verdict, you MUST call the ${REVIEWER_SUBAGENT_TYPE} subagent via the Task tool. ` +
       `Use subagent_type "${REVIEWER_SUBAGENT_TYPE}" with a prompt that includes the ${input.subjectLabel}, ` +
-      `iteration=${input.iteration}, and planVersion=${input.planVersion}. ` +
+      `${renderReviewContext({ iteration: input.iteration, planVersion: input.planVersion })}. ` +
       'After the reviewer returns, submit ONLY the verdict via reviewVerdict; the plugin resolves the reviewer findings from captured evidence automatically. ' +
       'Do NOT submit, copy, or alter reviewFindings in host-task mode — hand-edited or mismatched findings are rejected (SUBAGENT_SESSION_MISMATCH / findings hash mismatch). ' +
       'reviewVerdict records the independent reviewer result; it is NOT user approval and only advances to the human review gate. ' +

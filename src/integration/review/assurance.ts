@@ -279,7 +279,7 @@ export function buildInvocationEvidence(input: {
   source?: 'host-orchestrated' | 'agent-submitted-attested';
   reviewOutputMode?: 'structured_output' | 'text_compat';
   structuredOutputUsed?: boolean;
-  reviewAssuranceLevel?: 'structured_high' | 'text_compat_lower';
+  reviewAssuranceLevel?: 'structured_high' | 'structured_recovered' | 'text_compat_lower';
   extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
   modelCapabilityError?: string;
   /** Captured verdict from the reviewer's actual output (host-task authoritative). */

@@ -81,6 +81,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reviewer prompt context is emitted from one canonical serializer (F9).**
+  The `iteration`/`planVersion` context an agent must echo into the reviewer
+  subagent prompt was built by two independent string builders
+  (`pending-instruction.ts` produced `iteration=X, and planVersion=Y`;
+  `host-task-policy.ts` produced `Context: iteration=X, planVersion=Y`) while a
+  third path (`promptContainsValue` / `extractContentMeta`) validated it. The
+  subtly divergent forms made a plausibly-constructed reviewer prompt fail the
+  first-attempt `SUBAGENT_PROMPT_MISSING_CONTEXT` check, forcing a wasted
+  reviewer Task round-trip (observed in both the plan and standalone-review
+  demo flows). Both builders now emit the single canonical
+  `renderReviewContext({ iteration, planVersion })` form, so the emitted context
+  is byte-identical and satisfies enforcement on the first attempt. Changes:
+  `src/integration/review/prompt-builders.ts`,
+  `src/integration/review/pending-instruction.ts`,
+  `src/integration/review/host-task-policy.ts`, plus tests.
+
 - **VALIDATION timeouts and executor errors no longer invalidate the plan (F5).**
   A verification command that times out or cannot be executed (command-not-found,
   exit 124/127) is now classified as an execution error (`CHECK_ERRORED`) that keeps
@@ -154,6 +170,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     restore; `writeIfAbsent()` uses `wx` exclusive-create for `force=false`.
 
 ### Security
+
+- **Reviewer provenance is host-authoritative; malformed findings are assurance-downgraded (F8).**
+  The reviewer subagent (an LLM) is no longer treated as an authority for its own
+  execution time or session identity. At host-task binding, `normalizeHostTaskFindings`
+  now overwrites `reviewedAt` with the real invocation timestamp and
+  `reviewedBy.sessionId` with the resolved child session id, preserving the model's
+  untrusted originals as diagnostics-only `reviewerClaimedAt` / `reviewerClaimedBy`
+  (new optional Zod fields on `ReviewFindings`, absent from the SDK output schema —
+  documented intentional drift in the findings-schema drift guard). Confabulated
+  values such as `reviewedAt="…T00:00:00Z"` or
+  `reviewedBy.sessionId="flowguard-reviewer-session"` can no longer masquerade as
+  audit-authoritative. Findings recovered only from an embedded/brace-balanced JSON
+  block in mixed model output now bind at a new `structured_recovered` assurance tier
+  (between `structured_high` and `text_compat_lower`) instead of silently claiming
+  `structured_high`; binding still proceeds (downgrade, not fail-closed). Changes:
+  `src/state/evidence-review.ts`, `src/integration/review/evidence-binding.ts`,
+  `src/integration/review/assurance.ts`,
+  `src/integration/review/enforcement/extraction.ts`,
+  `src/integration/review/enforcement/types.ts`,
+  `src/integration/review/findings-schema-drift.test.ts`, plus tests.
 
 - **OpenCode SDK and host baselines updated (#655).** `@opencode-ai/plugin`
   and host version baselines bumped with contract, integration, smoke, and
