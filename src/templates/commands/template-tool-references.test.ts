@@ -21,6 +21,7 @@ import {
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_HELP,
 } from '../../integration/tool-names.js';
 import { COMMANDS } from './index.js';
 
@@ -38,6 +39,7 @@ const REGISTERED_TOOLS: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_HELP,
 ]);
 
 const TOOL_REFERENCE_PATTERN = /flowguard_[a-z_]+/g;

@@ -22,6 +22,7 @@ export {
   abort_session,
   archive,
   architecture,
+  help,
 } from './tools/index.js';
 
 export { FlowGuardAuditPlugin } from './plugin.js';

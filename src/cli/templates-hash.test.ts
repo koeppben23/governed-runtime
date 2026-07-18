@@ -33,6 +33,7 @@ import {
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_ARCHITECTURE,
+  TOOL_FLOWGUARD_HELP,
 } from '../integration/tool-names.js';
 
 function sha256(value: string): string {
@@ -42,7 +43,7 @@ function sha256(value: string): string {
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
     expect(sha256(TOOL_WRAPPER)).toBe(
-      '3d7e2c04d9d51119d6682d434326b57679580be4aaa79a2b4296af585bf2b298',
+      '2cf761e388f62fd387681e6e3b77bd9ac902a97978739ea54c72a44daa5e17be',
     );
   });
 
@@ -178,20 +179,22 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // change the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '39026b714786edc7d5e954f3d85a9e311e30faa978a301a8874789d68989d412',
+      '45b7f24890c7b448ad6393ef552559f5f673c33e1c06b799324d8f3faf525f29',
     );
   });
 
-  it('all 21 commands present', () => {
+  it('all 23 commands present', () => {
     const expected = [
       'abort.md',
       'approve.md',
       'architecture.md',
       'archive.md',
       'check.md',
+      'commands.md',
       'continue.md',
       'export.md',
       'finish.md',
+      'help.md',
       'hydrate.md',
       'implement.md',
       'plan.md',
@@ -231,6 +234,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_ABORT,
       TOOL_FLOWGUARD_ARCHIVE,
       TOOL_FLOWGUARD_ARCHITECTURE,
+      TOOL_FLOWGUARD_HELP,
     ];
 
     // Parse the actual export identifiers from TOOL_WRAPPER's export block.

@@ -33,10 +33,13 @@ import { CHECK_COMMAND } from './check.js';
 import { EXPORT_COMMAND } from './export.js';
 import { WHY_COMMAND } from './why.js';
 import { FINISH_COMMAND } from './finish.js';
+import { HELP_COMMAND } from './help.js';
+import { COMMANDS_COMMAND } from './commands.js';
+import { INSTALLED_COMMANDS } from '../../integration/installed-commands.js';
 
 export { GOVERNANCE_RULES } from './shared-rules.js';
 
-export const COMMANDS: Record<string, string> = {
+const COMMAND_BODIES: Record<string, string> = {
   'hydrate.md': HYDRATE_COMMAND,
   'status.md': STATUS_COMMAND,
   'ticket.md': TICKET_COMMAND,
@@ -58,4 +61,20 @@ export const COMMANDS: Record<string, string> = {
   'export.md': EXPORT_COMMAND,
   'why.md': WHY_COMMAND,
   'finish.md': FINISH_COMMAND,
+  'help.md': HELP_COMMAND,
+  'commands.md': COMMANDS_COMMAND,
 };
+
+/**
+ * Installer-compatible projection of the canonical installed-command catalogue.
+ * Missing template bodies fail closed during module initialization.
+ */
+export const COMMANDS: Record<string, string> = Object.fromEntries(
+  INSTALLED_COMMANDS.map((definition) => {
+    const body = COMMAND_BODIES[definition.filename];
+    if (body === undefined) {
+      throw new Error(`Installed command template missing: ${definition.filename}`);
+    }
+    return [definition.filename, body];
+  }),
+);

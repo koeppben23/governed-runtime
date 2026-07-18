@@ -34,6 +34,7 @@ export const TOOL_FLOWGUARD_CONTINUE = 'flowguard_continue';
 export const TOOL_FLOWGUARD_ARCHITECTURE = 'flowguard_architecture';
 export const TOOL_FLOWGUARD_ABORT = 'flowguard_abort_session';
 export const TOOL_FLOWGUARD_ARCHIVE = 'flowguard_archive';
+export const TOOL_FLOWGUARD_HELP = 'flowguard_help';
 
 export { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 

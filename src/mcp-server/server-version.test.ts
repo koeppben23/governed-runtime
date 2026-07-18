@@ -69,6 +69,7 @@ vi.mock('../integration/tools/index.js', () => {
     abort_session: tool,
     archive: tool,
     continue: tool,
+    help: tool,
   };
 });
 
