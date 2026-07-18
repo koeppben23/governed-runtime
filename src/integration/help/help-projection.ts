@@ -254,11 +254,7 @@ function buildArchiveVerification(state: SessionState | null): ArchiveVerificati
   };
 }
 
-function buildCommandDetail(
-  state: SessionState | null,
-  policy: FlowGuardPolicy | null,
-  requestedInvocation: string,
-): HelpResult {
+function buildCommandDetail(state: SessionState | null, requestedInvocation: string): HelpResult {
   const definition = getInstalledCommand(requestedInvocation);
   const command = definition
     ? projectCommand(definition, state, visibilityForPreflight(preflight(definition, state)))
@@ -386,13 +382,15 @@ export function buildHelpResult(
     reviewReport?: ReviewReport;
   },
 ): HelpResult {
-  if (opts.requestedInvocation) return buildCommandDetail(state, policy, opts.requestedInvocation);
+  if (opts.requestedInvocation) return buildCommandDetail(state, opts.requestedInvocation);
   if (!state || !policy) return buildNoSessionResult();
 
+  // After the early returns, view is always 'context' or 'commands'.
+  const view = opts.view as 'context' | 'commands';
   return buildSessionHelpResult(
     state,
     policy,
-    opts.view,
+    view,
     opts.scope ?? 'available',
     resolveReport(state, opts.reviewReport),
   );
