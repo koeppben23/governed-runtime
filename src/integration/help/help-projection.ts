@@ -23,6 +23,10 @@ import {
   type InstalledCommandDefinition,
 } from '../installed-commands.js';
 import {
+  resolveCurrentReviewReport,
+  type ReviewReportResolution,
+} from '../review/report-coherence.js';
+import {
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_HELP,
   TOOL_FLOWGUARD_HYDRATE,
@@ -66,25 +70,12 @@ export interface HelpResult {
   readonly lifecycle: string;
   readonly readiness: Readiness;
   readonly recommendationQuality: RecommendationQuality;
+  readonly reviewReportStatus: 'current' | 'stale' | 'foreign' | 'incoherent' | 'not_available';
   readonly nextActionSummary: string;
   readonly evidenceCompleteness: EvidenceCompleteness;
   readonly archiveVerification: ArchiveVerification;
   readonly nextAction: ProjectedCommand | null;
   readonly commands: readonly ProjectedCommand[];
-}
-
-// ── Snapshot validation ──────────────────────────────────────────────
-
-/**
- * Determine whether a persisted ReviewReport is current for the given state.
- * A stale or mismatched report must not influence Help readiness.
- */
-function isReviewReportCurrent(state: SessionState, report: ReviewReport): boolean {
-  if (report.sessionId !== state.id) return false;
-  if (report.phase !== state.phase) return false;
-  if (report.planDigest !== (state.plan?.current.digest ?? null)) return false;
-  if (report.implDigest !== (state.implementation?.digest ?? null)) return false;
-  return true;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -189,37 +180,34 @@ export function finishToReadiness(overallStatus: FinishOverallStatus): Readiness
   }
 }
 
-function finishToRecommendationQuality(overallStatus: FinishOverallStatus): RecommendationQuality {
-  switch (overallStatus) {
-    case 'READY':
+function projectRecommendationQuality(
+  reportResolution: ReviewReportResolution | null,
+): RecommendationQuality {
+  if (!reportResolution || reportResolution.status !== 'current') {
+    return {
+      quality: 'not_applicable',
+      advisoryStatus: 'not_applicable',
+      summary: 'No current standalone review recommendation is available.',
+    };
+  }
+  switch (reportResolution.report.overallStatus) {
+    case 'clean':
       return {
         quality: 'clean',
         advisoryStatus: 'ready',
-        summary: 'No advisory findings or warnings.',
+        summary: 'No advisory findings. The review found no issues.',
       };
-    case 'READY_WITH_WARNINGS':
+    case 'warnings':
       return {
         quality: 'warnings',
         advisoryStatus: 'ready_with_warnings',
-        summary: 'Session complete with configuration or review warnings.',
+        summary: 'Review found warnings. They are advisory and do not block export.',
       };
-    case 'CHANGES_REQUIRED':
+    case 'issues':
       return {
         quality: 'issues',
         advisoryStatus: 'changes_required',
         summary: 'Standalone review found issues. Changes are recommended but do not block export.',
-      };
-    case 'BLOCKED':
-      return {
-        quality: 'not_applicable',
-        advisoryStatus: 'not_applicable',
-        summary: 'Workflow is blocked; recommendation quality is not applicable.',
-      };
-    case 'NOT_VERIFIED':
-      return {
-        quality: 'not_applicable',
-        advisoryStatus: 'not_applicable',
-        summary: 'Required evidence is incomplete; recommendation quality is not applicable.',
       };
   }
 }
@@ -284,6 +272,7 @@ function buildCommandDetail(
       advisoryStatus: 'not_applicable',
       summary: '',
     },
+    reviewReportStatus: 'not_available',
     nextActionSummary: command ? command.description : 'Unknown FlowGuard command.',
     evidenceCompleteness: buildEvidenceCompleteness(state),
     archiveVerification: buildArchiveVerification(state),
@@ -304,6 +293,7 @@ function buildNoSessionResult(): HelpResult {
       advisoryStatus: 'not_applicable',
       summary: '',
     },
+    reviewReportStatus: 'not_available',
     nextActionSummary: 'Start a governed session.',
     evidenceCompleteness: buildEvidenceCompleteness(null),
     archiveVerification: buildArchiveVerification(null),
@@ -325,10 +315,7 @@ function projectActiveCommand(
     const projected = projectCommand(definition, state, 'available');
     return projected.preflight.status === 'available'
       ? { ...projected, visibility: 'recommended' }
-      : {
-          ...projected,
-          visibility: visibilityForPreflight(projected.preflight),
-        };
+      : { ...projected, visibility: visibilityForPreflight(projected.preflight) };
   }
   const availability = preflight(definition, state);
   if (availability.status === 'available') return projectCommand(definition, state, 'available');
@@ -344,6 +331,51 @@ function isVisibleInScope(command: ProjectedCommand, scope: 'available' | 'all')
   return definition?.visibility === 'primary';
 }
 
+function resolveReport(
+  state: SessionState,
+  reviewReport?: ReviewReport,
+): ReviewReportResolution | null {
+  if (!reviewReport) return null;
+  return resolveCurrentReviewReport(state, reviewReport);
+}
+function buildSessionHelpResult(
+  state: SessionState,
+  policy: FlowGuardPolicy,
+  view: 'context' | 'commands',
+  scope: 'available' | 'all',
+  reportResolution: ReviewReportResolution | null,
+): HelpResult {
+  const currentReport = reportResolution?.status === 'current' ? reportResolution.report : null;
+
+  const status = buildStatusProjection(state, policy);
+  const finish = buildFinishCard(state, policy, currentReport);
+  const readiness = finishToReadiness(finish.overallStatus);
+  const recommendationQuality = projectRecommendationQuality(reportResolution);
+
+  const recommended = findRecommendation(status.productNextAction.primaryCommand);
+  const candidateNext = recommended ? projectCommand(recommended, state, 'recommended') : null;
+  const nextAction =
+    candidateNext && candidateNext.preflight.status === 'available' ? candidateNext : null;
+
+  const commands = INSTALLED_COMMANDS.map((definition) =>
+    projectActiveCommand(definition, state, recommended, scope),
+  ).filter((command) => isVisibleInScope(command, scope));
+  const contextCommands = view === 'context' ? limitContextCommands(commands) : commands;
+
+  return {
+    phase: { id: state.phase, label: PHASE_LABELS[state.phase] },
+    lifecycle: PHASE_LABELS[state.phase],
+    readiness,
+    recommendationQuality,
+    reviewReportStatus: reportResolution?.status ?? 'not_available',
+    nextActionSummary: status.productNextAction.summary,
+    evidenceCompleteness: buildEvidenceCompleteness(state),
+    archiveVerification: buildArchiveVerification(state),
+    nextAction,
+    commands: contextCommands,
+  };
+}
+
 export function buildHelpResult(
   state: SessionState | null,
   policy: FlowGuardPolicy | null,
@@ -357,37 +389,13 @@ export function buildHelpResult(
   if (opts.requestedInvocation) return buildCommandDetail(state, policy, opts.requestedInvocation);
   if (!state || !policy) return buildNoSessionResult();
 
-  const currentReport =
-    opts.reviewReport && isReviewReportCurrent(state, opts.reviewReport) ? opts.reviewReport : null;
-
-  const status = buildStatusProjection(state, policy);
-  const finish = buildFinishCard(state, policy, currentReport);
-  const readiness = finishToReadiness(finish.overallStatus);
-  const recommendationQuality = finishToRecommendationQuality(finish.overallStatus);
-
-  const recommended = findRecommendation(status.productNextAction.primaryCommand);
-  const candidateNext = recommended ? projectCommand(recommended, state, 'recommended') : null;
-  const nextAction =
-    candidateNext && candidateNext.preflight.status === 'available' ? candidateNext : null;
-
-  const scope = opts.scope ?? 'available';
-  const commands = INSTALLED_COMMANDS.map((definition) =>
-    projectActiveCommand(definition, state, recommended, scope),
-  ).filter((command) => isVisibleInScope(command, scope));
-
-  const contextCommands = opts.view === 'context' ? limitContextCommands(commands) : commands;
-
-  return {
-    phase: { id: state.phase, label: PHASE_LABELS[state.phase] },
-    lifecycle: PHASE_LABELS[state.phase],
-    readiness,
-    recommendationQuality,
-    nextActionSummary: status.productNextAction.summary,
-    evidenceCompleteness: buildEvidenceCompleteness(state),
-    archiveVerification: buildArchiveVerification(state),
-    nextAction,
-    commands: contextCommands,
-  };
+  return buildSessionHelpResult(
+    state,
+    policy,
+    opts.view,
+    opts.scope ?? 'available',
+    resolveReport(state, opts.reviewReport),
+  );
 }
 
 function limitContextCommands(commands: readonly ProjectedCommand[]): readonly ProjectedCommand[] {

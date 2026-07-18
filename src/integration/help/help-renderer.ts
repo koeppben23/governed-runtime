@@ -25,6 +25,7 @@ export function renderHelp(result: HelpResult, verbose: boolean): string {
     lifecycle: result.lifecycle,
     readiness: result.readiness,
     recommendationQuality: result.recommendationQuality,
+    reviewReportStatus: result.reviewReportStatus,
     nextActionSummary: result.nextActionSummary,
     evidenceCompleteness: result.evidenceCompleteness,
     archiveVerification: result.archiveVerification,
