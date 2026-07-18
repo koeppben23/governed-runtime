@@ -81,6 +81,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Reviewer children are isolated from FlowGuard workflow tools (F14).** The OpenCode
+  reviewer capability profile now denies both direct `flowguard_*` and MCP-prefixed
+  `mcp__flowguard__*` tools while retaining `read`, `glob`, and `grep` for research.
+  This prevents a reviewer child from hydrating or creating a parallel FlowGuard
+  session directory; review provenance remains in the parent obligation and audit
+  trail. Team sessions still require explicit `/export` and are not auto-archived on
+  completion. The capability contract advances reviewer criteria from `p38-v1` to
+  `p39-v1`; existing p38 obligations remain bound to p38 and require a new review
+  cycle after upgrade or rollback.
+
 - **Incoherent reviewer captures recover without deadlocking the review obligation (F13).**
   Reviewer mandate criteria now require `changes_requested` whenever `blockingIssues`
   is non-empty, matching the runtime F12 invariant. This changes the installed reviewer

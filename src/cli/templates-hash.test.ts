@@ -84,10 +84,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed again for p36->p37: added a Security-as-risk vulnerability bullet
     // (content + implementation) and a root-cause bullet (plan + implementation),
     // which changes the REVIEWER_AGENT body and REVIEW_MANDATE_DIGEST.
-    // Refreshed for reviewer tool isolation: OpenCode reviewers cannot access
-    // FlowGuard workflow tools, including through MCP-prefixed names.
+    // p37 -> p38: strict blockingIssues/verdict coherence. p38 -> p39: OpenCode
+    // reviewer capability isolation denies FlowGuard workflow tools directly and
+    // through MCP-prefixed names.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'f3e98f66862cade550b9138658dfbe82f2aeb50b989a2ec398c62bd8b2be0249',
+      '23356c1c40b9fc986efd71cae8fa4b577c246bed502cc0faa321db9dccf2d30b',
     );
   });
 

@@ -57,10 +57,9 @@ description: Independent reviewer for FlowGuard plan, implementation, architectu
 mode: subagent
 hidden: true
 steps: 10
-tools:
-  flowguard_*: false
-  mcp__flowguard__*: false
 permission:
+  flowguard_*: deny
+  mcp__flowguard__*: deny
   edit: deny
   bash: deny
   webfetch: deny

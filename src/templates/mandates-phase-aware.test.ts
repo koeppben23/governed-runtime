@@ -297,8 +297,8 @@ describe('phase-aware mandates rendering', () => {
     // line count is bounded deliberately. Raised 90 -> 96 for the p36-v1 criteria
     // enrichment, then 96 -> 98 for p37-v1 (a Security-as-risk vulnerability bullet
     // in content + implementation, and a root-cause bullet in plan + implementation),
-    // then 98 -> 101 for FlowGuard tool isolation frontmatter.
+    // then 98 -> 100 for p39-v1 FlowGuard tool-isolation permissions.
     // Keep new criteria terse; do not treat this as headroom for unbounded growth.
-    expect(roughTokenBudget(REVIEWER_AGENT).lines).toBeLessThanOrEqual(101);
+    expect(roughTokenBudget(REVIEWER_AGENT).lines).toBeLessThanOrEqual(100);
   });
 });

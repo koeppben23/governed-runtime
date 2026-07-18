@@ -20,7 +20,7 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
 
-export const REVIEW_CRITERIA_VERSION = 'p38-v1';
+export const REVIEW_CRITERIA_VERSION = 'p39-v1';
 
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 // No fallback: if the import fails, the module fails fast (desired for governance)

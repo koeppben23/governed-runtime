@@ -129,6 +129,24 @@ describe('integration/review-assurance', () => {
       expect(result.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
       expect(result.blockedCode).toBeNull();
     });
+
+    it('creates p39 obligations without rewriting persisted p38 attestation values', () => {
+      const p38: ReviewObligation = {
+        ...makeObligation(),
+        criteriaVersion: 'p38-v1',
+        mandateDigest: 'f3e98f66862cade550b9138658dfbe82f2aeb50b989a2ec398c62bd8b2be0249',
+      };
+      const assurance = appendReviewObligation(emptyReviewAssurance(), p38);
+      const fresh = makeObligation();
+
+      expect(REVIEW_CRITERIA_VERSION).toBe('p39-v1');
+      expect(assurance.obligations[0]).toMatchObject({
+        criteriaVersion: 'p38-v1',
+        mandateDigest: p38.mandateDigest,
+      });
+      expect(fresh.criteriaVersion).toBe('p39-v1');
+      expect(fresh.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
+    });
   });
 
   describe('appendReviewObligation', () => {
