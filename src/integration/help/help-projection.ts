@@ -55,16 +55,39 @@ export interface ArchiveVerification {
   readonly summary: string;
 }
 
+export interface RecommendationQuality {
+  readonly quality: 'clean' | 'warnings' | 'issues' | 'not_applicable';
+  readonly advisoryStatus: 'ready' | 'ready_with_warnings' | 'changes_required' | 'not_applicable';
+  readonly summary: string;
+}
+
 export interface HelpResult {
   readonly phase: Readonly<{ id: string; label: string }> | null;
   readonly lifecycle: string;
   readonly readiness: Readiness;
-  readonly recommendation: string;
+  readonly recommendationQuality: RecommendationQuality;
+  readonly nextActionSummary: string;
   readonly evidenceCompleteness: EvidenceCompleteness;
   readonly archiveVerification: ArchiveVerification;
   readonly nextAction: ProjectedCommand | null;
   readonly commands: readonly ProjectedCommand[];
 }
+
+// ── Snapshot validation ──────────────────────────────────────────────
+
+/**
+ * Determine whether a persisted ReviewReport is current for the given state.
+ * A stale or mismatched report must not influence Help readiness.
+ */
+function isReviewReportCurrent(state: SessionState, report: ReviewReport): boolean {
+  if (report.sessionId !== state.id) return false;
+  if (report.phase !== state.phase) return false;
+  if (report.planDigest !== (state.plan?.current.digest ?? null)) return false;
+  if (report.implDigest !== (state.implementation?.digest ?? null)) return false;
+  return true;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────
 
 function description(definition: InstalledCommandDefinition): string {
   if (definition.target.workflowCommand) {
@@ -166,22 +189,50 @@ export function finishToReadiness(overallStatus: FinishOverallStatus): Readiness
   }
 }
 
-function buildEvidenceCompleteness(
-  state: SessionState | null,
-  policy: FlowGuardPolicy | null,
-): EvidenceCompleteness {
-  if (!state || !policy)
-    return { status: 'not_applicable', summary: 'No session is available to assess.' };
+function finishToRecommendationQuality(overallStatus: FinishOverallStatus): RecommendationQuality {
+  switch (overallStatus) {
+    case 'READY':
+      return {
+        quality: 'clean',
+        advisoryStatus: 'ready',
+        summary: 'No advisory findings or warnings.',
+      };
+    case 'READY_WITH_WARNINGS':
+      return {
+        quality: 'warnings',
+        advisoryStatus: 'ready_with_warnings',
+        summary: 'Session complete with configuration or review warnings.',
+      };
+    case 'CHANGES_REQUIRED':
+      return {
+        quality: 'issues',
+        advisoryStatus: 'changes_required',
+        summary: 'Standalone review found issues. Changes are recommended but do not block export.',
+      };
+    case 'BLOCKED':
+      return {
+        quality: 'not_applicable',
+        advisoryStatus: 'not_applicable',
+        summary: 'Workflow is blocked; recommendation quality is not applicable.',
+      };
+    case 'NOT_VERIFIED':
+      return {
+        quality: 'not_applicable',
+        advisoryStatus: 'not_applicable',
+        summary: 'Required evidence is incomplete; recommendation quality is not applicable.',
+      };
+  }
+}
+
+function buildEvidenceCompleteness(state: SessionState | null): EvidenceCompleteness {
+  if (!state) return { status: 'not_applicable', summary: 'No session is available to assess.' };
   const evidence = buildEvidenceDetailProjection(state);
   if (evidence.overallComplete) {
     return { status: 'complete', summary: 'Required evidence is present.' };
   }
   const hasFailed = evidence.slots.some((slot) => slot.required && slot.status === 'failed');
   if (hasFailed) {
-    return {
-      status: 'failed',
-      summary: 'One or more required evidence slots have failed checks.',
-    };
+    return { status: 'failed', summary: 'One or more required evidence slots have failed checks.' };
   }
   return { status: 'incomplete', summary: 'Required evidence is incomplete.' };
 }
@@ -228,8 +279,13 @@ function buildCommandDetail(
     phase: state ? { id: state.phase, label: PHASE_LABELS[state.phase] } : null,
     lifecycle: state ? PHASE_LABELS[state.phase] : 'No active session',
     readiness: 'none',
-    recommendation: command ? command.description : 'Unknown FlowGuard command.',
-    evidenceCompleteness: buildEvidenceCompleteness(state, policy),
+    recommendationQuality: {
+      quality: 'not_applicable',
+      advisoryStatus: 'not_applicable',
+      summary: '',
+    },
+    nextActionSummary: command ? command.description : 'Unknown FlowGuard command.',
+    evidenceCompleteness: buildEvidenceCompleteness(state),
     archiveVerification: buildArchiveVerification(state),
     nextAction: null,
     commands: command ? [command] : [],
@@ -243,8 +299,13 @@ function buildNoSessionResult(): HelpResult {
     phase: null,
     lifecycle: 'No active session',
     readiness: 'none',
-    recommendation: 'Start a governed session.',
-    evidenceCompleteness: buildEvidenceCompleteness(null, null),
+    recommendationQuality: {
+      quality: 'not_applicable',
+      advisoryStatus: 'not_applicable',
+      summary: '',
+    },
+    nextActionSummary: 'Start a governed session.',
+    evidenceCompleteness: buildEvidenceCompleteness(null),
     archiveVerification: buildArchiveVerification(null),
     nextAction: projectCommand(hydrate, null, 'recommended'),
     commands: [
@@ -296,9 +357,13 @@ export function buildHelpResult(
   if (opts.requestedInvocation) return buildCommandDetail(state, policy, opts.requestedInvocation);
   if (!state || !policy) return buildNoSessionResult();
 
+  const currentReport =
+    opts.reviewReport && isReviewReportCurrent(state, opts.reviewReport) ? opts.reviewReport : null;
+
   const status = buildStatusProjection(state, policy);
-  const finish = buildFinishCard(state, policy, opts.reviewReport ?? null);
+  const finish = buildFinishCard(state, policy, currentReport);
   const readiness = finishToReadiness(finish.overallStatus);
+  const recommendationQuality = finishToRecommendationQuality(finish.overallStatus);
 
   const recommended = findRecommendation(status.productNextAction.primaryCommand);
   const candidateNext = recommended ? projectCommand(recommended, state, 'recommended') : null;
@@ -316,8 +381,9 @@ export function buildHelpResult(
     phase: { id: state.phase, label: PHASE_LABELS[state.phase] },
     lifecycle: PHASE_LABELS[state.phase],
     readiness,
-    recommendation: status.productNextAction.summary,
-    evidenceCompleteness: buildEvidenceCompleteness(state, policy),
+    recommendationQuality,
+    nextActionSummary: status.productNextAction.summary,
+    evidenceCompleteness: buildEvidenceCompleteness(state),
     archiveVerification: buildArchiveVerification(state),
     nextAction,
     commands: contextCommands,
