@@ -32,6 +32,11 @@ cd demos/java-task-manager
 
 > Governed architectural decision: LLM analyses the codebase, generates a
 > MADR-format ADR, the subagent reviews it, and a human approves.
+>
+> Steps A0–A6 (7 steps). Step A3 combines ADR generation and subagent review
+> into one narrative unit — the audience sees the LLM interaction as a single
+> governed round-trip. A separate A3/A4 split would duplicate the speaking
+> pattern already established in Part 2 Step 3 (Plan + Plan Review).
 
 ### Step A0 — Prove the Bug Exists (context for architecture analysis)
 

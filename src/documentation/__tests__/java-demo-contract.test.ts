@@ -55,11 +55,14 @@ const REPO_PATH = path.join(
 
 function extractSection(markdown: string, heading: string): string {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = markdown.match(new RegExp(`^## ${escaped}\\s*$([\\s\\S]*?)(?=^##\\s+|\\Z)`, 'mi'));
-  if (!match || !match[1]) {
+  const pattern = new RegExp(`(?:^|\\n)## ${escaped}\\s*\\n([\\s\\S]*?)(?=\\n##\\s+|$)`, 'i');
+
+  const body = pattern.exec(markdown)?.[1];
+  if (body === undefined) {
     throw new Error(`Missing section: ## ${heading}`);
   }
-  return match[1].trim();
+
+  return body.trim();
 }
 
 describe('Java Task Manager demo contract', () => {
@@ -108,6 +111,11 @@ describe('Java Task Manager demo contract', () => {
     expect(requestedOutput).toContain('`## Decision`');
     expect(requestedOutput).toContain('`## Consequences`');
     expect(requestedOutput).toMatch(/create a MADR-format.+ADR/i);
+
+    // The ADR ticket itself references the concrete symbols
+    expect(adrTicket).toContain('`TaskRepository.findById()`');
+    expect(adrTicket).toContain('`TaskService.getTask()`');
+    expect(adrTicket).toContain('`TaskService.updateTask()`');
 
     // Referenced symbols exist as methods in the seed code (not just words)
     const [serviceSrc, repoSrc] = await Promise.all([
