@@ -254,8 +254,11 @@ function buildReviewedState(
     strictObligation,
     ctx.now(),
     review.evidenceInvocationId ??
-      findAcceptedInvocationForFindings(review.assuranceBase, strictObligation, args.reviewFindings)
-        ?.invocationId,
+      findAcceptedInvocationForFindings(
+        review.assuranceBase,
+        strictObligation,
+        review.effectiveFindings,
+      )?.invocationId,
   );
 
   return {

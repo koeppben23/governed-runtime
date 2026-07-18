@@ -136,12 +136,13 @@ export function buildArchitectureReviewCard(input: ArchitectureReviewCardInput):
 
   // ── ADR Body ─────────────────────────────────────────────────────
   // Rendered verbatim — parity with the Plan Review Card's ## Proposed Plan section.
-  if (adrText) {
+  const normalizedAdrText = adrText?.trim();
+  if (normalizedAdrText) {
     lines.push('---');
     lines.push('');
     lines.push('## Architecture Decision');
     lines.push('');
-    lines.push(adrText);
+    lines.push(normalizedAdrText);
     lines.push('');
   }
 

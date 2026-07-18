@@ -51,6 +51,11 @@ describe('buildArchitectureReviewCard', () => {
     expect(card).not.toContain('## Architecture Decision');
   });
 
+  it('omits the ADR body section when adrText is whitespace-only', () => {
+    const card = buildArchitectureReviewCard({ ...baseInput, adrText: '   \n \t ' });
+    expect(card).not.toContain('## Architecture Decision');
+  });
+
   it('renders reviewer findings when present', () => {
     const card = buildArchitectureReviewCard({
       ...baseInput,
