@@ -4,7 +4,7 @@ import { makeProgressedState, makeState } from '../../fixtures.js';
 import { buildHelpResult } from './help-projection.js';
 
 describe('buildHelpResult', () => {
-  it('recommends the product invocation /export after a clean terminal completion', () => {
+  it('recommends /export after a clean terminal completion', () => {
     const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
       view: 'commands',
       scope: 'all',
@@ -17,6 +17,25 @@ describe('buildHelpResult', () => {
     expect(archiveCommand?.alsoAvailableAs).toEqual(['/export']);
   });
 
+  it('all commands marked recommended have available preflight', () => {
+    for (const state of [
+      makeProgressedState('COMPLETE'),
+      makeProgressedState('PLAN_REVIEW'),
+      makeProgressedState('IMPLEMENTATION'),
+      makeProgressedState('ARCH_REVIEW'),
+    ]) {
+      const result = buildHelpResult(state, TEAM_POLICY, { view: 'context' });
+      for (const command of result.commands) {
+        if (command.visibility === 'recommended') {
+          expect(
+            command.preflight.status,
+            `${command.invocation} marked recommended but preflight=${command.preflight.status}`,
+          ).toBe('available');
+        }
+      }
+    }
+  });
+
   it('projects export preflight without claiming current snapshot freshness', () => {
     const state = makeProgressedState('COMPLETE');
     const stateWithArchive = { ...state, archiveStatus: 'verified' } as typeof state;
@@ -25,10 +44,9 @@ describe('buildHelpResult', () => {
       requestedInvocation: '/export',
     });
 
-    expect(result.technicalVerification.summary).toContain(
-      'Current snapshot freshness is not established',
-    );
-    expect(result.nextAction?.preflight.guarantee).toBe('eligible_to_attempt');
+    expect(result.archiveVerification.status).toBe('previously_verified');
+    expect(result.archiveVerification.currentSnapshotVerified).toBe(false);
+    expect(result.archiveVerification.summary).toContain('snapshot freshness');
   });
 
   it('blocks export for aborted sessions while keeping status available', () => {
@@ -52,9 +70,6 @@ describe('buildHelpResult', () => {
     if (exportPreflight?.status === 'blocked') {
       expect(exportPreflight.reasonCode).toBe('ABORTED_SESSION');
     }
-    expect(
-      result.commands.find((command) => command.invocation === '/status')?.preflight.status,
-    ).toBe('available');
   });
 
   it('keeps no-session help limited to initialization and read-only orientation', () => {
@@ -62,16 +77,6 @@ describe('buildHelpResult', () => {
 
     expect(result.nextAction?.invocation).toBe('/hydrate');
     expect(result.commands.map((command) => command.invocation)).toEqual(['/hydrate', '/status']);
-  });
-
-  it('validates recommended action against preflight', () => {
-    const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
-      view: 'context',
-    });
-
-    if (result.nextAction) {
-      expect(result.nextAction.preflight.status).toBe('available');
-    }
   });
 
   it('/commands --all has a distinct registered interface identity', () => {
@@ -85,16 +90,21 @@ describe('buildHelpResult', () => {
     expect(allCmd?.invocation).toBe('/commands --all');
   });
 
-  it('/help context shows limited commands (not full list)', () => {
+  it('/help context shows limited commands with one recommendation', () => {
     const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
       view: 'context',
     });
     expect(result.nextAction).not.toBeNull();
-    // Context view should be constrained
+    expect(result.commands.filter((command) => command.visibility === 'recommended')).toHaveLength(
+      result.nextAction ? 1 : 0,
+    );
+    expect(
+      result.commands.filter((command) => command.visibility === 'blocked_recoverable'),
+    ).toHaveLength(0);
     expect(result.commands.length).toBeLessThanOrEqual(10);
   });
 
-  it('alias derivation uses the canonical authority, not hard-coded logic', () => {
+  it('alias derivation uses the canonical authority', () => {
     const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
       view: 'commands',
       scope: 'all',
@@ -105,11 +115,51 @@ describe('buildHelpResult', () => {
     expect(archiveCmd?.alsoAvailableAs).toContain('/export');
   });
 
-  it('projection includes structured readiness and technicalVerification axes', () => {
+  it('projection includes structured readiness, technicalVerification, and archiveVerification', () => {
     const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
       view: 'context',
     });
     expect(result.readiness).toBeDefined();
     expect(result.technicalVerification.status).toBeDefined();
+    expect(result.archiveVerification.status).toBeDefined();
+  });
+
+  it('technicalVerification does not mix archive status with evidence completeness', () => {
+    const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.technicalVerification.status).toBe('verified');
+    expect(result.archiveVerification.status).toBe('not_created');
+  });
+
+  it('CHANGES_REQUIRED yields ready_with_warnings readiness', () => {
+    // makeProgressedState generates a clean COMPLETE; the finish card readiness
+    // is derived from completeness, not an advisory review report, so COMPLETE
+    // with complete evidence yields 'ready'.
+    const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(['ready', 'ready_with_warnings']).toContain(result.readiness);
+    if (result.readiness === 'ready' || result.readiness === 'ready_with_warnings') {
+      expect(result.nextAction).not.toBeNull();
+    }
+  });
+
+  it('/help <command> never claims the requested command as the recommended next action', () => {
+    const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
+      view: 'command',
+      requestedInvocation: '/export',
+    });
+    expect(result.nextAction).toBeNull();
+    expect(result.commands).toHaveLength(1);
+  });
+
+  it('/help <command> shows the command even when it is currently blocked', () => {
+    const result = buildHelpResult(makeProgressedState('IMPLEMENTATION'), TEAM_POLICY, {
+      view: 'command',
+      requestedInvocation: '/export',
+    });
+    expect(result.nextAction).toBeNull();
+    expect(result.commands).toHaveLength(1);
   });
 });

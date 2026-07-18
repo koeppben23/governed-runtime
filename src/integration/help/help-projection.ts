@@ -39,7 +39,13 @@ export interface ProjectedCommand {
 }
 
 export interface TechnicalVerification {
-  readonly status: 'verified' | 'not_verified' | 'failed' | 'not_applicable';
+  readonly status: 'verified' | 'not_verified' | 'not_applicable';
+  readonly summary: string;
+}
+
+export interface ArchiveVerification {
+  readonly status: 'not_created' | 'previously_verified' | 'failed' | 'unknown';
+  readonly currentSnapshotVerified: boolean;
   readonly summary: string;
 }
 
@@ -49,11 +55,15 @@ export interface HelpResult {
   readonly readiness: Readiness;
   readonly recommendation: string;
   readonly technicalVerification: TechnicalVerification;
+  readonly archiveVerification: ArchiveVerification;
   readonly nextAction: ProjectedCommand | null;
   readonly commands: readonly ProjectedCommand[];
 }
 
 function description(definition: InstalledCommandDefinition): string {
+  if (definition.target.workflowCommand) {
+    return COMMAND_HELP[definition.target.workflowCommand].description;
+  }
   return definition.description;
 }
 
@@ -93,11 +103,11 @@ function preflight(
     !isCommandAllowed(state.phase, definition.target.workflowCommand)
   ) {
     return {
-      status: 'blocked',
+      status: 'not_applicable',
       guarantee: 'eligible_to_attempt',
-      reasonCode: 'WORKFLOW_COMMAND_NOT_ALLOWED',
-      message: 'This workflow command is not eligible in the current phase.',
-      recovery: 'Follow the recommended next action.',
+      reasonCode: 'NOT_APPLICABLE_TO_ACTIVE_FLOW',
+      message: 'This command applies to a different workflow or phase.',
+      recovery: 'Use the recommended flow commands.',
     };
   }
   return { status: 'available', guarantee: 'eligible_to_attempt' };
@@ -157,28 +167,41 @@ function buildTechnicalVerification(
   if (!state || !policy)
     return { status: 'not_applicable', summary: 'No session is available to verify.' };
   const finish = buildFinishCard(state, policy);
-  if (finish.overallStatus === 'BLOCKED' && finish.blocker) {
-    return {
-      status: 'not_verified',
-      summary: finish.blocker.reasonText ?? 'A runtime blocker is preventing advancement.',
-    };
-  }
   if (finish.overallStatus === 'NOT_VERIFIED') {
     return { status: 'not_verified', summary: 'Required evidence is incomplete.' };
   }
+  // BLOCKED is a lifecycle/enforcement condition, not evidence deficiency.
+  // Technical verification remains independent.
+  return { status: 'verified', summary: 'Evidence is complete and verified.' };
+}
+
+function buildArchiveVerification(state: SessionState | null): ArchiveVerification {
+  if (!state)
+    return {
+      status: 'unknown',
+      currentSnapshotVerified: false,
+      summary: 'No session is available for archive verification.',
+    };
   if (state.archiveStatus === 'verified') {
     return {
-      status: 'verified',
+      status: 'previously_verified',
+      currentSnapshotVerified: false,
       summary:
         'A previous audit package verification succeeded. Current snapshot freshness is not established.',
     };
   }
-  if (state.archiveStatus === 'failed')
+  if (state.archiveStatus === 'failed') {
     return {
       status: 'failed',
+      currentSnapshotVerified: false,
       summary: 'Audit package verification failed. Inspect status before retrying export.',
     };
-  return { status: 'not_verified', summary: 'No audit package verification has been recorded.' };
+  }
+  return {
+    status: 'not_created',
+    currentSnapshotVerified: false,
+    summary: 'No audit package has been created yet.',
+  };
 }
 
 function buildCommandDetail(
@@ -196,7 +219,8 @@ function buildCommandDetail(
     readiness: 'none',
     recommendation: command ? command.description : 'Unknown FlowGuard command.',
     technicalVerification: buildTechnicalVerification(state, policy),
-    nextAction: command,
+    archiveVerification: buildArchiveVerification(state),
+    nextAction: null,
     commands: command ? [command] : [],
   };
 }
@@ -210,6 +234,7 @@ function buildNoSessionResult(): HelpResult {
     readiness: 'none',
     recommendation: 'Start a governed session.',
     technicalVerification: buildTechnicalVerification(null, null),
+    archiveVerification: buildArchiveVerification(null),
     nextAction: projectCommand(hydrate, null, 'recommended'),
     commands: [
       projectCommand(hydrate, null, 'recommended'),
@@ -224,7 +249,15 @@ function projectActiveCommand(
   recommended: InstalledCommandDefinition | undefined,
   scope: 'available' | 'all',
 ): ProjectedCommand {
-  if (definition.id === recommended?.id) return projectCommand(definition, state, 'recommended');
+  if (definition.id === recommended?.id) {
+    const projected = projectCommand(definition, state, 'available');
+    return projected.preflight.status === 'available'
+      ? { ...projected, visibility: 'recommended' }
+      : {
+          ...projected,
+          visibility: visibilityForPreflight(projected.preflight),
+        };
+  }
   const availability = preflight(definition, state);
   if (availability.status === 'available') return projectCommand(definition, state, 'available');
   if (scope === 'all')
@@ -273,6 +306,7 @@ export function buildHelpResult(
     readiness,
     recommendation: status.productNextAction.summary,
     technicalVerification: buildTechnicalVerification(state, policy),
+    archiveVerification: buildArchiveVerification(state),
     nextAction,
     commands: contextCommands,
   };
