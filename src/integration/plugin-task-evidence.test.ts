@@ -80,7 +80,6 @@ function mockWs(overrides: Partial<PluginWorkspace> = {}): PluginWorkspace {
       sessionId: SESSION_ID,
     }),
     updateReviewAssurance: vi.fn().mockResolvedValue(undefined),
-    takeUnhydratedToolAttempts: vi.fn().mockReturnValue([]),
     ...overrides,
   } as unknown as PluginWorkspace;
 }
@@ -154,31 +153,6 @@ describe('handleHostTaskEvidence', () => {
         expect.objectContaining({ childSessionId: 'child-1', obligationId: 'obl-1' }),
       );
       expect(hookOutput.output).toBeUndefined();
-    });
-
-    it('records buffered child tool attempts in the parent audit trail', async () => {
-      mockReadState.mockResolvedValue(makeStateInfo('host_task_required'));
-      const ws = mockWs({
-        takeUnhydratedToolAttempts: vi
-          .fn()
-          .mockReturnValue([{ toolName: 'flowguard_abort_session', observedAt: now }]),
-      });
-
-      await handleHostTaskEvidence(
-        { ws, log: mockLog(), logError: vi.fn() },
-        SESSION_ID,
-        'child-1',
-        now,
-        hookOutput,
-      );
-
-      expect(mockAppendReviewAuditEvent).toHaveBeenCalledWith(
-        '/tmp/sess',
-        SESSION_ID,
-        'IMPLEMENTATION',
-        'review:child_tool_attempt',
-        expect.objectContaining({ childSessionId: 'child-1', toolName: 'flowguard_abort_session' }),
-      );
     });
 
     it('binds evidence for host_task_preferred policy', async () => {

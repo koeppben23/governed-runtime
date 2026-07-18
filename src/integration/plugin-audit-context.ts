@@ -34,7 +34,6 @@ interface AuditContextDeps {
   }>;
   initChain(sessDir: string | null, sessionId: string): Promise<string>;
   invalidateChainState(sessionId: string): void;
-  recordUnhydratedToolAttempt?(sessionId: string, toolName: string): void;
   log: {
     debug(service: string, message: string, extra?: Record<string, unknown>): void;
   };
@@ -73,7 +72,6 @@ export async function resolveAuditContext(
 
   const { policy, state } = await deps.resolveSessionPolicy(sessDir);
   if (!state) {
-    deps.recordUnhydratedToolAttempt?.(sessionId, toolName);
     deps.log.debug('audit', 'skipping unhydrated session audit', { sessionId, tool: toolName });
     return null;
   }

@@ -296,8 +296,9 @@ describe('phase-aware mandates rendering', () => {
     // Compactness budget: the reviewer prompt is loaded on every review, so the
     // line count is bounded deliberately. Raised 90 -> 96 for the p36-v1 criteria
     // enrichment, then 96 -> 98 for p37-v1 (a Security-as-risk vulnerability bullet
-    // in content + implementation, and a root-cause bullet in plan + implementation).
+    // in content + implementation, and a root-cause bullet in plan + implementation),
+    // then 98 -> 101 for FlowGuard tool isolation frontmatter.
     // Keep new criteria terse; do not treat this as headroom for unbounded growth.
-    expect(roughTokenBudget(REVIEWER_AGENT).lines).toBeLessThanOrEqual(98);
+    expect(roughTokenBudget(REVIEWER_AGENT).lines).toBeLessThanOrEqual(101);
   });
 });

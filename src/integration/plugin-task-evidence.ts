@@ -165,19 +165,6 @@ async function persistHostTaskEvidence(
       bindOutcome: bindResult.bindOutcome,
     },
   );
-  for (const attempt of deps.ws.takeUnhydratedToolAttempts(evidence.childSessionId)) {
-    await appendReviewAuditEvent(
-      sessDir,
-      sessionId,
-      updated?.phase ?? 'unknown',
-      'review:child_tool_attempt',
-      {
-        childSessionId: evidence.childSessionId,
-        toolName: attempt.toolName,
-        observedAt: attempt.observedAt,
-      },
-    );
-  }
 }
 
 function blockRequiredHostTaskEvidence(
