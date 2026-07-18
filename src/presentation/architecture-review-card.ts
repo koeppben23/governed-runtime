@@ -27,6 +27,8 @@ export interface ArchitectureReviewCardInput {
   adrId?: string;
   /** ADR content digest. */
   adrDigest?: string;
+  /** Full ADR body in MADR Markdown. Rendered verbatim like the plan card renders planText. */
+  adrText?: string;
   /** Self-review iteration number. */
   iteration: number;
   /** Subagent overall verdict. */
@@ -74,8 +76,9 @@ export interface ArchitectureReviewCardInput {
  * Sections:
  * 1. Header with ADR title and status
  * 2. ADR metadata (id, digest, iteration)
- * 3. Reviewer findings (when present)
- * 4. Footer with recommended next actions
+ * 3. ADR body verbatim (when present)
+ * 4. Reviewer findings (when present)
+ * 5. Footer with recommended next actions
  *
  * At ARCH_REVIEW the card shows /approve, /request-changes, /reject.
  * At ARCH_COMPLETE the card shows the approved status without pending actions.
@@ -86,6 +89,7 @@ export function buildArchitectureReviewCard(input: ArchitectureReviewCardInput):
     adrTitle,
     adrId,
     adrDigest,
+    adrText,
     iteration,
     overallVerdict,
     blockingIssues,
@@ -127,6 +131,18 @@ export function buildArchitectureReviewCard(input: ArchitectureReviewCardInput):
     if (adrId) lines.push(`- **ID:** \`${adrId}\``);
     if (adrDigest) lines.push(`- **Digest:** \`${adrDigest}\``);
     if (iteration > 0) lines.push(`- **Review iteration:** ${iteration}`);
+    lines.push('');
+  }
+
+  // ── ADR Body ─────────────────────────────────────────────────────
+  // Rendered verbatim — parity with the Plan Review Card's ## Proposed Plan section.
+  const normalizedAdrText = adrText?.trim();
+  if (normalizedAdrText) {
+    lines.push('---');
+    lines.push('');
+    lines.push('## Architecture Decision');
+    lines.push('');
+    lines.push(normalizedAdrText);
     lines.push('');
   }
 
