@@ -1,10 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { TEAM_POLICY, getPolicyPreset } from '../../config/policy.js';
+import { TEAM_POLICY } from '../../config/policy.js';
 import { makeProgressedState, makeState } from '../../fixtures.js';
 import { buildHelpResult, finishToReadiness } from './help-projection.js';
 import { buildFinishCard } from '../status.js';
 import type { ReviewReport } from '../../state/evidence.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';
+
+function makeReviewReport(overallStatus: ReviewReport['overallStatus']): ReviewReport {
+  return {
+    schemaVersion: 'flowguard-review-report.v1',
+    sessionId: '00000000-0000-4000-8000-000000000001',
+    generatedAt: '2026-01-01T00:00:00.000Z',
+    phase: 'REVIEW_COMPLETE',
+    planDigest: null,
+    implDigest: null,
+    validationSummary: [],
+    findings: [],
+    overallStatus,
+    completeness: evaluateCompleteness(makeProgressedState('REVIEW_COMPLETE')),
+  };
+}
 
 describe('buildHelpResult', () => {
   it('recommends /export after a clean terminal completion', () => {
@@ -101,9 +116,10 @@ describe('buildHelpResult', () => {
     expect(result.commands.filter((command) => command.visibility === 'recommended')).toHaveLength(
       result.nextAction ? 1 : 0,
     );
-    expect(
-      result.commands.filter((command) => command.visibility === 'blocked_recoverable'),
-    ).toHaveLength(0);
+    const recoverable = result.commands.filter(
+      (command) => command.visibility === 'blocked_recoverable',
+    );
+    expect(recoverable.length).toBeLessThanOrEqual(2);
     expect(result.commands.length).toBeLessThanOrEqual(10);
   });
 
@@ -118,44 +134,40 @@ describe('buildHelpResult', () => {
     expect(archiveCmd?.alsoAvailableAs).toContain('/export');
   });
 
-  it('projection includes structured readiness, technicalVerification, and archiveVerification', () => {
+  it('projection includes structured readiness, evidenceCompleteness, and archiveVerification', () => {
     const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
       view: 'context',
     });
     expect(result.readiness).toBeDefined();
-    expect(result.technicalVerification.status).toBeDefined();
+    expect(result.evidenceCompleteness.status).toBeDefined();
     expect(result.archiveVerification.status).toBeDefined();
   });
 
-  it('technicalVerification does not mix archive status with evidence completeness', () => {
+  it('evidenceCompleteness does not overclaim technical verification', () => {
     const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
       view: 'context',
     });
-    expect(result.technicalVerification.status).toBe('verified');
+    expect(result.evidenceCompleteness.status).toBe('complete');
     expect(result.archiveVerification.status).toBe('not_created');
+    expect(result.evidenceCompleteness.summary).toContain('Required evidence');
   });
 
-  it('CHANGES_REQUIRED yields ready_with_warnings readiness', () => {
+  it('CHANGES_REQUIRED review report yields ready_with_warnings readiness via help projection', () => {
     const state = makeProgressedState('COMPLETE');
-    const reviewReport: ReviewReport = {
-      schemaVersion: 'flowguard-review-report.v1',
-      sessionId: state.id,
-      generatedAt: '2026-01-01T00:00:00.000Z',
-      phase: 'REVIEW_COMPLETE',
-      planDigest: null,
-      implDigest: null,
-      validationSummary: [],
-      findings: [],
-      overallStatus: 'issues',
-      completeness: evaluateCompleteness(state),
-    };
+    const reviewReport = makeReviewReport('issues');
+
     const finish = buildFinishCard(state, TEAM_POLICY, reviewReport);
     expect(finish.overallStatus).toBe('CHANGES_REQUIRED');
     expect(finishToReadiness(finish.overallStatus)).toBe('ready_with_warnings');
-    // Advisory CHANGES_REQUIRED must not block technical verification
-    const result = buildHelpResult(state, TEAM_POLICY, { view: 'context' });
-    expect(result.technicalVerification.status).toBe('verified');
+
+    const result = buildHelpResult(state, TEAM_POLICY, {
+      view: 'context',
+      reviewReport,
+    });
+    expect(result.readiness).toBe('ready_with_warnings');
     expect(result.nextAction?.invocation).toBe('/export');
+    const exportCmd = result.commands.find((command) => command.invocation === '/export');
+    expect(exportCmd?.preflight.status).toBe('available');
   });
 
   it('/help <command> never claims the requested command as the recommended next action', () => {

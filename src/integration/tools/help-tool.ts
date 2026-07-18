@@ -6,6 +6,7 @@
 import { z } from 'zod';
 import type { ToolDefinition } from './helpers.js';
 import { formatError, withReadOnlySession } from './helpers.js';
+import { readReport } from '../../adapters/persistence.js';
 import { buildHelpResult } from '../help/help-projection.js';
 import { renderHelp } from '../help/help-renderer.js';
 
@@ -48,9 +49,14 @@ export const help: ToolDefinition = {
       }
       const session = await withReadOnlySession(context);
       const view = parsed.data;
+      let reviewReport = undefined;
+      if (session.sessDir) {
+        reviewReport = (await readReport(session.sessDir)) ?? undefined;
+      }
       const result = buildHelpResult(session.state, session.policy, {
         view: view.view,
         scope: view.view === 'commands' ? view.scope : undefined,
+        reviewReport,
         ...(view.view === 'command'
           ? { requestedInvocation: `/${view.command.replace(/^\/+/, '')}` }
           : {}),

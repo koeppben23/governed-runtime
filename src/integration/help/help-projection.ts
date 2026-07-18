@@ -7,6 +7,7 @@ import type { FlowGuardPolicy } from '../../config/policy.js';
 import { COMMAND_HELP } from '../../machine/command-help.js';
 import { isCommandAllowed } from '../../machine/commands.js';
 import type { SessionState } from '../../state/schema.js';
+import type { ReviewReport } from '../../state/evidence.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import {
   buildStatusProjection,
@@ -43,8 +44,8 @@ export interface ProjectedCommand {
   readonly alsoAvailableAs: readonly string[];
 }
 
-export interface TechnicalVerification {
-  readonly status: 'verified' | 'not_verified' | 'not_applicable';
+export interface EvidenceCompleteness {
+  readonly status: 'complete' | 'incomplete' | 'failed' | 'not_applicable';
   readonly summary: string;
 }
 
@@ -59,7 +60,7 @@ export interface HelpResult {
   readonly lifecycle: string;
   readonly readiness: Readiness;
   readonly recommendation: string;
-  readonly technicalVerification: TechnicalVerification;
+  readonly evidenceCompleteness: EvidenceCompleteness;
   readonly archiveVerification: ArchiveVerification;
   readonly nextAction: ProjectedCommand | null;
   readonly commands: readonly ProjectedCommand[];
@@ -165,17 +166,24 @@ export function finishToReadiness(overallStatus: FinishOverallStatus): Readiness
   }
 }
 
-function buildTechnicalVerification(
+function buildEvidenceCompleteness(
   state: SessionState | null,
   policy: FlowGuardPolicy | null,
-): TechnicalVerification {
+): EvidenceCompleteness {
   if (!state || !policy)
-    return { status: 'not_applicable', summary: 'No session is available to verify.' };
+    return { status: 'not_applicable', summary: 'No session is available to assess.' };
   const evidence = buildEvidenceDetailProjection(state);
   if (evidence.overallComplete) {
-    return { status: 'verified', summary: 'Evidence is complete and verified.' };
+    return { status: 'complete', summary: 'Required evidence is present.' };
   }
-  return { status: 'not_verified', summary: 'Required evidence is incomplete.' };
+  const hasFailed = evidence.slots.some((slot) => slot.required && slot.status === 'failed');
+  if (hasFailed) {
+    return {
+      status: 'failed',
+      summary: 'One or more required evidence slots have failed checks.',
+    };
+  }
+  return { status: 'incomplete', summary: 'Required evidence is incomplete.' };
 }
 
 function buildArchiveVerification(state: SessionState | null): ArchiveVerification {
@@ -221,7 +229,7 @@ function buildCommandDetail(
     lifecycle: state ? PHASE_LABELS[state.phase] : 'No active session',
     readiness: 'none',
     recommendation: command ? command.description : 'Unknown FlowGuard command.',
-    technicalVerification: buildTechnicalVerification(state, policy),
+    evidenceCompleteness: buildEvidenceCompleteness(state, policy),
     archiveVerification: buildArchiveVerification(state),
     nextAction: null,
     commands: command ? [command] : [],
@@ -236,7 +244,7 @@ function buildNoSessionResult(): HelpResult {
     lifecycle: 'No active session',
     readiness: 'none',
     recommendation: 'Start a governed session.',
-    technicalVerification: buildTechnicalVerification(null, null),
+    evidenceCompleteness: buildEvidenceCompleteness(null, null),
     archiveVerification: buildArchiveVerification(null),
     nextAction: projectCommand(hydrate, null, 'recommended'),
     commands: [
@@ -282,13 +290,14 @@ export function buildHelpResult(
     view: 'context' | 'commands' | 'command';
     scope?: 'available' | 'all';
     requestedInvocation?: string;
+    reviewReport?: ReviewReport;
   },
 ): HelpResult {
   if (opts.requestedInvocation) return buildCommandDetail(state, policy, opts.requestedInvocation);
   if (!state || !policy) return buildNoSessionResult();
 
   const status = buildStatusProjection(state, policy);
-  const finish = buildFinishCard(state, policy);
+  const finish = buildFinishCard(state, policy, opts.reviewReport ?? null);
   const readiness = finishToReadiness(finish.overallStatus);
 
   const recommended = findRecommendation(status.productNextAction.primaryCommand);
@@ -308,7 +317,7 @@ export function buildHelpResult(
     lifecycle: PHASE_LABELS[state.phase],
     readiness,
     recommendation: status.productNextAction.summary,
-    technicalVerification: buildTechnicalVerification(state, policy),
+    evidenceCompleteness: buildEvidenceCompleteness(state, policy),
     archiveVerification: buildArchiveVerification(state),
     nextAction,
     commands: contextCommands,
