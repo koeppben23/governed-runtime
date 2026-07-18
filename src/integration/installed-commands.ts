@@ -6,6 +6,8 @@
  * admissibility remains in machine/commands.ts; aliases remain in
  * command-aliases.ts. Command templates consume this catalogue when assembled so
  * an installed template cannot silently drift from its public interface.
+ *
+ * Multiple interface identities may share a single template file.
  */
 
 import { Command } from '../machine/commands.js';
@@ -52,7 +54,8 @@ export type InstalledCommandId =
   | 'alias.why'
   | 'operational.finish'
   | 'operational.help.context'
-  | 'operational.help.commands';
+  | 'operational.help.commands'
+  | 'operational.help.commands-all';
 
 type ToolName =
   | typeof TOOL_FLOWGUARD_ABORT
@@ -71,7 +74,8 @@ type ToolName =
 
 export interface InstalledCommandDefinition {
   readonly id: InstalledCommandId;
-  readonly filename: `${string}.md`;
+  /** Template body file to install. Multiple definitions may share a file. */
+  readonly templateFile: `${string}.md`;
   readonly invocation: `/${string}`;
   readonly kind: 'workflow' | 'operational' | 'preferred_name' | 'action_variant' | 'convenience';
   readonly target: Readonly<{
@@ -81,143 +85,159 @@ export interface InstalledCommandDefinition {
   }>;
   readonly visibility: 'primary' | 'visible_alias' | 'compatibility';
   readonly presentationGroup: PresentationGroup;
+  /** Presentation copy for operational interfaces. */
+  readonly description: string;
 }
 
 function aliasKind(alias: keyof typeof COMMAND_ALIASES): InstalledCommandDefinition['kind'] {
   return COMMAND_ALIASES[alias]!.kind;
 }
 
-/** Every installed template has exactly one stable public-interface identity. */
+/** Every installed template has at least one stable public-interface identity. */
 export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
   {
     id: 'workflow.hydrate',
-    filename: 'hydrate.md',
+    templateFile: 'hydrate.md',
     invocation: '/hydrate',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_HYDRATE, workflowCommand: Command.HYDRATE },
     visibility: 'primary',
     presentationGroup: 'start',
+    description: 'Prepare or restore a governed session.',
   },
   {
     id: 'operational.status',
-    filename: 'status.md',
+    templateFile: 'status.md',
     invocation: '/status',
     kind: 'operational',
     target: { toolName: TOOL_FLOWGUARD_STATUS },
     visibility: 'primary',
     presentationGroup: 'information',
+    description: 'Show the current phase and next action.',
   },
   {
     id: 'workflow.ticket',
-    filename: 'ticket.md',
+    templateFile: 'ticket.md',
     invocation: '/ticket',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_TICKET, workflowCommand: Command.TICKET },
     visibility: 'compatibility',
     presentationGroup: 'start',
+    description: 'Record the task that the workflow will govern.',
   },
   {
     id: 'workflow.plan',
-    filename: 'plan.md',
+    templateFile: 'plan.md',
     invocation: '/plan',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_PLAN, workflowCommand: Command.PLAN },
     visibility: 'primary',
     presentationGroup: 'work',
+    description: 'Create or revise the implementation plan.',
   },
   {
     id: 'workflow.continue',
-    filename: 'continue.md',
+    templateFile: 'continue.md',
     invocation: '/continue',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_CONTINUE, workflowCommand: Command.CONTINUE },
     visibility: 'primary',
     presentationGroup: 'work',
+    description: 'Route to the next workflow step.',
   },
   {
     id: 'workflow.implement',
-    filename: 'implement.md',
+    templateFile: 'implement.md',
     invocation: '/implement',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_IMPLEMENT, workflowCommand: Command.IMPLEMENT },
     visibility: 'primary',
     presentationGroup: 'work',
+    description: 'Record implementation evidence for the approved plan.',
   },
   {
     id: 'workflow.validate',
-    filename: 'validate.md',
+    templateFile: 'validate.md',
     invocation: '/validate',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_RUN_CHECK, workflowCommand: Command.VALIDATE },
     visibility: 'compatibility',
     presentationGroup: 'verify',
+    description: 'Record required verification results.',
   },
   {
     id: 'workflow.review-decision',
-    filename: 'review-decision.md',
+    templateFile: 'review-decision.md',
     invocation: '/review-decision',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_DECISION, workflowCommand: Command.REVIEW_DECISION },
     visibility: 'compatibility',
     presentationGroup: 'review',
+    description: 'Record the human decision at a review gate.',
   },
   {
     id: 'workflow.review',
-    filename: 'review.md',
+    templateFile: 'review.md',
     invocation: '/review',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_REVIEW, workflowCommand: Command.REVIEW },
     visibility: 'primary',
     presentationGroup: 'review',
+    description: 'Start a standalone compliance review.',
   },
   {
     id: 'workflow.architecture',
-    filename: 'architecture.md',
+    templateFile: 'architecture.md',
     invocation: '/architecture',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_ARCHITECTURE, workflowCommand: Command.ARCHITECTURE },
     visibility: 'primary',
     presentationGroup: 'review',
+    description: 'Create or revise an architecture decision record.',
   },
   {
     id: 'workflow.abort',
-    filename: 'abort.md',
+    templateFile: 'abort.md',
     invocation: '/abort',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_ABORT, workflowCommand: Command.ABORT },
     visibility: 'primary',
     presentationGroup: 'recovery',
+    description: 'End the current workflow without presenting it as completed.',
   },
   {
     id: 'operational.archive',
-    filename: 'archive.md',
+    templateFile: 'archive.md',
     invocation: '/archive',
     kind: 'operational',
     target: { toolName: TOOL_FLOWGUARD_ARCHIVE },
     visibility: 'visible_alias',
     presentationGroup: 'export',
+    description: 'Create and verify the audit package.',
   },
   {
     id: 'alias.start',
-    filename: 'start.md',
+    templateFile: 'start.md',
     invocation: '/start',
     kind: aliasKind('start'),
     target: { toolName: TOOL_FLOWGUARD_HYDRATE, workflowCommand: Command.HYDRATE },
     visibility: 'primary',
     presentationGroup: 'start',
+    description: 'Prepare or restore a governed session.',
   },
   {
     id: 'alias.task',
-    filename: 'task.md',
+    templateFile: 'task.md',
     invocation: '/task',
     kind: aliasKind('task'),
     target: { toolName: TOOL_FLOWGUARD_TICKET, workflowCommand: Command.TICKET },
     visibility: 'primary',
     presentationGroup: 'start',
+    description: 'Record the task that the workflow will govern.',
   },
   {
     id: 'variant.approve',
-    filename: 'approve.md',
+    templateFile: 'approve.md',
     invocation: '/approve',
     kind: aliasKind('approve'),
     target: {
@@ -227,10 +247,11 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     },
     visibility: 'primary',
     presentationGroup: 'review',
+    description: 'Accept the reviewed work and advance.',
   },
   {
     id: 'variant.request-changes',
-    filename: 'request-changes.md',
+    templateFile: 'request-changes.md',
     invocation: '/request-changes',
     kind: aliasKind('request-changes'),
     target: {
@@ -240,10 +261,11 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     },
     visibility: 'primary',
     presentationGroup: 'review',
+    description: 'Request revisions to the reviewed work.',
   },
   {
     id: 'variant.reject',
-    filename: 'reject.md',
+    templateFile: 'reject.md',
     invocation: '/reject',
     kind: aliasKind('reject'),
     target: {
@@ -253,61 +275,83 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     },
     visibility: 'primary',
     presentationGroup: 'review',
+    description: 'Reject the reviewed work.',
   },
   {
     id: 'alias.check',
-    filename: 'check.md',
+    templateFile: 'check.md',
     invocation: '/check',
     kind: aliasKind('check'),
     target: { toolName: TOOL_FLOWGUARD_RUN_CHECK, workflowCommand: Command.VALIDATE },
     visibility: 'primary',
     presentationGroup: 'verify',
+    description: 'Run required verification checks.',
   },
   {
     id: 'alias.export',
-    filename: 'export.md',
+    templateFile: 'export.md',
     invocation: '/export',
     kind: aliasKind('export'),
     target: { toolName: TOOL_FLOWGUARD_ARCHIVE },
     visibility: 'primary',
     presentationGroup: 'export',
+    description: 'Create and verify the audit package.',
   },
   {
     id: 'alias.why',
-    filename: 'why.md',
+    templateFile: 'why.md',
     invocation: '/why',
     kind: aliasKind('why'),
     target: { toolName: TOOL_FLOWGUARD_STATUS, fixedArgs: COMMAND_ALIASES.why!.defaultArgs },
     visibility: 'primary',
     presentationGroup: 'information',
+    description: 'Explain the current runtime blocker.',
   },
   {
     id: 'operational.finish',
-    filename: 'finish.md',
+    templateFile: 'finish.md',
     invocation: '/finish',
     kind: 'operational',
     target: { toolName: TOOL_FLOWGUARD_STATUS, fixedArgs: { finish: true } },
     visibility: 'primary',
     presentationGroup: 'complete',
+    description: 'Show completion readiness without changing the workflow.',
   },
   {
     id: 'operational.help.context',
-    filename: 'help.md',
+    templateFile: 'help.md',
     invocation: '/help',
     kind: 'operational',
     target: { toolName: TOOL_FLOWGUARD_HELP, fixedArgs: { view: 'context' } },
     visibility: 'primary',
     presentationGroup: 'information',
+    description: 'Show concise help for the current situation.',
   },
   {
     id: 'operational.help.commands',
-    filename: 'commands.md',
+    templateFile: 'commands.md',
     invocation: '/commands',
     kind: 'operational',
     target: { toolName: TOOL_FLOWGUARD_HELP, fixedArgs: { view: 'commands', scope: 'available' } },
     visibility: 'primary',
     presentationGroup: 'information',
+    description: 'List FlowGuard commands for the current context.',
   },
+  {
+    id: 'operational.help.commands-all',
+    templateFile: 'commands.md',
+    invocation: '/commands --all',
+    kind: 'operational',
+    target: { toolName: TOOL_FLOWGUARD_HELP, fixedArgs: { view: 'commands', scope: 'all' } },
+    visibility: 'primary',
+    presentationGroup: 'information',
+    description: 'Show the complete installed FlowGuard command reference.',
+  },
+];
+
+/** Unique template files across all installed interface identities. */
+export const INSTALLED_TEMPLATE_FILES: readonly string[] = [
+  ...new Set(INSTALLED_COMMANDS.map((definition) => definition.templateFile)),
 ];
 
 export function getInstalledCommand(invocation: string): InstalledCommandDefinition | undefined {
@@ -318,4 +362,20 @@ export function preferredInvocationForTool(toolName: ToolName): string | undefin
   return INSTALLED_COMMANDS.find(
     (definition) => definition.target.toolName === toolName && definition.visibility === 'primary',
   )?.invocation;
+}
+
+/**
+ * Visible alternative invocations for the same semantic target.
+ * Derived from the canonical alias authority, never hard-coded.
+ */
+export function visibleAliasesForDefinition(
+  definition: InstalledCommandDefinition,
+): readonly string[] {
+  if (definition.target.toolName !== TOOL_FLOWGUARD_ARCHIVE) return [];
+  return INSTALLED_COMMANDS.filter(
+    (candidate) =>
+      candidate.target.toolName === definition.target.toolName &&
+      candidate.invocation !== definition.invocation &&
+      candidate.visibility !== 'compatibility',
+  ).map((candidate) => candidate.invocation);
 }

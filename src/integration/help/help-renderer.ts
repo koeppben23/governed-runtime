@@ -23,6 +23,7 @@ export function renderHelp(result: HelpResult, verbose: boolean): string {
     title: 'FlowGuard Help',
     phase: result.phase?.label ?? null,
     lifecycle: result.lifecycle,
+    readiness: result.readiness,
     recommendation: result.recommendation,
     technicalVerification: result.technicalVerification,
     nextAction: result.nextAction ? renderCommand(result.nextAction, verbose) : null,

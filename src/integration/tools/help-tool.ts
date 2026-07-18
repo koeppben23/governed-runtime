@@ -31,7 +31,6 @@ export const help: ToolDefinition = {
   description:
     'Read-only context-sensitive FlowGuard help. Use view=context for /help, view=commands ' +
     'with scope=available or all for /commands, and view=command with a command name for details.',
-  // OpenCode exposes raw shapes; execute validates the discriminated union before projection.
   args: {
     view: z.enum(['context', 'commands', 'command']),
     scope: z.enum(['available', 'all']).optional(),
@@ -50,7 +49,8 @@ export const help: ToolDefinition = {
       const session = await withReadOnlySession(context);
       const view = parsed.data;
       const result = buildHelpResult(session.state, session.policy, {
-        scope: view.view === 'commands' ? view.scope : 'available',
+        view: view.view,
+        scope: view.view === 'commands' ? view.scope : undefined,
         ...(view.view === 'command'
           ? { requestedInvocation: `/${view.command.replace(/^\/+/, '')}` }
           : {}),

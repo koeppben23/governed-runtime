@@ -8,11 +8,12 @@ import { COMMAND_HELP } from '../../machine/command-help.js';
 import { isCommandAllowed } from '../../machine/commands.js';
 import type { SessionState } from '../../state/schema.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
-import { buildStatusProjection } from '../status.js';
+import { buildStatusProjection, buildFinishCard, type FinishOverallStatus } from '../status.js';
 import { evaluateArchivePreflight, type CommandPreflight } from '../archive-preflight.js';
 import {
   getInstalledCommand,
   INSTALLED_COMMANDS,
+  visibleAliasesForDefinition,
   type InstalledCommandDefinition,
 } from '../installed-commands.js';
 import {
@@ -25,6 +26,8 @@ import {
 export type HelpVisibility =
   'recommended' | 'available' | 'upcoming' | 'blocked_recoverable' | 'not_applicable' | 'hidden';
 
+export type Readiness = 'ready' | 'ready_with_warnings' | 'blocked' | 'not_verified' | 'none';
+
 export interface ProjectedCommand {
   readonly id: string;
   readonly invocation: string;
@@ -35,30 +38,23 @@ export interface ProjectedCommand {
   readonly alsoAvailableAs: readonly string[];
 }
 
+export interface TechnicalVerification {
+  readonly status: 'verified' | 'not_verified' | 'failed' | 'not_applicable';
+  readonly summary: string;
+}
+
 export interface HelpResult {
   readonly phase: Readonly<{ id: string; label: string }> | null;
   readonly lifecycle: string;
+  readonly readiness: Readiness;
   readonly recommendation: string;
-  readonly technicalVerification: string;
+  readonly technicalVerification: TechnicalVerification;
   readonly nextAction: ProjectedCommand | null;
   readonly commands: readonly ProjectedCommand[];
 }
 
-const OPERATIONAL_DESCRIPTIONS: Readonly<Partial<Record<string, string>>> = {
-  'operational.status': 'Show the current phase and next action.',
-  'operational.archive': 'Create and verify the audit package.',
-  'alias.export': 'Create and verify the audit package.',
-  'operational.finish': 'Show completion readiness without changing the workflow.',
-  'alias.why': 'Explain the current runtime blocker.',
-  'operational.help.context': 'Show concise help for the current situation.',
-  'operational.help.commands': 'List FlowGuard commands for the current context.',
-};
-
 function description(definition: InstalledCommandDefinition): string {
-  if (definition.target.workflowCommand) {
-    return COMMAND_HELP[definition.target.workflowCommand].description;
-  }
-  return OPERATIONAL_DESCRIPTIONS[definition.id] ?? 'Run this FlowGuard command.';
+  return definition.description;
 }
 
 function label(definition: InstalledCommandDefinition): string {
@@ -90,8 +86,6 @@ function preflight(
       recovery: 'Run /hydrate to initialize a session.',
     };
   }
-  // /continue and /abort intentionally retain terminal tool semantics even though
-  // the machine predicate denies all lifecycle commands at terminal phases.
   if (
     definition.id !== 'workflow.continue' &&
     definition.id !== 'workflow.abort' &&
@@ -109,11 +103,6 @@ function preflight(
   return { status: 'available', guarantee: 'eligible_to_attempt' };
 }
 
-function aliases(definition: InstalledCommandDefinition): readonly string[] {
-  if (definition.target.toolName !== TOOL_FLOWGUARD_ARCHIVE) return [];
-  return definition.invocation === '/export' ? ['/archive'] : ['/export'];
-}
-
 function projectCommand(
   definition: InstalledCommandDefinition,
   state: SessionState | null,
@@ -126,12 +115,19 @@ function projectCommand(
     description: description(definition),
     visibility,
     preflight: preflight(definition, state),
-    alsoAvailableAs: aliases(definition),
+    alsoAvailableAs: visibleAliasesForDefinition(definition),
   };
 }
 
 function visibilityForPreflight(preflightResult: CommandPreflight): HelpVisibility {
-  return preflightResult.status === 'available' ? 'available' : 'blocked_recoverable';
+  switch (preflightResult.status) {
+    case 'available':
+      return 'available';
+    case 'blocked':
+      return 'blocked_recoverable';
+    case 'not_applicable':
+      return 'not_applicable';
+  }
 }
 
 function findRecommendation(invocation: string | null): InstalledCommandDefinition | undefined {
@@ -139,76 +135,160 @@ function findRecommendation(invocation: string | null): InstalledCommandDefiniti
   return getInstalledCommand(invocation);
 }
 
-function technicalVerification(state: SessionState | null): string {
-  if (!state) return 'No session is available to verify.';
+function finishToReadiness(overallStatus: FinishOverallStatus): Readiness {
+  switch (overallStatus) {
+    case 'READY':
+      return 'ready';
+    case 'READY_WITH_WARNINGS':
+      return 'ready_with_warnings';
+    case 'BLOCKED':
+      return 'blocked';
+    case 'NOT_VERIFIED':
+      return 'not_verified';
+    case 'CHANGES_REQUIRED':
+      return 'ready_with_warnings';
+  }
+}
+
+function buildTechnicalVerification(
+  state: SessionState | null,
+  policy: FlowGuardPolicy | null,
+): TechnicalVerification {
+  if (!state || !policy)
+    return { status: 'not_applicable', summary: 'No session is available to verify.' };
+  const finish = buildFinishCard(state, policy);
+  if (finish.overallStatus === 'BLOCKED' && finish.blocker) {
+    return {
+      status: 'not_verified',
+      summary: finish.blocker.reasonText ?? 'A runtime blocker is preventing advancement.',
+    };
+  }
+  if (finish.overallStatus === 'NOT_VERIFIED') {
+    return { status: 'not_verified', summary: 'Required evidence is incomplete.' };
+  }
   if (state.archiveStatus === 'verified') {
-    return 'A previous audit package verification succeeded. Current snapshot freshness is not established.';
+    return {
+      status: 'verified',
+      summary:
+        'A previous audit package verification succeeded. Current snapshot freshness is not established.',
+    };
   }
   if (state.archiveStatus === 'failed')
-    return 'Audit package verification failed. Inspect status before retrying export.';
-  return 'No audit package verification has been recorded.';
+    return {
+      status: 'failed',
+      summary: 'Audit package verification failed. Inspect status before retrying export.',
+    };
+  return { status: 'not_verified', summary: 'No audit package verification has been recorded.' };
+}
+
+function buildCommandDetail(
+  state: SessionState | null,
+  policy: FlowGuardPolicy | null,
+  requestedInvocation: string,
+): HelpResult {
+  const definition = getInstalledCommand(requestedInvocation);
+  const command = definition
+    ? projectCommand(definition, state, visibilityForPreflight(preflight(definition, state)))
+    : null;
+  return {
+    phase: state ? { id: state.phase, label: PHASE_LABELS[state.phase] } : null,
+    lifecycle: state ? PHASE_LABELS[state.phase] : 'No active session',
+    readiness: 'none',
+    recommendation: command ? command.description : 'Unknown FlowGuard command.',
+    technicalVerification: buildTechnicalVerification(state, policy),
+    nextAction: command,
+    commands: command ? [command] : [],
+  };
+}
+
+function buildNoSessionResult(): HelpResult {
+  const hydrate = INSTALLED_COMMANDS.find((definition) => definition.id === 'workflow.hydrate')!;
+  const status = INSTALLED_COMMANDS.find((definition) => definition.id === 'operational.status')!;
+  return {
+    phase: null,
+    lifecycle: 'No active session',
+    readiness: 'none',
+    recommendation: 'Start a governed session.',
+    technicalVerification: buildTechnicalVerification(null, null),
+    nextAction: projectCommand(hydrate, null, 'recommended'),
+    commands: [
+      projectCommand(hydrate, null, 'recommended'),
+      projectCommand(status, null, 'available'),
+    ],
+  };
+}
+
+function projectActiveCommand(
+  definition: InstalledCommandDefinition,
+  state: SessionState,
+  recommended: InstalledCommandDefinition | undefined,
+  scope: 'available' | 'all',
+): ProjectedCommand {
+  if (definition.id === recommended?.id) return projectCommand(definition, state, 'recommended');
+  const availability = preflight(definition, state);
+  if (availability.status === 'available') return projectCommand(definition, state, 'available');
+  if (scope === 'all')
+    return projectCommand(definition, state, visibilityForPreflight(availability));
+  return projectCommand(definition, state, 'hidden');
+}
+
+function isVisibleInScope(command: ProjectedCommand, scope: 'available' | 'all'): boolean {
+  if (scope === 'all') return true;
+  if (command.visibility === 'hidden') return false;
+  const definition = INSTALLED_COMMANDS.find((candidate) => candidate.id === command.id);
+  return definition?.visibility === 'primary';
 }
 
 export function buildHelpResult(
   state: SessionState | null,
   policy: FlowGuardPolicy | null,
-  opts: { scope: 'available' | 'all'; requestedInvocation?: string },
+  opts: {
+    view: 'context' | 'commands' | 'command';
+    scope?: 'available' | 'all';
+    requestedInvocation?: string;
+  },
 ): HelpResult {
-  if (opts.requestedInvocation) {
-    const definition = getInstalledCommand(opts.requestedInvocation);
-    const command = definition
-      ? projectCommand(definition, state, visibilityForPreflight(preflight(definition, state)))
-      : null;
-    return {
-      phase: state ? { id: state.phase, label: PHASE_LABELS[state.phase] } : null,
-      lifecycle: state ? PHASE_LABELS[state.phase] : 'No active session',
-      recommendation: command ? command.description : 'Unknown FlowGuard command.',
-      technicalVerification: technicalVerification(state),
-      nextAction: command,
-      commands: command ? [command] : [],
-    };
-  }
-
-  if (!state || !policy) {
-    const hydrate = INSTALLED_COMMANDS.find((definition) => definition.id === 'workflow.hydrate')!;
-    const status = INSTALLED_COMMANDS.find((definition) => definition.id === 'operational.status')!;
-    return {
-      phase: null,
-      lifecycle: 'No active session',
-      recommendation: 'Start a governed session.',
-      technicalVerification: technicalVerification(null),
-      nextAction: projectCommand(hydrate, null, 'recommended'),
-      commands: [
-        projectCommand(hydrate, null, 'recommended'),
-        projectCommand(status, null, 'available'),
-      ],
-    };
-  }
+  if (opts.requestedInvocation) return buildCommandDetail(state, policy, opts.requestedInvocation);
+  if (!state || !policy) return buildNoSessionResult();
 
   const status = buildStatusProjection(state, policy);
+  const finish = buildFinishCard(state, policy);
+  const readiness = finishToReadiness(finish.overallStatus);
+
   const recommended = findRecommendation(status.productNextAction.primaryCommand);
-  const recommendedCommand = recommended ? projectCommand(recommended, state, 'recommended') : null;
-  const commands = INSTALLED_COMMANDS.map((definition) => {
-    if (definition.id === recommended?.id) return projectCommand(definition, state, 'recommended');
-    const availability = preflight(definition, state);
-    if (availability.status === 'available') return projectCommand(definition, state, 'available');
-    return projectCommand(
-      definition,
-      state,
-      opts.scope === 'all' ? 'blocked_recoverable' : 'hidden',
-    );
-  }).filter((command) => {
-    if (opts.scope === 'all') return true;
-    const definition = INSTALLED_COMMANDS.find((candidate) => candidate.id === command.id);
-    return command.visibility !== 'hidden' && definition?.visibility === 'primary';
-  });
+  const candidateNext = recommended ? projectCommand(recommended, state, 'recommended') : null;
+  const nextAction =
+    candidateNext && candidateNext.preflight.status === 'available' ? candidateNext : null;
+
+  const scope = opts.scope ?? 'available';
+  const commands = INSTALLED_COMMANDS.map((definition) =>
+    projectActiveCommand(definition, state, recommended, scope),
+  ).filter((command) => isVisibleInScope(command, scope));
+
+  const contextCommands = opts.view === 'context' ? limitContextCommands(commands) : commands;
 
   return {
     phase: { id: state.phase, label: PHASE_LABELS[state.phase] },
     lifecycle: PHASE_LABELS[state.phase],
+    readiness,
     recommendation: status.productNextAction.summary,
-    technicalVerification: technicalVerification(state),
-    nextAction: recommendedCommand,
-    commands,
+    technicalVerification: buildTechnicalVerification(state, policy),
+    nextAction,
+    commands: contextCommands,
   };
+}
+
+function limitContextCommands(commands: readonly ProjectedCommand[]): readonly ProjectedCommand[] {
+  const recommended = commands.filter((command) => command.visibility === 'recommended');
+  const available = commands.filter(
+    (command) => command.visibility === 'available' && command.id !== recommended[0]?.id,
+  );
+  const upcoming = commands
+    .filter(
+      (command) =>
+        command.visibility === 'blocked_recoverable' && command.id !== recommended[0]?.id,
+    )
+    .slice(0, 2);
+
+  return [...recommended, ...available.slice(0, 5), ...upcoming];
 }

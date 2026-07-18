@@ -9,7 +9,7 @@
  * prompt engineering best practices. Shared governance rules are
  * composed from shared-rules.ts.
  *
- * @version v2
+ * @version v3
  */
 
 import { HYDRATE_COMMAND } from './hydrate.js';
@@ -35,7 +35,7 @@ import { WHY_COMMAND } from './why.js';
 import { FINISH_COMMAND } from './finish.js';
 import { HELP_COMMAND } from './help.js';
 import { COMMANDS_COMMAND } from './commands.js';
-import { INSTALLED_COMMANDS } from '../../integration/installed-commands.js';
+import { INSTALLED_TEMPLATE_FILES } from '../../integration/installed-commands.js';
 
 export { GOVERNANCE_RULES } from './shared-rules.js';
 
@@ -67,14 +67,15 @@ const COMMAND_BODIES: Record<string, string> = {
 
 /**
  * Installer-compatible projection of the canonical installed-command catalogue.
+ * Only unique template files are assembled; multiple interfaces may share one file.
  * Missing template bodies fail closed during module initialization.
  */
 export const COMMANDS: Record<string, string> = Object.fromEntries(
-  INSTALLED_COMMANDS.map((definition) => {
-    const body = COMMAND_BODIES[definition.filename];
+  INSTALLED_TEMPLATE_FILES.map((templateFile) => {
+    const body = COMMAND_BODIES[templateFile];
     if (body === undefined) {
-      throw new Error(`Installed command template missing: ${definition.filename}`);
+      throw new Error(`Installed command template missing: ${templateFile}`);
     }
-    return [definition.filename, body];
+    return [templateFile, body];
   }),
 );
