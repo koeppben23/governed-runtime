@@ -60,6 +60,7 @@ steps: 10
 permission:
   flowguard_*: deny
   mcp__flowguard__*: deny
+  task: deny
   edit: deny
   bash: deny
   webfetch: deny

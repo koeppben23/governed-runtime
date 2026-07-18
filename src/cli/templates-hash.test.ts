@@ -85,10 +85,10 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // (content + implementation) and a root-cause bullet (plan + implementation),
     // which changes the REVIEWER_AGENT body and REVIEW_MANDATE_DIGEST.
     // p37 -> p38: strict blockingIssues/verdict coherence. p38 -> p39: OpenCode
-    // reviewer capability isolation denies FlowGuard workflow tools directly and
-    // through MCP-prefixed names.
+    // reviewer capability isolation denies direct and MCP-prefixed FlowGuard tools.
+    // p39 -> p40: reviewer task delegation is denied as part of that boundary.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '23356c1c40b9fc986efd71cae8fa4b577c246bed502cc0faa321db9dccf2d30b',
+      'ac252d555c821363decd336ad1c1b05a03d0e6df98439b3d11322311d15676a0',
     );
   });
 

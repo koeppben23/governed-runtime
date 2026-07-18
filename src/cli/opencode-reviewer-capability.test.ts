@@ -69,6 +69,7 @@ describe('OpenCode reviewer capability contract', () => {
       expect.arrayContaining([
         { permission: 'flowguard_*', action: 'deny', pattern: '*' },
         { permission: 'mcp__flowguard__*', action: 'deny', pattern: '*' },
+        { permission: 'task', action: 'deny', pattern: '*' },
         { permission: 'edit', action: 'deny', pattern: '*' },
         { permission: 'bash', action: 'deny', pattern: '*' },
         { permission: 'webfetch', action: 'deny', pattern: '*' },
@@ -85,5 +86,6 @@ describe('OpenCode reviewer capability contract', () => {
     expect(debugTool('mcp__flowguard__hydrate')).toContain(
       'Tool mcp__flowguard__hydrate is disabled',
     );
+    expect(debugTool('task')).toContain('Tool task is disabled');
   });
 });
