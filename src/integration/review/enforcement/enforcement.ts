@@ -639,7 +639,7 @@ export function enforceReviewerObligation(params: {
     capturedRawFindings?: Record<string, unknown>;
   }>;
   reviewInvocationPolicy: string | undefined;
-  maxReviewerCaptureRetries?: number;
+  maxIncoherentReviewerCaptureRetries?: number;
   strictEnforcement: boolean;
   stateAvailable: boolean;
 }): EnforcementResult {
@@ -679,7 +679,7 @@ export function enforceReviewerObligation(params: {
       Array.isArray(invocation.capturedRawFindings?.blockingIssues) &&
       invocation.capturedRawFindings.blockingIssues.length > 0,
   ).length;
-  const maxRetries = params.maxReviewerCaptureRetries ?? 1;
+  const maxRetries = params.maxIncoherentReviewerCaptureRetries ?? 1;
   if (incoherentCaptureCount > maxRetries) {
     return {
       allowed: false,

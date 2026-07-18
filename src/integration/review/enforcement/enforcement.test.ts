@@ -1779,7 +1779,7 @@ describe('review-enforcement', () => {
       const allowedRetry = enforceReviewerObligation({
         obligations: [pending],
         invocations: [incoherentCapture],
-        maxReviewerCaptureRetries: 1,
+        maxIncoherentReviewerCaptureRetries: 1,
         reviewInvocationPolicy: 'host_task_required',
         strictEnforcement: true,
         stateAvailable: true,
@@ -1787,7 +1787,7 @@ describe('review-enforcement', () => {
       const exhausted = enforceReviewerObligation({
         obligations: [pending],
         invocations: [incoherentCapture, incoherentCapture],
-        maxReviewerCaptureRetries: 1,
+        maxIncoherentReviewerCaptureRetries: 1,
         reviewInvocationPolicy: 'host_task_required',
         strictEnforcement: true,
         stateAvailable: true,

@@ -213,8 +213,8 @@ export interface FlowGuardPolicy {
   /** Max impl-review iterations in IMPL_REVIEW phase before force-convergence. */
   readonly maxImplReviewIterations: number;
 
-  /** Max fresh reviewer captures after an unusable host-task capture. */
-  readonly maxReviewerCaptureRetries: number;
+  /** Max fresh reviewer captures after an F12-incoherent host-task capture. */
+  readonly maxIncoherentReviewerCaptureRetries: number;
 
   /**
    * Whether the session initiator can approve at User Gates.

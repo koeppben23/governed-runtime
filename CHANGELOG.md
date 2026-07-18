@@ -81,6 +81,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Incoherent reviewer captures recover without deadlocking the review obligation (F13).**
+  Reviewer mandate criteria now require `changes_requested` whenever `blockingIssues`
+  is non-empty, matching the runtime F12 invariant. This changes the installed reviewer
+  mandate digest and advances `criteriaVersion` from `p37-v1` to `p38-v1`. A persisted
+  incoherent host-task capture remains audit evidence but no longer masks a later
+  coherent capture for the same obligation. The frozen policy field
+  `maxIncoherentReviewerCaptureRetries` defaults to one fresh retry and accepts config
+  overrides from `0` through `5`; it counts only the F12 `accept` plus blocking-issues
+  shape, not malformed or unparseable output. Existing obligations remain bound to
+  their persisted mandate values; start a new review cycle to use p38 criteria.
+
 - **Standalone content reviews no longer emit lifecycle ticket/plan warnings (F11).**
   A standalone `/review` of an external branch/PR/text diff previously reported
   `No ticket evidence` and `No plan evidence` as `completeness`-category warnings

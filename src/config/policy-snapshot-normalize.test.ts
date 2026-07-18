@@ -53,6 +53,11 @@ describe('normalizePolicySnapshot', () => {
       expect(result.allowSelfApproval).toBe(false);
     });
 
+    it('defaults the missing F12 incoherent-capture retry budget for legacy snapshots', () => {
+      const result = normalizePolicySnapshot({ mode: 'team' });
+      expect(result.maxIncoherentReviewerCaptureRetries).toBe(1);
+    });
+
     it('invalid mode throws PolicyConfigurationError (fail-closed)', () => {
       expect(() => normalizePolicySnapshot({ mode: 'bogus' })).toThrow(PolicyConfigurationError);
       expect(() => normalizePolicySnapshot({ mode: 'bogus' })).toThrow(

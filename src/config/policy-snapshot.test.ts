@@ -75,6 +75,9 @@ describe('createPolicySnapshot', () => {
     expect(snapshot.requireHumanGates).toBe(SOLO_POLICY.requireHumanGates);
     expect(snapshot.maxSelfReviewIterations).toBe(SOLO_POLICY.maxSelfReviewIterations);
     expect(snapshot.maxImplReviewIterations).toBe(SOLO_POLICY.maxImplReviewIterations);
+    expect(snapshot.maxIncoherentReviewerCaptureRetries).toBe(
+      SOLO_POLICY.maxIncoherentReviewerCaptureRetries,
+    );
     expect(snapshot.allowSelfApproval).toBe(SOLO_POLICY.allowSelfApproval);
     expect(snapshot.requireVerifiedActorsForApproval).toBe(
       SOLO_POLICY.requireVerifiedActorsForApproval,

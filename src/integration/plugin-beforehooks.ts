@@ -152,7 +152,8 @@ async function enforceReviewerObligationCheck(
     obligations: sessionState?.reviewAssurance?.obligations ?? [],
     invocations: sessionState?.reviewAssurance?.invocations ?? [],
     reviewInvocationPolicy: sessionState?.policySnapshot?.reviewInvocationPolicy,
-    maxReviewerCaptureRetries: sessionState?.policySnapshot?.maxReviewerCaptureRetries,
+    maxIncoherentReviewerCaptureRetries:
+      sessionState?.policySnapshot?.maxIncoherentReviewerCaptureRetries,
     strictEnforcement,
     stateAvailable: sessionState !== null,
   });

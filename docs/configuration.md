@@ -318,6 +318,22 @@ Reduced ceremony can apply only when all of these are true:
 
 If any condition fails, FlowGuard keeps the full existing ceremony. Sensitive surfaces escalate to the computed minimum, often `HIGH-RISK`; they do not downgrade to `STANDARD` by default. Reduced ceremony never writes synthetic `implReview` approval evidence.
 
+### policy.maxIncoherentReviewerCaptureRetries
+
+**Type:** integer `0` through `5`
+**Default:** `1`
+
+Caps fresh `flowguard-reviewer` Task calls after a host-task capture is internally
+incoherent: `overallVerdict: "accept"` with a non-empty `blockingIssues` array (F12).
+The initial incoherent capture is retained as audit evidence; a default budget of `1`
+allows one fresh reviewer call for the same pending obligation. A second incoherent
+capture exhausts the budget and requires the governed artifact to be re-submitted for
+a new review obligation.
+
+This is intentionally **not** a general parser-recovery budget. Missing, malformed, or
+schema-invalid reviewer output follows its own fail-closed recovery path and does not
+consume this F12-specific budget.
+
 ### Runtime Policy Resolution
 
 Different runtime contexts resolve policy defaults independently:
@@ -345,6 +361,7 @@ Config values are resolved once at session creation (first `/hydrate`). The reso
 
 - `policySnapshot.maxSelfReviewIterations`
 - `policySnapshot.maxImplReviewIterations`
+- `policySnapshot.maxIncoherentReviewerCaptureRetries`
 - `policySnapshot.allowReducedCeremony`
 - `profileResolution.activeChecks`
 
