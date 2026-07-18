@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { TEAM_POLICY } from '../../config/policy.js';
+import { TEAM_POLICY, getPolicyPreset } from '../../config/policy.js';
 import { makeProgressedState, makeState } from '../../fixtures.js';
-import { buildHelpResult } from './help-projection.js';
+import { buildHelpResult, finishToReadiness } from './help-projection.js';
+import { buildFinishCard } from '../status.js';
+import type { ReviewReport } from '../../state/evidence.js';
+import { evaluateCompleteness } from '../../audit/completeness.js';
 
 describe('buildHelpResult', () => {
   it('recommends /export after a clean terminal completion', () => {
@@ -133,16 +136,26 @@ describe('buildHelpResult', () => {
   });
 
   it('CHANGES_REQUIRED yields ready_with_warnings readiness', () => {
-    // makeProgressedState generates a clean COMPLETE; the finish card readiness
-    // is derived from completeness, not an advisory review report, so COMPLETE
-    // with complete evidence yields 'ready'.
-    const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
-      view: 'context',
-    });
-    expect(['ready', 'ready_with_warnings']).toContain(result.readiness);
-    if (result.readiness === 'ready' || result.readiness === 'ready_with_warnings') {
-      expect(result.nextAction).not.toBeNull();
-    }
+    const state = makeProgressedState('COMPLETE');
+    const reviewReport: ReviewReport = {
+      schemaVersion: 'flowguard-review-report.v1',
+      sessionId: state.id,
+      generatedAt: '2026-01-01T00:00:00.000Z',
+      phase: 'REVIEW_COMPLETE',
+      planDigest: null,
+      implDigest: null,
+      validationSummary: [],
+      findings: [],
+      overallStatus: 'issues',
+      completeness: evaluateCompleteness(state),
+    };
+    const finish = buildFinishCard(state, TEAM_POLICY, reviewReport);
+    expect(finish.overallStatus).toBe('CHANGES_REQUIRED');
+    expect(finishToReadiness(finish.overallStatus)).toBe('ready_with_warnings');
+    // Advisory CHANGES_REQUIRED must not block technical verification
+    const result = buildHelpResult(state, TEAM_POLICY, { view: 'context' });
+    expect(result.technicalVerification.status).toBe('verified');
+    expect(result.nextAction?.invocation).toBe('/export');
   });
 
   it('/help <command> never claims the requested command as the recommended next action', () => {

@@ -8,7 +8,12 @@ import { COMMAND_HELP } from '../../machine/command-help.js';
 import { isCommandAllowed } from '../../machine/commands.js';
 import type { SessionState } from '../../state/schema.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
-import { buildStatusProjection, buildFinishCard, type FinishOverallStatus } from '../status.js';
+import {
+  buildStatusProjection,
+  buildFinishCard,
+  buildEvidenceDetailProjection,
+  type FinishOverallStatus,
+} from '../status.js';
 import { evaluateArchivePreflight, type CommandPreflight } from '../archive-preflight.js';
 import {
   getInstalledCommand,
@@ -103,11 +108,11 @@ function preflight(
     !isCommandAllowed(state.phase, definition.target.workflowCommand)
   ) {
     return {
-      status: 'not_applicable',
+      status: 'blocked',
       guarantee: 'eligible_to_attempt',
-      reasonCode: 'NOT_APPLICABLE_TO_ACTIVE_FLOW',
-      message: 'This command applies to a different workflow or phase.',
-      recovery: 'Use the recommended flow commands.',
+      reasonCode: 'WORKFLOW_COMMAND_NOT_ALLOWED',
+      message: 'This command is not available in the current phase.',
+      recovery: 'Follow the recommended next action.',
     };
   }
   return { status: 'available', guarantee: 'eligible_to_attempt' };
@@ -145,7 +150,7 @@ function findRecommendation(invocation: string | null): InstalledCommandDefiniti
   return getInstalledCommand(invocation);
 }
 
-function finishToReadiness(overallStatus: FinishOverallStatus): Readiness {
+export function finishToReadiness(overallStatus: FinishOverallStatus): Readiness {
   switch (overallStatus) {
     case 'READY':
       return 'ready';
@@ -166,13 +171,11 @@ function buildTechnicalVerification(
 ): TechnicalVerification {
   if (!state || !policy)
     return { status: 'not_applicable', summary: 'No session is available to verify.' };
-  const finish = buildFinishCard(state, policy);
-  if (finish.overallStatus === 'NOT_VERIFIED') {
-    return { status: 'not_verified', summary: 'Required evidence is incomplete.' };
+  const evidence = buildEvidenceDetailProjection(state);
+  if (evidence.overallComplete) {
+    return { status: 'verified', summary: 'Evidence is complete and verified.' };
   }
-  // BLOCKED is a lifecycle/enforcement condition, not evidence deficiency.
-  // Technical verification remains independent.
-  return { status: 'verified', summary: 'Evidence is complete and verified.' };
+  return { status: 'not_verified', summary: 'Required evidence is incomplete.' };
 }
 
 function buildArchiveVerification(state: SessionState | null): ArchiveVerification {
