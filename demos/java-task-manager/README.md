@@ -56,10 +56,10 @@ A regression test for this case exists in `TaskControllerTest` but is annotated
 
 After a successful FlowGuard session, two files are changed:
 
-| File                                                                       | Change                                                          |
-| -------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| `src/main/java/com/example/taskmanager/service/TaskService.java`           | Add null-check in `updateTask()`, throw `TaskNotFoundException` |
-| `src/test/java/com/example/taskmanager/controller/TaskControllerTest.java` | Remove `@Disabled` from `update_taskNotFound_returns404()`      |
+| File                                                                       | Change                                                                               |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `src/main/java/com/example/taskmanager/service/TaskService.java`           | Add null-check in `updateTask()`, throw `TaskNotFoundException`                      |
+| `src/test/java/com/example/taskmanager/controller/TaskControllerTest.java` | Enable `update_taskNotFound_returns404()`, assert `$.taskId`, and update its Javadoc |
 
 All 16 tests pass (the previously skipped test is now enabled and green).
 

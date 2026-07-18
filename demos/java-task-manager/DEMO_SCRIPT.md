@@ -100,10 +100,10 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ## Step 6 — Implement the Fix
 
-| Action          | Phase          | What I Say                                                                                                                                        |
-| --------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/implement`    | IMPLEMENTATION | "Jetzt implementiert der LLM den Fix. Der Agent darf nicht einfach nur den Test aktivieren — er muss beides liefern: Bugfix und Testaktivierung." |
-| Show `git diff` | IMPLEMENTATION | "Hier sehen Sie die Änderung: ein kleiner null-Check in TaskService, und der @Disabled ist entfernt. Nichts anderes wurde angefasst."             |
+| Action          | Phase          | What I Say                                                                                                                                                                                                                     |
+| --------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/implement`    | IMPLEMENTATION | "Jetzt implementiert der LLM den Fix. Der Agent darf nicht einfach nur den Test aktivieren — er muss den Bugfix liefern, den Test aktivieren, die `taskId`-Fehlerantwort prüfen und das Baseline-Javadoc aktualisieren."       |
+| Show `git diff` | IMPLEMENTATION | "Hier sehen Sie die Änderung: ein kleiner null-Check in TaskService, der @Disabled ist entfernt, der Fehlerkörper wird geprüft, und das Javadoc beschreibt jetzt den aktiven Regressionstest. Nichts anderes wurde angefasst." |
 
 ---
 
