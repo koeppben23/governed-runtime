@@ -375,10 +375,10 @@ async function persistAndFormatConvergedReview(input: ReviewResultContext): Prom
     next: formatEval(advanced.evalResult),
     _audit: { transitions: advanced.transitions },
   };
-  attachLatestReview(resp, args.reviewFindings, review.expectedPlanVersion);
+  attachLatestReview(resp, review.effectiveFindings, review.expectedPlanVersion);
   await attachReviewCard({
     resp,
-    reviewFindings: args.reviewFindings,
+    reviewFindings: review.effectiveFindings,
     session,
     revision,
     finalState: advanced.state,
@@ -427,6 +427,7 @@ async function attachReviewCard(input: {
     adrTitle: revision.currentAdr.title,
     adrId: revision.currentAdr.id,
     adrDigest: revision.currentAdr.digest,
+    adrText: revision.currentAdr.adrText,
     iteration,
     overallVerdict: latestReview?.overallVerdict as string | undefined,
     blockingIssues: reviewFindings?.blockingIssues,
