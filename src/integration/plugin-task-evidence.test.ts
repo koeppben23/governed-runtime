@@ -19,12 +19,14 @@ const {
   mockAppendInvocationEvidence,
   mockEnsureReviewAssurance,
   mockStrictBlockedOutput,
+  mockAppendReviewAuditEvent,
 } = vi.hoisted(() => ({
   mockReadState: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   mockBuildHostTaskEvidence: vi.fn<(...args: unknown[]) => unknown>(),
   mockAppendInvocationEvidence: vi.fn<(...args: unknown[]) => unknown>(),
   mockEnsureReviewAssurance: vi.fn<(...args: unknown[]) => unknown>(),
   mockStrictBlockedOutput: vi.fn<(code: string, detail: Record<string, string>) => string>(),
+  mockAppendReviewAuditEvent: vi.fn<(...args: unknown[]) => Promise<void>>(),
 }));
 
 vi.mock('../adapters/persistence.js', () => ({
@@ -42,6 +44,10 @@ vi.mock('./review/assurance.js', () => ({
 
 vi.mock('./plugin-helpers.js', () => ({
   strictBlockedOutput: mockStrictBlockedOutput,
+}));
+
+vi.mock('./review/audit-events.js', () => ({
+  appendReviewAuditEvent: mockAppendReviewAuditEvent,
 }));
 
 import { handleHostTaskEvidence } from './plugin-task-evidence.js';
@@ -115,6 +121,7 @@ beforeEach(() => {
   mockStrictBlockedOutput.mockImplementation(
     (code, detail) => `BLOCKED: ${code} (${JSON.stringify(detail)})`,
   );
+  mockAppendReviewAuditEvent.mockResolvedValue(undefined);
 });
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -138,6 +145,13 @@ describe('handleHostTaskEvidence', () => {
 
       expect(mockBuildHostTaskEvidence).toHaveBeenCalledTimes(1);
       expect(ws.updateReviewAssurance).toHaveBeenCalledTimes(1);
+      expect(mockAppendReviewAuditEvent).toHaveBeenCalledWith(
+        '/tmp/sess',
+        SESSION_ID,
+        'IMPLEMENTATION',
+        'review:invocation_captured',
+        expect.objectContaining({ childSessionId: 'child-1', obligationId: 'obl-1' }),
+      );
       expect(hookOutput.output).toBeUndefined();
     });
 

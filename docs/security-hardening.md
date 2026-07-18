@@ -333,7 +333,8 @@ fatal (`ARCHIVE_FAILED`). Non-regulated mode remains tolerant.
 
 **Scope exclusions:** Aborted sessions (`error.code === 'ABORTED'`) do not trigger the
 regulated archive lifecycle — abort is an emergency escape with no archive guarantee.
-Non-regulated sessions use the existing fire-and-forget auto-archive in the audit plugin.
+Solo sessions may use the fire-and-forget auto-archive path; team sessions require an
+explicit `/export` and are never archived by completion auditing.
 
 ---
 

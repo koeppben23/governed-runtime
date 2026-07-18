@@ -153,8 +153,9 @@ state tracks the archive lifecycle:
 `archiveStatus !== 'verified'` (and no `error`) is NOT a clean regulated
 completion. Status/doctor tools should surface this as degraded.
 
-**Non-regulated sessions** (solo, team) do not set `archiveStatus`. Archive
-creation is fire-and-forget via the audit plugin — existing behavior preserved.
+**Non-regulated sessions** do not set `archiveStatus`. Solo sessions may use
+the audit plugin's fire-and-forget archive path. Team sessions never archive
+on completion: `/export` is the explicit archive action.
 
 **Aborted sessions** (`error.code === 'ABORTED'`) do not trigger the regulated
 archive lifecycle. Abort is an emergency escape with no archive guarantee.

@@ -250,10 +250,9 @@ describe('archive', () => {
     it.skipIf(!tarOk)(
       're-archiving a session is idempotent: no duplicate artifact-binding event, verify still passes',
       async () => {
-        // Reproduces the demo archive race: the fire-and-forget auto-archive on
-        // COMPLETE plus the manual /export both archive the same session. Without
-        // idempotent binding, each appends an archive:artifacts_bound event, the
-        // live trail outgrows the manifest anchor, and verify reports
+        // Repeated explicit exports must not duplicate artifact bindings. Without
+        // idempotent binding, each archive appends an archive:artifacts_bound event
+        // and the live trail outgrows the manifest anchor, so verify reports
         // audit_chain_truncated -> archiveStatus:"failed" on a valid archive.
         await hydrateSession();
         await ticket.execute({ text: 'Idempotent re-archive test', source: 'user' }, ctx);
@@ -274,9 +273,9 @@ describe('archive', () => {
         const state = await readState(sessDir);
         await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
 
-        // First archive (simulates the auto-archive on COMPLETE).
+        // First explicit archive.
         await archiveSession(fp.fingerprint, ctx.sessionID);
-        // Second archive (simulates the manual /export).
+        // Repeated explicit archive.
         await archiveSession(fp.fingerprint, ctx.sessionID);
 
         const { events } = await readAuditTrail(sessDir);
@@ -305,7 +304,7 @@ describe('archive', () => {
         const state = await readState(sessDir);
         await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
 
-        // Prior archive (auto-archive equivalent).
+        // Prior explicit archive.
         await archiveSession(fp.fingerprint, ctx.sessionID);
 
         // Manual /export now must not race to failed.

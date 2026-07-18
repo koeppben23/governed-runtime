@@ -2,11 +2,7 @@ import { existsSync } from 'node:fs';
 import { readState } from '../adapters/persistence.js';
 import { buildEnforcementError } from './plugin-helpers.js';
 import { isMutatingHostTool, isHostToolAllowedInPhase } from './phase-tool-gate.js';
-import {
-  enforceBeforeVerdict,
-  enforceBeforeSubagentCall,
-  enforceReviewerObligation,
-} from './review/enforcement/enforcement.js';
+import { enforceBeforeVerdict } from './review/enforcement/enforcement.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import type { CommandHookBeforeInput, ToolHookBeforeInput, ToolHookBeforeOutput } from './types.js';
 import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
@@ -17,6 +13,7 @@ import { runWithLogContextAsync } from '../logging/log-context.js';
 import type { SessionState } from '../state/schema.js';
 import { enforceRiskClassificationBefore as enforceRiskBefore } from './plugin-risk.js';
 import { enforceDiscoveryHealthBefore } from './plugin-discovery-health.js';
+import { REASON_REVIEWER_CHILD_ISOLATION_UNAVAILABLE } from '../shared/flowguard-identifiers.js';
 
 export async function commandBefore(
   runtime: FlowGuardPluginRuntime,
@@ -71,7 +68,7 @@ export async function toolBefore(
 async function resolveEnforcement(
   runtime: FlowGuardPluginRuntime,
   sessionId: string,
-  context: 'subagent' | 'verdict',
+  context: 'verdict',
 ): Promise<{ strictEnforcement: boolean; sessionState: SessionState | null }> {
   try {
     const sessDir = runtime.ws.getSessionDir(sessionId);
@@ -112,22 +109,13 @@ async function enforceTaskBefore(
 ): Promise<void> {
   const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : '';
   if (subagentType === REVIEWER_SUBAGENT_TYPE) {
-    const eState = runtime.ws.getEnforcementState(sessionId);
-    const { strictEnforcement, sessionState } = await resolveEnforcement(
-      runtime,
-      sessionId,
-      'subagent',
+    // OpenCode reveals the child session only after Task completion. Without
+    // pre-execution parent/agent provenance, a reviewer could invoke FlowGuard
+    // tools before FlowGuard could identify and deny the child.
+    throw buildEnforcementError(
+      REASON_REVIEWER_CHILD_ISOLATION_UNAVAILABLE,
+      'OpenCode does not provide verifiable reviewer-child provenance before tool execution.',
     );
-    await enforceReviewerObligationCheck(runtime, sessionState, strictEnforcement);
-
-    const result = enforceBeforeSubagentCall(eState, args, strictEnforcement);
-    if (result.allowed) return;
-    runtime.log.warn('enforcement', 'blocked subagent call', {
-      tool: toolName,
-      sessionId,
-      code: result.code,
-    });
-    throw buildEnforcementError(result.code ?? 'INTERNAL_ERROR', result.reason ?? '');
   }
   if (subagentType === '') return;
   runtime.log.warn('enforcement', 'blocked unauthorized subagent type', {
@@ -139,32 +127,6 @@ async function enforceTaskBefore(
     'SUBAGENT_TYPE_UNAUTHORIZED',
     `Subagent type '${subagentType}' is not authorized by FlowGuard governance. Only '${REVIEWER_SUBAGENT_TYPE}' is allowed.`,
   );
-}
-
-// This host-hook coordinator must preserve the sequential fail-closed checks.
-// eslint-disable-next-line complexity
-async function enforceReviewerObligationCheck(
-  runtime: FlowGuardPluginRuntime,
-  sessionState: SessionState | null,
-  strictEnforcement: boolean,
-): Promise<void> {
-  const obligationResult = enforceReviewerObligation({
-    obligations: sessionState?.reviewAssurance?.obligations ?? [],
-    invocations: sessionState?.reviewAssurance?.invocations ?? [],
-    reviewInvocationPolicy: sessionState?.policySnapshot?.reviewInvocationPolicy,
-    maxIncoherentReviewerCaptureRetries:
-      sessionState?.policySnapshot?.maxIncoherentReviewerCaptureRetries,
-    strictEnforcement,
-    stateAvailable: sessionState !== null,
-  });
-  if (!obligationResult.allowed) {
-    const obligations = sessionState?.reviewAssurance?.obligations ?? [];
-    runtime.log.warn('enforcement', `reviewer task blocked — ${obligationResult.code}`, {
-      policy: sessionState?.policySnapshot?.reviewInvocationPolicy,
-      pendingObligationCount: obligations.filter((o) => o.status === 'pending').length,
-    });
-    throw buildEnforcementError(obligationResult.code, obligationResult.reason);
-  }
 }
 
 async function enforceMutatingToolCheck(

@@ -11,6 +11,7 @@
 import { readState } from '../adapters/persistence.js';
 import { buildHostTaskEvidence } from './review/evidence-binding.js';
 import { appendInvocationEvidence, ensureReviewAssurance } from './review/assurance.js';
+import { appendReviewAuditEvent } from './review/audit-events.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 
@@ -149,6 +150,21 @@ async function persistHostTaskEvidence(
     ...s,
     reviewAssurance: appendInvocationEvidence(ensureReviewAssurance(s.reviewAssurance), evidence),
   }));
+  const updated = await readState(sessDir);
+  await appendReviewAuditEvent(
+    sessDir,
+    sessionId,
+    updated?.phase ?? 'unknown',
+    'review:invocation_captured',
+    {
+      obligationId: evidence.obligationId,
+      invocationId: evidence.invocationId,
+      childSessionId: evidence.childSessionId,
+      findingsHash: evidence.findingsHash,
+      capturedVerdict: evidence.capturedVerdict,
+      bindOutcome: bindResult.bindOutcome,
+    },
+  );
 }
 
 function blockRequiredHostTaskEvidence(
