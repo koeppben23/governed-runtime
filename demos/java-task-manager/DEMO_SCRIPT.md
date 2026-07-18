@@ -258,11 +258,11 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ### Step 11 — Export the Evidence
 
-| Action                                      | What I Say                                                                                                                                                                            |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/export`                                   | "Ich exportiere das Audit-Archive. FlowGuard erzeugt ein verifizierbares Paket mit allen Artefakten."                                                                                 |
-| Show `/export` response                     | "Die `/export`-Antwort zeigt: `archiveStatus: verified` und `Session archived and verified.` — FlowGuard hat das Archiv direkt nach der Erstellung verifiziert."                      |
-| Optional: `ls .flowguard/sessions/archive/` | "Hier im Archive: Manifest, Session-State, Plan-Evidence, Review-Cards, Implementation-Diff. Manifest und Checksums machen nachträgliche Änderungen am exportierten Paket erkennbar." |
+| Action                   | What I Say                                                                                                                                                                             |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/export`                | "Ich exportiere das Audit-Archive. FlowGuard erzeugt ein verifizierbares Paket mit allen Artefakten."                                                                                  |
+| Show `/export` response  | "Die `/export`-Antwort zeigt: `archiveStatus: verified` und `Session archived and verified.` — FlowGuard hat das Archiv direkt nach der Erstellung verifiziert."                       |
+| Show export archive path | "Das Archiv liegt in `~/.config/opencode/workspaces/.../archive/` — außerhalb des Projektverzeichnisses. Es uberlebt Workspace-Resets und ist unabhängig von der aktiven MCP-Session." |
 
 ---
 

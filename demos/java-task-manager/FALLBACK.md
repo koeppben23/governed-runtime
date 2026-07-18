@@ -66,14 +66,21 @@ cd /tmp/flowguard-java-review-demo
 Capture: branch listing, `/review` block with `CONTENT_ANALYSIS_REQUIRED`,
 subagent findings, `REVIEW_COMPLETE`.
 
-### 4. Frozen Evidence Workspace
+### 4. Frozen Evidence Assets
 
-After a successful live or recorded run, keep the workspace intact:
+After a successful live or recorded run, keep two separate assets available:
+
+1. **Workspace** — for visible source and generated artifacts (checkpoints, diffs).
+2. **Verified evidence archive** — stored outside the workspace under the
+   OpenCode config directory.
 
 ```bash
-# Do NOT delete the workspace after the demo.
-# Keep it as a fallback exhibit.
-ls -la /tmp/flowguard-java-review-demo/.flowguard/sessions/archive/
+# Keep the workspace as a visual fallback exhibit.
+test -d /tmp/flowguard-java-review-demo
+
+# Locate verified session archives in the OpenCode workspace state.
+# The exact archive path is emitted by the /export command response.
+find ~/.config/opencode/workspaces -path '*/archive/*.tar.gz' -type f -print
 ```
 
 ---
@@ -82,11 +89,11 @@ ls -la /tmp/flowguard-java-review-demo/.flowguard/sessions/archive/
 
 ### Tab Group 1: Live (always visible)
 
-| Application                       | Purpose                                  |
-| --------------------------------- | ---------------------------------------- |
-| OpenCode Desktop                  | Live session                             |
-| Terminal                          | `./mvnw test`, `git diff`, `ls archive/` |
-| `DEMO_SCRIPT.md` (open in editor) | Spickzettel                              |
+| Application                       | Purpose                                              |
+| --------------------------------- | ---------------------------------------------------- |
+| OpenCode Desktop                  | Live session                                         |
+| Terminal                          | `./mvnw test`, `git diff`, saved export archive path |
+| `DEMO_SCRIPT.md` (open in editor) | Spickzettel                                          |
 
 ### Tab Group 2: Fallback (open, hidden, ready)
 
@@ -97,7 +104,7 @@ ls -la /tmp/flowguard-java-review-demo/.flowguard/sessions/archive/
 | Video player (paused at 00:00) | Pre-recorded review run                                        |
 | Finder / file browser          | Workspace checkpoints under `/tmp/flowguard-demo-checkpoints/` |
 | Text editor                    | `git diff` output of the fix                                   |
-| Terminal                       | Saved `./mvnw test` output                                     |
+| Terminal                       | Saved `./mvnw test` output and verified archive path           |
 
 ### Checkpoint Recovery
 
