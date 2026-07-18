@@ -39,8 +39,9 @@ describe('Java Task Manager demo contract', () => {
       fs.readFile(CONTROLLER_TEST_PATH, 'utf-8'),
     ]);
 
-    expect(ticket).toContain('jsonPath("$.taskId").value("non-existent-id")');
-    expect(ticket).toContain('Replace the baseline\n   Javadoc instruction');
+    expect(ticket).toMatch(/remove.*@Disabled/is);
+    expect(ticket).toMatch(/jsonPath\("\$\.taskId"\).*non-existent-id/is);
+    expect(ticket).toMatch(/(?:replace.*Javadoc|Javadoc.*active regression)/is);
     expect(readme).toContain('assert `$.taskId`, and update its Javadoc');
     expect(demoScript).toContain('die `taskId`-Fehlerantwort prüfen');
 
@@ -59,33 +60,41 @@ describe('Java Task Manager demo contract', () => {
     try {
       await execFile('bash', [SETUP_SCRIPT, '--prepare-only', targetDir], { cwd: REPO_ROOT });
 
-      const [{ stdout: branch }, { stdout: changedPaths }, materializedControllerTest] =
-        await Promise.all([
-          execFile('git', ['branch', '--show-current'], { cwd: targetDir }),
-          execFile('git', ['diff', '--name-only', 'main...feature/add-due-date'], {
-            cwd: targetDir,
-          }),
-          fs.readFile(
-            path.join(
-              targetDir,
-              'src',
-              'test',
-              'java',
-              'com',
-              'example',
-              'taskmanager',
-              'controller',
-              'TaskControllerTest.java',
-            ),
-            'utf-8',
+      const [
+        { stdout: branch },
+        { stdout: changedPaths },
+        materializedTicket,
+        materializedControllerTest,
+      ] = await Promise.all([
+        execFile('git', ['branch', '--show-current'], { cwd: targetDir }),
+        execFile('git', ['diff', '--name-only', 'main...feature/add-due-date'], {
+          cwd: targetDir,
+        }),
+        fs.readFile(path.join(targetDir, 'TICKET.md'), 'utf-8'),
+        fs.readFile(
+          path.join(
+            targetDir,
+            'src',
+            'test',
+            'java',
+            'com',
+            'example',
+            'taskmanager',
+            'controller',
+            'TaskControllerTest.java',
           ),
-        ]);
+          'utf-8',
+        ),
+      ]);
 
       expect(branch.trim()).toBe('main');
       expect(changedPaths).toContain('src/main/java/com/example/taskmanager/model/Task.java');
       expect(changedPaths).toContain(
         'src/main/java/com/example/taskmanager/dto/CreateTaskRequest.java',
       );
+      expect(materializedTicket).toMatch(/remove.*@Disabled/is);
+      expect(materializedTicket).toMatch(/jsonPath\("\$\.taskId"\).*non-existent-id/is);
+      expect(materializedTicket).toMatch(/(?:replace.*Javadoc|Javadoc.*active regression)/is);
       expect(materializedControllerTest).toContain(
         '@Disabled("Regression: PUT /tasks/{id} returns HTTP 500',
       );
