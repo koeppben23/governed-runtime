@@ -12,18 +12,16 @@ This demo proves three independent FlowGuard flows in one project:
 | **Part 2** | Implementation | 8–10 min | AI-assisted code changes routed through ticket, plan, review, approval, checks, and exportable evidence                      |
 | **Part 3** | Review         | 5–10 min | External contributions governed through content-aware review with subagent findings, obligation binding, and evidence export |
 
-Each part runs in its own FlowGuard session. Parts 1 and 2 share the same workspace (reset between sessions). Part 3 uses a separate workspace with a pre-built branch.
+All three flows run in one workspace. Each flow is an independent FlowGuard
+session (separate `/start`). The Review flow uses a branch diff, not the
+working tree — it operates independently of Implementation changes on `main`.
 
 ## Prerequisites (run before the demo)
 
 ```bash
 cd demos/java-task-manager
-
-# Part 1 + 2 workspace
 ./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
-
-# Part 3 workspace (separate)
-./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-review-demo
+# Open /tmp/flowguard-java-demo in OpenCode Desktop
 ```
 
 ---
@@ -81,23 +79,18 @@ cd demos/java-task-manager
 
 ### Step A6 — Export Architecture Evidence
 
-| Action                  | What I Say                                                                                                                                                                            |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/export`               | "Ich exportiere das Architecture-Evidence-Archiv. FlowGuard erzeugt ein verifizierbares Paket mit ADR, Review-Findings, Audit-Trail und Manifest."                                    |
-| Show `/export` response | "`archiveStatus: verified` — das Archiv wurde direkt nach der Erstellung verifiziert."                                                                                                |
-| Archive location        | "Das Archiv liegt unter `~/.config/opencode/workspaces/.../archive/`. Es uberlebt den Workspace-Reset fur Part 2 — die Archive sind außerhalb des Projektverzeichnisses gespeichert." |
+| Action                  | What I Say                                                                                                                                                              |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/export`               | "Ich exportiere das Architecture-Evidence-Archiv. FlowGuard erzeugt ein verifizierbares Paket mit ADR, Review-Findings, Audit-Trail und Manifest."                      |
+| Show `/export` response | "`archiveStatus: verified` — das Archiv wurde direkt nach der Erstellung verifiziert."                                                                                  |
+| Archive location        | "Das Archiv liegt unter `~/.config/opencode/workspaces/.../archive/`. Es uberlebt Workspace-Resets — die Archive sind außerhalb des Projektverzeichnisses gespeichert." |
 
-### Reset for Part 2
+### Transition to Part 2
 
-```bash
-# Close OpenCode Desktop
-./snapshot-demo.sh restore 00-seed /tmp/flowguard-java-demo
-# Reopen /tmp/flowguard-java-demo in OpenCode Desktop (new MCP transport → new sessionId)
-```
-
-> The `00-seed` snapshot restores the buggy code + FlowGuard install. No session
-> state survives — reopening OpenCode creates a fresh MCP transport and a fresh
-> FlowGuard session for Part 2.
+Close OpenCode Desktop, reopen the same workspace, `/start` a fresh session.
+No snapshot restore is needed — the Architecture flow does not modify files.
+OpenCode reconnecting creates a new MCP transport (new sessionId), so the
+ticket flow starts from a clean READY state.
 
 ### Architecture Guardrails
 
@@ -277,13 +270,17 @@ Testlauf, dass der zuvor dokumentierte Bug wirklich geschlossen wurde.
 
 ## Part 3 — Review Flow (5–10 min)
 
-> Content-aware review of an external branch. Uses a separate workspace with a
-> pre-built branch.
+> Content-aware review of an external branch. The Review flow uses a branch
+> diff, not the working tree — it operates independently of the Implementation
+> changes on `main`. No separate workspace is needed.
 
 ### Precondition
 
 ```bash
-cd /tmp/flowguard-java-review-demo
+# Same workspace — no additional setup required.
+cd /tmp/flowguard-java-demo
+git branch --list
+# Expected: feature/add-due-date, *main
 ```
 
 The branch `feature/add-due-date` already exists. It simulates an external PR:
@@ -310,7 +307,7 @@ git diff --name-only main...feature/add-due-date
 
 | Step | Action                                     | Phase           | What I Say                                                                                                                                                                                                                                                                                                                                                                                              |
 | ---- | ------------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| R1   | `/start`                                   | READY           | "Neue Session im Review-Workspace. `/review` ist ein eigener Flow ab READY."                                                                                                                                                                                                                                                                                                                            |
+| R1   | `/start`                                   | READY           | "Neue Session. `/review` ist ein eigener Flow ab READY — alle drei Flows laufen im selben Workspace."                                                                                                                                                                                                                                                                                                   |
 | R2   | `/review branch=feature/add-due-date`      | REVIEW          | "FlowGuard erkennt content-aware review, erzeugt eine Obligation, blockt mit `CONTENT_ANALYSIS_REQUIRED`."                                                                                                                                                                                                                                                                                              |
 | R3   | Host invokes `flowguard-reviewer` subagent | —               | "Der Subagent analysiert den Diff. `dueDate` ist im Model und im Request-DTO — aber es ist _nirgends verdrahtet_: `TaskService.createTask()` schreibt es nicht (nutzt weiter den 4-arg-Konstruktor), und `TaskResponse` gibt es nicht aus. Ein neu gesetztes Fälligkeitsdatum verschwindet also lautlos. Der Reviewer muss diese strukturelle Lücke semantisch erkennen — sie ist kein Compile-Fehler." |
 | R4   | Host submits `reviewFindings`              | REVIEW_COMPLETE | "Attestierte Findings eingereicht. FlowGuard validiert: Mandate-Digest, Session-ID-Match, Obligation-ID. Report geschrieben, Flow abgeschlossen."                                                                                                                                                                                                                                                       |
@@ -335,8 +332,9 @@ git diff --name-only main...feature/add-due-date
   Subagent-Review-Mechanismus geprüft.
 - Der Reviewer-Subagent findet **echte strukturelle Probleme**, nicht nur oberflächliche
   Checks.
-- Zwei Sessions in **getrennten Workspaces** sind unabhängig — jede mit eigenem
-  Audit-Trail und Evidence. Keine gemeinsame SSOT-Kette.
+- Drei Sessions im **selben Workspace** sind unabhängig — jede mit eigenem
+  Audit-Trail und Evidence. Die Branch-Diff-basierte Review ist immun gegen
+  Working-Tree-Änderungen auf `main`.
 
 ### Notes
 
@@ -385,7 +383,6 @@ If someone in the audience knows the other name, this is why both exist:
   visible workspace evidence only. They do **not** restore MCP session state (stored in
   `~/.config/opencode/`). After architecture snapshot restore, either start a new session
   or present the snapshot as prerecorded evidence.
-- **Reset between Part 1 and Part 2:** Close OpenCode Desktop, run
-  `snapshot-demo.sh restore 00-seed`, then reopen the workspace. This creates a fresh
-  MCP transport with a new sessionId. The architecture export archive survives the reset
-  — it is stored in `~/.config/opencode/workspaces/.../archive/`, outside the workspace.
+- **Transition between Part 1 and Part 2:** Close OpenCode Desktop, reopen the same
+  workspace. No snapshot restore is needed — the Architecture flow does not modify files.
+  A fresh MCP transport gives a clean READY session for the Implementation flow.

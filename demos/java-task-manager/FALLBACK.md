@@ -58,9 +58,9 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 Record R1–R4 from the review section:
 
 ```bash
-./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-review-demo
-cd /tmp/flowguard-java-review-demo
-# Open /tmp/flowguard-java-review-demo in OpenCode Desktop
+./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
+cd /tmp/flowguard-java-demo
+# Open /tmp/flowguard-java-demo in OpenCode Desktop
 ```
 
 Capture: branch listing, `/review` block with `CONTENT_ANALYSIS_REQUIRED`,
@@ -76,7 +76,7 @@ After a successful live or recorded run, keep two separate assets available:
 
 ```bash
 # Keep the workspace as a visual fallback exhibit.
-test -d /tmp/flowguard-java-review-demo
+test -d /tmp/flowguard-java-demo
 
 # Locate verified session archives in the OpenCode workspace state.
 # The exact archive path is emitted by the /export command response.
@@ -161,7 +161,6 @@ Architecture recovery strategy:
 
 - [ ] All three recordings play correctly
 - [ ] `./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo` completes with verified install
-- [ ] `./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-review-demo` completes with verified install
 - [ ] `./mvnw test` — 16 tests, 0 failures, 1 skipped
 - [ ] `./mvnw -o test` passes (Maven offline-ready)
 - [ ] `ADR_TICKET.md` is present and non-empty in the workspace

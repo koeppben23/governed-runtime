@@ -29,12 +29,9 @@ Each flow produces exportable, verifiable evidence archives.
 ## Quick Start
 
 ```bash
-# Workspace for Part 1 (Architecture) and Part 2 (Implementation)
+# Prepare and install FlowGuard into the demo workspace
 ./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
 cd /tmp/flowguard-java-demo
-
-# Workspace for Part 3 (Review)
-./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-review-demo
 
 # Verify the starting state
 ./mvnw test
