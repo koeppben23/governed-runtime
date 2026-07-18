@@ -114,8 +114,9 @@ Three governed flows are available after `/start` (or `/hydrate`):
 4. `/review prNumber=42 reviewFindings=<complete object>` →
    REVIEW_COMPLETE, receives structured `reviewCard`
 
-**Diagnostic commands:** `/status` — current phase, next action, evidence summary.
-`/why` — explain and resolve blockers.
+**Diagnostic commands:** `/help` — context-sensitive next action and relevant commands.
+`/commands` — currently available commands (`--all` for the complete reference).
+`/status` — current phase, next action, evidence summary. `/why` — explain and resolve blockers.
 
 **Advanced/canonical commands** (`/hydrate`, `/ticket`, `/review-decision`,
 `/validate`, `/architecture`, `/review`, `/archive`, `/abort`, `/continue`)
