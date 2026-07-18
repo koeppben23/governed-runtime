@@ -141,6 +141,8 @@ async function enforceTaskBefore(
   );
 }
 
+// This host-hook coordinator must preserve the sequential fail-closed checks.
+// eslint-disable-next-line complexity
 async function enforceReviewerObligationCheck(
   runtime: FlowGuardPluginRuntime,
   sessionState: SessionState | null,
@@ -148,7 +150,9 @@ async function enforceReviewerObligationCheck(
 ): Promise<void> {
   const obligationResult = enforceReviewerObligation({
     obligations: sessionState?.reviewAssurance?.obligations ?? [],
+    invocations: sessionState?.reviewAssurance?.invocations ?? [],
     reviewInvocationPolicy: sessionState?.policySnapshot?.reviewInvocationPolicy,
+    maxReviewerCaptureRetries: sessionState?.policySnapshot?.maxReviewerCaptureRetries,
     strictEnforcement,
     stateAvailable: sessionState !== null,
   });

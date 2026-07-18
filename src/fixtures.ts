@@ -49,6 +49,7 @@ export const POLICY_SNAPSHOT: PolicySnapshot = {
   requireHumanGates: true,
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
+  maxReviewerCaptureRetries: 1,
   allowSelfApproval: true,
   minimumActorAssuranceForApproval: 'best_effort',
   requireVerifiedActorsForApproval: false,

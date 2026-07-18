@@ -572,6 +572,29 @@ describe('review-enforcement', () => {
       expect(result).toHaveProperty('code', 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
     });
 
+    it('F12 recovery: permits a second reviewer call after an incoherent capture', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
+        taskResultWithFindings('s1', {
+          verdict: 'accept',
+          blockingIssues: [{ severity: 'minor', description: 'stale comment' }],
+        }),
+        LATER,
+      );
+
+      expect(matchPendingReview(state, { prompt: 'Review' })).not.toBeNull();
+    });
+
     it('L4: blocks verdict when blockingIssues were added (inflated)', () => {
       const state = createSessionState();
 
@@ -1744,6 +1767,35 @@ describe('review-enforcement', () => {
         stateAvailable: true,
       });
       expect(result.allowed).toBe(true);
+    });
+
+    it('allows one retry but blocks after the reviewer capture retry budget is exhausted', () => {
+      const pending = { status: 'pending', obligationId: 'obligation-a' } as const;
+      const incoherentCapture = {
+        obligationId: 'obligation-a',
+        capturedVerdict: 'accept',
+        capturedRawFindings: { blockingIssues: [{ message: 'stale comment' }] },
+      };
+      const allowedRetry = enforceReviewerObligation({
+        obligations: [pending],
+        invocations: [incoherentCapture],
+        maxReviewerCaptureRetries: 1,
+        reviewInvocationPolicy: 'host_task_required',
+        strictEnforcement: true,
+        stateAvailable: true,
+      });
+      const exhausted = enforceReviewerObligation({
+        obligations: [pending],
+        invocations: [incoherentCapture, incoherentCapture],
+        maxReviewerCaptureRetries: 1,
+        reviewInvocationPolicy: 'host_task_required',
+        strictEnforcement: true,
+        stateAvailable: true,
+      });
+
+      expect(allowedRetry.allowed).toBe(true);
+      expect(exhausted.allowed).toBe(false);
+      expect(exhausted).toHaveProperty('code', 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
     });
 
     it('blocks when host_task_required and no obligations at all', () => {

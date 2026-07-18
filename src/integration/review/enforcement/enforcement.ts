@@ -318,11 +318,11 @@ export function onTaskToolAfter(
 }
 
 /**
- * Whether a pending review already holds a "good" capture — reviewer findings
- * that parse against the ReviewFindings schema (the SAME schema the verdict-time
- * resolver applies in resolveHostTaskFindings).
+ * Whether a pending review already holds a usable capture — reviewer findings
+ * that parse against the ReviewFindings schema and satisfy the canonical verdict
+ * coherence rule applied by the verdict-time resolver.
  *
- * A capture that is absent (null) or schema-invalid (e.g. the reviewer emitted
+ * A capture that is absent (null), schema-invalid (e.g. the reviewer emitted
  * non-JSON, or mistyped a required field such as `majorRisks`) is NOT good: it
  * can never be bound into a parseable invocation, so the verdict submission
  * fails with HOST_TASK_FINDINGS_UNPARSEABLE. Treating such a capture as
@@ -330,14 +330,17 @@ export function onTaskToolAfter(
  * locked (subagentCalled=true) while its only capture is unusable, and a re-run's
  * evidence is rejected as duplicate_evidence against the corrupt capture.
  *
- * Returning false keeps the review re-armable so a subsequent reviewer run can
- * replace the bad capture (new child session + new findings hash → no duplicate).
+ * or internally incoherent (accept with blocking issues) is NOT usable. Returning
+ * false keeps the review re-armable so a subsequent reviewer run can replace the
+ * bad capture (new child session + new findings hash → no duplicate).
  */
-function hasParseableCapture(pending: PendingReview): boolean {
-  // safeParse(null/undefined) is already a failure, so an absent capture and a
-  // schema-invalid one both correctly resolve to "not parseable" — no separate
-  // null guard needed.
-  return ReviewFindings.safeParse(pending.capturedFindings?.rawFindings).success;
+function hasUsableCapture(pending: PendingReview): boolean {
+  const parsed = ReviewFindings.safeParse(pending.capturedFindings?.rawFindings);
+  if (!parsed.success) return false;
+  return validateReviewFindingsConsistency({
+    overallVerdict: parsed.data.overallVerdict,
+    blockingIssueCount: parsed.data.blockingIssues.length,
+  }).ok;
 }
 
 /**
@@ -350,15 +353,15 @@ function hasParseableCapture(pending: PendingReview): boolean {
  * - >1 awaiting capture, no contentMeta match: null (fail-closed, ambiguous)
  *
  * "Awaiting capture" includes a review that was already called but whose only
- * capture is unparseable/absent (see hasParseableCapture) — so a reviewer re-run
- * replaces a corrupt capture instead of deadlocking the obligation.
+ * capture is unusable (see hasUsableCapture) — so a reviewer re-run replaces a
+ * corrupt or incoherent capture instead of deadlocking the obligation.
  */
 export function matchPendingReview(
   state: SessionEnforcementState,
   taskArgs: Record<string, unknown>,
 ): PendingReview | null {
   const awaitingCapture = [...state.pendingReviews.values()].filter(
-    (p) => !p.subagentCalled || !hasParseableCapture(p),
+    (p) => !p.subagentCalled || !hasUsableCapture(p),
   );
 
   if (awaitingCapture.length === 0) return null;
@@ -629,8 +632,14 @@ export function recordPluginReview(
  * @public unit-testable, no side effects
  */
 export function enforceReviewerObligation(params: {
-  obligations: ReadonlyArray<Pick<ReviewObligation, 'status'>>;
+  obligations: ReadonlyArray<Pick<ReviewObligation, 'status'> & { obligationId?: string }>;
+  invocations?: ReadonlyArray<{
+    obligationId: string;
+    capturedVerdict?: string;
+    capturedRawFindings?: Record<string, unknown>;
+  }>;
   reviewInvocationPolicy: string | undefined;
+  maxReviewerCaptureRetries?: number;
   strictEnforcement: boolean;
   stateAvailable: boolean;
 }): EnforcementResult {
@@ -655,6 +664,29 @@ export function enforceReviewerObligation(params: {
         'A flowguard-reviewer Task may only run when a pending review obligation exists. ' +
         'Run flowguard_plan or flowguard_review first to create a pending review obligation, ' +
         'then start the reviewer Task.',
+    };
+  }
+
+  const pendingObligationIds = new Set(
+    params.obligations
+      .filter((obligation) => obligation.status === 'pending' && obligation.obligationId)
+      .map((obligation) => obligation.obligationId!),
+  );
+  const incoherentCaptureCount = (params.invocations ?? []).filter(
+    (invocation) =>
+      (pendingObligationIds.size === 0 || pendingObligationIds.has(invocation.obligationId)) &&
+      invocation.capturedVerdict === 'accept' &&
+      Array.isArray(invocation.capturedRawFindings?.blockingIssues) &&
+      invocation.capturedRawFindings.blockingIssues.length > 0,
+  ).length;
+  const maxRetries = params.maxReviewerCaptureRetries ?? 1;
+  if (incoherentCaptureCount > maxRetries) {
+    return {
+      allowed: false,
+      code: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
+      reason:
+        `Reviewer capture retry budget exhausted after ${incoherentCaptureCount} incoherent capture(s). ` +
+        'Revise or re-submit the governed artifact to create a new review obligation; do not continue retrying this obligation.',
     };
   }
 

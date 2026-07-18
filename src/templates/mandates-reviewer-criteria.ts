@@ -105,8 +105,8 @@ Your response must conform to this JSON schema. When structured output is active
 
 ## Rules
 
-- overallVerdict MUST be "changes_requested" if blockingIssues contains critical or major severity.
-- overallVerdict MAY be "accept" only if blockingIssues is empty or minor only.
+- overallVerdict MUST be "changes_requested" whenever blockingIssues is non-empty.
+- overallVerdict MAY be "accept" only if blockingIssues is empty.
 - overallVerdict MAY be "unable_to_review" only under the validity conditions above.
 - Do NOT use "unable_to_review" to avoid producing substantive findings.
 - Do NOT invent findings; every finding must be backed by evidence.
@@ -157,7 +157,7 @@ flowguard_decision is not independent review evidence. A review-evidence file is
 
 Rules:
 - reviewMode MUST always be "subagent".
-- overallVerdict MUST be "changes_requested" if blockingIssues contains critical or major severity.
+- overallVerdict MUST be "changes_requested" whenever blockingIssues is non-empty.
 - overallVerdict MAY be "unable_to_review" only for tool-failure conditions where honest review is impossible.
 - Do not use Bash, Write, or Edit. Use only read/search tools and flowguard_review.
 `;

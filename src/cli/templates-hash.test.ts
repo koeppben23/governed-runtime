@@ -84,8 +84,10 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed again for p36->p37: added a Security-as-risk vulnerability bullet
     // (content + implementation) and a root-cause bullet (plan + implementation),
     // which changes the REVIEWER_AGENT body and REVIEW_MANDATE_DIGEST.
+    // Refreshed for p37->p38: every blocking issue now requires a
+    // changes_requested verdict, matching the runtime coherence invariant.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '12d8e68edfa5dcc81d0a3bec1626b47413ebd0566049fb74a6100280e01723b4',
+      '511598457bb767daa65ba1b2828b515a1df0795166ef4c44de1282f8d1d3d8d5',
     );
   });
 

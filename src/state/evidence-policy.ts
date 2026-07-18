@@ -69,6 +69,8 @@ export const PolicySnapshotSchema = z
     requireHumanGates: z.boolean(),
     maxSelfReviewIterations: z.number().int().positive(),
     maxImplReviewIterations: z.number().int().positive(),
+    /** Frozen retry budget for unusable reviewer captures. */
+    maxReviewerCaptureRetries: z.number().int().nonnegative().optional(),
     allowSelfApproval: z.boolean(),
     /**
      * P34: Minimum required actor assurance for regulated approval decisions.
@@ -207,6 +209,7 @@ export const PolicySnapshotSchema = z
       (defaultsToEnforcement(snapshot.mode)
         ? { enforcement: 'required' as const, allowNoCommands: false }
         : { enforcement: 'off' as const, allowNoCommands: false }),
+    maxReviewerCaptureRetries: snapshot.maxReviewerCaptureRetries ?? 1,
   }))
   .readonly();
 export type PolicySnapshot = z.infer<typeof PolicySnapshotSchema>;

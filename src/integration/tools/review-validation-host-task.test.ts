@@ -193,6 +193,43 @@ describe('resolveHostTaskFindings', () => {
     expect(result.kind).toBe('resolved');
   });
 
+  it('RECOVERY: resolves the later coherent capture after an incoherent capture', () => {
+    const incoherentRawFindings = {
+      ...validRawFindings,
+      overallVerdict: 'accept',
+      blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale comment' }],
+    };
+    const coherentRawFindings = {
+      ...validRawFindings,
+      overallVerdict: 'changes_requested',
+      blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale comment' }],
+    };
+    const laterInvocationId = '33333333-3333-4333-8333-333333333333';
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          capturedRawFindings: incoherentRawFindings,
+          findingsHash: hashFindings(incoherentRawFindings),
+        }),
+        makeHostTaskInvocation({
+          invocationId: laterInvocationId,
+          childSessionId: 'ses_child_retry',
+          capturedVerdict: 'changes_requested',
+          capturedRawFindings: coherentRawFindings,
+          findingsHash: hashFindings(coherentRawFindings),
+        }),
+      ],
+    };
+
+    const result = resolveHostTaskFindings(assurance, makeObligation());
+
+    expect(result.kind).toBe('resolved');
+    if (result.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(result.invocationId).toBe(laterInvocationId);
+    expect(result.findings.overallVerdict).toBe('changes_requested');
+  });
+
   // ── Bad Path ────────────────────────────────────────────────────────────
 
   it('BAD: returns null when assurance is undefined', () => {

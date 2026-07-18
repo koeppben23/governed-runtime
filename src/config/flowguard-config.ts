@@ -135,6 +135,8 @@ export const FlowGuardConfigSchema = z.object({
       maxSelfReviewIterations: z.number().int().min(1).max(10).optional(),
       /** Override max impl-review iterations (IMPL_REVIEW phase). */
       maxImplReviewIterations: z.number().int().min(1).max(10).optional(),
+      /** Override retries after an unusable reviewer capture. */
+      maxReviewerCaptureRetries: z.number().int().min(0).max(5).optional(),
       /** P33/P34: Require verified actor identity for regulated approvals.
        * Superseded by minimumActorAssuranceForApproval when set. */
       requireVerifiedActorsForApproval: z.boolean().optional(),

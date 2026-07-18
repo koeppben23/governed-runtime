@@ -60,6 +60,9 @@ export type HostTaskFindingsResolution =
  * @param obligation - The pending/fulfilled obligation to resolve findings for
  * @returns Parsed findings + invocationId, or null if evidence is unavailable
  */
+// The resolver enumerates every persisted capture so an unusable record cannot
+// mask a later coherent retry; its branches are the explicit fail-closed states.
+// eslint-disable-next-line complexity
 export function resolveHostTaskFindings(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation | null,
@@ -85,6 +88,10 @@ export function resolveHostTaskFindings(
   // historically degraded to not_found), which is exactly the confusing
   // failure operators hit when the reviewer ran but its findings were corrupt.
   let unparseableDetail: string | null = null;
+  let incoherentBlockingIssueCount: number | null = null;
+  // An unusable earlier capture must not deadlock a later coherent retry. The
+  // earlier evidence remains persisted for audit while this loop continues to
+  // consider subsequent captures for the same obligation.
   for (const invocation of matchingInvocations) {
     const invocationRejection = getReviewFindingsAcceptanceRejection({ obligation, invocation });
     if (invocationRejection) {
@@ -108,7 +115,8 @@ export function resolveHostTaskFindings(
         blockingIssueCount: parsed.data.blockingIssues.length,
       });
       if (!consistency.ok) {
-        return { kind: 'incoherent', blockingIssueCount: consistency.details.blockingIssueCount };
+        incoherentBlockingIssueCount ??= consistency.details.blockingIssueCount;
+        continue;
       }
       return {
         kind: 'resolved',
@@ -136,6 +144,9 @@ export function resolveHostTaskFindings(
 
   if (unparseableDetail !== null) {
     return { kind: 'unparseable', detail: unparseableDetail };
+  }
+  if (incoherentBlockingIssueCount !== null) {
+    return { kind: 'incoherent', blockingIssueCount: incoherentBlockingIssueCount };
   }
   return { kind: 'not_found' };
 }
