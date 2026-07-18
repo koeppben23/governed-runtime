@@ -3,6 +3,7 @@ import { evaluateCompleteness } from './completeness.js';
 import { makeState, makeProgressedState, FIXED_TIME, FIXED_SESSION_UUID } from '../fixtures.js';
 import { benchmarkSync, PERF_BUDGETS } from '../test-policy.js';
 import type { ValidationResult } from '../state/evidence.js';
+import type { SessionState } from '../state/schema.js';
 
 function validationResult(checkId: string, passed: boolean, detail: string): ValidationResult {
   return {
@@ -16,6 +17,16 @@ function validationResult(checkId: string, passed: boolean, detail: string): Val
     executionMs: 1,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
+  };
+}
+
+function zeroCheckCompleteState(overrides: Partial<SessionState> = {}): SessionState {
+  return {
+    ...makeProgressedState('COMPLETE'),
+    activeChecks: [],
+    validation: [],
+    implValidation: [],
+    ...overrides,
   };
 }
 
@@ -45,7 +56,7 @@ describe('audit completeness', () => {
       const report = evaluateCompleteness(state);
       expect(report.phase).toBe('COMPLETE');
       expect(report.overallComplete).toBe(true);
-      expect(report.summary.complete).toBe(8); // All 8 slots
+      expect(report.summary.complete).toBe(9); // All 9 slots
       expect(report.summary.missing).toBe(0);
       expect(report.summary.failed).toBe(0);
     });
@@ -325,13 +336,14 @@ describe('audit completeness', () => {
       const report = evaluateCompleteness(state);
       const { complete, missing, notYetRequired, failed } = report.summary;
       expect(complete + missing + notYetRequired + failed).toBe(report.summary.total);
-      expect(report.summary.total).toBe(8);
+      expect(report.summary.total).toBe(9);
     });
 
     it('architecture flow evaluates arch-specific slots', () => {
       const state = makeState('ARCHITECTURE', { architecture: null });
       const report = evaluateCompleteness(state);
       expect(report.phase).toBe('ARCHITECTURE');
+      expect(report.summary.total).toBe(report.slots.length);
       const archSlot = report.slots.find((s) => s.slot === 'architecture');
       expect(archSlot?.required).toBe(true);
       expect(archSlot?.status).toBe('missing');
@@ -343,6 +355,13 @@ describe('audit completeness', () => {
       expect(report.slots).toHaveLength(0);
       // 0 slots → missing=0, failed=0, phase !== READY → overallComplete is vacuously true
       expect(report.overallComplete).toBe(true);
+      expect(report.summary.total).toBe(0);
+      expect(
+        report.summary.complete +
+          report.summary.missing +
+          report.summary.notYetRequired +
+          report.summary.failed,
+      ).toBe(0);
     });
 
     it('architecture flow at ARCH_COMPLETE with accepted ADR — all complete', () => {
@@ -405,15 +424,16 @@ describe('audit completeness', () => {
         expectedRequired: number;
         expectedTotal: number;
       }> = [
-        { phase: 'READY', expectedRequired: 0, expectedTotal: 8 },
-        { phase: 'TICKET', expectedRequired: 1, expectedTotal: 8 }, // ticket
-        { phase: 'PLAN', expectedRequired: 2, expectedTotal: 8 }, // ticket, plan
-        { phase: 'PLAN_REVIEW', expectedRequired: 3, expectedTotal: 8 }, // +selfReview
-        { phase: 'VALIDATION', expectedRequired: 4, expectedTotal: 8 }, // +planReviewDecision
-        { phase: 'IMPLEMENTATION', expectedRequired: 5, expectedTotal: 8 }, // +validation
-        { phase: 'IMPL_REVIEW', expectedRequired: 6, expectedTotal: 8 }, // +implementation
-        { phase: 'EVIDENCE_REVIEW', expectedRequired: 7, expectedTotal: 8 }, // +implReview
-        { phase: 'COMPLETE', expectedRequired: 8, expectedTotal: 8 }, // +evidenceReviewDecision
+        { phase: 'READY', expectedRequired: 0, expectedTotal: 9 },
+        { phase: 'TICKET', expectedRequired: 1, expectedTotal: 9 }, // ticket
+        { phase: 'PLAN', expectedRequired: 2, expectedTotal: 9 }, // ticket, plan
+        { phase: 'PLAN_REVIEW', expectedRequired: 3, expectedTotal: 9 }, // +selfReview
+        { phase: 'VALIDATION', expectedRequired: 4, expectedTotal: 9 }, // +planReviewDecision
+        { phase: 'IMPLEMENTATION', expectedRequired: 5, expectedTotal: 9 }, // +validation
+        { phase: 'IMPL_VALIDATION', expectedRequired: 6, expectedTotal: 9 }, // +implementation
+        { phase: 'IMPL_REVIEW', expectedRequired: 7, expectedTotal: 9 }, // +implValidation
+        { phase: 'EVIDENCE_REVIEW', expectedRequired: 8, expectedTotal: 9 }, // +implReview
+        { phase: 'COMPLETE', expectedRequired: 9, expectedTotal: 9 }, // +evidenceReviewDecision
       ];
       for (const { phase, expectedRequired } of phases) {
         const state =
@@ -665,11 +685,20 @@ describe('audit completeness', () => {
       expect(slot?.status).toBe('missing');
     });
 
-    it('validation: empty activeChecks means NOT present even with validation results', () => {
+    it('validation: blocked zero-check policy remains NOT present even with validation results', () => {
+      const progressed = makeProgressedState('IMPLEMENTATION');
       const state = makeState('IMPLEMENTATION', {
-        ...makeProgressedState('IMPLEMENTATION'),
+        ...progressed,
         validation: [validationResult('test_quality', true, 'ok')],
         activeChecks: [],
+        policySnapshot: {
+          ...progressed.policySnapshot,
+          validationEvidence: {
+            ...progressed.policySnapshot.validationEvidence,
+            enforcement: 'required',
+            allowNoCommands: false,
+          },
+        },
       });
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'validation');
@@ -843,6 +872,81 @@ describe('audit completeness', () => {
       const report = evaluateCompleteness(state);
       const slot = report.slots.find((s) => s.slot === 'planReviewDecision');
       expect(slot?.detail).toContain('topology invariant');
+    });
+  });
+
+  describe('Zero-check completeness (allowNoCommands)', () => {
+    it('vacuous pass: explicit allowNoCommands completes both validation slots', () => {
+      const state = zeroCheckCompleteState();
+      const report = evaluateCompleteness({
+        ...state,
+        policySnapshot: {
+          ...state.policySnapshot,
+          validationEvidence: {
+            ...state.policySnapshot.validationEvidence,
+            enforcement: 'required',
+            allowNoCommands: true,
+          },
+        },
+      });
+      expect(report.overallComplete).toBe(true);
+      const valSlot = report.slots.find((s) => s.slot === 'validation')!;
+      expect(valSlot.status).toBe('complete');
+      const implValSlot = report.slots.find((s) => s.slot === 'implValidation')!;
+      expect(implValSlot.status).toBe('complete');
+    });
+
+    it('vacuous pass: lenient policy with no detected stack completes both validation slots', () => {
+      const report = evaluateCompleteness(zeroCheckCompleteState());
+      expect(report.overallComplete).toBe(true);
+      expect(report.slots.find((s) => s.slot === 'validation')?.status).toBe('complete');
+      expect(report.slots.find((s) => s.slot === 'implValidation')?.status).toBe('complete');
+    });
+
+    it('missing: validation incomplete when activeChecks exist but no results', () => {
+      const state = makeProgressedState('IMPLEMENTATION');
+      const stateWithChecks = {
+        ...state,
+        activeChecks: ['test'],
+        validation: [],
+      };
+      const report = evaluateCompleteness(stateWithChecks);
+      const valSlot = report.slots.find((s) => s.slot === 'validation')!;
+      expect(valSlot.status).toBe('missing');
+    });
+
+    it('missing: implValidation incomplete when activeChecks exist but no results', () => {
+      const state = makeProgressedState('IMPL_REVIEW');
+      const stateWithChecks = {
+        ...state,
+        activeChecks: ['test'],
+        validation: [validationResult('test', true, 'passed')],
+        implValidation: [],
+      };
+      const report = evaluateCompleteness(stateWithChecks);
+      const implValSlot = report.slots.find((s) => s.slot === 'implValidation')!;
+      expect(implValSlot.status).toBe('missing');
+    });
+
+    it('missing: detected stack with no commands and no opt-out blocks both validation slots', () => {
+      const state = zeroCheckCompleteState({
+        discoverySummary: {
+          primaryLanguages: ['typescript'],
+          frameworks: [],
+          topologyKind: 'single-project',
+          moduleCount: 1,
+          hasApiSurface: false,
+          hasPersistenceSurface: false,
+          hasCiCd: false,
+          hasSecuritySurface: false,
+        },
+      });
+      const report = evaluateCompleteness(state);
+      expect(report.overallComplete).toBe(false);
+      const valSlot = report.slots.find((s) => s.slot === 'validation')!;
+      expect(valSlot.status).toBe('missing');
+      const implValSlot = report.slots.find((s) => s.slot === 'implValidation')!;
+      expect(implValSlot.status).toBe('missing');
     });
   });
 

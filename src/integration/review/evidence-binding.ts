@@ -63,6 +63,8 @@ export function buildHostTaskEvidence(
     rawFindings,
     matchedObligation,
     attestationInfo.hasValidAttestation,
+    childSessionId,
+    now,
   );
 
   const findingsHash = hashFindings(normalizedFindings);
@@ -78,6 +80,22 @@ export function buildHostTaskEvidence(
     `${oType}:${matchedObligation.iteration}:${matchedObligation.planVersion}`,
   );
 
+  // F8: findings recovered from an embedded/brace-balanced block (mixed model
+  // output) are downgraded from structured_high so the audit trail reflects the
+  // lower provenance confidence. The whole transport contract must agree — a
+  // recovered block was NOT clean structured output, so reviewOutputMode,
+  // structuredOutputUsed, and extractionMethod are set consistently rather than
+  // left at their structured-output defaults. Binding still proceeds.
+  const recovered = latest.capturedFindings?.extractionMethod === 'recovered_block';
+  const transport = recovered
+    ? {
+        reviewAssuranceLevel: 'structured_recovered' as const,
+        reviewOutputMode: 'text_compat' as const,
+        structuredOutputUsed: false,
+        extractionMethod: 'outermost_braces' as const,
+      }
+    : { reviewAssuranceLevel: 'structured_high' as const };
+
   const evidence = buildInvocationEvidence({
     obligationId: matchedObligation.obligationId,
     obligationType: oType,
@@ -89,6 +107,7 @@ export function buildHostTaskEvidence(
     findingsHash,
     invokedAt: now,
     source: 'host-orchestrated',
+    ...transport,
     capturedVerdict: latest.capturedFindings?.overallVerdict,
     capturedRawFindings: normalizedFindings,
   });
@@ -281,27 +300,103 @@ function hostConstantDivergentFields(
   return fields;
 }
 
+/**
+ * Overwrite reviewer-authored provenance with host-authoritative values (F8).
+ *
+ * The reviewer subagent (an LLM) MUST NOT be an authority for the review
+ * execution time or its own session identity. It routinely confabulates both
+ * (e.g. reviewedAt="...T00:00:00Z", reviewedBy.sessionId="flowguard-reviewer-session").
+ * The host owns the truthful values: the real invocation timestamp (`now`) and
+ * the resolved child session id. We stamp those and preserve the original
+ * (untrusted) reviewer claims in `reviewerClaimedAt` / `reviewerClaimedBy` for
+ * diagnostics only.
+ *
+ * Host-only attestation constants (mandateDigest/criteriaVersion/reviewedBy
+ * literal) are overwritten with the obligation's canonical values, while the
+ * reviewer-reliable binding anchors (toolObligationId, iteration, planVersion)
+ * are preserved as-is.
+ */
 function normalizeHostTaskFindings(
   rawFindings: Record<string, unknown>,
   obligation: ReviewObligation,
   hasValidAttestation: boolean,
+  childSessionId: string,
+  now: string,
 ): Record<string, unknown> {
+  const provenance = applyHostProvenance(rawFindings, childSessionId, now);
   if (!hasValidAttestation) {
-    const { attestation: _omit, ...rest } = rawFindings;
+    const { attestation: _omit, ...rest } = provenance;
     return rest;
   }
-  // Overwrite reviewer-echoed host constants with the obligation's canonical values so
-  // persisted evidence is truthful rather than confabulated. The reviewer-reliable
-  // binding anchors (toolObligationId, iteration, planVersion) are preserved as-is.
-  const attestation = (rawFindings.attestation ?? {}) as Record<string, unknown>;
+  const attestation = (provenance.attestation ?? {}) as Record<string, unknown>;
   return {
-    ...rawFindings,
+    ...provenance,
     attestation: {
       ...attestation,
       mandateDigest: obligation.mandateDigest,
       criteriaVersion: obligation.criteriaVersion,
       reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
+  };
+}
+
+/**
+ * Replace model-authored `reviewedAt` / `reviewedBy` with host-authoritative
+ * values, retaining the model's originals as untrusted `reviewerClaimedAt` /
+ * `reviewerClaimedBy` diagnostics (F8).
+ *
+ * The ENTIRE reviewedBy block is host-constructed — not just sessionId. A model
+ * that echoes the real child session id could otherwise still fabricate actorId,
+ * actorSource, or actorAssurance (e.g. actorSource="verified_identity",
+ * actorAssurance="cryptographic") and have them persisted as canonical
+ * provenance. reviewerClaimedBy always preserves the complete original model
+ * block whenever the model supplied one, independent of any field comparison.
+ */
+function applyHostProvenance(
+  rawFindings: Record<string, unknown>,
+  childSessionId: string,
+  now: string,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = { ...rawFindings };
+
+  const claimedAt = rawFindings.reviewedAt;
+  if (typeof claimedAt === 'string' && claimedAt && claimedAt !== now) {
+    result.reviewerClaimedAt = claimedAt;
+  }
+  result.reviewedAt = now;
+
+  const claimedBy = rawFindings.reviewedBy;
+  // Preserve the complete original model block whenever one was supplied — not
+  // only when the claimed sessionId diverges. actorId/actorSource/actorAssurance
+  // can be confabulated even when the sessionId happens to match.
+  if (claimedBy && typeof claimedBy === 'object' && !Array.isArray(claimedBy)) {
+    result.reviewerClaimedBy = claimedBy;
+  }
+  result.reviewedBy = buildHostReviewedBy(childSessionId);
+
+  return result;
+}
+
+/**
+ * Build the fully host-authoritative `reviewedBy` block. Every field is a
+ * host-known value; NOTHING is carried over from the model payload. When the
+ * host has no independently-resolved reviewer identity, neutral truthful values
+ * are used that describe exactly what the host knows: the reviewer is the
+ * flowguard-reviewer subagent bound to the resolved child session, with an
+ * unverified (best-effort) identity assurance.
+ *
+ * - actorId: the canonical reviewer subagent type (host-known).
+ * - actorSource: 'unknown' — the host did not independently verify the actor's
+ *   identity source (the ReviewActorInfo enum has no dedicated host-task value;
+ *   'unknown' is the truthful neutral choice rather than an invented one).
+ * - actorAssurance: 'best_effort' — session-bound but not identity-verified.
+ */
+function buildHostReviewedBy(childSessionId: string): Record<string, unknown> {
+  return {
+    sessionId: childSessionId,
+    actorId: REVIEWER_SUBAGENT_TYPE,
+    actorSource: 'unknown',
+    actorAssurance: 'best_effort',
   };
 }
 

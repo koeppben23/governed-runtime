@@ -164,10 +164,11 @@ real, registered reason.
 
 ### Validation Evidence
 
-| Code                             | Description                                                                                   | Solution                                                                                                                             |
-| -------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `VALIDATION_EVIDENCE_REQUIRED`   | Policy requires validation evidence but no Discovery-derived verification commands are active | Re-run discovery and `/hydrate` to detect repo-native checks, or set `validationEvidence.allowNoCommands=true` (governance approval) |
-| `VALIDATION_EVIDENCE_UNVERIFIED` | Policy requires validation evidence but Discovery is not trustworthy (NOT_VERIFIED)           | Run `/hydrate` to restore healthy Discovery and clear any blocked discovery health gate before retrying VALIDATION                   |
+| Code                                    | Description                                                                                                                           | Solution                                                                                                                             |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `VALIDATION_EVIDENCE_REQUIRED`          | Policy requires validation evidence but no Discovery-derived verification commands are active                                         | Re-run discovery and `/hydrate` to detect repo-native checks, or set `validationEvidence.allowNoCommands=true` (governance approval) |
+| `VALIDATION_EVIDENCE_UNVERIFIED`        | Policy requires validation evidence but Discovery is not trustworthy (NOT_VERIFIED)                                                   | Run `/hydrate` to restore healthy Discovery and clear any blocked discovery health gate before retrying VALIDATION                   |
+| `VALIDATION_EVIDENCE_STACK_NO_COMMANDS` | Discovery detected a technology stack but derived no verification commands; VALIDATION will not pass vacuously (mis-detection hazard) | Re-run `/hydrate` so repo-native checks are detected, or set `validationEvidence.allowNoCommands=true` (governance approval)         |
 
 ### Evidence Integrity
 
@@ -192,6 +193,7 @@ real, registered reason.
 | `SUBAGENT_PROMPT_MISSING_CONTEXT`           | L3 — prompt missing iteration or planVersion context                          | Use the runtime-built prompt                                                                                         |
 | `SUBAGENT_FINDINGS_VERDICT_MISMATCH`        | L4 — submitted overallVerdict differs from actual subagent verdict            | Submit the findings exactly as returned by the orchestrator                                                          |
 | `SUBAGENT_FINDINGS_ISSUES_MISMATCH`         | L4 — submitted blockingIssues count differs from actual count                 | Submit the findings exactly as returned                                                                              |
+| `SUBAGENT_VERDICT_FINDINGS_INCOHERENT`      | Captured review is self-contradictory: `accept` verdict with blocking issues  | Return a non-accept verdict, or reclassify/resolve the blocking issues, then re-review                               |
 | `SUBAGENT_EVIDENCE_REUSED`                  | One-shot review evidence reused for a second obligation                       | Submit a substantively-new artifact for a fresh review obligation                                                    |
 | `MAX_REVIEW_ITERATIONS_REACHED`             | Retained; no longer emitted — loop force-converges to the review gate         | Use `/review-decision` (approve / request-changes / reject) at the gate                                              |
 | `SUBAGENT_UNABLE_TO_REVIEW`                 | Reviewer declared the artifact unreviewable; obligation consumed              | Address the reviewer's reason or substantially revise; do not retry the same artifact                                |
@@ -379,9 +381,11 @@ TSA_TIMESTAMP_ASSURANCE_FAILED
 SUBAGENT_SESSION_MISMATCH
 SUBAGENT_TYPE_UNAUTHORIZED
 SUBAGENT_UNABLE_TO_REVIEW
+SUBAGENT_VERDICT_FINDINGS_INCOHERENT
 TICKET_REQUIRED
 TOOL_ERROR
 VALIDATION_EVIDENCE_REQUIRED
+VALIDATION_EVIDENCE_STACK_NO_COMMANDS
 VALIDATION_EVIDENCE_UNVERIFIED
 VALIDATION_INCOMPLETE
 VERIFIED_ACTOR_REQUIRED

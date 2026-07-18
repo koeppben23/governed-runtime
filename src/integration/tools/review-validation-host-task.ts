@@ -23,6 +23,7 @@ import {
   withHostTaskPath,
   type HostTaskFindingsAcceptanceRejection,
 } from './review-validation-acceptance.js';
+import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
 
 /**
  * Result of resolving review findings from host-task invocation evidence.
@@ -40,6 +41,7 @@ export type HostTaskFindingsResolution =
   | ({ readonly kind: 'resolved' } & ResolvedHostTaskFindings)
   | { readonly kind: 'rejected'; readonly rejection: HostTaskFindingsAcceptanceRejection }
   | { readonly kind: 'unparseable'; readonly detail: string }
+  | { readonly kind: 'incoherent'; readonly blockingIssueCount: number }
   | { readonly kind: 'not_found' };
 
 /**
@@ -58,6 +60,9 @@ export type HostTaskFindingsResolution =
  * @param obligation - The pending/fulfilled obligation to resolve findings for
  * @returns Parsed findings + invocationId, or null if evidence is unavailable
  */
+// The resolver enumerates every persisted capture so an unusable record cannot
+// mask a later coherent retry; its branches are the explicit fail-closed states.
+// eslint-disable-next-line complexity
 export function resolveHostTaskFindings(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation | null,
@@ -83,6 +88,10 @@ export function resolveHostTaskFindings(
   // historically degraded to not_found), which is exactly the confusing
   // failure operators hit when the reviewer ran but its findings were corrupt.
   let unparseableDetail: string | null = null;
+  let incoherentBlockingIssueCount: number | null = null;
+  // An unusable earlier capture must not deadlock a later coherent retry. The
+  // earlier evidence remains persisted for audit while this loop continues to
+  // consider subsequent captures for the same obligation.
   for (const invocation of matchingInvocations) {
     const invocationRejection = getReviewFindingsAcceptanceRejection({ obligation, invocation });
     if (invocationRejection) {
@@ -95,6 +104,20 @@ export function resolveHostTaskFindings(
     // a distinct BLOCKED code (not silent not_found).
     const parsed = ReviewFindingsSchema.safeParse(invocation.capturedRawFindings);
     if (parsed.success) {
+      // F12: coherence of the host-captured record. An `accept` verdict that
+      // still carries blocking issues is self-contradictory and must fail closed
+      // before the findings are treated as valid evidence — this is the host-task
+      // ingestion boundary (verdict-only submission never reaches the tool-layer
+      // validateReviewFindings coherence check). Canonical rule in
+      // findings-consistency.ts.
+      const consistency = validateReviewFindingsConsistency({
+        overallVerdict: parsed.data.overallVerdict,
+        blockingIssueCount: parsed.data.blockingIssues.length,
+      });
+      if (!consistency.ok) {
+        incoherentBlockingIssueCount ??= consistency.details.blockingIssueCount;
+        continue;
+      }
       return {
         kind: 'resolved',
         findings: parsed.data,
@@ -121,6 +144,9 @@ export function resolveHostTaskFindings(
 
   if (unparseableDetail !== null) {
     return { kind: 'unparseable', detail: unparseableDetail };
+  }
+  if (incoherentBlockingIssueCount !== null) {
+    return { kind: 'incoherent', blockingIssueCount: incoherentBlockingIssueCount };
   }
   return { kind: 'not_found' };
 }

@@ -40,7 +40,7 @@ export type PlanRecord = z.infer<typeof PlanRecord>;
 
 /**
  * State of the PLAN phase self-review loop.
- * Convergence: iteration >= maxIterations OR (revisionDelta === "none" AND verdict === "approve").
+ * Convergence: iteration >= maxIterations OR (revisionDelta === "none" AND verdict === "accept").
  * This is the "digest-stop" mechanism.
  */
 export const SelfReviewLoop = z.object({

@@ -67,7 +67,7 @@ local composite-action dependencies: external GitHub Actions must use full
 40-character lowercase commit SHAs, local actions under `./` are allowed, local
 and Docker actions are allowed only when pinned by `sha256` digest.
 
-The `mutation` job runs StrykerJS mutation testing against 38 security-critical
+The `mutation` job runs StrykerJS mutation testing against 42 security-critical
 files spanning adapters (persistence-lock + host-adapter), archive digesting,
 audit (integrity + completeness), config (policy + reasons + profile), hooks (HTTP hook server + command pre-tool-use + shared obligation-tracker +
 phase-gate), identity (token-verifier + key-resolver), integration
@@ -75,7 +75,7 @@ phase-gate), identity (token-verifier + key-resolver), integration
 plugin-audit-lifecycle-reason, review enforcement, review orchestrator,
 orchestrator detection/output, and agent resolution), logging (error-serialize),
 templates (codex-plugin, claude-code-plugin),
-shared canonical JSON, machine (commands, evaluate, guards, next-action), and
+shared canonical JSON, machine (commands, evaluate, guards, next-action, validation-evidence), and
 rails (architecture, hydrate, review, review-decision, ticket). It uploads a
 mutation report artifact (`reports/mutation/`) and enforces the `break: 80`
 threshold in `stryker.conf.json` when the scheduled/release/manual mutation
@@ -171,25 +171,25 @@ they are not a per-area carve-out.
 
 ### Scope
 
-37 files are mutated, covering the fail-closed governance core
+42 files are mutated, covering the fail-closed governance core
 (see `stryker.conf.json` for the canonical list):
 
-| Area                                                                                                                                                                                 | Files  | Representative score            |
-| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------ | ------------------------------- |
-| Adapters (`persistence-lock`, `host-adapter`)                                                                                                                                        | 2      | (see latest report)             |
-| Archive (`content-digest`)                                                                                                                                                           | 1      | (see latest report)             |
-| Audit (`integrity`, `completeness`)                                                                                                                                                  | 2      | (see latest report)             |
-| Config (`policy`, `reasons`, `profile`)                                                                                                                                              | 3      | (see latest report)             |
-| MCP (`execution-limiter`)                                                                                                                                                            | 1      | (see latest report)             |
-| Hooks (`http-server`, `pre-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                                              | 4      | (see latest report)             |
-| Identity (`token-verifier`, `key-resolver`)                                                                                                                                          | 2      | (see latest report)             |
-| Integration (`command-aliases`, `tool-classification`, `tools/review-validation-mode`, `plugin-audit-lifecycle-reason`, review enforcement/orchestrator/detection/output/resolution) | 9      | (see latest report)             |
-| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                                     | 2      | (see latest report)             |
-| Shared (`canonical-json`)                                                                                                                                                            | 1      | (see latest report)             |
-| Logging (`error-serialize`)                                                                                                                                                          | 1      | (see latest report)             |
-| Machine (`commands`, `evaluate`, `guards`, `next-action`)                                                                                                                            | 4      | (see latest report)             |
-| Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`)                                                                                                             | 5      | (see latest report)             |
-| **Total**                                                                                                                                                                            | **38** | uploaded as `reports/mutation/` |
+| Area                                                                                                                                                                                                                                                                      | Files  | Representative score            |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------ | ------------------------------- |
+| Adapters (`persistence-lock`, `host-adapter`)                                                                                                                                                                                                                             | 2      | (see latest report)             |
+| Archive (`content-digest`)                                                                                                                                                                                                                                                | 1      | (see latest report)             |
+| Audit (`integrity`, `completeness`)                                                                                                                                                                                                                                       | 2      | (see latest report)             |
+| Config (`policy`, `reasons`, `profile`)                                                                                                                                                                                                                                   | 3      | (see latest report)             |
+| MCP (`execution-limiter`)                                                                                                                                                                                                                                                 | 1      | (see latest report)             |
+| Hooks (`http-server`, `pre-tool-use`, `shared/obligation-tracker`, `shared/phase-gate`)                                                                                                                                                                                   | 4      | (see latest report)             |
+| Identity (`token-verifier`, `key-resolver`)                                                                                                                                                                                                                               | 2      | (see latest report)             |
+| Integration (`command-aliases`, `tool-classification`, `tools/review-validation-mode`, `tools/review-validation`, `tools/review-validation-host-task`, `plugin-audit-lifecycle-reason`, review enforcement/findings-consistency/orchestrator/detection/output/resolution) | 12     | (see latest report)             |
+| Templates (`codex-plugin`, `claude-code-plugin`)                                                                                                                                                                                                                          | 2      | (see latest report)             |
+| Shared (`canonical-json`)                                                                                                                                                                                                                                                 | 1      | (see latest report)             |
+| Logging (`error-serialize`)                                                                                                                                                                                                                                               | 1      | (see latest report)             |
+| Machine (`commands`, `evaluate`, `guards`, `next-action`, `validation-evidence`)                                                                                                                                                                                          | 5      | (see latest report)             |
+| Rails (`architecture`, `hydrate`, `review`, `review-decision`, `ticket`)                                                                                                                                                                                                  | 5      | (see latest report)             |
+| **Total**                                                                                                                                                                                                                                                                 | **42** | uploaded as `reports/mutation/` |
 
 Per-file mutation scores are produced fresh in CI; consult the latest
 `reports/mutation/` artifact for current numbers.

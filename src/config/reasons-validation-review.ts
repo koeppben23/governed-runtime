@@ -270,6 +270,18 @@ export const REVIEW_VALIDATION_REASONS = [
   },
 
   {
+    code: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
+    category: 'state',
+    messageTemplate:
+      'overallVerdict "accept" is incoherent with {count} blocking issue(s). An accepted review must contain no blocking issues. Return a non-accept verdict or remove/reclassify the findings after resolving the inconsistency.',
+    recoverySteps: [
+      'Return a non-accept verdict (changes_requested, or unable_to_review where the artifact is genuinely unreviewable) when blocking issues are present',
+      'Or resolve the inconsistency and re-run the review so the reviewer emits coherent findings',
+      'Do not accept a review whose findings still report blocking issues',
+    ],
+  },
+
+  {
     code: 'SUBAGENT_EVIDENCE_REUSED',
     category: 'state',
     messageTemplate:
@@ -385,6 +397,18 @@ export const REVIEW_VALIDATION_REASONS = [
       'Run flowguard_hydrate to restore trustworthy Discovery (clear health gate, clean drift, persisted summary and digest)',
       'Resolve any blocked discoveryHealthGate before retrying VALIDATION',
       'Do not treat an empty active-check list as a verified pass while Discovery health is unverified',
+    ],
+  },
+
+  {
+    code: 'VALIDATION_EVIDENCE_STACK_NO_COMMANDS',
+    category: 'admissibility',
+    messageTemplate:
+      'Discovery detected a technology stack for this repository, but no verification commands were derived, so VALIDATION cannot pass vacuously. A detected stack with zero active checks is treated as a mis-detection hazard, not a verified "no commands" property.',
+    recoverySteps: [
+      'Re-run flowguard_hydrate so repo-native verification commands (build/test/lint) are detected from the stack',
+      'Ensure the stack wrapper/manifest (package.json scripts, mvnw/gradlew, pyproject) is at the resolved worktree root',
+      'If this stack genuinely has no verification commands, set validationEvidence.allowNoCommands=true in policy with explicit governance approval (the only sanctioned exception)',
     ],
   },
 

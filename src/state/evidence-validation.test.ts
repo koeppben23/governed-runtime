@@ -8,7 +8,7 @@
  * @test-policy HAPPY, BAD, CORNER
  */
 import { describe, it, expect } from 'vitest';
-import { ValidationResult } from './evidence-validation.js';
+import { ValidationResult, isExecutionError } from './evidence-validation.js';
 import { FIXED_TIME } from './evidence-test-constants.js';
 
 const VALID_DIGEST = 'a'.repeat(64);
@@ -205,6 +205,24 @@ describe('evidence-validation', () => {
           timedOut: false,
         }),
       ).toThrow();
+    });
+  });
+
+  describe('isExecutionError (F5)', () => {
+    it('true when timedOut', () => {
+      expect(isExecutionError({ timedOut: true, exitCode: 124 })).toBe(true);
+    });
+    it('true for exit 124 even if timedOut flag is false', () => {
+      expect(isExecutionError({ timedOut: false, exitCode: 124 })).toBe(true);
+    });
+    it('true for exit 127 (command not found)', () => {
+      expect(isExecutionError({ timedOut: false, exitCode: 127 })).toBe(true);
+    });
+    it('false for a passing check (exit 0)', () => {
+      expect(isExecutionError({ timedOut: false, exitCode: 0 })).toBe(false);
+    });
+    it('false for an ordinary failure (exit 1)', () => {
+      expect(isExecutionError({ timedOut: false, exitCode: 1 })).toBe(false);
     });
   });
 });

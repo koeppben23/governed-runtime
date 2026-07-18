@@ -30,8 +30,8 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data.policy).toEqual({});
       expect(result.data.profile).toEqual({});
       expect(result.data.host).toEqual({});
-      expect(result.data.archive.redaction.mode).toBe('basic');
-      expect(result.data.archive.redaction.includeRaw).toBe(false);
+      expect(result.data.archive.redaction.mode).toBe('none');
+      expect(result.data.archive.redaction.includeRaw).toBe(true);
     }
   });
 

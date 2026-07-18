@@ -98,6 +98,7 @@ export async function resolveNewPolicyResolution(
     digestFn: digestText,
     configMaxSelfReviewIterations: config.policy.maxSelfReviewIterations,
     configMaxImplReviewIterations: config.policy.maxImplReviewIterations,
+    configMaxIncoherentReviewerCaptureRetries: config.policy.maxIncoherentReviewerCaptureRetries,
     configRequireVerifiedActorsForApproval: config.policy.requireVerifiedActorsForApproval,
     configMinimumActorAssuranceForApproval: config.policy.minimumActorAssuranceForApproval,
     configIdentityProvider: config.policy.identityProvider,

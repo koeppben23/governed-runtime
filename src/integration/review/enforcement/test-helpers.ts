@@ -89,6 +89,29 @@ export function taskResultWithEmbeddedFindings(
   return `Here are my review findings:\n${taskResultWithFindings(sessionId, opts)}\nEnd of review.`;
 }
 
+/**
+ * Build a Task tool result whose findings JSON is valid JSON with a present
+ * `overallVerdict` (so extractCapturedFindings succeeds) but a MISTYPED required
+ * field — `majorRiskes` instead of `majorRisks`. The captured rawFindings then
+ * FAIL ReviewFindings.safeParse, reproducing the live-demo host-task deadlock
+ * where a single reviewer typo poisoned the obligation.
+ */
+export function taskResultWithMalformedFindings(sessionId: string): string {
+  return JSON.stringify({
+    iteration: 0,
+    planVersion: 1,
+    reviewMode: 'subagent',
+    overallVerdict: 'accept',
+    blockingIssues: [],
+    majorRiskes: [], // typo → required `majorRisks` missing → unparseable
+    missingVerification: [],
+    scopeCreep: [],
+    unknowns: [],
+    reviewedBy: { sessionId },
+    reviewedAt: NOW,
+  });
+}
+
 /** Build a substantive prompt for the subagent (meets MIN_SUBAGENT_PROMPT_LENGTH). */
 export function validSubagentPrompt(
   opts: { iteration?: number; planVersion?: number } = {},

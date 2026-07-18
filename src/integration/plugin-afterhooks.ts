@@ -51,6 +51,7 @@ import {
   TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_CONTINUE,
   TOOL_FLOWGUARD_HYDRATE,
+  TOOL_FLOWGUARD_RUN_CHECK,
 } from './tool-names.js';
 import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './plugin-risk.js';
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
@@ -125,6 +126,7 @@ function isReviewableFlowGuardTool(toolName: string): boolean {
     TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
     TOOL_FLOWGUARD_ARCHITECTURE,
     TOOL_FLOWGUARD_REVIEW,
+    TOOL_FLOWGUARD_RUN_CHECK,
   ].includes(toolName);
 }
 

@@ -57,7 +57,7 @@ function makeDeps(overrides: Partial<AuditDeps> = {}): AuditDeps {
         mode: 'solo',
         requireHumanGates: false,
       },
-      state: null,
+      state: makeState('PLAN'),
     }),
     initChain: vi.fn().mockResolvedValue('prev-hash-001'),
     invalidateChainState: vi.fn(),
@@ -90,6 +90,31 @@ describe('runAudit', () => {
       expect(result).toBeUndefined();
       expect(deps.initChain).not.toHaveBeenCalled();
       expect(deps.appendAndTrack).not.toHaveBeenCalled();
+    });
+
+    it('does not persist audit for an unhydrated host session', async () => {
+      const deps = makeDeps({
+        resolveSessionPolicy: vi.fn().mockResolvedValue({
+          policy: {
+            audit: { emitToolCalls: true, emitTransitions: true, enableChainHash: true },
+            actorClassification: {},
+            mode: 'team',
+            requireHumanGates: true,
+          },
+          state: null,
+        }),
+      });
+
+      await expect(
+        runAudit(deps, 'flowguard_abort_session', {}, {}, SESSION_ID),
+      ).resolves.toBeUndefined();
+      expect(deps.initChain).not.toHaveBeenCalled();
+      expect(deps.appendAndTrack).not.toHaveBeenCalled();
+      expect(deps.log.debug).toHaveBeenCalledWith(
+        'audit',
+        'skipping unhydrated session audit',
+        expect.objectContaining({ sessionId: SESSION_ID, tool: 'flowguard_abort_session' }),
+      );
     });
 
     // ─── H2: tool_call emitted ──────────────────────────────────────
@@ -127,7 +152,7 @@ describe('runAudit', () => {
             mode: 'solo',
             requireHumanGates: false,
           },
-          state: null,
+          state: makeState('TICKET'),
         }),
       });
 
@@ -160,7 +185,7 @@ describe('runAudit', () => {
             mode: 'solo',
             requireHumanGates: false,
           },
-          state: null,
+          state: makeState('TICKET'),
         }),
       });
       const output = { phase: 'PLAN', error: false };
@@ -358,7 +383,7 @@ describe('runAudit', () => {
             mode: 'regulated',
             requireHumanGates: false,
           },
-          state: null,
+          state: makeState('TICKET'),
         }),
         appendAndTrack: vi.fn().mockRejectedValue(new Error('disk full')),
       });
@@ -651,7 +676,7 @@ describe('runAudit', () => {
             mode: 'solo',
             requireHumanGates: false,
           },
-          state: null,
+          state: makeState('PLAN_REVIEW'),
         }),
       });
       const output = {

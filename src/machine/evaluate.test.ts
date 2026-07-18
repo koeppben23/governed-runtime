@@ -193,7 +193,7 @@ describe('evaluate', () => {
       expect(result.kind).toBe('transition');
       if (result.kind === 'transition') {
         expect(result.event).toBe('IMPL_COMPLETE');
-        expect(result.target).toBe('IMPL_REVIEW');
+        expect(result.target).toBe('IMPL_VALIDATION');
       }
     });
 

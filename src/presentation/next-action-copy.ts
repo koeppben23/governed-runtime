@@ -75,6 +75,10 @@ const PRODUCT_GUIDANCE = {
     text: 'Submit your Architecture Decision Record with /architecture',
     commands: ['/architecture'],
   },
+  RUN_REVIEWER_TASK: {
+    text: 'Independent content review is pending. Run the flowguard-reviewer Task, then submit only its verdict with flowguard_review.',
+    commands: [],
+  },
 } satisfies Partial<Record<ActionCode, { text: string; commands: readonly string[] }>>;
 
 /**
@@ -85,11 +89,17 @@ const PRODUCT_GUIDANCE = {
  *
  * @param action - Canonical next action from the machine layer.
  * @param phase - Current phase for context enrichment.
+ * @param aborted - True when the session reached a terminal phase via /abort
+ *   (state.error.code === 'ABORTED'). An aborted session is terminal but is NOT
+ *   a clean completion, so it must not be guided toward /export as a "verifiable
+ *   audit package"; the user is redirected to read-only /status instead.
  * @returns Product-friendly display guidance.
  */
 export function buildProductNextAction(
   action: NextAction,
   phase: Phase,
+  aborted = false,
+  archiveStatus?: string | null,
 ): { text: string; commands: readonly string[] } {
   const code = action.code as ActionCode;
   const guidance = PRODUCT_GUIDANCE[code];
@@ -100,11 +110,34 @@ export function buildProductNextAction(
 
   const phaseLabel = PHASE_LABELS[phase];
 
+  // Aborted terminal session: do NOT offer /finish + /export. Exporting an
+  // aborted session as a verifiable audit package would misrepresent a
+  // failed/abandoned session as a clean completion (the /export path itself is
+  // fail-closed against this in archive-tool.ts). Redirect to inspection.
+  if (action.code === 'SESSION_COMPLETE' && aborted) {
+    return {
+      text: 'Session aborted — not a clean completion and not exportable as a verifiable audit package. Inspect the preserved audit state with /status.',
+      commands: ['/status'],
+    };
+  }
+
   // Enrich terminal messages with the phase label for context.
   // /finish is a read-only readiness aggregator that works in every terminal
   // phase (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE), so it is offered before
   // /export across all three flows.
   if (action.code === 'SESSION_COMPLETE') {
+    if (archiveStatus === 'verified') {
+      return {
+        text: `${phaseLabel}. The audit package has been verified. Inspect the session with /finish or /status.`,
+        commands: ['/finish', '/status'],
+      };
+    }
+    if (archiveStatus === 'failed') {
+      return {
+        text: `${phaseLabel}. Audit package verification failed. Inspect the failure with /status, then retry /export after recovery.`,
+        commands: ['/status', '/export'],
+      };
+    }
     return {
       text: `${phaseLabel}. Review readiness with /finish, then run /export to create a verifiable audit package.`,
       commands: guidance.commands,

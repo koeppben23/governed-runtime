@@ -17,6 +17,7 @@
 
 import type { LoopVerdict } from '../state/evidence.js';
 import type { SessionState, Phase, Event } from '../state/schema.js';
+import { isExecutionError } from '../state/evidence-validation.js';
 import { evaluateValidationEvidence } from './validation-evidence.js';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -43,7 +44,7 @@ export const hasPlanReady: GuardFn = (s) => s.ticket !== null && s.plan !== null
  *
  * Converged when:
  *   iteration >= maxIterations (force-convergence)
- *   OR (revisionDelta === "none" AND verdict === "approve") (stable approval)
+ *   OR (revisionDelta === "none" AND verdict === "accept") (stable approval)
  *
  * Special case (P1.3 — third LoopVerdict):
  *   verdict === "unable_to_review" returns false UNCONDITIONALLY.
@@ -52,7 +53,7 @@ export const hasPlanReady: GuardFn = (s) => s.ticket !== null && s.plan !== null
  * subagent (see src/templates/mandates.ts validity-conditions whitelist).
  * It MUST NOT count as convergence on either disjunct:
  *
- * 1. The "stable approval" disjunct does not apply (verdict !== "approve").
+ * 1. The "stable approval" disjunct does not apply (verdict !== "accept").
  * 2. The "iteration >= maxIterations" force-convergence disjunct WOULD
  *    otherwise force-converge an unreviewable submission, which is
  *    exactly the failure mode this slice prevents. A reviewer that has
@@ -128,6 +129,46 @@ export const allValidationsPassed: GuardFn = (s) => {
 /** At least one validation check has an explicit failure (passed: false). */
 export const checkFailed: GuardFn = (s) => s.validation.some((v) => !v.passed);
 
+/**
+ * At least one validation check ERRORED during execution (timeout / command
+ * not-found) rather than failing a verdict. Fires CHECK_ERRORED, which keeps the
+ * session in VALIDATION for a retry and preserves plan approval — unlike
+ * CHECK_FAILED, which routes to PLAN. Evaluated BEFORE checkFailed so a transient
+ * execution error is never misread as a deficient plan.
+ */
+export const checkErrored: GuardFn = (s) => s.validation.some(isExecutionError);
+
+/**
+ * Post-implementation validation passed (IMPL_VALIDATION phase). Mirrors
+ * {@link allValidationsPassed} but reads `implValidation` — the re-run of the
+ * active checks against the IMPLEMENTED code. Empty active-check lists defer to the
+ * same validation-evidence authority (a detected stack with zero checks is blocked
+ * at the pre-impl VALIDATION gate, so IMPL_VALIDATION is reached only when the empty
+ * list is a genuine repo property).
+ */
+export const implValidationPassed: GuardFn = (s) => {
+  if (s.activeChecks.length === 0) {
+    return !evaluateValidationEvidence(s).blocked;
+  }
+  const passedIds = new Set<string>();
+  for (const v of s.implValidation) {
+    if (v.passed) passedIds.add(v.checkId);
+  }
+  return s.activeChecks.every((checkId) => passedIds.has(checkId));
+};
+
+/**
+ * A post-implementation check FAILED a verdict (IMPL_VALIDATION). Routes back to
+ * IMPLEMENTATION — the delivered code is wrong, not the plan.
+ */
+export const implCheckFailed: GuardFn = (s) => s.implValidation.some((v) => !v.passed);
+
+/**
+ * A post-implementation check ERRORED (timeout / command-not-found). Keeps the
+ * session in IMPL_VALIDATION for a retry, mirroring {@link checkErrored}.
+ */
+export const implCheckErrored: GuardFn = (s) => s.implValidation.some(isExecutionError);
+
 /** Implementation evidence is present. */
 export const implComplete: GuardFn = (s) => s.implementation !== null;
 
@@ -194,6 +235,7 @@ export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<
     'VALIDATION',
     [
       { event: 'ERROR', guard: hasError },
+      { event: 'CHECK_ERRORED', guard: checkErrored },
       { event: 'ALL_PASSED', guard: allValidationsPassed },
       { event: 'CHECK_FAILED', guard: checkFailed },
     ],
@@ -205,6 +247,16 @@ export const GUARDS: ReadonlyMap<Phase, readonly GuardEntry[]> = new Map<
       { event: 'ERROR', guard: hasError },
       { event: 'REDUCED_CEREMONY', guard: reducedCeremonyReady },
       { event: 'IMPL_COMPLETE', guard: implComplete },
+    ],
+  ],
+
+  [
+    'IMPL_VALIDATION',
+    [
+      { event: 'ERROR', guard: hasError },
+      { event: 'CHECK_ERRORED', guard: implCheckErrored },
+      { event: 'ALL_PASSED', guard: implValidationPassed },
+      { event: 'CHECK_FAILED', guard: implCheckFailed },
     ],
   ],
 

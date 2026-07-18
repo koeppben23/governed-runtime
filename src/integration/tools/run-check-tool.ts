@@ -40,6 +40,7 @@ import {
 
 // State & Machine
 import type { SessionState } from '../../state/schema.js';
+import type { FlowGuardPolicy } from '../../config/policy.js';
 import { evaluate } from '../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 import { evaluateValidationEvidence } from '../../machine/validation-evidence.js';
@@ -57,6 +58,8 @@ import { deriveRepairGuidance } from '../../verification/repair-guidance.js';
 
 // Evidence types
 import type { ValidationResult } from '../../state/evidence-validation.js';
+import { isExecutionError } from '../../state/evidence-validation.js';
+import type { ReviewObligation } from '../../state/evidence.js';
 
 // Adapter — lock retry
 import { withSessionWriteLockRetry, PersistenceError } from '../../adapters/lock-retry.js';
@@ -66,6 +69,16 @@ import { REASON_LOCK_TIMEOUT_EXHAUSTED } from '../../shared/flowguard-identifier
 
 // Logging
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
+import { reviewObligationResponseFields } from '../review/assurance.js';
+import {
+  resolveRuntimeReviewPlatform,
+  resolveReviewOrchestrationMode,
+} from '../review/orchestration-mode.js';
+import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import {
+  activateImplementationReviewObligation,
+  nextImplementationReviewIteration,
+} from './implement-shared.js';
 
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
 const RUN_CHECK_RETRIES = RUN_CHECK_RETRY_DELAYS_MS.length;
@@ -194,7 +207,13 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       const advanced = autoAdvance(nextState, (s) => evaluate(s, railCtx.policy), railCtx);
       if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
 
-      await writeStateWithArtifactsAlreadyLocked(sessDir, advanced.state);
+      const activated = activateImplementationReviewObligation(advanced.state, {
+        subagentEnabled: freshPolicy.selfReview?.subagentEnabled ?? false,
+        iteration: nextImplementationReviewIteration(advanced.state),
+        planVersion: (advanced.state.plan?.history.length ?? 0) + 1,
+        now: railCtx.now(),
+      });
+      await writeStateWithArtifactsAlreadyLocked(sessDir, activated.state);
       logger.info('tool', 'check_persisted', {
         sessionId,
         checkId: kind,
@@ -209,6 +228,9 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         originalState: freshState,
         passedIds,
         advanced,
+        finalState: activated.state,
+        nextObligation: activated.obligation,
+        policy: freshPolicy,
       });
     },
     {
@@ -307,10 +329,10 @@ function mergeValidationResult(
   state: SessionState,
   validationResult: ValidationResult,
 ): ValidationResult[] {
-  return [
-    ...state.validation.filter((v) => v.checkId !== validationResult.checkId),
-    validationResult,
-  ];
+  // Post-implementation checks (IMPL_VALIDATION) accumulate in implValidation; the
+  // pre-implementation baseline run (VALIDATION) accumulates in validation.
+  const slot = state.phase === 'IMPL_VALIDATION' ? state.implValidation : state.validation;
+  return [...slot.filter((v) => v.checkId !== validationResult.checkId), validationResult];
 }
 
 function buildNextValidationState(
@@ -319,11 +341,32 @@ function buildNextValidationState(
   passedIds: Set<string>,
 ): SessionState {
   const allPassed = state.activeChecks.every((id) => passedIds.has(id));
+  const hasExecutionError = validation.some(isExecutionError);
+
+  if (state.phase === 'IMPL_VALIDATION') {
+    // Post-implementation validation writes to implValidation. A genuine failure
+    // routes IMPL_VALIDATION → IMPLEMENTATION (the delivered CODE is wrong, not the
+    // plan); clear implementation so the agent must re-run /implement and the machine
+    // does not immediately re-fire IMPL_COMPLETE into an advance loop. Execution
+    // errors (timeout/not-found) stay in IMPL_VALIDATION for a retry.
+    const genuinelyFailed = !allPassed && !hasExecutionError;
+    return {
+      ...state,
+      implValidation: validation,
+      error: null,
+      ...(genuinelyFailed ? { implementation: null } : {}),
+    };
+  }
+
+  // F5: preserve plan evidence when the non-pass is an execution error (timeout /
+  // command-not-found). The machine stays in VALIDATION (CHECK_ERRORED) for a retry
+  // rather than routing to PLAN, so the approved plan must survive.
+  const clearPlanEvidence = !allPassed && !hasExecutionError;
   return {
     ...state,
     validation,
     error: null,
-    ...(allPassed ? {} : { selfReview: null, reviewDecision: null }),
+    ...(clearPlanEvidence ? { selfReview: null, reviewDecision: null } : {}),
   };
 }
 
@@ -336,9 +379,31 @@ function formatRunCheckResponse(input: {
   originalState: SessionState;
   passedIds: Set<string>;
   advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
+  finalState: SessionState;
+  nextObligation: ReviewObligation | null;
+  policy: FlowGuardPolicy;
 }): ToolResult {
-  const { kind, evidence, derivedRepairGuidance, originalState, passedIds, advanced } = input;
-  const { state: finalState, evalResult: ev, transitions } = advanced;
+  const { kind, evidence, derivedRepairGuidance, originalState, passedIds, advanced, finalState } =
+    input;
+  const { evalResult: ev, transitions } = advanced;
+  const platform = resolveRuntimeReviewPlatform();
+  const mode = resolveReviewOrchestrationMode({
+    platform,
+    reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
+    nativeReviewerAvailable: platform !== 'unknown',
+    manualAttestedAllowed: input.policy.reviewInvocationPolicy !== 'host_task_required',
+  });
+  const reviewInstruction = input.nextObligation
+    ? buildPendingReviewInstruction({
+        mode,
+        platform,
+        reviewKind: 'implementation',
+        obligation: input.nextObligation,
+        iteration: input.nextObligation.iteration,
+        planVersion: input.nextObligation.planVersion,
+        subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
+      })
+    : null;
   return appendNextAction(
     JSON.stringify({
       phase: finalState.phase,
@@ -354,7 +419,9 @@ function formatRunCheckResponse(input: {
       },
       derivedRepairGuidance,
       remainingChecks: originalState.activeChecks.filter((id) => !passedIds.has(id)),
-      next: formatEval(ev),
+      ...reviewObligationResponseFields(input.nextObligation),
+      next: reviewInstruction?.next ?? formatEval(ev),
+      ...(reviewInstruction ? { reviewInvocation: reviewInstruction.reviewInvocation } : {}),
       _audit: { transitions },
     }),
     finalState,

@@ -333,58 +333,36 @@ describe('persistence', () => {
       expect(tmpFiles).toHaveLength(0);
     });
 
-    it('ARCHIVE: rename failure during archiveSession preserves pre-existing sidecar files', async () => {
+    it('ARCHIVE: checksum sidecar is preserved when its atomic replacement fails', async () => {
       const worktree = tmpDir;
       const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'gov-archive-config-'));
       const cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
       const sessionId = `archive-atomic-${Date.now()}`;
       try {
         const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
-        await writeState(sessDir, makeState('COMPLETE'));
+        const state = makeState('COMPLETE');
+        await writeState(sessDir, {
+          ...state,
+          policySnapshot: { ...state.policySnapshot, mode: 'regulated' },
+        });
 
-        // Pre-create valid decision-receipts and archive-manifest with known content
-        const receiptsPath = path.join(sessDir, 'decision-receipts.v1.json');
-        const originalReceipts =
-          JSON.stringify(
-            {
-              schemaVersion: 'decision-receipts.v1',
-              sessionId,
-              generatedAt: new Date().toISOString(),
-              count: 0,
-              receipts: [],
-            },
-            null,
-            2,
-          ) + '\n';
-        await fs.writeFile(receiptsPath, originalReceipts, 'utf-8');
-
-        const manifestPath = path.join(sessDir, 'archive-manifest.json');
-        const originalManifest =
-          JSON.stringify(
-            { schemaVersion: 'archive-manifest.v1', files: [], redactionMode: 'basic' },
-            null,
-            2,
-          ) + '\n';
-        await fs.writeFile(manifestPath, originalManifest, 'utf-8');
+        const archiveDir = path.join(configDir, 'workspaces', fingerprint, 'sessions', 'archive');
+        const checksumPath = path.join(archiveDir, `${sessionId}.tar.gz.sha256`);
+        const originalChecksum = 'a'.repeat(64) + `  ${sessionId}.tar.gz\n`;
+        await fs.mkdir(archiveDir, { recursive: true });
+        await fs.writeFile(checksumPath, originalChecksum, 'utf-8');
 
         vi.mocked(fs.rename).mockRejectedValue(new Error('EXDEV — simulated failure'));
-        await expect(archiveSession(fingerprint, sessionId)).rejects.toBeInstanceOf(
-          PersistenceError,
-        );
+        await expect(archiveSession(fingerprint, sessionId)).rejects.toMatchObject({
+          code: 'ARCHIVE_FAILED',
+        });
         restoreRename();
 
-        // decision-receipts: must exist and be exactly the original content
-        expect(existsSync(receiptsPath)).toBe(true);
-        const afterReceipts = await fs.readFile(receiptsPath, 'utf-8');
-        expect(afterReceipts).toBe(originalReceipts);
+        expect(existsSync(checksumPath)).toBe(true);
+        expect(await fs.readFile(checksumPath, 'utf-8')).toBe(originalChecksum);
 
-        // archive-manifest: must exist and be exactly the original content
-        expect(existsSync(manifestPath)).toBe(true);
-        const afterManifest = await fs.readFile(manifestPath, 'utf-8');
-        expect(afterManifest).toBe(originalManifest);
-
-        // No orphan .tmp files in session directory
-        const entries = await fs.readdir(sessDir);
+        // No orphan .tmp files remain beside the checksum sidecar.
+        const entries = await fs.readdir(archiveDir);
         const tmpFiles = entries.filter((e) => e.includes('.tmp'));
         expect(tmpFiles).toHaveLength(0);
       } finally {

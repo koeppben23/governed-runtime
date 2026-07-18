@@ -41,6 +41,7 @@ export interface HydratePolicyOptions {
   readFileFn?: (path: string) => Promise<string>;
   configMaxSelfReviewIterations?: number;
   configMaxImplReviewIterations?: number;
+  configMaxIncoherentReviewerCaptureRetries?: number;
   configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
   configRequireVerifiedActorsForApproval?: boolean;
   configIdentityProvider?: IdpConfig;
@@ -101,6 +102,7 @@ function applyConfigOverrides(
   opts: {
     configMaxSelfReviewIterations?: number;
     configMaxImplReviewIterations?: number;
+    configMaxIncoherentReviewerCaptureRetries?: number;
     configMinimumActorAssuranceForApproval?: 'best_effort' | 'claim_validated' | 'idp_verified';
     configRequireVerifiedActorsForApproval?: boolean;
     configIdentityProvider?: IdpConfig;
@@ -118,6 +120,9 @@ function applyConfigOverrides(
       opts.configMaxSelfReviewIterations ?? basePolicy.maxSelfReviewIterations,
     maxImplReviewIterations:
       opts.configMaxImplReviewIterations ?? basePolicy.maxImplReviewIterations,
+    maxIncoherentReviewerCaptureRetries:
+      opts.configMaxIncoherentReviewerCaptureRetries ??
+      basePolicy.maxIncoherentReviewerCaptureRetries,
     minimumActorAssuranceForApproval: resolveMinAssurance(
       basePolicy,
       opts.configMinimumActorAssuranceForApproval,

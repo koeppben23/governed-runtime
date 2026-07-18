@@ -151,6 +151,18 @@ describe('flowguard_continue (runtime)', () => {
     expect(parsed._continue.action).toBe('deterministic');
   });
 
+  it('IMPL_REVIEW routes to the reviewer task and verdict tool, never /implement', async () => {
+    setPhase('IMPL_REVIEW');
+    mocks.appendNextAction.mockImplementation((p: string) => p);
+    const { continue_cmd } = await import('./continue-tool.js');
+    const res = await continue_cmd.execute({}, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.phase).toBe('IMPL_REVIEW');
+    expect(parsed.next).toContain('flowguard-reviewer');
+    expect(parsed.next).toContain('flowguard_review_implementation');
+    expect(parsed.next).not.toContain('/implement');
+  });
+
   // ── BAD: blocking on ambiguous / unknown ──────────────────────────────────
 
   it('blocks READY phase with CONTINUE_AMBIGUOUS', async () => {
@@ -250,6 +262,24 @@ describe('flowguard_continue (runtime)', () => {
     expect(parsed.phase).toBe('REVIEW_COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
     expect(parsed.next).toBe('/export');
+  });
+
+  it('COMPLETE aborted → redirects to /status, never /review or /export', async () => {
+    // Governance integrity: an aborted terminal session must not be routed to
+    // /export as an audit package.
+    const state = { phase: 'COMPLETE', error: { code: 'ABORTED', message: 'Operator aborted' } };
+    mocks.state = state;
+    mocks.readOnlySession = { state, policy: null };
+    mocks.appendNextAction.mockImplementation((p: string) => p);
+    const { continue_cmd } = await import('./continue-tool.js');
+    const res = await continue_cmd.execute({}, {} as never);
+    const parsed = JSON.parse(String(res));
+    expect(parsed.phase).toBe('COMPLETE');
+    expect(parsed._continue.action).toBe('terminal');
+    expect(parsed.next).toBe('/status');
+    expect(parsed.next).not.toBe('/review');
+    expect(parsed.next).not.toBe('/export');
+    expect(String(parsed.status).toLowerCase()).toContain('aborted');
   });
 
   // ── ERROR: catch handler ──────────────────────────────────────────────────

@@ -95,7 +95,7 @@ describe('review rail', () => {
       const report = await executeReview(state, NOW);
       expect(report.completeness).toBeDefined();
       expect(report.completeness.overallComplete).toBe(true);
-      expect(report.completeness.slots).toHaveLength(8);
+      expect(report.completeness.slots).toHaveLength(9);
     });
 
     it('is available at any phase (always allowed)', async () => {

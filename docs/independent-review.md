@@ -209,6 +209,11 @@ The installer writes `.opencode/agents/flowguard-reviewer.md`:
 
 - `mode: subagent`, `hidden: true`, `steps: 10`
 - Read-only: `edit: deny`, `bash: deny`, `webfetch: deny`
+- FlowGuard-isolated: `flowguard_*: deny` and `mcp__flowguard__*: deny` are
+  agent-specific OpenCode permission rules. They prevent reviewer children from
+  hydrating, mutating, or auditing an independent FlowGuard workflow session.
+  `task: deny` prevents reviewer subagent cascades; `read`, `glob`, and `grep`
+  remain available for review research.
 - Adversarial, falsification-first review prompt
 - Returns structured ReviewFindings JSON
 
@@ -259,7 +264,7 @@ Independent subagent review is the default FlowGuard policy configuration:
   iteration:            number    // 0-based, must match expected iteration
   planVersion:          number    // positive integer, must match current plan version
   reviewMode:           'subagent'
-  overallVerdict:       'approve' | 'changes_requested' | 'unable_to_review'
+  overallVerdict:       'accept' | 'changes_requested' | 'unable_to_review'
   blockingIssues:       Finding[] // severity: critical|major|minor
   majorRisks:           Finding[] // category: completeness|correctness|feasibility|risk|quality
   missingVerification:  string[]

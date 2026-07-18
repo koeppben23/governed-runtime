@@ -84,8 +84,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed again for p36->p37: added a Security-as-risk vulnerability bullet
     // (content + implementation) and a root-cause bullet (plan + implementation),
     // which changes the REVIEWER_AGENT body and REVIEW_MANDATE_DIGEST.
+    // p37 -> p38: strict blockingIssues/verdict coherence. p38 -> p39: OpenCode
+    // reviewer capability isolation denies direct and MCP-prefixed FlowGuard tools.
+    // p39 -> p40: reviewer task delegation is denied as part of that boundary.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '12d8e68edfa5dcc81d0a3bec1626b47413ebd0566049fb74a6100280e01723b4',
+      'ac252d555c821363decd336ad1c1b05a03d0e6df98439b3d11322311d15676a0',
     );
   });
 
@@ -168,9 +171,14 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for #520 review: /finish template now renders the canonical
     // blocker field verbatim (buildBlockedProjection) instead of unspecified
     // "blockers and warnings", changing the /finish body and COMMANDS hash.
+    // Refreshed for F10: the /review, /check, and shared review-loop templates
+    // now instruct the agent to pass the FlowGuard-provided reviewerTaskPrompt
+    // VERBATIM as the Task tool prompt (canonical copy-prompt) to eliminate the
+    // first-attempt SUBAGENT_PROMPT_MISSING_CONTEXT block. New command bodies
+    // change the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '9b097655dbf8f51cc3df5f7052e7391c5e7fdc6152cd1d45e642470facc499f6',
+      '39026b714786edc7d5e954f3d85a9e311e30faa978a301a8874789d68989d412',
     );
   });
 

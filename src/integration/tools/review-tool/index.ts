@@ -120,6 +120,16 @@ function prepareHostTaskVerdictReview(
 
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
 
+  if (resolved.kind === 'incoherent') {
+    // F12: the host-captured record is internally self-contradictory
+    // (accept + blocking issues). Fail closed with the canonical coherence
+    // reason code — not the generic HOST_SUBAGENT_TASK_REQUIRED catch-all
+    // whose recovery message would mislead about evidence availability.
+    return formatBlocked('SUBAGENT_VERDICT_FINDINGS_INCOHERENT', {
+      count: String(resolved.blockingIssueCount),
+    });
+  }
+
   if (resolved.kind !== 'resolved') {
     return formatBlocked(
       'HOST_SUBAGENT_TASK_REQUIRED',

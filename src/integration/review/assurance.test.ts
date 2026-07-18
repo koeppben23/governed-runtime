@@ -129,6 +129,36 @@ describe('integration/review-assurance', () => {
       expect(result.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
       expect(result.blockedCode).toBeNull();
     });
+
+    it('creates p40 obligations without rewriting prior attestation values', () => {
+      const priorObligations: ReviewObligation[] = [
+        {
+          ...makeObligation(),
+          criteriaVersion: 'p38-v1',
+          mandateDigest: '511598457bb767daa65ba1b2828b515a1df0795166ef4c44de1282f8d1d3d8d5',
+        },
+        {
+          ...makeObligation(),
+          criteriaVersion: 'p38-v1',
+          mandateDigest: 'f3e98f66862cade550b9138658dfbe82f2aeb50b989a2ec398c62bd8b2be0249',
+        },
+        {
+          ...makeObligation(),
+          criteriaVersion: 'p39-v1',
+          mandateDigest: '23356c1c40b9fc986efd71cae8fa4b577c246bed502cc0faa321db9dccf2d30b',
+        },
+      ];
+      const assurance = priorObligations.reduce(
+        (current, obligation) => appendReviewObligation(current, obligation),
+        emptyReviewAssurance(),
+      );
+      const fresh = makeObligation();
+
+      expect(REVIEW_CRITERIA_VERSION).toBe('p40-v1');
+      expect(assurance.obligations).toEqual(priorObligations);
+      expect(fresh.criteriaVersion).toBe('p40-v1');
+      expect(fresh.mandateDigest).toBe(REVIEW_MANDATE_DIGEST);
+    });
   });
 
   describe('appendReviewObligation', () => {

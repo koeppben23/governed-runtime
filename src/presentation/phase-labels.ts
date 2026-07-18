@@ -25,6 +25,7 @@ export const PHASE_LABELS = {
   PLAN_REVIEW: 'Ready for plan approval',
   VALIDATION: 'Validation',
   IMPLEMENTATION: 'Implementation in progress',
+  IMPL_VALIDATION: 'Re-validating implementation',
   IMPL_REVIEW: 'Ready for evidence review',
   EVIDENCE_REVIEW: 'Ready for final review',
   COMPLETE: 'Complete',

@@ -270,7 +270,7 @@ export interface IterationResult<T> {
  * Result of a converged convergence iteration.
  *
  * Returned when the loop reached a terminal state via either:
- *   - digest-stop (revisionDelta === "none" AND verdict === "approve"), or
+ *   - digest-stop (revisionDelta === "none" AND verdict === "accept"), or
  *   - force-convergence (iteration >= maxIterations) with a non-blocking
  *     verdict (i.e. NOT 'unable_to_review').
  *
@@ -353,7 +353,7 @@ function processIteration<T extends { readonly digest: string }>(
  * Generic convergence loop with digest-stop.
  *
  * Iterates until:
- * - verdict === "approve" AND revisionDelta === "none" (converged), OR
+ * - verdict === "accept" AND revisionDelta === "none" (converged), OR
  * - iteration >= maxIterations (force-stopped), OR
  * - verdict === "unable_to_review" (BLOCKED — P1.3 slice 4b).
  *

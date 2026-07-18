@@ -34,6 +34,9 @@ describe('mandates — contract anchors', () => {
     expect(REVIEWER_AGENT.length).toBeGreaterThan(100);
     expect(REVIEWER_AGENT).toContain('flowguard-reviewer');
     expect(REVIEWER_AGENT).toContain('## Your Role');
+    expect(REVIEWER_AGENT).toContain('flowguard_*: deny');
+    expect(REVIEWER_AGENT).toContain('mcp__flowguard__*: deny');
+    expect(REVIEWER_AGENT).toContain('task: deny');
   });
 
   it('CLAUDE_REVIEWER_AGENT contains platform marker', () => {

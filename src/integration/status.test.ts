@@ -148,6 +148,34 @@ describe('policyMode — from policySnapshot', () => {
   });
 });
 
+describe('productNextAction — aborted terminal session (governance integrity)', () => {
+  const policy = getPolicyPreset('solo');
+
+  it('redirects an aborted COMPLETE session to read-only /status', () => {
+    const state: SessionState = {
+      ...makeMinimalState('COMPLETE'),
+      error: {
+        code: 'ABORTED',
+        message: 'Operator aborted',
+        recoveryHint: 'Start a new session with /hydrate',
+        occurredAt: '2026-01-01T00:00:00.000Z',
+      },
+    };
+    const projection = buildStatusProjection(state, policy);
+    // An aborted session must not be routed to /export as a verifiable audit package.
+    expect(projection.productNextAction.primaryCommand).toBe('/status');
+    expect(String(projection.productNextAction.summary).toLowerCase()).toContain('aborted');
+    expect(projection.productNextAction.summary).not.toContain('/export');
+    expect(projection.productNextAction.summary).not.toContain('/finish');
+    expect(projection.productNextAction.summary).not.toContain('/review');
+  });
+
+  it('a clean COMPLETE session is unaffected (still offers /export)', () => {
+    const projection = buildStatusProjection(makeMinimalState('COMPLETE'), policy);
+    expect(projection.productNextAction.summary).toContain('/export');
+  });
+});
+
 describe('profileId — from activeProfile', () => {
   const policy = getPolicyPreset('solo');
 
@@ -446,6 +474,20 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           checkId: 'check_1',
           passed: true,
           detail: 'All checks passed',
+          executedAt: new Date().toISOString(),
+          kind: 'test',
+          command: 'npm test',
+          exitCode: 0,
+          executionMs: 1,
+          outputDigest: 'check_1_digest',
+          timedOut: false,
+        },
+      ],
+      implValidation: [
+        {
+          checkId: 'check_1',
+          passed: true,
+          detail: 'Post-impl checks passed',
           executedAt: new Date().toISOString(),
           kind: 'test',
           command: 'npm test',

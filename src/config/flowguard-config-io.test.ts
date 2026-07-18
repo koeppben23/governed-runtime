@@ -105,6 +105,7 @@ describe('readConfig', () => {
   it('returns DEFAULT_CONFIG when no config file exists', async () => {
     const config = await readConfig(tmpDir);
     expect(config).toEqual(DEFAULT_CONFIG);
+    expect(config.archive.redaction).toEqual({ mode: 'none', includeRaw: true });
   });
 
   it('reads and parses a valid config file', async () => {
@@ -136,6 +137,7 @@ describe('readConfig', () => {
     // policy and profile should have defaults
     expect(config.policy).toEqual({});
     expect(config.profile).toEqual({});
+    expect(config.archive.redaction).toEqual({ mode: 'none', includeRaw: true });
   });
 
   // ── BAD ────────────────────────────────────────────────────────────────

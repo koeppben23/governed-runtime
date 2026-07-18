@@ -11,6 +11,7 @@ import type { SessionState } from '../state/schema.js';
 import type { DiscoverySummary } from '../state/discovery-schemas.js';
 import {
   evaluateValidationEvidence,
+  hasDetectedStack,
   hasTrustworthyDiscoveryForVerification,
 } from './validation-evidence.js';
 import { makeState, POLICY_SNAPSHOT } from '../fixtures.js';
@@ -37,6 +38,7 @@ function makeValidationState(opts: {
   discoveryDigest?: string | null;
   discoveryHealthEnforcement?: 'off' | 'advisory' | 'required';
   gate?: SessionState['discoveryHealthGate'];
+  detectedStack?: SessionState['detectedStack'];
 }): SessionState {
   const trustworthyDefaults =
     opts.trustworthy === true
@@ -68,6 +70,7 @@ function makeValidationState(opts: {
     discoverySummary: trustworthyDefaults.discoverySummary,
     discoveryDigest: trustworthyDefaults.discoveryDigest,
     discoveryHealthGate: trustworthyDefaults.gate,
+    detectedStack: opts.detectedStack,
     policySnapshot: {
       ...POLICY_SNAPSHOT,
       discoveryHealth: {
@@ -254,6 +257,123 @@ describe('machine/validation-evidence', () => {
       );
       expect(d.blocked).toBe(false);
       expect(d.code).toBeNull();
+    });
+  });
+
+  // ─── F4 — detected-stack-but-no-commands fail-closed ────────
+  describe('F4 — detected stack with zero active checks', () => {
+    it('off + empty checks + stack detected (summary language) → blocked STACK_NO_COMMANDS', () => {
+      const d = evaluateValidationEvidence(
+        makeValidationState({ enforcement: 'off', discoverySummary: SUMMARY }),
+      );
+      expect(d.blocked).toBe(true);
+      expect(d.required).toBe(false);
+      expect(d.code).toBe('VALIDATION_EVIDENCE_STACK_NO_COMMANDS');
+    });
+
+    it('off + empty checks + stack detected + allowNoCommands=true → not blocked (sanctioned opt-out)', () => {
+      const d = evaluateValidationEvidence(
+        makeValidationState({
+          enforcement: 'off',
+          allowNoCommands: true,
+          discoverySummary: SUMMARY,
+        }),
+      );
+      expect(d.blocked).toBe(false);
+      expect(d.code).toBeNull();
+    });
+
+    it('off + empty checks + NO stack → not blocked (vacuous pass preserved)', () => {
+      const d = evaluateValidationEvidence(
+        makeValidationState({ enforcement: 'off', discoverySummary: null }),
+      );
+      expect(d.blocked).toBe(false);
+      expect(d.code).toBeNull();
+    });
+
+    it('advisory + empty checks + stack detected → blocked STACK_NO_COMMANDS', () => {
+      const d = evaluateValidationEvidence(
+        makeValidationState({ enforcement: 'advisory', discoverySummary: SUMMARY }),
+      );
+      expect(d.blocked).toBe(true);
+      expect(d.code).toBe('VALIDATION_EVIDENCE_STACK_NO_COMMANDS');
+    });
+
+    it('detectedStack.items path triggers detection independently of summary', () => {
+      const d = evaluateValidationEvidence(
+        makeValidationState({
+          enforcement: 'off',
+          discoverySummary: null,
+          detectedStack: {
+            summary: 'java=21',
+            items: [{ kind: 'language', id: 'java', version: '21' }],
+            versions: [],
+          },
+        }),
+      );
+      expect(d.blocked).toBe(true);
+      expect(d.code).toBe('VALIDATION_EVIDENCE_STACK_NO_COMMANDS');
+    });
+
+    it('required + empty + trustworthy + stack detected → REQUIRED (F4 does not pre-empt required path)', () => {
+      const d = evaluateValidationEvidence(
+        makeValidationState({ enforcement: 'required', trustworthy: true }),
+      );
+      expect(d.blocked).toBe(true);
+      expect(d.code).toBe('VALIDATION_EVIDENCE_REQUIRED');
+    });
+
+    it('non-empty checks dominate even when a stack is detected', () => {
+      const d = evaluateValidationEvidence(
+        makeValidationState({
+          enforcement: 'off',
+          activeChecks: ['build'],
+          discoverySummary: SUMMARY,
+        }),
+      );
+      expect(d.blocked).toBe(false);
+      expect(d.code).toBeNull();
+    });
+  });
+
+  // ─── hasDetectedStack unit edges ────────────────────────────
+  describe('hasDetectedStack edges', () => {
+    it('null detectedStack and null summary → false', () => {
+      expect(hasDetectedStack(makeValidationState({ enforcement: 'off' }))).toBe(false);
+    });
+
+    it('summary with only empty arrays → false', () => {
+      expect(
+        hasDetectedStack(
+          makeValidationState({
+            enforcement: 'off',
+            discoverySummary: { ...SUMMARY, primaryLanguages: [], frameworks: [] },
+          }),
+        ),
+      ).toBe(false);
+    });
+
+    it('summary framework (no language) → true', () => {
+      expect(
+        hasDetectedStack(
+          makeValidationState({
+            enforcement: 'off',
+            discoverySummary: { ...SUMMARY, primaryLanguages: [], frameworks: ['spring'] },
+          }),
+        ),
+      ).toBe(true);
+    });
+
+    it('detectedStack with empty items → false', () => {
+      expect(
+        hasDetectedStack(
+          makeValidationState({
+            enforcement: 'off',
+            discoverySummary: null,
+            detectedStack: { summary: '', items: [], versions: [] },
+          }),
+        ),
+      ).toBe(false);
     });
   });
 });

@@ -1294,7 +1294,6 @@ describe('integration/plugin', () => {
         // because input does NOT carry args per the documented contract.
         const input = { tool: 'task', sessionID, callID: 'c1' };
         const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
-        // Should not throw — enforcement logic finds the subagent_type on output.args
         await expect(beforeHook!(input, output)).resolves.toBeUndefined();
       } finally {
         await ws.cleanup();

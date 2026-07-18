@@ -135,6 +135,8 @@ export const FlowGuardConfigSchema = z.object({
       maxSelfReviewIterations: z.number().int().min(1).max(10).optional(),
       /** Override max impl-review iterations (IMPL_REVIEW phase). */
       maxImplReviewIterations: z.number().int().min(1).max(10).optional(),
+      /** Override retries after accept findings contain blocking issues (F12). */
+      maxIncoherentReviewerCaptureRetries: z.number().int().min(0).max(5).optional(),
       /** P33/P34: Require verified actor identity for regulated approvals.
        * Superseded by minimumActorAssuranceForApproval when set. */
       requireVerifiedActorsForApproval: z.boolean().optional(),
@@ -210,13 +212,13 @@ export const FlowGuardConfigSchema = z.object({
       redaction: z
         .object({
           /** Redaction mode for export artifacts. */
-          mode: z.enum(['none', 'basic', 'strict']).default('basic'),
+          mode: z.enum(['none', 'basic', 'strict']).default('none'),
           /** Include raw artifacts in archive alongside redacted artifacts. */
-          includeRaw: z.boolean().default(false),
+          includeRaw: z.boolean().default(true),
         })
-        .default({ mode: 'basic', includeRaw: false }),
+        .default({ mode: 'none', includeRaw: true }),
     })
-    .default({ redaction: { mode: 'basic', includeRaw: false } }),
+    .default({ redaction: { mode: 'none', includeRaw: true } }),
 });
 
 // ─── Types ───────────────────────────────────────────────────────────────────

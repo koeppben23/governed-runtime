@@ -260,6 +260,15 @@ describe('abort_session', () => {
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.phase).toBe('COMPLETE');
+      // Governance integrity: the aborted session is explicitly marked and is NOT
+      // presented as a clean completion — guidance redirects to /status and never
+      // offers /export as a verifiable audit package.
+      expect(result.aborted).toBe(true);
+      const product = result.productNextAction as { text: string; commands: string[] };
+      expect(product.commands).toEqual(['/status']);
+      expect(product.text).not.toContain('/export');
+      expect(product.text).not.toContain('/finish');
+      expect(product.text).not.toContain('/review');
     });
 
     it('abort is persisted on disk', async () => {

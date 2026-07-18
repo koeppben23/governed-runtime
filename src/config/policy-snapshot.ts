@@ -120,6 +120,7 @@ export function createPolicySnapshot(
     requireHumanGates: policy.requireHumanGates,
     maxSelfReviewIterations: policy.maxSelfReviewIterations,
     maxImplReviewIterations: policy.maxImplReviewIterations,
+    maxIncoherentReviewerCaptureRetries: policy.maxIncoherentReviewerCaptureRetries,
     allowSelfApproval: policy.allowSelfApproval,
     requireVerifiedActorsForApproval: policy.requireVerifiedActorsForApproval,
     audit: buildAuditSection(policy.audit),
@@ -176,6 +177,7 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     requireHumanGates: snapshot.requireHumanGates,
     maxSelfReviewIterations: snapshot.maxSelfReviewIterations,
     maxImplReviewIterations: snapshot.maxImplReviewIterations,
+    maxIncoherentReviewerCaptureRetries: snapshot.maxIncoherentReviewerCaptureRetries ?? 1,
     allowSelfApproval: snapshot.allowSelfApproval,
     selfReview: normalizeSelfReviewConfig(snapshot.selfReview),
     reviewOutputPolicy:

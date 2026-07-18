@@ -72,25 +72,18 @@ FlowGuard processes data in two contexts:
 - Long-term retention
 - Archive integrity verification
 
-### Export Redaction
+### Archive Evidence Handling
 
-FlowGuard preserves raw runtime and audit state internally; redaction is applied only to export artifacts according to the configured archive policy.
+Archive Layout v2 is a complete raw-evidence package for authorized auditors. Its default and only supported archive configuration is:
 
-**Scope of redaction:** `decision-receipts.*.json`, `review-report.*.json`, `session-state.json`, and `audit.jsonl` are subject to export redaction. The following are always included as raw and are never redacted:
+- `archive.redaction.mode = none`
+- `archive.redaction.includeRaw = true`
 
-- `archive-manifest.json` — structural metadata only (file inventory, digests, audit anchors, redaction metadata)
-- Evidence artifacts under `artifacts/` — original evidence files
+The archive includes raw runtime state, audit trail, decision receipts, review reports, and evidence artifacts. Archive manifests mark this with `rawIncluded: true` and the `raw_audit_evidence_export` risk flag. Store and transfer archives as confidential material.
 
-External references recorded on `/ticket` are stored in `session-state.json` and remain raw for authority/traceability reasons. This includes ticket URLs, tracker IDs, branch names, and similar reference metadata.
+Legacy archive redaction settings (`basic`, `strict`, or `includeRaw=false`) fail archive creation. Migrate them to the v2 values above; redacted sharing export is a future separate feature.
 
-Review-report export references are redacted in redacted export artifacts.
-
-Default archive behavior:
-
-- `archive.redaction.mode = basic`
-- `archive.redaction.includeRaw = false`
-
-Opt-in raw export (`includeRaw=true`) is explicitly marked in archive manifests with a risk flag.
+External references recorded on `/ticket`, including URLs, tracker IDs, and branch names, remain raw in the archived authoritative state and reports.
 
 ### Configuration
 

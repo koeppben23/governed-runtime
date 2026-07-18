@@ -1,7 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as os from 'node:os';
 import * as path from 'node:path';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 import {
   createToolContext,
@@ -147,8 +150,10 @@ async function completeRegulatedSession(): Promise<{
   });
   await callOk(decision, { verdict: 'approve', rationale: 'plan approved' });
 
-  // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
-  {
+  // Run all active verification checks for the current phase (VALIDATION baseline
+  // or IMPL_VALIDATION post-implementation). Discovery detects TypeScript →
+  // activeChecks=['typecheck'] → pass via run_check.
+  const runActiveChecks = async (): Promise<void> => {
     const ids = await getSessionPaths();
     const st = await readState(ids.sessDir);
     if (st && st.activeChecks.length > 0) {
@@ -156,9 +161,11 @@ async function completeRegulatedSession(): Promise<{
         await callOk(run_check, { kind });
       }
     }
-  }
+  };
+  await runActiveChecks(); // VALIDATION → IMPLEMENTATION
 
   await callOk(implement, {});
+  await runActiveChecks(); // IMPL_VALIDATION → IMPL_REVIEW (re-run checks on the fixed code)
   for (let i = 0; i < 8 && (await currentPhase()) !== 'EVIDENCE_REVIEW'; i++) {
     await callOk(review_implementation, { reviewVerdict: 'accept' });
   }
@@ -175,6 +182,26 @@ async function readAuditLines(sessDir: string): Promise<string[]> {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
+}
+
+async function mutateArchive(
+  ids: { archiveSidecar: string },
+  mutate: (root: string) => Promise<void>,
+): Promise<void> {
+  const archivePath = ids.archiveSidecar.slice(0, -'.sha256'.length);
+  const stagingRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-tamper-'));
+  try {
+    await promisify(execFile)('tar', ['xzf', archivePath, '-C', stagingRoot]);
+    await mutate(path.join(stagingRoot, ctx.sessionID));
+    await promisify(execFile)('tar', ['czf', archivePath, '-C', stagingRoot, ctx.sessionID]);
+    const digest = crypto
+      .createHash('sha256')
+      .update(await fs.readFile(archivePath))
+      .digest('hex');
+    await fs.writeFile(ids.archiveSidecar, `${digest}  ${path.basename(archivePath)}\n`, 'utf-8');
+  } finally {
+    await fs.rm(stagingRoot, { recursive: true, force: true });
+  }
 }
 
 describe('audit/archive tamper matrix', () => {
@@ -204,7 +231,9 @@ describe('audit/archive tamper matrix', () => {
     const ids = await completeRegulatedSession();
     const lines = await readAuditLines(ids.sessDir);
     lines.splice(1, 1);
-    await fs.writeFile(path.join(ids.sessDir, 'audit.jsonl'), `${lines.join('\n')}\n`, 'utf-8');
+    await mutateArchive(ids, (root) =>
+      fs.writeFile(path.join(root, 'audit', 'audit.jsonl'), `${lines.join('\n')}\n`, 'utf-8'),
+    );
 
     const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
@@ -215,7 +244,9 @@ describe('audit/archive tamper matrix', () => {
     const ids = await completeRegulatedSession();
     const lines = await readAuditLines(ids.sessDir);
     const swapped = [lines[1], lines[0], ...lines.slice(2)].filter(Boolean);
-    await fs.writeFile(path.join(ids.sessDir, 'audit.jsonl'), `${swapped.join('\n')}\n`, 'utf-8');
+    await mutateArchive(ids, (root) =>
+      fs.writeFile(path.join(root, 'audit', 'audit.jsonl'), `${swapped.join('\n')}\n`, 'utf-8'),
+    );
 
     const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
@@ -230,10 +261,12 @@ describe('audit/archive tamper matrix', () => {
       ...events[events.length - 1],
       chainHash: '0'.repeat(64),
     };
-    await fs.writeFile(
-      path.join(ids.sessDir, 'audit.jsonl'),
-      `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
-      'utf-8',
+    await mutateArchive(ids, (root) =>
+      fs.writeFile(
+        path.join(root, 'audit', 'audit.jsonl'),
+        `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
+        'utf-8',
+      ),
     );
 
     expect(verifyChain(events, { strict: true }).valid).toBe(false);
@@ -279,10 +312,12 @@ describe('audit/archive tamper matrix', () => {
         nestedTamper: { verdict: 'reject', depth: { changed: true } },
       },
     };
-    await fs.writeFile(
-      path.join(ids.sessDir, 'audit.jsonl'),
-      `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
-      'utf-8',
+    await mutateArchive(ids, (root) =>
+      fs.writeFile(
+        path.join(root, 'audit', 'audit.jsonl'),
+        `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
+        'utf-8',
+      ),
     );
 
     const chainResult = verifyChain(events, { strict: true });
@@ -338,10 +373,12 @@ describe('audit/archive tamper matrix', () => {
         ...resealedTamper,
         chainHash: computeChainHash(last.prevHash, resealedTamper),
       } as unknown as Record<string, unknown>;
-      await fs.writeFile(
-        path.join(ids.sessDir, 'audit.jsonl'),
-        `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
-        'utf-8',
+      await mutateArchive(ids, (root) =>
+        fs.writeFile(
+          path.join(root, 'audit', 'audit.jsonl'),
+          `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
+          'utf-8',
+        ),
       );
 
       const chainResult = verifyChain(events, { strict: true, strictTimestamps: true });
@@ -436,10 +473,12 @@ describe('audit/archive tamper matrix', () => {
         ...coordinatedTamper,
         chainHash: computeChainHash(last.prevHash, coordinatedTamper),
       } as unknown as Record<string, unknown>;
-      await fs.writeFile(
-        path.join(ids.sessDir, 'audit.jsonl'),
-        `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
-        'utf-8',
+      await mutateArchive(ids, (root) =>
+        fs.writeFile(
+          path.join(root, 'audit', 'audit.jsonl'),
+          `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
+          'utf-8',
+        ),
       );
 
       const chainResult = verifyChain(events, { strict: true, strictTimestamps: true });
@@ -455,10 +494,12 @@ describe('audit/archive tamper matrix', () => {
     const last = { ...events[events.length - 1]! };
     delete last.auditFormatVersion;
     events[events.length - 1] = last;
-    await fs.writeFile(
-      path.join(ids.sessDir, 'audit.jsonl'),
-      `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
-      'utf-8',
+    await mutateArchive(ids, (root) =>
+      fs.writeFile(
+        path.join(root, 'audit', 'audit.jsonl'),
+        `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
+        'utf-8',
+      ),
     );
 
     const chainResult = verifyChain(events, { strict: true });
@@ -477,10 +518,12 @@ describe('audit/archive tamper matrix', () => {
       ...events[events.length - 1],
       prevHash: 'f'.repeat(64),
     };
-    await fs.writeFile(
-      path.join(ids.sessDir, 'audit.jsonl'),
-      `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
-      'utf-8',
+    await mutateArchive(ids, (root) =>
+      fs.writeFile(
+        path.join(root, 'audit', 'audit.jsonl'),
+        `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
+        'utf-8',
+      ),
     );
 
     expect(verifyChain(events, { strict: true }).valid).toBe(false);
@@ -500,10 +543,12 @@ describe('audit/archive tamper matrix', () => {
       actor: 'legacy',
       detail: { source: 'test' },
     };
-    await fs.appendFile(
-      path.join(ids.sessDir, 'audit.jsonl'),
-      `${JSON.stringify(legacyEvent)}\n`,
-      'utf-8',
+    await mutateArchive(ids, (root) =>
+      fs.appendFile(
+        path.join(root, 'audit', 'audit.jsonl'),
+        `${JSON.stringify(legacyEvent)}\n`,
+        'utf-8',
+      ),
     );
 
     const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
@@ -513,7 +558,9 @@ describe('audit/archive tamper matrix', () => {
 
   it.skipIf(!tarOk)('malformed JSONL line -> visible integrity issue', async () => {
     const ids = await completeRegulatedSession();
-    await fs.appendFile(path.join(ids.sessDir, 'audit.jsonl'), '{not-json}\n', 'utf-8');
+    await mutateArchive(ids, (root) =>
+      fs.appendFile(path.join(root, 'audit', 'audit.jsonl'), '{not-json}\n', 'utf-8'),
+    );
 
     const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
@@ -522,13 +569,15 @@ describe('audit/archive tamper matrix', () => {
 
   it.skipIf(!tarOk)('archive manifest digest tamper -> verify fail', async () => {
     const ids = await completeRegulatedSession();
-    const manifestPath = path.join(ids.sessDir, 'archive-manifest.json');
-    const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as Record<
-      string,
-      unknown
-    >;
-    manifest.contentDigest = '0'.repeat(64);
-    await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+    await mutateArchive(ids, async (root) => {
+      const manifestPath = path.join(root, 'archive-manifest.json');
+      const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as Record<
+        string,
+        unknown
+      >;
+      manifest.contentDigest = '0'.repeat(64);
+      await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+    });
 
     const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
     expect(verification.passed).toBe(false);
@@ -539,16 +588,18 @@ describe('audit/archive tamper matrix', () => {
     'manifest policyMode flipped to weaken strict verification -> verify fail (#420)',
     async () => {
       const ids = await completeRegulatedSession();
-      const manifestPath = path.join(ids.sessDir, 'archive-manifest.json');
-      const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as Record<
-        string,
-        unknown
-      >;
-      // Attacker flips the unsigned mode field to disable strict verification.
-      // The integrity-covered authority (state.policySnapshot.mode) still says regulated.
-      expect(manifest.policyMode).toBe('regulated');
-      manifest.policyMode = 'team';
-      await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+      await mutateArchive(ids, async (root) => {
+        const manifestPath = path.join(root, 'archive-manifest.json');
+        const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8')) as Record<
+          string,
+          unknown
+        >;
+        // Attacker flips the unsigned mode field to disable strict verification.
+        // The integrity-covered authority (state.policySnapshot.mode) still says regulated.
+        expect(manifest.policyMode).toBe('regulated');
+        manifest.policyMode = 'team';
+        await fs.writeFile(manifestPath, JSON.stringify(manifest), 'utf-8');
+      });
 
       const logs: Array<{ level: string; service: string; extra?: Record<string, unknown> }> = [];
       const logger: AdapterLogger = {
@@ -588,10 +639,8 @@ describe('audit/archive tamper matrix', () => {
       // Drop the final event(s): a prefix of a valid hash-chain is still chain-valid,
       // so only a signed head+count anchor can expose the missing tail.
       const truncated = lines.slice(0, lines.length - 1);
-      await fs.writeFile(
-        path.join(ids.sessDir, 'audit.jsonl'),
-        `${truncated.join('\n')}\n`,
-        'utf-8',
+      await mutateArchive(ids, (root) =>
+        fs.writeFile(path.join(root, 'audit', 'audit.jsonl'), `${truncated.join('\n')}\n`, 'utf-8'),
       );
 
       const logs: Array<{ level: string; service: string; extra?: Record<string, unknown> }> = [];
@@ -625,10 +674,8 @@ describe('audit/archive tamper matrix', () => {
 
   it.skipIf(!tarOk)('evidence file tamper after archive -> verify fail', async () => {
     const ids = await completeRegulatedSession();
-    await fs.appendFile(
-      path.join(ids.sessDir, 'archive-manifest.json'),
-      '\n{"tampered":true}\n',
-      'utf-8',
+    await mutateArchive(ids, (root) =>
+      fs.appendFile(path.join(root, 'archive-manifest.json'), '\n{"tampered":true}\n', 'utf-8'),
     );
 
     const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
@@ -651,7 +698,9 @@ describe('audit/archive tamper matrix', () => {
     'regulated tamper verification fails while persisted workflow phase remains complete',
     async () => {
       const ids = await completeRegulatedSession();
-      await fs.appendFile(path.join(ids.sessDir, 'audit.jsonl'), '{not-json}\n', 'utf-8');
+      await mutateArchive(ids, (root) =>
+        fs.appendFile(path.join(root, 'audit', 'audit.jsonl'), '{not-json}\n', 'utf-8'),
+      );
 
       const verification = await verifyArchive(ids.fingerprint, ctx.sessionID);
       const state = await readState(ids.sessDir);

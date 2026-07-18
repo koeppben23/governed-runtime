@@ -280,6 +280,7 @@ function buildNewHydrateState(
     plan: null,
     selfReview: null,
     validation: [],
+    implValidation: [],
     implementation: null,
     reducedCeremony: null,
     implReview: null,

@@ -221,13 +221,16 @@ function manualAttestedInvocation(input: {
   };
 }
 
-function planStateWithEvidence(verdict: 'accept' | 'changes_requested' = 'accept') {
+function planStateWithEvidence(
+  verdict: 'accept' | 'changes_requested' = 'accept',
+  blockingIssues: unknown[] = [],
+) {
   const rawFindings: Record<string, unknown> = {
     iteration: 0,
     planVersion: 1,
     reviewMode: 'subagent',
     overallVerdict: verdict,
-    blockingIssues: [],
+    blockingIssues,
     majorRisks: [],
     missingVerification: [],
     scopeCreep: [],
@@ -340,6 +343,37 @@ describe('BUG-17: plan evidence-first resolution', () => {
     const parsed = JSON.parse(String(res));
     // Evidence-resolved findings used — no BLOCKED
     expect(parsed.error).toBeUndefined();
+  });
+
+  it('F12 REGRESSION: host_task_required + captured accept WITH blocking issue → BLOCKED, no advance, no persist', async () => {
+    // Exact demo defect: the host-captured reviewer record has overallVerdict
+    // 'accept' AND a non-empty blockingIssues array. The plan tool must fail
+    // closed at evidence resolution and MUST NOT advance to PLAN_REVIEW or
+    // persist any converged state.
+    mocks.state = planStateWithEvidence('accept', [
+      { severity: 'minor', category: 'quality', message: 'stale comment' },
+    ]);
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'host_task_required',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+    });
+
+    const { plan } = await import('./plan.js');
+    const res = await plan.execute({ reviewVerdict: 'accept' }, {} as never);
+    const parsed = JSON.parse(String(res));
+
+    // 1. Fail-closed with the coherence reason code.
+    expect(parsed.error).toBe(true);
+    expect(parsed.code).toBe('SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
+
+    // 2. No advance to the review gate and no converged state persisted:
+    //    the boundary stopped before any state materialization.
+    expect(mocks.autoAdvance).not.toHaveBeenCalled();
+    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
+    expect(mocks.appendNextAction).not.toHaveBeenCalled();
   });
 
   it('FAIL-CLOSED: auto-advance overflow returns blocked and persists NO state (#428)', async () => {

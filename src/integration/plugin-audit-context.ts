@@ -71,6 +71,10 @@ export async function resolveAuditContext(
   if (!sessDir) return null;
 
   const { policy, state } = await deps.resolveSessionPolicy(sessDir);
+  if (!state) {
+    deps.log.debug('audit', 'skipping unhydrated session audit', { sessionId, tool: toolName });
+    return null;
+  }
   const { emitToolCalls, emitTransitions, enableChainHash } = policy.audit;
   const effectiveMode = policy.mode;
 

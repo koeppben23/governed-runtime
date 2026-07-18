@@ -2,21 +2,26 @@
  * @module validate
  * @description /validate rail — run verification checks via subprocess execution.
  *
- * Allowed only in VALIDATION phase. Runs all active checks by executing
- * discovered verification commands and recording execution evidence.
+ * Allowed in VALIDATION and IMPL_VALIDATION phases. Runs all active checks by
+ * executing discovered verification commands and recording execution evidence.
  *
  * After validation:
- * - ALL_PASSED → auto-advance to IMPLEMENTATION
- * - CHECK_FAILED → transition to PLAN (plan must be revised + re-approved)
+ * - VALIDATION: ALL_PASSED → IMPLEMENTATION; CHECK_FAILED → PLAN
+ * - IMPL_VALIDATION: ALL_PASSED → IMPL_REVIEW; CHECK_FAILED → IMPLEMENTATION
+ * - Either phase: CHECK_ERRORED stays in same phase for retry
  *
  * v2: Execution-evidence model. FlowGuard executes commands directly.
  * Agent self-report is no longer accepted.
  *
- * @version v2
+ * v3: IMPL_VALIDATION support — post-implementation checks write to
+ * implValidation and keep the approved plan intact.
+ *
+ * @version v3
  */
 
 import type { SessionState } from '../state/schema.js';
 import type { ValidationResult } from '../state/evidence-validation.js';
+import { isExecutionError } from '../state/evidence-validation.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext } from './types.js';
 import { autoAdvance, createPolicyEvalFn } from './types.js';
@@ -78,25 +83,10 @@ export async function executeValidate(
     results.push(result);
   }
 
-  // 4. Record results in state
-  // If any check failed, clear planning evidence so the plan must be revised and
-  // re-approved (CHECK_FAILED → PLAN). Without clearing, autoAdvance would see
-  // stale self-review/reviewDecision and skip past PLAN immediately.
-  const allPassed = results.every((r) => r.passed);
-  const nextState: SessionState = {
-    ...state,
-    validation: results,
-    error: null,
-    ...(allPassed
-      ? {}
-      : {
-          selfReview: null,
-          reviewDecision: null,
-          plan: state.plan ? { ...state.plan, reviewFindings: undefined } : null,
-        }),
-  };
+  // 4. Record results in state — phase-aware slot and failure semantics.
+  const nextState = buildValidationResultState(state, results);
 
-  // 5. Auto-advance (ALL_PASSED → IMPLEMENTATION, or CHECK_FAILED → PLAN) — policy-aware
+  // 5. Auto-advance — policy-aware
   const evalFn = createPolicyEvalFn(ctx);
   const advanced = autoAdvance(nextState, evalFn, ctx);
   if (advanced.kind === 'overflow') {
@@ -105,4 +95,39 @@ export async function executeValidate(
   const { state: finalState, evalResult, transitions } = advanced;
 
   return { kind: 'ok', state: finalState, evalResult, transitions };
+}
+
+/**
+ * Build the next state after validation — phase-aware slot assignment and
+ * evidence clearing.
+ *
+ * In IMPL_VALIDATION: writes to implValidation, clears implementation on
+ * genuine failure (CODE is wrong), keeps the approved plan intact.
+ * In VALIDATION: writes to validation, clears plan/self-review/reviewDecision
+ * on genuine failure (PLAN is wrong).
+ * Execution errors (timeout/command-not-found) never clear evidence in either
+ * phase — the session stays for a retry.
+ */
+function buildValidationResultState(
+  state: SessionState,
+  results: ValidationResult[],
+): SessionState {
+  const allPassed = results.every((r) => r.passed);
+  const hasExecutionError = results.some(isExecutionError);
+  const genuinelyFailed = !allPassed && !hasExecutionError;
+  const postImplementation = state.phase === 'IMPL_VALIDATION';
+
+  return {
+    ...state,
+    ...(postImplementation ? { implValidation: results } : { validation: results }),
+    error: null,
+    ...(postImplementation && genuinelyFailed ? { implementation: null } : {}),
+    ...(!postImplementation && genuinelyFailed
+      ? {
+          selfReview: null,
+          reviewDecision: null,
+          plan: state.plan ? { ...state.plan, reviewFindings: undefined } : null,
+        }
+      : {}),
+  };
 }

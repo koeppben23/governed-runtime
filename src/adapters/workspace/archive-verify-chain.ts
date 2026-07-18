@@ -13,6 +13,9 @@
 
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
+import * as os from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { hashBuffer } from '../../shared/hashing.js';
 import { readState } from '../persistence.js';
 import { readAuditTrail } from '../persistence-audit.js';
@@ -34,7 +37,7 @@ import {
 } from './archive-verify-helpers.js';
 import { isPolicyMode } from '../../state/policy-mode.js';
 import { validateFingerprint, validateSessionId } from './types.js';
-import { workspacesHome, sessionDir } from './init.js';
+import { workspacesHome } from './init.js';
 import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js';
 import {
   loadArchiveManifest,
@@ -396,14 +399,14 @@ async function verifyTimestampChain(
 }
 
 async function verifyAuditChainIntegrity(
-  sessDir: string,
+  archiveRoot: string,
   manifest: ArchiveManifest,
   findings: ArchiveFinding[],
   state: import('../../state/schema.js').SessionState | null,
   strict: boolean,
 ): Promise<void> {
   try {
-    const { events, skipped } = await readAuditTrail(sessDir);
+    const { events, skipped } = await readAuditTrail(path.join(archiveRoot, 'audit'));
     verifyAuditCompleteness(manifest, events, findings);
 
     if (strict && skipped > 0) {
@@ -415,7 +418,7 @@ async function verifyAuditChainIntegrity(
       });
     }
 
-    await verifyArtifactBinding(sessDir, manifest, events, findings);
+    await verifyArtifactBinding(archiveRoot, manifest, events, findings);
 
     if (events.length > 0) {
       await verifyTimestampChain(events, state, manifest, findings, strict);
@@ -449,6 +452,7 @@ function addContentDigestFindings(manifest: ArchiveManifest, findings: ArchiveFi
       auditChainHead: manifest.auditChainHead,
       auditEventCount: manifest.auditEventCount,
       schemaVersion: manifest.schemaVersion,
+      layoutVersion: manifest.layoutVersion,
       sessionId: manifest.sessionId,
       fingerprint: manifest.fingerprint,
       discoveryDigest: manifest.discoveryDigest,
@@ -573,6 +577,8 @@ async function verifyArchiveIntegrity(
   await verifyArchiveChecksum(archiveTarPath, checksumSidecarPath, strict, findings);
 }
 
+// Extraction, manifest validation, and cleanup must stay in one transaction.
+// eslint-disable-next-line max-lines-per-function
 async function verifyArchiveImpl(
   fingerprint: string,
   sessionId: string,
@@ -580,64 +586,91 @@ async function verifyArchiveImpl(
   validateFingerprint(fingerprint);
   const validSessionId = validateSessionId(sessionId);
 
-  const sessDir = sessionDir(fingerprint, validSessionId);
+  const archiveCheckDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
+  const archiveTarPath = path.join(archiveCheckDir, `${validSessionId}.tar.gz`);
   const findings: ArchiveFinding[] = [];
+  const extractionRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-archive-verify-'));
+  const sessDir = path.join(extractionRoot, validSessionId);
 
-  const manifest = await loadArchiveManifest(sessDir, findings);
-  if (!manifest) {
+  try {
+    await promisify(execFile)('tar', ['xzf', archiveTarPath, '-C', extractionRoot], {
+      timeout: 30_000,
+      windowsHide: true,
+    });
+  } catch (error) {
+    findings.push({
+      code: 'missing_manifest',
+      severity: 'error',
+      message: `Archive extraction failed: ${error instanceof Error ? error.message : String(error)}`,
+    });
+    await fs.rm(extractionRoot, { recursive: true, force: true });
     return buildVerificationResult(findings, null);
   }
 
-  const stateExists = await fileExists(path.join(sessDir, 'session-state.json'));
-  let state: import('../../state/schema.js').SessionState | null = null;
-  if (stateExists) {
-    try {
-      state = await readState(sessDir);
-    } catch (error) {
-      findings.push({
-        code: 'state_invalid',
-        severity: 'error',
-        message: `Session state file could not be parsed or validated: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        file: 'session-state.json',
-      });
-    }
-  }
-  if (!stateExists) {
-    findings.push({
-      code: 'state_missing',
-      severity: 'error',
-      message: 'Session state file not found',
-      file: 'session-state.json',
-    });
-  }
+  try {
+    const manifest = await loadArchiveManifest(sessDir, findings);
+    if (!manifest) return buildVerificationResult(findings, null);
 
-  if (manifest.discoveryDigest) {
-    for (const snapshotFile of ['discovery-snapshot.json', 'profile-resolution-snapshot.json']) {
-      const exists = await fileExists(path.join(sessDir, snapshotFile));
-      if (!exists) {
+    const stateDir = path.join(sessDir, 'state');
+    const stateExists = await fileExists(path.join(stateDir, 'session-state.json'));
+    let state: import('../../state/schema.js').SessionState | null = null;
+    if (stateExists) {
+      try {
+        state = await readState(stateDir);
+      } catch (error) {
         findings.push({
-          code: 'snapshot_missing',
-          severity: 'warning',
-          message: `Discovery snapshot not found: ${snapshotFile}`,
-          file: snapshotFile,
+          code: 'state_invalid',
+          severity: 'error',
+          message: `Session state file could not be parsed or validated: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          file: 'state/session-state.json',
         });
       }
     }
+    if (!stateExists) {
+      findings.push({
+        code: 'state_missing',
+        severity: 'error',
+        message: 'Session state file not found',
+        file: 'state/session-state.json',
+      });
+    }
+
+    if (manifest.discoveryDigest) {
+      for (const snapshotFile of ['discovery-snapshot.json', 'profile-resolution-snapshot.json']) {
+        const archivePath = `context/${snapshotFile}`;
+        const exists = await fileExists(path.join(sessDir, archivePath));
+        if (!exists) {
+          findings.push({
+            code: 'snapshot_missing',
+            severity: 'warning',
+            message: `Discovery snapshot not found: ${snapshotFile}`,
+            file: archivePath,
+          });
+        }
+      }
+    }
+
+    await verifyManifestFiles(sessDir, manifest, findings);
+    await checkUnexpectedFiles(sessDir, manifest, findings);
+    await verifyArchiveIntegrity(
+      { sessDir, fingerprint, validSessionId },
+      manifest,
+      findings,
+      state,
+    );
+
+    const result = buildVerificationResult(findings, manifest);
+    getAdapterLogger().info('archive', 'archive_verified', {
+      sessionId: validSessionId,
+      passed: result.passed,
+      findingCount: result.findings.length,
+    });
+    return result;
+  } finally {
+    await fs.rm(extractionRoot, { recursive: true, force: true });
   }
-
-  await verifyManifestFiles(sessDir, manifest, findings);
-  await checkUnexpectedFiles(sessDir, manifest, findings);
-  await verifyArchiveIntegrity({ sessDir, fingerprint, validSessionId }, manifest, findings, state);
-
-  const result = buildVerificationResult(findings, manifest);
-  getAdapterLogger().info('archive', 'archive_verified', {
-    sessionId: validSessionId,
-    passed: result.passed,
-    findingCount: result.findings.length,
-  });
-  return result;
 }
 
 // ─── Result Construction ──────────────────────────────────────────────────────

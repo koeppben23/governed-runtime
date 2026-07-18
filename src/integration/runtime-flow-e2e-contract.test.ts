@@ -297,6 +297,9 @@ describe('FlowGuard tool-level E2E', () => {
               history: [],
               reviewFindings: undefined,
             },
+            // No active checks → IMPL_VALIDATION passes vacuously and auto-advances to
+            // IMPL_REVIEW (this segment exercises the review handshake, not re-validation).
+            activeChecks: [],
           }),
         );
         mkdirSync(path.join(s.worktree, 'src'), { recursive: true });
@@ -405,6 +408,10 @@ describe('FlowGuard tool-level E2E', () => {
         expect(r3).not.toContain('INTERNAL_ERROR');
         st = await readState(s.sDir);
         expect(st!.implementation).toBeTruthy();
+
+        // IMPL_VALIDATION: re-run the checks against the implemented code → IMPL_REVIEW
+        await run_check.execute({ kind: 'typecheck' }, s.tc);
+        st = await readState(s.sDir);
 
         // Step 5: inject impl evidence + approve
         const { oblId: iid } = await inject(s.sDir, st!, host, 'implement', s.tc.sessionID);

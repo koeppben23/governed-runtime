@@ -34,6 +34,7 @@ const ALL_PHASES: Phase[] = [
   'PLAN_REVIEW',
   'VALIDATION',
   'IMPLEMENTATION',
+  'IMPL_VALIDATION',
   'IMPL_REVIEW',
   'EVIDENCE_REVIEW',
   'COMPLETE',
@@ -295,7 +296,7 @@ describe('state machine fuzz', () => {
       fc.property(fc.constantFrom('REDUCED_CEREMONY', 'IMPL_COMPLETE' as Event), (event) => {
         const target = resolveTransition('IMPLEMENTATION', event);
         expect(target).toBeDefined();
-        expect(['EVIDENCE_REVIEW', 'IMPL_REVIEW']).toContain(target!);
+        expect(['IMPL_VALIDATION', 'EVIDENCE_REVIEW']).toContain(target!);
       }),
       {
         numRuns: Number(process.env.FAST_CHECK_NUM_RUNS) || 100,

@@ -10,8 +10,8 @@
  * - Policy-aware emission (tool_call, transition, chain hash)
  * - Lifecycle events (session_created, session_completed, session_aborted)
  * - Error events on tool failures
- * - Auto-archive on COMPLETE transitions
- * - Fire-and-forget error handling (no crashes)
+ * - Mode-correct completion archival
+ * - Solo fire-and-forget error handling (no crashes)
  *
  * Git adapter functions are selectively mocked (same as tools-execute.test.ts).
  *
@@ -20,6 +20,8 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
+import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import {
   createTestWorkspace,
   isTarAvailable,
@@ -34,6 +36,7 @@ import {
   initWorkspace,
   computeFingerprint,
   sessionDir as resolveSessionDir,
+  workspacesHome,
 } from '../adapters/workspace/index.js';
 import { verifyChain } from '../audit/integrity.js';
 import { makeState, makeProgressedState, POLICY_SNAPSHOT } from '../fixtures.js';
@@ -215,6 +218,19 @@ describe('plugin-integration', () => {
       expect(toolCallEvents[0]!.event).toBe('tool_call:flowguard_status');
     });
 
+    it('does not materialize a session directory for an unhydrated child tool attempt', async () => {
+      const childSessionId = `ses_${crypto.randomUUID().replace(/-/g, '')}`;
+
+      await handler(
+        { tool: 'flowguard_abort_session', sessionID: childSessionId },
+        { title: 'abort', output: makeToolOutput({ phase: 'unknown' }), metadata: {} },
+      );
+
+      await expect(fs.stat(resolveSessionDir(fingerprint, childSessionId))).rejects.toMatchObject({
+        code: 'ENOENT',
+      });
+    });
+
     it('persists transition events for phase changes', async () => {
       const transitions = [
         {
@@ -326,6 +342,14 @@ describe('plugin-integration', () => {
       const lifecycle = events.filter((e) => eventKind(e) === 'lifecycle');
       const completed = lifecycle.find((e) => e.event.includes('session_completed'));
       expect(completed).toBeDefined();
+      const archivePath = path.join(
+        workspacesHome(),
+        fingerprint,
+        'sessions',
+        'archive',
+        `${sessionId}.tar.gz`,
+      );
+      await expect(fs.stat(archivePath)).rejects.toMatchObject({ code: 'ENOENT' });
     });
 
     it('actor classification matches policy', async () => {
@@ -900,7 +924,7 @@ describe('plugin-integration', () => {
   // ─── PERF ──────────────────────────────────────────────────
 
   describe.skipIf(!PERF_ENABLED)('PERF', () => {
-    it('1000 non-mutating non-FlowGuard tool calls complete in < 50ms', async () => {
+    it('1000 non-mutating non-FlowGuard tool calls complete in < 100ms', async () => {
       const start = performance.now();
       for (let i = 0; i < 1000; i++) {
         await handler(
@@ -910,7 +934,7 @@ describe('plugin-integration', () => {
       }
       const elapsed = performance.now() - start;
       // Prefix check should be near-instant (CI-tolerant budget)
-      expect(elapsed).toBeLessThan(75);
+      expect(elapsed).toBeLessThan(100);
     });
 
     it('10 FlowGuard tool calls with persistence complete reasonably', async () => {

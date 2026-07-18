@@ -190,8 +190,10 @@ async function driveToComplete(context: TestToolContext = ctx): Promise<string> 
       await callOk(plan, { planText: '## Plan\nTest' }, context);
     } else if (lastPhase === 'PLAN') {
       await callOk(plan, { reviewVerdict: 'accept' }, context);
-    } else if (lastPhase === 'VALIDATION') {
-      // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
+    } else if (lastPhase === 'VALIDATION' || lastPhase === 'IMPL_VALIDATION') {
+      // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check.
+      // Covers the pre-implementation VALIDATION baseline and the post-implementation
+      // IMPL_VALIDATION re-run against the fixed code.
       const sd = await getSessDir(context);
       const st = await readState(sd);
       if (st && st.activeChecks.length > 0) {
@@ -263,7 +265,7 @@ describe('HAPPY: status JSON shape is stable', () => {
     await callOk(plan, { planText: '## Plan\nTest' });
     await callOk(plan, { reviewVerdict: 'accept' });
     // Pass validation: discovery detects TypeScript → activeChecks=['typecheck']
-    {
+    const runActiveChecks = async (): Promise<void> => {
       const sd = await getSessDir();
       const st = await readState(sd);
       if (st && st.activeChecks.length > 0) {
@@ -271,8 +273,10 @@ describe('HAPPY: status JSON shape is stable', () => {
           await callOk(run_check, { kind });
         }
       }
-    }
+    };
+    await runActiveChecks();
     await callOk(implement, {});
+    await runActiveChecks(); // IMPL_VALIDATION → IMPL_REVIEW
 
     const result = parseToolResult<StatusResult>(await status.execute({}, ctx));
     expect(result.phase).toBe('IMPL_REVIEW');

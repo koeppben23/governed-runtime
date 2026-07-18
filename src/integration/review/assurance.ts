@@ -20,7 +20,7 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
 
-export const REVIEW_CRITERIA_VERSION = 'p37-v1';
+export const REVIEW_CRITERIA_VERSION = 'p40-v1';
 
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 // No fallback: if the import fails, the module fails fast (desired for governance)
@@ -279,7 +279,7 @@ export function buildInvocationEvidence(input: {
   source?: 'host-orchestrated' | 'agent-submitted-attested';
   reviewOutputMode?: 'structured_output' | 'text_compat';
   structuredOutputUsed?: boolean;
-  reviewAssuranceLevel?: 'structured_high' | 'text_compat_lower';
+  reviewAssuranceLevel?: 'structured_high' | 'structured_recovered' | 'text_compat_lower';
   extractionMethod?: 'direct_json' | 'json_fence' | 'outermost_braces';
   modelCapabilityError?: string;
   /** Captured verdict from the reviewer's actual output (host-task authoritative). */

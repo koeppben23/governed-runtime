@@ -373,7 +373,9 @@ describe('run_check', () => {
       const raw = await run_check.execute({ kind: 'typecheck' }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('PLAN'); // Timeout = failure → back to PLAN
+      // F5: an execution error (timeout) is not a plan deficiency — stay in
+      // VALIDATION for a retry (CHECK_ERRORED) instead of routing back to PLAN.
+      expect(result.phase).toBe('VALIDATION');
       const evidence = result.evidence as Record<string, unknown>;
       expect(evidence.timedOut).toBe(true);
       expect(evidence.passed).toBe(false);

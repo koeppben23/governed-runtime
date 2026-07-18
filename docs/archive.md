@@ -14,25 +14,26 @@ When a session reaches COMPLETE phase, you can archive it:
 
 An archive includes:
 
-- `session-state.json` — Complete session state
-- `audit.jsonl` — Audit trail (if enabled)
-- `decision-receipts.redacted.v1.json` — Redacted decision receipts export artifact
-- `review-report.redacted.json` — Redacted review report export artifact (when review report exists)
-- `discovery-snapshot.json` — Repository discovery snapshot
-- `profile-resolution-snapshot.json` — Profile resolution snapshot
-- `artifacts/ticket.v*.md` + `artifacts/ticket.v*.json` — Append-only ticket evidence artifacts
-- `artifacts/plan.v*.md` + `artifacts/plan.v*.json` — Append-only plan evidence artifacts
-
-By default (`archive.redaction.mode=basic`, `includeRaw=false`), raw decision receipts and raw review report are excluded from archives.
+- `state/session-state.json` — Complete canonical session state
+- `audit/audit.jsonl` — Complete hash-chained audit trail
+- `audit/decision-receipts.v1.json` — Decision receipt projection
+- `context/discovery-snapshot.json` — Repository discovery snapshot
+- `context/profile-resolution-snapshot.json` — Profile resolution snapshot
+- `artifacts/ticket/`, `artifacts/plan/`, and `artifacts/reviews/` — Evidence artifacts
+- `reports/review-report.json` — Standalone review report when present
+- `implementation/implementation-diff.<digest>.patch` — Implementation patch when present
 
 FlowGuard fail-closes archive creation when `session-state.json` contains ticket/plan evidence but required derived artifacts under `artifacts/` are missing, malformed, or digest/hash-inconsistent with current ticket/plan evidence.
 
-**Redaction scope:** Redaction is applied only to export artifacts (`decision-receipts.*.json`, `review-report.*.json`). The following artifacts are **always included as raw** and are **never redacted**:
+Archive Layout v2 is a complete, raw evidence package for authorized auditors. It
+does not apply redaction or encryption. Store and transfer it as confidential
+material. A future redacted sharing export is a separate product surface and is
+not an audit substitute.
 
-- `session-state.json` — raw session state (internal SSOT)
-- `audit.jsonl` — raw append-only audit chain (integrity chain artifact)
-
-Raw runtime and audit state is preserved internally; redaction is applied only to export artifacts according to the configured archive policy.
+Archive Layout v2 requires `archive.redaction.mode=none` and
+`archive.redaction.includeRaw=true`. These are the defaults. Legacy redaction
+settings (`basic`, `strict`, or `includeRaw=false`) fail archive creation; migrate
+the configuration before exporting.
 
 ## Archive Location
 
@@ -45,9 +46,9 @@ Archives are stored at:
 ### Configuration Scope
 
 Archive creation calls `readConfig()` without a worktree argument intentionally.
-The originating worktree may no longer exist at archive time. Archive/redaction
-uses global config or default config. Repo config overrides do not apply to
-archives unless a future policy-snapshot change is introduced.
+The originating worktree may no longer exist at archive time. Archive
+configuration uses global config or default config. Repo config overrides do not
+apply to archives unless a future policy-snapshot change is introduced.
 
 ## Manifest
 
@@ -56,6 +57,7 @@ Each archive includes an `archive-manifest.json`:
 ```json
 {
   "schemaVersion": "archive-manifest.v2",
+  "layoutVersion": 2,
   "createdAt": "2026-04-15T10:00:00.000Z",
   "sessionId": "uuid",
   "fingerprint": "abc123...",
@@ -64,24 +66,16 @@ Each archive includes an `archive-manifest.json`:
   "discoveryDigest": "sha256...",
   "auditChainHead": "sha256...",
   "auditEventCount": 12,
-  "redactionMode": "basic",
-  "rawIncluded": false,
-  "redactedArtifacts": [
-    "decision-receipts.redacted.v1.json",
-    "review-report.redacted.json"
-  ],
-  "excludedFiles": ["decision-receipts.v1.json", "review-report.json"],
-  "riskFlags": [],
-  "includedFiles": ["session-state.json", "audit.jsonl"],
+  "rawIncluded": true,
+  "riskFlags": ["raw_audit_evidence_export"],
+  "includedFiles": ["state/session-state.json", "audit/audit.jsonl"],
   "fileDigests": {
-    "session-state.json": "sha256...",
-    "audit.jsonl": "sha256..."
+    "state/session-state.json": "sha256...",
+    "audit/audit.jsonl": "sha256..."
   },
   "contentDigest": "sha256..."
 }
 ```
-
-If `includeRaw=true`, `riskFlags` includes `raw_export_enabled`.
 
 ### Manifest schema versions
 
@@ -159,8 +153,9 @@ state tracks the archive lifecycle:
 `archiveStatus !== 'verified'` (and no `error`) is NOT a clean regulated
 completion. Status/doctor tools should surface this as degraded.
 
-**Non-regulated sessions** (solo, team) do not set `archiveStatus`. Archive
-creation is fire-and-forget via the audit plugin — existing behavior preserved.
+**Non-regulated sessions** do not set `archiveStatus`. Solo sessions may use
+the audit plugin's fire-and-forget archive path. Team sessions never archive
+on completion: `/export` is the explicit archive action.
 
 **Aborted sessions** (`error.code === 'ABORTED'`) do not trigger the regulated
 archive lifecycle. Abort is an emergency escape with no archive guarantee.

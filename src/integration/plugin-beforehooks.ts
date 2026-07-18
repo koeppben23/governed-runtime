@@ -141,6 +141,8 @@ async function enforceTaskBefore(
   );
 }
 
+// This host-hook coordinator preserves sequential fail-closed checks.
+// eslint-disable-next-line complexity
 async function enforceReviewerObligationCheck(
   runtime: FlowGuardPluginRuntime,
   sessionState: SessionState | null,
@@ -148,18 +150,20 @@ async function enforceReviewerObligationCheck(
 ): Promise<void> {
   const obligationResult = enforceReviewerObligation({
     obligations: sessionState?.reviewAssurance?.obligations ?? [],
+    invocations: sessionState?.reviewAssurance?.invocations ?? [],
     reviewInvocationPolicy: sessionState?.policySnapshot?.reviewInvocationPolicy,
+    maxIncoherentReviewerCaptureRetries:
+      sessionState?.policySnapshot?.maxIncoherentReviewerCaptureRetries,
     strictEnforcement,
     stateAvailable: sessionState !== null,
   });
-  if (!obligationResult.allowed) {
-    const obligations = sessionState?.reviewAssurance?.obligations ?? [];
-    runtime.log.warn('enforcement', `reviewer task blocked — ${obligationResult.code}`, {
-      policy: sessionState?.policySnapshot?.reviewInvocationPolicy,
-      pendingObligationCount: obligations.filter((o) => o.status === 'pending').length,
-    });
-    throw buildEnforcementError(obligationResult.code, obligationResult.reason);
-  }
+  if (obligationResult.allowed) return;
+  const obligations = sessionState?.reviewAssurance?.obligations ?? [];
+  runtime.log.warn('enforcement', `reviewer task blocked — ${obligationResult.code}`, {
+    policy: sessionState?.policySnapshot?.reviewInvocationPolicy,
+    pendingObligationCount: obligations.filter((o) => o.status === 'pending').length,
+  });
+  throw buildEnforcementError(obligationResult.code, obligationResult.reason);
 }
 
 async function enforceMutatingToolCheck(

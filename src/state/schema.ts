@@ -72,6 +72,7 @@ export const Phase = z.enum([
   'PLAN_REVIEW',
   'VALIDATION',
   'IMPLEMENTATION',
+  'IMPL_VALIDATION',
   'IMPL_REVIEW',
   'EVIDENCE_REVIEW',
   'COMPLETE',
@@ -199,6 +200,9 @@ export const Event = z.enum([
   'ALL_PASSED',
   'CHECK_FAILED',
 
+  // VALIDATION execution error (timeout / command-not-found): retry, do NOT re-plan
+  'CHECK_ERRORED',
+
   // IMPLEMENTATION → IMPL_REVIEW
   'IMPL_COMPLETE',
 
@@ -285,6 +289,14 @@ export const SessionState = z.object({
 
   /** Validation check results (VALIDATION phase, N checks in one phase). */
   validation: z.array(ValidationResult),
+
+  /**
+   * Post-implementation validation check results (IMPL_VALIDATION phase). Kept
+   * separate from `validation` (the pre-implementation baseline run) so the audit
+   * trail retains both the baseline and the re-run of checks against the fixed code.
+   * Defaulted to [] for backward compatibility with pre-IMPL_VALIDATION sessions.
+   */
+  implValidation: z.array(ValidationResult).default([]),
 
   /** Implementation evidence from /implement. */
   implementation: ImplEvidence.nullable(),

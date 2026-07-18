@@ -39,7 +39,7 @@ Existing AI tools leave these questions unanswered. The platform closes this gap
 ### Deterministic Workflow Control
 
 - **3 independent flows** — Ticket (full dev lifecycle), Architecture (ADR creation), Review (compliance and content-aware review)
-- **14 explicit phases** across three flows, starting from a shared READY entry point
+- **15 explicit phases** across three flows, starting from a shared READY entry point
 - **Phase gates** that require evidence before progression
 - **Computed next actions** — the system tells you exactly what is allowed, not guessed
 - **Explicit orientation surface** — `/status` provides read-only canonical projections for phase, blockers, evidence, context, and readiness
@@ -116,21 +116,21 @@ The system establishes workspace binding (OpenCode session to git worktree via r
 
 Thirteen installed core FlowGuard commands cover workflow, diagnostics, and operations:
 
-| Command            | Purpose                                                                                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `/hydrate`         | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                              |
-| `/status`          | Show current phase, blockers, evidence, context, and readiness projections                                         |
+| Command            | Purpose                                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `/hydrate`         | Bootstrap FlowGuard session, bind workspace, resolve fingerprint, profile, and policy                               |
+| `/status`          | Show current phase, blockers, evidence, context, and readiness projections                                          |
 | `/finish`          | Read-only Finish Card: overall readiness, evidence, and non-normative next-action guidance before export/PR/archive |
-| `/ticket`          | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs.     |
-| `/plan`            | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.                |
-| `/architecture`    | Submit Architecture Decision Record with self-review loop. Converged ADRs display an **Architecture Review Card**. |
-| `/review`          | Generate standalone compliance or content-aware review. Completed reviews display a **Review Report Card**.        |
-| `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                                          |
-| `/implement`       | Execute implementation, record evidence, run review loop                                                           |
-| `/validate`        | Run validation checks (test quality, rollback safety)                                                              |
-| `/continue`        | Universal routing — do the next appropriate action for the current phase                                           |
-| `/abort`           | Emergency session termination                                                                                      |
-| `/archive`         | Archive a completed session as `.tar.gz`                                                                           |
+| `/ticket`          | Record the task description for FlowGuard tracking. Supports external references (Jira, ADO, GitHub) via URLs.      |
+| `/plan`            | Generate implementation plan with self-review loop. Converged plans display a **Plan Review Card**.                 |
+| `/architecture`    | Submit Architecture Decision Record with self-review loop. Converged ADRs display an **Architecture Review Card**.  |
+| `/review`          | Generate standalone compliance or content-aware review. Completed reviews display a **Review Report Card**.         |
+| `/review-decision` | Record human verdict at User Gates (approve / changes_requested / reject)                                           |
+| `/implement`       | Execute implementation, record evidence, run review loop                                                            |
+| `/validate`        | Run validation checks (test quality, rollback safety)                                                               |
+| `/continue`        | Universal routing — do the next appropriate action for the current phase                                            |
+| `/abort`           | Emergency session termination                                                                                       |
+| `/archive`         | Archive a completed session as `.tar.gz`                                                                            |
 
 Product commands (`/start`, `/task`, `/approve`, `/request-changes`, `/reject`, `/check`, `/export`, `/why`) provide a user-friendly facade that invokes canonical tools with pre-configured arguments. Review cards (Plan, Architecture, Review Report) are derived presentation artifacts injected into tool responses — `session-state.json` remains the SSOT.
 
@@ -385,7 +385,7 @@ This gives operators and compliance stakeholders a concrete vocabulary for syste
 - **Language:** TypeScript (100%, zero-bridge architecture)
 - **Distribution:** Pre-built proprietary release artifact (`flowguard-core-{version}.tgz`) via GitHub Releases
 - **Release Integrity:** SHA-256 checksums + CycloneDX SBOM + GitHub provenance attestation
-- **Phase Count:** 14 explicit workflow phases across 3 flows
+- **Phase Count:** 15 explicit workflow phases across 3 flows
 - **Workflow Commands:** 12 installed core slash commands (hydrate, ticket, plan, continue, implement, review-decision, validate, architecture, review, abort, status, archive). The machine-driven set lives in `src/machine/commands.ts`; the installed `.md` templates and their alias overlay live in `src/templates/commands/`.
 - **CLI Commands:** 6 (install, uninstall, doctor, run, serve, inspect)
 - **Operational Tools:** 2 user-facing read/export tools (`flowguard_status`, `flowguard_archive`)

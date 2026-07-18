@@ -15,6 +15,7 @@ import {
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RUN_CHECK,
 } from '../tool-names.js';
 
 /**
@@ -57,6 +58,17 @@ export function resolveReviewObligationTool(toolName: string): ReviewableTool | 
   if (toolName === TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION) return TOOL_FLOWGUARD_IMPLEMENT;
   if (isReviewableTool(toolName)) return toolName;
   return undefined;
+}
+
+/**
+ * Resolve the logical owner for a tool response that signals an independent
+ * review requirement. Post-implementation checks create the obligation only
+ * after validation succeeds, but the implementation tool still owns its
+ * verdict and enforcement key.
+ */
+export function reviewSignalOwner(toolName: string): ReviewableTool | undefined {
+  if (toolName === TOOL_FLOWGUARD_RUN_CHECK) return TOOL_FLOWGUARD_IMPLEMENT;
+  return resolveReviewObligationTool(toolName);
 }
 
 /**

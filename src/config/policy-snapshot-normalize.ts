@@ -185,6 +185,7 @@ function normalizeCoreFields(
   requireHumanGates: boolean;
   maxSelfReviewIterations: number;
   maxImplReviewIterations: number;
+  maxIncoherentReviewerCaptureRetries: number;
   allowSelfApproval: boolean;
   normalized: boolean;
 } {
@@ -209,10 +210,18 @@ function normalizeCoreFields(
     typeof rawApprove === 'boolean' ? rawApprove : defaults.allowSelfApproval;
   if (typeof rawApprove !== 'boolean') norm = true;
 
+  const rawCaptureRetries = s.maxIncoherentReviewerCaptureRetries;
+  const maxIncoherentReviewerCaptureRetries =
+    typeof rawCaptureRetries === 'number'
+      ? rawCaptureRetries
+      : defaults.maxIncoherentReviewerCaptureRetries;
+  if (typeof rawCaptureRetries !== 'number') norm = true;
+
   return {
     requireHumanGates,
     maxSelfReviewIterations,
     maxImplReviewIterations,
+    maxIncoherentReviewerCaptureRetries,
     allowSelfApproval,
     normalized: norm,
   };
@@ -565,6 +574,7 @@ export function normalizePolicySnapshotWithMeta(
       requireHumanGates: core.requireHumanGates,
       maxSelfReviewIterations: core.maxSelfReviewIterations,
       maxImplReviewIterations: core.maxImplReviewIterations,
+      maxIncoherentReviewerCaptureRetries: core.maxIncoherentReviewerCaptureRetries,
       allowSelfApproval: core.allowSelfApproval,
       requireVerifiedActorsForApproval: policy.requireVerifiedActorsForApproval,
       audit,
@@ -591,6 +601,7 @@ const SOLO_DEFAULTS = {
   requireHumanGates: false as const,
   maxSelfReviewIterations: 2,
   maxImplReviewIterations: 1,
+  maxIncoherentReviewerCaptureRetries: 1,
   allowSelfApproval: true as const,
   minimumActorAssuranceForApproval: 'best_effort' as const,
   effectiveGateBehavior: 'auto_approve' as const,
@@ -605,6 +616,7 @@ const REGULATED_DEFAULTS = {
   requireHumanGates: true as const,
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
+  maxIncoherentReviewerCaptureRetries: 1,
   allowSelfApproval: false as const,
   minimumActorAssuranceForApproval: 'claim_validated' as const,
   effectiveGateBehavior: 'human_gated' as const,
@@ -619,6 +631,7 @@ const TEAM_DEFAULTS = {
   requireHumanGates: true as const,
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
+  maxIncoherentReviewerCaptureRetries: 1,
   allowSelfApproval: true as const,
   minimumActorAssuranceForApproval: 'best_effort' as const,
   effectiveGateBehavior: 'human_gated' as const,
@@ -633,6 +646,7 @@ const TEAM_CI_DEFAULTS = {
   requireHumanGates: true as const,
   maxSelfReviewIterations: 3,
   maxImplReviewIterations: 3,
+  maxIncoherentReviewerCaptureRetries: 1,
   allowSelfApproval: true as const,
   minimumActorAssuranceForApproval: 'best_effort' as const,
   effectiveGateBehavior: 'human_gated' as const,
@@ -650,6 +664,7 @@ export function modeConsistentDefaults(mode: PolicyMode): {
   readonly requireHumanGates: boolean;
   readonly maxSelfReviewIterations: number;
   readonly maxImplReviewIterations: number;
+  readonly maxIncoherentReviewerCaptureRetries: number;
   readonly allowSelfApproval: boolean;
   readonly minimumActorAssuranceForApproval: 'best_effort' | 'claim_validated' | 'idp_verified';
   readonly effectiveGateBehavior: EffectiveGateBehavior;

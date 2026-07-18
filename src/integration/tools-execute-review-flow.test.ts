@@ -28,7 +28,7 @@ import {
   type TestWorkspace,
   withTestEnv,
 } from './test-helpers.js';
-import { REVIEW_MANDATE_DIGEST } from './review/assurance.js';
+import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import {
   status,
   hydrate,
@@ -303,7 +303,7 @@ describe('review', () => {
           planVersion: 1,
           reviewedBy: 'flowguard-reviewer',
           mandateDigest: REVIEW_MANDATE_DIGEST,
-          criteriaVersion: 'p37-v1',
+          criteriaVersion: REVIEW_CRITERIA_VERSION,
         },
       };
 

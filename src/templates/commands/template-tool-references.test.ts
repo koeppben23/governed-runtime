@@ -79,6 +79,7 @@ describe('command templates: agent pinning for review-orchestration commands', (
     'implement.md',
     'review.md',
     'architecture.md',
+    'check.md',
   ] as const;
 
   for (const cmd of COMMANDS_REQUIRING_BUILD_AGENT) {
@@ -104,6 +105,18 @@ describe('command templates: agent pinning for review-orchestration commands', (
     if (!frontmatter) throw new TypeError('missing status frontmatter');
     // status.md does NOT need agent: build (it only calls flowguard_status)
     expect(frontmatter).not.toMatch(/^agent:\s*build$/m);
+  });
+});
+
+describe('check command: implementation review orchestration', () => {
+  it('starts and submits mandatory review after checks enter IMPL_REVIEW', () => {
+    const body = COMMANDS['check.md'];
+    if (!body) throw new TypeError('missing check command template');
+
+    expect(body).toContain('If the final `flowguard_run_check` response has phase `IMPL_REVIEW`');
+    expect(body).toContain('`flowguard-reviewer` via the Task tool');
+    expect(body).toContain('`flowguard_review_implementation({ reviewVerdict })`');
+    expect(body).toContain('Never make the subsequent human approval decision.');
   });
 });
 

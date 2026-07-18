@@ -25,7 +25,7 @@
  */
 
 import type { SessionState } from '../../../state/schema.js';
-import type { ReviewObligation } from '../../../state/evidence-review.js';
+import { ReviewFindings, type ReviewObligation } from '../../../state/evidence-review.js';
 import {
   type SessionEnforcementState,
   type PendingReview,
@@ -43,12 +43,13 @@ import {
   resolveSubagentSessionId,
   promptContainsValue,
 } from './extraction.js';
+import { validateReviewFindingsConsistency } from './findings-consistency.js';
 
 import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
 import {
-  isReviewableTool,
   obligationTypeForTool,
   resolveReviewObligationTool,
+  reviewSignalOwner,
   type ReviewableTool,
 } from '../obligation-tools.js';
 import { parseToolResult } from '../../plugin-helpers.js';
@@ -128,17 +129,39 @@ export function onFlowGuardToolAfter(
   output: string,
   now: string,
 ): void {
+  const reviewContext = resolveReviewTrackingContext(toolName);
+  if (!reviewContext) return;
+
+  const parsed = parseToolResult(output);
+  if (!parsed) return;
+
+  clearSubmittedReview(state, reviewContext.obligationTool, args, parsed);
+  trackRequiredReview(state, reviewContext, parsed, now);
+  handleContentAnalysisFlag(state, parsed, toolName, now);
+}
+
+function resolveReviewTrackingContext(toolName: string): {
+  obligationTool: ReviewableTool | undefined;
+  signalOwner: ReviewableTool | undefined;
+  isReviewContent: boolean;
+} | null {
   // The obligation-owning tool for a verdict submission. For
   // flowguard_review_implementation this resolves to flowguard_implement (the
   // tool that created the pending review); for plan/architecture/review it is
   // the tool itself.
   const obligationTool = resolveReviewObligationTool(toolName);
+  const signalOwner = reviewSignalOwner(toolName);
   const isReviewContent = toolName === TOOL_FLOWGUARD_REVIEW;
-  if (obligationTool === undefined && !isReviewContent) return;
+  if (obligationTool === undefined && signalOwner === undefined && !isReviewContent) return null;
+  return { obligationTool, signalOwner, isReviewContent };
+}
 
-  const parsed = parseToolResult(output);
-  if (!parsed) return;
-
+function clearSubmittedReview(
+  state: SessionEnforcementState,
+  obligationTool: ReviewableTool | undefined,
+  args: Record<string, unknown>,
+  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+): void {
   // Verdict submission clears the pending review on the obligation-owning key.
   const hasSelfReviewVerdict =
     typeof args.reviewVerdict === 'string' && args.reviewVerdict.length > 0;
@@ -146,18 +169,22 @@ export function onFlowGuardToolAfter(
     const verdictKey: PendingReviewTool = obligationTool ?? TOOL_FLOWGUARD_REVIEW;
     state.pendingReviews.delete(verdictKey);
   }
+}
 
+function trackRequiredReview(
+  state: SessionEnforcementState,
+  context: NonNullable<ReturnType<typeof resolveReviewTrackingContext>>,
+  parsed: NonNullable<ReturnType<typeof parseToolResult>>,
+  now: string,
+): void {
   // REVIEW_REQUIRED is emitted by the record/content tool itself, which owns its
   // pending-review key. A verdict-only tool never emits REVIEW_REQUIRED.
-  const recordKey: PendingReviewTool = isReviewContent
+  const recordKey: PendingReviewTool = context.isReviewContent
     ? TOOL_FLOWGUARD_REVIEW
-    : (obligationTool as PendingReviewTool);
+    : (context.signalOwner as PendingReviewTool);
   const next = typeof parsed.next === 'string' ? parsed.next : '';
-  if (next.startsWith(REVIEW_REQUIRED_PREFIX) && isReviewableTool(toolName)) {
+  if (next.startsWith(REVIEW_REQUIRED_PREFIX) && (context.isReviewContent || context.signalOwner))
     trackReviewRequired(state, recordKey, next, now);
-  }
-
-  handleContentAnalysisFlag(state, parsed, toolName, now);
 }
 
 /**
@@ -291,27 +318,59 @@ export function onTaskToolAfter(
 }
 
 /**
+ * Whether a pending review already holds a usable capture — reviewer findings
+ * that parse against the ReviewFindings schema and satisfy the canonical verdict
+ * coherence rule applied by the verdict-time resolver.
+ *
+ * A capture that is absent (null), schema-invalid (e.g. the reviewer emitted
+ * non-JSON, or mistyped a required field such as `majorRisks`) is NOT good: it
+ * can never be bound into a parseable invocation, so the verdict submission
+ * fails with HOST_TASK_FINDINGS_UNPARSEABLE. Treating such a capture as
+ * "satisfied" is exactly what deadlocks the obligation — the pending review is
+ * locked (subagentCalled=true) while its only capture is unusable, and a re-run's
+ * evidence is rejected as duplicate_evidence against the corrupt capture.
+ *
+ * or internally incoherent (accept with blocking issues) is NOT usable. Returning
+ * false keeps the review re-armable so a subsequent reviewer run can replace the
+ * bad capture (new child session + new findings hash → no duplicate).
+ */
+function hasUsableCapture(pending: PendingReview): boolean {
+  const parsed = ReviewFindings.safeParse(pending.capturedFindings?.rawFindings);
+  if (!parsed.success) return false;
+  return validateReviewFindingsConsistency({
+    overallVerdict: parsed.data.overallVerdict,
+    blockingIssueCount: parsed.data.blockingIssues.length,
+  }).ok;
+}
+
+/**
  * Match a Task call to exactly one pending review obligation.
  *
  * Matching strategy (P34 1:1 contract):
- * - 0 pending: null (no obligation to satisfy)
- * - 1 pending: that one (unambiguous — L3 already validated the prompt)
- * - >1 pending: match by contentMeta (iteration + planVersion from prompt)
- * - >1 pending, no contentMeta match: null (fail-closed, ambiguous)
+ * - 0 awaiting capture: null (no obligation to satisfy)
+ * - 1 awaiting capture: that one (unambiguous — L3 already validated the prompt)
+ * - >1 awaiting capture: match by contentMeta (iteration + planVersion from prompt)
+ * - >1 awaiting capture, no contentMeta match: null (fail-closed, ambiguous)
+ *
+ * "Awaiting capture" includes a review that was already called but whose only
+ * capture is unusable (see hasUsableCapture) — so a reviewer re-run replaces a
+ * corrupt or incoherent capture instead of deadlocking the obligation.
  */
 export function matchPendingReview(
   state: SessionEnforcementState,
   taskArgs: Record<string, unknown>,
 ): PendingReview | null {
-  const uncalled = [...state.pendingReviews.values()].filter((p) => !p.subagentCalled);
+  const awaitingCapture = [...state.pendingReviews.values()].filter(
+    (p) => !p.subagentCalled || !hasUsableCapture(p),
+  );
 
-  if (uncalled.length === 0) return null;
-  if (uncalled.length === 1) return uncalled[0]!;
+  if (awaitingCapture.length === 0) return null;
+  if (awaitingCapture.length === 1) return awaitingCapture[0]!;
 
-  // Multiple pending — match by contentMeta from prompt
+  // Multiple awaiting capture — match by contentMeta from prompt
   const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';
 
-  for (const pending of uncalled) {
+  for (const pending of awaitingCapture) {
     if (!pending.contentMeta) continue;
 
     const { expectedIteration, expectedPlanVersion } = pending.contentMeta;
@@ -424,6 +483,31 @@ function checkFindingsMismatch(
   return null;
 }
 
+/**
+ * F12: assert the internal coherence of the captured review record.
+ *
+ * Semantically distinct from checkFindingsMismatch (which is anti-tampering
+ * between submitted and captured findings). This validates the captured record
+ * itself: an `accept` verdict must not carry blocking issues. Kept as its own
+ * check so a later refactor of the mismatch logic cannot silently drop the
+ * coherence invariant. Delegates to the canonical SSOT rule.
+ */
+function checkCapturedFindingsConsistency(captured: {
+  overallVerdict: string;
+  blockingIssuesCount: number;
+}): EnforcementResult | null {
+  const consistency = validateReviewFindingsConsistency({
+    overallVerdict: captured.overallVerdict,
+    blockingIssueCount: captured.blockingIssuesCount,
+  });
+  if (consistency.ok) return null;
+  return {
+    allowed: false,
+    code: consistency.code,
+    reason: `FlowGuard enforcement: overallVerdict "accept" is incoherent with ${consistency.details.blockingIssueCount} blocking issue(s). An accepted review must contain no blocking issues; return a non-accept verdict or reclassify the findings.`,
+  };
+}
+
 function verifyFindingsIntegrity(
   pending: {
     subagentRecord?: { sessionId: string | null } | null;
@@ -435,6 +519,9 @@ function verifyFindingsIntegrity(
   const sessionIssue = checkSessionMismatch(pending, reviewFindings);
   if (sessionIssue) return sessionIssue;
   if (!pending.capturedFindings) return null;
+  // Coherence of the captured record first, then anti-tampering vs submitted.
+  const consistencyIssue = checkCapturedFindingsConsistency(pending.capturedFindings);
+  if (consistencyIssue) return consistencyIssue;
   return checkFindingsMismatch(pending, reviewFindings);
 }
 
@@ -545,8 +632,14 @@ export function recordPluginReview(
  * @public unit-testable, no side effects
  */
 export function enforceReviewerObligation(params: {
-  obligations: ReadonlyArray<Pick<ReviewObligation, 'status'>>;
+  obligations: ReadonlyArray<Pick<ReviewObligation, 'status'> & { obligationId?: string }>;
+  invocations?: ReadonlyArray<{
+    obligationId: string;
+    capturedVerdict?: string;
+    capturedRawFindings?: Record<string, unknown>;
+  }>;
   reviewInvocationPolicy: string | undefined;
+  maxIncoherentReviewerCaptureRetries?: number;
   strictEnforcement: boolean;
   stateAvailable: boolean;
 }): EnforcementResult {
@@ -571,6 +664,29 @@ export function enforceReviewerObligation(params: {
         'A flowguard-reviewer Task may only run when a pending review obligation exists. ' +
         'Run flowguard_plan or flowguard_review first to create a pending review obligation, ' +
         'then start the reviewer Task.',
+    };
+  }
+
+  const pendingObligationIds = new Set(
+    params.obligations
+      .filter((obligation) => obligation.status === 'pending' && obligation.obligationId)
+      .map((obligation) => obligation.obligationId!),
+  );
+  const incoherentCaptureCount = (params.invocations ?? []).filter(
+    (invocation) =>
+      (pendingObligationIds.size === 0 || pendingObligationIds.has(invocation.obligationId)) &&
+      invocation.capturedVerdict === 'accept' &&
+      Array.isArray(invocation.capturedRawFindings?.blockingIssues) &&
+      invocation.capturedRawFindings.blockingIssues.length > 0,
+  ).length;
+  const maxRetries = params.maxIncoherentReviewerCaptureRetries ?? 1;
+  if (incoherentCaptureCount > maxRetries) {
+    return {
+      allowed: false,
+      code: 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT',
+      reason:
+        `Reviewer capture retry budget exhausted after ${incoherentCaptureCount} incoherent capture(s). ` +
+        'Revise or re-submit the governed artifact to create a new review obligation; do not continue retrying this obligation.',
     };
   }
 

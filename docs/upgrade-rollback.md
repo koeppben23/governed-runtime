@@ -109,6 +109,22 @@ archive the old session and start fresh.
 - Treat any `schemaVersion` change as a breaking change until migration
   infrastructure ships (tracked in `docs/architecture/schema-migration.md`)
 
+### Reviewer Mandate Compatibility
+
+Reviewer obligations bind both `criteriaVersion` and the reviewer-mandate digest. The
+`p38-v1` mandate requires `changes_requested` whenever `blockingIssues` is non-empty.
+The `p39-v1` mandate makes the reviewer tool-capability profile part of the attested
+contract by denying direct and MCP-prefixed `flowguard_*` tools while preserving
+read-only research tools. The `p40-v1` mandate additionally denies the reviewer's
+`task` capability, preventing subagent cascades. Each version has its own digest.
+
+Existing obligations remain bound to their persisted `p38-v1` or `p39-v1` criteria and
+digest and are never reinterpreted as `p40-v1` evidence. Archive or complete an
+in-flight review before upgrading when its attestation must remain reproducible; create
+a new artifact review cycle to use p40. Rolling back to a p39 build likewise requires a
+new review cycle for any p40-bound obligation. Do not edit obligation attestation values
+or mandate digests to bridge the version boundary.
+
 ### Archive Compatibility
 
 Archives are tar.gz files containing structured JSON. Archive readability depends on the archive format used by each version.

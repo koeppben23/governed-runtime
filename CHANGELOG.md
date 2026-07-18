@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Post-implementation validation gate: `IMPL_VALIDATION` phase (F1).** The ticket
+  flow now re-runs the verification checks against the IMPLEMENTED code before the
+  independent review and the human evidence gate, closing the gap where validation
+  only ran on the pre-fix baseline. `/implement` records evidence and advances to the
+  new `IMPL_VALIDATION` phase; `/check` (now admissible in `IMPL_VALIDATION`) executes
+  the checks and records them in a separate `implValidation` slot (distinct from the
+  pre-implementation `validation` baseline). Passing checks advance to `IMPL_REVIEW`; a
+  genuine failure routes back to `IMPLEMENTATION` (the code is wrong, not the plan); a
+  timeout/executor error retries in place. Universal across policy modes; reduced
+  ceremony still bypasses. **Forward-only:** rolling back the release abandons any
+  in-flight session sitting at `IMPL_VALIDATION` (the phase is unknown to an older
+  build's fail-closed schema). Workflow phase count 14 → 15.
+
 - **Read-only `/finish` Finish Card (#520).** New read-only command that renders
   a curated readiness overview before `/export`, PR, or archive decisions. It is
   a status aggregator — never approves, never consumes obligations, never writes
@@ -20,6 +33,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Available in all phases including terminal phases.
 
 ### Changed
+
+- **Implementation evidence is content-bound and captures a diff artifact (F3).**
+  `ImplEvidence.digest` now hashes the CURRENT content of each changed file (path +
+  git blob hash) instead of the sorted file-name list, so two different edits to the
+  same file set produce different digests. `/implement` also captures a unified diff
+  of the change to a content-addressed `implementation-diff.<digest>.patch` under the
+  session directory (covered by the archive manifest checksums) and records its hash
+  as the optional, backward-compatible `ImplEvidence.diffDigest`.
+
+- **VALIDATION fails closed when a stack is detected but no checks are derived (F4).**
+  Under lenient validation-evidence enforcement (`off`/`advisory` — e.g. the default
+  `team` mode), an empty active-check list previously passed VALIDATION vacuously.
+  When Discovery has detected a technology stack, that empty list is now treated as a
+  mis-detection hazard and blocks with `VALIDATION_EVIDENCE_STACK_NO_COMMANDS`. The
+  sole opt-out is the explicit `validationEvidence.allowNoCommands=true` policy flag;
+  the stricter `required` path (regulated/team-ci) is unchanged. `validation-evidence.ts`
+  is now mutation-covered.
 
 - **Node toolchain reproducible at 22.22.2 (#619).** `.node-version` and
   `devEngines` define the dev baseline; runtime support narrowed from `>=20` to
@@ -50,6 +80,91 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of raw API calls; successful runs auto-close stale drift issues.
 
 ### Fixed
+
+- **Reviewer children are isolated from FlowGuard workflow tools (F14).** The OpenCode
+  reviewer capability profile now denies both direct `flowguard_*` and MCP-prefixed
+  `mcp__flowguard__*` tools and denies `task`, while retaining `read`, `glob`, and
+  `grep` for research. This prevents a reviewer child from hydrating, delegating, or
+  creating a parallel FlowGuard session directory; review provenance remains in the
+  parent obligation and audit trail. Team sessions still require explicit `/export` and
+  are not auto-archived on completion. The capability contract advances reviewer
+  criteria from `p38-v1` to `p39-v1` for direct/MCP denials and to `p40-v1` for the
+  `task` denial; existing obligations remain bound to their persisted values and require
+  a new review cycle after upgrade or rollback.
+
+- **Incoherent reviewer captures recover without deadlocking the review obligation (F13).**
+  Reviewer mandate criteria now require `changes_requested` whenever `blockingIssues`
+  is non-empty, matching the runtime F12 invariant. This changes the installed reviewer
+  mandate digest and advances `criteriaVersion` from `p37-v1` to `p38-v1`. A persisted
+  incoherent host-task capture remains audit evidence but no longer masks a later
+  coherent capture for the same obligation. The frozen policy field
+  `maxIncoherentReviewerCaptureRetries` defaults to one fresh retry and accepts config
+  overrides from `0` through `5`; it counts only the F12 `accept` plus blocking-issues
+  shape, not malformed or unparseable output. Existing obligations remain bound to
+  their persisted mandate values; start a new review cycle to use p38 criteria.
+
+- **Standalone content reviews no longer emit lifecycle ticket/plan warnings (F11).**
+  A standalone `/review` of an external branch/PR/text diff previously reported
+  `No ticket evidence` and `No plan evidence` as `completeness`-category warnings
+  even though the same report stated `Overall: Complete` / `0/0 complete, 0 missing` —
+  a self-contradictory presentation that inflated the finding and warning counts.
+  Those two mechanical findings describe the session LIFECYCLE and are meaningless
+  when reviewing external content, so they are now suppressed in content-review mode
+  (`buildMechanicalFindings` receives `refInput`; content reviews are exactly those
+  where `refInput` is defined, per `buildReviewReferenceInput`). Lifecycle `/review`
+  runs with no external content keep the warnings unchanged. No new reason codes or
+  finding categories; presentation-semantics fix only. Changes: `src/rails/review.ts`,
+  `CHANGELOG.md`, plus tests.
+
+- **Reviewer Task prompt is handed to the agent verbatim, eliminating the first-attempt review block (F10).**
+  In the host-task review path the agent had to free-compose the `flowguard-reviewer`
+  Task prompt from prose and routinely omitted the literal `iteration=`/`planVersion=`
+  tokens that enforcement (`promptContainsValue`) requires, so the FIRST Task call was
+  blocked with `SUBAGENT_PROMPT_MISSING_CONTEXT` and only a retry succeeded (reproduced
+  in the standalone `/review` demo run). F9 unified the emitter side but did not remove
+  this root cause. FlowGuard now emits a canonical, copy-ready `reviewerTaskPrompt` in the
+  host-task blocked output (and the pending-review instruction), built by the SAME
+  `renderReviewContext` serializer the enforcement matcher validates against — making the
+  emitter/validator agreement structural rather than dependent on the agent echoing the
+  values. The `/review`, `/check`, and shared review-loop command templates now instruct
+  the agent to paste `reviewerTaskPrompt` verbatim as the Task `prompt`. Enforcement itself
+  is unchanged (not loosened); a free-composed prompt without the context tokens is still
+  blocked. New `renderReviewerTaskPrompt` authority in `prompt-builders.ts`. Changes:
+  `src/integration/review/prompt-builders.ts`, `src/integration/review/host-task-policy.ts`,
+  `src/integration/review/pending-instruction.ts`,
+  `src/templates/commands/{review,check,shared-review-loop}.ts`,
+  `src/cli/templates-hash.test.ts` (expected COMMANDS hash refreshed), plus tests.
+
+- **Reviewer prompt context is emitted from one canonical serializer (F9).**
+  The `iteration`/`planVersion` context an agent must echo into the reviewer
+  subagent prompt was built by two independent string builders
+  (`pending-instruction.ts` produced `iteration=X, and planVersion=Y`;
+  `host-task-policy.ts` produced `Context: iteration=X, planVersion=Y`) while a
+  third path (`promptContainsValue` / `extractContentMeta`) validated it. The
+  subtly divergent forms made a plausibly-constructed reviewer prompt fail the
+  first-attempt `SUBAGENT_PROMPT_MISSING_CONTEXT` check, forcing a wasted
+  reviewer Task round-trip (observed in both the plan and standalone-review
+  demo flows). Both builders now emit the single canonical
+  `renderReviewContext({ iteration, planVersion })` form, so the emitted context
+  is byte-identical and satisfies enforcement on the first attempt. Changes:
+  `src/integration/review/prompt-builders.ts`,
+  `src/integration/review/pending-instruction.ts`,
+  `src/integration/review/host-task-policy.ts`, plus tests.
+
+- **VALIDATION timeouts and executor errors no longer invalidate the plan (F5).**
+  A verification command that times out or cannot be executed (command-not-found,
+  exit 124/127) is now classified as an execution error (`CHECK_ERRORED`) that keeps
+  the session in VALIDATION for a retry, instead of being treated as a failing check
+  that routes to PLAN and clears the approved plan and self-review evidence. Genuine
+  check failures (non-zero exit) still route to PLAN as before.
+
+- **Reviewer loop-verdict documentation corrected to `accept`.** Independent-review,
+  phases, commands, and agent-guidance docs (plus internal convergence comments)
+  now describe the reviewer subagent's `LoopVerdict` as `accept` (not the stale
+  `approve`), matching the runtime enum and installed reviewer prompt. The human
+  EVIDENCE_REVIEW gate keeps its distinct `approve` / `changes_requested` / `reject`
+  verdict. Also aligned the Java demo `/check` narration to the command FlowGuard
+  actually executes (`./mvnw verify`, a superset that includes the test phase).
 
 - **HTTP dispatch and audit-lock recovery hardened (#670, #672).** `GET /health`
   remains public while all other hook requests authenticate before route or method
@@ -109,6 +224,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     restore; `writeIfAbsent()` uses `wx` exclusive-create for `force=false`.
 
 ### Security
+
+- **Self-contradictory reviewer findings can no longer accept a review gate (F12).**
+  A reviewer verdict of `accept` carrying a non-empty `blockingIssues` array is now
+  rejected fail-closed at every ingestion boundary. Previously the only rule requiring
+  `accept` to be free of blocking issues lived as prose in the reviewer mandate with no
+  runtime enforcement, so a review could converge (and archive) with `blockingIssueCount`
+  greater than zero shown next to an accepted status — the exact contradiction observed
+  in a demo run. The canonical, dependency-free invariant
+  (`validateReviewFindingsConsistency`, strict emptiness) is the single source of truth
+  and is called at both the verdict-submission boundary (`validateReviewFindings`, all
+  four review kinds) and the host-task evidence-resolution boundary
+  (`resolveHostTaskFindings`), plus asserted at the plugin enforcement layer as
+  defense-in-depth — one rule implementation, multiple protection sites. Coherence is
+  checked before anti-tampering, so a contradictory record never masks (or is masked by)
+  a hash/verdict mismatch, and never becomes effective evidence. The runtime is
+  intentionally stricter than the current mandate prose (which still permits minor-only
+  blocking issues); severity-aware separation via a schema change is deferred so the
+  taxonomy becomes structurally guaranteed rather than interpreted. New reason code
+  `SUBAGENT_VERDICT_FINDINGS_INCOHERENT`. The reviewer mandate digest and
+  `criteriaVersion` are deliberately unchanged: this fix does not touch mandate content,
+  so no in-flight obligation is invalidated.
+
+- **Reviewer provenance is host-authoritative; malformed findings are assurance-downgraded (F8).**
+  The reviewer subagent (an LLM) is no longer treated as an authority for its own
+  execution time or session identity. At host-task binding, `normalizeHostTaskFindings`
+  now rebuilds the ENTIRE `reviewedBy` block host-authoritatively — `sessionId` from the
+  resolved child session and `actorId`/`actorSource`/`actorAssurance` from host-known
+  neutral values (`flowguard-reviewer` / `unknown` / `best_effort`); no model-supplied
+  actor field is carried into the canonical block, so a reviewer echoing the correct
+  session id can no longer smuggle a fabricated `actorSource`/`actorAssurance`. It also
+  overwrites `reviewedAt` with the real host binding timestamp. The complete original
+  model block is always preserved as diagnostics-only `reviewerClaimedBy`, and the model
+  time as `reviewerClaimedAt` (new optional Zod fields on `ReviewFindings`, intentionally
+  absent from the SDK output schema — documented drift in the findings-schema drift
+  guard). Findings recovered only from an embedded/brace-balanced JSON block in mixed
+  model output now bind at a new `structured_recovered` assurance tier with a consistent
+  transport contract (`reviewOutputMode: text_compat`, `structuredOutputUsed: false`,
+  `extractionMethod: outermost_braces`) instead of silently claiming `structured_high`
+  alongside structured-output defaults; binding still proceeds (downgrade, not
+  fail-closed). Changes: `src/state/evidence-review.ts`,
+  `src/integration/review/evidence-binding.ts`, `src/integration/review/assurance.ts`,
+  `src/integration/review/enforcement/extraction.ts`,
+  `src/integration/review/enforcement/types.ts`,
+  `src/integration/review/findings-schema-drift.test.ts`, plus tests.
 
 - **OpenCode SDK and host baselines updated (#655).** `@opencode-ai/plugin`
   and host version baselines bumped with contract, integration, smoke, and

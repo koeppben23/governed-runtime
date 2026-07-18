@@ -144,7 +144,13 @@ export function formatRailResult(result: RailResult): ToolResult {
     });
   }
   const nextAction = resolveNextAction(result.state.phase, result.state);
-  const productNext = buildProductNextAction(nextAction, result.state.phase);
+  const aborted = result.state.error?.code === 'ABORTED';
+  const productNext = buildProductNextAction(
+    nextAction,
+    result.state.phase,
+    aborted,
+    result.state.archiveStatus ?? null,
+  );
   const reviewDecision = result.state.reviewDecision;
   const { archiveStatus } = result.state;
   const reviewLoop = getReviewLoopProgress(result.state);
@@ -155,6 +161,11 @@ export function formatRailResult(result: RailResult): ToolResult {
     next: formatEval(result.evalResult),
     nextAction,
     productNextAction: productNext,
+    // Governance integrity: mark an aborted terminal session explicitly so it is
+    // never presented as an indistinguishable clean completion. Distinct from the
+    // blocked-result `error: true` convention (this is a successful tool call that
+    // reports a terminated session). Omitted for clean states.
+    ...(aborted ? { aborted: true } : {}),
     ...(reviewDecision
       ? {
           reviewDecision: {
@@ -489,7 +500,12 @@ function isPersistedAbort(result: Extract<RailResult, { kind: 'ok' }>): boolean 
  */
 export function appendNextAction(jsonStr: string, state: SessionState): string {
   const nextAction = resolveNextAction(state.phase, state);
-  const productNext = buildProductNextAction(nextAction, state.phase);
+  const productNext = buildProductNextAction(
+    nextAction,
+    state.phase,
+    state.error?.code === 'ABORTED',
+    state.archiveStatus ?? null,
+  );
   const parsed = JSON.parse(jsonStr);
   parsed.nextAction = nextAction;
   parsed.phaseLabel = PHASE_LABELS[state.phase];

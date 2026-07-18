@@ -9,6 +9,7 @@
 import { parseToolResult, getToolOutput } from '../plugin-helpers.js';
 import { extractContentMeta } from './enforcement/extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
 import { REVIEW_COMPLETED_PREFIX, extractReviewContext } from './orchestrator.js';
 import {
   REASON_HOST_SUBAGENT_TASK_REQUIRED,
@@ -86,20 +87,61 @@ function resolveHostTaskContext(
   return null;
 }
 
+/**
+ * F10: build the canonical copy-ready reviewer prompt when both the
+ * host-authoritative attestation and the resolved review context are available;
+ * otherwise null. Extracted to keep buildHostTaskBlockedOutput within the
+ * complexity budget.
+ */
+function buildReviewerTaskPromptOrNull(
+  attestationMeta: HostTaskAttestationMeta | null,
+  ctx: { iteration: number; planVersion: number | null } | null,
+): string | null {
+  if (!attestationMeta || ctx?.iteration == null) return null;
+  return renderReviewerTaskPrompt({
+    iteration: ctx.iteration,
+    planVersion: ctx.planVersion,
+    obligationId: attestationMeta.toolObligationId,
+    mandateDigest: attestationMeta.mandateDigest,
+    criteriaVersion: attestationMeta.criteriaVersion,
+    subjectLabel: 'the artifact under review',
+  });
+}
+
 function buildHostTaskBlockedOutput(
   result: Record<string, unknown>,
   policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>,
   attestationMeta: HostTaskAttestationMeta | null,
 ): string {
+  // The original standalone response is CONTENT_ANALYSIS_REQUIRED and carries
+  // manual-findings recovery. Host-task policy replaces that contract entirely:
+  // only captured Task evidence plus a matching verdict can complete this path.
+  result.code = REASON_HOST_SUBAGENT_TASK_REQUIRED;
+  result.message = `Policy requires host-visible Task-tool evidence for ${REVIEWER_SUBAGENT_TYPE}; submit only the captured reviewer verdict after the Task completes.`;
+  result.recovery = [RECOVERY_HOST_SUBAGENT_TASK];
   // BUG-16: Preserve iteration/planVersion so the agent can construct a correct
   // subagent prompt that passes promptContainsValue enforcement. Standalone
   // /review (CONTENT_ANALYSIS_REQUIRED) has no `next`, so the values are sourced
   // from the obligation instead (see resolveHostTaskContext). BUG-18: Instruct
   // the reviewer subagent to NOT call FlowGuard tools in its own session.
   const ctx = resolveHostTaskContext(result, attestationMeta);
-  const iterStr = ctx?.iteration != null ? `iteration=${ctx.iteration}` : '';
-  const versionStr = ctx?.planVersion != null ? `planVersion=${ctx.planVersion}` : '';
-  const contextSuffix = [iterStr, versionStr].filter(Boolean).join(', ');
+  const contextSuffix =
+    ctx?.iteration != null
+      ? renderReviewContext({ iteration: ctx.iteration, planVersion: ctx.planVersion })
+      : '';
+
+  // F10: hand the agent a canonical, verbatim copy-ready reviewer prompt so it
+  // does not free-compose one and omit the iteration=/planVersion= tokens the
+  // enforcement matcher requires (the first-attempt SUBAGENT_PROMPT_MISSING_CONTEXT
+  // root cause). The prompt embeds the review context via the SAME serializer the
+  // matcher validates against. Only emitted when both the attestation and the
+  // review context are available.
+  const reviewerTaskPrompt = buildReviewerTaskPromptOrNull(attestationMeta, ctx);
+  const copyPromptStr = reviewerTaskPrompt
+    ? ` A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it ` +
+      `VERBATIM as the Task tool "prompt" argument (append the artifact content to review), ` +
+      `so the required review context is present on the first attempt.`
+    : '';
 
   // Forward the host-authoritative attestation so the agent passes a concrete
   // toolObligationId (UUID) to the reviewer subagent. Without this the
@@ -118,6 +160,7 @@ function buildHostTaskBlockedOutput(
     `a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool. ` +
     `Call the Task tool with subagent_type="${REVIEWER_SUBAGENT_TYPE}".` +
     (contextSuffix ? ` Context: ${contextSuffix}.` : '') +
+    copyPromptStr +
     attestationStr +
     ` The reviewer subagent must NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, flowguard_review_implementation, flowguard_architecture) in its own session.` +
     ` When it returns, submit ONLY the verdict (reviewVerdict) matching the reviewer's overallVerdict — ` +
@@ -127,6 +170,10 @@ function buildHostTaskBlockedOutput(
     `do NOT approve and do NOT invent findings — report the transport failure and stop; independent review is ` +
     `mandatory and cannot be self-substituted. Setting reviewerUnavailable: true fails closed ` +
     `(REVIEWER_UNAVAILABLE_STRICT) with recovery guidance; it never approves or enables self-review.`;
+
+  if (reviewerTaskPrompt) {
+    result.reviewerTaskPrompt = reviewerTaskPrompt;
+  }
 
   // Structured attestation so the agent can forward it machine-readably to the
   // reviewer (mirrors pending-instruction.ts requiredReviewAttestation).

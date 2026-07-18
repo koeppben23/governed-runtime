@@ -327,6 +327,36 @@ export async function changedFiles(worktree: string): Promise<string[]> {
 }
 
 /**
+ * Produce a unified diff of the given worktree paths against HEAD.
+ *
+ * Captures the ACTUAL content change for implementation evidence (not just the file
+ * names). Tracked changes (staged + unstaged) are rendered by `git diff HEAD`. This
+ * is NON-MUTATING: it never stages files (no `git add`). New/untracked files are not
+ * expanded into the patch here — their content is still bound by the evidence content
+ * digest (see {@link hashWorktreeFiles}); only their human-readable body is omitted.
+ *
+ * Fails soft: returns an empty string when there is no HEAD (fresh repo) or the diff
+ * cannot be produced, so evidence recording never hard-fails on diff capture.
+ *
+ * @param worktree repository worktree root.
+ * @param paths worktree-relative paths to include (already OS-normalized).
+ * @returns a unified-diff string (possibly empty).
+ */
+export async function worktreeDiff(worktree: string, paths: readonly string[]): Promise<string> {
+  if (paths.length === 0) return '';
+  try {
+    return await gitRaw(worktree, ['diff', '--no-color', 'HEAD', '--', ...paths]);
+  } catch {
+    // No HEAD yet (initial repo) or path error — fall back to a plain worktree diff.
+    try {
+      return await gitRaw(worktree, ['diff', '--no-color', '--', ...paths]);
+    } catch {
+      return '';
+    }
+  }
+}
+
+/**
  * Compute the git blob hash of each given worktree path's CURRENT content.
  *
  * Uses `git hash-object` (the same content addressing git uses for blobs), so

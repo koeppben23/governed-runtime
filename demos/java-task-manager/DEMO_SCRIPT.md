@@ -92,27 +92,43 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ## Step 5 — Validate (all tests pass, disabled test does not block)
 
-| Action   | Phase                       | What I Say                                                                                                                                                                                                           |
-| -------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/check` | VALIDATION → IMPLEMENTATION | "FlowGuard führt die Validierung durch: `./mvnw test`. Alle aktiven Tests sind grün — der `@Disabled`-Test läuft nicht mit. Deshalb ist die Validation erfolgreich und FlowGuard erlaubt jetzt die Implementierung." |
+| Action   | Phase                       | What I Say                                                                                                                                                                                                                                                                                                                      |
+| -------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/check` | VALIDATION → IMPLEMENTATION | "FlowGuard führt die Validierung durch: `./mvnw verify` (der aus den Repo-Wrappern erkannte Verifikationsbefehl — ein Superset, das die Test-Phase mit ausführt). Alle aktiven Tests sind grün — der `@Disabled`-Test läuft nicht mit. Deshalb ist die Validation erfolgreich und FlowGuard erlaubt jetzt die Implementierung." |
 
 ---
 
 ## Step 6 — Implement the Fix
 
-| Action          | Phase          | What I Say                                                                                                                                        |
-| --------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/implement`    | IMPLEMENTATION | "Jetzt implementiert der LLM den Fix. Der Agent darf nicht einfach nur den Test aktivieren — er muss beides liefern: Bugfix und Testaktivierung." |
-| Show `git diff` | IMPLEMENTATION | "Hier sehen Sie die Änderung: ein kleiner null-Check in TaskService, und der @Disabled ist entfernt. Nichts anderes wurde angefasst."             |
+| Action          | Phase          | What I Say                                                                                                                                                                                                                     |
+| --------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/implement`    | IMPLEMENTATION | "Jetzt implementiert der LLM den Fix. Der Agent darf nicht einfach nur den Test aktivieren — er muss den Bugfix liefern, den Test aktivieren, die `taskId`-Fehlerantwort prüfen und das Baseline-Javadoc aktualisieren."       |
+| Show `git diff` | IMPLEMENTATION | "Hier sehen Sie die Änderung: ein kleiner null-Check in TaskService, der @Disabled ist entfernt, der Fehlerkörper wird geprüft, und das Javadoc beschreibt jetzt den aktiven Regressionstest. Nichts anderes wurde angefasst." |
+
+---
+
+## Step 6b — Re-Validate the Implemented Fix (IMPL_VALIDATION)
+
+> After `/implement`, FlowGuard does **not** jump straight to review. It re-runs the
+> verification checks against the **implemented** code in the new `IMPL_VALIDATION`
+> phase. The pre-implementation `/check` (Step 5) ran on the baseline where the
+> regression test was still `@Disabled`; this run executes the now-enabled test, so
+> the fix is validated **in-flow**, inside the audit trail — not only in the manual
+> Step 9 afterwards.
+
+| Action   | Phase                         | What I Say                                                                                                                                                                                                                                                                                                                                |
+| -------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/check` | IMPL_VALIDATION → IMPL_REVIEW | "FlowGuard führt die Prüfungen jetzt gegen den implementierten Code aus. Der zuvor `@Disabled` Regressionstest ist aktiviert und läuft grün — der Fix ist in-flow validiert. Erst dann öffnet FlowGuard das unabhängige Review. Schlägt ein Check hier fehl, geht es zurück in die IMPLEMENTATION (der Code ist falsch, nicht der Plan)." |
 
 ---
 
 ## Step 7 — Independent Implementation Review
 
-> Under `team` policy, the implementation does **not** go straight to the human
-> gate. FlowGuard first routes the code change through an **independent
-> implementation review** (`IMPL_REVIEW`) — a separate phase from the plan
-> review. Reduced ceremony (skipping this) is disabled in `team`.
+> Under `team` policy, once the post-implementation checks pass (`IMPL_VALIDATION`),
+> the implementation still does **not** go straight to the human gate. FlowGuard
+> routes the code change through an **independent implementation review**
+> (`IMPL_REVIEW`) — a separate phase from the plan review. Reduced ceremony (skipping
+> both IMPL_VALIDATION and IMPL_REVIEW) is disabled in `team`.
 
 | Action                                     | Phase                         | What I Say                                                                                                                                                                                                                                          |
 | ------------------------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -133,11 +149,15 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 9 — Prove the Fix (post-flow)
+## Step 9 — Prove the Fix (post-flow, confirmatory)
 
-| Action        | What I Say                                                                                                           |
-| ------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `./mvnw test` | "Alle 16 Tests grün, null skipped. Der zuvor disabled Regressionstest läuft jetzt und beweist: der Bug ist behoben." |
+> With the `IMPL_VALIDATION` gate (Step 6b), the regression test already ran green
+> **inside** the governed flow and audit trail. This manual run is now a
+> confirmatory external check, no longer the only proof.
+
+| Action        | What I Say                                                                                                                                                                               |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `./mvnw test` | "Zur Bestätigung außerhalb von FlowGuard: alle 16 Tests grün, null skipped. Der Regressionstest, den FlowGuard in Step 6b schon ausgeführt hat, beweist auch hier: der Bug ist behoben." |
 
 ---
 

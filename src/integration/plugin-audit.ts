@@ -307,20 +307,28 @@ async function maybeCompleteAndArchive(
     });
   }
 
-  if (deps.cachedFingerprint) {
-    if (toolLayerHandled) {
-      deps.log.debug('audit', 'archive handled by tool layer', {
-        archiveStatus: freshState.archiveStatus,
-      });
-    } else {
-      archiveSession(deps.cachedFingerprint, sessionId).catch((err) => {
-        deps.log.warn('audit', 'auto-archive failed', {
-          error: serializeError(err),
-        });
-      });
-    }
-  }
+  scheduleSoloArchive(deps, sessionId, state, freshState, toolLayerHandled);
   return prevHash;
+}
+
+function scheduleSoloArchive(
+  deps: AuditDeps,
+  sessionId: string,
+  state: SessionState | null,
+  freshState: SessionState | null,
+  toolLayerHandled: boolean,
+): void {
+  const fingerprint = deps.cachedFingerprint;
+  if (!fingerprint || (freshState ?? state)?.policySnapshot.mode !== 'solo') return;
+  if (toolLayerHandled) {
+    deps.log.debug('audit', 'archive handled by tool layer', {
+      archiveStatus: freshState?.archiveStatus,
+    });
+    return;
+  }
+  archiveSession(fingerprint, sessionId).catch((err) => {
+    deps.log.warn('audit', 'auto-archive failed', { error: serializeError(err) });
+  });
 }
 
 interface StrictTimestampTracker {
@@ -568,7 +576,7 @@ export async function runAudit(
     // ── 4. Emit lifecycle events ────────────────────────────────────────
     await emitLifecycleAudit({ deps, ctx, toolName, sessionId, state, policy, timestampTracker });
 
-    // ── 5. Detect session completion + auto-archive ──────────────────────
+    // ── 5. Detect session completion + solo auto-archive ─────────────────
     ctx.prevHash = await maybeCompleteAndArchive(deps, ctx, {
       toolName,
       sessionId,

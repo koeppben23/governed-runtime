@@ -61,27 +61,24 @@ import {
 
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';
+import { resolveNextAction } from '../../machine/next-action.js';
 import { autoAdvance } from '../../rails/types.js';
-import type { ReviewFindings } from '../../state/evidence.js';
+import type { ReviewFindings, ImplEvidence, ReviewObligation } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 
 // Rail helpers
 
 // Adapters
-import { changedFiles, hashWorktreeFiles } from '../../adapters/git.js';
+import { changedFiles, hashWorktreeFiles, worktreeDiff } from '../../adapters/git.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
+import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 
 // Evidence types
 
 // Review findings validation (shared with plan.ts)
 import { validateReviewFindings } from './review-validation.js';
-import {
-  appendReviewObligation,
-  createReviewObligation,
-  ensureReviewAssurance,
-  reviewObligationResponseFields,
-} from '../review/assurance.js';
+import { ensureReviewAssurance, reviewObligationResponseFields } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { resolveCeremonyProfile, isNonDomainConfigPath } from '../phase-tool-gate.js';
 import {
@@ -90,7 +87,10 @@ import {
 } from '../review/orchestration-mode.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
 import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
-import { nextImplementationReviewIteration } from './implement-shared.js';
+import {
+  activateImplementationReviewObligation,
+  nextImplementationReviewIteration,
+} from './implement-shared.js';
 // Mode A
 export function validateInitialReviewFindings(input: ImplementRuntime): string | null {
   if (!input.args.reviewFindings) return null;
@@ -146,7 +146,7 @@ function buildImplRecordedResponse(input: {
   domainFiles: string[];
   reviewIteration: number;
   planVersion: number;
-  nextObligation: ReturnType<typeof createReviewObligation> | null;
+  nextObligation: ReviewObligation | null;
   transitions: ReadonlyArray<unknown>;
   reviewFindings: ReviewFindings[];
   ceremony: ImplementationCeremony;
@@ -161,15 +161,18 @@ function buildImplRecordedResponse(input: {
     nativeReviewerAvailable: platform === 'unknown' ? false : true,
     manualAttestedAllowed: input.policy.reviewInvocationPolicy !== 'host_task_required',
   });
-  const instruction = buildPendingReviewInstruction({
-    mode,
-    platform,
-    reviewKind: 'implementation',
-    obligation: input.nextObligation,
-    iteration: input.reviewIteration,
-    planVersion: input.planVersion,
-    subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
-  });
+  const instruction = input.nextObligation
+    ? buildPendingReviewInstruction({
+        mode,
+        platform,
+        reviewKind: 'implementation',
+        obligation: input.nextObligation,
+        iteration: input.reviewIteration,
+        planVersion: input.planVersion,
+        subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
+      })
+    : null;
+  const nextAction = resolveNextAction(input.finalState.phase, input.finalState);
   const response: Record<string, unknown> = {
     phase: input.finalState.phase,
     status: `Implementation recorded. ${input.files.length} files changed, ${input.domainFiles.length} domain files.`,
@@ -183,8 +186,8 @@ function buildImplRecordedResponse(input: {
     ...reviewObligationResponseFields(input.nextObligation),
     next: reduced
       ? 'REDUCED_CEREMONY_APPLIED: Runtime evidence classified the changed files as TRIVIAL after passed validation. Reduced-ceremony evidence was recorded; implementation review evidence was not synthesized.'
-      : instruction.next,
-    ...(reduced ? {} : { reviewInvocation: instruction.reviewInvocation }),
+      : (instruction?.next ?? nextAction.text),
+    ...(instruction ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: input.transitions },
   };
 
@@ -254,6 +257,49 @@ async function scopeImplementationFiles(
   return { files, baselineScoping: 'applied' };
 }
 
+/**
+ * Build ImplEvidence with a CONTENT-bound digest and capture the change as a diff
+ * artifact.
+ *
+ * The digest hashes each changed file's CURRENT content (path + git blob hash) so
+ * distinct edits to the same file set yield distinct digests — closing the prior
+ * gap where the digest was computed over file NAMES only. The unified diff is written
+ * to `<sessDir>/implementation-diff.<diffDigest>.patch` (content-addressed, so
+ * identical content is idempotent) and covered by the archive manifest checksums;
+ * its digest is bound into the evidence. Diff capture is best-effort: an empty
+ * diff or a write failure omits `diffDigest` and never blocks recording; the digest
+ * is only set when the artifact was successfully written to disk.
+ */
+async function buildImplEvidence(
+  input: ImplementRuntime,
+  files: string[],
+  domainFiles: string[],
+): Promise<ImplEvidence> {
+  const sortedFiles = [...files].sort();
+  const contentHashes = await hashWorktreeFiles(input.worktree, sortedFiles);
+  const digest = input.ctx.digest(
+    sortedFiles.map((f) => `${f}:${contentHashes[f] ?? 'deleted'}`).join('\n'),
+  );
+
+  let diffDigest: string | undefined;
+  const diffText = await worktreeDiff(input.worktree, sortedFiles);
+  if (diffText.trim().length > 0) {
+    const candidateDigest = input.ctx.digest(diffText);
+    const written = await writeImplementationDiffArtifact(input.sessDir, candidateDigest, diffText);
+    if (written) {
+      diffDigest = candidateDigest;
+    }
+  }
+
+  return {
+    changedFiles: files,
+    domainFiles,
+    digest,
+    ...(diffDigest ? { diffDigest } : {}),
+    executedAt: input.ctx.now(),
+  };
+}
+
 export async function handleImplRecord(
   input: ImplementRuntime,
   changedFilesOverride?: string[],
@@ -273,12 +319,7 @@ export async function handleImplRecord(
   const domainFiles = files.filter(
     (f) => !f.startsWith('.opencode/') && !f.includes('node_modules/') && !isNonDomainConfigPath(f),
   );
-  const implEvidence = {
-    changedFiles: files,
-    domainFiles,
-    digest: input.ctx.digest(files.sort().join('\n')),
-    executedAt: input.ctx.now(),
-  };
+  const implEvidence = await buildImplEvidence(input, files, domainFiles);
   const existingFindings = input.state.implReviewFindings ?? [];
   const newReviewFindings = input.args.reviewFindings
     ? [...existingFindings, input.args.reviewFindings]
@@ -287,18 +328,13 @@ export async function handleImplRecord(
   const planVersion = (input.state.plan?.history.length ?? 0) + 1;
   const ceremony = resolveCeremonyProfile({ state: input.state, changedFiles: files });
   const reducedCeremony = ceremony.profile === 'reduced';
-  const nextObligation =
-    input.subagentEnabled && !reducedCeremony
-      ? createReviewObligation({
-          obligationType: 'implement',
-          iteration: reviewIteration,
-          planVersion,
-          now: input.ctx.now(),
-        })
-      : null;
   const nextState: SessionState = {
     ...input.state,
     implementation: implEvidence,
+    // Fresh implementation invalidates any prior post-implementation checks; the
+    // machine advances to IMPL_VALIDATION where the checks are re-run against the
+    // new code (prevents a stale IMPL_VALIDATION failure from looping).
+    implValidation: [],
     reducedCeremony: reducedCeremony
       ? {
           profile: 'reduced',
@@ -311,7 +347,7 @@ export async function handleImplRecord(
       : null,
     implReview: null,
     implReviewFindings: newReviewFindings.length > 0 ? newReviewFindings : undefined,
-    reviewAssurance: appendReviewObligation(input.state.reviewAssurance, nextObligation),
+    reviewAssurance: input.state.reviewAssurance,
     error: null,
   };
   return persistImplRecordAndRespond({
@@ -321,7 +357,6 @@ export async function handleImplRecord(
     domainFiles,
     reviewIteration,
     planVersion,
-    nextObligation,
     reviewFindings: newReviewFindings,
     ceremony,
     baselineScoping,
@@ -335,7 +370,6 @@ interface PersistImplRecordArgs {
   domainFiles: string[];
   reviewIteration: number;
   planVersion: number;
-  nextObligation: ReturnType<typeof createReviewObligation> | null;
   reviewFindings: ReviewFindings[];
   ceremony: ReturnType<typeof resolveCeremonyProfile>;
   baselineScoping: 'applied' | 'unavailable';
@@ -349,17 +383,23 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
     return formatAutoAdvanceOverflow(advanced);
   }
   const { state: finalState, transitions } = advanced;
-  await writeStateWithArtifacts(input.sessDir, finalState);
+  const activated = activateImplementationReviewObligation(finalState, {
+    subagentEnabled: input.subagentEnabled,
+    iteration: reviewIteration,
+    planVersion,
+    now: input.ctx.now(),
+  });
+  await writeStateWithArtifacts(input.sessDir, activated.state);
 
   return appendNextAction(
     JSON.stringify(
       buildImplRecordedResponse({
-        finalState,
+        finalState: activated.state,
         files,
         domainFiles,
         reviewIteration,
         planVersion,
-        nextObligation: args.nextObligation,
+        nextObligation: activated.obligation,
         transitions,
         reviewFindings: args.reviewFindings,
         ceremony: args.ceremony,
@@ -367,6 +407,6 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
         baselineScoping: args.baselineScoping,
       }),
     ),
-    finalState,
+    activated.state,
   );
 }

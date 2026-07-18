@@ -16,6 +16,8 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import {
   createToolContext,
   createTestWorkspace,
@@ -194,7 +196,12 @@ describe('archive', () => {
   describe('HAPPY', () => {
     it.skipIf(!tarOk)('archives a completed session to tar.gz', async () => {
       await hydrateSession();
-      await abort_session.execute({ reason: 'Complete for archive' }, ctx);
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
       const raw = await archive.execute({}, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
@@ -222,27 +229,30 @@ describe('archive', () => {
         const result = parseToolResult(raw);
         expect(result.error).toBeUndefined();
 
-        const manifestRaw = await fs.readFile(`${sessDir}/archive-manifest.json`, 'utf-8');
+        const { stdout: manifestRaw } = await promisify(execFile)('tar', [
+          'xOf',
+          result.archivePath as string,
+          `${ctx.sessionID}/archive-manifest.json`,
+        ]);
         const manifest = JSON.parse(manifestRaw) as {
           includedFiles: string[];
           fileDigests: Record<string, string>;
         };
-        expect(manifest.includedFiles).toContain('artifacts/ticket.v1.md');
-        expect(manifest.includedFiles).toContain('artifacts/ticket.v1.json');
-        expect(manifest.includedFiles).toContain('artifacts/plan.v1.md');
-        expect(manifest.includedFiles).toContain('artifacts/plan.v1.json');
-        expect(manifest.fileDigests['artifacts/ticket.v1.json']).toBeTruthy();
-        expect(manifest.fileDigests['artifacts/plan.v1.json']).toBeTruthy();
+        expect(manifest.includedFiles).toContain('artifacts/ticket/ticket.v1.md');
+        expect(manifest.includedFiles).toContain('artifacts/ticket/ticket.v1.json');
+        expect(manifest.includedFiles).toContain('artifacts/plan/plan.v1.md');
+        expect(manifest.includedFiles).toContain('artifacts/plan/plan.v1.json');
+        expect(manifest.fileDigests['artifacts/ticket/ticket.v1.json']).toBeTruthy();
+        expect(manifest.fileDigests['artifacts/plan/plan.v1.json']).toBeTruthy();
       },
     );
 
     it.skipIf(!tarOk)(
       're-archiving a session is idempotent: no duplicate artifact-binding event, verify still passes',
       async () => {
-        // Reproduces the demo archive race: the fire-and-forget auto-archive on
-        // COMPLETE plus the manual /export both archive the same session. Without
-        // idempotent binding, each appends an archive:artifacts_bound event, the
-        // live trail outgrows the manifest anchor, and verify reports
+        // Repeated explicit exports must not duplicate artifact bindings. Without
+        // idempotent binding, each archive appends an archive:artifacts_bound event
+        // and the live trail outgrows the manifest anchor, so verify reports
         // audit_chain_truncated -> archiveStatus:"failed" on a valid archive.
         await hydrateSession();
         await ticket.execute({ text: 'Idempotent re-archive test', source: 'user' }, ctx);
@@ -263,9 +273,9 @@ describe('archive', () => {
         const state = await readState(sessDir);
         await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
 
-        // First archive (simulates the auto-archive on COMPLETE).
+        // First explicit archive.
         await archiveSession(fp.fingerprint, ctx.sessionID);
-        // Second archive (simulates the manual /export).
+        // Repeated explicit archive.
         await archiveSession(fp.fingerprint, ctx.sessionID);
 
         const { events } = await readAuditTrail(sessDir);
@@ -294,7 +304,7 @@ describe('archive', () => {
         const state = await readState(sessDir);
         await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
 
-        // Prior archive (auto-archive equivalent).
+        // Prior explicit archive.
         await archiveSession(fp.fingerprint, ctx.sessionID);
 
         // Manual /export now must not race to failed.
@@ -346,6 +356,19 @@ describe('archive', () => {
         'EVIDENCE_ARTIFACT_MISMATCH',
       ]).toContain(result.code);
     });
+
+    it('blocks /export for an aborted session (not a clean audit package)', async () => {
+      // Governance integrity: an aborted session is terminal (phase=COMPLETE)
+      // but must not be exportable as a "verifiable audit package" — that would
+      // misrepresent a failed/abandoned session as a clean completion. The abort
+      // is already preserved in the audit trail; the user is directed to /review.
+      await hydrateSession();
+      await abort_session.execute({ reason: 'Operator aborted mid-flow' }, ctx);
+      const raw = await archive.execute({}, ctx);
+      const result = parseToolResult(raw);
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('ABORTED');
+    });
   });
 
   describe('CORNER', () => {
@@ -390,7 +413,12 @@ describe('archive', () => {
 
     it('archive path follows expected pattern', async () => {
       await hydrateSession();
-      await abort_session.execute({ reason: 'Done' }, ctx);
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
       // Even if tar is missing, the tool should at least try and produce
       // a meaningful error or succeed. We test the path structure.
       const raw = await archive.execute({}, ctx);

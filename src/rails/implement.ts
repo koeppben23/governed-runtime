@@ -26,7 +26,6 @@ import type { ImplEvidence, PlanRecord, TicketEvidence, LoopVerdict } from '../s
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
 import {
-  applyTransition,
   autoAdvance,
   runConvergenceLoop,
   createPolicyEvalFn,
@@ -80,31 +79,25 @@ async function collectAndAdvance(
     digest: ctx.digest(changedFiles.sort().join('\n')),
     executedAt: ctx.now(),
   };
-  let nextState: SessionState = {
+  const nextState: SessionState = {
     ...state,
     implementation: currentImpl,
+    // Test-only rail: the production flow re-runs the verification checks in
+    // IMPL_VALIDATION via an explicit /check. This bundled orchestrator simulates a
+    // passing post-implementation run by mirroring the (passing) pre-implementation
+    // checks, so it can auto-advance IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW
+    // and exercise the independent review loop.
+    implValidation: state.validation,
     implReview: null,
     error: null,
   };
-  const allTransitions: TransitionRecord[] = [];
-  const evalAfterImpl = evalFn(nextState);
-  if (evalAfterImpl.kind === 'transition') {
-    const at = ctx.now();
-    allTransitions.push({
-      from: nextState.phase,
-      to: evalAfterImpl.target,
-      event: evalAfterImpl.event,
-      at,
-    });
-    nextState = applyTransition(
-      nextState,
-      nextState.phase,
-      evalAfterImpl.target,
-      evalAfterImpl.event,
-      at,
-    );
+  const advanced = autoAdvance(nextState, evalFn, ctx);
+  if (advanced.kind === 'overflow') {
+    // Non-terminating advance (misconfigured topology). Keep the recorded evidence
+    // at IMPLEMENTATION; the caller re-evaluates and surfaces the stop.
+    return { currentImpl, nextState, transitions: [] };
   }
-  return { currentImpl, nextState, transitions: allTransitions };
+  return { currentImpl, nextState: advanced.state, transitions: [...advanced.transitions] };
 }
 
 export async function executeImplement(

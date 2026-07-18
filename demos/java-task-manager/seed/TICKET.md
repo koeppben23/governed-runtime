@@ -30,8 +30,11 @@ that exposes this exact bug when activated.
    to propagate.
 
 2. **TaskControllerTest.update_taskNotFound_returns404()**: Remove the
-   `@Disabled` annotation to activate the regression test so it verifies
-   that the 404 response is returned for a non-existent task update.
+   `@Disabled` annotation to activate the regression test. Keep its HTTP 404
+   assertion and add `jsonPath("$.taskId").value("non-existent-id")` so the
+   error body proves the requested task ID is preserved. Replace the baseline
+   Javadoc instruction to manually remove `@Disabled` with a description of
+   the now-active regression coverage.
 
 ## Do Not Change
 
@@ -49,5 +52,8 @@ that exposes this exact bug when activated.
 - `PUT /tasks/non-existent-id` returns HTTP 404 with an error body that
   includes the missing task ID.
 - `PUT /tasks/{existing-id}` continues to work as before.
-- `update_taskNotFound_returns404` test is enabled and passes.
+- `update_taskNotFound_returns404` is enabled, passes, and asserts
+  `$.taskId == "non-existent-id"`.
+- The test Javadoc describes the active regression coverage; it does not
+  retain an instruction to remove `@Disabled`.
 - All existing tests continue to pass.

@@ -176,13 +176,14 @@ async function getSessDir(context: TestToolContext = ctx): Promise<string> {
 }
 
 /**
- * Drive through VALIDATION phase by running all active checks.
+ * Drive through a validation phase by running all active checks.
  * The executor mock returns passing results (defined in vi.mock above).
- * No-op if not in VALIDATION phase or if activeChecks is empty.
+ * Handles the pre-implementation VALIDATION baseline and the post-implementation
+ * IMPL_VALIDATION re-run. No-op if not in a validation phase or activeChecks is empty.
  */
 async function passValidation(context: TestToolContext = ctx): Promise<void> {
   const phase = await getPhase(context);
-  if (phase !== 'VALIDATION') return;
+  if (phase !== 'VALIDATION' && phase !== 'IMPL_VALIDATION') return;
   const sessDir = await getSessDir(context);
   const state = await readState(sessDir);
   if (!state || state.activeChecks.length === 0) return;
@@ -263,6 +264,7 @@ describe('e2e-workflow', () => {
 
       // 6. Implement (Mode A: record changes)
       await callOk(implement, {});
+      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
 
       // 7. Implement (Mode B: approve review)
       await callOk(review_implementation, { reviewVerdict: 'accept' });
@@ -322,6 +324,7 @@ describe('e2e-workflow', () => {
 
       // 6. Implement + review
       await callOk(implement, {});
+      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       for (let i = 0; i < 5; i++) {
         const phase = await getPhase();
         if (phase === 'EVIDENCE_REVIEW') break;
@@ -441,6 +444,7 @@ describe('e2e-workflow', () => {
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
       await passValidation();
       await callOk(implement, {});
+      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
         await callOk(review_implementation, { reviewVerdict: 'accept' });
@@ -460,6 +464,7 @@ describe('e2e-workflow', () => {
 
       // Re-implement and complete
       await callOk(implement, {});
+      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
         await callOk(review_implementation, { reviewVerdict: 'accept' });
@@ -481,6 +486,7 @@ describe('e2e-workflow', () => {
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
       await passValidation();
       await callOk(implement, {});
+      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
         await callOk(review_implementation, { reviewVerdict: 'accept' });
@@ -531,6 +537,7 @@ describe('e2e-workflow', () => {
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
       await passValidation();
       await callOk(implement, {});
+      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       await callOk(review_implementation, { reviewVerdict: 'accept' });
       expect(await getPhase()).toBe('COMPLETE');
 
@@ -562,6 +569,7 @@ describe('e2e-workflow', () => {
       phases.push(await getPhase()); // IMPLEMENTATION
 
       await callOk(implement, {});
+      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       phases.push(await getPhase()); // After impl record
 
       await callOk(review_implementation, { reviewVerdict: 'accept' });
@@ -701,6 +709,7 @@ describe('e2e-workflow', () => {
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
       await passValidation();
       await callOk(implement, {});
+      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       await callOk(review_implementation, { reviewVerdict: 'accept' });
       expect(await getPhase()).toBe('COMPLETE');
 
@@ -718,6 +727,7 @@ describe('e2e-workflow', () => {
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
       await passValidation();
       await callOk(implement, {});
+      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       await callOk(review_implementation, { reviewVerdict: 'accept' });
       expect(await getPhase()).toBe('COMPLETE');
 
@@ -765,6 +775,7 @@ describe('e2e-workflow', () => {
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
       await passValidation();
       await callOk(implement, {});
+      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
         await callOk(review_implementation, { reviewVerdict: 'accept' });
@@ -1039,6 +1050,7 @@ describe('e2e-workflow', () => {
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
       await passValidation();
       await callOk(implement, {});
+      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
         await callOk(review_implementation, { reviewVerdict: 'accept' });
@@ -1059,6 +1071,7 @@ describe('e2e-workflow', () => {
       // VALIDATION: pass checks again
       await passValidation();
       await callOk(implement, {});
+      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'EVIDENCE_REVIEW') break;
         await callOk(review_implementation, { reviewVerdict: 'accept' });
@@ -1086,6 +1099,7 @@ describe('e2e-workflow', () => {
       // Pass validation
       await passValidation();
       await callOk(implement, {});
+      await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
       await callOk(review_implementation, { reviewVerdict: 'accept' });
       expect(await getPhase()).toBe('COMPLETE');
       const elapsed = Date.now() - start;
@@ -1103,6 +1117,7 @@ describe('e2e-workflow', () => {
         // Pass validation
         await passValidation(ic);
         await callOk(implement, {}, ic);
+        await passValidation(ic); // IMPL_VALIDATION -> IMPL_REVIEW
         await callOk(review_implementation, { reviewVerdict: 'accept' }, ic);
         expect(await getPhase(ic)).toBe('COMPLETE');
       }

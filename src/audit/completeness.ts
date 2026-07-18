@@ -42,6 +42,7 @@
 import { z } from 'zod';
 import { compareActorIdentity } from '../identity/actor-info.js';
 import type { ActorIdentityComparison } from '../identity/actor-info.js';
+import { evaluateValidationEvidence } from '../machine/validation-evidence.js';
 import type { SessionState, Phase } from '../state/schema.js';
 
 // ─── Zod Schemas for ReviewReport ────────────────────────────────────
@@ -162,9 +163,10 @@ const PHASE_ORDER: Readonly<Record<Phase, number>> = {
   PLAN_REVIEW: 2,
   VALIDATION: 3,
   IMPLEMENTATION: 4,
-  IMPL_REVIEW: 5,
-  EVIDENCE_REVIEW: 6,
-  COMPLETE: 7,
+  IMPL_VALIDATION: 5,
+  IMPL_REVIEW: 6,
+  EVIDENCE_REVIEW: 7,
+  COMPLETE: 8,
   ARCHITECTURE: -1,
   ARCH_REVIEW: -1,
   ARCH_COMPLETE: -1,
@@ -183,9 +185,10 @@ const SLOT_REQUIRED_FROM: Readonly<Record<string, number>> = {
   selfReview: 2, // PLAN_REVIEW
   planReviewDecision: 3, // VALIDATION
   validation: 4, // IMPLEMENTATION
-  implementation: 5, // IMPL_REVIEW
-  implReview: 6, // EVIDENCE_REVIEW
-  evidenceReviewDecision: 7, // COMPLETE
+  implementation: 5, // IMPL_VALIDATION
+  implValidation: 6, // IMPL_REVIEW
+  implReview: 7, // EVIDENCE_REVIEW
+  evidenceReviewDecision: 8, // COMPLETE
 };
 
 /** All evidence slots in evidence-chain order. */
@@ -196,6 +199,7 @@ const ALL_SLOTS = [
   'planReviewDecision',
   'validation',
   'implementation',
+  'implValidation',
   'implReview',
   'evidenceReviewDecision',
 ] as const;
@@ -208,6 +212,7 @@ const SLOT_LABELS: Readonly<Record<string, string>> = {
   planReviewDecision: 'Plan Review Decision',
   validation: 'Validation Results',
   implementation: 'Implementation Evidence',
+  implValidation: 'Post-Implementation Validation',
   implReview: 'Implementation Review',
   evidenceReviewDecision: 'Evidence Review Decision',
 };
@@ -220,6 +225,7 @@ const SLOT_ARTIFACT_KIND: Readonly<Record<string, string>> = {
   planReviewDecision: 'review_decision',
   validation: 'validation_results',
   implementation: 'implementation_evidence',
+  implValidation: 'implementation_validation_results',
   implReview: 'implementation_review',
   evidenceReviewDecision: 'review_decision',
   architecture: 'architecture_decision',
@@ -229,11 +235,29 @@ const SLOT_ARTIFACT_KIND: Readonly<Record<string, string>> = {
 // ─── Slot Evaluation ──────────────────────────────────────────────────────────
 
 /**
+ * Whether validation-like evidence is complete for a set of results.
+ *
+ * For zero active checks, the validation-evidence authority decides whether
+ * vacuous advancement is admissible. This keeps audit completeness aligned
+ * with machine guards without reimplementing policy semantics.
+ */
+function checksComplete(
+  state: SessionState,
+  results: ReadonlyArray<{ checkId: string; passed: boolean }>,
+): boolean {
+  if (state.activeChecks.length === 0) {
+    return !evaluateValidationEvidence(state).blocked;
+  }
+  return state.activeChecks.every((id) => results.some((v) => v.checkId === id && v.passed));
+}
+
+/**
  * Check if an evidence slot has valid data present in state.
  *
  * Special cases:
  * - planReviewDecision: verified by topology invariant (phase >= VALIDATION)
- * - validation: all active checks must pass (not just "some results exist")
+ * - validation: checksComplete - policy-admissible zero checks, or all active checks passed
+ * - implValidation: checksComplete - same semantics, separate post-implementation slot
  * - evidenceReviewDecision: COMPLETE phase with no error
  */
 const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phaseOrd: number) => boolean> = {
@@ -242,11 +266,9 @@ const SLOT_PRESENT_CHECKS: Record<string, (state: SessionState, phaseOrd: number
   plan: (s) => s.plan !== null,
   selfReview: (s) => s.selfReview !== null,
   planReviewDecision: (_s, phaseOrd) => phaseOrd >= PHASE_ORDER['VALIDATION'],
-  validation: (s) =>
-    s.validation.length > 0 &&
-    s.activeChecks.length > 0 &&
-    s.activeChecks.every((id) => s.validation.some((v) => v.checkId === id && v.passed)),
+  validation: (s) => checksComplete(s, s.validation),
   implementation: (s) => s.implementation !== null,
+  implValidation: (s) => checksComplete(s, s.implValidation),
   implReview: (s) => s.implReview !== null,
   evidenceReviewDecision: (s) => s.phase === 'COMPLETE' && s.error === null,
   archReviewDecision: (s) => s.phase === 'ARCH_COMPLETE' && s.error === null,
@@ -265,6 +287,9 @@ function isSlotPresent(state: SessionState, slot: string): boolean {
 function isSlotFailed(state: SessionState, slot: string): boolean {
   if (slot === 'validation') {
     return state.validation.length > 0 && state.validation.some((v) => !v.passed);
+  }
+  if (slot === 'implValidation') {
+    return state.implValidation.length > 0 && state.implValidation.some((v) => !v.passed);
   }
   return false;
 }
@@ -297,6 +322,15 @@ const SLOT_DETAIL_FNS: Record<
     return failedIds.length > 0
       ? `${passed}/${total} passed, failed: ${failedIds.join(', ')}`
       : `${passed}/${total} passed`;
+  },
+  implValidation: (s) => {
+    if (s.implValidation.length === 0) return undefined;
+    const passed = s.implValidation.filter((v) => v.passed).length;
+    const total = s.implValidation.length;
+    const failedIds = s.implValidation.filter((v) => !v.passed).map((v) => v.checkId);
+    return failedIds.length > 0
+      ? `post-impl ${passed}/${total} passed, failed: ${failedIds.join(', ')}`
+      : `post-impl ${passed}/${total} passed`;
   },
   implementation: (s) =>
     s.implementation
@@ -488,6 +522,6 @@ export function evaluateCompleteness(state: SessionState): CompletenessReport {
     overallComplete,
     slots,
     fourEyes,
-    summary: { total: ALL_SLOTS.length, complete, missing, notYetRequired, failed },
+    summary: { total: slots.length, complete, missing, notYetRequired, failed },
   };
 }

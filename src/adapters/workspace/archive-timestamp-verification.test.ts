@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { makeState } from '../../fixtures.js';
 import type { ArchiveFinding, ArchiveManifest, ManifestPolicyMode } from '../../archive/types.js';
-import { ARCHIVE_MANIFEST_SCHEMA_VERSION } from '../../archive/types.js';
+import { ARCHIVE_LAYOUT_VERSION, ARCHIVE_MANIFEST_SCHEMA_VERSION } from '../../archive/types.js';
 import type { AuditEvent } from '../../state/evidence.js';
 import { verifyArchiveTimestampTokens } from './archive-timestamp-verification.js';
 
@@ -11,6 +11,7 @@ const FINGERPRINT = 'aaaabbbbccccddddeeeeffff';
 function manifest(policyMode: ManifestPolicyMode): ArchiveManifest {
   return {
     schemaVersion: ARCHIVE_MANIFEST_SCHEMA_VERSION,
+    layoutVersion: ARCHIVE_LAYOUT_VERSION,
     createdAt: '2026-01-01T00:00:00.000Z',
     sessionId: SESSION_ID,
     fingerprint: FINGERPRINT,

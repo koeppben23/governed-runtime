@@ -39,6 +39,11 @@ import {
   taskResultWithEmbeddedFindings,
   validSubagentPrompt,
 } from './test-helpers.js';
+import {
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RUN_CHECK,
+} from '../../tool-names.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Tests
@@ -123,6 +128,32 @@ describe('review-enforcement', () => {
       });
 
       expect(result.allowed).toBe(true);
+    });
+
+    it('tracks a post-implementation check review signal under the implementation owner', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        TOOL_FLOWGUARD_RUN_CHECK,
+        { kind: 'build' },
+        modeASubagentResponse({ iteration: 1, planVersion: 2, phase: 'IMPL_REVIEW' }),
+        NOW,
+      );
+
+      const prompt = validSubagentPrompt({ iteration: 1, planVersion: 2 });
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt },
+        taskResultWithFindings('sub-session-check'),
+        LATER,
+      );
+
+      expect(state.pendingReviews.get(TOOL_FLOWGUARD_IMPLEMENT)?.subagentCalled).toBe(true);
+      expect(
+        enforceBeforeVerdict(state, TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION, {
+          reviewVerdict: 'accept',
+        }),
+      ).toEqual({ allowed: true });
     });
 
     it('no enforcement when independent-review marker is absent', () => {
@@ -502,6 +533,66 @@ describe('review-enforcement', () => {
 
       expect(result.allowed).toBe(false);
       expect(result).toHaveProperty('code', 'SUBAGENT_FINDINGS_ISSUES_MISMATCH');
+    });
+
+    it('F12: blocks verdict when the CAPTURED record is accept + blocking issue (coherence, not tampering)', () => {
+      const state = createSessionState();
+
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+
+      // Subagent itself returns an incoherent record: accept WITH a blocking issue.
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
+        taskResultWithFindings('s1', {
+          verdict: 'accept',
+          blockingIssues: [{ severity: 'minor', description: 'stale comment' }],
+        }),
+        LATER,
+      );
+
+      // Agent faithfully echoes the captured (incoherent) record — no tampering.
+      const result = enforceBeforeVerdict(state, 'flowguard_plan', {
+        reviewVerdict: 'accept',
+        reviewFindings: {
+          overallVerdict: 'accept',
+          blockingIssues: [{ severity: 'minor', description: 'stale comment' }],
+          reviewedBy: { sessionId: 's1' },
+        },
+      });
+
+      expect(result.allowed).toBe(false);
+      // Coherence fires BEFORE the anti-tampering mismatch check.
+      expect(result).toHaveProperty('code', 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
+    });
+
+    it('F12 recovery: permits a second reviewer call after an incoherent capture', () => {
+      const state = createSessionState();
+      onFlowGuardToolAfter(
+        state,
+        'flowguard_plan',
+        { planText: '## Plan' },
+        modeASubagentResponse(),
+        NOW,
+      );
+
+      onTaskToolAfter(
+        state,
+        { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: 'Review' },
+        taskResultWithFindings('s1', {
+          verdict: 'accept',
+          blockingIssues: [{ severity: 'minor', description: 'stale comment' }],
+        }),
+        LATER,
+      );
+
+      expect(matchPendingReview(state, { prompt: 'Review' })).not.toBeNull();
     });
 
     it('L4: blocks verdict when blockingIssues were added (inflated)', () => {
@@ -1676,6 +1767,35 @@ describe('review-enforcement', () => {
         stateAvailable: true,
       });
       expect(result.allowed).toBe(true);
+    });
+
+    it('allows one retry but blocks after the reviewer capture retry budget is exhausted', () => {
+      const pending = { status: 'pending', obligationId: 'obligation-a' } as const;
+      const incoherentCapture = {
+        obligationId: 'obligation-a',
+        capturedVerdict: 'accept',
+        capturedRawFindings: { blockingIssues: [{ message: 'stale comment' }] },
+      };
+      const allowedRetry = enforceReviewerObligation({
+        obligations: [pending],
+        invocations: [incoherentCapture],
+        maxIncoherentReviewerCaptureRetries: 1,
+        reviewInvocationPolicy: 'host_task_required',
+        strictEnforcement: true,
+        stateAvailable: true,
+      });
+      const exhausted = enforceReviewerObligation({
+        obligations: [pending],
+        invocations: [incoherentCapture, incoherentCapture],
+        maxIncoherentReviewerCaptureRetries: 1,
+        reviewInvocationPolicy: 'host_task_required',
+        strictEnforcement: true,
+        stateAvailable: true,
+      });
+
+      expect(allowedRetry.allowed).toBe(true);
+      expect(exhausted.allowed).toBe(false);
+      expect(exhausted).toHaveProperty('code', 'SUBAGENT_VERDICT_FINDINGS_INCOHERENT');
     });
 
     it('blocks when host_task_required and no obligations at all', () => {

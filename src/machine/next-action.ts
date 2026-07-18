@@ -49,6 +49,7 @@ export const ACTION_CODES = {
   VALIDATION_EVIDENCE_UNVERIFIED: 'VALIDATION_EVIDENCE_UNVERIFIED',
   RUN_IMPLEMENT: 'RUN_IMPLEMENT',
   RUN_ARCHITECTURE: 'RUN_ARCHITECTURE',
+  RUN_REVIEWER_TASK: 'RUN_REVIEWER_TASK',
   SESSION_COMPLETE: 'SESSION_COMPLETE',
 } as const;
 
@@ -173,9 +174,22 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
           commands: ['/continue'],
         },
 
+  IMPL_VALIDATION: (state) =>
+    state.implValidation.length === 0
+      ? {
+          code: ACTION_CODES.RUN_VALIDATE,
+          text: 'Implementation recorded. Re-run the verification checks against the fixed code with /check',
+          commands: ['/check'],
+        }
+      : {
+          code: ACTION_CODES.RUN_CONTINUE,
+          text: 'Post-implementation validation complete. Run /continue to advance',
+          commands: ['/continue'],
+        },
+
   IMPL_REVIEW: () => ({
     code: ACTION_CODES.RUN_CONTINUE,
-    text: 'Run /continue to advance',
+    text: 'Implementation review is pending. Invoke the flowguard-reviewer task, then submit its verdict with flowguard_review_implementation.',
     commands: ['/continue'],
   }),
 
@@ -187,7 +201,7 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
 
   COMPLETE: () => ({
     code: ACTION_CODES.SESSION_COMPLETE,
-    text: 'Workflow complete. All evidence archived.',
+    text: 'Workflow complete. Review readiness and archive evidence when appropriate.',
     commands: [],
   }),
 
@@ -209,7 +223,7 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
 
   ARCH_COMPLETE: () => ({
     code: ACTION_CODES.SESSION_COMPLETE,
-    text: 'Architecture flow complete. ADR archived.',
+    text: 'Architecture flow complete. Review readiness and archive the ADR when appropriate.',
     commands: [],
   }),
 
@@ -222,7 +236,7 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
 
   REVIEW_COMPLETE: () => ({
     code: ACTION_CODES.SESSION_COMPLETE,
-    text: 'Review flow complete. Report archived.',
+    text: 'Review flow complete. Review the report and archive it when appropriate.',
     commands: [],
   }),
 };
@@ -241,5 +255,15 @@ const NEXT_ACTION_MAP: Record<Phase, NextActionFn> = {
  * @returns NextAction with code, guidance text, and available commands.
  */
 export function resolveNextAction(phase: Phase, state: SessionState): NextAction {
+  const pendingStandaloneReview = state.reviewAssurance?.obligations.some(
+    (obligation) => obligation.obligationType === 'review' && obligation.status === 'pending',
+  );
+  if (phase === 'READY' && pendingStandaloneReview) {
+    return {
+      code: ACTION_CODES.RUN_REVIEWER_TASK,
+      text: 'Independent content review is pending. Invoke the flowguard-reviewer Task, then submit only its verdict with flowguard_review.',
+      commands: [],
+    };
+  }
   return NEXT_ACTION_MAP[phase](state);
 }

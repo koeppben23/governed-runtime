@@ -262,6 +262,10 @@ describe('runReviewOrchestration strict /review content analysis', () => {
     expect(client.session.create).not.toHaveBeenCalled();
     expect(client.session.prompt).not.toHaveBeenCalled();
     const parsed = JSON.parse(output.output) as Record<string, unknown>;
+    expect(parsed.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
+    expect(parsed.recovery).toEqual([
+      expect.stringContaining('host-visible subagent invocation via the OpenCode Task tool'),
+    ]);
     expect(parsed.reviewInvocation).toMatchObject({
       policy: 'host_task_required',
       status: 'blocked_until_host_task',

@@ -39,7 +39,7 @@ Relevance levels:
 | HR        | Human Resources                      | Not Applicable | —                                                                                          |
 | AM        | Asset Management                     | Partial        | Release artifact checksums, SBOM, narrow supply chain                                      |
 | PS        | Physical Security                    | Not Applicable | —                                                                                          |
-| RB        | Operational Procedures               | **Direct**     | 14-phase governed workflow, evidence gates, audit trail                                    |
+| RB        | Operational Procedures               | **Direct**     | 15-phase governed workflow, evidence gates, audit trail                                    |
 | IDM       | Identity and Access Management       | **Direct**     | Four-eyes principle, role separation (initiator vs. reviewer)                              |
 | CRY       | Cryptography and Key Management      | Partial        | SHA-256 hash chain, checksums on release artifacts                                         |
 | KOS       | Communications Security              | Not Applicable | No network communication (self-hosted)                                                     |
@@ -66,7 +66,7 @@ The RB domain covers change management, operational documentation, logging, and 
 
 **Change Management:**
 
-- 14 explicit workflow phases across 3 flows: Ticket (READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE), Architecture (READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE), Review (READY → REVIEW → REVIEW_COMPLETE)
+- 15 explicit workflow phases across 3 flows: Ticket (READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE), Architecture (READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE), Review (READY → REVIEW → REVIEW_COMPLETE)
 - Phase gates that require evidence before progression — no phase can be skipped
 - Fail-closed enforcement: execution blocks when evidence or state is invalid
 - Backward transitions on rejection: `changes_requested` returns to the previous authoring phase; `reject` returns to TICKET (ticket flow) or READY (architecture flow)
