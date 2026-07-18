@@ -1271,7 +1271,7 @@ describe('integration/plugin', () => {
     });
 
     // ── C2 regression: before hook reads args from output, not input ──
-    it('C2 BAD — before hook reads reviewer type from output.args and blocks unavailable isolation', async () => {
+    it('C2 HAPPY — before hook reads task subagent_type from output.args, not input', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
@@ -1294,9 +1294,7 @@ describe('integration/plugin', () => {
         // because input does NOT carry args per the documented contract.
         const input = { tool: 'task', sessionID, callID: 'c1' };
         const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
-        await expect(beforeHook!(input, output)).rejects.toThrow(
-          'REVIEWER_CHILD_ISOLATION_UNAVAILABLE',
-        );
+        await expect(beforeHook!(input, output)).resolves.toBeUndefined();
       } finally {
         await ws.cleanup();
       }
@@ -1338,7 +1336,7 @@ describe('integration/plugin', () => {
       }
     });
 
-    it('C2 CORNER — input.args is ignored even if present (only output.args triggers isolation block)', async () => {
+    it('C2 CORNER — input.args is ignored even if present (only output.args matters)', async () => {
       const ws = await createTestWorkspace();
       try {
         const sessionID = crypto.randomUUID();
@@ -1361,10 +1359,9 @@ describe('integration/plugin', () => {
           args: { subagent_type: 'WRONG_TYPE' },
         };
         const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test' } };
-        // The hook must read output.args (flowguard-reviewer), not input.args (WRONG_TYPE).
-        await expect(beforeHook!(input, output)).rejects.toThrow(
-          'REVIEWER_CHILD_ISOLATION_UNAVAILABLE',
-        );
+        // The hook should read output.args (flowguard-reviewer), not input.args (WRONG_TYPE)
+        // If it reads input.args, it would miss the enforcement logic for flowguard-reviewer
+        await expect(beforeHook!(input, output)).resolves.toBeUndefined();
       } finally {
         await ws.cleanup();
       }

@@ -67,6 +67,7 @@ export interface AuditDeps {
   mode: string;
   tsaProvider?: TimestampAuthorityProvider;
   timestampVerifier?: TimestampVerifier;
+  recordUnhydratedToolAttempt?(sessionId: string, toolName: string): void;
 }
 
 const LIFECYCLE_TOOLS: Record<string, string> = {

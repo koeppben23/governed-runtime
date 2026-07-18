@@ -94,6 +94,7 @@ describe('runAudit', () => {
 
     it('does not persist audit for an unhydrated host session', async () => {
       const deps = makeDeps({
+        recordUnhydratedToolAttempt: vi.fn(),
         resolveSessionPolicy: vi.fn().mockResolvedValue({
           policy: {
             audit: { emitToolCalls: true, emitTransitions: true, enableChainHash: true },
@@ -110,6 +111,10 @@ describe('runAudit', () => {
       ).resolves.toBeUndefined();
       expect(deps.initChain).not.toHaveBeenCalled();
       expect(deps.appendAndTrack).not.toHaveBeenCalled();
+      expect(deps.recordUnhydratedToolAttempt).toHaveBeenCalledWith(
+        SESSION_ID,
+        'flowguard_abort_session',
+      );
       expect(deps.log.debug).toHaveBeenCalledWith(
         'audit',
         'skipping unhydrated session audit',

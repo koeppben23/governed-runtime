@@ -38,6 +38,11 @@ export type MutableChainState = {
   lastHash: string | null;
 };
 
+export interface UnhydratedToolAttempt {
+  readonly toolName: string;
+  readonly observedAt: string;
+}
+
 /** Dependencies for the workspace factory. */
 export interface WorkspaceDeps {
   auditWorktree: string | undefined;
@@ -70,6 +75,8 @@ export interface PluginWorkspace {
   nextDecisionSequence(sessDir: string, sessionId: string): Promise<number>;
   runSerializedForSession(sessionId: string, task: () => Promise<void>): Promise<void>;
   getEnforcementState(sessionId: string): SessionEnforcementState;
+  recordUnhydratedToolAttempt(sessionId: string, toolName: string): void;
+  takeUnhydratedToolAttempts(sessionId: string): UnhydratedToolAttempt[];
   readonly cachedFingerprint: string | null;
   readonly cachedWsDir: string | null;
 }
@@ -87,6 +94,7 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
   private readonly _sessionQueues = new Map<string, Promise<void>>();
   private readonly _decisionSequenceCache = new Map<string, number>();
   private readonly _enforcementStates = new Map<string, SessionEnforcementState>();
+  private readonly _unhydratedToolAttempts = new Map<string, UnhydratedToolAttempt[]>();
 
   constructor(private readonly _deps: WorkspaceDeps) {}
 
@@ -252,6 +260,18 @@ export class PluginWorkspaceImpl implements PluginWorkspace {
     }
     return state;
   }
+
+  recordUnhydratedToolAttempt(sessionId: string, toolName: string): void {
+    const attempts = this._unhydratedToolAttempts.get(sessionId) ?? [];
+    attempts.push({ toolName, observedAt: new Date().toISOString() });
+    this._unhydratedToolAttempts.set(sessionId, attempts);
+  }
+
+  takeUnhydratedToolAttempts(sessionId: string): UnhydratedToolAttempt[] {
+    const attempts = this._unhydratedToolAttempts.get(sessionId) ?? [];
+    this._unhydratedToolAttempts.delete(sessionId);
+    return attempts;
+  }
 }
 
 export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
@@ -269,6 +289,8 @@ export function createWorkspace(deps: WorkspaceDeps): PluginWorkspace {
     nextDecisionSequence: (sd, sid) => impl.nextDecisionSequence(sd, sid),
     runSerializedForSession: (sid, t) => impl.runSerializedForSession(sid, t),
     getEnforcementState: (sid) => impl.getEnforcementState(sid),
+    recordUnhydratedToolAttempt: (sid, tool) => impl.recordUnhydratedToolAttempt(sid, tool),
+    takeUnhydratedToolAttempts: (sid) => impl.takeUnhydratedToolAttempts(sid),
     get cachedFingerprint() {
       return impl.cachedFingerprint;
     },

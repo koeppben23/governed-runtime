@@ -224,7 +224,7 @@ describe('plugin bootstrap fail-closed', () => {
   // BUG-08: Subagent type authorization (defense-in-depth)
   // ═══════════════════════════════════════════════════════════════════════════════
   describe('BUG-08: subagent type authorization', () => {
-    it('BAD — flowguard-reviewer is blocked without pre-execution child isolation', async () => {
+    it('HAPPY — flowguard-reviewer subagent type passes through (existing L3)', async () => {
       const ws = await createTestWorkspace();
       try {
         const hooks = await FlowGuardAuditPlugin(
@@ -232,12 +232,10 @@ describe('plugin bootstrap fail-closed', () => {
         );
         const beforeHook = hooks['tool.execute.before']!;
 
-        // The host cannot identify a reviewer child before it can invoke tools.
+        // flowguard-reviewer with empty prompt — should pass (no pending review)
         const input = { tool: 'task', sessionID: crypto.randomUUID(), callID: 'c1' };
         const output = { args: { subagent_type: 'flowguard-reviewer', prompt: 'test prompt' } };
-        await expect(beforeHook(input, output)).rejects.toThrow(
-          'REVIEWER_CHILD_ISOLATION_UNAVAILABLE',
-        );
+        await expect(beforeHook(input, output)).resolves.toBeUndefined();
       } finally {
         await ws.cleanup();
       }

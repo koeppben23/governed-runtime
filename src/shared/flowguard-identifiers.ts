@@ -23,12 +23,6 @@ export { FINGERPRINT_PATTERN, REVIEW_REPORT_SCHEMA_ID, REVIEWER_SUBAGENT_TYPE };
 /** Block code when host-visible subagent Task invocation is required by policy. */
 export const REASON_HOST_SUBAGENT_TASK_REQUIRED = 'HOST_SUBAGENT_TASK_REQUIRED';
 
-/**
- * Block code when OpenCode cannot prove reviewer-child identity before tool execution.
- * Without that host provenance, FlowGuard cannot safely deny workflow tools to a reviewer.
- */
-export const REASON_REVIEWER_CHILD_ISOLATION_UNAVAILABLE = 'REVIEWER_CHILD_ISOLATION_UNAVAILABLE';
-
 /** Block code when first-party plugin enforcement is unavailable for review acceptance. */
 export const REASON_PLUGIN_ENFORCEMENT_UNAVAILABLE = 'PLUGIN_ENFORCEMENT_UNAVAILABLE';
 

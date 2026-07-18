@@ -184,6 +184,7 @@ function createAuditDeps(
     mode: defaultMode ?? 'team',
     tsaProvider: new HttpTimestampAuthorityProvider(),
     timestampVerifier: new PkijsTimestampVerifier(),
+    recordUnhydratedToolAttempt: ws.recordUnhydratedToolAttempt,
   };
 }
 

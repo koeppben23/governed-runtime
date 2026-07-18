@@ -199,7 +199,6 @@ real, registered reason.
 | `SUBAGENT_UNABLE_TO_REVIEW`                 | Reviewer declared the artifact unreviewable; obligation consumed              | Address the reviewer's reason or substantially revise; do not retry the same artifact                                |
 | `SUBAGENT_TYPE_UNAUTHORIZED`                | Non-reviewer subagent type blocked by FlowGuard governance (defense-in-depth) | Only `flowguard-reviewer` subagent type is authorized; do not spawn other subagents                                  |
 | `REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION` | Reviewer Task started before pending review obligation (pre-execution block)  | Run `flowguard_plan` or `flowguard_review` first to create a pending review obligation, then start the reviewer Task |
-| `REVIEWER_CHILD_ISOLATION_UNAVAILABLE`      | Host cannot prove reviewer-child identity before tool execution               | Upgrade to a supported host integration; do not bypass the reviewer isolation gate                                   |
 | `SUBAGENT_CONTEXT_UNVERIFIABLE`             | Strict enforcement cannot validate obligation context from tool output        | Re-run the tool that produced the review obligation                                                                  |
 | `REVIEW_FINDINGS_REQUIRED`                  | Mode B verdict submitted without `reviewFindings`                             | Include the structured `reviewFindings` object                                                                       |
 | `REVIEW_FINDINGS_SESSION_MISMATCH`          | Findings came from a different session than the current FlowGuard session     | Use findings produced for the current session                                                                        |
@@ -353,7 +352,6 @@ REVIEW_PLAN_VERSION_MISMATCH
 REVIEW_SELF_APPROVAL_DENIED
 REVIEW_TRANSPORT_EVIDENCE_INVALID
 REVIEWER_INVOCATION_EXHAUSTED
-REVIEWER_CHILD_ISOLATION_UNAVAILABLE
 REVIEWER_TASK_REQUIRES_PENDING_OBLIGATION
 REVIEWER_UNAVAILABLE_STRICT
 REVISED_PLAN_REQUIRED

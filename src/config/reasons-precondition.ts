@@ -469,18 +469,6 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
-    code: 'REVIEWER_CHILD_ISOLATION_UNAVAILABLE',
-    category: 'precondition',
-    messageTemplate:
-      'The OpenCode host cannot prove reviewer-child identity before tool execution, so FlowGuard cannot safely isolate the flowguard-reviewer Task.',
-    recoverySteps: [
-      'Upgrade OpenCode to a version that exposes reviewer agent type and parent session identity before tool execution',
-      'Use a FlowGuard host integration with verified reviewer-child tool isolation',
-      'Do not bypass this block with a general-purpose subagent or manually fabricated review evidence',
-    ],
-  },
-
-  {
     code: 'SUBAGENT_TYPE_UNAUTHORIZED',
     category: 'precondition',
     messageTemplate: `Subagent type '{subagentType}' is not authorized by FlowGuard governance. Only ${REVIEWER_SUBAGENT_TYPE} is allowed.`,
