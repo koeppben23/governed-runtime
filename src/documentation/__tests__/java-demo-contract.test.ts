@@ -56,7 +56,7 @@ const REPO_PATH = path.join(
 function extractSection(markdown: string, heading: string): string {
   const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = markdown.match(new RegExp(`^## ${escaped}\\s*$([\\s\\S]*?)(?=^##\\s+|\\Z)`, 'mi'));
-  if (!match) {
+  if (!match || !match[1]) {
     throw new Error(`Missing section: ## ${heading}`);
   }
   return match[1].trim();
