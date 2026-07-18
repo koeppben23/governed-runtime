@@ -2,8 +2,8 @@
 
 This document describes how to prepare and use a pre-recorded fallback for the
 FlowGuard demo. The fallback exists to protect the core message — FlowGuard's
-governed delivery flow — from live-host instability during `/implement` or
-`/review`.
+governed delivery flow — from live-host instability during `/implement`,
+`/architecture`, or `/review`.
 
 **Do not mention the fallback proactively.** It is a professional safety net,
 not a planned part of the presentation.
@@ -12,9 +12,28 @@ not a planned part of the presentation.
 
 ## Fallback Assets (prepare once, keep ready)
 
-### 1. Screen Recording — Executive (~5–6 min)
+### 1. Screen Recording — Part 1: Architecture (~4–5 min)
 
-Record the Executive variant (Steps 0–5, 2a, 1–10 from `DEMO_SCRIPT.md`):
+Record the Architecture variant (Steps A0–A6 from `DEMO_SCRIPT.md`):
+
+```bash
+./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
+cd /tmp/flowguard-java-demo
+# Open /tmp/flowguard-java-demo in OpenCode Desktop
+```
+
+Capture: OpenCode window + terminal side-by-side. The recording should show:
+
+- `/start` output with policy mode
+- `/architecture Read ADR_TICKET.md and create an ADR` → LLM generates ADR
+- `INDEPENDENT_REVIEW_REQUIRED` → subagent invoked
+- Architecture Review Card with reviewer findings
+- `/approve` → `ARCH_COMPLETE`
+- `/export` → `archiveStatus: verified`
+
+### 2. Screen Recording — Part 2: Implementation (~5–6 min)
+
+Record the Implementation variant (Steps 0–11 from `DEMO_SCRIPT.md`):
 
 ```bash
 ./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
@@ -34,27 +53,34 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 - `/finish` Finish Card (`overallStatus: READY`, non-normative `actionGuidance`, `exitOptions`)
 - `/export` response (`archiveStatus: verified`, `Session archived and verified.`)
 
-### 2. Screen Recording — Optional Appendix (~3–5 min)
+### 3. Screen Recording — Part 3: Review (~3–5 min)
 
-Record B1–B4 from the bonus section:
+Record R1–R4 from the review section:
 
 ```bash
-./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-review-demo
-cd /tmp/flowguard-java-review-demo
-# Open /tmp/flowguard-java-review-demo in OpenCode Desktop
+./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo
+cd /tmp/flowguard-java-demo
+# Open /tmp/flowguard-java-demo in OpenCode Desktop
 ```
 
 Capture: branch listing, `/review` block with `CONTENT_ANALYSIS_REQUIRED`,
 subagent findings, `REVIEW_COMPLETE`.
 
-### 3. Frozen Evidence Workspace
+### 4. Frozen Evidence Assets
 
-After a successful live or recorded run, keep the workspace intact:
+After a successful live or recorded run, keep two separate assets available:
+
+1. **Workspace** — for visible source and generated artifacts (checkpoints, diffs).
+2. **Verified evidence archive** — stored outside the workspace under the
+   OpenCode config directory.
 
 ```bash
-# Do NOT delete the workspace after the demo.
-# Keep it as a fallback exhibit.
-ls -la /tmp/flowguard-java-review-demo/.flowguard/sessions/archive/
+# Keep the workspace as a visual fallback exhibit.
+test -d /tmp/flowguard-java-demo
+
+# Locate verified session archives in the OpenCode workspace state.
+# The exact archive path is emitted by the /export command response.
+find ~/.config/opencode/workspaces -path '*/archive/*.tar.gz' -type f -print
 ```
 
 ---
@@ -63,21 +89,22 @@ ls -la /tmp/flowguard-java-review-demo/.flowguard/sessions/archive/
 
 ### Tab Group 1: Live (always visible)
 
-| Application                       | Purpose                                  |
-| --------------------------------- | ---------------------------------------- |
-| OpenCode Desktop                  | Live session                             |
-| Terminal                          | `./mvnw test`, `git diff`, `ls archive/` |
-| `DEMO_SCRIPT.md` (open in editor) | Spickzettel                              |
+| Application                       | Purpose                                              |
+| --------------------------------- | ---------------------------------------------------- |
+| OpenCode Desktop                  | Live session                                         |
+| Terminal                          | `./mvnw test`, `git diff`, saved export archive path |
+| `DEMO_SCRIPT.md` (open in editor) | Spickzettel                                          |
 
 ### Tab Group 2: Fallback (open, hidden, ready)
 
 | Application                    | Purpose                                                        |
 | ------------------------------ | -------------------------------------------------------------- |
-| Video player (paused at 00:00) | Pre-recorded executive run                                     |
-| Video player (paused at 00:00) | Pre-recorded appendix run                                      |
+| Video player (paused at 00:00) | Pre-recorded architecture run                                  |
+| Video player (paused at 00:00) | Pre-recorded implementation run                                |
+| Video player (paused at 00:00) | Pre-recorded review run                                        |
 | Finder / file browser          | Workspace checkpoints under `/tmp/flowguard-demo-checkpoints/` |
 | Text editor                    | `git diff` output of the fix                                   |
-| Terminal                       | Saved `./mvnw test` output                                     |
+| Terminal                       | Saved `./mvnw test` output and verified archive path           |
 
 ### Checkpoint Recovery
 
@@ -89,6 +116,8 @@ If a live step takes too long, switch to a prepared workspace snapshot:
 
 After restore, reopen the workspace in OpenCode Desktop.
 
+#### Implementation Flow Snapshots
+
 | Snapshot            | Label            | Phase               |
 | ------------------- | ---------------- | ------------------- |
 | Seed workspace      | 00-seed          | Initial             |
@@ -96,6 +125,26 @@ After restore, reopen the workspace in OpenCode Desktop.
 | Implementation done | 02-implemented   | IMPL_REVIEW         |
 | Session complete    | 03-complete      | COMPLETE            |
 | Evidence exported   | 04-exported      | COMPLETE (archived) |
+
+#### Architecture Flow Snapshots
+
+Architecture snapshots reproduce visible workspace evidence only. They do
+**not** restore FlowGuard session state (stored in `~/.config/opencode/`).
+After architecture snapshot restore, either start a new session or present
+the snapshot as prerecorded evidence.
+
+| Snapshot          | Label             | Phase         | Resumable? |
+| ----------------- | ----------------- | ------------- | :--------: |
+| ADR reviewed      | A02-adr-reviewed  | ARCHITECTURE  |     No     |
+| Architecture done | A03-arch-complete | ARCH_COMPLETE |     No     |
+
+Architecture recovery strategy:
+
+| Fallback                                        | Snapshot            | Recovery                                                          |
+| ----------------------------------------------- | ------------------- | ----------------------------------------------------------------- |
+| LLM generiert keine ADR (Timeout/Fehler)        | `00-seed`           | Restore → OpenCode neu öffnen → `/start` → `/architecture` erneut |
+| Subagent lehnt ADR ab (>1 ungeplante Iteration) | `A02-adr-reviewed`  | Snapshot zeigen + erklären (visual only)                          |
+| ARCH_REVIEW → Zeit knapp                        | `A03-arch-complete` | Snapshot zeigen + erklären (visual only)                          |
 
 ---
 
@@ -110,10 +159,11 @@ After restore, reopen the workspace in OpenCode Desktop.
 
 ## Pre-flight Checklist (morning of the demo)
 
-- [ ] Both recordings play correctly
+- [ ] All three recordings play correctly
 - [ ] `./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-demo` completes with verified install
 - [ ] `./mvnw test` — 16 tests, 0 failures, 1 skipped
 - [ ] `./mvnw -o test` passes (Maven offline-ready)
+- [ ] `ADR_TICKET.md` is present and non-empty in the workspace
 - [ ] OpenCode Desktop starts and `/start` works
 - [ ] Git commit hash recorded
 - [ ] Tarball built from the exact commit intended for the pitch
@@ -121,5 +171,5 @@ After restore, reopen the workspace in OpenCode Desktop.
 - [ ] Internet connection stable
 - [ ] External display tested (resolution, font size for the room)
 - [ ] Tab groups arranged
-- [ ] Checkpoint snapshots created
+- [ ] Checkpoint snapshots created (including `A02-adr-reviewed`, `A03-arch-complete`)
 - [ ] Video player windows positioned behind live window group

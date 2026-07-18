@@ -28,6 +28,20 @@ The seed is a standalone git repository. The setup script copies it, runs
 `git init && git add -A && git commit -m "Initial"` to create a clean
 starting point.
 
+## Transition Between Flows
+
+All three flows run in the same workspace. Between Part 1 (Architecture) and
+Part 2 (Implementation), close OpenCode Desktop and reopen the workspace —
+the Architecture flow does not modify files, so no snapshot restore is needed.
+A fresh MCP transport creates a new sessionId.
+
+For a full reset to the initial state, use Option A above or restore the
+`00-seed` snapshot:
+
+```bash
+./demos/java-task-manager/snapshot-demo.sh restore 00-seed /tmp/flowguard-java-demo
+```
+
 ## Snapshot Recovery
 
 Restore a saved workspace checkpoint instead of starting fresh:
@@ -35,6 +49,10 @@ Restore a saved workspace checkpoint instead of starting fresh:
 ```bash
 ./demos/java-task-manager/snapshot-demo.sh restore 01-plan-approved /tmp/flowguard-java-demo
 ```
+
+Architecture snapshots (`A02-adr-reviewed`, `A03-arch-complete`) restore
+workspace evidence only. They do **not** restore FlowGuard session state
+(stored in `~/.config/opencode/`). See `FALLBACK.md` for recovery strategy.
 
 See `snapshot-demo.sh` for labels and usage.
 

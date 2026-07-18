@@ -39,6 +39,23 @@ describe('buildArchitectureReviewCard', () => {
     expect(card).toContain('**Review iteration:** 2');
   });
 
+  it('renders the ADR body verbatim when adrText is provided', () => {
+    const adrText = '## Context\nfoo\n\n## Decision\nbar\n\n## Consequences\nbaz\n';
+    const card = buildArchitectureReviewCard({ ...baseInput, adrText });
+    expect(card).toContain('## Architecture Decision');
+    expect(card).toContain(adrText);
+  });
+
+  it('omits the ADR body section when adrText is absent', () => {
+    const card = buildArchitectureReviewCard(baseInput);
+    expect(card).not.toContain('## Architecture Decision');
+  });
+
+  it('omits the ADR body section when adrText is whitespace-only', () => {
+    const card = buildArchitectureReviewCard({ ...baseInput, adrText: '   \n \t ' });
+    expect(card).not.toContain('## Architecture Decision');
+  });
+
   it('renders reviewer findings when present', () => {
     const card = buildArchitectureReviewCard({
       ...baseInput,

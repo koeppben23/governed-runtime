@@ -338,6 +338,137 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       });
     }
 
+    it('HAPPY: host_task_required + only verdict submitted + evidence resolved → card shows findings and ADR text', async () => {
+      // Bug: args.reviewFindings was used for latestReview/attachReviewCard,
+      // but in host_task_required mode the agent submits only the verdict.
+      // Fix: review.effectiveFindings carries the resolved evidence findings.
+      const capturedFindings = {
+        iteration: 0,
+        planVersion: 1,
+        reviewMode: 'subagent' as const,
+        overallVerdict: 'accept',
+        blockingIssues: [],
+        majorRisks: [
+          {
+            severity: 'major',
+            category: 'risk',
+            message: 'Race condition in in-memory storage',
+            location: 'TaskRepository',
+          },
+          {
+            severity: 'minor',
+            category: 'quality',
+            message: 'Lack of architectural coupling guard',
+          },
+        ],
+        missingVerification: ['No negative-path integration test'],
+        scopeCreep: [],
+        unknowns: [],
+        reviewedBy: { sessionId: 'ses_child' },
+        reviewedAt: now,
+      };
+
+      const stateWithFindings = makeState('ARCHITECTURE', {
+        architecture: {
+          id: 'ADR-001',
+          title: 'Architecture Decision',
+          adrText: '## Context\nctx\n\n## Decision\ndec\n\n## Consequences\ncons\n',
+          digest: 'digest-adr',
+          status: 'proposed',
+          createdAt: now,
+        },
+        selfReview: {
+          iteration: 0,
+          maxIterations: 3,
+          prevDigest: null,
+          currDigest: 'digest-adr',
+          revisionDelta: 'major',
+          verdict: 'changes_requested',
+        },
+        reviewAssurance: {
+          obligations: [
+            {
+              obligationId: OBLIGATION_ID,
+              obligationType: 'architecture',
+              iteration: 0,
+              planVersion: 1,
+              criteriaVersion: REVIEW_CRITERIA_VERSION,
+              mandateDigest: REVIEW_MANDATE_DIGEST,
+              createdAt: now,
+              pluginHandshakeAt: now,
+              status: 'fulfilled',
+              invocationId: INVOCATION_ID,
+              blockedCode: null,
+              fulfilledAt: now,
+              consumedAt: null,
+            },
+          ],
+          invocations: [
+            {
+              invocationId: INVOCATION_ID,
+              obligationId: OBLIGATION_ID,
+              obligationType: 'architecture',
+              parentSessionId: 'ses_parent',
+              childSessionId: 'ses_child',
+              agentType: 'flowguard-reviewer',
+              invocationMode: 'host_subagent_task',
+              reviewOutputMode: 'structured_output',
+              structuredOutputUsed: true,
+              reviewAssuranceLevel: 'structured_high',
+              hostVisible: true,
+              promptHash: 'abc',
+              mandateDigest: REVIEW_MANDATE_DIGEST,
+              criteriaVersion: REVIEW_CRITERIA_VERSION,
+              findingsHash: hashFindings(capturedFindings),
+              invokedAt: now,
+              fulfilledAt: now,
+              consumedByObligationId: null,
+              capturedVerdict: 'accept',
+              capturedRawFindings: capturedFindings,
+            },
+          ],
+        },
+      });
+      mocks.state = stateWithFindings;
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        ...TEAM_POLICY,
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'host_task_required',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+      // autoAdvance retains ARCHITECTURE — converged path is triggered by
+      // approvedConverged (revisionDelta=none + verdict=accept), not by phase.
+      mocks.autoAdvance.mockReturnValue({
+        kind: 'advanced',
+        state: mocks.state,
+        evalResult: { kind: 'pending' },
+        transitions: [],
+      });
+
+      const { architecture } = await import('./architecture.js');
+      // Agent submits ONLY the verdict — no reviewFindings (host_task_required contract)
+      const res = await architecture.execute({ reviewVerdict: 'accept' }, {} as never);
+      const parsed = JSON.parse(String(res));
+
+      // Not blocked — evidence-resolved findings are used
+      expect(parsed.error).toBeUndefined();
+      // latestReview reflects the resolved evidence findings, not the absent args.reviewFindings
+      expect(parsed.latestReview).toBeDefined();
+      expect(parsed.latestReview.overallVerdict).toBe('accept');
+      expect(parsed.latestReview.majorRiskCount).toBe(2);
+      // reviewCard carries the ADR text and resolved findings
+      expect(typeof parsed.reviewCard).toBe('string');
+      expect(parsed.reviewCard).toContain('## Architecture Decision');
+      expect(parsed.reviewCard).toContain('## Context');
+      expect(parsed.reviewCard).toContain('## Decision');
+      expect(parsed.reviewCard).toContain('## Consequences');
+      expect(parsed.reviewCard).toContain('## Reviewer Findings');
+      expect(parsed.reviewCard).toContain('### Major Risks (2)');
+      expect(parsed.reviewCard).toContain('Race condition in in-memory storage');
+      expect(parsed.reviewCard).toContain('Lack of architectural coupling guard');
+    });
+
     it('HAPPY: host_task_required + no reviewFindings + evidence available → succeeds', async () => {
       mocks.state = stateWithEvidence('accept');
       mocks.requireStateForMutation.mockResolvedValue(mocks.state);
