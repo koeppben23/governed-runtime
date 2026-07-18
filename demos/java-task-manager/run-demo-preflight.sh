@@ -164,7 +164,21 @@ check "opencode.json present" "$(test -f opencode.json -o -f opencode.jsonc && e
 check "reviewer agent present" "$(test -f .opencode/agents/flowguard-reviewer.md && echo 0 || echo 1)"
 check "commands directory present" "$(test -d .opencode/commands && echo 0 || echo 1)"
 
-# 5. Maven
+# 5. Architecture
+echo "--- Architecture ---"
+ADRT_TICKET="ADR_TICKET.md"
+check "ADR_TICKET.md exists" "$(test -f "$ADRT_TICKET" && echo 0 || echo 1)"
+if [[ -f "$ADRT_TICKET" ]]; then
+    check "ADR_TICKET.md not empty" "$(test -s "$ADRT_TICKET" && echo 0 || echo 1)"
+    check "ADR_TICKET.md has Task Context" "$(grep -q '## Task Context' "$ADRT_TICKET" && echo 0 || echo 1)"
+    check "ADR_TICKET.md has Requested Output" "$(grep -q '## Requested Output' "$ADRT_TICKET" && echo 0 || echo 1)"
+    check "ADR_TICKET.md has Constraints" "$(grep -q '## Constraints' "$ADRT_TICKET" && echo 0 || echo 1)"
+    check "ADR_TICKET.md has Acceptance Criteria" "$(grep -q '## Acceptance Criteria' "$ADRT_TICKET" && echo 0 || echo 1)"
+    check "TaskService.java exists" "$(test -f src/main/java/com/example/taskmanager/service/TaskService.java && echo 0 || echo 1)"
+    check "TaskRepository.java exists" "$(test -f src/main/java/com/example/taskmanager/repository/TaskRepository.java && echo 0 || echo 1)"
+fi
+
+# 6. Maven
 echo "--- Maven ---"
 check "./mvnw exists" "$(test -f mvnw && echo 0 || echo 1)"
 
@@ -189,7 +203,7 @@ else
     check "Maven offline test" 1
 fi
 
-# 6. Tooling versions
+# 7. Tooling versions
 echo ""
 echo "--- Tooling ---"
 

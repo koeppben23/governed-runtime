@@ -1,15 +1,22 @@
 # FlowGuard Demo — Java Task Manager
 
 This demo is intentionally **not wired into CI**. It is a manual presentation
-and repeatability scenario for demonstrating governed AI-assisted delivery
-end-to-end with FlowGuard.
+and repeatability scenario for demonstrating three governed AI-assisted
+delivery flows end-to-end with FlowGuard.
 
 ## What This Demo Proves
 
 The Java bug is deliberately small. This demo does **not** prove that an LLM
-can fix a Java bug. It proves that an AI-assisted change is routed through
-**ticket, plan, review, approval, checks, and exportable evidence** — instead
-of disappearing informally in a chat.
+can fix a Java bug. It proves that FlowGuard's governance model applies to
+**three independent workflows**:
+
+| Flow               | What It Governs                                                                                          | Evidence                                            |
+| ------------------ | -------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| **Architecture**   | ADR creation and review — architectural decisions documented, independently reviewed, and human-approved | ADR, Review Findings, Audit Trail                   |
+| **Implementation** | Code changes — ticket, plan, review, approval, checks, and implementation                                | Plan Evidence, Impl Diff, Review Cards, Audit Trail |
+| **Review**         | External contributions — content-aware branch diff analysis with subagent findings                       | Review Report, Obligation Binding, Audit Trail      |
+
+Each flow produces exportable, verifiable evidence archives.
 
 ## Prerequisites
 
@@ -22,16 +29,12 @@ of disappearing informally in a chat.
 ## Quick Start
 
 ```bash
-# Option A: Prepare + install in one step
+# Workspace for Part 1 (Architecture) and Part 2 (Implementation)
 ./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
 cd /tmp/flowguard-java-demo
 
-# Option B: Prepare only, then install manually
-./run-demo-setup.sh /tmp/flowguard-java-demo
-cd /tmp/flowguard-java-demo
-npx --package /path/to/flowguard-core-*.tgz flowguard install \
-  --install-scope repo --policy-mode team \
-  --core-tarball /path/to/flowguard-core-*.tgz --force
+# Workspace for Part 3 (Review)
+./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-review-demo
 
 # Verify the starting state
 ./mvnw test
@@ -52,7 +55,17 @@ HTTP 500 instead of the correct HTTP 404.
 A regression test for this case exists in `TaskControllerTest` but is annotated
 `@Disabled`.
 
-## Expected Outcome After the Flow
+## Expected Outcomes
+
+### Part 1 — Architecture Flow
+
+After `/architecture`, a MADR-format ADR is created with `## Context`,
+`## Decision`, and `## Consequences`. The ADR is independently reviewed by
+the `flowguard-reviewer` subagent. After human approval at `ARCH_REVIEW`,
+the ADR status is `accepted` and the session reaches `ARCH_COMPLETE`.
+The evidence archive contains the ADR, review findings, and audit trail.
+
+### Part 2 — Implementation Flow
 
 After a successful FlowGuard session, two files are changed:
 
@@ -62,6 +75,13 @@ After a successful FlowGuard session, two files are changed:
 | `src/test/java/com/example/taskmanager/controller/TaskControllerTest.java` | Enable `update_taskNotFound_returns404()`, assert `$.taskId`, and update its Javadoc |
 
 All 16 tests pass (the previously skipped test is now enabled and green).
+
+### Part 3 — Review Flow
+
+The `flowguard-reviewer` subagent detects the structural omission in the
+`feature/add-due-date` branch: `dueDate` is wired into the model and request
+DTO but silently dropped in the service and response DTO. The review report
+and evidence are exported.
 
 ## Directory Structure
 
@@ -79,6 +99,7 @@ demos/java-task-manager/
     ├── .gitignore
     ├── pom.xml
     ├── TICKET.md
+    ├── ADR_TICKET.md
     ├── mvnw / mvnw.cmd
     ├── .mvn/wrapper/
     └── src/...

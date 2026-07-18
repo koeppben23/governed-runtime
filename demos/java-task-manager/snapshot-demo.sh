@@ -11,7 +11,12 @@ Usage: $0 save <label> <workspace>
 Create or restore demo workspace checkpoints for pitch recovery.
 
 Labels:
-  00-seed, 01-plan-approved, 02-implemented, 03-complete, 04-exported
+  00-seed, 01-plan-approved, 02-implemented, 03-complete, 04-exported,
+  A02-adr-reviewed, A03-arch-complete
+
+Note: Architecture snapshots (A02, A03) restore workspace evidence only.
+They do NOT restore FlowGuard session state (stored in ~/.config/opencode/).
+See FALLBACK.md for recovery strategy.
 
 Examples:
   $0 save 02-implemented /tmp/flowguard-java-demo
@@ -47,7 +52,7 @@ fi
 
 # ─── Validate label ──────────────────────────────────────────────────────────
 
-ALLOWED_LABELS=('00-seed' '01-plan-approved' '02-implemented' '03-complete' '04-exported')
+ALLOWED_LABELS=('00-seed' '01-plan-approved' '02-implemented' '03-complete' '04-exported' 'A02-adr-reviewed' 'A03-arch-complete')
 LABEL_VALID=0
 for allowed in "${ALLOWED_LABELS[@]}"; do
     if [[ "$LABEL" == "$allowed" ]]; then

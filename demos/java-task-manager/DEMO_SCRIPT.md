@@ -1,50 +1,130 @@
-# Demo Script — Java Task Manager Bug Fix
+# Demo Script — Java Task Manager
 
 **Audience:** Technical decision makers, engineering leads
 
-## Runbook Variants
+## Three Parts — Three Governed Flows
 
-| Variant                 | Duration  | Audience         | Scope                                                                                           |
-| ----------------------- | --------- | ---------------- | ----------------------------------------------------------------------------------------------- |
-| **Executive**           | 8–10 min  | CEO / Management | Steps 0–5, 2a (blocker), 1–10, with prepared checkpoints for latency                            |
-| **Technical Deep Dive** | 20–25 min | Engineering      | Full main flow including baseline test, git diff, live review loop (max 1 unexpected iteration) |
-| **Bonus /review**       | 5–10 min  | Optional         | Content-aware `/review` flow with external branch (separate workspace)                          |
+This demo proves three independent FlowGuard flows in one project:
 
-### Executive Stop Points
+| Part       | Flow           | Duration | What It Proves                                                                                                               |
+| ---------- | -------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **Part 1** | Architecture   | 5–8 min  | Architectural decisions governed through ADR creation, independent review, human approval, and exportable evidence           |
+| **Part 2** | Implementation | 8–10 min | AI-assisted code changes routed through ticket, plan, review, approval, checks, and exportable evidence                      |
+| **Part 3** | Review         | 5–10 min | External contributions governed through content-aware review with subagent findings, obligation binding, and evidence export |
 
-- **Stop A** (Plan latency): switch to `01-plan-approved` snapshot.
-- **Stop B** (Implementation latency): switch to `02-implemented` snapshot.
-- **Stop C** (second reviewer iteration): switch to `03-complete` snapshot.
-
-### Guardrails
-
-- Maximum 1 unplanned reviewer iteration before switching to a prepared checkpoint.
-- Pre-recorded golden-path and bonus recordings remain available (see `FALLBACK.md`).
-- Both variants reference the same workspace checkpoints (see `snapshot-demo.sh`).
+Each part runs in its own FlowGuard session. Parts 1 and 2 share the same workspace (reset between sessions). Part 3 uses a separate workspace with a pre-built branch.
 
 ## Prerequisites (run before the demo)
 
 ```bash
 cd demos/java-task-manager
+
+# Part 1 + 2 workspace
 ./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-demo
-# Open /tmp/flowguard-java-demo in OpenCode Desktop
+
+# Part 3 workspace (separate)
+./run-demo-setup.sh --install --tarball /path/to/flowguard-core-*.tgz /tmp/flowguard-java-review-demo
 ```
 
 ---
 
-## Step 0 — Prove the Bug Exists (optional, pre-recorded or live)
+## Part 1 — Architecture Flow (5–8 min)
+
+> Governed architectural decision: LLM analyses the codebase, generates a
+> MADR-format ADR, the subagent reviews it, and a human approves.
+
+### Step A0 — Prove the Bug Exists (context for architecture analysis)
+
+| Action        | What I Say                                                                                                                           |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `./mvnw test` | "16 Tests, 15 executed, 1 skipped. Der Regressionstest beweist eine Inkonsistenz: `getTask()` prüft auf null, `updateTask()` nicht." |
+
+### Step A1 — Start the Session
+
+| Action                                                      | Phase | What I Say                                                                                                                                                                                                                          |
+| ----------------------------------------------------------- | ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/start`                                                    | READY | "Ich starte eine FlowGuard-Session fur den Architecture Flow. `/start` meldet `team` — human-gated. Der Architecture Flow ist ein eigener Pfad aus READY, getrennt vom Ticket-Flow."                                                |
+| Read the `/start` output (`policyResolution.effectiveMode`) |       | "Policy `team`: human-gated, Subagent-Review obligatorisch, keine Auto-Approve. Mit `/status` kann ich diese Lage jederzeit prufen. Der Architecture Flow verwendet dieselbe Subagent-Review-Pipeline wie der Plan-Flow in Part 2." |
+
+### Step A2 — Submit the Architecture Task
+
+| Action                                                           | Phase        | What I Say                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/architecture Read ADR_TICKET.md and create an ADR based on it` | ARCHITECTURE | "Ich ubergebe den Architecture Task. FlowGuard erzwingt, dass ein ADR in MADR-Format erstellt wird — mit `## Context`, `## Decision`, `## Consequences`. Der LLM analysiert den Code, erkennt die Inkonsistenz und generiert eine strukturierte Entscheidungsvorlage." |
+
+### Step A3 — ADR Generation and Subagent Review
+
+| Action                             | Phase        | What I Say                                                                                                                                                                                                                           |
+| ---------------------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| LLM reads ADR_TICKET.md + code     | ARCHITECTURE | "Der LLM liest das Architektur-Ticket, analysiert `TaskRepository.findById()` und die Inkonsistenz zwischen `getTask()` und `updateTask()`, und generiert einen ADR mit Context, Decision, Consequences."                            |
+| `flowguard_architecture` tool call | ARCHITECTURE | "FlowGuard validiert die ADR-Sections. Fehlen MADR-Sections, blockt das Tool mit `MISSING_ADR_SECTIONS` — der LLM muss nachbessern. Sind alle Sections da, erzeugt FlowGuard eine Review Obligation: `INDEPENDENT_REVIEW_REQUIRED`." |
+| Host invokes `flowguard-reviewer`  | ARCHITECTURE | "Der Subagent pruft: ist der Context vollstandig, die Decision konkret, die Consequences ehrlich, die MADR-Struktur korrekt? Wie beim Plan-Review: derselbe Mechanismus, andere Pruf-Kriterien."                                     |
+| Subagent returns `overallVerdict`  | ARCHITECTURE | "Der Reviewer attestiert die ADR-Qualitat. Bei `changes_requested` geht es zuruck zur Revision — maximal 3 Iterationen, dann Force-Convergence zum ARCH_REVIEW Human-Gate."                                                          |
+
+### Step A4 — Review Convergence
+
+| Action                               | Phase                      | What I Say                                                                                                                                                                                                              |
+| ------------------------------------ | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| LLM submits verdict + reviewFindings | ARCHITECTURE → ARCH_REVIEW | "Verdict submitted. FlowGuard validiert: Attestation-Chain (Mandate-Digest, Session-ID, Obligation-ID). Bei `accept` und Konvergenz (`revisionDelta=none`) wechselt die Phase zu ARCH_REVIEW."                          |
+| Architecture Review Card appears     | ARCH_REVIEW                | "Die Architecture Review Card zeigt: ADR-Titel, ID, Digest, Reviewer-Findings (Blocking Issues, Major Risks, Missing Verification), Iteration, und die moglichen Entscheidungen: Approve / Changes Requested / Reject." |
+
+### Step A5 — Approve the ADR
+
+| Action     | Phase                       | What I Say                                                                                                                                                                                |
+| ---------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/approve` | ARCH_REVIEW → ARCH_COMPLETE | "Ich genehmige die ADR. FlowGuard setzt den Status auf `accepted` und schreibt das MADR-Artefakt. ARCH_COMPLETE ist ein eigener Terminal-State — getrennt vom COMPLETE des Ticket-Flows." |
+
+### Step A6 — Export Architecture Evidence
+
+| Action                  | What I Say                                                                                                                                                                            |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/export`               | "Ich exportiere das Architecture-Evidence-Archiv. FlowGuard erzeugt ein verifizierbares Paket mit ADR, Review-Findings, Audit-Trail und Manifest."                                    |
+| Show `/export` response | "`archiveStatus: verified` — das Archiv wurde direkt nach der Erstellung verifiziert."                                                                                                |
+| Archive location        | "Das Archiv liegt unter `~/.config/opencode/workspaces/.../archive/`. Es uberlebt den Workspace-Reset fur Part 2 — die Archive sind außerhalb des Projektverzeichnisses gespeichert." |
+
+### Reset for Part 2
+
+```bash
+# Close OpenCode Desktop
+./snapshot-demo.sh restore 00-seed /tmp/flowguard-java-demo
+# Reopen /tmp/flowguard-java-demo in OpenCode Desktop (new MCP transport → new sessionId)
+```
+
+> The `00-seed` snapshot restores the buggy code + FlowGuard install. No session
+> state survives — reopening OpenCode creates a fresh MCP transport and a fresh
+> FlowGuard session for Part 2.
+
+### Architecture Guardrails
+
+- Maximum 1 unplanned subagent revision before switching to `A02-adr-reviewed` snapshot (visual evidence only).
+- Architecture snapshots (`A02-adr-reviewed`, `A03-arch-complete`) restore **workspace files only**, not FlowGuard session state. See `FALLBACK.md`.
+
+### Architecture Stop Points
+
+- **Stop A1** (ADR generation latency): restore `00-seed`, reopen OpenCode, retry `/architecture`.
+- **Stop A2** (reviewer iteration overflow): switch to `A02-adr-reviewed` snapshot — visual only.
+- **Stop A3** (ARCH_REVIEW time pressure): switch to `A03-arch-complete` snapshot — visual only.
+
+---
+
+## Part 2 — Implementation Flow (8–10 min)
+
+> Governed code change: the bug is fixed through ticket, plan, review, approval,
+> checks, and exportable evidence. This is the original main flow.
+
+### Step 0 — Prove the Bug Exists (optional, pre-recorded or live)
 
 | Action               | What I Say                                                                                       |
 | -------------------- | ------------------------------------------------------------------------------------------------ |
 | `./mvnw test`        | "16 Tests reported, 15 executed, 1 skipped — das ist unser Regressionstest."                     |
-| Show the test source | "Der Test ist absichtlich `@Disabled`, weil er aktuell fehlschlagen würde — er beweist den Bug." |
+| Show the test source | "Der Test ist absichtlich `@Disabled`, weil er aktuell fehlschlagen wurde — er beweist den Bug." |
 
 **Optional live proof:** Remove `@Disabled` locally, run `./mvnw test` to see the red test,
 then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 1 — Start the Session
+### Step 1 — Start the Session
 
 | Action                                                      | Phase | What I Say                                                                                                                                                                                                                                                       |
 | ----------------------------------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -53,7 +133,7 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 2 — Record the Ticket
+### Step 2 — Record the Ticket
 
 | Action            | Phase  | What I Say                                                                                            |
 | ----------------- | ------ | ----------------------------------------------------------------------------------------------------- |
@@ -61,7 +141,7 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 2a — Prove Enforcement (the forbidden transition)
+### Step 2a — Prove Enforcement (the forbidden transition)
 
 | Action       | Phase  | What I Say                                                                                                                                                                                                                            |
 | ------------ | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -72,7 +152,7 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 3 — Generate the Plan
+### Step 3 — Generate the Plan
 
 | Action                | Phase       | What I Say                                                                                                                                                      |
 | --------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -82,7 +162,7 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 4 — Approve the Plan
+### Step 4 — Approve the Plan
 
 | Action     | Phase      | What I Say                                                                                               |
 | ---------- | ---------- | -------------------------------------------------------------------------------------------------------- |
@@ -90,7 +170,7 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 5 — Validate (all tests pass, disabled test does not block)
+### Step 5 — Validate (all tests pass, disabled test does not block)
 
 | Action   | Phase                       | What I Say                                                                                                                                                                                                                                                                                                                      |
 | -------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -98,7 +178,7 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 6 — Implement the Fix
+### Step 6 — Implement the Fix
 
 | Action          | Phase          | What I Say                                                                                                                                                                                                                     |
 | --------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -107,7 +187,7 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 6b — Re-Validate the Implemented Fix (IMPL_VALIDATION)
+### Step 6b — Re-Validate the Implemented Fix (IMPL_VALIDATION)
 
 > After `/implement`, FlowGuard does **not** jump straight to review. It re-runs the
 > verification checks against the **implemented** code in the new `IMPL_VALIDATION`
@@ -122,7 +202,7 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 7 — Independent Implementation Review
+### Step 7 — Independent Implementation Review
 
 > Under `team` policy, once the post-implementation checks pass (`IMPL_VALIDATION`),
 > the implementation still does **not** go straight to the human gate. FlowGuard
@@ -141,7 +221,7 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 8 — Final Approval (Human Gate)
+### Step 8 — Final Approval (Human Gate)
 
 | Action     | Phase                      | What I Say                                                                                                                                                                                                                             |
 | ---------- | -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -149,7 +229,7 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 9 — Prove the Fix (post-flow, confirmatory)
+### Step 9 — Prove the Fix (post-flow, confirmatory)
 
 > With the `IMPL_VALIDATION` gate (Step 6b), the regression test already ran green
 > **inside** the governed flow and audit trail. This manual run is now a
@@ -161,7 +241,7 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 10 — Finish Card: Readiness Check Before Export
+### Step 10 — Finish Card: Readiness Check Before Export
 
 | Action                     | What I Say                                                                                                                                                                                                                                                                |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -171,7 +251,7 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Step 11 — Export the Evidence
+### Step 11 — Export the Evidence
 
 | Action                                      | What I Say                                                                                                                                                                            |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -181,7 +261,7 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
-## Summary Slide
+### Summary Slide
 
 Ich habe den Regressionstest im Seed bewusst disabled, weil FlowGuard zurecht keinen
 fehlschlagenden Baseline-Check in die Implementierung durchlässt. Der Fix besteht deshalb
@@ -190,15 +270,14 @@ Testlauf, dass der zuvor dokumentierte Bug wirklich geschlossen wurde.
 
 ---
 
-## Optional Appendix: Content-aware `/review` Flow (~5–10 min)
+## Part 3 — Review Flow (5–10 min)
 
-> Uses a separate workspace with a pre-built branch.
-> This is a standalone bonus — not part of the fixed time budget of either main variant.
+> Content-aware review of an external branch. Uses a separate workspace with a
+> pre-built branch.
 
 ### Precondition
 
 ```bash
-./run-demo-setup.sh --install --tarball <tgz> /tmp/flowguard-java-review-demo
 cd /tmp/flowguard-java-review-demo
 ```
 
@@ -226,10 +305,10 @@ git diff --name-only main...feature/add-due-date
 
 | Step | Action                                     | Phase           | What I Say                                                                                                                                                                                                                                                                                                                                                                                              |
 | ---- | ------------------------------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| B1   | `/start`                                   | READY           | "Neue Session. `/review` ist ein eigener Flow ab READY."                                                                                                                                                                                                                                                                                                                                                |
-| B2   | `/review branch=feature/add-due-date`      | REVIEW          | "FlowGuard erkennt content-aware review, erzeugt eine Obligation, blockt mit `CONTENT_ANALYSIS_REQUIRED`."                                                                                                                                                                                                                                                                                              |
-| B3   | Host invokes `flowguard-reviewer` subagent | —               | "Der Subagent analysiert den Diff. `dueDate` ist im Model und im Request-DTO — aber es ist _nirgends verdrahtet_: `TaskService.createTask()` schreibt es nicht (nutzt weiter den 4-arg-Konstruktor), und `TaskResponse` gibt es nicht aus. Ein neu gesetztes Fälligkeitsdatum verschwindet also lautlos. Der Reviewer muss diese strukturelle Lücke semantisch erkennen — sie ist kein Compile-Fehler." |
-| B4   | Host submits `reviewFindings`              | REVIEW_COMPLETE | "Attestierte Findings eingereicht. FlowGuard validiert: Mandate-Digest, Session-ID-Match, Obligation-ID. Report geschrieben, Flow abgeschlossen."                                                                                                                                                                                                                                                       |
+| R1   | `/start`                                   | READY           | "Neue Session im Review-Workspace. `/review` ist ein eigener Flow ab READY."                                                                                                                                                                                                                                                                                                                            |
+| R2   | `/review branch=feature/add-due-date`      | REVIEW          | "FlowGuard erkennt content-aware review, erzeugt eine Obligation, blockt mit `CONTENT_ANALYSIS_REQUIRED`."                                                                                                                                                                                                                                                                                              |
+| R3   | Host invokes `flowguard-reviewer` subagent | —               | "Der Subagent analysiert den Diff. `dueDate` ist im Model und im Request-DTO — aber es ist _nirgends verdrahtet_: `TaskService.createTask()` schreibt es nicht (nutzt weiter den 4-arg-Konstruktor), und `TaskResponse` gibt es nicht aus. Ein neu gesetztes Fälligkeitsdatum verschwindet also lautlos. Der Reviewer muss diese strukturelle Lücke semantisch erkennen — sie ist kein Compile-Fehler." |
+| R4   | Host submits `reviewFindings`              | REVIEW_COMPLETE | "Attestierte Findings eingereicht. FlowGuard validiert: Mandate-Digest, Session-ID-Match, Obligation-ID. Report geschrieben, Flow abgeschlossen."                                                                                                                                                                                                                                                       |
 
 ### Expected Flow
 
@@ -287,7 +366,7 @@ If someone in the audience knows the other name, this is why both exist:
 
 ## Known Limitations
 
-- `/plan` and `/implement` require an LLM-backed OpenCode instance. Without a model
+- `/plan`, `/implement`, and `/architecture` require an LLM-backed OpenCode instance. Without a model
   backend, these steps will fail or produce empty output.
 - Test execution time varies by machine. The `search_tasks_by_query` test uses
   a unique query term to avoid pollution from other tests in the shared Spring context.
@@ -297,3 +376,11 @@ If someone in the audience knows the other name, this is why both exist:
 - **Pre-recorded fallback:** See `FALLBACK.md`. Keep a recorded run and a frozen
   workspace ready. If the host hangs during `/implement` or `/review`, switch to the
   recording — it shows the same workspace, same flow, same artefacts.
+- **Architecture snapshots (`A02-adr-reviewed`, `A03-arch-complete`):** These reproduce
+  visible workspace evidence only. They do **not** restore MCP session state (stored in
+  `~/.config/opencode/`). After architecture snapshot restore, either start a new session
+  or present the snapshot as prerecorded evidence.
+- **Reset between Part 1 and Part 2:** Close OpenCode Desktop, run
+  `snapshot-demo.sh restore 00-seed`, then reopen the workspace. This creates a fresh
+  MCP transport with a new sessionId. The architecture export archive survives the reset
+  — it is stored in `~/.config/opencode/workspaces/.../archive/`, outside the workspace.

@@ -1,6 +1,6 @@
 /**
  * @module documentation/java-demo-contract
- * @description Keeps the Java demo's initial fixture, ticket, and runbook aligned.
+ * @description Keeps the Java demo's initial fixture, ticket, runbook, and architecture task aligned.
  */
 
 import { execFile as execFileCallback } from 'node:child_process';
@@ -14,12 +14,13 @@ const execFile = promisify(execFileCallback);
 const REPO_ROOT = path.resolve(__dirname, '../../..');
 const DEMO_DIR = path.join(REPO_ROOT, 'demos', 'java-task-manager');
 const SETUP_SCRIPT = path.join(DEMO_DIR, 'run-demo-setup.sh');
-const TICKET_PATH = path.join(DEMO_DIR, 'seed', 'TICKET.md');
+const SEED_DIR = path.join(DEMO_DIR, 'seed');
+const TICKET_PATH = path.join(SEED_DIR, 'TICKET.md');
+const ADR_TICKET_PATH = path.join(SEED_DIR, 'ADR_TICKET.md');
 const README_PATH = path.join(DEMO_DIR, 'README.md');
 const DEMO_SCRIPT_PATH = path.join(DEMO_DIR, 'DEMO_SCRIPT.md');
 const CONTROLLER_TEST_PATH = path.join(
-  DEMO_DIR,
-  'seed',
+  SEED_DIR,
   'src',
   'test',
   'java',
@@ -29,6 +30,37 @@ const CONTROLLER_TEST_PATH = path.join(
   'controller',
   'TaskControllerTest.java',
 );
+const SERVICE_PATH = path.join(
+  SEED_DIR,
+  'src',
+  'main',
+  'java',
+  'com',
+  'example',
+  'taskmanager',
+  'service',
+  'TaskService.java',
+);
+const REPO_PATH = path.join(
+  SEED_DIR,
+  'src',
+  'main',
+  'java',
+  'com',
+  'example',
+  'taskmanager',
+  'repository',
+  'TaskRepository.java',
+);
+
+function extractSection(markdown: string, heading: string): string {
+  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = markdown.match(new RegExp(`^## ${escaped}\\s*$([\\s\\S]*?)(?=^##\\s+|\\Z)`, 'mi'));
+  if (!match) {
+    throw new Error(`Missing section: ## ${heading}`);
+  }
+  return match[1].trim();
+}
 
 describe('Java Task Manager demo contract', () => {
   it('keeps the ticket and runbook explicit about the complete regression fix', async () => {
@@ -53,7 +85,47 @@ describe('Java Task Manager demo contract', () => {
     expect(controllerTest).not.toContain('jsonPath("$.taskId").value("non-existent-id")');
   });
 
-  it('materializes the documented seed and review fixture branches', async () => {
+  it('keeps the architecture task structurally sound and distinct from a pre-written ADR', async () => {
+    const [adrTicket, demoScript] = await Promise.all([
+      fs.readFile(ADR_TICKET_PATH, 'utf-8'),
+      fs.readFile(DEMO_SCRIPT_PATH, 'utf-8'),
+    ]);
+
+    // ADR_TICKET.md is a task, not a pre-written ADR — no MADR sections as own headings
+    expect(adrTicket).not.toMatch(/^## Context\s*$/m);
+    expect(adrTicket).not.toMatch(/^## Decision\s*$/m);
+    expect(adrTicket).not.toMatch(/^## Consequences\s*$/m);
+
+    // ADR_TICKET.md has task-specific sections
+    expect(adrTicket).toContain('## Task Context');
+    expect(adrTicket).toContain('## Requested Output');
+    expect(adrTicket).toContain('## Constraints');
+    expect(adrTicket).toContain('## Acceptance Criteria');
+
+    // The Requested Output section requires MADR sections
+    const requestedOutput = extractSection(adrTicket, 'Requested Output');
+    expect(requestedOutput).toContain('`## Context`');
+    expect(requestedOutput).toContain('`## Decision`');
+    expect(requestedOutput).toContain('`## Consequences`');
+    expect(requestedOutput).toMatch(/create a MADR-format.+ADR/i);
+
+    // Referenced symbols exist as methods in the seed code (not just words)
+    const [serviceSrc, repoSrc] = await Promise.all([
+      fs.readFile(SERVICE_PATH, 'utf-8'),
+      fs.readFile(REPO_PATH, 'utf-8'),
+    ]);
+    expect(serviceSrc).toMatch(/\bgetTask\s*\(/);
+    expect(serviceSrc).toMatch(/\bupdateTask\s*\(/);
+    expect(repoSrc).toMatch(/\bfindById\s*\(/);
+
+    // Demo script documents the Architecture part structurally
+    expect(demoScript).toContain('Part 1');
+    expect(demoScript).toContain('/architecture');
+    expect(demoScript).toContain('ARCH_COMPLETE');
+    expect(demoScript).toContain('ADR_TICKET.md');
+  });
+
+  it('materializes the documented seed including architecture task and review fixture branches', async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-java-demo-contract-'));
     const targetDir = path.join(tempDir, 'workspace');
 
@@ -98,6 +170,17 @@ describe('Java Task Manager demo contract', () => {
       expect(materializedControllerTest).toContain(
         '@Disabled("Regression: PUT /tasks/{id} returns HTTP 500',
       );
+
+      // Architecture task is materialized into the workspace
+      const materializedAdrTicket = await fs.readFile(
+        path.join(targetDir, 'ADR_TICKET.md'),
+        'utf-8',
+      );
+      expect(materializedAdrTicket).toContain('## Task Context');
+      expect(materializedAdrTicket).toContain('## Requested Output');
+      expect(materializedAdrTicket).toContain('`## Context`');
+      expect(materializedAdrTicket).toContain('`## Decision`');
+      expect(materializedAdrTicket).toContain('`## Consequences`');
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
