@@ -136,14 +136,23 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
     expect(card.blocker.missingEvidence.length).toBeGreaterThan(0);
   });
 
-  it('never reports READY prematurely in an early phase', () => {
-    const card = buildFinishCard(makeProgressedState('TICKET'), policy);
-    expect(card.overallStatus).not.toBe('READY');
+  it('reports IN_PROGRESS for non-terminal phases with complete evidence', () => {
+    // PLAN has ticket+plan complete; IMPLEMENTATION has ticket+plan+self-review+
+    // decision+validation; both are non-terminal with complete required evidence.
+    for (const phase of ['PLAN', 'IMPLEMENTATION'] as const) {
+      const card = buildFinishCard(makeProgressedState(phase), policy);
+      expect(card.overallStatus, `${phase} must not be READY`).not.toBe('READY');
+      expect(card.overallStatus, `${phase} must be IN_PROGRESS`).toBe('IN_PROGRESS');
+    }
   });
 
   it('does not invent a stale evidence status (not_yet_required never NOT_VERIFIED)', () => {
     // deriveFinishOverallStatus must only react to missing/failed required slots.
-    const readiness = { blocked: false, warnings: [] } as unknown as ReturnType<
+    const readiness = {
+      blocked: false,
+      warnings: [],
+      phase: 'COMPLETE',
+    } as unknown as ReturnType<
       typeof buildReadinessProjection
     >;
     const evidence = {

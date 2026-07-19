@@ -41,6 +41,7 @@ const ALL_COMMANDS = Object.values(Command) as FlowGuardCommand[];
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { getReviewLoopProgress, type ReviewLoopProgress } from './review/review-loop-progress.js';
+import { isTerminalPhase } from '../machine/topology.js';
 
 // ─── Projection Types ─────────────────────────────────────────────────────────
 
@@ -201,7 +202,7 @@ export interface ReadinessProjection {
  * phases, obligations, or gates.
  */
 export type FinishOverallStatus =
-  'READY' | 'READY_WITH_WARNINGS' | 'CHANGES_REQUIRED' | 'BLOCKED' | 'NOT_VERIFIED';
+  'IN_PROGRESS' | 'READY' | 'READY_WITH_WARNINGS' | 'CHANGES_REQUIRED' | 'BLOCKED' | 'NOT_VERIFIED';
 
 /** Presentation-only guidance status for a candidate next action. */
 export type FinishActionStatus = 'recommended' | 'not_recommended' | 'not_verified';
@@ -558,6 +559,8 @@ export function deriveFinishOverallStatus(
   if (hasUnverifiedEvidence(evidence)) return 'NOT_VERIFIED';
   if (reviewReport?.overallStatus === 'issues') return 'CHANGES_REQUIRED';
   if (readiness.warnings.length > 0) return 'READY_WITH_WARNINGS';
+  // Non-terminal phases with complete evidence are in progress, not ready.
+  if (!isTerminalPhase(readiness.phase)) return 'IN_PROGRESS';
   return 'READY';
 }
 
@@ -622,6 +625,16 @@ const FINISH_ACTION_TABLE: Record<
     keep: {
       status: 'recommended',
       reason: 'Keep the branch to complete verification before proceeding.',
+    },
+  },
+  IN_PROGRESS: {
+    proceed: {
+      status: 'not_verified',
+      reason: 'Workflow is not yet complete; export is not applicable.',
+    },
+    keep: {
+      status: 'recommended',
+      reason: 'Keep the branch open while the workflow progresses.',
     },
   },
   BLOCKED: {

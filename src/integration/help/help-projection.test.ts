@@ -208,6 +208,16 @@ describe('buildHelpResult', () => {
     expect(result.nextAction?.invocation).toBe('/task');
   });
 
+  it('non-terminal phases with complete evidence report readiness=none via IN_PROGRESS', () => {
+    for (const phase of ['PLAN', 'IMPLEMENTATION'] as const) {
+      const result = buildHelpResult(makeProgressedState(phase), TEAM_POLICY, {
+        view: 'context',
+      });
+      expect(result.readiness, `${phase} must be none`).toBe('none');
+      expect(result.nextAction).not.toBeNull();
+    }
+  });
+
   it('/start is primary, /hydrate is compatibility', () => {
     const result = buildHelpResult(makeProgressedState('READY'), TEAM_POLICY, {
       view: 'commands',

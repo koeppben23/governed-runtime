@@ -177,6 +177,8 @@ function findRecommendation(invocation: string | null): InstalledCommandDefiniti
 
 export function finishToReadiness(overallStatus: FinishOverallStatus): Readiness {
   switch (overallStatus) {
+    case 'IN_PROGRESS':
+      return 'none';
     case 'READY':
       return 'ready';
     case 'READY_WITH_WARNINGS':
@@ -358,9 +360,7 @@ function buildSessionHelpResult(
 
   const status = buildStatusProjection(state, policy);
   const finish = buildFinishCard(state, policy, currentReport);
-  // READY is an orientation state where the user must choose a flow.
-  // It is not blocked (no gate) and not verifiable (no evidence yet).
-  const readiness = state.phase === 'READY' ? 'none' : finishToReadiness(finish.overallStatus);
+  const readiness = finishToReadiness(finish.overallStatus);
   const recommendationQuality = projectRecommendationQuality(reportResolution);
 
   const recommended = findRecommendation(status.productNextAction.primaryCommand);
