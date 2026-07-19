@@ -85,7 +85,5 @@ function toPresentationConclusion(c: WhyConclusionProjection): PresentationConcl
         question: c.question,
         actions: c.actions.map((a) => ({ ...a })),
       };
-    case 'terminal':
-      return { kind: 'terminal', message: c.message };
   }
 }

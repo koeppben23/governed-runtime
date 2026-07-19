@@ -105,15 +105,15 @@ describe('golden fixtures for /why', () => {
     expect(pres.conclusion.kind).toBe('next_action');
   });
 
-  it('why-terminal matches golden output', async () => {
+  it('why-complete-verified matches golden output', async () => {
     const state = completeVerifiedState();
     const policy = getPolicyPreset('solo');
     const blocker = buildBlockedProjection(state, policy);
     const pres = buildWhyPresentationProjection(state, policy, blocker);
     const output = renderMarkdown(buildWhyDocument(pres));
-    const golden = await readGolden('why-terminal.md');
+    const golden = await readGolden('why-complete-verified.md');
     expect(output).toBe(golden.trimEnd());
-    // COMPLETE with verified archive: machine-terminal, product action /status → next_action
+    // COMPLETE + verified archive → machine-terminal with product next_action
     expect(pres.conclusion.kind).toBe('next_action');
   });
 });

@@ -33,10 +33,6 @@ export type WhyConclusionProjection =
       readonly kind: 'decision_required';
       readonly question: string;
       readonly actions: readonly StatusActionProjection[];
-    }
-  | {
-      readonly kind: 'terminal';
-      readonly message: string;
     };
 
 export interface WhyPresentationProjection {
@@ -141,21 +137,20 @@ function buildWhyConclusion(
     }
 
     case 'terminal': {
-      if (productNext.commands.length > 0) {
-        const nextCmd = productNext.commands[0];
-        if (nextCmd) {
-          return {
-            kind: 'next_action',
-            action: projectStatusActionFromCommand(nextCmd, 'recommended'),
-          };
-        }
+      // Machine-terminal phases (COMPLETE, ARCH_COMPLETE, REVIEW_COMPLETE)
+      // always have product commands (/export, /status). The /why surface
+      // has no presentation-terminal conclusion.
+      const nextCmd = productNext.commands[0];
+      if (!nextCmd) {
+        throw Object.assign(
+          new Error('WhyProjection: terminal evalResult has no product commands'),
+          { code: 'WHY_TERMINAL_PROJECTION_EMPTY' },
+        );
       }
-      if (productNext.text.trim().length === 0) {
-        throw Object.assign(new Error('WhyProjection: terminal requires non-empty text'), {
-          code: 'WHY_TERMINAL_PROJECTION_EMPTY',
-        });
-      }
-      return { kind: 'terminal', message: productNext.text };
+      return {
+        kind: 'next_action',
+        action: projectStatusActionFromCommand(nextCmd, 'recommended'),
+      };
     }
   }
 }
