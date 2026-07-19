@@ -25,11 +25,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Golden fixture tests and projection tests for READY, blocked, and degraded
   Discovery states.
 
-### Changed
-
-- `/status` template instructs the agent to render `presentation.markdown`
-  verbatim when present, without rephrasing.
-
 - **Contextual help commands (`/help` and `/commands`).** New read-only `flowguard_help`
   tool with installed `/help` (phase-sensitive next action and relevant commands),
   `/commands` (available commands for the current context), and `/commands --all`
@@ -62,6 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Available in all phases including terminal phases.
 
 ### Changed
+
+- `/status` template instructs the agent to render `presentation.markdown`
+  verbatim when present, without rephrasing.
 
 - **Implementation evidence is content-bound and captures a diff artifact (F3).**
   `ImplEvidence.digest` now hashes the CURRENT content of each changed file (path +

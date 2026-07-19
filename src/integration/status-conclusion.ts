@@ -90,14 +90,8 @@ export function projectStatusConclusion(
   }
 
   // There are still user actions available → next_action
-  if (productNextAction.commands.length > 0) {
-    const command = productNextAction.commands[0];
-    if (!command) {
-      return {
-        kind: 'terminal',
-        message: productNextAction.text,
-      };
-    }
+  const command = productNextAction.commands[0];
+  if (command) {
     return {
       kind: 'next_action',
       action: projectStatusActionFromCommand(command, 'recommended'),
