@@ -114,6 +114,19 @@ Available in any phase, including terminal phases (`COMPLETE`, `ARCH_COMPLETE`, 
 
 `/finish` maps internally to `flowguard_status` with `{ finish: true }`.
 
+### /help
+
+Read-only, context-sensitive FlowGuard guidance. `/help` shows the current phase,
+one recommended next action, and a compact list of relevant commands. Use
+`/help <command>` for command details; use `--verbose` only when phase IDs,
+preflight reasons, or canonical aliases are needed.
+
+### /commands
+
+Read-only command listing for the current session. `/commands` shows currently
+relevant commands. `/commands --all` shows the complete installed command
+reference, including visible compatibility invocations.
+
 ### /hydrate
 
 Bootstrap or reload the FlowGuard session. Idempotent — safe to call repeatedly.

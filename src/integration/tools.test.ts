@@ -31,6 +31,7 @@ import {
   abort_session,
   archive,
   architecture,
+  help,
   attachGovernanceFooter,
 } from './tools/index.js';
 import * as barrel from './index.js';
@@ -38,7 +39,7 @@ import { benchmarkSync } from '../test-policy.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** All 13 exported tool names, matching the filenames OpenCode will discover. */
+/** All 14 exported tool names, matching the filenames OpenCode will discover. */
 const TOOL_NAMES = [
   'status',
   'hydrate',
@@ -53,6 +54,7 @@ const TOOL_NAMES = [
   'abort_session',
   'archive',
   'architecture',
+  'help',
 ] as const;
 
 /** Tools imported directly for testing. */
@@ -70,6 +72,7 @@ const TOOLS: Record<string, unknown> = {
   abort_session,
   archive,
   architecture,
+  help,
 };
 
 /** Tools that accept arguments (have non-empty args schema). */
@@ -84,6 +87,7 @@ const TOOLS_WITH_ARGS = [
   'abort_session',
   'architecture',
   'review',
+  'help',
 ] as const;
 
 /** Tools that have no arguments (args: {}). */
@@ -94,8 +98,8 @@ const TOOLS_WITHOUT_ARGS = ['archive', 'implement'] as const;
 describe('integration/tools', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('exports exactly 13 tools', () => {
-      expect(Object.keys(TOOLS).length).toBe(13);
+    it('exports exactly 14 tools', () => {
+      expect(Object.keys(TOOLS).length).toBe(14);
     });
 
     for (const name of TOOL_NAMES) {
@@ -115,7 +119,7 @@ describe('integration/tools', () => {
       });
     }
 
-    it('barrel re-exports all 13 tools', () => {
+    it('barrel re-exports all 14 tools', () => {
       for (const name of TOOL_NAMES) {
         expect((barrel as Record<string, unknown>)[name]).toBeDefined();
         expect((barrel as Record<string, unknown>)[name]).toBe(TOOLS[name]);
@@ -246,9 +250,9 @@ describe('integration/tools', () => {
       expect(attachGovernanceFooter('"ok"')).toBe('"ok"');
     });
 
-    it('barrel has exactly 14 named exports (13 tools + 1 plugin)', () => {
+    it('barrel has exactly 15 named exports (14 tools + 1 plugin)', () => {
       const exports = Object.keys(barrel);
-      expect(exports.length).toBe(14);
+      expect(exports.length).toBe(15);
     });
   });
 

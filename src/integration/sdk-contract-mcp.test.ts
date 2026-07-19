@@ -9,7 +9,7 @@
  * - Description changes (informational)
  *
  * Evidence sources:
- * - .sdk-baselines/mcp/ (13 tool schema files + version.json)
+ * - .sdk-baselines/mcp/ (14 tool schema files + version.json)
  * - src/mcp-server/server.ts (tool registry)
  * - src/integration/tools/ (tool definitions with Zod args)
  *
@@ -47,6 +47,7 @@ const EXPECTED_TOOLS = [
   'flowguard_abort_session',
   'flowguard_archive',
   'flowguard_continue',
+  'flowguard_help',
 ] as const;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -68,13 +69,13 @@ describe('SDK Contract: MCP tool registry', () => {
       );
     });
 
-    it('version.json lists all 13 tool schemas', () => {
+    it('version.json lists all 14 tool schemas', () => {
       const version = loadSchema('version.json');
-      expect((version.schemas as string[]).length).toBe(13);
+      expect((version.schemas as string[]).length).toBe(14);
     });
   });
 
-  describe('HAPPY: all 13 tool schema files exist', () => {
+  describe('HAPPY: all 14 tool schema files exist', () => {
     for (const tool of EXPECTED_TOOLS) {
       it(`${tool}.json exists`, () => {
         expect(existsSync(path.join(mcpBaseDir, `${tool}.json`))).toBe(true);
@@ -136,6 +137,11 @@ describe('SDK Contract: MCP tool registry', () => {
   });
 
   describe('HAPPY: enum values are pinned', () => {
+    it('flowguard_help view enum has 3 values', () => {
+      const schema = loadSchema('flowguard_help.json');
+      const props = schema.properties as Record<string, Record<string, unknown>>;
+      expect(props.view!.enum).toEqual(['context', 'commands', 'command']);
+    });
     it('flowguard_hydrate policyMode enum has 4 values', () => {
       const schema = loadSchema('flowguard_hydrate.json');
       const props = schema.properties as Record<string, Record<string, unknown>>;

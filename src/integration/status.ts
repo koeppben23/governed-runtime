@@ -41,6 +41,7 @@ const ALL_COMMANDS = Object.values(Command) as FlowGuardCommand[];
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { getReviewLoopProgress, type ReviewLoopProgress } from './review/review-loop-progress.js';
+import { isTerminalPhase } from '../machine/topology.js';
 
 // ─── Projection Types ─────────────────────────────────────────────────────────
 
@@ -201,7 +202,7 @@ export interface ReadinessProjection {
  * phases, obligations, or gates.
  */
 export type FinishOverallStatus =
-  'READY' | 'READY_WITH_WARNINGS' | 'CHANGES_REQUIRED' | 'BLOCKED' | 'NOT_VERIFIED';
+  'IN_PROGRESS' | 'READY' | 'READY_WITH_WARNINGS' | 'CHANGES_REQUIRED' | 'BLOCKED' | 'NOT_VERIFIED';
 
 /** Presentation-only guidance status for a candidate next action. */
 export type FinishActionStatus = 'recommended' | 'not_recommended' | 'not_verified';
@@ -389,7 +390,7 @@ export function buildBlockedProjection(
   const next = resolveNextAction(state.phase, state);
   const completeness = evaluateCompleteness(state);
 
-  const blocked = evalResult.kind === 'waiting' || evalResult.kind === 'pending';
+  const blocked = evalResult.kind === 'waiting';
   const missingEvidence = completeness.slots
     .filter((slot) => slot.required && (slot.status === 'missing' || slot.status === 'failed'))
     .map((slot) => ({
@@ -454,7 +455,7 @@ export function buildReadinessProjection(
 ): ReadinessProjection {
   const completeness = evaluateCompleteness(state);
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
-  const blocked = evalResult.kind === 'waiting' || evalResult.kind === 'pending';
+  const blocked = evalResult.kind === 'waiting';
   const snapshot = state.policySnapshot;
   const warnings: string[] = [];
 
@@ -540,11 +541,12 @@ function hasUnverifiedEvidence(evidence: EvidenceDetailProjection): boolean {
  * strictly presentational — it re-evaluates nothing.
  *
  * Precedence (highest first):
- * 1. BLOCKED             — readiness projection reports blocked (waiting/pending).
+ * 1. BLOCKED             — readiness projection reports blocked (waiting).
  * 2. NOT_VERIFIED        — a required evidence slot is missing or failed.
- * 3. CHANGES_REQUIRED    — completed standalone review report has issues.
- * 4. READY_WITH_WARNINGS — not blocked, evidence ok, but warnings present.
- * 5. READY               — otherwise.
+ * 3. IN_PROGRESS         — non-terminal phase; lifecycle not yet complete.
+ * 4. CHANGES_REQUIRED    — completed standalone review report has issues.
+ * 5. READY_WITH_WARNINGS — terminal, evidence ok, but warnings present.
+ * 6. READY               — otherwise.
  *
  * BLOCKED intentionally wins over NOT_VERIFIED so a blocked session is not
  * mislabelled merely because evidence is also incomplete.
@@ -556,6 +558,8 @@ export function deriveFinishOverallStatus(
 ): FinishOverallStatus {
   if (readiness.blocked) return 'BLOCKED';
   if (hasUnverifiedEvidence(evidence)) return 'NOT_VERIFIED';
+  // Non-terminal phases are in progress regardless of warnings or review status.
+  if (!isTerminalPhase(readiness.phase)) return 'IN_PROGRESS';
   if (reviewReport?.overallStatus === 'issues') return 'CHANGES_REQUIRED';
   if (readiness.warnings.length > 0) return 'READY_WITH_WARNINGS';
   return 'READY';
@@ -622,6 +626,16 @@ const FINISH_ACTION_TABLE: Record<
     keep: {
       status: 'recommended',
       reason: 'Keep the branch to complete verification before proceeding.',
+    },
+  },
+  IN_PROGRESS: {
+    proceed: {
+      status: 'not_verified',
+      reason: 'Workflow is not yet complete; export is not applicable.',
+    },
+    keep: {
+      status: 'recommended',
+      reason: 'Keep the branch open while the workflow progresses.',
     },
   },
   BLOCKED: {

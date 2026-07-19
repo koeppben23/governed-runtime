@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_help",
+  "title": "flowguard_help",
+  "description": "Read-only context-sensitive FlowGuard help. Use view=context for /help, view=commands with scope=available or all for /commands, and view=command with a command name for details.",
+  "type": "object",
+  "properties": {
+    "view": {
+      "type": "string",
+      "enum": ["context", "commands", "command"]
+    },
+    "scope": {
+      "type": "string",
+      "enum": ["available", "all"]
+    },
+    "command": {
+      "type": "string",
+      "minLength": 1
+    },
+    "verbose": {
+      "type": "boolean"
+    }
+  },
+  "required": ["view"],
+  "additionalProperties": false
+}

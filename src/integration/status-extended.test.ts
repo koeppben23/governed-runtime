@@ -332,13 +332,13 @@ describe('status.ts MUTATION_KILL matrix', () => {
   });
 
   describe('HAPPY/CORNER blocker projection', () => {
-    it('pending phases expose a blocker with null reason text and no human action requirement', () => {
+    it('pending phases expose blocked=false (no gate block) with null reason text', () => {
       for (const phase of ['READY', 'TICKET', 'PLAN', 'ARCHITECTURE'] as const) {
         const status = buildStatusProjection(makeMinimalState(phase), solo);
         const blocked = buildBlockedProjection(makeMinimalState(phase), solo);
 
         expect(status.blocker).toEqual({ reasonCode: null, reasonText: null });
-        expect(blocked.blocked).toBe(true);
+        expect(blocked.blocked).toBe(false);
         expect(blocked.reasonCode).toBeNull();
         expect(blocked.reasonText).toBeNull();
         expect(blocked.humanActionRequired).toBeNull();

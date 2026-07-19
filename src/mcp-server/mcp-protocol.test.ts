@@ -197,7 +197,7 @@ describe('MCP Protocol Compliance', () => {
     const result = resp.result as { tools: Array<{ name: string; description: string }> };
     expect(result.tools).toBeDefined();
     expect(Array.isArray(result.tools)).toBe(true);
-    expect(result.tools.length).toBe(13);
+    expect(result.tools.length).toBe(14);
 
     const toolNames = result.tools.map((t) => t.name).sort();
     const expectedNames = [
@@ -213,9 +213,11 @@ describe('MCP Protocol Compliance', () => {
       'flowguard_status',
       'flowguard_ticket',
       'flowguard_run_check',
+      'flowguard_archive',
+      'flowguard_help',
     ];
 
-    // We expect 13 tools - check at least these core ones are present
+    // We expect 14 tools - check all registered FlowGuard tools are present.
     for (const name of expectedNames) {
       expect(toolNames, `Missing tool: ${name}`).toContain(name);
     }
@@ -281,7 +283,7 @@ describe('MCP Protocol Compliance', () => {
     expect(resp.jsonrpc).toBe('2.0');
   });
 
-  it('HAPPY: tools/call invokes each of the 13 tools without protocol error', async () => {
+  it('HAPPY: tools/call invokes each of the 14 tools without protocol error', async () => {
     const allToolNames = [
       'flowguard_status',
       'flowguard_hydrate',
@@ -296,6 +298,7 @@ describe('MCP Protocol Compliance', () => {
       'flowguard_abort_session',
       'flowguard_archive',
       'flowguard_continue',
+      'flowguard_help',
     ];
 
     for (const toolName of allToolNames) {
@@ -303,7 +306,11 @@ describe('MCP Protocol Compliance', () => {
       // issue #565). Supply a valid value so we exercise the tool, not a schema
       // rejection. All other tools accept an empty argument object.
       const toolArgs: Record<string, unknown> =
-        toolName === 'flowguard_review_implementation' ? { reviewVerdict: 'accept' } : {};
+        toolName === 'flowguard_review_implementation'
+          ? { reviewVerdict: 'accept' }
+          : toolName === 'flowguard_help'
+            ? { view: 'context' }
+            : {};
       const resp = await client.send(
         makeRequest('tools/call', {
           name: toolName,

@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Contextual help commands (`/help` and `/commands`).** New read-only `flowguard_help`
+  tool with installed `/help` (phase-sensitive next action and relevant commands),
+  `/commands` (available commands for the current context), and `/commands --all`
+  (complete reference). Help derives availability and recommendations from canonical
+  authorities (command policy, next-action resolver, readiness projection). Also
+  introduces a typed installed-command interface catalogue, archive preflight shared
+  between the tool and projection layers, and `/export` as the sole primary
+  audit-package recommendation.
 - **Post-implementation validation gate: `IMPL_VALIDATION` phase (F1).** The ticket
   flow now re-runs the verification checks against the IMPLEMENTED code before the
   independent review and the human evidence gate, closing the gap where validation

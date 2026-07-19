@@ -193,9 +193,9 @@ describe('buildBlockedProjection', () => {
     expect(blocked.reasonCode).toBeNull();
   });
 
-  it('reports blocked=true and missingEvidence on pending phase', () => {
+  it('reports blocked=false on pending phase (no gate block)', () => {
     const blocked = buildBlockedProjection(makeMinimalState('PLAN'), solo);
-    expect(blocked.blocked).toBe(true);
+    expect(blocked.blocked).toBe(false);
     expect(blocked.missingEvidence.some((slot) => slot.slot === 'plan')).toBe(true);
     expect(blocked.nextResolvableCommand).toBe('/continue');
   });
@@ -476,7 +476,7 @@ describe('context and readiness projections', () => {
     state.actorInfo = { id: 'u1', source: 'claim', assurance: 'claim_validated', email: 'u@e.com' };
     const readiness = buildReadinessProjection(state, getPolicyPreset('solo'));
     expect(readiness.phase).toBe('TICKET');
-    expect(readiness.blocked).toBe(true); // pending phase
+    expect(readiness.blocked).toBe(false); // pending phase
     expect(readiness.evidenceComplete).toBe(true);
     expect(readiness.actorKnown).toBe(true);
     expect(readiness.warnings).toEqual([]);

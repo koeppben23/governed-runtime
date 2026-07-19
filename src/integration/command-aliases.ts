@@ -26,6 +26,8 @@ export type CommandAliasResolution = Readonly<{
   defaultArgs?: Readonly<Record<string, unknown>>;
   /** Human-readable label for product documentation and status output. */
   productLabel: string;
+  /** Presentation role. Only preferred names may replace canonical UX labels. */
+  kind: 'preferred_name' | 'action_variant' | 'convenience';
 }>;
 
 // ─── Alias Registry ───────────────────────────────────────────────────────────
@@ -47,38 +49,46 @@ export const COMMAND_ALIASES: Readonly<Record<string, CommandAliasResolution>> =
   start: {
     canonicalCommand: 'hydrate',
     productLabel: 'Start governed task',
+    kind: 'preferred_name',
   },
   task: {
     canonicalCommand: 'ticket',
     productLabel: 'Capture task',
+    kind: 'preferred_name',
   },
   approve: {
     canonicalCommand: 'review-decision',
     defaultArgs: { verdict: 'approve' },
     productLabel: 'Approve current review gate',
+    kind: 'action_variant',
   },
   'request-changes': {
     canonicalCommand: 'review-decision',
     defaultArgs: { verdict: 'changes_requested' },
     productLabel: 'Request changes',
+    kind: 'action_variant',
   },
   reject: {
     canonicalCommand: 'review-decision',
     defaultArgs: { verdict: 'reject' },
     productLabel: 'Reject current review gate',
+    kind: 'action_variant',
   },
   check: {
     canonicalCommand: 'validate',
     productLabel: 'Check evidence',
+    kind: 'preferred_name',
   },
   export: {
     canonicalCommand: 'archive',
     productLabel: 'Export audit package',
+    kind: 'preferred_name',
   },
   why: {
     canonicalCommand: 'status',
     defaultArgs: { whyBlocked: true },
     productLabel: 'Explain blocker',
+    kind: 'convenience',
   },
 };
 
@@ -109,6 +119,7 @@ export function resolveCommandAlias(input: string): CommandAliasResolution {
     COMMAND_ALIASES[normalized] ?? {
       canonicalCommand: normalized,
       productLabel: normalized,
+      kind: 'convenience',
     }
   );
 }

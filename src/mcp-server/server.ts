@@ -40,6 +40,7 @@ import { abort_session } from '../integration/tools/index.js';
 import { archive } from '../integration/tools/index.js';
 // 'continue' is a reserved word - imported via namespace
 import { continue as continue_cmd } from '../integration/tools/index.js';
+import { help } from '../integration/tools/index.js';
 
 // --- Tool Registry ---
 
@@ -57,6 +58,7 @@ const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   abort_session,
   archive,
   continue: continue_cmd,
+  help,
 };
 
 // --- Server Factory ---

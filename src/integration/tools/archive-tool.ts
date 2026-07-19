@@ -16,9 +16,9 @@ import {
   writeStateWithArtifacts,
 } from './helpers.js';
 import { readState } from '../../adapters/persistence.js';
-import { TERMINAL } from '../../machine/topology.js';
 import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
+import { evaluateArchivePreflight } from '../archive-preflight.js';
 
 /**
  * Verify a freshly created archive and derive the reportable status. Isolated
@@ -61,26 +61,16 @@ export const archive: ToolDefinition = {
       const { fingerprint, sessDir } = await resolveWorkspacePaths(context);
       const state = await readState(sessDir);
 
-      if (!state) {
-        return formatBlocked('NO_SESSION');
-      }
-
-      if (!TERMINAL.has(state.phase)) {
-        return formatBlocked('COMMAND_NOT_ALLOWED', {
-          command: '/archive',
-          phase: state.phase,
-        });
-      }
-
-      // Governance integrity: an aborted session reaches phase=COMPLETE via the
-      // /abort escape hatch (error.code='ABORTED'), but it is NOT a clean
-      // completion and must not be exported as a "verifiable audit package" —
-      // that would misrepresent a failed/abandoned session as a successful one.
-      // This mirrors the existing !error invariant that excludes aborted sessions
-      // from the automatic regulated archive (decision-finalization.ts). The abort
-      // itself is already preserved in the audit trail; use /review to inspect it.
-      if (state.error?.code === 'ABORTED') {
-        return formatBlocked('ABORTED', { reason: state.error.message });
+      if (!state) return formatBlocked('NO_SESSION');
+      const preflight = evaluateArchivePreflight(state);
+      if (preflight.status !== 'available') {
+        if (preflight.reasonCode === 'TERMINAL_PHASE_REQUIRED') {
+          return formatBlocked('COMMAND_NOT_ALLOWED', {
+            command: '/archive',
+            phase: state.phase,
+          });
+        }
+        return formatBlocked('ABORTED', { reason: state.error?.message ?? '' });
       }
 
       const archivePath = await archiveSession(fingerprint, context.sessionID);

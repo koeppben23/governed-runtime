@@ -2,7 +2,7 @@
   "platform": "mcp",
   "updated": "2026-05-21T00:00:00.000Z",
   "version": "1.2.0-tp.1",
-  "description": "MCP tool input schemas for all 13 FlowGuard governance tools. Pinned from Zod definitions in src/integration/tools/.",
+  "description": "MCP tool input schemas for all 14 FlowGuard governance tools. Pinned from Zod definitions in src/integration/tools/.",
   "server": {
     "name": "flowguard",
     "version": "1.2.0-tp.1"
@@ -20,6 +20,7 @@
     "flowguard_review.json",
     "flowguard_abort_session.json",
     "flowguard_archive.json",
-    "flowguard_continue.json"
+    "flowguard_continue.json",
+    "flowguard_help.json"
   ]
 }

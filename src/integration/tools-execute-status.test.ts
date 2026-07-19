@@ -575,6 +575,7 @@ describe('status', () => {
       const finish = result.finish as Record<string, unknown>;
       expect(finish).toBeDefined();
       expect([
+        'IN_PROGRESS',
         'READY',
         'READY_WITH_WARNINGS',
         'CHANGES_REQUIRED',

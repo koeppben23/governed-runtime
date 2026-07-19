@@ -29,6 +29,7 @@ import {
   TOOL_FLOWGUARD_ABORT,
   TOOL_FLOWGUARD_STATUS,
   TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_HELP,
 } from './tool-names.js';
 import * as ToolNames from './tool-names.js';
 import { Command } from '../machine/commands.js';
@@ -77,6 +78,10 @@ describe('tool-classification', () => {
 
     it('TOOL_FLOWGUARD_ARCHIVE is operational', () => {
       expect(getToolClassification(TOOL_FLOWGUARD_ARCHIVE)).toBe('operational');
+    });
+
+    it('TOOL_FLOWGUARD_HELP is operational', () => {
+      expect(getToolClassification(TOOL_FLOWGUARD_HELP)).toBe('operational');
     });
   });
 
