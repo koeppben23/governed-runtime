@@ -14,13 +14,7 @@ function renderCommandJson(command: ProjectedCommand, verbose: boolean): Record<
     description: command.description,
     visibility: command.visibility,
     ...(command.alsoAvailableAs.length > 0 ? { alsoAvailableAs: command.alsoAvailableAs } : {}),
-    ...(verbose
-      ? {
-          id: command.id,
-          label: command.label,
-          preflight: command.preflight,
-        }
-      : {}),
+    ...(verbose ? { id: command.id, label: command.label, preflight: command.preflight } : {}),
   };
 }
 
@@ -42,11 +36,7 @@ function buildArtifactsJson(result: HelpResult, includeContent: boolean): Record
       ? { content: result.artifacts.currentPlan.content }
       : {}),
   };
-  return {
-    ticket,
-    currentPlan: plan,
-    status: result.artifacts.status,
-  };
+  return { ticket, currentPlan: plan, status: result.artifacts.status };
 }
 
 function renderHelpJson(result: HelpResult, verbose: boolean, includeContent: boolean): string {
@@ -64,12 +54,7 @@ function renderHelpJson(result: HelpResult, verbose: boolean, includeContent: bo
     commands: result.commands.map((command) => renderCommandJson(command, verbose)),
     artifacts: buildArtifactsJson(result, includeContent),
     ...(result.blocker
-      ? {
-          blocker: {
-            reasonCode: result.blocker.reasonCode,
-            message: result.blocker.message,
-          },
-        }
+      ? { blocker: { reasonCode: result.blocker.reasonCode, message: result.blocker.message } }
       : {}),
   });
 }
@@ -87,32 +72,26 @@ function visibilityMarker(visibility: string): string {
   }
 }
 
-function renderHelpMarkdown(result: HelpResult, includeContent: boolean): string {
-  const lines: string[] = [];
-
-  // Phase / State
+function appendHeader(lines: string[], result: HelpResult): void {
   if (result.phase) {
     lines.push(`**Phase:** ${result.phase.label}`);
   } else {
     lines.push('**No active FlowGuard session.**');
   }
-
-  // Readiness
   if (result.readiness !== 'none') {
     lines.push(`**Readiness:** ${result.readiness}`);
   }
+}
 
-  // Blocker
-  if (result.blocker) {
-    const parts: string[] = [];
-    if (result.blocker.message) parts.push(result.blocker.message);
-    if (result.blocker.reasonCode) parts.push(`[${result.blocker.reasonCode}]`);
-    if (parts.length > 0) {
-      lines.push(`**Why blocked:** ${parts.join(' ')}`);
-    }
-  }
+function appendBlocker(lines: string[], result: HelpResult): void {
+  if (!result.blocker) return;
+  const parts: string[] = [];
+  if (result.blocker.message) parts.push(result.blocker.message);
+  if (result.blocker.reasonCode) parts.push(`[${result.blocker.reasonCode}]`);
+  if (parts.length > 0) lines.push(`**Why blocked:** ${parts.join(' ')}`);
+}
 
-  // Next Action
+function appendNextAction(lines: string[], result: HelpResult): void {
   if (result.nextAction) {
     lines.push(
       `**Next:** \`${result.nextAction.invocation}\` \u2014 ${result.nextAction.description}`,
@@ -120,8 +99,9 @@ function renderHelpMarkdown(result: HelpResult, includeContent: boolean): string
   } else if (result.nextActionSummary) {
     lines.push(`**Next:** ${result.nextActionSummary}`);
   }
+}
 
-  // Commands
+function appendCommands(lines: string[], result: HelpResult): void {
   lines.push('');
   lines.push('**Available commands:**');
   for (const cmd of result.commands) {
@@ -132,61 +112,71 @@ function renderHelpMarkdown(result: HelpResult, includeContent: boolean): string
         : '';
     lines.push(`  ${marker} \`${cmd.invocation}\` \u2014 ${cmd.description}${blockedNote}`);
   }
+}
 
-  // Aliases
-  const cmdsWithAliases = result.commands.filter((cmd) => cmd.alsoAvailableAs.length > 0);
-  if (cmdsWithAliases.length > 0) {
-    const allAliases = cmdsWithAliases.flatMap((cmd) => cmd.alsoAvailableAs);
-    if (allAliases.length > 0) {
-      lines.push('');
-      lines.push(`**Aliases:** ${allAliases.map((a) => `\`${a}\``).join(', ')}`);
-    }
+function appendArtifactMeta(lines: string[], result: HelpResult): void {
+  if (result.artifacts.status === 'not_verified') return;
+  lines.push('');
+  lines.push('**Session artifacts:**');
+  if (result.artifacts.ticket.status === 'available') {
+    const d = result.artifacts.ticket.digest
+      ? ` (digest: ${result.artifacts.ticket.digest.slice(0, 8)}...)`
+      : '';
+    lines.push(`  ticket: available${d}`);
+  } else {
+    lines.push('  ticket: not verified');
   }
+  if (result.artifacts.currentPlan.status === 'available') {
+    const v = result.artifacts.currentPlanVersion ? ` v${result.artifacts.currentPlanVersion}` : '';
+    const d = result.artifacts.currentPlan.digest
+      ? ` (digest: ${result.artifacts.currentPlan.digest.slice(0, 8)}...)`
+      : '';
+    lines.push(`  current plan${v}: available${d}`);
+  } else {
+    lines.push('  current plan: not verified');
+  }
+}
 
-  // Artifacts
-  if (result.artifacts.status !== 'not_verified') {
+function appendArtifactContent(lines: string[], result: HelpResult): void {
+  if (result.artifacts.ticket.content) {
     lines.push('');
-    lines.push('**Session artifacts:**');
-    if (result.artifacts.ticket.status === 'available') {
-      const digest = result.artifacts.ticket.digest
-        ? ` (digest: ${result.artifacts.ticket.digest.slice(0, 8)}...)`
-        : '';
-      lines.push(`  ticket: available${digest}`);
-    } else {
-      lines.push(`  ticket: not verified`);
-    }
-    if (result.artifacts.currentPlan.status === 'available') {
-      const version = result.artifacts.currentPlanVersion
-        ? ` v${result.artifacts.currentPlanVersion}`
-        : '';
-      const digest = result.artifacts.currentPlan.digest
-        ? ` (digest: ${result.artifacts.currentPlan.digest.slice(0, 8)}...)`
-        : '';
-      lines.push(`  current plan${version}: available${digest}`);
-    } else {
-      lines.push(`  current plan: not verified`);
-    }
+    lines.push('**Ticket:**');
+    lines.push(result.artifacts.ticket.content);
   }
-
-  // Full artifact content (only when explicitly requested)
-  if (includeContent) {
-    if (result.artifacts.ticket.content) {
-      lines.push('');
-      lines.push('**Ticket:**');
-      lines.push(result.artifacts.ticket.content);
-    }
-    if (result.artifacts.currentPlan.content) {
-      lines.push('');
-      const version = result.artifacts.currentPlanVersion
-        ? ` (v${result.artifacts.currentPlanVersion})`
-        : '';
-      lines.push(`**Current plan${version}:**`);
-      lines.push(result.artifacts.currentPlan.content);
-    }
+  if (result.artifacts.currentPlan.content) {
+    lines.push('');
+    const v = result.artifacts.currentPlanVersion
+      ? ` (v${result.artifacts.currentPlanVersion})`
+      : '';
+    lines.push(`**Current plan${v}:**`);
+    lines.push(result.artifacts.currentPlan.content);
   }
+}
 
+function renderHelpMarkdown(result: HelpResult, includeContent: boolean): string {
+  const lines: string[] = [];
+  appendHeader(lines, result);
+  appendBlocker(lines, result);
+  appendNextAction(lines, result);
+  appendCommands(lines, result);
+  appendAliases(lines, result);
+  appendArtifactMeta(lines, result);
+  if (includeContent) appendArtifactContent(lines, result);
   return lines.join('\n');
 }
+
+// ─── Aliases ───────────────────────────────────────────────────────────
+
+function appendAliases(lines: string[], result: HelpResult): void {
+  const cmdsWithAliases = result.commands.filter((cmd) => cmd.alsoAvailableAs.length > 0);
+  if (cmdsWithAliases.length === 0) return;
+  const allAliases = cmdsWithAliases.flatMap((cmd) => cmd.alsoAvailableAs);
+  if (allAliases.length === 0) return;
+  lines.push('');
+  lines.push(`**Aliases:** ${allAliases.map((a) => `\`${a}\``).join(', ')}`);
+}
+
+// ─── Public API ────────────────────────────────────────────────────────
 
 export function renderHelp(result: HelpResult, output: RenderOutput): string {
   const includeContent = output.includeArtifactContent ?? false;

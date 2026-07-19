@@ -56,30 +56,36 @@ export const help: ToolDefinition = {
           message: 'Use context, commands with scope, or command with a command name.',
         });
       }
-      const session = await withReadOnlySession(context);
-      const view = parsed.data;
-      let reviewReport = undefined;
-      if (session.sessDir) {
-        reviewReport = (await readReport(session.sessDir)) ?? undefined;
-      }
-      const result = buildHelpResult(session.state, session.policy, {
-        view: view.view,
-        scope: view.view === 'commands' ? view.scope : undefined,
-        reviewReport,
-        ...(view.view === 'command'
-          ? { requestedInvocation: `/${view.command.replace(/^\/+/, '')}` }
-          : {}),
-        includeArtifactContent:
-          view.view !== 'command' ? (view.includeArtifactContent ?? false) : false,
-      });
-      return renderHelp(result, {
-        format: view.verbose ? 'json' : 'markdown',
-        verbose: view.verbose ?? false,
-        includeArtifactContent:
-          view.view !== 'command' ? (view.includeArtifactContent ?? false) : false,
-      });
+      return executeHelp(parsed.data, context);
     } catch (err) {
       return formatError(err);
     }
   },
 };
+
+async function executeHelp(
+  view: z.infer<typeof HelpArgsSchema>,
+  context: Parameters<ToolDefinition['execute']>[1],
+): Promise<string> {
+  const session = await withReadOnlySession(context);
+  let reviewReport = undefined;
+  if (session.sessDir) {
+    reviewReport = (await readReport(session.sessDir)) ?? undefined;
+  }
+  const result = buildHelpResult(session.state, session.policy, {
+    view: view.view,
+    scope: view.view === 'commands' ? view.scope : undefined,
+    reviewReport,
+    ...(view.view === 'command'
+      ? { requestedInvocation: `/${view.command.replace(/^\/+/, '')}` }
+      : {}),
+    includeArtifactContent:
+      view.view !== 'command' ? (view.includeArtifactContent ?? false) : false,
+  });
+  return renderHelp(result, {
+    format: view.verbose ? 'json' : 'markdown',
+    verbose: view.verbose ?? false,
+    includeArtifactContent:
+      view.view !== 'command' ? (view.includeArtifactContent ?? false) : false,
+  });
+}

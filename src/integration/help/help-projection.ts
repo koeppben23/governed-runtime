@@ -123,6 +123,37 @@ function firstLinePreview(body: string): string {
   return line.length <= 200 ? line : line.slice(0, 197) + '...';
 }
 
+function buildArtifactSlot(
+  evidence: { text?: string; body?: string; digest?: string } | null | undefined,
+  includeContent: boolean,
+  nextActionSummary: string,
+): ArtifactSlot {
+  const text = evidence ? (evidence.text ?? evidence.body ?? null) : null;
+  const digest = evidence?.digest ?? null;
+  if (text) {
+    return {
+      status: 'available',
+      digest,
+      preview: firstLinePreview(text),
+      content: includeContent ? text : null,
+      workflowNextAction: null,
+    };
+  }
+  return {
+    status: 'not_verified',
+    digest: null,
+    preview: null,
+    content: null,
+    workflowNextAction: nextActionSummary,
+  };
+}
+
+function artifactsStatus(tAvailable: boolean, pAvailable: boolean): HelpArtifacts['status'] {
+  if (tAvailable && pAvailable) return 'available';
+  if (tAvailable || pAvailable) return 'partial';
+  return 'not_verified';
+}
+
 function buildArtifacts(
   state: SessionState | null,
   includeContent: boolean,
@@ -130,55 +161,14 @@ function buildArtifacts(
 ): HelpArtifacts {
   if (!state) return EMPTY_ARTIFACTS;
 
-  const ticketText = state.ticket?.text ?? null;
-  const planBody = state.plan?.current?.body ?? null;
-  const ticketDigest = state.ticket?.digest ?? null;
-  const planDigest = state.plan?.current?.digest ?? null;
-
-  const ticket: ArtifactSlot = ticketText
-    ? {
-        status: 'available',
-        digest: ticketDigest,
-        preview: firstLinePreview(ticketText),
-        content: includeContent ? ticketText : null,
-        workflowNextAction: null,
-      }
-    : {
-        status: 'not_verified',
-        digest: null,
-        preview: null,
-        content: null,
-        workflowNextAction: nextActionSummary,
-      };
-
-  const plan: ArtifactSlot = planBody
-    ? {
-        status: 'available',
-        digest: planDigest,
-        preview: firstLinePreview(planBody),
-        content: includeContent ? planBody : null,
-        workflowNextAction: null,
-      }
-    : {
-        status: 'not_verified',
-        digest: null,
-        preview: null,
-        content: null,
-        workflowNextAction: nextActionSummary,
-      };
-
-  const overallStatus: HelpArtifacts['status'] =
-    ticket.status === 'available' && plan.status === 'available'
-      ? 'available'
-      : ticket.status === 'available' || plan.status === 'available'
-        ? 'partial'
-        : 'not_verified';
+  const ticketSlot = buildArtifactSlot(state.ticket, includeContent, nextActionSummary);
+  const planSlot = buildArtifactSlot(state.plan?.current, includeContent, nextActionSummary);
 
   return {
-    ticket,
-    currentPlan: plan,
+    ticket: ticketSlot,
+    currentPlan: planSlot,
     currentPlanVersion: state.plan ? (state.plan.history?.length ?? 0) + 1 : null,
-    status: overallStatus,
+    status: artifactsStatus(ticketSlot.status === 'available', planSlot.status === 'available'),
   };
 }
 
@@ -468,14 +458,17 @@ function resolveReport(
   if (!reviewReport) return null;
   return resolveCurrentReviewReport(state, reviewReport);
 }
-function buildSessionHelpResult(
-  state: SessionState,
-  policy: FlowGuardPolicy,
-  view: 'context' | 'commands',
-  scope: 'available' | 'all',
-  reportResolution: ReviewReportResolution | null,
-  includeArtifactContent: boolean,
-): HelpResult {
+interface SessionHelpOpts {
+  readonly state: SessionState;
+  readonly policy: FlowGuardPolicy;
+  readonly view: 'context' | 'commands';
+  readonly scope: 'available' | 'all';
+  readonly reportResolution: ReviewReportResolution | null;
+  readonly includeArtifactContent: boolean;
+}
+
+function buildSessionHelpResult(opts: SessionHelpOpts): HelpResult {
+  const { state, policy, view, scope, reportResolution, includeArtifactContent } = opts;
   const currentReport = reportResolution?.status === 'current' ? reportResolution.report : null;
 
   const status = buildStatusProjection(state, policy);
@@ -525,14 +518,14 @@ export function buildHelpResult(
 
   // After the early returns, view is always 'context' or 'commands'.
   const view = opts.view as 'context' | 'commands';
-  return buildSessionHelpResult(
+  return buildSessionHelpResult({
     state,
     policy,
     view,
-    opts.scope ?? 'available',
-    resolveReport(state, opts.reviewReport),
-    opts.includeArtifactContent ?? false,
-  );
+    scope: opts.scope ?? 'available',
+    reportResolution: resolveReport(state, opts.reviewReport),
+    includeArtifactContent: opts.includeArtifactContent ?? false,
+  });
 }
 
 function limitContextCommands(commands: readonly ProjectedCommand[]): readonly ProjectedCommand[] {
