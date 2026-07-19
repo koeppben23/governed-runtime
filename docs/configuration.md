@@ -13,22 +13,11 @@ FlowGuard supports per-repository configuration via `flowguard.json`.
 
 ```json
 {
-  "schemaVersion": "v1",
-  "logging": {
-    "level": "info"
-  },
-  "policy": {
-    "defaultMode": "solo"
-  },
-  "profile": {},
-  "archive": {
-    "redaction": {
-      "mode": "none",
-      "includeRaw": true
-    }
-  }
+  "schemaVersion": "v1"
 }
 ```
+
+With no policy override, FlowGuard resolves the built-in `team` mode (human-gated).
 
 ## Settings Reference
 
@@ -128,7 +117,7 @@ Invalid or unrecognized policy mode values are rejected with an explicit `Policy
 
 ### policy.maxSelfReviewIterations
 
-**Type:** `number` (1-20)
+**Type:** `number` (1-10)
 **Default:** Preset value (solo=2, team/team-ci/regulated=3)
 
 Overrides the maximum independent review iterations in PLAN phase. The field name is retained as the persisted policy contract:
@@ -277,7 +266,7 @@ assurance `claim_validated` or higher (the same effect as
 
 ### policy.maxImplReviewIterations
 
-**Type:** `number` (1-20)
+**Type:** `number` (1-10)
 **Default:** Preset value (solo=1, team/team-ci/regulated=3)
 
 Overrides the maximum impl-review iterations in IMPL_REVIEW phase:
