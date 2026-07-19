@@ -113,6 +113,8 @@ describe('presentation/index.ts barrel', () => {
     'STATUS_LABELS',
     'lookupStatusLabel',
     'parseStatusLabel',
+    'parseArchiveLabel',
+    'GUIDANCE_STATUS_LABELS',
   ] as const;
 
   const INTERNAL_SYMBOLS = [

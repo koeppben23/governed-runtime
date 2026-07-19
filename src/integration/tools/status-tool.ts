@@ -58,12 +58,18 @@ import {
   buildReadinessProjection,
   buildFinishCard,
 } from '../status.js';
+import {
+  buildWhyPresentationProjection,
+  buildFinishPresentationProjection,
+} from '../status-why-finish.js';
 import { buildImplementationGuidance } from '../implementation-guidance.js';
 import type { DiscoveryDriftStatusProjection } from '../discovery-drift-status.js';
 import { buildDiscoveryDriftStatus } from '../discovery-drift-status.js';
 import { evaluateDiscoveryEvidenceGate } from '../discovery-health-gate.js';
 import { BUILD_INFO } from '../../shared/build-info.js';
 import { buildStatusDocument, buildNoSessionDocument } from '../status-presentation.js';
+import { buildWhyDocument } from '../why-presentation.js';
+import { buildFinishDocument } from '../finish-presentation.js';
 import { renderMarkdown } from '../../presentation/index.js';
 
 /**
@@ -136,24 +142,30 @@ async function resolveProjection(
   if (args.finish) {
     const reviewReport = await readReport(sessDir);
     const finishCard = buildFinishCard(state, policy, reviewReport);
+    const finishPres = buildFinishPresentationProjection(state, finishCard);
+    const finishDoc = buildFinishDocument(finishPres);
     return appendNextAction(
       JSON.stringify({
         phase: state.phase,
         sessionId: state.id,
         finish: finishCard,
         ...checkFields,
+        presentation: { markdown: renderMarkdown(finishDoc) },
       }),
       state,
     );
   }
   if (args.whyBlocked) {
     const blocked = buildBlockedProjection(state, policy);
+    const whyPres = buildWhyPresentationProjection(state, policy, blocked);
+    const whyDoc = buildWhyDocument(whyPres);
     return appendNextAction(
       JSON.stringify({
         phase: state.phase,
         sessionId: state.id,
         whyBlocked: blocked,
         ...checkFields,
+        presentation: { markdown: renderMarkdown(whyDoc) },
       }),
       state,
     );

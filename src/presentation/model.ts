@@ -212,8 +212,33 @@ export interface NoticeSection {
   readonly heading?: string;
   /** Primary message body. */
   readonly message: string;
+  /** Additional messages — each with its own symbol prefix. Optional, backwards-compatible. */
+  readonly additionalMessages?: readonly string[];
   /** Structured detail rows. */
   readonly details: readonly KeyValueItem[];
+}
+
+/** Non-normative guidance status for action recommendations. */
+export type GuidanceStatus = 'recommended' | 'not_recommended' | 'not_verified';
+
+export interface GuidanceItem {
+  readonly action: string;
+  readonly status: GuidanceStatus;
+  readonly reason: string;
+}
+
+export interface GuidanceSection {
+  readonly kind: 'guidance';
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
+  readonly items: readonly GuidanceItem[];
+}
+
+export interface BulletListSection {
+  readonly kind: 'bulletList';
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
+  readonly items: readonly string[];
 }
 
 export type PresentationSection =
@@ -225,7 +250,9 @@ export type PresentationSection =
   | ChecklistSection
   | TextSection
   | CodeSection
-  | NoticeSection;
+  | NoticeSection
+  | BulletListSection
+  | GuidanceSection;
 
 // ─── Conclusion ────────────────────────────────────────────────────────────────
 

@@ -33,8 +33,12 @@ import type {
   NoticeSection,
   ArtifactItem,
   TextSection,
+  BulletListSection,
+  GuidanceSection,
+  GuidanceStatus,
 } from './model.js';
-import { validateCodeLanguage } from './model.js';
+import { validateCodeLanguage, PresentationContractError } from './model.js';
+import { GUIDANCE_STATUS_LABELS } from './labels.js';
 
 // ─── Document Renderer ─────────────────────────────────────────────────────────
 
@@ -85,6 +89,10 @@ function renderSection(section: PresentationSection): string {
       return sectionHeading(section) + renderCode(section);
     case 'notice':
       return sectionHeading(section) + renderNotice(section);
+    case 'bulletList':
+      return sectionHeading(section) + renderBulletList(section);
+    case 'guidance':
+      return sectionHeading(section) + renderGuidance(section);
   }
 }
 
@@ -173,13 +181,63 @@ function renderCode(section: CodeSection): string {
 }
 
 function renderNotice(section: NoticeSection): string {
+  if (section.message.trim().length === 0) {
+    throw new PresentationContractError('NoticeSection: message must not be empty');
+  }
   const symbol = noticeSymbol(section.level);
   const lines: string[] = [];
   lines.push(`${symbol} ${section.message}`);
+  for (const msg of section.additionalMessages ?? []) {
+    if (msg.trim().length === 0) {
+      throw new PresentationContractError(
+        'NoticeSection: additionalMessages must not contain empty strings',
+      );
+    }
+    lines.push(`${symbol} ${msg}`);
+  }
   for (const detail of section.details) {
     lines.push(`**${detail.label}:** ${detail.value}`);
   }
   return lines.join('\n');
+}
+
+function renderBulletList(section: BulletListSection): string {
+  for (const item of section.items) {
+    if (item.trim().length === 0) {
+      throw new PresentationContractError('BulletListSection: items must not be empty');
+    }
+  }
+  return section.items.map((t) => `• ${t}`).join('\n');
+}
+
+function renderGuidance(section: GuidanceSection): string {
+  if (section.items.length === 0) {
+    throw new PresentationContractError('GuidanceSection: items must not be empty');
+  }
+  const lines: string[] = [];
+  for (const item of section.items) {
+    if (item.action.trim().length === 0) {
+      throw new PresentationContractError('GuidanceItem: action must not be empty');
+    }
+    if (item.reason.trim().length === 0) {
+      throw new PresentationContractError('GuidanceItem: reason must not be empty');
+    }
+    const sym = guidanceSymbol(item.status);
+    const label = GUIDANCE_STATUS_LABELS[item.status];
+    lines.push(`${sym} **${item.action}:** ${label} — ${item.reason}`);
+  }
+  return lines.join('\n');
+}
+
+function guidanceSymbol(status: GuidanceStatus): string {
+  switch (status) {
+    case 'recommended':
+      return '✓';
+    case 'not_recommended':
+      return '•';
+    case 'not_verified':
+      return '?';
+  }
 }
 
 function noticeSymbol(level: NoticeSection['level']): string {

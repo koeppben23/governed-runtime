@@ -78,3 +78,47 @@ export function parseStatusLabel(raw: string): PresentationStatus {
       `Known values: ${Object.keys(STATUS_LABELS).join(', ')}.`,
   );
 }
+
+// ─── Archive Labels ────────────────────────────────────────────────────────────
+
+/**
+ * Archive lifecycle states — derived from the state domain union,
+ * not a manually-duplicated local union.
+ * Adding a new state to SessionState['archiveStatus'] causes a
+ * compile error here via {@link KnownArchiveStatus}.
+ */
+export type KnownArchiveStatus = NonNullable<
+  import('../state/schema.js').SessionState['archiveStatus']
+>;
+
+const ARCHIVE_LABELS = {
+  pending: 'Pending',
+  created: 'Created',
+  verified: 'Verified',
+  failed: 'Failed',
+} as const satisfies Record<KnownArchiveStatus, string>;
+
+/**
+ * Normalise an archive status string to its presentation label.
+ * Throws for unknown values.
+ */
+export function parseArchiveLabel(raw: string): string {
+  if (!(raw in ARCHIVE_LABELS)) {
+    throw new PresentationContractError(
+      `Unknown archive status: ${JSON.stringify(raw)}. ` +
+        `Known values: ${Object.keys(ARCHIVE_LABELS).join(', ')}.`,
+    );
+  }
+  return ARCHIVE_LABELS[raw as KnownArchiveStatus];
+}
+
+// ─── Guidance Labels ───────────────────────────────────────────────────────────
+
+import type { GuidanceStatus } from './model.js';
+
+/** Presentation labels for guidance status values. */
+export const GUIDANCE_STATUS_LABELS: Record<GuidanceStatus, string> = {
+  recommended: 'Recommended',
+  not_recommended: 'Not recommended',
+  not_verified: 'Not verified',
+} as const;
