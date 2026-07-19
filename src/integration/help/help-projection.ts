@@ -178,11 +178,19 @@ function buildBlocker(
 ): HelpBlocker | null {
   if (!state || !policy) return null;
   const status = buildStatusProjection(state, policy);
-  if (!status.blocker?.reasonCode && !status.blocker?.reasonText) return null;
-  return {
-    reasonCode: status.blocker.reasonCode,
-    message: status.blocker.reasonText,
-  };
+  if (status.blocker?.reasonCode || status.blocker?.reasonText) {
+    return {
+      reasonCode: status.blocker.reasonCode,
+      message: status.blocker.reasonText,
+    };
+  }
+  if (state.discoveryHealthGate?.status === 'blocked') {
+    return {
+      reasonCode: state.discoveryHealthGate.code ?? null,
+      message: state.discoveryHealthGate.message ?? null,
+    };
+  }
+  return null;
 }
 
 function description(definition: InstalledCommandDefinition): string {

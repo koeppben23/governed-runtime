@@ -381,21 +381,37 @@ describe('resume end-to-end via help.execute', () => {
     await ws.cleanup();
   });
 
-  it('returns ticket and plan content via includeArtifactContent after hydrate+ticket+plan', async () => {
+  it('returns ticket and plan content with version and digest after resume', async () => {
     await hydrate.execute({}, ctx);
     await ticket.execute({ text: 'Fix the auth bug in login.ts', source: 'user' }, ctx);
     await plan.execute({ planText: '## Plan\n1. Fix auth\n2. Add tests' }, ctx);
 
+    // Re-read state to verify persistence
     const fp = await computeFingerprint(ws.tmpDir);
     const sd = sessionDir(fp.fingerprint, ctx.sessionID);
     const state = await readState(sd);
-    expect(state?.ticket?.text).toBe('Fix the auth bug in login.ts');
-    expect(state?.plan?.current?.body).toContain('## Plan');
+    if (!state?.ticket?.digest || !state?.plan?.current?.digest) {
+      throw new TypeError('Expected persisted digest in state');
+    }
+    expect(state.ticket.text).toBe('Fix the auth bug in login.ts');
+    expect(state.plan.current.body).toBe('## Plan\n1. Fix auth\n2. Add tests');
+    expect((state.plan.history?.length ?? 0) + 1).toBe(1);
 
-    const out = await help.execute({ view: 'context', includeArtifactContent: true }, ctx);
+    // Fresh context: simulate resume after compaction
+    const resumeCtx = createToolContext({
+      worktree: ws.tmpDir,
+      directory: ws.tmpDir,
+      sessionID: ctx.sessionID,
+    });
+    const out = await help.execute({ view: 'context', includeArtifactContent: true }, resumeCtx);
     expect(typeof out).toBe('string');
-    expect(out as string).toContain('Fix the auth bug in login.ts');
-    expect(out as string).toContain('## Plan');
+    const md = out as string;
+    expect(md).toContain('Fix the auth bug in login.ts');
+    expect(md).toContain('## Plan');
+    expect(md).toContain('Fix auth');
+    expect(md).toContain('current plan v1: available');
+    expect(md).toContain(state.ticket.digest.slice(0, 8));
+    expect(md).toContain(state.plan.current.digest.slice(0, 8));
   });
 
   it('verbose alone does NOT include artifact content in real session', async () => {
@@ -408,16 +424,23 @@ describe('resume end-to-end via help.execute', () => {
     expect(parsed.artifacts.ticket.digest).toBeTruthy();
   });
 
-  it('command view renders single command without artifact content', async () => {
-    const out = await help.execute({ view: 'command', command: 'start' }, ctx);
-    expect(typeof out).toBe('string');
-    expect(out as string).not.toContain('**Ticket:**');
-    expect(out as string).not.toContain('**Session artifacts:**');
+  it('command view rejects includeArtifactContent via strict schema', async () => {
+    const out = await help.execute(
+      {
+        view: 'command',
+        command: 'start',
+        includeArtifactContent: true,
+      } as Record<string, unknown>,
+      ctx,
+    );
+    const parsed = JSON.parse(out as string);
+    expect(parsed.error).toBe(true);
+    expect(parsed.message).toContain('Use context');
   });
 });
 
 describe('degraded discovery blocker projection', () => {
-  it('projects readiness from discoveryHealthGate blocked state', () => {
+  it('projects blocker from discoveryHealthGate blocked state', () => {
     const base = makeProgressedState('IMPLEMENTATION');
     const degraded = buildHelpResult(
       {
@@ -432,10 +455,10 @@ describe('degraded discovery blocker projection', () => {
       TEAM_POLICY,
       { view: 'context' },
     );
-    // Discovery gate alone does not set readiness to not_verified via finish card.
-    // The gate is checked by the evaluator at audit/archive boundaries, not projected
-    // into the help readiness signal. The readiness field reflects the finish-card
-    // status which stays 'none' for a non-terminal phase without explicit blocker.
-    expect(degraded.readiness).toBe('none');
+    expect(degraded.blocker).not.toBeNull();
+    if (degraded.blocker) {
+      expect(degraded.blocker.reasonCode).toBe('DISCOVERY_HEALTH_DEGRADED');
+      expect(degraded.blocker.message).toBe('Discovery health is degraded');
+    }
   });
 });
