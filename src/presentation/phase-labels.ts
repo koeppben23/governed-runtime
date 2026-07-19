@@ -26,7 +26,7 @@ export const PHASE_LABELS = {
   VALIDATION: 'Validation',
   IMPLEMENTATION: 'Implementation in progress',
   IMPL_VALIDATION: 'Re-validating implementation',
-  IMPL_REVIEW: 'Ready for evidence review',
+  IMPL_REVIEW: 'Implementation review in progress',
   EVIDENCE_REVIEW: 'Ready for final review',
   COMPLETE: 'Complete',
   ARCHITECTURE: 'Architecture in progress',

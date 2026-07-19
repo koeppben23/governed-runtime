@@ -114,6 +114,15 @@ describe('documentation/user-docs-drift', () => {
     });
   });
 
+  describe('HAPPY — docs/installation.md alias table matches COMMAND_ALIASES', () => {
+    it('/start maps to /hydrate, not /ticket + /plan', () => {
+      const content = readDoc('docs/installation.md');
+      const rows = extractProductCommandRows(content);
+      expect(rows.get('/start')).toBe('/hydrate');
+      expect(content).not.toContain('`/ticket` + `/plan`');
+    });
+  });
+
   describe('BAD — docs/phases.md cannot drift from topology/schema', () => {
     it('phase reference contains every schema phase exactly once', () => {
       expect(extractPhaseTableNames(readDoc('docs/phases.md'))).toEqual([...Phase.options].sort());

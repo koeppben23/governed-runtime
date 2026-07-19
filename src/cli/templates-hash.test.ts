@@ -177,9 +177,12 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // VERBATIM as the Task tool prompt (canonical copy-prompt) to eliminate the
     // first-attempt SUBAGENT_PROMPT_MISSING_CONTEXT block. New command bodies
     // change the COMMANDS hash.
+    // Refreshed for #686: /implement template now documents the IMPL_VALIDATION
+    // gate with auto-chain (flowguard_run_check) between recording evidence and
+    // entering the review loop, closing the gap between README and template.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '45b7f24890c7b448ad6393ef552559f5f673c33e1c06b799324d8f3faf525f29',
+      '71bdab0d84cf933c3de1c757f55f8a322d921d7518e1a867d3b42c29439d7d1c',
     );
   });
 

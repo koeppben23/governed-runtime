@@ -124,6 +124,13 @@ describe('documentation/top-level-docs-drift', () => {
       expect(readDoc('PRODUCT_ONE_PAGER.md')).toContain('Three independent flows');
     });
 
+    it('ticket-flow phase sequence in commands.md includes IMPL_VALIDATION', () => {
+      const content = readDoc('docs/commands.md');
+      expect(content).toContain(
+        'IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE',
+      );
+    });
+
     it('policy-mode counts and labels match policy presets', () => {
       expect(policyModeLabels).toEqual(['regulated', 'solo', 'team', 'team-ci']);
 

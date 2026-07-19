@@ -83,10 +83,12 @@ Use `/request-changes` to revise the plan or `/reject` to stop the task.
 /implement
 ```
 
-The implementation enters its own iterative independent-review loop (parity with
-`/plan`): the reviewer subagent is invoked against the recorded code changes; the
-agent revises and re-records on `changes_requested`; convergence advances to
-`EVIDENCE_REVIEW`.
+`/implement` is end-to-end: it records implementation evidence, auto-runs the
+post-implementation validation checks (`IMPL_VALIDATION`), and enters the iterative
+independent-review loop (parity with `/plan`): the reviewer subagent is invoked
+against the recorded code changes; the agent revises and re-records on
+`changes_requested`; convergence advances to `EVIDENCE_REVIEW` — ready for
+approval.
 
 ### 6. Final Review
 

@@ -321,7 +321,7 @@ Use these commands in OpenCode chat to drive workflows:
 
 | Alias              | Routes to                                     |
 | ------------------ | --------------------------------------------- |
-| `/start`           | `/ticket` + `/plan`                           |
+| `/start`           | `/hydrate`                                    |
 | `/task`            | `/ticket`                                     |
 | `/approve`         | `/review-decision approve`                    |
 | `/request-changes` | `/review-decision changes_requested`          |

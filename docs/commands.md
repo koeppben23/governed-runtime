@@ -36,11 +36,11 @@ For all other commands, slash and tool names match `1:1` (`/hydrate` →
 
 After `/hydrate`, the session starts in the **READY** phase. Three standalone flows are available:
 
-| Flow             | Command         | Phases                                                                                                       | Purpose                                              |
-| ---------------- | --------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
-| **Ticket**       | `/ticket`       | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE | Full development lifecycle                           |
-| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                           | Create an Architecture Decision Record (ADR)         |
-| **Review**       | `/review`       | READY → REVIEW → REVIEW_COMPLETE                                                                             | Generate a compliance or content-aware review report |
+| Flow             | Command         | Phases                                                                                                                         | Purpose                                              |
+| ---------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- |
+| **Ticket**       | `/ticket`       | READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE | Full development lifecycle                           |
+| **Architecture** | `/architecture` | READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE                                                                             | Create an Architecture Decision Record (ADR)         |
+| **Review**       | `/review`       | READY → REVIEW → REVIEW_COMPLETE                                                                                               | Generate a compliance or content-aware review report |
 
 ## Product Commands
 
