@@ -152,6 +152,20 @@ describe('renderHelp', () => {
     expect(out).not.toContain('**Ticket:**');
   });
 
+  it('Markdown separates major sections with blank lines', () => {
+    const out = renderHelp(
+      noSessionResult({
+        blocker: { reasonCode: 'REASON', message: 'Blocked' },
+        readiness: 'blocked',
+      }),
+      { format: 'markdown' },
+    );
+    expect(out).toMatch(/\*\*Why blocked:.*\]\n\n\*\*Next:/);
+    expect(out).toMatch(/\*\*Next:.*\n\n\n\*\*Available commands:/);
+    // No trailing blank line at end
+    expect(out).not.toMatch(/\n$/);
+  });
+
   it('Markdown shows blocker when present', () => {
     const out = renderHelp(
       noSessionResult({

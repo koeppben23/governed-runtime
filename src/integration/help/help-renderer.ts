@@ -81,6 +81,7 @@ function appendHeader(lines: string[], result: HelpResult): void {
   if (result.readiness !== 'none') {
     lines.push(`**Readiness:** ${result.readiness}`);
   }
+  lines.push('');
 }
 
 function appendBlocker(lines: string[], result: HelpResult): void {
@@ -88,7 +89,10 @@ function appendBlocker(lines: string[], result: HelpResult): void {
   const parts: string[] = [];
   if (result.blocker.message) parts.push(result.blocker.message);
   if (result.blocker.reasonCode) parts.push(`[${result.blocker.reasonCode}]`);
-  if (parts.length > 0) lines.push(`**Why blocked:** ${parts.join(' ')}`);
+  if (parts.length > 0) {
+    lines.push(`**Why blocked:** ${parts.join(' ')}`);
+    lines.push('');
+  }
 }
 
 function appendNextAction(lines: string[], result: HelpResult): void {
@@ -99,6 +103,7 @@ function appendNextAction(lines: string[], result: HelpResult): void {
   } else if (result.nextActionSummary) {
     lines.push(`**Next:** ${result.nextActionSummary}`);
   }
+  lines.push('');
 }
 function appendCommands(lines: string[], result: HelpResult): void {
   lines.push('');
@@ -123,6 +128,7 @@ function appendCommands(lines: string[], result: HelpResult): void {
       }
     }
   }
+  lines.push('');
 }
 
 function appendArtifactMeta(lines: string[], result: HelpResult): void {
@@ -150,6 +156,7 @@ function appendArtifactMeta(lines: string[], result: HelpResult): void {
   } else {
     lines.push('  current plan: not verified');
   }
+  lines.push('');
 }
 function appendArtifactContent(lines: string[], result: HelpResult): void {
   if (result.artifacts.ticket.content) {
@@ -175,6 +182,7 @@ function renderHelpMarkdown(result: HelpResult, includeContent: boolean): string
   appendCommands(lines, result);
   appendArtifactMeta(lines, result);
   if (includeContent) appendArtifactContent(lines, result);
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
   return lines.join('\n');
 }
 
