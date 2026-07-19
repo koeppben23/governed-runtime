@@ -152,9 +152,7 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
       blocked: false,
       warnings: [],
       phase: 'COMPLETE',
-    } as unknown as ReturnType<
-      typeof buildReadinessProjection
-    >;
+    } as unknown as ReturnType<typeof buildReadinessProjection>;
     const evidence = {
       slots: [{ required: false, status: 'not_yet_required' }],
     } as unknown as ReturnType<typeof buildEvidenceDetailProjection>;
