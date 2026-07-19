@@ -152,7 +152,7 @@ function runCli(
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-smoke-doctor-'));
       try {
         const r = await runCli(['doctor', '--install-scope', 'repo'], { cwd: tmpDir });
-        expect(r.code).not.toBe(0);
+        expect(r.code).toBe(1);
         expect(r.stdout).toContain('NOT_VERIFIED');
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true });

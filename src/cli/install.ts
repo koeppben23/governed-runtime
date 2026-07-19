@@ -412,8 +412,21 @@ export function formatDoctor(checks: DoctorCheck[], host: InstallPlatform): stri
   lines.push(`  ${ok}/${total} checks passed`);
 
   if (warn > 0) {
-    lines.push(`  ${warn} warning(s) — host activation/enforcement not fully verified`);
-    lines.push(`  Next: restart ${hostName} and re-run \`flowguard doctor\``);
+    const activationWarns = checks.filter(
+      (c) => c.status === 'warn' && c.check === SHIPPED_EXECUTABLE_CHECK,
+    ).length;
+    lines.push(`  ${warn} warning(s)`);
+    if (activationWarns > 0) {
+      lines.push(
+        `  ${activationWarns} shipped-executable warning(s) — restart ${hostName} and re-run \`flowguard doctor\``,
+      );
+    }
+    const otherWarns = warn - activationWarns;
+    if (otherWarns > 0) {
+      lines.push(
+        `  ${otherWarns} trust/context warning(s) for ${hostName} — review check details above and re-run \`flowguard doctor\``,
+      );
+    }
   }
   if (total === 0 || checks.some((c) => c.status !== 'ok' && c.status !== 'warn')) {
     lines.push(

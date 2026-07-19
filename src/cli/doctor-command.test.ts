@@ -75,7 +75,7 @@ describe('formatDoctor', () => {
     expect(result).toContain('1/1 checks passed');
   });
 
-  it('reports HEALTHY_WITH_WARNINGS when only warn checks exist', () => {
+  it('reports HEALTHY_WITH_WARNINGS with trust/context recovery', () => {
     const result = formatDoctor(
       [
         { file: 'x', status: 'ok' },
@@ -84,7 +84,23 @@ describe('formatDoctor', () => {
       'opencode',
     );
     expect(result).toContain('Status: HEALTHY_WITH_WARNINGS');
+    expect(result).toContain('trust/context warning');
+    expect(result).toContain('review check details');
+  });
+
+  it('reports HEALTHY_WITH_WARNINGS with shipped-executable restart recovery', () => {
+    const result = formatDoctor(
+      [
+        { file: 'x', status: 'ok' },
+        { file: 'node', status: 'warn', check: 'shipped-executable' as unknown as string },
+        { file: 'y', status: 'warn' },
+      ],
+      'opencode',
+    );
+    expect(result).toContain('Status: HEALTHY_WITH_WARNINGS');
+    expect(result).toContain('shipped-executable warning');
     expect(result).toContain('restart OpenCode');
+    expect(result).toContain('trust/context warning');
   });
 
   it('reports NOT_VERIFIED when missing checks exist', () => {
