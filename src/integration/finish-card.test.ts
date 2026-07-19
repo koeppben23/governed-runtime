@@ -35,6 +35,7 @@ import { evaluateCompleteness } from '../audit/completeness.js';
 import { makeProgressedState } from '../fixtures.js';
 
 const policy = getPolicyPreset('solo');
+const blockedPolicy = getPolicyPreset('team');
 
 function makeReviewReport(overallStatus: ReviewReport['overallStatus']): ReviewReport {
   return {
@@ -74,9 +75,13 @@ function makeUnverifiedState(): SessionState {
   return { ...makeProgressedState('COMPLETE'), plan: null };
 }
 
-/** Early, in-progress phase with missing evidence → blocked AND evidence incomplete. */
+/** Waiting phase with missing evidence → blocked AND evidence incomplete. */
 function makeBlockedIncompleteState(): SessionState {
-  return makeProgressedState('TICKET');
+  // PLAN_REVIEW under team/regulated policy blocks (waiting on human decision).
+  // But the progressed fixture has complete ticket+plan+self-review evidence.
+  // Strip the plan to make evidence incomplete while staying at the gate.
+  const state = makeProgressedState('PLAN_REVIEW');
+  return { ...state, plan: null };
 }
 
 // ─── MATRIX: overall status ─────────────────────────────────────────────────
@@ -111,19 +116,19 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
 
   it('BLOCKED wins over NOT_VERIFIED when blocked AND evidence incomplete', () => {
     const state = makeBlockedIncompleteState();
-    const readiness = buildReadinessProjection(state, policy);
+    const readiness = buildReadinessProjection(state, blockedPolicy);
     const evidence = buildEvidenceDetailProjection(state);
     // Precondition: this fixture is both blocked and has missing required evidence.
     expect(readiness.blocked).toBe(true);
     expect(
       evidence.slots.some((s) => s.required && (s.status === 'missing' || s.status === 'failed')),
     ).toBe(true);
-    expect(buildFinishCard(state, policy).overallStatus).toBe('BLOCKED');
+    expect(buildFinishCard(state, blockedPolicy).overallStatus).toBe('BLOCKED');
   });
 
   it('exposes canonical blocker detail (blocked=true) when BLOCKED', () => {
     const state = makeBlockedIncompleteState();
-    const card = buildFinishCard(state, policy);
+    const card = buildFinishCard(state, blockedPolicy);
     expect(card.overallStatus).toBe('BLOCKED');
     expect(card.blocker.blocked).toBe(true);
     // Missing required evidence is surfaced in the canonical blocker projection,
@@ -254,7 +259,7 @@ describe('buildFinishCard — guarantees and non-normative action framing', () =
   });
 
   it('does not recommend proceeding when BLOCKED', () => {
-    const blocked = buildFinishCard(makeBlockedIncompleteState(), policy);
+    const blocked = buildFinishCard(makeBlockedIncompleteState(), blockedPolicy);
     const proceed = blocked.actionGuidance.filter(
       (g) => g.action === 'create PR' || g.action === 'export evidence',
     );

@@ -121,7 +121,7 @@ function preflight(
     return {
       status: 'blocked',
       guarantee: 'eligible_to_attempt',
-      reasonCode: 'WORKFLOW_COMMAND_NOT_ALLOWED',
+      reasonCode: 'CONTINUE_AMBIGUOUS',
       message: 'Continue requires a selected workflow. Choose a flow first.',
       recovery: 'Run /task, /architecture, or /review to select a flow.',
     };
@@ -288,7 +288,10 @@ function buildCommandDetail(state: SessionState | null, requestedInvocation: str
 }
 
 function buildNoSessionResult(): HelpResult {
-  const hydrate = INSTALLED_COMMANDS.find((definition) => definition.id === 'workflow.hydrate')!;
+  const start = INSTALLED_COMMANDS.find(
+    (definition) =>
+      definition.target.toolName === TOOL_FLOWGUARD_HYDRATE && definition.visibility === 'primary',
+  )!;
   const status = INSTALLED_COMMANDS.find((definition) => definition.id === 'operational.status')!;
   return {
     phase: null,
@@ -303,9 +306,9 @@ function buildNoSessionResult(): HelpResult {
     nextActionSummary: 'Start a governed session.',
     evidenceCompleteness: buildEvidenceCompleteness(null),
     archiveVerification: buildArchiveVerification(null),
-    nextAction: projectCommand(hydrate, null, 'recommended'),
+    nextAction: projectCommand(start, null, 'recommended'),
     commands: [
-      projectCommand(hydrate, null, 'recommended'),
+      projectCommand(start, null, 'recommended'),
       projectCommand(status, null, 'available'),
     ],
   };
@@ -355,6 +358,8 @@ function buildSessionHelpResult(
 
   const status = buildStatusProjection(state, policy);
   const finish = buildFinishCard(state, policy, currentReport);
+  // READY is an orientation state where the user must choose a flow.
+  // It is not blocked (no gate) and not verifiable (no evidence yet).
   const readiness = state.phase === 'READY' ? 'none' : finishToReadiness(finish.overallStatus);
   const recommendationQuality = projectRecommendationQuality(reportResolution);
 

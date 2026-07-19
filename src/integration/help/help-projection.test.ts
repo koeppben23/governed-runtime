@@ -77,10 +77,10 @@ describe('buildHelpResult', () => {
     expect(ef?.status).toBe('blocked');
   });
 
-  it('no-session help shows only hydrate and status', () => {
+  it('no-session help recommends /start, not /hydrate', () => {
     const result = buildHelpResult(null, null, { view: 'context' });
-    expect(result.nextAction?.invocation).toBe('/hydrate');
-    expect(result.commands.map((command) => command.invocation)).toEqual(['/hydrate', '/status']);
+    expect(result.nextAction?.invocation).toBe('/start');
+    expect(result.commands.map((command) => command.invocation)).toEqual(['/start', '/status']);
   });
 
   it('/commands --all has a formal interface identity', () => {
@@ -217,7 +217,7 @@ describe('buildHelpResult', () => {
     expect(invocations).not.toContain('/hydrate');
   });
 
-  it('/continue is blocked at READY', () => {
+  it('/continue is blocked at READY with canonical CONTINUE_AMBIGUOUS code', () => {
     const all = buildHelpResult(makeProgressedState('READY'), TEAM_POLICY, {
       view: 'commands',
       scope: 'all',
@@ -225,5 +225,8 @@ describe('buildHelpResult', () => {
     const allContinue = all.commands.find((command) => command.invocation === '/continue');
     expect(allContinue?.preflight.status).toBe('blocked');
     expect(allContinue?.visibility).toBe('blocked_recoverable');
+    if (allContinue?.preflight.status === 'blocked') {
+      expect(allContinue.preflight.reasonCode).toBe('CONTINUE_AMBIGUOUS');
+    }
   });
 });

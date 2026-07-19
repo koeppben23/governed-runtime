@@ -389,7 +389,7 @@ export function buildBlockedProjection(
   const next = resolveNextAction(state.phase, state);
   const completeness = evaluateCompleteness(state);
 
-  const blocked = evalResult.kind === 'waiting' || evalResult.kind === 'pending';
+  const blocked = evalResult.kind === 'waiting';
   const missingEvidence = completeness.slots
     .filter((slot) => slot.required && (slot.status === 'missing' || slot.status === 'failed'))
     .map((slot) => ({
@@ -454,7 +454,7 @@ export function buildReadinessProjection(
 ): ReadinessProjection {
   const completeness = evaluateCompleteness(state);
   const evalResult = evaluate(state, { requireHumanGates: policy.requireHumanGates });
-  const blocked = evalResult.kind === 'waiting' || evalResult.kind === 'pending';
+  const blocked = evalResult.kind === 'waiting';
   const snapshot = state.policySnapshot;
   const warnings: string[] = [];
 

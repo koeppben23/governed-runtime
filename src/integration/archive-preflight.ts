@@ -11,6 +11,7 @@ export type CommandPreflightReason =
   | 'TERMINAL_PHASE_REQUIRED'
   | 'ABORTED_SESSION'
   | 'WORKFLOW_COMMAND_NOT_ALLOWED'
+  | 'CONTINUE_AMBIGUOUS'
   | 'NOT_APPLICABLE_TO_ACTIVE_FLOW';
 
 export type CommandPreflight =
