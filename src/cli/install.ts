@@ -121,55 +121,48 @@ function isValidLogMode(value: string): value is 'file' | 'console' | 'file+cons
   return value === 'file' || value === 'console' || value === 'file+console';
 }
 
-function trySetInstallScope(st: ParseState, value: string | null): boolean {
-  if (value && isValidScope(value)) {
-    st.installScope = value;
-    return true;
-  }
-  return false;
+function validateAndSetScope(st: ParseState, flag: string, value: string): string | true {
+  if (!isValidScope(value)) return `Invalid install scope: ${value}`;
+  st.installScope = value;
+  return true;
 }
-function trySetPlatform(st: ParseState, value: string | null): boolean {
-  if (value && isValidPlatform(value)) {
-    st.installPlatform = value;
-    return true;
-  }
-  return false;
+
+function validateAndSetPlatform(st: ParseState, flag: string, value: string): string | true {
+  if (!isValidPlatform(value)) return `Invalid platform: ${value}`;
+  st.installPlatform = value;
+  return true;
 }
-function trySetPolicyMode(st: ParseState, value: string | null): boolean {
-  if (value && isValidPolicyMode(value)) {
-    st.policyMode = value;
-    return true;
-  }
-  return false;
-}
-function trySetTarball(st: ParseState, value: string | null): boolean {
-  if (value) {
-    st.coreTarball = value;
-    return true;
-  }
-  return false;
-}
-function trySetChecksums(st: ParseState, value: string | null): boolean {
-  if (value) {
-    st.checksumsFile = value;
-    return true;
-  }
-  return false;
-}
-function trySetLogMode(st: ParseState, value: string | null): boolean {
-  if (value && isValidLogMode(value)) {
-    st.logMode = value;
-    return true;
-  }
-  return false;
-}
-function trySetDeprecatedMode(st: ParseState, deps: string[], value: string | null): boolean {
-  if (value && isValidPolicyMode(value)) {
+
+function validateAndSetPolicyMode(
+  st: ParseState,
+  deps: string[],
+  flag: string,
+  value: string,
+): string | true {
+  if (!isValidPolicyMode(value)) return `Invalid policy mode: ${value}`;
+  if (flag === '--mode') {
     st.policyMode = value;
     deps.push('--mode is deprecated, use --policy-mode');
-    return true;
+  } else {
+    st.policyMode = value;
   }
-  return false;
+  return true;
+}
+
+function validateAndSetLogMode(st: ParseState, flag: string, value: string): string | true {
+  if (!isValidLogMode(value)) return `Invalid log mode: ${value}`;
+  st.logMode = value;
+  return true;
+}
+
+function validateAndSetTarball(st: ParseState, flag: string, value: string): true {
+  st.coreTarball = value;
+  return true;
+}
+
+function validateAndSetChecksums(st: ParseState, flag: string, value: string): true {
+  st.checksumsFile = value;
+  return true;
 }
 
 function handleValueFlag(
@@ -177,25 +170,26 @@ function handleValueFlag(
   deps: string[],
   flag: string,
   value: string | null,
-): boolean {
+): string | true {
+  if (value === null) return `${flag} requires a value`;
+
   switch (flag) {
     case '--install-scope':
-      return trySetInstallScope(st, value);
+      return validateAndSetScope(st, flag, value);
     case '--platform':
     case '--host':
-      return trySetPlatform(st, value);
+      return validateAndSetPlatform(st, flag, value);
     case '--policy-mode':
-      return trySetPolicyMode(st, value);
-    case '--core-tarball':
-      return trySetTarball(st, value);
-    case '--checksums-file':
-      return trySetChecksums(st, value);
-    case '--log-mode':
-      return trySetLogMode(st, value);
     case '--mode':
-      return trySetDeprecatedMode(st, deps, value);
+      return validateAndSetPolicyMode(st, deps, flag, value);
+    case '--core-tarball':
+      return validateAndSetTarball(st, flag, value);
+    case '--checksums-file':
+      return validateAndSetChecksums(st, flag, value);
+    case '--log-mode':
+      return validateAndSetLogMode(st, flag, value);
   }
-  return false;
+  return `Unknown option: ${flag}`;
 }
 
 function parseOneArg(
@@ -204,7 +198,7 @@ function parseOneArg(
   arg: string,
   argv: string[],
   i: number,
-): number {
+): number | string {
   if (arg === '--help' || arg === '-h') return -2;
 
   const valueFlags = new Set([
@@ -219,7 +213,8 @@ function parseOneArg(
 
   if (valueFlags.has(arg) || arg === '--mode') {
     const value = readNextValue(argv, i);
-    if (!handleValueFlag(st, deps, arg, value)) return -1;
+    const result = handleValueFlag(st, deps, arg, value);
+    if (result !== true) return result;
     return 2;
   }
 
@@ -287,6 +282,8 @@ function parseInstallArgs(
     if (arg === undefined) return { kind: 'error', error: 'Unexpected empty argument' };
     const advance = parseOneArg(st, deprecations, arg, argv, i);
     if (advance === -2) return { kind: 'help' };
+    if (typeof advance === 'string')
+      return { kind: 'error', error: advance, hint: 'Use --help for usage' };
     if (advance < 0)
       return { kind: 'error', error: `Unknown option: ${arg}`, hint: 'Use --help for usage' };
     i += advance;
@@ -306,8 +303,11 @@ function parseInstallArgs(
 export function parseArgs(
   argv: string[],
 ): CliParseResult<{ args: CliArgs; deprecations: string[] }> {
-  const action = argv[0] as CliAction | undefined;
-  if (!action || !VALID_ACTIONS.includes(action)) {
+  const action = argv[0];
+  if (action === '--help' || action === '-h') {
+    return { kind: 'help' };
+  }
+  if (!action || !VALID_ACTIONS.includes(action as CliAction)) {
     return {
       kind: 'error',
       error: action ? `Unknown command: ${action}` : 'No command specified',
@@ -319,7 +319,7 @@ export function parseArgs(
     return makeDelegatedResult(action);
   }
 
-  return parseInstallArgs(action, argv);
+  return parseInstallArgs(action as CliAction, argv);
 }
 
 // ─── CLI Entry Point ──────────────────────────────────────────────────────────
@@ -544,7 +544,8 @@ async function executeDoctorAction(args: CliArgs, cliLog: FlowGuardLogger): Prom
   console.log(`Checking FlowGuard for ${hostName} at ${displayTarget}...`);
   console.log('');
   console.log(formatDoctor(checks, platform));
-  const hasFailure = checks.some((c) => c.status !== 'ok' && c.status !== 'warn');
+  const hasFailure =
+    checks.length === 0 || checks.some((c) => c.status !== 'ok' && c.status !== 'warn');
   logShippedExecutableFailures(checks, cliLog);
   cliLog.info('cli', 'doctor completed', {
     totalChecks: checks.length,
