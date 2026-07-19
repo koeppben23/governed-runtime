@@ -69,13 +69,17 @@ export function projectStatusConclusion(
       projectStatusActionFromCommand(invocation, 'available'),
     );
 
-    // A waiting gate with no resolvable commands is a data-integrity error —
-    // surface as terminal with the reason rather than an empty decision.
+    // A waiting gate with no resolvable commands is a data-integrity error.
+    // It must not be silently surfaced as a terminal conclusion — a waiting
+    // gate is not terminal, and the presentation layer must not invent
+    // fallback text to cover a contract deficiency.
     if (actions.length === 0) {
-      return {
-        kind: 'terminal',
-        message: `Blocked: ${evalResult.reason}`,
-      };
+      throw Object.assign(
+        new Error(
+          `StatusProjection: waiting gate has no canonical decision actions: ${evalResult.reason}`,
+        ),
+        { code: 'STATUS_DECISION_PROJECTION_EMPTY' },
+      );
     }
 
     return {
