@@ -195,6 +195,29 @@ describe('documentation/user-docs-drift', () => {
       expect(section).toContain('Built-in default: `team`');
       expect(section).toContain('installer persists `--policy-mode`');
     });
+
+    it('host-selection matrix documents enforcement levels and restart activation', () => {
+      const content = readDoc('docs/installation.md');
+      expect(content).toContain('## Host Selection Matrix');
+
+      // All three hosts present
+      expect(content).toContain('OpenCode');
+      expect(content).toContain('Claude Code');
+      expect(content).toContain('Codex');
+
+      // Enforcement levels from authority
+      expect(content).toContain('`synchronous`');
+      expect(content).toContain('`hook_gated`');
+
+      // Each host requires restart for activation
+      expect(content).toMatch(/Restart OpenCode/);
+      expect(content).toMatch(/Restart Claude/);
+      expect(content).toMatch(/Restart Codex/);
+
+      // Key limitations present
+      expect(content).toContain('Hook timeout');
+      expect(content).toContain('NOT_VERIFIED_NATIVE_LOAD');
+    });
   });
 
   describe('EDGE — docs/policies.md policy table matches runtime gates', () => {

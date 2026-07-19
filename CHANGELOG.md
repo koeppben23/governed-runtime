@@ -102,6 +102,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`IMPL_VALIDATION` → `flowguard_run_check`) before entering the review loop,
   closing the gate that was visible in README but missing from the template.
 
+- **CLI errors, defaults, doctor outcomes, and host targets actionable (#687).**
+  Shared `CliParseResult` discriminated-union contract (`ok`/`help`/`error`)
+  adopted across all CLI parsers. Invalid commands and flags emit precise errors
+  to stderr with exit 2; `--help` (root and subcommand) exits 0. Usage corrected
+  from `solo (default)` to `team (default)`. Install/uninstall/doctor output
+  names the selected host and resolved target path. `flowguard run --` joins all
+  tokens after the separator. Doctor output now renders `HEALTHY`,
+  `HEALTHY_WITH_WARNINGS`, or `NOT_VERIFIED` with host-specific recovery guidance.
+  Installation docs include host-selection matrix with enforcement levels and
+  activation requirements per platform.
+
 - **Reviewer children are isolated from FlowGuard workflow tools (F14).** The OpenCode
   reviewer capability profile now denies both direct `flowguard_*` and MCP-prefixed
   `mcp__flowguard__*` tools and denies `task`, while retaining `read`, `glob`, and

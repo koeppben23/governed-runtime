@@ -111,7 +111,7 @@ describe('cli/formatResult', () => {
         { file: 'b.ts', status: 'missing' },
         { file: 'c.ts', status: 'ok' },
       ];
-      const output = formatDoctor(checks);
+      const output = formatDoctor(checks, 'opencode');
       expect(output).toContain('2/3 checks passed');
     });
 
@@ -126,7 +126,7 @@ describe('cli/formatResult', () => {
         { file: 'g', status: 'instruction_stale' },
         { file: 'h', status: 'error', detail: 'malformed' },
       ];
-      const output = formatDoctor(checks);
+      const output = formatDoctor(checks, 'opencode');
       expect(output).toContain('[ok]');
       expect(output).toContain('[MISSING]');
       expect(output).toContain('[MODIFIED]');
@@ -172,14 +172,14 @@ describe('cli/main', () => {
   });
 
   describe('BAD', () => {
-    it('returns 1 for invalid args', async () => {
+    it('returns 2 for invalid args', async () => {
       const code = await main([]);
-      expect(code).toBe(1);
+      expect(code).toBe(2);
     });
 
-    it('returns 1 for unknown command', async () => {
+    it('returns 2 for unknown command', async () => {
       const code = await main(['deploy']);
-      expect(code).toBe(1);
+      expect(code).toBe(2);
     });
 
     it('returns 1 when install is called without --core-tarball', async () => {
