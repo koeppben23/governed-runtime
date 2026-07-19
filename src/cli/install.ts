@@ -121,13 +121,13 @@ function isValidLogMode(value: string): value is 'file' | 'console' | 'file+cons
   return value === 'file' || value === 'console' || value === 'file+console';
 }
 
-function validateAndSetScope(st: ParseState, flag: string, value: string): string | true {
+function validateAndSetScope(st: ParseState, value: string): string | true {
   if (!isValidScope(value)) return `Invalid install scope: ${value}`;
   st.installScope = value;
   return true;
 }
 
-function validateAndSetPlatform(st: ParseState, flag: string, value: string): string | true {
+function validateAndSetPlatform(st: ParseState, value: string): string | true {
   if (!isValidPlatform(value)) return `Invalid platform: ${value}`;
   st.installPlatform = value;
   return true;
@@ -149,18 +149,18 @@ function validateAndSetPolicyMode(
   return true;
 }
 
-function validateAndSetLogMode(st: ParseState, flag: string, value: string): string | true {
+function validateAndSetLogMode(st: ParseState, value: string): string | true {
   if (!isValidLogMode(value)) return `Invalid log mode: ${value}`;
   st.logMode = value;
   return true;
 }
 
-function validateAndSetTarball(st: ParseState, flag: string, value: string): true {
+function validateAndSetTarball(st: ParseState, value: string): true {
   st.coreTarball = value;
   return true;
 }
 
-function validateAndSetChecksums(st: ParseState, flag: string, value: string): true {
+function validateAndSetChecksums(st: ParseState, value: string): true {
   st.checksumsFile = value;
   return true;
 }
@@ -175,19 +175,19 @@ function handleValueFlag(
 
   switch (flag) {
     case '--install-scope':
-      return validateAndSetScope(st, flag, value);
+      return validateAndSetScope(st, value);
     case '--platform':
     case '--host':
-      return validateAndSetPlatform(st, flag, value);
+      return validateAndSetPlatform(st, value);
     case '--policy-mode':
     case '--mode':
       return validateAndSetPolicyMode(st, deps, flag, value);
     case '--core-tarball':
-      return validateAndSetTarball(st, flag, value);
+      return validateAndSetTarball(st, value);
     case '--checksums-file':
-      return validateAndSetChecksums(st, flag, value);
+      return validateAndSetChecksums(st, value);
     case '--log-mode':
-      return validateAndSetLogMode(st, flag, value);
+      return validateAndSetLogMode(st, value);
   }
   return `Unknown option: ${flag}`;
 }

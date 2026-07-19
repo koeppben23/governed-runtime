@@ -148,10 +148,11 @@ function runCli(
   });
 
   describe('CORNER — doctor and install output', () => {
-    it('doctor on empty repo reports NOT_VERIFIED', async () => {
+    it('doctor on empty repo reports NOT_VERIFIED with non-zero exit', async () => {
       const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-smoke-doctor-'));
       try {
         const r = await runCli(['doctor', '--install-scope', 'repo'], { cwd: tmpDir });
+        expect(r.code).not.toBe(0);
         expect(r.stdout).toContain('NOT_VERIFIED');
       } finally {
         await fs.rm(tmpDir, { recursive: true, force: true });
