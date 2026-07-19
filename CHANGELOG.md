@@ -89,6 +89,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Configuration documentation safe by default (#688).** The primary configuration
+  example now uses minimal `{ "schemaVersion": "v1" }` instead of explicitly setting
+  `policy.defaultMode` to `solo` (auto-approval). Documented `maxSelfReviewIterations`
+  and `maxImplReviewIterations` ranges corrected from `1-20` to `1-10`, matching
+  `FlowGuardConfigSchema`. New documentation-contract drift tests added.
+
 - **Reviewer children are isolated from FlowGuard workflow tools (F14).** The OpenCode
   reviewer capability profile now denies both direct `flowguard_*` and MCP-prefixed
   `mcp__flowguard__*` tools and denies `task`, while retaining `read`, `glob`, and

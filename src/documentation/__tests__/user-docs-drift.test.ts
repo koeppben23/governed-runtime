@@ -14,6 +14,7 @@ import { COMMAND_ALIASES } from '../../integration/command-aliases.js';
 import { TRANSITIONS, USER_GATES } from '../../machine/topology.js';
 import { Phase } from '../../state/schema.js';
 import { COMMANDS } from '../../templates/commands/index.js';
+import { FlowGuardConfigSchema } from '../../config/flowguard-config.js';
 import { REGULATED_POLICY, SOLO_POLICY, TEAM_CI_POLICY, TEAM_POLICY } from '../../config/policy.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -61,6 +62,29 @@ function policyModes(): string[] {
   return [SOLO_POLICY, TEAM_POLICY, TEAM_CI_POLICY, REGULATED_POLICY]
     .map((policy) => policy.mode)
     .sort();
+}
+
+function extractSettingSection(content: string, setting: string): string {
+  const escaped = setting.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = content.match(new RegExp(`^### ${escaped}\\n([\\s\\S]*?)(?=^### |\\Z)`, 'm'));
+  if (!match?.[1]) throw new Error(`Missing documentation section for ${setting}`);
+  return match[1];
+}
+
+function extractJsonExample(content: string, sectionHeading: string): unknown {
+  const sectionIdx = content.indexOf(sectionHeading);
+  if (sectionIdx < 0) throw new Error(`Missing section: ${sectionHeading}`);
+  const blockMatch = content.slice(sectionIdx).match(/```json\s*\n([\s\S]*?)\n```/);
+  if (!blockMatch?.[1]) throw new Error(`Missing JSON example in ${sectionHeading}`);
+  try {
+    return JSON.parse(blockMatch[1]);
+  } catch (error) {
+    throw new Error(
+      `Invalid JSON in ${sectionHeading}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 }
 
 describe('documentation/user-docs-drift', () => {
@@ -124,6 +148,40 @@ describe('documentation/user-docs-drift', () => {
       expect(content).toContain(
         `solo=${SOLO_POLICY.maxImplReviewIterations}, team=${TEAM_POLICY.maxImplReviewIterations}, team-ci=${TEAM_CI_POLICY.maxImplReviewIterations}, regulated=${REGULATED_POLICY.maxImplReviewIterations}`,
       );
+    });
+
+    it('configuration schema example validates against FlowGuardConfigSchema', () => {
+      const example = extractJsonExample(
+        readDoc('docs/configuration.md'),
+        '## Configuration Schema',
+      );
+      const result = FlowGuardConfigSchema.safeParse(example);
+      expect(result.success).toBe(true);
+    });
+
+    it('documents the built-in policy default from TEAM_POLICY authority', () => {
+      const content = readDoc('docs/configuration.md');
+      expect(TEAM_POLICY.mode).toBe('team');
+      expect(content).toContain('**Default:** `team`');
+      expect(content).toContain('Built-in default: `team`');
+    });
+
+    it('review iteration bounds match schema max(10) for both fields', () => {
+      const content = readDoc('docs/configuration.md');
+      for (const setting of ['policy.maxSelfReviewIterations', 'policy.maxImplReviewIterations']) {
+        const section = extractSettingSection(content, setting);
+        expect(section, `${setting} must document correct range`).toContain('`number` (1-10)');
+        expect(section, `${setting} must not contain stale 1-20`).not.toContain('(1-20)');
+      }
+    });
+
+    it('distinguishes explicit, persisted, and built-in policy mode sources', () => {
+      const content = readDoc('docs/configuration.md');
+      const section = extractSettingSection(content, 'policy.defaultMode');
+      expect(section).toContain('Explicit `/hydrate` tool argument');
+      expect(section).toContain('`flowguard.json`');
+      expect(section).toContain('Built-in default: `team`');
+      expect(section).toContain('installer persists `--policy-mode`');
     });
   });
 
