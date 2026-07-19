@@ -101,7 +101,7 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     invocation: '/hydrate',
     kind: 'workflow',
     target: { toolName: TOOL_FLOWGUARD_HYDRATE, workflowCommand: Command.HYDRATE },
-    visibility: 'primary',
+    visibility: 'compatibility',
     presentationGroup: 'start',
     description: 'Prepare or restore a governed session.',
   },

@@ -199,4 +199,31 @@ describe('buildHelpResult', () => {
     expect(result.evidenceCompleteness.status).toBeDefined();
     expect(result.archiveVerification.status).toBeDefined();
   });
+
+  it('READY is orientation, not blocked', () => {
+    const result = buildHelpResult(makeProgressedState('READY'), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.readiness).toBe('none');
+    expect(result.nextAction?.invocation).toBe('/task');
+  });
+
+  it('/start is primary, /hydrate is compatibility', () => {
+    const result = buildHelpResult(makeProgressedState('READY'), TEAM_POLICY, {
+      view: 'commands',
+    });
+    const invocations = result.commands.map((command) => command.invocation);
+    expect(invocations).toContain('/start');
+    expect(invocations).not.toContain('/hydrate');
+  });
+
+  it('/continue is blocked at READY', () => {
+    const all = buildHelpResult(makeProgressedState('READY'), TEAM_POLICY, {
+      view: 'commands',
+      scope: 'all',
+    });
+    const allContinue = all.commands.find((command) => command.invocation === '/continue');
+    expect(allContinue?.preflight.status).toBe('blocked');
+    expect(allContinue?.visibility).toBe('blocked_recoverable');
+  });
 });

@@ -116,6 +116,16 @@ function preflight(
       recovery: 'Run /hydrate to initialize a session.',
     };
   }
+  // /continue at READY deterministically yields CONTINUE_AMBIGUOUS.
+  if (definition.id === 'workflow.continue' && state.phase === 'READY') {
+    return {
+      status: 'blocked',
+      guarantee: 'eligible_to_attempt',
+      reasonCode: 'WORKFLOW_COMMAND_NOT_ALLOWED',
+      message: 'Continue requires a selected workflow. Choose a flow first.',
+      recovery: 'Run /task, /architecture, or /review to select a flow.',
+    };
+  }
   if (
     definition.id !== 'workflow.continue' &&
     definition.id !== 'workflow.abort' &&
@@ -345,7 +355,7 @@ function buildSessionHelpResult(
 
   const status = buildStatusProjection(state, policy);
   const finish = buildFinishCard(state, policy, currentReport);
-  const readiness = finishToReadiness(finish.overallStatus);
+  const readiness = state.phase === 'READY' ? 'none' : finishToReadiness(finish.overallStatus);
   const recommendationQuality = projectRecommendationQuality(reportResolution);
 
   const recommended = findRecommendation(status.productNextAction.primaryCommand);
