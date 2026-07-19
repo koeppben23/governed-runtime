@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { TEAM_POLICY } from '../../config/policy.js';
-import { makeProgressedState, makeState } from '../../fixtures.js';
+import { makeProgressedState, makeState, TICKET } from '../../fixtures.js';
 import { buildHelpResult, finishToReadiness } from './help-projection.js';
 import { buildFinishCard } from '../status.js';
 import { resolveCurrentReviewReport } from '../review/report-coherence.js';
@@ -238,5 +238,69 @@ describe('buildHelpResult', () => {
     if (allContinue?.preflight.status === 'blocked') {
       expect(allContinue.preflight.reasonCode).toBe('CONTINUE_AMBIGUOUS');
     }
+  });
+});
+
+// ── Artifacts ─────────────────────────────────────────────────────────
+
+describe('HelpResult artifacts', () => {
+  it('ticket available when state has ticket', () => {
+    const result = buildHelpResult(makeState('TICKET', { ticket: TICKET }), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.artifacts.ticket.status).toBe('available');
+    expect(result.artifacts.ticket.digest).toBe('digest-of-ticket');
+    expect(result.artifacts.ticket.preview).toBe('Fix the auth bug in login.ts');
+    expect(result.artifacts.ticket.content).toBeNull();
+  });
+
+  it('ticket content populated with includeArtifactContent', () => {
+    const result = buildHelpResult(makeState('TICKET', { ticket: TICKET }), TEAM_POLICY, {
+      view: 'context',
+      includeArtifactContent: true,
+    });
+    expect(result.artifacts.ticket.content).toBe('Fix the auth bug in login.ts');
+  });
+
+  it('ticket not_verified when state has no ticket', () => {
+    const result = buildHelpResult(makeState('READY'), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.artifacts.ticket.status).toBe('not_verified');
+    expect(result.artifacts.ticket.workflowNextAction).toBeTruthy();
+  });
+
+  it('currentPlan available with version = history.length + 1', () => {
+    const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.artifacts.currentPlan.status).toBe('available');
+    expect(result.artifacts.currentPlan.digest).toBe('digest-of-plan');
+    expect(result.artifacts.currentPlanVersion).toBe(1); // history: [] → 0 + 1
+  });
+
+  it('artifacts partial when only ticket exists', () => {
+    const result = buildHelpResult(makeState('TICKET', { ticket: TICKET }), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.artifacts.ticket.status).toBe('available');
+    expect(result.artifacts.currentPlan.status).toBe('not_verified');
+    expect(result.artifacts.status).toBe('partial');
+  });
+
+  it('no session → all not_verified', () => {
+    const result = buildHelpResult(null, null, { view: 'context' });
+    expect(result.artifacts.ticket.status).toBe('not_verified');
+    expect(result.artifacts.currentPlan.status).toBe('not_verified');
+    expect(result.artifacts.status).toBe('not_verified');
+  });
+});
+
+describe('HelpResult blocker', () => {
+  it('blocker null when no status blocker', () => {
+    const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.blocker).toBeNull();
   });
 });

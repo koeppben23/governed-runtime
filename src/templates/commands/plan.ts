@@ -29,7 +29,13 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 2: Generate Plan
 
-2. Use the ticket already provided in this session as the source of truth for the task. (The ticket text is NOT included in the flowguard_status response — status only confirms \`hasTicket\` and the phase. Use the ticket content from the user's request / the /ticket step.)
+2. Use the ticket already provided in this session as the source of truth for the task. (The ticket
+   text is NOT included in the flowguard_status response — status only confirms \`hasTicket\` and
+   the phase. If the ticket text is no longer available in this conversation context, run
+   \`/help\` first to verify the session state and artifact digest, then call
+   \`flowguard_help({ view: "context", includeArtifactContent: true })\` to retrieve the complete
+   canonical ticket content. Use ONLY the returned content — do not reconstruct or infer task
+   details from metadata alone.)
 3. Write a detailed implementation plan in markdown with these 7 required sections:
    - \`## Objective\` — 1-3 sentences: what is being built and why.
    - \`## Approach\` — Technical strategy with specific patterns, libraries, or architecture decisions.

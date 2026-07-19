@@ -11,12 +11,19 @@ import { buildHelpResult } from '../help/help-projection.js';
 import { renderHelp } from '../help/help-renderer.js';
 
 const HelpArgsSchema = z.discriminatedUnion('view', [
-  z.object({ view: z.literal('context'), verbose: z.boolean().optional() }).strict(),
+  z
+    .object({
+      view: z.literal('context'),
+      verbose: z.boolean().optional(),
+      includeArtifactContent: z.boolean().optional(),
+    })
+    .strict(),
   z
     .object({
       view: z.literal('commands'),
       scope: z.enum(['available', 'all']),
       verbose: z.boolean().optional(),
+      includeArtifactContent: z.boolean().optional(),
     })
     .strict(),
   z
@@ -31,12 +38,14 @@ const HelpArgsSchema = z.discriminatedUnion('view', [
 export const help: ToolDefinition = {
   description:
     'Read-only context-sensitive FlowGuard help. Use view=context for /help, view=commands ' +
-    'with scope=available or all for /commands, and view=command with a command name for details.',
+    'with scope=available or all for /commands, and view=command with a command name for details. ' +
+    'For resume after compaction, set includeArtifactContent: true to retrieve full ticket and plan text.',
   args: {
     view: z.enum(['context', 'commands', 'command']),
     scope: z.enum(['available', 'all']).optional(),
     command: z.string().min(1).optional(),
     verbose: z.boolean().optional(),
+    includeArtifactContent: z.boolean().optional(),
   },
   async execute(args, context) {
     try {
@@ -60,8 +69,15 @@ export const help: ToolDefinition = {
         ...(view.view === 'command'
           ? { requestedInvocation: `/${view.command.replace(/^\/+/, '')}` }
           : {}),
+        includeArtifactContent:
+          view.view !== 'command' ? (view.includeArtifactContent ?? false) : false,
       });
-      return renderHelp(result, view.verbose ?? false);
+      return renderHelp(result, {
+        format: view.verbose ? 'json' : 'markdown',
+        verbose: view.verbose ?? false,
+        includeArtifactContent:
+          view.view !== 'command' ? (view.includeArtifactContent ?? false) : false,
+      });
     } catch (err) {
       return formatError(err);
     }

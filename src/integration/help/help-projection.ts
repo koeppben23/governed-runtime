@@ -65,6 +65,26 @@ export interface RecommendationQuality {
   readonly summary: string;
 }
 
+export interface ArtifactSlot {
+  readonly status: 'available' | 'not_verified';
+  readonly digest: string | null;
+  readonly preview: string | null;
+  readonly content: string | null;
+  readonly workflowNextAction: string | null;
+}
+
+export interface HelpArtifacts {
+  readonly ticket: ArtifactSlot;
+  readonly currentPlan: ArtifactSlot;
+  readonly currentPlanVersion: number | null;
+  readonly status: 'available' | 'partial' | 'not_verified';
+}
+
+export interface HelpBlocker {
+  readonly reasonCode: string | null;
+  readonly message: string | null;
+}
+
 export interface HelpResult {
   readonly phase: Readonly<{ id: string; label: string }> | null;
   readonly lifecycle: string;
@@ -76,9 +96,104 @@ export interface HelpResult {
   readonly archiveVerification: ArchiveVerification;
   readonly nextAction: ProjectedCommand | null;
   readonly commands: readonly ProjectedCommand[];
+  readonly artifacts: HelpArtifacts;
+  readonly blocker: HelpBlocker | null;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────
+
+const EMPTY_ARTIFACT_SLOT: ArtifactSlot = {
+  status: 'not_verified',
+  digest: null,
+  preview: null,
+  content: null,
+  workflowNextAction: null,
+};
+
+const EMPTY_ARTIFACTS: HelpArtifacts = {
+  ticket: EMPTY_ARTIFACT_SLOT,
+  currentPlan: EMPTY_ARTIFACT_SLOT,
+  currentPlanVersion: null,
+  status: 'not_verified',
+};
+
+function firstLinePreview(body: string): string {
+  const idx = body.indexOf('\n');
+  const line = idx === -1 ? body : body.slice(0, idx);
+  return line.length <= 200 ? line : line.slice(0, 197) + '...';
+}
+
+function buildArtifacts(
+  state: SessionState | null,
+  includeContent: boolean,
+  nextActionSummary: string,
+): HelpArtifacts {
+  if (!state) return EMPTY_ARTIFACTS;
+
+  const ticketText = state.ticket?.text ?? null;
+  const planBody = state.plan?.current?.body ?? null;
+  const ticketDigest = state.ticket?.digest ?? null;
+  const planDigest = state.plan?.current?.digest ?? null;
+
+  const ticket: ArtifactSlot = ticketText
+    ? {
+        status: 'available',
+        digest: ticketDigest,
+        preview: firstLinePreview(ticketText),
+        content: includeContent ? ticketText : null,
+        workflowNextAction: null,
+      }
+    : {
+        status: 'not_verified',
+        digest: null,
+        preview: null,
+        content: null,
+        workflowNextAction: nextActionSummary,
+      };
+
+  const plan: ArtifactSlot = planBody
+    ? {
+        status: 'available',
+        digest: planDigest,
+        preview: firstLinePreview(planBody),
+        content: includeContent ? planBody : null,
+        workflowNextAction: null,
+      }
+    : {
+        status: 'not_verified',
+        digest: null,
+        preview: null,
+        content: null,
+        workflowNextAction: nextActionSummary,
+      };
+
+  const overallStatus: HelpArtifacts['status'] =
+    ticket.status === 'available' && plan.status === 'available'
+      ? 'available'
+      : ticket.status === 'available' || plan.status === 'available'
+        ? 'partial'
+        : 'not_verified';
+
+  return {
+    ticket,
+    currentPlan: plan,
+    currentPlanVersion: state.plan ? (state.plan.history?.length ?? 0) + 1 : null,
+    status: overallStatus,
+  };
+}
+
+function buildBlocker(
+  state: SessionState | null,
+  policy: FlowGuardPolicy | null,
+): HelpBlocker | null {
+  if (!state || !policy) return null;
+  const status = buildStatusProjection(state, policy);
+  if (!status.blocker?.reasonCode && !status.blocker?.reasonText) return null;
+  return {
+    reasonCode: status.blocker.reasonCode,
+    message: status.blocker.reasonText,
+  };
+}
 
 function description(definition: InstalledCommandDefinition): string {
   if (definition.target.workflowCommand) {
@@ -286,6 +401,8 @@ function buildCommandDetail(state: SessionState | null, requestedInvocation: str
     archiveVerification: buildArchiveVerification(state),
     nextAction: null,
     commands: command ? [command] : [],
+    artifacts: EMPTY_ARTIFACTS,
+    blocker: null,
   };
 }
 
@@ -313,6 +430,8 @@ function buildNoSessionResult(): HelpResult {
       projectCommand(start, null, 'recommended'),
       projectCommand(status, null, 'available'),
     ],
+    artifacts: EMPTY_ARTIFACTS,
+    blocker: null,
   };
 }
 
@@ -355,6 +474,7 @@ function buildSessionHelpResult(
   view: 'context' | 'commands',
   scope: 'available' | 'all',
   reportResolution: ReviewReportResolution | null,
+  includeArtifactContent: boolean,
 ): HelpResult {
   const currentReport = reportResolution?.status === 'current' ? reportResolution.report : null;
 
@@ -384,6 +504,8 @@ function buildSessionHelpResult(
     archiveVerification: buildArchiveVerification(state),
     nextAction,
     commands: contextCommands,
+    artifacts: buildArtifacts(state, includeArtifactContent, status.productNextAction.summary),
+    blocker: buildBlocker(state, policy),
   };
 }
 
@@ -395,6 +517,7 @@ export function buildHelpResult(
     scope?: 'available' | 'all';
     requestedInvocation?: string;
     reviewReport?: ReviewReport;
+    includeArtifactContent?: boolean;
   },
 ): HelpResult {
   if (opts.requestedInvocation) return buildCommandDetail(state, opts.requestedInvocation);
@@ -408,6 +531,7 @@ export function buildHelpResult(
     view,
     opts.scope ?? 'available',
     resolveReport(state, opts.reviewReport),
+    opts.includeArtifactContent ?? false,
   );
 }
 

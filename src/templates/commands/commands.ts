@@ -16,7 +16,8 @@ Show the currently available FlowGuard commands, or the complete reference.
    - \`--all\`: use \`{ view: "commands", scope: "all" }\`
    - \`--verbose\`: include \`verbose: true\`
 2. Call \`flowguard_help\` with the parsed arguments.
-3. Report the returned command list exactly and concisely.
+3. Read the returned Markdown command list. Present it verbatim. The Markdown contains phase,
+   readiness, next action, and available commands. Do not summarize or restructure it.
 
 ## Rules
 
@@ -27,5 +28,5 @@ ${GOVERNANCE_RULES}
 ## Done-when
 
 - Commands were retrieved through \`flowguard_help\`.
-- Output reflects the returned FlowGuard projection without inferred availability.
+- Markdown command list rendered verbatim.
 `;
