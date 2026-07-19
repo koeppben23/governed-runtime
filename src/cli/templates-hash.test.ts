@@ -182,7 +182,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // entering the review loop, closing the gap between README and template.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '1e946d761191f66acaa2aec555775f81eee24f4392fbe4dbf2c4c7fc9b484bbb',
+      'df1e6cd5267ba70d815bd1b6953765f4bb6529a9ca59cd272c1e03c3b2a3cc70',
     );
   });
 

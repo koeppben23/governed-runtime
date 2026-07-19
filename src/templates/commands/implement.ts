@@ -39,14 +39,20 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 3: Post-Implementation Validation
 
- 5. Read the \`next\` field from the \`flowguard_implement\` response. The session is now in
-    IMPL_VALIDATION. Automatically call \`flowguard_run_check({})\` for each active check
-    to re-run the validation against the implemented code (distinct from the
-    pre-implementation VALIDATION baseline).
-    - All checks pass → advances to IMPL_REVIEW. Proceed to Phase 4.
+ 5. Call \`flowguard_status\` again with NO focused flags (no whyBlocked/evidence/context/readiness)
+    to get the full projection, then read \`activeChecks\` (equivalently \`remainingChecks\` in
+    IMPL_VALIDATION). The session is now in IMPL_VALIDATION after recording evidence.
+    - If both \`activeChecks\` and \`verificationCandidates\` are empty: report no active checks
+      and skip to Phase 5 (the review loop will handle the next gate).
+    - For each kind in \`activeChecks\` (or \`remainingChecks\`), call
+      \`flowguard_run_check({ kind: "<kind>" })\` to re-run the check against the implemented
+      code (distinct from the pre-implementation VALIDATION baseline).
+    - If the final \`flowguard_run_check\` response has phase \`IMPL_REVIEW\`: proceed to Phase 5
+      (Implementation Review Loop).
     - Any check fails → routes back to IMPLEMENTATION. Fix the code, then call
       \`flowguard_implement({})\` again to re-record evidence (return to Phase 2 step 4).
-    - Executor timeout/error → retry \`flowguard_run_check\` in place.
+    - Executor timeout/error on a single check → retry that \`flowguard_run_check({ kind })\`
+      exactly once. If it fails again, stop and report the error — do not retry unbounded.
 
 ### Phase 4: Record Verification Evidence
 
@@ -97,15 +103,17 @@ Happy path:
 1. \`flowguard_status\` → phase: IMPLEMENTATION, plan approved
 2. (execute plan steps: read/write/edit/bash)
 3. \`flowguard_implement({})\` → records evidence, session advances to IMPL_VALIDATION
-4. \`flowguard_run_check({})\` (auto) → checks pass, advances to IMPL_REVIEW
-5. \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the implementation)
+4. \`flowguard_status\` (unfocused) → read \`activeChecks\`
+5. \`flowguard_run_check({ kind: "<kind>" })\` for each active check → passes, advances to IMPL_REVIEW
+6. (review loop) \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the implementation)
 
 Revision path (when review returns changes_requested):
 1. \`flowguard_review_implementation({ reviewVerdict: "changes_requested" })\` → routes back to IMPLEMENTATION
 2. (fix code based on blockingIssues)
 3. \`flowguard_implement({})\` → re-records evidence, advances to IMPL_VALIDATION
-4. \`flowguard_run_check({})\` (auto) → checks pass, advances to IMPL_REVIEW
-5. \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate)
+4. \`flowguard_status\` (unfocused) → read \`activeChecks\`
+5. \`flowguard_run_check({ kind: "<kind>" })\` for each active check → passes, advances to IMPL_REVIEW
+6. (review loop) \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate)
 
 ${GOVERNANCE_RULES}
 ## Presentation

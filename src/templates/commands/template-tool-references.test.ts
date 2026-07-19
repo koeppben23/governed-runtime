@@ -213,13 +213,26 @@ describe('implement command: validation-gate contract', () => {
   it('auto-chains through IMPL_VALIDATION and the review loop', () => {
     const body = COMMANDS['implement.md'];
     expect(body).toContain('IMPL_VALIDATION');
-    expect(body).toContain('flowguard_run_check');
+    expect(body).toContain('flowguard_status');
+    expect(body).toContain('activeChecks');
+    expect(body).toContain('flowguard_run_check({ kind: "<kind>" })');
     expect(body).toContain('IMPL_REVIEW');
     expect(body).toContain('flowguard_review_implementation');
+  });
+
+  it('does not call flowguard_run_check without a kind argument', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).not.toContain('flowguard_run_check({})');
   });
 
   it('does not skip IMPL_VALIDATION into IMPL_REVIEW directly', () => {
     const body = COMMANDS['implement.md'];
     expect(body).not.toContain('INDEPENDENT_REVIEW_COMPLETED: ..."');
+  });
+
+  it('limits executor retry to exactly once before failing', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).toContain('retry');
+    expect(body).not.toContain('retry in place');
   });
 });
