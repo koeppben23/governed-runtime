@@ -24,6 +24,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   authority.
 - Golden fixture tests and projection tests for READY, blocked, and degraded
   Discovery states.
+- **Shared presentation primitives extended with bulletList, guidance sections,
+  and notice multi-message support.** The presentation model gains `BulletListSection`,
+  `GuidanceSection` (with `GuidanceStatus`/`GuidanceItem`), and `NoticeSection.additionalMessages`
+  for structured rendering of lists, action recommendations, and multi-line warnings.
+- **`/why` and `/finish` migrate to the shared presentation renderer.** Both
+  surfaces now produce deterministic Markdown via dedicated builders
+  (`buildWhyDocument` / `buildFinishDocument`) consuming canonical upstream
+  projections (`WhyPresentationProjection` / `FinishPresentationProjection`).
+  Templates no longer ask agents to interpret structured JSON; the existing
+  `whyBlocked` and `finish` JSON responses remain structurally unchanged.
+  Golden tests cover blocked, evidence-gap, active, terminal, ready,
+  ready-with-warnings, and not-verified states. Archive labels are exhaustively
+  normalised from the state domain.
 
 - **Contextual help commands (`/help` and `/commands`).** New read-only `flowguard_help`
   tool with installed `/help` (phase-sensitive next action and relevant commands),
