@@ -18,6 +18,7 @@ import {
   run,
   serve,
 } from './run.js';
+import type { HeadlessConfig } from './run-types.js';
 
 const netState = vi.hoisted(() => ({ serverRunning: false }));
 
@@ -78,12 +79,7 @@ async function createExecutable(
 describe('parseRunArgs', () => {
   function ok(result: ReturnType<typeof parseRunArgs>) {
     expect(result.kind).toBe('ok');
-    return (
-      result as {
-        kind: 'ok';
-        value: ReturnType<typeof parseRunArgs> extends { kind: 'ok'; value: infer V } ? V : never;
-      }
-    ).value;
+    return (result as { kind: 'ok'; value: HeadlessConfig }).value;
   }
 
   describe('happy path', () => {

@@ -88,7 +88,7 @@ describe('formatDoctor', () => {
     expect(result).toContain('review check details');
   });
 
-  it('reports HEALTHY_WITH_WARNINGS with shipped-executable restart recovery', () => {
+  it('reports HEALTHY_WITH_WARNINGS with shipped-executable reinstall recovery', () => {
     const result = formatDoctor(
       [
         { file: 'x', status: 'ok' },
@@ -99,7 +99,7 @@ describe('formatDoctor', () => {
     );
     expect(result).toContain('Status: HEALTHY_WITH_WARNINGS');
     expect(result).toContain('shipped-executable warning');
-    expect(result).toContain('restart OpenCode');
+    expect(result).toContain('install --force');
     expect(result).toContain('trust/context warning');
   });
 

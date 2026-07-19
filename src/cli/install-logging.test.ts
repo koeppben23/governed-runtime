@@ -36,12 +36,15 @@ describe('CLI structured logging', () => {
   describe('HAPPY', () => {
     it('--log-mode flag is parsed', () => {
       const parsed = parseArgs(['doctor', '--log-mode', 'file+console', '--install-scope', 'repo']);
-      expect(parsed).not.toBeNull();
-      expect(parsed!.args.logMode).toBe('file+console');
+      expect(parsed.kind).toBe('ok');
+      if (parsed.kind === 'ok') {
+        expect(parsed.value.args.logMode).toBe('file+console');
+      }
     });
 
     it('--log-mode rejects invalid values', () => {
-      expect(parseArgs(['doctor', '--log-mode', 'cloud'])).toBeNull();
+      const result = parseArgs(['doctor', '--log-mode', 'cloud']);
+      expect(result.kind).not.toBe('ok');
     });
   });
 
@@ -235,10 +238,10 @@ describe('CLI structured logging', () => {
       }
     });
 
-    it('unknown action returns 1', async () => {
+    it('unknown action returns 2', async () => {
       vi.spyOn(process.stderr, 'write').mockReturnValue(true);
       vi.spyOn(process.stdout, 'write').mockReturnValue(true);
-      await expect(main(['invalid-action'])).resolves.toBe(1);
+      await expect(main(['invalid-action'])).resolves.toBe(2);
     });
   });
 });

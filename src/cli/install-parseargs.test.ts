@@ -8,6 +8,7 @@ import { describe, it, expect } from 'vitest';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { parseArgs, resolveTarget, formatTargetPath } from './install.js';
+import type { CliArgs } from './install.js';
 import { setupCliTestEnvironment } from './install-test-helpers.test.js';
 import { withTestEnv } from '../integration/test-helpers.js';
 
@@ -18,7 +19,7 @@ setupCliTestEnvironment();
 describe('cli/parseArgs', () => {
   function okResult(result: ReturnType<typeof parseArgs>) {
     expect(result.kind).toBe('ok');
-    return (result as { kind: 'ok'; value: { args: unknown; deprecations: unknown[] } }).value;
+    return (result as { kind: 'ok'; value: { args: CliArgs; deprecations: string[] } }).value;
   }
 
   function errorResult(result: ReturnType<typeof parseArgs>) {

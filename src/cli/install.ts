@@ -412,16 +412,16 @@ export function formatDoctor(checks: DoctorCheck[], host: InstallPlatform): stri
   lines.push(`  ${ok}/${total} checks passed`);
 
   if (warn > 0) {
-    const activationWarns = checks.filter(
+    const binaryWarns = checks.filter(
       (c) => c.status === 'warn' && c.check === SHIPPED_EXECUTABLE_CHECK,
     ).length;
     lines.push(`  ${warn} warning(s)`);
-    if (activationWarns > 0) {
+    if (binaryWarns > 0) {
       lines.push(
-        `  ${activationWarns} shipped-executable warning(s) — restart ${hostName} and re-run \`flowguard doctor\``,
+        `  ${binaryWarns} shipped-executable warning(s) — repair via \`flowguard install --force\` and re-run \`flowguard doctor\``,
       );
     }
-    const otherWarns = warn - activationWarns;
+    const otherWarns = warn - binaryWarns;
     if (otherWarns > 0) {
       lines.push(
         `  ${otherWarns} trust/context warning(s) for ${hostName} — review check details above and re-run \`flowguard doctor\``,
