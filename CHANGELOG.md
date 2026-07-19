@@ -95,6 +95,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `maxImplReviewIterations` ranges corrected from `1-20` to `1-10`, matching
   `FlowGuardConfigSchema`. New documentation-contract drift tests added.
 
+- **Lifecycle guidance and phase labels runtime-accurate (#686).** `/start` alias
+  corrected to `/hydrate` in installation docs. Ticket-flow table now includes
+  `IMPL_VALIDATION`. `IMPL_REVIEW` label distinguished from final evidence review.
+  `/implement` template auto-chains through post-implementation validation
+  (`IMPL_VALIDATION` → `flowguard_run_check`) before entering the review loop,
+  closing the gate that was visible in README but missing from the template.
+
 - **Reviewer children are isolated from FlowGuard workflow tools (F14).** The OpenCode
   reviewer capability profile now denies both direct `flowguard_*` and MCP-prefixed
   `mcp__flowguard__*` tools and denies `task`, while retaining `read`, `glob`, and

@@ -63,7 +63,7 @@ describe('PHASE_LABELS', () => {
     expect(PHASE_LABELS.VALIDATION).toBe('Validation');
     expect(PHASE_LABELS.IMPLEMENTATION).toBe('Implementation in progress');
     expect(PHASE_LABELS.IMPL_VALIDATION).toBe('Re-validating implementation');
-    expect(PHASE_LABELS.IMPL_REVIEW).toBe('Ready for evidence review');
+    expect(PHASE_LABELS.IMPL_REVIEW).toBe('Implementation review in progress');
     expect(PHASE_LABELS.EVIDENCE_REVIEW).toBe('Ready for final review');
     expect(PHASE_LABELS.COMPLETE).toBe('Complete');
     expect(PHASE_LABELS.ARCHITECTURE).toBe('Architecture in progress');

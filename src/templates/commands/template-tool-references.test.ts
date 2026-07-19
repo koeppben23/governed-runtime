@@ -208,3 +208,18 @@ describe('command templates: third LoopVerdict narrative drift guard', () => {
     expect(body).toContain('SUBAGENT_UNABLE_TO_REVIEW');
   });
 });
+
+describe('implement command: validation-gate contract', () => {
+  it('auto-chains through IMPL_VALIDATION and the review loop', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).toContain('IMPL_VALIDATION');
+    expect(body).toContain('flowguard_run_check');
+    expect(body).toContain('IMPL_REVIEW');
+    expect(body).toContain('flowguard_review_implementation');
+  });
+
+  it('does not skip IMPL_VALIDATION into IMPL_REVIEW directly', () => {
+    const body = COMMANDS['implement.md'];
+    expect(body).not.toContain('INDEPENDENT_REVIEW_COMPLETED: ..."');
+  });
+});

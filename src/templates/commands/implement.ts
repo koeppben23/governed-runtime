@@ -33,18 +33,30 @@ ${DISCOVERY_REVIEW_CAPTURE}
    - Use \`write\` or \`edit\` to create or modify files.
    - Use \`bash\` for commands (install dependencies, run formatters, etc.).
    - Follow the plan steps exactly — add nothing beyond what the plan specifies.
-4. After completing ALL plan steps, call \`flowguard_implement({})\` with no arguments.
-   - The tool auto-detects changed files via git and records evidence.
+ 4. After completing ALL plan steps, call \`flowguard_implement({})\` with no arguments.
+    - The tool auto-detects changed files via git and records evidence.
+    - The session advances to IMPL_VALIDATION.
 
-### Phase 3: Record Verification Evidence
+### Phase 3: Post-Implementation Validation
 
-5. Write a \`## Verification Evidence\` section distinguishing:
-   - **Planned checks**: Each check from the plan's Verification Plan.
-   - **Executed checks**: Only checks actually run. Mark unexecuted checks as NOT_VERIFIED.
+ 5. Read the \`next\` field from the \`flowguard_implement\` response. The session is now in
+    IMPL_VALIDATION. Automatically call \`flowguard_run_check({})\` for each active check
+    to re-run the validation against the implemented code (distinct from the
+    pre-implementation VALIDATION baseline).
+    - All checks pass → advances to IMPL_REVIEW. Proceed to Phase 4.
+    - Any check fails → routes back to IMPLEMENTATION. Fix the code, then call
+      \`flowguard_implement({})\` again to re-record evidence (return to Phase 2 step 4).
+    - Executor timeout/error → retry \`flowguard_run_check\` in place.
 
-### Phase 4: Implementation Review Loop
+### Phase 4: Record Verification Evidence
 
-6. Read the \`next\` field from the tool response and follow its instructions exactly:
+ 6. Write a \`## Verification Evidence\` section distinguishing:
+    - **Planned checks**: Each check from the plan's Verification Plan.
+    - **Executed checks**: Only checks actually run. Mark unexecuted checks as NOT_VERIFIED.
+
+### Phase 5: Implementation Review Loop
+
+ 7. Read the \`next\` field from the tool response and follow its instructions exactly:
 ${SHARED_REVIEW_LOOP({
   toolName: 'flowguard_implement',
   verdictToolName: 'flowguard_review_implementation',
@@ -56,7 +68,7 @@ ${SHARED_REVIEW_LOOP({
   strictRecoveryVerb: 'Re-record',
   strictRecoveryNoun: 're-recordings',
   iterationNote: '(max 3 iterations)',
-  repeatStep: 6,
+  repeatStep: 7,
   subagentExtra: '',
   fallbackExtra: '',
   unableDescription:
@@ -69,9 +81,11 @@ ${SHARED_REVIEW_LOOP({
 ## Rules
 
 - Follow the approved plan exactly — no deviations or additions.
-- Record evidence with \`flowguard_implement({})\` (no arguments) BEFORE submitting the review verdict with \`flowguard_review_implementation({ reviewVerdict })\` — these are separate single-purpose tools.
-- Always complete the independent review (plugin findings or reviewer subagent).
-- When changes are requested: make the actual code changes, then re-record with flowguard_implement({}).
+- Record evidence with \`flowguard_implement({})\` (no arguments) BEFORE starting the review loop.
+- After \`flowguard_implement({})\`, auto-run \`flowguard_run_check\` — do not skip IMPL_VALIDATION.
+- When changes are requested in the review loop: make the actual code changes, then re-record
+  with \`flowguard_implement({})\` (which advances to IMPL_VALIDATION and triggers the auto-chain
+  again).
 - In Verification Evidence, list only checks that were actually executed. Mark all others as NOT_VERIFIED.
 - Follow profile rules from \`flowguard_status\` when implementing.
 - Do not call flowguard_plan during /implement — planning is complete.
@@ -82,14 +96,16 @@ ${SHARED_REVIEW_LOOP({
 Happy path:
 1. \`flowguard_status\` → phase: IMPLEMENTATION, plan approved
 2. (execute plan steps: read/write/edit/bash)
-3. \`flowguard_implement({})\` → records evidence, returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
-4. \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the implementation)
+3. \`flowguard_implement({})\` → records evidence, session advances to IMPL_VALIDATION
+4. \`flowguard_run_check({})\` (auto) → checks pass, advances to IMPL_REVIEW
+5. \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the implementation)
 
 Revision path (when review returns changes_requested):
-1. \`flowguard_review_implementation({ reviewVerdict: "changes_requested" })\`
+1. \`flowguard_review_implementation({ reviewVerdict: "changes_requested" })\` → routes back to IMPLEMENTATION
 2. (fix code based on blockingIssues)
-3. \`flowguard_implement({})\` → re-records evidence, new review starts
-4. \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate — the USER decides via /review-decision)
+3. \`flowguard_implement({})\` → re-records evidence, advances to IMPL_VALIDATION
+4. \`flowguard_run_check({})\` (auto) → checks pass, advances to IMPL_REVIEW
+5. \`flowguard_review_implementation({ reviewVerdict: "accept" })\` → EVIDENCE_REVIEW (user gate)
 
 ${GOVERNANCE_RULES}
 ## Presentation
