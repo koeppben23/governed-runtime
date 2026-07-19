@@ -21,10 +21,14 @@ const CODE_LITERAL_PATTERN = /code:\s*['"]([A-Z][A-Z0-9_]+)['"]/g;
 // These codes are NOT registry codes — they are CRITICAL/error severities,
 // audit event codes, or external library codes. Excluded explicitly.
 const EXCLUDED_CODES: ReadonlySet<string> = new Set([
-  'CRITICAL', // severity tag in error fixtures, not a registry reason
-  'REVIEW_FAILED', // audit-test fixture, not a runtime block
-  'STATUS_ACTION_PROJECTION_MISSING_METADATA', // data-integrity error, not a governance reason
-  'STATUS_DECISION_PROJECTION_EMPTY', // data-integrity error, not a governance reason
+  'CRITICAL',
+  'REVIEW_FAILED',
+  'STATUS_ACTION_PROJECTION_MISSING_METADATA',
+  'STATUS_DECISION_PROJECTION_EMPTY',
+  'WHY_DECISION_PROJECTION_EMPTY',
+  'WHY_ACTION_PROJECTION_EMPTY',
+  'WHY_TERMINAL_PROJECTION_EMPTY',
+  'FINISH_TERMINAL_PROJECTION_EMPTY',
 ]);
 
 /**

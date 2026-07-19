@@ -120,3 +120,53 @@ not as a renderer parameter.
   within the content by at least 1, with a minimum of 3.
 - Language identifiers are validated against `[A-Za-z0-9_+.#-]+`. Invalid
   identifiers are rejected with an explicit error.
+
+## 12. Bullet List (`bulletList`)
+
+Generic bulleted list for non-command items (exit options, enumerations).
+Renders as:
+
+```md
+• Item one
+• Item two
+```
+
+- Empty items are rejected with a contract error.
+- Distinct from `commandList` — no invocation, no description, no visibility.
+
+## 13. Guidance (`guidance`)
+
+Non-normative action recommendations for /finish.
+
+| `GuidanceStatus`  | Symbol | Rendering                                 |
+| ----------------- | ------ | ----------------------------------------- |
+| `recommended`     | `✓`    | `✓ **Action:** Recommended — reason.`     |
+| `not_recommended` | `•`    | `• **Action:** Not recommended — reason.` |
+| `not_verified`    | `?`    | `? **Action:** Not verified — reason.`    |
+
+- Must NOT be confused with executable commands (`commandList`).
+- Must NOT be confused with advisory notices (`notice`).
+- Every item must have non-empty `action` and `reason` fields.
+
+## 14. Notice Multi-Message
+
+The `NoticeSection` now supports `additionalMessages?: readonly string[]`
+for rendering multiple messages under a single heading:
+
+```md
+## Warnings
+
+⚠ First warning.
+⚠ Second warning.
+```
+
+- Each message receives its own symbol prefix.
+- Empty messages in `additionalMessages` are rejected.
+- Backwards-compatible: existing single-message notices are unaffected.
+
+## 15. Archive Labels
+
+Archive lifecycle states (`pending` | `created` | `verified` | `failed`)
+are normalised via `parseArchiveLabel()`. Unknown values throw a contract
+error. The known set is derived from the state domain, not manually
+duplicated.

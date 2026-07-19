@@ -1,13 +1,13 @@
 ## Status
 
-**Overall:** Not verified
+**Overall:** Ready with warnings
 **Phase:** Complete
 **Policy:** solo
 
 ## Evidence
 
-**Verified:** 4
-**Missing:** 5
+**Verified:** 9
+**Missing:** 0
 **Four eyes:** Satisfied
 
 ## Archive
@@ -16,14 +16,13 @@
 
 ## Warnings
 
-⚠ Legacy policy configuration was normalized.
-⚠ Self-review config requires plugin verification.
+⚠ Legacy selfReview config detected and normalized to mandatory strict. Ensure flowguard-reviewer plugin is active.
 
 ## Guidance
 
-? **create PR:** Not verified — Required evidence is missing or failed; proceeding is not verified.
-? **export evidence:** Not verified — Required evidence is missing or failed; proceeding is not verified.
-✓ **keep branch:** Recommended — Keep the branch to complete verification before proceeding.
+✓ **create PR:** Recommended — Ready with warnings; review warnings before proceeding.
+✓ **export evidence:** Recommended — Ready with warnings; review warnings before proceeding.
+• **keep branch:** Not recommended — Ready with warnings; keeping the branch open is optional.
 
 ## Exit options
 

@@ -82,11 +82,14 @@ export function parseStatusLabel(raw: string): PresentationStatus {
 // ─── Archive Labels ────────────────────────────────────────────────────────────
 
 /**
- * Archive lifecycle states from {@link SessionState['archiveStatus']}.
- * Exhaustive — adding a new archive state without updating this table
- * causes a compile error.
+ * Archive lifecycle states — derived from the state domain union,
+ * not a manually-duplicated local union.
+ * Adding a new state to SessionState['archiveStatus'] causes a
+ * compile error here via {@link KnownArchiveStatus}.
  */
-export type KnownArchiveStatus = 'pending' | 'created' | 'verified' | 'failed';
+export type KnownArchiveStatus = NonNullable<
+  import('../state/schema.js').SessionState['archiveStatus']
+>;
 
 const ARCHIVE_LABELS = {
   pending: 'Pending',

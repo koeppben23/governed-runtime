@@ -1,13 +1,13 @@
 ## Status
 
-**Overall:** Not verified
+**Overall:** Ready
 **Phase:** Complete
 **Policy:** solo
 
 ## Evidence
 
-**Verified:** 4
-**Missing:** 5
+**Verified:** 9
+**Missing:** 0
 **Four eyes:** Satisfied
 
 ## Archive
@@ -16,9 +16,9 @@
 
 ## Guidance
 
-? **create PR:** Not verified — Required evidence is missing or failed; proceeding is not verified.
-? **export evidence:** Not verified — Required evidence is missing or failed; proceeding is not verified.
-✓ **keep branch:** Recommended — Keep the branch to complete verification before proceeding.
+✓ **create PR:** Recommended — Session reports ready; proceeding is a suitable next step.
+✓ **export evidence:** Recommended — Session reports ready; proceeding is a suitable next step.
+• **keep branch:** Not recommended — Session is ready; keeping the branch open is not necessary.
 
 ## Exit options
 

@@ -10,8 +10,8 @@
 
 ## Evidence
 
-**Verified:** 0
-**Missing:** 3
+**Verified:** 3
+**Missing:** 0
 **Four eyes:** Satisfied
 
 ## Guidance

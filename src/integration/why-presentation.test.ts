@@ -5,36 +5,60 @@
 import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import type { SessionState } from '../state/schema.js';
 import { renderMarkdown } from '../presentation/markdown.js';
 import { buildWhyDocument } from './why-presentation.js';
 import { buildBlockedProjection } from './status.js';
 import { buildWhyPresentationProjection } from './status-why-finish.js';
-import { makeState } from '../fixtures.js';
+import { makeState, makeProgressedState } from '../fixtures.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { createPolicySnapshot } from '../config/policy-snapshot.js';
 
-function sp(mode: string) {
-  return createPolicySnapshot(getPolicyPreset(mode as any), '2026-01-01T00:00:00.000Z', () => 'd');
+function sp(mode: 'solo' | 'team') {
+  return createPolicySnapshot(getPolicyPreset(mode), '2026-01-01T00:00:00.000Z', () => 'd');
 }
 
-/** Build a session state for testing. */
-function bs(phase: string, mode = 'solo'): any {
+/** SOLO-policy READY-phase state — minimal, no evidence. */
+function readyState(): SessionState {
   return {
-    ...makeState(phase as any),
-    id: 't-' + phase + '-' + mode,
-    phase,
-    policySnapshot: sp(mode),
-    activeProfile: null,
+    ...makeState('READY'),
+    policySnapshot: sp('solo'),
     activeChecks: [],
     verificationCandidates: [],
-    ticket: null,
-    plan: null,
-    selfReview: null,
-    validation: [],
-    implementation: null,
-    implReview: null,
-    reviewDecision: null,
-    architecture: null,
+  };
+}
+
+/** TEAM-policy PLAN_REVIEW with evidence (ticket + plan). */
+function planReviewBlockedState(): SessionState {
+  return makeProgressedState('PLAN_REVIEW');
+}
+
+/** VALIDATION + team policy — evidence gap. */
+function validationState(): SessionState {
+  return {
+    ...makeState('VALIDATION'),
+    policySnapshot: sp('team'),
+    activeChecks: [],
+    verificationCandidates: [],
+  };
+}
+
+/** TICKET + solo — not blocked, active. */
+function ticketState(): SessionState {
+  return {
+    ...makeState('TICKET'),
+    policySnapshot: sp('solo'),
+    activeChecks: [],
+    verificationCandidates: [],
+  };
+}
+
+/** COMPLETE + verified archive + solo policy. */
+function completeVerifiedState(): SessionState {
+  return {
+    ...makeProgressedState('COMPLETE'),
+    archiveStatus: 'verified',
+    policySnapshot: sp('solo'),
     actorInfo: undefined,
   };
 }
@@ -48,43 +72,49 @@ async function readGolden(name: string): Promise<string> {
 
 describe('golden fixtures for /why', () => {
   it('why-blocked-plan-review matches golden output', async () => {
-    const state = bs('PLAN_REVIEW', 'team');
+    const state = planReviewBlockedState();
     const policy = getPolicyPreset('team');
-    const blocker = buildBlockedProjection(state as any, policy);
-    const pres = buildWhyPresentationProjection(state as any, policy, blocker);
+    const blocker = buildBlockedProjection(state, policy);
+    const pres = buildWhyPresentationProjection(state, policy, blocker);
     const output = renderMarkdown(buildWhyDocument(pres));
     const golden = await readGolden('why-blocked-plan-review.md');
     expect(output).toBe(golden.trimEnd());
+    // Canonical: waiting gate at PLAN_REVIEW → decision_required
+    expect(pres.conclusion.kind).toBe('decision_required');
   });
 
   it('why-evidence-gap matches golden output', async () => {
-    const state = bs('VALIDATION', 'team');
+    const state = validationState();
     const policy = getPolicyPreset('team');
-    const blocker = buildBlockedProjection(state as any, policy);
-    const pres = buildWhyPresentationProjection(state as any, policy, blocker);
+    const blocker = buildBlockedProjection(state, policy);
+    const pres = buildWhyPresentationProjection(state, policy, blocker);
     const output = renderMarkdown(buildWhyDocument(pres));
     const golden = await readGolden('why-evidence-gap.md');
     expect(output).toBe(golden.trimEnd());
   });
 
   it('why-not-blocked-active matches golden output', async () => {
-    const state = bs('TICKET');
+    const state = ticketState();
     const policy = getPolicyPreset('solo');
-    const blocker = buildBlockedProjection(state as any, policy);
-    const pres = buildWhyPresentationProjection(state as any, policy, blocker);
+    const blocker = buildBlockedProjection(state, policy);
+    const pres = buildWhyPresentationProjection(state, policy, blocker);
     const output = renderMarkdown(buildWhyDocument(pres));
     const golden = await readGolden('why-not-blocked-active.md');
     expect(output).toBe(golden.trimEnd());
+    // Active non-blocked state → next_action
+    expect(pres.conclusion.kind).toBe('next_action');
   });
 
   it('why-terminal matches golden output', async () => {
-    const state = bs('COMPLETE');
+    const state = completeVerifiedState();
     const policy = getPolicyPreset('solo');
-    const blocker = buildBlockedProjection(state as any, policy);
-    const pres = buildWhyPresentationProjection(state as any, policy, blocker);
+    const blocker = buildBlockedProjection(state, policy);
+    const pres = buildWhyPresentationProjection(state, policy, blocker);
     const output = renderMarkdown(buildWhyDocument(pres));
     const golden = await readGolden('why-terminal.md');
     expect(output).toBe(golden.trimEnd());
+    // COMPLETE with verified archive: machine-terminal, product action /status → next_action
+    expect(pres.conclusion.kind).toBe('next_action');
   });
 });
 
@@ -92,85 +122,72 @@ describe('golden fixtures for /why', () => {
 
 describe('buildWhyDocument', () => {
   it('produces a compact_card document', () => {
-    const state = bs('TICKET');
+    const state = ticketState();
     const policy = getPolicyPreset('solo');
-    const blocker = buildBlockedProjection(state as any, policy);
-    const doc = buildWhyDocument(buildWhyPresentationProjection(state as any, policy, blocker));
+    const blocker = buildBlockedProjection(state, policy);
+    const doc = buildWhyDocument(buildWhyPresentationProjection(state, policy, blocker));
     expect(doc.kind).toBe('compact_card');
     if (doc.kind === 'compact_card') expect(doc.density).toBe('compact');
   });
 
-  it('shows Blocked: Blocked when blocked is true', () => {
-    const state = bs('PLAN_REVIEW', 'team');
+  it('shows Blocked: Blocked when blocked at gate', () => {
+    const state = planReviewBlockedState();
     const policy = getPolicyPreset('team');
-    const blocker = buildBlockedProjection(state as any, policy);
-    const doc = buildWhyDocument(buildWhyPresentationProjection(state as any, policy, blocker));
+    const blocker = buildBlockedProjection(state, policy);
+    const doc = buildWhyDocument(buildWhyPresentationProjection(state, policy, blocker));
     expect(renderMarkdown(doc)).toContain('**Blocked:** Blocked');
   });
 
-  it('shows Blocked: No when blocked is false', () => {
-    const state = bs('TICKET');
+  it('shows Blocked: No when not blocked', () => {
+    const state = ticketState();
     const policy = getPolicyPreset('solo');
-    const blocker = buildBlockedProjection(state as any, policy);
-    const doc = buildWhyDocument(buildWhyPresentationProjection(state as any, policy, blocker));
+    const blocker = buildBlockedProjection(state, policy);
+    const doc = buildWhyDocument(buildWhyPresentationProjection(state, policy, blocker));
     expect(renderMarkdown(doc)).toContain('**Blocked:** No');
   });
 
-  it('includes blocker section with ## Blocked heading when blocked at gate', () => {
-    const state = bs('PLAN_REVIEW', 'team');
+  it('includes blocker section at review gate', () => {
+    const state = planReviewBlockedState();
     const policy = getPolicyPreset('team');
-    const blocker = buildBlockedProjection(state as any, policy);
-    const doc = buildWhyDocument(buildWhyPresentationProjection(state as any, policy, blocker));
+    const blocker = buildBlockedProjection(state, policy);
+    const doc = buildWhyDocument(buildWhyPresentationProjection(state, policy, blocker));
     const output = renderMarkdown(doc);
     expect(output).toContain('## Blocked');
     expect(output).toContain('⚠ **Blocked:**');
   });
 
-  it('omits blocker section when no reason code or text', () => {
-    const state = bs('TICKET');
+  it('omits blocker section when not blocked', () => {
+    const state = ticketState();
     const policy = getPolicyPreset('solo');
-    const blocker = buildBlockedProjection(state as any, policy);
-    const doc = buildWhyDocument(buildWhyPresentationProjection(state as any, policy, blocker));
-    const output = renderMarkdown(doc);
-    expect(output).not.toContain('## Blocked');
-    expect(output).not.toContain('## Evidence required');
+    const blocker = buildBlockedProjection(state, policy);
+    const doc = buildWhyDocument(buildWhyPresentationProjection(state, policy, blocker));
+    expect(renderMarkdown(doc)).not.toContain('## Blocked');
   });
 
-  it('includes artifactList for missing evidence when present', () => {
-    const state = bs('PLAN_REVIEW', 'team');
+  it('includes missing evidence artifactList in evidence-gap state', () => {
+    const state = validationState();
     const policy = getPolicyPreset('team');
-    const blocker = buildBlockedProjection(state as any, policy);
-    const doc = buildWhyDocument(buildWhyPresentationProjection(state as any, policy, blocker));
-    const output = renderMarkdown(doc);
-    expect(output).toContain('## Missing evidence');
+    const blocker = buildBlockedProjection(state, policy);
+    const doc = buildWhyDocument(buildWhyPresentationProjection(state, policy, blocker));
+    expect(renderMarkdown(doc)).toContain('## Missing evidence');
   });
 
-  it('decision_required has multiple actions at review gate', () => {
-    const state = bs('PLAN_REVIEW', 'team');
+  it('produces decision_required at waiting gate', () => {
+    const state = planReviewBlockedState();
     const policy = getPolicyPreset('team');
-    const blocker = buildBlockedProjection(state as any, policy);
-    const doc = buildWhyDocument(buildWhyPresentationProjection(state as any, policy, blocker));
+    const blocker = buildBlockedProjection(state, policy);
+    const doc = buildWhyDocument(buildWhyPresentationProjection(state, policy, blocker));
     const c = doc.conclusion;
     if (!c) throw new Error('no conclusion');
     expect(c.kind).toBe('decision_required');
     if (c.kind === 'decision_required') expect(c.actions.length).toBeGreaterThan(1);
   });
 
-  it('next_action conclusion for complete state', () => {
-    const state = bs('COMPLETE');
+  it('produces next_action for active state', () => {
+    const state = ticketState();
     const policy = getPolicyPreset('solo');
-    const blocker = buildBlockedProjection(state as any, policy);
-    const doc = buildWhyDocument(buildWhyPresentationProjection(state as any, policy, blocker));
-    const c = doc.conclusion;
-    if (!c) throw new Error('no conclusion');
-    expect(c.kind).toBe('next_action');
-  });
-
-  it('next_action conclusion for active non-blocked state', () => {
-    const state = bs('TICKET');
-    const policy = getPolicyPreset('solo');
-    const blocker = buildBlockedProjection(state as any, policy);
-    const doc = buildWhyDocument(buildWhyPresentationProjection(state as any, policy, blocker));
+    const blocker = buildBlockedProjection(state, policy);
+    const doc = buildWhyDocument(buildWhyPresentationProjection(state, policy, blocker));
     const c = doc.conclusion;
     if (!c) throw new Error('no conclusion');
     expect(c.kind).toBe('next_action');
