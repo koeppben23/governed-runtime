@@ -41,14 +41,20 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
  5. Call \`flowguard_status\` again with NO focused flags (no whyBlocked/evidence/context/readiness)
     to get the full projection, then read \`activeChecks\` (equivalently \`remainingChecks\` in
-    IMPL_VALIDATION). The session is now in IMPL_VALIDATION after recording evidence.
-    - If both \`activeChecks\` and \`verificationCandidates\` are empty: report no active checks
-      and skip to Phase 5 (the review loop will handle the next gate).
-    - For each kind in \`activeChecks\` (or \`remainingChecks\`), call
-      \`flowguard_run_check({ kind: "<kind>" })\` to re-run the check against the implemented
-      code (distinct from the pre-implementation VALIDATION baseline).
-    - If the final \`flowguard_run_check\` response has phase \`IMPL_REVIEW\`: proceed to Phase 5
-      (Implementation Review Loop).
+    IMPL_VALIDATION) and \`verificationCandidates\`. The session is now in IMPL_VALIDATION after
+    recording evidence.
+    - If both \`activeChecks\`/\`remainingChecks\` and \`verificationCandidates\` are empty:
+      report no active checks and stop — the IMPL_REVIEW gate cannot be reached without
+      canonical check execution. Surface the current \`nextAction\` from status.
+    - If \`activeChecks\`/\`remainingChecks\` is non-empty: for each kind, call
+      \`flowguard_run_check({ kind: "<kind>" })\`.
+    - If \`activeChecks\`/\`remainingChecks\` is empty but \`verificationCandidates\` is non-empty:
+      for each kind in \`verificationCandidates\`, call
+      \`flowguard_run_check({ kind: "<kind>" })\` — it validates the kind against canonical
+      state, not against the status output.
+    - After running all checks, check the FINAL \`flowguard_run_check\` response: only proceed
+      to Phase 5 if the response phase is \`IMPL_REVIEW\`. Never assume IMPL_REVIEW without
+      a confirming runtime response.
     - Any check fails → routes back to IMPLEMENTATION. Fix the code, then call
       \`flowguard_implement({})\` again to re-record evidence (return to Phase 2 step 4).
     - Executor timeout/error on a single check → retry that \`flowguard_run_check({ kind })\`
