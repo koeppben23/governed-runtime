@@ -65,10 +65,13 @@ function policyModes(): string[] {
 }
 
 function extractSettingSection(content: string, setting: string): string {
-  const escaped = setting.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = content.match(new RegExp(`^### ${escaped}\\n([\\s\\S]*?)(?=^### |\\Z)`, 'm'));
-  if (!match?.[1]) throw new Error(`Missing documentation section for ${setting}`);
-  return match[1];
+  const heading = `### ${setting}`;
+  const startIdx = content.indexOf(heading);
+  if (startIdx < 0) throw new Error(`Missing documentation section for ${setting}`);
+  const afterHeading = content.indexOf('\n', startIdx) + 1;
+  let endIdx = content.indexOf('\n### ', afterHeading);
+  if (endIdx < 0) endIdx = content.length;
+  return content.slice(afterHeading, endIdx).trim();
 }
 
 function extractJsonExample(content: string, sectionHeading: string): unknown {
