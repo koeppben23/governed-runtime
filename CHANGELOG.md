@@ -109,9 +109,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from `solo (default)` to `team (default)`. Install/uninstall/doctor output
   names the selected host and resolved target path. `flowguard run --` joins all
   tokens after the separator. Doctor output now renders `HEALTHY`,
-  `HEALTHY_WITH_WARNINGS`, or `NOT_VERIFIED` with host-specific recovery guidance.
-  Installation docs include host-selection matrix with enforcement levels and
-  activation requirements per platform.
+  `HEALTHY_WITH_WARNINGS`, or `NOT_VERIFIED` with classified recovery guidance.
+  Installation docs include host-selection matrix. 16 black-box smoke tests added.
+
+- **Contextual help as scannable Markdown with artifact resume (#689).** `/help` and
+  `/commands` now render Markdown guidance (phase, readiness, blocker, next action,
+  commands, aliases, artifact metadata) as the default chat output, replacing the
+  previous raw JSON. Structured JSON remains available via `verbose: true` for
+  machine consumers. `flowguard_help` supports `includeArtifactContent: true` to
+  retrieve complete canonical ticket and plan text from the rehydrated session
+  state after compaction — bounded, read-only, no file paths. `/implement` and
+  `/plan` templates include two-stage resume guidance.
 
 - **Reviewer children are isolated from FlowGuard workflow tools (F14).** The OpenCode
   reviewer capability profile now denies both direct `flowguard_*` and MCP-prefixed

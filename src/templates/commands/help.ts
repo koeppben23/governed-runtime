@@ -16,7 +16,9 @@ Show the commands and next action relevant to the current FlowGuard session.
    - a command name: use \`{ view: "command", command: "<name>" }\`
    - \`--verbose\`: include \`verbose: true\`
 2. Call \`flowguard_help\` with the parsed arguments.
-3. Report the returned help exactly and concisely.
+3. Read the returned Markdown guidance. Present it verbatim. The Markdown contains the current
+   phase, readiness, next action, available commands, alias information, and artifact metadata.
+   Do not summarize or restructure it.
 
 ## Rules
 
@@ -27,5 +29,7 @@ ${GOVERNANCE_RULES}
 ## Done-when
 
 - Help was retrieved through \`flowguard_help\`.
-- Output reflects the returned FlowGuard projection without inferred availability.
+- Markdown guidance rendered verbatim. If artifact metadata is present, note that ticket/plan
+  artifacts are available for resume context (use \`includeArtifactContent: true\` to retrieve
+  their full content).
 `;

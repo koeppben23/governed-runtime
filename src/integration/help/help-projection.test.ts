@@ -1,11 +1,25 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { TEAM_POLICY } from '../../config/policy.js';
-import { makeProgressedState, makeState } from '../../fixtures.js';
+import * as crypto from 'node:crypto';
+import { makeProgressedState, makeState, TICKET } from '../../fixtures.js';
 import { buildHelpResult, finishToReadiness } from './help-projection.js';
 import { buildFinishCard } from '../status.js';
 import { resolveCurrentReviewReport } from '../review/report-coherence.js';
 import type { ReviewReport } from '../../state/evidence.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';
+import { help } from '../tools/help-tool.js';
+import {
+  createToolContext,
+  createTestWorkspace,
+  withTestEnv,
+  type TestWorkspace,
+  type TestToolContext,
+} from '../test-helpers.js';
+import { hydrate } from '../tools/hydrate.js';
+import { ticket } from '../tools/ticket-tool.js';
+import { plan } from '../tools/plan.js';
+import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
+import { readState } from '../../adapters/persistence.js';
 
 function makeReviewReport(
   state: ReturnType<typeof makeProgressedState>,
@@ -237,6 +251,214 @@ describe('buildHelpResult', () => {
     expect(allContinue?.visibility).toBe('blocked_recoverable');
     if (allContinue?.preflight.status === 'blocked') {
       expect(allContinue.preflight.reasonCode).toBe('CONTINUE_AMBIGUOUS');
+    }
+  });
+});
+
+// ── Artifacts ─────────────────────────────────────────────────────────
+
+describe('HelpResult artifacts', () => {
+  it('ticket available when state has ticket', () => {
+    const result = buildHelpResult(makeState('TICKET', { ticket: TICKET }), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.artifacts.ticket.status).toBe('available');
+    expect(result.artifacts.ticket.digest).toBe('digest-of-ticket');
+    expect(result.artifacts.ticket.preview).toBe('Fix the auth bug in login.ts');
+    expect(result.artifacts.ticket.content).toBeNull();
+  });
+
+  it('ticket content populated with includeArtifactContent', () => {
+    const result = buildHelpResult(makeState('TICKET', { ticket: TICKET }), TEAM_POLICY, {
+      view: 'context',
+      includeArtifactContent: true,
+    });
+    expect(result.artifacts.ticket.content).toBe('Fix the auth bug in login.ts');
+  });
+
+  it('ticket not_verified when state has no ticket', () => {
+    const result = buildHelpResult(makeState('READY'), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.artifacts.ticket.status).toBe('not_verified');
+    expect(result.artifacts.ticket.workflowNextAction).toBeTruthy();
+  });
+
+  it('currentPlan available with version = history.length + 1', () => {
+    const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.artifacts.currentPlan.status).toBe('available');
+    expect(result.artifacts.currentPlan.digest).toBe('digest-of-plan');
+    expect(result.artifacts.currentPlanVersion).toBe(1); // history: [] → 0 + 1
+  });
+
+  it('artifacts partial when only ticket exists', () => {
+    const result = buildHelpResult(makeState('TICKET', { ticket: TICKET }), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.artifacts.ticket.status).toBe('available');
+    expect(result.artifacts.currentPlan.status).toBe('not_verified');
+    expect(result.artifacts.status).toBe('partial');
+  });
+
+  it('no session → all not_verified', () => {
+    const result = buildHelpResult(null, null, { view: 'context' });
+    expect(result.artifacts.ticket.status).toBe('not_verified');
+    expect(result.artifacts.currentPlan.status).toBe('not_verified');
+    expect(result.artifacts.status).toBe('not_verified');
+  });
+});
+
+describe('HelpResult blocker', () => {
+  it('blocker null when no status blocker', () => {
+    const result = buildHelpResult(makeProgressedState('COMPLETE'), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.blocker).toBeNull();
+  });
+
+  it('blocker populated from status projection for user gate phase', () => {
+    const result = buildHelpResult(makeProgressedState('PLAN_REVIEW'), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.blocker).not.toBeNull();
+    if (result.blocker) {
+      expect(result.blocker.message).toContain('Awaiting');
+    }
+  });
+
+  it('blocker rendered in Markdown with message from projection', () => {
+    const result = buildHelpResult(makeProgressedState('PLAN_REVIEW'), TEAM_POLICY, {
+      view: 'context',
+    });
+    // Verify the blocker was derived from the real status projection, not invented
+    expect(result.blocker?.message).toContain('Awaiting');
+  });
+});
+
+describe('flowguard_help tool execute', () => {
+  it('no-session context returns Markdown guidance via execute', async () => {
+    const ctx = createToolContext({ worktree: '/tmp/test-worktree' });
+    const out = await help.execute({ view: 'context' }, ctx);
+    expect(typeof out).toBe('string');
+    expect(out).toContain('**No active FlowGuard session.**');
+    expect(out).toContain('**Available commands:**');
+  });
+
+  it('includeArtifactContent: true with no session still returns Markdown', async () => {
+    const ctx = createToolContext({ worktree: '/tmp/test-worktree' });
+    const out = await help.execute({ view: 'context', includeArtifactContent: true }, ctx);
+    expect(typeof out).toBe('string');
+    expect(out).toContain('**No active FlowGuard session.**');
+  });
+
+  it('verbose returns JSON with title', async () => {
+    const ctx = createToolContext({ worktree: '/tmp/test-worktree' });
+    const out = await help.execute({ view: 'context', verbose: true }, ctx);
+    expect(() => JSON.parse(out as string)).not.toThrow();
+    expect(JSON.parse(out as string).title).toBe('FlowGuard Help');
+  });
+});
+
+describe('resume end-to-end via help.execute', () => {
+  let ws: TestWorkspace;
+  let ctx: TestToolContext;
+  let cleanupEnv: () => void;
+
+  beforeEach(async () => {
+    cleanupEnv = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
+    ws = await createTestWorkspace();
+    ctx = createToolContext({
+      worktree: ws.tmpDir,
+      directory: ws.tmpDir,
+      sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+    });
+  });
+
+  afterEach(async () => {
+    cleanupEnv();
+    await ws.cleanup();
+  });
+
+  it('returns ticket and plan content with version and digest after resume', async () => {
+    await hydrate.execute({}, ctx);
+    await ticket.execute({ text: 'Fix the auth bug in login.ts', source: 'user' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix auth\n2. Add tests' }, ctx);
+
+    // Re-read state to verify persistence
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sd = sessionDir(fp.fingerprint, ctx.sessionID);
+    const state = await readState(sd);
+    if (!state?.ticket?.digest || !state?.plan?.current?.digest) {
+      throw new TypeError('Expected persisted digest in state');
+    }
+    expect(state.ticket.text).toBe('Fix the auth bug in login.ts');
+    expect(state.plan.current.body).toBe('## Plan\n1. Fix auth\n2. Add tests');
+    expect((state.plan.history?.length ?? 0) + 1).toBe(1);
+
+    // Fresh context: simulate resume after compaction
+    const resumeCtx = createToolContext({
+      worktree: ws.tmpDir,
+      directory: ws.tmpDir,
+      sessionID: ctx.sessionID,
+    });
+    const out = await help.execute({ view: 'context', includeArtifactContent: true }, resumeCtx);
+    expect(typeof out).toBe('string');
+    const md = out as string;
+    expect(md).toContain('Fix the auth bug in login.ts');
+    expect(md).toContain('## Plan');
+    expect(md).toContain('Fix auth');
+    expect(md).toContain('current plan v1: available');
+    expect(md).toContain(state.ticket.digest.slice(0, 8));
+    expect(md).toContain(state.plan.current.digest.slice(0, 8));
+  });
+
+  it('verbose alone does NOT include artifact content in real session', async () => {
+    await hydrate.execute({}, ctx);
+    await ticket.execute({ text: 'Confidential task', source: 'user' }, ctx);
+
+    const out = await help.execute({ view: 'context', verbose: true }, ctx);
+    const parsed = JSON.parse(out as string);
+    expect(parsed.artifacts.ticket.content).toBeUndefined();
+    expect(parsed.artifacts.ticket.digest).toBeTruthy();
+  });
+
+  it('command view rejects includeArtifactContent via strict schema', async () => {
+    const out = await help.execute(
+      {
+        view: 'command',
+        command: 'start',
+        includeArtifactContent: true,
+      } as Record<string, unknown>,
+      ctx,
+    );
+    const parsed = JSON.parse(out as string);
+    expect(parsed.error).toBe(true);
+    expect(parsed.message).toContain('Use context');
+  });
+});
+
+describe('degraded discovery blocker projection', () => {
+  it('projects blocker from discoveryHealthGate blocked state', () => {
+    const base = makeProgressedState('IMPLEMENTATION');
+    const degraded = buildHelpResult(
+      {
+        ...base,
+        discoveryHealthGate: {
+          status: 'blocked',
+          code: 'DISCOVERY_HEALTH_DEGRADED',
+          message: 'Discovery health is degraded',
+          blockedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      TEAM_POLICY,
+      { view: 'context' },
+    );
+    expect(degraded.blocker).not.toBeNull();
+    if (degraded.blocker) {
+      expect(degraded.blocker.reasonCode).toBe('DISCOVERY_HEALTH_DEGRADED');
+      expect(degraded.blocker.message).toBe('Discovery health is degraded');
     }
   });
 });

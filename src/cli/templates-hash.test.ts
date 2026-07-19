@@ -180,9 +180,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for #686: /implement template now documents the IMPL_VALIDATION
     // gate with auto-chain (flowguard_run_check) between recording evidence and
     // entering the review loop, closing the gap between README and template.
+    // Refreshed for #689: /help and /commands templates now instruct the agent
+    // to render Markdown guidance verbatim instead of raw JSON. /implement and
+    // /plan include resume hints to retrieve artifact content via
+    // flowguard_help({ includeArtifactContent: true }).
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '71bdab0d84cf933c3de1c757f55f8a322d921d7518e1a867d3b42c29439d7d1c',
+      'c3152d2e2a957c92cf89faaae9b323535765033def5b1394d1740f39a2d92ee0',
     );
   });
 
