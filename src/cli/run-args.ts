@@ -5,6 +5,7 @@
 
 import { isHostId } from '../shared/hosts.js';
 import type { HeadlessConfig, ServeConfig } from './run-types.js';
+import type { CliParseResult } from './parse-result.js';
 
 function isUnknownFlag(arg: string, knownFlags: string[]): boolean {
   return arg.startsWith('-') && !knownFlags.includes(arg);
@@ -102,16 +103,28 @@ function handleRunArg(
   index: number,
   config: HeadlessConfig,
   errors: string[],
-): { index: number; done: boolean } {
+): { index: number; done: boolean; help?: boolean } {
   const arg = argv[index];
-  if (arg === '--') {
-    const next = argv[index + 1];
-    if (next) config.prompt = next;
-    return { index, done: true };
+  if (arg === '--help' || arg === '-h') {
+    return { index: argv.length, done: true, help: true };
   }
+
+  if (arg === '--') {
+    const remaining = argv.slice(index + 1).join(' ');
+    if (remaining) config.prompt = remaining;
+    return { index: argv.length, done: true };
+  }
+
   const handler = arg ? RUN_HANDLERS[arg] : undefined;
   if (handler) return { index: handler(argv, index, config, errors), done: false };
-  if (arg && !arg.startsWith('-')) config.prompt = arg;
+
+  if (arg && !arg.startsWith('-')) {
+    if (config.prompt) {
+      errors.push(`Unexpected extra argument: ${arg}`);
+    } else {
+      config.prompt = arg;
+    }
+  }
   return { index, done: false };
 }
 
@@ -123,13 +136,17 @@ function handleServeArg(
 ): number {
   const arg = argv[index];
   const handler = arg ? SERVE_HANDLERS[arg] : undefined;
-  return handler ? handler(argv, index, config, errors) : index;
+  if (handler) return handler(argv, index, config, errors);
+  if (arg && !arg.startsWith('-')) {
+    errors.push(`Unexpected positional argument: ${arg}`);
+  }
+  return index;
 }
 
-export function parseRunArgs(argv: string[]): { config: HeadlessConfig; errors: string[] } | null {
+export function parseRunArgs(argv: string[]): CliParseResult<HeadlessConfig> {
   const config: HeadlessConfig = { prompt: '' };
   const errors: string[] = [];
-  const knownFlags = ['--', '--prompt', '--cwd', '--host'];
+  const knownFlags = ['--', '--prompt', '--cwd', '--host', '--help', '-h'];
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -141,6 +158,7 @@ export function parseRunArgs(argv: string[]): { config: HeadlessConfig; errors: 
     }
 
     const result = handleRunArg(argv, i, config, errors);
+    if (result.help) return { kind: 'help' };
     i = result.done ? argv.length : result.index;
   }
 
@@ -148,17 +166,23 @@ export function parseRunArgs(argv: string[]): { config: HeadlessConfig; errors: 
     errors.push('Prompt is required');
   }
 
-  return errors.length > 0 ? null : { config, errors };
+  if (errors.length > 0) {
+    return { kind: 'error', error: errors.join('; ') };
+  }
+
+  return { kind: 'ok', value: config };
 }
 
-export function parseServeArgs(argv: string[]): { config: ServeConfig; errors: string[] } | null {
+export function parseServeArgs(argv: string[]): CliParseResult<ServeConfig> {
   const config: ServeConfig = {};
   const errors: string[] = [];
-  const knownFlags = ['--port', '--hostname', '--cwd', '--host'];
+  const knownFlags = ['--port', '--hostname', '--cwd', '--host', '--help', '-h'];
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg) continue;
+
+    if (arg === '--help' || arg === '-h') return { kind: 'help' };
 
     if (isUnknownFlag(arg, knownFlags)) {
       errors.push(`Unknown flag: ${arg}`);
@@ -168,5 +192,9 @@ export function parseServeArgs(argv: string[]): { config: ServeConfig; errors: s
     i = handleServeArg(argv, i, config, errors);
   }
 
-  return errors.length > 0 ? null : { config, errors };
+  if (errors.length > 0) {
+    return { kind: 'error', error: errors.join('; ') };
+  }
+
+  return { kind: 'ok', value: config };
 }

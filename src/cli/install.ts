@@ -17,6 +17,8 @@ import { resetAdapterLogger } from '../logging/adapter-logger.js';
 import type { FlowGuardLogger } from '../logging/logger.js';
 import { HOST_IDS } from '../shared/hosts.js';
 import { POLICY_MODES } from '../state/policy-mode.js';
+import type { CliParseResult } from './parse-result.js';
+import { formatTargetPath } from './install-helpers.js';
 import {
   type InstallScope,
   type InstallPlatform,
@@ -46,6 +48,7 @@ export {
 } from './install-helpers.js';
 export {
   resolveTarget,
+  formatTargetPath,
   sha256,
   computeMandatesDigest,
   mergeReviewerTaskPermission,
@@ -202,6 +205,8 @@ function parseOneArg(
   argv: string[],
   i: number,
 ): number {
+  if (arg === '--help' || arg === '-h') return -2;
+
   const valueFlags = new Set([
     '--install-scope',
     '--platform',
@@ -238,63 +243,83 @@ function parseOneArg(
   }
 }
 
-/**
- * Parse CLI arguments from process.argv.
- *
- * Supports both new flags (--install-scope, --policy-mode) and deprecated
- * aliases (--global, --project, --mode) with warnings.
- *
- * @param argv - Raw argv (typically process.argv.slice(2)).
- * @returns Parsed arguments and deprecation warnings, or null if invalid.
- */
-export function parseArgs(argv: string[]): { args: CliArgs; deprecations: string[] } | null {
-  const action = argv[0] as CliAction | undefined;
-  if (!action || !VALID_ACTIONS.includes(action)) {
-    return null;
-  }
+function buildArgs(action: CliAction, st: ParseState): CliArgs {
+  return {
+    action,
+    installScope: st.installScope,
+    installPlatform: st.installPlatform,
+    policyMode: st.policyMode,
+    force: st.force,
+    coreTarball: st.coreTarball,
+    checksumsFile: st.checksumsFile,
+    allowUnverifiedTarball: st.allowUnverifiedTarball,
+    logMode: st.logMode,
+  };
+}
 
-  if (action === 'run' || action === 'serve' || action === 'inspect') {
-    return {
+function makeDelegatedResult(
+  action: string,
+): CliParseResult<{ args: CliArgs; deprecations: string[] }> {
+  return {
+    kind: 'ok',
+    value: {
       args: {
-        action,
+        action: action as CliAction,
         installScope: 'global',
         installPlatform: 'opencode',
         policyMode: 'team',
         force: false,
       },
       deprecations: [],
-    };
-  }
+    },
+  };
+}
 
+function parseInstallArgs(
+  action: CliAction,
+  argv: string[],
+): CliParseResult<{ args: CliArgs; deprecations: string[] }> {
   const st = initialParseState();
   const deprecations: string[] = [];
 
   for (let i = 1; i < argv.length;) {
     const arg = argv[i];
-    if (arg === undefined) return null;
+    if (arg === undefined) return { kind: 'error', error: 'Unexpected empty argument' };
     const advance = parseOneArg(st, deprecations, arg, argv, i);
-    if (advance < 0) return null;
+    if (advance === -2) return { kind: 'help' };
+    if (advance < 0)
+      return { kind: 'error', error: `Unknown option: ${arg}`, hint: 'Use --help for usage' };
     i += advance;
   }
 
   if (st.checksumsFile && st.allowUnverifiedTarball) {
-    return null;
+    return {
+      kind: 'error',
+      error: '--checksums-file and --allow-unverified-tarball are mutually exclusive',
+    };
   }
 
-  return {
-    args: {
-      action,
-      installScope: st.installScope,
-      installPlatform: st.installPlatform,
-      policyMode: st.policyMode,
-      force: st.force,
-      coreTarball: st.coreTarball,
-      checksumsFile: st.checksumsFile,
-      allowUnverifiedTarball: st.allowUnverifiedTarball,
-      logMode: st.logMode,
-    },
-    deprecations,
-  };
+  return { kind: 'ok', value: { args: buildArgs(action, st), deprecations } };
+}
+
+/** Parse CLI arguments from process.argv. */
+export function parseArgs(
+  argv: string[],
+): CliParseResult<{ args: CliArgs; deprecations: string[] }> {
+  const action = argv[0] as CliAction | undefined;
+  if (!action || !VALID_ACTIONS.includes(action)) {
+    return {
+      kind: 'error',
+      error: action ? `Unknown command: ${action}` : 'No command specified',
+      hint: 'Use --help for usage',
+    };
+  }
+
+  if (action === 'run' || action === 'serve' || action === 'inspect') {
+    return makeDelegatedResult(action);
+  }
+
+  return parseInstallArgs(action, argv);
 }
 
 // ─── CLI Entry Point ──────────────────────────────────────────────────────────
@@ -342,7 +367,13 @@ export function formatResult(result: CliResult): string {
 /**
  * Format doctor check results for console output.
  */
-export function formatDoctor(checks: DoctorCheck[]): string {
+export function formatDoctor(checks: DoctorCheck[], host: InstallPlatform): string {
+  const hostNames: Record<InstallPlatform, string> = {
+    opencode: 'OpenCode',
+    'claude-code': 'Claude Code',
+    codex: 'Codex',
+  };
+  const hostName = hostNames[host] ?? host;
   const lines: string[] = [];
   const iconMap: Record<DoctorStatus, string> = {
     ok: 'ok',
@@ -362,9 +393,33 @@ export function formatDoctor(checks: DoctorCheck[]): string {
   }
 
   const ok = checks.filter((c) => c.status === 'ok').length;
+  const warn = checks.filter((c) => c.status === 'warn').length;
   const total = checks.length;
+
+  let overall: string;
+  if (total === 0) {
+    overall = 'NOT_VERIFIED';
+  } else if (checks.some((c) => c.status !== 'ok' && c.status !== 'warn')) {
+    overall = 'NOT_VERIFIED';
+  } else if (warn > 0) {
+    overall = 'HEALTHY_WITH_WARNINGS';
+  } else {
+    overall = 'HEALTHY';
+  }
+
   lines.push('');
+  lines.push(`  Status: ${overall}`);
   lines.push(`  ${ok}/${total} checks passed`);
+
+  if (warn > 0) {
+    lines.push(`  ${warn} warning(s) — host activation/enforcement not fully verified`);
+    lines.push(`  Next: restart ${hostName} and re-run \`flowguard doctor\``);
+  }
+  if (total === 0 || checks.some((c) => c.status !== 'ok' && c.status !== 'warn')) {
+    lines.push(
+      `  Next: \`flowguard install --force\` to repair, or \`flowguard doctor\` after fixing`,
+    );
+  }
 
   return lines.join('\n');
 }
@@ -386,7 +441,7 @@ Options:
   --install-scope  Where to install: global (default) or repo
   --platform       Install host platform: opencode (default), claude-code, or codex
   --host           Alias for --platform during install; runtime host for run/serve
-  --policy-mode    FlowGuard policy: solo (default), team, team-ci, regulated
+  --policy-mode    FlowGuard policy: team (default), solo, team-ci, regulated
   --force          Overwrite all managed artifacts
   --core-tarball   Path to flowguard-core-{version}.tgz (required for install)
   --checksums-file Path to checksums.sha256 (defaults to tarball-adjacent checksums.sha256)
@@ -433,11 +488,19 @@ function logShippedExecutableFailures(checks: DoctorCheck[], cliLog: FlowGuardLo
 }
 
 async function executeInstallAction(args: CliArgs, cliLog: FlowGuardLogger): Promise<number> {
+  const platform = args.installPlatform ?? 'opencode';
+  const target = resolveTarget(args.installScope, platform);
+  const displayTarget = formatTargetPath(target, args.installScope, process.cwd());
+  const hostNames: Record<InstallPlatform, string> = {
+    opencode: 'OpenCode',
+    'claude-code': 'Claude Code',
+    codex: 'Codex',
+  };
+  const hostName = hostNames[platform] ?? platform;
   const result = await install(args);
-  const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
-  console.log(`Installing FlowGuard to ${targetLabel}...`);
+  console.log(`Installing FlowGuard for ${hostName} at ${displayTarget}...`);
   console.log(`  Install scope: ${args.installScope}`);
-  console.log(`  Platform: ${args.installPlatform ?? 'opencode'}`);
+  console.log(`  Platform: ${platform}`);
   console.log(`  Policy mode: ${args.policyMode}`);
   console.log('');
   console.log(formatResult(result));
@@ -450,9 +513,17 @@ async function executeInstallAction(args: CliArgs, cliLog: FlowGuardLogger): Pro
 }
 
 async function executeUninstallAction(args: CliArgs, cliLog: FlowGuardLogger): Promise<number> {
-  const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
+  const platform = args.installPlatform ?? 'opencode';
+  const target = resolveTarget(args.installScope, platform);
+  const displayTarget = formatTargetPath(target, args.installScope, process.cwd());
+  const hostNames: Record<InstallPlatform, string> = {
+    opencode: 'OpenCode',
+    'claude-code': 'Claude Code',
+    codex: 'Codex',
+  };
+  const hostName = hostNames[platform] ?? platform;
   const result = await uninstall(args);
-  console.log(`Uninstalling FlowGuard from ${targetLabel}...`);
+  console.log(`Uninstalling FlowGuard for ${hostName} from ${displayTarget}...`);
   console.log('');
   console.log(formatResult(result));
   cliLog.info('cli', 'uninstall completed', { filesRemoved: result.ops.length });
@@ -460,11 +531,19 @@ async function executeUninstallAction(args: CliArgs, cliLog: FlowGuardLogger): P
 }
 
 async function executeDoctorAction(args: CliArgs, cliLog: FlowGuardLogger): Promise<number> {
-  const targetLabel = args.installScope === 'global' ? '~/.config/opencode/' : './.opencode/';
+  const platform = args.installPlatform ?? 'opencode';
+  const target = resolveTarget(args.installScope, platform);
+  const displayTarget = formatTargetPath(target, args.installScope, process.cwd());
+  const hostNames: Record<InstallPlatform, string> = {
+    opencode: 'OpenCode',
+    'claude-code': 'Claude Code',
+    codex: 'Codex',
+  };
+  const hostName = hostNames[platform] ?? platform;
   const checks = await doctor(args);
-  console.log(`Checking FlowGuard installation at ${targetLabel}...`);
+  console.log(`Checking FlowGuard for ${hostName} at ${displayTarget}...`);
   console.log('');
-  console.log(formatDoctor(checks));
+  console.log(formatDoctor(checks, platform));
   const hasFailure = checks.some((c) => c.status !== 'ok' && c.status !== 'warn');
   logShippedExecutableFailures(checks, cliLog);
   cliLog.info('cli', 'doctor completed', {
@@ -474,6 +553,34 @@ async function executeDoctorAction(args: CliArgs, cliLog: FlowGuardLogger): Prom
   return hasFailure ? 1 : 0;
 }
 
+async function executeAction(
+  action: CliAction,
+  args: CliArgs,
+  argv: string[],
+  cliLog: FlowGuardLogger,
+): Promise<number> {
+  switch (action) {
+    case 'install':
+      return executeInstallAction(args, cliLog);
+    case 'uninstall':
+      return executeUninstallAction(args, cliLog);
+    case 'doctor':
+      return executeDoctorAction(args, cliLog);
+    case 'run': {
+      const { runMain } = await import('./run.js');
+      return runMain(argv.slice(1));
+    }
+    case 'serve': {
+      const { serveMain } = await import('./run.js');
+      return serveMain(argv.slice(1));
+    }
+    case 'inspect': {
+      const { inspectMain } = await import('./inspect-command.js');
+      return inspectMain(argv.slice(1));
+    }
+  }
+}
+
 /**
  * CLI main entry point.
  * Only executes when this file is run directly (not when imported for testing).
@@ -481,12 +588,19 @@ async function executeDoctorAction(args: CliArgs, cliLog: FlowGuardLogger): Prom
 export async function main(argv: string[]): Promise<number> {
   const parsed = parseArgs(argv);
 
-  if (!parsed) {
+  if (parsed.kind === 'help') {
     console.log(getUsage());
-    return 1;
+    return 0;
   }
 
-  const { args, deprecations } = parsed;
+  if (parsed.kind === 'error') {
+    console.error(`[error] ${parsed.error}`);
+    if (parsed.hint) console.error(parsed.hint);
+    console.error(getUsage());
+    return 2;
+  }
+
+  const { args, deprecations } = parsed.value;
 
   const cliLog = initCliLogger(
     resolveTarget(args.installScope, args.installPlatform ?? 'opencode'),
@@ -506,31 +620,7 @@ export async function main(argv: string[]): Promise<number> {
   });
 
   try {
-    switch (args.action) {
-      case 'install':
-        return executeInstallAction(args, cliLog);
-
-      case 'uninstall':
-        return executeUninstallAction(args, cliLog);
-
-      case 'doctor':
-        return executeDoctorAction(args, cliLog);
-
-      case 'run': {
-        const { runMain } = await import('./run.js');
-        return runMain(argv.slice(1));
-      }
-
-      case 'serve': {
-        const { serveMain } = await import('./run.js');
-        return serveMain(argv.slice(1));
-      }
-
-      case 'inspect': {
-        const { inspectMain } = await import('./inspect-command.js');
-        return inspectMain(argv.slice(1));
-      }
-    }
+    return executeAction(args.action, args, argv, cliLog);
   } finally {
     resetAdapterLogger();
   }

@@ -294,12 +294,18 @@ Options:
 export async function runMain(argv: string[]): Promise<number> {
   const parsed = parseRunArgs(argv);
 
-  if (!parsed) {
+  if (parsed.kind === 'help') {
     console.log(getRunUsage());
-    return 1;
+    return 0;
   }
 
-  const result = await run(parsed.config);
+  if (parsed.kind === 'error') {
+    console.error(`[error] ${parsed.error}`);
+    console.error(getRunUsage());
+    return 2;
+  }
+
+  const result = await run(parsed.value);
   console.log(formatRunResult(result));
 
   return result.success ? 0 : 1;
@@ -308,15 +314,21 @@ export async function runMain(argv: string[]): Promise<number> {
 export async function serveMain(argv: string[]): Promise<number> {
   const parsed = parseServeArgs(argv);
 
-  if (!parsed) {
+  if (parsed.kind === 'help') {
     console.log(getServeUsage());
-    return 1;
+    return 0;
   }
 
-  const result = await serve(parsed.config);
+  if (parsed.kind === 'error') {
+    console.error(`[error] ${parsed.error}`);
+    console.error(getServeUsage());
+    return 2;
+  }
+
+  const result = await serve(parsed.value);
 
   if (!result.success) {
-    console.log(`[error] ${result.error}`);
+    console.error(`[error] ${result.error}`);
     return 1;
   }
 

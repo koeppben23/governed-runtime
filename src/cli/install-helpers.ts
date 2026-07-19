@@ -14,7 +14,7 @@ import { readFile, writeFile, unlink, open, lstat, rename, rmdir, readdir } from
 import type { FileHandle } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { ensureDir } from '../adapters/persistence.js';
-import { join, resolve, dirname, basename } from 'node:path';
+import { join, resolve, dirname, basename, relative as relativePath } from 'node:path';
 import { homedir } from 'node:os';
 import { timingSafeEqual } from 'node:crypto';
 import { hashText, hashFile } from '../shared/hashing.js';
@@ -108,6 +108,13 @@ export function resolveTarget(scope: InstallScope, platform: InstallPlatform = '
   if (platform === 'claude-code') return resolve('.claude');
   if (platform === 'codex') return resolve('plugins', 'flowguard');
   return resolve('.opencode');
+}
+
+export function formatTargetPath(target: string, scope: InstallScope, cwd: string): string {
+  if (scope === 'global') return target.replace(homedir(), '~');
+  const rel = relativePath(cwd, target);
+  if (!rel) return './';
+  return `./${rel.replace(/\\/g, '/')}`;
 }
 
 export function reviewerDefinitionForPlatform(platform: InstallPlatform): {

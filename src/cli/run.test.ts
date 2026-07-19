@@ -76,130 +76,191 @@ async function createExecutable(
 }
 
 describe('parseRunArgs', () => {
+  function ok(result: ReturnType<typeof parseRunArgs>) {
+    expect(result.kind).toBe('ok');
+    return (
+      result as {
+        kind: 'ok';
+        value: ReturnType<typeof parseRunArgs> extends { kind: 'ok'; value: infer V } ? V : never;
+      }
+    ).value;
+  }
+
   describe('happy path', () => {
     it('parses positional prompt', () => {
-      const result = parseRunArgs(['Run /hydrate']);
-      expect(result).not.toBeNull();
-      expect(result?.config.prompt).toBe('Run /hydrate');
+      const config = ok(parseRunArgs(['Run /hydrate']));
+      expect(config.prompt).toBe('Run /hydrate');
     });
 
     it('parses --prompt flag', () => {
-      const result = parseRunArgs(['--prompt', 'Run /validate']);
-      expect(result).not.toBeNull();
-      expect(result?.config.prompt).toBe('Run /validate');
+      const config = ok(parseRunArgs(['--prompt', 'Run /validate']));
+      expect(config.prompt).toBe('Run /validate');
     });
 
     it('parses -- for prompt', () => {
-      const result = parseRunArgs(['--', 'Run /hydrate']);
-      expect(result).not.toBeNull();
-      expect(result?.config.prompt).toBe('Run /hydrate');
+      const config = ok(parseRunArgs(['--', 'Run /hydrate']));
+      expect(config.prompt).toBe('Run /hydrate');
+    });
+
+    it('joins all tokens after -- into prompt', () => {
+      const config = ok(parseRunArgs(['--', 'Run', '/hydrate', 'policyMode=team-ci']));
+      expect(config.prompt).toBe('Run /hydrate policyMode=team-ci');
     });
 
     it('parses --cwd', () => {
-      const result = parseRunArgs(['--cwd', '/some/path', 'Run /validate']);
-      expect(result).not.toBeNull();
-      expect(result?.config.cwd).toBe('/some/path');
+      const config = ok(parseRunArgs(['--cwd', '/some/path', 'Run /validate']));
+      expect(config.cwd).toBe('/some/path');
     });
 
     it('parses --host', () => {
-      const result = parseRunArgs(['--host', 'claude-code', '--', 'Run /validate']);
-      expect(result).not.toBeNull();
-      expect(result?.config.host).toBe('claude-code');
-      expect(result?.config.prompt).toBe('Run /validate');
+      const config = ok(parseRunArgs(['--host', 'claude-code', '--', 'Run /validate']));
+      expect(config.host).toBe('claude-code');
+      expect(config.prompt).toBe('Run /validate');
     });
   });
 
   describe('bad path', () => {
-    it('returns null when prompt missing', () => {
-      expect(parseRunArgs([])).toBeNull();
+    it('returns error when prompt missing', () => {
+      const result = parseRunArgs([]);
+      expect(result.kind).toBe('error');
     });
 
-    it('returns null when --prompt missing value', () => {
-      expect(parseRunArgs(['--prompt'])).toBeNull();
+    it('returns error when --prompt missing value', () => {
+      const result = parseRunArgs(['--prompt']);
+      expect(result.kind).toBe('error');
     });
 
-    it('returns null for unknown flag', () => {
-      expect(parseRunArgs(['--unknown', 'value'])).toBeNull();
+    it('returns error for unknown flag', () => {
+      const result = parseRunArgs(['--unknown', 'value']);
+      expect(result.kind).toBe('error');
     });
 
-    it('returns null for invalid host value', () => {
-      expect(parseRunArgs(['--host', 'unknown-host', '--', 'Run /hydrate'])).toBeNull();
+    it('returns error for invalid host value', () => {
+      const result = parseRunArgs(['--host', 'unknown-host', '--', 'Run /hydrate']);
+      expect(result.kind).toBe('error');
     });
 
-    it('returns null when --host is missing a value', () => {
-      expect(parseRunArgs(['--host'])).toBeNull();
+    it('returns error when --host is missing a value', () => {
+      const result = parseRunArgs(['--host']);
+      expect(result.kind).toBe('error');
+    });
+
+    it('returns help for --help', () => {
+      const result = parseRunArgs(['--help']);
+      expect(result.kind).toBe('help');
+    });
+
+    it('returns help for -h', () => {
+      const result = parseRunArgs(['-h']);
+      expect(result.kind).toBe('help');
+    });
+
+    it('rejects extra positional arguments', () => {
+      const result = parseRunArgs(['prompt1', 'prompt2']);
+      expect(result.kind).toBe('error');
+      if (result.kind === 'error') expect(result.error).toContain('extra');
     });
   });
 
   describe('corner cases', () => {
     it('handles prompt with special chars', () => {
-      const result = parseRunArgs(['Run /plan "quotes" <brackets>']);
-      expect(result).not.toBeNull();
-      expect(result?.config.prompt).toBe('Run /plan "quotes" <brackets>');
+      const config = ok(parseRunArgs(['Run /plan "quotes" <brackets>']));
+      expect(config.prompt).toBe('Run /plan "quotes" <brackets>');
     });
   });
 });
 
 describe('parseServeArgs', () => {
+  function ok(result: ReturnType<typeof parseServeArgs>) {
+    expect(result.kind).toBe('ok');
+    return (
+      result as {
+        kind: 'ok';
+        value: { port?: number; hostname?: string; host?: string; cwd?: string };
+      }
+    ).value;
+  }
+
   describe('happy path', () => {
     it('parses defaults', () => {
-      expect(parseServeArgs([])).not.toBeNull();
+      const config = ok(parseServeArgs([]));
+      expect(config.port).toBeUndefined();
     });
 
     it('parses --port', () => {
-      const result = parseServeArgs(['--port', '3000']);
-      expect(result).not.toBeNull();
-      expect(result?.config.port).toBe(3000);
+      const config = ok(parseServeArgs(['--port', '3000']));
+      expect(config.port).toBe(3000);
     });
 
     it('parses --hostname', () => {
-      const result = parseServeArgs(['--hostname', '0.0.0.0']);
-      expect(result).not.toBeNull();
-      expect(result?.config.hostname).toBe('0.0.0.0');
+      const config = ok(parseServeArgs(['--hostname', '0.0.0.0']));
+      expect(config.hostname).toBe('0.0.0.0');
     });
 
     it('parses all flags', () => {
-      const result = parseServeArgs([
-        '--host',
-        'opencode',
-        '--port',
-        '8080',
-        '--hostname',
-        '0.0.0.0',
-        '--cwd',
-        '/ws',
-      ]);
-      expect(result).not.toBeNull();
-      expect(result?.config.host).toBe('opencode');
-      expect(result?.config.port).toBe(8080);
-      expect(result?.config.hostname).toBe('0.0.0.0');
-      expect(result?.config.cwd).toBe('/ws');
+      const config = ok(
+        parseServeArgs([
+          '--host',
+          'opencode',
+          '--port',
+          '8080',
+          '--hostname',
+          '0.0.0.0',
+          '--cwd',
+          '/ws',
+        ]),
+      );
+      expect(config.host).toBe('opencode');
+      expect(config.port).toBe(8080);
+      expect(config.hostname).toBe('0.0.0.0');
+      expect(config.cwd).toBe('/ws');
     });
   });
 
   describe('bad path', () => {
-    it('returns null when --port missing', () => {
-      expect(parseServeArgs(['--port'])).toBeNull();
+    it('returns error when --port missing', () => {
+      const result = parseServeArgs(['--port']);
+      expect(result.kind).toBe('error');
     });
 
-    it('returns null when --port invalid', () => {
-      expect(parseServeArgs(['--port', 'not-a-number'])).toBeNull();
+    it('returns error when --port invalid', () => {
+      const result = parseServeArgs(['--port', 'not-a-number']);
+      expect(result.kind).toBe('error');
     });
 
-    it('returns null when --port out of range', () => {
-      expect(parseServeArgs(['--port', '0'])).toBeNull();
+    it('returns error when --port out of range', () => {
+      const result = parseServeArgs(['--port', '0']);
+      expect(result.kind).toBe('error');
     });
 
     it('rejects unsupported --detach flag', () => {
-      expect(parseServeArgs(['--detach'])).toBeNull();
+      const result = parseServeArgs(['--detach']);
+      expect(result.kind).toBe('error');
     });
 
-    it('returns null for invalid host value', () => {
-      expect(parseServeArgs(['--host', 'unknown-host'])).toBeNull();
+    it('returns error for invalid host value', () => {
+      const result = parseServeArgs(['--host', 'unknown-host']);
+      expect(result.kind).toBe('error');
     });
 
-    it('returns null when --host is missing a value', () => {
-      expect(parseServeArgs(['--host'])).toBeNull();
+    it('returns error when --host is missing a value', () => {
+      const result = parseServeArgs(['--host']);
+      expect(result.kind).toBe('error');
+    });
+
+    it('returns help for --help', () => {
+      const result = parseServeArgs(['--help']);
+      expect(result.kind).toBe('help');
+    });
+
+    it('returns help for -h', () => {
+      const result = parseServeArgs(['-h']);
+      expect(result.kind).toBe('help');
+    });
+
+    it('rejects unexpected positional argument', () => {
+      const result = parseServeArgs(['unexpected']);
+      expect(result.kind).toBe('error');
     });
   });
 });

@@ -41,6 +41,22 @@ The explicit supply-chain opt-out is `--allow-unverified-tarball`. It is not
 recommended; the installer warns and logs the opt-out. Use it only when an
 operator has verified the artifact through another controlled channel.
 
+## Host Selection Matrix
+
+Before installing, choose the host platform. Enforcement and activation guarantees
+differ per host.
+
+| Host        | Enforcement   | Global Target                 | Repo Target            | Activation       | Key Limitation               |
+| ----------- | ------------- | ----------------------------- | ---------------------- | ---------------- | ---------------------------- |
+| OpenCode    | `synchronous` | `~/.config/opencode/`         | `./.opencode/`         | Restart OpenCode | —                            |
+| Claude Code | `hook_gated`  | `~/.claude/`                  | `./.claude/`           | Restart Claude   | Hook timeout = tool proceeds |
+| Codex       | `hook_gated`  | `~/.codex/plugins/flowguard/` | `./plugins/flowguard/` | Restart Codex    | `NOT_VERIFIED_NATIVE_LOAD`   |
+
+OpenCode provides the strongest enforcement path through its synchronous plugin.
+Claude Code and Codex are supported through MCP, hooks, and native packaging with
+hook-gated, platform-limited guarantees. See
+[Platform Limitations](./platform-limitations.md) for details.
+
 ### 2. Initialize OpenCode Integration (Standard)
 
 The approved local tarball is the authoritative package source. npm/npx may use an internal cache, but no global installation is required.
