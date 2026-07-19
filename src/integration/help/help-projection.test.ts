@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { TEAM_POLICY } from '../../config/policy.js';
+import * as crypto from 'node:crypto';
 import { makeProgressedState, makeState, TICKET } from '../../fixtures.js';
 import { buildHelpResult, finishToReadiness } from './help-projection.js';
 import { buildFinishCard } from '../status.js';
@@ -7,7 +8,18 @@ import { resolveCurrentReviewReport } from '../review/report-coherence.js';
 import type { ReviewReport } from '../../state/evidence.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';
 import { help } from '../tools/help-tool.js';
-import { createToolContext } from '../test-helpers.js';
+import {
+  createToolContext,
+  createTestWorkspace,
+  withTestEnv,
+  type TestWorkspace,
+  type TestToolContext,
+} from '../test-helpers.js';
+import { hydrate } from '../tools/hydrate.js';
+import { ticket } from '../tools/ticket-tool.js';
+import { plan } from '../tools/plan.js';
+import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
+import { readState } from '../../adapters/persistence.js';
 
 function makeReviewReport(
   state: ReturnType<typeof makeProgressedState>,
@@ -346,5 +358,84 @@ describe('flowguard_help tool execute', () => {
     const out = await help.execute({ view: 'context', verbose: true }, ctx);
     expect(() => JSON.parse(out as string)).not.toThrow();
     expect(JSON.parse(out as string).title).toBe('FlowGuard Help');
+  });
+});
+
+describe('resume end-to-end via help.execute', () => {
+  let ws: TestWorkspace;
+  let ctx: TestToolContext;
+  let cleanupEnv: () => void;
+
+  beforeEach(async () => {
+    cleanupEnv = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
+    ws = await createTestWorkspace();
+    ctx = createToolContext({
+      worktree: ws.tmpDir,
+      directory: ws.tmpDir,
+      sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
+    });
+  });
+
+  afterEach(async () => {
+    cleanupEnv();
+    await ws.cleanup();
+  });
+
+  it('returns ticket and plan content via includeArtifactContent after hydrate+ticket+plan', async () => {
+    await hydrate.execute({}, ctx);
+    await ticket.execute({ text: 'Fix the auth bug in login.ts', source: 'user' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix auth\n2. Add tests' }, ctx);
+
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sd = sessionDir(fp.fingerprint, ctx.sessionID);
+    const state = await readState(sd);
+    expect(state?.ticket?.text).toBe('Fix the auth bug in login.ts');
+    expect(state?.plan?.current?.body).toContain('## Plan');
+
+    const out = await help.execute({ view: 'context', includeArtifactContent: true }, ctx);
+    expect(typeof out).toBe('string');
+    expect(out as string).toContain('Fix the auth bug in login.ts');
+    expect(out as string).toContain('## Plan');
+  });
+
+  it('verbose alone does NOT include artifact content in real session', async () => {
+    await hydrate.execute({}, ctx);
+    await ticket.execute({ text: 'Confidential task', source: 'user' }, ctx);
+
+    const out = await help.execute({ view: 'context', verbose: true }, ctx);
+    const parsed = JSON.parse(out as string);
+    expect(parsed.artifacts.ticket.content).toBeUndefined();
+    expect(parsed.artifacts.ticket.digest).toBeTruthy();
+  });
+
+  it('command view renders single command without artifact content', async () => {
+    const out = await help.execute({ view: 'command', command: 'start' }, ctx);
+    expect(typeof out).toBe('string');
+    expect(out as string).not.toContain('**Ticket:**');
+    expect(out as string).not.toContain('**Session artifacts:**');
+  });
+});
+
+describe('degraded discovery blocker projection', () => {
+  it('projects readiness from discoveryHealthGate blocked state', () => {
+    const base = makeProgressedState('IMPLEMENTATION');
+    const degraded = buildHelpResult(
+      {
+        ...base,
+        discoveryHealthGate: {
+          status: 'blocked',
+          code: 'DISCOVERY_HEALTH_DEGRADED',
+          message: 'Discovery health is degraded',
+          blockedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      TEAM_POLICY,
+      { view: 'context' },
+    );
+    // Discovery gate alone does not set readiness to not_verified via finish card.
+    // The gate is checked by the evaluator at audit/archive boundaries, not projected
+    // into the help readiness signal. The readiness field reflects the finish-card
+    // status which stays 'none' for a non-terminal phase without explicit blocker.
+    expect(degraded.readiness).toBe('none');
   });
 });
