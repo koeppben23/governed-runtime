@@ -65,12 +65,23 @@ export function projectStatusConclusion(
   // Blocked at a User Gate → decision_required
   // question comes from evaluator reason; actions from product commands
   if (evalResult.kind === 'waiting') {
+    const actions = productNextAction.commands.map((invocation) =>
+      projectStatusActionFromCommand(invocation, 'available'),
+    );
+
+    // A waiting gate with no resolvable commands is a data-integrity error —
+    // surface as terminal with the reason rather than an empty decision.
+    if (actions.length === 0) {
+      return {
+        kind: 'terminal',
+        message: `Blocked: ${evalResult.reason}`,
+      };
+    }
+
     return {
       kind: 'decision_required',
       question: evalResult.reason,
-      actions: productNextAction.commands.map((invocation) =>
-        projectStatusActionFromCommand(invocation, 'available'),
-      ),
+      actions,
     };
   }
 

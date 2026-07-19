@@ -108,10 +108,12 @@ describe('golden fixtures', () => {
     });
     const output = renderMarkdown(doc);
 
-    // Phase and Policy always first
+    // Phase and Policy always first (after ## Status heading)
     const lines = output.split('\n');
-    expect(lines[0]).toBe('**Phase:** Ready');
-    expect(lines[1]).toBe('**Policy:** solo');
+    expect(lines[0]).toBe('## Status');
+    expect(output).toContain('**Phase:** Ready');
+    expect(output).toContain('**Readiness:** Ready');
+    expect(output).toContain('**Policy:** solo');
 
     // Evidence summary present
     expect(output).toContain('**Verified:** 0');
@@ -171,12 +173,12 @@ describe('golden fixtures', () => {
 
     // Phase
     expect(output).toContain('**Phase:** Ready for plan approval');
+    // Readiness
+    expect(output).toContain('**Readiness:** Blocked');
     // Blocker section
     expect(output).toContain('`PLAN_REVIEW_REQUIRED`');
     expect(output).toContain('⚠ **Blocked:**');
     expect(output).toContain('A human review decision is required.');
-    // Recovery
-    expect(output).toContain('**Recovery:** Run /review-decision and choose a verdict.');
     // Evidence
     expect(output).toContain('**Verified:** 0');
     // Question
@@ -186,8 +188,8 @@ describe('golden fixtures', () => {
     expect(output).toContain('• `/request-changes` — Request revisions to the reviewed work.');
     expect(output).toContain('• `/reject` — Reject the reviewed work.');
     // No recommendation arrow (all available, none recommended)
-    const lastLine = output.split('\n').pop()!;
-    expect(lastLine).toContain('• `/reject`');
+    const conclusionLines = output.split('\n').slice(-3);
+    expect(conclusionLines.join('\n')).toContain('• `/reject`');
   });
 
   it('degraded discovery renders notice section', () => {

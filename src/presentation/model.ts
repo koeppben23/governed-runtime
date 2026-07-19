@@ -132,18 +132,24 @@ export interface ChecklistItem {
 
 export interface KeyValueSection {
   readonly kind: 'keyValue';
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
   readonly items: readonly KeyValueItem[];
 }
 
 export interface CommandListSection {
   readonly kind: 'commandList';
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
   readonly items: readonly PresentationAction[];
 }
 
 export interface BlockerSection {
   readonly kind: 'blocker';
-  /** Reason code — always rendered in backticks. */
-  readonly code: string;
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
+  /** Reason code — rendered in backticks. Null/omitted when not available. */
+  readonly code: string | null;
   /** Human-readable reason text. */
   readonly text: string;
   /** Recovery instruction, when available from the canonical source. */
@@ -152,29 +158,39 @@ export interface BlockerSection {
 
 export interface ArtifactListSection {
   readonly kind: 'artifactList';
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
   readonly items: readonly ArtifactItem[];
 }
 
 export interface FindingsSection {
   readonly kind: 'findings';
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
   readonly groups: readonly FindingGroup[];
 }
 
 export interface ChecklistSection {
   readonly kind: 'checklist';
-  /** Optional group label rendered as a heading above the checklist. */
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
+  /** Checklist label displayed inline above the items. */
   readonly label?: string;
   readonly items: readonly ChecklistItem[];
 }
 
 export interface TextSection {
   readonly kind: 'text';
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
   /** Validated markdown content — must pass {@link normalizedMarkdown}. */
   readonly content: NormalizedMarkdown;
 }
 
 export interface CodeSection {
   readonly kind: 'code';
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
   /** Validated language identifier — must pass {@link validateCodeLanguage}. */
   readonly language?: string;
   /** Code content — may contain internal blank lines. */
@@ -192,8 +208,8 @@ export interface NoticeSection {
   readonly kind: 'notice';
   /** Visual severity level. */
   readonly level: 'warning' | 'not_verified' | 'info';
-  /** Section heading. */
-  readonly heading: string;
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
   /** Primary message body. */
   readonly message: string;
   /** Structured detail rows. */

@@ -9,14 +9,16 @@
  * invents blocker text, recovery, or status labels. The renderer enforces
  * spacing invariants; this module produces the semantic structure.
  *
- * @version v1
+ * @version v2
  */
 
 import type { StatusProjection, StatusActionProjection } from './status.js';
 import type { DiscoveryHealthProjection } from '../discovery/discovery-health.js';
 import type { DiscoveryDriftStatusProjection } from './discovery-drift-status.js';
+import { getInstalledCommand } from './installed-commands.js';
 import {
   normalizedMarkdown,
+  parseStatusLabel,
   type PresentationDocument,
   type PresentationSection,
   type PresentationConclusion,
@@ -40,24 +42,21 @@ export interface FullStatusPresentationInput {
 /**
  * Build a compact-card PresentationDocument from the Full-Status projection.
  *
- * Renders sections in UX-optimised order:
- *   1. Status (phase, readiness, policy)
- *   2. Blocked (only when blocked)
- *   3. Evidence summary
- *   4. Available actions
- *   5. Notice (Discovery warnings / not-verified)
- *   6. Conclusion
+ * Renders sections with `##` headings in UX-optimised order:
+ *   1. ## Status (phase, readiness, policy)
+ *   2. ## Blocked (only when blocked)
+ *   3. ## Evidence summary
+ *   4. ## Available actions
+ *   5. ## Remaining checks (VALIDATION phase only)
+ *   6. ## Notice (Discovery warnings / not-verified)
+ *   7. Conclusion (no heading — inline at document end)
  */
 export function buildStatusDocument(input: FullStatusPresentationInput): PresentationDocument {
   const { status, discoveryHealth, discoveryDrift, remainingChecks } = input;
   const sections: PresentationSection[] = [];
 
   // 1. Status
-  const statusItems: KeyValueItem[] = [
-    { label: 'Phase', value: status.phaseLabel },
-    { label: 'Policy', value: status.policyMode },
-  ];
-  sections.push({ kind: 'keyValue', items: statusItems });
+  sections.push(buildStatusSection(status));
 
   // 2. Blocked
   if (status.blocker && status.blocker.reasonText) {
@@ -83,7 +82,6 @@ export function buildStatusDocument(input: FullStatusPresentationInput): Present
     sections.push(discoverySection);
   }
 
-  // 7. Conclusion
   const conclusion = buildPresentationConclusion(status.conclusion);
 
   return {
@@ -120,13 +118,38 @@ export function buildNoSessionDocument(): PresentationDocument {
 
 // ─── Section Builders ──────────────────────────────────────────────────────────
 
+function buildStatusSection(status: StatusProjection): PresentationSection {
+  const readiness = deriveReadinessLabel(status);
+  const items: KeyValueItem[] = [
+    { label: 'Phase', value: status.phaseLabel },
+    { label: 'Readiness', value: readiness },
+    { label: 'Policy', value: status.policyMode },
+  ];
+  return { kind: 'keyValue', heading: 'Status', items };
+}
+
+/**
+ * Project a normalised readiness label from the already-projected status fields.
+ *
+ * Does NOT re-evaluate gates, obligations, or completeness. Only translates the
+ * existing projection signals (blocker, evidence) into a presentation label.
+ */
+function deriveReadinessLabel(status: StatusProjection): string {
+  if (status.blocker?.reasonText) return parseStatusLabel('BLOCKED');
+  if (status.evidenceSummary.missing > 0 || status.evidenceSummary.failed > 0)
+    return parseStatusLabel('NOT_VERIFIED');
+  return parseStatusLabel('READY');
+}
+
 function buildBlockerSection(status: StatusProjection): BlockerSection {
   const blocker = status.blocker!;
   return {
     kind: 'blocker',
-    code: blocker.reasonCode ?? 'BLOCKED',
+    heading: 'Blocked',
+    code: blocker.reasonCode ?? null,
     text: blocker.reasonText!,
-    ...(status.productNextAction.summary ? { recovery: status.productNextAction.summary } : {}),
+    // recovery must come from the canonical projection, not from
+    // general next-action copy — omitted until the projection carries it
   };
 }
 
@@ -134,6 +157,7 @@ function buildEvidenceSection(status: StatusProjection): PresentationSection {
   const { evidenceSummary } = status;
   return {
     kind: 'keyValue',
+    heading: 'Evidence',
     items: [
       { label: 'Verified', value: String(evidenceSummary.present) },
       { label: 'Missing', value: String(evidenceSummary.missing) },
@@ -146,19 +170,22 @@ function buildEvidenceSection(status: StatusProjection): PresentationSection {
 }
 
 function buildAvailableActionsSection(status: StatusProjection): PresentationSection {
-  const items: PresentationAction[] = status.allowedCommands.map((invocation: string) => ({
-    invocation,
-    description: '', // populated below if installed metadata exists
-    visibility: 'available' as const,
-  }));
+  const items: PresentationAction[] = status.allowedCommands.map((invocation: string) => {
+    const cmd = getInstalledCommand(invocation);
+    return {
+      invocation,
+      description: cmd?.description ?? '',
+      visibility: 'available' as const,
+    };
+  });
 
-  return { kind: 'commandList', items };
+  return { kind: 'commandList', heading: 'Available actions', items };
 }
 
 function buildRemainingChecksSection(checks: string[]): PresentationSection {
   return {
     kind: 'checklist',
-    label: 'Remaining checks',
+    heading: 'Remaining checks',
     items: checks.map((id) => ({ text: id, checked: false })),
   };
 }
@@ -169,7 +196,6 @@ function buildDiscoveryNoticeSection(
 ): NoticeSection | null {
   if (!discoveryHealth) return null;
   if (discoveryHealth.healthy) {
-    // Only surface drift if healthy (degraded covers both)
     const driftNotVerified = discoveryDrift.notVerified.filter(
       (n: string) => !n.startsWith('NOT_VERIFIED:'),
     );

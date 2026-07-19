@@ -59,26 +59,32 @@ export function renderMarkdown(document: PresentationDocument): string {
 
 // ─── Section Dispatcher ────────────────────────────────────────────────────────
 
+type HeadedSection = { readonly heading?: string };
+
+function sectionHeading(section: HeadedSection): string {
+  return section.heading && section.heading.length > 0 ? `## ${section.heading}\n\n` : '';
+}
+
 function renderSection(section: PresentationSection): string {
   switch (section.kind) {
     case 'keyValue':
-      return renderKeyValue(section.items);
+      return sectionHeading(section) + renderKeyValue(section.items);
     case 'commandList':
-      return renderCommandList(section.items);
+      return sectionHeading(section) + renderCommandList(section.items);
     case 'blocker':
-      return renderBlocker(section);
+      return sectionHeading(section) + renderBlocker(section);
     case 'artifactList':
-      return renderArtifactList(section.items);
+      return sectionHeading(section) + renderArtifactList(section.items);
     case 'findings':
-      return renderFindings(section.groups);
+      return sectionHeading(section) + renderFindings(section.groups);
     case 'checklist':
-      return renderChecklist(section);
+      return sectionHeading(section) + renderChecklist(section);
     case 'text':
-      return renderText(section);
+      return sectionHeading(section) + renderText(section);
     case 'code':
-      return renderCode(section);
+      return sectionHeading(section) + renderCode(section);
     case 'notice':
-      return renderNotice(section);
+      return sectionHeading(section) + renderNotice(section);
   }
 }
 
@@ -95,7 +101,8 @@ function renderCommandList(items: readonly PresentationAction[]): string {
 function renderBlocker(section: BlockerSection): string {
   const lines: string[] = [];
   const symbol = '⚠';
-  lines.push(`${symbol} **Blocked:** \`${section.code}\` — ${section.text}`);
+  const codeBlock = section.code ? ` \`${section.code}\`` : '';
+  lines.push(`${symbol} **Blocked:**${codeBlock} — ${section.text}`);
   if (section.recovery) {
     lines.push(`**Recovery:** ${section.recovery}`);
   }
