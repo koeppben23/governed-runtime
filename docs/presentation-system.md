@@ -126,7 +126,7 @@ not as a renderer parameter.
 Generic bulleted list for non-command items (exit options, enumerations).
 Renders as:
 
-```md
+```markdown
 • Item one
 • Item two
 ```
@@ -153,7 +153,7 @@ Non-normative action recommendations for /finish.
 The `NoticeSection` now supports `additionalMessages?: readonly string[]`
 for rendering multiple messages under a single heading:
 
-```md
+```markdown
 ## Warnings
 
 ⚠ First warning.
