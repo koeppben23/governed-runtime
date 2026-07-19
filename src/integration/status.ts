@@ -42,6 +42,14 @@ import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { getReviewLoopProgress, type ReviewLoopProgress } from './review/review-loop-progress.js';
 import { isTerminalPhase } from '../machine/topology.js';
+import {
+  projectStatusConclusion,
+  type StatusActionProjection,
+  type StatusConclusionProjection,
+} from './status-conclusion.js';
+
+// Re-export for consumers
+export type { StatusActionProjection, StatusConclusionProjection };
 
 // ─── Projection Types ─────────────────────────────────────────────────────────
 
@@ -107,6 +115,14 @@ export interface StatusProjection {
    * Populated only during VALIDATION phase. Absent otherwise.
    */
   remainingChecks?: string[];
+
+  /**
+   * Canonical conclusion derived from evalResult and productNextAction.
+   *
+   * The presentation builder MUST NOT derive conclusion kind or actions itself.
+   * This field carries the already-decided conclusion, typed by kind.
+   */
+  conclusion: StatusConclusionProjection;
 }
 
 /**
@@ -341,6 +357,7 @@ export function buildStatusProjection(
       state.phase === 'VALIDATION' && state.activeChecks.length > 0
         ? state.activeChecks.filter((id) => !state.validation.some((v) => v.checkId === id))
         : undefined,
+    conclusion: projectStatusConclusion(evalResult, productNext),
   };
 }
 

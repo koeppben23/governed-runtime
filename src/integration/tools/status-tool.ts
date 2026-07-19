@@ -21,6 +21,7 @@ import {
   formatError,
   formatEval,
   appendNextAction,
+  enrichWithNextAction,
 } from './helpers.js';
 
 import type { SessionState } from '../../state/schema.js';
@@ -62,6 +63,8 @@ import type { DiscoveryDriftStatusProjection } from '../discovery-drift-status.j
 import { buildDiscoveryDriftStatus } from '../discovery-drift-status.js';
 import { evaluateDiscoveryEvidenceGate } from '../discovery-health-gate.js';
 import { BUILD_INFO } from '../../shared/build-info.js';
+import { buildStatusDocument, buildNoSessionDocument } from '../status-presentation.js';
+import { renderMarkdown } from '../../presentation/index.js';
 
 /**
  * Build identity for the governanceMandates block — surfaces the installed
@@ -460,46 +463,58 @@ function buildFullStatusResponse(input: FullStatusInput): string {
     discoveryHealth,
   });
 
-  return appendNextAction(
-    JSON.stringify({
-      status: projection,
-      phase: state.phase,
-      sessionId: state.id,
-      remainingChecks: projection.remainingChecks,
-      policyMode: state.policySnapshot?.mode ?? 'unknown',
-      discoveryHealth: discoveryHealth ?? null,
-      discoveryHealthGate: buildDiscoveryHealthGateStatus(state),
-      discoveryEvidenceGate: evaluateDiscoveryEvidenceGate(
-        state.policySnapshot.discoveryHealth,
-        discoveryHealth ?? unavailableDiscoveryHealth('missing'),
-        discoveryDrift.status,
-      ),
-      discoveryDrift,
-      implementationGuidance,
-      archiveStatus: state.archiveStatus ?? null,
-      appliedPolicy: buildAppliedPolicyStatus(state),
-      ...buildProfileStatus(state, discoveryHealth),
-      ...buildEvidenceStatus(state),
-      ...buildImplementationStatus(state),
-      evalKind: ev.kind,
-      next: formatEval(ev),
-      completeness: {
-        overallComplete: completeness.overallComplete,
-        fourEyes: completeness.fourEyes,
-        summary: completeness.summary,
-      },
-      governanceMandates: {
-        source: 'src/templates/mandates.ts',
-        projection: 'phase-aware',
-        mandatesVerbosity: 'explicit',
-        renderFallbackIsPromptSafetyOnly: true,
-        runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence: true,
-        phaseRelevantRules: renderPhaseAwareMandates({}, state.phase),
-      },
-      build: buildIdentityField(),
-    }),
-    state,
-  );
+  const presentationDoc = buildStatusDocument({
+    status: projection,
+    discoveryHealth: discoveryHealth ?? null,
+    discoveryDrift,
+    remainingChecks: projection.remainingChecks,
+  });
+  const presentationMarkdown = renderMarkdown(presentationDoc);
+
+  const responseObj = {
+    status: projection,
+    phase: state.phase,
+    sessionId: state.id,
+    remainingChecks: projection.remainingChecks,
+    policyMode: state.policySnapshot?.mode ?? 'unknown',
+    discoveryHealth: discoveryHealth ?? null,
+    discoveryHealthGate: buildDiscoveryHealthGateStatus(state),
+    discoveryEvidenceGate: evaluateDiscoveryEvidenceGate(
+      state.policySnapshot.discoveryHealth,
+      discoveryHealth ?? unavailableDiscoveryHealth('missing'),
+      discoveryDrift.status,
+    ),
+    discoveryDrift,
+    implementationGuidance,
+    archiveStatus: state.archiveStatus ?? null,
+    appliedPolicy: buildAppliedPolicyStatus(state),
+    ...buildProfileStatus(state, discoveryHealth),
+    ...buildEvidenceStatus(state),
+    ...buildImplementationStatus(state),
+    evalKind: ev.kind,
+    next: formatEval(ev),
+    completeness: {
+      overallComplete: completeness.overallComplete,
+      fourEyes: completeness.fourEyes,
+      summary: completeness.summary,
+    },
+    governanceMandates: {
+      source: 'src/templates/mandates.ts',
+      projection: 'phase-aware',
+      mandatesVerbosity: 'explicit',
+      renderFallbackIsPromptSafetyOnly: true,
+      runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence: true,
+      phaseRelevantRules: renderPhaseAwareMandates({}, state.phase),
+    },
+    build: buildIdentityField(),
+  };
+
+  const enriched = enrichWithNextAction(responseObj, state);
+
+  return JSON.stringify({
+    ...enriched,
+    presentation: { markdown: presentationMarkdown },
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -537,6 +552,7 @@ export const status: ToolDefinition = {
       const { state, policy, sessDir } = await withReadOnlySession(context);
 
       if (!state) {
+        const noSessionDoc = buildNoSessionDocument();
         return JSON.stringify({
           phase: null,
           status: 'No FlowGuard session found.',
@@ -551,6 +567,7 @@ export const status: ToolDefinition = {
             runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence: true,
           },
           build: buildIdentityField(),
+          presentation: { markdown: renderMarkdown(noSessionDoc) },
         });
       }
 

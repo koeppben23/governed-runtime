@@ -494,11 +494,41 @@ function isPersistedAbort(result: Extract<RailResult, { kind: 'ok' }>): boolean 
  * Use this when a tool builds custom JSON (not via formatRailResult)
  * but still needs the mandatory NextAction footer.
  *
+ * Delegates to {@link enrichWithNextAction} for the actual logic —
+ * this function is a thin JSON-parse/serialize wrapper for backwards
+ * compatibility.
+ *
  * @param jsonStr - The JSON string to augment (will be parsed, extended, re-serialized).
  * @param state - Current session state for NextAction resolution.
  * @returns JSON string with nextAction field + trailing footer line.
  */
 export function appendNextAction(jsonStr: string, state: SessionState): string {
+  return JSON.stringify(enrichWithNextAction(JSON.parse(jsonStr), state));
+}
+
+/** Fields appended by {@link enrichWithNextAction}. */
+export interface NextActionFields {
+  nextAction: ReturnType<typeof resolveNextAction>;
+  phaseLabel: string;
+  productNextAction: ReturnType<typeof buildProductNextAction>;
+}
+
+/**
+ * Enrich an arbitrary value object with NextAction fields.
+ *
+ * This is the canonical implementation — {@link appendNextAction}
+ * delegates to it for the JSON-based path. Callers that already work
+ * with objects (instead of pre-serialized JSON strings) should use this
+ * function directly to avoid unnecessary parse/serialize rounds.
+ *
+ * @param value - The object to enrich.
+ * @param state - Current session state for NextAction resolution.
+ * @returns The value augmented with nextAction, phaseLabel, and productNextAction.
+ */
+export function enrichWithNextAction<T extends Record<string, unknown>>(
+  value: T,
+  state: SessionState,
+): T & NextActionFields {
   const nextAction = resolveNextAction(state.phase, state);
   const productNext = buildProductNextAction(
     nextAction,
@@ -506,11 +536,12 @@ export function appendNextAction(jsonStr: string, state: SessionState): string {
     state.error?.code === 'ABORTED',
     state.archiveStatus ?? null,
   );
-  const parsed = JSON.parse(jsonStr);
-  parsed.nextAction = nextAction;
-  parsed.phaseLabel = PHASE_LABELS[state.phase];
-  parsed.productNextAction = productNext;
-  return JSON.stringify(parsed);
+  return {
+    ...value,
+    nextAction,
+    phaseLabel: PHASE_LABELS[state.phase],
+    productNextAction: productNext,
+  };
 }
 
 // ─── Plan Parsing ─────────────────────────────────────────────────────────────
