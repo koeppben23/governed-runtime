@@ -42,6 +42,15 @@ import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 import { getReviewLoopProgress, type ReviewLoopProgress } from './review/review-loop-progress.js';
 import { isTerminalPhase } from '../machine/topology.js';
+import {
+  projectStatusConclusion,
+  type StatusActionProjection,
+  type StatusConclusionProjection,
+} from './status-conclusion.js';
+import type { KnownPresentationStatusInput } from '../presentation/labels.js';
+
+// Re-export for consumers
+export type { StatusActionProjection, StatusConclusionProjection };
 
 // ─── Projection Types ─────────────────────────────────────────────────────────
 
@@ -107,6 +116,20 @@ export interface StatusProjection {
    * Populated only during VALIDATION phase. Absent otherwise.
    */
   remainingChecks?: string[];
+
+  /**
+   * Canonical readiness derived from evalResult and evidenceSummary.
+   * Computed upstream — the presentation builder MUST NOT re-derive this.
+   */
+  readiness: KnownPresentationStatusInput;
+
+  /**
+   * Canonical conclusion derived from evalResult and productNextAction.
+   *
+   * The presentation builder MUST NOT derive conclusion kind or actions itself.
+   * This field carries the already-decided conclusion, typed by kind.
+   */
+  conclusion: StatusConclusionProjection;
 }
 
 /**
@@ -341,6 +364,8 @@ export function buildStatusProjection(
       state.phase === 'VALIDATION' && state.activeChecks.length > 0
         ? state.activeChecks.filter((id) => !state.validation.some((v) => v.checkId === id))
         : undefined,
+    conclusion: projectStatusConclusion(evalResult, productNext),
+    readiness: deriveReadinessField(evalResult, completeness),
   };
 }
 
@@ -488,6 +513,19 @@ export function buildReadinessProjection(
         : null,
     warnings,
   };
+}
+
+// ─── Readiness Derivation ──────────────────────────────────────────────────────
+
+/** Canonical readiness for StatusProjection — computed upstream, never in presentation. */
+function deriveReadinessField(
+  evalResult: ReturnType<typeof evaluate>,
+  completeness: ReturnType<typeof evaluateCompleteness>,
+): KnownPresentationStatusInput {
+  if (evalResult.kind === 'waiting') return 'BLOCKED';
+  if (completeness.summary.missing > 0 || completeness.summary.failed > 0) return 'NOT_VERIFIED';
+  if (evalResult.kind === 'pending') return 'IN_PROGRESS';
+  return 'READY';
 }
 
 // ─── Blocker Extraction ───────────────────────────────────────────────────────

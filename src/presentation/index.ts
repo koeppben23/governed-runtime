@@ -11,3 +11,37 @@ export { buildProductNextAction } from './next-action-copy.js';
 export { buildPlanReviewCard } from './plan-review-card.js';
 export { buildArchitectureReviewCard } from './architecture-review-card.js';
 export { buildReviewReportCard } from './review-report-card.js';
+export { normalizedMarkdown, validateCodeLanguage, PresentationContractError } from './model.js';
+export type {
+  NormalizedMarkdown,
+  PresentationAction,
+  KeyValueItem,
+  ArtifactItem,
+  FindingItem,
+  FindingGroup,
+  ChecklistItem,
+  KeyValueSection,
+  CommandListSection,
+  BlockerSection,
+  ArtifactListSection,
+  FindingsSection,
+  ChecklistSection,
+  TextSection,
+  CodeSection,
+  NoticeSection,
+  PresentationSection,
+  PresentationConclusion,
+  CompactCardDocument,
+  ReviewCardDocument,
+  DiagnosticCardDocument,
+  PlanDocument,
+  PresentationDocument,
+} from './model.js';
+export { renderMarkdown } from './markdown.js';
+export {
+  STATUS_LABELS,
+  lookupStatusLabel,
+  parseStatusLabel,
+  type KnownPresentationStatusInput,
+  type PresentationStatus,
+} from './labels.js';

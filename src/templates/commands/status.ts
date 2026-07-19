@@ -18,7 +18,10 @@ Arguments: $ARGUMENTS
 1. Parse optional flags from \`$ARGUMENTS\`:
    - \`--why-blocked\` | \`--evidence\` | \`--context\` | \`--readiness\`
 2. Call \`flowguard_status\` with the appropriate flag (or no args if none provided).
-3. Report the returned payload concisely.
+3. Wenn \`presentation.markdown\` im Response vorhanden ist, gib es wörtlich
+   aus — nicht umformulieren, nicht interpretieren.
+   Andernfalls gib die fokussierte Projektion aus, ohne eigene Semantik zu
+   erfinden.
 4. If no session exists: report this and recommend \`/hydrate\`.
 
 ## Rules

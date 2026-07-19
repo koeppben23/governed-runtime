@@ -106,6 +106,13 @@ describe('presentation/index.ts barrel', () => {
     'buildPlanReviewCard',
     'buildArchitectureReviewCard',
     'buildReviewReportCard',
+    'normalizedMarkdown',
+    'validateCodeLanguage',
+    'PresentationContractError',
+    'renderMarkdown',
+    'STATUS_LABELS',
+    'lookupStatusLabel',
+    'parseStatusLabel',
   ] as const;
 
   const INTERNAL_SYMBOLS = [
@@ -181,7 +188,7 @@ describe('presentation/index.ts barrel', () => {
     });
   });
 
-  describe('EDGE — index.ts exports exactly 5 symbols', () => {
+  describe('EDGE — index.ts exports exactly the expected set', () => {
     it('exports only the expected set', async () => {
       const mod = await import('./presentation/index.js');
       const keys = Object.keys(mod).sort();

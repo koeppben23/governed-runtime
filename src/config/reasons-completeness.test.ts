@@ -23,6 +23,8 @@ const CODE_LITERAL_PATTERN = /code:\s*['"]([A-Z][A-Z0-9_]+)['"]/g;
 const EXCLUDED_CODES: ReadonlySet<string> = new Set([
   'CRITICAL', // severity tag in error fixtures, not a registry reason
   'REVIEW_FAILED', // audit-test fixture, not a runtime block
+  'STATUS_ACTION_PROJECTION_MISSING_METADATA', // data-integrity error, not a governance reason
+  'STATUS_DECISION_PROJECTION_EMPTY', // data-integrity error, not a governance reason
 ]);
 
 /**

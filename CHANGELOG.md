@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Deterministic presentation rendering for `/status`.** New `src/presentation/`
+  primitives (`model.ts`, `markdown.ts`, `labels.ts`) establish a central visual
+  contract: PresentationDocument with typed sections (keyValue, commandList,
+  blocker, artifactList, findings, checklist, text, code, notice) and
+  deterministic Markdown output. Constructions enforce spacing invariants
+  (no `\n\n\n`, no trailing whitespace, exactly one conclusion), code-fence
+  safety, and label normalisation.
+- `/status` now includes a `presentation.markdown` field in full-status and
+  no-session responses. The renderer produces structurally invariant output
+  so that every model run renders `/status` identically.
+- Status conclusion projected upstream from `evalResult` and `productNextAction`
+  via `projectStatusConclusion()` — the presentation builder never derives
+  authority.
+- Golden fixture tests and projection tests for READY, blocked, and degraded
+  Discovery states.
+
 - **Contextual help commands (`/help` and `/commands`).** New read-only `flowguard_help`
   tool with installed `/help` (phase-sensitive next action and relevant commands),
   `/commands` (available commands for the current context), and `/commands --all`
@@ -41,6 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Available in all phases including terminal phases.
 
 ### Changed
+
+- `/status` template instructs the agent to render `presentation.markdown`
+  verbatim when present, without rephrasing.
 
 - **Implementation evidence is content-bound and captures a diff artifact (F3).**
   `ImplEvidence.digest` now hashes the CURRENT content of each changed file (path +

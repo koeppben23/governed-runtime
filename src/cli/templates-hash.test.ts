@@ -186,7 +186,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // flowguard_help({ includeArtifactContent: true }).
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'c3152d2e2a957c92cf89faaae9b323535765033def5b1394d1740f39a2d92ee0',
+      'cefe3d2ba879c77623265ff89427916fe336e230109b6952d5d2c10659066da7',
     );
   });
 
