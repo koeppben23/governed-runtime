@@ -165,13 +165,12 @@ describe('renderHelp', () => {
     expect(out).toContain('[REASON]');
   });
 
-  it('Markdown shows aliases when available', () => {
+  it('Markdown shows aliases per-command', () => {
     const out = renderHelp(noSessionResult(), { format: 'markdown' });
-    expect(out).toContain('**Aliases:**');
-    expect(out).toContain('/hydrate');
+    expect(out).toContain('(aliases: `/hydrate`)');
   });
 
-  it('Markdown shows artifact metadata when available', () => {
+  it('Markdown shows artifact preview in metadata', () => {
     const out = renderHelp(
       {
         ...noSessionResult(),
@@ -200,7 +199,7 @@ describe('renderHelp', () => {
     expect(out).toContain('ticket: available');
     expect(out).toContain('abcdef12');
     expect(out).toContain('current plan v3: available');
-    expect(out).not.toContain('Fix auth bug'); // preview not in markdown, only digest
+    expect(out).toContain('Fix auth bug');
   });
 
   it('Markdown shows full content when includeArtifactContent', () => {
@@ -277,7 +276,9 @@ describe('renderHelp', () => {
     );
     expect(out).toContain('\u26A0');
     expect(out).toContain('/blocked');
-    expect(out).toContain('SESSION_REQUIRED');
+    expect(out).toContain('blocked: Not available');
+    expect(out).toContain('code: SESSION_REQUIRED');
+    expect(out).toContain('recovery: Try later');
   });
 
   it('Markdown shows unavailable command with backtick marker in command detail mode', () => {

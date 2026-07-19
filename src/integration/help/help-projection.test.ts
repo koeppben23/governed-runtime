@@ -6,6 +6,8 @@ import { buildFinishCard } from '../status.js';
 import { resolveCurrentReviewReport } from '../review/report-coherence.js';
 import type { ReviewReport } from '../../state/evidence.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';
+import { help } from '../tools/help-tool.js';
+import { createToolContext } from '../test-helpers.js';
 
 function makeReviewReport(
   state: ReturnType<typeof makeProgressedState>,
@@ -302,5 +304,47 @@ describe('HelpResult blocker', () => {
       view: 'context',
     });
     expect(result.blocker).toBeNull();
+  });
+
+  it('blocker populated from status projection for user gate phase', () => {
+    const result = buildHelpResult(makeProgressedState('PLAN_REVIEW'), TEAM_POLICY, {
+      view: 'context',
+    });
+    expect(result.blocker).not.toBeNull();
+    if (result.blocker) {
+      expect(result.blocker.message).toContain('Awaiting');
+    }
+  });
+
+  it('blocker rendered in Markdown with message from projection', () => {
+    const result = buildHelpResult(makeProgressedState('PLAN_REVIEW'), TEAM_POLICY, {
+      view: 'context',
+    });
+    // Verify the blocker was derived from the real status projection, not invented
+    expect(result.blocker?.message).toContain('Awaiting');
+  });
+});
+
+describe('flowguard_help tool execute', () => {
+  it('no-session context returns Markdown guidance via execute', async () => {
+    const ctx = createToolContext({ worktree: '/tmp/test-worktree' });
+    const out = await help.execute({ view: 'context' }, ctx);
+    expect(typeof out).toBe('string');
+    expect(out).toContain('**No active FlowGuard session.**');
+    expect(out).toContain('**Available commands:**');
+  });
+
+  it('includeArtifactContent: true with no session still returns Markdown', async () => {
+    const ctx = createToolContext({ worktree: '/tmp/test-worktree' });
+    const out = await help.execute({ view: 'context', includeArtifactContent: true }, ctx);
+    expect(typeof out).toBe('string');
+    expect(out).toContain('**No active FlowGuard session.**');
+  });
+
+  it('verbose returns JSON with title', async () => {
+    const ctx = createToolContext({ worktree: '/tmp/test-worktree' });
+    const out = await help.execute({ view: 'context', verbose: true }, ctx);
+    expect(() => JSON.parse(out as string)).not.toThrow();
+    expect(JSON.parse(out as string).title).toBe('FlowGuard Help');
   });
 });

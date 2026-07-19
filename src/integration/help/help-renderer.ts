@@ -100,17 +100,28 @@ function appendNextAction(lines: string[], result: HelpResult): void {
     lines.push(`**Next:** ${result.nextActionSummary}`);
   }
 }
-
 function appendCommands(lines: string[], result: HelpResult): void {
   lines.push('');
   lines.push('**Available commands:**');
   for (const cmd of result.commands) {
     const marker = visibilityMarker(cmd.visibility);
-    const blockedNote =
-      cmd.preflight.status === 'blocked'
-        ? ` (blocked: ${cmd.preflight.reasonCode ?? cmd.preflight.message ?? ''})`
+    const aliases =
+      cmd.alsoAvailableAs.length > 0
+        ? ` (aliases: ${cmd.alsoAvailableAs.map((a) => `\`${a}\``).join(', ')})`
         : '';
-    lines.push(`  ${marker} \`${cmd.invocation}\` \u2014 ${cmd.description}${blockedNote}`);
+    lines.push(`  ${marker} \`${cmd.invocation}\` \u2014 ${cmd.description}${aliases}`);
+
+    if (cmd.preflight.status === 'blocked') {
+      if (cmd.preflight.message) {
+        lines.push(`    blocked: ${cmd.preflight.message}`);
+      }
+      if (cmd.preflight.reasonCode) {
+        lines.push(`    code: ${cmd.preflight.reasonCode}`);
+      }
+      if (cmd.preflight.recovery) {
+        lines.push(`    recovery: ${cmd.preflight.recovery}`);
+      }
+    }
   }
 }
 
@@ -119,24 +130,27 @@ function appendArtifactMeta(lines: string[], result: HelpResult): void {
   lines.push('');
   lines.push('**Session artifacts:**');
   if (result.artifacts.ticket.status === 'available') {
+    const prev = result.artifacts.ticket.preview ? ` "${result.artifacts.ticket.preview}"` : '';
     const d = result.artifacts.ticket.digest
       ? ` (digest: ${result.artifacts.ticket.digest.slice(0, 8)}...)`
       : '';
-    lines.push(`  ticket: available${d}`);
+    lines.push(`  ticket: available${prev}${d}`);
   } else {
     lines.push('  ticket: not verified');
   }
   if (result.artifacts.currentPlan.status === 'available') {
     const v = result.artifacts.currentPlanVersion ? ` v${result.artifacts.currentPlanVersion}` : '';
+    const prev = result.artifacts.currentPlan.preview
+      ? ` "${result.artifacts.currentPlan.preview}"`
+      : '';
     const d = result.artifacts.currentPlan.digest
       ? ` (digest: ${result.artifacts.currentPlan.digest.slice(0, 8)}...)`
       : '';
-    lines.push(`  current plan${v}: available${d}`);
+    lines.push(`  current plan${v}: available${prev}${d}`);
   } else {
     lines.push('  current plan: not verified');
   }
 }
-
 function appendArtifactContent(lines: string[], result: HelpResult): void {
   if (result.artifacts.ticket.content) {
     lines.push('');
@@ -159,21 +173,9 @@ function renderHelpMarkdown(result: HelpResult, includeContent: boolean): string
   appendBlocker(lines, result);
   appendNextAction(lines, result);
   appendCommands(lines, result);
-  appendAliases(lines, result);
   appendArtifactMeta(lines, result);
   if (includeContent) appendArtifactContent(lines, result);
   return lines.join('\n');
-}
-
-// ─── Aliases ───────────────────────────────────────────────────────────
-
-function appendAliases(lines: string[], result: HelpResult): void {
-  const cmdsWithAliases = result.commands.filter((cmd) => cmd.alsoAvailableAs.length > 0);
-  if (cmdsWithAliases.length === 0) return;
-  const allAliases = cmdsWithAliases.flatMap((cmd) => cmd.alsoAvailableAs);
-  if (allAliases.length === 0) return;
-  lines.push('');
-  lines.push(`**Aliases:** ${allAliases.map((a) => `\`${a}\``).join(', ')}`);
 }
 
 // ─── Public API ────────────────────────────────────────────────────────
