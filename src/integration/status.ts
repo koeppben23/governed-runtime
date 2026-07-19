@@ -541,11 +541,12 @@ function hasUnverifiedEvidence(evidence: EvidenceDetailProjection): boolean {
  * strictly presentational — it re-evaluates nothing.
  *
  * Precedence (highest first):
- * 1. BLOCKED             — readiness projection reports blocked (waiting/pending).
+ * 1. BLOCKED             — readiness projection reports blocked (waiting).
  * 2. NOT_VERIFIED        — a required evidence slot is missing or failed.
- * 3. CHANGES_REQUIRED    — completed standalone review report has issues.
- * 4. READY_WITH_WARNINGS — not blocked, evidence ok, but warnings present.
- * 5. READY               — otherwise.
+ * 3. IN_PROGRESS         — non-terminal phase; lifecycle not yet complete.
+ * 4. CHANGES_REQUIRED    — completed standalone review report has issues.
+ * 5. READY_WITH_WARNINGS — terminal, evidence ok, but warnings present.
+ * 6. READY               — otherwise.
  *
  * BLOCKED intentionally wins over NOT_VERIFIED so a blocked session is not
  * mislabelled merely because evidence is also incomplete.
@@ -557,10 +558,10 @@ export function deriveFinishOverallStatus(
 ): FinishOverallStatus {
   if (readiness.blocked) return 'BLOCKED';
   if (hasUnverifiedEvidence(evidence)) return 'NOT_VERIFIED';
+  // Non-terminal phases are in progress regardless of warnings or review status.
+  if (!isTerminalPhase(readiness.phase)) return 'IN_PROGRESS';
   if (reviewReport?.overallStatus === 'issues') return 'CHANGES_REQUIRED';
   if (readiness.warnings.length > 0) return 'READY_WITH_WARNINGS';
-  // Non-terminal phases with complete evidence are in progress, not ready.
-  if (!isTerminalPhase(readiness.phase)) return 'IN_PROGRESS';
   return 'READY';
 }
 

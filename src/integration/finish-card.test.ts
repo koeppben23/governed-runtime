@@ -146,6 +146,21 @@ describe('deriveFinishOverallStatus — overall status matrix', () => {
     }
   });
 
+  it('non-terminal phase stays IN_PROGRESS even with warnings', () => {
+    const state = makeProgressedState('PLAN');
+    state.policySnapshot = {
+      ...state.policySnapshot,
+      selfReview: {
+        subagentEnabled: false,
+        fallbackToSelf: true,
+        strictEnforcement: false,
+      },
+    };
+    const card = buildFinishCard(state, policy);
+    expect(card.readiness.warnings.length).toBeGreaterThan(0);
+    expect(card.overallStatus).toBe('IN_PROGRESS');
+  });
+
   it('does not invent a stale evidence status (not_yet_required never NOT_VERIFIED)', () => {
     // deriveFinishOverallStatus must only react to missing/failed required slots.
     const readiness = {
