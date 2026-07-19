@@ -15,10 +15,10 @@
 import type { StatusProjection, StatusActionProjection } from './status.js';
 import type { DiscoveryHealthProjection } from '../discovery/discovery-health.js';
 import type { DiscoveryDriftStatusProjection } from './discovery-drift-status.js';
-import { getInstalledCommand } from './installed-commands.js';
+import { projectStatusActionFromCommand } from './status-conclusion.js';
 import {
   normalizedMarkdown,
-  parseStatusLabel,
+  lookupStatusLabel,
   type PresentationDocument,
   type PresentationSection,
   type PresentationConclusion,
@@ -119,26 +119,12 @@ export function buildNoSessionDocument(): PresentationDocument {
 // ─── Section Builders ──────────────────────────────────────────────────────────
 
 function buildStatusSection(status: StatusProjection): PresentationSection {
-  const readiness = deriveReadinessLabel(status);
   const items: KeyValueItem[] = [
     { label: 'Phase', value: status.phaseLabel },
-    { label: 'Readiness', value: readiness },
+    { label: 'Readiness', value: lookupStatusLabel(status.readiness) },
     { label: 'Policy', value: status.policyMode },
   ];
   return { kind: 'keyValue', heading: 'Status', items };
-}
-
-/**
- * Project a normalised readiness label from the already-projected status fields.
- *
- * Does NOT re-evaluate gates, obligations, or completeness. Only translates the
- * existing projection signals (blocker, evidence) into a presentation label.
- */
-function deriveReadinessLabel(status: StatusProjection): string {
-  if (status.blocker?.reasonText) return parseStatusLabel('BLOCKED');
-  if (status.evidenceSummary.missing > 0 || status.evidenceSummary.failed > 0)
-    return parseStatusLabel('NOT_VERIFIED');
-  return parseStatusLabel('READY');
 }
 
 function buildBlockerSection(status: StatusProjection): BlockerSection {
@@ -171,12 +157,8 @@ function buildEvidenceSection(status: StatusProjection): PresentationSection {
 
 function buildAvailableActionsSection(status: StatusProjection): PresentationSection {
   const items: PresentationAction[] = status.allowedCommands.map((invocation: string) => {
-    const cmd = getInstalledCommand(invocation);
-    return {
-      invocation,
-      description: cmd?.description ?? '',
-      visibility: 'available' as const,
-    };
+    const p = projectStatusActionFromCommand(invocation, 'available');
+    return { invocation: p.invocation, description: p.description, visibility: p.visibility };
   });
 
   return { kind: 'commandList', heading: 'Available actions', items };

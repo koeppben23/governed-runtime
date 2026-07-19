@@ -2,23 +2,26 @@
 
 **Phase:** Ready for plan approval
 **Readiness:** Blocked
-**Policy:** solo
+**Policy:** team
 
 ## Blocked
 
-⚠ **Blocked:** `PLAN_REVIEW_REQUIRED` — A human review decision is required.
+⚠ **Blocked:** — Awaiting plan review decision (approve / changes_requested / reject)
 
 ## Evidence
 
 **Verified:** 0
-**Missing:** 0
-**Not yet required:** 7
+**Missing:** 3
+**Not yet required:** 6
 
 ## Available actions
 
-• `/ticket` — Record the task that the workflow will govern.
-• `/architecture` — Create or revise an architecture decision record.
-• `/review` — Start a standalone compliance review.
+• `/hydrate` — Prepare or restore a governed session.
+• `/continue` — Route to the next workflow step.
+• `/review-decision` — Record the human decision at a review gate.
+• `/abort` — End the current workflow without presenting it as completed.
+
+## Decision required
 
 Awaiting plan review decision (approve / changes_requested / reject)
 • `/approve` — Accept the reviewed work and advance.

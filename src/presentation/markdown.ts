@@ -200,7 +200,9 @@ function renderConclusion(conclusion: PresentationConclusion): string {
     case 'next_action':
       return renderAction(conclusion.action);
     case 'decision_required': {
-      const lines: string[] = [conclusion.question];
+      const lines: string[] = [];
+      lines.push(`## Decision required\n`);
+      lines.push(conclusion.question);
       for (const action of conclusion.actions) {
         lines.push(renderAction(action));
       }

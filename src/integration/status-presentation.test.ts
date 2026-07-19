@@ -15,8 +15,9 @@ import { describe, it, expect } from 'vitest';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { renderMarkdown } from '../presentation/markdown.js';
-import type { PresentationDocument } from '../presentation/model.js';
+import type { PresentationDocument, CompactCardDocument } from '../presentation/model.js';
 import { buildStatusDocument, buildNoSessionDocument } from './status-presentation.js';
+import type { FullStatusPresentationInput } from './status-presentation.js';
 import { buildStatusProjection } from './status.js';
 import type { StatusProjection, StatusActionProjection } from './status.js';
 import type { DiscoveryHealthUnavailableProjection } from '../discovery/discovery-health.js';
@@ -28,6 +29,14 @@ import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 
 // ─── Test Helpers ──────────────────────────────────────────────────────────────
+
+function buildCompactDoc(input: FullStatusPresentationInput): CompactCardDocument {
+  const doc = buildStatusDocument(input);
+  if (doc.kind !== 'compact_card') {
+    throw new Error('buildStatusDocument must return a compact_card');
+  }
+  return doc;
+}
 
 function makeSoloPolicy(): FlowGuardPolicy {
   return getPolicyPreset('solo');
@@ -125,6 +134,7 @@ function makeBaseProjection(overrides: Partial<StatusProjection> = {}): StatusPr
     blocker: null,
     evidenceSummary: { present: 0, missing: 0, notYetRequired: 7, failed: 0 },
     reviewLoop: null,
+    readiness: 'READY',
     conclusion: {
       kind: 'next_action' as const,
       action: {
@@ -187,63 +197,37 @@ describe('golden fixtures', () => {
     expect(output).toBe(golden.trimEnd());
   });
 
-  it('ready state produces expected structure via canonical projection', () => {
+  it('ready state matches golden output', async () => {
     const state = makeReadyState();
     const policy = makeSoloPolicy();
     const projection = buildStatusProjection(state, policy);
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
     });
     const output = renderMarkdown(doc);
-
-    // Phase, Readiness, Policy under ## Status heading
-    expect(output).toContain('## Status');
-    expect(output).toContain('**Phase:** Ready');
-    expect(output).toContain('**Readiness:**');
-    expect(output).toContain('**Policy:** solo');
-
-    // Evidence section
-    expect(output).toContain('## Evidence');
-
-    // Conclusion exists
-    expect(output).toContain('→');
+    const golden = await readGolden('status-ready.md');
+    expect(output).toBe(golden.trimEnd());
   });
 
-  it('blocked state renders blocker and decision_required via canonical projection', () => {
+  it('blocked state matches golden output', async () => {
     const state = makeBlockedPlanReviewState();
     const policy = makeTeamPolicy();
     const projection = buildStatusProjection(state, policy);
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
     });
     const output = renderMarkdown(doc);
-
-    // Phase
-    expect(output).toContain('**Phase:** Ready for plan approval');
-    // Readiness blocked
-    expect(output).toContain('**Readiness:** Blocked');
-    // Blocker section has ## Blocked heading
-    expect(output).toContain('## Blocked');
-    expect(output).toContain('⚠ **Blocked:**');
-
-    // Conclusion is decision_required at a waiting gate
-    expect(doc.conclusion.kind).toBe('decision_required');
-    if (doc.conclusion.kind === 'decision_required') {
-      expect(doc.conclusion.actions.length).toBeGreaterThan(0);
-      // All actions available, none recommended
-      for (const action of doc.conclusion.actions) {
-        expect(action.visibility).toBe('available');
-      }
-    }
+    const golden = await readGolden('status-blocked-plan-review.md');
+    expect(output).toBe(golden.trimEnd());
   });
 
-  it('degraded discovery renders notice section via canonical projection', () => {
+  it('degraded discovery matches golden output', async () => {
     const state = makeValidatingState();
     const policy = makeSoloPolicy();
     const projection = buildStatusProjection(state, policy);
@@ -253,21 +237,14 @@ describe('golden fixtures', () => {
       notVerified: ['Discovery drift', 'Code-surface completeness'],
     });
     const health = makeDegradedDiscoveryHealth();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: health,
       discoveryDrift: drift,
     });
     const output = renderMarkdown(doc);
-
-    // Phase from canonical projection
-    expect(output).toContain('**Phase:** Validation');
-    // Notice section with heading
-    expect(output).toContain('## Discovery');
-    expect(output).toContain('⚠');
-    expect(output).toContain('Discovery data is degraded or unavailable.');
-    expect(output).toContain('**Reason:** missing');
-    expect(output).toContain('**Recovery:** Run /hydrate to refresh discovery data.');
+    const golden = await readGolden('status-degraded-discovery.md');
+    expect(output).toBe(golden.trimEnd());
   });
 });
 
@@ -277,7 +254,7 @@ describe('buildStatusDocument', () => {
   it('produces a compact_card document', () => {
     const projection = makeBaseProjection();
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
@@ -289,7 +266,7 @@ describe('buildStatusDocument', () => {
   it('always includes a conclusion', () => {
     const projection = makeBaseProjection();
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
@@ -301,7 +278,7 @@ describe('buildStatusDocument', () => {
   it('omits actor when null', () => {
     const projection = makeBaseProjection({ actor: null });
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
@@ -324,7 +301,7 @@ describe('buildStatusDocument', () => {
       },
     });
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
@@ -337,7 +314,7 @@ describe('buildStatusDocument', () => {
   it('omits blocker section when not blocked', () => {
     const projection = makeBaseProjection();
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
@@ -358,7 +335,7 @@ describe('buildStatusDocument', () => {
       },
     });
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
@@ -382,7 +359,7 @@ describe('buildStatusDocument', () => {
       },
     });
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
@@ -402,7 +379,7 @@ describe('buildStatusDocument', () => {
       },
     });
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
@@ -424,7 +401,7 @@ describe('buildStatusDocument', () => {
       },
     });
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
@@ -438,7 +415,7 @@ describe('buildStatusDocument', () => {
       allowedCommands: ['/ticket', '/architecture', '/review'],
     });
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
@@ -454,7 +431,7 @@ describe('buildStatusDocument', () => {
       evidenceSummary: { present: 2, missing: 0, notYetRequired: 5, failed: 0 },
     });
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
@@ -468,7 +445,7 @@ describe('buildStatusDocument', () => {
       evidenceSummary: { present: 2, missing: 1, notYetRequired: 4, failed: 1 },
     });
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
@@ -488,10 +465,14 @@ describe('buildNoSessionDocument', () => {
 
   it('recommends /hydrate', () => {
     const doc = buildNoSessionDocument();
-    expect(doc.conclusion.kind).toBe('next_action');
-    if (doc.conclusion.kind === 'next_action') {
-      expect(doc.conclusion.action.invocation).toBe('/hydrate');
-      expect(doc.conclusion.action.visibility).toBe('recommended');
+    const conclusion = doc.conclusion;
+    expect(conclusion).toBeDefined();
+    // buildNoSessionDocument always returns a compact_card with conclusion
+    if (!conclusion) throw new Error('expected conclusion');
+    expect(conclusion.kind).toBe('next_action');
+    if (conclusion.kind === 'next_action') {
+      expect(conclusion.action.invocation).toBe('/hydrate');
+      expect(conclusion.action.visibility).toBe('recommended');
     }
   });
 
@@ -509,7 +490,7 @@ describe('discovery notice', () => {
   it('omits notice when discovery health is not present', () => {
     const projection = makeBaseProjection();
     const drift = makeDriftProjection();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: null,
       discoveryDrift: drift,
@@ -522,7 +503,7 @@ describe('discovery notice', () => {
     const projection = makeBaseProjection();
     const drift = makeDriftProjection();
     const health = makeDegradedDiscoveryHealth();
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: health,
       discoveryDrift: drift,
@@ -556,7 +537,7 @@ describe('discovery notice', () => {
       ageWarning: null,
       healthy: true,
     };
-    const doc = buildStatusDocument({
+    const doc = buildCompactDoc({
       status: projection,
       discoveryHealth: health,
       discoveryDrift: drift,
