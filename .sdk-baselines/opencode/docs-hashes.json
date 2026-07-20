@@ -1,5 +1,5 @@
 {
-  "generated": "2026-07-06T12:03:31.790Z",
+  "generated": "2026-07-20T13:07:13.459Z",
   "version": "1",
   "hashes": {
     "sdk": {
@@ -11,8 +11,8 @@
       "sections": 42
     },
     "config": {
-      "hash": "4fc8b00a1f362815f5a7dadf2aec80b0e80603aa161fbfe322309c1b6082a0e3",
-      "sections": 86
+      "hash": "6a9f978c13cedd2fe584cc9f8e364f1a59c2c05e892583e7b5b23580584ae080",
+      "sections": 88
     },
     "commands": {
       "hash": "dfed96b60dcafc94b25e22d12970973988e004368457a5b9998055c6147fbfa2",
