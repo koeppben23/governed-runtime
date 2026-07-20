@@ -45,7 +45,7 @@ import {
 import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
-import { buildBlockedDiagnostics } from '../../diagnostics/index.js';
+import { buildBlockedDiagnostics, formatDiagnosticCard } from '../../diagnostics/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
@@ -131,6 +131,12 @@ export function formatRailResult(result: RailResult): ToolResult {
     const diagnostics = buildBlockedDiagnostics(result.code, {
       reason: result.reason,
     });
+    // Unify the blocked surface with the rest of the presentation layer: when a
+    // structured diagnostic is available, also render it through the shared
+    // renderer so the display path matches /status, /why, /finish, and /help.
+    const presentationMarkdown = diagnostics
+      ? formatDiagnosticCard({ code: result.code, message: result.reason, diagnostics })
+      : null;
     return JSON.stringify({
       error: true,
       code: result.code,
@@ -138,6 +144,7 @@ export function formatRailResult(result: RailResult): ToolResult {
       recovery: result.recovery,
       quickFix: result.quickFix,
       ...(diagnostics ? { diagnostics } : {}),
+      ...(presentationMarkdown ? { presentation: { markdown: presentationMarkdown } } : {}),
       // #428: surface structured overflow context so the plugin boundary can
       // detect and log the fail-closed overflow without parsing the message.
       ...(result.overflow ? { autoAdvanceOverflow: result.overflow } : {}),
@@ -194,6 +201,11 @@ export function formatBlocked(
   getAdapterLogger().warn('machine', 'tool_blocked', { code, ...getLogTraceFields() });
   const info = defaultReasonRegistry.format(code, vars);
   const diagnostics = buildBlockedDiagnostics(info.code, vars);
+  // Render the diagnostic through the shared renderer so blocked returns from
+  // inline tool logic present consistently with the rest of the surface.
+  const presentationMarkdown = diagnostics
+    ? formatDiagnosticCard({ code: info.code, message: info.reason, diagnostics })
+    : null;
   return JSON.stringify({
     error: true,
     code: info.code,
@@ -201,6 +213,7 @@ export function formatBlocked(
     recovery: info.recovery,
     quickFix: info.quickFix,
     ...(diagnostics ? { diagnostics } : {}),
+    ...(presentationMarkdown ? { presentation: { markdown: presentationMarkdown } } : {}),
     ...(extra ?? {}),
   });
 }
