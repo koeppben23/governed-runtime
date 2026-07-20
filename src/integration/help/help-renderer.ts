@@ -1,6 +1,12 @@
 /** @module integration/help/help-renderer */
 
 import type { HelpResult, ProjectedCommand } from './help-projection.js';
+import { renderMarkdown } from '../../presentation/markdown.js';
+import type {
+  HelpDocument,
+  PresentationSection,
+  DetailedCommandVisibility,
+} from '../../presentation/model.js';
 
 export interface RenderOutput {
   readonly format: 'markdown' | 'json';
@@ -59,131 +65,120 @@ function renderHelpJson(result: HelpResult, verbose: boolean, includeContent: bo
   });
 }
 
-// ─── Markdown Renderer ─────────────────────────────────────────────────
+// ─── Presentation Builder ──────────────────────────────────────────────────────
 
-function visibilityMarker(visibility: string): string {
-  switch (visibility) {
+function mapVisibility(v: ProjectedCommand['visibility']): DetailedCommandVisibility {
+  switch (v) {
     case 'recommended':
-      return '\u2192';
+      return 'recommended';
     case 'blocked_recoverable':
-      return '\u26A0';
-    default:
-      return '\u2022';
+      return 'blocked_recoverable';
+    case 'available':
+    case 'upcoming':
+    case 'not_applicable':
+    case 'hidden':
+      return 'available';
   }
 }
 
-function appendHeader(lines: string[], result: HelpResult): void {
-  if (result.phase) {
-    lines.push(`**Phase:** ${result.phase.label}`);
-  } else {
-    lines.push('**No active FlowGuard session.**');
+export function buildHelpDocument(result: HelpResult, includeContent: boolean): HelpDocument {
+  const sections: PresentationSection[] = [];
+
+  // HelpSummary
+  sections.push({
+    kind: 'helpSummary',
+    phase: result.phase?.label ?? null,
+    readiness: result.readiness !== 'none' ? result.readiness : null,
+    blocker: result.blocker
+      ? { message: result.blocker.message, reasonCode: result.blocker.reasonCode }
+      : null,
+    nextAction: result.nextAction
+      ? { invocation: result.nextAction.invocation, description: result.nextAction.description }
+      : result.nextActionSummary
+        ? { summary: result.nextActionSummary }
+        : null,
+  });
+
+  // DetailedCommandList
+  sections.push({
+    kind: 'detailedCommandList',
+    label: 'Available commands',
+    items: result.commands.map((cmd) => ({
+      invocation: cmd.invocation,
+      description: cmd.description,
+      visibility: mapVisibility(cmd.visibility),
+      aliases: cmd.alsoAvailableAs,
+      preflight:
+        cmd.preflight.status === 'blocked'
+          ? {
+              status: 'blocked' as const,
+              message: cmd.preflight.message,
+              reasonCode: cmd.preflight.reasonCode,
+              recovery: cmd.preflight.recovery,
+            }
+          : { status: 'available' as const },
+    })),
+  });
+
+  // HelpArtifact
+  if (result.artifacts.status !== 'not_verified') {
+    sections.push(buildHelpArtifactSection(result));
   }
-  if (result.readiness !== 'none') {
-    lines.push(`**Readiness:** ${result.readiness}`);
+
+  // EmbeddedMarkdown (Artifact Content)
+  if (includeContent) {
+    tapArtifactContent(sections, result);
   }
+
+  return { kind: 'help_document', sections };
 }
 
-function appendBlocker(lines: string[], result: HelpResult): void {
-  if (!result.blocker) return;
-  const parts: string[] = [];
-  if (result.blocker.message) parts.push(result.blocker.message);
-  if (result.blocker.reasonCode) parts.push(`[${result.blocker.reasonCode}]`);
-  if (parts.length > 0) lines.push(`**Why blocked:** ${parts.join(' ')}`);
+function buildHelpArtifactSection(result: HelpResult): PresentationSection {
+  return {
+    kind: 'helpArtifact',
+    label: 'Session artifacts',
+    items: [
+      {
+        label: 'ticket',
+        status: result.artifacts.ticket.status,
+        preview: result.artifacts.ticket.preview,
+        digest: result.artifacts.ticket.digest,
+      },
+      {
+        label: `current plan${result.artifacts.currentPlanVersion ? ` v${result.artifacts.currentPlanVersion}` : ''}`,
+        status: result.artifacts.currentPlan.status,
+        preview: result.artifacts.currentPlan.preview,
+        digest: result.artifacts.currentPlan.digest,
+      },
+    ],
+  };
 }
 
-function appendNextAction(lines: string[], result: HelpResult): void {
-  if (result.nextAction) {
-    lines.push(
-      `**Next:** \`${result.nextAction.invocation}\` \u2014 ${result.nextAction.description}`,
-    );
-  } else if (result.nextActionSummary) {
-    lines.push(`**Next:** ${result.nextActionSummary}`);
-  }
-}
-function appendCommands(lines: string[], result: HelpResult): void {
-  lines.push('');
-  lines.push('**Available commands:**');
-  for (const cmd of result.commands) {
-    const marker = visibilityMarker(cmd.visibility);
-    const aliases =
-      cmd.alsoAvailableAs.length > 0
-        ? ` (aliases: ${cmd.alsoAvailableAs.map((a) => `\`${a}\``).join(', ')})`
-        : '';
-    lines.push(`  ${marker} \`${cmd.invocation}\` \u2014 ${cmd.description}${aliases}`);
-
-    if (cmd.preflight.status === 'blocked') {
-      if (cmd.preflight.message) {
-        lines.push(`    blocked: ${cmd.preflight.message}`);
-      }
-      if (cmd.preflight.reasonCode) {
-        lines.push(`    code: ${cmd.preflight.reasonCode}`);
-      }
-      if (cmd.preflight.recovery) {
-        lines.push(`    recovery: ${cmd.preflight.recovery}`);
-      }
-    }
-  }
-}
-
-function appendArtifactMeta(lines: string[], result: HelpResult): void {
-  if (result.artifacts.status === 'not_verified') return;
-  lines.push('');
-  lines.push('**Session artifacts:**');
-  if (result.artifacts.ticket.status === 'available') {
-    const prev = result.artifacts.ticket.preview ? ` "${result.artifacts.ticket.preview}"` : '';
-    const d = result.artifacts.ticket.digest
-      ? ` (digest: ${result.artifacts.ticket.digest.slice(0, 8)}...)`
-      : '';
-    lines.push(`  ticket: available${prev}${d}`);
-  } else {
-    lines.push('  ticket: not verified');
-  }
-  if (result.artifacts.currentPlan.status === 'available') {
-    const v = result.artifacts.currentPlanVersion ? ` v${result.artifacts.currentPlanVersion}` : '';
-    const prev = result.artifacts.currentPlan.preview
-      ? ` "${result.artifacts.currentPlan.preview}"`
-      : '';
-    const d = result.artifacts.currentPlan.digest
-      ? ` (digest: ${result.artifacts.currentPlan.digest.slice(0, 8)}...)`
-      : '';
-    lines.push(`  current plan${v}: available${prev}${d}`);
-  } else {
-    lines.push('  current plan: not verified');
-  }
-}
-function appendArtifactContent(lines: string[], result: HelpResult): void {
+function tapArtifactContent(sections: PresentationSection[], result: HelpResult): void {
   if (result.artifacts.ticket.content) {
-    lines.push('');
-    lines.push('**Ticket:**');
-    lines.push(result.artifacts.ticket.content);
+    sections.push({
+      kind: 'embeddedMarkdown',
+      label: 'Ticket',
+      content: result.artifacts.ticket.content,
+    });
   }
   if (result.artifacts.currentPlan.content) {
-    lines.push('');
-    const v = result.artifacts.currentPlanVersion
-      ? ` (v${result.artifacts.currentPlanVersion})`
-      : '';
-    lines.push(`**Current plan${v}:**`);
-    lines.push(result.artifacts.currentPlan.content);
+    sections.push({
+      kind: 'embeddedMarkdown',
+      label: `Current plan${result.artifacts.currentPlanVersion ? ` (v${result.artifacts.currentPlanVersion})` : ''}`,
+      content: result.artifacts.currentPlan.content,
+    });
   }
 }
 
-function renderHelpMarkdown(result: HelpResult, includeContent: boolean): string {
-  const lines: string[] = [];
-  appendHeader(lines, result);
-  appendBlocker(lines, result);
-  appendNextAction(lines, result);
-  appendCommands(lines, result);
-  appendArtifactMeta(lines, result);
-  if (includeContent) appendArtifactContent(lines, result);
-  return lines.join('\n');
-}
-
-// ─── Public API ────────────────────────────────────────────────────────
+// ─── Public API ────────────────────────────────────────────────────────────────
 
 export function renderHelp(result: HelpResult, output: RenderOutput): string {
   const includeContent = output.includeArtifactContent ?? false;
+
   if (output.format === 'json') {
     return renderHelpJson(result, output.verbose ?? false, includeContent);
   }
-  return renderHelpMarkdown(result, includeContent);
+
+  return renderMarkdown(buildHelpDocument(result, includeContent));
 }

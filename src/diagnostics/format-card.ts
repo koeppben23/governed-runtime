@@ -1,35 +1,71 @@
 /**
  * @module diagnostics/format-card
- * @description Human-readable failure card formatting for runtime diagnostics.
+ * @description Diagnostic card formatting using the shared presentation renderer.
  */
 
 import type { RuntimeDiagnostics } from './types.js';
+import type { DiagnosticCardDocument, PresentationSection } from '../presentation/model.js';
+import { normalizedMarkdown } from '../presentation/model.js';
+import { renderMarkdown } from '../presentation/markdown.js';
 
-function section(title: string, values: readonly string[]): string[] {
-  if (values.length === 0) return [];
-  return [`${title}:`, ...values.map((value) => `- ${value}`), ''];
+export type DiagnosticCardInput = Readonly<{
+  code: string;
+  message: string;
+  diagnostics: RuntimeDiagnostics;
+}>;
+
+/**
+ * Build a DiagnosticCardDocument from a diagnostic input.
+ * Uses shared presentation primitives instead of a plaintext engine.
+ */
+export function buildBlockedDiagnosticDocument(input: DiagnosticCardInput): DiagnosticCardDocument {
+  const { code, message, diagnostics } = input;
+  const sections: PresentationSection[] = [];
+
+  sections.push({
+    kind: 'text',
+    content: normalizedMarkdown('FlowGuard blocked this action.'),
+  });
+
+  sections.push({
+    kind: 'blocker',
+    code,
+    text: message,
+  });
+
+  sections.push({
+    kind: 'keyValue',
+    items: [{ label: 'Root cause', value: diagnostics.rootCause }],
+  });
+
+  if (diagnostics.observed.length > 0) {
+    sections.push({ kind: 'bulletList', heading: 'Observed', items: diagnostics.observed });
+  }
+  if (diagnostics.required.length > 0) {
+    sections.push({ kind: 'bulletList', heading: 'Required', items: diagnostics.required });
+  }
+  if (diagnostics.missingEvidence?.length) {
+    sections.push({
+      kind: 'bulletList',
+      heading: 'Missing evidence',
+      items: diagnostics.missingEvidence,
+    });
+  }
+  if (diagnostics.safeNextActions.length > 0) {
+    sections.push({
+      kind: 'bulletList',
+      heading: 'Next',
+      items: diagnostics.safeNextActions,
+    });
+  }
+
+  return { kind: 'diagnostic_card', sections };
 }
 
-export function formatDiagnosticCard(input: {
-  readonly code: string;
-  readonly message: string;
-  readonly diagnostics: RuntimeDiagnostics;
-}): string {
-  const { code, message, diagnostics } = input;
-  return [
-    'FlowGuard blocked this action.',
-    '',
-    'Reason:',
-    `${code}: ${message}`,
-    '',
-    'Root cause:',
-    diagnostics.rootCause,
-    '',
-    ...section('Observed', diagnostics.observed),
-    ...section('Required', diagnostics.required),
-    ...section('Missing evidence', diagnostics.missingEvidence ?? []),
-    ...section('Next', diagnostics.safeNextActions),
-  ]
-    .join('\n')
-    .trimEnd();
+/**
+ * Format a diagnostic card to a Markdown string.
+ * Preserved public API — delegates to the shared renderer.
+ */
+export function formatDiagnosticCard(input: DiagnosticCardInput): string {
+  return renderMarkdown(buildBlockedDiagnosticDocument(input));
 }

@@ -1,6 +1,18 @@
-import { describe, expect, it } from 'vitest';
+/**
+ * @module integration/help/help-renderer.test
+ * @description Original renderer tests (preserved) + golden fixture + edge case tests.
+ */
+import { describe, it, expect } from 'vitest';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import type { HelpResult } from './help-projection.js';
-import { renderHelp } from './help-renderer.js';
+import { renderHelp, buildHelpDocument } from './help-renderer.js';
+import { renderMarkdown } from '../../presentation/markdown.js';
+import { makeProgressedState } from '../../fixtures.js';
+import { getPolicyPreset } from '../../config/policy.js';
+import { createPolicySnapshot } from '../../config/policy-snapshot.js';
+import { buildHelpResult } from './help-projection.js';
+import type { SessionState } from '../../state/schema.js';
 
 const emptyArtifact = {
   status: 'not_verified' as const,
@@ -22,10 +34,7 @@ function noSessionResult(overrides?: Partial<HelpResult>): HelpResult {
     },
     reviewReportStatus: 'not_available',
     nextActionSummary: 'Start a governed session.',
-    evidenceCompleteness: {
-      status: 'not_applicable',
-      summary: 'No session.',
-    },
+    evidenceCompleteness: { status: 'not_applicable', summary: 'No session.' },
     archiveVerification: {
       status: 'unknown',
       currentSnapshotVerified: false,
@@ -56,10 +65,7 @@ function noSessionResult(overrides?: Partial<HelpResult>): HelpResult {
         label: 'Status',
         description: 'Show session state',
         visibility: 'available',
-        preflight: {
-          status: 'available',
-          guarantee: 'read_only_available',
-        },
+        preflight: { status: 'available', guarantee: 'read_only_available' },
         alsoAvailableAs: [],
       },
     ],
@@ -74,6 +80,40 @@ function noSessionResult(overrides?: Partial<HelpResult>): HelpResult {
   };
 }
 
+function sp(mode: 'solo' | 'team') {
+  return createPolicySnapshot(getPolicyPreset(mode), '2026-01-01T00:00:00.000Z', () => 'd');
+}
+
+function makePlanReviewState(): SessionState {
+  return {
+    ...makeProgressedState('PLAN_REVIEW'),
+    policySnapshot: sp('team'),
+    activeChecks: [],
+    verificationCandidates: [],
+    actorInfo: undefined,
+  };
+}
+
+function makeCompleteState(): SessionState {
+  return {
+    ...makeProgressedState('COMPLETE'),
+    archiveStatus: 'verified',
+    policySnapshot: sp('solo'),
+    activeChecks: [],
+    verificationCandidates: [],
+    actorInfo: undefined,
+  };
+}
+
+async function readGolden(name: string): Promise<string> {
+  const p = resolve(__dirname, '..', '..', '..', 'testdata', 'presentation', name);
+  return readFile(p, 'utf-8');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Original renderer tests — preserved
+// ═══════════════════════════════════════════════════════════════════════════════
+
 describe('renderHelp', () => {
   it('verbose JSON is valid and has title', () => {
     const out = renderHelp(noSessionResult(), { format: 'json', verbose: true });
@@ -81,6 +121,7 @@ describe('renderHelp', () => {
     const parsed = JSON.parse(out);
     expect(parsed.title).toBe('FlowGuard Help');
     expect(parsed.artifacts).toBeDefined();
+    expect(parsed).not.toHaveProperty('presentation');
   });
 
   it('verbose JSON without includeArtifactContent has no content fields', () => {
@@ -147,7 +188,7 @@ describe('renderHelp', () => {
     const out = renderHelp(noSessionResult(), { format: 'markdown' });
     expect(out).toContain('**No active FlowGuard session.**');
     expect(out).toContain('**Available commands:**');
-    expect(out).toContain('\u2192');
+    expect(out).toContain('→');
     expect(out).toContain('/start');
     expect(out).not.toContain('**Ticket:**');
   });
@@ -274,14 +315,14 @@ describe('renderHelp', () => {
       }),
       { format: 'markdown' },
     );
-    expect(out).toContain('\u26A0');
+    expect(out).toContain('⚠');
     expect(out).toContain('/blocked');
     expect(out).toContain('blocked: Not available');
     expect(out).toContain('code: SESSION_REQUIRED');
     expect(out).toContain('recovery: Try later');
   });
 
-  it('Markdown shows unavailable command with backtick marker in command detail mode', () => {
+  it('Markdown shows available command with bullet marker', () => {
     const out = renderHelp(
       noSessionResult({
         commands: [
@@ -298,7 +339,7 @@ describe('renderHelp', () => {
       }),
       { format: 'markdown' },
     );
-    expect(out).toContain('\u2022 `/thing`');
+    expect(out).toContain('• `/thing`');
   });
 
   it('verbose flag alone does NOT include artifact content', () => {
@@ -316,5 +357,203 @@ describe('renderHelp', () => {
     );
     const parsed = JSON.parse(out);
     expect(parsed.artifacts.ticket.content).toBeUndefined();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Golden fixture tests
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('help golden fixtures', () => {
+  it('help-no-session matches golden output', async () => {
+    const result = buildHelpResult(null, null, { view: 'context' });
+    const output = renderHelp(result, { format: 'markdown' });
+    const golden = await readGolden('help-no-session.md');
+    expect(output).toBe(golden);
+  });
+
+  it('help-blocked matches golden output', async () => {
+    const state = makePlanReviewState();
+    const result = buildHelpResult(state, getPolicyPreset('team'), { view: 'context' });
+    const output = renderHelp(result, { format: 'markdown' });
+    const golden = await readGolden('help-blocked.md');
+    expect(output).toBe(golden);
+  });
+
+  it('help-complete matches golden output', async () => {
+    const state = makeCompleteState();
+    const result = buildHelpResult(state, getPolicyPreset('solo'), { view: 'context' });
+    const output = renderHelp(result, { format: 'markdown' });
+    const golden = await readGolden('help-complete.md');
+    expect(output).toBe(golden);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Blocker edge cases
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('help blocker edge cases', () => {
+  it('renders blocker with only reasonCode', () => {
+    const doc = buildHelpDocument(
+      noSessionResult({
+        phase: { id: 'TICKET', label: 'Task captured' },
+        readiness: 'blocked',
+        blocker: { message: null, reasonCode: 'MISSING_EVIDENCE' },
+        nextAction: null,
+      }),
+      false,
+    );
+    const out = renderMarkdown(doc);
+    expect(out).toContain('**Why blocked:** [MISSING_EVIDENCE]');
+    expect(out).not.toContain('MISSING_EVIDENCE] ');
+  });
+
+  it('omits blocker line when both message and reasonCode are null', () => {
+    const doc = buildHelpDocument(
+      noSessionResult({
+        phase: { id: 'TICKET', label: 'Task captured' },
+        blocker: { message: null, reasonCode: null },
+      }),
+      false,
+    );
+    const out = renderMarkdown(doc);
+    expect(out).not.toContain('**Why blocked:');
+  });
+
+  it('blocked preflight without details renders command line only', () => {
+    const blockedPreflight = {
+      status: 'blocked' as const,
+      message: null,
+      reasonCode: null,
+      recovery: null,
+      guarantee: 'eligible_to_attempt' as const,
+    } as any; // CommandPreflight.blocked requires non-null fields, but DetailedCommandItem.preflight.blocked allows null — bridge for renderer edge-case test
+    const doc = buildHelpDocument(
+      noSessionResult({
+        commands: [
+          {
+            id: 'x',
+            invocation: '/review-decision',
+            label: 'Review',
+            description: 'Record the decision.',
+            visibility: 'blocked_recoverable',
+            preflight: blockedPreflight,
+            alsoAvailableAs: [],
+          },
+        ],
+        nextAction: null,
+      }),
+      false,
+    );
+    const out = renderMarkdown(doc);
+    expect(out).toContain('⚠ `/review-decision`');
+    expect(out).not.toContain('blocked:');
+    expect(out).not.toContain('code:');
+    expect(out).not.toContain('recovery:');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// EmbeddedMarkdown boundary tests + ticket + plan simultaneously
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('embeddedMarkdown boundary normalization', () => {
+  it('removes trailing newline', () => {
+    const out = renderHelp(
+      {
+        ...noSessionResult(),
+        artifacts: {
+          ticket: { ...emptyArtifact, status: 'available', content: '# Header\n' },
+          currentPlan: { ...emptyArtifact, status: 'not_verified', content: null },
+          currentPlanVersion: null,
+          status: 'available',
+        },
+      },
+      { format: 'markdown', includeArtifactContent: true },
+    );
+    expect(out).toContain('**Ticket:**\n# Header');
+    expect(out).not.toContain('# Header\n\n');
+  });
+
+  it('removes leading newline', () => {
+    const out = renderHelp(
+      {
+        ...noSessionResult(),
+        artifacts: {
+          ticket: { ...emptyArtifact, status: 'available', content: '\n# Header' },
+          currentPlan: { ...emptyArtifact, status: 'not_verified', content: null },
+          currentPlanVersion: null,
+          status: 'available',
+        },
+      },
+      { format: 'markdown', includeArtifactContent: true },
+    );
+    expect(out).toContain('**Ticket:**\n# Header');
+  });
+
+  it('preserves internal blank lines', () => {
+    const out = renderHelp(
+      {
+        ...noSessionResult(),
+        artifacts: {
+          ticket: { ...emptyArtifact, status: 'available', content: 'Paragraph 1\n\nParagraph 2' },
+          currentPlan: { ...emptyArtifact, status: 'not_verified', content: null },
+          currentPlanVersion: null,
+          status: 'available',
+        },
+      },
+      { format: 'markdown', includeArtifactContent: true },
+    );
+    expect(out).toContain('Paragraph 1\n\nParagraph 2');
+  });
+
+  it('preserves trailing spaces within content', () => {
+    const out = renderHelp(
+      {
+        ...noSessionResult(),
+        artifacts: {
+          ticket: { ...emptyArtifact, status: 'available', content: 'Line with spaces  ' },
+          currentPlan: { ...emptyArtifact, status: 'not_verified', content: null },
+          currentPlanVersion: null,
+          status: 'available',
+        },
+      },
+      { format: 'markdown', includeArtifactContent: true },
+    );
+    expect(out).toContain('Line with spaces  ');
+  });
+
+  it('renders ticket and plan simultaneously with correct order', () => {
+    const out = renderHelp(
+      {
+        ...noSessionResult(),
+        artifacts: {
+          ticket: {
+            ...emptyArtifact,
+            status: 'available',
+            digest: 'a',
+            preview: 'T',
+            content: 'Ticket content here',
+          },
+          currentPlan: {
+            ...emptyArtifact,
+            status: 'available',
+            digest: 'b',
+            preview: 'P',
+            content: 'Plan content here',
+          },
+          currentPlanVersion: 1,
+          status: 'available',
+        },
+      },
+      { format: 'markdown', includeArtifactContent: true },
+    );
+    const ticketIdx = out.indexOf('**Ticket:**');
+    const planIdx = out.indexOf('**Current plan (v1):**');
+    expect(ticketIdx).toBeGreaterThan(0);
+    expect(planIdx).toBeGreaterThan(ticketIdx);
+    expect(out).toContain('Ticket content here');
+    expect(out).toContain('Plan content here');
   });
 });

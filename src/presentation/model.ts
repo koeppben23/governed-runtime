@@ -241,6 +241,86 @@ export interface BulletListSection {
   readonly items: readonly string[];
 }
 
+// ─── Help / Diagnostic Primitives ─────────────────────────────────────────────
+
+/** Visibility for detailed command lists — includes blocked_recoverable for help surfaces. */
+export type DetailedCommandVisibility = 'recommended' | 'available' | 'blocked_recoverable';
+
+export interface DetailedCommandItem {
+  /** Never null — detail commands are always command-based. */
+  readonly invocation: string;
+  readonly description: string;
+  readonly visibility: DetailedCommandVisibility;
+  readonly aliases: readonly string[];
+  readonly preflight:
+    | { readonly status: 'available' }
+    | {
+        readonly status: 'blocked';
+        readonly message: string | null;
+        readonly reasonCode: string | null;
+        readonly recovery: string | null;
+      };
+}
+
+export interface DetailedCommandListSection {
+  readonly kind: 'detailedCommandList';
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
+  /** Plain-text label — renderer wraps in `**...:**`. */
+  readonly label?: string;
+  readonly items: readonly DetailedCommandItem[];
+}
+
+/** Combined phase / readiness / blocker / next-action summary for the /help surface. */
+export interface HelpSummarySection {
+  readonly kind: 'helpSummary';
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
+  readonly phase: string | null;
+  readonly readiness: string | null;
+  readonly blocker: {
+    readonly message: string | null;
+    readonly reasonCode: string | null;
+  } | null;
+  readonly nextAction:
+    | { readonly invocation: string; readonly description: string }
+    | { readonly summary: string }
+    | null;
+}
+
+/** Artifact meta-section for /help — ticket and plan status summaries. */
+export interface HelpArtifactSection {
+  readonly kind: 'helpArtifact';
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
+  /** Plain-text label — renderer wraps in `**...:**`. */
+  readonly label: string;
+  readonly items: ReadonlyArray<{
+    /** Plain-text label — renderer uses directly. */
+    readonly label: string;
+    readonly status: 'available' | 'not_verified';
+    readonly preview: string | null;
+    readonly digest: string | null;
+  }>;
+}
+
+/**
+ * Verbatim embedded Markdown content for /help artifact bodies.
+ *
+ * Internal content is preserved exactly. Only leading and trailing newline
+ * characters at the section boundary are removed so the shared renderer
+ * can enforce canonical spacing between sections. Trailing spaces and
+ * internal blank lines remain opaque content.
+ */
+export interface EmbeddedMarkdownSection {
+  readonly kind: 'embeddedMarkdown';
+  /** Rendered as `## heading` when present. */
+  readonly heading?: string;
+  /** Plain-text label — renderer wraps in `**...:**`. */
+  readonly label: string;
+  readonly content: string;
+}
+
 export type PresentationSection =
   | KeyValueSection
   | CommandListSection
@@ -252,7 +332,11 @@ export type PresentationSection =
   | CodeSection
   | NoticeSection
   | BulletListSection
-  | GuidanceSection;
+  | GuidanceSection
+  | DetailedCommandListSection
+  | HelpSummarySection
+  | HelpArtifactSection
+  | EmbeddedMarkdownSection;
 
 // ─── Conclusion ────────────────────────────────────────────────────────────────
 
@@ -293,8 +377,8 @@ export interface ReviewCardDocument {
 export interface DiagnosticCardDocument {
   readonly kind: 'diagnostic_card';
   readonly sections: readonly PresentationSection[];
-  /** Diagnostic cards always carry a conclusion. */
-  readonly conclusion: PresentationConclusion;
+  /** Diagnostic cards may omit a conclusion — blocked-action semantics are inline. */
+  readonly conclusion?: PresentationConclusion;
 }
 
 export interface PlanDocument {
@@ -304,5 +388,13 @@ export interface PlanDocument {
   readonly conclusion?: never;
 }
 
+/** Surface-specific document for /help — no conclusion, flat section layout. */
+export interface HelpDocument {
+  readonly kind: 'help_document';
+  readonly sections: readonly PresentationSection[];
+  /** Help documents never carry a conclusion. */
+  readonly conclusion?: never;
+}
+
 export type PresentationDocument =
-  CompactCardDocument | ReviewCardDocument | DiagnosticCardDocument | PlanDocument;
+  CompactCardDocument | ReviewCardDocument | DiagnosticCardDocument | PlanDocument | HelpDocument;
