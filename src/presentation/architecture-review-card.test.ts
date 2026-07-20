@@ -46,11 +46,17 @@ describe('buildArchitectureReviewCard', () => {
     expect(card).toContain('**Review iteration:** 2');
   });
 
-  it('renders the ADR body verbatim when adrText is provided', () => {
+  it('renders the ADR body under the Architecture Decision heading, demoting embedded headings', () => {
     const adrText = '## Context\nfoo\n\n## Decision\nbar\n\n## Consequences\nbaz\n';
     const card = buildArchitectureReviewCard({ ...baseInput, adrText });
     expect(card).toContain('## Architecture Decision');
-    expect(card).toContain(adrText);
+    // Embedded MADR ## sections are demoted to ### so they nest under the
+    // owning ## Architecture Decision section (no heading-level inversion).
+    expect(card).toContain('### Context\nfoo');
+    expect(card).toContain('### Decision\nbar');
+    expect(card).toContain('### Consequences\nbaz');
+    // Card contributes exactly one document-level H1 (its title).
+    expect(card.match(/^# /gm)).toHaveLength(1);
   });
 
   it('omits the ADR body section when adrText is absent', () => {

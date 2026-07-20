@@ -264,7 +264,7 @@ describe('cli/templates/verification-output-contract', () => {
     it('/plan template defines exactly one implementation-plan H1', () => {
       const planTemplate = COMMANDS['plan.md'];
       expect((planTemplate as string).match(/`# Implementation Plan`/g)).toHaveLength(1);
-      expect(planTemplate).toContain('The only `#` heading in the document');
+      expect(planTemplate).toContain('The single top-level heading of the plan body');
     });
 
     it('/plan template requires seven mandatory semantic dimensions', () => {

@@ -191,9 +191,19 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // when presentation.markdown is present. The `Next action:` requirement now
     // scopes to the fallback projection only. Changes the /status, /why, and
     // /finish bodies and therefore the COMMANDS hash.
+    // Refreshed for rendering-consistency: (1) /plan template clarifies the
+    // `# Implementation Plan` body heading is demoted when embedded in the Plan
+    // Review Card (no longer claims "the only # heading in the document"), and
+    // (2) /plan and /architecture Done-when now defer to the review card's
+    // rendered conclusion (## Decision required) instead of demanding a separate
+    // `Next action:` line — the plan and architecture review cards carry a
+    // PresentationConclusion, so a textual line would duplicate it. /implement
+    // and /review keep their `Next action:` line: the review-report card is
+    // intentionally conclusion-less, so that line is the sole (non-duplicated)
+    // next-action source. Changes the /plan and /architecture bodies.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '175be5be839c3f7eb8e0e9c01dff9ef95b2dcc8e072eff611be21fb51f0619a4',
+      '72f3b0860dd46425cd1442c97f5943dae2cb2711dbfc909faee227b8dfcaf2fc',
     );
   });
 

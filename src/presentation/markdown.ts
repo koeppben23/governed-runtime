@@ -392,15 +392,118 @@ function renderEmbeddedMarkdown(section: EmbeddedMarkdownSection): string {
     throw new PresentationContractError('EmbeddedMarkdownSection: label must not be empty');
   }
 
-  const content = section.content.replace(/^\n+/, '').replace(/\n+$/, '');
+  // Embedded content is authored outside the presentation layer (agent plan/ADR
+  // bodies, ticket text). It is the one untrusted input path in the renderer,
+  // so it is normalised here — the single shared boundary — rather than by each
+  // embedder. Two concerns are handled:
+  //  1. Structural sanitisation: strip trailing whitespace and collapse
+  //     triple+ newlines so the document invariants hold (code-fence content is
+  //     exempt and preserved verbatim).
+  //  2. Heading demotion: no embedded heading may be shallower than the section
+  //     that owns it. A section with a `heading` renders it as `## heading`, so
+  //     the body must start at `###` (H3) or deeper; a label-only embed sits at
+  //     document level (next to the document H1 title) and must start at `##`.
+  //     This prevents a second document-level H1 and H1-under-H2 inversions.
+  const minLevel = section.heading !== undefined ? 3 : 2;
+  const normalized = normalizeEmbeddedContent(section.content, minLevel);
 
-  if (content.length === 0) {
+  if (normalized.length === 0) {
     throw new PresentationContractError(
       'EmbeddedMarkdownSection: content must not be empty after boundary normalization',
     );
   }
 
-  return section.label !== undefined ? `**${section.label}:**\n${content}` : content;
+  return section.label !== undefined ? `**${section.label}:**\n${normalized}` : normalized;
+}
+
+/**
+ * Normalise untrusted embedded Markdown for safe inclusion in a document:
+ * boundary-trims, sanitises structural whitespace, and demotes ATX headings so
+ * the shallowest heading is at least `minLevel`. Fenced code blocks are opaque:
+ * their content (and internal blank lines/indentation) is preserved verbatim.
+ */
+function normalizeEmbeddedContent(raw: string, minLevel: number): string {
+  const boundaryTrimmed = raw.replace(/^\n+/, '').replace(/\n+$/, '');
+  if (boundaryTrimmed.length === 0) return '';
+
+  const shallowest = shallowestHeadingLevel(boundaryTrimmed);
+  const shift = shallowest !== null && shallowest < minLevel ? minLevel - shallowest : 0;
+
+  const lines = boundaryTrimmed.split('\n');
+  const out: string[] = [];
+  let inFence = false;
+  let fenceMarker = '';
+  let prevBlankOutsideFence = false;
+
+  for (const line of lines) {
+    const fence = fenceDelimiter(line);
+    if (fence !== null && (!inFence || line.trimStart().startsWith(fenceMarker))) {
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = fence;
+      } else {
+        inFence = false;
+        fenceMarker = '';
+      }
+      out.push(line); // fence delimiter lines are preserved verbatim
+      prevBlankOutsideFence = false;
+      continue;
+    }
+    if (inFence) {
+      out.push(line); // code content preserved verbatim (exempt from all normalisation)
+      continue;
+    }
+    const sanitized = sanitizeStructuralLine(demoteHeadingLine(line, shift));
+    const blank = sanitized.length === 0;
+    // Collapse triple+ newlines between structural blocks: never allow two
+    // consecutive blank lines outside a code fence.
+    if (blank && prevBlankOutsideFence) continue;
+    out.push(sanitized);
+    prevBlankOutsideFence = blank;
+  }
+
+  return out.join('\n');
+}
+
+/** Return the ``` / ~~~ fence marker if the line opens/closes a fenced block. */
+function fenceDelimiter(line: string): string | null {
+  const m = /^\s*(`{3,}|~{3,})/.exec(line);
+  return m ? m[1]! : null;
+}
+
+/** Strip trailing whitespace from a non-code line. */
+function sanitizeStructuralLine(line: string): string {
+  return line.replace(/[ \t]+$/, '');
+}
+
+/** Demote an ATX heading line by `shift` levels (capped at H6). No-op otherwise. */
+function demoteHeadingLine(line: string, shift: number): string {
+  if (shift <= 0) return line;
+  const m = /^(#{1,6})(\s.*)$/.exec(line);
+  if (!m) return line;
+  const level = Math.min(6, m[1]!.length + shift);
+  return '#'.repeat(level) + m[2]!;
+}
+
+/** Shallowest (smallest) ATX heading level in fence-external content, or null. */
+function shallowestHeadingLevel(content: string): number | null {
+  let inFence = false;
+  let fenceMarker = '';
+  let shallowest: number | null = null;
+  for (const line of content.split('\n')) {
+    const fence = fenceDelimiter(line);
+    if (fence !== null && (!inFence || line.trimStart().startsWith(fenceMarker))) {
+      inFence = !inFence;
+      fenceMarker = inFence ? fence : '';
+      continue;
+    }
+    if (inFence) continue;
+    const m = /^(#{1,6})\s/.exec(line);
+    if (m && (shallowest === null || m[1]!.length < shallowest)) {
+      shallowest = m[1]!.length;
+    }
+  }
+  return shallowest;
 }
 
 // ─── Conclusion Renderer ───────────────────────────────────────────────────────
