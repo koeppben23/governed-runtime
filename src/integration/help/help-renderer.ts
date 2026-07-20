@@ -81,7 +81,7 @@ function mapVisibility(v: ProjectedCommand['visibility']): DetailedCommandVisibi
   }
 }
 
-function buildHelpDocument(result: HelpResult, includeContent: boolean): HelpDocument {
+export function buildHelpDocument(result: HelpResult, includeContent: boolean): HelpDocument {
   const sections: PresentationSection[] = [];
 
   // HelpSummary

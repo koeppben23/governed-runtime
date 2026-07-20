@@ -330,9 +330,17 @@ function renderHelpSummary(section: HelpSummarySection): string {
     lines.push(`**Readiness:** ${section.readiness}`);
   }
 
-  if (section.blocker?.message) {
-    const code = section.blocker.reasonCode ? ` [${section.blocker.reasonCode}]` : '';
-    lines.push(`**Why blocked:** ${section.blocker.message}${code}`);
+  if (section.blocker) {
+    const parts: string[] = [];
+    if (section.blocker.message) {
+      parts.push(section.blocker.message);
+    }
+    if (section.blocker.reasonCode) {
+      parts.push(`[${section.blocker.reasonCode}]`);
+    }
+    if (parts.length > 0) {
+      lines.push(`**Why blocked:** ${parts.join(' ')}`);
+    }
   }
 
   if (section.nextAction) {
@@ -373,13 +381,14 @@ function renderEmbeddedMarkdown(section: EmbeddedMarkdownSection): string {
   if (section.label.trim().length === 0) {
     throw new PresentationContractError('EmbeddedMarkdownSection: label must not be empty');
   }
-  if (section.content.length === 0) {
-    throw new PresentationContractError('EmbeddedMarkdownSection: content must not be empty');
-  }
 
-  // Only leading/trailing newlines at section boundary are removed.
-  // Internal content (including trailing spaces and blank lines) is preserved.
   const content = section.content.replace(/^\n+/, '').replace(/\n+$/, '');
+
+  if (content.length === 0) {
+    throw new PresentationContractError(
+      'EmbeddedMarkdownSection: content must not be empty after boundary normalization',
+    );
+  }
 
   return `**${section.label}:**\n${content}`;
 }
