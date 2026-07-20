@@ -21,6 +21,8 @@ import {
   writeStateWithArtifacts,
 } from './helpers.js';
 import { USER_GATES, TERMINAL } from '../../machine/topology.js';
+import { resolveNextAction } from '../../machine/next-action.js';
+import { buildProductNextAction } from '../../presentation/next-action-copy.js';
 import type { MutableSession, ToolDefinition } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import { bindExternalReviewEvidence } from '../review/transport-evidence.js';
@@ -103,16 +105,27 @@ export const continue_cmd: ToolDefinition = {
 };
 
 function formatUserGateGuidance(state: SessionState): string {
-  const guidance: Record<string, string[]> = {
-    PLAN_REVIEW: ['/approve', '/request-changes', '/reject'],
-    EVIDENCE_REVIEW: ['/approve', '/request-changes', '/reject'],
-    ARCH_REVIEW: ['/approve', '/request-changes', '/reject'],
-  };
+  // Derive the gate decision commands from the canonical product projection
+  // instead of a local hardcoded list. buildProductNextAction resolves the
+  // user-gate phases (PLAN_REVIEW / EVIDENCE_REVIEW / ARCH_REVIEW) to their
+  // decision commands from the machine authority, so /continue no longer keeps
+  // a parallel copy of ['/approve', '/request-changes', '/reject'].
+  const nextAction = resolveNextAction(state.phase, state);
+  const productNext = buildProductNextAction(
+    nextAction,
+    state.phase,
+    state.error?.code === 'ABORTED',
+    state.archiveStatus ?? null,
+  );
+  const commands =
+    productNext.commands.length > 0
+      ? productNext.commands
+      : ['/approve', '/request-changes', '/reject'];
   return appendNextAction(
     JSON.stringify({
       phase: state.phase,
       status: `User gate active at ${state.phase}. A human decision is required.`,
-      next: guidance[state.phase]?.join(', ') ?? '/approve, /request-changes, /reject',
+      next: commands.join(', '),
       _continue: { action: 'manual_decision' },
     }),
     state,
