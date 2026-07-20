@@ -11,12 +11,17 @@
  * - No trailing newline at document end.
  * - Exactly \n\n between non-empty sections.
  * - No trailing whitespace on any line.
- * - No \n\n\n between structural blocks (code-fence content is exempt).
+ * - No \n\n\n between structural blocks (code-fence content is exempt;
+ *   EmbeddedMarkdownSection internal content is opaque and may contain
+ *   internal blank lines — triple-newline rule applies only to structural
+ *   section joins).
+ * - EmbeddedMarkdownSection preserves internal content exactly except for
+ *   leading/trailing newlines at the section boundary.
  *
  * The renderer constructs output so that these invariants are structurally
  * impossible to violate — no post-processing, no silent repair.
  *
- * @version v1
+ * @version v2
  */
 
 import type {
@@ -36,6 +41,10 @@ import type {
   BulletListSection,
   GuidanceSection,
   GuidanceStatus,
+  DetailedCommandListSection,
+  HelpSummarySection,
+  HelpArtifactSection,
+  EmbeddedMarkdownSection,
 } from './model.js';
 import { validateCodeLanguage, PresentationContractError } from './model.js';
 import { GUIDANCE_STATUS_LABELS } from './labels.js';
@@ -63,9 +72,7 @@ export function renderMarkdown(document: PresentationDocument): string {
 
 // ─── Section Dispatcher ────────────────────────────────────────────────────────
 
-type HeadedSection = { readonly heading?: string };
-
-function sectionHeading(section: HeadedSection): string {
+function sectionHeading(section: { readonly heading?: string }): string {
   return section.heading && section.heading.length > 0 ? `## ${section.heading}\n\n` : '';
 }
 
@@ -93,6 +100,14 @@ function renderSection(section: PresentationSection): string {
       return sectionHeading(section) + renderBulletList(section);
     case 'guidance':
       return sectionHeading(section) + renderGuidance(section);
+    case 'detailedCommandList':
+      return sectionHeading(section) + renderDetailedCommandList(section);
+    case 'helpSummary':
+      return sectionHeading(section) + renderHelpSummary(section);
+    case 'helpArtifact':
+      return sectionHeading(section) + renderHelpArtifact(section);
+    case 'embeddedMarkdown':
+      return sectionHeading(section) + renderEmbeddedMarkdown(section);
   }
 }
 
@@ -249,6 +264,124 @@ function noticeSymbol(level: NoticeSection['level']): string {
     case 'info':
       return '•';
   }
+}
+
+// ─── Help/Diagnostics Renderers ────────────────────────────────────────────────
+
+function renderDetailedCommandList(section: DetailedCommandListSection): string {
+  const lines: string[] = [];
+  if (section.label) {
+    lines.push(`**${section.label}:**`);
+  }
+  for (const item of section.items) {
+    if (item.invocation.trim().length === 0) {
+      throw new PresentationContractError('DetailedCommandItem: invocation must not be empty');
+    }
+    if (item.description.trim().length === 0) {
+      throw new PresentationContractError('DetailedCommandItem: description must not be empty');
+    }
+    for (const alias of item.aliases) {
+      if (alias.trim().length === 0) {
+        throw new PresentationContractError(
+          'DetailedCommandItem: aliases must not contain empty strings',
+        );
+      }
+    }
+    const sym = detailedCommandSymbol(item.visibility);
+    const aliases =
+      item.aliases.length > 0
+        ? ` (aliases: ${item.aliases.map((a) => `\`${a}\``).join(', ')})`
+        : '';
+    lines.push(`  ${sym} \`${item.invocation}\` — ${item.description}${aliases}`);
+
+    if (item.preflight.status === 'blocked') {
+      const p = item.preflight;
+      if (p.message) lines.push(`    blocked: ${p.message}`);
+      if (p.reasonCode) lines.push(`    code: ${p.reasonCode}`);
+      if (p.recovery) lines.push(`    recovery: ${p.recovery}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function detailedCommandSymbol(
+  visibility: DetailedCommandListSection['items'][number]['visibility'],
+): string {
+  switch (visibility) {
+    case 'recommended':
+      return '→';
+    case 'available':
+      return '•';
+    case 'blocked_recoverable':
+      return '⚠';
+  }
+}
+
+function renderHelpSummary(section: HelpSummarySection): string {
+  const lines: string[] = [];
+
+  if (section.phase) {
+    lines.push(`**Phase:** ${section.phase}`);
+  } else {
+    lines.push('**No active FlowGuard session.**');
+  }
+
+  if (section.readiness && section.readiness !== 'none') {
+    lines.push(`**Readiness:** ${section.readiness}`);
+  }
+
+  if (section.blocker?.message) {
+    const code = section.blocker.reasonCode ? ` [${section.blocker.reasonCode}]` : '';
+    lines.push(`**Why blocked:** ${section.blocker.message}${code}`);
+  }
+
+  if (section.nextAction) {
+    if ('invocation' in section.nextAction) {
+      lines.push(
+        `**Next:** \`${section.nextAction.invocation}\` — ${section.nextAction.description}`,
+      );
+    } else {
+      lines.push(`**Next:** ${section.nextAction.summary}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function renderHelpArtifact(section: HelpArtifactSection): string {
+  if (section.label.trim().length === 0) {
+    throw new PresentationContractError('HelpArtifactSection: label must not be empty');
+  }
+  const lines: string[] = [];
+  lines.push(`**${section.label}:**`);
+  for (const item of section.items) {
+    if (item.label.trim().length === 0) {
+      throw new PresentationContractError('HelpArtifactSection: item label must not be empty');
+    }
+    const pv = item.preview ? ` "${item.preview}"` : '';
+    const dg = item.digest ? ` (digest: ${item.digest.slice(0, 8)}...)` : '';
+    if (item.status === 'available') {
+      lines.push(`  ${item.label}: available${pv}${dg}`);
+    } else {
+      lines.push(`  ${item.label}: not verified`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function renderEmbeddedMarkdown(section: EmbeddedMarkdownSection): string {
+  if (section.label.trim().length === 0) {
+    throw new PresentationContractError('EmbeddedMarkdownSection: label must not be empty');
+  }
+  if (section.content.length === 0) {
+    throw new PresentationContractError('EmbeddedMarkdownSection: content must not be empty');
+  }
+
+  // Only leading/trailing newlines at section boundary are removed.
+  // Internal content (including trailing spaces and blank lines) is preserved.
+  const content = section.content.replace(/^\n+/, '').replace(/\n+$/, '');
+
+  return `**${section.label}:**\n${content}`;
 }
 
 // ─── Conclusion Renderer ───────────────────────────────────────────────────────
