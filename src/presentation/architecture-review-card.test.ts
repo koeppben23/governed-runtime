@@ -23,8 +23,8 @@ describe('buildArchitectureReviewCard', () => {
       adrTitle: 'Use presentation-only command aliases',
     });
     expect(card).toContain('# FlowGuard Architecture Review');
-    expect(card).toContain('> **ADR:** Use presentation-only command aliases');
-    expect(card).toContain('> **Status:** Ready for architecture review');
+    expect(card).toContain('**ADR:** Use presentation-only command aliases');
+    expect(card).toContain('**Status:** Ready for architecture review');
   });
 
   it('renders ADR details with id, digest, and iteration', () => {
@@ -72,9 +72,9 @@ describe('buildArchitectureReviewCard', () => {
     expect(card).toContain('### Blocking Issues (1)');
     expect(card).toContain('Missing alternatives');
     expect(card).toContain('### Major Risks (1)');
-    expect(card).toContain('### Missing Verification (1)');
-    expect(card).toContain('### Scope Creep (1)');
-    expect(card).toContain('### Unknowns (1)');
+    expect(card).toContain('## Missing Verification (1)');
+    expect(card).toContain('## Scope Creep (1)');
+    expect(card).toContain('## Unknowns (1)');
   });
 
   it('shows next actions at ARCH_REVIEW', () => {
@@ -95,7 +95,7 @@ describe('buildArchitectureReviewCard', () => {
         commands: [],
       },
     });
-    expect(card).toContain('> **Status:** Architecture complete');
+    expect(card).toContain('**Status:** Architecture complete');
     expect(card).not.toContain('/approve');
     expect(card).not.toContain('/request-changes');
   });

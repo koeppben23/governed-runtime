@@ -2,18 +2,27 @@
  * @module presentation/review-report-card
  * @description Pure presentation builder for the Review Report Card.
  *
- * Builds a markdown card presenting standalone /review findings with
- * completeness matrix and audit evidence. Called when /review completes
- * (phase REVIEW_COMPLETE).
+ * Builds the Review Report Card as a typed PresentationDocument rendered
+ * through the shared Markdown renderer (renderMarkdown). Presents standalone
+ * /review findings with the completeness matrix and audit evidence. Called
+ * when /review completes (phase REVIEW_COMPLETE).
  *
  * This is a pure function — no state dependency, no side effects.
  * All fields are derived from the ReviewReport and State already available
  * in the tool handler.
  *
- * @version v1
+ * @version v2
  */
 
 import type { Phase } from '../state/schema.js';
+import type {
+  ReviewCardDocument,
+  PresentationSection,
+  KeyValueItem,
+  FindingGroup,
+  FindingItem,
+} from './model.js';
+import { renderMarkdown } from './markdown.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -57,23 +66,26 @@ export interface ReviewReportCardInput {
   extractionMethod?: string;
 }
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Severity / Category Projection ─────────────────────────────────────────────
 
-const SEVERITY_GROUP: Record<string, { label: string; order: number }> = {
-  critical: { label: 'Critical', order: 0 },
-  major: { label: 'Major', order: 1 },
-  error: { label: 'Issues', order: 2 },
-  minor: { label: 'Warnings', order: 3 },
-  warning: { label: 'Warnings', order: 3 },
-  info: { label: 'Notes', order: 4 },
+/**
+ * Maps a raw finding severity to a presentation FindingGroup: a display label,
+ * a sort order, and a severity from the closed FindingGroup.severity union.
+ */
+const SEVERITY_GROUP: Record<
+  string,
+  { label: string; order: number; severity: FindingGroup['severity'] }
+> = {
+  critical: { label: 'Critical', order: 0, severity: 'critical' },
+  major: { label: 'Major', order: 1, severity: 'major' },
+  error: { label: 'Issues', order: 2, severity: 'major' },
+  minor: { label: 'Warnings', order: 3, severity: 'warning' },
+  warning: { label: 'Warnings', order: 3, severity: 'warning' },
+  info: { label: 'Notes', order: 4, severity: 'info' },
 };
 
-function severityLabel(severity: string): string {
-  return SEVERITY_GROUP[severity]?.label ?? severity;
-}
-
-function severityOrder(severity: string): number {
-  return SEVERITY_GROUP[severity]?.order ?? 99;
+function severityGroup(severity: string): { label: string; order: number; severity: FindingGroup['severity'] } {
+  return SEVERITY_GROUP[severity] ?? { label: severity, order: 99, severity: 'info' };
 }
 
 function categoryLabel(category: string): string {
@@ -93,14 +105,18 @@ function categoryLabel(category: string): string {
 // ─── Card Builder ────────────────────────────────────────────────────────────
 
 /**
- * Build a Review Report Card as a markdown string.
+ * Build a Review Report Card as a Markdown string via the shared renderer.
  *
- * Sections:
- * 1. Header with status and input origin
- * 2. Findings grouped by severity (critical > major > warnings > notes)
- * 3. Completeness (4-eyes status + summary)
- * 4. Evidence (obligationId, invocation source, reviewer — when present)
- * 5. Recommended follow-up (orientation, no governance commands)
+ * Sections (all typed, spacing enforced by renderMarkdown):
+ * 1. Title (H1)
+ * 2. Metadata (status, overall, input, references)
+ * 3. Findings grouped by severity (critical > major > issues > warnings > notes)
+ * 4. Completeness (4-eyes status + summary)
+ * 5. Evidence (obligationId, invocation source, reviewer — when present)
+ * 6. Recommended follow-up (orientation, no governance commands)
+ *
+ * This card carries no conclusion — /review is terminal orientation, not a
+ * decision gate.
  */
 export function buildReviewReportCard(input: ReviewReportCardInput): string {
   const {
@@ -121,15 +137,18 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
     extractionMethod,
   } = input;
 
-  const lines: string[] = [];
+  const sections: PresentationSection[] = [];
 
-  // ── Header ──────────────────────────────────────────────────────
-  lines.push('# FlowGuard Review Report');
-  lines.push('');
-  lines.push(`> **Status:** ${phaseLabel}`);
-  lines.push(`> **Overall:** ${overallStatus}`);
+  // ── Title ──────────────────────────────────────────────────────────
+  sections.push({ kind: 'title', text: 'FlowGuard Review Report' });
+
+  // ── Metadata ───────────────────────────────────────────────────────
+  const metadata: KeyValueItem[] = [
+    { label: 'Status', value: phaseLabel },
+    { label: 'Overall', value: overallStatus },
+  ];
   if (inputOrigin) {
-    lines.push(`> **Input:** ${inputOrigin}`);
+    metadata.push({ label: 'Input', value: inputOrigin });
   }
   if (references && references.length > 0) {
     const refList = references
@@ -143,61 +162,57 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
         return type ? `${type}: ${value}` : String(value);
       })
       .join(', ');
-    lines.push(`> **References:** ${refList}`);
+    metadata.push({ label: 'References', value: refList });
   }
-  lines.push('');
+  sections.push({ kind: 'keyValue', items: metadata });
 
-  // ── Findings ────────────────────────────────────────────────────
+  // ── Findings ───────────────────────────────────────────────────────
   if (findings.length > 0) {
-    const grouped = new Map<number, typeof findings>();
+    const grouped = new Map<number, { label: string; severity: FindingGroup['severity']; items: FindingItem[] }>();
     for (const f of findings) {
-      const order = severityOrder(f.severity);
-      if (!grouped.has(order)) grouped.set(order, []);
-      grouped.get(order)!.push(f);
-    }
-    const sorted = [...grouped.entries()].sort(([a], [b]) => a - b);
-
-    lines.push('---');
-    lines.push('');
-    lines.push('## Findings');
-    lines.push('');
-
-    for (const [, group] of sorted) {
-      const first = group[0];
-      if (!first) continue;
-      const sev = severityLabel(first.severity);
-      lines.push(`### ${sev} (${group.length})`);
-      lines.push('');
-      for (const f of group) {
-        const location = f.location ? ` \`${f.location}\`` : '';
-        lines.push(`- **${categoryLabel(f.category)}:** ${f.message}${location}`);
+      const g = severityGroup(f.severity);
+      let bucket = grouped.get(g.order);
+      if (!bucket) {
+        bucket = { label: g.label, severity: g.severity, items: [] };
+        grouped.set(g.order, bucket);
       }
-      lines.push('');
+      bucket.items.push({
+        category: categoryLabel(f.category),
+        message: f.message,
+        ...(f.location ? { location: f.location } : {}),
+      });
     }
+    const groups: FindingGroup[] = [...grouped.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([, bucket]) => ({
+        severity: bucket.severity,
+        label: bucket.label,
+        items: bucket.items,
+      }));
+    sections.push({ kind: 'findings', heading: 'Findings', groups });
   } else {
-    lines.push('---');
-    lines.push('');
-    lines.push('## Findings');
-    lines.push('');
-    lines.push('No issues found.');
-    lines.push('');
+    sections.push({
+      kind: 'bulletList',
+      heading: 'Findings',
+      items: ['No issues found.'],
+    });
   }
 
-  // ── Completeness ────────────────────────────────────────────────
-  lines.push('---');
-  lines.push('');
-  lines.push('## Completeness');
-  lines.push('');
-  lines.push(`- **Overall:** ${completeness.overallComplete ? 'Complete' : 'Incomplete'}`);
-  lines.push(
-    `- **Four-eyes principle:** ${
-      completeness.fourEyes ? 'Satisfied' : 'Not satisfied / Not recorded'
-    }`,
-  );
-  lines.push(`- ${completeness.summary}`);
-  lines.push('');
+  // ── Completeness ───────────────────────────────────────────────────
+  sections.push({
+    kind: 'keyValue',
+    heading: 'Completeness',
+    items: [
+      { label: 'Overall', value: completeness.overallComplete ? 'Complete' : 'Incomplete' },
+      {
+        label: 'Four-eyes principle',
+        value: completeness.fourEyes ? 'Satisfied' : 'Not satisfied / Not recorded',
+      },
+      { label: 'Summary', value: completeness.summary },
+    ],
+  });
 
-  // ── Evidence ────────────────────────────────────────────────────
+  // ── Evidence ───────────────────────────────────────────────────────
   const hasEvidence =
     obligationId ||
     invocationSource ||
@@ -207,46 +222,49 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
     reviewOutputMode ||
     reviewAssuranceLevel;
   if (hasEvidence) {
-    lines.push('---');
-    lines.push('');
-    lines.push('## Evidence');
-    lines.push('');
-    if (obligationId) lines.push(`- **Obligation:** \`${obligationId}\``);
-    if (invocationSource) lines.push(`- **Invocation source:** ${invocationSource}`);
-    if (invocationMode) lines.push(`- **Invocation mode:** ${invocationMode}`);
+    const evidence: KeyValueItem[] = [];
+    if (obligationId) evidence.push({ label: 'Obligation', value: `\`${obligationId}\`` });
+    if (invocationSource) evidence.push({ label: 'Invocation source', value: invocationSource });
+    if (invocationMode) evidence.push({ label: 'Invocation mode', value: invocationMode });
     if (typeof hostVisible === 'boolean') {
-      lines.push(`- **Host visible:** ${hostVisible ? 'yes' : 'no'}`);
+      evidence.push({ label: 'Host visible', value: hostVisible ? 'yes' : 'no' });
     }
-    if (reviewerSessionId) lines.push(`- **Reviewer session:** \`${reviewerSessionId}\``);
-    if (reviewOutputMode) lines.push(`- **Review output mode:** ${reviewOutputMode}`);
+    if (reviewerSessionId) {
+      evidence.push({ label: 'Reviewer session', value: `\`${reviewerSessionId}\`` });
+    }
+    if (reviewOutputMode) evidence.push({ label: 'Review output mode', value: reviewOutputMode });
     if (typeof structuredOutputUsed === 'boolean') {
-      lines.push(`- **Structured output used:** ${structuredOutputUsed ? 'yes' : 'no'}`);
+      evidence.push({ label: 'Structured output used', value: structuredOutputUsed ? 'yes' : 'no' });
     }
-    if (reviewAssuranceLevel) lines.push(`- **Review assurance:** ${reviewAssuranceLevel}`);
-    if (extractionMethod) lines.push(`- **Extraction method:** ${extractionMethod}`);
-    lines.push('');
+    if (reviewAssuranceLevel) {
+      evidence.push({ label: 'Review assurance', value: reviewAssuranceLevel });
+    }
+    if (extractionMethod) evidence.push({ label: 'Extraction method', value: extractionMethod });
+    sections.push({ kind: 'keyValue', heading: 'Evidence', items: evidence });
   }
 
-  // ── Recommended follow-up ───────────────────────────────────────
-  lines.push('---');
-  lines.push('');
-  lines.push('## Recommended follow-up');
-  lines.push('');
+  // ── Recommended follow-up ──────────────────────────────────────────
+  const followUp: string[] = [];
   const hasCriticalOrMajor = findings.some(
     (f) => f.severity === 'critical' || f.severity === 'major' || f.severity === 'error',
   );
   if (findings.length === 0) {
-    lines.push(
-      '- No follow-up required from this review. Re-run `/review` after changes if needed.',
+    followUp.push(
+      'No follow-up required from this review. Re-run `/review` after changes if needed.',
     );
   } else {
     if (hasCriticalOrMajor) {
-      lines.push('- Address critical and major findings before merging.');
+      followUp.push('Address critical and major findings before merging.');
     }
-    lines.push('- Add missing verification where listed.');
-    lines.push('- Re-run `/review` after changes if needed.');
+    followUp.push('Add missing verification where listed.');
+    followUp.push('Re-run `/review` after changes if needed.');
   }
-  lines.push('');
+  sections.push({ kind: 'bulletList', heading: 'Recommended follow-up', items: followUp });
 
-  return lines.join('\n');
+  const document: ReviewCardDocument = {
+    kind: 'review_card',
+    sections,
+  };
+
+  return renderMarkdown(document);
 }
