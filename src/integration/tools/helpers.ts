@@ -49,6 +49,9 @@ import { buildBlockedDiagnostics, formatDiagnosticCard } from '../../diagnostics
 import type { RuntimeDiagnostics } from '../../diagnostics/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
+import { renderMarkdown } from '../../presentation/index.js';
+import type { PresentationDocument } from '../../presentation/index.js';
+import { buildRailConclusion } from './rail-conclusion.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
 
 const lockedSessionDir = new AsyncLocalStorage<string>();
@@ -143,6 +146,27 @@ function buildBlockedPresentation(
   };
 }
 
+/**
+ * Render the rail-surface Next-Action conclusion to Markdown for display.
+ *
+ * Builds a conclusion-only compact-card PresentationDocument (no sections) and
+ * renders it through the shared renderer, so the mutating-tool next action is
+ * displayed identically to /status, /why, and /finish. Additive only — this is
+ * the user-facing display; the machine-readable `next` field is unchanged.
+ */
+export function buildNextActionPresentation(
+  state: SessionState,
+  evalResult: EvalResult,
+): { markdown: string } {
+  const document: PresentationDocument = {
+    kind: 'compact_card',
+    density: 'compact',
+    sections: [],
+    conclusion: buildRailConclusion(state, evalResult),
+  };
+  return { markdown: renderMarkdown(document) };
+}
+
 /** Format a RailResult for LLM consumption. Audit transitions in metadata channel. */
 export function formatRailResult(result: RailResult): ToolResult {
   if (result.kind === 'blocked') {
@@ -187,6 +211,12 @@ export function formatRailResult(result: RailResult): ToolResult {
     next: formatEval(result.evalResult),
     nextAction,
     productNextAction: productNext,
+    // Render the user-facing next action through the shared renderer so mutating
+    // tools display it identically to /status, /why, and /finish. Additive: the
+    // machine-readable `next`/`nextAction`/`productNextAction` fields above are
+    // unchanged. The rendered conclusion is the display authority; the command
+    // template must not print a duplicate `Next action:` line when it is present.
+    presentation: buildNextActionPresentation(result.state, result.evalResult),
     // Governance integrity: mark an aborted terminal session explicitly so it is
     // never presented as an indistinguishable clean completion. Distinct from the
     // blocked-result `error: true` convention (this is a successful tool call that

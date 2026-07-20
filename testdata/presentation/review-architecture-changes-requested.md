@@ -16,6 +16,6 @@
 ## Decision required
 
 Review the ADR and decide.
-• `/approve` — approve the ADR if it is complete and acceptable
-• `/request-changes` — send the ADR back for revision
-• `/reject` — discard this ADR
+- `/approve` — approve the ADR if it is complete and acceptable
+- `/request-changes` — send the ADR back for revision
+- `/reject` — discard this ADR

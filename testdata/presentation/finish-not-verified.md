@@ -12,12 +12,12 @@
 
 ## Guidance
 
-? **create PR:** Not verified — Required evidence is missing or failed; proceeding is not verified.
-? **export evidence:** Not verified — Required evidence is missing or failed; proceeding is not verified.
-✓ **keep branch:** Recommended — Keep the branch to complete verification before proceeding.
+- **create PR:** Not verified — Required evidence is missing or failed; proceeding is not verified.
+- **export evidence:** Not verified — Required evidence is missing or failed; proceeding is not verified.
+- **keep branch:** Recommended — Keep the branch to complete verification before proceeding.
 
 ## Exit options
 
-• Abandon this work
+- Abandon this work
 
 → `/task` — Record the task that the workflow will govern.

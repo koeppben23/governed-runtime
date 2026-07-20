@@ -6,5 +6,5 @@
 
 ## Available commands
 
-  → `/start` — Prepare or restore a governed session.
-  • `/status` — Show the current phase and next action.
+  - **`/start`** — Prepare or restore a governed session.
+  - `/status` — Show the current phase and next action.

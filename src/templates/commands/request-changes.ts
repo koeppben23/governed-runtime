@@ -31,5 +31,10 @@ ${GOVERNANCE_RULES}
 
 - Changes-requested verdict recorded via flowguard_decision.
 - Phase transition and next action reported.
-- Response ends with \`Next action:\` line.
+- If \`presentation.markdown\` was present, it was printed verbatim and its
+  rendered conclusion (the trailing \`→\`/\`•\` command line or the
+  \`## Decision required\` block) is the next-action guidance — do NOT append a
+  separate \`Next action:\` line.
+- Only on the fallback projection (no \`presentation.markdown\`): response ends
+  with a \`Next action:\` line.
 `;

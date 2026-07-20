@@ -28,6 +28,6 @@
 
 ## Recommended follow-up
 
-• Address critical and major findings before merging.
-• Add missing verification where listed.
-• Re-run `/review` after changes if needed.
+- Address critical and major findings before merging.
+- Add missing verification where listed.
+- Re-run `/review` after changes if needed.

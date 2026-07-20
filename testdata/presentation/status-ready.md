@@ -12,11 +12,11 @@
 
 ## Available actions
 
-• `/hydrate` — Prepare or restore a governed session.
-• `/ticket` — Record the task that the workflow will govern.
-• `/continue` — Route to the next workflow step.
-• `/review` — Start a standalone compliance review.
-• `/architecture` — Create or revise an architecture decision record.
-• `/abort` — End the current workflow without presenting it as completed.
+- `/hydrate` — Prepare or restore a governed session.
+- `/ticket` — Record the task that the workflow will govern.
+- `/continue` — Route to the next workflow step.
+- `/review` — Start a standalone compliance review.
+- `/architecture` — Create or revise an architecture decision record.
+- `/abort` — End the current workflow without presenting it as completed.
 
 → `/task` — Record the task that the workflow will govern.

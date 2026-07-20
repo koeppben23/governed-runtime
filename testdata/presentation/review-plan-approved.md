@@ -33,6 +33,6 @@
 ## Decision required
 
 Plan ready.
-• `/approve` — approve the plan if it is complete and acceptable
-• `/request-changes` — send the plan back for revision
-• `/reject` — stop this task
+- `/approve` — approve the plan if it is complete and acceptable
+- `/request-changes` — send the plan back for revision
+- `/reject` — stop this task

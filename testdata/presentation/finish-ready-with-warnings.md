@@ -20,12 +20,12 @@
 
 ## Guidance
 
-✓ **create PR:** Recommended — Ready with warnings; review warnings before proceeding.
-✓ **export evidence:** Recommended — Ready with warnings; review warnings before proceeding.
-• **keep branch:** Not recommended — Ready with warnings; keeping the branch open is optional.
+- **create PR:** Recommended — Ready with warnings; review warnings before proceeding.
+- **export evidence:** Recommended — Ready with warnings; review warnings before proceeding.
+- **keep branch:** Not recommended — Ready with warnings; keeping the branch open is optional.
 
 ## Exit options
 
-• Abandon this work
+- Abandon this work
 
 → `/status` — Show the current phase and next action.

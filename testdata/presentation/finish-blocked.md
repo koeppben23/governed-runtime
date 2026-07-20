@@ -16,12 +16,12 @@
 
 ## Guidance
 
-• **create PR:** Not recommended — Session is blocked; resolve blockers before proceeding.
-• **export evidence:** Not recommended — Session is blocked; resolve blockers before proceeding.
-✓ **keep branch:** Recommended — Keep the branch to resolve blockers before proceeding.
+- **create PR:** Not recommended — Session is blocked; resolve blockers before proceeding.
+- **export evidence:** Not recommended — Session is blocked; resolve blockers before proceeding.
+- **keep branch:** Recommended — Keep the branch to resolve blockers before proceeding.
 
 ## Exit options
 
-• Abandon this work
+- Abandon this work
 
 → `/approve` — Accept the reviewed work and advance.

@@ -208,9 +208,9 @@ describe('buildPlanReviewCard', () => {
         productNextAction,
       });
 
-      expect(card).toContain('• `/approve` — approve the plan if it is complete and acceptable');
-      expect(card).toContain('• `/request-changes` — send the plan back for revision');
-      expect(card).toContain('• `/reject` — stop this task');
+      expect(card).toContain('- `/approve` — approve the plan if it is complete and acceptable');
+      expect(card).toContain('- `/request-changes` — send the plan back for revision');
+      expect(card).toContain('- `/reject` — stop this task');
     });
   });
 
@@ -256,7 +256,7 @@ describe('buildPlanReviewCard', () => {
         productNextAction: productNextActionPartial,
       });
 
-      expect(card).toContain('• `/approve` — approve the plan if it is complete and acceptable');
+      expect(card).toContain('- `/approve` — approve the plan if it is complete and acceptable');
       expect(card).not.toContain('`/request-changes`');
       expect(card).not.toContain('`/reject`');
     });
@@ -354,7 +354,7 @@ describe('buildPlanReviewCard', () => {
 
       // Decision-required conclusion: question then action lines (single newline).
       expect(card).toContain(
-        'Action paragraph.\n• `/approve` — approve the plan if it is complete and acceptable',
+        'Action paragraph.\n- `/approve` — approve the plan if it is complete and acceptable',
       );
     });
 
@@ -369,9 +369,9 @@ describe('buildPlanReviewCard', () => {
         },
       });
 
-      const actionLines = card.split('\n').filter((l) => l.startsWith('• '));
+      const actionLines = card.split('\n').filter((l) => l.startsWith('- '));
       expect(actionLines).toEqual([
-        '• `/approve` — approve the plan if it is complete and acceptable',
+        '- `/approve` — approve the plan if it is complete and acceptable',
       ]);
     });
 
@@ -388,7 +388,7 @@ describe('buildPlanReviewCard', () => {
 
       expect(card.endsWith('Action only.')).toBe(true);
       expect(card).not.toContain('## Decision required');
-      const actionLines = card.split('\n').filter((l) => l.startsWith('• '));
+      const actionLines = card.split('\n').filter((l) => l.startsWith('- '));
       expect(actionLines).toHaveLength(0);
     });
 
@@ -416,7 +416,7 @@ describe('buildPlanReviewCard', () => {
           commands: ['/request-changes'] as readonly string[],
         },
       });
-      expect(card).toContain('• `/request-changes` — send the plan back for revision');
+      expect(card).toContain('- `/request-changes` — send the plan back for revision');
       expect(card).not.toContain('/approve');
       expect(card).not.toContain('/reject');
     });
@@ -431,7 +431,7 @@ describe('buildPlanReviewCard', () => {
           commands: ['/reject'] as readonly string[],
         },
       });
-      expect(card).toContain('• `/reject` — stop this task');
+      expect(card).toContain('- `/reject` — stop this task');
       expect(card).not.toContain('/approve');
       expect(card).not.toContain('/request-changes');
     });
@@ -446,8 +446,8 @@ describe('buildPlanReviewCard', () => {
           commands: ['/approve', '/reject'] as readonly string[],
         },
       });
-      expect(card).toContain('• `/approve`');
-      expect(card).toContain('• `/reject`');
+      expect(card).toContain('- `/approve`');
+      expect(card).toContain('- `/reject`');
       expect(card).not.toContain('/request-changes');
     });
 
@@ -462,9 +462,9 @@ describe('buildPlanReviewCard', () => {
           commands: ['/reject', '/request-changes', '/approve'] as readonly string[],
         },
       });
-      const idxApprove = card.indexOf('• `/approve`');
-      const idxRequest = card.indexOf('• `/request-changes`');
-      const idxReject = card.indexOf('• `/reject`');
+      const idxApprove = card.indexOf('- `/approve`');
+      const idxRequest = card.indexOf('- `/request-changes`');
+      const idxReject = card.indexOf('- `/reject`');
       expect(idxApprove).toBeGreaterThan(-1);
       expect(idxRequest).toBeGreaterThan(idxApprove);
       expect(idxReject).toBeGreaterThan(idxRequest);

@@ -6,15 +6,15 @@ FlowGuard blocked this action.
 
 ## Observed
 
-• tool=/plan
-• phase=PLAN_REVIEW
+- tool=/plan
+- phase=PLAN_REVIEW
 
 ## Required
 
-• read-only investigation tools in this phase
-• implementation phase before mutating host tools
+- read-only investigation tools in this phase
+- implementation phase before mutating host tools
 
 ## Next
 
-• Use read-only tools such as read, glob, or grep while investigating.
-• Advance the FlowGuard workflow to the implementation phase before mutating files.
+- Use read-only tools such as read, glob, or grep while investigating.
+- Advance the FlowGuard workflow to the implementation phase before mutating files.

@@ -151,7 +151,7 @@ describe('buildFinishDocument', () => {
     );
     const output = renderMarkdown(doc);
     expect(output).toContain('## Exit options');
-    expect(output).toContain('• Abandon this work');
+    expect(output).toContain('- Abandon this work');
   });
 
   it('renders warning notice for each warning', () => {
