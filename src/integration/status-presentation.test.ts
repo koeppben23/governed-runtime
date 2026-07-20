@@ -546,4 +546,82 @@ describe('discovery notice', () => {
     expect(result).toContain('?');
     expect(result).toContain('Discovery');
   });
+
+  // ─── /finish terminal-phase hint (operational aggregator, not next-action) ──
+  describe('finish hint', () => {
+    const cleanDrift = makeDriftProjection();
+
+    for (const phase of ['COMPLETE', 'ARCH_COMPLETE', 'REVIEW_COMPLETE'] as const) {
+      it(`surfaces the /finish hint in terminal phase ${phase}`, () => {
+        const projection = makeBaseProjection({
+          phase,
+          phaseLabel: phase,
+          allowedCommands: [],
+          conclusion: {
+            kind: 'next_action',
+            action: {
+              invocation: '/export',
+              description: 'Create and verify the audit package.',
+              visibility: 'recommended',
+            },
+          },
+        });
+        const result = renderMarkdown(
+          buildCompactDoc({
+            status: projection,
+            discoveryHealth: null,
+            discoveryDrift: cleanDrift,
+          }),
+        );
+        // Hint present as a plain bullet, sourced from the installed-command
+        // registry, and rendered ABOVE the canonical conclusion.
+        expect(result).toContain(
+          '`/finish` — Show completion readiness without changing the workflow.',
+        );
+        expect(result).toContain('→ `/export`');
+        expect(result.indexOf('/finish')).toBeLessThan(result.indexOf('→ `/export`'));
+        // No heading for the hint — it must not read as next-action authority.
+        expect(result).not.toContain('## /finish');
+      });
+    }
+
+    it('does not surface /finish in a non-terminal phase (READY)', () => {
+      const projection = makeBaseProjection({ phase: 'READY', phaseLabel: 'Ready' });
+      const result = renderMarkdown(
+        buildCompactDoc({ status: projection, discoveryHealth: null, discoveryDrift: cleanDrift }),
+      );
+      expect(result).not.toContain('/finish');
+    });
+
+    it('does not add /finish to allowedCommands / Available actions', () => {
+      const projection = makeBaseProjection({
+        phase: 'COMPLETE',
+        phaseLabel: 'COMPLETE',
+        allowedCommands: [],
+      });
+      const result = renderMarkdown(
+        buildCompactDoc({ status: projection, discoveryHealth: null, discoveryDrift: cleanDrift }),
+      );
+      // Available actions section is only emitted from allowedCommands, which
+      // never contains /finish (machine-enum authority is untouched).
+      expect(result).not.toContain('## Available actions');
+    });
+
+    it('places the /finish hint before a terminal (archived) conclusion', () => {
+      const projection = makeBaseProjection({
+        phase: 'COMPLETE',
+        phaseLabel: 'COMPLETE',
+        allowedCommands: [],
+        conclusion: { kind: 'terminal', message: 'Session complete. Audit package verified.' },
+      });
+      const result = renderMarkdown(
+        buildCompactDoc({ status: projection, discoveryHealth: null, discoveryDrift: cleanDrift }),
+      );
+      expect(result).toContain('`/finish`');
+      expect(result).toContain('Session complete. Audit package verified.');
+      expect(result.indexOf('/finish')).toBeLessThan(
+        result.indexOf('Session complete. Audit package verified.'),
+      );
+    });
+  });
 });

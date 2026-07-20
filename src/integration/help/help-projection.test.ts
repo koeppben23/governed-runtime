@@ -343,7 +343,7 @@ describe('flowguard_help tool execute', () => {
     const out = await help.execute({ view: 'context' }, ctx);
     expect(typeof out).toBe('string');
     expect(out).toContain('**No active FlowGuard session.**');
-    expect(out).toContain('**Available commands:**');
+    expect(out).toContain('## Available commands');
   });
 
   it('includeArtifactContent: true with no session still returns Markdown', async () => {

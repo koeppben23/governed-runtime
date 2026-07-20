@@ -104,6 +104,8 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     '  majorRisks, missingVerification, scopeCreep, unknowns, reviewedBy, reviewedAt, and',
     `  attestation set to the values above (iteration=${input.iteration}` +
       `${input.planVersion != null ? `, planVersion=${input.planVersion}` : ''}).`,
+    '- Output ONLY the ReviewFindings JSON object as the final content of your reply:',
+    '  no prose, no reasoning, and no markdown code fences before or after it.',
     '',
     `Append the ${input.subjectLabel} content to review below this line:`,
   ].join('\n');

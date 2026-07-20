@@ -16,6 +16,10 @@
  */
 
 import type { CapturedFindings } from './types.js';
+import {
+  extractJsonFromTextWithMethod,
+  extractLastMatchingJsonObject,
+} from '../text-extraction.js';
 
 // ─── Content Metadata Extraction ─────────────────────────────────────────────
 
@@ -47,31 +51,30 @@ export function extractContentMeta(
  * @returns CapturedFindings or null if extraction fails
  */
 export function extractCapturedFindings(taskResult: string): CapturedFindings | null {
-  // Try direct JSON parse — clean, conforming structured output (high assurance).
-  try {
-    const parsed = JSON.parse(taskResult) as unknown;
-    const result = extractFindingsFromObject(parsed, 'clean_json');
+  // Strategy 1: clean, conforming structured output (high assurance).
+  // Covers a bare JSON object and a single ```json fenced object with no
+  // surrounding prose.
+  const structured = extractJsonFromTextWithMethod(taskResult);
+  if (structured && structured.extractionMethod === 'direct_json') {
+    const result = extractFindingsFromObject(structured.value, 'clean_json');
     if (result) return result;
-  } catch {
-    // Not clean JSON — continue to regex extraction
   }
 
-  // Try to find a JSON block containing overallVerdict in the response.
-  // This is a best-effort recovery from mixed model output; the recovered
-  // extraction method downgrades review assurance downstream (F8).
-  const jsonMatch = taskResult.match(/\{[^{}]*"overallVerdict"\s*:\s*"[^"]+"/);
-  if (jsonMatch) {
-    const startIdx = taskResult.indexOf(jsonMatch[0]);
-    const candidate = extractJsonBlock(taskResult, startIdx);
-    if (candidate) {
-      try {
-        const parsed = JSON.parse(candidate) as unknown;
-        const result = extractFindingsFromObject(parsed, 'recovered_block');
-        if (result) return result;
-      } catch {
-        // Parse failed — fall through
-      }
-    }
+  // Strategy 2: best-effort recovery from mixed model output. The canonical
+  // reviewerTaskPrompt invites reasoning and quoted artifact content (ADR/diff
+  // bodies containing `{`) around the ReviewFindings JSON, and the findings
+  // object routinely places nested objects (blockingIssues/reviewedBy) before
+  // `overallVerdict`. Recover the LAST top-level object that carries a string
+  // `overallVerdict` — reviewers emit their verdict object last. String-aware
+  // scanning prevents quoted braces from corrupting the match. This method
+  // downgrades review assurance downstream (F8).
+  const recovered = extractLastMatchingJsonObject(
+    taskResult,
+    (obj) => typeof obj.overallVerdict === 'string' && obj.overallVerdict.length > 0,
+  );
+  if (recovered) {
+    const result = extractFindingsFromObject(recovered, 'recovered_block');
+    if (result) return result;
   }
 
   return null;
