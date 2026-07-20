@@ -32,72 +32,63 @@ async function readGolden(name: string): Promise<string> {
 
 describe('diagnostic golden fixtures', () => {
   it('diagnostic-gate-policy matches golden output', async () => {
-    const d = diag({
-      diagnosticCode: 'POLICY_DENIAL',
+    const d = buildBlockedDiagnostics('HOST_TOOL_PHASE_DENIED', {
       phase: 'PLAN_REVIEW',
       command: '/plan',
       policyMode: 'team',
-      rootCause: 'Policy requires plan review before execution.',
-      observed: ['Phase: PLAN_REVIEW', 'Command: /plan'],
-      required: ['Approved plan review'],
-      safeNextActions: ['/review-decision', '/continue'],
+      reason: 'Plan review is required before execution.',
     });
     const out = formatDiagnosticCard({
-      code: 'POLICY_DENIAL',
+      code: 'HOST_TOOL_PHASE_DENIED',
       message: 'Plan review is required.',
-      diagnostics: d,
+      diagnostics: d!,
     });
     const golden = await readGolden('diagnostic-gate-policy.md');
     expect(out).toBe(golden);
   });
 
   it('diagnostic-evidence matches golden output', async () => {
-    const d = diag({
-      diagnosticCode: 'EVIDENCE_MISSING',
-      rootCause: 'Required evidence slots are missing.',
-      required: ['ticket', 'plan', 'validation'],
-      missingEvidence: [
-        'ticket — Run /ticket to record the task.',
-        'plan — Run /plan to create an implementation plan.',
-      ],
-      safeNextActions: ['/ticket', '/plan'],
+    const d = buildBlockedDiagnostics('PLUGIN_ENFORCEMENT_UNAVAILABLE', {
+      reason: 'Required evidence slots are missing.',
     });
     const out = formatDiagnosticCard({
-      code: 'EVIDENCE_MISSING',
+      code: 'PLUGIN_ENFORCEMENT_UNAVAILABLE',
       message: 'Required evidence is missing.',
-      diagnostics: d,
+      diagnostics: d!,
     });
     const golden = await readGolden('diagnostic-evidence.md');
     expect(out).toBe(golden);
   });
 
   it('diagnostic-review-deny matches golden output', async () => {
-    const d = diag({
-      diagnosticCode: 'REVIEW_DENIED',
-      deniedReviewPath: 'plan-reviewer-iteration-3',
-      rootCause: 'Review was denied at plan-reviewer-iteration-3.',
-      observed: ['Review denial', 'Blocking issues: 2'],
-      required: ['Approved review'],
-      safeNextActions: ['/review-decision', '/reject'],
+    const d = buildBlockedDiagnostics('STRICT_REVIEW_ORCHESTRATION_FAILED', {
+      phase: 'PLAN_REVIEW',
+      policyMode: 'regulated',
+      reason: 'Review was denied at plan-reviewer-iteration-3.',
+      obligationId: 'oblig-plan-reviewer-3',
+      code: 'REVIEW_DENIED',
     });
     const out = formatDiagnosticCard({
-      code: 'REVIEW_DENIED',
+      code: 'STRICT_REVIEW_ORCHESTRATION_FAILED',
       message: 'Review returned with blocking issues.',
-      diagnostics: d,
+      diagnostics: d!,
     });
     const golden = await readGolden('diagnostic-review-deny.md');
     expect(out).toBe(golden);
   });
 
   it('diagnostic-minimal matches golden output', async () => {
-    const d = diag({
+    // Synthetic minimal case — no real producer exists for fully empty diagnostics.
+    // This tests the formatter contract for degenerate input.
+    const d: RuntimeDiagnostics = {
       diagnosticCode: 'MINIMAL',
+      severity: 'error',
       rootCause: '',
       observed: [],
       required: [],
       missingEvidence: [],
       safeNextActions: [],
-    });
+    };
     const out = formatDiagnosticCard({
       code: 'MINIMAL',
       message: 'Minimal diagnostic test.',

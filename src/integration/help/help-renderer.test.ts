@@ -232,6 +232,12 @@ describe('help JSON path unchanged', () => {
     const parsed = JSON.parse(json);
     expect(parsed.title).toBe('FlowGuard Help');
     expect(parsed.phase).toBeTruthy();
+    expect(parsed.lifecycle).toBeDefined();
+    expect(parsed.nextAction).toBeDefined();
+    expect(Array.isArray(parsed.commands)).toBe(true);
+    expect(parsed.artifacts).toBeDefined();
+    expect(parsed.blocker).toBeDefined();
+    expect(parsed).not.toHaveProperty('presentation');
   });
 });
 
@@ -300,5 +306,32 @@ describe('buildHelpDocument structure', () => {
     );
     const hasEmbedded = doc.sections.some((s) => s.kind === 'embeddedMarkdown');
     expect(hasEmbedded).toBe(true);
+  });
+
+  it('blocked preflight without details renders command line only', () => {
+    const doc = buildHelpDocument(
+      minimalResult({
+        commands: [
+          {
+            invocation: '/review-decision',
+            description: 'Record the decision.',
+            visibility: 'blocked_recoverable',
+            alsoAvailableAs: [],
+            preflight: {
+              status: 'blocked',
+              message: null,
+              reasonCode: null,
+              recovery: null,
+            },
+          },
+        ],
+      }),
+      false,
+    );
+    const out = renderMarkdown(doc);
+    expect(out).toContain('⚠ `/review-decision`');
+    expect(out).not.toContain('blocked:');
+    expect(out).not.toContain('code:');
+    expect(out).not.toContain('recovery:');
   });
 });

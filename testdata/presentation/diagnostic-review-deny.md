@@ -1,19 +1,21 @@
 FlowGuard blocked this action.
 
-⚠ **Blocked:** `REVIEW_DENIED` — Review returned with blocking issues.
+⚠ **Blocked:** `STRICT_REVIEW_ORCHESTRATION_FAILED` — Review returned with blocking issues.
 
 **Root cause:** Review was denied at plan-reviewer-iteration-3.
 
 ## Observed
 
-• Review denial
-• Blocking issues: 2
+• obligationId=oblig-plan-reviewer-3
+• blockedCode=REVIEW_DENIED
 
 ## Required
 
-• Approved review
+• parseable reviewer output
+• valid strict attestation
+• bindable review invocation evidence
 
 ## Next
 
-• /review-decision
-• /reject
+• Re-run the FlowGuard command to create a fresh review obligation and retry orchestration.
+• Run flowguard doctor if orchestration failures repeat.

@@ -1,21 +1,16 @@
 FlowGuard blocked this action.
 
-⚠ **Blocked:** `EVIDENCE_MISSING` — Required evidence is missing.
+⚠ **Blocked:** `PLUGIN_ENFORCEMENT_UNAVAILABLE` — Required evidence is missing.
 
 **Root cause:** Required evidence slots are missing.
 
 ## Required
 
-• ticket
-• plan
-• validation
-
-## Missing evidence
-
-• ticket — Run /ticket to record the task.
-• plan — Run /plan to create an implementation plan.
+• readable FlowGuard session state
+• active plugin enforcement context
 
 ## Next
 
-• /ticket
-• /plan
+• Run flowguard doctor to verify the installation and plugin activation.
+• Inspect session directory and session-state.json permissions.
+• Re-run /hydrate after fixing workspace or session state issues.

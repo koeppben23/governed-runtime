@@ -1,19 +1,20 @@
 FlowGuard blocked this action.
 
-⚠ **Blocked:** `POLICY_DENIAL` — Plan review is required.
+⚠ **Blocked:** `HOST_TOOL_PHASE_DENIED` — Plan review is required.
 
-**Root cause:** Policy requires plan review before execution.
+**Root cause:** /plan is mutating and is not allowed while FlowGuard is in PLAN_REVIEW.
 
 ## Observed
 
-• Phase: PLAN_REVIEW
-• Command: /plan
+• tool=/plan
+• phase=PLAN_REVIEW
 
 ## Required
 
-• Approved plan review
+• read-only investigation tools in this phase
+• implementation phase before mutating host tools
 
 ## Next
 
-• /review-decision
-• /continue
+• Use read-only tools such as read, glob, or grep while investigating.
+• Advance the FlowGuard workflow to the implementation phase before mutating files.
