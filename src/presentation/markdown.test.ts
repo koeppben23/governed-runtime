@@ -338,6 +338,11 @@ describe('renderMarkdown', () => {
     expect(result).toContain('- **correctness:** Missing validation `src/foo.ts`');
     expect(result).toContain('### Warnings (1)');
     expect(result).toContain('- **quality:** Missing tests');
+    // Consecutive severity groups are separated by a blank line so each `###`
+    // group heading is a cleanly delimited block.
+    expect(result).toContain(
+      '- **correctness:** Missing validation `src/foo.ts`\n\n### Warnings (1)',
+    );
   });
 
   it('renders artifactList', () => {

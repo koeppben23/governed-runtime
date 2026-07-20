@@ -8,6 +8,7 @@
 
 ### Critical (1)
 - **Correctness:** Missing null check `src/payments/validate.ts`
+
 ### Major (1)
 - **Quality:** Missing test coverage `src/payments/routes.ts`
 

@@ -167,15 +167,18 @@ function artifactStatusSymbol(status: ArtifactItem['status']): string {
 }
 
 function renderFindings(groups: readonly FindingGroup[]): string {
-  const lines: string[] = [];
+  const blocks: string[] = [];
   for (const group of groups) {
     if (group.items.length === 0) continue;
-    lines.push(`### ${group.label} (${group.items.length})`);
+    const lines: string[] = [`### ${group.label} (${group.items.length})`];
     for (const item of group.items) {
       lines.push(renderFindingItem(item));
     }
+    blocks.push(lines.join('\n'));
   }
-  return lines.join('\n');
+  // Separate consecutive severity groups with a blank line so each `###` group
+  // heading is a cleanly delimited block (consistent with `\n\n`-spaced sections).
+  return blocks.join('\n\n');
 }
 
 function renderFindingItem(item: FindingItem): string {
