@@ -517,24 +517,37 @@ function isPersistedAbort(result: Extract<RailResult, { kind: 'ok' }>): boolean 
 }
 
 /**
- * Append NextAction to a custom JSON response string.
+ * Append NextAction routing metadata to a custom JSON response string.
  *
  * Use this when a tool builds custom JSON (not via formatRailResult)
- * but still needs the mandatory NextAction footer.
+ * but still needs the machine-readable NextAction routing fields.
  *
  * Delegates to {@link enrichWithNextAction} for the actual logic —
  * this function is a thin JSON-parse/serialize wrapper for backwards
  * compatibility.
  *
+ * Contract: the appended `nextAction`/`productNextAction` fields are
+ * machine-readable ROUTING METADATA, not a pre-rendered footer. On surfaces
+ * that carry `presentation.markdown`, the user-facing next action is owned by
+ * the rendered PresentationConclusion (see src/presentation/markdown.ts); the
+ * agent must not additionally print these JSON fields as a duplicate
+ * `Next action:` line. On surfaces without `presentation.markdown`, the command
+ * template projects a single `Next action:` line from `productNextAction`.
+ *
  * @param jsonStr - The JSON string to augment (will be parsed, extended, re-serialized).
  * @param state - Current session state for NextAction resolution.
- * @returns JSON string with nextAction field + trailing footer line.
+ * @returns JSON string with nextAction routing fields.
  */
 export function appendNextAction(jsonStr: string, state: SessionState): string {
   return JSON.stringify(enrichWithNextAction(JSON.parse(jsonStr), state));
 }
 
-/** Fields appended by {@link enrichWithNextAction}. */
+/**
+ * Machine-readable NextAction routing fields appended by
+ * {@link enrichWithNextAction}. These are NOT a rendered footer — user-facing
+ * next-action text is owned by the presentation conclusion where a rendered
+ * document exists.
+ */
 export interface NextActionFields {
   nextAction: ReturnType<typeof resolveNextAction>;
   phaseLabel: string;
