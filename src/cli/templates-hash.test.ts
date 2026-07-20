@@ -193,7 +193,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // /finish bodies and therefore the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '4073684b7cbe468b92da94c62d30c711abbb0f33df40ae43723bab1e92d56da3',
+      '175be5be839c3f7eb8e0e9c01dff9ef95b2dcc8e072eff611be21fb51f0619a4',
     );
   });
 

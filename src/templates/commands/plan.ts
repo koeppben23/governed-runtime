@@ -41,7 +41,8 @@ ${DISCOVERY_REVIEW_CAPTURE}
    \`# Implementation Plan\` — The only \`#\` heading in the document.
 
    \`> **Objective:** ... | **Scope:** ... | **Risk:** Low/Medium/High | **Version:** N\`
-   — Single metadata line (blockquote). \`Version\` starts at 1 for the first
+   — Single metadata line (blockquote). **Objective:** is 1-3 concise sentences
+   stating what is being built and why. \`Version\` starts at 1 for the first
    submission. For revisions, increment the previously presented plan version
    by exactly 1. Do not derive version from unrelated artifact metadata.
 
@@ -49,12 +50,19 @@ ${DISCOVERY_REVIEW_CAPTURE}
    decision with its rationale or tradeoff. Keep the section compact.
 
    \`## Implementation\` — Each step as \`### N. Step Name\`. Every step includes:
-   - \`**Files:**\` — comma-separated explicit repository-relative file paths.
-     Do not use directories, glob patterns, ellipses, or categories as
-     substitutes for file paths.
-   - \`**Changes:**\` — concrete description of what changes.
-   - \`**Edge cases:**\` — step-specific edge case handling.
-   - \`**Validation:**\` — verifiable condition for this step.
+    - \`**Files:**\` — comma-separated explicit repository-relative file paths.
+      Do not use directories, glob patterns, ellipses, or categories as
+      substitutes for file paths.
+    - \`**Changes:**\` — concrete description of what changes.
+    - \`**Edge cases:**\` — step-specific edge case handling.
+    - \`**Validation:**\` — verifiable condition for this step.
+
+    Prefer vertical tracer-bullet steps: each step should form a thin,
+    end-to-end path through the affected layers and be independently verifiable.
+    Avoid horizontal steps that build an entire layer without an executable or
+    reviewable outcome. When a step introduces a module, prefer a deep module
+    (small interface, substantial encapsulated implementation) over a shallow
+    pass-through.
 
    \`## Change Inventory\` — Markdown table listing every affected file with
    an explicit repository-relative path:

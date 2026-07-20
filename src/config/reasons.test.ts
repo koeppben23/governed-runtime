@@ -261,12 +261,14 @@ describe('cli/templates/verification-output-contract', () => {
       expect(planTemplate).toMatch(/recovery/i);
     });
 
+    it('/plan template defines exactly one implementation-plan H1', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect((planTemplate as string).match(/# Implementation Plan/g)).toHaveLength(1);
+      expect(planTemplate).toContain('The only `#` heading in the document');
+    });
+
     it('/plan template requires seven mandatory semantic dimensions', () => {
       const planTemplate = COMMANDS['plan.md'];
-      // H1
-      expect(planTemplate).toContain('# Implementation Plan');
-      // The only # heading assertion
-      expect(planTemplate).toMatch(/only `#` heading/i);
       // Metadata header
       expect(planTemplate).toContain('> **Objective:**');
       expect(planTemplate).toContain('**Scope:**');
@@ -282,6 +284,11 @@ describe('cli/templates/verification-output-contract', () => {
       expect(planTemplate).toContain('## Change Inventory');
       expect(planTemplate).toContain('## Acceptance Criteria');
       expect(planTemplate).toContain('## Verification');
+    });
+
+    it('/plan template defines the files-union invariant', () => {
+      const planTemplate = COMMANDS['plan.md'];
+      expect(planTemplate).toMatch(/union of all per-step.*Files.*must match.*files listed here/is);
     });
 
     it('/plan template defines the change-inventory table contract', () => {
