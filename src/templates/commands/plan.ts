@@ -38,7 +38,11 @@ ${DISCOVERY_REVIEW_CAPTURE}
    details from metadata alone.)
 3. Write a detailed implementation plan in markdown using this structure:
 
-   \`# Implementation Plan\` — The only \`#\` heading in the document.
+   \`# Implementation Plan\` — The single top-level heading of the plan body. Use
+   exactly one \`#\`; all other sections use \`##\` or deeper. When the plan is
+   embedded in the Plan Review Card, FlowGuard automatically demotes these
+   headings so they nest under the card — do not add extra \`#\` headings to
+   compensate.
 
    \`> **Objective:** ... | **Scope:** ... | **Risk:** Low/Medium/High | **Version:** N\`
    — Single metadata line (blockquote). **Objective:** is 1-3 concise sentences
@@ -157,6 +161,9 @@ ${GOVERNANCE_RULES}
 - Independent review loop has converged (approved or max 3 iterations).
 ${DISCOVERY_REVIEW_DONE_WHEN}
 - If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
-- On the converged path: phase has advanced to PLAN_REVIEW and the response ends with \`Next action: user must run /review-decision approve, /request-changes, or /reject.\`
+- On the converged path: phase has advanced to PLAN_REVIEW. The reviewCard already
+  ends with its rendered next-action conclusion (a \`## Decision required\` block
+  listing \`/approve\`, \`/request-changes\`, \`/reject\`) — do NOT append a separate
+  \`Next action:\` line; the rendered conclusion is the canonical next action.
 - On a blocked path (review not converged, reviewer unavailable, or a FlowGuard error code): no \`/review-decision\` next action is emitted; the response surfaces the FlowGuard blocker and its recovery instead.
 `;

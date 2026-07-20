@@ -8,8 +8,10 @@
 
 ### Critical (1)
 - **Completeness:** Missing evidence
+
 ### Major (1)
 - **Risk:** Untracked dependency `package.json`
+
 ### Warnings (1)
 - **Quality:** Missing changelog entry
 

@@ -10,28 +10,28 @@
 
 ## Proposed Plan
 
-## Objective
-Implement payment validation.
+### Implementation Plan
 
-## Approach
-Use a validation pipeline.
+> **Objective:** Implement payment validation. | **Scope:** src/payments | **Risk:** Low | **Version:** 3
 
-## Steps
-1. Add validate.ts
-2. Add tests
+#### Approach
+- Use a validation pipeline.
 
-## Files to Modify
-- src/payments/validate.ts
-- src/payments/validate.test.ts
+#### Implementation
+##### 1. Add validator
+**Files:** src/payments/validate.ts
+**Changes:** add validate().
 
-## Edge Cases
-1. Empty input -> return false.
+#### Change Inventory
+| Area | Files | Change |
+|---|---|---|
+| Payments | src/payments/validate.ts | CREATE |
 
-## Validation Criteria
-1. npm test passes.
+#### Acceptance Criteria
+- [ ] Valid payment returns true.
 
-## Verification Plan
-1. npm test
+#### Verification
+1. npm test — Source: package.json#scripts.test
 
 ## Decision required
 

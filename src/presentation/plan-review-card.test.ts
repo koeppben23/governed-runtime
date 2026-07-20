@@ -24,32 +24,57 @@ async function readGolden(name: string): Promise<string> {
   return readFile(p, 'utf-8');
 }
 
+// #709 implementation-plan visual contract: one `#` top heading, `##` sections.
 const fullPlanBody = [
-  '## Objective',
-  'Implement payment validation.',
+  '# Implementation Plan',
+  '',
+  '> **Objective:** Implement payment validation. | **Scope:** src/payments | **Risk:** Low | **Version:** 1',
   '',
   '## Approach',
-  'Use a validation pipeline.',
+  '- Use a validation pipeline.',
   '',
-  '## Steps',
-  '1. Add `validate.ts` in `src/payments/`.',
-  '2. Add tests in `src/payments/validate.test.ts`.',
+  '## Implementation',
+  '### 1. Add validator',
+  '**Files:** `src/payments/validate.ts`',
+  '**Changes:** add validate().',
   '',
-  '## Files to Modify',
-  '- `src/payments/validate.ts`',
-  '- `src/payments/validate.test.ts`',
+  '## Change Inventory',
+  '| Area | Files | Change |',
+  '|---|---|---|',
+  '| Payments | `src/payments/validate.ts` | CREATE |',
   '',
-  '## Edge Cases',
-  '1. Empty input → return false.',
-  '2. Invalid currency → throw PaymentError.',
+  '## Acceptance Criteria',
+  '- [ ] Valid payment returns true.',
   '',
-  '## Validation Criteria',
-  '1. `npm test` passes.',
-  '2. Valid payment returns true.',
+  '## Verification',
+  '1. `npm test` — Source: package.json#scripts.test',
+].join('\n');
+
+// The same body after the renderer demotes it for embedding in the review card
+// (# -> ###, ## -> ####, ### -> #####) so it nests under `## Proposed Plan`.
+const fullPlanBodyEmbedded = [
+  '### Implementation Plan',
   '',
-  '## Verification Plan',
-  '1. `npm test` — Source: package.json:scripts.test',
-  '2. Manual review of payment edge cases.',
+  '> **Objective:** Implement payment validation. | **Scope:** src/payments | **Risk:** Low | **Version:** 1',
+  '',
+  '#### Approach',
+  '- Use a validation pipeline.',
+  '',
+  '#### Implementation',
+  '##### 1. Add validator',
+  '**Files:** `src/payments/validate.ts`',
+  '**Changes:** add validate().',
+  '',
+  '#### Change Inventory',
+  '| Area | Files | Change |',
+  '|---|---|---|',
+  '| Payments | `src/payments/validate.ts` | CREATE |',
+  '',
+  '#### Acceptance Criteria',
+  '- [ ] Valid payment returns true.',
+  '',
+  '#### Verification',
+  '1. `npm test` — Source: package.json#scripts.test',
 ].join('\n');
 
 const productNextAction = {
@@ -72,10 +97,12 @@ describe('buildPlanReviewCard', () => {
         productNextAction,
       });
 
-      expect(card).toContain(fullPlanBody);
+      expect(card).toContain(fullPlanBodyEmbedded);
       expect(card).toContain('# FlowGuard Plan Review');
       expect(card).toContain('## Proposed Plan');
       expect(card).toContain('## Decision required');
+      // Exactly one document-level H1 (the card title); the plan body H1 is demoted.
+      expect(card.match(/^# /gm)).toHaveLength(1);
     });
 
     it('includes phase label in the status line', () => {
@@ -263,7 +290,7 @@ describe('buildPlanReviewCard', () => {
       expect(card).toContain('**Plan version:** v2');
       expect(card).toContain('**Policy:** team');
       expect(card).toContain('**Task:** Fix login bug');
-      expect(card).toContain(fullPlanBody);
+      expect(card).toContain(fullPlanBodyEmbedded);
     });
   });
 
@@ -445,21 +472,23 @@ describe('buildPlanReviewCard', () => {
   });
 
   describe('EDGE', () => {
-    it('plan body is preserved verbatim (no markdown corruption)', () => {
-      const markdownWithSpecialChars =
+    it('preserves plan body content (only heading levels are demoted, no other corruption)', () => {
+      const body =
         '## Plan\n\nUse `code` and **bold** and _italic_.\n\n> A quote block\n\n```ts\nconst x = 1;\n```';
 
       const card = buildPlanReviewCard({
-        planText: markdownWithSpecialChars,
+        planText: body,
         phase: 'PLAN_REVIEW',
         phaseLabel: 'Ready for plan approval',
         productNextAction,
       });
 
-      expect(card).toContain(markdownWithSpecialChars);
-      expect(card).toContain('```ts');
-      expect(card).toContain('const x = 1;');
+      // Heading demoted under `## Proposed Plan` (## -> ###); everything else intact.
+      expect(card).toContain('### Plan\n\nUse `code` and **bold** and _italic_.');
+      expect(card).toContain('```ts\nconst x = 1;\n```');
       expect(card).toContain('> A quote block');
+      // Exactly one document-level H1.
+      expect(card.match(/^# /gm)).toHaveLength(1);
     });
 
     it('status text says "ready for" not "approved"', () => {
@@ -517,29 +546,31 @@ describe('buildPlanReviewCard', () => {
 
 // ─── Golden Baseline Tests ──────────────────────────────────────────────────────
 
+// #709 implementation-plan visual contract (one `#` top heading). Exercises the
+// real template structure so the golden catches double-H1 / inversion regressions.
 const planBody = [
-  '## Objective',
-  'Implement payment validation.',
+  '# Implementation Plan',
+  '',
+  '> **Objective:** Implement payment validation. | **Scope:** src/payments | **Risk:** Low | **Version:** 3',
   '',
   '## Approach',
-  'Use a validation pipeline.',
+  '- Use a validation pipeline.',
   '',
-  '## Steps',
-  '1. Add validate.ts',
-  '2. Add tests',
+  '## Implementation',
+  '### 1. Add validator',
+  '**Files:** src/payments/validate.ts',
+  '**Changes:** add validate().',
   '',
-  '## Files to Modify',
-  '- src/payments/validate.ts',
-  '- src/payments/validate.test.ts',
+  '## Change Inventory',
+  '| Area | Files | Change |',
+  '|---|---|---|',
+  '| Payments | src/payments/validate.ts | CREATE |',
   '',
-  '## Edge Cases',
-  '1. Empty input -> return false.',
+  '## Acceptance Criteria',
+  '- [ ] Valid payment returns true.',
   '',
-  '## Validation Criteria',
-  '1. npm test passes.',
-  '',
-  '## Verification Plan',
-  '1. npm test',
+  '## Verification',
+  '1. npm test — Source: package.json#scripts.test',
 ].join('\n');
 
 describe('plan review golden fixtures', () => {

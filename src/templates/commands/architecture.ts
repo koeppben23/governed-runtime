@@ -99,5 +99,9 @@ ${GOVERNANCE_RULES}
 ${DISCOVERY_REVIEW_DONE_WHEN}
 - If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
 - Phase has reached ARCH_REVIEW (ready for human review).
-- Response ends with a \`Next action:\` line.
+- When \`reviewCard\` is present it already ends with its rendered next-action
+  conclusion (a \`## Decision required\` block, or a terminal message) — do NOT
+  append a separate \`Next action:\` line; the rendered conclusion is canonical.
+  Only when no \`reviewCard\` is present (blocked path) does the response end with
+  a \`Next action:\` line surfacing the FlowGuard blocker.
 `;

@@ -19,6 +19,7 @@ import type {
   ReviewCardDocument,
   DiagnosticCardDocument,
   PlanDocument,
+  HelpDocument,
 } from './model.js';
 
 // ─── Invariant Helpers ─────────────────────────────────────────────────────────
@@ -337,6 +338,11 @@ describe('renderMarkdown', () => {
     expect(result).toContain('- **correctness:** Missing validation `src/foo.ts`');
     expect(result).toContain('### Warnings (1)');
     expect(result).toContain('- **quality:** Missing tests');
+    // Consecutive severity groups are separated by a blank line so each `###`
+    // group heading is a cleanly delimited block.
+    expect(result).toContain(
+      '- **correctness:** Missing validation `src/foo.ts`\n\n### Warnings (1)',
+    );
   });
 
   it('renders artifactList', () => {
@@ -594,5 +600,114 @@ describe('renderMarkdown', () => {
     const result = renderMarkdown(doc);
     // 5 backticks in content, need 6
     expect(result).toContain('``````markdown');
+  });
+
+  describe('embeddedMarkdown normalization', () => {
+    it('demotes an embedded H1 body under a ## heading to H3 (no H1-under-H2 inversion)', () => {
+      const doc: ReviewCardDocument = {
+        kind: 'review_card',
+        sections: [
+          { kind: 'title', text: 'FlowGuard Plan Review' },
+          {
+            kind: 'embeddedMarkdown',
+            heading: 'Proposed Plan',
+            content: '# Implementation Plan\n\n## Approach\n\n- a',
+          },
+        ],
+      };
+      const result = renderMarkdown(doc);
+      // Exactly one document-level H1 (the card title), body H1 demoted to H3.
+      expect(result.match(/^# /gm)).toHaveLength(1);
+      expect(result).toContain('## Proposed Plan\n\n### Implementation Plan');
+      expect(result).toContain('#### Approach');
+      // No embedded heading is shallower than the owning ## section.
+      expect(result).not.toMatch(/## Proposed Plan\n\n# /);
+    });
+
+    it('demotes a label-only embed so its shallowest heading is at least H2', () => {
+      const doc: HelpDocument = {
+        kind: 'help_document',
+        sections: [
+          { kind: 'title', text: 'FlowGuard Help' },
+          {
+            kind: 'embeddedMarkdown',
+            label: 'Current plan',
+            content: '# Implementation Plan\n\nx',
+          },
+        ],
+      };
+      const result = renderMarkdown(doc);
+      // Only the document title is H1; embedded plan H1 demoted to H2.
+      expect(result.match(/^# /gm)).toHaveLength(1);
+      expect(result).toContain('**Current plan:**\n## Implementation Plan');
+    });
+
+    it('preserves relative heading structure when demoting', () => {
+      const doc: ReviewCardDocument = {
+        kind: 'review_card',
+        sections: [
+          { kind: 'title', text: 'Card' },
+          {
+            kind: 'embeddedMarkdown',
+            heading: 'Body',
+            content: '# Top\n\n## Mid\n\n### Deep',
+          },
+        ],
+      };
+      const result = renderMarkdown(doc);
+      expect(result).toContain('### Top');
+      expect(result).toContain('#### Mid');
+      expect(result).toContain('##### Deep');
+    });
+
+    it('strips trailing whitespace and collapses triple newlines in embedded content', () => {
+      const doc: ReviewCardDocument = {
+        kind: 'review_card',
+        sections: [
+          { kind: 'title', text: 'Card' },
+          {
+            kind: 'embeddedMarkdown',
+            heading: 'Body',
+            content: 'line with trailing space   \n\n\n\nnext block',
+          },
+        ],
+      };
+      const result = renderMarkdown(doc);
+      expect(result).not.toMatch(/[ \t]+$/m);
+      expect(result).not.toContain('\n\n\n');
+    });
+
+    it('preserves code-fence content verbatim (triple newlines and indentation exempt)', () => {
+      const doc: ReviewCardDocument = {
+        kind: 'review_card',
+        sections: [
+          { kind: 'title', text: 'Card' },
+          {
+            kind: 'embeddedMarkdown',
+            heading: 'Body',
+            content: '```ts\nconst x = 1;\n\n\n// keep\n```',
+          },
+        ],
+      };
+      const result = renderMarkdown(doc);
+      expect(result).toContain('```ts\nconst x = 1;\n\n\n// keep\n```');
+    });
+
+    it('does not demote # inside a code fence', () => {
+      const doc: ReviewCardDocument = {
+        kind: 'review_card',
+        sections: [
+          { kind: 'title', text: 'Card' },
+          {
+            kind: 'embeddedMarkdown',
+            heading: 'Body',
+            content: '## Real heading\n\n```sh\n# a shell comment, not a heading\n```',
+          },
+        ],
+      };
+      const result = renderMarkdown(doc);
+      expect(result).toContain('# a shell comment, not a heading');
+      expect(result).toContain('### Real heading');
+    });
   });
 });

@@ -10,8 +10,15 @@ this contract.
 | --------------- | ----------------- | ------------------------------------------------------- |
 | Compact Card    | `compact_card`    | Single-surface status, readiness, quick info            |
 | Review Card     | `review_card`     | Plan review, architecture review, review report         |
-| Plan Document   | `plan_document`   | Full plan body with context metadata                    |
+| Plan Document   | `plan_document`   | Reserved — see note below                               |
 | Diagnostic Card | `diagnostic_card` | Blocker details, validation results, evidence drilldown |
+
+> **Note on `plan_document`:** This type is **reserved and not currently
+> produced in production**. The full plan body is rendered by embedding it into
+> the Plan Review Card (`review_card`) as an `embeddedMarkdown` section under
+> `## Proposed Plan` (see §16), not as a standalone `plan_document`. The type is
+> retained for a possible future standalone plan surface; until then it carries
+> no conclusion and has no production builder.
 
 ## 2. Heading Hierarchy
 
@@ -20,6 +27,39 @@ this contract.
 - `##` — Section headings within compact cards, review cards, and diagnostic
   cards.
 - `**Label:**` — Summary lines within sections. For key-value pairs only.
+
+**Single document title (H1):**
+
+- A document has **at most one** top-level `#` heading, contributed by a
+  `TitleSection` placed first. This is the document title (e.g.
+  `# FlowGuard Plan Review`).
+- Content embedded via `embeddedMarkdown` (agent-authored plan/ADR/ticket
+  bodies) may carry its own headings, but the renderer **demotes** them so no
+  embedded heading is shallower than the section that owns it. A body embedded
+  under a `## Proposed Plan` section therefore starts at `###`, never `#` or
+  `##`. This guarantees exactly one document `#` and prevents heading-level
+  inversion (an H1 nested under an H2). See §16.
+
+## 16. Embedded Markdown Normalization
+
+`embeddedMarkdown` is the only path that carries content authored outside the
+presentation layer (agent plan/ADR bodies, ticket text). It is normalized at the
+shared renderer boundary — never per embedder:
+
+- **Heading demotion:** ATX headings are demoted so the shallowest embedded
+  heading is at least one level deeper than the owning section (`###` under a
+  `##` section; `##` for a label-only embed that sits at document level). This
+  enforces the single-H1 rule (§2) and prevents heading-level inversion.
+  Relative heading structure within the body is preserved.
+- **Whitespace sanitization:** trailing whitespace is stripped and runs of three
+  or more newlines are collapsed to a single blank line, so embedded content
+  cannot break the spacing invariants (§3).
+- **Code-fence exemption:** fenced code blocks are opaque. Their content —
+  including `#` lines that are not headings, internal blank lines, and
+  indentation — is preserved verbatim and never demoted or sanitized.
+
+Because normalization happens in the renderer, embedders (plan card, architecture
+card, `/help` current-plan and ticket bodies) never pre-process embedded content.
 
 ## 3. Spacing Rules
 
