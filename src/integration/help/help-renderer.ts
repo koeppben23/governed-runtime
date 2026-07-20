@@ -2,6 +2,7 @@
 
 import type { HelpResult, ProjectedCommand } from './help-projection.js';
 import { renderMarkdown } from '../../presentation/markdown.js';
+import { normalizedMarkdown } from '../../presentation/model.js';
 import type {
   HelpDocument,
   PresentationSection,
@@ -84,25 +85,33 @@ function mapVisibility(v: ProjectedCommand['visibility']): DetailedCommandVisibi
 export function buildHelpDocument(result: HelpResult, includeContent: boolean): HelpDocument {
   const sections: PresentationSection[] = [];
 
-  // HelpSummary
+  // ## Status — phase / readiness / blocker (next-action pulled into its own
+  // section below so the surface reads as a card, consistent with the status
+  // and review surfaces). No heading in the no-session case: there is no status
+  // to head, and the summary renders a standalone "No active session" line.
+  const hasSession = result.phase != null;
   sections.push({
     kind: 'helpSummary',
+    ...(hasSession ? { heading: 'Status' } : {}),
     phase: result.phase?.label ?? null,
     readiness: result.readiness !== 'none' ? result.readiness : null,
     blocker: result.blocker
       ? { message: result.blocker.message, reasonCode: result.blocker.reasonCode }
       : null,
-    nextAction: result.nextAction
-      ? { invocation: result.nextAction.invocation, description: result.nextAction.description }
-      : result.nextActionSummary
-        ? { summary: result.nextActionSummary }
-        : null,
+    // nextAction is rendered as its own `## Next` section (below), not inline.
+    nextAction: null,
   });
 
-  // DetailedCommandList
+  // ## Next — the recommended next action, as its own card section.
+  const nextSection = buildNextSection(result);
+  if (nextSection) {
+    sections.push(nextSection);
+  }
+
+  // ## Available commands
   sections.push({
     kind: 'detailedCommandList',
-    label: 'Available commands',
+    heading: 'Available commands',
     items: result.commands.map((cmd) => ({
       invocation: cmd.invocation,
       description: cmd.description,
@@ -131,6 +140,38 @@ export function buildHelpDocument(result: HelpResult, includeContent: boolean): 
   }
 
   return { kind: 'help_document', sections };
+}
+
+/**
+ * Build the `## Next` section from the help result's next action, or null when
+ * no next action is available.
+ */
+function buildNextSection(result: HelpResult): PresentationSection | null {
+  if (result.nextAction) {
+    return {
+      kind: 'text',
+      heading: 'Next',
+      content: normalizedMarkdown(
+        toSingleLine(`\`${result.nextAction.invocation}\` — ${result.nextAction.description}`),
+      ),
+    };
+  }
+  if (result.nextActionSummary) {
+    const line = toSingleLine(result.nextActionSummary);
+    if (line.length === 0) return null;
+    return { kind: 'text', heading: 'Next', content: normalizedMarkdown(line) };
+  }
+  return null;
+}
+
+/**
+ * Collapse a possibly multi-line summary into a single trimmed line. Guarantees
+ * the value satisfies the NormalizedMarkdown contract (no leading/trailing
+ * newline, no trailing whitespace), matching the single-line rendering the
+ * `## Next` section expects.
+ */
+function toSingleLine(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
 }
 
 function buildHelpArtifactSection(result: HelpResult): PresentationSection {

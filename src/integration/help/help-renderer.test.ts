@@ -187,10 +187,28 @@ describe('renderHelp', () => {
   it('default Markdown for no-session shows guidance', () => {
     const out = renderHelp(noSessionResult(), { format: 'markdown' });
     expect(out).toContain('**No active FlowGuard session.**');
-    expect(out).toContain('**Available commands:**');
+    expect(out).toContain('## Available commands');
     expect(out).toContain('→');
     expect(out).toContain('/start');
     expect(out).not.toContain('**Ticket:**');
+  });
+
+  it('renders a multi-line next-action summary as a single ## Next line without throwing', () => {
+    // CHOOSE_FLOW-style summaries are multi-line; the NormalizedMarkdown
+    // contract forbids embedded newlines / trailing whitespace, so the renderer
+    // must collapse them rather than throw.
+    const result = noSessionResult({
+      nextAction: null,
+      nextActionSummary: 'Choose your workflow:\n  /ticket   — start\n  /review   — compliance ',
+    });
+    let out = '';
+    expect(() => {
+      out = renderHelp(result, { format: 'markdown' });
+    }).not.toThrow();
+    expect(out).toContain('## Next');
+    expect(out).toContain('Choose your workflow: /ticket — start /review — compliance');
+    // No raw newline leaked into the Next line body.
+    expect(out).not.toContain('Choose your workflow:\n');
   });
 
   it('Markdown shows blocker when present', () => {

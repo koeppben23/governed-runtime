@@ -257,6 +257,37 @@ describe('review-enforcement extraction helpers', () => {
       expect(findings!.sessionId).toBe('s1');
     });
 
+    // Provenance is authority: extractionMethod drives the downstream assurance
+    // downgrade (evidence-binding.ts: recovered_block → structured_recovered,
+    // otherwise structured_high). These pin that contract.
+    it('marks bare JSON as clean_json (high assurance)', () => {
+      const findings = extractCapturedFindings(
+        JSON.stringify({ overallVerdict: 'accept', blockingIssues: [] }),
+      );
+      expect(findings!.extractionMethod).toBe('clean_json');
+    });
+
+    it('marks bare JSON with surrounding whitespace as clean_json', () => {
+      const findings = extractCapturedFindings(
+        '  \n' + JSON.stringify({ overallVerdict: 'accept', blockingIssues: [] }) + '\n  ',
+      );
+      expect(findings!.extractionMethod).toBe('clean_json');
+    });
+
+    it('marks prose-wrapped JSON as recovered_block (downgraded assurance)', () => {
+      const findings = extractCapturedFindings(
+        'Reasoning first.\n' + JSON.stringify({ overallVerdict: 'accept', blockingIssues: [] }),
+      );
+      expect(findings!.extractionMethod).toBe('recovered_block');
+    });
+
+    it('marks fenced JSON as recovered_block (not clean, matches prior behavior)', () => {
+      const findings = extractCapturedFindings(
+        '```json\n' + JSON.stringify({ overallVerdict: 'accept', blockingIssues: [] }) + '\n```',
+      );
+      expect(findings!.extractionMethod).toBe('recovered_block');
+    });
+
     it('extracts from embedded JSON in text', () => {
       const text =
         'Here are the findings:\n' +
@@ -294,6 +325,110 @@ describe('review-enforcement extraction helpers', () => {
       expect(findings).not.toBeNull();
       expect(findings!.overallVerdict).toBe('unable_to_review');
       expect(findings!.sessionId).toBe('s-unable');
+    });
+
+    // ─── Brittleness regressions (host-task no_matched_record) ──────────────
+    // The canonical reviewerTaskPrompt invites prose/reasoning and quoted
+    // artifact content (ADR/diff) around the ReviewFindings JSON. These are the
+    // exact shapes that produced `no_matched_record` in the wild and must now
+    // extract cleanly.
+
+    it('extracts when nested { precedes overallVerdict (field ordering)', () => {
+      // blockingIssues/reviewedBy objects appear BEFORE overallVerdict — the
+      // old verdict-anchored regex (\{[^{}]*"overallVerdict") cannot recover
+      // this because a nested `{` occurs before the verdict token.
+      const text =
+        'Now I have all the evidence. Let me compile the findings.\n\n' +
+        JSON.stringify({
+          blockingIssues: [{ severity: 'critical', message: 'x' }],
+          reviewedBy: { sessionId: 's-ordered' },
+          overallVerdict: 'changes_requested',
+        }) +
+        '\n';
+      const findings = extractCapturedFindings(text);
+      expect(findings).not.toBeNull();
+      expect(findings!.overallVerdict).toBe('changes_requested');
+      expect(findings!.blockingIssuesCount).toBe(1);
+      expect(findings!.sessionId).toBe('s-ordered');
+    });
+
+    it('extracts JSON wrapped in a ```json code fence', () => {
+      const text =
+        'Here is my review:\n```json\n' +
+        JSON.stringify({
+          overallVerdict: 'accept',
+          blockingIssues: [],
+          reviewedBy: { sessionId: 's-fence' },
+        }) +
+        '\n```\n';
+      const findings = extractCapturedFindings(text);
+      expect(findings).not.toBeNull();
+      expect(findings!.overallVerdict).toBe('accept');
+      expect(findings!.sessionId).toBe('s-fence');
+    });
+
+    it('selects the reviewer JSON even when quoted artifact braces precede it', () => {
+      // The reviewer quotes an ADR/diff (which contains `{`) BEFORE emitting its
+      // own ReviewFindings JSON at the end. A naive first-object scan would grab
+      // the quoted artifact block; the reviewer verdict is the LAST valid
+      // overallVerdict-bearing object.
+      const quotedArtifact =
+        'Reviewed ADR body:\n```java\npublic Task get(String id) { return repo.findById(id); }\n```\n' +
+        'Example config: { "spring": { "datasource": { "url": "x" } } }\n';
+      const reviewJson = JSON.stringify({
+        overallVerdict: 'accept',
+        blockingIssues: [],
+        reviewedBy: { sessionId: 's-last' },
+      });
+      const findings = extractCapturedFindings(quotedArtifact + '\n' + reviewJson);
+      expect(findings).not.toBeNull();
+      expect(findings!.overallVerdict).toBe('accept');
+      expect(findings!.sessionId).toBe('s-last');
+    });
+
+    it('selects the LAST overallVerdict object when two are present', () => {
+      // A quoted example ReviewFindings (e.g. from the prompt skeleton) precedes
+      // the real verdict. The real verdict is last.
+      const exampleSkeleton = JSON.stringify({
+        overallVerdict: 'accept',
+        blockingIssues: [],
+        reviewedBy: { sessionId: 'example' },
+      });
+      const realVerdict = JSON.stringify({
+        overallVerdict: 'changes_requested',
+        blockingIssues: [{ severity: 'major', message: 'y' }],
+        reviewedBy: { sessionId: 's-real' },
+      });
+      const findings = extractCapturedFindings(
+        'For reference, return this shape:\n' +
+          exampleSkeleton +
+          '\n\nMy actual review:\n' +
+          realVerdict,
+      );
+      expect(findings).not.toBeNull();
+      expect(findings!.overallVerdict).toBe('changes_requested');
+      expect(findings!.blockingIssuesCount).toBe(1);
+      expect(findings!.sessionId).toBe('s-real');
+    });
+
+    it('does not mistake a { inside a string value for structure', () => {
+      const text =
+        'Prose before.\n' +
+        JSON.stringify({
+          overallVerdict: 'accept',
+          blockingIssues: [],
+          reviewedBy: { sessionId: 's-str' },
+          note: 'the diff had a `{` brace in it',
+        });
+      const findings = extractCapturedFindings(text);
+      expect(findings).not.toBeNull();
+      expect(findings!.overallVerdict).toBe('accept');
+      expect(findings!.sessionId).toBe('s-str');
+    });
+
+    it('still returns null when no overallVerdict object exists (fail-closed)', () => {
+      const text = 'Config: { "a": { "b": 1 } } and prose, but no verdict object.';
+      expect(extractCapturedFindings(text)).toBeNull();
     });
   });
 

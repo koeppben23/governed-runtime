@@ -16,6 +16,8 @@ import type { StatusProjection, StatusActionProjection } from './status.js';
 import type { DiscoveryHealthProjection } from '../discovery/discovery-health.js';
 import type { DiscoveryDriftStatusProjection } from './discovery-drift-status.js';
 import { projectStatusActionFromCommand } from './status-conclusion.js';
+import { isTerminalPhase } from '../machine/topology.js';
+import { INSTALLED_COMMANDS } from './installed-commands.js';
 import {
   normalizedMarkdown,
   lookupStatusLabel,
@@ -80,6 +82,17 @@ export function buildStatusDocument(input: FullStatusPresentationInput): Present
   const discoverySection = buildDiscoveryNoticeSection(discoveryHealth, discoveryDrift);
   if (discoverySection) {
     sections.push(discoverySection);
+  }
+
+  // 7. Finish-readiness hint (terminal phases only).
+  //    /finish is an operational, read-only status aggregator — it is NOT a
+  //    workflow command and therefore never appears in `allowedCommands` or as a
+  //    next-action. At the workflow end we surface it as a plain hint, clearly
+  //    separated from the canonical `→ /export` conclusion, without a heading so
+  //    it is not mistaken for next-action authority.
+  const finishHint = buildFinishHintSection(status);
+  if (finishHint) {
+    sections.push(finishHint);
   }
 
   const conclusion = buildPresentationConclusion(status.conclusion);
@@ -169,6 +182,29 @@ function buildRemainingChecksSection(checks: string[]): PresentationSection {
     kind: 'checklist',
     heading: 'Remaining checks',
     items: checks.map((id) => ({ text: id, checked: false })),
+  };
+}
+
+/**
+ * Description for the /finish hint, sourced verbatim from the installed-command
+ * registry (single source of truth) rather than duplicated here.
+ */
+const FINISH_INVOCATION = '/finish';
+const FINISH_DESCRIPTION =
+  INSTALLED_COMMANDS.find((c) => c.invocation === FINISH_INVOCATION)?.description ?? '';
+
+/**
+ * Build the terminal-phase /finish hint, or null when the phase is not terminal.
+ *
+ * Heading-less bulletList so it renders as a plain `• /finish — …` line above
+ * the canonical conclusion, never mistaken for the next-action authority.
+ */
+function buildFinishHintSection(status: StatusProjection): PresentationSection | null {
+  if (!isTerminalPhase(status.phase)) return null;
+  if (FINISH_DESCRIPTION.length === 0) return null;
+  return {
+    kind: 'bulletList',
+    items: [`\`${FINISH_INVOCATION}\` — ${FINISH_DESCRIPTION}`],
   };
 }
 
