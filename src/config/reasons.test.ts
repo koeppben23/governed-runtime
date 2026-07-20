@@ -263,7 +263,7 @@ describe('cli/templates/verification-output-contract', () => {
 
     it('/plan template defines exactly one implementation-plan H1', () => {
       const planTemplate = COMMANDS['plan.md'];
-      expect((planTemplate as string).match(/# Implementation Plan/g)).toHaveLength(1);
+      expect((planTemplate as string).match(/`# Implementation Plan`/g)).toHaveLength(1);
       expect(planTemplate).toContain('The only `#` heading in the document');
     });
 
