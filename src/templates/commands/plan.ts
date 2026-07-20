@@ -36,14 +36,42 @@ ${DISCOVERY_REVIEW_CAPTURE}
    \`flowguard_help({ view: "context", includeArtifactContent: true })\` to retrieve the complete
    canonical ticket content. Use ONLY the returned content — do not reconstruct or infer task
    details from metadata alone.)
-3. Write a detailed implementation plan in markdown with these 7 required sections:
-   - \`## Objective\` — 1-3 sentences: what is being built and why.
-   - \`## Approach\` — Technical strategy with specific patterns, libraries, or architecture decisions.
-   - \`## Steps\` — Numbered list. Each step names at least one specific file path AND describes the concrete change. Prefer vertical tracer-bullet slices (one thin end-to-end path through every layer that is independently verifiable) over horizontal slices that build one layer at a time. Where a step introduces a module, favor a deep module (small interface, substantial hidden implementation) over a shallow pass-through.
-   - \`## Files to Modify\` — Complete list of file paths to create, modify, or delete.
-   - \`## Edge Cases\` — Numbered list: scenario + handling strategy.
-   - \`## Validation Criteria\` — Numbered list of verifiable conditions.
-   - \`## Verification Plan\` — Numbered list citing the command AND its Source (e.g., "Source: package.json:scripts.test"). State "NOT_VERIFIED" with recovery steps if no repo-native candidate is available.
+3. Write a detailed implementation plan in markdown using this structure:
+
+   \`# Implementation Plan\` — The only \`#\` heading in the document.
+
+   \`> **Objective:** ... | **Scope:** ... | **Risk:** Low/Medium/High | **Version:** N\`
+   — Single metadata line (blockquote). \`Version\` starts at 1 for the first
+   submission. For revisions, increment the previously presented plan version
+   by exactly 1. Do not derive version from unrelated artifact metadata.
+
+   \`## Approach\` — 3-5 concise bullet points, each describing one architectural
+   decision with its rationale or tradeoff. Keep the section compact.
+
+   \`## Implementation\` — Each step as \`### N. Step Name\`. Every step includes:
+   - \`**Files:**\` — comma-separated explicit repository-relative file paths.
+     Do not use directories, glob patterns, ellipses, or categories as
+     substitutes for file paths.
+   - \`**Changes:**\` — concrete description of what changes.
+   - \`**Edge cases:**\` — step-specific edge case handling.
+   - \`**Validation:**\` — verifiable condition for this step.
+
+   \`## Change Inventory\` — Markdown table listing every affected file with
+   an explicit repository-relative path:
+   | Area | Files | Change |
+   |---|---|---|
+   The \`Change\` cell must begin with one of \`CREATE\`, \`MODIFY\`, \`DELETE\`,
+   or \`RENAME\`. The union of all per-step \`**Files:**\` entries must match
+   the files listed here. A table row may list multiple comma-separated
+   explicit paths.
+
+   \`## Acceptance Criteria\` — Checklist (\`- [ ]\`) of observable product or
+   repository outcomes. Do not duplicate verification commands here — those
+   belong in \`## Verification\`.
+
+   \`## Verification\` — Numbered list citing the command AND its Source
+   (e.g., \`Source: package.json#scripts.test\`). State \`NOT_VERIFIED\` with
+   recovery steps if no repo-native candidate is available.
 4. Call \`flowguard_plan({ planText })\` with only planText set to the full plan markdown.
 5. Read the response. The \`next\` field contains the review workflow instructions.
 
@@ -80,7 +108,7 @@ ${SHARED_REVIEW_LOOP({
 ## Planning discipline
 
 - Resolve open questions that the repository can answer by exploring the codebase (use the explore agent or read/search tools) instead of asking the user. Reserve user questions for genuine product or intent decisions that the code cannot settle.
-- Stress-test domain relationships and edge behavior with concrete scenarios before writing \`## Edge Cases\`; a scenario that the plan cannot answer is a gap to resolve, not a detail to defer.
+- Stress-test domain relationships and edge behavior with concrete scenarios before writing each step's \`**Edge cases:**\` field; a scenario that the plan cannot answer is a gap to resolve, not a detail to defer.
 - Cross-check stated behavior against the actual code. When a claim in the request contradicts what the code does, surface the contradiction in the plan rather than planning on top of the unverified claim.
 
 ## Rules
@@ -89,7 +117,7 @@ ${SHARED_REVIEW_LOOP({
 - Always complete the independent review before proceeding (use plugin findings or the reviewer subagent).
 - When revising a plan, include the COMPLETE plan text (not a diff).
 - Cite Source for each verification check, or state NOT_VERIFIED with recovery steps.
-- Use \`verificationCandidates\` from \`flowguard_status\` when available to populate the Verification Plan (prefer repo-native commands over generic ones).
+- Use \`verificationCandidates\` from \`flowguard_status\` when available to populate the \`## Verification\` section (prefer repo-native commands over generic ones).
 - Follow profile rules from \`flowguard_status\` when writing the plan (they supplement governance mandates).
 - Do not call implementation tools (write/edit/bash) during /plan — this command produces a plan only.
 - Do not substitute self-review for independent review when subagent review is active.
@@ -116,8 +144,8 @@ ${GOVERNANCE_RULES}
 
 ## Done-when
 
-- Plan contains all 7 required sections.
-- Verification Plan cites Source for each check OR states NOT_VERIFIED.
+- Plan preserves all seven mandatory semantic dimensions across the structural sections.
+- The \`## Verification\` section cites Source for each check OR states NOT_VERIFIED.
 - Independent review loop has converged (approved or max 3 iterations).
 ${DISCOVERY_REVIEW_DONE_WHEN}
 - If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.

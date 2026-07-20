@@ -80,6 +80,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Restructured the `/plan` authoring template around an implementation-plan
+  visual contract. The seven mandatory planning dimensions are preserved across
+  the new structural sections: `# Implementation Plan` with metadata header,
+  `## Approach`, `## Implementation` (per-step Files/Changes/Edge Cases/
+  Validation), `## Change Inventory` (table with CREATE/MODIFY/DELETE/RENAME),
+  `## Acceptance Criteria` (checklist), and `## Verification` (Source-cited).
+
 - `/status` template instructs the agent to render `presentation.markdown`
   verbatim when present, without rephrasing.
 
