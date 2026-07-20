@@ -388,7 +388,7 @@ function renderHelpArtifact(section: HelpArtifactSection): string {
 }
 
 function renderEmbeddedMarkdown(section: EmbeddedMarkdownSection): string {
-  if (section.label.trim().length === 0) {
+  if (section.label !== undefined && section.label.trim().length === 0) {
     throw new PresentationContractError('EmbeddedMarkdownSection: label must not be empty');
   }
 
@@ -400,7 +400,7 @@ function renderEmbeddedMarkdown(section: EmbeddedMarkdownSection): string {
     );
   }
 
-  return `**${section.label}:**\n${content}`;
+  return section.label !== undefined ? `**${section.label}:**\n${content}` : content;
 }
 
 // ─── Conclusion Renderer ───────────────────────────────────────────────────────

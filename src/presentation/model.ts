@@ -328,8 +328,12 @@ export interface EmbeddedMarkdownSection {
   readonly kind: 'embeddedMarkdown';
   /** Rendered as `## heading` when present. */
   readonly heading?: string;
-  /** Plain-text label — renderer wraps in `**...:**`. */
-  readonly label: string;
+  /**
+   * Optional plain-text label — renderer wraps in `**...:**` above the content.
+   * Omit for verbatim body sections that carry their own `heading` and need no
+   * inline label (e.g. a plan/ADR body under `## Proposed Plan`).
+   */
+  readonly label?: string;
   readonly content: string;
 }
 
