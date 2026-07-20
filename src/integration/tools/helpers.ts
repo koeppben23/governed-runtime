@@ -46,6 +46,7 @@ import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
 import { buildBlockedDiagnostics, formatDiagnosticCard } from '../../diagnostics/index.js';
+import type { RuntimeDiagnostics } from '../../diagnostics/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
@@ -120,6 +121,28 @@ export function formatEval(ev: EvalResult): string {
   }
 }
 
+/**
+ * Build the shared blocked-response fields for a reason code: the structured
+ * diagnostics object (when a builder exists) and the presentation.markdown
+ * rendered through the shared renderer. Single source of truth for both
+ * blocked-response producers (formatRailResult, formatBlocked).
+ */
+function buildBlockedPresentation(
+  code: string,
+  message: string,
+  detail: Record<string, string>,
+): {
+  diagnostics?: RuntimeDiagnostics;
+  presentation?: { markdown: string };
+} {
+  const diagnostics = buildBlockedDiagnostics(code, detail);
+  if (!diagnostics) return {};
+  return {
+    diagnostics,
+    presentation: { markdown: formatDiagnosticCard({ code, message, diagnostics }) },
+  };
+}
+
 /** Format a RailResult for LLM consumption. Audit transitions in metadata channel. */
 export function formatRailResult(result: RailResult): ToolResult {
   if (result.kind === 'blocked') {
@@ -128,23 +151,19 @@ export function formatRailResult(result: RailResult): ToolResult {
       ...(result.overflow ? { overflowLimit: result.overflow.limit } : {}),
       ...getLogTraceFields(),
     });
-    const diagnostics = buildBlockedDiagnostics(result.code, {
-      reason: result.reason,
-    });
     // Unify the blocked surface with the rest of the presentation layer: when a
     // structured diagnostic is available, also render it through the shared
     // renderer so the display path matches /status, /why, /finish, and /help.
-    const presentationMarkdown = diagnostics
-      ? formatDiagnosticCard({ code: result.code, message: result.reason, diagnostics })
-      : null;
+    const blockedPresentation = buildBlockedPresentation(result.code, result.reason, {
+      reason: result.reason,
+    });
     return JSON.stringify({
       error: true,
       code: result.code,
       message: result.reason,
       recovery: result.recovery,
       quickFix: result.quickFix,
-      ...(diagnostics ? { diagnostics } : {}),
-      ...(presentationMarkdown ? { presentation: { markdown: presentationMarkdown } } : {}),
+      ...blockedPresentation,
       // #428: surface structured overflow context so the plugin boundary can
       // detect and log the fail-closed overflow without parsing the message.
       ...(result.overflow ? { autoAdvanceOverflow: result.overflow } : {}),
@@ -200,20 +219,16 @@ export function formatBlocked(
 ): string {
   getAdapterLogger().warn('machine', 'tool_blocked', { code, ...getLogTraceFields() });
   const info = defaultReasonRegistry.format(code, vars);
-  const diagnostics = buildBlockedDiagnostics(info.code, vars);
   // Render the diagnostic through the shared renderer so blocked returns from
   // inline tool logic present consistently with the rest of the surface.
-  const presentationMarkdown = diagnostics
-    ? formatDiagnosticCard({ code: info.code, message: info.reason, diagnostics })
-    : null;
+  const blockedPresentation = buildBlockedPresentation(info.code, info.reason, vars ?? {});
   return JSON.stringify({
     error: true,
     code: info.code,
     message: info.reason,
     recovery: info.recovery,
     quickFix: info.quickFix,
-    ...(diagnostics ? { diagnostics } : {}),
-    ...(presentationMarkdown ? { presentation: { markdown: presentationMarkdown } } : {}),
+    ...blockedPresentation,
     ...(extra ?? {}),
   });
 }
