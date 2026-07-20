@@ -86,7 +86,7 @@ function sp(mode: 'solo' | 'team') {
 
 function makePlanReviewState(): SessionState {
   return {
-    ...(makeProgressedState('PLAN_REVIEW') as any),
+    ...makeProgressedState('PLAN_REVIEW'),
     policySnapshot: sp('team'),
     activeChecks: [],
     verificationCandidates: [],
@@ -96,7 +96,7 @@ function makePlanReviewState(): SessionState {
 
 function makeCompleteState(): SessionState {
   return {
-    ...(makeProgressedState('COMPLETE') as any),
+    ...makeProgressedState('COMPLETE'),
     archiveStatus: 'verified',
     policySnapshot: sp('solo'),
     activeChecks: [],
@@ -428,7 +428,7 @@ describe('help blocker edge cases', () => {
       reasonCode: null,
       recovery: null,
       guarantee: 'eligible_to_attempt' as const,
-    } as any;
+    } as any; // CommandPreflight.blocked requires non-null fields, but DetailedCommandItem.preflight.blocked allows null — bridge for renderer edge-case test
     const doc = buildHelpDocument(
       noSessionResult({
         commands: [
