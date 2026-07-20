@@ -283,7 +283,10 @@ function noticeSymbol(level: NoticeSection['level']): string {
 
 function renderDetailedCommandList(section: DetailedCommandListSection): string {
   const lines: string[] = [];
-  if (section.label) {
+  // A `## heading` (emitted centrally by the section dispatcher) supersedes the
+  // legacy inline `**label:**`. Only render the label when no heading is set.
+  const hasHeading = section.heading !== undefined && section.heading.length > 0;
+  if (!hasHeading && section.label) {
     lines.push(`**${section.label}:**`);
   }
   for (const item of section.items) {

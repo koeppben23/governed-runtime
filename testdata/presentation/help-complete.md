@@ -1,8 +1,14 @@
+## Status
+
 **Phase:** Complete
 **Readiness:** ready
-**Next:** `/status` — Show the current phase and next action.
 
-**Available commands:**
+## Next
+
+`/status` — Show the current phase and next action.
+
+## Available commands
+
   → `/status` — Show the current phase and next action.
   • `/continue` — Route to the next workflow step.
   • `/abort` — End the current workflow without presenting it as completed.
