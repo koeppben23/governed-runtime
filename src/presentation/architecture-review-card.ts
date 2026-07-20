@@ -190,7 +190,12 @@ export function buildArchitectureReviewCard(input: ArchitectureReviewCardInput):
 // ─── Findings Projection ────────────────────────────────────────────────────────
 
 interface FindingInputs {
-  blockingIssues?: Array<{ severity: string; category: string; message: string; location?: string }>;
+  blockingIssues?: Array<{
+    severity: string;
+    category: string;
+    message: string;
+    location?: string;
+  }>;
   majorRisks?: Array<{ severity: string; category: string; message: string; location?: string }>;
   missingVerification?: string[];
   scopeCreep?: string[];

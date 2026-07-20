@@ -84,7 +84,11 @@ const SEVERITY_GROUP: Record<
   info: { label: 'Notes', order: 4, severity: 'info' },
 };
 
-function severityGroup(severity: string): { label: string; order: number; severity: FindingGroup['severity'] } {
+function severityGroup(severity: string): {
+  label: string;
+  order: number;
+  severity: FindingGroup['severity'];
+} {
   return SEVERITY_GROUP[severity] ?? { label: severity, order: 99, severity: 'info' };
 }
 
@@ -168,7 +172,10 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
 
   // ── Findings ───────────────────────────────────────────────────────
   if (findings.length > 0) {
-    const grouped = new Map<number, { label: string; severity: FindingGroup['severity']; items: FindingItem[] }>();
+    const grouped = new Map<
+      number,
+      { label: string; severity: FindingGroup['severity']; items: FindingItem[] }
+    >();
     for (const f of findings) {
       const g = severityGroup(f.severity);
       let bucket = grouped.get(g.order);
@@ -234,7 +241,10 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
     }
     if (reviewOutputMode) evidence.push({ label: 'Review output mode', value: reviewOutputMode });
     if (typeof structuredOutputUsed === 'boolean') {
-      evidence.push({ label: 'Structured output used', value: structuredOutputUsed ? 'yes' : 'no' });
+      evidence.push({
+        label: 'Structured output used',
+        value: structuredOutputUsed ? 'yes' : 'no',
+      });
     }
     if (reviewAssuranceLevel) {
       evidence.push({ label: 'Review assurance', value: reviewAssuranceLevel });
