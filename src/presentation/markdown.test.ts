@@ -117,7 +117,7 @@ describe('renderMarkdown', () => {
     };
     const result = renderMarkdown(doc);
     assertRendererInvariants(result);
-    expect(result).toContain('• `/check` — Run checks');
+    expect(result).toContain('- `/check` — Run checks');
     expect(result).toContain('→ `/approve` — Approve');
     expect(result).toContain('→ `/continue` — Continue');
   });
@@ -265,9 +265,9 @@ describe('renderMarkdown', () => {
     const result = renderMarkdown(doc);
     assertRendererInvariants(result);
     expect(result).toContain('Choose a review verdict.');
-    expect(result).toContain('• `/approve` — Accept');
-    expect(result).toContain('• `/request-changes` — Revise');
-    expect(result).toContain('• `/reject` — Reject');
+    expect(result).toContain('- `/approve` — Accept');
+    expect(result).toContain('- `/request-changes` — Revise');
+    expect(result).toContain('- `/reject` — Reject');
     expect(result).not.toContain('→');
   });
 

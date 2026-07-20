@@ -6,7 +6,7 @@
 
 ## Findings
 
-• No issues found.
+- No issues found.
 
 ## Completeness
 
@@ -16,4 +16,4 @@
 
 ## Recommended follow-up
 
-• No follow-up required from this review. Re-run `/review` after changes if needed.
+- No follow-up required from this review. Re-run `/review` after changes if needed.

@@ -235,7 +235,7 @@ function renderBulletList(section: BulletListSection): string {
       throw new PresentationContractError('BulletListSection: items must not be empty');
     }
   }
-  return section.items.map((t) => `• ${t}`).join('\n');
+  return section.items.map((t) => `- ${t}`).join('\n');
 }
 
 function renderGuidance(section: GuidanceSection): string {
@@ -257,15 +257,8 @@ function renderGuidance(section: GuidanceSection): string {
   return lines.join('\n');
 }
 
-function guidanceSymbol(status: GuidanceStatus): string {
-  switch (status) {
-    case 'recommended':
-      return '✓';
-    case 'not_recommended':
-      return '•';
-    case 'not_verified':
-      return '?';
-  }
+function guidanceSymbol(_status: GuidanceStatus): string {
+  return '-';
 }
 
 function noticeSymbol(level: NoticeSection['level']): string {
@@ -275,7 +268,7 @@ function noticeSymbol(level: NoticeSection['level']): string {
     case 'not_verified':
       return '?';
     case 'info':
-      return '•';
+      return '-';
   }
 }
 
@@ -308,7 +301,9 @@ function renderDetailedCommandList(section: DetailedCommandListSection): string 
       item.aliases.length > 0
         ? ` (aliases: ${item.aliases.map((a) => `\`${a}\``).join(', ')})`
         : '';
-    lines.push(`  ${sym} \`${item.invocation}\` — ${item.description}${aliases}`);
+    const inv =
+      item.visibility === 'recommended' ? `**\`${item.invocation}\`**` : `\`${item.invocation}\``;
+    lines.push(`  ${sym} ${inv} — ${item.description}${aliases}`);
 
     if (item.preflight.status === 'blocked') {
       const p = item.preflight;
@@ -321,16 +316,9 @@ function renderDetailedCommandList(section: DetailedCommandListSection): string 
 }
 
 function detailedCommandSymbol(
-  visibility: DetailedCommandListSection['items'][number]['visibility'],
+  _visibility: DetailedCommandListSection['items'][number]['visibility'],
 ): string {
-  switch (visibility) {
-    case 'recommended':
-      return '→';
-    case 'available':
-      return '•';
-    case 'blocked_recoverable':
-      return '⚠';
-  }
+  return '-';
 }
 
 function renderHelpSummary(section: HelpSummarySection): string {
@@ -554,7 +542,7 @@ function renderConclusion(conclusion: PresentationConclusion): string {
 // ─── Action Renderer ───────────────────────────────────────────────────────────
 
 function renderAction(action: PresentationAction): string {
-  const symbol = action.visibility === 'recommended' ? '→' : '•';
+  const symbol = action.visibility === 'recommended' ? '→' : '-';
   const invocation = action.invocation ? ` \`${action.invocation}\`` : '';
   return `${symbol}${invocation} — ${action.description}`;
 }

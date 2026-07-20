@@ -16,14 +16,14 @@
 
 ## Available actions
 
-• `/hydrate` — Prepare or restore a governed session.
-• `/continue` — Route to the next workflow step.
-• `/review-decision` — Record the human decision at a review gate.
-• `/abort` — End the current workflow without presenting it as completed.
+- `/hydrate` — Prepare or restore a governed session.
+- `/continue` — Route to the next workflow step.
+- `/review-decision` — Record the human decision at a review gate.
+- `/abort` — End the current workflow without presenting it as completed.
 
 ## Decision required
 
 Awaiting plan review decision (approve / changes_requested / reject)
-• `/approve` — Accept the reviewed work and advance.
-• `/request-changes` — Request revisions to the reviewed work.
-• `/reject` — Reject the reviewed work.
+- `/approve` — Accept the reviewed work and advance.
+- `/request-changes` — Request revisions to the reviewed work.
+- `/reject` — Reject the reviewed work.

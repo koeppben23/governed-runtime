@@ -188,8 +188,7 @@ describe('renderHelp', () => {
     const out = renderHelp(noSessionResult(), { format: 'markdown' });
     expect(out).toContain('**No active FlowGuard session.**');
     expect(out).toContain('## Available commands');
-    expect(out).toContain('→');
-    expect(out).toContain('/start');
+    expect(out).toContain('- **`/start`**');
     expect(out).not.toContain('**Ticket:**');
   });
 
@@ -333,8 +332,7 @@ describe('renderHelp', () => {
       }),
       { format: 'markdown' },
     );
-    expect(out).toContain('⚠');
-    expect(out).toContain('/blocked');
+    expect(out).toContain('- `/blocked`');
     expect(out).toContain('blocked: Not available');
     expect(out).toContain('code: SESSION_REQUIRED');
     expect(out).toContain('recovery: Try later');
@@ -357,7 +355,7 @@ describe('renderHelp', () => {
       }),
       { format: 'markdown' },
     );
-    expect(out).toContain('• `/thing`');
+    expect(out).toContain('- `/thing`');
   });
 
   it('verbose flag alone does NOT include artifact content', () => {
@@ -465,7 +463,7 @@ describe('help blocker edge cases', () => {
       false,
     );
     const out = renderMarkdown(doc);
-    expect(out).toContain('⚠ `/review-decision`');
+    expect(out).toContain('- `/review-decision`');
     expect(out).not.toContain('blocked:');
     expect(out).not.toContain('code:');
     expect(out).not.toContain('recovery:');

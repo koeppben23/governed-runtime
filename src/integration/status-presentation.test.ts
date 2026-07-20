@@ -421,9 +421,9 @@ describe('buildStatusDocument', () => {
       discoveryDrift: drift,
     });
     const result = renderMarkdown(doc);
-    expect(result).toContain('• `/ticket`');
-    expect(result).toContain('• `/architecture`');
-    expect(result).toContain('• `/review`');
+    expect(result).toContain('- `/ticket`');
+    expect(result).toContain('- `/architecture`');
+    expect(result).toContain('- `/review`');
   });
 
   it('omits failed evidence row when count is zero', () => {
