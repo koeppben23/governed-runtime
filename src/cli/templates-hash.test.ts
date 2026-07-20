@@ -201,9 +201,16 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // and /review keep their `Next action:` line: the review-report card is
     // intentionally conclusion-less, so that line is the sole (non-duplicated)
     // next-action source. Changes the /plan and /architecture bodies.
+    // Refreshed for rail next-action rendering: the /approve, /request-changes,
+    // /reject, and /review-decision commands run through flowguard_decision,
+    // whose success response now carries presentation.markdown (a rendered
+    // next-action conclusion). Their Done-when now defers to that rendered
+    // conclusion and scopes the `Next action:` line to the fallback projection
+    // only, matching /status, /why, and /finish. Changes those four bodies and
+    // therefore the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '72f3b0860dd46425cd1442c97f5943dae2cb2711dbfc909faee227b8dfcaf2fc',
+      '8eb0dbabd27fc8f7fdf698bd197a9fd6b5a1c5b3d35731bb54a5acd3d0788100',
     );
   });
 
