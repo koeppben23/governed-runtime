@@ -75,6 +75,27 @@ describe('renderMarkdown', () => {
     expect(result).toBe('**Phase:** Planning\n**Policy:** Team\n\nDone.');
   });
 
+  it('renders a title section as an H1 with canonical spacing', () => {
+    const doc: ReviewCardDocument = {
+      kind: 'review_card',
+      sections: [
+        { kind: 'title', text: 'FlowGuard Plan Review' },
+        { kind: 'keyValue', items: [{ label: 'Status', value: 'Approved' }] },
+      ],
+    };
+    const result = renderMarkdown(doc);
+    assertRendererInvariants(result);
+    expect(result).toBe('# FlowGuard Plan Review\n\n**Status:** Approved');
+  });
+
+  it('throws when a title section text is empty', () => {
+    const doc: ReviewCardDocument = {
+      kind: 'review_card',
+      sections: [{ kind: 'title', text: '   ' }],
+    };
+    expect(() => renderMarkdown(doc)).toThrow(/TitleSection: text must not be empty/);
+  });
+
   it('renders commandList with available and recommended actions', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',

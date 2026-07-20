@@ -30,6 +30,7 @@ import type {
   PresentationConclusion,
   PresentationAction,
   KeyValueItem,
+  TitleSection,
   BlockerSection,
   ChecklistSection,
   CodeSection,
@@ -78,6 +79,8 @@ function sectionHeading(section: { readonly heading?: string }): string {
 
 function renderSection(section: PresentationSection): string {
   switch (section.kind) {
+    case 'title':
+      return renderTitle(section);
     case 'keyValue':
       return sectionHeading(section) + renderKeyValue(section.items);
     case 'commandList':
@@ -112,6 +115,13 @@ function renderSection(section: PresentationSection): string {
 }
 
 // ─── Section Renderers ─────────────────────────────────────────────────────────
+
+function renderTitle(section: TitleSection): string {
+  if (section.text.trim().length === 0) {
+    throw new PresentationContractError('TitleSection: text must not be empty');
+  }
+  return `# ${section.text}`;
+}
 
 function renderKeyValue(items: readonly KeyValueItem[]): string {
   return items.map((item) => `**${item.label}:** ${item.value}`).join('\n');
