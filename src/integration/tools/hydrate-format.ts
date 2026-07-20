@@ -11,6 +11,17 @@ import { executeHydrate } from '../../rails/hydrate.js';
 import type { ToolResult } from './helpers.js';
 import { persistAndFormat, appendNextAction } from './helpers.js';
 import { LOCK_CONTENDED_OUTPUT_FIELD } from '../../shared/flowguard-identifiers.js';
+import { PHASE_LABELS } from '../../presentation/phase-labels.js';
+import { renderMarkdown } from '../../presentation/markdown.js';
+import type {
+  CompactCardDocument,
+  PresentationSection,
+  PresentationConclusion,
+  KeyValueSection,
+  CommandListSection,
+  NoticeSection,
+} from '../../presentation/model.js';
+import type { Phase } from '../../state/schema.js';
 
 import type {
   DiscoveryHydration,
@@ -144,6 +155,117 @@ export function contextClaimedTaskClass(params: BuildHydrateInputParams) {
 
 // ─── Response Formatting ─────────────────────────────────────────────────
 
+// ─── Response Formatting ─────────────────────────────────────────────────
+
+interface HydrateCardParams {
+  sessionId: string;
+  phase: Phase;
+  policyMode: string;
+  gateBehavior: string;
+  profileName: string;
+  profileDetected: boolean;
+  endpointCount: number | undefined;
+  gateNotice: string | null;
+}
+
+/**
+ * Build a portable, LLM-consensus presentation card for a fresh session.
+ *
+ * The card is rendered through the shared {@link renderMarkdown} so it carries
+ * the same ASCII-only symbol conventions as /status, /finish, /why, and /help.
+ * All LLMs render this identically — deepseek, big-pickle, and any future
+ * model that consumes OpenCode-compatible tool output.
+ */
+function buildHydratePresentationCard(params: HydrateCardParams): { markdown: string } {
+  const sections: PresentationSection[] = [];
+  sections.push({ kind: 'title' as const, text: 'FlowGuard session active.' });
+  sections.push(buildHydrateStatusSection(params));
+  sections.push(buildHydrateWorkflowsSection());
+  if (params.gateNotice !== null) {
+    sections.push(buildHydrateGateNoticeSection(params.gateNotice));
+  }
+
+  const conclusion: PresentationConclusion = {
+    kind: 'next_action',
+    action: {
+      invocation: '/task',
+      description: 'Record the task that the workflow will govern.',
+      visibility: 'recommended',
+    },
+  };
+
+  const document: CompactCardDocument = {
+    kind: 'compact_card',
+    density: 'compact',
+    sections,
+    conclusion,
+  };
+  return { markdown: renderMarkdown(document) };
+}
+
+function buildHydrateStatusSection(params: HydrateCardParams): KeyValueSection {
+  const modeLabel =
+    params.gateBehavior === 'auto_approve'
+      ? `${params.policyMode} (auto-approve)`
+      : params.policyMode;
+  const gateQualifier =
+    params.gateBehavior === 'human_gated'
+      ? ' (human-gated — every key decision requires your explicit approval)'
+      : '';
+
+  const profileParts: string[] = [params.profileName];
+  if (params.profileDetected) {
+    profileParts.push('auto-detected');
+    if (params.endpointCount !== undefined && params.endpointCount > 0) {
+      profileParts.push(`${params.endpointCount} API endpoints discovered`);
+    }
+  }
+
+  return {
+    kind: 'keyValue',
+    heading: 'Status',
+    items: [
+      { label: 'Session ID', value: params.sessionId.slice(0, 8) },
+      { label: 'Phase', value: PHASE_LABELS[params.phase] },
+      { label: 'Policy', value: `${modeLabel}${gateQualifier}` },
+      { label: 'Profile', value: profileParts.join(', ') },
+    ],
+  };
+}
+
+function buildHydrateWorkflowsSection(): CommandListSection {
+  return {
+    kind: 'commandList',
+    heading: 'Workflows',
+    items: [
+      {
+        invocation: '/task',
+        description:
+          'Record a ticket and run the full development lifecycle (ticket \u2192 plan \u2192 implement \u2192 review)',
+        visibility: 'available' as const,
+      },
+      {
+        invocation: '/architecture',
+        description: 'Create an Architecture Decision Record (ADR)',
+        visibility: 'available' as const,
+      },
+      {
+        invocation: '/review',
+        description: 'Generate a compliance review report',
+        visibility: 'available' as const,
+      },
+    ],
+  };
+}
+
+function buildHydrateGateNoticeSection(notice: string): NoticeSection {
+  return { kind: 'notice', level: 'warning', message: notice, additionalMessages: [], details: [] };
+}
+
+function extractOutputStr(formatted: ToolResult): string {
+  return typeof formatted === 'object' && 'output' in formatted ? formatted.output : formatted;
+}
+
 export async function formatNewSessionResponse(
   sessDir: string,
   result: Extract<ReturnType<typeof executeHydrate>, { kind: 'ok' }>,
@@ -152,11 +274,22 @@ export async function formatNewSessionResponse(
 ): Promise<ToolResult> {
   const state = result.state;
   const formattedResult = await persistAndFormat(sessDir, result);
-  const outputStr =
-    typeof formattedResult === 'object' && 'output' in formattedResult
-      ? formattedResult.output
-      : formattedResult;
+  const outputStr = extractOutputStr(formattedResult);
   const formatted = JSON.parse(outputStr) as Record<string, unknown>;
+  const gateNoticeText = buildGateNotice(
+    policyResolution.effectiveGateBehavior,
+    policyResolution.effectiveMode,
+  );
+  const cardParams: HydrateCardParams = {
+    sessionId: state.id,
+    phase: state.phase,
+    policyMode: policyResolution.effectiveMode,
+    gateBehavior: policyResolution.effectiveGateBehavior,
+    profileName: state.activeProfile?.name ?? 'Baseline Governance',
+    profileDetected: !!discovery.repoSignals,
+    endpointCount: discovery.discoverySummary?.apiEndpointCount ?? undefined,
+    gateNotice: gateNoticeText,
+  };
   const response: Record<string, unknown> = {
     ...formatted,
     sessionId: state.id,
@@ -167,10 +300,8 @@ export async function formatNewSessionResponse(
     discoverySummary: discovery.discoverySummary ?? null,
     claimedTaskClass: state.claimedTaskClass ?? null,
     policyResolution: formatPolicyResolution(policyResolution),
-    gateNotice: buildGateNotice(
-      policyResolution.effectiveGateBehavior,
-      policyResolution.effectiveMode,
-    ),
+    gateNotice: gateNoticeText,
+    presentation: buildHydratePresentationCard(cardParams),
   };
   return appendNextAction(JSON.stringify(response), state);
 }

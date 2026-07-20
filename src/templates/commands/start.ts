@@ -14,13 +14,11 @@ Bootstrap the FlowGuard session for this project.
 ## Steps
 
 1. Call \`flowguard_hydrate\` with no arguments.
-2. Read the returned JSON (\`phase\`, \`phaseLabel\`, \`nextAction\`, optional \`productNextAction\`, \`policyResolution.effectiveMode\`, \`gateNotice\`).
-3. Report the result in product-friendly language:
-   - New session: welcome the user, confirm the session is active, state the active policy mode (\`policyResolution.effectiveMode\`), present available workflows (task, architecture, review).
-   - Existing session loaded: report current phase label, active policy mode, and next action.
-   - Error: report the error message.
-4. If \`gateNotice\` is present (non-null), display it verbatim and prominently — it warns that review gates auto-approve without a human decision. Do not paraphrase or omit it.
-5. Briefly note this is a governed session — every step produces verifiable evidence.
+2. If \`presentation.markdown\` is present in the response, print it verbatim — do not reformat, summarize, or restructure it.
+   The rendered conclusion (the trailing \`→\` command line) is the next-action guidance — do NOT append a separate \`Next action:\` line.
+3. If \`presentation.markdown\` is NOT present (error, degraded response): report the error message and stop.
+4. If \`gateNotice\` is present (non-null) AND it is not already visible in the presentation.markdown: display it verbatim and prominently.
+   Do not paraphrase or omit it.
 
 ## Rules
 
@@ -31,7 +29,6 @@ ${GOVERNANCE_RULES}
 ## Done-when
 
 - FlowGuard session is active (new or existing loaded).
-- Session ID, phase label, active policy mode, and next action are reported.
-- If \`gateNotice\` is present, it is shown verbatim.
-- Response ends with \`Next action: run /task to begin a development task, /architecture to create an ADR, or /review for a compliance report.\`
+- If \`presentation.markdown\` was present, it was printed verbatim.
+- Otherwise: session state reported per the error path.
 `;
