@@ -629,7 +629,11 @@ describe('renderMarkdown', () => {
         kind: 'help_document',
         sections: [
           { kind: 'title', text: 'FlowGuard Help' },
-          { kind: 'embeddedMarkdown', label: 'Current plan', content: '# Implementation Plan\n\nx' },
+          {
+            kind: 'embeddedMarkdown',
+            label: 'Current plan',
+            content: '# Implementation Plan\n\nx',
+          },
         ],
       };
       const result = renderMarkdown(doc);

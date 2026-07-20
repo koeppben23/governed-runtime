@@ -472,8 +472,10 @@ describe('embeddedMarkdown boundary normalization', () => {
       },
       { format: 'markdown', includeArtifactContent: true },
     );
-    expect(out).toContain('**Ticket:**\n# Header');
-    expect(out).not.toContain('# Header\n\n');
+    // Label-only embed: the ticket's own `#` is demoted to `##` so it does not
+    // become a second document-level H1 alongside the help title.
+    expect(out).toContain('**Ticket:**\n## Header');
+    expect(out).not.toContain('## Header\n\n');
   });
 
   it('removes leading newline', () => {
@@ -489,7 +491,7 @@ describe('embeddedMarkdown boundary normalization', () => {
       },
       { format: 'markdown', includeArtifactContent: true },
     );
-    expect(out).toContain('**Ticket:**\n# Header');
+    expect(out).toContain('**Ticket:**\n## Header');
   });
 
   it('preserves internal blank lines', () => {
@@ -508,7 +510,7 @@ describe('embeddedMarkdown boundary normalization', () => {
     expect(out).toContain('Paragraph 1\n\nParagraph 2');
   });
 
-  it('preserves trailing spaces within content', () => {
+  it('strips trailing spaces within content (structural whitespace invariant)', () => {
     const out = renderHelp(
       {
         ...noSessionResult(),
@@ -521,7 +523,10 @@ describe('embeddedMarkdown boundary normalization', () => {
       },
       { format: 'markdown', includeArtifactContent: true },
     );
-    expect(out).toContain('Line with spaces  ');
+    // The contract forbids trailing whitespace on any line (§3); embedded
+    // content is sanitised at the renderer boundary.
+    expect(out).toContain('Line with spaces');
+    expect(out).not.toMatch(/[ \t]+$/m);
   });
 
   it('renders ticket and plan simultaneously with correct order', () => {
