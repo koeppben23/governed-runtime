@@ -398,6 +398,14 @@ export interface DiagnosticCardDocument {
   readonly conclusion?: PresentationConclusion;
 }
 
+/**
+ * RESERVED — not currently produced in production.
+ *
+ * The full plan body is rendered by embedding it into the Plan Review Card
+ * (`ReviewCardDocument`) as an `embeddedMarkdown` section under `## Proposed
+ * Plan`, not as a standalone `plan_document`. This type is retained for a
+ * possible future standalone plan surface. See docs/presentation-system.md §1.
+ */
 export interface PlanDocument {
   readonly kind: 'plan_document';
   readonly sections: readonly PresentationSection[];
