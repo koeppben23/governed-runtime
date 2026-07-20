@@ -119,4 +119,27 @@ describe('buildRailConclusion', () => {
       }
     });
   });
+
+  describe('GOVERNANCE BOUNDARY — pending review is not a rail next action', () => {
+    // The pending-review submission responses (buildPlanSubmissionResponse etc.)
+    // carry a dense governance `next` protocol from buildPendingReviewInstruction
+    // ("INDEPENDENT_REVIEW_REQUIRED: ... invoke the reviewer via the Task tool").
+    // A rail conclusion for those PLAN / IMPL_REVIEW states resolves to the
+    // routing command /continue — which is NOT the required action (invoking the
+    // reviewer subagent). This test pins that mismatch so the rendered rail
+    // conclusion is never substituted for the governance protocol on those
+    // surfaces: the governance `next` remains the sole authority there.
+    it('rail conclusion for PLAN pending routes to /continue, not the reviewer protocol', () => {
+      const state = makeProgressedState('PLAN');
+      const conclusion = buildRailConclusion(state, { kind: 'pending', phase: 'PLAN' });
+      expect(conclusion.kind).toBe('next_action');
+      if (conclusion.kind === 'next_action') {
+        expect(conclusion.action.invocation).toBe('/continue');
+        // Proves the rail conclusion cannot carry the reviewer-invocation
+        // protocol, so it must not replace the governance `next` on pending
+        // review submission responses.
+        expect(conclusion.action.description).not.toContain('flowguard-reviewer');
+      }
+    });
+  });
 });
