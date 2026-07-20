@@ -67,6 +67,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   evidence-completeness, and next-action authorities; the only new logic is a
   single non-normative overall-status classifier (`READY`, `READY_WITH_WARNINGS`,
   `BLOCKED`, `NOT_VERIFIED`) plus non-normative action guidance and exit options.
+- **Diagnostics and /help migrated to the shared presentation renderer.**
+  `formatDiagnosticCard()` now uses `renderMarkdown()` instead of a plaintext
+  engine, producing structured Markdown via `buildBlockedDiagnosticDocument()`.
+  `/help` uses new structured primitives (`DetailedCommandListSection` with
+  per-command preflight and `blocked_recoverable` visibility, `HelpSummarySection`,
+  `HelpArtifactSection`, `EmbeddedMarkdownSection`) to produce visually identical
+  output through `renderHelp()` + `buildHelpDocument()`. The JSON path and
+  `HelpResult` types are unchanged. `DiagnosticCardDocument.conclusion` is now
+  optional.
   Available in all phases including terminal phases.
 
 ### Changed
