@@ -4,6 +4,13 @@
  */
 import { describe, it, expect } from 'vitest';
 import { buildArchitectureReviewCard } from './architecture-review-card.js';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
+async function readGolden(name: string): Promise<string> {
+  const p = resolve(__dirname, '..', '..', 'testdata', 'presentation', name);
+  return readFile(p, 'utf-8');
+}
 
 const baseInput = {
   phase: 'ARCH_REVIEW' as const,
@@ -123,5 +130,43 @@ describe('buildArchitectureReviewCard', () => {
       forcedConvergence: true,
     });
     expect(card).not.toContain('Reviewer did NOT approve');
+  });
+});
+
+// ─── Golden Baseline Tests ──────────────────────────────────────────────────────
+
+describe('architecture review golden fixtures', () => {
+  it('review-architecture-accepted matches golden output', async () => {
+    const card = buildArchitectureReviewCard({
+      phase: 'ARCH_COMPLETE',
+      phaseLabel: 'Architecture complete',
+      adrTitle: 'Use presentation-only command aliases',
+      adrId: 'ADR-001',
+      adrDigest: 'abc123',
+      iteration: 2,
+      overallVerdict: 'accept',
+      isApproved: true,
+      productNextAction: { text: 'Architecture approved.', commands: [] },
+    });
+    expect(card).toBe(await readGolden('review-architecture-accepted.md'));
+  });
+
+  it('review-architecture-changes-requested matches golden output', async () => {
+    const card = buildArchitectureReviewCard({
+      phase: 'ARCH_REVIEW',
+      phaseLabel: 'Ready for architecture review',
+      adrTitle: 'Use presentation-only command aliases',
+      adrId: 'ADR-001',
+      adrDigest: 'abc123',
+      iteration: 3,
+      overallVerdict: 'changes_requested',
+      isApproved: false,
+      forcedConvergence: true,
+      productNextAction: {
+        text: 'Review the ADR and decide.',
+        commands: ['/approve', '/request-changes', '/reject'],
+      },
+    });
+    expect(card).toBe(await readGolden('review-architecture-changes-requested.md'));
   });
 });

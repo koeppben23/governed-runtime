@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Golden baseline tests for all four review cards.** Eight exact-match
+  golden fixtures cover the reachable key states of the Plan Review Card
+  (approval-ready, changes-requested), Architecture Review Card (accepted,
+  changes-requested), Implementation Review Card (accepted, issues), and
+  Compliance Review Card (clean, issues-found). Each fixture is compared
+  byte-for-byte via `toBe()` to the shared renderer output.
+
 - **Deterministic presentation rendering for `/status`.** New `src/presentation/`
   primitives (`model.ts`, `markdown.ts`, `labels.ts`) establish a central visual
   contract: PresentationDocument with typed sections (keyValue, commandList,

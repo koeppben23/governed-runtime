@@ -4,6 +4,13 @@
  */
 import { describe, it, expect } from 'vitest';
 import { buildReviewReportCard } from './review-report-card.js';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
+async function readGolden(name: string): Promise<string> {
+  const p = resolve(__dirname, '..', '..', 'testdata', 'presentation', name);
+  return readFile(p, 'utf-8');
+}
 
 const baseInput = {
   phase: 'REVIEW_COMPLETE' as const,
@@ -116,5 +123,109 @@ describe('buildReviewReportCard', () => {
     });
     expect(card).toContain('Address critical and major findings');
     expect(card).not.toContain('No follow-up required');
+  });
+});
+
+// ─── Golden Baseline Tests ──────────────────────────────────────────────────────
+
+describe('implementation review golden fixtures', () => {
+  it('review-impl-accepted matches golden output', async () => {
+    const card = buildReviewReportCard({
+      phase: 'IMPL_REVIEW',
+      phaseLabel: 'Implementation review in progress',
+      overallStatus: 'clean',
+      findings: [],
+      completeness: {
+        overallComplete: true,
+        fourEyes: true,
+        summary: '6/6 complete, 0 missing',
+      },
+      inputOrigin: 'pr',
+    });
+    expect(card).toBe(await readGolden('review-impl-accepted.md'));
+  });
+
+  it('review-impl-changes-requested matches golden output', async () => {
+    const card = buildReviewReportCard({
+      phase: 'IMPL_REVIEW',
+      phaseLabel: 'Implementation review in progress',
+      overallStatus: 'issues',
+      findings: [
+        {
+          severity: 'critical',
+          category: 'correctness',
+          message: 'Missing null check',
+          location: 'src/payments/validate.ts',
+        },
+        {
+          severity: 'major',
+          category: 'quality',
+          message: 'Missing test coverage',
+          location: 'src/payments/routes.ts',
+        },
+      ],
+      completeness: {
+        overallComplete: false,
+        fourEyes: false,
+        summary: '4/6 complete, 2 missing',
+      },
+      inputOrigin: 'pr',
+    });
+    expect(card).toBe(await readGolden('review-impl-changes-requested.md'));
+  });
+});
+
+describe('compliance review golden fixtures', () => {
+  it('review-compliance-clean matches golden output', async () => {
+    const card = buildReviewReportCard({
+      phase: 'REVIEW_COMPLETE',
+      phaseLabel: 'Review complete',
+      overallStatus: 'clean',
+      findings: [],
+      completeness: {
+        overallComplete: true,
+        fourEyes: true,
+        summary: '3/3 complete, 0 missing',
+      },
+      inputOrigin: 'manual_text',
+      obligationId: 'oblig-001',
+      invocationSource: 'host-orchestrated',
+    });
+    expect(card).toBe(await readGolden('review-compliance-clean.md'));
+  });
+
+  it('review-compliance-issues-found matches golden output', async () => {
+    const card = buildReviewReportCard({
+      phase: 'REVIEW_COMPLETE',
+      phaseLabel: 'Review complete',
+      overallStatus: 'issues',
+      findings: [
+        {
+          severity: 'critical',
+          category: 'completeness',
+          message: 'Missing evidence',
+        },
+        {
+          severity: 'major',
+          category: 'risk',
+          message: 'Untracked dependency',
+          location: 'package.json',
+        },
+        {
+          severity: 'warning',
+          category: 'quality',
+          message: 'Missing changelog entry',
+        },
+      ],
+      completeness: {
+        overallComplete: false,
+        fourEyes: false,
+        summary: '1/3 complete, 2 missing',
+      },
+      inputOrigin: 'branch',
+      invocationSource: 'agent-submitted-attested',
+      obligationId: 'oblig-002',
+    });
+    expect(card).toBe(await readGolden('review-compliance-issues-found.md'));
   });
 });

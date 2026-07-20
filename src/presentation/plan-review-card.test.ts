@@ -16,6 +16,13 @@
  */
 import { describe, expect, it } from 'vitest';
 import { buildPlanReviewCard } from './plan-review-card.js';
+import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+
+async function readGolden(name: string): Promise<string> {
+  const p = resolve(__dirname, '..', '..', 'testdata', 'presentation', name);
+  return readFile(p, 'utf-8');
+}
 
 const fullPlanBody = [
   '## Objective',
@@ -505,5 +512,68 @@ describe('buildPlanReviewCard', () => {
 
       expect(card).not.toContain('Reviewer did NOT approve');
     });
+  });
+});
+
+// ─── Golden Baseline Tests ──────────────────────────────────────────────────────
+
+const planBody = [
+  '## Objective',
+  'Implement payment validation.',
+  '',
+  '## Approach',
+  'Use a validation pipeline.',
+  '',
+  '## Steps',
+  '1. Add validate.ts',
+  '2. Add tests',
+  '',
+  '## Files to Modify',
+  '- src/payments/validate.ts',
+  '- src/payments/validate.test.ts',
+  '',
+  '## Edge Cases',
+  '1. Empty input -> return false.',
+  '',
+  '## Validation Criteria',
+  '1. npm test passes.',
+  '',
+  '## Verification Plan',
+  '1. npm test',
+].join('\n');
+
+describe('plan review golden fixtures', () => {
+  it('review-plan-approved matches golden output', async () => {
+    const card = buildPlanReviewCard({
+      planText: planBody,
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      productNextAction: {
+        text: 'Plan ready.',
+        commands: ['/approve', '/request-changes', '/reject'],
+      },
+      planVersion: 3,
+      policyMode: 'team',
+      taskTitle: 'Add payment validation',
+      forcedConvergence: false,
+    });
+    expect(card).toBe(await readGolden('review-plan-approved.md'));
+  });
+
+  it('review-plan-changes-requested matches golden output', async () => {
+    const card = buildPlanReviewCard({
+      planText: planBody,
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      productNextAction: {
+        text: 'Plan needs revision.',
+        commands: ['/approve', '/request-changes', '/reject'],
+      },
+      planVersion: 2,
+      policyMode: 'team',
+      taskTitle: 'Add payment validation',
+      forcedConvergence: true,
+    });
+    expect(card).toBe(await readGolden('review-plan-changes-requested.md'));
   });
 });
