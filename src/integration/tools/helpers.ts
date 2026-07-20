@@ -45,7 +45,8 @@ import {
 import { resolvePolicyFromSnapshot } from '../../config/policy.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { defaultReasonRegistry } from '../../config/reasons.js';
-import { buildBlockedDiagnostics } from '../../diagnostics/index.js';
+import { buildBlockedDiagnostics, formatDiagnosticCard } from '../../diagnostics/index.js';
+import type { RuntimeDiagnostics } from '../../diagnostics/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
@@ -120,6 +121,28 @@ export function formatEval(ev: EvalResult): string {
   }
 }
 
+/**
+ * Build the shared blocked-response fields for a reason code: the structured
+ * diagnostics object (when a builder exists) and the presentation.markdown
+ * rendered through the shared renderer. Single source of truth for both
+ * blocked-response producers (formatRailResult, formatBlocked).
+ */
+function buildBlockedPresentation(
+  code: string,
+  message: string,
+  detail: Record<string, string>,
+): {
+  diagnostics?: RuntimeDiagnostics;
+  presentation?: { markdown: string };
+} {
+  const diagnostics = buildBlockedDiagnostics(code, detail);
+  if (!diagnostics) return {};
+  return {
+    diagnostics,
+    presentation: { markdown: formatDiagnosticCard({ code, message, diagnostics }) },
+  };
+}
+
 /** Format a RailResult for LLM consumption. Audit transitions in metadata channel. */
 export function formatRailResult(result: RailResult): ToolResult {
   if (result.kind === 'blocked') {
@@ -128,7 +151,10 @@ export function formatRailResult(result: RailResult): ToolResult {
       ...(result.overflow ? { overflowLimit: result.overflow.limit } : {}),
       ...getLogTraceFields(),
     });
-    const diagnostics = buildBlockedDiagnostics(result.code, {
+    // Unify the blocked surface with the rest of the presentation layer: when a
+    // structured diagnostic is available, also render it through the shared
+    // renderer so the display path matches /status, /why, /finish, and /help.
+    const blockedPresentation = buildBlockedPresentation(result.code, result.reason, {
       reason: result.reason,
     });
     return JSON.stringify({
@@ -137,7 +163,7 @@ export function formatRailResult(result: RailResult): ToolResult {
       message: result.reason,
       recovery: result.recovery,
       quickFix: result.quickFix,
-      ...(diagnostics ? { diagnostics } : {}),
+      ...blockedPresentation,
       // #428: surface structured overflow context so the plugin boundary can
       // detect and log the fail-closed overflow without parsing the message.
       ...(result.overflow ? { autoAdvanceOverflow: result.overflow } : {}),
@@ -193,14 +219,16 @@ export function formatBlocked(
 ): string {
   getAdapterLogger().warn('machine', 'tool_blocked', { code, ...getLogTraceFields() });
   const info = defaultReasonRegistry.format(code, vars);
-  const diagnostics = buildBlockedDiagnostics(info.code, vars);
+  // Render the diagnostic through the shared renderer so blocked returns from
+  // inline tool logic present consistently with the rest of the surface.
+  const blockedPresentation = buildBlockedPresentation(info.code, info.reason, vars ?? {});
   return JSON.stringify({
     error: true,
     code: info.code,
     message: info.reason,
     recovery: info.recovery,
     quickFix: info.quickFix,
-    ...(diagnostics ? { diagnostics } : {}),
+    ...blockedPresentation,
     ...(extra ?? {}),
   });
 }
@@ -489,24 +517,37 @@ function isPersistedAbort(result: Extract<RailResult, { kind: 'ok' }>): boolean 
 }
 
 /**
- * Append NextAction to a custom JSON response string.
+ * Append NextAction routing metadata to a custom JSON response string.
  *
  * Use this when a tool builds custom JSON (not via formatRailResult)
- * but still needs the mandatory NextAction footer.
+ * but still needs the machine-readable NextAction routing fields.
  *
  * Delegates to {@link enrichWithNextAction} for the actual logic —
  * this function is a thin JSON-parse/serialize wrapper for backwards
  * compatibility.
  *
+ * Contract: the appended `nextAction`/`productNextAction` fields are
+ * machine-readable ROUTING METADATA, not a pre-rendered footer. On surfaces
+ * that carry `presentation.markdown`, the user-facing next action is owned by
+ * the rendered PresentationConclusion (see src/presentation/markdown.ts); the
+ * agent must not additionally print these JSON fields as a duplicate
+ * `Next action:` line. On surfaces without `presentation.markdown`, the command
+ * template projects a single `Next action:` line from `productNextAction`.
+ *
  * @param jsonStr - The JSON string to augment (will be parsed, extended, re-serialized).
  * @param state - Current session state for NextAction resolution.
- * @returns JSON string with nextAction field + trailing footer line.
+ * @returns JSON string with nextAction routing fields.
  */
 export function appendNextAction(jsonStr: string, state: SessionState): string {
   return JSON.stringify(enrichWithNextAction(JSON.parse(jsonStr), state));
 }
 
-/** Fields appended by {@link enrichWithNextAction}. */
+/**
+ * Machine-readable NextAction routing fields appended by
+ * {@link enrichWithNextAction}. These are NOT a rendered footer — user-facing
+ * next-action text is owned by the presentation conclusion where a rendered
+ * document exists.
+ */
 export interface NextActionFields {
   nextAction: ReturnType<typeof resolveNextAction>;
   phaseLabel: string;

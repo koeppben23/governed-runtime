@@ -29,8 +29,8 @@ describe('buildReviewReportCard', () => {
       inputOrigin: 'pr',
     });
     expect(card).toContain('# FlowGuard Review Report');
-    expect(card).toContain('> **Status:** Review complete');
-    expect(card).toContain('> **Input:** pr');
+    expect(card).toContain('**Status:** Review complete');
+    expect(card).toContain('**Input:** pr');
   });
 
   it('renders references with fallback formatting', () => {

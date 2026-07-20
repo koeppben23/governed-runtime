@@ -75,6 +75,27 @@ describe('renderMarkdown', () => {
     expect(result).toBe('**Phase:** Planning\n**Policy:** Team\n\nDone.');
   });
 
+  it('renders a title section as an H1 with canonical spacing', () => {
+    const doc: ReviewCardDocument = {
+      kind: 'review_card',
+      sections: [
+        { kind: 'title', text: 'FlowGuard Plan Review' },
+        { kind: 'keyValue', items: [{ label: 'Status', value: 'Approved' }] },
+      ],
+    };
+    const result = renderMarkdown(doc);
+    assertRendererInvariants(result);
+    expect(result).toBe('# FlowGuard Plan Review\n\n**Status:** Approved');
+  });
+
+  it('throws when a title section text is empty', () => {
+    const doc: ReviewCardDocument = {
+      kind: 'review_card',
+      sections: [{ kind: 'title', text: '   ' }],
+    };
+    expect(() => renderMarkdown(doc)).toThrow(/TitleSection: text must not be empty/);
+  });
+
   it('renders commandList with available and recommended actions', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
@@ -247,6 +268,42 @@ describe('renderMarkdown', () => {
     expect(result).toContain('• `/request-changes` — Revise');
     expect(result).toContain('• `/reject` — Reject');
     expect(result).not.toContain('→');
+  });
+
+  it('throws when terminal conclusion message violates the structural contract', () => {
+    const doc: CompactCardDocument = {
+      kind: 'compact_card',
+      density: 'compact',
+      sections: [],
+      // Trailing whitespace would otherwise silently break the document
+      // invariants — the renderer must fail closed.
+      conclusion: { kind: 'terminal', message: 'Done.   ' },
+    };
+    expect(() => renderMarkdown(doc)).toThrow(/Presentation contract violation/);
+  });
+
+  it('throws when terminal conclusion message is empty', () => {
+    const doc: CompactCardDocument = {
+      kind: 'compact_card',
+      density: 'compact',
+      sections: [],
+      conclusion: { kind: 'terminal', message: '' },
+    };
+    expect(() => renderMarkdown(doc)).toThrow(/terminal message must not be empty/);
+  });
+
+  it('throws when decision_required question violates the structural contract', () => {
+    const doc: CompactCardDocument = {
+      kind: 'compact_card',
+      density: 'compact',
+      sections: [],
+      conclusion: {
+        kind: 'decision_required',
+        question: 'Choose a verdict.\n',
+        actions: [{ invocation: '/approve', description: 'Accept', visibility: 'available' }],
+      },
+    };
+    expect(() => renderMarkdown(doc)).toThrow(/Presentation contract violation/);
   });
 
   it('renders findings section', () => {

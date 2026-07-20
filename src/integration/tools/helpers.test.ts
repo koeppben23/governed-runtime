@@ -50,6 +50,24 @@ describe('formatBlocked', () => {
     expect(result.code).toBe('NONEXISTENT_CODE');
     expect(typeof result.message).toBe('string');
   });
+
+  it('omits presentation.markdown for codes without a diagnostic builder', () => {
+    const result = parseJSON(formatBlocked('COMMAND_NOT_ALLOWED'));
+    expect(result.diagnostics).toBeUndefined();
+    expect(result.presentation).toBeUndefined();
+  });
+
+  it('renders presentation.markdown via the shared renderer for diagnostic-bearing codes', () => {
+    const result = parseJSON(formatBlocked('PLUGIN_ENFORCEMENT_UNAVAILABLE'));
+    expect(result.diagnostics).toBeDefined();
+    const presentation = result.presentation as { markdown: string } | undefined;
+    expect(presentation).toBeDefined();
+    expect(typeof presentation!.markdown).toBe('string');
+    // Rendered through the shared renderer: blocker section + no leading/trailing newline.
+    expect(presentation!.markdown).toContain('FlowGuard blocked this action.');
+    expect(presentation!.markdown.startsWith('\n')).toBe(false);
+    expect(presentation!.markdown.endsWith('\n')).toBe(false);
+  });
 });
 
 describe('formatAutoAdvanceOverflow', () => {

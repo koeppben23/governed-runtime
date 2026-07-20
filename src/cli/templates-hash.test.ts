@@ -184,9 +184,16 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // to render Markdown guidance verbatim instead of raw JSON. /implement and
     // /plan include resume hints to retrieve artifact content via
     // flowguard_help({ includeArtifactContent: true }).
+    // Refreshed for presentation-unification: /status, /why, and /finish
+    // Done-when now defer to the rendered presentation.markdown conclusion (the
+    // trailing →/• command line or ## Decision required block) as the canonical
+    // next-action guidance and forbid appending a duplicate `Next action:` line
+    // when presentation.markdown is present. The `Next action:` requirement now
+    // scopes to the fallback projection only. Changes the /status, /why, and
+    // /finish bodies and therefore the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'd3f5917ded29c8c2870269e4862655d02e814430301462656dcacad449c35b6b',
+      '2cf109cf9c0081dd21bbc7b7f85d5ef2fdfbc9f504f5fa6af50ae1d7740b5b4b',
     );
   });
 

@@ -30,6 +30,7 @@ import type {
   PresentationConclusion,
   PresentationAction,
   KeyValueItem,
+  TitleSection,
   BlockerSection,
   ChecklistSection,
   CodeSection,
@@ -46,7 +47,7 @@ import type {
   HelpArtifactSection,
   EmbeddedMarkdownSection,
 } from './model.js';
-import { validateCodeLanguage, PresentationContractError } from './model.js';
+import { validateCodeLanguage, normalizedMarkdown, PresentationContractError } from './model.js';
 import { GUIDANCE_STATUS_LABELS } from './labels.js';
 
 // ─── Document Renderer ─────────────────────────────────────────────────────────
@@ -78,6 +79,8 @@ function sectionHeading(section: { readonly heading?: string }): string {
 
 function renderSection(section: PresentationSection): string {
   switch (section.kind) {
+    case 'title':
+      return renderTitle(section);
     case 'keyValue':
       return sectionHeading(section) + renderKeyValue(section.items);
     case 'commandList':
@@ -112,6 +115,13 @@ function renderSection(section: PresentationSection): string {
 }
 
 // ─── Section Renderers ─────────────────────────────────────────────────────────
+
+function renderTitle(section: TitleSection): string {
+  if (section.text.trim().length === 0) {
+    throw new PresentationContractError('TitleSection: text must not be empty');
+  }
+  return `# ${section.text}`;
+}
 
 function renderKeyValue(items: readonly KeyValueItem[]): string {
   return items.map((item) => `**${item.label}:** ${item.value}`).join('\n');
@@ -378,7 +388,7 @@ function renderHelpArtifact(section: HelpArtifactSection): string {
 }
 
 function renderEmbeddedMarkdown(section: EmbeddedMarkdownSection): string {
-  if (section.label.trim().length === 0) {
+  if (section.label !== undefined && section.label.trim().length === 0) {
     throw new PresentationContractError('EmbeddedMarkdownSection: label must not be empty');
   }
 
@@ -390,7 +400,7 @@ function renderEmbeddedMarkdown(section: EmbeddedMarkdownSection): string {
     );
   }
 
-  return `**${section.label}:**\n${content}`;
+  return section.label !== undefined ? `**${section.label}:**\n${content}` : content;
 }
 
 // ─── Conclusion Renderer ───────────────────────────────────────────────────────
@@ -400,16 +410,35 @@ function renderConclusion(conclusion: PresentationConclusion): string {
     case 'next_action':
       return renderAction(conclusion.action);
     case 'decision_required': {
+      // The question is free-form text sourced from upstream projections
+      // (e.g. productNextAction/evalResult). Validate it against the
+      // structural contract so a stray trailing newline/whitespace fails
+      // closed instead of silently violating the document invariants.
+      const question = normalizedMarkdown(conclusion.question);
+      if (question.length === 0) {
+        throw new PresentationContractError(
+          'PresentationConclusion: decision_required question must not be empty',
+        );
+      }
       const lines: string[] = [];
       lines.push(`## Decision required\n`);
-      lines.push(conclusion.question);
+      lines.push(question);
       for (const action of conclusion.actions) {
         lines.push(renderAction(action));
       }
       return lines.join('\n');
     }
-    case 'terminal':
-      return conclusion.message;
+    case 'terminal': {
+      // Terminal message is free-form upstream text; enforce the same
+      // structural contract as all other rendered content.
+      const message = normalizedMarkdown(conclusion.message);
+      if (message.length === 0) {
+        throw new PresentationContractError(
+          'PresentationConclusion: terminal message must not be empty',
+        );
+      }
+      return message;
+    }
   }
 }
 

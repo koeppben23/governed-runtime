@@ -130,6 +130,18 @@ export interface ChecklistItem {
 
 // ─── Section Variants ──────────────────────────────────────────────────────────
 
+/**
+ * Top-level document title, rendered as a single H1 (`# text`).
+ *
+ * Distinct from a section `heading` (rendered as `## heading`). Use for the
+ * card/document title only — there must be at most one TitleSection per
+ * document, placed first. The renderer enforces non-empty text.
+ */
+export interface TitleSection {
+  readonly kind: 'title';
+  readonly text: string;
+}
+
 export interface KeyValueSection {
   readonly kind: 'keyValue';
   /** Rendered as `## heading` when present. */
@@ -316,12 +328,17 @@ export interface EmbeddedMarkdownSection {
   readonly kind: 'embeddedMarkdown';
   /** Rendered as `## heading` when present. */
   readonly heading?: string;
-  /** Plain-text label — renderer wraps in `**...:**`. */
-  readonly label: string;
+  /**
+   * Optional plain-text label — renderer wraps in `**...:**` above the content.
+   * Omit for verbatim body sections that carry their own `heading` and need no
+   * inline label (e.g. a plan/ADR body under `## Proposed Plan`).
+   */
+  readonly label?: string;
   readonly content: string;
 }
 
 export type PresentationSection =
+  | TitleSection
   | KeyValueSection
   | CommandListSection
   | BlockerSection
