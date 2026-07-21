@@ -137,6 +137,17 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'REVIEW_OBLIGATION_NOT_FOUND',
+    category: 'precondition',
+    messageTemplate:
+      'The review obligation {obligationId} is missing, consumed, blocked, or does not match the supplied review continuation.',
+    recoverySteps: [
+      'Use reviewObligationId from the original CONTENT_ANALYSIS_REQUIRED response',
+      'If the obligation was archived or the session changed, start a new /review and complete its new review lifecycle',
+    ],
+  },
+
+  {
     code: 'REVIEWER_UNAVAILABLE_STRICT',
     category: 'precondition',
     messageTemplate:
