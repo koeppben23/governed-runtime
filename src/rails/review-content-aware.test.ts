@@ -191,7 +191,6 @@ describe('HAPPY: loadExternalContent content path', () => {
 
   it('no input fields returns null', async () => {
     const result = await loadExternalContent({});
-    expect(result).not.toBeNull();
     expect(result).toBeNull();
   });
 
