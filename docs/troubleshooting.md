@@ -518,6 +518,7 @@ Status tags used:
 
 - `[ok]`, `[MISSING]`, `[MODIFIED]`, `[UNMANAGED]`, `[VERSION]`, `[INSTR_MISSING]`, `[INSTR_STALE]`, `[ERROR]`, `[WARN]` — actionable doctor check results
 - `[NOTE]` — non-actionable platform characteristics shown by doctor
+- `[written]`, `[merged]`, `[skipped]`, `[removed]` — install/uninstall file operations
 - `[error]`, `[warn]` — install/uninstall diagnostics
 - `[next]`, `[status]` — activation hints and informational notices
 
