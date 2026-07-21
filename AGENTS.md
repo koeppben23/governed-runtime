@@ -30,6 +30,19 @@ FlowGuard-governed runtime session.
 - Do not hide failures with silent fallbacks; surface errors explicitly.
 - Do not claim tests or verification passed unless they were run.
 - Mark unexecuted or unproven claims as `NOT_VERIFIED`.
+
+### Assumptions and Evidence
+
+- Do not present assumptions as established repository or runtime facts.
+- Mark necessary unverified assumptions explicitly as `ASSUMPTION`.
+- Verify assumptions before implementation when verification is reasonably
+  available.
+- Do not encode unverified assumptions into contracts, schemas, state
+  transitions, migrations, policy, security boundaries, or externally
+  observable behavior.
+- For safety-relevant or high-risk ambiguity, ask one precise question or
+  return `BLOCKED`.
+
 - For trust-boundary reviews, use `docs/trust-boundaries.md` as the canonical
   review contract.
 - Respect the file-size budget: 750 LOC is a review blocker for production
