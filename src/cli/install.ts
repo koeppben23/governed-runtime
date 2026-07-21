@@ -362,7 +362,7 @@ export function formatResult(result: CliResult): string {
     lines.push(`  [warn] ${w}`);
   }
 
-  for (const n of result.notices) {
+  for (const n of result.notices ?? []) {
     const tag = n.kind === 'next' ? 'next' : 'status';
     lines.push(`  [${tag}] ${n.message}`);
   }
@@ -380,8 +380,9 @@ function formatResultErrors(result: CliResult, lines: string[]): void {
   }
   lines.push('');
   lines.push('  Recovery plan:');
-  if (result.errorDetails.length > 0) {
-    lines.push(...formatRecoveryLines(result.errorDetails));
+  const details = result.errorDetails ?? [];
+  if (details.length > 0) {
+    lines.push(...formatRecoveryLines(details));
   } else {
     lines.push('    flowguard doctor          → diagnose remaining issues');
     lines.push('    flowguard install --force → repair incomplete install');
@@ -395,7 +396,6 @@ function computeOverallStatus(
   warnCount: number,
 ): string {
   const actionable = actionableChecks.length;
-  if (actionable === 0 && infoChecks.length > 0) return 'HEALTHY';
   if (actionable === 0) return 'NOT_VERIFIED';
   if (actionableChecks.some((c) => c.status !== 'ok' && c.status !== 'warn')) return 'NOT_VERIFIED';
   if (warnCount > 0) return 'HEALTHY_WITH_WARNINGS';
@@ -607,29 +607,18 @@ async function executeDoctorAction(args: CliArgs, cliLog: FlowGuardLogger): Prom
   console.log(`Checking FlowGuard for ${hostName} at ${displayTarget}...`);
   console.log('');
 
-  if (args.scopeSource === 'default') {
+  const scopeSource = args.scopeSource ?? 'default';
+  if (scopeSource === 'default') {
     const altScope: InstallScope = args.installScope === 'global' ? 'repo' : 'global';
     const altTarget = resolveTarget(altScope, platform);
     const altDetection = detectInstalledArtifacts(altTarget, platform);
     if (altDetection.found) {
       const altDisplay = formatTargetPath(altTarget, altScope, process.cwd());
-      if (altDetection.complete) {
-        console.error(
-          `[status] Doctor checked the ${args.installScope} installation because no scope was specified.`,
-        );
-        console.error(
-          `[status] A complete FlowGuard installation was also found at ${altDisplay}.`,
-        );
-        console.error(`[next] To inspect it, run: flowguard doctor --install-scope ${altScope}`);
-      } else {
-        console.error(
-          `[status] Doctor checked the ${args.installScope} installation because no scope was specified.`,
-        );
-        console.error(`[warn] Partial FlowGuard artifacts were found at ${altDisplay}.`);
-        console.error(
-          `[next] To inspect and repair, run: flowguard doctor --install-scope ${altScope}`,
-        );
-      }
+      console.error(
+        `[status] Doctor checked the ${args.installScope} installation because no scope was specified.`,
+      );
+      console.error(`[status] FlowGuard artifacts were also found at ${altDisplay}.`);
+      console.error(`[next] To inspect them, run: flowguard doctor --install-scope ${altScope}`);
       console.error('');
     }
   }

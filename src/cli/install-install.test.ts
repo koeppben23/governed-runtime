@@ -161,7 +161,7 @@ describe('cli/install', () => {
         false,
       );
       expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
-      expect(result.notices.some((n) => n.message.includes('claude --plugin-dir'))).toBe(true);
+      expect(result.notices!.some((n) => n.message.includes('claude --plugin-dir'))).toBe(true);
     });
 
     it('installs Codex plugin tree and marketplace registration without touching opencode.json', async () => {
@@ -186,7 +186,9 @@ describe('cli/install', () => {
       expect(marketplace.name).toBe('flowguard');
       expect(marketplace.plugins).toEqual([CODEX_MARKETPLACE_ENTRY_REPO]);
       expect(existsSync(path.join(tmpDir, 'opencode.json'))).toBe(false);
-      expect(result.notices.some((n) => n.message.includes('INSTALLED_AND_REGISTERED'))).toBe(true);
+      expect(result.notices!.some((n) => n.message.includes('INSTALLED_AND_REGISTERED'))).toBe(
+        true,
+      );
       expect(result.warnings).toContain('Codex native plugin load: NOT_VERIFIED_NATIVE_LOAD');
 
       const entry = CODEX_MARKETPLACE_ENTRY_REPO;
@@ -329,7 +331,7 @@ describe('cli/install', () => {
       const result = await install(repoArgs({ coreTarball: tarball }));
       expect(result.errors).toEqual([]);
       expect(result.warnings).toEqual([]);
-      expect(result.notices).toEqual([
+      expect(result.notices!).toEqual([
         {
           kind: 'next',
           message: 'Restart OpenCode to activate FlowGuard (plugins are loaded once at startup).',
@@ -531,7 +533,7 @@ describe('cli/install', () => {
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
       expect(result.errors).toEqual([]);
-      expect(result.notices.some((n) => n.message.includes('Restart OpenCode'))).toBe(true);
+      expect(result.notices!.some((n) => n.message.includes('Restart OpenCode'))).toBe(true);
     });
 
     it('BAD: reports error when package manager install fails', async () => {
@@ -1159,7 +1161,7 @@ describe('cli/install', () => {
       const checksumsFile = await createChecksumsFile(path.basename(tarball), expectedHash);
       const result = await install(repoArgs({ coreTarball: tarball, checksumsFile }));
       expect(result.errors).toEqual([]);
-      expect(result.notices.some((n) => n.message.includes('Restart OpenCode'))).toBe(true);
+      expect(result.notices!.some((n) => n.message.includes('Restart OpenCode'))).toBe(true);
       expect(existsSync(path.join(tmpDir, '.opencode', MANDATES_FILENAME))).toBe(true);
     });
 

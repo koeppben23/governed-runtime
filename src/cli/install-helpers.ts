@@ -664,8 +664,7 @@ export function detectInstalledArtifacts(
   }
 
   const found = results.some((r) => r.ok);
-  const complete = results.every((r) => r.ok);
   const artifacts = results.filter((r) => r.ok).map((r) => r.file);
 
-  return { found, complete, artifacts };
+  return { found, artifacts };
 }

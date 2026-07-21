@@ -39,11 +39,14 @@ const RECOVERY_MAP: Record<
     'Download the tarball matching installer version from the releases page',
   TARBALL_CHECKSUMS_UNREADABLE: 'Ensure checksums.sha256 is readable next to the tarball',
   TARBALL_SHA256_MISMATCH: 'Re-download tarball and checksums file; verify with sha256sum -c',
+  TARBALL_INTEGRITY_FAILED:
+    'Inspect the integrity error above, re-download the release artifacts, and retry verification.',
   ALREADY_INSTALLED: 'Add --force to overwrite, or run uninstall first',
   DEPENDENCY_INSTALL_FAILED: 'Run npm install or bun install manually in the target directory',
   INSTALL_LOCK_CONFLICT: (detail) => {
-    const p = detail.recoveryContext?.path ?? '~/.config/opencode/.flowguard-install.lock';
-    return `Remove stale lock file: rm -f ${p}`;
+    if (!detail.recoveryContext?.path)
+      return 'Remove the stale FlowGuard installation lock and retry';
+    return `Remove stale lock file: rm -f ${detail.recoveryContext.path}`;
   },
 };
 

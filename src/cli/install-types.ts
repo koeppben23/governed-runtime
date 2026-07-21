@@ -30,7 +30,7 @@ export type ScopeSource = 'default' | 'cli';
 export interface CliArgs {
   action: CliAction;
   installScope: InstallScope;
-  scopeSource: ScopeSource;
+  scopeSource?: ScopeSource;
   installPlatform?: InstallPlatform;
   policyMode: PolicyMode;
   force: boolean;
@@ -64,14 +64,13 @@ export interface CliResult {
   target: string;
   ops: FileOp[];
   errors: string[];
-  errorDetails: CliError[];
+  errorDetails?: CliError[];
   warnings: string[];
-  notices: CliNotice[];
+  notices?: CliNotice[];
 }
 
 export interface ArtifactDetection {
   found: boolean;
-  complete: boolean;
   artifacts: string[];
 }
 
