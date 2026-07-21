@@ -1,6 +1,6 @@
-# Quick Start
+# Quick Start (OpenCode)
 
-Get FlowGuard up and running in 5 minutes.
+This Quick Start applies to OpenCode, the fully supported GA host.
 
 ## Prerequisites
 

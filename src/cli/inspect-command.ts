@@ -73,7 +73,10 @@ Modes:
 Options:
   --session <id>  Session ID to inspect
   --json          Output ComplianceSummary as JSON (requires --session)
-  -h, --help      Show this help`;
+  -h, --help      Show this help
+
+inspect operates on the current repository and does not accept
+installation-target or host-selection flags.`;
 }
 
 // ─── Session Discovery ────────────────────────────────────────────────────────

@@ -96,6 +96,7 @@ export function repoArgs(overrides: Partial<CliArgs> = {}): CliArgs {
   return {
     action: 'install',
     installScope: 'repo',
+    scopeSource: 'default',
     policyMode: 'solo',
     force: false,
     coreTarball: undefined,
@@ -108,6 +109,7 @@ export function globalArgs(overrides: Partial<CliArgs> = {}): CliArgs {
   return {
     action: 'install',
     installScope: 'global',
+    scopeSource: 'default',
     policyMode: 'solo',
     force: false,
     coreTarball: undefined,

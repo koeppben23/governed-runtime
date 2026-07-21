@@ -24,28 +24,14 @@ import {
   REVIEWER_AGENT_FILENAME,
   REVIEWER_AGENT,
   FLOWGUARD_MANDATES_BODY,
+  MANDATES_FILENAME,
 } from './templates.js';
 
 // ─── Typed Errors ────────────────────────────────────────────────────────────
 
-export type InstallErrorCode =
-  | 'TARBALL_CHECKSUMS_UNREADABLE'
-  | 'TARBALL_DUPLICATE_ENTRY'
-  | 'TARBALL_NOT_FOUND'
-  | 'TARBALL_SHA256_MISMATCH'
-  | 'REVIEWER_CONFIG_REJECTED'
-  | 'REVIEWER_CONFIG_INVALID'
-  | 'REVIEWER_TUNING_UNSUPPORTED';
-
-export class InstallError extends Error {
-  readonly code: InstallErrorCode;
-
-  constructor(code: InstallErrorCode, message: string) {
-    super(message);
-    this.name = 'InstallError';
-    this.code = code;
-  }
-}
+export type { InstallErrorCode } from './install-types.js';
+import { InstallError } from './install-recovery.js';
+export { InstallError };
 
 // ---- re-export everything from split modules for backward compatibility ----
 export type {
@@ -58,6 +44,10 @@ export type {
   DoctorStatus,
   DoctorCheck,
   PolicyMode,
+  CliError,
+  CliNotice,
+  ArtifactDetection,
+  ScopeSource,
 } from './install-types.js';
 export {
   PACKAGE_VERSION,
@@ -94,7 +84,7 @@ export {
 } from './install-json.js';
 export { hashText as sha256 };
 
-import type { InstallScope, InstallPlatform, FileOp } from './install-types.js';
+import type { InstallScope, InstallPlatform, FileOp, ArtifactDetection } from './install-types.js';
 
 // ---- Path Resolution ----
 
@@ -630,4 +620,51 @@ async function removeDirectoryRecursively(directoryPath: string): Promise<void> 
     await unlink(childPath);
   }
   await rmdir(directoryPath);
+}
+
+// ─── Structured Error Helpers (in install-recovery.ts) ────────────────────────
+
+export { formatRecoveryLines, pushError, toCliError } from './install-recovery.js';
+
+// ─── Artifact Detection ──────────────────────────────────────────────────────
+
+function checkArtifactExistence(
+  target: string,
+  relativePath: string,
+): { file: string; ok: boolean } {
+  const fullPath = join(target, relativePath);
+  return { file: relativePath, ok: existsSync(fullPath) };
+}
+
+export function detectInstalledArtifacts(
+  target: string,
+  platform: InstallPlatform,
+): ArtifactDetection {
+  const results: { file: string; ok: boolean }[] = [];
+
+  if (platform === 'opencode') {
+    results.push(checkArtifactExistence(target, MANDATES_FILENAME));
+    results.push(checkArtifactExistence(target, 'tools/flowguard.ts'));
+    results.push(checkArtifactExistence(target, 'plugins/flowguard-audit.ts'));
+    results.push(checkArtifactExistence(target, 'flowguard.json'));
+  } else if (platform === 'claude-code') {
+    results.push(
+      checkArtifactExistence(target, join('flowguard-plugin', '.claude-plugin', 'plugin.json')),
+    );
+    results.push(checkArtifactExistence(target, '.mcp.json'));
+    results.push(checkArtifactExistence(target, join('hooks', 'hooks.json')));
+    results.push(
+      checkArtifactExistence(target, join('flowguard-plugin', 'agents', 'flowguard-reviewer.md')),
+    );
+  } else {
+    results.push(checkArtifactExistence(target, join('.codex-plugin', 'plugin.json')));
+    results.push(checkArtifactExistence(target, '.mcp.json'));
+    results.push(checkArtifactExistence(target, join('hooks', 'hooks.json')));
+    results.push(checkArtifactExistence(target, join('subagents', 'flowguard-reviewer.md')));
+  }
+
+  const found = results.some((r) => r.ok);
+  const artifacts = results.filter((r) => r.ok).map((r) => r.file);
+
+  return { found, artifacts };
 }

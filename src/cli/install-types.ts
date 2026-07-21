@@ -25,9 +25,12 @@ export type InstallPlatform = HostId;
 
 export type CliAction = 'install' | 'uninstall' | 'doctor' | 'run' | 'serve' | 'inspect';
 
+export type ScopeSource = 'default' | 'cli';
+
 export interface CliArgs {
   action: CliAction;
   installScope: InstallScope;
+  scopeSource?: ScopeSource;
   installPlatform?: InstallPlatform;
   policyMode: PolicyMode;
   force: boolean;
@@ -43,11 +46,32 @@ export interface FileOp {
   reason?: string;
 }
 
+export interface CliError {
+  code?: InstallErrorCode;
+  message: string;
+  recoveryContext?: {
+    path?: string;
+    target?: string;
+  };
+}
+
+export interface CliNotice {
+  kind: 'next' | 'status';
+  message: string;
+}
+
 export interface CliResult {
   target: string;
   ops: FileOp[];
   errors: string[];
+  errorDetails?: CliError[];
   warnings: string[];
+  notices?: CliNotice[];
+}
+
+export interface ArtifactDetection {
+  found: boolean;
+  artifacts: string[];
 }
 
 export type DoctorStatus =
@@ -59,7 +83,8 @@ export type DoctorStatus =
   | 'instruction_missing'
   | 'instruction_stale'
   | 'error'
-  | 'warn';
+  | 'warn'
+  | 'info';
 
 export interface DoctorCheck {
   file: string;
@@ -127,3 +152,22 @@ export const FLOWGUARD_REVIEWER_EFFORT_ENV = 'FLOWGUARD_REVIEWER_EFFORT';
 export const VALID_EFFORT_PATTERN = /^[a-z]+$/;
 
 export const OPENCODE_CONFIG_FILENAMES = ['opencode.jsonc', 'opencode.json'] as const;
+
+// ─── Typed Error Codes ───────────────────────────────────────────────────────
+
+export type InstallErrorCode =
+  | 'TARBALL_CHECKSUMS_UNREADABLE'
+  | 'TARBALL_DUPLICATE_ENTRY'
+  | 'TARBALL_NOT_FOUND'
+  | 'TARBALL_SHA256_MISMATCH'
+  | 'TARBALL_NAME_INVALID'
+  | 'TARBALL_VERSION_MISMATCH'
+  | 'TARBALL_INTEGRITY_FAILED'
+  | 'MISSING_CORE_TARBALL'
+  | 'CONFIG_INCOMPATIBLE_FLAGS'
+  | 'ALREADY_INSTALLED'
+  | 'DEPENDENCY_INSTALL_FAILED'
+  | 'INSTALL_LOCK_CONFLICT'
+  | 'REVIEWER_CONFIG_REJECTED'
+  | 'REVIEWER_CONFIG_INVALID'
+  | 'REVIEWER_TUNING_UNSUPPORTED';

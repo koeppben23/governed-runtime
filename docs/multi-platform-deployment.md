@@ -67,7 +67,7 @@ Expected output (truncated):
   [ok] ~/.config/opencode/tools/flowguard.ts
   [ok] ~/.config/opencode/agents/flowguard-reviewer.md
   [ok] ~/.config/opencode/commands/hydrate.md
-  ... (20 command files — 12 canonical + 8 product aliases)
+  ... (installed command files)
   [ok] ~/.config/opencode/package.json
   [ok] ~/.config/opencode/opencode.json (or opencode.jsonc when present)
   [ok] flowguard.json — config valid

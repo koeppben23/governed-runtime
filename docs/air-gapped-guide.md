@@ -103,7 +103,7 @@ Expected `doctor` output:
   [ok] ~/.config/opencode/tools/flowguard.ts
   [ok] ~/.config/opencode/plugins/flowguard-audit.ts
   [ok] ~/.config/opencode/commands/hydrate.md
-  ... (20 command files — 12 canonical + 8 product aliases)
+  ... (installed command files)
   [ok] ~/.config/opencode/commands/archive.md
   [ok] ~/.config/opencode/package.json
   [ok] ~/.config/opencode/opencode.json

@@ -18,7 +18,8 @@ import type { FlowGuardLogger } from '../logging/logger.js';
 import { HOST_IDS } from '../shared/hosts.js';
 import { POLICY_MODES } from '../state/policy-mode.js';
 import type { CliParseResult } from './parse-result.js';
-import { formatTargetPath } from './install-helpers.js';
+import { formatTargetPath, detectInstalledArtifacts } from './install-helpers.js';
+import { formatRecoveryLines } from './install-recovery.js';
 import {
   type InstallScope,
   type InstallPlatform,
@@ -28,6 +29,7 @@ import {
   type CliResult,
   type DoctorStatus,
   type DoctorCheck,
+  type ScopeSource,
   PACKAGE_VERSION,
   SHIPPED_EXECUTABLE_CHECK,
   resolvePackageRoot,
@@ -79,6 +81,7 @@ const VALID_ACTIONS: readonly CliAction[] = [
 
 interface ParseState {
   installScope: InstallScope;
+  scopeSource: ScopeSource;
   installPlatform: InstallPlatform;
   policyMode: PolicyMode;
   force: boolean;
@@ -91,6 +94,7 @@ interface ParseState {
 function initialParseState(): ParseState {
   return {
     installScope: 'global',
+    scopeSource: 'default',
     installPlatform: 'opencode',
     // Fail-closed default: a fresh install is human-gated (team) unless the
     // operator passes --policy-mode solo|team-ci for auto-approve behavior.
@@ -124,6 +128,7 @@ function isValidLogMode(value: string): value is 'file' | 'console' | 'file+cons
 function validateAndSetScope(st: ParseState, value: string): string | true {
   if (!isValidScope(value)) return `Invalid install scope: ${value}`;
   st.installScope = value;
+  st.scopeSource = 'cli';
   return true;
 }
 
@@ -242,6 +247,7 @@ function buildArgs(action: CliAction, st: ParseState): CliArgs {
   return {
     action,
     installScope: st.installScope,
+    scopeSource: st.scopeSource,
     installPlatform: st.installPlatform,
     policyMode: st.policyMode,
     force: st.force,
@@ -261,6 +267,7 @@ function makeDelegatedResult(
       args: {
         action: action as CliAction,
         installScope: 'global',
+        scopeSource: 'default',
         installPlatform: 'opencode',
         policyMode: 'team',
         force: false,
@@ -324,15 +331,21 @@ export function parseArgs(
 
 // ─── CLI Entry Point ──────────────────────────────────────────────────────────
 
+function countOps(ops: Array<{ action: string }>) {
+  return {
+    written: ops.filter((o) => o.action === 'written').length,
+    merged: ops.filter((o) => o.action === 'merged').length,
+    skipped: ops.filter((o) => o.action === 'skipped').length,
+    removed: ops.filter((o) => o.action === 'removed').length,
+  };
+}
+
 /**
  * Format a CliResult for human-readable console output.
  */
 export function formatResult(result: CliResult): string {
   const lines: string[] = [];
-  const written = result.ops.filter((o) => o.action === 'written').length;
-  const merged = result.ops.filter((o) => o.action === 'merged').length;
-  const skipped = result.ops.filter((o) => o.action === 'skipped').length;
-  const removed = result.ops.filter((o) => o.action === 'removed').length;
+  const { written, merged, skipped, removed } = countOps(result.ops);
 
   for (const op of result.ops) {
     const suffix = op.reason ? ` (${op.reason})` : '';
@@ -349,19 +362,44 @@ export function formatResult(result: CliResult): string {
     lines.push(`  [warn] ${w}`);
   }
 
-  if (result.errors.length > 0) {
-    lines.push('');
-    for (const err of result.errors) {
-      lines.push(`  [error] ${err}`);
-    }
-    lines.push('');
-    lines.push('  Recovery plan:');
+  for (const n of result.notices ?? []) {
+    const tag = n.kind === 'next' ? 'next' : 'status';
+    lines.push(`  [${tag}] ${n.message}`);
+  }
+
+  formatResultErrors(result, lines);
+
+  return lines.join('\n');
+}
+
+function formatResultErrors(result: CliResult, lines: string[]): void {
+  if (result.errors.length === 0) return;
+  lines.push('');
+  for (const err of result.errors) {
+    lines.push(`  [error] ${err}`);
+  }
+  lines.push('');
+  lines.push('  Recovery plan:');
+  const details = result.errorDetails ?? [];
+  if (details.length > 0) {
+    lines.push(...formatRecoveryLines(details));
+  } else {
     lines.push('    flowguard doctor          → diagnose remaining issues');
     lines.push('    flowguard install --force → repair incomplete install');
     lines.push('    flowguard uninstall       → remove FlowGuard completely');
   }
+}
 
-  return lines.join('\n');
+function computeOverallStatus(
+  actionableChecks: DoctorCheck[],
+  infoChecks: DoctorCheck[],
+  warnCount: number,
+): string {
+  const actionable = actionableChecks.length;
+  if (actionable === 0) return 'NOT_VERIFIED';
+  if (actionableChecks.some((c) => c.status !== 'ok' && c.status !== 'warn')) return 'NOT_VERIFIED';
+  if (warnCount > 0) return 'HEALTHY_WITH_WARNINGS';
+  return 'HEALTHY';
 }
 
 /**
@@ -385,56 +423,68 @@ export function formatDoctor(checks: DoctorCheck[], host: InstallPlatform): stri
     instruction_stale: 'INSTR_STALE',
     error: 'ERROR',
     warn: 'WARN',
+    info: 'NOTE',
   };
 
-  for (const check of checks) {
+  const actionableChecks = checks.filter((c) => c.status !== 'info');
+  const infoChecks = checks.filter((c) => c.status === 'info');
+
+  for (const check of actionableChecks) {
     const suffix = check.detail ? ` — ${check.detail}` : '';
     lines.push(`  [${iconMap[check.status]}] ${check.file}${suffix}`);
   }
 
-  const ok = checks.filter((c) => c.status === 'ok').length;
-  const warn = checks.filter((c) => c.status === 'warn').length;
-  const total = checks.length;
-
-  let overall: string;
-  if (total === 0) {
-    overall = 'NOT_VERIFIED';
-  } else if (checks.some((c) => c.status !== 'ok' && c.status !== 'warn')) {
-    overall = 'NOT_VERIFIED';
-  } else if (warn > 0) {
-    overall = 'HEALTHY_WITH_WARNINGS';
-  } else {
-    overall = 'HEALTHY';
+  if (infoChecks.length > 0) {
+    lines.push('');
+    lines.push('  Platform characteristics:');
+    lines.push('    (see docs/platform-limitations.md for details)');
+    for (const check of infoChecks) {
+      lines.push(`    [NOTE] ${check.file} — ${check.detail ?? ''}`);
+    }
   }
+
+  const ok = actionableChecks.filter((c) => c.status === 'ok').length;
+  const warn = actionableChecks.filter((c) => c.status === 'warn').length;
+  const actionable = actionableChecks.length;
+  const overall = computeOverallStatus(actionableChecks, infoChecks, warn);
 
   lines.push('');
   lines.push(`  Status: ${overall}`);
-  lines.push(`  ${ok}/${total} checks passed`);
+  lines.push(`  ${ok}/${actionable} actionable checks passed`);
 
-  if (warn > 0) {
-    const binaryWarns = checks.filter(
-      (c) => c.status === 'warn' && c.check === SHIPPED_EXECUTABLE_CHECK,
-    ).length;
-    lines.push(`  ${warn} warning(s)`);
-    if (binaryWarns > 0) {
-      lines.push(
-        `  ${binaryWarns} shipped-executable warning(s) — repair via \`flowguard install --force\` and re-run \`flowguard doctor\``,
-      );
-    }
-    const otherWarns = warn - binaryWarns;
-    if (otherWarns > 0) {
-      lines.push(
-        `  ${otherWarns} trust/context warning(s) for ${hostName} — review check details above and re-run \`flowguard doctor\``,
-      );
-    }
+  if (infoChecks.length > 0) {
+    lines.push(`  ${infoChecks.length} platform characteristic(s)`);
   }
-  if (total === 0 || checks.some((c) => c.status !== 'ok' && c.status !== 'warn')) {
+
+  if (warn > 0) appendWarningSummary(checks, lines, hostName, warn);
+  if (actionable === 0 || actionableChecks.some((c) => c.status !== 'ok' && c.status !== 'warn')) {
     lines.push(
       `  Next: \`flowguard install --force\` to repair, or \`flowguard doctor\` after fixing`,
     );
   }
 
   return lines.join('\n');
+}
+
+function appendWarningSummary(
+  checks: DoctorCheck[],
+  lines: string[],
+  hostName: string,
+  warnCount: number,
+): void {
+  const binaryWarns = checks.filter(
+    (c) => c.status === 'warn' && c.check === SHIPPED_EXECUTABLE_CHECK,
+  ).length;
+  lines.push(`  ${warnCount} warning(s)`);
+  if (binaryWarns > 0)
+    lines.push(
+      `  ${binaryWarns} shipped-executable warning(s) — repair via \`flowguard install --force\` and re-run \`flowguard doctor\``,
+    );
+  const otherWarns = warnCount - binaryWarns;
+  if (otherWarns > 0)
+    lines.push(
+      `  ${otherWarns} trust/context warning(s) for ${hostName} — review check details above and re-run \`flowguard doctor\``,
+    );
 }
 
 function getUsage(): string {
@@ -556,9 +606,28 @@ async function executeDoctorAction(args: CliArgs, cliLog: FlowGuardLogger): Prom
   const checks = await doctor(args);
   console.log(`Checking FlowGuard for ${hostName} at ${displayTarget}...`);
   console.log('');
+
+  const scopeSource = args.scopeSource ?? 'default';
+  if (scopeSource === 'default') {
+    const altScope: InstallScope = args.installScope === 'global' ? 'repo' : 'global';
+    const altTarget = resolveTarget(altScope, platform);
+    const altDetection = detectInstalledArtifacts(altTarget, platform);
+    if (altDetection.found) {
+      const altDisplay = formatTargetPath(altTarget, altScope, process.cwd());
+      console.error(
+        `[status] Doctor checked the ${args.installScope} installation because no scope was specified.`,
+      );
+      console.error(`[status] FlowGuard artifacts were also found at ${altDisplay}.`);
+      console.error(`[next] To inspect them, run: flowguard doctor --install-scope ${altScope}`);
+      console.error('');
+    }
+  }
+
   console.log(formatDoctor(checks, platform));
+  const actionableChecks = checks.filter((c) => c.status !== 'info');
   const hasFailure =
-    checks.length === 0 || checks.some((c) => c.status !== 'ok' && c.status !== 'warn');
+    actionableChecks.length === 0 ||
+    actionableChecks.some((c) => c.status !== 'ok' && c.status !== 'warn');
   logShippedExecutableFailures(checks, cliLog);
   cliLog.info('cli', 'doctor completed', {
     totalChecks: checks.length,

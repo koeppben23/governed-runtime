@@ -57,6 +57,8 @@ Claude Code and Codex are supported through MCP, hooks, and native packaging wit
 hook-gated, platform-limited guarantees. See
 [Platform Limitations](./platform-limitations.md) for details.
 
+Claude Code and Codex are technical previews; OpenCode is the fully supported GA host.
+
 ### 2. Initialize OpenCode Integration (Standard)
 
 The approved local tarball is the authoritative package source. npm/npx may use an internal cache, but no global installation is required.
@@ -177,7 +179,7 @@ Expected output:
   [ok] ~/.config/opencode/tools/flowguard.ts
   [ok] ~/.config/opencode/plugins/flowguard-audit.ts
   [ok] ~/.config/opencode/commands/hydrate.md
-  ... (20 command files total — 12 canonical + 8 product aliases)
+  ... (installed command files)
   [ok] ~/.config/opencode/commands/archive.md
   [ok] ~/.config/opencode/package.json
   [ok] ~/.config/opencode/opencode.json (or opencode.jsonc when present)
