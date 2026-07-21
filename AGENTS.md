@@ -33,15 +33,21 @@ FlowGuard-governed runtime session.
 
 ### Assumptions and Evidence
 
+Use these markers in contributor output:
+
+- `ASSUMPTION`: necessary and plausible, but not verified from repository
+  artifacts.
+- `NOT_VERIFIED`: not executed, tested, or proven with evidence.
+- `BLOCKED`: safe implementation cannot continue with the available evidence.
+
 - Do not present assumptions as established repository or runtime facts.
-- Mark necessary unverified assumptions explicitly as `ASSUMPTION`.
 - Verify assumptions before implementation when verification is reasonably
   available.
 - Do not encode unverified assumptions into contracts, schemas, state
   transitions, migrations, policy, security boundaries, or externally
   observable behavior.
-- For safety-relevant or high-risk ambiguity, ask one precise question or
-  return `BLOCKED`.
+- For safety-relevant or high-risk ambiguity, ask one precise question or state
+  that implementation is `BLOCKED`.
 
 - For trust-boundary reviews, use `docs/trust-boundaries.md` as the canonical
   review contract.
