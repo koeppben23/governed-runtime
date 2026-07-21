@@ -38,6 +38,7 @@ import {
   buildReviewReferenceInput,
   ensureMissingAnalysisObligation,
   hasReviewContentInput,
+  matchesReviewObligationInput,
   resolveSubmittedReviewObligation,
   validateSubmittedReviewFindings,
   consumeValidatedReviewObligation,
@@ -224,15 +225,14 @@ function resolveHostTaskObligation(
   return { kind: 'missing' };
 }
 
-function validateHostTaskObligationBranch(
+function validateHostTaskObligationInput(
   obligation: ReviewObligation,
-  branch: string | undefined,
+  args: ReviewToolArgs,
 ): string | null {
-  const obligationBranch = obligation.metadata?.branch;
-  if (branch !== undefined && typeof obligationBranch === 'string' && obligationBranch !== branch) {
-    return formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {
+  if (!matchesReviewObligationInput(obligation, args)) {
+    return formatBlocked('REVIEW_OBLIGATION_INPUT_MISMATCH', {
       obligationId: obligation.obligationId,
-      reason: 'The supplied branch does not match the host-task review obligation.',
+      reason: 'The supplied review input does not match the host-task review obligation.',
     });
   }
   return null;
@@ -267,8 +267,8 @@ function prepareHostTaskVerdictReview(
   }
 
   const obligation = resolution.obligation;
-  const branchBlock = validateHostTaskObligationBranch(obligation, exec.args.branch);
-  if (branchBlock) return branchBlock;
+  const inputBlock = validateHostTaskObligationInput(obligation, exec.args);
+  if (inputBlock) return inputBlock;
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
 
   if (resolved.kind === 'incoherent') {

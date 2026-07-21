@@ -182,6 +182,14 @@ export function fingerprintReviewInput(args: {
   return hashText(payload);
 }
 
+export function matchesReviewObligationInput(
+  obligation: ReviewObligation,
+  args: ReviewToolArgs,
+): boolean {
+  const inputFingerprint = obligation.metadata?.inputFingerprint;
+  return typeof inputFingerprint === 'string' && inputFingerprint === fingerprintReviewInput(args);
+}
+
 // ─── Obligation lifecycle ────────────────────────────────────────────────────
 
 export async function persistReviewObligation(
@@ -209,12 +217,13 @@ export async function ensureMissingAnalysisObligation(
     resolvedBranchSha: resolvedSource?.resolvedBranchSha,
     resolvedBaseSha: resolvedSource?.resolvedBaseSha,
   });
+  const inputFingerprint = fingerprintReviewInput(args);
   const existing = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
   const verdictFirstCall = args.reviewVerdict !== undefined && existing === null;
   if (!verdictFirstCall && args.reviewFindings !== undefined) return { message: null };
   let obligation = existing;
   if (!obligation) {
-    const metadata: Record<string, unknown> = { fingerprint };
+    const metadata: Record<string, unknown> = { fingerprint, inputFingerprint };
     if (args.branch && resolvedSource) {
       metadata.branch = args.branch;
       metadata.baseBranch = resolvedSource.baseBranch;
@@ -243,36 +252,28 @@ function isActiveReviewObligation(
   );
 }
 
-function matchesObligationBranch(
-  obligation: ReviewObligation,
-  branch: string | undefined,
-): boolean {
-  const obligationBranch = obligation.metadata?.branch;
-  return (
-    branch === undefined || typeof obligationBranch !== 'string' || obligationBranch === branch
-  );
-}
-
 function validateSuppliedReviewObligation(input: {
   suppliedObligationId: string | undefined;
   obligation: ReviewObligation | null;
   attestationObligationId: string | undefined;
-  branch: string | undefined;
+  args: ReviewToolArgs;
 }): string | null {
-  const { suppliedObligationId, obligation, attestationObligationId, branch } = input;
+  const { suppliedObligationId, obligation, attestationObligationId, args } = input;
   if (!suppliedObligationId) return null;
+  let code = 'REVIEW_OBLIGATION_NOT_FOUND';
   let message: string | null = null;
   if (!isActiveReviewObligation(obligation)) {
     message = 'The supplied reviewObligationId does not identify an active review obligation.';
-  } else if (!matchesObligationBranch(obligation, branch)) {
-    message = 'The supplied branch does not match reviewObligationId.';
+  } else if (!matchesReviewObligationInput(obligation, args)) {
+    code = 'REVIEW_OBLIGATION_INPUT_MISMATCH';
+    message = 'The supplied review input does not match reviewObligationId.';
   } else if (attestationObligationId && suppliedObligationId !== attestationObligationId) {
     message = 'reviewObligationId does not match reviewFindings.attestation.toolObligationId.';
   }
   return message
     ? JSON.stringify({
         error: true,
-        code: 'REVIEW_OBLIGATION_NOT_FOUND',
+        code,
         message,
         obligationId: suppliedObligationId,
       })
@@ -298,7 +299,7 @@ export async function resolveSubmittedReviewObligation(
     suppliedObligationId,
     obligation: obligationById,
     attestationObligationId: attToolObligationId,
-    branch: args.branch,
+    args,
   });
   if (suppliedBlock) {
     return {
@@ -317,7 +318,7 @@ export async function resolveSubmittedReviewObligation(
       iteration: 1,
       planVersion: 1,
       now,
-      metadata: { fingerprint },
+      metadata: { fingerprint, inputFingerprint: fingerprint },
     });
     await persistReviewObligation(sessDir, state, obligation);
     return {

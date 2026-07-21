@@ -542,7 +542,29 @@ describe('review (standalone flow)', () => {
         ),
       );
 
-      expect(result.code).toBe('REVIEW_OBLIGATION_NOT_FOUND');
+      expect(result.code).toBe('REVIEW_OBLIGATION_INPUT_MISMATCH');
+    });
+
+    it('host_task_required verdict rejects a branch using a text obligation ID', async () => {
+      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
+      const first = parseToolResult(
+        await review.execute({ text: 'manual diff', inputOrigin: 'manual_text' }, ctx),
+      );
+      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+
+      const result = parseToolResult(
+        await review.execute(
+          {
+            branch: 'feature-auth',
+            inputOrigin: 'branch',
+            reviewObligationId: obligationId,
+            reviewVerdict: 'accept',
+          },
+          ctx,
+        ),
+      );
+
+      expect(result.code).toBe('REVIEW_OBLIGATION_INPUT_MISMATCH');
     });
 
     it('host_task_required verdict-only review blocks verdict tampering', async () => {

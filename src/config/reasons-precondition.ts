@@ -148,6 +148,17 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'REVIEW_OBLIGATION_INPUT_MISMATCH',
+    category: 'precondition',
+    messageTemplate:
+      'The supplied review input does not match the immutable source identity for obligation {obligationId}.',
+    recoverySteps: [
+      'Reuse the exact content input from the original CONTENT_ANALYSIS_REQUIRED response',
+      'Do not combine reviewObligationId with a different branch, PR, URL, text, input origin, or references',
+    ],
+  },
+
+  {
     code: 'REVIEWER_UNAVAILABLE_STRICT',
     category: 'precondition',
     messageTemplate:
