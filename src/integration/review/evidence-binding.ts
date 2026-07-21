@@ -16,24 +16,7 @@ import type { SessionEnforcementState, HostTaskBindResult } from './enforcement/
 import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { obligationTypeForTool } from './obligation-tools.js';
 import { buildInvocationEvidence, hashFindings, hashText } from './assurance.js';
-import { getRequiredBranchReviewProvenance } from '../tools/review-tool/obligation.js';
-
-function getBranchProvenanceFields(obligation: ReviewObligation): {
-  resolvedBranchSha: string | null;
-  resolvedBaseSha: string | null;
-  reviewedContentDigest: string | null;
-} {
-  const isBranch =
-    typeof obligation.metadata?.branch === 'string' && obligation.metadata.branch.length > 0;
-  if (!isBranch)
-    return { resolvedBranchSha: null, resolvedBaseSha: null, reviewedContentDigest: null };
-  const p = getRequiredBranchReviewProvenance(obligation);
-  return {
-    resolvedBranchSha: p.resolvedBranchSha,
-    resolvedBaseSha: p.resolvedBaseSha,
-    reviewedContentDigest: p.reviewedContentDigest,
-  };
-}
+import { getBranchProvenanceFields } from './review-provenance.js';
 
 /**
  * Build host-subagent-task invocation evidence from enforcement state and persisted obligations.

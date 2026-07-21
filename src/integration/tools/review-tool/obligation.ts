@@ -8,7 +8,6 @@
  */
 
 import { hashText, hashTextShort } from '../../../shared/hashing.js';
-import { z } from 'zod';
 
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
@@ -148,51 +147,15 @@ export function hasReviewContentInput(args: {
 
 // ─── Branch Review Provenance ────────────────────────────────────────────────
 
-const BranchReviewSourceSchema = z.object({
-  branch: z.string().min(1),
-  baseBranch: z.string().min(1),
-  resolvedBranchSha: z.string().regex(/^[0-9a-f]{40,64}$/i),
-  resolvedBaseSha: z.string().regex(/^[0-9a-f]{40,64}$/i),
-});
-
-export class ReviewProvenanceError extends Error {
-  readonly code = 'REVIEW_BRANCH_PROVENANCE_MISSING' as const;
-
-  constructor(message: string) {
-    super(message);
-    this.name = 'ReviewProvenanceError';
-  }
-}
-
-export function getRequiredBranchReviewSource(
-  obligation: ReviewObligation,
-): z.infer<typeof BranchReviewSourceSchema> {
-  const parsed = BranchReviewSourceSchema.safeParse(obligation.metadata);
-  if (!parsed.success) {
-    throw new ReviewProvenanceError(
-      'Branch review obligation does not contain valid immutable provenance.',
-    );
-  }
-  return parsed.data;
-}
-
-const BranchReviewProvenanceSchema = BranchReviewSourceSchema.extend({
-  reviewedContentDigest: z.string().min(1),
-});
-
-export type RequiredBranchReviewProvenance = z.infer<typeof BranchReviewProvenanceSchema>;
-
-export function getRequiredBranchReviewProvenance(
-  obligation: ReviewObligation,
-): RequiredBranchReviewProvenance {
-  const parsed = BranchReviewProvenanceSchema.safeParse(obligation.metadata);
-  if (!parsed.success) {
-    throw new ReviewProvenanceError(
-      'Branch review obligation does not contain valid provenance including content digest.',
-    );
-  }
-  return parsed.data;
-}
+export {
+  BranchReviewSourceSchema,
+  BranchReviewProvenanceSchema,
+  ReviewProvenanceError,
+  getRequiredBranchReviewSource,
+  getRequiredBranchReviewProvenance,
+  type RequiredBranchReviewSource,
+  type RequiredBranchReviewProvenance,
+} from '../../review/review-provenance.js';
 
 export function fingerprintReviewInput(args: {
   prNumber?: number;

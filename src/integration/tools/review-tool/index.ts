@@ -246,6 +246,33 @@ function resolveHostTaskObligation(
   return { kind: 'missing' };
 }
 
+function hasNonPendingBranchObligation(state: SessionState, branch: string): boolean {
+  return (
+    state.reviewAssurance?.obligations.some(
+      (o) =>
+        o.obligationType === 'review' &&
+        o.status !== 'pending' &&
+        typeof o.metadata?.branch === 'string' &&
+        o.metadata.branch === branch,
+    ) ?? false
+  );
+}
+
+function handleMissingHostTaskObligation(
+  state: SessionState,
+  exec: ReviewExecutionContext,
+  resolvedSource: ResolvedBranchReviewSource | undefined,
+): ReviewPreparation | string | null {
+  const isFollowUp = resolvedSource === undefined;
+  if (isFollowUp && exec.args.branch && hasNonPendingBranchObligation(state, exec.args.branch)) {
+    return formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {
+      branch: exec.args.branch,
+      reason: 'The review obligation for this branch was already consumed or blocked.',
+    });
+  }
+  return null;
+}
+
 function prepareHostTaskVerdictReview(
   state: SessionState,
   result: StartedReviewResult,
@@ -263,7 +290,8 @@ function prepareHostTaskVerdictReview(
       count: String(resolution.count),
     });
   }
-  if (resolution.kind === 'missing') return null;
+  if (resolution.kind === 'missing')
+    return handleMissingHostTaskObligation(state, exec, resolvedSource);
 
   const obligation = resolution.obligation;
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);

@@ -252,7 +252,11 @@ export const ReviewInvocationEvidence = z
       .nullable()
       .optional(),
     /** SHA-256 digest of the extracted/reviewed content (branch reviews only). */
-    reviewedContentDigest: z.string().min(1).nullable().optional(),
+    reviewedContentDigest: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/i)
+      .nullable()
+      .optional(),
   })
   .readonly();
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
