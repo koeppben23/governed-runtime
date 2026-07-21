@@ -512,14 +512,14 @@ are still open (common with vitest parallel execution).
 
 ## Accessibility
 
-FlowGuard CLI output is plain text and uses explicit textual status labels. It does not rely on color to communicate status, which improves compatibility with screen readers and other assistive terminal tooling. Output is always no-color. No `--color` or `--no-color` flag is needed.
+FlowGuard CLI output is plain text and uses explicit textual status labels. It does not rely on color to communicate status, which improves compatibility with screen readers and other assistive terminal tooling. FlowGuard's current CLI formatters produce plain-text output without ANSI color styling.
 
 Status tags used:
 
-- `[ok]`, `[MISSING]`, `[MODIFIED]`, `[UNMANAGED]`, `[VERSION]`, `[INSTR_MISSING]`, `[INSTR_STALE]`, `[ERROR]`, `[WARN]`, `[NOTE]` — doctor check results
+- `[ok]`, `[MISSING]`, `[MODIFIED]`, `[UNMANAGED]`, `[VERSION]`, `[INSTR_MISSING]`, `[INSTR_STALE]`, `[ERROR]`, `[WARN]` — actionable doctor check results
+- `[NOTE]` — non-actionable platform characteristics shown by doctor
 - `[error]`, `[warn]` — install/uninstall diagnostics
 - `[next]`, `[status]` — activation hints and informational notices
-- `[NOTE]` — platform characteristics (separate from doctor checks)
 
 ## Getting Help
 
