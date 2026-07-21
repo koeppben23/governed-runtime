@@ -510,6 +510,19 @@ are still open (common with vitest parallel execution).
 
 **Solution:** Re-run the test. This is a known Windows-specific flake.
 
+## Accessibility
+
+FlowGuard CLI output uses text-based status tags and does not emit ANSI terminal formatting. This makes the output screen-reader compatible by default.
+
+Status tags used:
+
+- `[ok]`, `[MISSING]`, `[MODIFIED]`, `[ERROR]` — doctor check results
+- `[error]`, `[warn]` — install/uninstall diagnostics
+- `[next]`, `[status]` — activation hints and informational notices
+- `[NOTE]` — platform characteristics (doctor)
+
+Output is always no-color. No `--color` or `--no-color` flag is needed because the CLI never emits ANSI escape sequences.
+
 ## Getting Help
 
 1. Check `/status` for session status
