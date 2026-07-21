@@ -187,12 +187,9 @@ describe('HAPPY: loadExternalContent content path', () => {
     }
   });
 
-  it('no input fields returns content branch with empty string', async () => {
+  it('no input fields returns null', async () => {
     const result = await loadExternalContent({});
-    expect('content' in result).toBe(true);
-    if ('content' in result) {
-      expect(result.content).toBe('');
-    }
+    expect(result).toBeNull();
   });
 
   it('skipExternalContentLoad skips content loading', async () => {
@@ -216,12 +213,12 @@ describe('BAD: blocked paths', () => {
     }
   });
 
-  it('loadExternalContent with branch returns blocked (no gh CLI)', async () => {
+  it('loadExternalContent with branch without provenance returns blocked', async () => {
     const result = await loadExternalContent({ branch: 'feature/x' });
-    expect('content' in result).toBe(false);
-    if (!('content' in result)) {
+    expect(!('content' in (result ?? {}))).toBe(true);
+    if (result && 'kind' in result) {
       expect(result.kind).toBe('blocked');
-      expect(result.code).toBe('COMMAND_BLOCKED');
+      expect(result.code).toBe('REVIEW_BRANCH_PROVENANCE_MISSING');
     }
   });
 
@@ -279,17 +276,14 @@ describe('EDGE: empty and undefined input', () => {
     expect('kind' in report).toBe(false);
   });
 
-  it('all undefined fields returns content with empty string', async () => {
+  it('all undefined fields returns null', async () => {
     const result = await loadExternalContent({
       text: undefined,
       prNumber: undefined,
       branch: undefined,
       url: undefined,
     });
-    expect('content' in result).toBe(true);
-    if ('content' in result) {
-      expect(result.content).toBe('');
-    }
+    expect(result).toBeNull();
   });
 });
 

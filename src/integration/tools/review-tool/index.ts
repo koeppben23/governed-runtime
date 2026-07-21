@@ -47,8 +47,28 @@ import {
   persistReviewCompletion,
   buildReviewCompletionResponse,
 } from './completion.js';
+import { resolveBranchReviewSource } from '../../../adapters/gh-cli.js';
+import { prepareReviewContent } from '../../../rails/review.js';
 
 // ─── Review preparation orchestrator ─────────────────────────────────────────
+
+function populateBranchRefInput(
+  refInput: ReviewReferenceInput | undefined,
+  source: {
+    branch: string;
+    baseBranch: string;
+    resolvedBranchSha: string;
+    resolvedBaseSha: string;
+  },
+): ReviewReferenceInput {
+  return {
+    ...refInput,
+    branch: source.branch,
+    baseBranch: source.baseBranch,
+    resolvedBranchSha: source.resolvedBranchSha,
+    resolvedBaseSha: source.resolvedBaseSha,
+  };
+}
 
 async function prepareReviewExecution(
   sessDir: string,
@@ -59,19 +79,35 @@ async function prepareReviewExecution(
   const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec);
   if (hostTaskVerdict) return hostTaskVerdict;
 
+  // Resolve immutable branch source exactly once, before any fingerprinting
+  const resolvedSource = exec.args.branch ? resolveBranchReviewSource(exec.args.branch) : undefined;
+
   const missingAnalysis = await ensureMissingAnalysisObligation(
     sessDir,
     state,
     exec.args,
     exec.now,
+    resolvedSource,
   );
   if (missingAnalysis) return missingAnalysis;
 
   let refInput = buildReviewReferenceInput(exec.args);
+  if (resolvedSource) {
+    refInput = populateBranchRefInput(refInput, resolvedSource);
+  }
   if (exec.args.reviewFindings === undefined) {
     return { result, refInput, validatedReviewObligation: null };
   }
+  return finishFindingsSubmission(sessDir, state, result, exec, refInput);
+}
 
+async function finishFindingsSubmission(
+  sessDir: string,
+  state: SessionState,
+  result: StartedReviewResult,
+  exec: ReviewExecutionContext,
+  refInput: ReviewReferenceInput | undefined,
+): Promise<ReviewPreparation | string> {
   const resolved = await resolveSubmittedReviewObligation(sessDir, state, exec.args, exec.now);
   if (resolved.blocked) return resolved.blocked;
   const validationBlock = validateSubmittedReviewFindings(exec.args, resolved.obligation);
@@ -84,6 +120,16 @@ async function prepareReviewExecution(
   );
   if (recorded.blocked) return recorded.blocked;
   if (refInput) refInput = { ...refInput, skipExternalContentLoad: true };
+  // Carry obligation provenance into refInput for the findings-submission path
+  const meta = resolved.obligation.metadata;
+  if (typeof meta?.resolvedBranchSha === 'string' && typeof meta?.resolvedBaseSha === 'string') {
+    refInput = {
+      ...refInput,
+      reviewObligationId: resolved.obligation.obligationId,
+      resolvedBranchSha: meta.resolvedBranchSha,
+      resolvedBaseSha: meta.resolvedBaseSha,
+    };
+  }
   return {
     result: recorded.result,
     refInput,
@@ -292,12 +338,24 @@ export const review: ToolDefinition = {
       const prepared = await prepareReviewWithoutExternalCalls(args, context);
       if (typeof prepared === 'string') return prepared;
 
-      // External content loading and analyzer execution happen outside the session write lock.
+      // Prepare external content before executing review, so we can bind the
+      // content digest to the obligation before the reviewer starts.
+      const contentResult = await prepareReviewContent(
+        prepared.refInput,
+        undefined /* dnsLookup */,
+      );
+      if (contentResult && 'kind' in contentResult) {
+        return formatBlockedReviewReport(contentResult);
+      }
+
+      const externalContent = contentResult?.content;
+      // Execute review with pre-loaded content to avoid double-loading
       const reviewResult = await executeReview(
         prepared.result.state,
         prepared.now,
         buildReviewExecutors(args, prepared.effectiveReviewFindings),
         prepared.refInput,
+        externalContent,
       );
       return await persistCompletedReview(args, context, reviewResult, prepared.now);
     } catch (err) {

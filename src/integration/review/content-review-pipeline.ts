@@ -47,7 +47,10 @@ async function loadContentForReview(
   const { deps, reviewCtx } = ctx;
   const refInput = extractContentRefInput(input);
   const contentResult = await loadExternalContent(refInput);
-  const hasContent = 'content' in contentResult && typeof contentResult.content === 'string';
+  const hasContent =
+    contentResult !== null &&
+    !('kind' in contentResult) &&
+    typeof contentResult.content === 'string';
   if (!hasContent) {
     if (strictEnforcement) {
       await blockReviewOutcomeHelper(deps, ctx, 'STRICT_REVIEW_ORCHESTRATION_FAILED', {

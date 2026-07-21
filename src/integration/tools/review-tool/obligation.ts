@@ -8,6 +8,7 @@
  */
 
 import { hashText, hashTextShort } from '../../../shared/hashing.js';
+import { z } from 'zod';
 
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
@@ -26,6 +27,7 @@ import {
 } from '../../review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { writeStateWithArtifacts } from '../helpers.js';
+import { type ResolvedBranchReviewSource } from '../../../adapters/gh-cli.js';
 import type { ReviewToolArgs, StartedReviewResult } from './types.js';
 
 // ─── Formatting helpers ──────────────────────────────────────────────────────
@@ -144,6 +146,36 @@ export function hasReviewContentInput(args: {
   );
 }
 
+// ─── Branch Review Provenance ────────────────────────────────────────────────
+
+const BranchReviewSourceSchema = z.object({
+  branch: z.string().min(1),
+  baseBranch: z.string().min(1),
+  resolvedBranchSha: z.string().regex(/^[0-9a-f]{40,64}$/i),
+  resolvedBaseSha: z.string().regex(/^[0-9a-f]{40,64}$/i),
+});
+
+export class ReviewProvenanceError extends Error {
+  readonly code = 'REVIEW_BRANCH_PROVENANCE_MISSING' as const;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ReviewProvenanceError';
+  }
+}
+
+export function getRequiredBranchReviewSource(
+  obligation: ReviewObligation,
+): z.infer<typeof BranchReviewSourceSchema> {
+  const parsed = BranchReviewSourceSchema.safeParse(obligation.metadata);
+  if (!parsed.success) {
+    throw new ReviewProvenanceError(
+      'Branch review obligation does not contain valid immutable provenance.',
+    );
+  }
+  return parsed.data;
+}
+
 export function fingerprintReviewInput(args: {
   prNumber?: number;
   branch?: string;
@@ -151,6 +183,8 @@ export function fingerprintReviewInput(args: {
   text?: string;
   inputOrigin?: string;
   references?: unknown;
+  resolvedBranchSha?: string;
+  resolvedBaseSha?: string;
 }): string {
   const payload = JSON.stringify({
     prNumber: args.prNumber,
@@ -159,6 +193,8 @@ export function fingerprintReviewInput(args: {
     textHash: args.text ? hashTextShort(args.text, 16) : undefined,
     inputOrigin: args.inputOrigin,
     references: args.references ? hashTextShort(JSON.stringify(args.references), 16) : undefined,
+    resolvedBranchSha: args.resolvedBranchSha,
+    resolvedBaseSha: args.resolvedBaseSha,
   });
   return hashText(payload);
 }
@@ -181,25 +217,33 @@ export async function ensureMissingAnalysisObligation(
   state: SessionState,
   args: ReviewToolArgs,
   now: string,
+  resolvedSource?: ResolvedBranchReviewSource,
 ): Promise<string | null> {
   if (!hasReviewContentInput(args)) return null;
-  const fingerprint = fingerprintReviewInput(args);
+
+  const fingerprint = fingerprintReviewInput({
+    ...args,
+    resolvedBranchSha: resolvedSource?.resolvedBranchSha,
+    resolvedBaseSha: resolvedSource?.resolvedBaseSha,
+  });
   const existing = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
-  // A verdict-bearing FIRST call with no pending obligation yet must create the
-  // obligation here (the host-task verdict path deferred to us via null), even
-  // if it erroneously carried a placeholder reviewFindings object. This keeps
-  // such a call on the "create pending obligation -> CONTENT_ANALYSIS_REQUIRED"
-  // path instead of falling through to the SDK reviewFindings-submission path.
   const verdictFirstCall = args.reviewVerdict !== undefined && existing === null;
   if (!verdictFirstCall && args.reviewFindings !== undefined) return null;
   let obligation = existing;
   if (!obligation) {
+    const metadata: Record<string, unknown> = { fingerprint };
+    if (args.branch && resolvedSource) {
+      metadata.branch = args.branch;
+      metadata.baseBranch = resolvedSource.baseBranch;
+      metadata.resolvedBranchSha = resolvedSource.resolvedBranchSha;
+      metadata.resolvedBaseSha = resolvedSource.resolvedBaseSha;
+    }
     obligation = createReviewObligation({
       obligationType: 'review',
       iteration: 1,
       planVersion: 1,
       now,
-      metadata: { fingerprint },
+      metadata,
     });
     await persistReviewObligation(sessDir, state, obligation);
   }
