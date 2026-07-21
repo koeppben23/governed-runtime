@@ -17,6 +17,11 @@ import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../tool-names.js'
 import { obligationTypeForTool } from './obligation-tools.js';
 import { buildInvocationEvidence, hashFindings, hashText } from './assurance.js';
 
+function readMetadataString(obligation: ReviewObligation, key: string): string | null {
+  const val = obligation.metadata?.[key];
+  return typeof val === 'string' ? val : null;
+}
+
 /**
  * Build host-subagent-task invocation evidence from enforcement state and persisted obligations.
  *
@@ -110,6 +115,9 @@ export function buildHostTaskEvidence(
     ...transport,
     capturedVerdict: latest.capturedFindings?.overallVerdict,
     capturedRawFindings: normalizedFindings,
+    resolvedBranchSha: readMetadataString(matchedObligation, 'resolvedBranchSha'),
+    resolvedBaseSha: readMetadataString(matchedObligation, 'resolvedBaseSha'),
+    reviewedContentDigest: readMetadataString(matchedObligation, 'reviewedContentDigest'),
   });
 
   return {

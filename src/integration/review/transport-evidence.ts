@@ -24,6 +24,11 @@ import {
   validateStrictAttestation,
 } from './assurance.js';
 
+function readMetaStr(obligation: ReviewObligation, key: string): string | null {
+  const val = obligation.metadata?.[key];
+  return typeof val === 'string' ? val : null;
+}
+
 export type TransportEvidenceBindResult =
   | { readonly status: 'none' }
   | {
@@ -269,6 +274,9 @@ function buildManualTransportInvocation(
     source: 'agent-submitted-attested',
     capturedVerdict: findings.overallVerdict,
     capturedRawFindings: findings,
+    resolvedBranchSha: readMetaStr(obligation, 'resolvedBranchSha'),
+    resolvedBaseSha: readMetaStr(obligation, 'resolvedBaseSha'),
+    reviewedContentDigest: readMetaStr(obligation, 'reviewedContentDigest'),
   });
 }
 

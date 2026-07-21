@@ -27,6 +27,7 @@ import {
   InputOriginSchema,
   ExternalReferenceSchema,
   ReviewFindings,
+  type ReviewObligation,
 } from '../../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import type { ReviewExecutionContext, ReviewPreparation } from './types.js';
@@ -216,7 +217,7 @@ function findHostTaskObligation(
   state: SessionState,
   args: ReviewToolArgs,
   resolvedSource?: ResolvedBranchReviewSource,
-) {
+): ReviewObligation | null {
   const fingerprint = computeHostTaskFingerprint(args, resolvedSource);
   const obligation = findLatestPendingReviewObligation(
     state.reviewAssurance,
@@ -225,17 +226,19 @@ function findHostTaskObligation(
   );
   if (obligation) return obligation;
   // On follow-up calls without resolved source, search pending obligations
-  // whose metadata.branch matches the input branch
+  // whose metadata.branch matches. Require exactly one match — fail if ambiguous.
   if (resolvedSource === undefined && args.branch) {
-    return (
-      state.reviewAssurance?.obligations.find(
-        (o) =>
-          o.obligationType === 'review' &&
-          o.status === 'pending' &&
-          typeof o.metadata?.branch === 'string' &&
-          o.metadata.branch === args.branch,
-      ) ?? null
+    const assurances = state.reviewAssurance?.obligations;
+    if (!assurances) return null;
+    const candidates = assurances.filter(
+      (o) =>
+        o.obligationType === 'review' &&
+        o.status === 'pending' &&
+        typeof o.metadata?.branch === 'string' &&
+        o.metadata.branch === args.branch,
     );
+    if (candidates.length === 1) return candidates[0] ?? null;
+    return null; // zero or multiple — do not guess
   }
   return null;
 }
