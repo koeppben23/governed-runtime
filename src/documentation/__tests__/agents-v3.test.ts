@@ -81,13 +81,11 @@ describe('repository AGENTS guidance', () => {
       const lines = content.split('\n').length;
 
       expect(lines).toBeGreaterThanOrEqual(25);
-      // Budget recalibrated for Assumptions and Evidence section (PR #723).
-      // The 16-line addition adds ~1300 chars of contributor guidance — a 9%
-      // file-size increase. The guard is reset with generous headroom:
-      // 189 lines / 9733 chars as of 2026-07, capped at 195 / 10000.
-      // Future growth beyond these limits requires its own guard recalibration.
-      expect(lines).toBeLessThanOrEqual(195);
-      expect(content.length).toBeLessThanOrEqual(10000);
+      // Budget recalibrated for comprehensive restructuring (PR #723).
+      // Restructured Verification, expanded Assumptions, new PR metadata
+      // rules. 266 lines / 10970 chars as of 2026-07.
+      expect(lines).toBeLessThanOrEqual(270);
+      expect(content.length).toBeLessThanOrEqual(11500);
     });
 
     it('keeps guidance docs free of second mandatory output semantics', async () => {
