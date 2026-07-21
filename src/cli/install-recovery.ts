@@ -92,7 +92,7 @@ export function formatRecoveryLines(
   return lines;
 }
 
-/** Single write boundary for install/uninstall errors. Keeps errors:string[] and errorDetails:CliError[] in sync. */
+/** Write boundary for structured install/uninstall errors. Keeps errors:string[] and errorDetails:CliError[] in sync. */
 export function pushError(
   errors: string[],
   errorDetails: CliError[],

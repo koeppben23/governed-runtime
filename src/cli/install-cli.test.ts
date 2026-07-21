@@ -149,6 +149,16 @@ describe('cli/formatResult', () => {
       expect(output).toContain('[INSTR_STALE]');
       expect(output).toContain('[ERROR]');
     });
+
+    it('all-info checks produce NOT_VERIFIED status', () => {
+      const checks: DoctorCheck[] = [
+        { file: 'trust://opencode/authority', status: 'info' },
+        { file: 'trust://opencode/capabilities', status: 'info' },
+      ];
+      const output = formatDoctor(checks, 'opencode');
+      expect(output).toContain('Status: NOT_VERIFIED');
+      expect(output).toContain('0/0 actionable checks passed');
+    });
   });
 
   describe('PERF', () => {

@@ -624,9 +624,10 @@ async function executeDoctorAction(args: CliArgs, cliLog: FlowGuardLogger): Prom
   }
 
   console.log(formatDoctor(checks, platform));
+  const actionableChecks = checks.filter((c) => c.status !== 'info');
   const hasFailure =
-    checks.length === 0 ||
-    checks.some((c) => c.status !== 'ok' && c.status !== 'warn' && c.status !== 'info');
+    actionableChecks.length === 0 ||
+    actionableChecks.some((c) => c.status !== 'ok' && c.status !== 'warn');
   logShippedExecutableFailures(checks, cliLog);
   cliLog.info('cli', 'doctor completed', {
     totalChecks: checks.length,
