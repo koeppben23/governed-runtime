@@ -213,34 +213,37 @@ function computeHostTaskFingerprint(
   });
 }
 
-function findHostTaskObligation(
+type HostTaskObligationResolution =
+  | { kind: 'found'; obligation: ReviewObligation }
+  | { kind: 'missing' }
+  | { kind: 'ambiguous'; count: number };
+
+function resolveHostTaskObligation(
   state: SessionState,
   args: ReviewToolArgs,
   resolvedSource?: ResolvedBranchReviewSource,
-): ReviewObligation | null {
+): HostTaskObligationResolution {
   const fingerprint = computeHostTaskFingerprint(args, resolvedSource);
   const obligation = findLatestPendingReviewObligation(
     state.reviewAssurance,
     'review',
     fingerprint,
   );
-  if (obligation) return obligation;
-  // On follow-up calls without resolved source, search pending obligations
-  // whose metadata.branch matches. Require exactly one match — fail if ambiguous.
+  if (obligation) return { kind: 'found', obligation };
+  // On follow-up calls without resolved source, find by branch metadata
   if (resolvedSource === undefined && args.branch) {
-    const assurances = state.reviewAssurance?.obligations;
-    if (!assurances) return null;
-    const candidates = assurances.filter(
-      (o) =>
-        o.obligationType === 'review' &&
-        o.status === 'pending' &&
-        typeof o.metadata?.branch === 'string' &&
-        o.metadata.branch === args.branch,
-    );
-    if (candidates.length === 1) return candidates[0] ?? null;
-    return null; // zero or multiple — do not guess
+    const candidates =
+      state.reviewAssurance?.obligations.filter(
+        (o) =>
+          o.obligationType === 'review' &&
+          o.status === 'pending' &&
+          typeof o.metadata?.branch === 'string' &&
+          o.metadata.branch === args.branch,
+      ) ?? [];
+    if (candidates.length === 1) return { kind: 'found', obligation: candidates[0]! };
+    if (candidates.length > 1) return { kind: 'ambiguous', count: candidates.length };
   }
-  return null;
+  return { kind: 'missing' };
 }
 
 function prepareHostTaskVerdictReview(
@@ -252,17 +255,17 @@ function prepareHostTaskVerdictReview(
   if (exec.policy !== 'host_task_required' || exec.args.reviewVerdict === undefined) return null;
   if (!hasReviewContentInput(exec.args)) return null;
 
-  const obligation = findHostTaskObligation(state, exec.args, resolvedSource);
+  const resolution = resolveHostTaskObligation(state, exec.args, resolvedSource);
 
-  // First content-aware /review call that already carries a reviewVerdict but
-  // has NO pending obligation yet: do NOT terminally block on missing host-task
-  // evidence. Fall through (return null) so prepareReviewExecution reaches
-  // ensureMissingAnalysisObligation, which creates the PENDING obligation and
-  // returns CONTENT_ANALYSIS_REQUIRED — exactly like a verdict-less first call.
-  // Otherwise the reviewer Task would have nothing to bind to and the flow
-  // wedges (a verdict in the first call could never succeed).
-  if (obligation === null) return null;
+  if (resolution.kind === 'ambiguous') {
+    return formatBlocked('REVIEW_OBLIGATION_AMBIGUOUS', {
+      branch: exec.args.branch!,
+      count: String(resolution.count),
+    });
+  }
+  if (resolution.kind === 'missing') return null;
 
+  const obligation = resolution.obligation;
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
 
   if (resolved.kind === 'incoherent') {

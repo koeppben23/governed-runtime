@@ -23,10 +23,23 @@ import {
   hashText,
   validateStrictAttestation,
 } from './assurance.js';
+import { getRequiredBranchReviewProvenance } from '../tools/review-tool/obligation.js';
 
-function readMetaStr(obligation: ReviewObligation, key: string): string | null {
-  const val = obligation.metadata?.[key];
-  return typeof val === 'string' ? val : null;
+function getBranchProvenanceFields(obligation: ReviewObligation): {
+  resolvedBranchSha: string | null;
+  resolvedBaseSha: string | null;
+  reviewedContentDigest: string | null;
+} {
+  const isBranch =
+    typeof obligation.metadata?.branch === 'string' && obligation.metadata.branch.length > 0;
+  if (!isBranch)
+    return { resolvedBranchSha: null, resolvedBaseSha: null, reviewedContentDigest: null };
+  const p = getRequiredBranchReviewProvenance(obligation);
+  return {
+    resolvedBranchSha: p.resolvedBranchSha,
+    resolvedBaseSha: p.resolvedBaseSha,
+    reviewedContentDigest: p.reviewedContentDigest,
+  };
 }
 
 export type TransportEvidenceBindResult =
@@ -274,9 +287,7 @@ function buildManualTransportInvocation(
     source: 'agent-submitted-attested',
     capturedVerdict: findings.overallVerdict,
     capturedRawFindings: findings,
-    resolvedBranchSha: readMetaStr(obligation, 'resolvedBranchSha'),
-    resolvedBaseSha: readMetaStr(obligation, 'resolvedBaseSha'),
-    reviewedContentDigest: readMetaStr(obligation, 'reviewedContentDigest'),
+    ...getBranchProvenanceFields(obligation),
   });
 }
 

@@ -16,10 +16,23 @@ import type { SessionEnforcementState, HostTaskBindResult } from './enforcement/
 import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { obligationTypeForTool } from './obligation-tools.js';
 import { buildInvocationEvidence, hashFindings, hashText } from './assurance.js';
+import { getRequiredBranchReviewProvenance } from '../tools/review-tool/obligation.js';
 
-function readMetadataString(obligation: ReviewObligation, key: string): string | null {
-  const val = obligation.metadata?.[key];
-  return typeof val === 'string' ? val : null;
+function getBranchProvenanceFields(obligation: ReviewObligation): {
+  resolvedBranchSha: string | null;
+  resolvedBaseSha: string | null;
+  reviewedContentDigest: string | null;
+} {
+  const isBranch =
+    typeof obligation.metadata?.branch === 'string' && obligation.metadata.branch.length > 0;
+  if (!isBranch)
+    return { resolvedBranchSha: null, resolvedBaseSha: null, reviewedContentDigest: null };
+  const p = getRequiredBranchReviewProvenance(obligation);
+  return {
+    resolvedBranchSha: p.resolvedBranchSha,
+    resolvedBaseSha: p.resolvedBaseSha,
+    reviewedContentDigest: p.reviewedContentDigest,
+  };
 }
 
 /**
@@ -115,9 +128,7 @@ export function buildHostTaskEvidence(
     ...transport,
     capturedVerdict: latest.capturedFindings?.overallVerdict,
     capturedRawFindings: normalizedFindings,
-    resolvedBranchSha: readMetadataString(matchedObligation, 'resolvedBranchSha'),
-    resolvedBaseSha: readMetadataString(matchedObligation, 'resolvedBaseSha'),
-    reviewedContentDigest: readMetadataString(matchedObligation, 'reviewedContentDigest'),
+    ...getBranchProvenanceFields(matchedObligation),
   });
 
   return {

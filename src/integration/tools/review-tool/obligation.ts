@@ -176,6 +176,24 @@ export function getRequiredBranchReviewSource(
   return parsed.data;
 }
 
+const BranchReviewProvenanceSchema = BranchReviewSourceSchema.extend({
+  reviewedContentDigest: z.string().min(1),
+});
+
+export type RequiredBranchReviewProvenance = z.infer<typeof BranchReviewProvenanceSchema>;
+
+export function getRequiredBranchReviewProvenance(
+  obligation: ReviewObligation,
+): RequiredBranchReviewProvenance {
+  const parsed = BranchReviewProvenanceSchema.safeParse(obligation.metadata);
+  if (!parsed.success) {
+    throw new ReviewProvenanceError(
+      'Branch review obligation does not contain valid provenance including content digest.',
+    );
+  }
+  return parsed.data;
+}
+
 export function fingerprintReviewInput(args: {
   prNumber?: number;
   branch?: string;
