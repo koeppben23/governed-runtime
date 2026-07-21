@@ -38,6 +38,8 @@ export type ReviewPreparation = {
   validatedReviewObligation: ReviewObligation | null;
   /** Newly created pending obligation (first content-aware call). */
   pendingObligation?: ReviewObligation;
+  /** Blocking message to return after content preparation (e.g. CONTENT_ANALYSIS_REQUIRED). */
+  blockMessage?: string;
   effectiveReviewFindings?: ReviewFindings;
   evidenceInvocationId?: string;
   nativeAttestationRejection?: NativeAttestationRejection;

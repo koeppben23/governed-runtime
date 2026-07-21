@@ -24,6 +24,7 @@ import {
   formatSubagentReviewNotInvoked,
   fingerprintReviewInput,
   getRequiredBranchReviewSource,
+  ReviewProvenanceError,
 } from './obligation.js';
 import type {
   NativeAttestationRejection,
@@ -161,12 +162,14 @@ function getBranchProvenance(obligation: ReviewObligation): {
   const isBranchReview =
     typeof obligation.metadata?.branch === 'string' && obligation.metadata.branch.length > 0;
   if (!isBranchReview) return {};
-  // For branch reviews, fail-closed if SHAs are missing
+  // For branch reviews, all three fields must be present
   const source = getRequiredBranchReviewSource(obligation);
-  const digest =
-    typeof obligation.metadata?.reviewedContentDigest === 'string'
-      ? obligation.metadata.reviewedContentDigest
-      : null;
+  const digest = obligation.metadata?.reviewedContentDigest;
+  if (typeof digest !== 'string' || digest.length === 0) {
+    throw new ReviewProvenanceError(
+      'Branch review obligation does not contain a valid content digest.',
+    );
+  }
   return {
     resolvedBranchSha: source.resolvedBranchSha,
     resolvedBaseSha: source.resolvedBaseSha,

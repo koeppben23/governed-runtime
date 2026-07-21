@@ -139,7 +139,6 @@ async function prepareReviewExecution(
     exec.now,
     resolvedSource,
   );
-  if (missingResult.message) return missingResult.message;
 
   let refInput = buildReviewReferenceInput(exec.args);
   if (resolvedSource) {
@@ -151,6 +150,7 @@ async function prepareReviewExecution(
       refInput,
       validatedReviewObligation: null,
       pendingObligation: missingResult.obligation,
+      blockMessage: missingResult.message ?? undefined,
     };
   }
   return finishFindingsSubmission(sessDir, state, result, exec, refInput);
@@ -206,6 +206,26 @@ function computeHostTaskFingerprint(
   });
 }
 
+function findHostTaskObligation(
+  state: SessionState,
+  args: ReviewToolArgs,
+  resolvedSource?: ResolvedBranchReviewSource,
+) {
+  const obligation = findLatestPendingReviewObligation(
+    state.reviewAssurance,
+    'review',
+    computeHostTaskFingerprint(args, resolvedSource),
+  );
+  if (!obligation && resolvedSource === undefined) {
+    return findLatestPendingReviewObligation(
+      state.reviewAssurance,
+      'review',
+      fingerprintReviewInput(args),
+    );
+  }
+  return obligation;
+}
+
 function prepareHostTaskVerdictReview(
   state: SessionState,
   result: StartedReviewResult,
@@ -215,12 +235,7 @@ function prepareHostTaskVerdictReview(
   if (exec.policy !== 'host_task_required' || exec.args.reviewVerdict === undefined) return null;
   if (!hasReviewContentInput(exec.args)) return null;
 
-  const fingerprint = computeHostTaskFingerprint(exec.args, resolvedSource);
-  const obligation = findLatestPendingReviewObligation(
-    state.reviewAssurance,
-    'review',
-    fingerprint,
-  );
+  const obligation = findHostTaskObligation(state, exec.args, resolvedSource);
 
   // First content-aware /review call that already carries a reviewVerdict but
   // has NO pending obligation yet: do NOT terminally block on missing host-task
@@ -414,25 +429,27 @@ export const review: ToolDefinition = {
         return formatBlockedReviewReport(contentResult);
       }
 
-      // Bind the content digest to the obligation before starting the reviewer.
+      // Bind the content digest to the obligation before any further action.
       // First-call paths use pendingObligation; findings-submission uses validatedReviewObligation.
-      let reviewState = prepared.result.state;
       const bindTarget = prepared.pendingObligation ?? prepared.validatedReviewObligation;
       if (contentResult?.reviewedContentDigest && bindTarget?.obligationId) {
-        reviewState = await bindReviewContentDigest(
+        await bindReviewContentDigest(
           context,
           bindTarget.obligationId,
           contentResult.reviewedContentDigest,
         );
       }
 
-      const externalContent = contentResult?.content;
+      // Return the blocking message AFTER content loading and digest binding,
+      // so the obligation is fully prepared for the reviewer.
+      if (prepared.blockMessage) return prepared.blockMessage;
+
       const reviewResult = await executeReview(
-        reviewState,
+        prepared.result.state,
         prepared.now,
         buildReviewExecutors(args, prepared.effectiveReviewFindings),
         prepared.refInput,
-        externalContent,
+        contentResult?.content,
       );
       return await persistCompletedReview(args, context, reviewResult, prepared.now);
     } catch (err) {
