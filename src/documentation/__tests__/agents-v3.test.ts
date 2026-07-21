@@ -81,7 +81,10 @@ describe('repository AGENTS guidance', () => {
       const lines = content.split('\n').length;
 
       expect(lines).toBeGreaterThanOrEqual(25);
-      expect(lines).toBeLessThanOrEqual(185);
+      // Stable conciseness budget for root AGENTS.md after restructuring
+      // (PR #723). Area-specific details moved to src/{machine,config,integration}/.
+      // 187 lines / 8635 chars as of 2026-07.
+      expect(lines).toBeLessThanOrEqual(190);
       expect(content.length).toBeLessThanOrEqual(9000);
     });
 
@@ -163,5 +166,111 @@ describe('repository AGENTS guidance', () => {
         expect(content).toMatch(new RegExp(`\`${type}\``));
       }
     });
+  });
+
+  describe('Assumptions and Evidence contract (PR #723)', () => {
+    it('defines contributor evidence markers', async () => {
+      const content = await readAgents();
+
+      expect(content).toContain('`ASSUMPTION`: necessary and plausible');
+      expect(content).toContain('`NOT_VERIFIED`: not executed');
+      expect(content).toContain('`BLOCKED`: safe implementation cannot continue');
+    });
+
+    it('separates plan assumptions from implementation', async () => {
+      const content = await readAgents();
+      const unwrapped = unwrapMarkdown(content);
+
+      expect(unwrapped).toContain('Plans may contain clearly marked assumptions');
+      expect(content).toContain(
+        'Do not implement behavior that depends on an unresolved high-risk assumption.',
+      );
+    });
+
+    it('prohibits encoding unverified assumptions into contracts', async () => {
+      const content = await readAgents();
+
+      expect(content).toContain(
+        'Do not encode unverified assumptions into contracts, schemas, state',
+      );
+    });
+
+    it('requires minimum clarification or BLOCKED for high-risk ambiguity', async () => {
+      const content = await readAgents();
+
+      expect(content).toContain('ask the minimum precise');
+      expect(content).toContain('clarification needed or state that implementation is `BLOCKED`');
+    });
+  });
+
+  describe('area-specific guidance (PR #723)', () => {
+    it('links layer-specific AGENTS.md files from root', async () => {
+      const content = await readAgents();
+
+      expect(content).toContain('`src/machine/AGENTS.md`');
+      expect(content).toContain('`src/config/AGENTS.md`');
+      expect(content).toContain('`src/integration/AGENTS.md`');
+    });
+
+    it('warns that area files are local guidance, not product mandates', async () => {
+      const content = await readAgents();
+
+      expect(content).toContain(
+        'These files are local contributor guidance, not installed product mandates.',
+      );
+    });
+
+    it('src/machine/AGENTS.md exists and documents its authority', async () => {
+      const content = await fs.readFile(path.join(PROJECT_ROOT, 'src/machine/AGENTS.md'), 'utf-8');
+
+      expect(content).toContain('canonical authority');
+      expect(content).toContain('guard evaluation');
+    });
+
+    it('src/config/AGENTS.md exists and documents its authority', async () => {
+      const content = await fs.readFile(path.join(PROJECT_ROOT, 'src/config/AGENTS.md'), 'utf-8');
+
+      expect(content).toContain('canonical authority');
+      expect(content).toContain('reason codes');
+    });
+
+    it('src/integration/AGENTS.md exists and documents its boundary', async () => {
+      const content = await fs.readFile(
+        path.join(PROJECT_ROOT, 'src/integration/AGENTS.md'),
+        'utf-8',
+      );
+
+      expect(content).toContain('consumes canonical authorities');
+      expect(content).toContain('must never become a provider');
+    });
+  });
+
+  describe('CLAUDE.md bridge (PR #723)', () => {
+    it('imports root AGENTS.md via @AGENTS.md', async () => {
+      const content = await fs.readFile(path.join(PROJECT_ROOT, 'CLAUDE.md'), 'utf-8');
+
+      expect(content.replace(/\r\n/g, '\n').split('\n')[0]).toBe('@AGENTS.md');
+    });
+
+    it('does not duplicate rules from AGENTS.md', async () => {
+      const content = await fs.readFile(path.join(PROJECT_ROOT, 'CLAUDE.md'), 'utf-8');
+
+      expect(content).not.toContain('ASSUMPTION');
+      expect(content).not.toContain('BLOCKED');
+      expect(content).not.toContain('canonical authority');
+      expect(content).not.toContain('npm run lint:strict');
+    });
+
+    it.each(['machine', 'config', 'integration'])(
+      'provides a Claude Code bridge for src/%s',
+      async (layer) => {
+        const content = await fs.readFile(
+          path.join(PROJECT_ROOT, `src/${layer}/CLAUDE.md`),
+          'utf-8',
+        );
+
+        expect(content.replace(/\r\n/g, '\n').trim()).toBe('@AGENTS.md');
+      },
+    );
   });
 });
