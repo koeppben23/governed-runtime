@@ -144,6 +144,12 @@ async function prepareReviewExecution(
   if (resolvedSource) {
     refInput = populateBranchRefInput(refInput, resolvedSource);
   }
+  if (resolvedSource && missingResult.obligation) {
+    refInput = {
+      ...refInput,
+      reviewObligationId: missingResult.obligation.obligationId,
+    };
+  }
   if (exec.args.reviewFindings === undefined) {
     return {
       result,
@@ -211,19 +217,27 @@ function findHostTaskObligation(
   args: ReviewToolArgs,
   resolvedSource?: ResolvedBranchReviewSource,
 ) {
+  const fingerprint = computeHostTaskFingerprint(args, resolvedSource);
   const obligation = findLatestPendingReviewObligation(
     state.reviewAssurance,
     'review',
-    computeHostTaskFingerprint(args, resolvedSource),
+    fingerprint,
   );
-  if (!obligation && resolvedSource === undefined) {
-    return findLatestPendingReviewObligation(
-      state.reviewAssurance,
-      'review',
-      fingerprintReviewInput(args),
+  if (obligation) return obligation;
+  // On follow-up calls without resolved source, search pending obligations
+  // whose metadata.branch matches the input branch
+  if (resolvedSource === undefined && args.branch) {
+    return (
+      state.reviewAssurance?.obligations.find(
+        (o) =>
+          o.obligationType === 'review' &&
+          o.status === 'pending' &&
+          typeof o.metadata?.branch === 'string' &&
+          o.metadata.branch === args.branch,
+      ) ?? null
     );
   }
-  return obligation;
+  return null;
 }
 
 function prepareHostTaskVerdictReview(
@@ -432,8 +446,9 @@ export const review: ToolDefinition = {
       // Bind the content digest to the obligation before any further action.
       // First-call paths use pendingObligation; findings-submission uses validatedReviewObligation.
       const bindTarget = prepared.pendingObligation ?? prepared.validatedReviewObligation;
+      let reviewState = prepared.result.state;
       if (contentResult?.reviewedContentDigest && bindTarget?.obligationId) {
-        await bindReviewContentDigest(
+        reviewState = await bindReviewContentDigest(
           context,
           bindTarget.obligationId,
           contentResult.reviewedContentDigest,
@@ -445,7 +460,7 @@ export const review: ToolDefinition = {
       if (prepared.blockMessage) return prepared.blockMessage;
 
       const reviewResult = await executeReview(
-        prepared.result.state,
+        reviewState,
         prepared.now,
         buildReviewExecutors(args, prepared.effectiveReviewFindings),
         prepared.refInput,
