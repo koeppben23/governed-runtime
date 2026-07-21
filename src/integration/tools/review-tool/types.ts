@@ -36,6 +36,8 @@ export type ReviewPreparation = {
   result: StartedReviewResult;
   refInput?: ReviewReferenceInput;
   validatedReviewObligation: ReviewObligation | null;
+  /** Newly created pending obligation (first content-aware call). */
+  pendingObligation?: ReviewObligation;
   effectiveReviewFindings?: ReviewFindings;
   evidenceInvocationId?: string;
   nativeAttestationRejection?: NativeAttestationRejection;

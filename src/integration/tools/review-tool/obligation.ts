@@ -218,8 +218,8 @@ export async function ensureMissingAnalysisObligation(
   args: ReviewToolArgs,
   now: string,
   resolvedSource?: ResolvedBranchReviewSource,
-): Promise<string | null> {
-  if (!hasReviewContentInput(args)) return null;
+): Promise<{ message: string | null; obligation?: ReviewObligation }> {
+  if (!hasReviewContentInput(args)) return { message: null };
 
   const fingerprint = fingerprintReviewInput({
     ...args,
@@ -228,7 +228,7 @@ export async function ensureMissingAnalysisObligation(
   });
   const existing = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
   const verdictFirstCall = args.reviewVerdict !== undefined && existing === null;
-  if (!verdictFirstCall && args.reviewFindings !== undefined) return null;
+  if (!verdictFirstCall && args.reviewFindings !== undefined) return { message: null };
   let obligation = existing;
   if (!obligation) {
     const metadata: Record<string, unknown> = { fingerprint };
@@ -247,7 +247,7 @@ export async function ensureMissingAnalysisObligation(
     });
     await persistReviewObligation(sessDir, state, obligation);
   }
-  return formatMissingContentAnalysis(obligation.obligationId);
+  return { message: formatMissingContentAnalysis(obligation.obligationId), obligation };
 }
 
 export async function resolveSubmittedReviewObligation(

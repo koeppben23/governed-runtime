@@ -23,6 +23,7 @@ import {
   formatBlockedWithAttestation,
   formatSubagentReviewNotInvoked,
   fingerprintReviewInput,
+  getRequiredBranchReviewSource,
 } from './obligation.js';
 import type {
   NativeAttestationRejection,
@@ -152,6 +153,27 @@ export async function resolveNativeAttestation(input: {
   };
 }
 
+function getBranchProvenance(obligation: ReviewObligation): {
+  resolvedBranchSha?: string | null;
+  resolvedBaseSha?: string | null;
+  reviewedContentDigest?: string | null;
+} {
+  const isBranchReview =
+    typeof obligation.metadata?.branch === 'string' && obligation.metadata.branch.length > 0;
+  if (!isBranchReview) return {};
+  // For branch reviews, fail-closed if SHAs are missing
+  const source = getRequiredBranchReviewSource(obligation);
+  const digest =
+    typeof obligation.metadata?.reviewedContentDigest === 'string'
+      ? obligation.metadata.reviewedContentDigest
+      : null;
+  return {
+    resolvedBranchSha: source.resolvedBranchSha,
+    resolvedBaseSha: source.resolvedBaseSha,
+    reviewedContentDigest: digest,
+  };
+}
+
 // ─── Manual invocation state building ────────────────────────────────────────
 
 function buildManualInvocationState(input: {
@@ -186,18 +208,7 @@ function buildManualInvocationState(input: {
     invokedAt: now,
     fulfilledAt: now,
     source: 'agent-submitted-attested',
-    resolvedBranchSha:
-      typeof obligation.metadata?.resolvedBranchSha === 'string'
-        ? obligation.metadata.resolvedBranchSha
-        : null,
-    resolvedBaseSha:
-      typeof obligation.metadata?.resolvedBaseSha === 'string'
-        ? obligation.metadata.resolvedBaseSha
-        : null,
-    reviewedContentDigest:
-      typeof obligation.metadata?.reviewedContentDigest === 'string'
-        ? obligation.metadata.reviewedContentDigest
-        : null,
+    ...getBranchProvenance(obligation),
     ...(attestation.hostCapturedAgentId
       ? { hostCapturedAgentId: attestation.hostCapturedAgentId }
       : {}),

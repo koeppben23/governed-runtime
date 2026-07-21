@@ -87,8 +87,8 @@ async function bindReviewContentDigest(
     const updatedState: SessionState = {
       ...state,
       reviewAssurance: {
+        ...assurance,
         obligations: updatedObligations,
-        invocations: assurance.invocations ?? [],
       },
     };
 
@@ -123,30 +123,35 @@ async function prepareReviewExecution(
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
 ): Promise<ReviewPreparation | string> {
-  // Resolve immutable branch source when creating a new obligation (first call).
-  // On findings/verdict submission calls, use the obligation's stored provenance.
-  const isSubmissionCall = exec.args.reviewFindings !== undefined;
+  // Resolve immutable branch source only when no obligation exists yet
+  const isFollowUpCall =
+    exec.args.reviewFindings !== undefined || exec.args.reviewVerdict !== undefined;
   const resolvedSource =
-    exec.args.branch && !isSubmissionCall ? resolveBranchReviewSource(exec.args.branch) : undefined;
+    exec.args.branch && !isFollowUpCall ? resolveBranchReviewSource(exec.args.branch) : undefined;
 
   const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec, resolvedSource);
   if (hostTaskVerdict) return hostTaskVerdict;
 
-  const missingAnalysis = await ensureMissingAnalysisObligation(
+  const missingResult = await ensureMissingAnalysisObligation(
     sessDir,
     state,
     exec.args,
     exec.now,
     resolvedSource,
   );
-  if (missingAnalysis) return missingAnalysis;
+  if (missingResult.message) return missingResult.message;
 
   let refInput = buildReviewReferenceInput(exec.args);
   if (resolvedSource) {
     refInput = populateBranchRefInput(refInput, resolvedSource);
   }
   if (exec.args.reviewFindings === undefined) {
-    return { result, refInput, validatedReviewObligation: null };
+    return {
+      result,
+      refInput,
+      validatedReviewObligation: null,
+      pendingObligation: missingResult.obligation,
+    };
   }
   return finishFindingsSubmission(sessDir, state, result, exec, refInput);
 }
@@ -409,15 +414,14 @@ export const review: ToolDefinition = {
         return formatBlockedReviewReport(contentResult);
       }
 
-      // Bind the content digest to the obligation before starting the reviewer
+      // Bind the content digest to the obligation before starting the reviewer.
+      // First-call paths use pendingObligation; findings-submission uses validatedReviewObligation.
       let reviewState = prepared.result.state;
-      if (
-        contentResult?.reviewedContentDigest &&
-        prepared.validatedReviewObligation?.obligationId
-      ) {
+      const bindTarget = prepared.pendingObligation ?? prepared.validatedReviewObligation;
+      if (contentResult?.reviewedContentDigest && bindTarget?.obligationId) {
         reviewState = await bindReviewContentDigest(
           context,
-          prepared.validatedReviewObligation.obligationId,
+          bindTarget.obligationId,
           contentResult.reviewedContentDigest,
         );
       }
