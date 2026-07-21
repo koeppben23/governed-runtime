@@ -18,7 +18,11 @@ import {
   formatAutoAdvanceOverflow,
   formatBlocked,
 } from '../helpers.js';
-import { startReviewFlow, executeReview } from '../../../rails/review.js';
+import {
+  startReviewFlow,
+  executeReview,
+  type ReviewReferenceInput,
+} from '../../../rails/review.js';
 import {
   InputOriginSchema,
   ExternalReferenceSchema,
@@ -47,8 +51,49 @@ import {
   persistReviewCompletion,
   buildReviewCompletionResponse,
 } from './completion.js';
-import { resolveBranchReviewSource } from '../../../adapters/gh-cli.js';
+import {
+  resolveBranchReviewSource,
+  type ResolvedBranchReviewSource,
+} from '../../../adapters/gh-cli.js';
 import { prepareReviewContent } from '../../../rails/review.js';
+import { appendReviewObligation, findReviewObligationById } from '../../review/assurance.js';
+import { writeStateWithArtifacts } from '../helpers.js';
+
+// ─── Content Digest Binding ─────────────────────────────────────────────────
+
+async function bindReviewContentDigest(
+  context: Parameters<ToolDefinition['execute']>[1],
+  obligationId: string,
+  reviewedContentDigest: string,
+): Promise<SessionState> {
+  return withMutableSessionTransaction(context, async ({ sessDir, state }) => {
+    const obligation = findReviewObligationById(state.reviewAssurance, obligationId);
+    if (!obligation) throw new Error('Obligation not found for content digest binding');
+
+    const updatedMetadata = {
+      ...(typeof obligation.metadata === 'object' && obligation.metadata !== null
+        ? (obligation.metadata as Record<string, unknown>)
+        : {}),
+      reviewedContentDigest,
+    };
+
+    const updatedObligation = { ...obligation, metadata: updatedMetadata };
+    const updatedAssurance = state.reviewAssurance.obligations.map((o) =>
+      o.obligationId === obligationId ? updatedObligation : o,
+    );
+
+    const updatedState: SessionState = {
+      ...state,
+      reviewAssurance: {
+        ...state.reviewAssurance,
+        obligations: updatedAssurance,
+      },
+    };
+
+    await writeStateWithArtifacts(sessDir, updatedState);
+    return updatedState;
+  });
+}
 
 // ─── Review preparation orchestrator ─────────────────────────────────────────
 
@@ -76,11 +121,14 @@ async function prepareReviewExecution(
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
 ): Promise<ReviewPreparation | string> {
-  const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec);
-  if (hostTaskVerdict) return hostTaskVerdict;
+  // Resolve immutable branch source when creating a new obligation (first call).
+  // On findings/verdict submission calls, use the obligation's stored provenance.
+  const isSubmissionCall = exec.args.reviewFindings !== undefined;
+  const resolvedSource =
+    exec.args.branch && !isSubmissionCall ? resolveBranchReviewSource(exec.args.branch) : undefined;
 
-  // Resolve immutable branch source exactly once, before any fingerprinting
-  const resolvedSource = exec.args.branch ? resolveBranchReviewSource(exec.args.branch) : undefined;
+  const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec, resolvedSource);
+  if (hostTaskVerdict) return hostTaskVerdict;
 
   const missingAnalysis = await ensureMissingAnalysisObligation(
     sessDir,
@@ -144,11 +192,17 @@ function prepareHostTaskVerdictReview(
   state: SessionState,
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
+  resolvedSource?: ResolvedBranchReviewSource,
 ): ReviewPreparation | string | null {
   if (exec.policy !== 'host_task_required' || exec.args.reviewVerdict === undefined) return null;
   if (!hasReviewContentInput(exec.args)) return null;
 
-  const fingerprint = fingerprintReviewInput(exec.args);
+  // Use SHA-aware fingerprinting when branch source has been resolved
+  const fingerprint = fingerprintReviewInput({
+    ...exec.args,
+    resolvedBranchSha: resolvedSource?.resolvedBranchSha,
+    resolvedBaseSha: resolvedSource?.resolvedBaseSha,
+  });
   const obligation = findLatestPendingReviewObligation(
     state.reviewAssurance,
     'review',
@@ -338,8 +392,7 @@ export const review: ToolDefinition = {
       const prepared = await prepareReviewWithoutExternalCalls(args, context);
       if (typeof prepared === 'string') return prepared;
 
-      // Prepare external content before executing review, so we can bind the
-      // content digest to the obligation before the reviewer starts.
+      // Load external content and compute the content digest
       const contentResult = await prepareReviewContent(
         prepared.refInput,
         undefined /* dnsLookup */,
@@ -348,10 +401,22 @@ export const review: ToolDefinition = {
         return formatBlockedReviewReport(contentResult);
       }
 
+      // Bind the content digest to the obligation before starting the reviewer
+      let reviewState = prepared.result.state;
+      if (
+        contentResult?.reviewedContentDigest &&
+        prepared.validatedReviewObligation?.obligationId
+      ) {
+        reviewState = await bindReviewContentDigest(
+          context,
+          prepared.validatedReviewObligation.obligationId,
+          contentResult.reviewedContentDigest,
+        );
+      }
+
       const externalContent = contentResult?.content;
-      // Execute review with pre-loaded content to avoid double-loading
       const reviewResult = await executeReview(
-        prepared.result.state,
+        reviewState,
         prepared.now,
         buildReviewExecutors(args, prepared.effectiveReviewFindings),
         prepared.refInput,

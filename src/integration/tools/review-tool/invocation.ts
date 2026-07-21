@@ -186,6 +186,18 @@ function buildManualInvocationState(input: {
     invokedAt: now,
     fulfilledAt: now,
     source: 'agent-submitted-attested',
+    resolvedBranchSha:
+      typeof obligation.metadata?.resolvedBranchSha === 'string'
+        ? obligation.metadata.resolvedBranchSha
+        : null,
+    resolvedBaseSha:
+      typeof obligation.metadata?.resolvedBaseSha === 'string'
+        ? obligation.metadata.resolvedBaseSha
+        : null,
+    reviewedContentDigest:
+      typeof obligation.metadata?.reviewedContentDigest === 'string'
+        ? obligation.metadata.reviewedContentDigest
+        : null,
     ...(attestation.hostCapturedAgentId
       ? { hostCapturedAgentId: attestation.hostCapturedAgentId }
       : {}),
