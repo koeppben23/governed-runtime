@@ -145,7 +145,9 @@ describe('Claude Code plugin templates', () => {
 
     // Host-task branch: verdict only, no reviewFindings.
     expect(reviewSkill).toContain('Host-task mode');
-    expect(reviewSkill).toContain('`reviewVerdict` ONLY');
+    expect(reviewSkill).toContain(
+      '`reviewObligationId` from `requiredReviewAttestation.toolObligationId`',
+    );
     expect(reviewSkill).toContain('Do NOT submit `reviewFindings`, not even an empty placeholder');
     // SDK/manual branch is preserved but now conditional.
     expect(reviewSkill).toContain('SDK/manual mode only');

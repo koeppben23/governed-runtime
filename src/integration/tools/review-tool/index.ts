@@ -37,13 +37,11 @@ import type { ReviewToolArgs } from './types.js';
 import {
   buildReviewReferenceInput,
   ensureMissingAnalysisObligation,
-  fingerprintReviewInput,
   hasReviewContentInput,
   resolveSubmittedReviewObligation,
   validateSubmittedReviewFindings,
   consumeValidatedReviewObligation,
 } from './obligation.js';
-import { findLatestPendingReviewObligation } from '../../review/assurance.js';
 import { resolveHostTaskFindings } from '../review-validation.js';
 import { recordSubmittedReviewInvocation } from './invocation.js';
 import {
@@ -52,10 +50,7 @@ import {
   persistReviewCompletion,
   buildReviewCompletionResponse,
 } from './completion.js';
-import {
-  resolveBranchReviewSource,
-  type ResolvedBranchReviewSource,
-} from '../../../adapters/gh-cli.js';
+import { resolveBranchReviewSource } from '../../../adapters/gh-cli.js';
 import { prepareReviewContent } from '../../../rails/review.js';
 import { findReviewObligationById } from '../../review/assurance.js';
 import { writeStateWithArtifacts } from '../helpers.js';
@@ -124,16 +119,19 @@ async function prepareReviewExecution(
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
 ): Promise<ReviewPreparation | string> {
-  // Resolve immutable branch source when creating a new obligation.
-  // Skip only on findings submissions (the obligation already exists).
-  // Verdict-first calls still need source resolution for obligation creation.
+  // Resolve immutable branch source only when creating an obligation. An explicit
+  // host-task continuation is bound to its existing obligation and must not re-resolve refs.
   const isFindingsSubmission = exec.args.reviewFindings !== undefined;
+  const isHostTaskVerdictContinuation =
+    exec.policy === 'host_task_required' &&
+    exec.args.reviewVerdict !== undefined &&
+    exec.args.reviewObligationId !== undefined;
   const resolvedSource =
-    exec.args.branch && !isFindingsSubmission
+    exec.args.branch && !isFindingsSubmission && !isHostTaskVerdictContinuation
       ? resolveBranchReviewSource(exec.args.branch)
       : undefined;
 
-  const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec, resolvedSource);
+  const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec);
   if (hostTaskVerdict) return hostTaskVerdict;
 
   const missingResult = await ensureMissingAnalysisObligation(
@@ -174,7 +172,9 @@ async function finishFindingsSubmission(
   refInput: ReviewReferenceInput | undefined,
 ): Promise<ReviewPreparation | string> {
   const resolved = await resolveSubmittedReviewObligation(sessDir, state, exec.args, exec.now);
-  if (resolved.blocked) return resolved.blocked;
+  if (resolved.blocked || !resolved.obligation) {
+    return resolved.blocked ?? formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {});
+  }
   const validationBlock = validateSubmittedReviewFindings(exec.args, resolved.obligation);
   if (validationBlock) return validationBlock;
   const recorded = await recordSubmittedReviewInvocation(
@@ -205,98 +205,70 @@ async function finishFindingsSubmission(
   };
 }
 
-function computeHostTaskFingerprint(
-  args: ReviewToolArgs,
-  resolvedSource?: ResolvedBranchReviewSource,
-): string {
-  return fingerprintReviewInput({
-    ...args,
-    resolvedBranchSha: resolvedSource?.resolvedBranchSha,
-    resolvedBaseSha: resolvedSource?.resolvedBaseSha,
-  });
-}
-
 type HostTaskObligationResolution =
-  | { kind: 'found'; obligation: ReviewObligation }
-  | { kind: 'missing' }
-  | { kind: 'ambiguous'; count: number };
+  { kind: 'found'; obligation: ReviewObligation } | { kind: 'missing' };
 
 function resolveHostTaskObligation(
   state: SessionState,
-  args: ReviewToolArgs,
-  resolvedSource?: ResolvedBranchReviewSource,
+  reviewObligationId: string,
 ): HostTaskObligationResolution {
-  const fingerprint = computeHostTaskFingerprint(args, resolvedSource);
-  const obligation = findLatestPendingReviewObligation(
-    state.reviewAssurance,
-    'review',
-    fingerprint,
-  );
-  if (obligation) return { kind: 'found', obligation };
-  // On follow-up calls without resolved source, find by branch metadata
-  if (resolvedSource === undefined && args.branch) {
-    const candidates =
-      state.reviewAssurance?.obligations.filter(
-        (o) =>
-          o.obligationType === 'review' &&
-          o.status === 'pending' &&
-          typeof o.metadata?.branch === 'string' &&
-          o.metadata.branch === args.branch,
-      ) ?? [];
-    if (candidates.length === 1) return { kind: 'found', obligation: candidates[0]! };
-    if (candidates.length > 1) return { kind: 'ambiguous', count: candidates.length };
+  const obligation = findReviewObligationById(state.reviewAssurance, reviewObligationId);
+  if (
+    obligation &&
+    obligation.obligationType === 'review' &&
+    obligation.status !== 'consumed' &&
+    obligation.status !== 'blocked'
+  ) {
+    return { kind: 'found', obligation };
   }
   return { kind: 'missing' };
 }
 
-function hasNonPendingBranchObligation(state: SessionState, branch: string): boolean {
-  return (
-    state.reviewAssurance?.obligations.some(
-      (o) =>
-        o.obligationType === 'review' &&
-        o.status !== 'pending' &&
-        typeof o.metadata?.branch === 'string' &&
-        o.metadata.branch === branch,
-    ) ?? false
-  );
-}
-
-function handleMissingHostTaskObligation(
-  state: SessionState,
-  exec: ReviewExecutionContext,
-  resolvedSource: ResolvedBranchReviewSource | undefined,
-): ReviewPreparation | string | null {
-  const isFollowUp = resolvedSource === undefined;
-  if (isFollowUp && exec.args.branch && hasNonPendingBranchObligation(state, exec.args.branch)) {
+function validateHostTaskObligationBranch(
+  obligation: ReviewObligation,
+  branch: string | undefined,
+): string | null {
+  const obligationBranch = obligation.metadata?.branch;
+  if (branch !== undefined && typeof obligationBranch === 'string' && obligationBranch !== branch) {
     return formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {
-      branch: exec.args.branch,
-      reason: 'The review obligation for this branch was already consumed or blocked.',
+      obligationId: obligation.obligationId,
+      reason: 'The supplied branch does not match the host-task review obligation.',
     });
   }
   return null;
+}
+
+function getHostTaskVerdictContinuation(
+  exec: ReviewExecutionContext,
+): { reviewObligationId: string; reviewVerdict: 'accept' | 'changes_requested' } | null {
+  if (exec.policy !== 'host_task_required') return null;
+  const { reviewObligationId, reviewVerdict } = exec.args;
+  if (reviewObligationId === undefined || reviewVerdict === undefined) return null;
+  return { reviewObligationId, reviewVerdict };
 }
 
 function prepareHostTaskVerdictReview(
   state: SessionState,
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
-  resolvedSource?: ResolvedBranchReviewSource,
 ): ReviewPreparation | string | null {
-  if (exec.policy !== 'host_task_required' || exec.args.reviewVerdict === undefined) return null;
+  // A verdict without an ID is an allowed first call. It must create (or reissue
+  // instructions for) an obligation rather than guessing a continuation identity.
+  const continuation = getHostTaskVerdictContinuation(exec);
+  if (!continuation) return null;
   if (!hasReviewContentInput(exec.args)) return null;
 
-  const resolution = resolveHostTaskObligation(state, exec.args, resolvedSource);
-
-  if (resolution.kind === 'ambiguous') {
-    return formatBlocked('REVIEW_OBLIGATION_AMBIGUOUS', {
-      branch: exec.args.branch!,
-      count: String(resolution.count),
+  const resolution = resolveHostTaskObligation(state, continuation.reviewObligationId);
+  if (resolution.kind === 'missing') {
+    return formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {
+      obligationId: continuation.reviewObligationId,
+      reason: 'The host-task review obligation is missing, consumed, or blocked.',
     });
   }
-  if (resolution.kind === 'missing')
-    return handleMissingHostTaskObligation(state, exec, resolvedSource);
 
   const obligation = resolution.obligation;
+  const branchBlock = validateHostTaskObligationBranch(obligation, exec.args.branch);
+  if (branchBlock) return branchBlock;
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
 
   if (resolved.kind === 'incoherent') {
@@ -332,9 +304,9 @@ function prepareHostTaskVerdictReview(
     });
   }
 
-  if (exec.args.reviewVerdict !== resolved.findings.overallVerdict) {
+  if (continuation.reviewVerdict !== resolved.findings.overallVerdict) {
     return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
-      provided: exec.args.reviewVerdict,
+      provided: continuation.reviewVerdict,
       expected: resolved.findings.overallVerdict,
     });
   }
@@ -452,6 +424,13 @@ export const review: ToolDefinition = {
       .describe('GitHub PR number to load via gh CLI and analyze during /review.'),
     branch: z.string().optional().describe('Git branch name to load via gh CLI and analyze.'),
     url: z.string().url().optional().describe('URL to fetch and analyze during /review.'),
+    reviewObligationId: z
+      .string()
+      .uuid()
+      .optional()
+      .describe(
+        'Exact obligation ID from requiredReviewAttestation.toolObligationId. Required when submitting a host-task review verdict.',
+      ),
     reviewVerdict: z
       .enum(['accept', 'changes_requested'])
       .optional()

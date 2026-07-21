@@ -441,7 +441,11 @@ describe('review (standalone flow)', () => {
       await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
       const first = parseToolResult(
         await review.execute(
-          { branch: 'feature-auth', inputOrigin: 'branch', reviewVerdict: 'accept' },
+          {
+            branch: 'feature-auth',
+            inputOrigin: 'branch',
+            reviewVerdict: 'accept',
+          },
           ctx,
         ),
       );
@@ -467,6 +471,7 @@ describe('review (standalone flow)', () => {
       );
       expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+      expect(first.reviewObligationId).toBe(obligationId);
       await bindHostTaskReviewEvidence(obligationId);
 
       vi.mocked(ghMock.loadBranchDiff).mockImplementationOnce(() => {
@@ -475,7 +480,12 @@ describe('review (standalone flow)', () => {
 
       const result = parseToolResult(
         await review.execute(
-          { branch: 'feature-auth', inputOrigin: 'branch', reviewVerdict: 'accept' },
+          {
+            branch: 'feature-auth',
+            inputOrigin: 'branch',
+            reviewObligationId: obligationId,
+            reviewVerdict: 'accept',
+          },
           ctx,
         ),
       );
@@ -484,6 +494,55 @@ describe('review (standalone flow)', () => {
       expect(result.phase).toBe('REVIEW_COMPLETE');
       expect(result.reviewCard).toContain('host_subagent_task');
       expect(result.reviewCard).toContain('ses_review_child_host_task');
+    });
+
+    it('host_task_required verdict with an unknown obligation ID fails closed', async () => {
+      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
+      const first = parseToolResult(
+        await review.execute({ branch: 'feature-auth', inputOrigin: 'branch' }, ctx),
+      );
+      expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
+
+      const result = parseToolResult(
+        await review.execute(
+          {
+            branch: 'feature-auth',
+            inputOrigin: 'branch',
+            reviewObligationId: '00000000-0000-4000-8000-000000000999',
+            reviewVerdict: 'accept',
+          },
+          ctx,
+        ),
+      );
+
+      expect(result.code).toBe('REVIEW_OBLIGATION_NOT_FOUND');
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      expect(
+        (state!.reviewAssurance?.obligations ?? []).filter((o) => o.obligationType === 'review'),
+      ).toHaveLength(1);
+    });
+
+    it('host_task_required verdict rejects a branch that differs from its obligation', async () => {
+      await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
+      const first = parseToolResult(
+        await review.execute({ branch: 'feature-auth', inputOrigin: 'branch' }, ctx),
+      );
+      const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
+
+      const result = parseToolResult(
+        await review.execute(
+          {
+            branch: 'different-branch',
+            inputOrigin: 'branch',
+            reviewObligationId: obligationId,
+            reviewVerdict: 'accept',
+          },
+          ctx,
+        ),
+      );
+
+      expect(result.code).toBe('REVIEW_OBLIGATION_NOT_FOUND');
     });
 
     it('host_task_required verdict-only review blocks verdict tampering', async () => {
@@ -500,7 +559,12 @@ describe('review (standalone flow)', () => {
 
       const result = parseToolResult(
         await review.execute(
-          { text: 'manual diff', inputOrigin: 'manual_text', reviewVerdict: 'accept' },
+          {
+            text: 'manual diff',
+            inputOrigin: 'manual_text',
+            reviewObligationId: obligationId,
+            reviewVerdict: 'accept',
+          },
           ctx,
         ),
       );
@@ -558,7 +622,12 @@ describe('review (standalone flow)', () => {
 
       const result = parseToolResult(
         await review.execute(
-          { text: 'manual diff', inputOrigin: 'manual_text', reviewVerdict: 'accept' },
+          {
+            text: 'manual diff',
+            inputOrigin: 'manual_text',
+            reviewObligationId: obligationId,
+            reviewVerdict: 'accept',
+          },
           ctx,
         ),
       );

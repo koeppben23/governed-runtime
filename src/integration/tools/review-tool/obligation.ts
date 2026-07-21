@@ -70,6 +70,7 @@ export function formatBlockedWithAttestation(
       error: true,
       code,
       message,
+      reviewObligationId: obligationId,
       requiredReviewAttestation: {
         reviewedBy: REVIEWER_SUBAGENT_TYPE,
         mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -79,7 +80,7 @@ export function formatBlockedWithAttestation(
       reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
       recovery: [
         `Call Task tool with subagent_type: "${REVIEWER_SUBAGENT_TYPE}" and provide the content plus requiredReviewAttestation.`,
-        'After FlowGuard captures the Task evidence, re-run flowguard_review with only reviewVerdict matching the reviewer overallVerdict.',
+        'After FlowGuard captures the Task evidence, re-run flowguard_review with reviewObligationId set to requiredReviewAttestation.toolObligationId and reviewVerdict matching the reviewer overallVerdict.',
         'Do not submit, copy, or alter reviewFindings in host-task mode.',
       ],
     });
@@ -88,6 +89,7 @@ export function formatBlockedWithAttestation(
     error: true,
     code,
     message,
+    reviewObligationId: obligationId,
     ...buildRequiredReviewAttestationPayload(obligationId),
   });
 }
@@ -231,18 +233,79 @@ export async function ensureMissingAnalysisObligation(
   return { message: formatMissingContentAnalysis(obligation.obligationId), obligation };
 }
 
+function isActiveReviewObligation(
+  obligation: ReviewObligation | null,
+): obligation is ReviewObligation {
+  return (
+    obligation?.obligationType === 'review' &&
+    obligation.status !== 'consumed' &&
+    obligation.status !== 'blocked'
+  );
+}
+
+function matchesObligationBranch(
+  obligation: ReviewObligation,
+  branch: string | undefined,
+): boolean {
+  const obligationBranch = obligation.metadata?.branch;
+  return (
+    branch === undefined || typeof obligationBranch !== 'string' || obligationBranch === branch
+  );
+}
+
+function validateSuppliedReviewObligation(input: {
+  suppliedObligationId: string | undefined;
+  obligation: ReviewObligation | null;
+  attestationObligationId: string | undefined;
+  branch: string | undefined;
+}): string | null {
+  const { suppliedObligationId, obligation, attestationObligationId, branch } = input;
+  if (!suppliedObligationId) return null;
+  let message: string | null = null;
+  if (!isActiveReviewObligation(obligation)) {
+    message = 'The supplied reviewObligationId does not identify an active review obligation.';
+  } else if (!matchesObligationBranch(obligation, branch)) {
+    message = 'The supplied branch does not match reviewObligationId.';
+  } else if (attestationObligationId && suppliedObligationId !== attestationObligationId) {
+    message = 'reviewObligationId does not match reviewFindings.attestation.toolObligationId.';
+  }
+  return message
+    ? JSON.stringify({
+        error: true,
+        code: 'REVIEW_OBLIGATION_NOT_FOUND',
+        message,
+        obligationId: suppliedObligationId,
+      })
+    : null;
+}
+
 export async function resolveSubmittedReviewObligation(
   sessDir: string,
   state: SessionState,
   args: ReviewToolArgs,
   now: string,
-): Promise<{ obligation: ReviewObligation; blocked?: string }> {
+): Promise<{ obligation: ReviewObligation | null; blocked?: string }> {
   const findings = args.reviewFindings as Record<string, unknown>;
   const attToolObligationId = (findings.attestation as Record<string, unknown> | undefined)
     ?.toolObligationId as string | undefined;
-  const obligationById = attToolObligationId
-    ? findReviewObligationById(state.reviewAssurance, attToolObligationId)
-    : null;
+  const suppliedObligationId = args.reviewObligationId;
+  const obligationById = suppliedObligationId
+    ? findReviewObligationById(state.reviewAssurance, suppliedObligationId)
+    : attToolObligationId
+      ? findReviewObligationById(state.reviewAssurance, attToolObligationId)
+      : null;
+  const suppliedBlock = validateSuppliedReviewObligation({
+    suppliedObligationId,
+    obligation: obligationById,
+    attestationObligationId: attToolObligationId,
+    branch: args.branch,
+  });
+  if (suppliedBlock) {
+    return {
+      obligation: null,
+      blocked: suppliedBlock,
+    };
+  }
   const fingerprint = fingerprintReviewInput(args);
   let obligation =
     obligationById ??

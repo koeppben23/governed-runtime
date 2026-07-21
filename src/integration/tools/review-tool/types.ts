@@ -57,6 +57,8 @@ export type ReviewToolArgs = {
   prNumber?: number;
   branch?: string;
   url?: string;
+  /** Exact obligation identity required for host-task verdict continuations. */
+  reviewObligationId?: string;
   reviewVerdict?: 'accept' | 'changes_requested';
   reviewFindings?: ReviewFindings;
 };
