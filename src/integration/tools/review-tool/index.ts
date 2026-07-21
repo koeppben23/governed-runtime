@@ -56,7 +56,7 @@ import {
   type ResolvedBranchReviewSource,
 } from '../../../adapters/gh-cli.js';
 import { prepareReviewContent } from '../../../rails/review.js';
-import { appendReviewObligation, findReviewObligationById } from '../../review/assurance.js';
+import { findReviewObligationById } from '../../review/assurance.js';
 import { writeStateWithArtifacts } from '../helpers.js';
 
 // ─── Content Digest Binding ─────────────────────────────────────────────────
@@ -67,26 +67,28 @@ async function bindReviewContentDigest(
   reviewedContentDigest: string,
 ): Promise<SessionState> {
   return withMutableSessionTransaction(context, async ({ sessDir, state }) => {
-    const obligation = findReviewObligationById(state.reviewAssurance, obligationId);
+    const assurance = state.reviewAssurance;
+    if (!assurance) throw new Error('No review assurance state for content digest binding');
+
+    const obligation = findReviewObligationById(assurance, obligationId);
     if (!obligation) throw new Error('Obligation not found for content digest binding');
 
-    const updatedMetadata = {
-      ...(typeof obligation.metadata === 'object' && obligation.metadata !== null
-        ? (obligation.metadata as Record<string, unknown>)
-        : {}),
+    const existingMeta = obligation.metadata;
+    const updatedMetadata: Record<string, unknown> = {
+      ...(typeof existingMeta === 'object' && existingMeta !== null ? existingMeta : {}),
       reviewedContentDigest,
     };
 
     const updatedObligation = { ...obligation, metadata: updatedMetadata };
-    const updatedAssurance = state.reviewAssurance.obligations.map((o) =>
+    const updatedObligations = assurance.obligations.map((o) =>
       o.obligationId === obligationId ? updatedObligation : o,
     );
 
     const updatedState: SessionState = {
       ...state,
       reviewAssurance: {
-        ...state.reviewAssurance,
-        obligations: updatedAssurance,
+        obligations: updatedObligations,
+        invocations: assurance.invocations ?? [],
       },
     };
 
@@ -188,6 +190,17 @@ async function finishFindingsSubmission(
   };
 }
 
+function computeHostTaskFingerprint(
+  args: ReviewToolArgs,
+  resolvedSource?: ResolvedBranchReviewSource,
+): string {
+  return fingerprintReviewInput({
+    ...args,
+    resolvedBranchSha: resolvedSource?.resolvedBranchSha,
+    resolvedBaseSha: resolvedSource?.resolvedBaseSha,
+  });
+}
+
 function prepareHostTaskVerdictReview(
   state: SessionState,
   result: StartedReviewResult,
@@ -197,12 +210,7 @@ function prepareHostTaskVerdictReview(
   if (exec.policy !== 'host_task_required' || exec.args.reviewVerdict === undefined) return null;
   if (!hasReviewContentInput(exec.args)) return null;
 
-  // Use SHA-aware fingerprinting when branch source has been resolved
-  const fingerprint = fingerprintReviewInput({
-    ...exec.args,
-    resolvedBranchSha: resolvedSource?.resolvedBranchSha,
-    resolvedBaseSha: resolvedSource?.resolvedBaseSha,
-  });
+  const fingerprint = computeHostTaskFingerprint(exec.args, resolvedSource);
   const obligation = findLatestPendingReviewObligation(
     state.reviewAssurance,
     'review',
