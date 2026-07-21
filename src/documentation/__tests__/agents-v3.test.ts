@@ -260,5 +260,17 @@ describe('repository AGENTS guidance', () => {
       expect(content).not.toContain('canonical authority');
       expect(content).not.toContain('npm run lint:strict');
     });
+
+    it.each(['machine', 'config', 'integration'])(
+      'provides a Claude Code bridge for src/%s',
+      async (layer) => {
+        const content = await fs.readFile(
+          path.join(PROJECT_ROOT, `src/${layer}/CLAUDE.md`),
+          'utf-8',
+        );
+
+        expect(content.replace(/\r\n/g, '\n').trim()).toBe('@AGENTS.md');
+      },
+    );
   });
 });
