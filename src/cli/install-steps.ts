@@ -12,7 +12,7 @@ import { execSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
-import { InstallError } from './install-helpers.js';
+import { InstallError, pushError } from './install-helpers.js';
 import { ensureDirTracked, MutationJournal } from './install-transaction.js';
 import type { InstallMutationSink } from './install-mutation-types.js';
 import { globalConfigPath } from '../adapters/persistence.js';
@@ -43,6 +43,8 @@ import {
   type FileOp,
   type InstallPlatform,
   type RollbackEntry,
+  type CliError,
+  type CliNotice,
   FLOWGUARD_TARBALL_PATTERN,
   PACKAGE_VERSION,
   computeMandatesDigest,
@@ -66,14 +68,25 @@ export interface InstallContext {
   target: string;
   ops: FileOp[];
   errors: string[];
+  errorDetails: CliError[];
   warnings: string[];
+  notices: CliNotice[];
   args: CliArgs;
 }
 
 export function initInstallContext(args: CliArgs): InstallContext {
   const installPlatform = args.installPlatform ?? 'opencode';
   const target = resolveTarget(args.installScope, installPlatform);
-  return { installPlatform, target, ops: [], errors: [], warnings: [], args };
+  return {
+    installPlatform,
+    target,
+    ops: [],
+    errors: [],
+    errorDetails: [],
+    warnings: [],
+    notices: [],
+    args,
+  };
 }
 
 // ─── Step: Tarball validation ────────────────────────────────────────────────
@@ -89,10 +102,15 @@ export async function validateTarball(ctx: InstallContext): Promise<ValidatedTar
   const { args } = ctx;
 
   if (!args.coreTarball) {
-    ctx.errors.push(
-      `ERROR: --core-tarball is required.\n` +
-        `Usage: npx --package ./flowguard-core-${PACKAGE_VERSION()}.tgz flowguard install --core-tarball ./flowguard-core-${PACKAGE_VERSION()}.tgz\n` +
-        `Download from: https://github.com/koeppben23/governed-runtime/releases`,
+    pushError(
+      ctx.errors,
+      ctx.errorDetails,
+      new InstallError(
+        'MISSING_CORE_TARBALL',
+        `ERROR: --core-tarball is required.\n` +
+          `Usage: npx --package ./flowguard-core-${PACKAGE_VERSION()}.tgz flowguard install --core-tarball ./flowguard-core-${PACKAGE_VERSION()}.tgz\n` +
+          `Download from: https://github.com/koeppben23/governed-runtime/releases`,
+      ),
     );
     return null;
   }
@@ -100,35 +118,54 @@ export async function validateTarball(ctx: InstallContext): Promise<ValidatedTar
   const tarballPath = resolve(args.coreTarball);
 
   if (!existsSync(tarballPath)) {
-    ctx.errors.push(`ERROR: Core tarball not found: ${tarballPath}`);
+    pushError(
+      ctx.errors,
+      ctx.errorDetails,
+      new InstallError('TARBALL_NOT_FOUND', `ERROR: Core tarball not found: ${tarballPath}`),
+    );
     return null;
   }
 
   const tarballName = basename(tarballPath);
   const versionMatch = tarballName.match(FLOWGUARD_TARBALL_PATTERN);
   if (!versionMatch) {
-    ctx.errors.push(
-      'ERROR: Tarball filename must match flowguard-core-{version}.tgz\n' +
-        `  Found: ${tarballName}`,
+    pushError(
+      ctx.errors,
+      ctx.errorDetails,
+      new InstallError(
+        'TARBALL_NAME_INVALID',
+        'ERROR: Tarball filename must match flowguard-core-{version}.tgz\n' +
+          `  Found: ${tarballName}`,
+      ),
     );
     return null;
   }
   const tarballVersion = versionMatch[1];
 
   if (tarballVersion !== PACKAGE_VERSION()) {
-    ctx.errors.push(
-      `ERROR: Version mismatch.\n` +
-        `  Tarball: ${tarballVersion}\n` +
-        `  Installer: ${PACKAGE_VERSION()}\n` +
-        `  Please use the correct tarball version.`,
+    pushError(
+      ctx.errors,
+      ctx.errorDetails,
+      new InstallError(
+        'TARBALL_VERSION_MISMATCH',
+        `ERROR: Version mismatch.\n` +
+          `  Tarball: ${tarballVersion}\n` +
+          `  Installer: ${PACKAGE_VERSION()}\n` +
+          `  Please use the correct tarball version.`,
+      ),
     );
     return null;
   }
 
   if (args.checksumsFile && args.allowUnverifiedTarball) {
-    ctx.errors.push(
-      'ERROR: --checksums-file cannot be combined with --allow-unverified-tarball. ' +
-        'Choose verified installation or the explicit unverified opt-out.',
+    pushError(
+      ctx.errors,
+      ctx.errorDetails,
+      new InstallError(
+        'CONFIG_INCOMPATIBLE_FLAGS',
+        'ERROR: --checksums-file cannot be combined with --allow-unverified-tarball. ' +
+          'Choose verified installation or the explicit unverified opt-out.',
+      ),
     );
     return null;
   }
@@ -149,7 +186,12 @@ export async function validateTarball(ctx: InstallContext): Promise<ValidatedTar
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       getAdapterLogger().error('cli', 'tarball verification failed', { tarballPath, reason });
-      ctx.errors.push(`ERROR: Tarball integrity check failed: ${reason}`);
+      const code = err instanceof InstallError ? err.code : 'TARBALL_INTEGRITY_FAILED';
+      pushError(
+        ctx.errors,
+        ctx.errorDetails,
+        new InstallError(code, `ERROR: Tarball integrity check failed: ${reason}`),
+      );
       return null;
     }
   }
@@ -524,26 +566,29 @@ export async function installDependencies(
   }
 }
 
-// ─── Step: Post-install warnings ─────────────────────────────────────────────
+// ─── Step: Post-install notices ──────────────────────────────────────────────
 
 export function emitPostInstallWarnings(ctx: InstallContext): void {
   const { installPlatform, target, args } = ctx;
 
   if (installPlatform === 'claude-code') {
-    ctx.warnings.push(
-      `Load FlowGuard in Claude Code with: claude --plugin-dir ${join(target, 'flowguard-plugin')}`,
-    );
+    ctx.notices.push({
+      kind: 'next',
+      message: `Load FlowGuard in Claude Code with: claude --plugin-dir ${join(target, 'flowguard-plugin')}`,
+    });
   } else if (installPlatform === 'codex') {
-    ctx.warnings.push(
-      `Codex marketplace registration: ${codexInstallStatus(args.installScope)} at ${resolveCodexMarketplacePath(args.installScope)}`,
-    );
+    ctx.notices.push({
+      kind: 'status',
+      message: `Codex marketplace registration: ${codexInstallStatus(args.installScope)} at ${resolveCodexMarketplacePath(args.installScope)}`,
+    });
     ctx.warnings.push('Codex native plugin load: NOT_VERIFIED_NATIVE_LOAD');
     ctx.warnings.push(
       'Codex plugin hooks require [features].plugin_hooks = true and /hooks trust review before enforcement is verified.',
     );
   } else {
-    ctx.warnings.push(
-      'Restart OpenCode to activate FlowGuard (plugins are loaded once at startup).',
-    );
+    ctx.notices.push({
+      kind: 'next',
+      message: 'Restart OpenCode to activate FlowGuard (plugins are loaded once at startup).',
+    });
   }
 }

@@ -110,22 +110,22 @@ describe('validateTarball', () => {
 });
 
 describe('emitPostInstallWarnings', () => {
-  it('adds restart warning for opencode platform', () => {
+  it('adds restart notice for opencode platform', () => {
     const ctx = initInstallContext(repoArgs({ installPlatform: 'opencode' }));
     emitPostInstallWarnings(ctx);
-    expect(ctx.warnings.length).toBeGreaterThan(0);
-    expect(ctx.warnings.some((w) => w.includes('Restart'))).toBe(true);
+    expect(ctx.notices.some((n) => n.message.includes('Restart'))).toBe(true);
   });
 
-  it('adds plugin-dir guidance for claude-code', () => {
+  it('adds plugin-dir notice for claude-code', () => {
     const ctx = initInstallContext(repoArgs({ installPlatform: 'claude-code' }));
     emitPostInstallWarnings(ctx);
-    expect(ctx.warnings.some((w) => w.includes('claude --plugin-dir'))).toBe(true);
+    expect(ctx.notices.some((n) => n.message.includes('claude --plugin-dir'))).toBe(true);
   });
 
-  it('adds marketplace registration note for codex', () => {
+  it('adds marketplace registration note and native load warning for codex', () => {
     const ctx = initInstallContext(repoArgs({ installPlatform: 'codex' }));
     emitPostInstallWarnings(ctx);
-    expect(ctx.warnings.some((w) => w.includes('Codex'))).toBe(true);
+    expect(ctx.notices.some((n) => n.message.includes('Codex'))).toBe(true);
+    expect(ctx.warnings.some((w) => w.includes('NOT_VERIFIED_NATIVE_LOAD'))).toBe(true);
   });
 });

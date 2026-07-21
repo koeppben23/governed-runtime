@@ -169,17 +169,11 @@ async function gitRaw(
       });
       throw new GitError('GIT_TIMEOUT', `git ${args[0]} timed out after ${timeoutMs}ms`);
     }
-    // Extract stderr for diagnostics
     const stderr =
       typeof err === 'object' && err !== null && 'stderr' in err
         ? String((err as { stderr: unknown }).stderr).trim()
         : '';
     const msg = stderr || (err instanceof Error ? err.message : String(err));
-    getAdapterLogger().error('git', `git ${args.join(' ')} failed`, {
-      args,
-      cwd,
-      stderr: stderr || undefined,
-    });
     throw new GitError('GIT_COMMAND_FAILED', `git ${args.join(' ')} failed: ${msg}`);
   }
 }

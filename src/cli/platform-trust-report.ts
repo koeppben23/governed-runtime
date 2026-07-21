@@ -108,18 +108,18 @@ export function buildPlatformTrustReport(
   const checks: DoctorCheck[] = [
     {
       file: `trust://${host}/authority`,
-      status: 'warn',
+      status: 'info',
       detail:
         'projection-only diagnostic; FlowGuard state, policy, audit, and review evidence remain canonical authorities',
     },
     {
       file: `trust://${host}/capabilities`,
-      status: 'warn',
+      status: 'info',
       detail: `enforcement=${projection.enforcementLevel}; capabilities=${JSON.stringify(projection.capabilities)}`,
     },
     {
       file: `trust://${host}/runtime`,
-      status: 'warn',
+      status: 'info',
       detail: projection.runtimeVerification,
     },
     {
@@ -129,17 +129,17 @@ export function buildPlatformTrustReport(
     },
     {
       file: `trust://${host}/approval-primitive`,
-      status: 'warn',
+      status: 'info',
       detail: projection.approvalPrimitive,
     },
     {
       file: `trust://${host}/reviewer-transport`,
-      status: 'warn',
+      status: 'info',
       detail: projection.reviewerTransport,
     },
     {
       file: `trust://${host}/hook-semantics`,
-      status: 'warn',
+      status: 'info',
       detail: projection.hookSemantics,
     },
   ];
@@ -147,7 +147,7 @@ export function buildPlatformTrustReport(
   for (const receiptField of projection.receiptPreservation) {
     checks.push({
       file: `trust://${host}/receipt-preservation`,
-      status: 'warn',
+      status: 'info',
       detail: receiptField,
     });
   }

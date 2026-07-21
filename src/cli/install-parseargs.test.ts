@@ -34,6 +34,7 @@ describe('cli/parseArgs', () => {
       expect(args).toEqual({
         action: 'install',
         installScope: 'global',
+        scopeSource: 'default',
         installPlatform: 'opencode',
         policyMode: 'team',
         force: false,

@@ -195,5 +195,5 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
     errors.push(err instanceof Error ? err.message : String(err));
   }
 
-  return { target, ops, errors, warnings };
+  return { target, ops, errors, errorDetails: [], warnings, notices: [] };
 }

@@ -24,18 +24,13 @@ import {
   REVIEWER_AGENT_FILENAME,
   REVIEWER_AGENT,
   FLOWGUARD_MANDATES_BODY,
+  MANDATES_FILENAME,
 } from './templates.js';
 
 // ─── Typed Errors ────────────────────────────────────────────────────────────
 
-export type InstallErrorCode =
-  | 'TARBALL_CHECKSUMS_UNREADABLE'
-  | 'TARBALL_DUPLICATE_ENTRY'
-  | 'TARBALL_NOT_FOUND'
-  | 'TARBALL_SHA256_MISMATCH'
-  | 'REVIEWER_CONFIG_REJECTED'
-  | 'REVIEWER_CONFIG_INVALID'
-  | 'REVIEWER_TUNING_UNSUPPORTED';
+import type { InstallErrorCode } from './install-types.js';
+export type { InstallErrorCode } from './install-types.js';
 
 export class InstallError extends Error {
   readonly code: InstallErrorCode;
@@ -58,6 +53,10 @@ export type {
   DoctorStatus,
   DoctorCheck,
   PolicyMode,
+  CliError,
+  CliNotice,
+  ArtifactDetection,
+  ScopeSource,
 } from './install-types.js';
 export {
   PACKAGE_VERSION,
@@ -94,7 +93,13 @@ export {
 } from './install-json.js';
 export { hashText as sha256 };
 
-import type { InstallScope, InstallPlatform, FileOp } from './install-types.js';
+import type {
+  InstallScope,
+  InstallPlatform,
+  FileOp,
+  CliError,
+  ArtifactDetection,
+} from './install-types.js';
 
 // ---- Path Resolution ----
 
@@ -630,4 +635,138 @@ async function removeDirectoryRecursively(directoryPath: string): Promise<void> 
     await unlink(childPath);
   }
   await rmdir(directoryPath);
+}
+
+// ─── Structured Error Helpers ─────────────────────────────────────────────────
+
+const RECOVERY_MAP: Record<
+  string,
+  | string
+  | ((detail: {
+      code?: InstallErrorCode;
+      message: string;
+      recoveryContext?: { path?: string; target?: string };
+    }) => string)
+> = {
+  MISSING_CORE_TARBALL: 'Add --core-tarball <path> to your install command',
+  TARBALL_NOT_FOUND: 'Verify the tarball path exists and is readable',
+  TARBALL_NAME_INVALID: 'Rename to flowguard-core-{version}.tgz or download the correct release',
+  TARBALL_VERSION_MISMATCH:
+    'Download the tarball matching installer version from the releases page',
+  TARBALL_CHECKSUMS_UNREADABLE: 'Ensure checksums.sha256 is readable next to the tarball',
+  TARBALL_SHA256_MISMATCH: 'Re-download tarball and checksums file; verify with sha256sum -c',
+  ALREADY_INSTALLED: 'Add --force to overwrite, or run uninstall first',
+  DEPENDENCY_INSTALL_FAILED: 'Run npm install or bun install manually in the target directory',
+  INSTALL_LOCK_CONFLICT: (detail) => {
+    const p = detail.recoveryContext?.path ?? '~/.config/opencode/.flowguard-install.lock';
+    return `Remove stale lock file: rm -f ${p}`;
+  },
+};
+
+export function formatRecoveryLines(
+  errorDetails: Array<{
+    code?: InstallErrorCode;
+    message: string;
+    recoveryContext?: { path?: string; target?: string };
+  }>,
+): string[] {
+  const lines: string[] = [];
+  const seen = new Set<string>();
+  let hasUncoded = false;
+
+  for (const detail of errorDetails) {
+    if (!detail.code) {
+      hasUncoded = true;
+      continue;
+    }
+    if (seen.has(detail.code)) continue;
+    seen.add(detail.code);
+
+    const recovery = RECOVERY_MAP[detail.code];
+    if (recovery) {
+      if (typeof recovery === 'function') {
+        lines.push(`    ${recovery(detail)}`);
+      } else {
+        lines.push(`    ${recovery}`);
+      }
+    } else {
+      hasUncoded = true;
+    }
+  }
+
+  if (hasUncoded) {
+    lines.push('    flowguard doctor          → diagnose remaining issues');
+    lines.push('    flowguard install --force → repair incomplete install');
+    lines.push('    flowguard uninstall       → remove FlowGuard completely');
+  }
+
+  return lines;
+}
+
+/** Single write boundary for install/uninstall errors. Keeps errors:string[] and errorDetails:CliError[] in sync. */
+export function pushError(
+  errors: string[],
+  errorDetails: CliError[],
+  error: unknown,
+  recovery?: CliError['recoveryContext'],
+): void {
+  if (error instanceof InstallError) {
+    const msg = error.message;
+    errors.push(msg);
+    errorDetails.push({ code: error.code, message: msg, recoveryContext: recovery });
+  } else {
+    const msg = error instanceof Error ? error.message : String(error);
+    errors.push(msg);
+    errorDetails.push({ message: msg, recoveryContext: recovery });
+  }
+}
+
+/** Convert unknown error to CliError DTO. Used when errors array is not yet a CliResult. */
+export function toCliError(error: unknown): CliError {
+  if (error instanceof InstallError) return { code: error.code, message: error.message };
+  return { message: error instanceof Error ? error.message : String(error) };
+}
+
+// ─── Artifact Detection ──────────────────────────────────────────────────────
+
+function checkArtifactExistence(
+  target: string,
+  relativePath: string,
+): { file: string; ok: boolean } {
+  const fullPath = join(target, relativePath);
+  return { file: relativePath, ok: existsSync(fullPath) };
+}
+
+export function detectInstalledArtifacts(
+  target: string,
+  platform: InstallPlatform,
+): ArtifactDetection {
+  const results: { file: string; ok: boolean }[] = [];
+
+  if (platform === 'opencode') {
+    results.push(checkArtifactExistence(target, MANDATES_FILENAME));
+    results.push(checkArtifactExistence(target, 'tools/flowguard.ts'));
+    results.push(checkArtifactExistence(target, 'plugins/flowguard-audit.ts'));
+    results.push(checkArtifactExistence(target, 'flowguard.json'));
+  } else if (platform === 'claude-code') {
+    results.push(
+      checkArtifactExistence(target, join('flowguard-plugin', '.claude-plugin', 'plugin.json')),
+    );
+    results.push(checkArtifactExistence(target, '.mcp.json'));
+    results.push(checkArtifactExistence(target, join('hooks', 'hooks.json')));
+    results.push(
+      checkArtifactExistence(target, join('flowguard-plugin', 'agents', 'flowguard-reviewer.md')),
+    );
+  } else {
+    results.push(checkArtifactExistence(target, join('.codex-plugin', 'plugin.json')));
+    results.push(checkArtifactExistence(target, '.mcp.json'));
+    results.push(checkArtifactExistence(target, join('hooks', 'hooks.json')));
+    results.push(checkArtifactExistence(target, join('subagents', 'flowguard-reviewer.md')));
+  }
+
+  const found = results.some((r) => r.ok);
+  const complete = results.every((r) => r.ok);
+  const artifacts = results.filter((r) => r.ok).map((r) => r.file);
+
+  return { found, complete, artifacts };
 }

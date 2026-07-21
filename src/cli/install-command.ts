@@ -22,7 +22,7 @@ import {
   emitPostInstallWarnings,
   resolveConfigTargetDir,
 } from './install-steps.js';
-import { rollbackArtifacts } from './install-helpers.js';
+import { rollbackArtifacts, toCliError } from './install-helpers.js';
 import {
   createDependencyTransaction,
   executeDependencyTransaction,
@@ -187,11 +187,17 @@ export async function install(args: CliArgs): Promise<CliResult> {
   try {
     lock = await acquireInstallLock();
   } catch (lockErr) {
+    const msg = lockErr instanceof Error ? lockErr.message : String(lockErr);
+    const lockPath = installLockPath();
     return {
       target: '',
       ops: [],
-      errors: [lockErr instanceof Error ? lockErr.message : String(lockErr)],
+      errors: [msg],
+      errorDetails: [
+        { code: 'INSTALL_LOCK_CONFLICT', message: msg, recoveryContext: { path: lockPath } },
+      ],
       warnings: [],
+      notices: [],
     };
   }
 
@@ -218,7 +224,14 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
         target: ctx.target,
         ops: [],
         errors: ['FlowGuard is already installed. Use --force to reinstall.'],
+        errorDetails: [
+          {
+            code: 'ALREADY_INSTALLED',
+            message: 'FlowGuard is already installed. Use --force to reinstall.',
+          },
+        ],
         warnings: [],
+        notices: [],
       };
     }
 
@@ -226,7 +239,14 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
 
     const tarball = await validateTarball(ctx);
     if (!tarball)
-      return { target: ctx.target, ops: ctx.ops, errors: ctx.errors, warnings: ctx.warnings };
+      return {
+        target: ctx.target,
+        ops: ctx.ops,
+        errors: ctx.errors,
+        errorDetails: ctx.errorDetails,
+        warnings: ctx.warnings,
+        notices: ctx.notices,
+      };
 
     snapshot = await buildRollbackSnapshot(ctx, tarball.name);
     await writeArtifacts(ctx, tarball, snapshot);
@@ -238,15 +258,30 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
     await commitDependencyTransaction(tx, ctx);
 
     emitPostInstallWarnings(ctx);
-    return { target: ctx.target, ops: ctx.ops, errors: ctx.errors, warnings: ctx.warnings };
+    return {
+      target: ctx.target,
+      ops: ctx.ops,
+      errors: ctx.errors,
+      errorDetails: ctx.errorDetails,
+      warnings: ctx.warnings,
+      notices: ctx.notices,
+    };
   } catch (error) {
     const formattedError = formatInstallError(error);
     ctx.errors.push(formattedError);
+    ctx.errorDetails.push(toCliError(error));
     await rollbackDeps(tx, ctx.errors);
     await rollbackSnap(snapshot, ctx.ops, ctx.errors);
     getAdapterLogger().error('cli', 'install command failed', {
       error: formattedError,
     });
-    return { target: ctx.target, ops: ctx.ops, errors: ctx.errors, warnings: ctx.warnings };
+    return {
+      target: ctx.target,
+      ops: ctx.ops,
+      errors: ctx.errors,
+      errorDetails: ctx.errorDetails,
+      warnings: ctx.warnings,
+      notices: ctx.notices,
+    };
   }
 }

@@ -60,7 +60,9 @@ describe('cli/formatResult', () => {
           { path: '/tmp/test/c', action: 'skipped', reason: 'already exists' },
         ],
         errors: [],
+        errorDetails: [],
         warnings: [],
+        notices: [],
       };
       const output = formatResult(result);
       expect(output).toContain('Written: 1 files');
@@ -76,7 +78,9 @@ describe('cli/formatResult', () => {
         target: '/tmp/test',
         ops: [],
         errors: ['something broke'],
+        errorDetails: [],
         warnings: [],
+        notices: [],
       };
       const output = formatResult(result);
       expect(output).toContain('[error]');
@@ -86,7 +90,14 @@ describe('cli/formatResult', () => {
 
   describe('CORNER', () => {
     it('handles empty ops, errors, and warnings gracefully', () => {
-      const result: CliResult = { target: '/tmp/test', ops: [], errors: [], warnings: [] };
+      const result: CliResult = {
+        target: '/tmp/test',
+        ops: [],
+        errors: [],
+        errorDetails: [],
+        warnings: [],
+        notices: [],
+      };
       const output = formatResult(result);
       expect(typeof output).toBe('string');
     });
@@ -96,7 +107,9 @@ describe('cli/formatResult', () => {
         target: '/tmp/test',
         ops: [],
         errors: [],
+        errorDetails: [],
         warnings: ['something was modified'],
+        notices: [],
       };
       const output = formatResult(result);
       expect(output).toContain('[warn]');
@@ -112,7 +125,7 @@ describe('cli/formatResult', () => {
         { file: 'c.ts', status: 'ok' },
       ];
       const output = formatDoctor(checks, 'opencode');
-      expect(output).toContain('2/3 checks passed');
+      expect(output).toContain('2/3 actionable checks passed');
     });
 
     it('formatDoctor shows status labels for all statuses', () => {
@@ -144,7 +157,14 @@ describe('cli/formatResult', () => {
         path: `/tmp/file-${i}.ts`,
         action: 'written' as const,
       }));
-      const result: CliResult = { target: '/tmp', ops, errors: [], warnings: [] };
+      const result: CliResult = {
+        target: '/tmp',
+        ops,
+        errors: [],
+        errorDetails: [],
+        warnings: [],
+        notices: [],
+      };
       const start = performance.now();
       for (let i = 0; i < 100; i++) {
         formatResult(result);

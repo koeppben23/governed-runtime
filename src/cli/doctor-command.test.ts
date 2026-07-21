@@ -25,6 +25,7 @@ const VALID_STATUSES = [
   'instruction_stale',
   'error',
   'warn',
+  'info',
 ] as const;
 
 function hasMissingFor(check: string, checks: DoctorCheck[]): boolean {
@@ -72,7 +73,7 @@ describe('formatDoctor', () => {
   it('reports HEALTHY when all checks pass', () => {
     const result = formatDoctor([{ file: 'x', status: 'ok' }], 'opencode');
     expect(result).toContain('Status: HEALTHY');
-    expect(result).toContain('1/1 checks passed');
+    expect(result).toContain('1/1 actionable checks passed');
   });
 
   it('reports HEALTHY_WITH_WARNINGS with trust/context recovery', () => {
@@ -118,7 +119,7 @@ describe('formatDoctor', () => {
   it('reports NOT_VERIFIED for empty check list', () => {
     const result = formatDoctor([], 'opencode');
     expect(result).toContain('Status: NOT_VERIFIED');
-    expect(result).toContain('0/0 checks passed');
+    expect(result).toContain('0/0 actionable checks passed');
   });
 
   it('names the selected host platform in recovery', () => {
