@@ -81,11 +81,11 @@ describe('repository AGENTS guidance', () => {
       const lines = content.split('\n').length;
 
       expect(lines).toBeGreaterThanOrEqual(25);
-      // Budget recalibrated for comprehensive restructuring (PR #723).
-      // Restructured Verification, expanded Assumptions, new PR metadata
-      // rules. 266 lines / 10970 chars as of 2026-07.
-      expect(lines).toBeLessThanOrEqual(270);
-      expect(content.length).toBeLessThanOrEqual(11500);
+      // Stable conciseness budget for root AGENTS.md after restructuring
+      // (PR #723). Area-specific details moved to src/{machine,config,integration}/.
+      // 187 lines / 8635 chars as of 2026-07.
+      expect(lines).toBeLessThanOrEqual(190);
+      expect(content.length).toBeLessThanOrEqual(9000);
     });
 
     it('keeps guidance docs free of second mandatory output semantics', async () => {
