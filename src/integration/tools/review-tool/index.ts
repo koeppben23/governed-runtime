@@ -124,11 +124,14 @@ async function prepareReviewExecution(
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
 ): Promise<ReviewPreparation | string> {
-  // Resolve immutable branch source only when no obligation exists yet
-  const isFollowUpCall =
-    exec.args.reviewFindings !== undefined || exec.args.reviewVerdict !== undefined;
+  // Resolve immutable branch source when creating a new obligation.
+  // Skip only on findings submissions (the obligation already exists).
+  // Verdict-first calls still need source resolution for obligation creation.
+  const isFindingsSubmission = exec.args.reviewFindings !== undefined;
   const resolvedSource =
-    exec.args.branch && !isFollowUpCall ? resolveBranchReviewSource(exec.args.branch) : undefined;
+    exec.args.branch && !isFindingsSubmission
+      ? resolveBranchReviewSource(exec.args.branch)
+      : undefined;
 
   const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec, resolvedSource);
   if (hostTaskVerdict) return hostTaskVerdict;
