@@ -81,7 +81,9 @@ describe('repository AGENTS guidance', () => {
       const lines = content.split('\n').length;
 
       expect(lines).toBeGreaterThanOrEqual(25);
-      expect(lines).toBeLessThanOrEqual(194);
+      // Budget recalibrated for Assumptions and Evidence section (PR #723).
+      // 189 lines / 9428 chars as of 2026-07.
+      expect(lines).toBeLessThanOrEqual(195);
       expect(content.length).toBeLessThanOrEqual(10000);
     });
 

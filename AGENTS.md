@@ -33,8 +33,6 @@ FlowGuard-governed runtime session.
 
 ### Assumptions and Evidence
 
-Use these markers in contributor output:
-
 - `ASSUMPTION`: necessary and plausible, but not verified from repository
   artifacts.
 - `NOT_VERIFIED`: not executed, tested, or proven with evidence.
@@ -46,8 +44,8 @@ Use these markers in contributor output:
 - Do not encode unverified assumptions into contracts, schemas, state
   transitions, migrations, policy, security boundaries, or externally
   observable behavior.
-- For safety-relevant or high-risk ambiguity, ask one precise question or state
-  that implementation is `BLOCKED`.
+- For safety-relevant or high-risk ambiguity, ask the minimum precise
+  clarification needed or state that implementation is `BLOCKED`.
 
 - For trust-boundary reviews, use `docs/trust-boundaries.md` as the canonical
   review contract.
@@ -123,20 +121,18 @@ Additional rules:
 
 ## Generated Guards and Digests
 
-Some source files are protected by generated digests or guard tests. When
-changing mandates, schemas, generated contracts, or serialized evidence
-formats, run the owning guard tests:
+Some source files are guarded by generated digests or guard tests. When
+changing mandates, schemas, contracts, or evidence formats, run:
 
-- Mandate content changes: run the mandate hash guard
+- Mandate changes: run the mandate hash guard
   (`src/cli/templates-hash.test.ts`) and the install contract tests
-- Schema changes: run the relevant schema, default parsing, and version
+- Schema changes: run the relevant schema, default-parsing, and version
   consistency tests
-- Generated documentation or version placeholders: run `npm run generate-docs`
+- Doc/version placeholders: run `npm run generate-docs`
 
-Do not hand-edit generated hashes or digests. When a guard test fails because
-the content has intentionally changed, update the guard's expected value
-**explicitly** as part of the same change — the guard must never be
-blindly suppressed.
+Do not hand-edit generated hashes or digests. When a guard fails because
+the content was intentionally changed, update the expected value explicitly
+as part of the same change — never suppress the guard blindly.
 
 ## Local Commands
 
@@ -161,12 +157,14 @@ Before marking any task complete:
 4. Run `npm run test:architecture` for dependency, module-boundary, file-size, or architecture-sensitive changes.
 5. Run `npm run build` for CLI, package, runtime entrypoint, or distribution changes.
 6. Run `npm run check:unused-dependencies` when imports, exports, packages, or module boundaries change.
-7. For state, policy, archive, audit, review, or enforcement authority changes, run `npm run mutation` when mutation scope changed or the touched authority is mutation-covered. If not run, mark `NOT_VERIFIED` with the recovery command.
-8. For new reason codes, verify `npx vitest run --project unit src/config/reasons-completeness.test.ts`.
-9. For documentation contract changes, run the relevant docs drift or contract tests for the touched area; if no such test exists, state that explicitly in the verification notes. Reason-code or reason-doc changes must include:
-   ```
-   npx vitest run --project unit src/config/reasons-completeness.test.ts src/documentation/__tests__/reasons-doc-drift.test.ts
-   ```
+7. For authority-governed surfaces (state, policy, archive, audit, review,
+   enforcement): run `npm run mutation`. Mark `NOT_VERIFIED` if skipped.
+8. For new reason codes, verify `npx vitest run --project unit
+   src/config/reasons-completeness.test.ts`.
+9. For doc-contract changes: run relevant docs drift/contract tests; state if
+   none exist. Reason/reason-doc changes: `npx vitest run --project unit
+   src/config/reasons-completeness.test.ts
+   src/documentation/__tests__/reasons-doc-drift.test.ts`.
 10. Coverage thresholds: 80% across branches, lines, functions, and statements.
     Run `npm run test:coverage:ci` to verify.
 11. Before pushing, run `npm run check:format`; the CI pre-push hook requires clean Prettier output.
