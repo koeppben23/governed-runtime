@@ -18,11 +18,8 @@ import type { FlowGuardLogger } from '../logging/logger.js';
 import { HOST_IDS } from '../shared/hosts.js';
 import { POLICY_MODES } from '../state/policy-mode.js';
 import type { CliParseResult } from './parse-result.js';
-import {
-  formatTargetPath,
-  detectInstalledArtifacts,
-  formatRecoveryLines,
-} from './install-helpers.js';
+import { formatTargetPath, detectInstalledArtifacts } from './install-helpers.js';
+import { formatRecoveryLines } from './install-recovery.js';
 import {
   type InstallScope,
   type InstallPlatform,

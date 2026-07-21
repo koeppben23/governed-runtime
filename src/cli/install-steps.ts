@@ -45,6 +45,7 @@ import {
   type RollbackEntry,
   type CliError,
   type CliNotice,
+  type InstallErrorCode,
   FLOWGUARD_TARBALL_PATTERN,
   PACKAGE_VERSION,
   computeMandatesDigest,
@@ -98,76 +99,60 @@ export interface ValidatedTarball {
   version: string;
 }
 
+function failTarball(ctx: InstallContext, code: InstallErrorCode, msg: string): null {
+  pushError(ctx.errors, ctx.errorDetails, new InstallError(code, msg));
+  return null;
+}
+
 export async function validateTarball(ctx: InstallContext): Promise<ValidatedTarball | null> {
   const { args } = ctx;
 
   if (!args.coreTarball) {
-    pushError(
-      ctx.errors,
-      ctx.errorDetails,
-      new InstallError(
-        'MISSING_CORE_TARBALL',
-        `ERROR: --core-tarball is required.\n` +
-          `Usage: npx --package ./flowguard-core-${PACKAGE_VERSION()}.tgz flowguard install --core-tarball ./flowguard-core-${PACKAGE_VERSION()}.tgz\n` +
-          `Download from: https://github.com/koeppben23/governed-runtime/releases`,
-      ),
+    return failTarball(
+      ctx,
+      'MISSING_CORE_TARBALL',
+      `ERROR: --core-tarball is required.\n` +
+        `Usage: npx --package ./flowguard-core-${PACKAGE_VERSION()}.tgz flowguard install --core-tarball ./flowguard-core-${PACKAGE_VERSION()}.tgz\n` +
+        `Download from: https://github.com/koeppben23/governed-runtime/releases`,
     );
-    return null;
   }
 
   const tarballPath = resolve(args.coreTarball);
 
   if (!existsSync(tarballPath)) {
-    pushError(
-      ctx.errors,
-      ctx.errorDetails,
-      new InstallError('TARBALL_NOT_FOUND', `ERROR: Core tarball not found: ${tarballPath}`),
-    );
-    return null;
+    return failTarball(ctx, 'TARBALL_NOT_FOUND', `ERROR: Core tarball not found: ${tarballPath}`);
   }
 
   const tarballName = basename(tarballPath);
   const versionMatch = tarballName.match(FLOWGUARD_TARBALL_PATTERN);
   if (!versionMatch) {
-    pushError(
-      ctx.errors,
-      ctx.errorDetails,
-      new InstallError(
-        'TARBALL_NAME_INVALID',
-        'ERROR: Tarball filename must match flowguard-core-{version}.tgz\n' +
-          `  Found: ${tarballName}`,
-      ),
+    return failTarball(
+      ctx,
+      'TARBALL_NAME_INVALID',
+      'ERROR: Tarball filename must match flowguard-core-{version}.tgz\n' +
+        `  Found: ${tarballName}`,
     );
-    return null;
   }
   const tarballVersion = versionMatch[1];
 
   if (tarballVersion !== PACKAGE_VERSION()) {
-    pushError(
-      ctx.errors,
-      ctx.errorDetails,
-      new InstallError(
-        'TARBALL_VERSION_MISMATCH',
-        `ERROR: Version mismatch.\n` +
-          `  Tarball: ${tarballVersion}\n` +
-          `  Installer: ${PACKAGE_VERSION()}\n` +
-          `  Please use the correct tarball version.`,
-      ),
+    return failTarball(
+      ctx,
+      'TARBALL_VERSION_MISMATCH',
+      `ERROR: Version mismatch.\n` +
+        `  Tarball: ${tarballVersion}\n` +
+        `  Installer: ${PACKAGE_VERSION()}\n` +
+        `  Please use the correct tarball version.`,
     );
-    return null;
   }
 
   if (args.checksumsFile && args.allowUnverifiedTarball) {
-    pushError(
-      ctx.errors,
-      ctx.errorDetails,
-      new InstallError(
-        'CONFIG_INCOMPATIBLE_FLAGS',
-        'ERROR: --checksums-file cannot be combined with --allow-unverified-tarball. ' +
-          'Choose verified installation or the explicit unverified opt-out.',
-      ),
+    return failTarball(
+      ctx,
+      'CONFIG_INCOMPATIBLE_FLAGS',
+      'ERROR: --checksums-file cannot be combined with --allow-unverified-tarball. ' +
+        'Choose verified installation or the explicit unverified opt-out.',
     );
-    return null;
   }
 
   if (args.allowUnverifiedTarball) {
@@ -187,12 +172,7 @@ export async function validateTarball(ctx: InstallContext): Promise<ValidatedTar
       const reason = err instanceof Error ? err.message : String(err);
       getAdapterLogger().error('cli', 'tarball verification failed', { tarballPath, reason });
       const code = err instanceof InstallError ? err.code : 'TARBALL_INTEGRITY_FAILED';
-      pushError(
-        ctx.errors,
-        ctx.errorDetails,
-        new InstallError(code, `ERROR: Tarball integrity check failed: ${reason}`),
-      );
-      return null;
+      return failTarball(ctx, code, `ERROR: Tarball integrity check failed: ${reason}`);
     }
   }
 
