@@ -28,6 +28,7 @@ import {
   safeRead,
   safeUnlink,
   sha256,
+  toCliError,
 } from './install-helpers.js';
 import { uninstallClaudeCodePlugin, uninstallCodexPlugin } from './platform-uninstall.js';
 
@@ -195,5 +196,5 @@ export async function uninstall(args: CliArgs): Promise<CliResult> {
     errors.push(err instanceof Error ? err.message : String(err));
   }
 
-  return { target, ops, errors, errorDetails: [], warnings, notices: [] };
+  return { target, ops, errors, errorDetails: errors.map(toCliError), warnings, notices: [] };
 }
