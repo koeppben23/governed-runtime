@@ -53,7 +53,6 @@ Run these checks for all machine-layer changes:
 
 ```sh
 npx vitest run --project unit src/machine/
-npx vitest run --project unit src/machine/
 npm run test:architecture
 npm run check
 ```
