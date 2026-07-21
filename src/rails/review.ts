@@ -25,7 +25,7 @@ import type { RailResult, RailContext, TransitionRecord, RailBlocked } from './t
 import { autoAdvance, applyTransition, createPolicyEvalFn } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { blockedFromOverflow } from './auto-advance-overflow.js';
-import { hasGhCli, loadPrDiff, loadBranchDiff } from '../adapters/gh-cli.js';
+import { hasGhCli, loadPrDiff, loadResolvedBranchDiff } from '../adapters/gh-cli.js';
 import {
   parseIPv4,
   isPrivateIPv4,
@@ -34,7 +34,17 @@ import {
   isIPv6Address,
 } from '../adapters/ip-validation.js';
 import { lookupReviewHostname, type ReviewDnsLookup } from '../adapters/dns-resolution.js';
+import { hashText } from '../shared/hashing.js';
 export { parseIPv4 };
+
+// ─── Content Preparation Types ───────────────────────────────────────────────
+
+export interface PreparedReviewContent {
+  readonly content: string;
+  readonly reviewedContentDigest: string;
+}
+
+export type PrepareReviewResult = PreparedReviewContent | RailBlocked | null;
 
 // ─── Content Loading Helpers ──────────────────────────────────────
 
@@ -252,6 +262,14 @@ export interface ReviewReferenceInput {
   readonly url?: string;
   /** Skip external content loading (when reviewFindings provided by subagent). */
   readonly skipExternalContentLoad?: boolean;
+  /** Obligation ID that owns the immutable review provenance (branch reviews only). */
+  readonly reviewObligationId?: string;
+  /** Detected base branch name (branch reviews only). */
+  readonly baseBranch?: string;
+  /** Resolved full head commit SHA (branch reviews only). */
+  readonly resolvedBranchSha?: string;
+  /** Resolved full base commit SHA (branch reviews only). */
+  readonly resolvedBaseSha?: string;
 }
 
 // ─── Mechanical Findings ──────────────────────────────────────
@@ -347,12 +365,22 @@ function buildMechanicalFindings(
 export async function loadExternalContent(
   refInput: ReviewReferenceInput,
   dnsLookup?: ReviewDnsLookup,
-): Promise<{ content: string } | RailBlocked> {
-  if (refInput.prNumber !== undefined) return loadPrContent(refInput.prNumber);
-  if (refInput.branch !== undefined) return loadBranchContent(refInput.branch);
-  if (refInput.url !== undefined) return loadUrlContent(refInput, dnsLookup);
-  if (refInput.text !== undefined) return { content: refInput.text };
-  return { content: '' };
+): Promise<PrepareReviewResult> {
+  if (refInput.prNumber !== undefined) {
+    const result = loadPrContent(refInput.prNumber);
+    if ('kind' in result) return result;
+    return { content: result.content, reviewedContentDigest: hashText(result.content) };
+  }
+  if (refInput.branch !== undefined) return loadBranchContent(refInput);
+  if (refInput.url !== undefined) {
+    const result = await loadUrlContent(refInput, dnsLookup);
+    if ('kind' in result) return result;
+    return { content: result.content, reviewedContentDigest: hashText(result.content) };
+  }
+  if (refInput.text !== undefined) {
+    return { content: refInput.text, reviewedContentDigest: hashText(refInput.text) };
+  }
+  return null;
 }
 
 function loadContentViaGh(
@@ -379,13 +407,20 @@ function loadPrContent(prNumber: number): { content: string } | RailBlocked {
   return loadContentViaGh(() => loadPrDiff(prNumber), `Failed to load PR #${prNumber}`);
 }
 
-function loadBranchContent(branch: string): { content: string } | RailBlocked {
+function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult {
+  if (!refInput.reviewObligationId || !refInput.resolvedBranchSha || !refInput.resolvedBaseSha) {
+    return blocked('REVIEW_BRANCH_PROVENANCE_MISSING', {
+      command: '/review',
+      reason: 'Branch review requires resolved head and base commit provenance.',
+    });
+  }
   try {
-    return { content: loadBranchDiff(branch) };
+    const diff = loadResolvedBranchDiff(refInput.resolvedBranchSha, refInput.resolvedBaseSha);
+    return { content: diff, reviewedContentDigest: hashText(diff) };
   } catch (err) {
     return blocked('COMMAND_BLOCKED', {
       command: '/review',
-      reason: `Failed to load local branch '${branch}': ${err instanceof Error ? err.message : String(err)}`,
+      reason: `Failed to load branch diff at resolved commits: ${err instanceof Error ? err.message : String(err)}`,
     });
   }
 }
@@ -450,6 +485,24 @@ function computeRefs(refInput?: ReviewReferenceInput): ExternalReference[] | und
   return refInput?.references && refInput.references.length > 0 ? refInput.references : undefined;
 }
 
+// ─── Content Preparation ──────────────────────────────────────────────
+
+/**
+ * Load external review content and compute its digest.
+ * Does NOT invoke the reviewer — only prepares the content.
+ *
+ * Returns null when no external content is needed (no refInput, skipExternalContentLoad).
+ * Returns RailBlocked when loading fails.
+ * Returns PreparedReviewContent with content and its SHA-256 digest on success.
+ */
+export async function prepareReviewContent(
+  refInput?: ReviewReferenceInput,
+  dnsLookup?: ReviewDnsLookup,
+): Promise<PrepareReviewResult> {
+  if (!refInput || refInput.skipExternalContentLoad) return null;
+  return loadExternalContent(refInput, dnsLookup);
+}
+
 // ─── Report Generator ─────────────────────────────────────────
 
 export async function executeReview(
@@ -457,6 +510,7 @@ export async function executeReview(
   now: string,
   executors?: ReviewExecutors,
   refInput?: ReviewReferenceInput,
+  preloadedContent?: string,
 ): Promise<ReviewReport | RailBlocked> {
   const validationSummary = state.validation.map((v) => ({
     checkId: v.checkId,
@@ -468,13 +522,16 @@ export async function executeReview(
   const findings = buildMechanicalFindings(state, completeness, refInput);
 
   let externalContent: string | undefined;
-  if (refInput && !refInput.skipExternalContentLoad) {
+  if (preloadedContent !== undefined) {
+    externalContent = preloadedContent || undefined;
+  } else if (refInput && !refInput.skipExternalContentLoad) {
     const result = await loadExternalContent(refInput, executors?.dnsLookup);
-    if ('content' in result) {
-      // Treat empty string as no content
-      externalContent = result.content || undefined;
+    if (result === null) {
+      // No external content to load
+    } else if ('kind' in result) {
+      return result; // RailBlocked
     } else {
-      return result; // BLOCKED
+      externalContent = result.content || undefined;
     }
   }
 

@@ -32,6 +32,15 @@ vi.mock('../adapters/gh-cli', () => ({
   loadBranchDiff: vi
     .fn()
     .mockReturnValue('diff --git a/src/x.java b/src/x.java\n+branch line for review'),
+  resolveBranchReviewSource: vi.fn().mockImplementation((branch: string) => ({
+    branch,
+    baseBranch: 'main',
+    resolvedBranchSha: 'a'.repeat(40),
+    resolvedBaseSha: 'b'.repeat(40),
+  })),
+  loadResolvedBranchDiff: vi
+    .fn()
+    .mockReturnValue('diff --git a/src/x.java b/src/x.java\n+resolved line'),
 }));
 import { FlowGuardAuditPlugin } from './plugin.js';
 import { review } from './tools/index.js';

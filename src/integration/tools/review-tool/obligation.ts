@@ -26,6 +26,7 @@ import {
 } from '../../review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { writeStateWithArtifacts } from '../helpers.js';
+import { type ResolvedBranchReviewSource } from '../../../adapters/gh-cli.js';
 import type { ReviewToolArgs, StartedReviewResult } from './types.js';
 
 // ─── Formatting helpers ──────────────────────────────────────────────────────
@@ -69,6 +70,7 @@ export function formatBlockedWithAttestation(
       error: true,
       code,
       message,
+      reviewObligationId: obligationId,
       requiredReviewAttestation: {
         reviewedBy: REVIEWER_SUBAGENT_TYPE,
         mandateDigest: REVIEW_MANDATE_DIGEST,
@@ -78,7 +80,7 @@ export function formatBlockedWithAttestation(
       reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
       recovery: [
         `Call Task tool with subagent_type: "${REVIEWER_SUBAGENT_TYPE}" and provide the content plus requiredReviewAttestation.`,
-        'After FlowGuard captures the Task evidence, re-run flowguard_review with only reviewVerdict matching the reviewer overallVerdict.',
+        'After FlowGuard captures the Task evidence, re-run flowguard_review with reviewObligationId set to requiredReviewAttestation.toolObligationId and reviewVerdict matching the reviewer overallVerdict.',
         'Do not submit, copy, or alter reviewFindings in host-task mode.',
       ],
     });
@@ -87,6 +89,7 @@ export function formatBlockedWithAttestation(
     error: true,
     code,
     message,
+    reviewObligationId: obligationId,
     ...buildRequiredReviewAttestationPayload(obligationId),
   });
 }
@@ -144,6 +147,18 @@ export function hasReviewContentInput(args: {
   );
 }
 
+// ─── Branch Review Provenance ────────────────────────────────────────────────
+
+export {
+  BranchReviewSourceSchema,
+  BranchReviewProvenanceSchema,
+  ReviewProvenanceError,
+  getRequiredBranchReviewSource,
+  getRequiredBranchReviewProvenance,
+  type RequiredBranchReviewSource,
+  type RequiredBranchReviewProvenance,
+} from '../../review/review-provenance.js';
+
 export function fingerprintReviewInput(args: {
   prNumber?: number;
   branch?: string;
@@ -151,6 +166,8 @@ export function fingerprintReviewInput(args: {
   text?: string;
   inputOrigin?: string;
   references?: unknown;
+  resolvedBranchSha?: string;
+  resolvedBaseSha?: string;
 }): string {
   const payload = JSON.stringify({
     prNumber: args.prNumber,
@@ -159,8 +176,18 @@ export function fingerprintReviewInput(args: {
     textHash: args.text ? hashTextShort(args.text, 16) : undefined,
     inputOrigin: args.inputOrigin,
     references: args.references ? hashTextShort(JSON.stringify(args.references), 16) : undefined,
+    resolvedBranchSha: args.resolvedBranchSha,
+    resolvedBaseSha: args.resolvedBaseSha,
   });
   return hashText(payload);
+}
+
+export function matchesReviewObligationInput(
+  obligation: ReviewObligation,
+  args: ReviewToolArgs,
+): boolean {
+  const inputFingerprint = obligation.metadata?.inputFingerprint;
+  return typeof inputFingerprint === 'string' && inputFingerprint === fingerprintReviewInput(args);
 }
 
 // ─── Obligation lifecycle ────────────────────────────────────────────────────
@@ -181,29 +208,76 @@ export async function ensureMissingAnalysisObligation(
   state: SessionState,
   args: ReviewToolArgs,
   now: string,
-): Promise<string | null> {
-  if (!hasReviewContentInput(args)) return null;
-  const fingerprint = fingerprintReviewInput(args);
+  resolvedSource?: ResolvedBranchReviewSource,
+): Promise<{ message: string | null; obligation?: ReviewObligation }> {
+  if (!hasReviewContentInput(args)) return { message: null };
+
+  const fingerprint = fingerprintReviewInput({
+    ...args,
+    resolvedBranchSha: resolvedSource?.resolvedBranchSha,
+    resolvedBaseSha: resolvedSource?.resolvedBaseSha,
+  });
+  const inputFingerprint = fingerprintReviewInput(args);
   const existing = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
-  // A verdict-bearing FIRST call with no pending obligation yet must create the
-  // obligation here (the host-task verdict path deferred to us via null), even
-  // if it erroneously carried a placeholder reviewFindings object. This keeps
-  // such a call on the "create pending obligation -> CONTENT_ANALYSIS_REQUIRED"
-  // path instead of falling through to the SDK reviewFindings-submission path.
   const verdictFirstCall = args.reviewVerdict !== undefined && existing === null;
-  if (!verdictFirstCall && args.reviewFindings !== undefined) return null;
+  if (!verdictFirstCall && args.reviewFindings !== undefined) return { message: null };
   let obligation = existing;
   if (!obligation) {
+    const metadata: Record<string, unknown> = { fingerprint, inputFingerprint };
+    if (args.branch && resolvedSource) {
+      metadata.branch = args.branch;
+      metadata.baseBranch = resolvedSource.baseBranch;
+      metadata.resolvedBranchSha = resolvedSource.resolvedBranchSha;
+      metadata.resolvedBaseSha = resolvedSource.resolvedBaseSha;
+    }
     obligation = createReviewObligation({
       obligationType: 'review',
       iteration: 1,
       planVersion: 1,
       now,
-      metadata: { fingerprint },
+      metadata,
     });
     await persistReviewObligation(sessDir, state, obligation);
   }
-  return formatMissingContentAnalysis(obligation.obligationId);
+  return { message: formatMissingContentAnalysis(obligation.obligationId), obligation };
+}
+
+function isActiveReviewObligation(
+  obligation: ReviewObligation | null,
+): obligation is ReviewObligation {
+  return (
+    obligation?.obligationType === 'review' &&
+    obligation.status !== 'consumed' &&
+    obligation.status !== 'blocked'
+  );
+}
+
+function validateSuppliedReviewObligation(input: {
+  suppliedObligationId: string | undefined;
+  obligation: ReviewObligation | null;
+  attestationObligationId: string | undefined;
+  args: ReviewToolArgs;
+}): string | null {
+  const { suppliedObligationId, obligation, attestationObligationId, args } = input;
+  if (!suppliedObligationId) return null;
+  let code = 'REVIEW_OBLIGATION_NOT_FOUND';
+  let message: string | null = null;
+  if (!isActiveReviewObligation(obligation)) {
+    message = 'The supplied reviewObligationId does not identify an active review obligation.';
+  } else if (!matchesReviewObligationInput(obligation, args)) {
+    code = 'REVIEW_OBLIGATION_INPUT_MISMATCH';
+    message = 'The supplied review input does not match reviewObligationId.';
+  } else if (attestationObligationId && suppliedObligationId !== attestationObligationId) {
+    message = 'reviewObligationId does not match reviewFindings.attestation.toolObligationId.';
+  }
+  return message
+    ? JSON.stringify({
+        error: true,
+        code,
+        message,
+        obligationId: suppliedObligationId,
+      })
+    : null;
 }
 
 export async function resolveSubmittedReviewObligation(
@@ -211,13 +285,28 @@ export async function resolveSubmittedReviewObligation(
   state: SessionState,
   args: ReviewToolArgs,
   now: string,
-): Promise<{ obligation: ReviewObligation; blocked?: string }> {
+): Promise<{ obligation: ReviewObligation | null; blocked?: string }> {
   const findings = args.reviewFindings as Record<string, unknown>;
   const attToolObligationId = (findings.attestation as Record<string, unknown> | undefined)
     ?.toolObligationId as string | undefined;
-  const obligationById = attToolObligationId
-    ? findReviewObligationById(state.reviewAssurance, attToolObligationId)
-    : null;
+  const suppliedObligationId = args.reviewObligationId;
+  const obligationById = suppliedObligationId
+    ? findReviewObligationById(state.reviewAssurance, suppliedObligationId)
+    : attToolObligationId
+      ? findReviewObligationById(state.reviewAssurance, attToolObligationId)
+      : null;
+  const suppliedBlock = validateSuppliedReviewObligation({
+    suppliedObligationId,
+    obligation: obligationById,
+    attestationObligationId: attToolObligationId,
+    args,
+  });
+  if (suppliedBlock) {
+    return {
+      obligation: null,
+      blocked: suppliedBlock,
+    };
+  }
   const fingerprint = fingerprintReviewInput(args);
   let obligation =
     obligationById ??
@@ -229,7 +318,7 @@ export async function resolveSubmittedReviewObligation(
       iteration: 1,
       planVersion: 1,
       now,
-      metadata: { fingerprint },
+      metadata: { fingerprint, inputFingerprint: fingerprint },
     });
     await persistReviewObligation(sessDir, state, obligation);
     return {

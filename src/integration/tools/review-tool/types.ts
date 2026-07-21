@@ -36,6 +36,10 @@ export type ReviewPreparation = {
   result: StartedReviewResult;
   refInput?: ReviewReferenceInput;
   validatedReviewObligation: ReviewObligation | null;
+  /** Newly created pending obligation (first content-aware call). */
+  pendingObligation?: ReviewObligation;
+  /** Blocking message to return after content preparation (e.g. CONTENT_ANALYSIS_REQUIRED). */
+  blockMessage?: string;
   effectiveReviewFindings?: ReviewFindings;
   evidenceInvocationId?: string;
   nativeAttestationRejection?: NativeAttestationRejection;
@@ -53,6 +57,8 @@ export type ReviewToolArgs = {
   prNumber?: number;
   branch?: string;
   url?: string;
+  /** Exact obligation identity required for host-task verdict continuations. */
+  reviewObligationId?: string;
   reviewVerdict?: 'accept' | 'changes_requested';
   reviewFindings?: ReviewFindings;
 };

@@ -72,6 +72,50 @@ export function loadBranchDiff(branch: string): string {
   return out;
 }
 
+// ─── Immutable Branch Review Source ──────────────────────────────────────────
+
+export interface ResolvedBranchReviewSource {
+  readonly branch: string;
+  readonly baseBranch: string;
+  readonly resolvedBranchSha: string;
+  readonly resolvedBaseSha: string;
+}
+
+/**
+ * Resolve both the branch head and detected base branch to full commit SHAs.
+ * Fails closed: throws GitError if either ref cannot be resolved.
+ */
+export function resolveBranchReviewSource(branch: string): ResolvedBranchReviewSource {
+  const baseBranch = detectBaseBranch();
+  const headSha = execFileSync(
+    'git',
+    ['rev-parse', '--verify', '--end-of-options', `${branch}^{commit}`],
+    { encoding: 'utf-8', stdio: 'pipe', timeout: 5000 },
+  ).trim();
+  const baseSha = execFileSync(
+    'git',
+    ['rev-parse', '--verify', '--end-of-options', `${baseBranch}^{commit}`],
+    { encoding: 'utf-8', stdio: 'pipe', timeout: 5000 },
+  ).trim();
+  return { branch, baseBranch, resolvedBranchSha: headSha, resolvedBaseSha: baseSha };
+}
+
+/**
+ * Load the diff between two resolved commit SHAs.
+ * Uses immutable refs — no branch name interpolation.
+ */
+export function loadResolvedBranchDiff(headSha: string, baseSha: string): string {
+  const out = execFileSync('git', ['diff', `${baseSha}...${headSha}`], {
+    encoding: 'utf-8',
+    stdio: 'pipe',
+    timeout: 15000,
+  });
+  if (!out || out.trim() === '') {
+    throw new GitError('GIT_COMMAND_FAILED', 'Empty diff between resolved commits');
+  }
+  return out;
+}
+
 function detectBaseBranch(): string {
   try {
     return execFileSync('git', ['symbolic-ref', 'refs/remotes/origin/HEAD'], {

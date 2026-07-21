@@ -291,6 +291,12 @@ export function buildInvocationEvidence(input: {
   hostCapturedAgentId?: string;
   hostCapturedAgentType?: typeof REVIEWER_SUBAGENT_TYPE;
   hostCaptureSource?: 'subagent_stop_hook' | 'post_tool_use_hook';
+  /** Resolved full head commit SHA (branch reviews only). */
+  resolvedBranchSha?: string | null;
+  /** Resolved full base commit SHA (branch reviews only). */
+  resolvedBaseSha?: string | null;
+  /** SHA-256 digest of the extracted/reviewed content (branch reviews only). */
+  reviewedContentDigest?: string | null;
 }): ReviewInvocationEvidence {
   const reviewOutputMode = input.reviewOutputMode ?? 'structured_output';
   const structuredOutputUsed =
@@ -318,6 +324,9 @@ export function buildInvocationEvidence(input: {
     reviewOutputMode,
     structuredOutputUsed,
     reviewAssuranceLevel,
+    resolvedBranchSha: input.resolvedBranchSha ?? null,
+    resolvedBaseSha: input.resolvedBaseSha ?? null,
+    reviewedContentDigest: input.reviewedContentDigest ?? null,
     ...buildOptionalInvocationFields(input),
   };
 }

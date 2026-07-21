@@ -16,6 +16,7 @@ import type { SessionEnforcementState, HostTaskBindResult } from './enforcement/
 import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { obligationTypeForTool } from './obligation-tools.js';
 import { buildInvocationEvidence, hashFindings, hashText } from './assurance.js';
+import { getBranchProvenanceFields } from './review-provenance.js';
 
 /**
  * Build host-subagent-task invocation evidence from enforcement state and persisted obligations.
@@ -110,6 +111,7 @@ export function buildHostTaskEvidence(
     ...transport,
     capturedVerdict: latest.capturedFindings?.overallVerdict,
     capturedRawFindings: normalizedFindings,
+    ...getBranchProvenanceFields(matchedObligation),
   });
 
   return {

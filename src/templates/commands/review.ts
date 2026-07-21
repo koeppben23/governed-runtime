@@ -93,7 +93,8 @@ Start the compliance review flow for the current FlowGuard session.
 5. Complete content-aware \`flowguard_review\` according to the review invocation mode:
     - If the response says host-task evidence was verified or policy requires host-visible
       Task evidence: after the \`${REVIEWER_SUBAGENT_TYPE}\` Task returns, call
-      \`flowguard_review\` with the same content fields plus \`reviewVerdict\` only
+       \`flowguard_review\` with the same content fields plus \`reviewObligationId\` from
+       \`requiredReviewAttestation.toolObligationId\` and \`reviewVerdict\`
       (\`"accept"\` or \`"changes_requested"\`) matching the reviewer's \`overallVerdict\`.
       Do NOT submit, copy, or alter \`reviewFindings\` (not even an empty placeholder object); FlowGuard resolves the captured
       ReviewInvocationEvidence automatically.
@@ -103,7 +104,8 @@ Start the compliance review flow for the current FlowGuard session.
       findings, call \`flowguard_review\` with the same content fields plus
       \`reviewFindings\` set to the complete ReviewFindings object as-is — no mapping, no array.
     - If host-task mode reports \`duplicate_evidence\`, do not rerun the reviewer. Use the
-      already-bound reviewer verdict and call \`flowguard_review\` with \`reviewVerdict\` only.
+       already-bound reviewer verdict and call \`flowguard_review\` with \`reviewObligationId\`
+       from \`requiredReviewAttestation.toolObligationId\` plus \`reviewVerdict\`.
 
 6. If no external content is supplied, call \`flowguard_review\` with optional \`inputOrigin\` and \`references\` only.
 

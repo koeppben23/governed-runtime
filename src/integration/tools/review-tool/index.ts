@@ -18,11 +18,16 @@ import {
   formatAutoAdvanceOverflow,
   formatBlocked,
 } from '../helpers.js';
-import { startReviewFlow, executeReview } from '../../../rails/review.js';
+import {
+  startReviewFlow,
+  executeReview,
+  type ReviewReferenceInput,
+} from '../../../rails/review.js';
 import {
   InputOriginSchema,
   ExternalReferenceSchema,
   ReviewFindings,
+  type ReviewObligation,
 } from '../../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import type { ReviewExecutionContext, ReviewPreparation } from './types.js';
@@ -32,13 +37,12 @@ import type { ReviewToolArgs } from './types.js';
 import {
   buildReviewReferenceInput,
   ensureMissingAnalysisObligation,
-  fingerprintReviewInput,
   hasReviewContentInput,
+  matchesReviewObligationInput,
   resolveSubmittedReviewObligation,
   validateSubmittedReviewFindings,
   consumeValidatedReviewObligation,
 } from './obligation.js';
-import { findLatestPendingReviewObligation } from '../../review/assurance.js';
 import { resolveHostTaskFindings } from '../review-validation.js';
 import { recordSubmittedReviewInvocation } from './invocation.js';
 import {
@@ -47,8 +51,68 @@ import {
   persistReviewCompletion,
   buildReviewCompletionResponse,
 } from './completion.js';
+import { resolveBranchReviewSource } from '../../../adapters/gh-cli.js';
+import { prepareReviewContent } from '../../../rails/review.js';
+import { findReviewObligationById } from '../../review/assurance.js';
+import { writeStateWithArtifacts } from '../helpers.js';
+
+// ─── Content Digest Binding ─────────────────────────────────────────────────
+
+async function bindReviewContentDigest(
+  context: Parameters<ToolDefinition['execute']>[1],
+  obligationId: string,
+  reviewedContentDigest: string,
+): Promise<SessionState> {
+  return withMutableSessionTransaction(context, async ({ sessDir, state }) => {
+    const assurance = state.reviewAssurance;
+    if (!assurance) throw new Error('No review assurance state for content digest binding');
+
+    const obligation = findReviewObligationById(assurance, obligationId);
+    if (!obligation) throw new Error('Obligation not found for content digest binding');
+
+    const existingMeta = obligation.metadata;
+    const updatedMetadata: Record<string, unknown> = {
+      ...(typeof existingMeta === 'object' && existingMeta !== null ? existingMeta : {}),
+      reviewedContentDigest,
+    };
+
+    const updatedObligation = { ...obligation, metadata: updatedMetadata };
+    const updatedObligations = assurance.obligations.map((o) =>
+      o.obligationId === obligationId ? updatedObligation : o,
+    );
+
+    const updatedState: SessionState = {
+      ...state,
+      reviewAssurance: {
+        ...assurance,
+        obligations: updatedObligations,
+      },
+    };
+
+    await writeStateWithArtifacts(sessDir, updatedState);
+    return updatedState;
+  });
+}
 
 // ─── Review preparation orchestrator ─────────────────────────────────────────
+
+function populateBranchRefInput(
+  refInput: ReviewReferenceInput | undefined,
+  source: {
+    branch: string;
+    baseBranch: string;
+    resolvedBranchSha: string;
+    resolvedBaseSha: string;
+  },
+): ReviewReferenceInput {
+  return {
+    ...refInput,
+    branch: source.branch,
+    baseBranch: source.baseBranch,
+    resolvedBranchSha: source.resolvedBranchSha,
+    resolvedBaseSha: source.resolvedBaseSha,
+  };
+}
 
 async function prepareReviewExecution(
   sessDir: string,
@@ -56,24 +120,62 @@ async function prepareReviewExecution(
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
 ): Promise<ReviewPreparation | string> {
+  // Resolve immutable branch source only when creating an obligation. An explicit
+  // host-task continuation is bound to its existing obligation and must not re-resolve refs.
+  const isFindingsSubmission = exec.args.reviewFindings !== undefined;
+  const isHostTaskVerdictContinuation =
+    exec.policy === 'host_task_required' &&
+    exec.args.reviewVerdict !== undefined &&
+    exec.args.reviewObligationId !== undefined;
+  const resolvedSource =
+    exec.args.branch && !isFindingsSubmission && !isHostTaskVerdictContinuation
+      ? resolveBranchReviewSource(exec.args.branch)
+      : undefined;
+
   const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec);
   if (hostTaskVerdict) return hostTaskVerdict;
 
-  const missingAnalysis = await ensureMissingAnalysisObligation(
+  const missingResult = await ensureMissingAnalysisObligation(
     sessDir,
     state,
     exec.args,
     exec.now,
+    resolvedSource,
   );
-  if (missingAnalysis) return missingAnalysis;
 
   let refInput = buildReviewReferenceInput(exec.args);
-  if (exec.args.reviewFindings === undefined) {
-    return { result, refInput, validatedReviewObligation: null };
+  if (resolvedSource) {
+    refInput = populateBranchRefInput(refInput, resolvedSource);
   }
+  if (resolvedSource && missingResult.obligation) {
+    refInput = {
+      ...refInput,
+      reviewObligationId: missingResult.obligation.obligationId,
+    };
+  }
+  if (exec.args.reviewFindings === undefined) {
+    return {
+      result,
+      refInput,
+      validatedReviewObligation: null,
+      pendingObligation: missingResult.obligation,
+      blockMessage: missingResult.message ?? undefined,
+    };
+  }
+  return finishFindingsSubmission(sessDir, state, result, exec, refInput);
+}
 
+async function finishFindingsSubmission(
+  sessDir: string,
+  state: SessionState,
+  result: StartedReviewResult,
+  exec: ReviewExecutionContext,
+  refInput: ReviewReferenceInput | undefined,
+): Promise<ReviewPreparation | string> {
   const resolved = await resolveSubmittedReviewObligation(sessDir, state, exec.args, exec.now);
-  if (resolved.blocked) return resolved.blocked;
+  if (resolved.blocked || !resolved.obligation) {
+    return resolved.blocked ?? formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {});
+  }
   const validationBlock = validateSubmittedReviewFindings(exec.args, resolved.obligation);
   if (validationBlock) return validationBlock;
   const recorded = await recordSubmittedReviewInvocation(
@@ -84,6 +186,16 @@ async function prepareReviewExecution(
   );
   if (recorded.blocked) return recorded.blocked;
   if (refInput) refInput = { ...refInput, skipExternalContentLoad: true };
+  // Carry obligation provenance into refInput for the findings-submission path
+  const meta = resolved.obligation.metadata;
+  if (typeof meta?.resolvedBranchSha === 'string' && typeof meta?.resolvedBaseSha === 'string') {
+    refInput = {
+      ...refInput,
+      reviewObligationId: resolved.obligation.obligationId,
+      resolvedBranchSha: meta.resolvedBranchSha,
+      resolvedBaseSha: meta.resolvedBaseSha,
+    };
+  }
   return {
     result: recorded.result,
     refInput,
@@ -94,30 +206,69 @@ async function prepareReviewExecution(
   };
 }
 
+type HostTaskObligationResolution =
+  { kind: 'found'; obligation: ReviewObligation } | { kind: 'missing' };
+
+function resolveHostTaskObligation(
+  state: SessionState,
+  reviewObligationId: string,
+): HostTaskObligationResolution {
+  const obligation = findReviewObligationById(state.reviewAssurance, reviewObligationId);
+  if (
+    obligation &&
+    obligation.obligationType === 'review' &&
+    obligation.status !== 'consumed' &&
+    obligation.status !== 'blocked'
+  ) {
+    return { kind: 'found', obligation };
+  }
+  return { kind: 'missing' };
+}
+
+function validateHostTaskObligationInput(
+  obligation: ReviewObligation,
+  args: ReviewToolArgs,
+): string | null {
+  if (!matchesReviewObligationInput(obligation, args)) {
+    return formatBlocked('REVIEW_OBLIGATION_INPUT_MISMATCH', {
+      obligationId: obligation.obligationId,
+      reason: 'The supplied review input does not match the host-task review obligation.',
+    });
+  }
+  return null;
+}
+
+function getHostTaskVerdictContinuation(
+  exec: ReviewExecutionContext,
+): { reviewObligationId: string; reviewVerdict: 'accept' | 'changes_requested' } | null {
+  if (exec.policy !== 'host_task_required') return null;
+  const { reviewObligationId, reviewVerdict } = exec.args;
+  if (reviewObligationId === undefined || reviewVerdict === undefined) return null;
+  return { reviewObligationId, reviewVerdict };
+}
+
 function prepareHostTaskVerdictReview(
   state: SessionState,
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
 ): ReviewPreparation | string | null {
-  if (exec.policy !== 'host_task_required' || exec.args.reviewVerdict === undefined) return null;
+  // A verdict without an ID is an allowed first call. It must create (or reissue
+  // instructions for) an obligation rather than guessing a continuation identity.
+  const continuation = getHostTaskVerdictContinuation(exec);
+  if (!continuation) return null;
   if (!hasReviewContentInput(exec.args)) return null;
 
-  const fingerprint = fingerprintReviewInput(exec.args);
-  const obligation = findLatestPendingReviewObligation(
-    state.reviewAssurance,
-    'review',
-    fingerprint,
-  );
+  const resolution = resolveHostTaskObligation(state, continuation.reviewObligationId);
+  if (resolution.kind === 'missing') {
+    return formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {
+      obligationId: continuation.reviewObligationId,
+      reason: 'The host-task review obligation is missing, consumed, or blocked.',
+    });
+  }
 
-  // First content-aware /review call that already carries a reviewVerdict but
-  // has NO pending obligation yet: do NOT terminally block on missing host-task
-  // evidence. Fall through (return null) so prepareReviewExecution reaches
-  // ensureMissingAnalysisObligation, which creates the PENDING obligation and
-  // returns CONTENT_ANALYSIS_REQUIRED — exactly like a verdict-less first call.
-  // Otherwise the reviewer Task would have nothing to bind to and the flow
-  // wedges (a verdict in the first call could never succeed).
-  if (obligation === null) return null;
-
+  const obligation = resolution.obligation;
+  const inputBlock = validateHostTaskObligationInput(obligation, exec.args);
+  if (inputBlock) return inputBlock;
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
 
   if (resolved.kind === 'incoherent') {
@@ -153,9 +304,9 @@ function prepareHostTaskVerdictReview(
     });
   }
 
-  if (exec.args.reviewVerdict !== resolved.findings.overallVerdict) {
+  if (continuation.reviewVerdict !== resolved.findings.overallVerdict) {
     return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
-      provided: exec.args.reviewVerdict,
+      provided: continuation.reviewVerdict,
       expected: resolved.findings.overallVerdict,
     });
   }
@@ -273,6 +424,13 @@ export const review: ToolDefinition = {
       .describe('GitHub PR number to load via gh CLI and analyze during /review.'),
     branch: z.string().optional().describe('Git branch name to load via gh CLI and analyze.'),
     url: z.string().url().optional().describe('URL to fetch and analyze during /review.'),
+    reviewObligationId: z
+      .string()
+      .uuid()
+      .optional()
+      .describe(
+        'Exact obligation ID from requiredReviewAttestation.toolObligationId. Required when submitting a host-task review verdict.',
+      ),
     reviewVerdict: z
       .enum(['accept', 'changes_requested'])
       .optional()
@@ -292,12 +450,37 @@ export const review: ToolDefinition = {
       const prepared = await prepareReviewWithoutExternalCalls(args, context);
       if (typeof prepared === 'string') return prepared;
 
-      // External content loading and analyzer execution happen outside the session write lock.
+      // Load external content and compute the content digest
+      const contentResult = await prepareReviewContent(
+        prepared.refInput,
+        undefined /* dnsLookup */,
+      );
+      if (contentResult && 'kind' in contentResult) {
+        return formatBlockedReviewReport(contentResult);
+      }
+
+      // Bind the content digest to the obligation before any further action.
+      // First-call paths use pendingObligation; findings-submission uses validatedReviewObligation.
+      const bindTarget = prepared.pendingObligation ?? prepared.validatedReviewObligation;
+      let reviewState = prepared.result.state;
+      if (contentResult?.reviewedContentDigest && bindTarget?.obligationId) {
+        reviewState = await bindReviewContentDigest(
+          context,
+          bindTarget.obligationId,
+          contentResult.reviewedContentDigest,
+        );
+      }
+
+      // Return the blocking message AFTER content loading and digest binding,
+      // so the obligation is fully prepared for the reviewer.
+      if (prepared.blockMessage) return prepared.blockMessage;
+
       const reviewResult = await executeReview(
-        prepared.result.state,
+        reviewState,
         prepared.now,
         buildReviewExecutors(args, prepared.effectiveReviewFindings),
         prepared.refInput,
+        contentResult?.content,
       );
       return await persistCompletedReview(args, context, reviewResult, prepared.now);
     } catch (err) {

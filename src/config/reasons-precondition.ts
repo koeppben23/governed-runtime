@@ -137,6 +137,28 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'REVIEW_OBLIGATION_NOT_FOUND',
+    category: 'precondition',
+    messageTemplate:
+      'The review obligation {obligationId} is missing, consumed, blocked, or does not match the supplied review continuation.',
+    recoverySteps: [
+      'Use reviewObligationId from the original CONTENT_ANALYSIS_REQUIRED response',
+      'If the obligation was archived or the session changed, start a new /review and complete its new review lifecycle',
+    ],
+  },
+
+  {
+    code: 'REVIEW_OBLIGATION_INPUT_MISMATCH',
+    category: 'precondition',
+    messageTemplate:
+      'The supplied review input does not match the immutable source identity for obligation {obligationId}.',
+    recoverySteps: [
+      'Reuse the exact content input from the original CONTENT_ANALYSIS_REQUIRED response',
+      'Do not combine reviewObligationId with a different branch, PR, URL, text, input origin, or references',
+    ],
+  },
+
+  {
     code: 'REVIEWER_UNAVAILABLE_STRICT',
     category: 'precondition',
     messageTemplate:

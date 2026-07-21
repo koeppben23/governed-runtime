@@ -239,6 +239,24 @@ export const ReviewInvocationEvidence = z
     hostCapturedAgentId: z.string().min(1).optional(),
     hostCapturedAgentType: z.literal(REVIEWER_SUBAGENT_TYPE).optional(),
     hostCaptureSource: z.enum(['subagent_stop_hook', 'post_tool_use_hook']).optional(),
+    /** Resolved full head commit SHA (branch reviews only). */
+    resolvedBranchSha: z
+      .string()
+      .regex(/^[0-9a-f]{40,64}$/i)
+      .nullable()
+      .optional(),
+    /** Resolved full base commit SHA (branch reviews only). */
+    resolvedBaseSha: z
+      .string()
+      .regex(/^[0-9a-f]{40,64}$/i)
+      .nullable()
+      .optional(),
+    /** SHA-256 digest of the extracted/reviewed content (branch reviews only). */
+    reviewedContentDigest: z
+      .string()
+      .regex(/^[0-9a-f]{64}$/i)
+      .nullable()
+      .optional(),
   })
   .readonly();
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;

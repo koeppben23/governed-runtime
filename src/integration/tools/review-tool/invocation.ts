@@ -23,6 +23,8 @@ import {
   formatBlockedWithAttestation,
   formatSubagentReviewNotInvoked,
   fingerprintReviewInput,
+  getRequiredBranchReviewSource,
+  ReviewProvenanceError,
 } from './obligation.js';
 import type {
   NativeAttestationRejection,
@@ -152,6 +154,29 @@ export async function resolveNativeAttestation(input: {
   };
 }
 
+function getBranchProvenance(obligation: ReviewObligation): {
+  resolvedBranchSha?: string | null;
+  resolvedBaseSha?: string | null;
+  reviewedContentDigest?: string | null;
+} {
+  const isBranchReview =
+    typeof obligation.metadata?.branch === 'string' && obligation.metadata.branch.length > 0;
+  if (!isBranchReview) return {};
+  // For branch reviews, all three fields must be present
+  const source = getRequiredBranchReviewSource(obligation);
+  const digest = obligation.metadata?.reviewedContentDigest;
+  if (typeof digest !== 'string' || digest.length === 0) {
+    throw new ReviewProvenanceError(
+      'Branch review obligation does not contain a valid content digest.',
+    );
+  }
+  return {
+    resolvedBranchSha: source.resolvedBranchSha,
+    resolvedBaseSha: source.resolvedBaseSha,
+    reviewedContentDigest: digest,
+  };
+}
+
 // ─── Manual invocation state building ────────────────────────────────────────
 
 function buildManualInvocationState(input: {
@@ -186,6 +211,7 @@ function buildManualInvocationState(input: {
     invokedAt: now,
     fulfilledAt: now,
     source: 'agent-submitted-attested',
+    ...getBranchProvenance(obligation),
     ...(attestation.hostCapturedAgentId
       ? { hostCapturedAgentId: attestation.hostCapturedAgentId }
       : {}),

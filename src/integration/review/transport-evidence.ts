@@ -23,6 +23,7 @@ import {
   hashText,
   validateStrictAttestation,
 } from './assurance.js';
+import { getBranchProvenanceFields } from './review-provenance.js';
 
 export type TransportEvidenceBindResult =
   | { readonly status: 'none' }
@@ -269,6 +270,7 @@ function buildManualTransportInvocation(
     source: 'agent-submitted-attested',
     capturedVerdict: findings.overallVerdict,
     capturedRawFindings: findings,
+    ...getBranchProvenanceFields(obligation),
   });
 }
 
