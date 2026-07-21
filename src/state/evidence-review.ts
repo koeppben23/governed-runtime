@@ -244,15 +244,15 @@ export const ReviewInvocationEvidence = z
       .string()
       .regex(/^[0-9a-f]{40,64}$/i)
       .nullable()
-      .default(null),
+      .optional(),
     /** Resolved full base commit SHA (branch reviews only). */
     resolvedBaseSha: z
       .string()
       .regex(/^[0-9a-f]{40,64}$/i)
       .nullable()
-      .default(null),
+      .optional(),
     /** SHA-256 digest of the extracted/reviewed content (branch reviews only). */
-    reviewedContentDigest: z.string().min(1).nullable().default(null),
+    reviewedContentDigest: z.string().min(1).nullable().optional(),
   })
   .readonly();
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;

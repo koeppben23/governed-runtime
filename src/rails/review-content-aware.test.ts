@@ -32,7 +32,7 @@ async function executeReviewReport(
   ...args: Parameters<typeof executeReviewUnsafe>
 ): Promise<ReviewReport> {
   const result = await executeReviewUnsafe(...args);
-  if ('kind' in result && result.kind === 'blocked') throw new Error(result.reason);
+  if ('kind' in result && result!.kind === 'blocked') throw new Error(result.reason);
   return result;
 }
 
@@ -173,22 +173,25 @@ describe('PR-E: content-aware /review', () => {
 describe('HAPPY: loadExternalContent content path', () => {
   it('text field returns content branch with the text', async () => {
     const result = await loadExternalContent({ text: 'analysis content' });
-    expect('content' in result).toBe(true);
-    if ('content' in result) {
-      expect(result.content).toBe('analysis content');
+    expect(result).not.toBeNull();
+    expect('content' in result!).toBe(true);
+    if ('content' in result!) {
+      expect(result!.content).toBe('analysis content');
     }
   });
 
   it('empty string text returns content branch with empty string', async () => {
     const result = await loadExternalContent({ text: '' });
-    expect('content' in result).toBe(true);
-    if ('content' in result) {
-      expect(result.content).toBe('');
+    expect(result).not.toBeNull();
+    expect('content' in result!).toBe(true);
+    if ('content' in result!) {
+      expect(result!.content).toBe('');
     }
   });
 
   it('no input fields returns null', async () => {
     const result = await loadExternalContent({});
+    expect(result).not.toBeNull();
     expect(result).toBeNull();
   });
 
@@ -206,28 +209,31 @@ describe('HAPPY: loadExternalContent content path', () => {
 describe('BAD: blocked paths', () => {
   it('loadExternalContent with prNumber returns blocked (no gh CLI)', async () => {
     const result = await loadExternalContent({ prNumber: 42 });
-    expect('content' in result).toBe(false);
-    if (!('content' in result)) {
-      expect(result.kind).toBe('blocked');
-      expect(result.code).toBe('COMMAND_BLOCKED');
+    expect(result).not.toBeNull();
+    expect('content' in result!).toBe(false);
+    if (!('content' in result!)) {
+      expect(result!.kind).toBe('blocked');
+      expect(result!.code).toBe('COMMAND_BLOCKED');
     }
   });
 
   it('loadExternalContent with branch without provenance returns blocked', async () => {
     const result = await loadExternalContent({ branch: 'feature/x' });
+    expect(result).not.toBeNull();
     expect(!('content' in (result ?? {}))).toBe(true);
     if (result && 'kind' in result) {
-      expect(result.kind).toBe('blocked');
-      expect(result.code).toBe('REVIEW_BRANCH_PROVENANCE_MISSING');
+      expect(result!.kind).toBe('blocked');
+      expect(result!.code).toBe('REVIEW_BRANCH_PROVENANCE_MISSING');
     }
   });
 
   it('loadExternalContent with blocked URL returns blocked', async () => {
     const result = await loadExternalContent({ url: 'http://0.0.0.0/secret' });
-    expect('content' in result).toBe(false);
-    if (!('content' in result)) {
-      expect(result.kind).toBe('blocked');
-      expect(result.code).toBe('COMMAND_BLOCKED');
+    expect(result).not.toBeNull();
+    expect('content' in result!).toBe(false);
+    if (!('content' in result!)) {
+      expect(result!.kind).toBe('blocked');
+      expect(result!.code).toBe('COMMAND_BLOCKED');
     }
   });
 });
@@ -238,9 +244,9 @@ describe('CORNER: mixed input fields', () => {
       prNumber: 42,
       text: 'should be ignored',
     });
-    expect('content' in result).toBe(false);
-    if (!('content' in result)) {
-      expect(result.kind).toBe('blocked');
+    expect('content' in result!).toBe(false);
+    if (!('content' in result!)) {
+      expect(result!.kind).toBe('blocked');
     }
   });
 
@@ -250,9 +256,9 @@ describe('CORNER: mixed input fields', () => {
       url: 'https://example.com',
       text: 'fallback',
     });
-    expect('content' in result).toBe(false);
-    if (!('content' in result)) {
-      expect(result.kind).toBe('blocked');
+    expect('content' in result!).toBe(false);
+    if (!('content' in result!)) {
+      expect(result!.kind).toBe('blocked');
     }
   });
 
@@ -261,10 +267,10 @@ describe('CORNER: mixed input fields', () => {
       url: 'http://0.0.0.0/test-priority',
       text: 'fallback',
     });
-    expect('content' in result).toBe(false);
-    if (!('content' in result)) {
-      expect(result.kind).toBe('blocked');
-      expect(result.code).toBe('COMMAND_BLOCKED');
+    expect('content' in result!).toBe(false);
+    if (!('content' in result!)) {
+      expect(result!.kind).toBe('blocked');
+      expect(result!.code).toBe('COMMAND_BLOCKED');
     }
   });
 });
