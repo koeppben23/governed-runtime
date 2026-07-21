@@ -8,7 +8,7 @@ FlowGuard provides deterministic workflow control, evidence gates, audit trails,
 and policy-bound decisions around supported AI-assisted engineering hosts. OpenCode
 currently provides the strongest enforcement path through its synchronous plugin;
 Claude Code and Codex are supported through MCP, hooks, and native packaging with
-hook-gated, platform-limited guarantees.
+hook-gated, platform-limited guarantees. Claude Code and Codex are technical previews.
 
 ---
 
@@ -21,6 +21,8 @@ Release publication is tag-driven (`v*`): if no release tag has been published y
 2. Install: `npx --package ./flowguard-core-{version}.tgz flowguard install --core-tarball ./flowguard-core-{version}.tgz`
 3. Restart OpenCode (plugins are loaded once at startup)
 4. Verify: `npx --package ./flowguard-core-{version}.tgz flowguard doctor`
+
+If you installed with `--install-scope repo`, use the same flag for `doctor`.
 
 See [docs/installation.md](./docs/installation.md) for full instructions.
 
@@ -79,6 +81,8 @@ In headless/non-interactive execution, FlowGuard does not rely on follow-up ques
 > For production headless workflows, use OpenCode directly (`opencode run`, `opencode serve`).
 
 ## In 30 Seconds
+
+This section applies to OpenCode, the fully supported GA host.
 
 Three governed flows are available after `/start` (or `/hydrate`):
 
