@@ -95,6 +95,7 @@ describe('cli/doctor', () => {
         (c) =>
           !c.file.startsWith('trust://') &&
           c.check !== SHIPPED_EXECUTABLE_CHECK &&
+          c.check !== 'opencode-instruction-source-activation' &&
           !c.file.includes('build-info.json'),
       );
       const allOk = fileChecks.every((c) => c.status === 'ok');
@@ -172,6 +173,7 @@ describe('cli/doctor', () => {
         1 +
         1 +
         1 +
+        1 + // opencode-instruction-source-activation (instruction-source gate)
         11 +
         executableChecks +
         buildInfoChecks;
@@ -508,6 +510,40 @@ describe('cli/doctor', () => {
       expect(ocCheck?.detail).toContain(mandatesInstructionEntry('repo'));
     });
 
+    it('activation: reports warn — activation is NOT_VERIFIED (never claims supported)', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+      const checks = await doctor(repoArgs({ action: 'doctor' }));
+      const compat = checks.find((c) => c.check === 'opencode-instruction-source-activation');
+      expect(compat).toBeDefined();
+      expect(compat?.status).toBe('warn');
+      expect(compat?.detail).toContain('activation is NOT_VERIFIED');
+      expect(compat?.detail).toContain('cannot prove');
+      expect(compat?.detail).not.toContain('supported');
+      expect(compat?.detail).not.toContain('instruction source configured');
+    });
+
+    it('activation: desktop-owned config reports warn (NOT_VERIFIED, not error)', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+      const ocPath = path.join(tmpDir, 'opencode.json');
+      const content = JSON.parse(await fs.readFile(ocPath, 'utf-8'));
+      // Simulate a desktop-owned config (plugin field present).
+      content.plugin = ['some-desktop-plugin'];
+      await fs.writeFile(ocPath, JSON.stringify(content, null, 2), 'utf-8');
+
+      const checks = await doctor(repoArgs({ action: 'doctor' }));
+      const compat = checks.find((c) => c.check === 'opencode-instruction-source-activation');
+      expect(compat?.status).toBe('warn');
+      expect(compat?.detail).toContain('activation');
+      expect(compat?.detail).not.toContain('instruction source configured');
+      expect(
+        checks.some(
+          (c) => c.check === 'opencode-instruction-source-activation' && c.status === 'error',
+        ),
+      ).toBe(false);
+    });
+
     it('detects instruction_stale (legacy AGENTS.md entry)', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
@@ -807,6 +843,7 @@ describe('cli/doctor', () => {
             (c) =>
               !c.file.startsWith('trust://') &&
               c.check !== SHIPPED_EXECUTABLE_CHECK &&
+              c.check !== 'opencode-instruction-source-activation' &&
               !c.file.includes('build-info.json'),
           )
           .every((c) => c.status === 'ok'),
@@ -827,6 +864,7 @@ describe('cli/doctor', () => {
             (c) =>
               !c.file.startsWith('trust://') &&
               c.check !== SHIPPED_EXECUTABLE_CHECK &&
+              c.check !== 'opencode-instruction-source-activation' &&
               !c.file.includes('build-info.json'),
           )
           .every((c) => c.status === 'ok'),

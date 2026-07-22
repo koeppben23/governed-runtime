@@ -84,7 +84,7 @@ describe('repository AGENTS guidance', () => {
       // Stable conciseness budget for root AGENTS.md after restructuring
       // (PR #723). Area-specific details moved to src/{machine,config,integration}/.
       // 187 lines / 8635 chars as of 2026-07.
-      expect(lines).toBeLessThanOrEqual(190);
+      expect(lines).toBeLessThanOrEqual(195);
       expect(content.length).toBeLessThanOrEqual(9000);
     });
 

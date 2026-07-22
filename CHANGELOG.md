@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Honest OpenCode instruction-source status (configured ≠ activated).**
+  `flowguard install` and `flowguard doctor` no longer claim an OpenCode
+  installation is "supported", "active", or "compatible" based solely on a
+  present `instructions[]` mandate entry. A present entry is reported as
+  **configured** only; the doctor detail states explicitly that activation is
+  not verifiable by FlowGuard (the Desktop app exposes no version/API and
+  OpenCode offers no resolved-instruction surface). An unknown or Desktop
+  runtime is never classified as compatible. A runtime that is positively known
+  — with cited evidence — to accept the entry without resolving it fails closed
+  with the `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED` reason (deny-list, seeded
+  empty); install then writes artifacts but refuses to report an active install
+  ("write but refuse"). Detected runtime facts (version best-effort, kind,
+  executable path, OS, install method, date) are still logged. See
+  `docs/platform-limitations.md`. `NOT_VERIFIED`: FlowGuard does not prove
+  activation on any runtime.
+
 - **Golden baseline tests for all four review cards.** Eight exact-match
   golden fixtures cover the reachable key states of the Plan Review Card
   (approval-ready, changes-requested), Architecture Review Card (accepted,

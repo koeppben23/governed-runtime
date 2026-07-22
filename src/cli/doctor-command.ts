@@ -44,6 +44,9 @@ import { checkShippedExecutables } from './doctor-executables.js';
 import { checkBuildInfo } from './doctor-build-info.js';
 import { checkPluginActivation } from './doctor-plugin.js';
 import { checkLastSessionHandshake } from './doctor-handshake.js';
+import { detectOpenCodeRuntimeEvidence } from './opencode-runtime-detect.js';
+import { classifyOpenCodeRuntime } from './opencode-runtime-compat.js';
+import { defaultReasonRegistry } from '../config/reasons.js';
 
 /**
  * Read a file for doctor inspection. Returns content or null.
@@ -269,6 +272,58 @@ async function checkOpencodeInstructions(
   return checks;
 }
 
+/** Check-category tag for the OpenCode instruction-source activation check. */
+const ACTIVATION_CHECK = 'opencode-instruction-source-activation';
+
+/**
+ * Report whether FlowGuard can verify that OpenCode loaded the configured
+ * instruction source.
+ *
+ * Honest posture: FlowGuard has no reliable surface to prove that OpenCode
+ * resolved `instructions[]` into the model context. This check warns that
+ * activation is unverifiable regardless of whether the structural config
+ * (handled by `checkOpencodeInstructions`) is present.
+ *
+ * A positively-known incompatible runtime (deny-list) is the only case
+ * that fails closed with an error.
+ */
+async function checkOpencodeInstructionSourceActivation(
+  scope: InstallScope,
+  target: string,
+): Promise<DoctorCheck[]> {
+  const opencodeJsonPath = resolveOpencodeConfigPath(scope, target);
+  const evidence = await detectOpenCodeRuntimeEvidence({ scope, platform: 'opencode', target });
+  const classification = classifyOpenCodeRuntime(evidence);
+
+  if (classification.status === 'known-unsupported') {
+    const formatted = defaultReasonRegistry.format('OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED', {
+      runtimeLine: evidence.runtimeLine ?? 'unknown',
+      version: evidence.version ?? 'unknown',
+    });
+    return [
+      {
+        file: opencodeJsonPath,
+        status: 'error',
+        detail: `${formatted.reason} (${classification.matched?.reason ?? ''})`.trim(),
+        check: ACTIVATION_CHECK,
+      },
+    ];
+  }
+
+  const runtimeDesc = `${evidence.runtimeKind}${evidence.version ? ` v${evidence.version}` : ''}`;
+  return [
+    {
+      file: opencodeJsonPath,
+      status: 'warn',
+      detail:
+        `runtime ${runtimeDesc}; instruction-source activation is NOT_VERIFIED. ` +
+        'FlowGuard cannot prove that OpenCode loaded the configured source. ' +
+        'See docs/platform-limitations.md.',
+      check: ACTIVATION_CHECK,
+    },
+  ];
+}
+
 function checkDesktopTaskHardening(
   parsed: Record<string, unknown>,
   instructions: string[],
@@ -444,6 +499,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   checks.push(...(await checkDependencies(target)));
   if (installPlatform === 'opencode') {
     checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
+    checks.push(...(await checkOpencodeInstructionSourceActivation(args.installScope, target)));
   }
   checks.push(...(await checkWorkspaceConfig(args.installScope, installPlatform, target)));
   if (installPlatform === 'opencode') {

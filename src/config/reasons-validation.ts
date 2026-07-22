@@ -308,5 +308,17 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     ],
   },
 
+  {
+    code: 'OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED',
+    category: 'config',
+    messageTemplate:
+      'OpenCode accepts the FlowGuard instruction entry but the detected runtime ({runtimeLine}, version {version}) does not resolve instruction sources. FlowGuard mandates are not active.',
+    recoverySteps: [
+      'Switch to an OpenCode runtime that is not on the FlowGuard incompatible deny-list',
+      'Verify the mandate file path is present in the opencode.json instructions[] array',
+      'Open an OpenCode session and confirm FlowGuard mandates take effect; FlowGuard cannot verify activation automatically',
+    ],
+  },
+
   ...REVIEW_VALIDATION_REASONS,
 ] as const satisfies readonly BlockedReason[];

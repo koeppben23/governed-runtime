@@ -36,6 +36,10 @@ FlowGuard-governed runtime session.
   files unless explicitly justified; 2000 LOC for test files. New files near
   the limit must not be further inflated. Prefer refactoring when a touched
   file already exceeds budget.
+* Lockfile discipline: use `npm install` (not `npm audit fix` alone) for
+  dependency changes. `npm audit fix` without a subsequent `npm install`
+  produces lockfiles that `npm ci` on CI cannot parse. Commit the result of
+  `npm install`, never a lockfile touched only by `npm audit fix`.
 
 ### Assumptions and Evidence
 

@@ -333,8 +333,17 @@ describe('cli/install', () => {
       expect(result.warnings).toEqual([]);
       expect(result.notices!).toEqual([
         {
+          kind: 'status',
+          message:
+            'FlowGuard mandates are configured for OpenCode. Activation depends on the runtime ' +
+            'loading instructions[] into the agent context; install does not verify this. ' +
+            'A present instructions[] entry does not prove activation.',
+        },
+        {
           kind: 'next',
-          message: 'Restart OpenCode to activate FlowGuard (plugins are loaded once at startup).',
+          message:
+            'Restart OpenCode to reload the updated FlowGuard configuration.' +
+            ' Mandate activation remains NOT_VERIFIED.',
         },
       ]);
 
