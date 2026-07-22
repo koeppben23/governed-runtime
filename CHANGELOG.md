@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **OpenCode instruction-source compatibility gate.** `flowguard install` and
+  `flowguard doctor` now detect the OpenCode runtime and verify that the
+  configured `instructions[]` mandate entry is resolved as an instruction
+  source, closing a silent fail-open where a present array entry alone reported
+  a healthy/active install. Uses a documented deny-list posture: Desktop and
+  every CLI version are supported (the `instructions[]` mechanism is
+  version-independent per the official docs); only a positively-known
+  incompatible runtime yields the new `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED`
+  reason with fail-closed recovery steps. Install writes artifacts but refuses
+  to report an active install for incompatible runtimes. The detected OpenCode
+  version, runtime kind, executable path, OS, install method, and install date
+  are recorded to the FlowGuard logs. See `docs/platform-limitations.md`.
+
 - **Golden baseline tests for all four review cards.** Eight exact-match
   golden fixtures cover the reachable key states of the Plan Review Card
   (approval-ready, changes-requested), Architecture Review Card (accepted,

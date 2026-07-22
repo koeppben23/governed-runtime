@@ -23,6 +23,9 @@ import {
   resolveConfigTargetDir,
 } from './install-steps.js';
 import { rollbackArtifacts, toCliError } from './install-helpers.js';
+import { detectOpenCodeRuntimeEvidence } from './opencode-runtime-detect.js';
+import { classifyOpenCodeRuntime } from './opencode-runtime-compat.js';
+import { defaultReasonRegistry } from '../config/reasons.js';
 import {
   createDependencyTransaction,
   executeDependencyTransaction,
@@ -208,6 +211,39 @@ export async function install(args: CliArgs): Promise<CliResult> {
   }
 }
 
+// ─── Instruction-source compatibility gate ────────────────────────────────────
+
+/**
+ * Instruction-source compatibility gate for install.
+ *
+ * Runs AFTER artifacts are written (write-but-refuse posture): a positively
+ * known-incompatible runtime does not roll back the install but pushes a
+ * blocking error + warning carrying the OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED
+ * reason, so the install result is not clean/active. Compatible, unknown and
+ * Desktop runtimes pass silently (evidence is still logged by the detector).
+ */
+async function enforceInstructionSourceCompat(ctx: InstallContext): Promise<void> {
+  if (ctx.installPlatform !== 'opencode') return;
+
+  const evidence = await detectOpenCodeRuntimeEvidence({
+    scope: ctx.args.installScope,
+    platform: 'opencode',
+    target: ctx.target,
+  });
+  const classification = classifyOpenCodeRuntime(evidence);
+  if (classification.compatibility !== 'known-incompatible') return;
+
+  const formatted = defaultReasonRegistry.format('OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED', {
+    runtimeLine: evidence.runtimeLine ?? 'unknown',
+    version: evidence.version ?? 'unknown',
+  });
+  ctx.warnings.push(
+    'FlowGuard artifacts were written but the detected OpenCode runtime does not resolve instruction sources — mandates are NOT active.',
+  );
+  ctx.errors.push(formatted.reason);
+  ctx.errorDetails.push({ message: formatted.reason });
+}
+
 async function doInstall(args: CliArgs): Promise<CliResult> {
   let snapshot: SnapshotResult | null = null;
   let tx: DependencyTransaction | null = null;
@@ -251,6 +287,12 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
     snapshot = await buildRollbackSnapshot(ctx, tarball.name);
     await writeArtifacts(ctx, tarball, snapshot);
     await writeConfigFiles(ctx, snapshot);
+
+    // Instruction-source compatibility gate (write-but-refuse posture).
+    // Artifacts are already written; if the runtime is positively known to be
+    // incompatible we surface a blocking error + warning so the install does
+    // not report a clean/active result. Compatible/unknown/Desktop pass.
+    await enforceInstructionSourceCompat(ctx);
 
     // Create transaction before any dependency mutations
     tx = await createDependencyTransaction(snapshot, snapshot.vendorTarballPath);

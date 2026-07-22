@@ -172,6 +172,7 @@ describe('cli/doctor', () => {
         1 +
         1 +
         1 +
+        1 + // opencode-runtime-compat (instruction-source gate)
         11 +
         executableChecks +
         buildInfoChecks;
@@ -506,6 +507,33 @@ describe('cli/doctor', () => {
       );
       expect(ocCheck).toBeDefined();
       expect(ocCheck?.detail).toContain(mandatesInstructionEntry('repo'));
+    });
+
+    it('runtime-compat: reports ok for a normal install (deny-list empty => compatible)', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+      const checks = await doctor(repoArgs({ action: 'doctor' }));
+      const compat = checks.find((c) => c.check === 'opencode-runtime-compat');
+      expect(compat).toBeDefined();
+      expect(compat?.status).toBe('ok');
+      expect(compat?.detail).toContain('instructions[] supported');
+    });
+
+    it('runtime-compat: desktop-owned config stays green (every version supported)', async () => {
+      const tarball = await createMockTarball();
+      await install(repoArgs({ coreTarball: tarball }));
+      const ocPath = path.join(tmpDir, 'opencode.json');
+      const content = JSON.parse(await fs.readFile(ocPath, 'utf-8'));
+      // Simulate a desktop-owned config (plugin field present).
+      content.plugin = ['some-desktop-plugin'];
+      await fs.writeFile(ocPath, JSON.stringify(content, null, 2), 'utf-8');
+
+      const checks = await doctor(repoArgs({ action: 'doctor' }));
+      const compat = checks.find((c) => c.check === 'opencode-runtime-compat');
+      expect(compat?.status).toBe('ok');
+      expect(
+        checks.some((c) => c.check === 'opencode-runtime-compat' && c.status === 'error'),
+      ).toBe(false);
     });
 
     it('detects instruction_stale (legacy AGENTS.md entry)', async () => {

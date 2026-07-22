@@ -44,6 +44,9 @@ import { checkShippedExecutables } from './doctor-executables.js';
 import { checkBuildInfo } from './doctor-build-info.js';
 import { checkPluginActivation } from './doctor-plugin.js';
 import { checkLastSessionHandshake } from './doctor-handshake.js';
+import { detectOpenCodeRuntimeEvidence } from './opencode-runtime-detect.js';
+import { classifyOpenCodeRuntime } from './opencode-runtime-compat.js';
+import { defaultReasonRegistry } from '../config/reasons.js';
 
 /**
  * Read a file for doctor inspection. Returns content or null.
@@ -269,6 +272,49 @@ async function checkOpencodeInstructions(
   return checks;
 }
 
+/** Check-category tag for the OpenCode instruction-source compatibility gate. */
+const RUNTIME_COMPAT_CHECK = 'opencode-runtime-compat';
+
+/**
+ * Check that the detected OpenCode runtime resolves `instructions[]` as an
+ * instruction source. Deny-list posture: compatible/unknown/Desktop are `ok`;
+ * only a positively-known incompatible runtime yields an error carrying the
+ * OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED reason. This closes the silent
+ * fail-open where a present array entry alone reported "healthy".
+ */
+async function checkOpencodeRuntimeCompat(
+  scope: InstallScope,
+  target: string,
+): Promise<DoctorCheck[]> {
+  const opencodeJsonPath = resolveOpencodeConfigPath(scope, target);
+  const evidence = await detectOpenCodeRuntimeEvidence({ scope, platform: 'opencode', target });
+  const classification = classifyOpenCodeRuntime(evidence);
+
+  if (classification.compatibility === 'known-incompatible') {
+    const formatted = defaultReasonRegistry.format('OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED', {
+      runtimeLine: evidence.runtimeLine ?? 'unknown',
+      version: evidence.version ?? 'unknown',
+    });
+    return [
+      {
+        file: opencodeJsonPath,
+        status: 'error',
+        detail: `${formatted.reason} (${classification.matched?.reason ?? ''})`.trim(),
+        check: RUNTIME_COMPAT_CHECK,
+      },
+    ];
+  }
+
+  return [
+    {
+      file: opencodeJsonPath,
+      status: 'ok',
+      detail: `runtime ${evidence.runtimeKind}${evidence.version ? ` v${evidence.version}` : ''}; instructions[] supported`,
+      check: RUNTIME_COMPAT_CHECK,
+    },
+  ];
+}
+
 function checkDesktopTaskHardening(
   parsed: Record<string, unknown>,
   instructions: string[],
@@ -444,6 +490,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   checks.push(...(await checkDependencies(target)));
   if (installPlatform === 'opencode') {
     checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
+    checks.push(...(await checkOpencodeRuntimeCompat(args.installScope, target)));
   }
   checks.push(...(await checkWorkspaceConfig(args.installScope, installPlatform, target)));
   if (installPlatform === 'opencode') {

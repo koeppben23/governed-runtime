@@ -233,6 +233,37 @@ governed capability is lost.
 | MEDIUM        | Acceptable with documented awareness        | Audit trail + obligation escalation warnings                       |
 | HIGH (Gap 3)  | Requires explicit organizational acceptance | External process monitoring, health checks, incident response plan |
 
+## OpenCode instruction-source compatibility
+
+FlowGuard installs its mandates by registering an entry in the OpenCode
+`instructions[]` array. Per the official OpenCode documentation this is the
+supported, version-independent mechanism for loading instruction sources:
+
+- <https://opencode.ai/docs/config#instructions> (retrieved 2026-07)
+- <https://opencode.ai/docs/rules> (retrieved 2026-07)
+
+The mechanism is exposed identically to the **OpenCode CLI** and the
+**OpenCode Desktop** app, and the docs bind it to no particular version.
+FlowGuard therefore supports Desktop and every CLI version.
+
+Compatibility is enforced with a **deny-list**, not an allow-list:
+
+- Compatible, unknown, and Desktop runtimes are reported healthy.
+- Only a runtime that is _positively known_ — with cited evidence — to accept
+  the `instructions[]` entry without resolving it is treated as incompatible.
+  Such a runtime yields the `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED` reason in
+  `flowguard doctor` and a non-clean `flowguard install` result (artifacts are
+  written but mandates are reported as NOT active — "write but refuse").
+- The deny-list (`KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES` in
+  `src/cli/opencode-runtime-compat.ts`) is seeded empty; no such runtime is
+  currently known.
+
+`flowguard doctor` and `flowguard install` record the detected OpenCode version
+(best-effort, CLI only), runtime kind, executable path, OS, install method, and
+install date to the FlowGuard logs. The Desktop app exposes no
+`opencode --version` executable, so its version is logged as `null`; this does
+not affect compatibility.
+
 ## References
 
 - `src/adapters/host-adapter.ts` — Host-Agnostic Adapter Interface (HAI)
