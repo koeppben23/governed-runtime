@@ -95,6 +95,7 @@ describe('cli/doctor', () => {
         (c) =>
           !c.file.startsWith('trust://') &&
           c.check !== SHIPPED_EXECUTABLE_CHECK &&
+          c.check !== 'opencode-runtime-compat' &&
           !c.file.includes('build-info.json'),
       );
       const allOk = fileChecks.every((c) => c.status === 'ok');
@@ -509,20 +510,20 @@ describe('cli/doctor', () => {
       expect(ocCheck?.detail).toContain(mandatesInstructionEntry('repo'));
     });
 
-    it('runtime-compat: reports ok but states configured-not-activated (no "supported" claim)', async () => {
+    it('runtime-compat: reports warn but states configured-not-activated (no "supported" claim)', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const checks = await doctor(repoArgs({ action: 'doctor' }));
       const compat = checks.find((c) => c.check === 'opencode-runtime-compat');
       expect(compat).toBeDefined();
-      expect(compat?.status).toBe('ok');
+      expect(compat?.status).toBe('warn');
       // honesty: configured, but activation is explicitly not claimed
       expect(compat?.detail).toContain('instruction source configured');
       expect(compat?.detail).toContain('activation is not verifiable');
       expect(compat?.detail).not.toContain('supported');
     });
 
-    it('runtime-compat: desktop-owned config stays structurally ok (configured, not claimed active)', async () => {
+    it('runtime-compat: desktop-owned config reports warn (configured, not claimed active)', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const ocPath = path.join(tmpDir, 'opencode.json');
@@ -533,7 +534,7 @@ describe('cli/doctor', () => {
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
       const compat = checks.find((c) => c.check === 'opencode-runtime-compat');
-      expect(compat?.status).toBe('ok');
+      expect(compat?.status).toBe('warn');
       expect(compat?.detail).toContain('activation is not verifiable');
       expect(
         checks.some((c) => c.check === 'opencode-runtime-compat' && c.status === 'error'),
@@ -839,6 +840,7 @@ describe('cli/doctor', () => {
             (c) =>
               !c.file.startsWith('trust://') &&
               c.check !== SHIPPED_EXECUTABLE_CHECK &&
+              c.check !== 'opencode-runtime-compat' &&
               !c.file.includes('build-info.json'),
           )
           .every((c) => c.status === 'ok'),
@@ -859,6 +861,7 @@ describe('cli/doctor', () => {
             (c) =>
               !c.file.startsWith('trust://') &&
               c.check !== SHIPPED_EXECUTABLE_CHECK &&
+              c.check !== 'opencode-runtime-compat' &&
               !c.file.includes('build-info.json'),
           )
           .every((c) => c.status === 'ok'),

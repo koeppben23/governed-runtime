@@ -312,7 +312,7 @@ async function checkOpencodeRuntimeCompat(
   return [
     {
       file: opencodeJsonPath,
-      status: 'ok',
+      status: 'warn',
       detail:
         `instruction source configured (runtime ${runtimeDesc}); ` +
         'activation is not verifiable by FlowGuard — a present instructions[] entry ' +

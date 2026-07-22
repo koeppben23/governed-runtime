@@ -568,7 +568,9 @@ export function emitPostInstallWarnings(ctx: InstallContext): void {
   } else {
     ctx.notices.push({
       kind: 'next',
-      message: 'Restart OpenCode to activate FlowGuard (plugins are loaded once at startup).',
+      message:
+        'Restart OpenCode to reload the updated FlowGuard configuration.' +
+        ' Mandate activation remains NOT_VERIFIED.',
     });
   }
 }
