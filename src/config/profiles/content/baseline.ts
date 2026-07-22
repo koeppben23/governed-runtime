@@ -136,7 +136,9 @@ and emit recovery steps.
 | AP-B07 | Logging Secrets | Credentials in logs, compliance violations, security exposure |
 | AP-B08 | Synchronous Blocking in Async Context | Deadlocks, throughput degradation, resource exhaustion |
 | AP-B09 | Copy-Paste Duplication | Diverging behavior, multiplied bugs, maintenance burden |
-| AP-B10 | Magic Numbers/Strings | Unclear intent, scattered dependencies, hard to change |`;
+| AP-B10 | Magic Numbers/Strings | Unclear intent, scattered dependencies, hard to change |
+| AP-B11 | Over-Engineering / Premature Abstraction | Speculative flexibility, defensive code for impossible cases, and abstractions for one call site add cost without value and obscure intent |
+| AP-B12 | Test-Fitting / Hardcoding-to-Pass | Solutions that special-case test inputs instead of implementing the general logic hide real defects and break on valid inputs the tests do not cover |`;
 
 // ─── Phase-Specific Sections ─────────────────────────────────────────────────
 
@@ -340,6 +342,112 @@ async def fetch_all(urls):
         return [await r.json() for r in responses]
 </correct>
 <why>Synchronous I/O in async context blocks the event loop, causing deadlocks, throughput degradation, and resource exhaustion under concurrent load.</why>
+</example>
+
+<example id="AP-B09" type="anti-pattern">
+<incorrect>
+# COPY-PASTE DUPLICATION — same discount logic pasted in two places
+def price_cart(items):
+    total = sum(i["price"] * i["qty"] for i in items)
+    if total > 100:
+        total = total * 0.9
+    return total
+
+def price_quote(items):
+    total = sum(i["price"] * i["qty"] for i in items)
+    if total > 100:            # duplicated rule — will diverge over time
+        total = total * 0.9
+    return total
+</incorrect>
+<correct>
+# Single source of truth for the shared rule
+def _apply_bulk_discount(total):
+    return total * 0.9 if total > 100 else total
+
+def _subtotal(items):
+    return sum(i["price"] * i["qty"] for i in items)
+
+def price_cart(items):
+    return _apply_bulk_discount(_subtotal(items))
+
+def price_quote(items):
+    return _apply_bulk_discount(_subtotal(items))
+</correct>
+<why>Duplicated logic diverges the moment one copy is changed and the other is missed, multiplying bugs and forcing every fix to be applied in several places.</why>
+</example>
+
+<example id="AP-B10" type="anti-pattern">
+<incorrect>
+# MAGIC NUMBERS/STRINGS — unexplained literals scattered across the code
+def is_retryable(status):
+    return status in (429, 503, 504)
+
+def backoff(attempt):
+    return min(2 ** attempt, 30)  # what is 30?
+</incorrect>
+<correct>
+# Named constants convey intent and centralize change
+RETRYABLE_STATUS_CODES = (429, 503, 504)
+MAX_BACKOFF_SECONDS = 30
+
+def is_retryable(status):
+    return status in RETRYABLE_STATUS_CODES
+
+def backoff(attempt):
+    return min(2 ** attempt, MAX_BACKOFF_SECONDS)
+</correct>
+<why>Unexplained literals hide intent, scatter the same decision across the codebase, and make a single conceptual change require hunting down every occurrence.</why>
+</example>
+
+<example id="AP-B11" type="anti-pattern">
+<incorrect>
+# OVER-ENGINEERING — speculative flexibility for one caller
+class GreeterStrategy:
+    def greet(self, name): ...
+
+class DefaultGreeter(GreeterStrategy):
+    def greet(self, name):
+        return f"Hello, {name}"
+
+class GreeterFactory:
+    def create(self, kind="default"):
+        return DefaultGreeter()
+
+def greet_user(name):
+    return GreeterFactory().create().greet(name)  # one implementation, ever
+</incorrect>
+<correct>
+# The minimum that satisfies the requirement
+def greet_user(name):
+    return f"Hello, {name}"
+</correct>
+<why>Abstractions built for hypothetical future variation that never arrives add indirection, code, and cognitive load without value; add the seam only when a second real case exists.</why>
+</example>
+
+<example id="AP-B12" type="anti-pattern">
+<incorrect>
+# TEST-FITTING — special-casing the known test inputs instead of solving the problem
+def roman(n):
+    if n == 4:
+        return "IV"        # only the values the tests check
+    if n == 9:
+        return "IX"
+    return "I" * n
+</incorrect>
+<correct>
+# General algorithm that works for every valid input
+_ROMAN = [(1000,"M"),(900,"CM"),(500,"D"),(400,"CD"),(100,"C"),(90,"XC"),
+          (50,"L"),(40,"XL"),(10,"X"),(9,"IX"),(5,"V"),(4,"IV"),(1,"I")]
+
+def roman(n):
+    out = []
+    for value, symbol in _ROMAN:
+        while n >= value:
+            out.append(symbol)
+            n -= value
+    return "".join(out)
+</correct>
+<why>Hardcoding the values a test asserts makes the suite green while the real logic is absent; the function breaks on every valid input the tests do not enumerate, hiding the defect until production.</why>
 </example>
 </examples>`;
 

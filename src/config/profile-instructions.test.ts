@@ -325,10 +325,10 @@ describe('config/profile/few-shot-examples', () => {
       expect(matches).toHaveLength(7);
     });
 
-    it('Baseline profile has 8 examples', () => {
+    it('Baseline profile has 12 examples', () => {
       const impl = resolveProfileInstructions(baselineProfile.instructions, 'IMPLEMENTATION');
       const matches = impl.match(/<example id="/g);
-      expect(matches).toHaveLength(8);
+      expect(matches).toHaveLength(12);
     });
   });
 
@@ -403,7 +403,7 @@ describe('config/profile/few-shot-examples', () => {
       }
     });
 
-    it('Baseline examples cover B01-B08', () => {
+    it('Baseline examples cover B01-B12', () => {
       const impl = resolveProfileInstructions(baselineProfile.instructions, 'IMPLEMENTATION');
       for (const id of [
         'AP-B01',
@@ -414,6 +414,10 @@ describe('config/profile/few-shot-examples', () => {
         'AP-B06',
         'AP-B07',
         'AP-B08',
+        'AP-B09',
+        'AP-B10',
+        'AP-B11',
+        'AP-B12',
       ]) {
         expect(impl).toContain(`id="${id}"`);
       }
