@@ -314,9 +314,9 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'OpenCode accepts the FlowGuard instruction entry but the detected runtime ({runtimeLine}, version {version}) does not resolve instruction sources. FlowGuard mandates are not active.',
     recoverySteps: [
-      'Use a supported OpenCode runtime (Desktop and every CLI version resolve the instructions[] mechanism per the official docs)',
-      'Install FlowGuard through the supported OpenCode instructions[] mechanism',
-      'Run `flowguard doctor` after switching runtimes to confirm mandates load',
+      'Switch to an OpenCode runtime that is not on the FlowGuard incompatible deny-list',
+      'Verify the mandate file path is present in the opencode.json instructions[] array',
+      'Open an OpenCode session and confirm FlowGuard mandates take effect; FlowGuard cannot verify activation automatically',
     ],
   },
 

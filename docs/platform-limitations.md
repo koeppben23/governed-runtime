@@ -233,36 +233,54 @@ governed capability is lost.
 | MEDIUM        | Acceptable with documented awareness        | Audit trail + obligation escalation warnings                       |
 | HIGH (Gap 3)  | Requires explicit organizational acceptance | External process monitoring, health checks, incident response plan |
 
-## OpenCode instruction-source compatibility
+## OpenCode instruction-source: configured is not activated
 
 FlowGuard installs its mandates by registering an entry in the OpenCode
 `instructions[]` array. Per the official OpenCode documentation this is the
-supported, version-independent mechanism for loading instruction sources:
+documented mechanism for loading instruction sources, exposed to both the CLI
+and the Desktop app:
 
 - <https://opencode.ai/docs/config#instructions> (retrieved 2026-07)
 - <https://opencode.ai/docs/rules> (retrieved 2026-07)
 
-The mechanism is exposed identically to the **OpenCode CLI** and the
-**OpenCode Desktop** app, and the docs bind it to no particular version.
-FlowGuard therefore supports Desktop and every CLI version.
+**A present `instructions[]` entry means the instruction source is _configured_.
+It does not prove the runtime loaded the mandates into the model context.**
+FlowGuard has no reliable surface to verify activation: the Desktop app exposes
+no `opencode --version` executable and OpenCode offers no documented API that
+reports the resolved instruction sources or the composed system prompt.
+FlowGuard therefore never claims the mandates are "active", "supported", or that
+a runtime is "compatible".
 
-Compatibility is enforced with a **deny-list**, not an allow-list:
+What the tools report honestly:
 
-- Compatible, unknown, and Desktop runtimes are reported healthy.
-- Only a runtime that is _positively known_ — with cited evidence — to accept
-  the `instructions[]` entry without resolving it is treated as incompatible.
-  Such a runtime yields the `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED` reason in
-  `flowguard doctor` and a non-clean `flowguard install` result (artifacts are
-  written but mandates are reported as NOT active — "write but refuse").
-- The deny-list (`KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES` in
-  `src/cli/opencode-runtime-compat.ts`) is seeded empty; no such runtime is
-  currently known.
+- `flowguard doctor` — the instruction-source check is `ok` only in the sense
+  that the entry is **configured**. Its detail states explicitly that
+  activation is not verifiable by FlowGuard. It does not turn the installation
+  green under a false "supported" claim.
+- `flowguard install` — writes the config and mandate file, then emits a notice
+  that mandates are **configured** and that activation is not verified by
+  install. It does not claim the runtime is governed.
+- An unknown or Desktop runtime is **never** classified as compatible. It is
+  simply `configured` (present, activation unverified).
+
+Fail-closed exception (deny-list): if a runtime is _positively known_ — with
+cited evidence — to accept the `instructions[]` entry without resolving it, it
+yields the `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED` reason in `flowguard
+doctor` and a non-clean `flowguard install` result (artifacts are written but
+mandates are reported as NOT active — "write but refuse"). The deny-list
+(`KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES` in
+`src/cli/opencode-runtime-compat.ts`) is seeded empty; no such runtime is
+currently known.
 
 `flowguard doctor` and `flowguard install` record the detected OpenCode version
 (best-effort, CLI only), runtime kind, executable path, OS, install method, and
 install date to the FlowGuard logs. The Desktop app exposes no
-`opencode --version` executable, so its version is logged as `null`; this does
-not affect compatibility.
+`opencode --version` executable, so its version is logged as `null`; this is a
+detection limitation and does not by itself imply activation either way.
+
+`NOT_VERIFIED`: FlowGuard does not prove instruction-source activation on any
+runtime. A future mechanism could verify activation if OpenCode exposes the
+resolved instruction sources or the composed agent system prompt.
 
 ## References
 

@@ -9,18 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **OpenCode instruction-source compatibility gate.** `flowguard install` and
-  `flowguard doctor` now detect the OpenCode runtime and verify that the
-  configured `instructions[]` mandate entry is resolved as an instruction
-  source, closing a silent fail-open where a present array entry alone reported
-  a healthy/active install. Uses a documented deny-list posture: Desktop and
-  every CLI version are supported (the `instructions[]` mechanism is
-  version-independent per the official docs); only a positively-known
-  incompatible runtime yields the new `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED`
-  reason with fail-closed recovery steps. Install writes artifacts but refuses
-  to report an active install for incompatible runtimes. The detected OpenCode
-  version, runtime kind, executable path, OS, install method, and install date
-  are recorded to the FlowGuard logs. See `docs/platform-limitations.md`.
+- **Honest OpenCode instruction-source status (configured ≠ activated).**
+  `flowguard install` and `flowguard doctor` no longer claim an OpenCode
+  installation is "supported", "active", or "compatible" based solely on a
+  present `instructions[]` mandate entry. A present entry is reported as
+  **configured** only; the doctor detail states explicitly that activation is
+  not verifiable by FlowGuard (the Desktop app exposes no version/API and
+  OpenCode offers no resolved-instruction surface). An unknown or Desktop
+  runtime is never classified as compatible. A runtime that is positively known
+  — with cited evidence — to accept the entry without resolving it fails closed
+  with the `OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED` reason (deny-list, seeded
+  empty); install then writes artifacts but refuses to report an active install
+  ("write but refuse"). Detected runtime facts (version best-effort, kind,
+  executable path, OS, install method, date) are still logged. See
+  `docs/platform-limitations.md`. `NOT_VERIFIED`: FlowGuard does not prove
+  activation on any runtime.
 
 - **Golden baseline tests for all four review cards.** Eight exact-match
   golden fixtures cover the reachable key states of the Plan Review Card
