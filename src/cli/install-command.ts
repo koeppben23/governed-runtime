@@ -214,13 +214,17 @@ export async function install(args: CliArgs): Promise<CliResult> {
 // ─── Instruction-source compatibility gate ────────────────────────────────────
 
 /**
- * Instruction-source compatibility gate for install.
+ * Instruction-source gate for install.
  *
  * Runs AFTER artifacts are written (write-but-refuse posture): a positively
- * known-incompatible runtime does not roll back the install but pushes a
+ * known-unsupported runtime does not roll back the install but pushes a
  * blocking error + warning carrying the OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED
- * reason, so the install result is not clean/active. Compatible, unknown and
- * Desktop runtimes pass silently (evidence is still logged by the detector).
+ * reason, so the install result is not clean.
+ *
+ * For every other case the install is honest rather than triumphant: mandates
+ * are CONFIGURED, but activation is not verified by install. A present
+ * `instructions[]` entry does not prove the runtime loaded it, so install adds
+ * a notice saying so instead of claiming the runtime is governed.
  */
 async function enforceInstructionSourceCompat(ctx: InstallContext): Promise<void> {
   if (ctx.installPlatform !== 'opencode') return;
@@ -231,17 +235,28 @@ async function enforceInstructionSourceCompat(ctx: InstallContext): Promise<void
     target: ctx.target,
   });
   const classification = classifyOpenCodeRuntime(evidence);
-  if (classification.compatibility !== 'known-incompatible') return;
 
-  const formatted = defaultReasonRegistry.format('OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED', {
-    runtimeLine: evidence.runtimeLine ?? 'unknown',
-    version: evidence.version ?? 'unknown',
+  if (classification.status === 'known-unsupported') {
+    const formatted = defaultReasonRegistry.format('OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED', {
+      runtimeLine: evidence.runtimeLine ?? 'unknown',
+      version: evidence.version ?? 'unknown',
+    });
+    ctx.warnings.push(
+      'FlowGuard artifacts were written but the detected OpenCode runtime is known not to resolve instruction sources — mandates are NOT active.',
+    );
+    ctx.errors.push(formatted.reason);
+    ctx.errorDetails.push({ message: formatted.reason });
+    return;
+  }
+
+  // Configured, but not verified-active. Be honest instead of claiming governed.
+  ctx.notices.push({
+    kind: 'status',
+    message:
+      'FlowGuard mandates are configured for OpenCode. Activation depends on the runtime ' +
+      'loading instructions[] into the agent context; install does not verify this. ' +
+      'A present instructions[] entry does not prove activation.',
   });
-  ctx.warnings.push(
-    'FlowGuard artifacts were written but the detected OpenCode runtime does not resolve instruction sources — mandates are NOT active.',
-  );
-  ctx.errors.push(formatted.reason);
-  ctx.errorDetails.push({ message: formatted.reason });
 }
 
 async function doInstall(args: CliArgs): Promise<CliResult> {
