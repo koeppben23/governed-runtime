@@ -64,8 +64,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // Refreshed for review-verdict disambiguation: the reviewer verdict token was
     // renamed 'approve' -> 'accept' (LoopVerdict), so the build-agent mandate's
     // review-verdict line changed.
+    // Refreshed for agent-role + Extended Guidance: prepended a senior-engineer
+    // role/identity sentence and enriched ## 12. Extended Guidance to name the
+    // owning authorities (commands/profiles/reviewer) without duplicating them.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      'aede72b6f9c10ef7452fa6ee995b190c871005ba6177076132b696902726325b',
+      'a7609e99ea74257aefd620818318d9d2a7f13a954a82cdcc4aee1214b9acacfe',
     );
   });
 
