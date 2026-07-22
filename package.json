@@ -96,7 +96,8 @@
     "release:assert-main-tag": "node scripts/assert-main-release-tag.js"
   },
   "engines": {
-    "node": "^20.0.0 || ^22.0.0 || ^24.0.0"
+    "node": "^20.0.0 || ^22.0.0 || ^24.0.0",
+    "npm": "^10.0.0"
   },
   "devEngines": {
     "runtime": {
@@ -114,6 +115,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@opentelemetry/api": "^1.9.1",
     "asn1js": "^3.0.10",
+    "fast-uri": "^3.1.4",
     "jose": "^6.2.3",
     "jsonc-parser": "^3.3.1",
     "pkijs": "^3.4.0",
