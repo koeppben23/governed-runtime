@@ -1,35 +1,38 @@
 /**
  * @module cli/opencode-runtime-compat
- * @description Canonical authority for OpenCode instruction-source compatibility.
+ * @description Canonical authority for OpenCode instruction-source classification.
  *
  * FlowGuard installs its mandates by registering an entry in the OpenCode
  * `instructions[]` array (see src/templates/mandates.ts). Per the official
- * OpenCode documentation this is the supported, version-independent mechanism
- * for loading custom instruction sources:
+ * OpenCode documentation this is the documented mechanism for loading custom
+ * instruction sources, exposed to both the CLI and the Desktop app:
  *   - https://opencode.ai/docs/config#instructions  (retrieved 2026-07)
  *   - https://opencode.ai/docs/rules                 (retrieved 2026-07)
  *
- * The documentation ties `instructions[]` resolution to no particular OpenCode
- * version, and it is exposed identically to the CLI and the Desktop app. There
- * is therefore no documented "supported version" list to allow-list against.
+ * Honesty model (deliberate, reviewed decision):
+ *   - A present `instructions[]` entry means the instruction source is
+ *     CONFIGURED. It does NOT prove the runtime actually loaded the file into
+ *     the model context. FlowGuard has no reliable surface to verify activation
+ *     (the Desktop app exposes no `--version` executable and no documented
+ *     resolved-instruction API), so this module never claims "supported",
+ *     "active", or "compatible".
+ *   - `configured` is therefore the neutral, honest classification: the entry
+ *     is in place; activation is simply not asserted here.
+ *   - `known-unsupported` is asserted ONLY when a runtime positively matches an
+ *     entry in {@link KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES}. This is a deny-list,
+ *     not an allow-list. It is seeded empty: no OpenCode runtime is currently
+ *     known — with evidence — to accept the `instructions[]` array entry while
+ *     failing to resolve it as an instruction source. Entries may only be added
+ *     with a positive, cited evidence source in `verifiedBy`.
  *
- * Classification model (deliberate, reviewed decision):
- *   - Default posture is `compatible`. An unknown runtime (including the
- *     Desktop app, which exposes no `--version` executable) is treated as
- *     compatible because the documented instruction-source mechanism is
- *     version-independent. This keeps FlowGuard working on Desktop and every
- *     CLI version.
- *   - `known-incompatible` is asserted ONLY when a runtime positively matches
- *     an entry in {@link KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES}. This is a
- *     deny-list, not an allow-list. It is seeded empty: no OpenCode runtime is
- *     currently known — with evidence — to accept the `instructions[]` array
- *     entry while failing to resolve it as an instruction source. Entries may
- *     only be added with a positive, cited evidence source in `verifiedBy`.
+ * An unknown runtime is NEVER treated as compatible/supported — it is simply
+ * `configured` (present but unverified). Blocking is reserved for positively
+ * known-incompatible runtimes.
  *
  * This is a pure module: no I/O, no side effects. Detection lives in
  * opencode-runtime-detect.ts; this module only classifies evidence.
  *
- * @version v1
+ * @version v2
  */
 
 /** Runtime "kind" derived from config-ownership heuristics (never from a version). */
@@ -69,21 +72,29 @@ export interface OpenCodeRuntimeDenyEntry {
  * `instructions[]` entry without resolving it as an instruction source.
  *
  * SEEDED EMPTY BY DESIGN. No such runtime is currently known with evidence.
- * The official docs describe `instructions[]` as universally supported. Do NOT
- * add speculative entries — each addition is a security-boundary change that
- * requires a positive, cited `verifiedBy` source.
+ * Do NOT add speculative entries — each addition is a security-boundary change
+ * that requires a positive, cited `verifiedBy` source.
  */
 export const KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES: readonly OpenCodeRuntimeDenyEntry[] = [];
 
-/** Classification result. `unknown` runtimes classify as `compatible`. */
-export type OpenCodeRuntimeCompatibility = 'compatible' | 'known-incompatible';
+/**
+ * Classification of the instruction source.
+ *
+ * - `configured`: the `instructions[]` entry is present. Activation is NOT
+ *   asserted — a present entry does not prove the runtime loaded it.
+ * - `known-unsupported`: the runtime positively matches the deny-list.
+ *
+ * There is deliberately no `compatible`/`supported`/`active` value: FlowGuard
+ * does not verify activation and must not claim it.
+ */
+export type OpenCodeRuntimeStatus = 'configured' | 'known-unsupported';
 
 /**
- * The matched deny entry when classification is `known-incompatible`.
- * `undefined` when `compatible`.
+ * The matched deny entry when status is `known-unsupported`.
+ * `undefined` when `configured`.
  */
 export interface OpenCodeRuntimeClassification {
-  readonly compatibility: OpenCodeRuntimeCompatibility;
+  readonly status: OpenCodeRuntimeStatus;
   readonly matched?: OpenCodeRuntimeDenyEntry;
 }
 
@@ -106,24 +117,22 @@ function versionInRange(version: string | null, range: string | undefined): bool
 /**
  * Classify runtime evidence against the deny-list.
  *
- * Fail-open on unknown (returns `compatible`) is intentional and documented:
- * the instruction-source mechanism is version-independent per official docs,
- * and Desktop exposes no version. Blocking is reserved for positively-known
- * incompatible runtimes.
+ * An unknown runtime (no positively determinable runtime-line, including the
+ * Desktop app) classifies as `configured` — present but activation-unverified.
+ * It is NEVER classified as compatible/supported. Blocking (`known-unsupported`)
+ * is reserved for positively-known incompatible runtimes on the deny-list.
  */
 export function classifyOpenCodeRuntime(
   evidence: OpenCodeRuntimeEvidence,
   denyList: readonly OpenCodeRuntimeDenyEntry[] = KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES,
 ): OpenCodeRuntimeClassification {
   if (evidence.runtimeLine === null) {
-    return { compatibility: 'compatible' };
+    return { status: 'configured' };
   }
   const matched = denyList.find(
     (entry) =>
       entry.runtimeLine === evidence.runtimeLine &&
       versionInRange(evidence.version, entry.versionRange),
   );
-  return matched
-    ? { compatibility: 'known-incompatible', matched }
-    : { compatibility: 'compatible' };
+  return matched ? { status: 'known-unsupported', matched } : { status: 'configured' };
 }
