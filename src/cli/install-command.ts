@@ -211,7 +211,7 @@ export async function install(args: CliArgs): Promise<CliResult> {
   }
 }
 
-// ─── Instruction-source compatibility gate ────────────────────────────────────
+// ─── Instruction-source status (configured vs. known-unsupported) ─────────────
 
 /**
  * Instruction-source gate for install.
@@ -303,10 +303,11 @@ async function doInstall(args: CliArgs): Promise<CliResult> {
     await writeArtifacts(ctx, tarball, snapshot);
     await writeConfigFiles(ctx, snapshot);
 
-    // Instruction-source compatibility gate (write-but-refuse posture).
+    // Instruction-source status (write-but-refuse posture).
     // Artifacts are already written; if the runtime is positively known to be
-    // incompatible we surface a blocking error + warning so the install does
-    // not report a clean/active result. Compatible/unknown/Desktop pass.
+    // unsupported we surface a blocking error + warning so the install does not
+    // report a clean result. Otherwise install stays honest: configured, with a
+    // notice that activation is not verified (unknown/Desktop are not claimed active).
     await enforceInstructionSourceCompat(ctx);
 
     // Create transaction before any dependency mutations
