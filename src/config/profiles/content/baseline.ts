@@ -137,8 +137,8 @@ and emit recovery steps.
 | AP-B08 | Synchronous Blocking in Async Context | Deadlocks, throughput degradation, resource exhaustion |
 | AP-B09 | Copy-Paste Duplication | Diverging behavior, multiplied bugs, maintenance burden |
 | AP-B10 | Magic Numbers/Strings | Unclear intent, scattered dependencies, hard to change |
-| AP-B11 | Over-Engineering / Premature Abstraction | Speculative flexibility, defensive code for impossible cases, and abstractions for one call site add cost without value and obscure intent |
-| AP-B12 | Test-Fitting / Hardcoding-to-Pass | Solutions that special-case test inputs instead of implementing the general logic hide real defects and break on valid inputs the tests do not cover |`;
+| AP-B11 | Over-Engineering / Premature Abstraction | Speculative flexibility, unused indirection, cost without value |
+| AP-B12 | Test-Fitting / Hardcoding-to-Pass | Hidden defects, breaks on untested valid inputs, absent real logic |`;
 
 // ─── Phase-Specific Sections ─────────────────────────────────────────────────
 
