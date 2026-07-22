@@ -99,6 +99,9 @@ ${SHARED_REVIEW_LOOP({
 ## Rules
 
 - Follow the approved plan exactly — no deviations or additions.
+- Make only changes the plan requires or that are clearly necessary to make it work: no speculative flexibility, no defensive handling for scenarios that cannot occur, no unrequested refactors of untouched code (see AP-B11 Over-Engineering).
+- Solve the problem generally; never special-case test inputs or hardcode values to make checks pass (see AP-B12 Test-Fitting). If a test looks wrong, surface it instead of fitting to it.
+- Use the standard project tools; do not build helper-script workarounds to shortcut a task. Remove any temporary files or scaffolding created for iteration before finishing.
 - Record evidence with \`flowguard_implement({})\` (no arguments) BEFORE starting the review loop.
 - After \`flowguard_implement({})\`, auto-run \`flowguard_run_check\` — do not skip IMPL_VALIDATION.
 - When changes are requested in the review loop: make the actual code changes, then re-record

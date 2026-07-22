@@ -208,9 +208,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // conclusion and scopes the `Next action:` line to the fallback projection
     // only, matching /status, /why, and /finish. Changes those four bodies and
     // therefore the COMMANDS hash.
+    // Refreshed for /implement quality rules: added Anti-Over-Engineering
+    // (AP-B11), Test-Fitting (AP-B12), and no-workaround/cleanup rules to the
+    // /implement ## Rules section. Changes the /implement body and therefore the
+    // COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '84a43a623053f30d2930525c10c4c984f7222edc54fc4fdca81b9e1fb9150e61',
+      '2f57fbb837d6771fd2c172a4ca7896d5dbacfc228b209b81cbeee342db477098',
     );
   });
 
