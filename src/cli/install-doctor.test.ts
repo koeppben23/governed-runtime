@@ -509,17 +509,20 @@ describe('cli/doctor', () => {
       expect(ocCheck?.detail).toContain(mandatesInstructionEntry('repo'));
     });
 
-    it('runtime-compat: reports ok for a normal install (deny-list empty => compatible)', async () => {
+    it('runtime-compat: reports ok but states configured-not-activated (no "supported" claim)', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const checks = await doctor(repoArgs({ action: 'doctor' }));
       const compat = checks.find((c) => c.check === 'opencode-runtime-compat');
       expect(compat).toBeDefined();
       expect(compat?.status).toBe('ok');
-      expect(compat?.detail).toContain('instructions[] supported');
+      // honesty: configured, but activation is explicitly not claimed
+      expect(compat?.detail).toContain('instruction source configured');
+      expect(compat?.detail).toContain('activation is not verifiable');
+      expect(compat?.detail).not.toContain('supported');
     });
 
-    it('runtime-compat: desktop-owned config stays green (every version supported)', async () => {
+    it('runtime-compat: desktop-owned config stays structurally ok (configured, not claimed active)', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const ocPath = path.join(tmpDir, 'opencode.json');
@@ -531,6 +534,7 @@ describe('cli/doctor', () => {
       const checks = await doctor(repoArgs({ action: 'doctor' }));
       const compat = checks.find((c) => c.check === 'opencode-runtime-compat');
       expect(compat?.status).toBe('ok');
+      expect(compat?.detail).toContain('activation is not verifiable');
       expect(
         checks.some((c) => c.check === 'opencode-runtime-compat' && c.status === 'error'),
       ).toBe(false);

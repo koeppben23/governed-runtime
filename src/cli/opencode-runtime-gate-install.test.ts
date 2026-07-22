@@ -1,13 +1,13 @@
 /**
  * @module cli/opencode-runtime-gate-install.test
  * @description Negative-path + happy-path tests for the install-time
- * instruction-source compatibility gate (write-but-refuse posture).
+ * instruction-source gate (write-but-refuse for known-unsupported; honest
+ * "configured, not activated" notice otherwise).
  *
  * @test-policy HAPPY, BAD — negative path is the governance-critical case.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import { mkdirSync } from 'node:fs';
 
@@ -37,14 +37,14 @@ vi.mock('node:child_process', async (importOriginal) => {
   return { ...original, execFileSync: vi.fn(mockImpl), execSync: vi.fn(mockImpl) };
 });
 
-// Compatibility authority mock: lets each test choose the classification while
-// keeping the deny-list empty in production.
-const compatMock = vi.hoisted(() => ({ compatibility: 'compatible' as string }));
+// Classification authority mock: lets each test choose the status while keeping
+// the deny-list empty in production.
+const compatMock = vi.hoisted(() => ({ status: 'configured' as string }));
 vi.mock('./opencode-runtime-compat.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('./opencode-runtime-compat.js')>();
   return {
     ...original,
-    classifyOpenCodeRuntime: vi.fn(() => ({ compatibility: compatMock.compatibility })),
+    classifyOpenCodeRuntime: vi.fn(() => ({ status: compatMock.status })),
   };
 });
 
@@ -57,18 +57,18 @@ import {
 
 setupCliTestEnvironment();
 
-describe('install instruction-source compatibility gate', () => {
+describe('install instruction-source gate', () => {
   beforeEach(() => {
-    compatMock.compatibility = 'compatible';
+    compatMock.status = 'configured';
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('HAPPY — compatible/unknown runtime installs cleanly', () => {
-    it('produces no compat error and writes the mandates artifact', async () => {
-      compatMock.compatibility = 'compatible';
+  describe('HAPPY — configured runtime installs, but does not claim governed', () => {
+    it('writes the mandates artifact, no error, and emits an honest configured-not-activated notice', async () => {
+      compatMock.status = 'configured';
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
 
@@ -76,12 +76,16 @@ describe('install instruction-source compatibility gate', () => {
       expect(
         result.ops.some((o) => o.path.endsWith('flowguard-mandates.md') && o.action === 'written'),
       ).toBe(true);
+      // honesty: install must NOT claim activation
+      expect(
+        (result.notices ?? []).some((n) => n.message.includes('does not prove activation')),
+      ).toBe(true);
     });
   });
 
-  describe('BAD — known-incompatible runtime: write but refuse active', () => {
+  describe('BAD — known-unsupported runtime: write but refuse', () => {
     it('writes artifacts but surfaces the reason error and a warning', async () => {
-      compatMock.compatibility = 'known-incompatible';
+      compatMock.status = 'known-unsupported';
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
 
@@ -90,7 +94,7 @@ describe('install instruction-source compatibility gate', () => {
         result.ops.some((o) => o.path.endsWith('flowguard-mandates.md') && o.action === 'written'),
       ).toBe(true);
 
-      // refuse-active: blocking error carrying the reason + a warning
+      // refuse: blocking error carrying the reason + a warning
       expect(result.errors.some((e) => e.includes('does not resolve instruction sources'))).toBe(
         true,
       );
