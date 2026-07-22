@@ -272,15 +272,18 @@ async function checkOpencodeInstructions(
   return checks;
 }
 
-/** Check-category tag for the OpenCode instruction-source compatibility gate. */
+/** Check-category tag for the OpenCode instruction-source classification. */
 const RUNTIME_COMPAT_CHECK = 'opencode-runtime-compat';
 
 /**
- * Check that the detected OpenCode runtime resolves `instructions[]` as an
- * instruction source. Deny-list posture: compatible/unknown/Desktop are `ok`;
- * only a positively-known incompatible runtime yields an error carrying the
- * OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED reason. This closes the silent
- * fail-open where a present array entry alone reported "healthy".
+ * Report the OpenCode instruction-source status.
+ *
+ * Honest posture: a present `instructions[]` entry means the source is
+ * CONFIGURED, not that the runtime loaded it. FlowGuard cannot verify
+ * activation (Desktop exposes no version/API), so the `ok` status here means
+ * "configured" only and its detail says so explicitly — it never claims the
+ * mandates are active or supported. A positively-known incompatible runtime
+ * (deny-list) is the only case that fails closed with an error.
  */
 async function checkOpencodeRuntimeCompat(
   scope: InstallScope,
@@ -290,7 +293,7 @@ async function checkOpencodeRuntimeCompat(
   const evidence = await detectOpenCodeRuntimeEvidence({ scope, platform: 'opencode', target });
   const classification = classifyOpenCodeRuntime(evidence);
 
-  if (classification.compatibility === 'known-incompatible') {
+  if (classification.status === 'known-unsupported') {
     const formatted = defaultReasonRegistry.format('OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED', {
       runtimeLine: evidence.runtimeLine ?? 'unknown',
       version: evidence.version ?? 'unknown',
@@ -305,11 +308,15 @@ async function checkOpencodeRuntimeCompat(
     ];
   }
 
+  const runtimeDesc = `${evidence.runtimeKind}${evidence.version ? ` v${evidence.version}` : ''}`;
   return [
     {
       file: opencodeJsonPath,
       status: 'ok',
-      detail: `runtime ${evidence.runtimeKind}${evidence.version ? ` v${evidence.version}` : ''}; instructions[] supported`,
+      detail:
+        `instruction source configured (runtime ${runtimeDesc}); ` +
+        'activation is not verifiable by FlowGuard — a present instructions[] entry ' +
+        'does not prove the runtime loaded it. See docs/platform-limitations.md.',
       check: RUNTIME_COMPAT_CHECK,
     },
   ];
