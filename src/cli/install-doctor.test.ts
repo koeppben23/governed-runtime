@@ -95,7 +95,7 @@ describe('cli/doctor', () => {
         (c) =>
           !c.file.startsWith('trust://') &&
           c.check !== SHIPPED_EXECUTABLE_CHECK &&
-          c.check !== 'opencode-runtime-compat' &&
+          c.check !== 'opencode-instruction-source-activation' &&
           !c.file.includes('build-info.json'),
       );
       const allOk = fileChecks.every((c) => c.status === 'ok');
@@ -173,7 +173,7 @@ describe('cli/doctor', () => {
         1 +
         1 +
         1 +
-        1 + // opencode-runtime-compat (instruction-source gate)
+        1 + // opencode-instruction-source-activation (instruction-source gate)
         11 +
         executableChecks +
         buildInfoChecks;
@@ -510,20 +510,20 @@ describe('cli/doctor', () => {
       expect(ocCheck?.detail).toContain(mandatesInstructionEntry('repo'));
     });
 
-    it('runtime-compat: reports warn but states configured-not-activated (no "supported" claim)', async () => {
+    it('activation: reports warn — activation is NOT_VERIFIED (never claims supported)', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const compat = checks.find((c) => c.check === 'opencode-runtime-compat');
+      const compat = checks.find((c) => c.check === 'opencode-instruction-source-activation');
       expect(compat).toBeDefined();
       expect(compat?.status).toBe('warn');
-      // honesty: configured, but activation is explicitly not claimed
-      expect(compat?.detail).toContain('instruction source configured');
-      expect(compat?.detail).toContain('activation is not verifiable');
+      expect(compat?.detail).toContain('activation is NOT_VERIFIED');
+      expect(compat?.detail).toContain('cannot prove');
       expect(compat?.detail).not.toContain('supported');
+      expect(compat?.detail).not.toContain('instruction source configured');
     });
 
-    it('runtime-compat: desktop-owned config reports warn (configured, not claimed active)', async () => {
+    it('activation: desktop-owned config reports warn (NOT_VERIFIED, not error)', async () => {
       const tarball = await createMockTarball();
       await install(repoArgs({ coreTarball: tarball }));
       const ocPath = path.join(tmpDir, 'opencode.json');
@@ -533,11 +533,14 @@ describe('cli/doctor', () => {
       await fs.writeFile(ocPath, JSON.stringify(content, null, 2), 'utf-8');
 
       const checks = await doctor(repoArgs({ action: 'doctor' }));
-      const compat = checks.find((c) => c.check === 'opencode-runtime-compat');
+      const compat = checks.find((c) => c.check === 'opencode-instruction-source-activation');
       expect(compat?.status).toBe('warn');
-      expect(compat?.detail).toContain('activation is not verifiable');
+      expect(compat?.detail).toContain('activation');
+      expect(compat?.detail).not.toContain('instruction source configured');
       expect(
-        checks.some((c) => c.check === 'opencode-runtime-compat' && c.status === 'error'),
+        checks.some(
+          (c) => c.check === 'opencode-instruction-source-activation' && c.status === 'error',
+        ),
       ).toBe(false);
     });
 
@@ -840,7 +843,7 @@ describe('cli/doctor', () => {
             (c) =>
               !c.file.startsWith('trust://') &&
               c.check !== SHIPPED_EXECUTABLE_CHECK &&
-              c.check !== 'opencode-runtime-compat' &&
+              c.check !== 'opencode-instruction-source-activation' &&
               !c.file.includes('build-info.json'),
           )
           .every((c) => c.status === 'ok'),
@@ -861,7 +864,7 @@ describe('cli/doctor', () => {
             (c) =>
               !c.file.startsWith('trust://') &&
               c.check !== SHIPPED_EXECUTABLE_CHECK &&
-              c.check !== 'opencode-runtime-compat' &&
+              c.check !== 'opencode-instruction-source-activation' &&
               !c.file.includes('build-info.json'),
           )
           .every((c) => c.status === 'ok'),

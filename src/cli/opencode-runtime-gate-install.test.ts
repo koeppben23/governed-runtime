@@ -2,7 +2,7 @@
  * @module cli/opencode-runtime-gate-install.test
  * @description Negative-path + happy-path tests for the install-time
  * instruction-source gate (write-but-refuse for known-unsupported; honest
- * "configured, not activated" notice otherwise).
+ * "not-classified, not activated" notice otherwise).
  *
  * @test-policy HAPPY, BAD — negative path is the governance-critical case.
  */
@@ -39,7 +39,7 @@ vi.mock('node:child_process', async (importOriginal) => {
 
 // Classification authority mock: lets each test choose the status while keeping
 // the deny-list empty in production.
-const compatMock = vi.hoisted(() => ({ status: 'configured' as string }));
+const compatMock = vi.hoisted(() => ({ status: 'not-classified' as string }));
 vi.mock('./opencode-runtime-compat.js', async (importOriginal) => {
   const original = await importOriginal<typeof import('./opencode-runtime-compat.js')>();
   return {
@@ -59,16 +59,16 @@ setupCliTestEnvironment();
 
 describe('install instruction-source gate', () => {
   beforeEach(() => {
-    compatMock.status = 'configured';
+    compatMock.status = 'not-classified';
   });
 
   afterEach(() => {
     vi.clearAllMocks();
   });
 
-  describe('HAPPY — configured runtime installs, but does not claim governed', () => {
-    it('writes the mandates artifact, no error, and emits an honest configured-not-activated notice', async () => {
-      compatMock.status = 'configured';
+  describe('HAPPY — not-classified runtime installs, but does not claim governed', () => {
+    it('writes the mandates artifact, no error, and emits an honest not-classified-not-activated notice', async () => {
+      compatMock.status = 'not-classified';
       const tarball = await createMockTarball();
       const result = await install(repoArgs({ coreTarball: tarball }));
 

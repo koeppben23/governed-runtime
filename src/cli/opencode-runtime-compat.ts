@@ -11,12 +11,12 @@
  *
  * Honesty model (deliberate, reviewed decision):
  *   - A present `instructions[]` entry means the instruction source is
- *     CONFIGURED. It does NOT prove the runtime actually loaded the file into
- *     the model context. FlowGuard has no reliable surface to verify activation
+ *     structurally present in the config. It does NOT prove the runtime actually
+ *     loaded the file into the model context. FlowGuard has no reliable surface to verify activation
  *     (the Desktop app exposes no `--version` executable and no documented
  *     resolved-instruction API), so this module never claims "supported",
  *     "active", or "compatible".
- *   - `configured` is therefore the neutral, honest classification: the entry
+ *   - `not-classified` is therefore the neutral, honest classification: the entry
  *     is in place; activation is simply not asserted here.
  *   - `known-unsupported` is asserted ONLY when a runtime positively matches an
  *     entry in {@link KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES}. This is a deny-list,
@@ -26,7 +26,7 @@
  *     with a positive, cited evidence source in `verifiedBy`.
  *
  * An unknown runtime is NEVER treated as compatible/supported — it is simply
- * `configured` (present but unverified). Blocking is reserved for positively
+ * `not-classified` (present but unverified). Blocking is reserved for positively
  * known-incompatible runtimes.
  *
  * This is a pure module: no I/O, no side effects. Detection lives in
@@ -80,18 +80,18 @@ export const KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES: readonly OpenCodeRuntimeDenyE
 /**
  * Classification of the instruction source.
  *
- * - `configured`: the `instructions[]` entry is present. Activation is NOT
- *   asserted — a present entry does not prove the runtime loaded it.
+ * - `not-classified`: the runtime does not match a positively-known
+ *   incompatible entry. Activation is NOT asserted.
  * - `known-unsupported`: the runtime positively matches the deny-list.
  *
  * There is deliberately no `compatible`/`supported`/`active` value: FlowGuard
  * does not verify activation and must not claim it.
  */
-export type OpenCodeRuntimeStatus = 'configured' | 'known-unsupported';
+export type OpenCodeRuntimeStatus = 'not-classified' | 'known-unsupported';
 
 /**
  * The matched deny entry when status is `known-unsupported`.
- * `undefined` when `configured`.
+ * `undefined` when `not-classified`.
  */
 export interface OpenCodeRuntimeClassification {
   readonly status: OpenCodeRuntimeStatus;
@@ -118,7 +118,7 @@ function versionInRange(version: string | null, range: string | undefined): bool
  * Classify runtime evidence against the deny-list.
  *
  * An unknown runtime (no positively determinable runtime-line, including the
- * Desktop app) classifies as `configured` — present but activation-unverified.
+ * Desktop app) classifies as `not-classified` — present but activation-unverified.
  * It is NEVER classified as compatible/supported. Blocking (`known-unsupported`)
  * is reserved for positively-known incompatible runtimes on the deny-list.
  */
@@ -127,12 +127,12 @@ export function classifyOpenCodeRuntime(
   denyList: readonly OpenCodeRuntimeDenyEntry[] = KNOWN_INCOMPATIBLE_OPENCODE_RUNTIMES,
 ): OpenCodeRuntimeClassification {
   if (evidence.runtimeLine === null) {
-    return { status: 'configured' };
+    return { status: 'not-classified' };
   }
   const matched = denyList.find(
     (entry) =>
       entry.runtimeLine === evidence.runtimeLine &&
       versionInRange(evidence.version, entry.versionRange),
   );
-  return matched ? { status: 'known-unsupported', matched } : { status: 'configured' };
+  return matched ? { status: 'known-unsupported', matched } : { status: 'not-classified' };
 }

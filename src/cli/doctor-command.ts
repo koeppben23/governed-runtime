@@ -272,20 +272,22 @@ async function checkOpencodeInstructions(
   return checks;
 }
 
-/** Check-category tag for the OpenCode instruction-source classification. */
-const RUNTIME_COMPAT_CHECK = 'opencode-runtime-compat';
+/** Check-category tag for the OpenCode instruction-source activation check. */
+const ACTIVATION_CHECK = 'opencode-instruction-source-activation';
 
 /**
- * Report the OpenCode instruction-source status.
+ * Report whether FlowGuard can verify that OpenCode loaded the configured
+ * instruction source.
  *
- * Honest posture: a present `instructions[]` entry means the source is
- * CONFIGURED, not that the runtime loaded it. FlowGuard cannot verify
- * activation (Desktop exposes no version/API), so the `ok` status here means
- * "configured" only and its detail says so explicitly — it never claims the
- * mandates are active or supported. A positively-known incompatible runtime
- * (deny-list) is the only case that fails closed with an error.
+ * Honest posture: FlowGuard has no reliable surface to prove that OpenCode
+ * resolved `instructions[]` into the model context. This check warns that
+ * activation is unverifiable regardless of whether the structural config
+ * (handled by `checkOpencodeInstructions`) is present.
+ *
+ * A positively-known incompatible runtime (deny-list) is the only case
+ * that fails closed with an error.
  */
-async function checkOpencodeRuntimeCompat(
+async function checkOpencodeInstructionSourceActivation(
   scope: InstallScope,
   target: string,
 ): Promise<DoctorCheck[]> {
@@ -303,7 +305,7 @@ async function checkOpencodeRuntimeCompat(
         file: opencodeJsonPath,
         status: 'error',
         detail: `${formatted.reason} (${classification.matched?.reason ?? ''})`.trim(),
-        check: RUNTIME_COMPAT_CHECK,
+        check: ACTIVATION_CHECK,
       },
     ];
   }
@@ -314,10 +316,10 @@ async function checkOpencodeRuntimeCompat(
       file: opencodeJsonPath,
       status: 'warn',
       detail:
-        `instruction source configured (runtime ${runtimeDesc}); ` +
-        'activation is not verifiable by FlowGuard — a present instructions[] entry ' +
-        'does not prove the runtime loaded it. See docs/platform-limitations.md.',
-      check: RUNTIME_COMPAT_CHECK,
+        `runtime ${runtimeDesc}; instruction-source activation is NOT_VERIFIED. ` +
+        'FlowGuard cannot prove that OpenCode loaded the configured source. ' +
+        'See docs/platform-limitations.md.',
+      check: ACTIVATION_CHECK,
     },
   ];
 }
@@ -497,7 +499,7 @@ export async function doctor(args: CliArgs): Promise<DoctorCheck[]> {
   checks.push(...(await checkDependencies(target)));
   if (installPlatform === 'opencode') {
     checks.push(...(await checkOpencodeInstructions(target, args.installScope)));
-    checks.push(...(await checkOpencodeRuntimeCompat(args.installScope, target)));
+    checks.push(...(await checkOpencodeInstructionSourceActivation(args.installScope, target)));
   }
   checks.push(...(await checkWorkspaceConfig(args.installScope, installPlatform, target)));
   if (installPlatform === 'opencode') {

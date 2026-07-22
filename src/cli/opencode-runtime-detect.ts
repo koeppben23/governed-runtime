@@ -14,7 +14,7 @@
  *     never throws across this boundary.
  *   - runtimeLine is only set when a runtime can be positively identified.
  *     Today no positive runtime-line source exists, so it stays `null`
- *     (=> classifies as `configured`, i.e. present but activation-unverified).
+ *     (=> classifies as `not-classified`, i.e. not positively matched as incompatible).
  *     This is the deliberate deny-list posture.
  *
  * Exactly one structured log record is emitted per detection so operators can
@@ -103,9 +103,8 @@ async function deriveRuntimeKind(
  * Collect runtime evidence and emit exactly one structured log record.
  *
  * Never throws: detection failures degrade to `null` fields and a fail-closed
- * warn log, but classification of a null runtimeLine is `configured` (present,
- * activation-unverified), so the caller does not block on undetectable runtimes
- * while the environment facts are still recorded.
+ * warn log. A null runtimeLine classifies as `not-classified` (no positive
+ * incompatibility match), not as a block signal.
  */
 export async function detectOpenCodeRuntimeEvidence(
   params: DetectRuntimeParams,
@@ -118,7 +117,7 @@ export async function detectOpenCodeRuntimeEvidence(
     runtimeKind = 'unknown';
   }
 
-  // No positive runtime-line source exists today; stays null => configured.
+  // No positive runtime-line source exists today; stays null => not-classified.
   const evidence: OpenCodeRuntimeEvidence = { runtimeKind, version, runtimeLine: null };
 
   const envelope = {
