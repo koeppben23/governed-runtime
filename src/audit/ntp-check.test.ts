@@ -15,7 +15,7 @@ class FakeSocket extends EventEmitter {
 
 function writeTimestamp(packet: Buffer, offset: number, timestamp: number): void {
   const seconds = Math.floor(timestamp) + 2208988800;
-  const fraction = Math.round((timestamp - Math.floor(timestamp)) * 0xffffffff);
+  const fraction = Math.round((timestamp - Math.floor(timestamp)) * 2 ** 32);
   packet.writeUInt32BE(seconds, offset);
   packet.writeUInt32BE(fraction, offset + 4);
 }
@@ -67,6 +67,27 @@ describe('checkNtpClock', () => {
       expect(socket.connect).toHaveBeenCalledWith(123, 'ntp.example', expect.any(Function));
       expect(socket.send).toHaveBeenCalledWith(expect.any(Buffer));
       expect(socket.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('records T1 only after connection and ignores responses received before sending', async () => {
+      const socket = new FakeSocket();
+      let connectCallback: (() => void) | undefined;
+      socket.connect.mockImplementation((_port: number, _server: string, callback: () => void) => {
+        connectCallback = callback;
+      });
+      mockCreateSocket.mockReturnValue(socket);
+      const now = vi.spyOn(Date, 'now').mockReturnValueOnce(200_000).mockReturnValueOnce(200_200);
+
+      const resultPromise = checkNtpClock(['ntp.example']);
+      socket.emit('message', Buffer.alloc(48));
+      expect(socket.close).not.toHaveBeenCalled();
+      expect(now).not.toHaveBeenCalled();
+
+      connectCallback?.();
+      expect(now).toHaveBeenCalledTimes(1);
+      socket.emit('message', ntpResponse(socket, { receive: 200.1, transmit: 200.15 }));
+
+      await expect(resultPromise).resolves.toMatchObject({ offsetMs: 25, roundTripMs: 150 });
     });
   });
 

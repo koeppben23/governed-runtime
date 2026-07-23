@@ -24,6 +24,7 @@ const NTP_SERVER_MODE = 4;
 const NTP_VERSION = 4;
 const NTP_MIN_COMPATIBLE_VERSION = 3;
 const NTP_MAX_STRATUM = 15;
+const NTP_FRACTION_SCALE = 2 ** 32;
 const ZERO_NTP_TIMESTAMP = Buffer.alloc(8);
 
 export interface NtpCheckResult {
@@ -37,7 +38,7 @@ export interface NtpCheckResult {
 function writeNtpTimestamp(buf: Buffer, offset: number, unixTimeMs: number): void {
   const unixSeconds = unixTimeMs / 1000;
   const seconds = Math.floor(unixSeconds) + NTP_EPOCH_OFFSET;
-  const fraction = Math.round((unixSeconds - Math.floor(unixSeconds)) * 0xffffffff);
+  const fraction = Math.round((unixSeconds - Math.floor(unixSeconds)) * NTP_FRACTION_SCALE);
   buf.writeUInt32BE(seconds, offset);
   buf.writeUInt32BE(fraction, offset + 4);
 }
@@ -52,7 +53,7 @@ function buildNtpPacket(sendTimeMs: number): Buffer {
 function parseNtpTimestamp(buf: Buffer, offset: number): number {
   const seconds = buf.readUInt32BE(offset);
   const fraction = buf.readUInt32BE(offset + 4);
-  return seconds + fraction / 0xffffffff - NTP_EPOCH_OFFSET;
+  return seconds + fraction / NTP_FRACTION_SCALE - NTP_EPOCH_OFFSET;
 }
 
 function validateNtpResponse(
@@ -94,33 +95,14 @@ function validateNtpResponse(
   };
 }
 
-function connectAndSend(
-  socket: dgram.Socket,
-  server: string,
-  packet: Buffer,
-  isResolved: () => boolean,
-  fail: (error: Error) => void,
-): void {
-  socket.connect(NTP_PORT, server, () => {
-    if (isResolved()) return;
-    try {
-      socket.send(packet);
-    } catch (err) {
-      fail(err instanceof Error ? err : new Error(String(err)));
-    }
-  });
-}
-
 async function querySingleServer(
   server: string,
   timeoutMs: number,
 ): Promise<{ server: string; offsetMs: number; roundTripMs: number }> {
   return new Promise((resolve, reject) => {
     const socket = dgram.createSocket('udp4');
-    const sendTimeMs = Date.now();
-    const sendTime = sendTimeMs / 1000;
-    const packet = buildNtpPacket(sendTimeMs);
-    const requestTransmitTimestamp = Buffer.from(packet.subarray(40, 48));
+    let sendTime: number | undefined;
+    let requestTransmitTimestamp: Buffer | undefined;
     let resolved = false;
 
     function cleanup(): void {
@@ -145,6 +127,8 @@ async function querySingleServer(
 
     socket.on('message', (msg: Buffer) => {
       if (resolved) return;
+      // Do not accept a response before the request has been transmitted.
+      if (sendTime === undefined || requestTransmitTimestamp === undefined) return;
       try {
         const receiveTime = Date.now();
         const { receiveTimestamp, transmitTimestamp } = validateNtpResponse(
@@ -176,7 +160,18 @@ async function querySingleServer(
 
     try {
       // A connected UDP socket accepts packets only from this peer.
-      connectAndSend(socket, server, packet, () => resolved, fail);
+      socket.connect(NTP_PORT, server, () => {
+        if (resolved) return;
+        try {
+          const sendTimeMs = Date.now();
+          sendTime = sendTimeMs / 1000;
+          const packet = buildNtpPacket(sendTimeMs);
+          requestTransmitTimestamp = Buffer.from(packet.subarray(40, 48));
+          socket.send(packet);
+        } catch (err) {
+          fail(err instanceof Error ? err : new Error(String(err)));
+        }
+      });
     } catch (err) {
       fail(err instanceof Error ? err : new Error(String(err)));
     }
