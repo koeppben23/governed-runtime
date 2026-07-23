@@ -107,6 +107,28 @@ describe('audit completeness', () => {
       expect(valSlot?.detail).toContain('failed: test_quality');
       expect(report.overallComplete).toBe(false);
     });
+
+    it('failed post-implementation evidence is isolated from complete validation evidence', () => {
+      const state = makeState('IMPL_REVIEW', {
+        ...makeProgressedState('IMPL_REVIEW'),
+        activeChecks: ['unit', 'lint'],
+        validation: [validationResult('unit', true, 'ok'), validationResult('lint', true, 'ok')],
+        implValidation: [
+          validationResult('unit', false, 'failed'),
+          validationResult('lint', true, 'ok'),
+        ],
+      });
+      const report = evaluateCompleteness(state);
+      const validationSlot = report.slots.find((slot) => slot.slot === 'validation');
+      const implValidationSlot = report.slots.find((slot) => slot.slot === 'implValidation');
+
+      expect(validationSlot).toMatchObject({ status: 'complete', detail: '2/2 passed' });
+      expect(implValidationSlot).toMatchObject({
+        status: 'failed',
+        detail: 'post-impl 1/2 passed, failed: unit',
+      });
+      expect(report.overallComplete).toBe(false);
+    });
   });
 
   // ─── CORNER ─────────────────────────────────────────────────
