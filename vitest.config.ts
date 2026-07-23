@@ -58,6 +58,7 @@ export default defineConfig({
             'src/cli/run-acp-smoke.test.ts',
             'src/cli/inspect-command.test.ts',
             'src/cli/opencode-reviewer-capability.test.ts',
+            'src/hooks/command-hooks-smoke.test.ts',
           ],
           globals: false,
           restoreMocks: true,

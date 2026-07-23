@@ -19,6 +19,12 @@ const NTP_DEFAULT_TIMEOUT_MS = 5000;
 const NTP_PORT = 123;
 const NTP_PACKET_SIZE = 48;
 const NTP_EPOCH_OFFSET = 2208988800;
+const NTP_CLIENT_MODE = 3;
+const NTP_SERVER_MODE = 4;
+const NTP_VERSION = 4;
+const NTP_MIN_COMPATIBLE_VERSION = 3;
+const NTP_MAX_STRATUM = 15;
+const ZERO_NTP_TIMESTAMP = Buffer.alloc(8);
 
 export interface NtpCheckResult {
   readonly offsetMs: number;
@@ -28,9 +34,18 @@ export interface NtpCheckResult {
   readonly error?: string;
 }
 
-function buildNtpPacket(): Buffer {
+function writeNtpTimestamp(buf: Buffer, offset: number, unixTimeMs: number): void {
+  const unixSeconds = unixTimeMs / 1000;
+  const seconds = Math.floor(unixSeconds) + NTP_EPOCH_OFFSET;
+  const fraction = Math.round((unixSeconds - Math.floor(unixSeconds)) * 0xffffffff);
+  buf.writeUInt32BE(seconds, offset);
+  buf.writeUInt32BE(fraction, offset + 4);
+}
+
+function buildNtpPacket(sendTimeMs: number): Buffer {
   const buf = Buffer.alloc(NTP_PACKET_SIZE);
-  buf[0] = 0x1b;
+  buf[0] = (NTP_VERSION << 3) | NTP_CLIENT_MODE;
+  writeNtpTimestamp(buf, 40, sendTimeMs);
   return buf;
 }
 
@@ -40,13 +55,72 @@ function parseNtpTimestamp(buf: Buffer, offset: number): number {
   return seconds + fraction / 0xffffffff - NTP_EPOCH_OFFSET;
 }
 
+function validateNtpResponse(
+  msg: Buffer,
+  server: string,
+  requestTransmitTimestamp: Buffer,
+): { receiveTimestamp: number; transmitTimestamp: number } {
+  if (msg.length < NTP_PACKET_SIZE) {
+    throw new Error(`NTP response from ${server} is shorter than ${NTP_PACKET_SIZE} bytes`);
+  }
+
+  const header = msg[0]!;
+  const leapIndicator = header >> 6;
+  const version = (header >> 3) & 0x07;
+  const mode = header & 0x07;
+  const stratum = msg[1]!;
+  const originateTimestampBytes = msg.subarray(24, 32);
+  const transmitTimestampBytes = msg.subarray(40, 48);
+
+  if (leapIndicator === 3) throw new Error(`NTP response from ${server} is unsynchronized`);
+  if (version < NTP_MIN_COMPATIBLE_VERSION || version > NTP_VERSION) {
+    throw new Error(`NTP response from ${server} has unsupported version ${version}`);
+  }
+  if (mode !== NTP_SERVER_MODE)
+    throw new Error(`NTP response from ${server} has unexpected mode ${mode}`);
+  if (stratum === 0 || stratum > NTP_MAX_STRATUM) {
+    throw new Error(`NTP response from ${server} has invalid stratum ${stratum}`);
+  }
+  if (!originateTimestampBytes.equals(requestTransmitTimestamp)) {
+    throw new Error(`NTP response from ${server} does not match the request timestamp`);
+  }
+  if (transmitTimestampBytes.equals(ZERO_NTP_TIMESTAMP)) {
+    throw new Error(`NTP response from ${server} has no transmit timestamp`);
+  }
+
+  return {
+    receiveTimestamp: parseNtpTimestamp(msg, 32),
+    transmitTimestamp: parseNtpTimestamp(msg, 40),
+  };
+}
+
+function connectAndSend(
+  socket: dgram.Socket,
+  server: string,
+  packet: Buffer,
+  isResolved: () => boolean,
+  fail: (error: Error) => void,
+): void {
+  socket.connect(NTP_PORT, server, () => {
+    if (isResolved()) return;
+    try {
+      socket.send(packet);
+    } catch (err) {
+      fail(err instanceof Error ? err : new Error(String(err)));
+    }
+  });
+}
+
 async function querySingleServer(
   server: string,
   timeoutMs: number,
 ): Promise<{ server: string; offsetMs: number; roundTripMs: number }> {
   return new Promise((resolve, reject) => {
     const socket = dgram.createSocket('udp4');
-    const sendTime = Date.now();
+    const sendTimeMs = Date.now();
+    const sendTime = sendTimeMs / 1000;
+    const packet = buildNtpPacket(sendTimeMs);
+    const requestTransmitTimestamp = Buffer.from(packet.subarray(40, 48));
     let resolved = false;
 
     function cleanup(): void {
@@ -72,19 +146,16 @@ async function querySingleServer(
     socket.on('message', (msg: Buffer) => {
       if (resolved) return;
       try {
-        if (msg.length < NTP_PACKET_SIZE) {
-          throw new Error(`NTP response from ${server} is shorter than ${NTP_PACKET_SIZE} bytes`);
-        }
-
         const receiveTime = Date.now();
-        const originateTimestamp = parseNtpTimestamp(msg, 24);
-        const receiveTimestamp = parseNtpTimestamp(msg, 32);
-        const transmitTimestamp = parseNtpTimestamp(msg, 40);
+        const { receiveTimestamp, transmitTimestamp } = validateNtpResponse(
+          msg,
+          server,
+          requestTransmitTimestamp,
+        );
 
-        const t1 = sendTime / 1000;
         const t4 = receiveTime / 1000;
-        const roundTrip = t4 - t1 - (receiveTimestamp - transmitTimestamp);
-        const offset = (originateTimestamp - t1 + receiveTimestamp - t4) / 2;
+        const roundTrip = t4 - sendTime - (transmitTimestamp - receiveTimestamp);
+        const offset = (receiveTimestamp - sendTime + transmitTimestamp - t4) / 2;
         const roundTripMs = Math.round(Math.abs(roundTrip) * 1000);
 
         resolved = true;
@@ -103,9 +174,9 @@ async function querySingleServer(
       fail(err);
     });
 
-    const packet = buildNtpPacket();
     try {
-      socket.send(packet, 0, packet.length, NTP_PORT, server);
+      // A connected UDP socket accepts packets only from this peer.
+      connectAndSend(socket, server, packet, () => resolved, fail);
     } catch (err) {
       fail(err instanceof Error ? err : new Error(String(err)));
     }
