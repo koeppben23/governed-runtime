@@ -14,7 +14,11 @@ findings previously marked `Open` were already satisfied in code at the analysis
 baseline (I1, I2, I3, G9 — see "Re-Triaged" below) and added three new findings
 from a mutation-scope and file-size audit (MUT1, SZ1, SZ2). A 2026-07-10
 re-triage confirmed two additional pre-existing fixes (G3, C7), one merged fix
-(G7), and three partial fixes (H2, C3, I4).
+(G7), two additional fixes (H2, C3), and one partial fix (I4). A 2026-07-23
+re-triage confirmed the NTP corrections AC4/AC5 (merged via #728), the
+flow-aware completeness fix AC7 (merged via #678), and two new assurance
+findings: MUT2 (coverage exclusion of production plugin helpers) and MUT3
+(release tags do not run mutation testing).
 
 ## Status Legend
 
@@ -51,8 +55,11 @@ re-triage confirmed two additional pre-existing fixes (G3, C7), one merged fix
 | D1   | LOW         | Fixed  | #585       | Central sink-layer redaction sanitizes diagnostic strings regardless of call site.                                 |
 | MUT1 | MEDIUM-HIGH | Fixed  | (direct)   | Mutation scope restored: 5 orchestrator/multi-mode files added to stryker scope with unit tests.                   |
 | G7   | MEDIUM      | Fixed  | #421       | Abort is a no-op at all terminal phases and no longer overwrites architecture or review terminal state.            |
+| AC4  | HIGH        | Fixed  | #728       | NTP requests timestamp T1 at send and use RFC 5905 four-timestamp offset and delay calculations.                  |
+| AC5  | HIGH        | Fixed  | #728       | NTP responses require a bound origin timestamp, valid protocol fields, and a non-null transmit timestamp.         |
+| AC7  | MEDIUM      | Fixed  | #678       | Completeness selects ticket, architecture, or review slots before calculating summary totals.                      |
 
-## Re-Triaged (2026-06-24, 2026-07-10)
+## Re-Triaged (2026-06-24, 2026-07-10, 2026-07-23)
 
 Findings the static analysis marked `Open` that a `develop` re-verification found
 already satisfied in code. Git history shows the relevant logic predates the
@@ -74,20 +81,20 @@ disproven, update the status and link the evidence."
 | Package | Priority | Status          | Findings                                       | Summary                                                                                                                                                                            |
 | ------- | -------- | --------------- | ---------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | A       | P1       | Partially Fixed | G1, G2, G24, G25, G26                          | Four-eyes and identity normalization/reporting. G1/G2/G24/G25 fixed; G26 remains open.                                                                                             |
-| B       | P1       | Partially Fixed | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2            | Hash-chain, canonical digest, TSA, and NTP hardening. AC1 fixed; AC2–AC5, TSA1–TSA2 remain open. AC3 also tracked in Package D (audit summarization redaction spans both domains). |
+| B       | P1       | Partially Fixed | AC1, AC2, AC3, AC4, AC5, TSA1, TSA2            | Hash-chain, canonical digest, TSA, and NTP hardening. AC1, AC3, AC4, and AC5 fixed; AC2 and TSA1–TSA2 remain open. |
 | C       | P1       | Partially Fixed | AR1, AR2, AUD2                                 | Archive integrity and audit write-lock recovery. AR1 and AUD2 fixed (#670); AR2 remains open.                                                                                      |
 | D       | P1       | Fixed           | R1, R2, R3, R4, R5, AC3                        | Secret-leak, redaction, logging, telemetry boundaries. R3, R5 fixed (#585); R1, R2, R4, AC3 fixed (redaction fail-closed).                                                         |
 | E       | P1       | Partially Fixed | H1, H2, H4, C1, C2, C3, C4, C5, M1, M2, M3, I4 | Hook, CLI, MCP, installer, and integration fail-closed hardening. H1, H2, H4, M1, M3 and C2–C5 fixed (#645, #646, #667); I4 partially fixed; C1 and M2 remain open.                |
-| F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13            | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421; G15, AC6–AC7, and G12–G13 remain open.                                    |
+| F       | P2       | Partially Fixed | G3, G7, G9, G15, AC6, AC7, G12, G13            | State-machine correctness and audit completeness. G3 and G9 are fixed pre-existing; G7 is fixed by #421 and AC7 by #678; G15, AC6, and G12–G13 remain open.                          |
 
-## Outstanding High-Priority Findings
+## High-Priority Findings
 
 | ID   | Severity | Status          | Summary                                                                                                                                                                   |
 | ---- | -------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | AC2  | HIGH     | Open            | Timestamp verification must not trust downgraded status when stronger evidence is present.                                                                                |
 | AC3  | HIGH     | Fixed           | Audit argument summarization can expose scalar secrets and needs redaction hardening.                                                                                     |
-| AC4  | HIGH     | Open            | NTP offset/delay calculation needs RFC-aligned correction.                                                                                                                |
-| AC5  | HIGH     | Open            | NTP response validation needs stricter checks.                                                                                                                            |
+| AC4  | HIGH     | Fixed           | NTP offset/delay calculation is RFC-aligned and captures T1 immediately before send (#728).                                                                              |
+| AC5  | HIGH     | Fixed           | NTP responses validate protocol fields, peer-bound origin timestamp, and non-null transmit timestamp (#728).                                                            |
 | H1   | HIGH     | Fixed           | HTTP governance routes require bearer authentication; non-loopback binds need explicit opt-in and token auth.                                                             |
 | H2   | HIGH     | Fixed           | HTTP and command hooks both block mutating tools while review obligations remain unresolved.                                                                              |
 | H3   | HIGH     | Open            | Session ID validation needs Windows/reserved-name hardening.                                                                                                              |
@@ -106,12 +113,12 @@ disproven, update the status and link the evidence."
 | AUD2 | HIGH     | Fixed           | Audit write lock safely recovers dead-process stale locks while failing closed for unsafe lock states (#670).                                                             |
 | LK1  | LOW      | Mitigated       | Stale-lock recovery re-verifies content before unlink to avoid deleting a foreign fresh lock; a residual sub-`unlink` OS race remains without an atomic primitive (#673). |
 
-## Outstanding Medium-Priority Findings
+## Medium-Priority Findings
 
 | ID   | Severity | Status          | Summary                                                                                                        |
 | ---- | -------- | --------------- | -------------------------------------------------------------------------------------------------------------- |
 | AC6  | MEDIUM   | Open            | Review-flow completeness can report complete mid-flow. `TESTED_BUG_BEHAVIOR`.                                  |
-| AC7  | MEDIUM   | Open            | Completeness summary total is ticket-flow-specific.                                                            |
+| AC7  | MEDIUM   | Fixed           | Completeness summary totals are computed from flow-specific ticket, architecture, or review slots (#678).      |
 | AC8  | MEDIUM   | Partially Fixed | Four-eyes reporting now uses structured identity; history handling remains open.                               |
 | AC9  | MEDIUM   | Open            | Timestamp imprint comparison and missing-cache behavior need tightening.                                       |
 | AC10 | MEDIUM   | Not Verified    | Timestamp token verification should distinguish legacy format from tampering.                                  |
@@ -142,6 +149,8 @@ disproven, update the status and link the evidence."
 | TSA2 | MEDIUM   | Not Verified    | TSA signature hash algorithm handling needs review.                                                            |
 | S1   | MEDIUM   | Open            | State schema versioning needs forward-migration strategy.                                                      |
 | S2   | MEDIUM   | Open            | Policy snapshot parse transforms can rewrite historical state.                                                 |
+| MUT2 | MEDIUM   | Open            | Coverage excludes the production `src/integration/plugin-helpers.ts` by wildcard; its enforcement paths do not count toward the 80% gate or mutation scope. |
+| MUT3 | MEDIUM   | Open            | Release tags can publish without mutation testing because the mutation workflow runs on schedules, manual dispatch, and `release/**` branches, not `v*` tags. |
 
 ## Low-Priority And Hardening Findings
 
@@ -197,7 +206,7 @@ disproven, update the status and link the evidence."
 | V3   | LOW        | Open         | Repair-guidance regex risk remains bounded by sanitization.                                                                                                                                        |
 | EA1  | LOW        | Open         | Artifact-type validation should match declared artifact union.                                                                                                                                     |
 | EA2  | LOW        | Open         | Review-card metadata needs schema coverage.                                                                                                                                                        |
-| SZ1  | LOW-MEDIUM | Open         | Prod files near the 750-LOC blocker: `src/adapters/workspace/evidence-artifacts.ts` (678), `src/config/policy-snapshot-normalize.ts` (677). `src/integration/plugin-audit.ts` relieved 706 -> 595. |
+| SZ1  | LOW-MEDIUM | Open         | Prod files near the 750-LOC blocker: `src/adapters/workspace/evidence-artifacts.ts` (678), `src/config/policy-snapshot-normalize.ts` (692). `src/integration/plugin-audit.ts` relieved 706 -> 603. |
 | SZ2  | LOW        | Open         | `dependency-rules.test.ts` (1656 LOC) exceeds the 1500 advisory; split without breaking the cycle-detection logic when it next grows.                                                              |
 | CMP1 | SEE ALSO   | Open         | Compliance mapping overlaps AC6, AC7, AC8, and G2.                                                                                                                                                 |
 
@@ -209,6 +218,7 @@ disproven, update the status and link the evidence."
 | Silent success after caught failures | Open   | Error handling should surface audit/install/workspace failures explicitly.        |
 | Environment-variable trust boundary  | Open   | Runtime and installer environment inputs need validation/sandboxing review.       |
 | Fail-open behavior                   | Open   | Hooks, MCP, plugin initialization, and audit persistence need fail-closed review. |
+| Assurance gate drift                 | Open   | MUT2/MUT3 leave production enforcement code outside coverage and formal releases outside mutation testing. |
 
 ## Test-Pinned Bug Behaviors
 
@@ -236,10 +246,10 @@ testing on security-critical paths" claim.
 
 Resolved (merged directly to `develop`): unit tests added for the two previously
 untested modules and all five files added to `stryker.conf.json` +
-`vitest.stryker.config.ts`. Per-file mutation scores at time of merge (NOT_VERIFIED
-— not re-confirmed post-merge): `agent-resolution.ts` 100, `orchestrator-output.ts`
-100, `canonical-json.ts` 100, `review-validation-mode.ts` 90.2,
-`orchestrator-detection.ts` 90.4.
+`vitest.stryker.config.ts`. A 2026-07-23 full mutation run re-confirmed the
+scope at 80.02% overall: `agent-resolution.ts` 100, `orchestrator-output.ts` 100,
+`canonical-json.ts` 90.91, `review-validation-mode.ts` 95, and
+`orchestrator-detection.ts` 90.38.
 
 ## Logging Redaction
 
