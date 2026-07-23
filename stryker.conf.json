@@ -18,6 +18,7 @@
 
     "src/audit/completeness.ts",
     "src/audit/integrity.ts",
+    "src/audit/ntp-check.ts",
 
     "src/config/policy.ts",
     "src/config/reasons.ts",

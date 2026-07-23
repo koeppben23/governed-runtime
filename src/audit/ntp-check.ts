@@ -49,49 +49,66 @@ async function querySingleServer(
     const sendTime = Date.now();
     let resolved = false;
 
-    const timer = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
+    function cleanup(): void {
+      clearTimeout(timer);
+      try {
         socket.close();
-        reject(new Error(`NTP query timeout for ${server}`));
+      } catch {
+        // The request result is authoritative; cleanup must not replace it.
       }
+    }
+
+    function fail(error: Error): void {
+      if (resolved) return;
+      resolved = true;
+      cleanup();
+      reject(error);
+    }
+
+    const timer = setTimeout(() => {
+      fail(new Error(`NTP query timeout for ${server}`));
     }, timeoutMs);
 
     socket.on('message', (msg: Buffer) => {
       if (resolved) return;
-      resolved = true;
-      clearTimeout(timer);
-      socket.close();
+      try {
+        if (msg.length < NTP_PACKET_SIZE) {
+          throw new Error(`NTP response from ${server} is shorter than ${NTP_PACKET_SIZE} bytes`);
+        }
 
-      const receiveTime = Date.now();
-      const originateTimestamp = parseNtpTimestamp(msg, 24);
-      const receiveTimestamp = parseNtpTimestamp(msg, 32);
-      const transmitTimestamp = parseNtpTimestamp(msg, 40);
+        const receiveTime = Date.now();
+        const originateTimestamp = parseNtpTimestamp(msg, 24);
+        const receiveTimestamp = parseNtpTimestamp(msg, 32);
+        const transmitTimestamp = parseNtpTimestamp(msg, 40);
 
-      const t1 = sendTime / 1000;
-      const t4 = receiveTime / 1000;
-      const roundTrip = t4 - t1 - (receiveTimestamp - transmitTimestamp);
-      const offset = (originateTimestamp - t1 + receiveTimestamp - t4) / 2;
-      const roundTripMs = Math.round(Math.abs(roundTrip) * 1000);
+        const t1 = sendTime / 1000;
+        const t4 = receiveTime / 1000;
+        const roundTrip = t4 - t1 - (receiveTimestamp - transmitTimestamp);
+        const offset = (originateTimestamp - t1 + receiveTimestamp - t4) / 2;
+        const roundTripMs = Math.round(Math.abs(roundTrip) * 1000);
 
-      resolve({
-        server,
-        offsetMs: Math.round(offset * 1000),
-        roundTripMs,
-      });
-    });
-
-    socket.on('error', (err: Error) => {
-      if (!resolved) {
         resolved = true;
-        clearTimeout(timer);
-        socket.close();
-        reject(err);
+        cleanup();
+        resolve({
+          server,
+          offsetMs: Math.round(offset * 1000),
+          roundTripMs,
+        });
+      } catch (err) {
+        fail(err instanceof Error ? err : new Error(String(err)));
       }
     });
 
+    socket.on('error', (err: Error) => {
+      fail(err);
+    });
+
     const packet = buildNtpPacket();
-    socket.send(packet, 0, packet.length, NTP_PORT, server);
+    try {
+      socket.send(packet, 0, packet.length, NTP_PORT, server);
+    } catch (err) {
+      fail(err instanceof Error ? err : new Error(String(err)));
+    }
   });
 }
 

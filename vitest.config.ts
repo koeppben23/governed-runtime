@@ -31,12 +31,6 @@ export default defineConfig({
         'src/integration/test-helpers.ts',
         'src/integration/*-test-helpers.ts',
         'src/integration/*-helpers.ts',
-        // Thin SDK hook entrypoints (glue; exercised only via the real host runtime).
-        'src/hooks/post-tool-use.ts',
-        'src/hooks/pre-tool-use.ts',
-        'src/hooks/session-start.ts',
-        'src/hooks/stop.ts',
-        'src/hooks/subagent-stop.ts',
       ],
       thresholds: {
         branches: 80,
@@ -93,6 +87,7 @@ export default defineConfig({
             'src/cli/inspect-command.test.ts',
             'src/cli/opencode-reviewer-capability.test.ts',
             'src/mcp-server/mcp-protocol.test.ts',
+            'src/hooks/command-hooks-smoke.test.ts',
           ],
           globals: false,
           restoreMocks: true,
