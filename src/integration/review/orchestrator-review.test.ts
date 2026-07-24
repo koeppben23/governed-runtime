@@ -22,6 +22,7 @@ import {
   buildArchitectureReviewPrompt,
   buildReviewContentPrompt,
   selectReviewerProfileRules,
+  CORE_REVIEW_PROFILE_MARKER,
   type PlanReviewPromptOpts,
   type ImplReviewPromptOpts,
 } from './prompt-builders.js';
@@ -38,6 +39,7 @@ import {
   type ReviewerSuccessResult,
 } from './orchestrator.js';
 import { REVIEW_REQUIRED_PREFIX, REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
+import { promptContainsValue } from './enforcement/extraction.js';
 
 import { TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { parseToolResult } from '../plugin-helpers.js';
@@ -899,4 +901,55 @@ describe('P9c — selectReviewerProfileRules mapping', () => {
     const result = selectReviewerProfileRules(profile, 'PLAN_REVIEW');
     expect(result.profileRules).not.toBe('impl-review-rules');
   });
+});
+
+// ─── Core review profile marker (Wave 1 — #730) ──────────────────────────────
+describe('CORE_REVIEW_PROFILE_MARKER (Wave 1 — #730)', () => {
+  const iteration = 12;
+  const planVersion = 34;
+  const common = {
+    ticketText: 'Fix auth bug',
+    iteration,
+    planVersion,
+    obligationId: '00000000-0000-0000-0000-000000000001',
+    criteriaVersion: 'p37-v1',
+    mandateDigest: 'a'.repeat(64),
+    discoveryContext: {},
+  };
+
+  const prompts: Record<string, string> = {
+    plan: buildPlanReviewPrompt({ ...common, planText: 'the plan body' }),
+    impl: buildImplReviewPrompt({ ...common, planText: 'the plan', changedFiles: ['a.ts'] }),
+    arch: buildArchitectureReviewPrompt({ ...common, adrText: 'the adr', adrTitle: 'ADR-1' }),
+    content: buildReviewContentPrompt({
+      content: 'PR diff',
+      ticketText: common.ticketText,
+      obligationId: common.obligationId,
+      mandateDigest: common.mandateDigest,
+      criteriaVersion: common.criteriaVersion,
+      iteration,
+      planVersion,
+      discoveryContext: {},
+    }),
+  };
+
+  it('the marker is digit-free (cannot collide with iteration/version matcher)', () => {
+    expect(/\d/.test(CORE_REVIEW_PROFILE_MARKER)).toBe(false);
+    expect(/iteration/i.test(CORE_REVIEW_PROFILE_MARKER)).toBe(false);
+    expect(/version/i.test(CORE_REVIEW_PROFILE_MARKER)).toBe(false);
+  });
+
+  for (const [flow, prompt] of Object.entries(prompts)) {
+    it(`${flow} prompt appends the core marker as trailing content`, () => {
+      expect(prompt).toContain(CORE_REVIEW_PROFILE_MARKER);
+      expect(prompt.trimEnd().endsWith(CORE_REVIEW_PROFILE_MARKER)).toBe(true);
+    });
+
+    it(`${flow} prompt preserves iteration/planVersion enforcement tokens with the marker present`, () => {
+      // Direct proof the marker does not displace the tokens the enforcement
+      // matcher (promptContainsValue) requires — the exact BUG-16 regression.
+      expect(promptContainsValue(prompt, 'iteration', iteration)).toBe(true);
+      expect(promptContainsValue(prompt, 'version', planVersion)).toBe(true);
+    });
+  }
 });
