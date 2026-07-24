@@ -20,6 +20,7 @@ import type {
   SelfReviewConfig,
   ReviewOutputPolicy,
   ReviewInvocationPolicy,
+  ReviewProfile,
   DiscoveryHealthPolicy,
   ValidationEvidencePolicy,
 } from './policy-types.js';
@@ -110,6 +111,10 @@ function isValidReviewInvocationPolicy(v: unknown): v is ReviewInvocationPolicy 
   return v === 'host_task_required' || v === 'host_task_preferred' || v === 'sdk_allowed';
 }
 
+function isValidReviewProfile(v: unknown): v is ReviewProfile {
+  return v === 'core' || v === 'full';
+}
+
 function normalizeBooleanField(
   raw: unknown,
   fallback: boolean,
@@ -125,16 +130,20 @@ function normalizeReviewPolicies(
 ): {
   reviewOutputPolicy: ReviewOutputPolicy;
   reviewInvocationPolicy: ReviewInvocationPolicy;
+  reviewProfile: ReviewProfile;
   normalized: boolean;
 } {
   const rawReviewOut = s.reviewOutputPolicy;
   const rawReviewInv = s.reviewInvocationPolicy;
+  const rawReviewProfile = s.reviewProfile;
   const validReviewOut = isValidReviewOutputPolicy(rawReviewOut);
   const validReviewInv = isValidReviewInvocationPolicy(rawReviewInv);
+  const validReviewProfile = isValidReviewProfile(rawReviewProfile);
   return {
     reviewOutputPolicy: validReviewOut ? rawReviewOut : defaults.reviewOutputPolicy,
     reviewInvocationPolicy: validReviewInv ? rawReviewInv : defaults.reviewInvocationPolicy,
-    normalized: !validReviewOut || !validReviewInv,
+    reviewProfile: validReviewProfile ? rawReviewProfile : defaults.reviewProfile,
+    normalized: !validReviewOut || !validReviewInv || !validReviewProfile,
   };
 }
 
@@ -235,6 +244,7 @@ function normalizePolicyFields(
   requireVerifiedActorsForApproval: boolean;
   reviewOutputPolicy: ReviewOutputPolicy;
   reviewInvocationPolicy: ReviewInvocationPolicy;
+  reviewProfile: ReviewProfile;
   enforceRiskClassification: boolean;
   allowRiskDowngradeOverride: boolean;
   allowReducedCeremony: boolean;
@@ -290,6 +300,7 @@ function normalizePolicyFields(
     requireVerifiedActorsForApproval: verifiedActors.value,
     reviewOutputPolicy: reviewPolicies.reviewOutputPolicy,
     reviewInvocationPolicy: reviewPolicies.reviewInvocationPolicy,
+    reviewProfile: reviewPolicies.reviewProfile,
     enforceRiskClassification,
     allowRiskDowngradeOverride: riskOverride.value,
     allowReducedCeremony: reducedCeremony.value,
@@ -585,6 +596,7 @@ export function normalizePolicySnapshotWithMeta(
       selfReview: normalizeSelfReviewConfig(rawSelfReview),
       reviewOutputPolicy: policy.reviewOutputPolicy,
       reviewInvocationPolicy: policy.reviewInvocationPolicy,
+      reviewProfile: policy.reviewProfile,
       enforceRiskClassification: policy.enforceRiskClassification,
       allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride,
       allowReducedCeremony: policy.allowReducedCeremony,
@@ -607,6 +619,7 @@ const SOLO_DEFAULTS = {
   effectiveGateBehavior: 'auto_approve' as const,
   reviewOutputPolicy: 'text_compat_allowed' as const,
   reviewInvocationPolicy: 'host_task_preferred' as const,
+  reviewProfile: 'core' as const,
   enforceRiskClassification: false as const,
   allowRiskDowngradeOverride: false as const,
   allowReducedCeremony: false as const,
@@ -622,6 +635,7 @@ const REGULATED_DEFAULTS = {
   effectiveGateBehavior: 'human_gated' as const,
   reviewOutputPolicy: 'structured_required' as const,
   reviewInvocationPolicy: 'host_task_required' as const,
+  reviewProfile: 'core' as const,
   enforceRiskClassification: true as const,
   allowRiskDowngradeOverride: false as const,
   allowReducedCeremony: false as const,
@@ -637,6 +651,7 @@ const TEAM_DEFAULTS = {
   effectiveGateBehavior: 'human_gated' as const,
   reviewOutputPolicy: 'text_compat_allowed' as const,
   reviewInvocationPolicy: 'host_task_required' as const,
+  reviewProfile: 'core' as const,
   enforceRiskClassification: false as const,
   allowRiskDowngradeOverride: false as const,
   allowReducedCeremony: false as const,
@@ -652,6 +667,7 @@ const TEAM_CI_DEFAULTS = {
   effectiveGateBehavior: 'human_gated' as const,
   reviewOutputPolicy: 'structured_required' as const,
   reviewInvocationPolicy: 'host_task_required' as const,
+  reviewProfile: 'core' as const,
   enforceRiskClassification: true as const,
   allowRiskDowngradeOverride: false as const,
   allowReducedCeremony: false as const,
@@ -670,6 +686,7 @@ export function modeConsistentDefaults(mode: PolicyMode): {
   readonly effectiveGateBehavior: EffectiveGateBehavior;
   readonly reviewOutputPolicy: ReviewOutputPolicy;
   readonly reviewInvocationPolicy: ReviewInvocationPolicy;
+  readonly reviewProfile: ReviewProfile;
   readonly enforceRiskClassification: boolean;
   readonly allowRiskDowngradeOverride: boolean;
   readonly allowReducedCeremony: boolean;

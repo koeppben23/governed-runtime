@@ -131,6 +131,7 @@ export function createPolicySnapshot(
     ...(policy.selfReview ? { selfReview: policy.selfReview } : {}),
     reviewOutputPolicy: policy.reviewOutputPolicy,
     reviewInvocationPolicy: policy.reviewInvocationPolicy,
+    reviewProfile: policy.reviewProfile,
     enforceRiskClassification: policy.enforceRiskClassification,
     allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride,
     allowReducedCeremony: policy.allowReducedCeremony,
@@ -171,7 +172,26 @@ export function freezePolicySnapshot(
 
 // ─── Snapshot → Runtime Policy ────────────────────────────────────────────────
 
+/**
+ * Resolve the three frozen review policies from a snapshot, applying
+ * mode-consistent fail-closed defaults for legacy snapshots. Extracted to keep
+ * resolvePolicyFromSnapshot within its cyclomatic-complexity budget.
+ */
+function resolveReviewPolicies(snapshot: PolicySnapshot): {
+  reviewOutputPolicy: FlowGuardPolicy['reviewOutputPolicy'];
+  reviewInvocationPolicy: FlowGuardPolicy['reviewInvocationPolicy'];
+  reviewProfile: FlowGuardPolicy['reviewProfile'];
+} {
+  const defaults = modeConsistentDefaults(snapshot.mode);
+  return {
+    reviewOutputPolicy: snapshot.reviewOutputPolicy ?? defaults.reviewOutputPolicy,
+    reviewInvocationPolicy: snapshot.reviewInvocationPolicy ?? defaults.reviewInvocationPolicy,
+    reviewProfile: snapshot.reviewProfile ?? defaults.reviewProfile,
+  };
+}
+
 export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPolicy {
+  const reviewPolicies = resolveReviewPolicies(snapshot);
   return {
     mode: snapshot.mode,
     requireHumanGates: snapshot.requireHumanGates,
@@ -180,11 +200,9 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     maxIncoherentReviewerCaptureRetries: snapshot.maxIncoherentReviewerCaptureRetries ?? 1,
     allowSelfApproval: snapshot.allowSelfApproval,
     selfReview: normalizeSelfReviewConfig(snapshot.selfReview),
-    reviewOutputPolicy:
-      snapshot.reviewOutputPolicy ?? modeConsistentDefaults(snapshot.mode).reviewOutputPolicy,
-    reviewInvocationPolicy:
-      snapshot.reviewInvocationPolicy ??
-      modeConsistentDefaults(snapshot.mode).reviewInvocationPolicy,
+    reviewOutputPolicy: reviewPolicies.reviewOutputPolicy,
+    reviewInvocationPolicy: reviewPolicies.reviewInvocationPolicy,
+    reviewProfile: reviewPolicies.reviewProfile,
     minimumActorAssuranceForApproval:
       snapshot.minimumActorAssuranceForApproval ??
       (snapshot.requireVerifiedActorsForApproval
