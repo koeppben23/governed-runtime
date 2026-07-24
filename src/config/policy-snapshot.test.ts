@@ -172,6 +172,12 @@ describe('resolvePolicyFromSnapshot', () => {
       expect(reconstructed.requireHumanGates).toBe(true);
       expect(reconstructed.reviewOutputPolicy).toBe('structured_required');
     });
+
+    it('round-trips the mandatory core reviewProfile (Wave 1 — #730)', () => {
+      const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256);
+      expect(snapshot.reviewProfile).toBe('core');
+      expect(resolvePolicyFromSnapshot(snapshot).reviewProfile).toBe('core');
+    });
   });
 
   describe('LEGACY — missing fields', () => {
@@ -182,6 +188,14 @@ describe('resolvePolicyFromSnapshot', () => {
         identityProviderMode: undefined as unknown as 'optional' | 'required',
       });
       expect(reconstructed.identityProviderMode).toBe('optional');
+    });
+
+    it('legacy snapshot without reviewProfile resolves fail-closed to core (Wave 1 — #730)', () => {
+      const snapshot = createPolicySnapshot(REGULATED_POLICY, NOW, sha256);
+      const legacy = { ...snapshot };
+      delete (legacy as { reviewProfile?: unknown }).reviewProfile;
+      const reconstructed = resolvePolicyFromSnapshot(legacy);
+      expect(reconstructed.reviewProfile).toBe('core');
     });
   });
 });

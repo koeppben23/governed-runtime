@@ -71,6 +71,7 @@ import {
   ensureReviewAssurance,
   findAcceptedInvocationForFindings,
   findLatestObligation,
+  resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 // presentation imports moved to plan-response.ts
@@ -225,6 +226,8 @@ function buildPlanSubmissionState(
         iteration: 0,
         planVersion,
         now: scope.ctx.now(),
+        reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
+        profileSource: 'policy_default',
       })
     : null;
 

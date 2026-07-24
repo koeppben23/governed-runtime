@@ -9,7 +9,11 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
-import type { ReviewInvocationPolicy, ReviewOutputPolicy } from '../../config/policy-types.js';
+import type {
+  ReviewInvocationPolicy,
+  ReviewOutputPolicy,
+  ReviewProfile,
+} from '../../config/policy-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import type { ReviewerSuccessResult } from './orchestrator.js';
 import { extractReviewContext } from './orchestrator.js';
@@ -228,10 +232,19 @@ export function isStrictEnforcementEnabled(sessionState: {
 }
 
 export function getReviewerPolicies(sessionState: {
-  policySnapshot: { reviewOutputPolicy?: string; reviewInvocationPolicy?: string };
-}): { reviewOutputPolicy: ReviewOutputPolicy; reviewInvocationPolicy: ReviewInvocationPolicy } {
+  policySnapshot: {
+    reviewOutputPolicy?: string;
+    reviewInvocationPolicy?: string;
+    reviewProfile?: string;
+  };
+}): {
+  reviewOutputPolicy: ReviewOutputPolicy;
+  reviewInvocationPolicy: ReviewInvocationPolicy;
+  reviewProfile: ReviewProfile;
+} {
   const outputPolicy = sessionState.policySnapshot.reviewOutputPolicy;
   const invocationPolicy = sessionState.policySnapshot?.reviewInvocationPolicy;
+  const reviewProfile = sessionState.policySnapshot?.reviewProfile;
   return {
     reviewOutputPolicy:
       outputPolicy === 'structured_required' || outputPolicy === 'text_compat_allowed'
@@ -243,6 +256,9 @@ export function getReviewerPolicies(sessionState: {
       invocationPolicy === 'sdk_allowed'
         ? invocationPolicy
         : 'host_task_required',
+    // Fail-closed: any missing/invalid frozen profile resolves to the mandatory
+    // 'core' baseline. 'core' is never operator-optional and has no 'off' mode.
+    reviewProfile: reviewProfile === 'core' || reviewProfile === 'full' ? reviewProfile : 'core',
   };
 }
 

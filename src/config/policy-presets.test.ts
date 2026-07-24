@@ -190,6 +190,13 @@ describe('config/policy', () => {
       expect(REGULATED_POLICY.allowReducedCeremony).toBe(false);
     });
 
+    it('every preset defaults to the mandatory core review profile (Wave 1 — #730)', () => {
+      expect(SOLO_POLICY.reviewProfile).toBe('core');
+      expect(TEAM_POLICY.reviewProfile).toBe('core');
+      expect(TEAM_CI_POLICY.reviewProfile).toBe('core');
+      expect(REGULATED_POLICY.reviewProfile).toBe('core');
+    });
+
     it('TEAM-CI enables auto-approval with full audit', () => {
       expect(TEAM_CI_POLICY.requireHumanGates).toBe(false);
       expect(TEAM_CI_POLICY.maxSelfReviewIterations).toBe(3);

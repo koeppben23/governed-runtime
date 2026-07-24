@@ -11,6 +11,8 @@ import {
   ReviewFindings,
   ReviewObligation,
   ReviewInvocationEvidence,
+  ReviewProfile,
+  ReviewProfileSource,
   ReviewAssuranceState,
   ReviewDecision,
   ReviewReport,
@@ -348,6 +350,73 @@ describe('evidence-review', () => {
         metadata: { inputFingerprint: 'abc', customField: 42 },
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
+    });
+  });
+
+  describe('ReviewProfile (Wave 1 — #730)', () => {
+    it('ReviewProfile accepts core and full', () => {
+      expect(ReviewProfile.parse('core')).toBe('core');
+      expect(ReviewProfile.parse('full')).toBe('full');
+    });
+
+    it('ReviewProfile rejects unknown values (no off mode)', () => {
+      expect(ReviewProfile.safeParse('off').success).toBe(false);
+      expect(ReviewProfile.safeParse('').success).toBe(false);
+      expect(ReviewProfile.safeParse('CORE').success).toBe(false);
+    });
+
+    it('ReviewProfileSource is forward-compatible for Wave 2 sources', () => {
+      for (const s of [
+        'policy_default',
+        'runtime_required_full',
+        'explicit_full_request',
+        'inherited_plan_full',
+      ]) {
+        expect(ReviewProfileSource.parse(s)).toBe(s);
+      }
+      expect(ReviewProfileSource.safeParse('bogus').success).toBe(false);
+    });
+
+    it('ReviewObligation accepts frozen reviewProfile and profileSource', () => {
+      const obligation = {
+        obligationId: FIXED_UUID,
+        obligationType: 'plan' as const,
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: 'v1',
+        mandateDigest: 'sha256-mandate',
+        createdAt: FIXED_TIME,
+        pluginHandshakeAt: null,
+        status: 'pending' as const,
+        invocationId: null,
+        blockedCode: null,
+        fulfilledAt: null,
+        consumedAt: null,
+        reviewProfile: 'core' as const,
+        profileSource: 'policy_default' as const,
+      };
+      expect(ReviewObligation.parse(obligation)).toEqual(obligation);
+    });
+
+    it('ReviewObligation remains backward compatible without profile fields', () => {
+      const legacy = {
+        obligationId: FIXED_UUID,
+        obligationType: 'plan' as const,
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: 'v1',
+        mandateDigest: 'sha256-mandate',
+        createdAt: FIXED_TIME,
+        pluginHandshakeAt: null,
+        status: 'pending' as const,
+        invocationId: null,
+        blockedCode: null,
+        fulfilledAt: null,
+        consumedAt: null,
+      };
+      const parsed = ReviewObligation.parse(legacy);
+      expect(parsed.reviewProfile).toBeUndefined();
+      expect(parsed.profileSource).toBeUndefined();
     });
   });
 });

@@ -76,6 +76,20 @@ export type ReviewOutputPolicy = 'structured_required' | 'text_compat_allowed';
 /** Controls how the reviewer is invoked — host-visible Task tool vs SDK vs fallback. */
 export type ReviewInvocationPolicy = 'host_task_required' | 'host_task_preferred' | 'sdk_allowed';
 
+/**
+ * Review coverage profile bound to a review obligation.
+ *
+ * - 'core' — the mandatory, non-optional baseline review pass. It reuses the
+ *   canonical reviewer criteria (src/templates/mandates-reviewer-criteria.ts)
+ *   as the required floor for every plan, implementation, architecture, and
+ *   standalone review. It is never operator-optional and has no `off` mode.
+ * - 'full' — expanded coverage for runtime-computed HIGH-RISK work and explicit
+ *   escalation. Wave 2 (#730) binds parallel specialist coverage to this value;
+ *   in the current wave `full` is a reserved, forward-compatible value and is
+ *   never auto-selected.
+ */
+export type ReviewProfile = 'core' | 'full';
+
 /** Mandatory independent review configuration for FlowGuardPolicy. */
 export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
   subagentEnabled: true,
@@ -232,6 +246,12 @@ export interface FlowGuardPolicy {
 
   /** How reviewer invocation must occur: host-visible Task tool, SDK, or policy-gated. */
   readonly reviewInvocationPolicy: ReviewInvocationPolicy;
+
+  /**
+   * Mandatory review coverage profile. Defaults to 'core' in every preset.
+   * 'core' is the non-optional baseline; 'full' is reserved for Wave 2 (#730).
+   */
+  readonly reviewProfile: ReviewProfile;
 
   /** Audit event emission controls. */
   readonly audit: AuditPolicy;

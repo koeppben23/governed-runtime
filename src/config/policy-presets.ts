@@ -33,6 +33,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   reviewOutputPolicy: 'text_compat_allowed',
   reviewInvocationPolicy: 'host_task_preferred',
+  reviewProfile: 'core',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -64,6 +65,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   reviewOutputPolicy: 'text_compat_allowed',
   reviewInvocationPolicy: 'host_task_required',
+  reviewProfile: 'core',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -95,6 +97,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   reviewOutputPolicy: 'structured_required',
   reviewInvocationPolicy: 'host_task_required',
+  reviewProfile: 'core',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -126,6 +129,7 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
   selfReview: DEFAULT_SELF_REVIEW_CONFIG,
   reviewOutputPolicy: 'structured_required',
   reviewInvocationPolicy: 'host_task_required',
+  reviewProfile: 'core',
   audit: {
     emitTransitions: true,
     emitToolCalls: true,

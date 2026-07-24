@@ -126,6 +126,13 @@ export const PolicySnapshotSchema = z
     reviewInvocationPolicy: z
       .enum(['host_task_required', 'host_task_preferred', 'sdk_allowed'])
       .optional(),
+    /**
+     * Frozen mandatory review coverage profile. 'core' is the non-optional
+     * baseline; 'full' is reserved for Wave 2 (#730). Optional for backward
+     * compatibility; resolvePolicyFromSnapshot applies a fail-closed,
+     * mode-consistent default ('core') for legacy snapshots.
+     */
+    reviewProfile: z.enum(['core', 'full']).optional(),
     /** Runtime risk-classification enforcement frozen at hydrate time. */
     enforceRiskClassification: z.boolean().optional(),
     /** Structured downgrade override permission. Defaults closed for legacy snapshots. */

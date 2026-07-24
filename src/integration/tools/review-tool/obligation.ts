@@ -17,6 +17,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   createReviewObligation,
   appendReviewObligation,
+  resolveFrozenReviewProfile,
   findLatestPendingReviewObligation,
   findReviewObligationById,
   consumeReviewObligation,
@@ -235,6 +236,8 @@ export async function ensureMissingAnalysisObligation(
       iteration: 1,
       planVersion: 1,
       now,
+      reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
+      profileSource: 'policy_default',
       metadata,
     });
     await persistReviewObligation(sessDir, state, obligation);
@@ -318,6 +321,8 @@ export async function resolveSubmittedReviewObligation(
       iteration: 1,
       planVersion: 1,
       now,
+      reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
+      profileSource: 'policy_default',
       metadata: { fingerprint, inputFingerprint: fingerprint },
     });
     await persistReviewObligation(sessDir, state, obligation);
