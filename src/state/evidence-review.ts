@@ -159,6 +159,33 @@ export type ReviewFindings = z.infer<typeof ReviewFindings>;
 // ─── Review Obligations and Invocation Evidence ────────────────────────────────
 
 /**
+ * Mandatory review coverage profile frozen into an obligation.
+ *
+ * Mirrors the canonical `ReviewProfile` in src/config/policy-types.ts. It is
+ * duplicated as a Zod enum here (not imported) because the state layer must not
+ * import from the config layer (see module-boundary rules). The two definitions
+ * are kept in lockstep by review-profile-parity tests.
+ *
+ * - 'core' — the mandatory, non-optional baseline (never 'off').
+ * - 'full' — reserved for Wave 2 (#730); never auto-selected in this wave.
+ */
+export const ReviewProfile = z.enum(['core', 'full']);
+export type ReviewProfile = z.infer<typeof ReviewProfile>;
+
+/**
+ * Provenance of the frozen review profile. Forward-compatible: Wave 2 (#730)
+ * extends this with 'runtime_required_full', 'explicit_full_request', and
+ * 'inherited_plan_full'. In the current wave only 'policy_default' is produced.
+ */
+export const ReviewProfileSource = z.enum([
+  'policy_default',
+  'runtime_required_full',
+  'explicit_full_request',
+  'inherited_plan_full',
+]);
+export type ReviewProfileSource = z.infer<typeof ReviewProfileSource>;
+
+/**
  * P35 strict obligation record.
  * Exactly one independent review invocation must fulfill each obligation.
  */
@@ -176,6 +203,15 @@ export const ReviewObligation = z.object({
   blockedCode: z.string().nullable(),
   fulfilledAt: z.string().datetime().nullable(),
   consumedAt: z.string().datetime().nullable(),
+  /**
+   * Mandatory review coverage profile frozen at obligation creation, before any
+   * reviewer invocation. Optional for backward compatibility with obligations
+   * persisted before this field existed; consumers treat a missing value as the
+   * fail-closed 'core' baseline.
+   */
+  reviewProfile: ReviewProfile.optional(),
+  /** Provenance of the frozen review profile (see ReviewProfileSource). */
+  profileSource: ReviewProfileSource.optional(),
   /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
   metadata: z.record(z.string(), z.unknown()).optional(),
 });

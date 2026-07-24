@@ -12,7 +12,11 @@ import type { RailContext } from '../../rails/types.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { ReviewFindings, ReviewObligation } from '../../state/evidence.js';
 import type { resolveCeremonyProfile } from '../phase-tool-gate.js';
-import { appendReviewObligation, createReviewObligation } from '../review/assurance.js';
+import {
+  appendReviewObligation,
+  createReviewObligation,
+  resolveFrozenReviewProfile,
+} from '../review/assurance.js';
 import { classifyToolCallMode } from './review-validation-mode.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -50,6 +54,8 @@ export function activateImplementationReviewObligation(
     iteration: input.iteration,
     planVersion: input.planVersion,
     now: input.now,
+    reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
+    profileSource: 'policy_default',
   });
   return {
     state: {

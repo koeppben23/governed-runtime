@@ -14,6 +14,8 @@ import type {
   ReviewInvocationMode,
   ReviewObligation,
   ReviewObligationType,
+  ReviewProfile,
+  ReviewProfileSource,
 } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 
@@ -45,6 +47,13 @@ export function createReviewObligation(input: {
   iteration: number;
   planVersion: number;
   now: string;
+  /**
+   * Mandatory review coverage profile frozen into the obligation at creation,
+   * before any reviewer invocation. Defaults to the fail-closed 'core' baseline.
+   */
+  reviewProfile?: ReviewProfile;
+  /** Provenance of the frozen profile. Defaults to 'policy_default'. */
+  profileSource?: ReviewProfileSource;
   metadata?: Record<string, unknown>;
 }): ReviewObligation {
   return {
@@ -61,8 +70,27 @@ export function createReviewObligation(input: {
     blockedCode: null,
     fulfilledAt: null,
     consumedAt: null,
+    // Fail-closed: freeze the mandatory 'core' baseline when no profile is
+    // supplied. The profile is fixed here, before the reviewer is invoked.
+    reviewProfile: input.reviewProfile ?? 'core',
+    profileSource: input.profileSource ?? 'policy_default',
     metadata: input.metadata,
   };
+}
+
+/**
+ * Resolve the frozen mandatory review profile from a policy snapshot shape.
+ *
+ * Fail-closed: any missing or invalid value resolves to the mandatory 'core'
+ * baseline. 'core' is never operator-optional and has no 'off' mode. This is
+ * the single resolver used by obligation-creation call sites so the frozen
+ * profile is consistent across every review flow.
+ */
+export function resolveFrozenReviewProfile(
+  policySnapshot: { reviewProfile?: string } | null | undefined,
+): ReviewProfile {
+  const raw = policySnapshot?.reviewProfile;
+  return raw === 'core' || raw === 'full' ? raw : 'core';
 }
 
 export function appendReviewObligation(
