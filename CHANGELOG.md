@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Mandatory `core` review coverage profile (Wave 1 of #730).** Every plan,
+  implementation, architecture, and standalone `/review` now runs under a
+  canonical, non-optional `core` review profile. The profile is frozen into the
+  review obligation at creation — before the reviewer is invoked — and is
+  audit-visible in the `review:obligation_created` and `review:subagent_invoked`
+  events (`reviewProfile`, `profileSource`). A new `reviewProfile` field
+  (`core` | `full`) is added to the policy snapshot; every preset defaults to
+  `core`. Any missing or invalid frozen profile resolves fail-closed to `core`
+  (there is no `off` mode) and legacy snapshots without the field degrade to
+  `core`. The `core` profile reuses the existing canonical reviewer criteria
+  (`src/templates/mandates-reviewer-criteria.ts`) — it introduces no second
+  review authority. `full` is a reserved, forward-compatible value; parallel
+  specialist coverage and automatic HIGH-RISK escalation are deferred to Wave 2
+  of #730 and are pending host-capability verification (#732). See
+  `docs/independent-review.md`.
+
 - **Honest OpenCode instruction-source status (configured ≠ activated).**
   `flowguard install` and `flowguard doctor` no longer claim an OpenCode
   installation is "supported", "active", or "compatible" based solely on a

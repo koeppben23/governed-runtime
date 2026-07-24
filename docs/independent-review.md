@@ -45,6 +45,17 @@ Separation of concerns:
 
 **Key invariant:** ReviewObligation, ReviewInvocationEvidence, and ReviewFindings are the only review-governance authority. OpenCode may invoke the reviewer via SDK/Task evidence; Claude Code and Codex may transport reviewer instructions through native agents/subagents. None of those transport mechanisms completes review by itself. Only structured, parseable, obligation-bound ReviewFindings can satisfy review. In strict mode, unparseable responses and orchestration failures are BLOCKED. `flowguard_decision` is a human gate decision only and never replaces independent review evidence.
 
+### Review Coverage Profile (`core` / `full`)
+
+Every review — plan, implementation, architecture, and standalone `/review` — runs under a mandatory **review coverage profile**:
+
+- **`core`** — the non-optional baseline. It is not operator-selectable and has no `off` mode. `core` reuses the canonical reviewer criteria in `src/templates/mandates-reviewer-criteria.ts`; it does **not** define a second set of criteria or a second review authority. The reviewer prompt carries a digit-free trailing marker declaring the profile; it never displaces the enforcement-bound `iteration`/`planVersion` context tokens.
+- **`full`** — a reserved, forward-compatible value. In the current release it is never auto-selected. Wave 2 of #730 binds parallel specialist coverage and automatic HIGH-RISK escalation to `full`; that work is pending host-capability verification (#732).
+
+The profile is **frozen into the review obligation at creation, before any reviewer is invoked** (`ReviewObligation.reviewProfile`, `ReviewObligation.profileSource`). It is sourced from the frozen policy snapshot (`policySnapshot.reviewProfile`), which every preset sets to `core`. Resolution is fail-closed: a missing or invalid frozen value, and any legacy snapshot without the field, resolves to `core`. The chosen profile and its source are recorded in the `review:obligation_created` and `review:subagent_invoked` audit events.
+
+The profile is advisory context and provenance only. It does not transition state, satisfy an obligation, or replace ReviewFindings — the canonical reviewer remains the sole producer of binding, obligation-bound findings.
+
 ### Multi-Platform Reviewer Transport
 
 FlowGuard projects one of four reviewer transport modes in tool output:
