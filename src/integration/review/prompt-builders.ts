@@ -18,6 +18,26 @@ import {
   type DiscoveryReviewContext,
 } from './discovery-context-prompt.js';
 
+/**
+ * Mandatory-baseline marker appended as the final line of every reviewer prompt.
+ *
+ * This declares that the review runs under the canonical 'core' coverage
+ * profile — the non-optional baseline whose criteria are owned by
+ * src/templates/mandates-reviewer-criteria.ts (REVIEWER_CRITERIA). It adds NO
+ * new criteria (no duplicate review authority); it only names the profile and
+ * marks it mandatory.
+ *
+ * Enforcement safety (verified against promptContainsValue in
+ * enforcement/extraction.ts): this string MUST NOT contain the tokens
+ * "iteration" or "version" followed within 30 non-digit characters by a number,
+ * and it is always appended AFTER the attestation/context block so it can never
+ * displace the real iteration=/planVersion= tokens the enforcement matcher
+ * requires. It is intentionally digit-free.
+ */
+export const CORE_REVIEW_PROFILE_MARKER =
+  'Review coverage profile: core (mandatory baseline; not optional). ' +
+  'Apply your full reviewer criteria for this review type as the required floor.';
+
 // ─── Canonical Review Context Serializer ─────────────────────────────────────
 
 /**
@@ -248,6 +268,8 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     `Set attestation.iteration=${iteration}.`,
     `Set attestation.planVersion=${planVersion}.`,
     `Set attestation.reviewedBy="${REVIEWER_SUBAGENT_TYPE}".`,
+    '',
+    CORE_REVIEW_PROFILE_MARKER,
   ].join('\n');
 }
 
@@ -300,6 +322,8 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     `Set attestation.iteration=${iteration}.`,
     `Set attestation.planVersion=${planVersion}.`,
     `Set attestation.reviewedBy="${REVIEWER_SUBAGENT_TYPE}".`,
+    '',
+    CORE_REVIEW_PROFILE_MARKER,
   ].join('\n');
 }
 
@@ -351,6 +375,8 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     `Set attestation.iteration=${iteration}.`,
     `Set attestation.planVersion=${planVersion}.`,
     `Set attestation.reviewedBy="${REVIEWER_SUBAGENT_TYPE}".`,
+    '',
+    CORE_REVIEW_PROFILE_MARKER,
   ].join('\n');
 }
 
@@ -410,6 +436,8 @@ export function buildReviewContentPrompt(opts: {
     '  blockingIssues, majorRisks, missingVerification, scopeCreep, unknowns,',
     '  reviewedBy: { sessionId }, reviewedAt, attestation.',
     'Use ONLY these categories: completeness, correctness, feasibility, risk, quality.',
+    '',
+    CORE_REVIEW_PROFILE_MARKER,
   );
   return lines.join('\n');
 }

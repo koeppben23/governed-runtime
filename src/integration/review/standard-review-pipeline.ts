@@ -108,6 +108,10 @@ async function recordObligationHandshake(
         planVersion: reviewCtx.planVersion,
         criteriaVersion: reviewCtx.criteriaVersion,
         mandateDigest: reviewCtx.mandateDigest,
+        // Freeze provenance: the mandatory review profile is frozen at
+        // obligation creation. 'policy_default' is the only source in this wave.
+        reviewProfile: getReviewerPolicies(sessionState).reviewProfile,
+        profileSource: 'policy_default',
       },
       auditFailureBehavior: strictEnforcement ? 'block' : 'warn',
     },
@@ -432,6 +436,7 @@ async function emitStandardEvidenceAudit(
           reviewOutputMode: reviewerResult.reviewOutputMode,
           structuredOutputUsed: reviewerResult.structuredOutputUsed,
           reviewAssuranceLevel: reviewerResult.reviewAssuranceLevel,
+          reviewProfile: getReviewerPolicies(sessionState).reviewProfile,
           ...(reviewerResult.extractionMethod
             ? { extractionMethod: reviewerResult.extractionMethod }
             : {}),
