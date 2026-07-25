@@ -30,6 +30,7 @@ import {
 import type { OrchestratorClient } from './types.js';
 
 import { REVIEW_FINDINGS_JSON_SCHEMA } from './findings-schema.js';
+import { extractStructuredOutputToolPart } from './structured-output-tool-part.js';
 import { extractJsonFromTextWithMethod } from './text-extraction.js';
 import {
   resolveReviewerAgent,
@@ -111,6 +112,18 @@ export interface InvokeReviewerOptions {
     error?: unknown;
     details?: Record<string, unknown>;
   }) => void;
+  /**
+   * Success-path diagnostic callback, symmetric to _onAttemptFailed. Invoked
+   * when a reviewer child session is created and/or a prompt completes, carrying
+   * parent/child correlation and step timing for observability (diagnostic only).
+   */
+  readonly _onAttemptSucceeded?: (info: {
+    attempt: number;
+    step: 'session_create' | 'session_prompt';
+    parentSessionId: string;
+    childSessionId: string;
+    durationMs: number;
+  }) => void;
 }
 
 /**
@@ -129,6 +142,7 @@ const DEFAULT_INVOKE_OPTIONS: Required<InvokeReviewerOptions> = {
   baseDelayMs: 1000,
   _sleepFn: retrySleep,
   _onAttemptFailed: () => {},
+  _onAttemptSucceeded: () => {},
 };
 
 interface ExecuteFormatFreePromptInput {
@@ -302,6 +316,7 @@ type InvokeAttemptResult = { kind: 'done'; result: ReviewerResult | null } | { k
 
 async function invokeReviewerAttempt(input: InvokeAttemptInput): Promise<InvokeAttemptResult> {
   const { client, parentSessionId, attempt, maxAttempts, options } = input;
+  const createStartedAt = performance.now();
   const createResult = await client.session.create({
     body: { parentID: parentSessionId, title: REVIEWER_SESSION_TITLE },
   });
@@ -316,13 +331,22 @@ async function invokeReviewerAttempt(input: InvokeAttemptInput): Promise<InvokeA
     return attempt < maxAttempts ? { kind: 'retry' } : { kind: 'done', result: null };
   }
 
+  options._onAttemptSucceeded({
+    attempt,
+    step: 'session_create',
+    parentSessionId,
+    childSessionId: createResult.data.id,
+    durationMs: performance.now() - createStartedAt,
+  });
+
   return promptReviewerSession({ ...input, childSessionId: createResult.data.id });
 }
 
 async function promptReviewerSession(
   input: InvokeAttemptInput & { childSessionId: string },
 ): Promise<InvokeAttemptResult> {
-  const { client, prompt, agent, childSessionId, attempt, options } = input;
+  const { client, prompt, agent, parentSessionId, childSessionId, attempt, options } = input;
+  const promptStartedAt = performance.now();
   const promptResult = await client.session.prompt({
     path: { id: childSessionId },
     body: buildStructuredPromptBody(agent, prompt),
@@ -346,8 +370,19 @@ async function promptReviewerSession(
   const capabilityResult = await handleInfoError(input, info?.error);
   if (capabilityResult) return capabilityResult;
 
-  const findings = extractStructuredFindings(info);
+  // Prefer the top-level structured field; fall back to a host that delivers
+  // structured output as a completed, validated `StructuredOutput` tool part.
+  // Both are structured-high; a plain text part is never accepted here.
+  const findings =
+    extractStructuredFindings(info) ?? extractStructuredOutputToolPart(promptResult.data.parts);
   if (!findings) return handleNoStructuredFindings(input, promptResult.data.parts, info);
+  options._onAttemptSucceeded({
+    attempt,
+    step: 'session_prompt',
+    parentSessionId,
+    childSessionId,
+    durationMs: performance.now() - promptStartedAt,
+  });
   return { kind: 'done', result: structuredReviewerResult(childSessionId, findings) };
 }
 
@@ -443,6 +478,7 @@ async function handleStructuredCapabilityError(
   await showTextCompatToast(input.client);
   const retrySessionId = await createFormatFreeRetrySession(input, error);
   if (!retrySessionId) return { kind: 'done', result: null };
+  const promptStartedAt = performance.now();
   const result = await executeFormatFreePrompt({
     client: input.client,
     agent: input.agent,
@@ -452,6 +488,21 @@ async function handleStructuredCapabilityError(
     modelCapabilityError: capabilityError,
     onFailed: input.options._onAttemptFailed,
   });
+  // Symmetric success observability: the text-compat path returns a valid
+  // ReviewerSuccessResult without emitting the session_prompt success event that
+  // the structured path emits. Emit it here for the text-compat retry session so
+  // a successful review always carries parent→child correlation and timing. (A
+  // separate session_create event for the retry session is intentionally not
+  // emitted, keeping this to the review-completion signal.)
+  if (result && result.blocked !== true) {
+    input.options._onAttemptSucceeded({
+      attempt: input.attempt,
+      step: 'session_prompt',
+      parentSessionId: input.parentSessionId,
+      childSessionId: retrySessionId,
+      durationMs: performance.now() - promptStartedAt,
+    });
+  }
   return { kind: 'done', result };
 }
 

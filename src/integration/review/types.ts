@@ -39,7 +39,24 @@ export interface OrchestratorClient {
     }): Promise<{
       data?:
         | {
-            parts?: Array<{ type?: string; text?: string }>;
+            /**
+             * Response parts. Text parts carry `text`; a `type: 'tool'` part
+             * (additive, optional fields) carries the host's structured-output
+             * delivery on hosts that return it as a `StructuredOutput` tool part
+             * rather than a top-level `info.structured_output` field. Existing
+             * mocks that only set `{ type, text }` remain valid.
+             */
+            parts?: Array<{
+              type?: string;
+              text?: string;
+              tool?: string;
+              callID?: string;
+              state?: {
+                status?: string;
+                input?: unknown;
+                metadata?: { valid?: unknown } & Record<string, unknown>;
+              };
+            }>;
             info?: {
               structured_output?: unknown;
               structured?: unknown;
@@ -53,6 +70,13 @@ export interface OrchestratorClient {
         | undefined;
       error?: unknown;
     }>;
+    /**
+     * Abort a running session. Optional and additive: existing mocks and call
+     * sites that only use create/prompt remain valid. Mirrors the documented
+     * OpenCode SDK `session.abort({ path })` shape. Used by the non-shipped
+     * parallel host-probe harness to exercise in-flight reviewer cancellation.
+     */
+    abort?(opts: { path: { id: string } }): Promise<{ data?: boolean; error?: unknown }>;
   };
   /** Optional TUI client for toast notifications. Not available in headless/CLI mode. */
   tui?: {

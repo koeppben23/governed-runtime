@@ -30,6 +30,7 @@ import {
   isStrictEnforcementEnabled,
   getReviewerPolicies,
   buildAttemptFailedLogger,
+  buildAttemptSucceededLogger,
   buildReviewDiscoveryContextForPipeline,
 } from './shared-helpers.js';
 
@@ -142,6 +143,7 @@ export async function runReviewContentPipeline(
     reviewOutputPolicy: policies.reviewOutputPolicy,
     reviewInvocationPolicy: policies.reviewInvocationPolicy,
     onAttemptFailed: buildAttemptFailedLogger(deps, TOOL_FLOWGUARD_REVIEW, sessionId),
+    onAttemptSucceeded: buildAttemptSucceededLogger(deps, TOOL_FLOWGUARD_REVIEW),
   });
 
   if (reviewerResult?.blocked) {

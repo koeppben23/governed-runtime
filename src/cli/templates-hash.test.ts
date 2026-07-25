@@ -215,9 +215,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // (AP-B11), Test-Fitting (AP-B12), and no-workaround/cleanup rules to the
     // /implement ## Rules section. Changes the /implement body and therefore the
     // COMMANDS hash.
+    // Refreshed for branch-review base detection: the /review template now
+    // documents the auto-detected base ladder and the explicit `base=<ref>`
+    // argument for branch reviews. Changes the /review body and therefore the
+    // COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '2f57fbb837d6771fd2c172a4ca7896d5dbacfc228b209b81cbeee342db477098',
+      '2ae4ab92c96c3a3e56aaea8e7d5431aab0f13e929e5c25b6f069879f2e0efd06',
     );
   });
 

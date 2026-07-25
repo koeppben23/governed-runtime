@@ -225,6 +225,133 @@ governed capability is lost.
 
 ---
 
+## Gap 8: Parallel Reviewer Host Capability (verified v1.4.0; version transfer pending)
+
+**Impact**: MEDIUM (gates the expanded/parallel review coverage in #730 Wave 2, #736)
+
+**Description**: FlowGuard's roadmap for expanded review coverage (#730 Wave 2)
+depends on the OpenCode host supporting **bounded, parallel, read-only reviewer
+child sessions of one parent**, including deterministic completion, unique
+session identity under concurrency, and in-flight cancellation via the
+documented `session.abort({ path })` SDK method.
+
+**Status update (2026-07-24)**: this capability was **originally `NOT_VERIFIED`**
+and has now been **verified against a real OpenCode host (Desktop CLI v1.4.0)**
+by a live run of the FlowGuard harness (see the parallel live run result below).
+The shipped release still spawns exactly one reviewer session at a time; no
+product code performs parallel reviewer fan-out yet. Both host-capability gates
+(parallelism and structured output) are now verified against v1.4.0; what
+remains `NOT_VERIFIED` is version transfer to the FlowGuard-targeted 1.18.x line
+and parallel-load abort (details below).
+
+**Decision (2026-07-24): parallel specialist coverage is NOT being built.** A
+design and scaffolding effort for the `full` review profile (a per-role prompt
+registry, fail-closed findings aggregation, and HIGH-RISK-to-`full` escalation)
+was prototyped and then **removed**, because parallel specialist fan-out over the
+SDK reviewer path is only reachable when `reviewInvocationPolicy` permits SDK
+spawns — i.e. only the SOLO preset (`host_task_preferred`). In the TEAM,
+TEAM_CI, and REGULATED presets the reviewer runs through the host-task path
+(`host_task_required`), where `invokeReviewer` blocks the SDK spawn and the
+agent spawns a single host-visible reviewer under a strict 1:1 obligation
+contract. HIGH-RISK work typically runs under exactly those stricter presets, so
+the intended benefit (parallel specialists on HIGH-RISK reviews) is not
+achievable via the SDK path, and delivering it through the host-task path would
+require breaking the fail-closed 1:1 obligation/evidence binding. The `full`
+review profile therefore remains a **reserved, inert enum value** (as before),
+with no producer, no marker, and no escalation. The verified host-capability
+evidence above is retained as reference; #736 (parallel specialist
+orchestration) is **not planned** on the SDK path.
+
+**What has been built and what it proves**:
+
+- A **non-shipped** measurement harness and deterministic fake client live under
+  `src/integration/review/__tests__/` (excluded from the production `tsc` build,
+  so they never reach `dist/`, the only packaged output).
+- The harness enforces a **bounded-concurrency** guarantee in FlowGuard-owned
+  code; that bound is genuinely tested and holds independently of any host.
+- All other harness tests are **self-consistency checks**: they document how the
+  harness interprets the documented SDK session semantics against our own fake.
+  They are an executable specification, **not** evidence of real host behavior.
+
+**Verification path (Strang 2 / #732)**: run the same harness against a real
+OpenCode instance and analyze the emitted structured evidence (parent/child
+session correlation, per-child timing, completion ordering). This live run has
+now been performed (see results below); the remaining gates are structured
+output and target-version confirmation, not basic host parallelism.
+
+**Feasibility spike result (2026-07-24, OpenCode Desktop CLI v1.4.0)**: a
+read-only, throwaway spike verified the underlying single-session host
+primitives against a live `opencode serve` instance (headless HTTP, Basic auth
+via `OPENCODE_SERVER_PASSWORD`):
+
+- `POST /session` creates a session; passing `parentID` creates a **child whose
+  `parentID` is set correctly** — real parent→child correlation over the host.
+- `POST /session/{id}/message` runs a prompt to **deterministic completion**
+  (`finish: "stop"`, ~3 s on a free model) with per-message timing and token
+  accounting — the per-child timing signal Gap 8 requires.
+- `POST /session/{id}/abort` returns `200 true` — in-flight cancellation exists.
+
+This raises the create / prompt-completion / abort primitives from
+`NOT_VERIFIED` to **verified for a single session (v1.4.0)**.
+
+**Parallel live run result (2026-07-24, OpenCode Desktop CLI v1.4.0)**: the
+FlowGuard `runParallelProbe` harness (the exact unit-tested harness, driven
+through a raw-`fetch` REST adapter over the documented HTTP API — no
+`@opencode-ai/sdk` import) was run against a live `opencode serve` instance with
+`maxConcurrency = 3` and 4 read-only child prompts under one parent. The
+harness is a gated live test (`src/integration/review/__tests__/parallel-host-probe-live.test.ts`,
+skipped unless `OPENCODE_LIVE=1` and `OPENCODE_CLI` are set, so CI never depends
+on a host). Observed:
+
+- **`peakObservedConcurrency = 3`** — the host genuinely ran three child
+  sessions of one parent simultaneously; it does **not** serialize prompts.
+- **4 unique child session ids** under one parent (unique identity under
+  concurrency).
+- **All 4 completed deterministically**; complete completion-ordering sequence
+  1..4. Per-child durations diverged widely (5.0 / 22.9 / 24.8 / 34.8 s) and the
+  completion order differed from dispatch order (the 5.0 s child finished first,
+  sequence 1; a 34.8 s child finished last, sequence 4) — direct evidence of
+  concurrent, not serialized, execution.
+
+This raises **bounded, parallel, read-only reviewer child sessions with unique
+identity, deterministic completion, and observable completion ordering** from
+`NOT_VERIFIED` to **verified against a real host (v1.4.0)**.
+
+**Structured-output live run result (2026-07-24, OpenCode Desktop CLI v1.4.0)**:
+a gated live test issued a `POST /session/{id}/message` with
+`format: { type: 'json_schema', schema, retryCount: 1 }` (a minimal reviewer
+verdict schema) and observed:
+
+- The host **accepts** the `format: json_schema` field (HTTP 200, no 400) and
+  returns **schema-validated** data: the assistant message carries a `tool`
+  part `tool: "StructuredOutput"` whose `state.status = "completed"`,
+  `state.metadata.valid = true`, and `state.input = { verdict: "accept" }` — the
+  schema-conformant object.
+- **Integration note (mechanism differs from the FlowGuard client contract)**:
+  the structured result is delivered in the `StructuredOutput` tool part's
+  `state.input`, and `finish` is `"tool-calls"` (not `"stop"`). There is **no
+  `info.structured_output` field** on this host version, whereas
+  `OrchestratorClient` (src/integration/review/types.ts) reads
+  `info.structured_output`/`info.structured`. Wave 2 orchestration must extract
+  from the tool part on this host line.
+- A **tool-calling-capable model is required**: the free tier
+  (`deepseek-v4-flash-free`) returned 0 tokens and no tool call; a capable model
+  (`claude-sonnet-4.6`) produced the validated output. This is a model, not a
+  host, limitation.
+
+This raises **structured-output delivery** from `NOT_VERIFIED` to **verified
+against a real host (v1.4.0)**.
+
+**What remains `NOT_VERIFIED`**: in-flight cancellation under _parallel_ load
+(single-session abort returns `200 true`, but a parallel abort race was not
+exercised), and **version transfer** to the FlowGuard-targeted SDK line (plugin
+pin 1.18.x vs. the 1.4.0 CLI probed here). #736 (parallel specialist
+orchestration) is therefore no longer blocked on host parallelism or structured
+output; it remains gated only on target-version confirmation and the client-side
+adaptation to read structured results from the `StructuredOutput` tool part.
+
+---
+
 ## Risk Acceptance Matrix
 
 | Residual Risk | Acceptance Criteria                         | Monitoring                                                         |

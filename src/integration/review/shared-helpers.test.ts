@@ -12,12 +12,14 @@ import {
   isStrictEnforcementEnabled,
   isOutputAlreadyBlocked,
   buildReviewDiscoveryContextForPipeline,
+  buildAttemptSucceededLogger,
   REASON_MANDATE_MISSING,
   REASON_MANDATE_MISMATCH,
   REASON_UNABLE_TO_REVIEW,
 } from './shared-helpers.js';
 import type { PipelineContext } from './pipeline-types.js';
 import type { SessionState } from '../../state/schema.js';
+import { createLogger, type LogEntry } from '../../logging/logger.js';
 
 const { buildReviewDiscoveryContext } = vi.hoisted(() => ({
   buildReviewDiscoveryContext: vi.fn(),
@@ -229,5 +231,58 @@ describe('buildReviewDiscoveryContextForPipeline (#401 drift)', () => {
     };
     expect(input.fingerprint).toBe('fp-1');
     expect(input.worktree).toBe('/tmp/repo');
+  });
+});
+
+describe('buildAttemptSucceededLogger', () => {
+  function depsWithLog(entries: LogEntry[]) {
+    const logger = createLogger('debug', (e) => {
+      entries.push(e);
+    });
+    return { log: logger } as unknown as Parameters<typeof buildAttemptSucceededLogger>[0];
+  }
+
+  it('emits an INFO orchestrator log with parent/child correlation and timing', () => {
+    const entries: LogEntry[] = [];
+    const logSucceeded = buildAttemptSucceededLogger(depsWithLog(entries), 'flowguard_plan');
+
+    logSucceeded({
+      attempt: 1,
+      step: 'session_prompt',
+      parentSessionId: 'parent-1',
+      childSessionId: 'child-9',
+      durationMs: 42,
+    });
+
+    expect(entries).toHaveLength(1);
+    const entry = entries[0]!;
+    expect(entry.level).toBe('info');
+    expect(entry.service).toBe('orchestrator');
+    expect(entry.extra).toMatchObject({
+      tool: 'flowguard_plan',
+      step: 'session_prompt',
+      parentSessionId: 'parent-1',
+      childSessionId: 'child-9',
+      durationMs: 42,
+    });
+  });
+
+  it('correlation IDs survive the logger redaction path intact', () => {
+    const entries: LogEntry[] = [];
+    const logSucceeded = buildAttemptSucceededLogger(depsWithLog(entries), 'flowguard_review');
+
+    // Realistic OpenCode-style session ids (no secrets, no absolute paths).
+    logSucceeded({
+      attempt: 2,
+      step: 'session_create',
+      parentSessionId: 'ses_abc123DEF',
+      childSessionId: 'ses_child456GHI',
+      durationMs: 7,
+    });
+
+    const extra = entries[0]!.extra as Record<string, unknown>;
+    expect(extra.parentSessionId).toBe('ses_abc123DEF');
+    expect(extra.childSessionId).toBe('ses_child456GHI');
+    expect(extra.durationMs).toBe(7);
   });
 });

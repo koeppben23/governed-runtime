@@ -176,6 +176,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Resolved high-severity PostCSS audit finding.** Updated the locked
+  transitive `postcss` dependency to `8.5.23` and refreshed related lockfile
+  entries. `npm audit --audit-level=high` now reports no high-severity findings.
+
 - **Configuration documentation safe by default (#688).** The primary configuration
   example now uses minimal `{ "schemaVersion": "v1" }` instead of explicitly setting
   `policy.defaultMode` to `solo` (auto-approval). Documented `maxSelfReviewIterations`

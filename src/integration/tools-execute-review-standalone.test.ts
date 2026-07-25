@@ -696,7 +696,7 @@ describe('review (standalone flow)', () => {
       expect(result.status).toBe('Review flow complete. Report generated.');
     });
 
-    it('review with references but no content fields succeeds', async () => {
+    it('review with references + inputOrigin but no content fields is blocked (REVIEW_CONTENT_SOURCE_INCOMPLETE)', async () => {
       await hydrateAndGetReady();
 
       const raw = await review.execute(
@@ -708,9 +708,10 @@ describe('review (standalone flow)', () => {
       );
       const result = parseToolResult(raw);
 
-      expect(result.error).toBeUndefined();
-      expect(result.phase).toBe('REVIEW_COMPLETE');
-      expect(result.references).toBeDefined();
+      // inputOrigin + references are provenance metadata, not content loaders.
+      // A concrete content field (url, text, prNumber, branch) is required.
+      expect(result.error).toBe(true);
+      expect(result.code).toBe('REVIEW_CONTENT_SOURCE_INCOMPLETE');
     });
   });
 
@@ -1520,6 +1521,106 @@ describe('review (standalone flow)', () => {
         expect(result.error).toBe(true);
         expect(result.code).toBe('HOST_SUBAGENT_TASK_REQUIRED');
       });
+    });
+  });
+
+  // =========================================================================
+  // CONTENT SOURCE COMPLETENESS (fail-closed bypass guard)
+  //
+  // Regression: inputOrigin + references without a concrete content field
+  // (branch, text, prNumber, url) was silently treated as "no content",
+  // allowing the review to complete mechanically with a clean report.
+  //
+  // Fix: REVIEW_CONTENT_SOURCE_INCOMPLETE blocks such incomplete calls
+  // before any obligation is created, and a defense-in-depth guard catches
+  // the case where the first guard is bypassed.
+  // =========================================================================
+  describe('content source completeness', () => {
+    it('BYPASS-1: inputOrigin=branch + references WITHOUT branch field is blocked', async () => {
+      await hydrateAndGetReady();
+
+      const result = await review.execute(
+        {
+          inputOrigin: 'branch',
+          references: [
+            {
+              ref: 'feature/add-due-date',
+              type: 'branch',
+              title: 'Add dueDate field',
+              source: 'local',
+            },
+          ],
+        },
+        ctx,
+      );
+      expect(typeof result).toBe('string');
+      const parsed = parseToolResult(result);
+      expect(parsed.error).toBe(true);
+      expect(parsed.code).toBe('REVIEW_CONTENT_SOURCE_INCOMPLETE');
+      expect(parsed.message).toContain('inputOrigin=branch');
+    });
+
+    it('BYPASS-2: content-free call WITHOUT inputOrigin/references still completes mechanically', async () => {
+      await hydrateAndGetReady();
+
+      const result = await review.execute({}, ctx);
+      expect(typeof result).toBe('string');
+      const parsed = parseToolResult(result);
+      // A content-free review completes mechanically — no error, no block.
+      expect(parsed.error).toBeUndefined();
+      expect(parsed.phase).toBe('REVIEW_COMPLETE');
+    });
+
+    it('BYPASS-3: inputOrigin=branch WITH branch field triggers content-aware flow', async () => {
+      await hydrateAndGetReady();
+
+      const result = await review.execute(
+        { inputOrigin: 'branch', branch: 'feature/some-branch' },
+        ctx,
+      );
+      expect(typeof result).toBe('string');
+      const parsed = parseToolResult(result);
+      // With an actual branch field, the review is content-aware.
+      // It may fail on GIT_NOT_FOUND or return CONTENT_ANALYSIS_REQUIRED,
+      // but it MUST NOT be REVIEW_CONTENT_SOURCE_INCOMPLETE.
+      expect(parsed.code).not.toBe('REVIEW_CONTENT_SOURCE_INCOMPLETE');
+    });
+
+    it('BYPASS-4: empty text field ("") is blocked as incomplete source', async () => {
+      await hydrateAndGetReady();
+
+      const result = await review.execute({ text: '' }, ctx);
+      expect(typeof result).toBe('string');
+      const parsed = parseToolResult(result);
+      expect(parsed.error).toBe(true);
+      expect(parsed.code).toBe('REVIEW_CONTENT_SOURCE_INCOMPLETE');
+    });
+
+    it('BYPASS-5: whitespace-only text field is blocked as incomplete source', async () => {
+      await hydrateAndGetReady();
+
+      const result = await review.execute({ text: '   ' }, ctx);
+      expect(typeof result).toBe('string');
+      const parsed = parseToolResult(result);
+      expect(parsed.error).toBe(true);
+      expect(parsed.code).toBe('REVIEW_CONTENT_SOURCE_INCOMPLETE');
+    });
+
+    it('BYPASS-6: empty branch field ("") is blocked (fail-closed)', async () => {
+      await hydrateAndGetReady();
+
+      const result = await review.execute({ inputOrigin: 'branch', branch: '' }, ctx);
+      expect(typeof result).toBe('string');
+      const parsed = parseToolResult(result);
+      // An empty branch field hits either the source validator
+      // (REVIEW_CONTENT_SOURCE_INCOMPLETE) or the branch-content loader
+      // (REVIEW_BRANCH_PROVENANCE_MISSING).  Both are fail-closed.
+      expect(parsed.error).toBe(true);
+      const validCodes = new Set([
+        'REVIEW_CONTENT_SOURCE_INCOMPLETE',
+        'REVIEW_BRANCH_PROVENANCE_MISSING',
+      ]);
+      expect(validCodes.has(String(parsed.code ?? ''))).toBe(true);
     });
   });
 

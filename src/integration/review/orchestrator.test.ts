@@ -947,3 +947,60 @@ describe('buildMutatedOutput', () => {
     expect(parsed.pluginReviewFindings).toBeDefined();
   });
 });
+
+describe('reviewer spawn observability (_onAttemptSucceeded)', () => {
+  const SPAWN_PROMPT = 'Review this plan. iteration=1, planVersion=1. Provide ReviewFindings JSON.';
+
+  it('emits session_create then session_prompt success with parent/child correlation and timing', async () => {
+    const client = mockClient();
+    const succeeded: Array<{
+      attempt: number;
+      step: string;
+      parentSessionId: string;
+      childSessionId: string;
+      durationMs: number;
+    }> = [];
+
+    const result = await invokeReviewer(client, SPAWN_PROMPT, 'parent-session-1', {
+      _onAttemptSucceeded: (info) => succeeded.push(info),
+    });
+
+    assertSuccessfulResult(result);
+    expect(succeeded.map((s) => s.step)).toEqual(['session_create', 'session_prompt']);
+    for (const s of succeeded) {
+      expect(s.parentSessionId).toBe('parent-session-1');
+      expect(s.childSessionId).toBe('child-session-1');
+      expect(s.attempt).toBe(1);
+      expect(typeof s.durationMs).toBe('number');
+      expect(s.durationMs).toBeGreaterThanOrEqual(0);
+    }
+  });
+
+  it('does not emit session_prompt success when session creation fails', async () => {
+    const client = mockClient({ createResult: { error: { message: 'boom' } } });
+    const succeeded: string[] = [];
+
+    await invokeReviewer(client, SPAWN_PROMPT, 'parent-1', {
+      _onAttemptSucceeded: (info) => succeeded.push(info.step),
+    });
+
+    expect(succeeded).not.toContain('session_create');
+    expect(succeeded).not.toContain('session_prompt');
+  });
+
+  it('does not emit prompt success when structured findings are absent (fail-closed)', async () => {
+    const client = mockClient({
+      promptResult: { data: { parts: [], info: {} }, error: undefined },
+    });
+    const succeeded: string[] = [];
+
+    await invokeReviewer(client, SPAWN_PROMPT, 'parent-1', {
+      _onAttemptSucceeded: (info) => succeeded.push(info.step),
+    });
+
+    // Child session was created, so session_create succeeds…
+    expect(succeeded).toContain('session_create');
+    // …but no valid findings means no prompt-success signal.
+    expect(succeeded).not.toContain('session_prompt');
+  });
+});

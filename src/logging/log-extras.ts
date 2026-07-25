@@ -80,6 +80,14 @@ export interface OrchestratorLogExtra {
   step?: string;
   iteration?: number;
   error?: SerializedError;
+  /** Parent session that owns the spawned reviewer child session. */
+  parentSessionId?: string;
+  /** Spawned reviewer child session id, for parent→child correlation. */
+  childSessionId?: string;
+  /** Wall-clock duration of the instrumented step in milliseconds. */
+  durationMs?: number;
+  /** Structured reason/outcome code for the step (diagnostic only). */
+  code?: string;
 }
 
 export function logOrchestrator(

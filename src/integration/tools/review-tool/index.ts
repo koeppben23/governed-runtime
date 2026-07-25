@@ -22,6 +22,7 @@ import {
   startReviewFlow,
   executeReview,
   type ReviewReferenceInput,
+  type PreparedReviewContent,
 } from '../../../rails/review.js';
 import {
   InputOriginSchema,
@@ -38,6 +39,7 @@ import {
   buildReviewReferenceInput,
   ensureMissingAnalysisObligation,
   hasReviewContentInput,
+  hasImplicitContentSignal,
   matchesReviewObligationInput,
   resolveSubmittedReviewObligation,
   validateSubmittedReviewFindings,
@@ -114,6 +116,14 @@ function populateBranchRefInput(
   };
 }
 
+function withCwd(
+  refInput: ReviewReferenceInput | undefined,
+  cwd: string | undefined,
+): ReviewReferenceInput | undefined {
+  if (!refInput || !cwd) return refInput;
+  return { ...refInput, cwd };
+}
+
 async function prepareReviewExecution(
   sessDir: string,
   state: SessionState,
@@ -129,7 +139,7 @@ async function prepareReviewExecution(
     exec.args.reviewObligationId !== undefined;
   const resolvedSource =
     exec.args.branch && !isFindingsSubmission && !isHostTaskVerdictContinuation
-      ? resolveBranchReviewSource(exec.args.branch)
+      ? resolveBranchReviewSource(exec.args.branch, exec.args.base, exec.context.worktree)
       : undefined;
 
   const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec);
@@ -156,13 +166,19 @@ async function prepareReviewExecution(
   if (exec.args.reviewFindings === undefined) {
     return {
       result,
-      refInput,
+      refInput: withCwd(refInput, exec.context.worktree),
       validatedReviewObligation: null,
       pendingObligation: missingResult.obligation,
       blockMessage: missingResult.message ?? undefined,
     };
   }
-  return finishFindingsSubmission(sessDir, state, result, exec, refInput);
+  return finishFindingsSubmission(
+    sessDir,
+    state,
+    result,
+    exec,
+    withCwd(refInput, exec.context.worktree),
+  );
 }
 
 async function finishFindingsSubmission(
@@ -314,7 +330,13 @@ function prepareHostTaskVerdictReview(
   const refInput = buildReviewReferenceInput(exec.args);
   return {
     result,
-    refInput: refInput ? { ...refInput, skipExternalContentLoad: true } : undefined,
+    refInput: refInput
+      ? {
+          ...refInput,
+          skipExternalContentLoad: true,
+          ...(exec.context.worktree ? { cwd: exec.context.worktree } : {}),
+        }
+      : undefined,
     validatedReviewObligation: obligation,
     effectiveReviewFindings: resolved.findings,
     evidenceInvocationId: resolved.invocationId,
@@ -395,6 +417,76 @@ async function persistCompletedReview(
   });
 }
 
+// ─── Content loading & binding ─────────────────────────────────────────────
+
+interface LoadedReviewContent {
+  reviewState: SessionState;
+  loadedContent: string | undefined;
+  blockMessage: string | undefined;
+}
+
+/**
+ * Load external review content, bind its digest to the obligation, and verify
+ * that a content-aware review has a bound obligation or loaded content before
+ * proceeding.
+ *
+ * Extracted from `execute` to keep tool-complexity within bounds.
+ */
+async function loadAndBindReviewContent(
+  prepared: PreparedReviewExecution,
+  args: ReviewToolArgs,
+  context: Parameters<ToolDefinition['execute']>[1],
+): Promise<LoadedReviewContent> {
+  const result = await prepareReviewContent(prepared.refInput, undefined);
+  if (result && 'kind' in result) {
+    return {
+      reviewState: prepared.result.state,
+      loadedContent: undefined,
+      blockMessage: formatBlockedReviewReport(result),
+    };
+  }
+
+  const loadedContent: PreparedReviewContent | null = result;
+  const bindTarget = prepared.pendingObligation ?? prepared.validatedReviewObligation;
+  const reviewState = await bindDigestIfAvailable(context, bindTarget, loadedContent, prepared);
+
+  if (prepared.blockMessage) {
+    return {
+      reviewState,
+      loadedContent: loadedContent?.content,
+      blockMessage: prepared.blockMessage,
+    };
+  }
+
+  if (hasImplicitContentSignal(args) && !bindTarget && !loadedContent) {
+    return {
+      reviewState,
+      loadedContent: undefined,
+      blockMessage: formatBlocked('REVIEW_CONTENT_SOURCE_INCOMPLETE', {
+        label: `inputOrigin=${args.inputOrigin ?? ''}, references`,
+      }),
+    };
+  }
+
+  return {
+    reviewState,
+    loadedContent: loadedContent?.content,
+    blockMessage: undefined,
+  };
+}
+
+async function bindDigestIfAvailable(
+  context: Parameters<ToolDefinition['execute']>[1],
+  bindTarget: ReviewObligation | null | undefined,
+  content: PreparedReviewContent | null,
+  prepared: PreparedReviewExecution,
+): Promise<SessionState> {
+  if (!content?.reviewedContentDigest || !bindTarget?.obligationId) {
+    return prepared.result.state;
+  }
+  return bindReviewContentDigest(context, bindTarget.obligationId, content.reviewedContentDigest);
+}
+
 export const review: ToolDefinition = {
   description:
     'Start the standalone review flow. Transitions READY → REVIEW → REVIEW_COMPLETE. ' +
@@ -423,6 +515,13 @@ export const review: ToolDefinition = {
       .optional()
       .describe('GitHub PR number to load via gh CLI and analyze during /review.'),
     branch: z.string().optional().describe('Git branch name to load via gh CLI and analyze.'),
+    base: z
+      .string()
+      .optional()
+      .describe(
+        'Explicit base ref/branch/SHA to diff a branch review against (e.g. base="main"). ' +
+          'When omitted, the base is auto-detected (origin/HEAD → main → master → merge-base with HEAD).',
+      ),
     url: z.string().url().optional().describe('URL to fetch and analyze during /review.'),
     reviewObligationId: z
       .string()
@@ -450,37 +549,15 @@ export const review: ToolDefinition = {
       const prepared = await prepareReviewWithoutExternalCalls(args, context);
       if (typeof prepared === 'string') return prepared;
 
-      // Load external content and compute the content digest
-      const contentResult = await prepareReviewContent(
-        prepared.refInput,
-        undefined /* dnsLookup */,
-      );
-      if (contentResult && 'kind' in contentResult) {
-        return formatBlockedReviewReport(contentResult);
-      }
-
-      // Bind the content digest to the obligation before any further action.
-      // First-call paths use pendingObligation; findings-submission uses validatedReviewObligation.
-      const bindTarget = prepared.pendingObligation ?? prepared.validatedReviewObligation;
-      let reviewState = prepared.result.state;
-      if (contentResult?.reviewedContentDigest && bindTarget?.obligationId) {
-        reviewState = await bindReviewContentDigest(
-          context,
-          bindTarget.obligationId,
-          contentResult.reviewedContentDigest,
-        );
-      }
-
-      // Return the blocking message AFTER content loading and digest binding,
-      // so the obligation is fully prepared for the reviewer.
-      if (prepared.blockMessage) return prepared.blockMessage;
+      const content = await loadAndBindReviewContent(prepared, args, context);
+      if (content.blockMessage) return content.blockMessage;
 
       const reviewResult = await executeReview(
-        reviewState,
+        content.reviewState,
         prepared.now,
         buildReviewExecutors(args, prepared.effectiveReviewFindings),
         prepared.refInput,
-        contentResult?.content,
+        content.loadedContent,
       );
       return await persistCompletedReview(args, context, reviewResult, prepared.now);
     } catch (err) {

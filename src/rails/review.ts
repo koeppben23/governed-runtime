@@ -270,6 +270,8 @@ export interface ReviewReferenceInput {
   readonly resolvedBranchSha?: string;
   /** Resolved full base commit SHA (branch reviews only). */
   readonly resolvedBaseSha?: string;
+  /** Worktree directory for git operations (branch reviews only). */
+  readonly cwd?: string;
 }
 
 // ─── Mechanical Findings ──────────────────────────────────────
@@ -366,13 +368,15 @@ export async function loadExternalContent(
   refInput: ReviewReferenceInput,
   dnsLookup?: ReviewDnsLookup,
 ): Promise<PrepareReviewResult> {
-  if (refInput.prNumber !== undefined) {
+  if (typeof refInput.prNumber === 'number' && refInput.prNumber > 0) {
     const result = loadPrContent(refInput.prNumber);
     if ('kind' in result) return result;
     return { content: result.content, reviewedContentDigest: hashText(result.content) };
   }
-  if (refInput.branch !== undefined) return loadBranchContent(refInput);
-  if (refInput.url !== undefined) {
+  if (typeof refInput.branch === 'string' && refInput.branch.trim().length > 0) {
+    return loadBranchContent(refInput);
+  }
+  if (typeof refInput.url === 'string' && refInput.url.trim().length > 0) {
     const result = await loadUrlContent(refInput, dnsLookup);
     if ('kind' in result) return result;
     return { content: result.content, reviewedContentDigest: hashText(result.content) };
@@ -415,7 +419,11 @@ function loadBranchContent(refInput: ReviewReferenceInput): PrepareReviewResult 
     });
   }
   try {
-    const diff = loadResolvedBranchDiff(refInput.resolvedBranchSha, refInput.resolvedBaseSha);
+    const diff = loadResolvedBranchDiff(
+      refInput.resolvedBranchSha,
+      refInput.resolvedBaseSha,
+      refInput.cwd,
+    );
     return { content: diff, reviewedContentDigest: hashText(diff) };
   } catch (err) {
     return blocked('COMMAND_BLOCKED', {

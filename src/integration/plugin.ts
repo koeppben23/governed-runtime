@@ -94,6 +94,7 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     getSessionId: () => currentSessionId,
     directory: candidateWorktree ?? '',
     worktree: candidateWorktree ?? '',
+    log,
   });
 
   const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient, adapter);
