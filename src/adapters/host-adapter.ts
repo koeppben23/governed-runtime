@@ -121,6 +121,18 @@ export interface ReviewerSpawnConfig {
     error?: unknown;
     details?: Record<string, unknown>;
   }) => void;
+  /**
+   * Diagnostic hook: callback on successful child-session creation / prompt
+   * completion, carrying parent→child correlation and step timing. Diagnostic
+   * only; does not affect governance evidence or the spawnReviewer signature.
+   */
+  readonly onAttemptSucceeded?: (info: {
+    attempt: number;
+    step: 'session_create' | 'session_prompt';
+    parentSessionId: string;
+    childSessionId: string;
+    durationMs: number;
+  }) => void;
 }
 
 /**

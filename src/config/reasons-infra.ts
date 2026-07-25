@@ -221,10 +221,11 @@ export const INFRA_REASONS: readonly BlockedReason[] = [
   {
     code: 'GIT_NOT_FOUND',
     category: 'adapter',
-    messageTemplate: 'git executable not found on PATH',
+    messageTemplate: 'git operation failed: {message}',
     recoverySteps: [
-      'Install git: https://git-scm.com/downloads',
-      'Ensure git is on the system PATH',
+      'Ensure git is installed and available on the system PATH',
+      'Verify that the worktree is a git repository',
+      'Check that the referenced branch or ref exists',
     ],
   },
 

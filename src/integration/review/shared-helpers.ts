@@ -14,6 +14,7 @@ import type {
   ReviewOutputPolicy,
   ReviewProfile,
 } from '../../config/policy-types.js';
+import { type OrchestratorLogExtra } from '../../logging/log-extras.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import type { ReviewerSuccessResult } from './orchestrator.js';
 import { extractReviewContext } from './orchestrator.js';
@@ -220,6 +221,37 @@ export function buildAttemptFailedLogger(
       error: info.error instanceof Error ? info.error.message : String(info.error ?? ''),
       ...(info.details ?? {}),
     });
+  };
+}
+
+/**
+ * Success-path counterpart to buildAttemptFailedLogger. Bridges the
+ * orchestrator's _onAttemptSucceeded callback to an INFO log carrying
+ * parent→child session correlation and step timing (diagnostic only).
+ */
+export function buildAttemptSucceededLogger(
+  deps: OrchestratorDeps,
+  toolName: string,
+): (info: {
+  attempt: number;
+  step: 'session_create' | 'session_prompt';
+  parentSessionId: string;
+  childSessionId: string;
+  durationMs: number;
+}) => void {
+  return (info) => {
+    const extra: OrchestratorLogExtra = {
+      tool: toolName,
+      step: info.step,
+      parentSessionId: info.parentSessionId,
+      childSessionId: info.childSessionId,
+      durationMs: info.durationMs,
+    };
+    deps.log.info(
+      'orchestrator',
+      `reviewer ${info.step} succeeded (attempt ${info.attempt})`,
+      extra as Record<string, unknown>,
+    );
   };
 }
 

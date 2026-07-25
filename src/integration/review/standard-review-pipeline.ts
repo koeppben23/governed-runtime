@@ -38,6 +38,7 @@ import {
   isOutputAlreadyBlocked,
   buildToolPrompt,
   buildAttemptFailedLogger,
+  buildAttemptSucceededLogger,
   buildReviewDiscoveryContextForPipeline,
 } from './shared-helpers.js';
 
@@ -141,6 +142,7 @@ async function spawnStandardReviewer(
     reviewOutputPolicy: policies.reviewOutputPolicy,
     reviewInvocationPolicy: policies.reviewInvocationPolicy,
     onAttemptFailed: buildAttemptFailedLogger(ctx.deps, toolName, ctx.sessionId),
+    onAttemptSucceeded: buildAttemptSucceededLogger(ctx.deps, toolName),
   });
 }
 

@@ -41,7 +41,17 @@ export function makeClient(opts: {
   createResult?: { data?: { id: string }; error?: unknown };
   promptResult?: {
     data?: {
-      parts?: Array<{ type?: string; text?: string }>;
+      parts?: Array<{
+        type?: string;
+        text?: string;
+        tool?: string;
+        callID?: string;
+        state?: {
+          status?: string;
+          input?: unknown;
+          metadata?: { valid?: unknown } & Record<string, unknown>;
+        };
+      }>;
       info?: {
         structured?: unknown;
         structured_output?: unknown;

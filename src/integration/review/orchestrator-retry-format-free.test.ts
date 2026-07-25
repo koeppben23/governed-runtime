@@ -134,6 +134,28 @@ describe('invokeReviewer — format-free retry fallback', () => {
       expect(result!.modelCapabilityError).toContain('tool_choice');
     });
 
+    it('T11c: emits a session_prompt success event for the text-compat retry', async () => {
+      const succeeded: Array<Record<string, unknown>> = [];
+      const client = makeSequentialClient({});
+      const result = await invokeReviewer(client, SHARED_PROMPT, 'parent-1', {
+        maxRetries: 0,
+        ...TEXT_COMPAT_OPTIONS,
+        _sleepFn: NO_SLEEP,
+        _onAttemptFailed: () => {},
+        _onAttemptSucceeded: (info) => succeeded.push(info),
+      });
+
+      assertSuccessfulResult(result);
+      // Symmetric observability: a successful text-compat review must emit the
+      // session_prompt success event with parent→child correlation and timing.
+      const promptEvent = succeeded.find((e) => e.step === 'session_prompt');
+      expect(promptEvent).toBeDefined();
+      expect(promptEvent!.parentSessionId).toBe('parent-1');
+      expect(promptEvent!.childSessionId).toBe('retry-session-1');
+      expect(typeof promptEvent!.durationMs).toBe('number');
+      expect(promptEvent!.durationMs as number).toBeGreaterThanOrEqual(0);
+    });
+
     it('T11b: blocks text compatibility when policy requires structured output', async () => {
       const diagnostics: Array<Record<string, unknown>> = [];
       const client = makeSequentialClient({});

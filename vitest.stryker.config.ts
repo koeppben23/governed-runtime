@@ -29,6 +29,7 @@ export default defineConfig({
       'src/integration/review/orchestrator-output.test.ts',
       'src/integration/review/agent-resolution.test.ts',
       'src/integration/review/orchestrator-invoke-agent-edges.test.ts',
+      'src/integration/review/structured-output-tool-part.test.ts',
       'src/integration/review/orchestrator-invoke-diagnostics.test.ts',
       'src/integration/review/orchestrator-invoke-errors.test.ts',
       'src/integration/review/orchestrator-retry-core.test.ts',

@@ -47,6 +47,9 @@ const EXCLUDED_CODES: ReadonlySet<string> = new Set([
   'REVIEWER_CONFIG_REJECTED',
   'REVIEWER_CONFIG_INVALID',
   'REVIEWER_TUNING_UNSUPPORTED',
+  // Diagnostic-only host-capability log code (diagnosticLog.warn), not a
+  // governance reason code — mirrors the CRITICAL/error-severity exclusions above.
+  'HOST_CAPABILITY_MISMATCH',
 ]);
 
 /**
@@ -65,6 +68,10 @@ function collectCodeLiterals(dir: string, acc: Set<string>): void {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const fullPath = join(dir, entry.name);
     if (entry.isDirectory()) {
+      // Skip __tests__/ trees: non-.test.ts helpers there (e.g. probe
+      // harnesses) carry diagnostic-only outcome codes, not governance
+      // reason codes, and must not be held to registry completeness.
+      if (entry.name === '__tests__') continue;
       collectCodeLiterals(fullPath, acc);
       continue;
     }
@@ -108,7 +115,7 @@ describe('SEED_REASONS completeness (F1 guard)', () => {
 
 // P10c: reason code split validation
 describe('P10c — reason code split', () => {
-  it('all 153 codes from split arrays are registered exactly once (no duplicates)', async () => {
+  it('all 154 codes from split arrays are registered exactly once (no duplicates)', async () => {
     const { PRECONDITION_REASONS } = await import('./reasons-precondition.js');
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
     const { INFRA_REASONS } = await import('./reasons-infra.js');
@@ -119,9 +126,9 @@ describe('P10c — reason code split', () => {
       ...INFRA_REASONS.map((r: { code: string }) => r.code),
     ];
 
-    expect(allSplitCodes).toHaveLength(154);
+    expect(allSplitCodes).toHaveLength(155);
     // No duplicates across the 3 arrays
-    expect(new Set(allSplitCodes).size).toBe(154);
+    expect(new Set(allSplitCodes).size).toBe(155);
     // All split codes are registered in the default registry
     for (const code of allSplitCodes) {
       expect(defaultReasonRegistry.get(code)).toBeDefined();
@@ -136,9 +143,9 @@ describe('P10c — reason code split', () => {
     }
   });
 
-  it('VALIDATION_REASONS has exactly 68 entries', async () => {
+  it('VALIDATION_REASONS has exactly 69 entries', async () => {
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
-    expect(VALIDATION_REASONS.length).toBe(68);
+    expect(VALIDATION_REASONS.length).toBe(69);
     const allowed = new Set(['input', 'state', 'config', 'admissibility']);
     for (const r of VALIDATION_REASONS) {
       expect(allowed.has(r.category)).toBe(true);

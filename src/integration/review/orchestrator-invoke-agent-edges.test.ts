@@ -184,6 +184,82 @@ describe('invokeReviewer — agent resolution + extraction', () => {
     });
   });
 
+  // ─── HAPPY: StructuredOutput tool-part path (real host mechanism) ───────────
+
+  describe('HAPPY — findings from a StructuredOutput tool part', () => {
+    function structuredToolPart(): Record<string, unknown> {
+      return {
+        type: 'tool',
+        tool: 'StructuredOutput',
+        callID: 'call-1',
+        state: {
+          status: 'completed',
+          input: validFindings({ overallVerdict: 'accept' }),
+          metadata: { valid: true },
+        },
+      };
+    }
+
+    it('accepts a completed, validated StructuredOutput tool part', async () => {
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: { parts: [structuredToolPart()], info: {} },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      const success = expectReviewerSuccess(result);
+      expect(success.sessionId).toBe('child-session-1');
+      expect(success.findings?.overallVerdict).toBe('accept');
+      // The tool-part path is structured-high, identical to info.structured_output.
+      expect(success.reviewOutputMode).toBe('structured_output');
+      expect(success.structuredOutputUsed).toBe(true);
+      expect(success.reviewAssuranceLevel).toBe('structured_high');
+    });
+
+    it('prefers info.structured_output over the tool part when both are present', async () => {
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [structuredToolPart()],
+            info: { structured_output: validFindings({ overallVerdict: 'changes_requested' }) },
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      // info field takes precedence; tool part is only the fallback.
+      expect(expectReviewerSuccess(result).findings?.overallVerdict).toBe('changes_requested');
+    });
+
+    it('stays fail-closed for a tool part that is not host-validated', async () => {
+      const client = makeClient({
+        agents: [{ id: 'flowguard-reviewer' }],
+        promptResult: {
+          data: {
+            parts: [
+              {
+                type: 'tool',
+                tool: 'StructuredOutput',
+                state: {
+                  status: 'completed',
+                  input: validFindings(),
+                  metadata: { valid: false },
+                },
+              },
+            ],
+            info: {},
+          },
+          error: undefined,
+        },
+      });
+      const result = await invokeReviewer(client, PROMPT, 'parent-1', { _sleepFn: NO_SLEEP });
+      expect(result).toBeNull();
+    });
+  });
+
   // ─── EDGE: sessionId injection ─────────────────────────────────────────────
 
   describe('EDGE — sessionId injection on findings', () => {

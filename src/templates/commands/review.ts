@@ -33,7 +33,7 @@ Start the compliance review flow for the current FlowGuard session.
 2. **External Reference Resolution** (PR URLs, branches, commits, URLs, manual text):
     If the user provides a reference:
     - **PR number**: Load PR diff via \`webfetch\` or \`gh pr view <number> --json diff\`. Add ExternalReference with type \`"pr"\`, set \`inputOrigin: "pr"\`.
-    - **Branch name**: Prefer local branch diff via \`git diff <base>...<branch>\` when no remote/PR is available; otherwise PR/branch diff via \`gh\` is acceptable. Add ExternalReference with type \`"branch"\`, source \`"local"\`, set \`inputOrigin: "branch"\`.
+    - **Branch name**: Prefer local branch diff via \`git diff <base>...<branch>\` when no remote/PR is available; otherwise PR/branch diff via \`gh\` is acceptable. Add ExternalReference with type \`"branch"\`, source \`"local"\`, set \`inputOrigin: "branch"\`. The base is auto-detected (origin/HEAD → main → master → merge-base with HEAD); if auto-detection fails or is wrong, pass an explicit \`base\` argument (e.g. \`flowguard_review({ branch: "feature/x", base: "main" })\`).
     - **URL**: Fetch content via \`webfetch\`. Set \`inputOrigin: "external_reference"\`.
     - **Manual text**: Use the supplied text directly. Set \`inputOrigin: "manual_text"\`.
     - **Commit SHA**: Add ExternalReference with type \`"commit"\`, source \`"local"\`, set \`inputOrigin: "external_reference"\`.

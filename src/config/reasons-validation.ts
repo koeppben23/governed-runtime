@@ -309,6 +309,17 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'REVIEW_CONTENT_SOURCE_INCOMPLETE',
+    category: 'input',
+    messageTemplate:
+      'Review source declared ({label}) but no concrete content was provided. Provide branch=<ref>, prNumber=<n>, url=<supported-url>, or non-empty text.',
+    recoverySteps: [
+      'Call flowguard_review with a concrete content field: branch=<ref>, prNumber=<n>, url=<supported-url>, or text=<content>',
+      'InputOrigin and references are provenance metadata only — they do not load content',
+    ],
+  },
+
+  {
     code: 'OPENCODE_INSTRUCTION_SOURCE_UNSUPPORTED',
     category: 'config',
     messageTemplate:

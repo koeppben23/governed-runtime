@@ -26,6 +26,7 @@ import type {
   EnforcementLevel,
 } from '../adapters/host-adapter.js';
 import type { OrchestratorClient } from './review/types.js';
+import type { FlowGuardLogger } from '../logging/logger.js';
 import { invokeReviewer } from './review/orchestrator.js';
 import { buildEnforcementError } from './plugin-helpers.js';
 
@@ -41,6 +42,12 @@ export interface OpenCodeAdapterConfig {
   readonly directory: string;
   /** Worktree path. */
   readonly worktree: string;
+  /**
+   * Optional structured diagnostic logger. When present, capability-validation
+   * mismatches are logged (diagnostic only). The adapter's own log() method
+   * remains TUI-toast oriented; this is the structured channel.
+   */
+  readonly log?: Pick<FlowGuardLogger, 'warn'>;
 }
 
 // ─── OpenCode Host Adapter ───────────────────────────────────────────────────
@@ -69,12 +76,14 @@ export class OpenCodeHostAdapter implements HostAdapter {
   private readonly sessionIdResolver: () => string;
   private readonly directoryPath: string;
   private readonly worktreePath: string;
+  private readonly diagnosticLog?: Pick<FlowGuardLogger, 'warn'>;
 
   constructor(config: OpenCodeAdapterConfig) {
     this.client = config.client;
     this.sessionIdResolver = config.getSessionId;
     this.directoryPath = config.directory;
     this.worktreePath = config.worktree;
+    this.diagnosticLog = config.log;
   }
 
   // ── Session Context ──────────────────────────────────────────────────────
@@ -121,6 +130,13 @@ export class OpenCodeHostAdapter implements HostAdapter {
       }
     } catch {
       mismatches.push({ capability: 'reviewerSpawn', expected: true, actual: false });
+    }
+
+    if (mismatches.length > 0) {
+      this.diagnosticLog?.warn('adapter', 'host capability validation reported mismatches', {
+        code: 'HOST_CAPABILITY_MISMATCH',
+        mismatches,
+      });
     }
 
     return {
@@ -173,6 +189,9 @@ export class OpenCodeHostAdapter implements HostAdapter {
     }
     if (config.onAttemptFailed !== undefined) {
       options._onAttemptFailed = config.onAttemptFailed;
+    }
+    if (config.onAttemptSucceeded !== undefined) {
+      options._onAttemptSucceeded = config.onAttemptSucceeded;
     }
 
     const result = await invokeReviewer(
