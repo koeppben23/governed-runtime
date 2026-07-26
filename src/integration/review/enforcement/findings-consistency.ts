@@ -158,6 +158,13 @@ export function validateChallengeConsistency(
   input: ChallengeConsistencyInput,
 ): ChallengeConsistencyResult {
   const challenges = input.challenges ?? [];
+  // unable_to_review is a fail-closed honest signal that no assessment
+  // could be completed. It must not be rejected because challenges are
+  // missing — the reviewer cannot fabricate evidence-bound challenges
+  // when no canonical evidence is available.
+  if (input.overallVerdict === 'unable_to_review') {
+    return validateChallengeCountFlexible(input, challenges);
+  }
   if (challenges.length !== input.requiredChallengeCount) {
     return {
       ok: false,
@@ -165,6 +172,13 @@ export function validateChallengeConsistency(
       details: { required: input.requiredChallengeCount, actual: challenges.length },
     };
   }
+  return validateChallengeCountFlexible(input, challenges);
+}
+
+function validateChallengeCountFlexible(
+  input: ChallengeConsistencyInput,
+  challenges: readonly Challenge[],
+): ChallengeConsistencyResult {
   const allowedRefs = input.allowedEvidenceRefs
     ? new Set(input.allowedEvidenceRefs.map(canonicalJsonStringify))
     : undefined;

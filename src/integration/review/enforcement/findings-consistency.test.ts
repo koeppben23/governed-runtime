@@ -177,5 +177,53 @@ describe('review/enforcement/findings-consistency', () => {
         }),
       ).toEqual({ ok: true });
     });
+
+    it('accepts unable_to_review with no challenges when no evidence is available', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'unable_to_review',
+          requiredChallengeCount: 2,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [],
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    it('rejects unable_to_review with fabricated evidence references', () => {
+      const result = validateChallengeConsistency({
+        overallVerdict: 'unable_to_review',
+        requiredChallengeCount: 2,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [{ ...implementationChallenge, evidenceRefs: [] }],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+      });
+    });
+
+    it('rejects unable_to_review with foreign evidence references', () => {
+      const allowedRefs = [{ kind: 'implementation', implementationDigest: 'allowed-digest' }];
+      const result = validateChallengeConsistency({
+        overallVerdict: 'unable_to_review',
+        requiredChallengeCount: 1,
+        requiredChallengeKind: 'implementation_challenge',
+        allowedEvidenceRefs: allowedRefs,
+        challenges: [
+          {
+            ...implementationChallenge,
+            evidenceRefs: [
+              { kind: 'implementation', implementationDigest: 'foreign-digest' },
+              { kind: 'validation_attempt' },
+            ],
+          },
+        ],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+        details: { reason: 'evidence_mismatch' },
+      });
+    });
   });
 });
