@@ -267,9 +267,20 @@ function architectureChallengeEvidence(state: SessionState): string[] | undefine
 
 function implementationChallengeEvidence(state: SessionState): string[] | undefined {
   const implementationDigest = state.implementation?.digest;
-  return implementationDigest
-    ? [JSON.stringify({ kind: 'implementation', implementationDigest })]
-    : undefined;
+  if (!implementationDigest) return undefined;
+  const successfulAttempts = state.validationAttempts.filter(
+    (attempt) =>
+      attempt.scope === 'implementation' &&
+      attempt.implementationDigest === implementationDigest &&
+      attempt.result.passed,
+  );
+  if (successfulAttempts.length === 0) return undefined;
+  return [
+    JSON.stringify({ kind: 'implementation', implementationDigest }),
+    ...successfulAttempts.map((attempt) =>
+      JSON.stringify({ kind: 'validation_attempt', attemptId: attempt.attemptId }),
+    ),
+  ];
 }
 
 function contentChallengeEvidence(
@@ -293,7 +304,7 @@ const CHALLENGE_EVIDENCE_BUILDERS: Record<
   review: contentChallengeEvidence,
 };
 
-function buildChallengeContract(
+export function buildHostTaskChallengeContract(
   state: SessionState,
   obligation: ReviewObligation | null,
 ): Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'] {
@@ -365,7 +376,7 @@ export async function handleHostTaskPolicy(
         criteriaVersion: preUpdateObligation.criteriaVersion,
       }
     : null;
-  const challengeContract = buildChallengeContract(sessionState, preUpdateObligation);
+  const challengeContract = buildHostTaskChallengeContract(sessionState, preUpdateObligation);
   const mutated = buildHostTaskPolicyOutput(
     rawOutput,
     typedPolicy,

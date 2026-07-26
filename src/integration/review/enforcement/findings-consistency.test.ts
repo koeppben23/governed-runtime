@@ -80,7 +80,7 @@ describe('review/enforcement/findings-consistency', () => {
   describe('challenge matrix', () => {
     const implementationChallenge = {
       kind: 'implementation_challenge',
-      evidenceRefs: [{ kind: 'implementation' }],
+      evidenceRefs: [{ kind: 'implementation' }, { kind: 'validation_attempt' }],
       outcome: 'pass',
     };
 
@@ -109,6 +109,16 @@ describe('review/enforcement/findings-consistency', () => {
           }).ok,
         ).toBe(false);
       }
+    });
+
+    it('rejects a passing implementation challenge without validation-attempt evidence', () => {
+      expect(
+        validateChallengeConsistency({
+          requiredChallengeCount: 1,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [{ ...implementationChallenge, evidenceRefs: [{ kind: 'implementation' }] }],
+        }),
+      ).toMatchObject({ ok: false, code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING' });
     });
 
     it('rejects an author resolution without a later independent resolved verdict', () => {

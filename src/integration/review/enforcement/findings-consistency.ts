@@ -104,6 +104,23 @@ export function validateChallengeConsistency(
     }
     if (
       challenge.kind === 'implementation_challenge' &&
+      challenge.outcome === 'pass' &&
+      !challenge.evidenceRefs.some(
+        (reference) =>
+          typeof reference === 'object' &&
+          reference !== null &&
+          'kind' in reference &&
+          reference.kind === 'validation_attempt',
+      )
+    ) {
+      return {
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+        details: { kind: challenge.kind, required: 'validation_attempt' },
+      };
+    }
+    if (
+      challenge.kind === 'implementation_challenge' &&
       (challenge.outcome === 'fail' || challenge.outcome === 'not_verified')
     ) {
       return {

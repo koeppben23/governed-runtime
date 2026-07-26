@@ -110,6 +110,10 @@ function capturedFindings(
               locations: ['src/example.ts'],
               evidenceRefs: [
                 { kind: 'implementation' as const, implementationDigest: 'impl-digest' },
+                {
+                  kind: 'validation_attempt' as const,
+                  attemptId: '33333333-3333-4333-8333-333333333333',
+                },
               ],
               outcome: 'pass' as const,
             },
@@ -195,7 +199,10 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
         scenario: 'Exercise the changed behavior.',
         claim: 'The implementation handles the expected input.',
         locations: ['src/example.ts'],
-        evidenceRefs: [{ kind: 'implementation', implementationDigest: 'impl-digest' }],
+        evidenceRefs: [
+          { kind: 'implementation', implementationDigest: 'impl-digest' },
+          { kind: 'validation_attempt', attemptId: '33333333-3333-4333-8333-333333333333' },
+        ],
         outcome: 'pass',
       },
     ],
