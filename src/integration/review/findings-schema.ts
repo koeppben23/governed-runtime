@@ -228,6 +228,21 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
         ],
       },
     },
+    challengeResolutionVerdicts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          challengeId: {
+            type: 'string',
+            pattern:
+              '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+          },
+          verdict: { type: 'string', enum: ['resolved', 'still_failing', 'not_verified'] },
+        },
+        required: ['challengeId', 'verdict'],
+      },
+    },
     reviewedBy: {
       type: 'object',
       properties: {

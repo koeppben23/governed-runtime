@@ -204,24 +204,6 @@ export function validateReviewFindings(
         ctx.expectedPlanVersion,
       )
     : null;
-  if (obligation?.requiredChallengeCount !== undefined && obligation.requiredChallengeKind) {
-    const challengeConsistency = validateChallengeConsistency({
-      requiredChallengeCount: obligation.requiredChallengeCount,
-      requiredChallengeKind: obligation.requiredChallengeKind,
-      challenges: findings.challenges,
-      resolutionVerdicts: findings.challengeResolutionVerdicts,
-      unresolvedImplementationChallengeIds: ctx.unresolvedImplementationChallengeIds,
-    });
-    if (!challengeConsistency.ok) {
-      return formatBlocked(
-        challengeConsistency.code,
-        Object.fromEntries(
-          Object.entries(challengeConsistency.details).map(([key, value]) => [key, String(value)]),
-        ),
-      );
-    }
-  }
-
   const expectedIteration = ctx.expectedIteration;
   const expectedPlanVersion = ctx.expectedPlanVersion;
 
@@ -239,6 +221,24 @@ export function validateReviewFindings(
       provided: String(findings.iteration),
       expected: String(expectedIteration),
     });
+  }
+
+  if (obligation?.requiredChallengeCount !== undefined && obligation.requiredChallengeKind) {
+    const challengeConsistency = validateChallengeConsistency({
+      requiredChallengeCount: obligation.requiredChallengeCount,
+      requiredChallengeKind: obligation.requiredChallengeKind,
+      challenges: findings.challenges,
+      resolutionVerdicts: findings.challengeResolutionVerdicts,
+      unresolvedImplementationChallengeIds: ctx.unresolvedImplementationChallengeIds,
+    });
+    if (!challengeConsistency.ok) {
+      return formatBlocked(
+        challengeConsistency.code,
+        Object.fromEntries(
+          Object.entries(challengeConsistency.details).map(([key, value]) => [key, String(value)]),
+        ),
+      );
+    }
   }
 
   if (ctx.strictEnforcement) return validateStrictReviewFindings(findings, ctx);

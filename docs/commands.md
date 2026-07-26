@@ -259,6 +259,16 @@ subagent's loop verdict is `accept` / `changes_requested` (the human
 EVIDENCE_REVIEW gate separately uses `approve` / `changes_requested` / `reject`).
 See `docs/phases.md#review-loop` for the loop semantics.
 
+### /resolve-implementation-challenge
+
+Record advisory `NOT_VERIFIED` evidence that a prior implementation challenge was addressed.
+
+**Allowed in:** IMPL_REVIEW
+
+Provide the challenge ID from the prior implementation review and one or more passing
+post-implementation validation attempt IDs for the current implementation digest. This
+does not accept the review, resolve the challenge by itself, or bypass EVIDENCE_REVIEW.
+
 ### /architecture
 
 Create or revise an Architecture Decision Record (ADR).

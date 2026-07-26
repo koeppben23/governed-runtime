@@ -92,7 +92,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // reviewer capability isolation denies direct and MCP-prefixed FlowGuard tools.
     // p39 -> p40: reviewer task delegation is denied as part of that boundary.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'ac252d555c821363decd336ad1c1b05a03d0e6df98439b3d11322311d15676a0',
+      '3170756289352e05a70b1f6d954ba9b4d7b3c9bcd104d54dee8a99b4c5f80c17',
     );
   });
 
@@ -221,11 +221,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '2ae4ab92c96c3a3e56aaea8e7d5431aab0f13e929e5c25b6f069879f2e0efd06',
+      '687e788d6b0b3158b6c95c0c1b743547e871dda8e9c4ffc914524c70605458ba',
     );
   });
 
-  it('all 23 commands present', () => {
+  it('all 24 commands present', () => {
     const expected = [
       'abort.md',
       'approve.md',
@@ -242,6 +242,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       'plan.md',
       'reject.md',
       'request-changes.md',
+      'resolve-implementation-challenge.md',
       'review-decision.md',
       'review.md',
       'start.md',

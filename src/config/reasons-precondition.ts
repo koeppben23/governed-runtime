@@ -459,6 +459,35 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Use a passing post-implementation validation attempt for the current implementation digest.',
     ],
   },
+  {
+    code: 'SUBAGENT_CHALLENGE_COUNT_INCOHERENT',
+    category: 'precondition',
+    messageTemplate:
+      'Independent review supplied {actual} challenges but policy requires at least {required}.',
+    recoverySteps: ['Submit the required number of evidence-bound challenges.'],
+  },
+  {
+    code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+    category: 'precondition',
+    messageTemplate: 'Independent review challenge of kind {kind} has no evidence references.',
+    recoverySteps: ['Bind each challenge to at least one canonical evidence reference.'],
+  },
+  {
+    code: 'SUBAGENT_CHALLENGE_KIND_INCOHERENT',
+    category: 'precondition',
+    messageTemplate:
+      'Independent review supplied challenge kind {actual}, but policy requires {required}.',
+    recoverySteps: ['Submit challenges using the kind required by the frozen review obligation.'],
+  },
+  {
+    code: 'SUBAGENT_IMPLEMENTATION_CHALLENGE_UNRESOLVED',
+    category: 'precondition',
+    messageTemplate: 'Implementation challenge {challengeId} remains unresolved.',
+    recoverySteps: [
+      'Record advisory resolution evidence using a passing post-implementation validation attempt.',
+      'Obtain a subsequent independent reviewer verdict of resolved.',
+    ],
+  },
 
   {
     code: 'SUBAGENT_PROMPT_EMPTY',
