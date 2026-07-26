@@ -226,4 +226,99 @@ describe('review/enforcement/findings-consistency', () => {
       });
     });
   });
+
+  describe('resolution verdict gating by overallVerdict', () => {
+    const challenge = {
+      kind: 'implementation_challenge' as const,
+      evidenceRefs: [{ kind: 'implementation' }, { kind: 'validation_attempt' }],
+      outcome: 'pass' as const,
+    };
+
+    it('accepts unable_to_review with prior unresolved challenge and no resolution verdict', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'unable_to_review',
+          requiredChallengeCount: 2,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [],
+          unresolvedImplementationChallengeIds: ['00000000-0000-4000-8000-000000000001'],
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    it('accepts unable_to_review with prior unresolved challenge and not_verified verdict', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'unable_to_review',
+          requiredChallengeCount: 2,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [],
+          unresolvedImplementationChallengeIds: ['00000000-0000-4000-8000-000000000001'],
+          resolutionVerdicts: [
+            { challengeId: '00000000-0000-4000-8000-000000000001', verdict: 'not_verified' },
+          ],
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    it('accepts changes_requested with prior unresolved challenge and still_failing verdict', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'changes_requested',
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [],
+          unresolvedImplementationChallengeIds: ['00000000-0000-4000-8000-000000000001'],
+          resolutionVerdicts: [
+            { challengeId: '00000000-0000-4000-8000-000000000001', verdict: 'still_failing' },
+          ],
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    it('rejects changes_requested when prior unresolved challenge has no verdict', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'changes_requested',
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [],
+          unresolvedImplementationChallengeIds: ['00000000-0000-4000-8000-000000000001'],
+        }).ok,
+      ).toBe(false);
+    });
+
+    it('rejects accept with prior unresolved challenge and still_failing verdict', () => {
+      const result = validateChallengeConsistency({
+        overallVerdict: 'accept',
+        requiredChallengeCount: 1,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [challenge],
+        unresolvedImplementationChallengeIds: ['00000000-0000-4000-8000-000000000001'],
+        resolutionVerdicts: [
+          { challengeId: '00000000-0000-4000-8000-000000000001', verdict: 'still_failing' },
+        ],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_IMPLEMENTATION_CHALLENGE_UNRESOLVED',
+        details: { verdict: 'still_failing' },
+      });
+    });
+
+    it('rejects accept with prior unresolved challenge and no verdict', () => {
+      const result = validateChallengeConsistency({
+        overallVerdict: 'accept',
+        requiredChallengeCount: 1,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [challenge],
+        unresolvedImplementationChallengeIds: ['00000000-0000-4000-8000-000000000001'],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_IMPLEMENTATION_CHALLENGE_UNRESOLVED',
+        details: { reason: 'no resolution verdict' },
+      });
+    });
+  });
 });

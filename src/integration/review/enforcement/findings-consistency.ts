@@ -186,19 +186,41 @@ function validateChallengeCountFlexible(
     const result = validateChallenge(input, challenge, allowedRefs);
     if (!result.ok) return result;
   }
+  return validateResolutionVerdicts(input);
+}
+
+function validateResolutionVerdicts(input: ChallengeConsistencyInput): ChallengeConsistencyResult {
+  const unresolvedIds = input.unresolvedImplementationChallengeIds ?? [];
+  if (unresolvedIds.length === 0) return { ok: true };
+
+  if (input.overallVerdict === 'unable_to_review') {
+    // No acceptance is happening. Prior unresolved challenges remain open
+    // and must not block the honest fail-closed result.
+    return { ok: true };
+  }
+
   const verdicts = new Map(
     (input.resolutionVerdicts ?? []).map((item) => [item.challengeId, item.verdict]),
   );
-  const unresolved = (input.unresolvedImplementationChallengeIds ?? []).find(
-    (id) => verdicts.get(id) !== 'resolved',
-  );
-  return unresolved
-    ? {
+
+  for (const id of unresolvedIds) {
+    const verdict = verdicts.get(id);
+    if (verdict === undefined) {
+      return {
         ok: false,
         code: 'SUBAGENT_IMPLEMENTATION_CHALLENGE_UNRESOLVED',
-        details: { challengeId: unresolved },
-      }
-    : { ok: true };
+        details: { challengeId: id, reason: 'no resolution verdict' },
+      };
+    }
+    if (input.overallVerdict === 'accept' && verdict !== 'resolved') {
+      return {
+        ok: false,
+        code: 'SUBAGENT_IMPLEMENTATION_CHALLENGE_UNRESOLVED',
+        details: { challengeId: id, verdict },
+      };
+    }
+  }
+  return { ok: true };
 }
 
 /**
