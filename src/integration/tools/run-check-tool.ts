@@ -372,7 +372,8 @@ function freezeValidationSubject(state: SessionState): ValidationSubject {
 function validationSubjectMatches(state: SessionState, subject: ValidationSubject): boolean {
   return subject.scope === 'baseline'
     ? state.phase === 'VALIDATION' && state.plan?.current.digest === subject.planDigest
-    : state.phase === 'IMPL_VALIDATION' && state.implementation?.digest === subject.implementationDigest;
+    : state.phase === 'IMPL_VALIDATION' &&
+        state.implementation?.digest === subject.implementationDigest;
 }
 
 function validationSubjectBlock(state: SessionState, subject: ValidationSubject): string | null {

@@ -78,7 +78,9 @@ describe('indexMarkdownSections', () => {
 
   it('ignores heading-shaped content inside backtick and tilde fences', () => {
     expect(
-      indexMarkdownSections('# Real\n```bash\n# not a section\n```\n~~~text\n## neither\n~~~\n## Next'),
+      indexMarkdownSections(
+        '# Real\n```bash\n# not a section\n```\n~~~text\n## neither\n~~~\n## Next',
+      ),
     ).toMatchObject([{ headingText: 'Real' }, { headingText: 'Next' }]);
   });
 });
