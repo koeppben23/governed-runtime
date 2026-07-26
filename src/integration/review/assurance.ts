@@ -18,7 +18,6 @@ import type {
   ReviewProfileSource,
 } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { assessMinimumTaskClass } from '../phase-tool-gate.js';
 
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
@@ -55,21 +54,8 @@ export function createReviewObligation(input: {
   reviewProfile?: ReviewProfile;
   /** Provenance of the frozen profile. Defaults to 'policy_default'. */
   profileSource?: ReviewProfileSource;
-  /** Paths are assessed by the phase-tool-gate authority, never a claimed class. */
-  changedFiles?: readonly string[];
   metadata?: Record<string, unknown>;
 }): ReviewObligation {
-  const computedMinimumTaskClass = assessMinimumTaskClass(
-    input.changedFiles ?? [],
-  ).minimumTaskClass;
-  const requiredChallengeCount =
-    computedMinimumTaskClass === 'HIGH-RISK' ? 2 : computedMinimumTaskClass === 'STANDARD' ? 1 : 0;
-  const requiredChallengeKind =
-    input.obligationType === 'implement'
-      ? 'implementation_challenge'
-      : input.obligationType === 'review'
-        ? 'content_challenge'
-        : 'design_challenge';
   return {
     obligationId: randomUUID(),
     obligationType: input.obligationType,
@@ -88,8 +74,6 @@ export function createReviewObligation(input: {
     // supplied. The profile is fixed here, before the reviewer is invoked.
     reviewProfile: input.reviewProfile ?? 'core',
     profileSource: input.profileSource ?? 'policy_default',
-    requiredChallengeCount,
-    requiredChallengeKind,
     metadata: input.metadata,
   };
 }

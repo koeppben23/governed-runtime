@@ -123,7 +123,7 @@ export type ValidationResult = z.infer<typeof ValidationResult>;
 export const ValidationAttempt = z.discriminatedUnion('scope', [
   z
     .object({
-      id: z.string().uuid(),
+      attemptId: z.string().uuid(),
       scope: z.literal('baseline'),
       planDigest: z.string().min(1),
       result: ValidationResult,
@@ -132,7 +132,7 @@ export const ValidationAttempt = z.discriminatedUnion('scope', [
     .readonly(),
   z
     .object({
-      id: z.string().uuid(),
+      attemptId: z.string().uuid(),
       scope: z.literal('implementation'),
       implementationDigest: z.string().min(1),
       result: ValidationResult,

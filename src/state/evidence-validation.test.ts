@@ -92,7 +92,7 @@ describe('evidence-validation', () => {
 
     it('ValidationAttempt binds a baseline result to the plan digest', () => {
       const result = ValidationAttempt.parse({
-        id: '00000000-0000-4000-8000-000000000001',
+        attemptId: '00000000-0000-4000-8000-000000000001',
         scope: 'baseline',
         planDigest: 'plan-digest',
         result: {
@@ -203,7 +203,7 @@ describe('evidence-validation', () => {
     it('rejects an implementation scope with a baseline digest binding', () => {
       expect(() =>
         ValidationAttempt.parse({
-          id: '00000000-0000-4000-8000-000000000001',
+          attemptId: '00000000-0000-4000-8000-000000000001',
           scope: 'implementation',
           planDigest: 'plan-digest',
           result: {

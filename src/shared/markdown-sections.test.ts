@@ -75,6 +75,12 @@ describe('indexMarkdownSections', () => {
     expect(detail.excerptDigest).toBe(hashText(detail.excerptText));
     expect(indexMarkdownSections('# Plan\nchanged')[0]!.excerptDigest).not.toBe(plan.excerptDigest);
   });
+
+  it('ignores heading-shaped content inside backtick and tilde fences', () => {
+    expect(
+      indexMarkdownSections('# Real\n```bash\n# not a section\n```\n~~~text\n## neither\n~~~\n## Next'),
+    ).toMatchObject([{ headingText: 'Real' }, { headingText: 'Next' }]);
+  });
 });
 
 describe('projectMarkdownHeadings', () => {

@@ -408,7 +408,7 @@ describe('CORNER', () => {
     ]);
     for (const attempt of state!.validationAttempts) {
       expect(attempt.scope).toBe('baseline');
-      expect(attempt.id).toMatch(
+      expect(attempt.attemptId).toMatch(
         /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
       );
       if (attempt.scope === 'baseline') {

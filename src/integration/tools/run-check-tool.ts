@@ -148,6 +148,7 @@ async function executeRunCheckPhased(
 
   const guard = validateRunCheckRequest(kind, state);
   if (typeof guard === 'string') return guard;
+  const subject = freezeValidationSubject(state);
 
   // ── Phase B: Execute check (NO lock — subprocess runs independently) ──
   const evidence = await executeCheck({
@@ -162,6 +163,7 @@ async function executeRunCheckPhased(
     kind,
     evidence,
     derivedRepairGuidance,
+    subject,
     sessDir,
     sessionId: context.sessionID,
   });
@@ -173,14 +175,16 @@ interface PersistCheckInput {
   kind: VerificationCandidateKind;
   evidence: Awaited<ReturnType<typeof executeCheck>>;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
+  subject: ValidationSubject;
   sessDir: string;
   sessionId: string;
 }
 
+// The lock-retry callback keeps execution and persistence intentionally separated.
+// eslint-disable-next-line max-lines-per-function
 async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<ToolResult> {
-  const { kind, evidence, derivedRepairGuidance, sessDir, sessionId } = input;
+  const { kind, evidence, derivedRepairGuidance, subject, sessDir, sessionId } = input;
   const logger = getAdapterLogger();
-
   return withSessionWriteLockRetry(
     sessDir,
     async () => {
@@ -191,10 +195,11 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
 
       const reGuard = validateRunCheckRequest(kind, freshState);
       if (typeof reGuard === 'string') {
-        // State changed under us — phase advanced or check removed.
-        // Return blocked rather than persisting stale result.
+        // State changed under us; do not persist stale result.
         return reGuard;
       }
+      const subjectBlock = validationSubjectBlock(freshState, subject);
+      if (subjectBlock) return subjectBlock;
 
       const validationResult = buildValidationResult(
         reGuard.checkId,
@@ -203,7 +208,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       );
       const allResults = mergeValidationResult(freshState, validationResult);
       const passedIds = new Set(allResults.filter((v) => v.passed).map((v) => v.checkId));
-      const validationAttempt = buildValidationAttempt(freshState, validationResult);
+      const validationAttempt = buildValidationAttempt(subject, validationResult);
       const nextState = buildNextValidationState(
         freshState,
         allResults,
@@ -347,24 +352,40 @@ function mergeValidationResult(
   return [...slot.filter((v) => v.checkId !== validationResult.checkId), validationResult];
 }
 
-function buildValidationAttempt(state: SessionState, result: ValidationResult): ValidationAttempt {
+type ValidationSubject =
+  | { readonly scope: 'baseline'; readonly planDigest: string }
+  | { readonly scope: 'implementation'; readonly implementationDigest: string };
+
+function freezeValidationSubject(state: SessionState): ValidationSubject {
   if (state.phase === 'VALIDATION') {
-    // validateRunCheckRequest has already fail-closed on the absent-plan case.
     return {
-      id: crypto.randomUUID(),
       scope: 'baseline',
       planDigest: state.plan!.current.digest,
-      result,
     };
   }
-
-  // validateRunCheckRequest has already fail-closed on absent implementation evidence.
   return {
-    id: crypto.randomUUID(),
     scope: 'implementation',
     implementationDigest: state.implementation!.digest,
-    result,
   };
+}
+
+function validationSubjectMatches(state: SessionState, subject: ValidationSubject): boolean {
+  return subject.scope === 'baseline'
+    ? state.phase === 'VALIDATION' && state.plan?.current.digest === subject.planDigest
+    : state.phase === 'IMPL_VALIDATION' && state.implementation?.digest === subject.implementationDigest;
+}
+
+function validationSubjectBlock(state: SessionState, subject: ValidationSubject): string | null {
+  return validationSubjectMatches(state, subject)
+    ? null
+    : formatBlocked('VALIDATION_SUBJECT_CHANGED');
+}
+
+function buildValidationAttempt(
+  subject: ValidationSubject,
+  result: ValidationResult,
+): ValidationAttempt {
+  return { attemptId: crypto.randomUUID(), ...subject, result };
 }
 
 function buildNextValidationState(

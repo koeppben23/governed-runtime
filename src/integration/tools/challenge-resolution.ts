@@ -53,7 +53,7 @@ export const resolve_implementation_challenge: ToolDefinition = {
           });
         }
         for (const attemptId of attemptIds) {
-          const attempt = state.validationAttempts.find((item) => item.id === attemptId);
+          const attempt = state.validationAttempts.find((item) => item.attemptId === attemptId);
           if (!attempt)
             return formatBlocked('IMPLEMENTATION_VALIDATION_ATTEMPT_UNKNOWN', { attemptId });
           if (attempt.scope !== 'implementation') {

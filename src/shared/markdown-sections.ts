@@ -33,6 +33,7 @@ interface ParsedHeading {
 }
 
 const ATX_HEADING = /^(#{1,6})\s(.*)$/;
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
 /**
  * Index ATX Markdown headings and their bounded excerpts. Heading paths are
@@ -41,8 +42,23 @@ const ATX_HEADING = /^(#{1,6})\s(.*)$/;
 export function indexMarkdownSections(markdown: string): MarkdownSection[] {
   const lines = markdown.split('\n');
   const headings: ParsedHeading[] = [];
+  let openFence: { marker: '`' | '~'; length: number } | null = null;
 
   for (const [lineIndex, line] of lines.entries()) {
+    const fence = FENCE.exec(line);
+    if (openFence) {
+      if (fence && fence[1]![0] === openFence.marker && fence[1]!.length >= openFence.length) {
+        openFence = null;
+      }
+      continue;
+    }
+    if (fence) {
+      openFence = {
+        marker: fence[1]![0] as '`' | '~',
+        length: fence[1]!.length,
+      };
+      continue;
+    }
     const match = ATX_HEADING.exec(line);
     if (!match) continue;
     headings.push({
