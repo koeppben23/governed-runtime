@@ -11,6 +11,7 @@ import {
   ValidationAttemptRef,
   ContentRef,
   ReviewChallenge,
+  ChallengeResolution,
   ReviewActorInfo,
   ReviewAttestation,
   ReviewFindings,
@@ -168,6 +169,16 @@ describe('evidence-review', () => {
       expect(ReviewChallenge.parse(design)).toEqual(design);
       expect(ReviewChallenge.parse(implementation)).toEqual(implementation);
       expect(ReviewChallenge.parse(content)).toEqual(content);
+    });
+
+    it('ChallengeResolution binds one challenge to immutable attempt IDs', () => {
+      const resolution = {
+        challengeId: '11111111-1111-4111-8111-111111111111',
+        implementationDigest: 'implementation-digest',
+        validationAttemptIds: ['22222222-2222-4222-8222-222222222222'],
+        resolvedAt: FIXED_TIME,
+      };
+      expect(ChallengeResolution.parse(resolution)).toEqual(resolution);
     });
 
     it('parses individual challenge evidence references', () => {

@@ -408,6 +408,59 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'IMPLEMENTATION_CHALLENGE_UNKNOWN',
+    category: 'precondition',
+    messageTemplate:
+      'Implementation challenge {challengeId} is not present in prior implementation review findings.',
+    recoverySteps: ['Use a challengeId from persisted implementation review findings.'],
+  },
+  {
+    code: 'IMPLEMENTATION_CHALLENGE_ALREADY_RESOLVED',
+    category: 'precondition',
+    messageTemplate:
+      'Implementation challenge {challengeId} already has advisory resolution evidence.',
+    recoverySteps: ['Do not submit a duplicate resolution for the same challenge.'],
+  },
+  {
+    code: 'IMPLEMENTATION_VALIDATION_ATTEMPT_UNKNOWN',
+    category: 'precondition',
+    messageTemplate:
+      'Validation attempt {attemptId} is not present in the immutable validation-attempt ledger.',
+    recoverySteps: ['Use an attemptId returned by post-implementation flowguard_run_check.'],
+  },
+  {
+    code: 'IMPLEMENTATION_VALIDATION_ATTEMPT_DUPLICATE',
+    category: 'precondition',
+    messageTemplate:
+      'Validation attempt {attemptId} was supplied more than once for one challenge resolution.',
+    recoverySteps: ['Supply each immutable validation attempt ID exactly once.'],
+  },
+  {
+    code: 'IMPLEMENTATION_VALIDATION_ATTEMPT_WRONG_SCOPE',
+    category: 'precondition',
+    messageTemplate:
+      'Validation attempt {attemptId} is not a post-implementation validation attempt.',
+    recoverySteps: ['Use only validation attempts with scope "implementation".'],
+  },
+  {
+    code: 'IMPLEMENTATION_VALIDATION_ATTEMPT_DIGEST_MISMATCH',
+    category: 'precondition',
+    messageTemplate:
+      'Validation attempt {attemptId} is bound to a different implementation digest.',
+    recoverySteps: ['Use attempts executed against the current implementation digest.'],
+  },
+  {
+    code: 'IMPLEMENTATION_VALIDATION_ATTEMPT_FAILED',
+    category: 'precondition',
+    messageTemplate:
+      'Validation attempt {attemptId} did not pass and cannot support a challenge resolution.',
+    recoverySteps: [
+      'Fix the implementation and rerun the required validation check.',
+      'Use a passing post-implementation validation attempt for the current implementation digest.',
+    ],
+  },
+
+  {
     code: 'SUBAGENT_PROMPT_EMPTY',
     category: 'precondition',
     messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} prompt is too short. Include the plan/implementation text, ticket text, iteration, and planVersion.`,

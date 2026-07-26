@@ -74,7 +74,11 @@ ${DISCOVERY_REVIEW_CAPTURE}
 
 ### Phase 5: Implementation Review Loop
 
- 7. Read the \`next\` field from the tool response and follow its instructions exactly:
+7. Read the \`next\` field from the tool response and follow its instructions exactly:
+   - Before submitting the reviewer verdict, optionally record each addressed prior implementation
+     challenge with \`flowguard_resolve_implementation_challenge({ challengeId, validationAttemptIds })\`.
+     Use only post-implementation validation attempt IDs for the current digest. This is advisory
+     \`NOT_VERIFIED\` evidence and never changes reviewer acceptance or the user gate.
 ${SHARED_REVIEW_LOOP({
   toolName: 'flowguard_implement',
   verdictToolName: 'flowguard_review_implementation',

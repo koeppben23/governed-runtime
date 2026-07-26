@@ -18,6 +18,7 @@ import {
   ActorInfoSchema,
   ArchitectureDecision,
   BindingInfo,
+  ChallengeResolution,
   CheckId,
   DecisionIdentitySchema,
   ErrorInfo,
@@ -296,6 +297,9 @@ export const SessionState = z.object({
    * this preserves every successful validation-result persistence for audit.
    */
   validationAttempts: z.array(ValidationAttempt).default([]),
+
+  /** Advisory challenge-resolution evidence; defaults for legacy sessions. */
+  challengeResolutions: z.array(ChallengeResolution).default([]),
 
   /**
    * Post-implementation validation check results (IMPL_VALIDATION phase). Kept

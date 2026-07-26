@@ -25,6 +25,7 @@ import {
   decision,
   implement,
   review_implementation,
+  resolve_implementation_challenge,
   run_check,
   review,
   continue as continueTool,
@@ -39,7 +40,7 @@ import { benchmarkSync } from '../test-policy.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** All 14 exported tool names, matching the filenames OpenCode will discover. */
+/** All 15 exported tool names, matching the filenames OpenCode will discover. */
 const TOOL_NAMES = [
   'status',
   'hydrate',
@@ -48,6 +49,7 @@ const TOOL_NAMES = [
   'decision',
   'implement',
   'review_implementation',
+  'resolve_implementation_challenge',
   'run_check',
   'review',
   'continue',
@@ -66,6 +68,7 @@ const TOOLS: Record<string, unknown> = {
   decision,
   implement,
   review_implementation,
+  resolve_implementation_challenge,
   run_check,
   review,
   continue: continueTool,
@@ -83,6 +86,7 @@ const TOOLS_WITH_ARGS = [
   'plan',
   'decision',
   'review_implementation',
+  'resolve_implementation_challenge',
   'run_check',
   'abort_session',
   'architecture',
@@ -98,8 +102,8 @@ const TOOLS_WITHOUT_ARGS = ['archive', 'implement'] as const;
 describe('integration/tools', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('exports exactly 14 tools', () => {
-      expect(Object.keys(TOOLS).length).toBe(14);
+    it('exports exactly 15 tools', () => {
+      expect(Object.keys(TOOLS).length).toBe(15);
     });
 
     for (const name of TOOL_NAMES) {
@@ -250,9 +254,9 @@ describe('integration/tools', () => {
       expect(attachGovernanceFooter('"ok"')).toBe('"ok"');
     });
 
-    it('barrel has exactly 15 named exports (14 tools + 1 plugin)', () => {
+    it('barrel has exactly 16 named exports (15 tools + 1 plugin)', () => {
       const exports = Object.keys(barrel);
-      expect(exports.length).toBe(15);
+      expect(exports.length).toBe(16);
     });
   });
 

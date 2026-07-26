@@ -160,6 +160,12 @@ export interface ImplReviewPromptOpts {
   readonly profileName?: string;
   readonly profileRules?: string;
   readonly discoveryContext: DiscoveryReviewContext;
+  readonly challengeResolutions?: ReadonlyArray<{
+    challengeId: string;
+    implementationDigest: string;
+    validationAttemptIds: string[];
+    resolvedAt: string;
+  }>;
 }
 
 /** Options for building an architecture (ADR) review prompt. F13 slice 6. */
@@ -289,6 +295,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     profileName,
     profileRules,
     discoveryContext,
+    challengeResolutions = [],
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -309,9 +316,19 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     '',
     ...(stackSection ? [stackSection, ''] : []),
     ...(discoverySection ? [discoverySection, ''] : []),
+    ...(challengeResolutions.length > 0
+      ? [
+          '## Advisory Challenge Resolutions (NOT_VERIFIED)',
+          '',
+          'These author-recorded bindings do not establish correctness or alter acceptance. Inspect the referenced challenge and validation attempts independently:',
+          JSON.stringify(challengeResolutions),
+          '',
+        ]
+      : []),
     '## Instructions',
     '',
     'Review this implementation against the approved plan and ticket.',
+    'Treat any challenge resolution as advisory NOT_VERIFIED evidence; independently verify it.',
     'Read the changed files using the read/glob/grep tools to verify correctness.',
     'Follow your review criteria for implementations.',
     'Return your findings as a single JSON object matching the ReviewFindings schema.',

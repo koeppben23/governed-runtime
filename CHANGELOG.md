@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Advisory implementation challenge resolution evidence (#747).**
+  `flowguard_resolve_implementation_challenge` is available in `IMPL_REVIEW` after
+  post-implementation validation. It persistently binds one prior implementation
+  challenge to the current implementation digest and immutable validation attempt
+  IDs, rejects unknown, duplicate, wrong-scope, and wrong-digest references, and
+  records resolved actor identity when available. Resolutions are surfaced as
+  `NOT_VERIFIED` reviewer/status context only; they do not change review acceptance
+  or policy enforcement.
+
 - **Mandatory `core` review coverage profile (Wave 1 of #730).** Every plan,
   implementation, architecture, and standalone `/review` now runs under a
   canonical, non-optional `core` review profile. The profile is frozen into the

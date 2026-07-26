@@ -36,6 +36,7 @@ import { review_implementation as rawReviewImplementation } from './implement.js
 import { architecture as rawArchitecture } from './architecture.js';
 import { continue_cmd as rawContinue } from './continue-tool.js';
 import { help as rawHelp } from './help-tool.js';
+import { resolve_implementation_challenge as rawResolveImplementationChallenge } from './challenge-resolution.js';
 import type { ToolDefinition, ToolResult } from './helpers.js';
 
 function buildFlowGuardFooter(phase: unknown): Record<string, unknown> {
@@ -106,6 +107,9 @@ export const hydrate = withGovernanceFooter(rawHydrate);
 export const plan = withGovernanceFooter(rawPlan);
 export const implement = withGovernanceFooter(rawImplement);
 export const review_implementation = withGovernanceFooter(rawReviewImplementation);
+export const resolve_implementation_challenge = withGovernanceFooter(
+  rawResolveImplementationChallenge,
+);
 export const architecture = withGovernanceFooter(rawArchitecture);
 const continueTool = withGovernanceFooter(rawContinue);
 export { continueTool as continue };

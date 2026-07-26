@@ -18,7 +18,7 @@ import {
   ReviewObligationStatus,
   ReviewVerdict,
 } from './evidence-primitives.js';
-import { DecisionIdentity } from './evidence-identity.js';
+import { ActorInfoSchema, DecisionIdentity } from './evidence-identity.js';
 
 // ─── Completeness Report ──────────────────────────────────────────────────────
 
@@ -174,6 +174,22 @@ export const ReviewChallenge = z.discriminatedUnion('kind', [
     .readonly(),
 ]);
 export type ReviewChallenge = z.infer<typeof ReviewChallenge>;
+
+/**
+ * Advisory evidence that an implementation challenge was addressed by the
+ * current implementation and its immutable post-implementation checks.
+ * Resolution remains deliberately separate from review acceptance policy.
+ */
+export const ChallengeResolution = z
+  .object({
+    challengeId: z.string().uuid(),
+    implementationDigest: z.string().min(1),
+    validationAttemptIds: z.array(z.string().uuid()).min(1),
+    resolvedAt: z.string().datetime(),
+    author: ActorInfoSchema.optional(),
+  })
+  .readonly();
+export type ChallengeResolution = z.infer<typeof ChallengeResolution>;
 
 /**
  * Identity information for the review actor (subagent or self).

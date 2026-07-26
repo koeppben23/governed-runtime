@@ -61,6 +61,15 @@ export const COMMAND_HELP: Record<Command, CommandHelpEntry> = {
     presentationGroup: 'work',
     displayOrder: 50,
   },
+  [Command.RESOLVE_IMPLEMENTATION_CHALLENGE]: {
+    label: 'Record challenge resolution',
+    description: 'Record advisory validation evidence for one implementation challenge.',
+    does: ['Binds one prior implementation challenge to current validation attempts.'],
+    doesNot: ['Approve the implementation or change review acceptance.'],
+    examples: ['/resolve-implementation-challenge'],
+    presentationGroup: 'review',
+    displayOrder: 55,
+  },
   [Command.REVIEW_DECISION]: {
     label: 'Decide review gate',
     description: 'Record the human decision at a review gate.',

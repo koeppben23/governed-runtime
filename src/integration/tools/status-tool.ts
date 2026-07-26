@@ -462,6 +462,12 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
     }),
     hasReviewDecision: state.reviewDecision !== null,
     reviewVerdict: state.reviewDecision?.verdict ?? null,
+    challengeResolutions: state.challengeResolutions
+      .filter((resolution) => resolution.implementationDigest === state.implementation?.digest)
+      .map((resolution) => ({
+        ...resolution,
+        advisory: 'NOT_VERIFIED: independently inspect the challenge and validation attempts.',
+      })),
     error: state.error,
   };
 }

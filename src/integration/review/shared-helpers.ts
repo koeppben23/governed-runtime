@@ -415,6 +415,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       criteriaVersion: reviewCtx.criteriaVersion,
       mandateDigest: reviewCtx.mandateDigest,
       discoveryContext,
+      challengeResolutions: stateChallengeResolutions(sessionState),
       ...implRules,
     });
   }
@@ -434,6 +435,17 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
   }
   deps.log.warn('orchestrator', 'unsupported reviewable tool — skipping', { tool: toolName });
   return null;
+}
+
+function stateChallengeResolutions(state: SessionState) {
+  return state.challengeResolutions
+    .filter((resolution) => resolution.implementationDigest === state.implementation?.digest)
+    .map(({ challengeId, implementationDigest, validationAttemptIds, resolvedAt }) => ({
+      challengeId,
+      implementationDigest,
+      validationAttemptIds,
+      resolvedAt,
+    }));
 }
 
 // ─── State + Audit Persistence Helper ────────────────────────────────────────
