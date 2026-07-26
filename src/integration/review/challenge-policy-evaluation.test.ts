@@ -36,6 +36,7 @@ type Metrics = {
   readonly blockingRate: number;
   readonly reReviewRate: number;
   readonly pipelineValidationLatencyMs: number;
+  readonly fixtureReviewerLatencyMs: number;
 };
 
 const FIXTURES: readonly Fixture[] = [
@@ -119,7 +120,18 @@ function capturedFindings(
   };
 }
 
-function resolveCapturedFixture(fixture: Fixture, frozen: boolean): boolean {
+async function fixtureReviewer(
+  artifact: Readonly<{ obligationId: string; iteration: number; capture: Fixture['capture'] }>,
+): Promise<ReviewFindings> {
+  // Deterministic reviewer fixture: deserialize its review artifact before producing findings.
+  const parsed = JSON.parse(JSON.stringify(artifact)) as typeof artifact;
+  return capturedFindings(parsed.obligationId, parsed.iteration, parsed.capture);
+}
+
+async function resolveCapturedFixture(
+  fixture: Fixture,
+  frozen: boolean,
+): Promise<{ blocked: boolean; reviewerLatencyMs: number }> {
   const obligation = createReviewObligation({
     obligationType: 'implement',
     iteration: 0,
@@ -128,7 +140,13 @@ function resolveCapturedFixture(fixture: Fixture, frozen: boolean): boolean {
     changedFiles: ['src/example.ts'],
     policySnapshot: frozen ? { challengePolicy: CHALLENGE_POLICY_V1 } : {},
   });
-  const findings = capturedFindings(obligation.obligationId, 0, fixture.capture);
+  const reviewerStartedAt = performance.now();
+  const findings = await fixtureReviewer({
+    obligationId: obligation.obligationId,
+    iteration: 0,
+    capture: fixture.capture,
+  });
+  const reviewerLatencyMs = performance.now() - reviewerStartedAt;
   const invocation = buildInvocationEvidence({
     obligationId: obligation.obligationId,
     obligationType: 'implement',
@@ -145,7 +163,7 @@ function resolveCapturedFixture(fixture: Fixture, frozen: boolean): boolean {
     { obligations: [obligation], invocations: [invocation] },
     obligation,
   );
-  return result.kind !== 'resolved';
+  return { blocked: result.kind !== 'resolved', reviewerLatencyMs };
 }
 
 async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boolean> {
@@ -285,9 +303,12 @@ async function evaluateFixtures(frozen: boolean): Promise<Metrics> {
   let falsePositives = 0;
   let falseNegatives = 0;
   let blocked = 0;
+  let reviewerLatencyMs = 0;
 
   for (const fixture of FIXTURES) {
-    const isBlocked = resolveCapturedFixture(fixture, frozen);
+    const result = await resolveCapturedFixture(fixture, frozen);
+    const isBlocked = result.blocked;
+    reviewerLatencyMs += result.reviewerLatencyMs;
     if (isBlocked) blocked++;
     if (isBlocked && fixture.expectedPolicyBlock) truePositives++;
     if (isBlocked && !fixture.expectedPolicyBlock) falsePositives++;
@@ -305,6 +326,7 @@ async function evaluateFixtures(frozen: boolean): Promise<Metrics> {
     blockingRate: blocked / totalFixtures,
     reReviewRate: secondReviewOccurred ? 1 / totalFixtures : 0,
     pipelineValidationLatencyMs: performance.now() - pipelineStartedAt,
+    fixtureReviewerLatencyMs: reviewerLatencyMs,
   };
 }
 
@@ -329,5 +351,7 @@ describe('controlled challenge-policy lifecycle evaluation (#747)', () => {
     });
     expect(withoutFrozenRequirements.pipelineValidationLatencyMs).toBeGreaterThanOrEqual(0);
     expect(withFrozenRequirements.pipelineValidationLatencyMs).toBeGreaterThanOrEqual(0);
+    expect(withoutFrozenRequirements.fixtureReviewerLatencyMs).toBeGreaterThanOrEqual(0);
+    expect(withFrozenRequirements.fixtureReviewerLatencyMs).toBeGreaterThanOrEqual(0);
   });
 });

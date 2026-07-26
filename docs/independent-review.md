@@ -72,6 +72,7 @@ is intentionally allowed to disagree with structural validation.
 | Precision                   |         N/A (no fixtures blocked) |                               50% |
 | Blocking rate               |                                0% |                         40% (2/5) |
 | Re-review rate              |                         20% (1/5) |                         20% (1/5) |
+| Fixture reviewer latency    | measured with `performance.now()` | measured with `performance.now()` |
 | Pipeline validation latency | measured with `performance.now()` | measured with `performance.now()` |
 
 The fixture set contains a missing-challenge case, a structurally valid but
@@ -83,9 +84,11 @@ host-captured reviewer finding only after that reviewer independently marks the
 resolution `resolved`. Re-review rate is therefore the observed second-review
 occurrence, not a count of blocks.
 
-These are deterministic fixture results only. `pipeline validation latency` is
-wall-clock execution time for this local test pipeline, measured with
-`performance.now()`; it is not reviewer model latency or production latency.
+These are deterministic fixture results only. `fixture reviewer latency` measures
+the deterministic fixture-reviewer artifact parsing and findings production; it is
+not reviewer-model or production latency. `pipeline validation latency` is the
+separate wall-clock execution time for host capture, validation, persistence, and
+re-review handling, measured with `performance.now()`.
 The labels and results do not establish reviewer/model quality or real-world
 false-positive and false-negative rates.
 
