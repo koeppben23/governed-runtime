@@ -355,6 +355,12 @@ export async function fulfillStrictReviewObligation(
               ? { diffDigest: state.implementation.diffDigest }
               : {}),
           },
+          {
+            kind: 'validation_attempt' as const,
+            // Test-reviewer output is transport evidence; this fixture does not
+            // execute checks, so it cannot claim a persisted attempt id.
+            attemptId: crypto.randomUUID(),
+          },
         ],
         outcome: 'pass' as const,
       };

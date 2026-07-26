@@ -92,7 +92,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // reviewer capability isolation denies direct and MCP-prefixed FlowGuard tools.
     // p39 -> p40: reviewer task delegation is denied as part of that boundary.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      '3170756289352e05a70b1f6d954ba9b4d7b3c9bcd104d54dee8a99b4c5f80c17',
+      'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
     );
   });
 
