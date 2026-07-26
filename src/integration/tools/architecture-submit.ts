@@ -16,10 +16,75 @@ import {
   reviewObligationResponseFields,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
+import { resolveChallengeClassificationEvidence } from './review-obligation-classification.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Mode A: ADR Submission
 // ═══════════════════════════════════════════════════════════════════════════
+
+async function resolveArchitectureChallengeClassification(
+  state: SessionState,
+  worktree: string | undefined,
+  subagentEnabled: boolean,
+  targetPaths?: string[],
+) {
+  if (!subagentEnabled) return { kind: 'not_required' as const };
+  return resolveChallengeClassificationEvidence(state, worktree, { targetPaths });
+}
+
+interface ArchObligationContext {
+  readonly state: SessionState;
+  readonly worktree: string | undefined;
+  readonly subagentEnabled: boolean;
+  readonly targetPaths: string[] | undefined;
+  readonly archPlanVersion: number;
+  readonly now: string;
+  readonly policySnapshot: NonNullable<SessionState['policySnapshot']>;
+}
+
+async function classifyAndCreateArchObligation(
+  ctx: ArchObligationContext,
+): Promise<
+  { state: SessionState; obligation: ReturnType<typeof createReviewObligation> | null } | string
+> {
+  const classification = await resolveArchitectureChallengeClassification(
+    ctx.state,
+    ctx.worktree,
+    ctx.subagentEnabled,
+    ctx.targetPaths,
+  );
+  if (classification.kind === 'unavailable') {
+    return formatBlocked('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {
+      reason: classification.reason,
+    });
+  }
+  const resolvedTargetPaths =
+    classification.kind === 'available' ? [...classification.changedFiles] : undefined;
+  const metadata: Record<string, unknown> = {};
+  if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
+    metadata.targetPaths = resolvedTargetPaths;
+  }
+  const obligation = ctx.subagentEnabled
+    ? createReviewObligation({
+        obligationType: 'architecture',
+        iteration: 0,
+        planVersion: ctx.archPlanVersion,
+        now: ctx.now,
+        reviewProfile: resolveFrozenReviewProfile(ctx.policySnapshot),
+        profileSource: 'policy_default',
+        policySnapshot: ctx.policySnapshot,
+        changedFiles: resolvedTargetPaths,
+        metadata,
+      })
+    : null;
+  const augmentedState = obligation
+    ? {
+        ...ctx.state,
+        reviewAssurance: appendReviewObligation(ctx.state.reviewAssurance, obligation),
+      }
+    : ctx.state;
+  return { state: augmentedState, obligation };
+}
 
 export async function handleAdrSubmission(
   args: ArchitectureArgs,
@@ -43,23 +108,18 @@ export async function handleAdrSubmission(
 
   const subagentEnabled = policy.selfReview?.subagentEnabled ?? false;
   const archPlanVersion = 1;
-  const nextObligation = subagentEnabled
-    ? createReviewObligation({
-        obligationType: 'architecture',
-        iteration: 0,
-        planVersion: archPlanVersion,
-        now: ctx.now(),
-        reviewProfile: resolveFrozenReviewProfile(result.state.policySnapshot),
-        profileSource: 'policy_default',
-        policySnapshot: result.state.policySnapshot,
-      })
-    : null;
-  const augmentedState: SessionState = nextObligation
-    ? {
-        ...result.state,
-        reviewAssurance: appendReviewObligation(result.state.reviewAssurance, nextObligation),
-      }
-    : result.state;
+  const now = ctx.now();
+  const classification = await classifyAndCreateArchObligation({
+    state: result.state,
+    worktree: session.worktree,
+    subagentEnabled,
+    targetPaths: args.targetPaths,
+    archPlanVersion,
+    now,
+    policySnapshot: result.state.policySnapshot,
+  });
+  if (typeof classification === 'string') return classification;
+  const { state: augmentedState, obligation: nextObligation } = classification;
 
   await writeStateWithArtifacts(sessDir, augmentedState);
 

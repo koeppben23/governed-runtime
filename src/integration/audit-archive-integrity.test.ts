@@ -215,7 +215,7 @@ async function completeRegulatedSession(): Promise<{ fingerprint: string; sessDi
   });
   await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
   await callOk(ticket, { text: 'Archive integrity task', source: 'user' });
-  await callOk(plan, { planText: '## Plan\nBuild and verify.' });
+  await callOk(plan, { planText: '## Plan\nBuild and verify.', targetPaths: ['docs/test.md'] });
   for (let i = 0; i < 4 && (await phase()) !== 'PLAN_REVIEW'; i++) {
     await callOk(plan, { reviewVerdict: 'accept' });
   }

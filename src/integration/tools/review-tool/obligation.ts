@@ -28,6 +28,7 @@ import {
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { validateChallengeConsistency } from '../../review/enforcement/findings-consistency.js';
 import { formatBlocked, writeStateWithArtifacts } from '../helpers.js';
+import { resolveChallengeClassificationEvidence } from '../review-obligation-classification.js';
 import { type ResolvedBranchReviewSource } from '../../../adapters/gh-cli.js';
 import type { ReviewToolArgs, StartedReviewResult } from './types.js';
 
@@ -303,12 +304,68 @@ export async function persistReviewObligation(
   });
 }
 
+interface NewReviewObligationInput {
+  readonly state: SessionState;
+  readonly args: ReviewToolArgs;
+  readonly now: string;
+  readonly worktree: string | undefined;
+  readonly resolvedSource: ResolvedBranchReviewSource | undefined;
+  readonly fingerprint: string;
+  readonly inputFingerprint: string;
+}
+
+async function createNewReviewObligation(
+  input: NewReviewObligationInput,
+): Promise<{ obligation?: ReviewObligation; blocked?: string }> {
+  const classification = await resolveChallengeClassificationEvidence(input.state, input.worktree, {
+    targetPaths: input.args.targetPaths,
+    branch: input.args.branch,
+    base: input.args.base,
+    prNumber: input.args.prNumber,
+  });
+  if (classification.kind === 'unavailable') {
+    return {
+      blocked: formatBlocked('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {
+        reason: classification.reason,
+      }),
+    };
+  }
+  const resolvedTargetPaths =
+    classification.kind === 'available' ? [...classification.changedFiles] : undefined;
+  const metadata: Record<string, unknown> = {
+    fingerprint: input.fingerprint,
+    inputFingerprint: input.inputFingerprint,
+  };
+  if (resolvedTargetPaths) {
+    metadata.targetPaths = resolvedTargetPaths;
+  }
+  if (input.args.branch && input.resolvedSource) {
+    metadata.branch = input.args.branch;
+    metadata.baseBranch = input.resolvedSource.baseBranch;
+    metadata.resolvedBranchSha = input.resolvedSource.resolvedBranchSha;
+    metadata.resolvedBaseSha = input.resolvedSource.resolvedBaseSha;
+  }
+  return {
+    obligation: createReviewObligation({
+      obligationType: 'review',
+      iteration: 1,
+      planVersion: 1,
+      now: input.now,
+      reviewProfile: resolveFrozenReviewProfile(input.state.policySnapshot),
+      profileSource: 'policy_default',
+      policySnapshot: input.state.policySnapshot,
+      changedFiles: resolvedTargetPaths,
+      metadata,
+    }),
+  };
+}
+
 export async function ensureMissingAnalysisObligation(
   sessDir: string,
   state: SessionState,
   args: ReviewToolArgs,
   now: string,
-  resolvedSource?: ResolvedBranchReviewSource,
+  context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource'>,
 ): Promise<{ message: string | null; obligation?: ReviewObligation }> {
   const sourceResult = validateReviewContentSource(args);
   if (sourceResult.kind === 'none') return { message: null };
@@ -320,8 +377,8 @@ export async function ensureMissingAnalysisObligation(
 
   const fingerprint = fingerprintReviewInput({
     ...args,
-    resolvedBranchSha: resolvedSource?.resolvedBranchSha,
-    resolvedBaseSha: resolvedSource?.resolvedBaseSha,
+    resolvedBranchSha: context.resolvedSource?.resolvedBranchSha,
+    resolvedBaseSha: context.resolvedSource?.resolvedBaseSha,
   });
   const inputFingerprint = fingerprintReviewInput(args);
   const existing = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
@@ -329,23 +386,16 @@ export async function ensureMissingAnalysisObligation(
   if (!verdictFirstCall && args.reviewFindings !== undefined) return { message: null };
   let obligation = existing;
   if (!obligation) {
-    const metadata: Record<string, unknown> = { fingerprint, inputFingerprint };
-    if (args.branch && resolvedSource) {
-      metadata.branch = args.branch;
-      metadata.baseBranch = resolvedSource.baseBranch;
-      metadata.resolvedBranchSha = resolvedSource.resolvedBranchSha;
-      metadata.resolvedBaseSha = resolvedSource.resolvedBaseSha;
-    }
-    obligation = createReviewObligation({
-      obligationType: 'review',
-      iteration: 1,
-      planVersion: 1,
+    const created = await createNewReviewObligation({
+      state,
+      args,
       now,
-      reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
-      profileSource: 'policy_default',
-      policySnapshot: state.policySnapshot,
-      metadata,
+      fingerprint,
+      inputFingerprint,
+      ...context,
     });
+    if (created.blocked) return { message: created.blocked };
+    obligation = created.obligation!;
     await persistReviewObligation(sessDir, state, obligation);
   }
   return { message: formatMissingContentAnalysis(obligation.obligationId), obligation };
@@ -394,6 +444,7 @@ export async function resolveSubmittedReviewObligation(
   state: SessionState,
   args: ReviewToolArgs,
   now: string,
+  worktree: string | undefined,
 ): Promise<{ obligation: ReviewObligation | null; blocked?: string }> {
   const findings = args.reviewFindings as Record<string, unknown>;
   const attToolObligationId = (findings.attestation as Record<string, unknown> | undefined)
@@ -422,16 +473,17 @@ export async function resolveSubmittedReviewObligation(
     findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
 
   if (!obligation) {
-    obligation = createReviewObligation({
-      obligationType: 'review',
-      iteration: 1,
-      planVersion: 1,
+    const created = await createNewReviewObligation({
+      state,
+      args,
       now,
-      reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
-      profileSource: 'policy_default',
-      policySnapshot: state.policySnapshot,
-      metadata: { fingerprint, inputFingerprint: fingerprint },
+      worktree,
+      resolvedSource: undefined,
+      fingerprint,
+      inputFingerprint: fingerprint,
     });
+    if (created.blocked) return { obligation: null, blocked: created.blocked };
+    obligation = created.obligation!;
     await persistReviewObligation(sessDir, state, obligation);
     return {
       obligation,
@@ -477,6 +529,8 @@ export function validateSubmittedReviewFindings(
 
   if (obligation.requiredChallengeCount !== undefined && obligation.requiredChallengeKind) {
     const challengeConsistency = validateChallengeConsistency({
+      overallVerdict: findings.overallVerdict as
+        'accept' | 'changes_requested' | 'unable_to_review',
       requiredChallengeCount: obligation.requiredChallengeCount,
       requiredChallengeKind: obligation.requiredChallengeKind,
       challenges: findings.challenges as Parameters<

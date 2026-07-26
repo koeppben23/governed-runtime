@@ -276,7 +276,10 @@ describe('plan', () => {
   describe('HAPPY', () => {
     it('Mode A: records initial plan with digest', async () => {
       await hydrateAndTicket();
-      const raw = await plan.execute({ planText: '## Plan\n1. Fix auth\n2. Add tests' }, ctx);
+      const raw = await plan.execute(
+        { planText: '## Plan\n1. Fix auth\n2. Add tests', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).toBeUndefined();
       expect(result.planDigest).toBeTruthy();
@@ -285,7 +288,7 @@ describe('plan', () => {
 
     it('Mode B: approve converges after mandatory subagent review', async () => {
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'accept');
       const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
       const result = parseToolResult(raw);
@@ -300,13 +303,14 @@ describe('plan', () => {
 
     it('Mode B: changes_requested with revised plan', async () => {
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Original Plan' }, ctx);
+      await plan.execute({ planText: '## Original Plan', targetPaths: ['docs/test.md'] }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
       const raw = await plan.execute(
         {
           reviewVerdict: 'changes_requested',
           planText: '## Revised Plan\n1. Better approach',
           reviewFindings,
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );
@@ -318,13 +322,14 @@ describe('plan', () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
 
-      await plan.execute({ planText: '## Original Plan' }, ctx);
+      await plan.execute({ planText: '## Original Plan', targetPaths: ['docs/test.md'] }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
       const raw = await plan.execute(
         {
           reviewVerdict: 'changes_requested',
           planText: '## Revised Plan\n1. Better approach',
           reviewFindings,
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );
@@ -345,7 +350,7 @@ describe('plan', () => {
   describe('BAD', () => {
     it('blocks with EMPTY_PLAN for empty planText', async () => {
       await hydrateAndTicket();
-      const raw = await plan.execute({ planText: '' }, ctx);
+      const raw = await plan.execute({ planText: '', targetPaths: ['docs/test.md'] }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('EMPTY_PLAN');
@@ -353,14 +358,14 @@ describe('plan', () => {
 
     it('blocks in READY phase (command not allowed without ticket phase)', async () => {
       await hydrateSession();
-      const raw = await plan.execute({ planText: '## Plan' }, ctx);
+      const raw = await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('COMMAND_NOT_ALLOWED');
     });
 
     it('blocks without session', async () => {
-      const raw = await plan.execute({ planText: '## Plan' }, ctx);
+      const raw = await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('NO_SESSION');
@@ -368,7 +373,10 @@ describe('plan', () => {
 
     it('normalizes mixed first-call planText + reviewVerdict into initial plan submission', async () => {
       await hydrateAndTicket();
-      const raw = await plan.execute({ planText: '## Plan', reviewVerdict: 'accept' }, ctx);
+      const raw = await plan.execute(
+        { planText: '## Plan', reviewVerdict: 'accept', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).not.toBe(true);
       expect(result.status).toContain('Plan submitted');
@@ -383,6 +391,7 @@ describe('plan', () => {
           reviewVerdict: 'accept',
           reviewFindings: modeBSubagentFindings,
           reviewerUnavailable: true,
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );
@@ -395,7 +404,11 @@ describe('plan', () => {
     it('normalizes first-call planText + reviewFindings into initial plan submission', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
-        { planText: '## Plan', reviewFindings: modeBSubagentFindings },
+        {
+          planText: '## Plan',
+          reviewFindings: modeBSubagentFindings,
+          targetPaths: ['docs/test.md'],
+        },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -406,7 +419,10 @@ describe('plan', () => {
 
     it('normalizes initial plan submission with preemptive reviewerUnavailable', async () => {
       await hydrateAndTicket();
-      const raw = await plan.execute({ planText: '## Plan', reviewerUnavailable: true }, ctx);
+      const raw = await plan.execute(
+        { planText: '## Plan', reviewerUnavailable: true, targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).not.toBe(true);
       expect(result.status).toContain('Plan submitted');
@@ -414,11 +430,17 @@ describe('plan', () => {
 
     it('blocks plan-only resubmission while review loop is active', async () => {
       await hydrateAndTicket();
-      const firstRaw = await plan.execute({ planText: '## Plan' }, ctx);
+      const firstRaw = await plan.execute(
+        { planText: '## Plan', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       const first = parseToolResult(firstRaw);
       expect(first.phase).toBe('PLAN');
 
-      const raw = await plan.execute({ planText: '## Replacement Plan' }, ctx);
+      const raw = await plan.execute(
+        { planText: '## Replacement Plan', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_REVIEW_IN_PROGRESS');
@@ -443,6 +465,7 @@ describe('plan', () => {
           reviewVerdict: 'changes_requested',
           planText: '## Revised Plan',
           reviewFindings: { ...modeBSubagentFindings, overallVerdict: 'changes_requested' },
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );
@@ -456,7 +479,7 @@ describe('plan', () => {
   describe('Mode-A hardblocks mid-loop', () => {
     async function setupMidLoopPlan(): Promise<void> {
       await hydrateAndTicket();
-      const raw = await plan.execute({ planText: '## Plan' }, ctx);
+      const raw = await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
       const result = parseToolResult(raw);
       expect(result.phase).toBe('PLAN');
     }
@@ -470,7 +493,10 @@ describe('plan', () => {
     it('blocks approval mixed with planText after the plan review loop has started', async () => {
       await setupMidLoopPlan();
 
-      const raw = await plan.execute({ planText: '## Revised Plan', reviewVerdict: 'accept' }, ctx);
+      const raw = await plan.execute(
+        { planText: '## Revised Plan', reviewVerdict: 'accept', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       const result = parseToolResult(raw);
 
       expect(result.error).toBe(true);
@@ -485,7 +511,11 @@ describe('plan', () => {
       await setupMidLoopPlan();
 
       const raw = await plan.execute(
-        { planText: '## Revised Plan', reviewFindings: modeBSubagentFindings },
+        {
+          planText: '## Revised Plan',
+          reviewFindings: modeBSubagentFindings,
+          targetPaths: ['docs/test.md'],
+        },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -500,7 +530,7 @@ describe('plan', () => {
       await setupMidLoopPlan();
 
       const raw = await plan.execute(
-        { planText: '## Revised Plan', reviewerUnavailable: true },
+        { planText: '## Revised Plan', reviewerUnavailable: true, targetPaths: ['docs/test.md'] },
         ctx,
       );
       const result = parseToolResult(raw);
@@ -518,7 +548,7 @@ describe('plan', () => {
     it('keeps plan evidence when PLAN_REVIEW changes_requested returns to PLAN', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-      await plan.execute({ planText: '## Plan' }, ctx);
+      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'accept');
 
       const reviewRaw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
@@ -548,7 +578,7 @@ describe('plan', () => {
     // Obligation bookkeeping: review #k consumes obligation (iteration k-1,
     // planVersion k) — see buildPlanSubmissionState / persistNonConvergedPlanReview.
     async function exhaustPlanReviews(maxIterations: number): Promise<Record<string, unknown>> {
-      await plan.execute({ planText: '## Plan v0' }, ctx);
+      await plan.execute({ planText: '## Plan v0', targetPaths: ['docs/test.md'] }, ctx);
       const sessDir = await currentSessionDir();
       let last: Record<string, unknown> = {};
       for (let k = 1; k <= maxIterations; k++) {
@@ -563,6 +593,7 @@ describe('plan', () => {
             reviewVerdict: 'changes_requested',
             planText: `## Revised plan ${k}`,
             reviewFindings: findings,
+            targetPaths: ['docs/test.md'],
           },
           ctx,
         );
@@ -665,7 +696,7 @@ describe('plan', () => {
   describe('CORNER', () => {
     it('Mode B changes_requested requires revised planText', async () => {
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan' }, ctx);
+      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
       const raw = await plan.execute({ reviewVerdict: 'changes_requested', reviewFindings }, ctx);
       const result = parseToolResult(raw);
@@ -675,7 +706,7 @@ describe('plan', () => {
 
     it('Mode B uses mandatory subagent review even when old snapshots are weakened', async () => {
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan' }, ctx);
+      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
 
       const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
       const raw = await plan.execute(
@@ -683,6 +714,7 @@ describe('plan', () => {
           reviewVerdict: 'changes_requested',
           planText: '## Revised Plan',
           reviewFindings,
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );
@@ -708,13 +740,14 @@ describe('plan', () => {
         },
       });
 
-      await plan.execute({ planText: '## Plan' }, ctx);
+      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
       const findings = { ...modeBSelfFindings, overallVerdict: 'changes_requested' as const };
       const raw = await plan.execute(
         {
           reviewVerdict: 'changes_requested',
           planText: '## Revised Plan',
           reviewFindings: findings,
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );
@@ -725,7 +758,7 @@ describe('plan', () => {
 
     it('Mode B blocks tampered review findings that do not match persisted evidence', async () => {
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan' }, ctx);
+      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
 
       const reviewFindings = await fulfillPlanReview(0, 'accept');
       const raw = await plan.execute(
@@ -748,7 +781,7 @@ describe('plan', () => {
 
     it('F12: blocks an accept payload carrying a blocking issue on coherence (precedes hash-mismatch)', async () => {
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan' }, ctx);
+      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
 
       const reviewFindings = await fulfillPlanReview(0, 'accept');
       // accept + a blocking issue is internally self-contradictory. The F12
@@ -779,7 +812,7 @@ describe('plan', () => {
 
     it('Mode B blocks when reviewVerdict does not match reviewFindings.overallVerdict', async () => {
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan' }, ctx);
+      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'changes_requested');
       const raw = await plan.execute(
         {
@@ -795,7 +828,7 @@ describe('plan', () => {
 
     it('Mode B blocks with PLAN_REVIEW_LOOP_REQUIRED when selfReview is null', async () => {
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan' }, ctx);
+      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
 
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -815,7 +848,7 @@ describe('plan', () => {
 
     it('Mode B blocks with PLAN_SUBMISSION_REQUIRED when plan is null', async () => {
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan' }, ctx);
+      await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
 
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -838,7 +871,7 @@ describe('plan', () => {
       await ticket.execute({ text: 'Implement payment validation', source: 'user' }, ctx);
       const planText =
         '## Plan\n\n### Objective\nImplement payment validation.\n\n### Approach\nUse a validation pipeline.\n\n### Steps\n1. Add `validate.ts`.\n2. Add tests.\n\n### Files to Modify\n- `src/payments/validate.ts`\n\n### Edge Cases\n1. Empty input.\n\n### Validation Criteria\n1. `npm test` passes.\n\n### Verification Plan\n1. `npm test` — Source: package.json:scripts.test';
-      await plan.execute({ planText }, ctx);
+      await plan.execute({ planText, targetPaths: ['docs/test.md'] }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'accept');
       const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
       const result = parseToolResult(raw);
@@ -854,7 +887,10 @@ describe('plan', () => {
     it('converged PLAN_REVIEW reviewCard contains recommended commands', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix auth', source: 'user' }, ctx);
-      await plan.execute({ planText: '## Plan\n1. Fix auth\n2. Add tests' }, ctx);
+      await plan.execute(
+        { planText: '## Plan\n1. Fix auth\n2. Add tests', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       const reviewFindings = await fulfillPlanReview(0, 'accept');
       const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
       const result = parseToolResult(raw);
@@ -867,7 +903,7 @@ describe('plan', () => {
 
     it('non-PLAN_REVIEW convergence (solo auto-advance) does not include reviewCard', async () => {
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
       const reviewFindings = await fulfillPlanReview(0, 'accept');
       const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
       const result = parseToolResult(raw);
@@ -887,7 +923,7 @@ describe('plan', () => {
       // MUST short-circuit to BLOCKED before any reviewVerdict
       // semantics are evaluated.
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Fix auth', targetPaths: ['docs/test.md'] }, ctx);
       // fulfillPlanReview installs a valid attestation; mutate the verdict.
       const baseFindings = await fulfillPlanReview(0, 'accept');
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
@@ -906,7 +942,7 @@ describe('plan', () => {
       // the agent's submitted reviewVerdict. There is no path where
       // an unreviewable finding can be coerced into convergence.
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Fix auth', targetPaths: ['docs/test.md'] }, ctx);
       const baseFindings = await fulfillPlanReview(0, 'accept');
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
@@ -923,7 +959,7 @@ describe('plan', () => {
       // Slice 2 reason registration must be reachable through the full
       // tool stack (not only via the unit-level validation test).
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
       const baseFindings = await fulfillPlanReview(0, 'accept');
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
@@ -956,7 +992,10 @@ describe('plan', () => {
       // short-circuit to BLOCKED before any reviewVerdict semantics
       // are evaluated.
       await hydrateSession({ policyMode: 'solo' });
-      await architecture.execute({ title: 'PostgreSQL', adrText }, ctx);
+      await architecture.execute(
+        { title: 'PostgreSQL', adrText, targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       const baseFindings = await fulfillArchitectureReview(0, 'accept');
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
@@ -975,7 +1014,10 @@ describe('plan', () => {
       // is no path where an unreviewable finding can be coerced into
       // architecture convergence.
       await hydrateSession({ policyMode: 'solo' });
-      await architecture.execute({ title: 'PostgreSQL', adrText }, ctx);
+      await architecture.execute(
+        { title: 'PostgreSQL', adrText, targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       const baseFindings = await fulfillArchitectureReview(0, 'accept');
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
@@ -992,7 +1034,10 @@ describe('plan', () => {
       // Slice 2 reason registration must be reachable through the full
       // architecture tool stack, parity with the plan version above.
       await hydrateSession({ policyMode: 'solo' });
-      await architecture.execute({ title: 'PostgreSQL', adrText }, ctx);
+      await architecture.execute(
+        { title: 'PostgreSQL', adrText, targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       const baseFindings = await fulfillArchitectureReview(0, 'accept');
       const unableFindings = { ...baseFindings, overallVerdict: 'unable_to_review' as const };
 
@@ -1010,12 +1055,11 @@ describe('plan', () => {
     });
 
     it('architecture obligation iteration matches expectedIteration (planVersion stable at 1)', async () => {
-      // F13 slice 10 contract pin: the architecture obligation always uses
-      // planVersion=1 (ADRs are immutable per id; iteration counts revisions).
-      // Submitting findings with planVersion!=1 must be rejected by
-      // validateReviewFindings to prevent cross-iteration replay.
       await hydrateSession({ policyMode: 'solo' });
-      await architecture.execute({ title: 'PostgreSQL', adrText }, ctx);
+      await architecture.execute(
+        { title: 'PostgreSQL', adrText, targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       const baseFindings = await fulfillArchitectureReview(0, 'accept');
       const driftFindings = { ...baseFindings, planVersion: 2 };
 
@@ -1073,7 +1117,11 @@ describe('plan', () => {
       await hydrateAndTicket();
       // Simulate a Zod bypass: args.reviewVerdict is null
       const raw = await plan.execute(
-        { planText: '## Plan\n1. Fix auth', reviewVerdict: null } as any,
+        {
+          planText: '## Plan\n1. Fix auth',
+          reviewVerdict: null,
+          targetPaths: ['docs/test.md'],
+        } as any,
         ctx,
       );
       const result = parseToolResult(raw);
@@ -1084,7 +1132,11 @@ describe('plan', () => {
     it('HAPPY: reviewFindings=null + planText → Mode A (not PLAN_SUBMISSION_MIXED_INPUTS)', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
-        { planText: '## Plan\n1. Fix auth', reviewFindings: null } as any,
+        {
+          planText: '## Plan\n1. Fix auth',
+          reviewFindings: null,
+          targetPaths: ['docs/test.md'],
+        } as any,
         ctx,
       );
       const result = parseToolResult(raw);
@@ -1095,7 +1147,12 @@ describe('plan', () => {
     it('CORNER: both reviewVerdict=null + reviewFindings=null + planText → Mode A', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
-        { planText: '## Plan\n1. Fix auth', reviewVerdict: null, reviewFindings: null } as any,
+        {
+          planText: '## Plan\n1. Fix auth',
+          reviewVerdict: null,
+          reviewFindings: null,
+          targetPaths: ['docs/test.md'],
+        } as any,
         ctx,
       );
       const result = parseToolResult(raw);
@@ -1114,7 +1171,7 @@ describe('plan', () => {
     it('EDGE: reviewVerdict="" (empty string) + planText → Mode A', async () => {
       await hydrateAndTicket();
       const raw = await plan.execute(
-        { planText: '## Plan\n1. Fix', reviewVerdict: '' } as any,
+        { planText: '## Plan\n1. Fix', reviewVerdict: '', targetPaths: ['docs/test.md'] } as any,
         ctx,
       );
       const result = parseToolResult(raw);

@@ -19,6 +19,7 @@ export type PlanArgs = {
   reviewVerdict?: 'accept' | 'changes_requested';
   reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
+  targetPaths?: string[];
 };
 
 export type MutablePlanSession = MutableSession;

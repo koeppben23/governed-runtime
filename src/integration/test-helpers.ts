@@ -351,15 +351,14 @@ export async function fulfillStrictReviewObligation(
           {
             kind: 'implementation' as const,
             implementationDigest: state.implementation?.digest ?? 'missing-implementation-digest',
-            ...(state.implementation?.diffDigest
-              ? { diffDigest: state.implementation.diffDigest }
-              : {}),
           },
           {
             kind: 'validation_attempt' as const,
-            // Test-reviewer output is transport evidence; this fixture does not
-            // execute checks, so it cannot claim a persisted attempt id.
-            attemptId: crypto.randomUUID(),
+            attemptId:
+              state.validationAttempts.find((a) => a.scope === 'implementation' && a.result.passed)
+                ?.attemptId ??
+              state.validationAttempts[0]?.attemptId ??
+              crypto.randomUUID(),
           },
         ],
         outcome: 'pass' as const,

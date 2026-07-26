@@ -84,10 +84,28 @@ export interface ReviewerChallengePromptContract {
   readonly requiredChallengeCount: number;
   readonly requiredChallengeKind?:
     'design_challenge' | 'implementation_challenge' | 'content_challenge';
-  readonly evidenceInstructions?: readonly string[];
+  /** Canonical evidence objects the reviewer may copy into a challenge. */
+  readonly evidenceRefs?: readonly Record<string, unknown>[];
 }
 
-function renderChallengeContract(contract: ReviewerChallengePromptContract | undefined): string[] {
+function challengeOutcome(kind: ReviewerChallengePromptContract['requiredChallengeKind']): string {
+  switch (kind) {
+    case 'implementation_challenge':
+      return 'pass';
+    case 'content_challenge':
+    case 'design_challenge':
+      return 'supported';
+    case undefined:
+      return 'not_verified';
+    default:
+      return 'not_verified';
+  }
+}
+
+function renderChallengeContract(
+  contract: ReviewerChallengePromptContract | undefined,
+  obligationId: string,
+): string[] {
   if (!contract) {
     return ['- Omit the optional challenges field; no Challenge contract was supplied.'];
   }
@@ -96,12 +114,26 @@ function renderChallengeContract(contract: ReviewerChallengePromptContract | und
       '- Challenge contract: requiredChallengeCount=0. Omit the optional challenges field entirely.',
     ];
   }
+  const evidenceRefs = contract.evidenceRefs ?? [];
+  const challenge = {
+    challengeId: '<fresh UUID>',
+    obligationId,
+    scenario: '<falsification scenario>',
+    claim: '<reviewed claim>',
+    locations: ['<concrete file or artifact location>'],
+    kind: contract.requiredChallengeKind,
+    evidenceRefs,
+    outcome: challengeOutcome(contract.requiredChallengeKind),
+  };
   return [
     `- Challenge contract: return exactly ${contract.requiredChallengeCount} ${contract.requiredChallengeKind} challenge(s).`,
-    '- Each challenge must use only the host-authoritative evidence reference(s) listed below. Do not invent or alter a digest, sectionPath, or attemptId.',
-    ...(contract.evidenceInstructions ?? [
-      '- No usable evidence reference was supplied; return unable_to_review.',
-    ]),
+    '- Every challenge MUST use a fresh UUID challengeId and the exact obligationId below.',
+    '- Copy evidenceRefs exactly from the schema below. Do not invent or alter a digest, sectionPath, or attemptId.',
+    '- Omit challengeResolutionVerdicts unless the Task prompt explicitly supplies prior challenge IDs to resolve.',
+    `- Required challenge object shape: ${JSON.stringify(challenge)}`,
+    ...(evidenceRefs.length === 0
+      ? ['- No usable evidence reference was supplied; return unable_to_review.']
+      : []),
   ];
 }
 
@@ -153,7 +185,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       `${input.planVersion != null ? `, planVersion=${input.planVersion}` : ''}).`,
     '- Output ONLY the ReviewFindings JSON object as the final content of your reply:',
     '  no prose, no reasoning, and no markdown code fences before or after it.',
-    ...renderChallengeContract(input.challengeContract),
+    ...renderChallengeContract(input.challengeContract, input.obligationId),
     '',
     `Append the ${input.subjectLabel} content to review below this line:`,
   ].join('\n');

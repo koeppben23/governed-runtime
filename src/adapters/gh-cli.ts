@@ -255,3 +255,46 @@ function detectBaseBranch(branch: string, cwd?: string): DetectedBase {
       'Provide an explicit base with base=<ref>, or create/fetch a mainline branch.',
   );
 }
+
+// ─── Target-Path Resolution for Challenge Classification ─────────────────────
+
+export function loadBranchChangedFiles(
+  branch: string,
+  explicitBase?: string,
+  cwd?: string,
+): string[] {
+  try {
+    const base = resolveBranchReviewSource(branch, explicitBase, cwd);
+    const out = execFileSync(
+      'git',
+      ['diff', '--name-only', `${base.resolvedBaseSha}...${base.resolvedBranchSha}`],
+      { encoding: 'utf-8', stdio: 'pipe', timeout: 10000, cwd },
+    );
+    return out
+      .trim()
+      .split('\n')
+      .filter((p) => p.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+export function loadPrChangedFiles(prNumber: number): string[] {
+  try {
+    const out = execFileSync(
+      'gh',
+      ['pr', 'view', String(prNumber), '--json', 'files', '--jq', '.files[].path'],
+      {
+        encoding: 'utf-8',
+        stdio: 'pipe',
+        timeout: 10000,
+      },
+    );
+    return out
+      .trim()
+      .split('\n')
+      .filter((p) => p.length > 0);
+  } catch {
+    return [];
+  }
+}

@@ -384,7 +384,10 @@ describe('resume end-to-end via help.execute', () => {
   it('returns ticket and plan content with version and digest after resume', async () => {
     await hydrate.execute({}, ctx);
     await ticket.execute({ text: 'Fix the auth bug in login.ts', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix auth\n2. Add tests' }, ctx);
+    await plan.execute(
+      { planText: '## Plan\n1. Fix auth\n2. Add tests', targetPaths: ['docs/test.md'] },
+      ctx,
+    );
 
     // Re-read state to verify persistence
     const fp = await computeFingerprint(ws.tmpDir);

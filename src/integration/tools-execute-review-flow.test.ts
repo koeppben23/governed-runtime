@@ -257,7 +257,10 @@ describe('review', () => {
 
     it('requires analysis findings for content-aware review inputs', async () => {
       await hydrateSession();
-      const raw = await review.execute({ text: 'diff --git a/file.ts b/file.ts' }, ctx);
+      const raw = await review.execute(
+        { text: 'diff --git a/file.ts b/file.ts', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
       expect(result.code).toBe('CONTENT_ANALYSIS_REQUIRED');
@@ -268,7 +271,11 @@ describe('review', () => {
       // Step 1: call /review with content but no findings — creates the obligation
       // and gives us the canonical toolObligationId.
       const blockedRaw = await review.execute(
-        { inputOrigin: 'manual_text', text: 'diff --git a/file.ts b/file.ts' },
+        {
+          inputOrigin: 'manual_text',
+          text: 'diff --git a/file.ts b/file.ts',
+          targetPaths: ['docs/test.md'],
+        },
         ctx,
       );
       const blocked = parseToolResult(blockedRaw);
@@ -401,6 +408,7 @@ describe('review', () => {
         {
           inputOrigin: 'manual_text',
           text: 'diff --git a/foo.ts b/foo.ts\n+export const bar = 1;',
+          targetPaths: ['docs/test.md'],
           references: [
             {
               ref: 'https://github.com/org/repo/pull/42',

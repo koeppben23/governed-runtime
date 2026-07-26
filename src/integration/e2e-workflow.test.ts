@@ -233,7 +233,10 @@ describe('e2e-workflow', () => {
       ).resolves.toBeUndefined();
 
       // 3. Plan (Mode A: submit)
-      await callOk(plan, { planText: '## Plan\n1. Fix auth\n2. Add tests' });
+      await callOk(plan, {
+        planText: '## Plan\n1. Fix auth\n2. Add tests',
+        targetPaths: ['docs/test.md'],
+      });
       const sessDirAfterPlan = await getSessDir();
       await expect(fs.access(`${sessDirAfterPlan}/artifacts/plan.v1.md`)).resolves.toBeUndefined();
       await expect(
@@ -293,7 +296,7 @@ describe('e2e-workflow', () => {
       await callOk(ticket, { text: 'Team task', source: 'user' });
 
       // 3. Plan + self-review (team: max 3 iterations)
-      await callOk(plan, { planText: '## Plan\n1. Do things' });
+      await callOk(plan, { planText: '## Plan\n1. Do things', targetPaths: ['docs/test.md'] });
       // Approve self-review until convergence
       for (let i = 0; i < 5; i++) {
         const phase = await getPhase();
@@ -344,7 +347,7 @@ describe('e2e-workflow', () => {
     it('reject at PLAN_REVIEW restarts from TICKET', async () => {
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
       await callOk(ticket, { text: 'Task', source: 'user' });
-      await callOk(plan, { planText: '## Plan' });
+      await callOk(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
         await callOk(plan, { reviewVerdict: 'accept' });
@@ -364,7 +367,7 @@ describe('e2e-workflow', () => {
     it('changes_requested at PLAN_REVIEW returns to PLAN for revision', async () => {
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
       await callOk(ticket, { text: 'Task', source: 'user' });
-      await callOk(plan, { planText: '## Original Plan' });
+      await callOk(plan, { planText: '## Original Plan', targetPaths: ['docs/test.md'] });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
         await callOk(plan, { reviewVerdict: 'accept' });
@@ -374,7 +377,10 @@ describe('e2e-workflow', () => {
       expect(await getPhase()).toBe('PLAN');
 
       // Can submit revised plan
-      await callOk(plan, { planText: '## Revised Plan with more detail' });
+      await callOk(plan, {
+        planText: '## Revised Plan with more detail',
+        targetPaths: ['docs/test.md'],
+      });
     });
 
     it('validation failure sends back to PLAN', async () => {
@@ -390,7 +396,7 @@ describe('e2e-workflow', () => {
       // Solo workflow up to VALIDATION
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Task', source: 'user' });
-      await callOk(plan, { planText: '## Plan' });
+      await callOk(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] });
       await callOk(plan, { reviewVerdict: 'accept' });
       // With verificationCandidates, activeChecks is not empty → stops at VALIDATION
       expect(await getPhase()).toBe('VALIDATION');
@@ -412,7 +418,7 @@ describe('e2e-workflow', () => {
       expect(await getPhase()).toBe('PLAN');
 
       // Can re-plan and re-validate
-      await callOk(plan, { planText: '## Better Plan with tests' });
+      await callOk(plan, { planText: '## Better Plan with tests', targetPaths: ['docs/test.md'] });
       // #428 root cause: submitting a new plan resets stale validation evidence,
       // so VALIDATION re-entry waits for fresh checks instead of immediately
       // re-firing CHECK_FAILED → PLAN (the oscillation that drove auto-advance
@@ -435,7 +441,7 @@ describe('e2e-workflow', () => {
       // Team workflow to EVIDENCE_REVIEW
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
       await callOk(ticket, { text: 'Rework task', source: 'user' });
-      await callOk(plan, { planText: '## Plan' });
+      await callOk(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
         await callOk(plan, { reviewVerdict: 'accept' });
@@ -477,7 +483,7 @@ describe('e2e-workflow', () => {
       // Team workflow to EVIDENCE_REVIEW
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
       await callOk(ticket, { text: 'Rejected task', source: 'user' });
-      await callOk(plan, { planText: '## Original Plan' });
+      await callOk(plan, { planText: '## Original Plan', targetPaths: ['docs/test.md'] });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
         await callOk(plan, { reviewVerdict: 'accept' });
@@ -516,7 +522,7 @@ describe('e2e-workflow', () => {
     it('abort mid-workflow terminates session', async () => {
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Task', source: 'user' });
-      await callOk(plan, { planText: '## Plan' });
+      await callOk(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] });
 
       await callOk(abort_session, { reason: 'Cancel everything' });
       expect(await getPhase()).toBe('COMPLETE');
@@ -532,7 +538,7 @@ describe('e2e-workflow', () => {
       // Full solo workflow to COMPLETE
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Task', source: 'user' });
-      await callOk(plan, { planText: '## Plan' });
+      await callOk(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] });
       await callOk(plan, { reviewVerdict: 'accept' });
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
       await passValidation();
@@ -558,7 +564,7 @@ describe('e2e-workflow', () => {
       await callOk(ticket, { text: 'Task', source: 'user' });
       phases.push(await getPhase());
 
-      await callOk(plan, { planText: '## Plan' });
+      await callOk(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] });
       phases.push(await getPhase()); // After plan submit
 
       await callOk(plan, { reviewVerdict: 'accept' });
@@ -626,7 +632,10 @@ describe('e2e-workflow', () => {
         expect(resolution.reason).toBe('ci_context_missing');
 
         await callOk(ticket, { text: 'CI-degrade task', source: 'user' });
-        await callOk(plan, { planText: '## Plan\nHuman gate expected' });
+        await callOk(plan, {
+          planText: '## Plan\nHuman gate expected',
+          targetPaths: ['docs/test.md'],
+        });
         await callOk(plan, { reviewVerdict: 'accept' });
         expect(await getPhase()).toBe('PLAN_REVIEW');
       } finally {
@@ -646,7 +655,10 @@ describe('e2e-workflow', () => {
         expect(resolution.effectiveGateBehavior).toBe('auto_approve');
 
         await callOk(ticket, { text: 'CI auto gate', source: 'user' });
-        await callOk(plan, { planText: '## Plan\nAuto gate expected' });
+        await callOk(plan, {
+          planText: '## Plan\nAuto gate expected',
+          targetPaths: ['docs/test.md'],
+        });
         await callOk(plan, { reviewVerdict: 'accept' });
         expect(await getPhase()).toBe('VALIDATION');
       } finally {
@@ -704,7 +716,7 @@ describe('e2e-workflow', () => {
       // Full solo workflow
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Local repo task', source: 'user' });
-      await callOk(plan, { planText: '## Local Plan' });
+      await callOk(plan, { planText: '## Local Plan', targetPaths: ['docs/test.md'] });
       await callOk(plan, { reviewVerdict: 'accept' });
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
       await passValidation();
@@ -722,7 +734,7 @@ describe('e2e-workflow', () => {
       // Run through complete solo workflow
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Audit test', source: 'user' });
-      await callOk(plan, { planText: '## Plan' });
+      await callOk(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] });
       await callOk(plan, { reviewVerdict: 'accept' });
       // Discovery detects TypeScript → activeChecks=['typecheck'] → VALIDATION
       await passValidation();
@@ -749,13 +761,14 @@ describe('e2e-workflow', () => {
       await callOk(ticket, { text: 'Iterative planning task', source: 'user' });
 
       // Submit initial plan
-      await callOk(plan, { planText: '## Initial Plan\nToo vague' });
+      await callOk(plan, { planText: '## Initial Plan\nToo vague', targetPaths: ['docs/test.md'] });
       expect(await getPhase()).toBe('PLAN');
 
       // Self-review: request changes with revised plan
       await callOk(plan, {
         reviewVerdict: 'changes_requested',
         planText: '## Revised Plan\n1. Concrete step A\n2. Concrete step B',
+        targetPaths: ['docs/test.md'],
       });
 
       // Now approve the revised plan
@@ -805,7 +818,11 @@ describe('e2e-workflow', () => {
       // 2. Submit ADR (Mode A: initial submission)
       const adrText =
         '## Context\nWe need a database.\n\n## Decision\nUse PostgreSQL.\n\n## Consequences\nMust maintain DB infra.';
-      await callOk(architecture, { title: 'Use PostgreSQL', adrText });
+      await callOk(architecture, {
+        title: 'Use PostgreSQL',
+        adrText,
+        targetPaths: ['docs/test.md'],
+      });
       expect(await getPhase()).toBe('ARCHITECTURE');
 
       // 3. Self-review: approve (solo: maxSelfReviewIterations=1, so converges immediately)
@@ -832,7 +849,11 @@ describe('e2e-workflow', () => {
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       const adrText =
         '## Context\nAuth model.\n\n## Decision\nUse OAuth2.\n\n## Consequences\nNeed IdP integration.';
-      await callOk(architecture, { title: 'OAuth2 for auth', adrText });
+      await callOk(architecture, {
+        title: 'OAuth2 for auth',
+        adrText,
+        targetPaths: ['docs/test.md'],
+      });
       await callOk(architecture, { reviewVerdict: 'accept' });
 
       const result = parseToolResult(await status.execute({}, ctx));
@@ -854,7 +875,11 @@ describe('e2e-workflow', () => {
       // 2. Submit ADR
       const adrText =
         '## Context\nMicroservices comm.\n\n## Decision\nUse gRPC.\n\n## Consequences\nNeed proto files.';
-      await callOk(architecture, { title: 'gRPC for services', adrText });
+      await callOk(architecture, {
+        title: 'gRPC for services',
+        adrText,
+        targetPaths: ['docs/test.md'],
+      });
 
       // 3. Self-review loop to ARCH_REVIEW
       for (let i = 0; i < 5; i++) {
@@ -877,7 +902,11 @@ describe('e2e-workflow', () => {
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
       const adrText =
         '## Context\nLogging.\n\n## Decision\nUse ELK.\n\n## Consequences\nComplex setup.';
-      await callOk(architecture, { title: 'ELK for logging', adrText });
+      await callOk(architecture, {
+        title: 'ELK for logging',
+        adrText,
+        targetPaths: ['docs/test.md'],
+      });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'ARCH_REVIEW') break;
         await callOk(architecture, { reviewVerdict: 'accept' });
@@ -899,7 +928,7 @@ describe('e2e-workflow', () => {
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
       const adrText =
         '## Context\nAPI.\n\n## Decision\nUse REST.\n\n## Consequences\nNeed OpenAPI specs.';
-      await callOk(architecture, { title: 'REST APIs', adrText });
+      await callOk(architecture, { title: 'REST APIs', adrText, targetPaths: ['docs/test.md'] });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'ARCH_REVIEW') break;
         await callOk(architecture, { reviewVerdict: 'accept' });
@@ -913,7 +942,11 @@ describe('e2e-workflow', () => {
       // Re-submit revised ADR (Mode A — selfReview was cleared, must re-initialize)
       const revisedAdr =
         '## Context\nAPI.\n\n## Decision\nUse REST.\n\n## Consequences\nNeed OpenAPI specs. Must version endpoints.';
-      await callOk(architecture, { title: 'REST APIs', adrText: revisedAdr });
+      await callOk(architecture, {
+        title: 'REST APIs',
+        adrText: revisedAdr,
+        targetPaths: ['docs/test.md'],
+      });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'ARCH_REVIEW') break;
         await callOk(architecture, { reviewVerdict: 'accept' });
@@ -929,7 +962,10 @@ describe('e2e-workflow', () => {
 
       await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
       await callOk(ticket, { text: 'Regulated four-eyes test', source: 'user' });
-      await callOk(plan, { planText: '## Regulated Plan\n\nThis plan requires external review.' });
+      await callOk(plan, {
+        planText: '## Regulated Plan\n\nThis plan requires external review.',
+        targetPaths: ['docs/test.md'],
+      });
 
       // Drive self-review to convergence
       for (let i = 0; i < 5; i++) {
@@ -965,7 +1001,7 @@ describe('e2e-workflow', () => {
     it('regulated mode allows changes_requested by same actor at PLAN_REVIEW', async () => {
       await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
       await callOk(ticket, { text: 'Regulated changes test', source: 'user' });
-      await callOk(plan, { planText: '## Plan needing changes' });
+      await callOk(plan, { planText: '## Plan needing changes', targetPaths: ['docs/test.md'] });
 
       // Drive to PLAN_REVIEW
       for (let i = 0; i < 5; i++) {
@@ -992,7 +1028,10 @@ describe('e2e-workflow', () => {
     it('regulated mode allows reject by same actor at PLAN_REVIEW', async () => {
       await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
       await callOk(ticket, { text: 'Regulated reject test', source: 'user' });
-      await callOk(plan, { planText: '## Plan that should be rejected' });
+      await callOk(plan, {
+        planText: '## Plan that should be rejected',
+        targetPaths: ['docs/test.md'],
+      });
 
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
@@ -1017,7 +1056,7 @@ describe('e2e-workflow', () => {
 
       await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
       await callOk(ticket, { text: 'Unknown actor test', source: 'user' });
-      await callOk(plan, { planText: '## Plan' });
+      await callOk(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] });
 
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
@@ -1041,7 +1080,7 @@ describe('e2e-workflow', () => {
       // Team workflow to EVIDENCE_REVIEW, then reject, then complete from scratch
       await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
       await callOk(ticket, { text: 'First attempt', source: 'user' });
-      await callOk(plan, { planText: '## Bad Plan' });
+      await callOk(plan, { planText: '## Bad Plan', targetPaths: ['docs/test.md'] });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
         await callOk(plan, { reviewVerdict: 'accept' });
@@ -1062,7 +1101,7 @@ describe('e2e-workflow', () => {
 
       // Full re-traversal with new ticket
       await callOk(ticket, { text: 'Second attempt — better approach', source: 'user' });
-      await callOk(plan, { planText: '## Better Plan' });
+      await callOk(plan, { planText: '## Better Plan', targetPaths: ['docs/test.md'] });
       for (let i = 0; i < 5; i++) {
         if ((await getPhase()) === 'PLAN_REVIEW') break;
         await callOk(plan, { reviewVerdict: 'accept' });
@@ -1094,7 +1133,10 @@ describe('e2e-workflow', () => {
       const start = Date.now();
       await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
       await callOk(ticket, { text: 'Perf test', source: 'user' });
-      await callOk(plan, { planText: '## Plan\nSimple implementation' });
+      await callOk(plan, {
+        planText: '## Plan\nSimple implementation',
+        targetPaths: ['docs/test.md'],
+      });
       await callOk(plan, { reviewVerdict: 'accept' });
       // Pass validation
       await passValidation();
@@ -1112,7 +1154,7 @@ describe('e2e-workflow', () => {
         const ic = createToolContext({ worktree: ws.tmpDir, directory: ws.tmpDir });
         await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' }, ic);
         await callOk(ticket, { text: `Task ${i}`, source: 'user' }, ic);
-        await callOk(plan, { planText: '## Plan' }, ic);
+        await callOk(plan, { planText: '## Plan', targetPaths: ['docs/test.md'] }, ic);
         await callOk(plan, { reviewVerdict: 'accept' }, ic);
         // Pass validation
         await passValidation(ic);

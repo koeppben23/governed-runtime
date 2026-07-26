@@ -225,6 +225,7 @@ export function validateReviewFindings(
 
   if (obligation?.requiredChallengeCount !== undefined && obligation.requiredChallengeKind) {
     const challengeConsistency = validateChallengeConsistency({
+      overallVerdict: findings.overallVerdict,
       requiredChallengeCount: obligation.requiredChallengeCount,
       requiredChallengeKind: obligation.requiredChallengeKind,
       challenges: findings.challenges,
@@ -521,6 +522,7 @@ interface HostTaskResolutionContext {
     readonly sessionId: string;
     readonly reviewHostPlatform?: 'opencode' | 'claude-code' | 'codex' | 'unknown';
     readonly unresolvedImplementationChallengeIds?: readonly string[];
+    readonly allowedChallengeEvidenceRefs?: readonly unknown[];
   };
 }
 
@@ -558,6 +560,7 @@ export function resolveHostTaskEffectiveFindings(
       ctx.state.assurance,
       ctx.pendingObligation,
       ctx.state.unresolvedImplementationChallengeIds,
+      ctx.state.allowedChallengeEvidenceRefs,
     );
     if (resolved.kind === 'resolved') {
       return {

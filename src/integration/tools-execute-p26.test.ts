@@ -389,7 +389,7 @@ describe('P26: regulated archive completion', () => {
       // Use team workflow directly (no regulated patch)
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Team task', source: 'user' }, ctx);
-      await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));
         if (s.phase === 'PLAN_REVIEW') break;
@@ -440,7 +440,7 @@ describe('P26: regulated archive completion', () => {
     it('solo + completion → no archiveStatus', async () => {
       // Solo auto-approves at gates — simple workflow
       await hydrateAndTicket();
-      await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Fix auth', targetPaths: ['docs/test.md'] }, ctx);
       await executeWithStrictReview(plan, { reviewVerdict: 'accept' });
       // Discovery detects TypeScript → activeChecks=['typecheck'] → pass via run_check
       {

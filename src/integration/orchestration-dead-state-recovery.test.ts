@@ -144,6 +144,7 @@ async function setupPlanDeadState(blockedCount = 1): Promise<void> {
     {
       planText:
         '## Objective\nTest\n## Approach\nTest\n## Steps\n1. test\n## Files to Modify\ntest.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test',
+      targetPaths: ['docs/test.md'],
     },
     ctx,
   );
@@ -179,6 +180,7 @@ async function setupImplementDeadState(blockedCount = 1): Promise<void> {
     {
       planText:
         '## Objective\nTest\n## Approach\nTest\n## Steps\n1. test\n## Files to Modify\ntest.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test',
+      targetPaths: ['docs/test.md'],
     },
     ctx,
   );
@@ -272,6 +274,7 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
         {
           planText:
             '## Objective\nRetry\n## Approach\nRetry\n## Steps\n1. retry\n## Files to Modify\ntest.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test',
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );
@@ -290,6 +293,7 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
         {
           planText:
             '## Objective\nRetry\n## Approach\nRetry\n## Steps\n1. retry\n## Files to Modify\ntest.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test',
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );
@@ -311,6 +315,7 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
         {
           planText:
             '## Objective\nRetry\n## Approach\nRetry\n## Steps\n1. retry\n## Files to Modify\ntest.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test',
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );
@@ -330,6 +335,7 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
         {
           planText:
             '## Objective\nTest\n## Approach\nTest\n## Steps\n1. test\n## Files to Modify\ntest.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test',
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );
@@ -346,6 +352,7 @@ describe('plan — dead-state recovery (Fix 2a)', () => {
         {
           planText:
             '## Objective\nNew\n## Approach\nNew\n## Steps\n1. new\n## Files to Modify\nnew.ts\n## Edge Cases\n1. none\n## Validation Criteria\n1. pass\n## Verification Plan\n1. test',
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );
@@ -415,6 +422,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         {
           title: 'Test Decision Retry',
           adrText: '## Context\nRetry\n## Decision\nRetry\n## Consequences\nRetry',
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );
@@ -434,6 +442,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         {
           title: 'Test Decision Retry',
           adrText: '## Context\nRetry\n## Decision\nRetry\n## Consequences\nRetry',
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );
@@ -466,6 +475,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         {
           title: 'Another Decision',
           adrText: '## Context\nNew\n## Decision\nNew\n## Consequences\nNew',
+          targetPaths: ['docs/test.md'],
         },
         ctx,
       );

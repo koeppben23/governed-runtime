@@ -51,6 +51,7 @@ import {
   type ArchitectureSession,
   buildArchitectureReviewInstruction,
 } from './architecture-shared.js';
+import { resolveChallengeClassificationEvidence } from './review-obligation-classification.js';
 
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
@@ -453,11 +454,41 @@ async function attachReviewCard(input: {
   if (artifactErr) resp.artifactWarning = artifactErr;
 }
 
+function findPriorArchTargetPaths(
+  assurance: NonNullable<SessionState['reviewAssurance']>,
+): string[] | undefined {
+  const obligations = [...assurance.obligations].reverse();
+  const lastArch = obligations.find((o) => o.obligationType === 'architecture');
+  const paths = lastArch?.metadata?.targetPaths;
+  if (!Array.isArray(paths)) return undefined;
+  const stringPaths: string[] = paths.filter((p: unknown): p is string => typeof p === 'string');
+  return stringPaths.length === paths.length ? stringPaths : undefined;
+}
+
 async function persistAndFormatNonConvergedReview(
   input: ReviewResultContext,
   verdict: LoopVerdict,
 ): Promise<string> {
   const { session, review, revision, advanced, iteration } = input;
+  const priorTargetPaths = findPriorArchTargetPaths(
+    ensureReviewAssurance(advanced.state.reviewAssurance),
+  );
+  const classification = review.subagentEnabled
+    ? await resolveChallengeClassificationEvidence(advanced.state, session.worktree, {
+        targetPaths: priorTargetPaths,
+      })
+    : { kind: 'not_required' as const };
+  if (classification.kind === 'unavailable') {
+    return formatBlocked('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {
+      reason: classification.reason,
+    });
+  }
+  const resolvedTargetPaths =
+    classification.kind === 'available' ? [...classification.changedFiles] : undefined;
+  const metadata: Record<string, unknown> = {};
+  if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
+    metadata.targetPaths = resolvedTargetPaths;
+  }
   const nextObligation = review.subagentEnabled
     ? createReviewObligation({
         obligationType: 'architecture',
@@ -467,6 +498,8 @@ async function persistAndFormatNonConvergedReview(
         reviewProfile: resolveFrozenReviewProfile(advanced.state.policySnapshot),
         profileSource: 'policy_default',
         policySnapshot: advanced.state.policySnapshot,
+        changedFiles: resolvedTargetPaths,
+        metadata,
       })
     : null;
   const stateToPersist = nextObligation

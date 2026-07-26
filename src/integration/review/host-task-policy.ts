@@ -231,19 +231,17 @@ function serializeDesignEvidence(input: {
   artifactKind: 'plan' | 'adr';
   artifactDigest: string;
   markdown: string;
-}): string[] {
-  return indexMarkdownSections(input.markdown).map((section) =>
-    JSON.stringify({
-      kind: 'plan_adr_section',
-      artifactKind: input.artifactKind,
-      artifactDigest: input.artifactDigest,
-      sectionPath: section.sectionPath,
-      excerptDigest: section.excerptDigest,
-    }),
-  );
+}): Record<string, unknown>[] {
+  return indexMarkdownSections(input.markdown).map((section) => ({
+    kind: 'plan_adr_section',
+    artifactKind: input.artifactKind,
+    artifactDigest: input.artifactDigest,
+    sectionPath: section.sectionPath,
+    excerptDigest: section.excerptDigest,
+  }));
 }
 
-function planChallengeEvidence(state: SessionState): string[] | undefined {
+function planChallengeEvidence(state: SessionState): Record<string, unknown>[] | undefined {
   const plan = state.plan?.current;
   return plan
     ? serializeDesignEvidence({
@@ -254,7 +252,7 @@ function planChallengeEvidence(state: SessionState): string[] | undefined {
     : undefined;
 }
 
-function architectureChallengeEvidence(state: SessionState): string[] | undefined {
+function architectureChallengeEvidence(state: SessionState): Record<string, unknown>[] | undefined {
   const adr = state.architecture;
   return adr
     ? serializeDesignEvidence({
@@ -265,7 +263,9 @@ function architectureChallengeEvidence(state: SessionState): string[] | undefine
     : undefined;
 }
 
-function implementationChallengeEvidence(state: SessionState): string[] | undefined {
+function implementationChallengeEvidence(
+  state: SessionState,
+): Record<string, unknown>[] | undefined {
   const implementationDigest = state.implementation?.digest;
   if (!implementationDigest) return undefined;
   const successfulAttempts = state.validationAttempts.filter(
@@ -276,27 +276,28 @@ function implementationChallengeEvidence(state: SessionState): string[] | undefi
   );
   if (successfulAttempts.length === 0) return undefined;
   return [
-    JSON.stringify({ kind: 'implementation', implementationDigest }),
-    ...successfulAttempts.map((attempt) =>
-      JSON.stringify({ kind: 'validation_attempt', attemptId: attempt.attemptId }),
-    ),
+    { kind: 'implementation', implementationDigest },
+    ...successfulAttempts.map((attempt) => ({
+      kind: 'validation_attempt',
+      attemptId: attempt.attemptId,
+    })),
   ];
 }
 
 function contentChallengeEvidence(
   _state: SessionState,
   obligation: ReviewObligation,
-): string[] | undefined {
+): Record<string, unknown>[] | undefined {
   const digest =
     typeof obligation.metadata?.fingerprint === 'string'
       ? obligation.metadata.fingerprint
       : undefined;
-  return digest ? [JSON.stringify({ kind: 'content', digest })] : undefined;
+  return digest ? [{ kind: 'content', digest }] : undefined;
 }
 
 const CHALLENGE_EVIDENCE_BUILDERS: Record<
   ReviewObligation['obligationType'],
-  (state: SessionState, obligation: ReviewObligation) => string[] | undefined
+  (state: SessionState, obligation: ReviewObligation) => Record<string, unknown>[] | undefined
 > = {
   plan: (state) => planChallengeEvidence(state),
   architecture: (state) => architectureChallengeEvidence(state),
@@ -314,11 +315,8 @@ export function buildHostTaskChallengeContract(
     requiredChallengeKind: obligation.requiredChallengeKind,
   };
   if (obligation.requiredChallengeCount === 0) return base;
-  const evidenceInstructions = CHALLENGE_EVIDENCE_BUILDERS[obligation.obligationType](
-    state,
-    obligation,
-  );
-  return evidenceInstructions ? { ...base, evidenceInstructions } : base;
+  const evidenceRefs = CHALLENGE_EVIDENCE_BUILDERS[obligation.obligationType](state, obligation);
+  return evidenceRefs ? { ...base, evidenceRefs } : base;
 }
 
 export async function handleHostTaskPolicy(

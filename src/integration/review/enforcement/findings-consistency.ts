@@ -25,6 +25,8 @@
  * blocked format.
  */
 
+import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
+
 /** Boundary-neutral result of the canonical consistency check. */
 export type ReviewFindingsConsistencyResult =
   | { readonly ok: true }
@@ -54,16 +56,20 @@ export interface ReviewFindingsConsistencyInput {
  * can be used at schema, SDK, and host-capture boundaries without dependencies.
  */
 export interface ChallengeConsistencyInput {
+  readonly overallVerdict: 'accept' | 'changes_requested' | 'unable_to_review';
   readonly requiredChallengeCount: number;
   readonly requiredChallengeKind:
     'design_challenge' | 'implementation_challenge' | 'content_challenge';
   readonly challenges:
     | readonly {
+        readonly obligationId?: string;
         readonly kind: string;
         readonly evidenceRefs?: readonly unknown[];
         readonly outcome?: string;
       }[]
     | undefined;
+  readonly expectedObligationId?: string;
+  readonly allowedEvidenceRefs?: readonly unknown[];
   readonly unresolvedImplementationChallengeIds?: readonly string[];
   readonly resolutionVerdicts?: readonly {
     readonly challengeId: string;
@@ -75,7 +81,79 @@ export type ChallengeConsistencyResult =
   | { readonly ok: true }
   | { readonly ok: false; readonly code: string; readonly details: Record<string, unknown> };
 
-// eslint-disable-next-line complexity -- explicit fail-closed challenge matrix branches
+type Challenge = NonNullable<ChallengeConsistencyInput['challenges']>[number];
+
+// eslint-disable-next-line complexity -- explicit fail-closed challenge checks
+function validateChallenge(
+  input: ChallengeConsistencyInput,
+  challenge: Challenge,
+  allowedRefs: ReadonlySet<string> | undefined,
+): ChallengeConsistencyResult {
+  if (
+    input.expectedObligationId !== undefined &&
+    challenge.obligationId !== input.expectedObligationId
+  ) {
+    return {
+      ok: false,
+      code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+      details: { kind: challenge.kind, reason: 'obligation_mismatch' },
+    };
+  }
+  if (input.requiredChallengeCount > 0 && challenge.kind !== input.requiredChallengeKind) {
+    return {
+      ok: false,
+      code: 'SUBAGENT_CHALLENGE_KIND_INCOHERENT',
+      details: { required: input.requiredChallengeKind, actual: challenge.kind },
+    };
+  }
+  if (!challenge.evidenceRefs || challenge.evidenceRefs.length === 0) {
+    return {
+      ok: false,
+      code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+      details: { kind: challenge.kind },
+    };
+  }
+  if (
+    allowedRefs &&
+    challenge.evidenceRefs.some((ref) => !allowedRefs.has(canonicalJsonStringify(ref)))
+  ) {
+    return {
+      ok: false,
+      code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+      details: { kind: challenge.kind, reason: 'evidence_mismatch' },
+    };
+  }
+  if (
+    challenge.kind === 'implementation_challenge' &&
+    challenge.outcome === 'pass' &&
+    !challenge.evidenceRefs.some(
+      (reference) =>
+        typeof reference === 'object' &&
+        reference !== null &&
+        'kind' in reference &&
+        reference.kind === 'validation_attempt',
+    )
+  ) {
+    return {
+      ok: false,
+      code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+      details: { kind: challenge.kind, required: 'validation_attempt' },
+    };
+  }
+  if (
+    challenge.kind === 'implementation_challenge' &&
+    input.overallVerdict === 'accept' &&
+    (challenge.outcome === 'fail' || challenge.outcome === 'not_verified')
+  ) {
+    return {
+      ok: false,
+      code: 'SUBAGENT_IMPLEMENTATION_CHALLENGE_UNRESOLVED',
+      details: { outcome: challenge.outcome },
+    };
+  }
+  return { ok: true };
+}
+
 export function validateChallengeConsistency(
   input: ChallengeConsistencyInput,
 ): ChallengeConsistencyResult {
@@ -87,48 +165,12 @@ export function validateChallengeConsistency(
       details: { required: input.requiredChallengeCount, actual: challenges.length },
     };
   }
+  const allowedRefs = input.allowedEvidenceRefs
+    ? new Set(input.allowedEvidenceRefs.map(canonicalJsonStringify))
+    : undefined;
   for (const challenge of challenges) {
-    if (input.requiredChallengeCount > 0 && challenge.kind !== input.requiredChallengeKind) {
-      return {
-        ok: false,
-        code: 'SUBAGENT_CHALLENGE_KIND_INCOHERENT',
-        details: { required: input.requiredChallengeKind, actual: challenge.kind },
-      };
-    }
-    if (!challenge.evidenceRefs || challenge.evidenceRefs.length === 0) {
-      return {
-        ok: false,
-        code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
-        details: { kind: challenge.kind },
-      };
-    }
-    if (
-      challenge.kind === 'implementation_challenge' &&
-      challenge.outcome === 'pass' &&
-      !challenge.evidenceRefs.some(
-        (reference) =>
-          typeof reference === 'object' &&
-          reference !== null &&
-          'kind' in reference &&
-          reference.kind === 'validation_attempt',
-      )
-    ) {
-      return {
-        ok: false,
-        code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
-        details: { kind: challenge.kind, required: 'validation_attempt' },
-      };
-    }
-    if (
-      challenge.kind === 'implementation_challenge' &&
-      (challenge.outcome === 'fail' || challenge.outcome === 'not_verified')
-    ) {
-      return {
-        ok: false,
-        code: 'SUBAGENT_IMPLEMENTATION_CHALLENGE_UNRESOLVED',
-        details: { outcome: challenge.outcome },
-      };
-    }
+    const result = validateChallenge(input, challenge, allowedRefs);
+    if (!result.ok) return result;
   }
   const verdicts = new Map(
     (input.resolutionVerdicts ?? []).map((item) => [item.challengeId, item.verdict]),

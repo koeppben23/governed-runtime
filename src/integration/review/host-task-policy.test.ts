@@ -36,7 +36,7 @@ function implementationAttempt(overrides: Record<string, unknown> = {}) {
 }
 
 function evidence(state = makeState('IMPL_REVIEW', { implementation: IMPL_EVIDENCE })) {
-  return buildHostTaskChallengeContract(state, obligation())?.evidenceInstructions;
+  return buildHostTaskChallengeContract(state, obligation())?.evidenceRefs;
 }
 
 describe('implementation host-task challenge evidence', () => {
@@ -49,11 +49,11 @@ describe('implementation host-task challenge evidence', () => {
     );
 
     expect(instructions).toEqual([
-      JSON.stringify({ kind: 'implementation', implementationDigest: IMPLEMENTATION_DIGEST }),
-      JSON.stringify({
+      { kind: 'implementation', implementationDigest: IMPLEMENTATION_DIGEST },
+      {
         kind: 'validation_attempt',
         attemptId: '22222222-2222-4222-8222-222222222222',
-      }),
+      },
     ]);
   });
 

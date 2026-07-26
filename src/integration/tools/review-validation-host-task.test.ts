@@ -119,6 +119,47 @@ describe('resolveHostTaskFindings', () => {
     expect(result.findings.overallVerdict).toBe('changes_requested');
   });
 
+  it('HAPPY: resolves an implementation challenge bound to the active obligation and evidence', () => {
+    const evidenceRefs = [
+      { kind: 'implementation', implementationDigest: 'implementation-digest' },
+      { kind: 'validation_attempt', attemptId: '33333333-3333-4333-8333-333333333333' },
+    ];
+    const rawFindings = {
+      ...validRawFindings,
+      challenges: [
+        {
+          challengeId: '44444444-4444-4444-8444-444444444444',
+          obligationId: OBLIGATION_ID,
+          scenario: 'Exercise the missing-resource update path.',
+          claim: 'The implementation returns the documented missing-resource response.',
+          locations: ['src/service.ts:10'],
+          kind: 'implementation_challenge',
+          evidenceRefs,
+          outcome: 'pass',
+        },
+      ],
+    };
+    const obligation = makeObligation({
+      obligationType: 'implement',
+      requiredChallengeCount: 1,
+      requiredChallengeKind: 'implementation_challenge',
+    });
+    const assurance = {
+      obligations: [obligation],
+      invocations: [
+        makeHostTaskInvocation({
+          obligationType: 'implement',
+          capturedRawFindings: rawFindings,
+          findingsHash: hashFindings(rawFindings),
+        }),
+      ],
+    };
+
+    expect(resolveHostTaskFindings(assurance, obligation, undefined, evidenceRefs).kind).toBe(
+      'resolved',
+    );
+  });
+
   // ── F12: verdict/blocking-issues coherence at the host-task boundary ────
   // Reproduces the demo defect: host-captured findings with overallVerdict
   // 'accept' AND a non-empty blockingIssues array. Verdict-only submission in

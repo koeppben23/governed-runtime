@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => {
     writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<void>>(
       async () => undefined,
     ),
+    changedFiles: vi.fn(async () => [] as string[]),
   };
 });
 
@@ -102,6 +103,10 @@ vi.mock('../../rails/types.js', () => ({
   autoAdvance: mocks.autoAdvance,
 }));
 
+vi.mock('../../adapters/git.js', () => ({
+  changedFiles: mocks.changedFiles,
+}));
+
 vi.mock('../../machine/evaluate.js', () => ({
   evaluate: () => ({ kind: 'pending' }),
 }));
@@ -141,6 +146,16 @@ describe('integration/tools/architecture (wrapper)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.changedFiles.mockResolvedValue([]);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
+      reviewInvocationPolicy: 'self',
+      selfReview: {
+        ...TEAM_POLICY.selfReview,
+        subagentEnabled: false,
+        strictEnforcement: false,
+      },
+    });
     mocks.state = makeState('READY');
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.isCommandAllowed.mockReturnValue(true);
@@ -215,6 +230,33 @@ describe('integration/tools/architecture (wrapper)', () => {
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCHITECTURE');
     expect(mocks.writeStateWithArtifacts).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks Mode A obligation creation when challenge-path evidence is unavailable', async () => {
+    const policySnapshot = {
+      ...makeState('READY').policySnapshot,
+      challengePolicy: TEAM_POLICY.challengePolicy,
+    };
+    mocks.state = makeState('READY', { policySnapshot });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.executeArchitecture.mockReturnValue({
+      kind: 'ok',
+      state: makeState('ARCHITECTURE', { policySnapshot }),
+      transitions: [],
+    });
+    mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
+      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
+    });
+    mocks.changedFiles.mockRejectedValueOnce(new Error('git unavailable'));
+
+    const { architecture } = await import('./architecture.js');
+    const parsed = JSON.parse(
+      String(await architecture.execute({ title: 'x', adrText: 'y' }, {} as never)),
+    );
+
+    expect(parsed.code).toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
+    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
   });
 
   it('blocks mixed ADR submission and review verdict', async () => {

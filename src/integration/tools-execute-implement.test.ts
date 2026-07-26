@@ -314,7 +314,7 @@ describe('implement', () => {
   /** Helper: reach IMPLEMENTATION phase via solo workflow. */
   async function reachImplementation(): Promise<void> {
     await hydrateAndTicket();
-    await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix auth', targetPaths: ['docs/test.md'] }, ctx);
     const planReviewFindings = await fulfillReview('plan', 0, 'accept');
     await plan.execute({ reviewVerdict: 'accept', reviewFindings: planReviewFindings }, ctx);
     // Solo: PLAN_REVIEW auto-approves → VALIDATION

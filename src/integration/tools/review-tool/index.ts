@@ -145,13 +145,10 @@ async function prepareReviewExecution(
   const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec);
   if (hostTaskVerdict) return hostTaskVerdict;
 
-  const missingResult = await ensureMissingAnalysisObligation(
-    sessDir,
-    state,
-    exec.args,
-    exec.now,
+  const missingResult = await ensureMissingAnalysisObligation(sessDir, state, exec.args, exec.now, {
+    worktree: exec.context.worktree,
     resolvedSource,
-  );
+  });
 
   let refInput = buildReviewReferenceInput(exec.args);
   if (resolvedSource) {
@@ -188,7 +185,13 @@ async function finishFindingsSubmission(
   exec: ReviewExecutionContext,
   refInput: ReviewReferenceInput | undefined,
 ): Promise<ReviewPreparation | string> {
-  const resolved = await resolveSubmittedReviewObligation(sessDir, state, exec.args, exec.now);
+  const resolved = await resolveSubmittedReviewObligation(
+    sessDir,
+    state,
+    exec.args,
+    exec.now,
+    exec.context.worktree,
+  );
   if (resolved.blocked || !resolved.obligation) {
     return resolved.blocked ?? formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {});
   }
@@ -546,6 +549,13 @@ export const review: ToolDefinition = {
         'Must include reviewMode="subagent", reviewedBy, and valid attestation with ' +
         'mandateDigest and criteriaVersion.',
     ),
+    targetPaths: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'File paths touched by this review. Required for risk classification when ' +
+          'challengePolicy is active and no branch/PR auto-resolution is available (e.g. text or URL review).',
+      ),
   },
   async execute(args: ReviewToolArgs, context) {
     try {

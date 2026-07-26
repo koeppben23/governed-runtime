@@ -63,4 +63,5 @@ export type ReviewToolArgs = {
   reviewObligationId?: string;
   reviewVerdict?: 'accept' | 'changes_requested';
   reviewFindings?: ReviewFindings;
+  targetPaths?: string[];
 };

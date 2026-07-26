@@ -455,6 +455,30 @@ describe('BUG-17: plan evidence-first resolution', () => {
     expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
   });
 
+  it('blocks initial obligation creation when challenge-path evidence is unavailable', async () => {
+    mocks.state = makeState('TICKET', {
+      ticket: TICKET,
+      policySnapshot: {
+        ...makeState('TICKET').policySnapshot,
+        challengePolicy: TEAM_POLICY.challengePolicy,
+      },
+    });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+    });
+    mocks.changedFiles.mockRejectedValueOnce(new Error('git unavailable'));
+
+    const { plan } = await import('./plan.js');
+    const parsed = JSON.parse(
+      String(await plan.execute({ planText: '## Plan\n1. Fix' }, {} as never)),
+    );
+
+    expect(parsed.code).toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
+    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
+  });
+
   it('EDGE: host_task_required + agent submits INVALID reviewFindings → still succeeds (ignored)', async () => {
     // BUG-17: In host_task mode, agent-submitted findings are completely ignored.
     // Even findings with wrong iteration/planVersion don't block because evidence is SSOT.

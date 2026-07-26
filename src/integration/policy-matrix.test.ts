@@ -177,7 +177,11 @@ async function hydrateMode(mode: Mode, ctx: TestToolContext): Promise<void> {
 async function drivePastPlan(mode: Mode, ctx: TestToolContext): Promise<string> {
   await hydrateMode(mode, ctx);
   await callOk(ticket, { text: `${mode} matrix task`, source: 'user' }, ctx);
-  await callOk(plan, { planText: '## Plan\nTest matrix policy behavior.' }, ctx);
+  await callOk(
+    plan,
+    { planText: '## Plan\nTest matrix policy behavior.', targetPaths: ['docs/test.md'] },
+    ctx,
+  );
   for (let i = 0; i < 5; i++) {
     const phase = await currentPhase(ctx);
     if (phase === 'PLAN_REVIEW' || phase === 'VALIDATION') return phase;

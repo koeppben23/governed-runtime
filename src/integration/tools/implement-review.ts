@@ -83,6 +83,7 @@ import {
 } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
+import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import { nextImplementationReviewIteration } from './implement-shared.js';
 function findPendingImplObligation(state: SessionState) {
@@ -105,6 +106,7 @@ function resolveImplementationFindings(
   planVersion: number,
 ) {
   const pendingObligation = findPendingImplObligation(input.state);
+  const challengeContract = buildHostTaskChallengeContract(input.state, pendingObligation);
   const resolved = resolveHostTaskEffectiveFindings({
     pendingObligation,
     expected: { obligationType: 'implement', iteration, planVersion },
@@ -126,6 +128,7 @@ function resolveImplementationFindings(
       unresolvedImplementationChallengeIds: input.state.challengeResolutions.map(
         (resolution) => resolution.challengeId,
       ),
+      allowedChallengeEvidenceRefs: challengeContract?.evidenceRefs,
     },
   });
   return { pendingObligation, resolved };

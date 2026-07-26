@@ -76,6 +76,7 @@ export function resolveHostTaskFindings(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation | null,
   unresolvedImplementationChallengeIds?: readonly string[],
+  allowedChallengeEvidenceRefs?: readonly unknown[],
 ): HostTaskFindingsResolution {
   if (!obligation || !assurance) return { kind: 'not_found' };
 
@@ -130,9 +131,12 @@ export function resolveHostTaskFindings(
       }
       if (obligation.requiredChallengeCount !== undefined && obligation.requiredChallengeKind) {
         const challengeConsistency = validateChallengeConsistency({
+          overallVerdict: parsed.data.overallVerdict,
           requiredChallengeCount: obligation.requiredChallengeCount,
           requiredChallengeKind: obligation.requiredChallengeKind,
           challenges: parsed.data.challenges,
+          expectedObligationId: obligation.obligationId,
+          allowedEvidenceRefs: allowedChallengeEvidenceRefs,
           resolutionVerdicts: parsed.data.challengeResolutionVerdicts,
           unresolvedImplementationChallengeIds,
         });
@@ -151,9 +155,7 @@ export function resolveHostTaskFindings(
     // Diagnostic for error analysis: captured findings are PRESENT (filter above
     // requires capturedRawFindings != null) but FAIL schema validation. Surface it.
     const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, 8);
-    if (unparseableDetail === null) {
-      unparseableDetail = issues.join('; ') || 'unknown schema validation failure';
-    }
+    unparseableDetail = issues.join('; ') || 'unknown schema validation failure';
     getAdapterLogger().warn(
       'flowguard_review',
       'host-task captured findings present but unparseable; treated as unparseable',

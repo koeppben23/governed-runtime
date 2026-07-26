@@ -160,6 +160,8 @@ vi.mock('../adapters/gh-cli', () => ({
   loadResolvedBranchDiff: vi
     .fn()
     .mockReturnValue('diff --git a/src/file.ts b/src/file.ts\n+resolved line'),
+  loadBranchChangedFiles: vi.fn().mockReturnValue(['src/auth/login.ts', 'src/auth/types.ts']),
+  loadPrChangedFiles: vi.fn().mockReturnValue(['src/auth/login.ts', 'src/auth/types.ts']),
 }));
 
 // ─── Capability Gates ────────────────────────────────────────────────────────
@@ -366,7 +368,11 @@ describe('review (standalone flow)', () => {
   // without findings first. Hydrates a fresh READY session internally.
   async function obtainObligationUuid(contentArg: Record<string, unknown>): Promise<string> {
     await hydrateAndGetReady();
-    const raw = await review.execute(contentArg, ctx);
+    const enriched = { ...contentArg };
+    if (enriched.targetPaths === undefined) {
+      enriched.targetPaths = ['docs/test.md'];
+    }
+    const raw = await review.execute(enriched, ctx);
     const blocked = parseToolResult(raw);
     if (blocked.code !== 'CONTENT_ANALYSIS_REQUIRED') {
       throw new Error(`Expected CONTENT_ANALYSIS_REQUIRED, got ${blocked.code}`);
@@ -467,7 +473,10 @@ describe('review (standalone flow)', () => {
     it('host_task_required branch review completes with host evidence and verdict only', async () => {
       await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
       const first = parseToolResult(
-        await review.execute({ branch: 'feature-auth', inputOrigin: 'branch' }, ctx),
+        await review.execute(
+          { branch: 'feature-auth', inputOrigin: 'branch', targetPaths: ['docs/test.md'] },
+          ctx,
+        ),
       );
       expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
@@ -548,7 +557,10 @@ describe('review (standalone flow)', () => {
     it('host_task_required verdict rejects a branch using a text obligation ID', async () => {
       await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
       const first = parseToolResult(
-        await review.execute({ text: 'manual diff', inputOrigin: 'manual_text' }, ctx),
+        await review.execute(
+          { text: 'manual diff', inputOrigin: 'manual_text', targetPaths: ['docs/test.md'] },
+          ctx,
+        ),
       );
       const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
 
@@ -570,7 +582,10 @@ describe('review (standalone flow)', () => {
     it('host_task_required verdict-only review blocks verdict tampering', async () => {
       await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
       const first = parseToolResult(
-        await review.execute({ text: 'manual diff', inputOrigin: 'manual_text' }, ctx),
+        await review.execute(
+          { text: 'manual diff', inputOrigin: 'manual_text', targetPaths: ['docs/test.md'] },
+          ctx,
+        ),
       );
       expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
@@ -604,7 +619,10 @@ describe('review (standalone flow)', () => {
       // code and the verdict-only call does NOT advance to REVIEW_COMPLETE.
       await hydrateSession({ policyMode: 'team', profileId: 'baseline' });
       const first = parseToolResult(
-        await review.execute({ text: 'manual diff', inputOrigin: 'manual_text' }, ctx),
+        await review.execute(
+          { text: 'manual diff', inputOrigin: 'manual_text', targetPaths: ['docs/test.md'] },
+          ctx,
+        ),
       );
       expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
@@ -1188,7 +1206,7 @@ describe('review (standalone flow)', () => {
         // Step 1: call /review with content but no reviewFindings -> blocked
         const refs = [{ ref: 'https://github.com/owner/repo/pull/42', type: 'pr' as const }];
         const blockedRaw = await review.execute(
-          { prNumber: 42, inputOrigin: 'pr', references: refs },
+          { prNumber: 42, inputOrigin: 'pr', references: refs, targetPaths: ['docs/test.md'] },
           ctx,
         );
         const blocked = parseToolResult(blockedRaw);
@@ -1504,7 +1522,10 @@ describe('review (standalone flow)', () => {
         });
 
         // First call: create obligation (CONTENT_ANALYSIS_REQUIRED)
-        const firstRaw = await review.execute({ prNumber: 55, inputOrigin: 'pr' }, ctx);
+        const firstRaw = await review.execute(
+          { prNumber: 55, inputOrigin: 'pr', targetPaths: ['docs/test.md'] },
+          ctx,
+        );
         const firstResult = parseToolResult(firstRaw);
         expect(firstResult.code).toBe('CONTENT_ANALYSIS_REQUIRED');
         const uuid = requiredString(firstResult.requiredReviewAttestation, 'toolObligationId');
@@ -1665,7 +1686,12 @@ describe('review (standalone flow)', () => {
       const snapshot = (await readState(await currentSessionDir()))!.policySnapshot!;
 
       // First call: create the review obligation (no findings yet).
-      const first = parseToolResult(await review.execute({ prNumber: 77, inputOrigin: 'pr' }, ctx));
+      const first = parseToolResult(
+        await review.execute(
+          { prNumber: 77, inputOrigin: 'pr', targetPaths: ['docs/test.md'] },
+          ctx,
+        ),
+      );
       expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       const uuid = requiredString(first.requiredReviewAttestation, 'toolObligationId');
 
@@ -1752,7 +1778,12 @@ describe('review (standalone flow)', () => {
         'host_task_preferred',
       );
 
-      const first = parseToolResult(await review.execute({ prNumber: 88, inputOrigin: 'pr' }, ctx));
+      const first = parseToolResult(
+        await review.execute(
+          { prNumber: 88, inputOrigin: 'pr', targetPaths: ['docs/test.md'] },
+          ctx,
+        ),
+      );
       expect(first.code).toBe('CONTENT_ANALYSIS_REQUIRED');
       const obligationId = requiredString(first.requiredReviewAttestation, 'toolObligationId');
 

@@ -283,7 +283,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
   it('reviewMode=subagent accepted by mandatory default', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'accept');
     const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
@@ -294,7 +294,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
   it('reviewMode=self blocked by mandatory default in Mode B', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const raw = await plan.execute(
       { reviewVerdict: 'accept', reviewFindings: validReviewFindingsSelf },
       ctx,
@@ -307,7 +307,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
   it('planVersion mismatch blocked in Mode B', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const wrongVersion = { ...validReviewFindingsSubagent, planVersion: 99 };
     const raw = await plan.execute(
       { reviewVerdict: 'changes_requested', reviewFindings: wrongVersion },
@@ -321,7 +321,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
   it('iteration mismatch blocked in Mode B', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const wrongIteration = { ...validReviewFindingsSubagent, iteration: 99 };
     const raw = await plan.execute(
       { reviewVerdict: 'changes_requested', reviewFindings: wrongIteration },
@@ -335,7 +335,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
   it('persists reviewFindings in state.plan.reviewFindings', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'accept');
     await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
 
@@ -355,7 +355,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
   it('persists plan in state.plan.current (separate from reviewFindings)', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'accept');
     await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
 
@@ -376,7 +376,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
   it('accepts valid reviewFindings with planVersion=1 in Mode B', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'accept');
     const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
@@ -387,7 +387,7 @@ describe('P34a: Agent-Orchestrated Review', () => {
   it('converged Mode B response appears after reviewFindings submission', async () => {
     await hydrateSession({ policyMode: 'solo' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'accept');
     const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
@@ -459,7 +459,7 @@ describe('P34a: Policy-Driven Branches', () => {
       },
     });
 
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'accept');
     const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
@@ -485,7 +485,7 @@ describe('P34a: Policy-Driven Branches', () => {
       },
     });
 
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const raw = await plan.execute(
       { reviewVerdict: 'accept', reviewFindings: validReviewFindingsSelf },
       ctx,
@@ -513,7 +513,7 @@ describe('P34a: Policy-Driven Branches', () => {
       },
     });
 
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const raw = await plan.execute(
       { reviewVerdict: 'accept', reviewFindings: validReviewFindingsSelf },
       ctx,
@@ -541,7 +541,7 @@ describe('P34a: Policy-Driven Branches', () => {
       },
     });
 
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const raw = await plan.execute({ reviewVerdict: 'accept' }, ctx);
     const result = parseToolResult(raw);
     expect(result.error).toBe(true);
@@ -569,7 +569,7 @@ describe('P34a: Policy-Driven Branches', () => {
     state = await readState(sessDir);
     expect(state?.policySnapshot.selfReview?.subagentEnabled).toBe(true);
 
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     const reviewFindings = await fulfillPlanReview(0, 'accept');
     const raw = await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     const result = parseToolResult(raw);
@@ -586,7 +586,7 @@ describe('decision', () => {
   async function reachPlanReview(): Promise<void> {
     await hydrateSession({ policyMode: 'team' });
     await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix', targetPaths: ['docs/test.md'] }, ctx);
     // In team mode, submit mandate-bound reviewer findings until convergence.
     for (let i = 0; i < 5; i++) {
       const s = parseToolResult(await status.execute({}, ctx));

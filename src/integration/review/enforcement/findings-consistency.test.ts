@@ -87,6 +87,7 @@ describe('review/enforcement/findings-consistency', () => {
     it('accepts the required HIGH-RISK implementation coverage', () => {
       expect(
         validateChallengeConsistency({
+          overallVerdict: 'accept',
           requiredChallengeCount: 2,
           requiredChallengeKind: 'implementation_challenge',
           challenges: [implementationChallenge, implementationChallenge],
@@ -103,6 +104,7 @@ describe('review/enforcement/findings-consistency', () => {
       ]) {
         expect(
           validateChallengeConsistency({
+            overallVerdict: 'accept',
             requiredChallengeCount: 2,
             requiredChallengeKind: 'implementation_challenge',
             challenges,
@@ -114,6 +116,7 @@ describe('review/enforcement/findings-consistency', () => {
     it('rejects a passing implementation challenge without validation-attempt evidence', () => {
       expect(
         validateChallengeConsistency({
+          overallVerdict: 'accept',
           requiredChallengeCount: 1,
           requiredChallengeKind: 'implementation_challenge',
           challenges: [{ ...implementationChallenge, evidenceRefs: [{ kind: 'implementation' }] }],
@@ -121,8 +124,38 @@ describe('review/enforcement/findings-consistency', () => {
       ).toMatchObject({ ok: false, code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING' });
     });
 
+    it('rejects evidence and obligation identifiers outside the active contract', () => {
+      const allowedEvidenceRefs = [
+        { kind: 'implementation', implementationDigest: 'current-digest' },
+        { kind: 'validation_attempt', attemptId: '00000000-0000-4000-8000-000000000002' },
+      ];
+      const result = validateChallengeConsistency({
+        overallVerdict: 'accept',
+        requiredChallengeCount: 1,
+        requiredChallengeKind: 'implementation_challenge',
+        expectedObligationId: '00000000-0000-4000-8000-000000000001',
+        allowedEvidenceRefs,
+        challenges: [
+          {
+            obligationId: '00000000-0000-4000-8000-000000000001',
+            ...implementationChallenge,
+            evidenceRefs: [
+              { kind: 'implementation', implementationDigest: 'foreign-digest' },
+              { kind: 'validation_attempt', attemptId: '00000000-0000-4000-8000-000000000002' },
+            ],
+          },
+        ],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
+        details: { reason: 'evidence_mismatch' },
+      });
+    });
+
     it('rejects an author resolution without a later independent resolved verdict', () => {
       const result = validateChallengeConsistency({
+        overallVerdict: 'accept',
         requiredChallengeCount: 0,
         requiredChallengeKind: 'implementation_challenge',
         challenges: [],
@@ -132,6 +165,17 @@ describe('review/enforcement/findings-consistency', () => {
         ],
       });
       expect(result.ok).toBe(false);
+    });
+
+    it('accepts a failed implementation challenge with changes_requested', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'changes_requested',
+          requiredChallengeCount: 1,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [{ ...implementationChallenge, outcome: 'fail' }],
+        }),
+      ).toEqual({ ok: true });
     });
   });
 });

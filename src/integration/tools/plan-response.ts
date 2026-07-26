@@ -41,6 +41,19 @@ import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
+import { resolveChallengeClassificationEvidence } from './review-obligation-classification.js';
+
+function findPriorPlanTargetPaths(
+  assurance: import('../../state/schema.js').SessionState['reviewAssurance'],
+): string[] | undefined {
+  if (!assurance) return undefined;
+  const obligations = [...assurance.obligations].reverse();
+  const lastPlan = obligations.find((o) => o.obligationType === 'plan');
+  const paths = lastPlan?.metadata?.targetPaths;
+  return Array.isArray(paths) && paths.every((p: unknown) => typeof p === 'string')
+    ? paths
+    : undefined;
+}
 
 /** Extract the first non-empty line of text, truncated to 120 characters. */
 export function firstLine(text: string | undefined): string | undefined {
@@ -195,6 +208,25 @@ export async function persistNonConvergedPlanReview(
   iteration: number,
 ): Promise<string> {
   const nextPlanVersion = revision.history.length + 1;
+  const priorTargetPaths = findPriorPlanTargetPaths(finalState.reviewAssurance);
+  const classification = scope.reviewPolicy.subagentEnabled
+    ? await resolveChallengeClassificationEvidence(finalState, scope.worktree, {
+        targetPaths: priorTargetPaths,
+      })
+    : { kind: 'not_required' as const };
+  if (classification.kind === 'unavailable') {
+    return JSON.stringify({
+      error: true,
+      code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
+      reason: classification.reason,
+    });
+  }
+  const resolvedTargetPaths =
+    classification.kind === 'available' ? [...classification.changedFiles] : undefined;
+  const metadata: Record<string, unknown> = {};
+  if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
+    metadata.targetPaths = resolvedTargetPaths;
+  }
   const nextObligation = scope.reviewPolicy.subagentEnabled
     ? createReviewObligation({
         obligationType: 'plan',
@@ -204,6 +236,8 @@ export async function persistNonConvergedPlanReview(
         reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
         profileSource: 'policy_default',
         policySnapshot: finalState.policySnapshot,
+        changedFiles: resolvedTargetPaths,
+        metadata,
       })
     : null;
   const stateToPersist = nextObligation
