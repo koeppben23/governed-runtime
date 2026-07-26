@@ -186,10 +186,20 @@ export const ChallengeResolution = z
     implementationDigest: z.string().min(1),
     validationAttemptIds: z.array(z.string().uuid()).min(1),
     resolvedAt: z.string().datetime(),
+    /** Author evidence is a proposal only; it never resolves a challenge. */
     author: ActorInfoSchema.optional(),
   })
   .readonly();
 export type ChallengeResolution = z.infer<typeof ChallengeResolution>;
+
+/** An independent reviewer's verdict on a prior implementation challenge resolution. */
+export const ChallengeResolutionVerdict = z
+  .object({
+    challengeId: z.string().uuid(),
+    verdict: z.enum(['resolved', 'still_failing', 'not_verified']),
+  })
+  .readonly();
+export type ChallengeResolutionVerdict = z.infer<typeof ChallengeResolutionVerdict>;
 
 /**
  * Identity information for the review actor (subagent or self).
@@ -272,6 +282,8 @@ export const ReviewFindings = z
     attestation: ReviewAttestation.optional(),
     /** Optional for findings persisted before challenge capture was introduced. */
     challenges: z.array(ReviewChallenge).optional(),
+    /** Reviewer-only verdicts for prior implementation challenge resolutions. */
+    challengeResolutionVerdicts: z.array(ChallengeResolutionVerdict).optional(),
   })
   .readonly();
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
@@ -332,6 +344,12 @@ export const ReviewObligation = z.object({
   reviewProfile: ReviewProfile.optional(),
   /** Provenance of the frozen review profile (see ReviewProfileSource). */
   profileSource: ReviewProfileSource.optional(),
+  /** Challenge coverage frozen from the runtime-computed minimum task class. */
+  requiredChallengeCount: z.number().int().min(0).max(2).optional(),
+  /** The sole challenge evidence kind required for this obligation. */
+  requiredChallengeKind: z
+    .enum(['design_challenge', 'implementation_challenge', 'content_challenge'])
+    .optional(),
   /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
   metadata: z.record(z.string(), z.unknown()).optional(),
 });

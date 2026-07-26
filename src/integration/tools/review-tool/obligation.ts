@@ -26,6 +26,7 @@ import {
   findAcceptedInvocationForFindings,
 } from '../../review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
+import { validateChallengeConsistency } from '../../review/enforcement/findings-consistency.js';
 import { formatBlocked, writeStateWithArtifacts } from '../helpers.js';
 import { type ResolvedBranchReviewSource } from '../../../adapters/gh-cli.js';
 import type { ReviewToolArgs, StartedReviewResult } from './types.js';
@@ -470,6 +471,25 @@ export function validateSubmittedReviewFindings(
       'reviewer returned overallVerdict "unable_to_review" — the content was declared unreviewable; this obligation is consumed and cannot pass review',
       obligation.obligationId,
     );
+  }
+
+  if (obligation.requiredChallengeCount !== undefined && obligation.requiredChallengeKind) {
+    const challengeConsistency = validateChallengeConsistency({
+      requiredChallengeCount: obligation.requiredChallengeCount,
+      requiredChallengeKind: obligation.requiredChallengeKind,
+      challenges: findings.challenges as Parameters<
+        typeof validateChallengeConsistency
+      >[0]['challenges'],
+      resolutionVerdicts: findings.challengeResolutionVerdicts as Parameters<
+        typeof validateChallengeConsistency
+      >[0]['resolutionVerdicts'],
+    });
+    if (!challengeConsistency.ok) {
+      return formatSubagentReviewNotInvoked(
+        `${challengeConsistency.code}: ${JSON.stringify(challengeConsistency.details)}`,
+        obligation.obligationId,
+      );
+    }
   }
 
   const verdict = validateStrictAttestation(

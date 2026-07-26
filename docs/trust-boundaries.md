@@ -80,7 +80,7 @@ Technically enforced:
 - Pure rails and machine logic must not log or perform side effects.
 - Mutating writes validate against Zod schemas and fail closed on invalid state.
 
-### Advisory Challenge Resolution Evidence
+### Enforced Challenge Resolution Evidence
 
 `ChallengeResolution` records an author's claimed binding from exactly one prior
 implementation review challenge to the current implementation digest and immutable
@@ -88,10 +88,14 @@ post-implementation validation-attempt IDs. The schema and `flowguard_resolve_im
 tool reject unknown, duplicate, wrong-scope, and wrong-digest references before the
 atomic state/artifact write. Resolved actor identity is recorded only when available.
 
-This evidence is **advisory NOT_VERIFIED**. It is visible to status and independent
-reviewers so they can inspect the original challenge and referenced attempts, but it
-does not satisfy review obligations, alter the reviewer verdict, or block/allow
-acceptance. Policy enforcement for challenge resolution remains disabled.
+Author evidence is **NOT_VERIFIED** until a subsequent independent `ReviewFindings`
+record supplies `challengeResolutionVerdicts` for every prior implementation
+challenge. Only the independent reviewer may mark a resolution `resolved`; `still_failing`
+and `not_verified` fail closed. Review obligations freeze their required challenge count
+from the phase-tool-gate runtime minimum task class (TRIVIAL 0, STANDARD 1, HIGH-RISK 2)
+and a single flow-native kind before invocation. Host captures and submitted findings use
+the same dependency-free consistency authority, so omitted evidence, wrong kinds, failed
+implementation challenges, and unresolved resolutions cannot be accepted.
 
 ### Adapters
 

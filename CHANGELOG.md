@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Enforced review challenge matrix (#747).** Review obligations now freeze runtime-derived
+  challenge coverage (TRIVIAL 0, STANDARD 1, HIGH-RISK 2) and their flow-native challenge
+  kind. Submitted and host-captured findings reject incoherent coverage. An author-recorded
+  implementation resolution remains NOT_VERIFIED until a later independent reviewer returns
+  `resolved`, `still_failing`, or `not_verified`.
+
 - **Advisory implementation challenge resolution evidence (#747).**
   `flowguard_resolve_implementation_challenge` is available in `IMPL_REVIEW` after
   post-implementation validation. It persistently binds one prior implementation

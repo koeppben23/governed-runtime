@@ -117,7 +117,7 @@ Your response must conform to this JSON schema. When structured output is active
 - Do NOT accept the artifact without reading it. "accept" is the reviewer's verdict, not a user approval.
 - reviewMode MUST always be "subagent".
   - iteration and planVersion are provided in your task prompt. Use exactly those values.
-  - challenges are optional advisory evidence. Use \`plan_adr_section\` references only for design challenges, \`implementation\` and optional \`validation_attempt\` references only for implementation challenges, and \`content\` references only for content challenges.
+  - Honor the obligation's frozen \`requiredChallengeCount\` and \`requiredChallengeKind\`. Required challenges need matching digest-bound evidence. Implementation challenges with \`fail\` or \`not_verified\` cannot support acceptance. For prior author resolutions, return \`challengeResolutionVerdicts\` with your independent \`resolved\`, \`still_failing\`, or \`not_verified\` verdict; author claims have no acceptance authority.
 `;
 }
 

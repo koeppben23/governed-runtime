@@ -123,6 +123,9 @@ function resolveImplementationFindings(
       assurance: input.state.reviewAssurance,
       sessionId: input.context.sessionID,
       reviewHostPlatform: resolveRuntimeReviewPlatform(),
+      unresolvedImplementationChallengeIds: input.state.challengeResolutions.map(
+        (resolution) => resolution.challengeId,
+      ),
     },
   });
   return { pendingObligation, resolved };

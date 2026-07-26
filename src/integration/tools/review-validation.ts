@@ -37,7 +37,10 @@ import {
   formatHostTaskAcceptanceRejection,
 } from './review-validation-acceptance.js';
 import { resolveHostTaskFindings } from './review-validation-host-task.js';
-import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
+import {
+  validateChallengeConsistency,
+  validateReviewFindingsConsistency,
+} from '../review/enforcement/findings-consistency.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 
@@ -63,6 +66,8 @@ export interface ReviewFindingsValidationContext {
   readonly reviewParentSessionId?: string;
   /** Runtime host platform for transport-specific strict evidence validation. */
   readonly reviewHostPlatform?: 'opencode' | 'claude-code' | 'codex' | 'unknown';
+  /** Author-proposed implementation resolutions requiring independent verdicts. */
+  readonly unresolvedImplementationChallengeIds?: readonly string[];
 }
 
 interface AttestedReviewCheckInput {
@@ -144,6 +149,7 @@ function pluginEnforcementUnavailableForReviewAcceptance(input: AttestedReviewCh
  *
  * @returns formatBlocked string if validation fails, null if valid.
  */
+// eslint-disable-next-line complexity -- ordered fail-closed validation boundary
 export function validateReviewFindings(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
@@ -189,6 +195,31 @@ export function validateReviewFindings(
     return formatBlocked(consistency.code, {
       count: String(consistency.details.blockingIssueCount),
     });
+  }
+  const obligation = ctx.assurance
+    ? findLatestObligation(
+        ctx.assurance.obligations,
+        ctx.obligationType ?? 'review',
+        ctx.expectedIteration,
+        ctx.expectedPlanVersion,
+      )
+    : null;
+  if (obligation?.requiredChallengeCount !== undefined && obligation.requiredChallengeKind) {
+    const challengeConsistency = validateChallengeConsistency({
+      requiredChallengeCount: obligation.requiredChallengeCount,
+      requiredChallengeKind: obligation.requiredChallengeKind,
+      challenges: findings.challenges,
+      resolutionVerdicts: findings.challengeResolutionVerdicts,
+      unresolvedImplementationChallengeIds: ctx.unresolvedImplementationChallengeIds,
+    });
+    if (!challengeConsistency.ok) {
+      return formatBlocked(
+        challengeConsistency.code,
+        Object.fromEntries(
+          Object.entries(challengeConsistency.details).map(([key, value]) => [key, String(value)]),
+        ),
+      );
+    }
   }
 
   const expectedIteration = ctx.expectedIteration;
@@ -489,6 +520,7 @@ interface HostTaskResolutionContext {
     readonly assurance?: ReviewAssuranceState;
     readonly sessionId: string;
     readonly reviewHostPlatform?: 'opencode' | 'claude-code' | 'codex' | 'unknown';
+    readonly unresolvedImplementationChallengeIds?: readonly string[];
   };
 }
 
@@ -522,7 +554,11 @@ export function resolveHostTaskEffectiveFindings(
         },
       );
     }
-    const resolved = resolveHostTaskFindings(ctx.state.assurance, ctx.pendingObligation);
+    const resolved = resolveHostTaskFindings(
+      ctx.state.assurance,
+      ctx.pendingObligation,
+      ctx.state.unresolvedImplementationChallengeIds,
+    );
     if (resolved.kind === 'resolved') {
       return {
         effectiveFindings: resolved.findings,
@@ -546,9 +582,12 @@ export function resolveHostTaskEffectiveFindings(
       // the host-task ingestion boundary before the findings become effective
       // evidence, so a contradictory review cannot advance the gate.
       return {
-        blocked: formatBlocked('SUBAGENT_VERDICT_FINDINGS_INCOHERENT', {
-          count: String(resolved.blockingIssueCount),
-        }),
+        blocked: formatBlocked(
+          resolved.code,
+          Object.fromEntries(
+            Object.entries(resolved.details).map(([key, value]) => [key, String(value)]),
+          ),
+        ),
       };
     }
     if (ctx.input.reviewerUnavailable === true) {

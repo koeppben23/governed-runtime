@@ -23,7 +23,10 @@ import {
   withHostTaskPath,
   type HostTaskFindingsAcceptanceRejection,
 } from './review-validation-acceptance.js';
-import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
+import {
+  validateChallengeConsistency,
+  validateReviewFindingsConsistency,
+} from '../review/enforcement/findings-consistency.js';
 
 /**
  * Result of resolving review findings from host-task invocation evidence.
@@ -41,7 +44,13 @@ export type HostTaskFindingsResolution =
   | ({ readonly kind: 'resolved' } & ResolvedHostTaskFindings)
   | { readonly kind: 'rejected'; readonly rejection: HostTaskFindingsAcceptanceRejection }
   | { readonly kind: 'unparseable'; readonly detail: string }
-  | { readonly kind: 'incoherent'; readonly blockingIssueCount: number }
+  | {
+      readonly kind: 'incoherent';
+      readonly code: string;
+      readonly details: Record<string, unknown>;
+      /** Compatibility projection for the original verdict/blocker invariant. */
+      readonly blockingIssueCount?: number;
+    }
   | { readonly kind: 'not_found' };
 
 /**
@@ -62,10 +71,11 @@ export type HostTaskFindingsResolution =
  */
 // The resolver enumerates every persisted capture so an unusable record cannot
 // mask a later coherent retry; its branches are the explicit fail-closed states.
-// eslint-disable-next-line complexity
+// eslint-disable-next-line complexity, max-lines-per-function
 export function resolveHostTaskFindings(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation | null,
+  unresolvedImplementationChallengeIds?: readonly string[],
 ): HostTaskFindingsResolution {
   if (!obligation || !assurance) return { kind: 'not_found' };
 
@@ -88,7 +98,7 @@ export function resolveHostTaskFindings(
   // historically degraded to not_found), which is exactly the confusing
   // failure operators hit when the reviewer ran but its findings were corrupt.
   let unparseableDetail: string | null = null;
-  let incoherentBlockingIssueCount: number | null = null;
+  let incoherent: { code: string; details: Record<string, unknown> } | null = null;
   // An unusable earlier capture must not deadlock a later coherent retry. The
   // earlier evidence remains persisted for audit while this loop continues to
   // consider subsequent captures for the same obligation.
@@ -115,8 +125,21 @@ export function resolveHostTaskFindings(
         blockingIssueCount: parsed.data.blockingIssues.length,
       });
       if (!consistency.ok) {
-        incoherentBlockingIssueCount ??= consistency.details.blockingIssueCount;
+        incoherent ??= { code: consistency.code, details: consistency.details };
         continue;
+      }
+      if (obligation.requiredChallengeCount !== undefined && obligation.requiredChallengeKind) {
+        const challengeConsistency = validateChallengeConsistency({
+          requiredChallengeCount: obligation.requiredChallengeCount,
+          requiredChallengeKind: obligation.requiredChallengeKind,
+          challenges: parsed.data.challenges,
+          resolutionVerdicts: parsed.data.challengeResolutionVerdicts,
+          unresolvedImplementationChallengeIds,
+        });
+        if (!challengeConsistency.ok) {
+          incoherent ??= { code: challengeConsistency.code, details: challengeConsistency.details };
+          continue;
+        }
       }
       return {
         kind: 'resolved',
@@ -145,8 +168,15 @@ export function resolveHostTaskFindings(
   if (unparseableDetail !== null) {
     return { kind: 'unparseable', detail: unparseableDetail };
   }
-  if (incoherentBlockingIssueCount !== null) {
-    return { kind: 'incoherent', blockingIssueCount: incoherentBlockingIssueCount };
+  if (incoherent !== null) {
+    return {
+      kind: 'incoherent',
+      code: incoherent.code,
+      details: incoherent.details,
+      ...(typeof incoherent.details.blockingIssueCount === 'number'
+        ? { blockingIssueCount: incoherent.details.blockingIssueCount }
+        : {}),
+    };
   }
   return { kind: 'not_found' };
 }

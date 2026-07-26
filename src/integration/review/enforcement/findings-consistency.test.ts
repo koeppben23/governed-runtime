@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { validateReviewFindingsConsistency } from './findings-consistency.js';
+import {
+  validateChallengeConsistency,
+  validateReviewFindingsConsistency,
+} from './findings-consistency.js';
 
 // F12: canonical verdict/blocking-issues coherence invariant (strict emptiness).
 // This is the single source of truth for the rule; both ingestion boundaries
@@ -71,6 +74,54 @@ describe('review/enforcement/findings-consistency', () => {
       expect(
         validateReviewFindingsConsistency({ overallVerdict: 'accept', blockingIssueCount: 0 }),
       ).toEqual({ ok: true });
+    });
+  });
+
+  describe('challenge matrix', () => {
+    const implementationChallenge = {
+      kind: 'implementation_challenge',
+      evidenceRefs: [{ kind: 'implementation' }],
+      outcome: 'pass',
+    };
+
+    it('accepts the required HIGH-RISK implementation coverage', () => {
+      expect(
+        validateChallengeConsistency({
+          requiredChallengeCount: 2,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [implementationChallenge, implementationChallenge],
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    it('rejects missing count, wrong kind, missing evidence, and failed implementation evidence', () => {
+      for (const challenges of [
+        [implementationChallenge],
+        [{ ...implementationChallenge, kind: 'design_challenge' }],
+        [{ ...implementationChallenge, evidenceRefs: [] }],
+        [{ ...implementationChallenge, outcome: 'not_verified' }],
+      ]) {
+        expect(
+          validateChallengeConsistency({
+            requiredChallengeCount: 2,
+            requiredChallengeKind: 'implementation_challenge',
+            challenges,
+          }).ok,
+        ).toBe(false);
+      }
+    });
+
+    it('rejects an author resolution without a later independent resolved verdict', () => {
+      const result = validateChallengeConsistency({
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [],
+        unresolvedImplementationChallengeIds: ['00000000-0000-4000-8000-000000000001'],
+        resolutionVerdicts: [
+          { challengeId: '00000000-0000-4000-8000-000000000001', verdict: 'not_verified' },
+        ],
+      });
+      expect(result.ok).toBe(false);
     });
   });
 });

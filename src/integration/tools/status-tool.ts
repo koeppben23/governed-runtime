@@ -466,7 +466,8 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
       .filter((resolution) => resolution.implementationDigest === state.implementation?.digest)
       .map((resolution) => ({
         ...resolution,
-        advisory: 'NOT_VERIFIED: independently inspect the challenge and validation attempts.',
+        advisory:
+          'NOT_VERIFIED until a subsequent independent ReviewFindings verdict resolves the challenge.',
       })),
     error: state.error,
   };

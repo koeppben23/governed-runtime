@@ -292,9 +292,12 @@ function prepareHostTaskVerdictReview(
     // (accept + blocking issues). Fail closed with the canonical coherence
     // reason code — not the generic HOST_SUBAGENT_TASK_REQUIRED catch-all
     // whose recovery message would mislead about evidence availability.
-    return formatBlocked('SUBAGENT_VERDICT_FINDINGS_INCOHERENT', {
-      count: String(resolved.blockingIssueCount),
-    });
+    return formatBlocked(
+      resolved.code,
+      Object.fromEntries(
+        Object.entries(resolved.details).map(([key, value]) => [key, String(value)]),
+      ),
+    );
   }
 
   if (resolved.kind !== 'resolved') {

@@ -56,6 +56,7 @@ export function activateImplementationReviewObligation(
     now: input.now,
     reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
     profileSource: 'policy_default',
+    changedFiles: state.implementation?.changedFiles ?? [],
   });
   return {
     state: {
