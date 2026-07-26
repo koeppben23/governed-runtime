@@ -58,26 +58,36 @@ The profile is advisory context and provenance only. It does not transition stat
 
 ### Controlled Challenge Fixture Evaluation (#747)
 
-`src/integration/review/challenge-policy-evaluation.test.ts` runs six matched,
+`src/integration/review/challenge-policy-evaluation.test.ts` runs controlled,
 deterministic implementation-review fixtures twice: once with a legacy-shaped
 obligation that has no frozen challenge requirements, and once with requirements
-frozen from `challenge-policy.v1`. The fixtures contain four expected challenge
-violations (missing count, wrong kind, missing evidence, and `not_verified`
-implementation evidence) plus valid STANDARD and HIGH-RISK controls.
+frozen from `challenge-policy.v1`. It resolves host-task-captured reviewer
+findings through the production host-task validation path rather than calling the
+challenge validator directly. Fixture ground truth is independently assigned and
+is intentionally allowed to disagree with structural validation.
 
-| Metric           | Without frozen requirements | With frozen requirements |
-| ---------------- | --------------------------: | -----------------------: |
-| Recall           |                          0% |                     100% |
-| Precision        |   N/A (no fixtures blocked) |                     100% |
-| Blocking rate    |                          0% |              66.7% (4/6) |
-| Re-review rate   |                          0% |              66.7% (4/6) |
-| Reviewer latency |                      270 ms |                   270 ms |
+| Metric                      |       Without frozen requirements |          With frozen requirements |
+| --------------------------- | --------------------------------: | --------------------------------: |
+| Recall                      |                                0% |                               50% |
+| Precision                   |         N/A (no fixtures blocked) |                               50% |
+| Blocking rate               |                                0% |                         40% (2/5) |
+| Re-review rate              |                         20% (1/5) |                         20% (1/5) |
+| Pipeline validation latency | measured with `performance.now()` | measured with `performance.now()` |
 
-These are deterministic fixture expectations only. Recall and precision use the
-fixture's expected challenge-violation label; re-review rate counts a blocked
-fixture as requiring another review; and reviewer latency is fixed fixture
-metadata, not elapsed runtime. They do not establish reviewer quality, real-world
-false-positive/false-negative rates, or production latency.
+The fixture set contains a missing-challenge case, a structurally valid but
+independently labeled semantic gap (an intentional false negative), a contested
+no-challenge control (an intentional false positive), and a valid control. It
+also executes `changes_requested`, records advisory challenge-resolution evidence
+through `resolve_implementation_challenge`, and accepts a distinct second
+host-captured reviewer finding only after that reviewer independently marks the
+resolution `resolved`. Re-review rate is therefore the observed second-review
+occurrence, not a count of blocks.
+
+These are deterministic fixture results only. `pipeline validation latency` is
+wall-clock execution time for this local test pipeline, measured with
+`performance.now()`; it is not reviewer model latency or production latency.
+The labels and results do not establish reviewer/model quality or real-world
+false-positive and false-negative rates.
 
 ### Multi-Platform Reviewer Transport
 
