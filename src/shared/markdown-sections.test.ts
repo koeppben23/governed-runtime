@@ -83,6 +83,27 @@ describe('indexMarkdownSections', () => {
       ),
     ).toMatchObject([{ headingText: 'Real' }, { headingText: 'Next' }]);
   });
+
+  it('does not close fences with a non-whitespace marker suffix', () => {
+    expect(
+      indexMarkdownSections(
+        '# Real\n```bash\n# hidden\n```not-a-close\n## still hidden\n```\n## Visible',
+      ).map((section) => section.headingText),
+    ).toEqual(['Real', 'Visible']);
+    expect(
+      indexMarkdownSections(
+        '# Real\n~~~text\n## hidden\n~~~not-a-close\n# still hidden\n~~~\n# Visible',
+      ).map((section) => section.headingText),
+    ).toEqual(['Real', 'Visible']);
+  });
+
+  it('accepts trailing whitespace but not a shorter closing marker', () => {
+    expect(
+      indexMarkdownSections('# Real\n````\n## hidden\n```\n# still hidden\n```` \t\n# Visible').map(
+        (section) => section.headingText,
+      ),
+    ).toEqual(['Real', 'Visible']);
+  });
 });
 
 describe('projectMarkdownHeadings', () => {
