@@ -226,6 +226,12 @@ describe('REVIEW_FINDINGS_JSON_SCHEMA ↔ Zod ReviewFindings drift guard', () =>
     expect(required).toContain('attestation');
   });
 
+  it('CONTRACT: challenges are available to the SDK but remain optional for legacy findings', () => {
+    const props = jsonSchemaProperties();
+    expect(props.challenges).toBeDefined();
+    expect(jsonSchemaRequired()).not.toContain('challenges');
+  });
+
   it('GOOD: round-trip — a minimal valid SDK output passes both JSON-Schema and Zod', () => {
     // Construct a payload that satisfies the JSON-Schema, then run it through
     // the Zod parser. This catches drift where one schema accepts shapes the

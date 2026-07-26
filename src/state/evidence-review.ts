@@ -73,6 +73,108 @@ export const Finding = z
   .readonly();
 export type Finding = z.infer<typeof Finding>;
 
+/** A deterministic Markdown heading path, including presentation-only text. */
+export const MarkdownSectionPath = z
+  .array(
+    z.object({
+      headingDepth: z.number().int().min(1).max(6),
+      siblingIndex: z.number().int().positive(),
+      headingText: z.string(),
+    }),
+  )
+  .min(1)
+  .readonly();
+export type MarkdownSectionPath = z.infer<typeof MarkdownSectionPath>;
+
+/** Digest-bound reference to a Plan or ADR section excerpt. */
+export const PlanAdrSectionRef = z
+  .object({
+    kind: z.literal('plan_adr_section'),
+    artifactKind: z.enum(['plan', 'adr']),
+    artifactDigest: z.string().min(1),
+    sectionPath: MarkdownSectionPath,
+    excerptDigest: z.string().min(1),
+  })
+  .readonly();
+export type PlanAdrSectionRef = z.infer<typeof PlanAdrSectionRef>;
+
+/** Digest-bound reference to an implementation and its optional persisted diff. */
+export const ImplementationRef = z
+  .object({
+    kind: z.literal('implementation'),
+    implementationDigest: z.string().min(1),
+    diffDigest: z.string().min(1).optional(),
+  })
+  .readonly();
+export type ImplementationRef = z.infer<typeof ImplementationRef>;
+
+/** Reference to an immutable validation-attempt authority record. */
+export const ValidationAttemptRef = z
+  .object({
+    kind: z.literal('validation_attempt'),
+    attemptId: z.string().uuid(),
+  })
+  .readonly();
+export type ValidationAttemptRef = z.infer<typeof ValidationAttemptRef>;
+
+/** Digest-bound reference to content reviewed outside a Plan, ADR, or implementation. */
+export const ContentRef = z
+  .object({
+    kind: z.literal('content'),
+    digest: z.string().min(1),
+  })
+  .readonly();
+export type ContentRef = z.infer<typeof ContentRef>;
+
+/** Typed evidence references permitted in a structured review challenge. */
+export const ReviewChallengeEvidenceRef = z.discriminatedUnion('kind', [
+  PlanAdrSectionRef,
+  ImplementationRef,
+  ValidationAttemptRef,
+  ContentRef,
+]);
+export type ReviewChallengeEvidenceRef = z.infer<typeof ReviewChallengeEvidenceRef>;
+
+const ReviewChallengeBase = {
+  challengeId: z.string().uuid(),
+  obligationId: z.string().uuid(),
+  scenario: z.string().min(1),
+  claim: z.string().min(1),
+  locations: z.array(z.string().min(1)).min(1),
+};
+
+/**
+ * An evidence-bound falsification attempt. This is advisory evidence only;
+ * challenge requirement and resolution enforcement are deliberately separate.
+ */
+export const ReviewChallenge = z.discriminatedUnion('kind', [
+  z
+    .object({
+      ...ReviewChallengeBase,
+      kind: z.literal('design_challenge'),
+      evidenceRefs: z.array(PlanAdrSectionRef).min(1),
+      outcome: z.enum(['supported', 'contradicted', 'not_verified']),
+    })
+    .readonly(),
+  z
+    .object({
+      ...ReviewChallengeBase,
+      kind: z.literal('implementation_challenge'),
+      evidenceRefs: z.array(z.union([ImplementationRef, ValidationAttemptRef])).min(1),
+      outcome: z.enum(['pass', 'fail', 'not_verified']),
+    })
+    .readonly(),
+  z
+    .object({
+      ...ReviewChallengeBase,
+      kind: z.literal('content_challenge'),
+      evidenceRefs: z.array(ContentRef).min(1),
+      outcome: z.enum(['supported', 'contradicted', 'not_verified']),
+    })
+    .readonly(),
+]);
+export type ReviewChallenge = z.infer<typeof ReviewChallenge>;
+
 /**
  * Identity information for the review actor (subagent or self).
  * Provides provenance for independent review attribution.
@@ -152,6 +254,8 @@ export const ReviewFindings = z
      */
     reviewerClaimedBy: ReviewActorInfo.optional(),
     attestation: ReviewAttestation.optional(),
+    /** Optional for findings persisted before challenge capture was introduced. */
+    challenges: z.array(ReviewChallenge).optional(),
   })
   .readonly();
 export type ReviewFindings = z.infer<typeof ReviewFindings>;

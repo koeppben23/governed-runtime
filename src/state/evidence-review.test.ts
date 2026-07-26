@@ -6,6 +6,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   Finding,
+  PlanAdrSectionRef,
+  ImplementationRef,
+  ValidationAttemptRef,
+  ContentRef,
+  ReviewChallenge,
   ReviewActorInfo,
   ReviewAttestation,
   ReviewFindings,
@@ -118,6 +123,74 @@ describe('evidence-review', () => {
         reviewedAt: FIXED_TIME,
       };
       expect(ReviewFindings.parse(findings)).toEqual(findings);
+    });
+
+    it('ReviewChallenge parses each evidence-bound semantic variant', () => {
+      const challengeId = '11111111-1111-4111-8111-111111111111';
+      const attemptId = '22222222-2222-4222-8222-222222222222';
+      const common = {
+        challengeId,
+        obligationId: FIXED_UUID,
+        scenario: 'The claimed behavior fails under an invalid input.',
+        claim: 'Invalid input is rejected before persistence.',
+        locations: ['src/example.ts:42'],
+      };
+      const design = {
+        ...common,
+        kind: 'design_challenge' as const,
+        evidenceRefs: [
+          {
+            kind: 'plan_adr_section' as const,
+            artifactKind: 'plan' as const,
+            artifactDigest: 'plan-digest',
+            sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }],
+            excerptDigest: 'excerpt-digest',
+          },
+        ],
+        outcome: 'supported' as const,
+      };
+      const implementation = {
+        ...common,
+        kind: 'implementation_challenge' as const,
+        evidenceRefs: [
+          { kind: 'implementation' as const, implementationDigest: 'implementation-digest' },
+          { kind: 'validation_attempt' as const, attemptId },
+        ],
+        outcome: 'pass' as const,
+      };
+      const content = {
+        ...common,
+        kind: 'content_challenge' as const,
+        evidenceRefs: [{ kind: 'content' as const, digest: 'content-digest' }],
+        outcome: 'contradicted' as const,
+      };
+
+      expect(ReviewChallenge.parse(design)).toEqual(design);
+      expect(ReviewChallenge.parse(implementation)).toEqual(implementation);
+      expect(ReviewChallenge.parse(content)).toEqual(content);
+    });
+
+    it('parses individual challenge evidence references', () => {
+      expect(
+        PlanAdrSectionRef.parse({
+          kind: 'plan_adr_section',
+          artifactKind: 'adr',
+          artifactDigest: 'adr-digest',
+          sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Decision' }],
+          excerptDigest: 'excerpt-digest',
+        }),
+      ).toBeDefined();
+      expect(
+        ImplementationRef.parse({
+          kind: 'implementation',
+          implementationDigest: 'implementation-digest',
+          diffDigest: 'diff-digest',
+        }),
+      ).toBeDefined();
+      expect(
+        ValidationAttemptRef.parse({ kind: 'validation_attempt', attemptId: FIXED_UUID }),
+      ).toBeDefined();
+      expect(ContentRef.parse({ kind: 'content', digest: 'content-digest' })).toBeDefined();
     });
   });
 
@@ -328,6 +401,21 @@ describe('evidence-review', () => {
           unknowns: [],
           reviewedBy: { sessionId: 'ses_test' },
           reviewedAt: FIXED_TIME,
+        }),
+      ).toThrow();
+    });
+
+    it('ReviewChallenge rejects evidence and outcomes from another semantic variant', () => {
+      expect(() =>
+        ReviewChallenge.parse({
+          challengeId: '11111111-1111-4111-8111-111111111111',
+          obligationId: FIXED_UUID,
+          scenario: 'A plan claim is unsupported.',
+          claim: 'The plan covers validation.',
+          locations: ['docs/plan.md#Validation'],
+          kind: 'design_challenge',
+          evidenceRefs: [{ kind: 'content', digest: 'content-digest' }],
+          outcome: 'pass',
         }),
       ).toThrow();
     });

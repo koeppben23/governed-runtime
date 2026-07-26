@@ -101,6 +101,7 @@ Your response must conform to this JSON schema. When structured output is active
   "missingVerification": ["<specific check not run or not provable>"],
   "scopeCreep": ["<specific out-of-scope item>"],
   "unknowns": ["<specific unresolved question>"],
+  "challenges": [{ "challengeId": "<UUID>", "obligationId": "<from prompt UUID>", "scenario": "<falsification scenario>", "claim": "<claim or expected behavior>", "locations": ["<concrete location>"], "kind": "design_challenge" | "implementation_challenge" | "content_challenge", "evidenceRefs": ["<typed digest-bound evidence reference>"], "outcome": "supported" | "contradicted" | "not_verified" | "pass" | "fail" }],
   "reviewedBy": { "sessionId": "<assigned session ID recorded in invocation evidence>" },
   "reviewedAt": "<ISO 8601 timestamp>",
   "attestation": { "mandateDigest": "<from prompt>", "criteriaVersion": "<from prompt>", "toolObligationId": "<from prompt>", "iteration": <same number>, "planVersion": <same number>, "reviewedBy": "${REVIEWER_SUBAGENT_TYPE}" }
@@ -116,6 +117,7 @@ Your response must conform to this JSON schema. When structured output is active
 - Do NOT accept the artifact without reading it. "accept" is the reviewer's verdict, not a user approval.
 - reviewMode MUST always be "subagent".
   - iteration and planVersion are provided in your task prompt. Use exactly those values.
+  - challenges are optional advisory evidence. Use \`plan_adr_section\` references only for design challenges, \`implementation\` and optional \`validation_attempt\` references only for implementation challenges, and \`content\` references only for content challenges.
 `;
 }
 
@@ -153,6 +155,7 @@ flowguard_decision is not independent review evidence. A review-evidence file is
   "missingVerification": ["<specific check not run or not provable>"],
   "scopeCreep": ["<specific out-of-scope item>"],
   "unknowns": ["<specific unresolved question>"],
+  "challenges": [{ "challengeId": "<UUID>", "obligationId": "<from prompt UUID>", "scenario": "<falsification scenario>", "claim": "<claim or expected behavior>", "locations": ["<concrete location>"], "kind": "design_challenge" | "implementation_challenge" | "content_challenge", "evidenceRefs": ["<typed digest-bound evidence reference>"], "outcome": "supported" | "contradicted" | "not_verified" | "pass" | "fail" }],
   "reviewedBy": { "sessionId": "<reviewer/subagent session id>" },
   "reviewedAt": "<ISO 8601 timestamp>",
   "attestation": { "mandateDigest": "<from prompt>", "criteriaVersion": "<from prompt>", "toolObligationId": "<from prompt>", "iteration": <same number>, "planVersion": <same number>, "reviewedBy": "${REVIEWER_SUBAGENT_TYPE}" }
@@ -162,6 +165,7 @@ Rules:
 - reviewMode MUST always be "subagent".
 - overallVerdict MUST be "changes_requested" whenever blockingIssues is non-empty.
 - overallVerdict MAY be "unable_to_review" only for tool-failure conditions where honest review is impossible.
+- challenges are optional advisory evidence. Use the evidence reference and outcome types that match the challenge kind.
 - Do not use Bash, Write, or Edit. Use only read/search tools and flowguard_review.
 `;
 }
