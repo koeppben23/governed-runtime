@@ -23,6 +23,7 @@ import type {
   ReviewProfile,
   DiscoveryHealthPolicy,
   ValidationEvidencePolicy,
+  ChallengePolicy,
 } from './policy-types.js';
 import {
   DEFAULT_SELF_REVIEW_CONFIG,
@@ -147,6 +148,30 @@ function normalizeReviewPolicies(
   };
 }
 
+function normalizeChallengePolicy(raw: unknown): NormalizedField<ChallengePolicy | undefined> {
+  if (raw === undefined) return { value: undefined, normalized: false };
+  if (raw === null || typeof raw !== 'object') return { value: undefined, normalized: true };
+  const candidate = raw as Record<string, unknown>;
+  const counts = candidate.counts;
+  if (
+    candidate.version === 'challenge-policy.v1' &&
+    counts !== null &&
+    typeof counts === 'object' &&
+    (counts as Record<string, unknown>).TRIVIAL === 0 &&
+    (counts as Record<string, unknown>).STANDARD === 1 &&
+    (counts as Record<string, unknown>)['HIGH-RISK'] === 2
+  ) {
+    return {
+      value: {
+        version: 'challenge-policy.v1',
+        counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+      },
+      normalized: false,
+    };
+  }
+  return { value: undefined, normalized: true };
+}
+
 /**
  * Normalize a potentially incomplete or legacy policy snapshot.
  *
@@ -250,6 +275,7 @@ function normalizePolicyFields(
   allowReducedCeremony: boolean;
   discoveryHealth: DiscoveryHealthPolicy;
   validationEvidence: ValidationEvidencePolicy;
+  challengePolicy?: ChallengePolicy;
   normalized: boolean;
 } {
   let norm = false;
@@ -295,6 +321,9 @@ function normalizePolicyFields(
   );
   if (validationEvidenceResult.normalized) norm = true;
 
+  const challengePolicy = normalizeChallengePolicy(s.challengePolicy);
+  if (challengePolicy.normalized) norm = true;
+
   return {
     effectiveGateBehavior,
     requireVerifiedActorsForApproval: verifiedActors.value,
@@ -306,6 +335,7 @@ function normalizePolicyFields(
     allowReducedCeremony: reducedCeremony.value,
     discoveryHealth: discoveryHealthResult.value,
     validationEvidence: validationEvidenceResult.value,
+    challengePolicy: challengePolicy.value,
     normalized: norm,
   };
 }
@@ -554,17 +584,18 @@ export function normalizePolicySnapshotWithMeta(
   const selfReviewNorm = normalizeSelfReviewCheck(s);
   const proven = extractProvenanceFields(s, mode);
 
-  const anyNormalized =
-    modeNorm ||
-    hashNorm ||
-    core.normalized ||
-    policy.normalized ||
-    assuranceNorm ||
-    idpNorm ||
-    actorNorm ||
-    auditNorm ||
-    selfReviewNorm ||
-    proven.reqModeNormalized;
+  const anyNormalized = [
+    modeNorm,
+    hashNorm,
+    core.normalized,
+    policy.normalized,
+    assuranceNorm,
+    idpNorm,
+    actorNorm,
+    auditNorm,
+    selfReviewNorm,
+    proven.reqModeNormalized,
+  ].some(Boolean);
 
   const rawSelfReview = s.selfReview as Partial<SelfReviewConfig> | null | undefined;
 
@@ -602,6 +633,7 @@ export function normalizePolicySnapshotWithMeta(
       allowReducedCeremony: policy.allowReducedCeremony,
       discoveryHealth: policy.discoveryHealth,
       validationEvidence: policy.validationEvidence,
+      ...(policy.challengePolicy ? { challengePolicy: policy.challengePolicy } : {}),
     },
     normalized: anyNormalized,
     reason: anyNormalized ? 'incomplete_snapshot_normalized' : undefined,

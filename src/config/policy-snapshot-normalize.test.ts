@@ -28,6 +28,11 @@ describe('normalizePolicySnapshot', () => {
       expect(normalized.mode).toBe('solo');
       expect(normalized.effectiveGateBehavior).toBe('auto_approve');
     });
+
+    it('preserves the frozen challenge policy', () => {
+      const original = freezePolicySnapshot(soloResolution(), NOW, sha256);
+      expect(normalizePolicySnapshot(original).challengePolicy).toEqual(original.challengePolicy);
+    });
   });
 
   describe('BAD — mode-consistent defaults', () => {
@@ -183,6 +188,11 @@ describe('normalizePolicySnapshot', () => {
     it('handles null input gracefully', () => {
       const result = normalizePolicySnapshot(null);
       expect(result.mode).toBe('team');
+    });
+
+    it('does not add challenge enforcement to a legacy snapshot', () => {
+      const result = normalizePolicySnapshot({ mode: 'team' });
+      expect(result.challengePolicy).toBeUndefined();
     });
 
     it('handles undefined input gracefully', () => {

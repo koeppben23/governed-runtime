@@ -117,6 +117,20 @@ configuration unit. To configure stronger actor identity assurance independent o
 mode, use `policy.minimumActorAssuranceForApproval` and
 `policy.identityProviderMode` (see "Configuring Stronger Assurance" below).
 
+## Review Challenge Policy
+
+New sessions freeze `challenge-policy.v1` into their policy snapshot. Each review
+obligation derives coverage from the runtime minimum task class: TRIVIAL requires
+0 challenges, STANDARD requires 1, and HIGH-RISK requires 2. Plan and architecture
+obligations require `design_challenge` evidence, implementation obligations require
+`implementation_challenge`, and standalone review obligations require
+`content_challenge`. The obligation stores the resolved count, kind, and policy
+version before reviewer invocation.
+
+Snapshots created before this policy have no `challengePolicy`; their obligations
+omit count and kind, so challenge enforcement remains disabled rather than being
+retrofitted from current policy defaults.
+
 ## Central Policy Minimum
 
 FlowGuard supports an explicit central policy source via `FLOWGUARD_POLICY_PATH`.

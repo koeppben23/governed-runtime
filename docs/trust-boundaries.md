@@ -91,9 +91,12 @@ atomic state/artifact write. Resolved actor identity is recorded only when avail
 Author evidence is **NOT_VERIFIED** until a subsequent independent `ReviewFindings`
 record supplies `challengeResolutionVerdicts` for every prior implementation
 challenge. Only the independent reviewer may mark a resolution `resolved`; `still_failing`
-and `not_verified` fail closed. Review obligations freeze their required challenge count
-from the phase-tool-gate runtime minimum task class (TRIVIAL 0, STANDARD 1, HIGH-RISK 2)
-and a single flow-native kind before invocation. Host captures and submitted findings use
+and `not_verified` fail closed. New-session review obligations derive their required
+challenge count from the `challenge-policy.v1` policy frozen in the session snapshot and
+the phase-tool-gate runtime minimum task class (TRIVIAL 0, STANDARD 1, HIGH-RISK 2), then
+freeze that result and a single flow-native kind before invocation. Legacy snapshots that
+lack this policy leave count and kind absent, with challenge enforcement disabled. Host
+captures and submitted findings use
 the same dependency-free consistency authority, so omitted evidence, wrong kinds, failed
 implementation challenges, and unresolved resolutions cannot be accepted.
 

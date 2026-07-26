@@ -14,6 +14,7 @@ import {
   createReviewObligation,
   appendReviewObligation,
   reviewObligationResponseFields,
+  resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -48,6 +49,9 @@ export async function handleAdrSubmission(
         iteration: 0,
         planVersion: archPlanVersion,
         now: ctx.now(),
+        reviewProfile: resolveFrozenReviewProfile(result.state.policySnapshot),
+        profileSource: 'policy_default',
+        policySnapshot: result.state.policySnapshot,
       })
     : null;
   const augmentedState: SessionState = nextObligation

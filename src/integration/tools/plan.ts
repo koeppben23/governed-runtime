@@ -228,6 +228,7 @@ function buildPlanSubmissionState(
         now: scope.ctx.now(),
         reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
         profileSource: 'policy_default',
+        policySnapshot: scope.state.policySnapshot,
       })
     : null;
 

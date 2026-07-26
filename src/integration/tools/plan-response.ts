@@ -34,6 +34,7 @@ import {
   createReviewObligation,
   findLatestObligation,
   appendReviewObligation,
+  resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
 import {
@@ -200,6 +201,9 @@ export async function persistNonConvergedPlanReview(
         iteration,
         planVersion: nextPlanVersion,
         now: scope.ctx.now(),
+        reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
+        profileSource: 'policy_default',
+        policySnapshot: finalState.policySnapshot,
       })
     : null;
   const stateToPersist = nextObligation

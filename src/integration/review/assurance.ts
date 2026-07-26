@@ -16,8 +16,11 @@ import type {
   ReviewObligationType,
   ReviewProfile,
   ReviewProfileSource,
+  PolicySnapshot,
 } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import { assessMinimumTaskClass } from '../phase-tool-gate.js';
+import { challengeKindForObligation } from '../../config/policy-types.js';
 
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
@@ -54,8 +57,21 @@ export function createReviewObligation(input: {
   reviewProfile?: ReviewProfile;
   /** Provenance of the frozen profile. Defaults to 'policy_default'. */
   profileSource?: ReviewProfileSource;
+  /** Frozen session policy; without its challenge policy, enforcement is disabled. */
+  policySnapshot?: Pick<PolicySnapshot, 'challengePolicy'> | null;
+  /** Runtime paths are classified by the canonical phase-tool gate. */
+  changedFiles?: readonly string[];
   metadata?: Record<string, unknown>;
 }): ReviewObligation {
+  const challengePolicy = input.policySnapshot?.challengePolicy;
+  const requirements = challengePolicy
+    ? {
+        requiredChallengeCount:
+          challengePolicy.counts[assessMinimumTaskClass(input.changedFiles ?? []).minimumTaskClass],
+        requiredChallengeKind: challengeKindForObligation(input.obligationType),
+        challengePolicyVersion: challengePolicy.version,
+      }
+    : {};
   return {
     obligationId: randomUUID(),
     obligationType: input.obligationType,
@@ -74,6 +90,7 @@ export function createReviewObligation(input: {
     // supplied. The profile is fixed here, before the reviewer is invoked.
     reviewProfile: input.reviewProfile ?? 'core',
     profileSource: input.profileSource ?? 'policy_default',
+    ...requirements,
     metadata: input.metadata,
   };
 }

@@ -56,6 +56,29 @@ The profile is **frozen into the review obligation at creation, before any revie
 
 The profile is advisory context and provenance only. It does not transition state, satisfy an obligation, or replace ReviewFindings — the canonical reviewer remains the sole producer of binding, obligation-bound findings.
 
+### Controlled Challenge Fixture Evaluation (#747)
+
+`src/integration/review/challenge-policy-evaluation.test.ts` runs six matched,
+deterministic implementation-review fixtures twice: once with a legacy-shaped
+obligation that has no frozen challenge requirements, and once with requirements
+frozen from `challenge-policy.v1`. The fixtures contain four expected challenge
+violations (missing count, wrong kind, missing evidence, and `not_verified`
+implementation evidence) plus valid STANDARD and HIGH-RISK controls.
+
+| Metric           | Without frozen requirements | With frozen requirements |
+| ---------------- | --------------------------: | -----------------------: |
+| Recall           |                          0% |                     100% |
+| Precision        |   N/A (no fixtures blocked) |                     100% |
+| Blocking rate    |                          0% |              66.7% (4/6) |
+| Re-review rate   |                          0% |              66.7% (4/6) |
+| Reviewer latency |                      270 ms |                   270 ms |
+
+These are deterministic fixture expectations only. Recall and precision use the
+fixture's expected challenge-violation label; re-review rate counts a blocked
+fixture as requiring another review; and reviewer latency is fixed fixture
+metadata, not elapsed runtime. They do not establish reviewer quality, real-world
+false-positive/false-negative rates, or production latency.
+
 ### Multi-Platform Reviewer Transport
 
 FlowGuard projects one of four reviewer transport modes in tool output:

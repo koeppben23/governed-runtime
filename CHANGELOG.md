@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Versioned frozen challenge policy (#747).** New sessions persist
+  `challenge-policy.v1` in the policy snapshot, and every review obligation reads
+  its requirement matrix from that frozen value before invocation. Snapshots from
+  before this policy remain compatible: missing `challengePolicy` disables
+  challenge count/kind enforcement rather than applying current defaults.
+
 - **Enforced review challenge matrix (#747).** Review obligations now freeze runtime-derived
   challenge coverage (TRIVIAL 0, STANDARD 1, HIGH-RISK 2) and their flow-native challenge
   kind. Submitted and host-captured findings reject incoherent coverage. An author-recorded

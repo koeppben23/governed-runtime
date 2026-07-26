@@ -343,6 +343,7 @@ export async function ensureMissingAnalysisObligation(
       now,
       reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
       profileSource: 'policy_default',
+      policySnapshot: state.policySnapshot,
       metadata,
     });
     await persistReviewObligation(sessDir, state, obligation);
@@ -428,6 +429,7 @@ export async function resolveSubmittedReviewObligation(
       now,
       reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
       profileSource: 'policy_default',
+      policySnapshot: state.policySnapshot,
       metadata: { fingerprint, inputFingerprint: fingerprint },
     });
     await persistReviewObligation(sessDir, state, obligation);

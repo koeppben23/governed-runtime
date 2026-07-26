@@ -350,6 +350,7 @@ export const ReviewObligation = z.object({
   requiredChallengeKind: z
     .enum(['design_challenge', 'implementation_challenge', 'content_challenge'])
     .optional(),
+  challengePolicyVersion: z.literal('challenge-policy.v1').optional(),
   /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
   metadata: z.record(z.string(), z.unknown()).optional(),
 });

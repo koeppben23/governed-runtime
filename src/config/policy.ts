@@ -28,9 +28,14 @@ export type {
   DiscoveryHealthDriftAction,
   ValidationEvidencePolicy,
   ValidationEvidenceEnforcement,
+  ChallengePolicy,
+  ChallengeKind,
 } from './policy-types.js';
 export {
   DEFAULT_SELF_REVIEW_CONFIG,
+  CHALLENGE_POLICY_V1,
+  CHALLENGE_POLICY_VERSION,
+  challengeKindForObligation,
   defaultDiscoveryHealthForMode,
   defaultValidationEvidenceForMode,
 } from './policy-types.js';

@@ -132,6 +132,14 @@ export function createPolicySnapshot(
     reviewOutputPolicy: policy.reviewOutputPolicy,
     reviewInvocationPolicy: policy.reviewInvocationPolicy,
     reviewProfile: policy.reviewProfile,
+    ...(policy.challengePolicy
+      ? {
+          challengePolicy: {
+            version: policy.challengePolicy.version,
+            counts: { ...policy.challengePolicy.counts },
+          },
+        }
+      : {}),
     enforceRiskClassification: policy.enforceRiskClassification,
     allowRiskDowngradeOverride: policy.allowRiskDowngradeOverride,
     allowReducedCeremony: policy.allowReducedCeremony,
@@ -203,6 +211,7 @@ export function resolvePolicyFromSnapshot(snapshot: PolicySnapshot): FlowGuardPo
     reviewOutputPolicy: reviewPolicies.reviewOutputPolicy,
     reviewInvocationPolicy: reviewPolicies.reviewInvocationPolicy,
     reviewProfile: reviewPolicies.reviewProfile,
+    challengePolicy: snapshot.challengePolicy,
     minimumActorAssuranceForApproval:
       snapshot.minimumActorAssuranceForApproval ??
       (snapshot.requireVerifiedActorsForApproval

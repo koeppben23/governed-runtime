@@ -6,6 +6,7 @@
 import type { FlowGuardPolicy, PolicyMode, TimestampAssurancePolicy } from './policy-types.js';
 import {
   DEFAULT_SELF_REVIEW_CONFIG,
+  CHALLENGE_POLICY_V1,
   defaultDiscoveryHealthForMode,
   defaultValidationEvidenceForMode,
 } from './policy-types.js';
@@ -34,6 +35,7 @@ export const SOLO_POLICY: FlowGuardPolicy = {
   reviewOutputPolicy: 'text_compat_allowed',
   reviewInvocationPolicy: 'host_task_preferred',
   reviewProfile: 'core',
+  challengePolicy: CHALLENGE_POLICY_V1,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -66,6 +68,7 @@ export const TEAM_POLICY: FlowGuardPolicy = {
   reviewOutputPolicy: 'text_compat_allowed',
   reviewInvocationPolicy: 'host_task_required',
   reviewProfile: 'core',
+  challengePolicy: CHALLENGE_POLICY_V1,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -98,6 +101,7 @@ export const TEAM_CI_POLICY: FlowGuardPolicy = {
   reviewOutputPolicy: 'structured_required',
   reviewInvocationPolicy: 'host_task_required',
   reviewProfile: 'core',
+  challengePolicy: CHALLENGE_POLICY_V1,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
@@ -130,6 +134,7 @@ export const REGULATED_POLICY: FlowGuardPolicy = {
   reviewOutputPolicy: 'structured_required',
   reviewInvocationPolicy: 'host_task_required',
   reviewProfile: 'core',
+  challengePolicy: CHALLENGE_POLICY_V1,
   audit: {
     emitTransitions: true,
     emitToolCalls: true,
