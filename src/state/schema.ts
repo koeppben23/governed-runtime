@@ -30,6 +30,7 @@ import {
   ReviewFindings,
   SelfReviewLoop,
   TicketEvidence,
+  ValidationAttempt,
   ValidationResult,
 } from './evidence.js';
 import {
@@ -289,6 +290,12 @@ export const SessionState = z.object({
 
   /** Validation check results (VALIDATION phase, N checks in one phase). */
   validation: z.array(ValidationResult),
+
+  /**
+   * Append-only execution ledger. Unlike the current per-check projections above,
+   * this preserves every successful validation-result persistence for audit.
+   */
+  validationAttempts: z.array(ValidationAttempt).default([]),
 
   /**
    * Post-implementation validation check results (IMPL_VALIDATION phase). Kept

@@ -37,6 +37,7 @@ import {
 } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { blockedFromOverflow } from './auto-advance-overflow.js';
+import { projectMarkdownHeadings } from '../shared/markdown-sections.js';
 
 // ─── Executor Interface ───────────────────────────────────────────────────────
 
@@ -63,16 +64,6 @@ export interface PlanExecutors {
 export interface PlanInput {
   /** User-provided plan text. If absent, plan is generated via executor. */
   readonly text?: string;
-}
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Extract markdown section headers from plan text. */
-function extractSections(body: string): string[] {
-  return body
-    .split('\n')
-    .filter((line) => /^#{1,3}\s/.test(line))
-    .map((line) => line.replace(/^#+\s*/, '').trim());
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -107,7 +98,7 @@ export async function executePlan(
   const currentPlan: PlanEvidence = {
     body: planBody,
     digest: ctx.digest(planBody),
-    sections: extractSections(planBody),
+    sections: projectMarkdownHeadings(planBody),
     createdAt: ctx.now(),
   };
 
@@ -127,7 +118,7 @@ export async function executePlan(
         updated: {
           body: review.revisedBody,
           digest: ctx.digest(review.revisedBody),
-          sections: extractSections(review.revisedBody),
+          sections: projectMarkdownHeadings(review.revisedBody),
           createdAt: ctx.now(),
         },
       };

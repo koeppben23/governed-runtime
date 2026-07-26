@@ -57,7 +57,7 @@ import { executeCheck } from '../../verification/executor.js';
 import { deriveRepairGuidance } from '../../verification/repair-guidance.js';
 
 // Evidence types
-import type { ValidationResult } from '../../state/evidence-validation.js';
+import type { ValidationAttempt, ValidationResult } from '../../state/evidence-validation.js';
 import { isExecutionError } from '../../state/evidence-validation.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 
@@ -203,7 +203,13 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       );
       const allResults = mergeValidationResult(freshState, validationResult);
       const passedIds = new Set(allResults.filter((v) => v.passed).map((v) => v.checkId));
-      const nextState = buildNextValidationState(freshState, allResults, passedIds);
+      const validationAttempt = buildValidationAttempt(freshState, validationResult);
+      const nextState = buildNextValidationState(
+        freshState,
+        allResults,
+        passedIds,
+        validationAttempt,
+      );
       const advanced = autoAdvance(nextState, (s) => evaluate(s, railCtx.policy), railCtx);
       if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
 
@@ -267,6 +273,12 @@ function validateRunCheckRequest(
 ): string | { checkId: string; candidate: { kind: VerificationCandidateKind; command: string } } {
   if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
     return formatBlocked('COMMAND_NOT_ALLOWED', { command: '/run_check', phase: state.phase });
+  }
+  if (state.phase === 'VALIDATION' && !state.plan) {
+    return formatBlocked('PLAN_REQUIRED', { action: 'baseline validation' });
+  }
+  if (state.phase === 'IMPL_VALIDATION' && !state.implementation) {
+    return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
   }
   const activeChecksBlock = blockWhenNoActiveChecks(state);
   if (activeChecksBlock) return activeChecksBlock;
@@ -335,10 +347,31 @@ function mergeValidationResult(
   return [...slot.filter((v) => v.checkId !== validationResult.checkId), validationResult];
 }
 
+function buildValidationAttempt(state: SessionState, result: ValidationResult): ValidationAttempt {
+  if (state.phase === 'VALIDATION') {
+    // validateRunCheckRequest has already fail-closed on the absent-plan case.
+    return {
+      id: crypto.randomUUID(),
+      scope: 'baseline',
+      planDigest: state.plan!.current.digest,
+      result,
+    };
+  }
+
+  // validateRunCheckRequest has already fail-closed on absent implementation evidence.
+  return {
+    id: crypto.randomUUID(),
+    scope: 'implementation',
+    implementationDigest: state.implementation!.digest,
+    result,
+  };
+}
+
 function buildNextValidationState(
   state: SessionState,
   validation: ValidationResult[],
   passedIds: Set<string>,
+  validationAttempt: ValidationAttempt,
 ): SessionState {
   const allPassed = state.activeChecks.every((id) => passedIds.has(id));
   const hasExecutionError = validation.some(isExecutionError);
@@ -353,6 +386,7 @@ function buildNextValidationState(
     return {
       ...state,
       implValidation: validation,
+      validationAttempts: [...state.validationAttempts, validationAttempt],
       error: null,
       ...(genuinelyFailed ? { implementation: null } : {}),
     };
@@ -365,6 +399,7 @@ function buildNextValidationState(
   return {
     ...state,
     validation,
+    validationAttempts: [...state.validationAttempts, validationAttempt],
     error: null,
     ...(clearPlanEvidence ? { selfReview: null, reviewDecision: null } : {}),
   };

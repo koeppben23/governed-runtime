@@ -8,7 +8,7 @@
  * @test-policy HAPPY, BAD, CORNER
  */
 import { describe, it, expect } from 'vitest';
-import { ValidationResult, isExecutionError } from './evidence-validation.js';
+import { ValidationAttempt, ValidationResult, isExecutionError } from './evidence-validation.js';
 import { FIXED_TIME } from './evidence-test-constants.js';
 
 const VALID_DIGEST = 'a'.repeat(64);
@@ -88,6 +88,29 @@ describe('evidence-validation', () => {
         };
         expect(() => ValidationResult.parse(result)).not.toThrow();
       }
+    });
+
+    it('ValidationAttempt binds a baseline result to the plan digest', () => {
+      const result = ValidationAttempt.parse({
+        id: '00000000-0000-4000-8000-000000000001',
+        scope: 'baseline',
+        planDigest: 'plan-digest',
+        result: {
+          checkId: 'test',
+          passed: true,
+          detail: 'All tests pass',
+          executedAt: FIXED_TIME,
+          kind: 'test',
+          command: 'npm test',
+          exitCode: 0,
+          executionMs: 1500,
+          outputDigest: VALID_DIGEST,
+          timedOut: false,
+        },
+      });
+      expect(result.scope).toBe('baseline');
+      if (result.scope !== 'baseline') throw new Error('Expected baseline validation attempt');
+      expect(result.planDigest).toBe('plan-digest');
     });
   });
 
@@ -173,6 +196,28 @@ describe('evidence-validation', () => {
           executionMs: -1,
           outputDigest: VALID_DIGEST,
           timedOut: false,
+        }),
+      ).toThrow();
+    });
+
+    it('rejects an implementation scope with a baseline digest binding', () => {
+      expect(() =>
+        ValidationAttempt.parse({
+          id: '00000000-0000-4000-8000-000000000001',
+          scope: 'implementation',
+          planDigest: 'plan-digest',
+          result: {
+            checkId: 'test',
+            passed: true,
+            detail: 'All tests pass',
+            executedAt: FIXED_TIME,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: 0,
+            executionMs: 1500,
+            outputDigest: VALID_DIGEST,
+            timedOut: false,
+          },
         }),
       ).toThrow();
     });

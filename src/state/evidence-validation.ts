@@ -115,6 +115,34 @@ export const ValidationResult = z
 export type ValidationResult = z.infer<typeof ValidationResult>;
 
 /**
+ * Immutable record of one runtime-executed validation attempt.
+ *
+ * The scope binds baseline validation to the approved plan and post-implementation
+ * validation to the implementation evidence that was under test.
+ */
+export const ValidationAttempt = z.discriminatedUnion('scope', [
+  z
+    .object({
+      id: z.string().uuid(),
+      scope: z.literal('baseline'),
+      planDigest: z.string().min(1),
+      result: ValidationResult,
+    })
+    .strict()
+    .readonly(),
+  z
+    .object({
+      id: z.string().uuid(),
+      scope: z.literal('implementation'),
+      implementationDigest: z.string().min(1),
+      result: ValidationResult,
+    })
+    .strict()
+    .readonly(),
+]);
+export type ValidationAttempt = z.infer<typeof ValidationAttempt>;
+
+/**
  * Whether a validation result represents an EXECUTION error (the check could not
  * be run to a verdict) rather than a genuine check FAILURE (the check ran and the
  * code did not pass). Execution errors are:

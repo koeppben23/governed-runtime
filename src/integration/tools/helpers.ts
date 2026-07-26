@@ -615,15 +615,8 @@ export function enrichWithNextAction<T extends Record<string, unknown>>(
   };
 }
 
-// ─── Plan Parsing ─────────────────────────────────────────────────────────────
-
-/** Extract markdown section headers from plan text. */
-export function extractSections(body: string): string[] {
-  return body
-    .split('\n')
-    .filter((line) => /^#{1,3}\s/.test(line))
-    .map((line) => line.replace(/^#+\s*/, '').trim());
-}
+// Compatibility export for existing tool consumers. The shared index is authoritative.
+export { projectMarkdownHeadings as extractSections } from '../../shared/markdown-sections.js';
 
 // ─── Session Bootstrap Wrappers ────────────────────────────────────────────────
 
