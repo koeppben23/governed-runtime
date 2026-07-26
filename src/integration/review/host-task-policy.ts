@@ -19,6 +19,8 @@ import type { ReviewInvocationPolicy } from '../../config/policy-types.js';
 import { findReviewObligationById, ensureReviewAssurance } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import type { SessionState } from '../../state/schema.js';
+import type { ReviewObligation } from '../../state/evidence.js';
+import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import type { OrchestratorDeps, ToolCallEvent } from './pipeline-types.js';
 
 // ─── Host Task Policy ────────────────────────────────────────────────────────
@@ -42,6 +44,7 @@ function buildHostTaskPolicyOutput(
   policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>,
   childSessionId: string | null,
   attestationMeta: HostTaskAttestationMeta | null,
+  challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'],
 ): string | null {
   const result = parseToolResult(originalOutput);
   if (!result || Array.isArray(result)) return null;
@@ -63,7 +66,7 @@ function buildHostTaskPolicyOutput(
     return JSON.stringify(result);
   }
 
-  return buildHostTaskBlockedOutput(result, policy, attestationMeta);
+  return buildHostTaskBlockedOutput(result, policy, attestationMeta, challengeContract);
 }
 
 /**
@@ -96,6 +99,7 @@ function resolveHostTaskContext(
 function buildReviewerTaskPromptOrNull(
   attestationMeta: HostTaskAttestationMeta | null,
   ctx: { iteration: number; planVersion: number | null } | null,
+  challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'],
 ): string | null {
   if (!attestationMeta || ctx?.iteration == null) return null;
   return renderReviewerTaskPrompt({
@@ -105,6 +109,7 @@ function buildReviewerTaskPromptOrNull(
     mandateDigest: attestationMeta.mandateDigest,
     criteriaVersion: attestationMeta.criteriaVersion,
     subjectLabel: 'the artifact under review',
+    challengeContract,
   });
 }
 
@@ -112,6 +117,7 @@ function buildHostTaskBlockedOutput(
   result: Record<string, unknown>,
   policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>,
   attestationMeta: HostTaskAttestationMeta | null,
+  challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'],
 ): string {
   // The original standalone response is CONTENT_ANALYSIS_REQUIRED and carries
   // manual-findings recovery. Host-task policy replaces that contract entirely:
@@ -136,7 +142,7 @@ function buildHostTaskBlockedOutput(
   // root cause). The prompt embeds the review context via the SAME serializer the
   // matcher validates against. Only emitted when both the attestation and the
   // review context are available.
-  const reviewerTaskPrompt = buildReviewerTaskPromptOrNull(attestationMeta, ctx);
+  const reviewerTaskPrompt = buildReviewerTaskPromptOrNull(attestationMeta, ctx, challengeContract);
   const copyPromptStr = reviewerTaskPrompt
     ? ` A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it ` +
       `VERBATIM as the Task tool "prompt" argument (append the artifact content to review), ` +
@@ -221,6 +227,89 @@ function resolveHostTaskAction(
   return 'fall_through';
 }
 
+function serializeDesignEvidence(input: {
+  artifactKind: 'plan' | 'adr';
+  artifactDigest: string;
+  markdown: string;
+}): string[] {
+  return indexMarkdownSections(input.markdown).map((section) =>
+    JSON.stringify({
+      kind: 'plan_adr_section',
+      artifactKind: input.artifactKind,
+      artifactDigest: input.artifactDigest,
+      sectionPath: section.sectionPath,
+      excerptDigest: section.excerptDigest,
+    }),
+  );
+}
+
+function planChallengeEvidence(state: SessionState): string[] | undefined {
+  const plan = state.plan?.current;
+  return plan
+    ? serializeDesignEvidence({
+        artifactKind: 'plan',
+        artifactDigest: plan.digest,
+        markdown: plan.body,
+      })
+    : undefined;
+}
+
+function architectureChallengeEvidence(state: SessionState): string[] | undefined {
+  const adr = state.architecture;
+  return adr
+    ? serializeDesignEvidence({
+        artifactKind: 'adr',
+        artifactDigest: adr.digest,
+        markdown: adr.adrText,
+      })
+    : undefined;
+}
+
+function implementationChallengeEvidence(state: SessionState): string[] | undefined {
+  const implementationDigest = state.implementation?.digest;
+  return implementationDigest
+    ? [JSON.stringify({ kind: 'implementation', implementationDigest })]
+    : undefined;
+}
+
+function contentChallengeEvidence(
+  _state: SessionState,
+  obligation: ReviewObligation,
+): string[] | undefined {
+  const digest =
+    typeof obligation.metadata?.fingerprint === 'string'
+      ? obligation.metadata.fingerprint
+      : undefined;
+  return digest ? [JSON.stringify({ kind: 'content', digest })] : undefined;
+}
+
+const CHALLENGE_EVIDENCE_BUILDERS: Record<
+  ReviewObligation['obligationType'],
+  (state: SessionState, obligation: ReviewObligation) => string[] | undefined
+> = {
+  plan: (state) => planChallengeEvidence(state),
+  architecture: (state) => architectureChallengeEvidence(state),
+  implement: (state) => implementationChallengeEvidence(state),
+  review: contentChallengeEvidence,
+};
+
+function buildChallengeContract(
+  state: SessionState,
+  obligation: ReviewObligation | null,
+): Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'] {
+  if (!obligation || obligation.requiredChallengeCount === undefined) return undefined;
+  const base = {
+    requiredChallengeCount: obligation.requiredChallengeCount,
+    requiredChallengeKind: obligation.requiredChallengeKind,
+  };
+  if (obligation.requiredChallengeCount === 0) return base;
+  const evidenceInstructions = CHALLENGE_EVIDENCE_BUILDERS[obligation.obligationType](
+    state,
+    obligation,
+  );
+  return evidenceInstructions ? { ...base, evidenceInstructions } : base;
+}
+
 export async function handleHostTaskPolicy(
   deps: OrchestratorDeps,
   sessionState: SessionState,
@@ -276,11 +365,13 @@ export async function handleHostTaskPolicy(
         criteriaVersion: preUpdateObligation.criteriaVersion,
       }
     : null;
+  const challengeContract = buildChallengeContract(sessionState, preUpdateObligation);
   const mutated = buildHostTaskPolicyOutput(
     rawOutput,
     typedPolicy,
     childSessionId,
     attestationMeta,
+    challengeContract,
   );
   if (mutated) output.output = mutated;
   return true;

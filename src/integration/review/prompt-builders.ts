@@ -76,6 +76,33 @@ export interface ReviewerTaskPromptInput {
   readonly criteriaVersion: string;
   /** Short human label of what is under review, e.g. "the plan", "the branch diff". */
   readonly subjectLabel: string;
+  /** Frozen challenge contract and host-authoritative references, when available. */
+  readonly challengeContract?: ReviewerChallengePromptContract;
+}
+
+export interface ReviewerChallengePromptContract {
+  readonly requiredChallengeCount: number;
+  readonly requiredChallengeKind?:
+    'design_challenge' | 'implementation_challenge' | 'content_challenge';
+  readonly evidenceInstructions?: readonly string[];
+}
+
+function renderChallengeContract(contract: ReviewerChallengePromptContract | undefined): string[] {
+  if (!contract) {
+    return ['- Omit the optional challenges field; no Challenge contract was supplied.'];
+  }
+  if (contract.requiredChallengeCount === 0) {
+    return [
+      '- Challenge contract: requiredChallengeCount=0. Omit the optional challenges field entirely.',
+    ];
+  }
+  return [
+    `- Challenge contract: return exactly ${contract.requiredChallengeCount} ${contract.requiredChallengeKind} challenge(s).`,
+    '- Each challenge must use only the host-authoritative evidence reference(s) listed below. Do not invent or alter a digest, sectionPath, or attemptId.',
+    ...(contract.evidenceInstructions ?? [
+      '- No usable evidence reference was supplied; return unable_to_review.',
+    ]),
+  ];
 }
 
 /**
@@ -126,6 +153,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       `${input.planVersion != null ? `, planVersion=${input.planVersion}` : ''}).`,
     '- Output ONLY the ReviewFindings JSON object as the final content of your reply:',
     '  no prose, no reasoning, and no markdown code fences before or after it.',
+    ...renderChallengeContract(input.challengeContract),
     '',
     `Append the ${input.subjectLabel} content to review below this line:`,
   ].join('\n');

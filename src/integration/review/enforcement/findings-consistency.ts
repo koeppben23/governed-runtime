@@ -80,7 +80,7 @@ export function validateChallengeConsistency(
   input: ChallengeConsistencyInput,
 ): ChallengeConsistencyResult {
   const challenges = input.challenges ?? [];
-  if (challenges.length < input.requiredChallengeCount) {
+  if (challenges.length !== input.requiredChallengeCount) {
     return {
       ok: false,
       code: 'SUBAGENT_CHALLENGE_COUNT_INCOHERENT',

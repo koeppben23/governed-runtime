@@ -279,6 +279,44 @@ describe('resolveHostTaskFindings', () => {
     expect(resolveHostTaskFindings(assurance, makeObligation()).kind).toBe('unparseable');
   });
 
+  it('RECOVERY: resolves a later valid capture after an unparseable challenge capture', () => {
+    const invalid = {
+      ...validRawFindings,
+      challenges: [
+        {
+          challengeId: '33333333-3333-4333-8333-333333333333',
+          obligationId: OBLIGATION_ID,
+          scenario: 'Challenge the ADR decision.',
+          claim: 'The decision is supported.',
+          locations: ['ADR: Decision'],
+          kind: 'design_challenge',
+          evidenceRefs: ['invalid-string-reference'],
+          outcome: 'supported',
+        },
+      ],
+    };
+    const laterInvocationId = '44444444-4444-4444-8444-444444444444';
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          capturedRawFindings: invalid,
+          findingsHash: hashFindings(invalid),
+        }),
+        makeHostTaskInvocation({
+          invocationId: laterInvocationId,
+          childSessionId: 'ses_child_retry',
+        }),
+      ],
+    };
+
+    const result = resolveHostTaskFindings(assurance, makeObligation());
+
+    expect(result.kind).toBe('resolved');
+    if (result.kind !== 'resolved') throw new Error('expected resolved findings');
+    expect(result.invocationId).toBe(laterInvocationId);
+  });
+
   it('D (hardening): logs a distinct warn when captured findings are present but unparseable', () => {
     const warnCalls: Array<{ service: string; message: string; extra?: Record<string, unknown> }> =
       [];
