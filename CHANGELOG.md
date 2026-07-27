@@ -10,15 +10,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Defense-in-depth validation gate on reviewer acceptance.** Accepting an
-  implementation review now re-checks, via the canonical `implValidationPassed`
-  guard (SSOT), that every active verification check has passing execution
-  evidence for the current implementation before advancing to `EVIDENCE_REVIEW`.
+  implementation review now re-checks that every active verification check has a
+  passing execution attempt bound to the **current** `implementation.digest`
+  (via `state.validationAttempts`) before advancing to `EVIDENCE_REVIEW`.
   Previously reviewer acceptance relied solely on the state-machine topology
   (reaching `IMPL_REVIEW` only through the `IMPL_VALIDATION` gate); this adds an
-  independent barrier so any future inbound path to `IMPL_REVIEW`, or a topology
-  regression, cannot accept unvalidated code. Sessions with no active checks are
-  unaffected (the deliberate zero-check behavior is preserved). Blocks with the
-  new `IMPL_VALIDATION_EVIDENCE_REQUIRED` reason code.
+  independent, digest-bound barrier so any future inbound path to `IMPL_REVIEW`, a
+  topology regression, or a future mutation of `implementation` that failed to
+  clear stale `implValidation`, cannot accept unvalidated or prior-revision code.
+  Sessions with no active checks are unaffected (the deliberate zero-check
+  behavior is preserved). Blocks with the new `IMPL_VALIDATION_EVIDENCE_REQUIRED`
+  reason code.
 
 - **Evidence-grounded implementation review.** The implementation reviewer
   prompt now carries FlowGuard-executed verification evidence (`exitCode`,

@@ -381,11 +381,15 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
  * bound to the current implementation — a genuine review signal, not silence.
  *
  * Enforcement safety: this section is emitted AFTER the attestation/context
- * block and BEFORE the CORE_REVIEW_PROFILE_MARKER, and it deliberately avoids
- * the tokens "iteration" and "version" adjacent to digits so it can never
- * displace the enforcement matcher's iteration=/planVersion= context tokens
- * (see promptContainsValue in enforcement/extraction.ts). Field labels are
- * neutral (`durationMs`, `digest`) for the same reason.
+ * block and BEFORE the CORE_REVIEW_PROFILE_MARKER. Its own field LABELS are
+ * neutral (`durationMs`, `digest`, `exitCode`, `kind`) — no "iteration"/"version"
+ * adjacent to digits. The `command` and `detail` VALUES are executor-derived and
+ * NOT sanitized, so they could in principle contain such a token. That is safe:
+ * the L3 matcher (promptContainsValue in enforcement/extraction.ts) is a positive
+ * `.test()` presence check on the whole prompt, so an extra token here cannot
+ * REMOVE the legitimate iteration=/planVersion= tokens emitted by
+ * renderReviewContext, and injecting the CORRECT expected value is not a bypass.
+ * The section therefore cannot flip enforcement in either direction.
  */
 export function renderVerificationEvidence(
   evidence: readonly ReviewVerificationEvidenceItem[],

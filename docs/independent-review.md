@@ -219,18 +219,24 @@ Recovery: revise the artifact substantially (e.g., new `flowguard_plan({ planTex
 #### Acceptance Requires Passing Validation Evidence (Defense-in-Depth)
 
 Accepting an implementation review does not advance to `EVIDENCE_REVIEW` on the
-reviewer verdict alone. Before advancing, `handleImplReview` re-checks the
-canonical `implValidationPassed` guard (from `src/machine/guards.ts`, the same
-authority that gates `IMPL_VALIDATION → IMPL_REVIEW`): every active verification
-check must have passing execution evidence for the current implementation.
+reviewer verdict alone. Before advancing, `handleImplReview` requires that every
+active verification check has a **passing execution attempt bound to the current
+`implementation.digest`** — checked against `state.validationAttempts`
+(scope `implementation`, matching digest, `passed`), the same digest-bound
+authority used to inject verification evidence into the reviewer prompt.
 
 On the normal path this is redundant — `IMPL_REVIEW` is only reachable once the
 `IMPL_VALIDATION` gate passed — but acceptance must not rely on topology alone.
-Reusing the machine guard (SSOT) means any future inbound path to `IMPL_REVIEW`,
-or a topology regression, still cannot accept unvalidated code. When the active
-checks are unsatisfied, acceptance blocks with `IMPL_VALIDATION_EVIDENCE_REQUIRED`.
-Sessions with no active checks are unaffected — the deliberate zero-check
-behavior for repos without discoverable verification commands is preserved.
+This gate is deliberately stronger than the machine guard `implValidationPassed`,
+which reads the digest-less `implValidation` slot and stays sound only by the
+invariant that a fresh implementation clears that slot. By binding to the current
+digest instead, any future inbound path to `IMPL_REVIEW`, a topology regression,
+or a future mutation of `implementation` that failed to clear stale
+`implValidation`, still cannot accept unvalidated or prior-revision code. When the
+active checks are unsatisfied, acceptance blocks with
+`IMPL_VALIDATION_EVIDENCE_REQUIRED`. Sessions with no active checks are unaffected
+— the deliberate zero-check behavior for repos without discoverable verification
+commands is preserved.
 
 ### Fail-Closed Enforcement
 
@@ -416,12 +422,17 @@ Validation logic is implemented once in `src/integration/tools/review-validation
 
 **Challenge freshness binding (both ingestion routes).** When an obligation
 carries a frozen challenge requirement, challenge `evidenceRefs` are validated
-against the obligation's `allowedEvidenceRefs` and `expectedObligationId`. For
-implementation challenges this is what binds an `outcome='pass'` challenge to a
-validation attempt for the **current** implementation digest — a stale, failed,
-or foreign attempt is rejected with `SUBAGENT_CHALLENGE_EVIDENCE_MISSING`. Both
-ingestion routes pass this binding context identically: the host-captured path
-(`resolveHostTaskFindings`) and the directly-submitted path
+against the obligation's `allowedEvidenceRefs`, and each challenge's
+`obligationId` must equal the active obligation (`expectedObligationId`). This
+obligation-scoping applies to **every** challenge-bearing obligation type —
+plan/architecture `design_challenge`, implement `implementation_challenge`, and
+standalone review `content_challenge` — not to implementation alone. For
+implementation challenges the allowed set additionally binds an `outcome='pass'`
+challenge to a validation attempt for the **current** implementation digest — a
+stale, failed, foreign, or wrong-obligation reference is rejected with
+`SUBAGENT_CHALLENGE_EVIDENCE_MISSING`. Both ingestion routes pass this binding
+context identically: the host-captured path (`resolveHostTaskFindings`) and the
+directly-submitted path
 (`resolveHostTaskEffectiveFindings` → `validateReviewFindings`). Neither route can
 accept a challenge whose evidence is outside the frozen allowed set.
 

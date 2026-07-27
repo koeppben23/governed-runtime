@@ -69,14 +69,18 @@ export interface ReviewFindingsValidationContext {
   /** Author-proposed implementation resolutions requiring independent verdicts. */
   readonly unresolvedImplementationChallengeIds?: readonly string[];
   /**
-   * Canonical, digest-bound challenge evidence references the active obligation
-   * permits. When set, submitted challenge evidenceRefs must be a subset of
-   * these — this is what binds an `implementation_challenge` to a validation
-   * attempt for the CURRENT implementation digest (freshness). Absent on
-   * non-challenge paths.
+   * Canonical challenge evidence references the active obligation permits. When
+   * set, submitted challenge evidenceRefs must be a subset of these. Applies to
+   * any challenge-bearing obligation; for an `implementation_challenge` this is
+   * what binds it to a passing validation attempt for the CURRENT implementation
+   * digest (freshness). Absent on non-challenge paths.
    */
   readonly allowedEvidenceRefs?: readonly unknown[];
-  /** Active obligation id; challenge obligationIds must match it when set. */
+  /**
+   * Active obligation id. When set, every submitted challenge's `obligationId`
+   * must equal it — obligation-scoping applies to all challenge-bearing
+   * obligation types (plan/architecture/implement/review), not implement alone.
+   */
   readonly expectedObligationId?: string;
 }
 
@@ -627,10 +631,17 @@ export function resolveHostTaskEffectiveFindings(
       reviewInvocationPolicy: ctx.policy.reviewInvocationPolicy,
       reviewParentSessionId: ctx.state.sessionId,
       reviewHostPlatform: ctx.state.reviewHostPlatform,
-      // Freshness binding for directly-submitted (non-host-captured) findings:
-      // without these, an implementation_challenge could cite a stale, failed,
-      // or foreign validation attempt and be accepted. Mirrors the host-captured
-      // path (resolveHostTaskFindings) so both ingestion routes bind identically.
+      // Challenge binding for directly-submitted (non-host-captured) findings.
+      // `expectedObligationId` makes challenges obligation-scoped for EVERY
+      // challenge-bearing obligation type (plan/architecture design_challenge,
+      // implement implementation_challenge, review content_challenge), not just
+      // implementation: buildReviewObligation freezes a challenge requirement for
+      // all of them when a challengePolicy exists. `allowedEvidenceRefs` adds the
+      // freshness bound (e.g. an implementation_challenge must cite a passing
+      // validation attempt for the current implementation digest). Without these,
+      // a challenge could cite a stale, failed, foreign, or wrong-obligation
+      // reference and be accepted. Mirrors the host-captured path
+      // (resolveHostTaskFindings) so both ingestion routes bind identically.
       unresolvedImplementationChallengeIds: ctx.state.unresolvedImplementationChallengeIds,
       allowedEvidenceRefs: ctx.state.allowedChallengeEvidenceRefs,
       expectedObligationId: ctx.pendingObligation?.obligationId,

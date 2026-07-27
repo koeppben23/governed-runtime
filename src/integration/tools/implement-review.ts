@@ -361,25 +361,58 @@ export async function handleImplReview(input: ImplementRuntime): Promise<string>
 /**
  * Defense-in-depth gate: reviewer acceptance must not advance to EVIDENCE_REVIEW
  * unless the active verification checks actually have passing execution evidence
- * for the current implementation.
+ * bound to the CURRENT implementation digest.
  *
  * Today `IMPL_REVIEW` is only reachable via the `IMPL_VALIDATION`
  * `implValidationPassed` gate, so on the normal path this is redundant. But
- * acceptance must not rely solely on topology: reusing the canonical guard (SSOT)
- * means any future inbound path to `IMPL_REVIEW`, or a topology regression, still
- * cannot accept unvalidated code. Returns a BLOCKED payload, or `null` when the
- * active checks are satisfied (including the vacuous zero-`activeChecks` case the
- * guard already permits).
+ * acceptance must not rely solely on topology: any future inbound path to
+ * `IMPL_REVIEW`, or a topology regression, must still not accept unvalidated code.
+ *
+ * Unlike the machine guard `implValidationPassed` — which reads the digest-less
+ * `implValidation` slot and is kept sound only by the invariant that a fresh
+ * implementation clears that slot — this gate binds evidence to the current
+ * `implementation.digest` via `state.validationAttempts` (same authority as
+ * `stateVerificationEvidence`). That closes the latent fail-open where a future
+ * path could set `implementation` without clearing `implValidation`: stale-digest
+ * evidence can never satisfy this gate.
+ *
+ * Returns a BLOCKED payload, or `null` when the active checks are satisfied. The
+ * zero-`activeChecks` case defers to `implValidationPassed` so the deliberate
+ * policy-gated behavior for repos without discoverable verification commands is
+ * preserved unchanged.
  */
 export function implValidationEvidenceGate(state: SessionState): string | null {
-  if (implValidationPassed(state)) return null;
-  const missing = state.activeChecks.filter(
-    (checkId) => !state.implValidation.some((v) => v.checkId === checkId && v.passed),
-  );
+  // No active checks: preserve the existing policy-gated (possibly vacuous) rule.
+  if (state.activeChecks.length === 0) {
+    return implValidationPassed(state) ? null : blockValidationEvidence(state.activeChecks, state);
+  }
+  // Active checks present: require a PASSING validation attempt bound to the
+  // current implementation digest for EVERY active check. A missing current
+  // implementation digest cannot satisfy any check.
+  const currentDigest = state.implementation?.digest;
+  const passedForCurrentDigest = new Set<string>();
+  if (currentDigest) {
+    for (const attempt of state.validationAttempts) {
+      if (
+        attempt.scope === 'implementation' &&
+        attempt.implementationDigest === currentDigest &&
+        attempt.result.passed
+      ) {
+        passedForCurrentDigest.add(attempt.result.checkId);
+      }
+    }
+  }
+  const missing = state.activeChecks.filter((checkId) => !passedForCurrentDigest.has(checkId));
+  return missing.length === 0 ? null : blockValidationEvidence(missing, state);
+}
+
+function blockValidationEvidence(missing: readonly string[], state: SessionState): string {
   return formatBlocked('IMPL_VALIDATION_EVIDENCE_REQUIRED', {
     message:
       missing.length > 0
-        ? `missing passing checks: ${missing.join(', ')}`
-        : 'validation evidence not satisfied',
+        ? `missing passing checks for current implementation: ${missing.join(', ')}`
+        : state.implementation
+          ? 'validation evidence not satisfied'
+          : 'no implementation evidence to validate',
   });
 }
