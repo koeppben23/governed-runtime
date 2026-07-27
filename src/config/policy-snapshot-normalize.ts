@@ -154,15 +154,11 @@ function normalizeChallengePolicy(
   raw: unknown,
   fallback: ChallengePolicy | undefined,
 ): NormalizedField<ChallengePolicy | undefined> {
-  // Absent field. In solo mode this stays legacy-compatible and does NOT
-  // activate enforcement. In team/team-ci/regulated modes it fails closed to the
-  // canonical matrix (fallback), so a legacy snapshot or a stripped
-  // challengePolicy in an enforced mode cannot silently disable challenge
-  // enforcement — mirroring the discoveryHealth / validationEvidence normalizers
-  // (finding A2). `normalized` is true only when we actually substitute a value.
-  if (raw === undefined) {
-    return { value: fallback, normalized: fallback !== undefined };
-  }
+  // Absent field: fail closed to the mode default (solo → undefined, enforced
+  // modes → canonical matrix), so a legacy/stripped snapshot in an enforced mode
+  // cannot silently disable enforcement (finding A2). `normalized` is true only
+  // when a value is substituted.
+  if (raw === undefined) return { value: fallback, normalized: fallback !== undefined };
   const candidate = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const counts = candidate.counts;
   if (
@@ -173,18 +169,10 @@ function normalizeChallengePolicy(
     (counts as Record<string, unknown>).STANDARD === 1 &&
     (counts as Record<string, unknown>)['HIGH-RISK'] === 2
   ) {
-    return {
-      value: {
-        version: 'challenge-policy.v1',
-        counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
-      },
-      normalized: false,
-    };
+    return { value: { ...CHALLENGE_POLICY_V1 }, normalized: false };
   }
-  // Present but malformed: enforcement WAS configured on this snapshot. Fail
-  // closed to the canonical frozen matrix rather than silently dropping to
-  // undefined (which would downgrade a required review). Mirrors the
-  // discoveryHealth / validationEvidence fail-closed normalizers.
+  // Present-but-malformed: fail closed to the canonical matrix rather than
+  // dropping to undefined (which would downgrade a required review).
   return { value: { ...CHALLENGE_POLICY_V1 }, normalized: true };
 }
 
