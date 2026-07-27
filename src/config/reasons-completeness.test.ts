@@ -17,6 +17,11 @@ import { defaultReasonRegistry } from './reasons.js';
 
 const SRC_ROOT = join(process.cwd(), 'src');
 const CODE_LITERAL_PATTERN = /code:\s*['"]([A-Z][A-Z0-9_]+)['"]/g;
+// Reason codes are also emitted positionally via helper calls such as
+// `formatBlocked('CODE')` / `strictBlockedOutput('CODE')`. These are NOT
+// `code:` object properties, so the property pattern above misses them. Guard
+// them explicitly to prevent unregistered-code regressions on those paths.
+const BLOCK_HELPER_PATTERN = /(?:formatBlocked|strictBlockedOutput)\(\s*['"]([A-Z][A-Z0-9_]+)['"]/g;
 
 // These codes are NOT registry codes — they are CRITICAL/error severities,
 // audit event codes, or external library codes. Excluded explicitly.
@@ -87,6 +92,12 @@ function collectCodeLiterals(dir: string, acc: Set<string>): void {
         acc.add(code);
       }
     }
+    while ((match = BLOCK_HELPER_PATTERN.exec(content)) !== null) {
+      const code = match[1];
+      if (code !== undefined && !EXCLUDED_CODES.has(code)) {
+        acc.add(code);
+      }
+    }
   }
 }
 
@@ -115,7 +126,7 @@ describe('SEED_REASONS completeness (F1 guard)', () => {
 
 // P10c: reason code split validation
 describe('P10c — reason code split', () => {
-  it('all 166 codes from split arrays are registered exactly once (no duplicates)', async () => {
+  it('all 169 codes from split arrays are registered exactly once (no duplicates)', async () => {
     const { PRECONDITION_REASONS } = await import('./reasons-precondition.js');
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
     const { INFRA_REASONS } = await import('./reasons-infra.js');
@@ -126,9 +137,9 @@ describe('P10c — reason code split', () => {
       ...INFRA_REASONS.map((r: { code: string }) => r.code),
     ];
 
-    expect(allSplitCodes).toHaveLength(166);
+    expect(allSplitCodes).toHaveLength(169);
     // No duplicates across the 3 arrays
-    expect(new Set(allSplitCodes).size).toBe(166);
+    expect(new Set(allSplitCodes).size).toBe(169);
     // All split codes are registered in the default registry
     for (const code of allSplitCodes) {
       expect(defaultReasonRegistry.get(code)).toBeDefined();
@@ -143,9 +154,9 @@ describe('P10c — reason code split', () => {
     }
   });
 
-  it('VALIDATION_REASONS has exactly 69 entries', async () => {
+  it('VALIDATION_REASONS has exactly 72 entries', async () => {
     const { VALIDATION_REASONS } = await import('./reasons-validation.js');
-    expect(VALIDATION_REASONS.length).toBe(69);
+    expect(VALIDATION_REASONS.length).toBe(72);
     const allowed = new Set(['input', 'state', 'config', 'admissibility']);
     for (const r of VALIDATION_REASONS) {
       expect(allowed.has(r.category)).toBe(true);

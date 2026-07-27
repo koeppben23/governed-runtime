@@ -15,6 +15,7 @@ import {
 } from './policy-snapshot-normalize.js';
 import type { PolicySnapshot } from '../state/evidence.js';
 import { PolicyConfigurationError } from './policy-errors.js';
+import { CHALLENGE_POLICY_V1 } from './policy-types.js';
 import { sha256, soloResolution, NOW } from './policy-snapshot.test.js';
 import { freezePolicySnapshot } from './policy-snapshot.js';
 
@@ -193,6 +194,20 @@ describe('normalizePolicySnapshot', () => {
     it('does not add challenge enforcement to a legacy snapshot', () => {
       const result = normalizePolicySnapshot({ mode: 'team' });
       expect(result.challengePolicy).toBeUndefined();
+    });
+
+    it('fails closed to the frozen matrix when a present challengePolicy is malformed', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'team',
+        challengePolicy: { version: 'challenge-policy.v1', counts: { TRIVIAL: 9 } },
+      });
+      expect(result.snapshot.challengePolicy).toEqual(CHALLENGE_POLICY_V1);
+      expect(result.normalized).toBe(true);
+    });
+
+    it('fails closed to the frozen matrix when challengePolicy is a non-object', () => {
+      const result = normalizePolicySnapshot({ mode: 'team', challengePolicy: 'nonsense' });
+      expect(result.challengePolicy).toEqual(CHALLENGE_POLICY_V1);
     });
 
     it('handles undefined input gracefully', () => {

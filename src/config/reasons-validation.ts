@@ -297,6 +297,17 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'VALIDATION_SUBJECT_CHANGED',
+    category: 'state',
+    messageTemplate:
+      'The plan or implementation under validation changed while checks were running; the results cannot be bound to a stable subject digest.',
+    recoverySteps: [
+      'Re-run flowguard_status to confirm the current phase and subject digest',
+      'Re-run the check so its attempt binds to the current plan or implementation digest',
+    ],
+  },
+
+  {
     code: 'CONTENT_ANALYSIS_REQUIRED',
     category: 'input',
     messageTemplate:

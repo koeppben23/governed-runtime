@@ -197,7 +197,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Resolved high-severity PostCSS audit finding.** Updated the locked
+- **Registered three fail-closed review reason codes (#747).**
+  `VALIDATION_SUBJECT_CHANGED` (validation subject digest changed mid-execution),
+  `SUBAGENT_EVIDENCE_MISSING`, and `SUBAGENT_MANDATE_MISMATCH` are emitted on
+  strict review/validation block paths via `formatBlocked(...)` but were absent
+  from the reason registry, so operators saw an `[UNREGISTERED_REASON: ...]`
+  placeholder instead of a message and recovery steps. All three are now
+  registered with recovery guidance. The completeness guard was strengthened to
+  also scan `formatBlocked('CODE')` / `strictBlockedOutput('CODE')` call sites,
+  not only `code:` object literals, so this class of gap fails CI in future.
+
+- **Fail-closed normalization of a malformed challenge policy (#747).** A policy
+  snapshot that carried a present-but-malformed `challengePolicy` was silently
+  coerced to `undefined`, disabling frozen challenge enforcement and downgrading
+  a required review. Malformed-but-present policies now fall back to the canonical
+  frozen `challenge-policy.v1` matrix (mirroring the `discoveryHealth` /
+  `validationEvidence` fail-closed normalizers). An absent `challengePolicy` still
+  stays legacy-compatible and does not activate enforcement.
+
   transitive `postcss` dependency to `8.5.23` and refreshed related lockfile
   entries. `npm audit --audit-level=high` now reports no high-severity findings.
 

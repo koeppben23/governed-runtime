@@ -29,6 +29,7 @@ import {
   DEFAULT_SELF_REVIEW_CONFIG,
   defaultDiscoveryHealthForMode,
   defaultValidationEvidenceForMode,
+  CHALLENGE_POLICY_V1,
 } from './policy-types.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { PolicyConfigurationError } from './policy-errors.js';
@@ -149,9 +150,11 @@ function normalizeReviewPolicies(
 }
 
 function normalizeChallengePolicy(raw: unknown): NormalizedField<ChallengePolicy | undefined> {
+  // Absent field: legacy/pre-challenge snapshot. Stays compatible and does NOT
+  // activate enforcement (ticket #747: legacy snapshots without challengePolicy
+  // remain compatible).
   if (raw === undefined) return { value: undefined, normalized: false };
-  if (raw === null || typeof raw !== 'object') return { value: undefined, normalized: true };
-  const candidate = raw as Record<string, unknown>;
+  const candidate = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const counts = candidate.counts;
   if (
     candidate.version === 'challenge-policy.v1' &&
@@ -169,7 +172,11 @@ function normalizeChallengePolicy(raw: unknown): NormalizedField<ChallengePolicy
       normalized: false,
     };
   }
-  return { value: undefined, normalized: true };
+  // Present but malformed: enforcement WAS configured on this snapshot. Fail
+  // closed to the canonical frozen matrix rather than silently dropping to
+  // undefined (which would downgrade a required review). Mirrors the
+  // discoveryHealth / validationEvidence fail-closed normalizers.
+  return { value: { ...CHALLENGE_POLICY_V1 }, normalized: true };
 }
 
 /**

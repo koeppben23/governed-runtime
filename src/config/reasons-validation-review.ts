@@ -318,6 +318,31 @@ export const REVIEW_VALIDATION_REASONS = [
   },
 
   {
+    code: 'SUBAGENT_EVIDENCE_MISSING',
+    category: 'state',
+    messageTemplate: `No persisted ${REVIEWER_SUBAGENT_TYPE} invocation evidence was found for review obligation {obligationId}. Strict review cannot approve without a fulfilled reviewer invocation.`,
+    recoverySteps: [
+      `Invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer subagent for the active obligation before submitting a verdict`,
+      'Submit the exact reviewFindings returned by that invocation',
+      'Run /continue to restore enforcement state if the invocation evidence is missing after a reload',
+    ],
+    quickFixCommand: '/continue',
+  },
+
+  {
+    code: 'SUBAGENT_MANDATE_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'The persisted subagent invocation evidence is bound to a different obligation than the active review obligation {obligationId}.',
+    recoverySteps: [
+      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer for the current obligation`,
+      'Do not submit invocation evidence captured for a previous obligation, iteration, or plan version',
+      'Run /continue to confirm the active obligation before retrying the verdict',
+    ],
+    quickFixCommand: '/continue',
+  },
+
+  {
     // RETAINED, NO LONGER EMITTED. The plan and architecture review loops used
     // to hard-block here when the iteration budget was exhausted without an
     // approving verdict. That stranded human-gated sessions at the review gate
