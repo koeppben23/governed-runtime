@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveHostTaskFindings } from './review-validation.js';
+import { resolveHostTaskFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
 import {
   setAdapterLogger,
   resetAdapterLogger,
@@ -574,5 +574,108 @@ describe('resolveHostTaskFindings', () => {
     expect(result.kind).toBe('resolved');
     if (result.kind !== 'resolved') throw new Error('expected resolved findings');
     expect(result.findings.overallVerdict).toBe('unable_to_review');
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// resolveHostTaskEffectiveFindings — directly-submitted challenge freshness (Gap 2)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('resolveHostTaskEffectiveFindings — directly-submitted challenge freshness', () => {
+  const CHALLENGE_OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
+  const IMPL_REF = { kind: 'implementation', implementationDigest: 'current-digest' };
+  const FRESH_ATTEMPT_REF = {
+    kind: 'validation_attempt',
+    attemptId: '44444444-4444-4444-8444-444444444444',
+  };
+
+  function challengeObligation(): ReviewObligation {
+    return {
+      obligationId: CHALLENGE_OBLIGATION_ID,
+      obligationType: 'implement' as const,
+      iteration: 0,
+      planVersion: 1,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      createdAt: new Date().toISOString(),
+      pluginHandshakeAt: null,
+      status: 'pending' as const,
+      invocationId: null,
+      blockedCode: null,
+      fulfilledAt: null,
+      consumedAt: null,
+      requiredChallengeCount: 1,
+      requiredChallengeKind: 'implementation_challenge' as const,
+    };
+  }
+
+  function submittedFindings(evidenceRefs: readonly unknown[]): Record<string, unknown> {
+    return {
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      overallVerdict: 'accept',
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: 'ses_child' },
+      reviewedAt: new Date().toISOString(),
+      challenges: [
+        {
+          challengeId: '33333333-3333-4333-8333-333333333333',
+          obligationId: CHALLENGE_OBLIGATION_ID,
+          scenario: 'The change breaks the failing edge case.',
+          claim: 'The new guard handles the null path.',
+          locations: ['src/foo.ts:10'],
+          kind: 'implementation_challenge',
+          evidenceRefs,
+          outcome: 'pass',
+        },
+      ],
+    };
+  }
+
+  function makeCtx(evidenceRefs: readonly unknown[]) {
+    // sdk_allowed => NOT host-task mode => directly-submitted branch (Gap 2 fix).
+    return {
+      pendingObligation: challengeObligation(),
+      expected: { obligationType: 'implement' as const, iteration: 0, planVersion: 1 },
+      policy: {
+        reviewInvocationPolicy: 'sdk_allowed' as const,
+        strictEnforcement: false,
+        subagentEnabled: true,
+        fallbackToSelf: false,
+      },
+      input: { reviewFindings: submittedFindings(evidenceRefs), verdict: 'accept' },
+      state: {
+        assurance: { obligations: [challengeObligation()], invocations: [] },
+        sessionId: 'ses_parent',
+        reviewHostPlatform: 'opencode' as const,
+        unresolvedImplementationChallengeIds: [],
+        allowedChallengeEvidenceRefs: [IMPL_REF, FRESH_ATTEMPT_REF],
+      },
+    };
+  }
+
+  it('accepts directly-submitted findings whose challenge cites a fresh, allowed attempt', () => {
+    const result = resolveHostTaskEffectiveFindings(makeCtx([IMPL_REF, FRESH_ATTEMPT_REF]));
+    expect(result.blocked).toBeUndefined();
+    expect(result.effectiveFindings).toBeDefined();
+  });
+
+  it('blocks directly-submitted findings whose challenge cites a stale/foreign attempt', () => {
+    // The exact Gap 2 leak: on the directly-submitted path the freshness set was
+    // never passed, so a validation_attempt outside allowedChallengeEvidenceRefs
+    // was silently accepted. It must now fail closed.
+    const staleRef = {
+      kind: 'validation_attempt',
+      attemptId: '99999999-9999-4999-8999-999999999999',
+    };
+    const result = resolveHostTaskEffectiveFindings(makeCtx([IMPL_REF, staleRef]));
+    expect(result.effectiveFindings).toBeUndefined();
+    expect(result.blocked).toBeDefined();
+    expect(String(result.blocked)).toContain('SUBAGENT_CHALLENGE_EVIDENCE_MISSING');
   });
 });

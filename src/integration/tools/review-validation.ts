@@ -68,6 +68,16 @@ export interface ReviewFindingsValidationContext {
   readonly reviewHostPlatform?: 'opencode' | 'claude-code' | 'codex' | 'unknown';
   /** Author-proposed implementation resolutions requiring independent verdicts. */
   readonly unresolvedImplementationChallengeIds?: readonly string[];
+  /**
+   * Canonical, digest-bound challenge evidence references the active obligation
+   * permits. When set, submitted challenge evidenceRefs must be a subset of
+   * these — this is what binds an `implementation_challenge` to a validation
+   * attempt for the CURRENT implementation digest (freshness). Absent on
+   * non-challenge paths.
+   */
+  readonly allowedEvidenceRefs?: readonly unknown[];
+  /** Active obligation id; challenge obligationIds must match it when set. */
+  readonly expectedObligationId?: string;
 }
 
 interface AttestedReviewCheckInput {
@@ -229,6 +239,8 @@ export function validateReviewFindings(
       requiredChallengeCount: obligation.requiredChallengeCount,
       requiredChallengeKind: obligation.requiredChallengeKind,
       challenges: findings.challenges,
+      expectedObligationId: ctx.expectedObligationId ?? obligation.obligationId,
+      allowedEvidenceRefs: ctx.allowedEvidenceRefs,
       resolutionVerdicts: findings.challengeResolutionVerdicts,
       unresolvedImplementationChallengeIds: ctx.unresolvedImplementationChallengeIds,
     });
@@ -615,6 +627,13 @@ export function resolveHostTaskEffectiveFindings(
       reviewInvocationPolicy: ctx.policy.reviewInvocationPolicy,
       reviewParentSessionId: ctx.state.sessionId,
       reviewHostPlatform: ctx.state.reviewHostPlatform,
+      // Freshness binding for directly-submitted (non-host-captured) findings:
+      // without these, an implementation_challenge could cite a stale, failed,
+      // or foreign validation attempt and be accepted. Mirrors the host-captured
+      // path (resolveHostTaskFindings) so both ingestion routes bind identically.
+      unresolvedImplementationChallengeIds: ctx.state.unresolvedImplementationChallengeIds,
+      allowedEvidenceRefs: ctx.state.allowedChallengeEvidenceRefs,
+      expectedObligationId: ctx.pendingObligation?.obligationId,
     });
     if (blocked) return { blocked };
     return { effectiveFindings: ctx.input.reviewFindings as ReviewFindings };

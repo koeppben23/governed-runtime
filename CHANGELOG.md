@@ -209,6 +209,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Bound implementation-challenge freshness on the directly-submitted review
+  path.** Challenge evidence freshness (an `implementation_challenge` must cite a
+  validation attempt for the current implementation digest, from the obligation's
+  allowed set, under the active obligation id) was enforced only on the
+  host-captured findings path. Directly-submitted `reviewFindings` reached
+  `validateReviewFindings` without `allowedEvidenceRefs` or `expectedObligationId`,
+  so a stale, failed, or foreign validation attempt could satisfy a challenge.
+  Both ingestion routes now pass identical binding context, so the freshness and
+  obligation-scope checks in `findings-consistency.ts` apply symmetrically.
+
 - **Registered three fail-closed review reason codes (#747).**
   `VALIDATION_SUBJECT_CHANGED` (validation subject digest changed mid-execution),
   `SUBAGENT_EVIDENCE_MISSING`, and `SUBAGENT_MANDATE_MISMATCH` are emitted on

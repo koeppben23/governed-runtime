@@ -398,6 +398,17 @@ All validation is fail-closed. Invalid findings return BLOCKED.
 
 Validation logic is implemented once in `src/integration/tools/review-validation.ts` and shared by `/plan`, `/architecture`, `/implement`, and `/review` tools. The `obligationType` discriminator (`'plan' | 'architecture' | 'implement' | 'review'`) selects per-obligation criteria. Plan, architecture, and implementation reviews bind iteration/version fields; standalone `/review` additionally binds the obligation to the concrete review input fingerprint and `toolObligationId`.
 
+**Challenge freshness binding (both ingestion routes).** When an obligation
+carries a frozen challenge requirement, challenge `evidenceRefs` are validated
+against the obligation's `allowedEvidenceRefs` and `expectedObligationId`. For
+implementation challenges this is what binds an `outcome='pass'` challenge to a
+validation attempt for the **current** implementation digest — a stale, failed,
+or foreign attempt is rejected with `SUBAGENT_CHALLENGE_EVIDENCE_MISSING`. Both
+ingestion routes pass this binding context identically: the host-captured path
+(`resolveHostTaskFindings`) and the directly-submitted path
+(`resolveHostTaskEffectiveFindings` → `validateReviewFindings`). Neither route can
+accept a challenge whose evidence is outside the frozen allowed set.
+
 **Plugin-level enforcement (`src/integration/review/enforcement/enforcement.ts`):**
 
 | Level   | Rule               | Condition                                                                                   | BLOCKED Code                         | Hook Point                |
