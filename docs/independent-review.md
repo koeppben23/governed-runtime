@@ -137,6 +137,41 @@ The LLM then sees the `INDEPENDENT_REVIEW_COMPLETED` response and submits the ve
 
 **Contract:** `INDEPENDENT_REVIEW_COMPLETED` is only signaled when the reviewer's response contains valid `ReviewFindings` and matching `ReviewInvocationEvidence`. Structured output is canonical high-assurance evidence. Text compatibility is lower-assurance evidence, policy-gated, audit-visible, and never treated as equivalent to structured output. Unparseable reviewer responses never produce `COMPLETED`.
 
+### Evidence-Grounded Implementation Review
+
+The implementation reviewer prompt carries a `## Verification Evidence (executed)`
+section built from FlowGuard-executed validation attempts, so the reviewer can
+falsify verification claims against runtime ground truth instead of inferring
+them from the diff. This evidence is executor-produced (`flowguard_run_check` via
+`src/verification/executor.ts`), never agent-reported: each row exposes the
+verification `kind`, `command`, `exitCode`, pass/fail/timeout status,
+`executionMs`, and the tamper-evident `outputDigest`.
+
+Fail-closed binding rules:
+
+- **Digest binding.** Only `implementation`-scope validation attempts whose
+  `implementationDigest` equals the current `implementation.digest` are injected.
+  Stale attempts (from a prior implementation revision), `baseline`-scope
+  attempts, and foreign-digest attempts are excluded, so the reviewer never
+  verifies claims against outdated ground truth
+  (`stateVerificationEvidence` in `src/integration/review/shared-helpers.ts`).
+- **No silent omission.** When no bound evidence exists, the section renders an
+  explicit `NOT_VERIFIED: no executed verification evidence is bound to the
+current implementation digest.` line rather than being dropped — "no bound
+  evidence" is itself a review signal.
+- **Read-only reviewer preserved.** FlowGuard executes the checks; the reviewer
+  model does not. The reviewer stays strictly read-only (`bash: deny`), and the
+  reviewer criteria (`REVIEWER_CRITERIA`) are unchanged — the behavior lives in
+  the prompt builder, not in a new review authority.
+- **Enforcement-safe.** The section is emitted after the attestation/context
+  block and uses neutral field labels (`durationMs`, `digest`) so it can never
+  introduce `iteration`/`version`-adjacent digits that would displace the L3
+  prompt-integrity context tokens.
+
+This surfaces executed evidence to the reviewer; it does not yet _require_ that
+the checks were executed before review (a `NOT_VERIFIED` section is still a valid
+review input). Mandatory pre-review execution is tracked separately.
+
 ### Review Output Policy
 
 `reviewOutputPolicy` is frozen in the policy snapshot at session creation:

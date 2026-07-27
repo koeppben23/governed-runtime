@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Evidence-grounded implementation review.** The implementation reviewer
+  prompt now carries FlowGuard-executed verification evidence (`exitCode`,
+  `passed`, `command`, `executionMs`, and the tamper-evident `outputDigest`) for
+  the current implementation, so the reviewer falsifies verification claims
+  against ground truth instead of inferring them. Only `implementation`-scope
+  validation attempts bound to the current implementation digest are injected;
+  stale, baseline, and foreign-digest attempts are excluded. When no bound
+  evidence exists the prompt renders an explicit `NOT_VERIFIED` line rather than
+  omitting the section. The reviewer remains strictly read-only — FlowGuard
+  executes the checks, not the reviewer model — and the reviewer criteria are
+  unchanged.
+
 - **Versioned frozen challenge policy (#747).** New sessions persist
   `challenge-policy.v1` in the policy snapshot, and every review obligation reads
   its requirement matrix from that frozen value before invocation. Snapshots from
