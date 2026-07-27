@@ -251,7 +251,7 @@ export function isNonDomainConfigPath(filePath: string): boolean {
   return NON_DOMAIN_CONFIG_BASENAMES.has(p);
 }
 
-function maxTaskClass(a: TaskClass, b: TaskClass): TaskClass {
+export function maxTaskClass(a: TaskClass, b: TaskClass): TaskClass {
   return TASK_CLASS_ORDER[a] >= TASK_CLASS_ORDER[b] ? a : b;
 }
 

@@ -74,6 +74,7 @@ async function classifyAndCreateArchObligation(
         profileSource: 'policy_default',
         policySnapshot: ctx.policySnapshot,
         changedFiles: resolvedTargetPaths,
+        claimedTaskClass: ctx.state.claimedTaskClass,
         metadata,
       })
     : null;

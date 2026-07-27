@@ -237,6 +237,7 @@ function buildPlanSubmissionState(
         profileSource: 'policy_default',
         policySnapshot: scope.state.policySnapshot,
         changedFiles: classificationFiles,
+        claimedTaskClass: scope.state.claimedTaskClass,
         metadata,
       })
     : null;

@@ -504,6 +504,7 @@ async function persistAndFormatNonConvergedReview(
         profileSource: 'policy_default',
         policySnapshot: advanced.state.policySnapshot,
         changedFiles: resolvedTargetPaths,
+        claimedTaskClass: advanced.state.claimedTaskClass,
         metadata,
       })
     : null;

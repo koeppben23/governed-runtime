@@ -237,6 +237,7 @@ export async function persistNonConvergedPlanReview(
         profileSource: 'policy_default',
         policySnapshot: finalState.policySnapshot,
         changedFiles: resolvedTargetPaths,
+        claimedTaskClass: finalState.claimedTaskClass,
         metadata,
       })
     : null;

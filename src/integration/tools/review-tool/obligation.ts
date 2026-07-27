@@ -356,6 +356,10 @@ async function createNewReviewObligation(
       profileSource: 'policy_default',
       policySnapshot: input.state.policySnapshot,
       changedFiles: resolvedTargetPaths,
+      // No claimedTaskClass floor here: a standalone /review assesses an EXTERNAL
+      // PR/branch/content whose risk is the reviewed diff itself (changedFiles),
+      // not the session's own task-class claim. The C1 floor applies only to the
+      // author's own change (plan/architecture/implement).
       metadata,
     }),
   };

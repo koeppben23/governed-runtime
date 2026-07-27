@@ -19,8 +19,9 @@ import type {
   PolicySnapshot,
 } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
-import { assessMinimumTaskClass } from '../phase-tool-gate.js';
+import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
 import { challengeKindForObligation } from '../../config/policy-types.js';
+import type { TaskClass } from '../../state/schema.js';
 
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
@@ -61,13 +62,27 @@ export function createReviewObligation(input: {
   policySnapshot?: Pick<PolicySnapshot, 'challengePolicy'> | null;
   /** Runtime paths are classified by the canonical phase-tool gate. */
   changedFiles?: readonly string[];
+  /**
+   * The author's declared task class. Used as a fail-closed FLOOR on the
+   * challenge count so a high-risk change cannot collapse the requirement to 0
+   * by declaring doc-only `targetPaths` (finding C1). The count is
+   * `counts[max(computedFromChangedFiles, claimedTaskClass)]`. NOT supplied for
+   * standalone /review, whose risk is the reviewed external diff, not the
+   * session's own task-class claim.
+   */
+  claimedTaskClass?: TaskClass;
   metadata?: Record<string, unknown>;
 }): ReviewObligation {
   const challengePolicy = input.policySnapshot?.challengePolicy;
   const requirements = challengePolicy
     ? {
         requiredChallengeCount:
-          challengePolicy.counts[assessMinimumTaskClass(input.changedFiles ?? []).minimumTaskClass],
+          challengePolicy.counts[
+            maxTaskClass(
+              assessMinimumTaskClass(input.changedFiles ?? []).minimumTaskClass,
+              input.claimedTaskClass ?? 'TRIVIAL',
+            )
+          ],
         requiredChallengeKind: challengeKindForObligation(input.obligationType),
         challengePolicyVersion: challengePolicy.version,
       }

@@ -167,6 +167,67 @@ describe('integration/review-assurance', () => {
       },
     );
 
+    describe('claimedTaskClass floors the challenge count (C1)', () => {
+      const policySnapshot = {
+        challengePolicy: {
+          version: 'challenge-policy.v1' as const,
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 } as const,
+        },
+      };
+
+      it('uses the HIGH-RISK claim even when changedFiles look doc-only', () => {
+        // The exact C1 attack: high-risk change declaring targetPaths=['docs/x.md'].
+        const result = createReviewObligation({
+          obligationType: 'plan',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          changedFiles: ['docs/x.md'],
+          claimedTaskClass: 'HIGH-RISK',
+          policySnapshot,
+        });
+        expect(result.requiredChallengeCount).toBe(2);
+      });
+
+      it('uses the computed HIGH-RISK when changedFiles outrank a low claim', () => {
+        const result = createReviewObligation({
+          obligationType: 'implement',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          changedFiles: ['src/state/schema.ts'],
+          claimedTaskClass: 'TRIVIAL',
+          policySnapshot,
+        });
+        expect(result.requiredChallengeCount).toBe(2);
+      });
+
+      it('takes the STANDARD claim over doc-only changedFiles', () => {
+        const result = createReviewObligation({
+          obligationType: 'plan',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          changedFiles: ['docs/x.md'],
+          claimedTaskClass: 'STANDARD',
+          policySnapshot,
+        });
+        expect(result.requiredChallengeCount).toBe(1);
+      });
+
+      it('defaults to the computed minimum when no claim is present', () => {
+        const result = createReviewObligation({
+          obligationType: 'plan',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          changedFiles: ['docs/x.md'],
+          policySnapshot,
+        });
+        expect(result.requiredChallengeCount).toBe(0);
+      });
+    });
+
     it('does not enforce challenges for a legacy snapshot without challengePolicy', () => {
       const result = createReviewObligation({
         obligationType: 'implement',

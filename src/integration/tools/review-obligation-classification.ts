@@ -40,6 +40,11 @@ export async function resolveChallengeClassificationEvidence(
 ): Promise<ChallengeClassificationEvidence> {
   if (!state.policySnapshot?.challengePolicy) return { kind: 'not_required' };
 
+  // Author-declared targetPaths take priority for the review SCOPE; VCS diff is
+  // the fallback. Note (finding C1): for pre-implementation obligations the
+  // challenge count's high-risk FLOOR is enforced separately via the author's
+  // claimedTaskClass in createReviewObligation, so a doc-only targetPaths cannot
+  // silently collapse a high-risk change's count.
   if (options?.targetPaths && options.targetPaths.length > 0) {
     return { kind: 'available', changedFiles: options.targetPaths };
   }

@@ -58,6 +58,7 @@ export function activateImplementationReviewObligation(
     profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
     changedFiles: state.implementation?.changedFiles ?? [],
+    claimedTaskClass: state.claimedTaskClass,
   });
   return {
     state: {
