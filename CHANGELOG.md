@@ -222,6 +222,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Hardened the review challenge feature against gaming (#747 follow-up).** Five
+  enforcement gaps in the challenge coverage feature were closed:
+  - _Distinctness + substance (B1/B2):_ the N required challenges must now be
+    substantively distinct (no duplicate `challengeId` or claim/locations/evidence
+    signature) and clear a low anti-placeholder claim floor. New codes
+    `SUBAGENT_CHALLENGE_NOT_DISTINCT`, `SUBAGENT_CHALLENGE_INSUBSTANTIAL`.
+  - _Contradicted falsification (B4):_ a `design_challenge`/`content_challenge`
+    whose outcome is `contradicted` can no longer accompany `accept`. New code
+    `SUBAGENT_CHALLENGE_CONTRADICTED`.
+  - _Evidence binding on all paths (B3/B5):_ `allowedEvidenceRefs` and
+    `expectedObligationId` are now wired on the plan, architecture, and standalone
+    review paths (previously implement-only), so a fabricated ADR section / digest
+    / content digest or a foreign obligation id is rejected.
+  - _Task-class floor (C1):_ the challenge count is floored by the author's
+    `claimedTaskClass` (`counts[max(computed, claimed)]`), so a high-risk change
+    can no longer collapse the count to 0 by declaring doc-only paths.
+  - _Fail-closed absent policy (A2):_ an absent `challengePolicy` now fails closed
+    to the canonical matrix in `team`/`team-ci`/`regulated` (solo stays
+    legacy-tolerant), matching the discoveryHealth/validationEvidence normalizers.
+
 - **Bound implementation-challenge freshness on the directly-submitted review
   path.** Challenge evidence freshness (an `implementation_challenge` must cite a
   validation attempt for the current implementation digest, from the obligation's

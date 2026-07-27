@@ -120,16 +120,24 @@ mode, use `policy.minimumActorAssuranceForApproval` and
 ## Review Challenge Policy
 
 New sessions freeze `challenge-policy.v1` into their policy snapshot. Each review
-obligation derives coverage from the runtime minimum task class: TRIVIAL requires
-0 challenges, STANDARD requires 1, and HIGH-RISK requires 2. Plan and architecture
-obligations require `design_challenge` evidence, implementation obligations require
-`implementation_challenge`, and standalone review obligations require
-`content_challenge`. The obligation stores the resolved count, kind, and policy
-version before reviewer invocation.
+obligation derives coverage from the runtime minimum task class, floored by the
+author's declared `claimedTaskClass`: TRIVIAL requires 0 challenges, STANDARD
+requires 1, and HIGH-RISK requires 2. A change declared HIGH-RISK therefore keeps
+its challenge requirement even if its declared paths look doc-only. Plan and
+architecture obligations require `design_challenge` evidence, implementation
+obligations require `implementation_challenge`, and standalone review obligations
+require `content_challenge` (whose coverage is derived from the reviewed diff, not
+the session's task-class claim). The obligation stores the resolved count, kind,
+and policy version before reviewer invocation. The required challenges must be
+substantively distinct and evidence-bound; a design/content challenge whose
+falsification is `contradicted` cannot accompany acceptance.
 
-Snapshots created before this policy have no `challengePolicy`; their obligations
-omit count and kind, so challenge enforcement remains disabled rather than being
-retrofitted from current policy defaults.
+Absent-`challengePolicy` handling is mode-dependent and fail-closed: a `solo`
+snapshot without the field stays legacy-tolerant (enforcement disabled), while
+`team`, `team-ci`, and `regulated` fail closed to the canonical
+`challenge-policy.v1` matrix so a legacy or stripped snapshot in an enforced mode
+cannot silently disable challenge enforcement. A present-but-malformed policy
+always normalizes to the canonical matrix.
 
 ## Central Policy Minimum
 
