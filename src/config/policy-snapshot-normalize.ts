@@ -29,6 +29,7 @@ import {
   DEFAULT_SELF_REVIEW_CONFIG,
   defaultDiscoveryHealthForMode,
   defaultValidationEvidenceForMode,
+  defaultChallengePolicyForMode,
   CHALLENGE_POLICY_V1,
 } from './policy-types.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
@@ -149,11 +150,19 @@ function normalizeReviewPolicies(
   };
 }
 
-function normalizeChallengePolicy(raw: unknown): NormalizedField<ChallengePolicy | undefined> {
-  // Absent field: legacy/pre-challenge snapshot. Stays compatible and does NOT
-  // activate enforcement (ticket #747: legacy snapshots without challengePolicy
-  // remain compatible).
-  if (raw === undefined) return { value: undefined, normalized: false };
+function normalizeChallengePolicy(
+  raw: unknown,
+  fallback: ChallengePolicy | undefined,
+): NormalizedField<ChallengePolicy | undefined> {
+  // Absent field. In solo mode this stays legacy-compatible and does NOT
+  // activate enforcement. In team/team-ci/regulated modes it fails closed to the
+  // canonical matrix (fallback), so a legacy snapshot or a stripped
+  // challengePolicy in an enforced mode cannot silently disable challenge
+  // enforcement — mirroring the discoveryHealth / validationEvidence normalizers
+  // (finding A2). `normalized` is true only when we actually substitute a value.
+  if (raw === undefined) {
+    return { value: fallback, normalized: fallback !== undefined };
+  }
   const candidate = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
   const counts = candidate.counts;
   if (
@@ -328,7 +337,7 @@ function normalizePolicyFields(
   );
   if (validationEvidenceResult.normalized) norm = true;
 
-  const challengePolicy = normalizeChallengePolicy(s.challengePolicy);
+  const challengePolicy = normalizeChallengePolicy(s.challengePolicy, defaults.challengePolicy);
   if (challengePolicy.normalized) norm = true;
 
   return {
@@ -731,6 +740,7 @@ export function modeConsistentDefaults(mode: PolicyMode): {
   readonly allowReducedCeremony: boolean;
   readonly discoveryHealth: DiscoveryHealthPolicy;
   readonly validationEvidence: ValidationEvidencePolicy;
+  readonly challengePolicy?: ChallengePolicy;
 } {
   const base =
     mode === 'solo'
@@ -744,5 +754,6 @@ export function modeConsistentDefaults(mode: PolicyMode): {
     ...base,
     discoveryHealth: defaultDiscoveryHealthForMode(mode),
     validationEvidence: defaultValidationEvidenceForMode(mode),
+    challengePolicy: defaultChallengePolicyForMode(mode),
   };
 }

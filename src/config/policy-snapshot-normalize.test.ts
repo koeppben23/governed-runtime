@@ -191,9 +191,17 @@ describe('normalizePolicySnapshot', () => {
       expect(result.mode).toBe('team');
     });
 
-    it('does not add challenge enforcement to a legacy snapshot', () => {
-      const result = normalizePolicySnapshot({ mode: 'team' });
+    it('leaves an absent challengePolicy disabled in solo mode (legacy-tolerant)', () => {
+      const result = normalizePolicySnapshot({ mode: 'solo' });
       expect(result.challengePolicy).toBeUndefined();
+    });
+
+    it('fails closed to the frozen matrix for an absent challengePolicy in an enforced mode (A2)', () => {
+      for (const mode of ['team', 'team-ci', 'regulated'] as const) {
+        const result = normalizePolicySnapshotWithMeta({ mode });
+        expect(result.snapshot.challengePolicy).toEqual(CHALLENGE_POLICY_V1);
+        expect(result.normalized).toBe(true);
+      }
     });
 
     it('fails closed to the frozen matrix when a present challengePolicy is malformed', () => {

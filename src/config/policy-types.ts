@@ -220,6 +220,16 @@ export function defaultValidationEvidenceForMode(mode: PolicyMode): ValidationEv
   return { enforcement: 'off', allowNoCommands: false };
 }
 
+/**
+ * Fail-closed challenge-policy default for a mode when a snapshot omits it.
+ * `solo` stays legacy-tolerant (no enforcement); team/team-ci/regulated fail
+ * closed to the canonical matrix so a stripped or legacy snapshot in an enforced
+ * mode cannot silently disable challenge enforcement (finding A2).
+ */
+export function defaultChallengePolicyForMode(mode: PolicyMode): ChallengePolicy | undefined {
+  return mode === 'solo' ? undefined : CHALLENGE_POLICY_V1;
+}
+
 // ─── FlowGuard Policy ─────────────────────────────────────────────────────────
 
 /**
