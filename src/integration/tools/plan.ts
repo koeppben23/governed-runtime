@@ -74,6 +74,7 @@ import {
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
+import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import { resolveChallengeClassificationEvidence } from './review-obligation-classification.js';
 // presentation imports moved to plan-response.ts
 
@@ -307,6 +308,13 @@ function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
       assurance: scope.state.reviewAssurance,
       sessionId: scope.context.sessionID,
       reviewHostPlatform: resolveRuntimeReviewPlatform(),
+      // Bind design-challenge evidence to the plan's canonical allowed refs
+      // (finding B3): without this, a plan review challenge could cite a
+      // fabricated ADR section / digest and pass.
+      allowedChallengeEvidenceRefs: buildHostTaskChallengeContract(
+        scope.state,
+        pendingObligation ?? null,
+      )?.evidenceRefs,
     },
   });
   return { assuranceBase, pendingObligation, expectedIteration, expectedPlanVersion, resolved };

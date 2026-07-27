@@ -195,7 +195,7 @@ async function finishFindingsSubmission(
   if (resolved.blocked || !resolved.obligation) {
     return resolved.blocked ?? formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {});
   }
-  const validationBlock = validateSubmittedReviewFindings(exec.args, resolved.obligation);
+  const validationBlock = validateSubmittedReviewFindings(state, exec.args, resolved.obligation);
   if (validationBlock) return validationBlock;
   const recorded = await recordSubmittedReviewInvocation(
     result,

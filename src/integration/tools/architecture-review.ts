@@ -36,6 +36,7 @@ import {
 
 import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
+import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 
 import {
   PHASE_LABELS,
@@ -164,6 +165,10 @@ function resolveArchitectureReview(
       assurance: state.reviewAssurance,
       sessionId: context.sessionID,
       reviewHostPlatform: resolveRuntimeReviewPlatform(),
+      // Bind design-challenge evidence to the ADR's canonical allowed refs
+      // (finding B3): a fabricated section/digest must not satisfy a challenge.
+      allowedChallengeEvidenceRefs: buildHostTaskChallengeContract(state, pendingObligation ?? null)
+        ?.evidenceRefs,
     },
   });
 

@@ -27,6 +27,7 @@ import {
 } from '../../review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { validateChallengeConsistency } from '../../review/enforcement/findings-consistency.js';
+import { buildHostTaskChallengeContract } from '../../review/host-task-policy.js';
 import { formatBlocked, writeStateWithArtifacts } from '../helpers.js';
 import { resolveChallengeClassificationEvidence } from '../review-obligation-classification.js';
 import { type ResolvedBranchReviewSource } from '../../../adapters/gh-cli.js';
@@ -497,6 +498,7 @@ export async function resolveSubmittedReviewObligation(
 }
 
 export function validateSubmittedReviewFindings(
+  state: SessionState,
   args: ReviewToolArgs,
   obligation: ReviewObligation,
 ): string | null {
@@ -536,6 +538,11 @@ export function validateSubmittedReviewFindings(
       challenges: findings.challenges as Parameters<
         typeof validateChallengeConsistency
       >[0]['challenges'],
+      // Obligation-scope + evidence binding for content challenges (findings
+      // B3/B5): a content challenge must carry the active obligation id and cite
+      // the canonical content ref, not a fabricated digest.
+      expectedObligationId: obligation.obligationId,
+      allowedEvidenceRefs: buildHostTaskChallengeContract(state, obligation)?.evidenceRefs,
       resolutionVerdicts: findings.challengeResolutionVerdicts as Parameters<
         typeof validateChallengeConsistency
       >[0]['resolutionVerdicts'],
