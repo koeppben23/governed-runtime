@@ -203,6 +203,87 @@ describe('review/enforcement/findings-consistency', () => {
       ).toEqual({ ok: true });
     });
 
+    it('rejects accept when a design challenge falsification is contradicted (B4)', () => {
+      const result = validateChallengeConsistency({
+        overallVerdict: 'accept',
+        requiredChallengeCount: 1,
+        requiredChallengeKind: 'design_challenge',
+        challenges: [
+          {
+            kind: 'design_challenge',
+            outcome: 'contradicted',
+            claim: 'The chosen option does not satisfy the stated latency constraint.',
+            locations: ['ADR: Decision'],
+            evidenceRefs: [{ kind: 'plan_adr_section' }],
+          },
+        ],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_CONTRADICTED',
+        details: { kind: 'design_challenge', outcome: 'contradicted' },
+      });
+    });
+
+    it('rejects accept when a content challenge falsification is contradicted (B4)', () => {
+      const result = validateChallengeConsistency({
+        overallVerdict: 'accept',
+        requiredChallengeCount: 1,
+        requiredChallengeKind: 'content_challenge',
+        challenges: [
+          {
+            kind: 'content_challenge',
+            outcome: 'contradicted',
+            claim: 'The diff introduces a SQL injection on the search endpoint.',
+            locations: ['src/search.ts:20'],
+            evidenceRefs: [{ kind: 'content' }],
+          },
+        ],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_CONTRADICTED',
+      });
+    });
+
+    it('accepts a contradicted design challenge under changes_requested', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'changes_requested',
+          requiredChallengeCount: 1,
+          requiredChallengeKind: 'design_challenge',
+          challenges: [
+            {
+              kind: 'design_challenge',
+              outcome: 'contradicted',
+              claim: 'The chosen option does not satisfy the stated latency constraint.',
+              locations: ['ADR: Decision'],
+              evidenceRefs: [{ kind: 'plan_adr_section' }],
+            },
+          ],
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    it('accepts a supported design challenge (falsification failed → artifact holds)', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'accept',
+          requiredChallengeCount: 1,
+          requiredChallengeKind: 'design_challenge',
+          challenges: [
+            {
+              kind: 'design_challenge',
+              outcome: 'supported',
+              claim: 'The chosen option satisfies the stated latency constraint.',
+              locations: ['ADR: Decision'],
+              evidenceRefs: [{ kind: 'plan_adr_section' }],
+            },
+          ],
+        }),
+      ).toEqual({ ok: true });
+    });
+
     it('accepts unable_to_review with no challenges when no evidence is available', () => {
       expect(
         validateChallengeConsistency({

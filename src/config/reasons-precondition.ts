@@ -506,6 +506,16 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Independent review challenge claim is too short (minimum {minChars} characters); placeholder challenges are rejected.',
     recoverySteps: ['State a concrete falsification claim for each required challenge.'],
   },
+  {
+    code: 'SUBAGENT_CHALLENGE_CONTRADICTED',
+    category: 'precondition',
+    messageTemplate:
+      'A {kind} falsification succeeded (outcome {outcome}); acceptance is not allowed while the artifact is contradicted.',
+    recoverySteps: [
+      'Return changes_requested and record the contradiction as a blocking issue.',
+      'Do not accept an artifact that a challenge has contradicted.',
+    ],
+  },
 
   {
     code: 'SUBAGENT_PROMPT_EMPTY',

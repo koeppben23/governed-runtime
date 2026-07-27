@@ -155,6 +155,22 @@ function validateChallenge(
       details: { outcome: challenge.outcome },
     };
   }
+  // A design/content challenge whose falsification SUCCEEDED (the artifact is
+  // contradicted) cannot accompany acceptance. Previously the outcome of these
+  // kinds was never checked, so a reviewer could collect a "contradicted"
+  // falsification signal and still return `accept` with no blocking issue — the
+  // signal was silently ignored (finding B4). Force a non-accept verdict.
+  if (
+    (challenge.kind === 'design_challenge' || challenge.kind === 'content_challenge') &&
+    input.overallVerdict === 'accept' &&
+    challenge.outcome === 'contradicted'
+  ) {
+    return {
+      ok: false,
+      code: 'SUBAGENT_CHALLENGE_CONTRADICTED',
+      details: { kind: challenge.kind, outcome: challenge.outcome },
+    };
+  }
   return { ok: true };
 }
 
