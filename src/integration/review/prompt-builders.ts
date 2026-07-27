@@ -226,6 +226,36 @@ export interface ImplReviewPromptOpts {
     validationAttemptIds: string[];
     resolvedAt: string;
   }>;
+  /**
+   * Runtime-executed verification evidence bound to the implementation under
+   * review. These are FlowGuard-executed (not agent-reported) check results, so
+   * the reviewer can falsify verification claims against ground truth instead of
+   * inferring them. Digest binding is the caller's responsibility: only evidence
+   * for the current implementation digest must be passed. When absent or empty,
+   * the section fails closed to an explicit NOT_VERIFIED line rather than being
+   * silently omitted, because "no bound evidence" is itself a review signal.
+   */
+  readonly verificationEvidence?: readonly ReviewVerificationEvidenceItem[];
+}
+
+/**
+ * A single runtime-executed verification result projected for the reviewer
+ * prompt. Fields are drawn from the immutable `ValidationAttempt.result`
+ * (executor-produced, tamper-evident via `outputDigest`). No raw stdout/stderr
+ * is carried — only the bounded `detail` summary and the integrity digest — so
+ * the section stays token-bounded while remaining independently verifiable.
+ */
+export interface ReviewVerificationEvidenceItem {
+  readonly attemptId: string;
+  readonly kind: string;
+  readonly command: string;
+  readonly passed: boolean;
+  readonly exitCode: number;
+  readonly timedOut: boolean;
+  readonly executionMs: number;
+  readonly outputDigest: string;
+  readonly detail: string;
+  readonly executedAt: string;
 }
 
 /** Options for building an architecture (ADR) review prompt. F13 slice 6. */
@@ -342,6 +372,53 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
 /**
  * Build a prompt for implementation review by the flowguard-reviewer subagent.
  */
+/**
+ * Render the executed verification evidence section for the implementation
+ * review prompt.
+ *
+ * Fail-closed: an empty list renders an explicit NOT_VERIFIED line instead of
+ * omitting the section, so the reviewer is told that no runtime evidence is
+ * bound to the current implementation — a genuine review signal, not silence.
+ *
+ * Enforcement safety: this section is emitted AFTER the attestation/context
+ * block and BEFORE the CORE_REVIEW_PROFILE_MARKER, and it deliberately avoids
+ * the tokens "iteration" and "version" adjacent to digits so it can never
+ * displace the enforcement matcher's iteration=/planVersion= context tokens
+ * (see promptContainsValue in enforcement/extraction.ts). Field labels are
+ * neutral (`durationMs`, `digest`) for the same reason.
+ */
+export function renderVerificationEvidence(
+  evidence: readonly ReviewVerificationEvidenceItem[],
+): string[] {
+  if (evidence.length === 0) {
+    return [
+      '## Verification Evidence (executed)',
+      '',
+      '- NOT_VERIFIED: no executed verification evidence is bound to the current implementation digest.',
+      '  Treat every plan verification claim as NOT_VERIFIED unless you can independently confirm it; do not assume checks passed.',
+      '',
+    ];
+  }
+  const rows = evidence.map((item) => {
+    const status = item.timedOut ? 'TIMED_OUT' : item.passed ? 'PASS' : 'FAIL';
+    return (
+      `- [${status}] kind=${item.kind} exitCode=${item.exitCode} durationMs=${item.executionMs} ` +
+      `digest=${item.outputDigest}\n` +
+      `  command: ${item.command}\n` +
+      `  detail: ${item.detail}`
+    );
+  });
+  return [
+    '## Verification Evidence (executed)',
+    '',
+    'FlowGuard executed these checks itself (not agent-reported); exitCode/digest are tamper-evident.',
+    'Verify plan verification claims against these results. A claim not supported by a PASS here is NOT_VERIFIED.',
+    '',
+    ...rows,
+    '',
+  ];
+}
+
 export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
   const {
     changedFiles,
@@ -356,6 +433,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     profileRules,
     discoveryContext,
     challengeResolutions = [],
+    verificationEvidence = [],
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -385,6 +463,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
           '',
         ]
       : []),
+    ...renderVerificationEvidence(verificationEvidence),
     '## Instructions',
     '',
     'Review this implementation against the approved plan and ticket.',
