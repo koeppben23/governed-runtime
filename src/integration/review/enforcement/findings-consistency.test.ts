@@ -83,6 +83,17 @@ describe('review/enforcement/findings-consistency', () => {
       evidenceRefs: [{ kind: 'implementation' }, { kind: 'validation_attempt' }],
       outcome: 'pass',
     };
+    // A substantively distinct second implementation challenge (different
+    // evidence) so a required count of 2 is not tripped by the anti-gaming
+    // distinctness guard.
+    const implementationChallenge2 = {
+      kind: 'implementation_challenge',
+      evidenceRefs: [
+        { kind: 'implementation' },
+        { kind: 'validation_attempt', attemptId: 'second' },
+      ],
+      outcome: 'pass',
+    };
 
     it('accepts the required HIGH-RISK implementation coverage', () => {
       expect(
@@ -90,7 +101,7 @@ describe('review/enforcement/findings-consistency', () => {
           overallVerdict: 'accept',
           requiredChallengeCount: 2,
           requiredChallengeKind: 'implementation_challenge',
-          challenges: [implementationChallenge, implementationChallenge],
+          challenges: [implementationChallenge, implementationChallenge2],
         }),
       ).toEqual({ ok: true });
     });
@@ -376,6 +387,124 @@ describe('review/enforcement/findings-consistency', () => {
         code: 'SUBAGENT_IMPLEMENTATION_CHALLENGE_UNRESOLVED',
         details: { outcome: 'not_verified' },
       });
+    });
+  });
+
+  describe('anti-gaming distinctness and substance floor (B1/B2)', () => {
+    const base = {
+      kind: 'implementation_challenge' as const,
+      outcome: 'pass' as const,
+      claim: 'The null branch is not covered by the delivered guard.',
+      locations: ['src/foo.ts:10'],
+    };
+
+    it('rejects two challenges with an identical substance signature', () => {
+      const dup = {
+        ...base,
+        challengeId: '00000000-0000-4000-8000-00000000000a',
+        evidenceRefs: [{ kind: 'implementation' }, { kind: 'validation_attempt' }],
+      };
+      const result = validateChallengeConsistency({
+        overallVerdict: 'accept',
+        requiredChallengeCount: 2,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [
+          dup,
+          { ...dup, challengeId: '00000000-0000-4000-8000-00000000000b' }, // only the id differs
+        ],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_NOT_DISTINCT',
+        details: { reason: 'duplicate_substance' },
+      });
+    });
+
+    it('rejects two challenges that reuse the same challengeId', () => {
+      const c = {
+        ...base,
+        challengeId: '00000000-0000-4000-8000-00000000000c',
+        evidenceRefs: [{ kind: 'implementation' }, { kind: 'validation_attempt' }],
+      };
+      const c2 = {
+        ...base,
+        challengeId: '00000000-0000-4000-8000-00000000000c', // same id
+        claim: 'A different concrete claim about the retry path behavior.',
+        evidenceRefs: [{ kind: 'implementation' }, { kind: 'validation_attempt', attemptId: 'x' }],
+      };
+      const result = validateChallengeConsistency({
+        overallVerdict: 'accept',
+        requiredChallengeCount: 2,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [c, c2],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_NOT_DISTINCT',
+        details: { reason: 'duplicate_challenge_id' },
+      });
+    });
+
+    it('accepts two substantively distinct challenges', () => {
+      const c1 = {
+        ...base,
+        challengeId: '00000000-0000-4000-8000-00000000000d',
+        evidenceRefs: [{ kind: 'implementation' }, { kind: 'validation_attempt' }],
+      };
+      const c2 = {
+        ...base,
+        challengeId: '00000000-0000-4000-8000-00000000000e',
+        claim: 'The concurrency guard does not cover the second writer.',
+        locations: ['src/bar.ts:42'],
+        evidenceRefs: [{ kind: 'implementation' }, { kind: 'validation_attempt', attemptId: 'y' }],
+      };
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'accept',
+          requiredChallengeCount: 2,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [c1, c2],
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    it('rejects a placeholder claim below the substance floor', () => {
+      const result = validateChallengeConsistency({
+        overallVerdict: 'accept',
+        requiredChallengeCount: 1,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [
+          {
+            ...base,
+            claim: 'x', // placeholder
+            evidenceRefs: [{ kind: 'implementation' }, { kind: 'validation_attempt' }],
+          },
+        ],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_INSUBSTANTIAL',
+        details: { reason: 'claim_too_short' },
+      });
+    });
+
+    it('does not apply the floor when claim is absent (reduced callers/fixtures)', () => {
+      // Reduced-shape challenges (no claim field) must remain valid — the floor
+      // is only enforced when the field is present.
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'accept',
+          requiredChallengeCount: 1,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [
+            {
+              kind: 'implementation_challenge',
+              outcome: 'pass',
+              evidenceRefs: [{ kind: 'implementation' }, { kind: 'validation_attempt' }],
+            },
+          ],
+        }),
+      ).toEqual({ ok: true });
     });
   });
 

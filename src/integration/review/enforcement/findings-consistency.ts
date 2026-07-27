@@ -66,6 +66,10 @@ export interface ChallengeConsistencyInput {
         readonly kind: string;
         readonly evidenceRefs?: readonly unknown[];
         readonly outcome?: string;
+        readonly challengeId?: string;
+        readonly claim?: string;
+        readonly scenario?: string;
+        readonly locations?: readonly string[];
       }[]
     | undefined;
   readonly expectedObligationId?: string;
@@ -179,6 +183,8 @@ function validateChallengeCountFlexible(
   input: ChallengeConsistencyInput,
   challenges: readonly Challenge[],
 ): ChallengeConsistencyResult {
+  const distinctness = validateChallengeSubstance(challenges);
+  if (!distinctness.ok) return distinctness;
   const allowedRefs = input.allowedEvidenceRefs
     ? new Set(input.allowedEvidenceRefs.map(canonicalJsonStringify))
     : undefined;
@@ -187,6 +193,90 @@ function validateChallengeCountFlexible(
     if (!result.ok) return result;
   }
   return validateResolutionVerdicts(input);
+}
+
+/**
+ * Anti-gaming invariant across the N required challenges (findings B1/B2).
+ *
+ * The count check alone is purely quantitative: without this, N byte-identical
+ * challenges (or N one-character placeholders) satisfy a HIGH-RISK requirement.
+ * Two guards close that:
+ *  - Distinctness: no two challenges may share a `challengeId`, and no two may
+ *    share the same substance signature (claim + locations + evidenceRefs,
+ *    normalized). Copying a challenge and only regenerating its random UUID is
+ *    therefore rejected.
+ *  - Substance floor: `claim` must clear a deliberately LOW non-whitespace
+ *    length bar. This is an anti-placeholder guard ("x", "n/a"), NOT a quality
+ *    judgement — a genuine falsification claim always clears it. Only applied
+ *    when the field is present (the input type makes it optional for reduced
+ *    callers/fixtures).
+ */
+function validateChallengeSubstance(challenges: readonly Challenge[]): ChallengeConsistencyResult {
+  if (challenges.length < 2) {
+    // Still enforce the placeholder floor for a single challenge.
+    return validateChallengeFloor(challenges);
+  }
+  const floor = validateChallengeFloor(challenges);
+  if (!floor.ok) return floor;
+
+  const seenIds = new Set<string>();
+  const seenSignatures = new Set<string>();
+  for (const challenge of challenges) {
+    if (challenge.challengeId !== undefined) {
+      if (seenIds.has(challenge.challengeId)) {
+        return {
+          ok: false,
+          code: 'SUBAGENT_CHALLENGE_NOT_DISTINCT',
+          details: { reason: 'duplicate_challenge_id', challengeId: challenge.challengeId },
+        };
+      }
+      seenIds.add(challenge.challengeId);
+    }
+    const signature = challengeSubstanceSignature(challenge);
+    if (seenSignatures.has(signature)) {
+      return {
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_NOT_DISTINCT',
+        details: { reason: 'duplicate_substance' },
+      };
+    }
+    seenSignatures.add(signature);
+  }
+  return { ok: true };
+}
+
+/** Deliberately low anti-placeholder bar; a real falsification claim clears it. */
+const MIN_CHALLENGE_CLAIM_CHARS = 12;
+
+function validateChallengeFloor(challenges: readonly Challenge[]): ChallengeConsistencyResult {
+  for (const challenge of challenges) {
+    if (
+      challenge.claim !== undefined &&
+      challenge.claim.trim().length < MIN_CHALLENGE_CLAIM_CHARS
+    ) {
+      return {
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_INSUBSTANTIAL',
+        details: { reason: 'claim_too_short', minChars: MIN_CHALLENGE_CLAIM_CHARS },
+      };
+    }
+  }
+  return { ok: true };
+}
+
+/**
+ * Substance signature keyed on the meaning of the challenge, not its identity.
+ * `claim` is normalized (trimmed + lowercased), `locations` sorted, and
+ * `evidenceRefs` reduced to a canonical sorted set, so trivial reordering or
+ * casing cannot defeat duplicate detection. `challengeId`/`scenario` are
+ * intentionally excluded — the scenario prose can be varied while the substance
+ * stays identical.
+ */
+function challengeSubstanceSignature(challenge: Challenge): string {
+  const claim = (challenge.claim ?? '').trim().toLowerCase();
+  const locations = [...(challenge.locations ?? [])].map((l) => l.trim().toLowerCase()).sort();
+  const evidence = [...(challenge.evidenceRefs ?? [])].map(canonicalJsonStringify).sort();
+  return canonicalJsonStringify({ kind: challenge.kind, claim, locations, evidence });
 }
 
 function validateResolutionVerdicts(input: ChallengeConsistencyInput): ChallengeConsistencyResult {

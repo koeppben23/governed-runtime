@@ -490,6 +490,24 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'SUBAGENT_CHALLENGE_NOT_DISTINCT',
+    category: 'precondition',
+    messageTemplate:
+      'Independent review supplied duplicate challenges ({reason}); each required challenge must be substantively distinct.',
+    recoverySteps: [
+      'Submit challenges that falsify different claims, cite different evidence, or target different locations.',
+      'Do not repeat a challenge with only a new challengeId.',
+    ],
+  },
+  {
+    code: 'SUBAGENT_CHALLENGE_INSUBSTANTIAL',
+    category: 'precondition',
+    messageTemplate:
+      'Independent review challenge claim is too short (minimum {minChars} characters); placeholder challenges are rejected.',
+    recoverySteps: ['State a concrete falsification claim for each required challenge.'],
+  },
+
+  {
     code: 'SUBAGENT_PROMPT_EMPTY',
     category: 'precondition',
     messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} prompt is too short. Include the plan/implementation text, ticket text, iteration, and planVersion.`,
