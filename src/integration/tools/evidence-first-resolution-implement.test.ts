@@ -11,7 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeState, TICKET } from '../../fixtures.js';
+import { makeState, TICKET, VALIDATION_PASSED } from '../../fixtures.js';
 import { TEAM_POLICY } from '../../config/policy-presets.js';
 import type { SessionState } from '../../state/schema.js';
 import {
@@ -255,6 +255,9 @@ function implStateWithEvidence(
       domainFiles: ['src/foo.ts'],
       executedAt: now,
     },
+    // Realistic IMPL_REVIEW state: the phase is only reachable once the active
+    // checks passed in IMPL_VALIDATION, so carry that passing evidence.
+    implValidation: VALIDATION_PASSED,
     selfReview: {
       iteration: 0,
       maxIterations: 3,
@@ -512,6 +515,8 @@ describe('BUG-17: implement evidence-first resolution', () => {
         digest: 'digest-impl',
         executedAt: now,
       },
+      // Realistic IMPL_REVIEW state: active checks passed in IMPL_VALIDATION.
+      implValidation: VALIDATION_PASSED,
       selfReview: {
         iteration: 0,
         maxIterations: 3,

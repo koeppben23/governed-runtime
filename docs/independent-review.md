@@ -216,6 +216,22 @@ The reviewer subagent returns one of three `overallVerdict` values:
 
 Recovery: revise the artifact substantially (e.g., new `flowguard_plan({ planText })` with clearer scope) or address the prerequisite that made the artifact unreviewable (e.g., file a new ticket). A fresh artifact submission starts a new review obligation.
 
+#### Acceptance Requires Passing Validation Evidence (Defense-in-Depth)
+
+Accepting an implementation review does not advance to `EVIDENCE_REVIEW` on the
+reviewer verdict alone. Before advancing, `handleImplReview` re-checks the
+canonical `implValidationPassed` guard (from `src/machine/guards.ts`, the same
+authority that gates `IMPL_VALIDATION → IMPL_REVIEW`): every active verification
+check must have passing execution evidence for the current implementation.
+
+On the normal path this is redundant — `IMPL_REVIEW` is only reachable once the
+`IMPL_VALIDATION` gate passed — but acceptance must not rely on topology alone.
+Reusing the machine guard (SSOT) means any future inbound path to `IMPL_REVIEW`,
+or a topology regression, still cannot accept unvalidated code. When the active
+checks are unsatisfied, acceptance blocks with `IMPL_VALIDATION_EVIDENCE_REQUIRED`.
+Sessions with no active checks are unaffected — the deliberate zero-check
+behavior for repos without discoverable verification commands is preserved.
+
 ### Fail-Closed Enforcement
 
 FlowGuard enforces the subagent requirement at three layers:

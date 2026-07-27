@@ -10,6 +10,18 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 export const REVIEW_VALIDATION_REASONS = [
   {
+    code: 'IMPL_VALIDATION_EVIDENCE_REQUIRED',
+    category: 'state',
+    messageTemplate:
+      'Implementation review cannot be accepted: active verification checks have no passing execution evidence for the current implementation ({message}). Reviewer acceptance is gated on executed validation, not review verdict alone.',
+    recoverySteps: [
+      'Run flowguard_run_check for each active check in IMPL_VALIDATION until all pass',
+      'Re-record the implementation with flowguard_implement if the code changed, then re-run checks',
+      'Only submit reviewVerdict: "accept" after every active check has passing execution evidence',
+    ],
+  },
+
+  {
     code: 'SUBAGENT_REVIEW_REQUIRED',
     category: 'input',
     messageTemplate: `reviewFindings must come from ${REVIEWER_SUBAGENT_TYPE} subagent. The findings provided do not contain evidence of subagent origin.`,

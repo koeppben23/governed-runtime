@@ -63,6 +63,7 @@ import {
 // State & Machine
 import type { SessionState } from '../../state/schema.js';
 import { evaluate, evaluateWithEvent } from '../../machine/evaluate.js';
+import { implValidationPassed } from '../../machine/guards.js';
 
 // Rail helpers
 import { applyTransition, autoAdvance } from '../../rails/types.js';
@@ -347,10 +348,38 @@ export async function handleImplReview(input: ImplementRuntime): Promise<string>
       reviewFindings: newReviewFindings,
     });
   }
+  const validationGate = implValidationEvidenceGate(input.state);
+  if (validationGate) return validationGate;
   return handleApprovedReview({
     runtime: input,
     reviewedState,
     iteration,
     reviewFindings: newReviewFindings,
+  });
+}
+
+/**
+ * Defense-in-depth gate: reviewer acceptance must not advance to EVIDENCE_REVIEW
+ * unless the active verification checks actually have passing execution evidence
+ * for the current implementation.
+ *
+ * Today `IMPL_REVIEW` is only reachable via the `IMPL_VALIDATION`
+ * `implValidationPassed` gate, so on the normal path this is redundant. But
+ * acceptance must not rely solely on topology: reusing the canonical guard (SSOT)
+ * means any future inbound path to `IMPL_REVIEW`, or a topology regression, still
+ * cannot accept unvalidated code. Returns a BLOCKED payload, or `null` when the
+ * active checks are satisfied (including the vacuous zero-`activeChecks` case the
+ * guard already permits).
+ */
+export function implValidationEvidenceGate(state: SessionState): string | null {
+  if (implValidationPassed(state)) return null;
+  const missing = state.activeChecks.filter(
+    (checkId) => !state.implValidation.some((v) => v.checkId === checkId && v.passed),
+  );
+  return formatBlocked('IMPL_VALIDATION_EVIDENCE_REQUIRED', {
+    message:
+      missing.length > 0
+        ? `missing passing checks: ${missing.join(', ')}`
+        : 'validation evidence not satisfied',
   });
 }
