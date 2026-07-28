@@ -503,8 +503,31 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'SUBAGENT_CHALLENGE_INSUBSTANTIAL',
     category: 'precondition',
     messageTemplate:
-      'Independent review challenge claim is too short (minimum {minChars} characters); placeholder challenges are rejected.',
-    recoverySteps: ['State a concrete falsification claim for each required challenge.'],
+      'Independent review challenge has an empty required field ({field}); placeholder challenges are rejected.',
+    recoverySteps: ['State a concrete scenario, claim, and locations for each required challenge.'],
+  },
+  {
+    code: 'SUBAGENT_RESOLUTION_VERDICT_UNKNOWN',
+    category: 'precondition',
+    messageTemplate:
+      'Resolution verdict references challenge {challengeId}, which is not an open challenge from the preceding review iteration.',
+    recoverySteps: [
+      'Return resolution verdicts only for the unresolved challenges of the immediately preceding iteration.',
+    ],
+  },
+  {
+    code: 'SUBAGENT_RESOLUTION_VERDICT_DUPLICATE',
+    category: 'precondition',
+    messageTemplate:
+      'Resolution verdict for challenge {challengeId} appears more than once; each challenge takes exactly one verdict.',
+    recoverySteps: ['Submit exactly one resolution verdict per open challenge.'],
+  },
+  {
+    code: 'SUBAGENT_RESOLUTION_VERDICT_UNEXPECTED',
+    category: 'precondition',
+    messageTemplate:
+      'Resolution verdicts were supplied ({supplied}) but no prior challenge is open for resolution.',
+    recoverySteps: ['Omit challengeResolutionVerdicts when there is no open challenge to resolve.'],
   },
   {
     code: 'SUBAGENT_CHALLENGE_CONTRADICTED',

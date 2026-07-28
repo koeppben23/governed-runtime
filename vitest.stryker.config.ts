@@ -40,6 +40,7 @@ export default defineConfig({
       'src/integration/review/orchestrator-retry-format-free.test.ts',
       'src/integration/review/enforcement/enforcement.test.ts',
       'src/integration/review/enforcement/findings-consistency.test.ts',
+      'src/integration/review/enforcement/challenge-consistency.test.ts',
       'src/integration/review/enforcement/mutation.test.ts',
       'src/integration/review/enforcement/extraction.test.ts',
       'src/integration/review/enforcement/session.test.ts',

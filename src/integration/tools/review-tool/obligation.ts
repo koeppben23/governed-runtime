@@ -26,7 +26,7 @@ import {
   findAcceptedInvocationForFindings,
 } from '../../review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
-import { validateChallengeConsistency } from '../../review/enforcement/findings-consistency.js';
+import { validateChallengeConsistency } from '../../review/enforcement/challenge-consistency.js';
 import { buildHostTaskChallengeContract } from '../../review/host-task-policy.js';
 import { formatBlocked, writeStateWithArtifacts } from '../helpers.js';
 import { resolveChallengeClassificationEvidence } from '../review-obligation-classification.js';

@@ -37,10 +37,8 @@ import {
   formatHostTaskAcceptanceRejection,
 } from './review-validation-acceptance.js';
 import { resolveHostTaskFindings } from './review-validation-host-task.js';
-import {
-  validateChallengeConsistency,
-  validateReviewFindingsConsistency,
-} from '../review/enforcement/findings-consistency.js';
+import { validateChallengeConsistency } from '../review/enforcement/challenge-consistency.js';
+import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 

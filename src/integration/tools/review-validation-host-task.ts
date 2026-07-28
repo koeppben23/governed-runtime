@@ -23,10 +23,8 @@ import {
   withHostTaskPath,
   type HostTaskFindingsAcceptanceRejection,
 } from './review-validation-acceptance.js';
-import {
-  validateChallengeConsistency,
-  validateReviewFindingsConsistency,
-} from '../review/enforcement/findings-consistency.js';
+import { validateChallengeConsistency } from '../review/enforcement/challenge-consistency.js';
+import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
 
 /**
  * Result of resolving review findings from host-task invocation evidence.
