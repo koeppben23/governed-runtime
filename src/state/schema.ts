@@ -321,6 +321,9 @@ export const SessionState = z.object({
   /** Independent review findings for /implement (parallel, NOT mixed with ImplEvidence). */
   implReviewFindings: z.array(ReviewFindings).optional(),
 
+  /** Independent review findings for standalone /review, retained append-only for audit. */
+  standaloneReviewFindings: z.array(ReviewFindings).optional(),
+
   /** P35 strict independent-review obligations and invocation evidence. */
   reviewAssurance: ReviewAssuranceState.optional(),
 

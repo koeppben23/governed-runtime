@@ -8,6 +8,7 @@ export function collectPreviouslyUsedChallengeIds(state: SessionState): readonly
     state.plan?.reviewFindings,
     state.architecture?.reviewFindings,
     state.implReviewFindings,
+    state.standaloneReviewFindings,
   ];
   for (const findingsHistory of histories) {
     for (const findings of findingsHistory ?? []) {

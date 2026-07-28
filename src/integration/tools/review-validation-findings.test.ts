@@ -132,29 +132,6 @@ describe('validateReviewFindings', () => {
       expect(result).toBeNull();
     });
 
-    it('rejects a reused challenge ID even without a required challenge policy', () => {
-      const challengeId = '00000000-0000-4000-8000-000000000014';
-      const result = validateReviewFindings(
-        makeFindings({
-          overallVerdict: 'changes_requested',
-          challenges: [
-            {
-              challengeId,
-              kind: 'implementation_challenge',
-              outcome: 'fail',
-              evidenceRefs: [{ kind: 'implementation' }],
-            } as ReviewChallenge,
-          ],
-        }),
-        makeCtx({ previouslyUsedChallengeIds: [challengeId] }),
-      );
-      expect(result).not.toBeNull();
-      expect(parseBlocked(result!)).toMatchObject({
-        code: 'SUBAGENT_CHALLENGE_NOT_DISTINCT',
-        error: true,
-      });
-    });
-
     it('returns null for planVersion > 1 when expected', () => {
       const result = validateReviewFindings(
         makeFindings({ planVersion: 5 }),

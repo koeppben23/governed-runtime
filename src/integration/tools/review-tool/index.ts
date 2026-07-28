@@ -404,7 +404,10 @@ async function persistCompletedReview(
       prepared.validatedReviewObligation,
       args,
       now,
-      prepared.evidenceInvocationId,
+      {
+        acceptedInvocationId: prepared.evidenceInvocationId,
+        effectiveReviewFindings: prepared.effectiveReviewFindings,
+      },
     );
     const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);
     if (completion.kind === 'overflow') {

@@ -165,7 +165,7 @@ export function validateChallengeConsistency(
   if (input.overallVerdict === 'unable_to_review') {
     return validateChallengeCountFlexible(input, challenges);
   }
-  if (input.requiredChallengeCount > 0 && challenges.length !== input.requiredChallengeCount) {
+  if (challenges.length !== input.requiredChallengeCount) {
     return {
       ok: false,
       code: 'SUBAGENT_CHALLENGE_COUNT_INCOHERENT',

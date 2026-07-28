@@ -98,4 +98,15 @@ describe('validateSubmittedReviewFindings — content challenge binding (B3/B5)'
       expect(result).not.toContain('SUBAGENT_CHALLENGE_');
     }
   });
+
+  it('rejects a standalone content challenge ID already persisted by an earlier standalone review', () => {
+    const prior = argsWith(contentChallenge()).reviewFindings!;
+    const result = validateSubmittedReviewFindings(
+      { ...makeState('REVIEW_COMPLETE'), standaloneReviewFindings: [prior] },
+      argsWith(contentChallenge()),
+      reviewObligation(),
+    );
+    expect(result).toContain('SUBAGENT_CHALLENGE_NOT_DISTINCT');
+    expect(result).toContain('historical_challenge_id_reused');
+  });
 });

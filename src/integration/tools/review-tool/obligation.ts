@@ -10,7 +10,7 @@
 import { hashText, hashTextShort } from '../../../shared/hashing.js';
 
 import type { SessionState } from '../../../state/schema.js';
-import type { ReviewObligation } from '../../../state/evidence.js';
+import type { ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
 import type { ReviewReferenceInput } from '../../../rails/review.js';
 import {
   REVIEW_MANDATE_DIGEST,
@@ -579,18 +579,27 @@ export function consumeValidatedReviewObligation(
   obligation: ReviewObligation | null,
   args: ReviewToolArgs,
   now: string,
-  acceptedInvocationId?: string | null,
+  consumption?: {
+    readonly acceptedInvocationId?: string | null;
+    readonly effectiveReviewFindings?: ReviewFindings;
+  },
 ): StartedReviewResult {
   if (!obligation) return result;
   return {
     ...result,
     state: {
       ...result.state,
+      standaloneReviewFindings: [
+        ...(result.state.standaloneReviewFindings ?? []),
+        ...((consumption?.effectiveReviewFindings ?? args.reviewFindings)
+          ? [consumption?.effectiveReviewFindings ?? args.reviewFindings!]
+          : []),
+      ],
       reviewAssurance: consumeReviewObligation(
         ensureReviewAssurance(result.state.reviewAssurance),
         obligation,
         now,
-        acceptedInvocationId ??
+        consumption?.acceptedInvocationId ??
           findAcceptedInvocationForFindings(
             result.state.reviewAssurance,
             obligation,

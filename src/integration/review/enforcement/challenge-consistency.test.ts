@@ -319,6 +319,20 @@ describe('review/enforcement/challenge-consistency', () => {
       ).toEqual({ ok: true });
     });
 
+    it('rejects optional challenges when the frozen requirement count is 0', () => {
+      const result = validateChallengeConsistency({
+        overallVerdict: 'changes_requested',
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [{ ...implementationChallenge, outcome: 'fail' }],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_COUNT_INCOHERENT',
+        details: { required: 0, actual: 1 },
+      });
+    });
+
     it('rejects a passing implementation challenge whose only evidence is non-validation-attempt', () => {
       const result = validateChallengeConsistency({
         overallVerdict: 'changes_requested',
