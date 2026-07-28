@@ -759,4 +759,83 @@ describe('review/enforcement/challenge-consistency', () => {
       });
     });
   });
+
+  describe('prior-failure gate — author resolution never acts as closure (#747)', () => {
+    const OPEN_ID = '00000000-0000-4000-8000-000000000001';
+    const UNADDRESSED = '00000000-0000-4000-8000-0000000000f0';
+
+    it('blocks accept while a prior failing challenge has no author resolution', () => {
+      const result = validateChallengeConsistency({
+        overallVerdict: 'accept',
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [],
+        unresolvedImplementationChallengeIds: [],
+        unaddressedPriorFailIds: [UNADDRESSED],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED',
+        details: { unaddressed: 1, challengeId: UNADDRESSED },
+      });
+    });
+
+    it('allows changes_requested while a prior failing challenge is unaddressed (loop stays open)', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'changes_requested',
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [],
+          unresolvedImplementationChallengeIds: [],
+          unaddressedPriorFailIds: [UNADDRESSED],
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    it('allows unable_to_review while a prior failing challenge is unaddressed', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'unable_to_review',
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [],
+          unresolvedImplementationChallengeIds: [],
+          unaddressedPriorFailIds: [UNADDRESSED],
+        }),
+      ).toEqual({ ok: true });
+    });
+
+    it('blocks accept even when the addressed challenge carries a resolved verdict, if another prior fail is unaddressed', () => {
+      // The author resolved OPEN_ID (→ targeted, reviewer says resolved) but a
+      // second prior failure remains unaddressed: acceptance must still fail closed.
+      const result = validateChallengeConsistency({
+        overallVerdict: 'accept',
+        requiredChallengeCount: 0,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [],
+        unresolvedImplementationChallengeIds: [OPEN_ID],
+        unaddressedPriorFailIds: [UNADDRESSED],
+        resolutionVerdicts: [{ challengeId: OPEN_ID, verdict: 'resolved' }],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED',
+      });
+    });
+
+    it('allows accept when all prior failures are addressed and the targeted challenge is independently resolved', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'accept',
+          requiredChallengeCount: 0,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [],
+          unresolvedImplementationChallengeIds: [OPEN_ID],
+          unaddressedPriorFailIds: [],
+          resolutionVerdicts: [{ challengeId: OPEN_ID, verdict: 'resolved' }],
+        }),
+      ).toEqual({ ok: true });
+    });
+  });
 });

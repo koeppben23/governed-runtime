@@ -40,11 +40,19 @@ export interface ChallengeConsistencyInput {
   readonly allowedEvidenceRefs?: readonly unknown[];
   /**
    * The IDs of challenges from the immediately preceding review iteration that
-   * are STILL OPEN (unresolved) and therefore require a reviewer resolution
-   * verdict in the current findings. This is the genuinely-open set — NOT the
-   * set of challenges the author has already recorded resolutions for.
+   * are addressed by a valid author resolution for the current digest and
+   * therefore REQUIRE an independent reviewer verdict in the current findings.
+   * An author resolution does not close a challenge (#747); it moves the
+   * challenge into this "must be independently judged" set.
    */
   readonly unresolvedImplementationChallengeIds?: readonly string[];
+  /**
+   * Prior failing implementation challenges with NO valid author resolution for
+   * the current digest. Acceptance fails closed while this set is non-empty: the
+   * author must first record a resolution before an independent reviewer can
+   * close the challenge. Never lets an author resolution act as closure.
+   */
+  readonly unaddressedPriorFailIds?: readonly string[];
   readonly resolutionVerdicts?: readonly {
     readonly challengeId: string;
     readonly verdict: string;
@@ -318,12 +326,40 @@ function validateSuppliedVerdictShape(
  * reason. `unable_to_review` may omit verdicts (no acceptance occurs) but any
  * verdicts it does supply must still reference known, unique open IDs.
  */
+/**
+ * #747 acceptance gate: an author resolution never acts as closure. While any
+ * prior failing challenge lacks a valid author resolution for the current
+ * digest, acceptance fails closed. Returns a failure, or `null` when acceptance
+ * is not blocked by this rule.
+ */
+function validatePriorFailureGate(
+  input: ChallengeConsistencyInput,
+): ChallengeConsistencyResult | null {
+  const unaddressed = input.unaddressedPriorFailIds ?? [];
+  if (input.overallVerdict === 'accept' && unaddressed.length > 0) {
+    return {
+      ok: false,
+      code: 'SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED',
+      details: { unaddressed: unaddressed.length, challengeId: unaddressed[0] ?? '' },
+    };
+  }
+  return null;
+}
+
 function validateResolutionVerdicts(input: ChallengeConsistencyInput): ChallengeConsistencyResult {
   const unresolvedIds = input.unresolvedImplementationChallengeIds ?? [];
   const supplied = input.resolutionVerdicts ?? [];
   const openIds = new Set(unresolvedIds);
 
-  // 1. No open challenges → no resolution verdicts may be supplied. Checked
+  // 0. Acceptance is forbidden while a prior failing challenge has no valid
+  //    author resolution for the current digest (#747: an author resolution is a
+  //    prerequisite for closure, and closure itself is the next reviewer's
+  //    decision — never the author's). changes_requested / unable_to_review keep
+  //    the loop open and are allowed to proceed.
+  const priorGate = validatePriorFailureGate(input);
+  if (priorGate) return priorGate;
+
+  // 1. No addressed challenges → no resolution verdicts may be supplied. Checked
   //    before per-item validation so the diagnosis is the specific "unexpected"
   //    signal rather than a generic "unknown id".
   if (openIds.size === 0) {

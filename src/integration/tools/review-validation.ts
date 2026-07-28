@@ -67,6 +67,13 @@ export interface ReviewFindingsValidationContext {
   /** Author-proposed implementation resolutions requiring independent verdicts. */
   readonly unresolvedImplementationChallengeIds?: readonly string[];
   /**
+   * Prior failing implementation challenges with NO valid author resolution for
+   * the current digest. Acceptance fails closed while this set is non-empty
+   * (#747: an author must record a resolution before the reviewer can close a
+   * prior challenge; author resolutions never act as closure).
+   */
+  readonly unaddressedPriorFailIds?: readonly string[];
+  /**
    * Canonical challenge evidence references the active obligation permits. When
    * set, submitted challenge evidenceRefs must be a subset of these. Applies to
    * any challenge-bearing obligation; for an `implementation_challenge` this is
@@ -245,6 +252,7 @@ export function validateReviewFindings(
       allowedEvidenceRefs: ctx.allowedEvidenceRefs,
       resolutionVerdicts: findings.challengeResolutionVerdicts,
       unresolvedImplementationChallengeIds: ctx.unresolvedImplementationChallengeIds,
+      unaddressedPriorFailIds: ctx.unaddressedPriorFailIds,
     });
     if (!challengeConsistency.ok) {
       return formatBlocked(
@@ -536,6 +544,7 @@ interface HostTaskResolutionContext {
     readonly sessionId: string;
     readonly reviewHostPlatform?: 'opencode' | 'claude-code' | 'codex' | 'unknown';
     readonly unresolvedImplementationChallengeIds?: readonly string[];
+    readonly unaddressedPriorFailIds?: readonly string[];
     readonly allowedChallengeEvidenceRefs?: readonly unknown[];
   };
 }
@@ -575,6 +584,7 @@ export function resolveHostTaskEffectiveFindings(
       ctx.pendingObligation,
       ctx.state.unresolvedImplementationChallengeIds,
       ctx.state.allowedChallengeEvidenceRefs,
+      ctx.state.unaddressedPriorFailIds,
     );
     if (resolved.kind === 'resolved') {
       return {
@@ -641,6 +651,7 @@ export function resolveHostTaskEffectiveFindings(
       // reference and be accepted. Mirrors the host-captured path
       // (resolveHostTaskFindings) so both ingestion routes bind identically.
       unresolvedImplementationChallengeIds: ctx.state.unresolvedImplementationChallengeIds,
+      unaddressedPriorFailIds: ctx.state.unaddressedPriorFailIds,
       allowedEvidenceRefs: ctx.state.allowedChallengeEvidenceRefs,
       expectedObligationId: ctx.pendingObligation?.obligationId,
     });

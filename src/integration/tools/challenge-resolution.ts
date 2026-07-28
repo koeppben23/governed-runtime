@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { resolveActor } from '../../adapters/actor.js';
 import { Command, isCommandAllowed } from '../../machine/commands.js';
 import type { ChallengeResolution } from '../../state/evidence.js';
+import type { SessionState } from '../../state/schema.js';
 import type { ToolDefinition } from './helpers.js';
 import {
   appendNextAction,
@@ -11,6 +12,32 @@ import {
   withMutableSessionTransaction,
   writeStateWithArtifacts,
 } from './helpers.js';
+
+/**
+ * Validate that `challengeId` names a prior implementation challenge that is
+ * eligible for an author resolution: it must exist in the last implementation
+ * review findings, have a FAILED outcome (`fail`/`not_verified` — a `pass`
+ * challenge was never open, #747), and not already carry a resolution. Returns a
+ * blocked tool result, or `null` when the challenge is resolvable.
+ */
+function checkResolvableChallenge(state: SessionState, challengeId: string): string | null {
+  const challenge = state.implReviewFindings
+    ?.at(-1)
+    ?.challenges?.find(
+      (item) => item.challengeId === challengeId && item.kind === 'implementation_challenge',
+    );
+  if (!challenge) return formatBlocked('IMPLEMENTATION_CHALLENGE_UNKNOWN', { challengeId });
+  if (challenge.outcome !== 'fail' && challenge.outcome !== 'not_verified') {
+    return formatBlocked('IMPLEMENTATION_CHALLENGE_NOT_FAILED', {
+      challengeId,
+      outcome: challenge.outcome ?? '',
+    });
+  }
+  if (state.challengeResolutions.some((item) => item.challengeId === challengeId)) {
+    return formatBlocked('IMPLEMENTATION_CHALLENGE_ALREADY_RESOLVED', { challengeId });
+  }
+  return null;
+}
 
 export const resolve_implementation_challenge: ToolDefinition = {
   description:
@@ -25,8 +52,6 @@ export const resolve_implementation_challenge: ToolDefinition = {
   },
   async execute(args, context) {
     try {
-      // Each rejection is intentionally explicit at this trust boundary.
-      // eslint-disable-next-line complexity
       return await withMutableSessionTransaction(context, async ({ sessDir, state, ctx }) => {
         const challengeId = args.challengeId as string;
         const attemptIds = args.validationAttemptIds as string[];
@@ -38,15 +63,8 @@ export const resolve_implementation_challenge: ToolDefinition = {
         }
         const implementation = state.implementation;
         if (!implementation) return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
-        const challenge = state.implReviewFindings
-          ?.at(-1)
-          ?.challenges?.find(
-            (item) => item.challengeId === challengeId && item.kind === 'implementation_challenge',
-          );
-        if (!challenge) return formatBlocked('IMPLEMENTATION_CHALLENGE_UNKNOWN', { challengeId });
-        if (state.challengeResolutions.some((item) => item.challengeId === challengeId)) {
-          return formatBlocked('IMPLEMENTATION_CHALLENGE_ALREADY_RESOLVED', { challengeId });
-        }
+        const challengeBlock = checkResolvableChallenge(state, challengeId);
+        if (challengeBlock) return challengeBlock;
         if (new Set(attemptIds).size !== attemptIds.length) {
           return formatBlocked('IMPLEMENTATION_VALIDATION_ATTEMPT_DUPLICATE', {
             attemptId: 'duplicate input',

@@ -1,13 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import type { SessionState } from '../../state/schema.js';
-import { computeUnresolvedImplementationChallengeIds } from './implement-review.js';
+import {
+  computeTargetedResolutionChallengeIds,
+  computeUnaddressedPriorFailIds,
+} from './implement-review.js';
 
-// Regression for the inverted-semantics bug: `unresolvedImplementationChallengeIds`
-// must be the genuinely-OPEN set (prior iteration's non-passing implementation
-// challenges MINUS author-resolved ones), NOT the set of already-resolved IDs.
+// #747 lifecycle semantics. An author resolution is advisory: it does NOT close
+// a challenge, it moves it into the set the NEXT independent reviewer must judge.
+//  - computeTargetedResolutionChallengeIds  = prior fail/not_verified ∩ resolved(current digest)
+//  - computeUnaddressedPriorFailIds         = prior fail/not_verified \ resolved(current digest)
 
-const OPEN_A = '00000000-0000-4000-8000-00000000000a';
-const OPEN_B = '00000000-0000-4000-8000-00000000000b';
+const A = '00000000-0000-4000-8000-00000000000a';
+const B = '00000000-0000-4000-8000-00000000000b';
 const PASSED = '00000000-0000-4000-8000-00000000000c';
 
 function stateWith(input: {
@@ -22,53 +26,99 @@ function stateWith(input: {
   } as unknown as SessionState;
 }
 
-describe('computeUnresolvedImplementationChallengeIds (inverted-bug regression)', () => {
-  it('returns the non-passing implementation challenges from the last iteration', () => {
+describe('implement re-review challenge lifecycle (#747)', () => {
+  describe('computeTargetedResolutionChallengeIds — the set the next reviewer MUST judge', () => {
+    it('INCLUDES a prior failing challenge the author resolved for the current digest', () => {
+      const state = stateWith({
+        digest: 'impl-1',
+        challenges: [
+          { challengeId: A, kind: 'implementation_challenge', outcome: 'fail' },
+          { challengeId: B, kind: 'implementation_challenge', outcome: 'fail' },
+        ],
+        resolutions: [{ challengeId: A, implementationDigest: 'impl-1' }],
+      });
+      // A is author-resolved for the current digest → the reviewer must judge A.
+      // B has no resolution → it is NOT yet a targeted (reviewer-judged) challenge.
+      expect(computeTargetedResolutionChallengeIds(state)).toEqual([A]);
+    });
+
+    it('does NOT target a resolution bound to a different implementation digest', () => {
+      const state = stateWith({
+        digest: 'impl-2',
+        challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }],
+        resolutions: [{ challengeId: A, implementationDigest: 'impl-1' }], // stale digest
+      });
+      expect(computeTargetedResolutionChallengeIds(state)).toEqual([]);
+    });
+
+    it('ignores non-implementation and passing challenges', () => {
+      const state = stateWith({
+        digest: 'impl-1',
+        challenges: [
+          { challengeId: PASSED, kind: 'implementation_challenge', outcome: 'pass' },
+          { challengeId: A, kind: 'design_challenge', outcome: 'contradicted' },
+        ],
+        resolutions: [{ challengeId: PASSED, implementationDigest: 'impl-1' }],
+      });
+      expect(computeTargetedResolutionChallengeIds(state)).toEqual([]);
+    });
+
+    it('returns empty when there are no prior review findings', () => {
+      expect(computeTargetedResolutionChallengeIds(stateWith({}))).toEqual([]);
+    });
+  });
+
+  describe('computeUnaddressedPriorFailIds — prior failures the author has NOT resolved', () => {
+    it('lists prior failing challenges with no current-digest resolution', () => {
+      const state = stateWith({
+        digest: 'impl-1',
+        challenges: [
+          { challengeId: A, kind: 'implementation_challenge', outcome: 'fail' },
+          { challengeId: B, kind: 'implementation_challenge', outcome: 'not_verified' },
+        ],
+        resolutions: [{ challengeId: A, implementationDigest: 'impl-1' }],
+      });
+      // A is addressed → only B remains unaddressed.
+      expect(computeUnaddressedPriorFailIds(state)).toEqual([B]);
+    });
+
+    it('counts a stale-digest resolution as NOT addressing the challenge', () => {
+      const state = stateWith({
+        digest: 'impl-2',
+        challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }],
+        resolutions: [{ challengeId: A, implementationDigest: 'impl-1' }],
+      });
+      expect(computeUnaddressedPriorFailIds(state)).toEqual([A]);
+    });
+
+    it('is empty when every prior failing challenge is resolved for the current digest', () => {
+      const state = stateWith({
+        digest: 'impl-1',
+        challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }],
+        resolutions: [{ challengeId: A, implementationDigest: 'impl-1' }],
+      });
+      expect(computeUnaddressedPriorFailIds(state)).toEqual([]);
+    });
+
+    it('returns empty when there are no prior review findings', () => {
+      expect(computeUnaddressedPriorFailIds(stateWith({}))).toEqual([]);
+    });
+  });
+
+  it('the two sets partition the prior failing challenges (no overlap, union = prior fails)', () => {
     const state = stateWith({
       digest: 'impl-1',
       challenges: [
-        { challengeId: OPEN_A, kind: 'implementation_challenge', outcome: 'fail' },
-        { challengeId: OPEN_B, kind: 'implementation_challenge', outcome: 'not_verified' },
+        { challengeId: A, kind: 'implementation_challenge', outcome: 'fail' },
+        { challengeId: B, kind: 'implementation_challenge', outcome: 'not_verified' },
         { challengeId: PASSED, kind: 'implementation_challenge', outcome: 'pass' },
       ],
+      resolutions: [{ challengeId: A, implementationDigest: 'impl-1' }],
     });
-    expect(computeUnresolvedImplementationChallengeIds(state)).toEqual([OPEN_A, OPEN_B]);
-  });
-
-  it('excludes challenges already resolved by the author for the current digest', () => {
-    const state = stateWith({
-      digest: 'impl-1',
-      challenges: [
-        { challengeId: OPEN_A, kind: 'implementation_challenge', outcome: 'fail' },
-        { challengeId: OPEN_B, kind: 'implementation_challenge', outcome: 'fail' },
-      ],
-      resolutions: [{ challengeId: OPEN_A, implementationDigest: 'impl-1' }],
-    });
-    // OPEN_A is resolved for the current digest → only OPEN_B remains open.
-    expect(computeUnresolvedImplementationChallengeIds(state)).toEqual([OPEN_B]);
-  });
-
-  it('does NOT exclude a resolution bound to a different implementation digest', () => {
-    const state = stateWith({
-      digest: 'impl-2',
-      challenges: [{ challengeId: OPEN_A, kind: 'implementation_challenge', outcome: 'fail' }],
-      resolutions: [{ challengeId: OPEN_A, implementationDigest: 'impl-1' }], // stale digest
-    });
-    expect(computeUnresolvedImplementationChallengeIds(state)).toEqual([OPEN_A]);
-  });
-
-  it('ignores non-implementation and passing challenges', () => {
-    const state = stateWith({
-      digest: 'impl-1',
-      challenges: [
-        { challengeId: PASSED, kind: 'implementation_challenge', outcome: 'pass' },
-        { challengeId: OPEN_A, kind: 'design_challenge', outcome: 'contradicted' },
-      ],
-    });
-    expect(computeUnresolvedImplementationChallengeIds(state)).toEqual([]);
-  });
-
-  it('returns empty when there are no prior review findings', () => {
-    expect(computeUnresolvedImplementationChallengeIds(stateWith({}))).toEqual([]);
+    const targeted = computeTargetedResolutionChallengeIds(state);
+    const unaddressed = computeUnaddressedPriorFailIds(state);
+    expect(targeted).toEqual([A]);
+    expect(unaddressed).toEqual([B]);
+    expect(targeted.some((id) => unaddressed.includes(id))).toBe(false);
   });
 });

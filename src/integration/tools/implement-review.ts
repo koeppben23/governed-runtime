@@ -102,37 +102,64 @@ function findPendingImplObligation(state: SessionState) {
 }
 
 /**
- * The genuinely-OPEN implementation challenges the current reviewer must judge.
- *
- * #747: a resolution verdict targets an unresolved challenge from the immediately
- * preceding review iteration. The open set is the previous iteration's
- * `implementation_challenge`s whose outcome was non-passing (`fail`/
- * `not_verified`), MINUS the challenges the author has already recorded a
- * resolution for against the current implementation digest.
- *
- * Note (NOT_VERIFIED, by design): "immediately preceding iteration" is derived
- * positionally via the last `implReviewFindings` entry; neither
- * `ChallengeResolutionVerdict` nor `ChallengeResolution` carries an explicit
- * iteration/flow binding in the schema, so cross-iteration binding is positional
- * only. A schema-level binding is intentionally out of scope here.
+ * Prior-iteration implementation challenges that failed falsification
+ * (`fail`/`not_verified`) and therefore require closure by the NEXT independent
+ * reviewer. Author resolutions are advisory only (#747): recording a resolution
+ * does NOT close the challenge, so these ids are the raw prior-open set before
+ * splitting into "addressed by an author resolution" vs "not yet addressed".
  */
-export function computeUnresolvedImplementationChallengeIds(
-  state: SessionState,
-): readonly string[] {
+function priorFailingImplementationChallengeIds(state: SessionState): readonly string[] {
   const priorChallenges = state.implReviewFindings?.at(-1)?.challenges ?? [];
-  const resolvedIds = new Set(
-    state.challengeResolutions
-      .filter((resolution) => resolution.implementationDigest === state.implementation?.digest)
-      .map((resolution) => resolution.challengeId),
-  );
   return priorChallenges
     .filter(
       (challenge) =>
         challenge.kind === 'implementation_challenge' &&
         (challenge.outcome === 'fail' || challenge.outcome === 'not_verified'),
     )
-    .map((challenge) => challenge.challengeId)
-    .filter((challengeId) => !resolvedIds.has(challengeId));
+    .map((challenge) => challenge.challengeId);
+}
+
+/** Challenge ids the author has recorded a resolution for against the CURRENT digest. */
+function resolvedForCurrentDigestIds(state: SessionState): ReadonlySet<string> {
+  return new Set(
+    state.challengeResolutions
+      .filter((resolution) => resolution.implementationDigest === state.implementation?.digest)
+      .map((resolution) => resolution.challengeId),
+  );
+}
+
+/**
+ * The challenges the NEXT independent reviewer MUST classify
+ * (`resolved`/`still_failing`/`not_verified`): prior failing implementation
+ * challenges for which the author HAS recorded a valid resolution against the
+ * current implementation digest.
+ *
+ * #747: an author resolution binds the challenge to new evidence but does NOT
+ * close it — closure authority belongs to the next reviewer. These ids are
+ * therefore the ones that require an independent verdict, NOT ids to drop.
+ *
+ * Note (NOT_VERIFIED, by design): "immediately preceding iteration" is derived
+ * positionally via the last `implReviewFindings` entry; neither
+ * `ChallengeResolutionVerdict` nor `ChallengeResolution` carries an explicit
+ * iteration/flow binding in the schema, so cross-iteration binding is positional
+ * plus digest only. A schema-level binding is intentionally out of scope here.
+ */
+export function computeTargetedResolutionChallengeIds(state: SessionState): readonly string[] {
+  const resolvedIds = resolvedForCurrentDigestIds(state);
+  return priorFailingImplementationChallengeIds(state).filter((id) => resolvedIds.has(id));
+}
+
+/**
+ * Prior failing implementation challenges with NO valid author resolution for the
+ * current digest. #747 forbids acceptance while any prior challenge remains
+ * unaddressed: the author must first record a resolution (bound to the current
+ * implementation digest and a passing validation attempt) before an independent
+ * reviewer can close it. The findings-consistency gate fails acceptance closed
+ * while this set is non-empty.
+ */
+export function computeUnaddressedPriorFailIds(state: SessionState): readonly string[] {
+  const resolvedIds = resolvedForCurrentDigestIds(state);
+  return priorFailingImplementationChallengeIds(state).filter((id) => !resolvedIds.has(id));
 }
 
 function resolveImplementationFindings(
@@ -160,9 +187,8 @@ function resolveImplementationFindings(
       assurance: input.state.reviewAssurance,
       sessionId: input.context.sessionID,
       reviewHostPlatform: resolveRuntimeReviewPlatform(),
-      unresolvedImplementationChallengeIds: computeUnresolvedImplementationChallengeIds(
-        input.state,
-      ),
+      unresolvedImplementationChallengeIds: computeTargetedResolutionChallengeIds(input.state),
+      unaddressedPriorFailIds: computeUnaddressedPriorFailIds(input.state),
       allowedChallengeEvidenceRefs: challengeContract?.evidenceRefs,
     },
   });

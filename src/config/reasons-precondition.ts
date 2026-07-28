@@ -422,6 +422,15 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     recoverySteps: ['Do not submit a duplicate resolution for the same challenge.'],
   },
   {
+    code: 'IMPLEMENTATION_CHALLENGE_NOT_FAILED',
+    category: 'precondition',
+    messageTemplate:
+      'Implementation challenge {challengeId} has outcome {outcome}; only a failed falsification (fail or not_verified) can be resolved.',
+    recoverySteps: [
+      'Record resolutions only for challenges the reviewer marked fail or not_verified.',
+    ],
+  },
+  {
     code: 'IMPLEMENTATION_VALIDATION_ATTEMPT_UNKNOWN',
     category: 'precondition',
     messageTemplate:
@@ -528,6 +537,16 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Resolution verdicts were supplied ({supplied}) but no prior challenge is open for resolution.',
     recoverySteps: ['Omit challengeResolutionVerdicts when there is no open challenge to resolve.'],
+  },
+  {
+    code: 'SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED',
+    category: 'precondition',
+    messageTemplate:
+      'Acceptance is blocked: {unaddressed} prior failing challenge(s) (e.g. {challengeId}) have no author resolution for the current implementation digest.',
+    recoverySteps: [
+      'Record a resolution for each prior failing challenge against the current implementation digest and a passing validation attempt.',
+      'Then obtain an independent reviewer verdict; author resolutions never close a challenge on their own.',
+    ],
   },
   {
     code: 'SUBAGENT_CHALLENGE_CONTRADICTED',

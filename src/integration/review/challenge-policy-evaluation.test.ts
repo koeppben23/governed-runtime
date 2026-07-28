@@ -16,6 +16,10 @@ import { createTestWorkspace, createToolContext, parseToolResult } from '../test
 import { resolve_implementation_challenge } from '../tools/challenge-resolution.js';
 import { resolveHostTaskFindings } from '../tools/review-validation-host-task.js';
 import {
+  computeTargetedResolutionChallengeIds,
+  computeUnaddressedPriorFailIds,
+} from '../tools/implement-review.js';
+import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
   buildInvocationEvidence,
@@ -203,7 +207,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
           { kind: 'implementation', implementationDigest: 'impl-digest' },
           { kind: 'validation_attempt', attemptId: '33333333-3333-4333-8333-333333333333' },
         ],
-        outcome: 'pass',
+        outcome: 'fail',
       },
     ],
   });
@@ -296,7 +300,9 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   const reReview = resolveHostTaskFindings(
     { obligations: [secondObligation], invocations: [secondInvocation] },
     secondObligation,
-    state?.challengeResolutions.map((item) => item.challengeId),
+    state ? computeTargetedResolutionChallengeIds(state) : undefined,
+    undefined,
+    state ? computeUnaddressedPriorFailIds(state) : undefined,
   );
   return (
     reReview.kind === 'resolved' &&
