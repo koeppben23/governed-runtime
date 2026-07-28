@@ -79,8 +79,8 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'admissibility',
     messageTemplate: 'Cannot verify risk classification evidence. {reason}',
     recoverySteps: [
-      'Restore readable session state and git worktree evidence',
-      'Run flowguard_status or flowguard_hydrate before retrying mutating tools',
+      'Restore readable session state and git worktree evidence so future sessions can classify risk',
+      'This evidence failure latches the risk gate for the current session; hydrate does not clear it — start a fresh governed session to proceed',
     ],
   },
 
@@ -89,7 +89,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'admissibility',
     messageTemplate: 'Risk gate is already blocked for this session: {reason}',
     recoverySteps: [
-      'Reclassify the task at the required risk level or start a fresh governed session',
+      'A blocked risk gate is fail-closed and cannot be cleared in-session (hydrate and reclassification do not clear it); start a fresh governed session to proceed',
     ],
   },
 
