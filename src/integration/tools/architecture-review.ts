@@ -52,7 +52,7 @@ import {
   type ArchitectureSession,
   buildArchitectureReviewInstruction,
 } from './architecture-shared.js';
-import { resolveChallengeClassificationEvidence } from './review-obligation-classification.js';
+import { resolveArchitectureChallengeClassification } from './architecture-challenge.js';
 
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
@@ -474,20 +474,21 @@ async function persistAndFormatNonConvergedReview(
   input: ReviewResultContext,
   verdict: LoopVerdict,
 ): Promise<string> {
-  const { session, review, revision, advanced, iteration } = input;
+  const { args, session, review, revision, advanced, iteration } = input;
+  // Recover the prior obligation's paths and union them with any fresh author
+  // targetPaths. Classification derives the rest from persisted discovery risk
+  // surfaces (shared SSOT with Mode A) and NEVER dead-ends: an ADR revision that
+  // carries no diff and no detected surface classifies as TRIVIAL, not a block.
   const priorTargetPaths = findPriorArchTargetPaths(
     ensureReviewAssurance(advanced.state.reviewAssurance),
   );
-  const classification = review.subagentEnabled
-    ? await resolveChallengeClassificationEvidence(advanced.state, session.worktree, {
-        targetPaths: priorTargetPaths,
-      })
-    : { kind: 'not_required' as const };
-  if (classification.kind === 'unavailable') {
-    return formatBlocked('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {
-      reason: classification.reason,
-    });
-  }
+  const targetPaths = [...new Set([...(priorTargetPaths ?? []), ...(args.targetPaths ?? [])])];
+  const classification = await resolveArchitectureChallengeClassification(
+    advanced.state,
+    session.wsDir,
+    review.subagentEnabled,
+    targetPaths,
+  );
   const resolvedTargetPaths =
     classification.kind === 'available' ? [...classification.changedFiles] : undefined;
   const metadata: Record<string, unknown> = {};
