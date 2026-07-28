@@ -75,7 +75,7 @@ import {
 } from '../review/assurance.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
-import { resolveChallengeClassificationEvidence } from './review-obligation-classification.js';
+import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 // presentation imports moved to plan-response.ts
 
 // ---- re-exported from sub-modules for backward-compatible import paths ----
@@ -435,16 +435,12 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const history = scope.state.plan ? [scope.state.plan.current, ...scope.state.plan.history] : [];
   const planVersion = history.length + 1;
   const reviewFindings = scope.args.reviewFindings ?? null;
-  const classification = scope.reviewPolicy.subagentEnabled
-    ? await resolveChallengeClassificationEvidence(scope.state, scope.worktree, {
-        targetPaths: scope.args.targetPaths,
-      })
-    : { kind: 'not_required' as const };
-  if (classification.kind === 'unavailable') {
-    return formatBlocked('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {
-      reason: classification.reason,
-    });
-  }
+  const classification = await resolvePreImplementationChallengeClassification(
+    scope.state,
+    scope.wsDir,
+    scope.reviewPolicy.subagentEnabled,
+    scope.args.targetPaths,
+  );
   const nextState = buildPlanSubmissionState(
     scope,
     planEvidence,

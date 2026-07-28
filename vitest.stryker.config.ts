@@ -25,7 +25,7 @@ export default defineConfig({
       'src/integration/tools/review-validation-host-task.test.ts',
       'src/integration/tools/evidence-first-resolution-plan.test.ts',
       'src/integration/discovery-risk-paths.test.ts',
-      'src/integration/tools/architecture-challenge.test.ts',
+      'src/integration/tools/pre-implementation-challenge.test.ts',
       'src/integration/tools/architecture-tool.test.ts',
       'src/integration/tools/architecture-tool-evidence-resolve.test.ts',
       'src/integration/review/orchestrator.test.ts',

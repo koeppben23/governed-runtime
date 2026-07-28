@@ -41,7 +41,7 @@ import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
-import { resolveChallengeClassificationEvidence } from './review-obligation-classification.js';
+import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 
 function findPriorPlanTargetPaths(
   assurance: import('../../state/schema.js').SessionState['reviewAssurance'],
@@ -209,18 +209,15 @@ export async function persistNonConvergedPlanReview(
 ): Promise<string> {
   const nextPlanVersion = revision.history.length + 1;
   const priorTargetPaths = findPriorPlanTargetPaths(finalState.reviewAssurance);
-  const classification = scope.reviewPolicy.subagentEnabled
-    ? await resolveChallengeClassificationEvidence(finalState, scope.worktree, {
-        targetPaths: priorTargetPaths,
-      })
-    : { kind: 'not_required' as const };
-  if (classification.kind === 'unavailable') {
-    return JSON.stringify({
-      error: true,
-      code: 'RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE',
-      reason: classification.reason,
-    });
-  }
+  const targetPaths = [
+    ...new Set([...(priorTargetPaths ?? []), ...(scope.args.targetPaths ?? [])]),
+  ];
+  const classification = await resolvePreImplementationChallengeClassification(
+    finalState,
+    scope.wsDir,
+    scope.reviewPolicy.subagentEnabled,
+    targetPaths,
+  );
   const resolvedTargetPaths =
     classification.kind === 'available' ? [...classification.changedFiles] : undefined;
   const metadata: Record<string, unknown> = {};

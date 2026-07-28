@@ -33,7 +33,7 @@
     "src/integration/command-aliases.ts",
     "src/integration/tool-classification.ts",
     "src/integration/discovery-risk-paths.ts",
-    "src/integration/tools/architecture-challenge.ts",
+    "src/integration/tools/pre-implementation-challenge.ts",
     "src/integration/tools/architecture-submit.ts",
     "src/integration/tools/review-validation-mode.ts",
     "src/integration/tools/review-validation.ts",

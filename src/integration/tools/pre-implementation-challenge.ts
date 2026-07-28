@@ -1,13 +1,17 @@
 /**
- * @module integration/tools/architecture-challenge
- * @description Canonical challenge classification for architecture (ADR) obligations.
+ * @module integration/tools/pre-implementation-challenge
+ * @description Canonical challenge classification for pre-implementation obligations
+ * that carry no diff of their own (architecture ADRs and plans).
  *
- * Shared by BOTH architecture flows:
- *  - Mode A (`architecture-submit`): the initial ADR submission.
- *  - Mode B (`architecture-review`): the non-converged revision loop that creates
- *    the next iteration's obligation.
+ * Shared by all four pre-implementation flows:
+ *  - Architecture Mode A (`architecture-submit`): the initial ADR submission.
+ *  - Architecture Mode B (`architecture-review`): the non-converged ADR revision
+ *    loop that creates the next iteration's obligation.
+ *  - Plan initial (`plan` submission): the initial plan submission.
+ *  - Plan revision (`plan-response`): the non-converged plan revision loop that
+ *    creates the next iteration's obligation.
  *
- * @version v1
+ * @version v2
  */
 
 import type { SessionState } from '../../state/schema.js';
@@ -15,12 +19,13 @@ import { readDiscovery } from '../../adapters/persistence-discovery.js';
 import { discoveryRiskPaths } from '../discovery-risk-paths.js';
 
 /**
- * Resolve the challenge-path classification for an ADR obligation.
+ * Resolve the challenge-path classification for a pre-implementation obligation
+ * (architecture ADR or plan).
  *
- * An ADR carries no diff of its own, so branch/PR diff evidence is not naturally
- * available — the historical shared resolver returned `unavailable` here and
- * hard-blocked the entire architecture flow whenever a `challengePolicy` was
- * active (team/team-ci/regulated). This derives the classification from canonical
+ * A pre-implementation artifact carries no diff of its own, so branch/PR diff
+ * evidence is not naturally available — the historical resolver returned
+ * `unavailable` here and hard-blocked the entire flow whenever a `challengePolicy`
+ * was active (team/team-ci/regulated). This derives the classification from canonical
  * session evidence instead and NEVER dead-ends:
  *
  *  - changedFiles = caller-provided `targetPaths` (author hint and, in the review
@@ -39,7 +44,7 @@ import { discoveryRiskPaths } from '../discovery-risk-paths.js';
  * the `not_required` short-circuit here only applies to solo (no challenge policy)
  * and never bypasses enforced-mode challenge coverage.
  */
-export async function resolveArchitectureChallengeClassification(
+export async function resolvePreImplementationChallengeClassification(
   state: SessionState,
   wsDir: string,
   subagentEnabled: boolean,

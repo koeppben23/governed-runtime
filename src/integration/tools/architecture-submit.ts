@@ -16,7 +16,7 @@ import {
   reviewObligationResponseFields,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
-import { resolveArchitectureChallengeClassification } from './architecture-challenge.js';
+import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Mode A: ADR Submission
@@ -35,7 +35,7 @@ interface ArchObligationContext {
 async function classifyAndCreateArchObligation(
   ctx: ArchObligationContext,
 ): Promise<{ state: SessionState; obligation: ReturnType<typeof createReviewObligation> | null }> {
-  const classification = await resolveArchitectureChallengeClassification(
+  const classification = await resolvePreImplementationChallengeClassification(
     ctx.state,
     ctx.wsDir,
     ctx.subagentEnabled,

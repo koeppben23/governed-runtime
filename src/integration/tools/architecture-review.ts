@@ -52,7 +52,7 @@ import {
   type ArchitectureSession,
   buildArchitectureReviewInstruction,
 } from './architecture-shared.js';
-import { resolveArchitectureChallengeClassification } from './architecture-challenge.js';
+import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
@@ -483,7 +483,7 @@ async function persistAndFormatNonConvergedReview(
     ensureReviewAssurance(advanced.state.reviewAssurance),
   );
   const targetPaths = [...new Set([...(priorTargetPaths ?? []), ...(args.targetPaths ?? [])])];
-  const classification = await resolveArchitectureChallengeClassification(
+  const classification = await resolvePreImplementationChallengeClassification(
     advanced.state,
     session.wsDir,
     review.subagentEnabled,

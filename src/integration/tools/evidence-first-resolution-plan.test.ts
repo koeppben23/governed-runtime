@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeState, TICKET } from '../../fixtures.js';
 import { TEAM_POLICY } from '../../config/policy-presets.js';
 import type { SessionState } from '../../state/schema.js';
+import type { DiscoveryResult } from '../../discovery/types.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -55,9 +56,9 @@ const mocks = vi.hoisted(() => {
       }),
     ),
     appendNextAction: vi.fn((payload: string) => payload),
-    writeStateWithArtifacts: vi.fn(async () => undefined),
+    writeStateWithArtifacts: vi.fn(async (_sessDir: string, _state: SessionState) => undefined),
     extractSections: vi.fn(() => []),
-    changedFiles: vi.fn(async () => ['src/foo.ts']),
+    readDiscovery: vi.fn(async () => null as unknown),
   };
 });
 
@@ -120,9 +121,10 @@ vi.mock('../../machine/evaluate.js', () => ({
   evaluateWithEvent: () => ({ kind: 'pending' }),
 }));
 
-vi.mock('../../adapters/git.js', () => ({
-  changedFiles: mocks.changedFiles,
-}));
+vi.mock('../../adapters/persistence-discovery.js', async (importOriginal) => {
+  const original = (await importOriginal()) as Record<string, unknown>;
+  return { ...original, readDiscovery: mocks.readDiscovery };
+});
 
 vi.mock('../../presentation/phase-labels.js', () => ({
   PHASE_LABELS: { PLAN: 'Plan', PLAN_REVIEW: 'Plan Review' },
@@ -150,6 +152,18 @@ const now = '2026-01-01T00:00:00.000Z';
 const originalFlowguardHostPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
 
 // ─── Test Fixtures ──────────────────────────────────────────────────────────
+
+function discoveryWithPaths(evidence: string[]): DiscoveryResult {
+  return {
+    surfaces: {
+      api: [],
+      persistence: [{ id: 'r', label: 'r', classification: 'fact', evidence }],
+      cicd: [],
+      security: [],
+      layers: [],
+    },
+  } as unknown as DiscoveryResult;
+}
 
 function makeFindings(
   overrides: Partial<{
@@ -455,7 +469,12 @@ describe('BUG-17: plan evidence-first resolution', () => {
     expect(parsed.code).toBe('REVIEW_FINDINGS_REQUIRED');
   });
 
-  it('blocks initial obligation creation when challenge-path evidence is unavailable', async () => {
+  it('initial obligation: no discovery surfaces and no targetPaths → succeeds with empty challenge scope (never dead-ends)', async () => {
+    // Pre-implementation SSOT parity: a plan carries no diff, so the historical
+    // resolver returned RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE and hard-blocked
+    // every enforced-mode initial submission. The shared classifier now derives
+    // scope from persisted discovery and NEVER dead-ends. Empty evidence → count 0,
+    // a genuine "no detected risk" signal, not a block.
     mocks.state = makeState('TICKET', {
       ticket: TICKET,
       policySnapshot: {
@@ -468,15 +487,91 @@ describe('BUG-17: plan evidence-first resolution', () => {
       ...TEAM_POLICY,
       selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
     });
-    mocks.changedFiles.mockRejectedValueOnce(new Error('git unavailable'));
+    mocks.readDiscovery.mockResolvedValueOnce(null);
+    mocks.autoAdvance.mockImplementation((s: SessionState) => ({
+      kind: 'advanced',
+      state: s,
+      evalResult: { kind: 'pending' },
+      transitions: [],
+    }));
 
     const { plan } = await import('./plan.js');
     const parsed = JSON.parse(
       String(await plan.execute({ planText: '## Plan\n1. Fix' }, {} as never)),
     );
 
-    expect(parsed.code).toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
-    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.code).not.toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
+    expect(mocks.writeStateWithArtifacts).toHaveBeenCalled();
+    // Empty scope → no targetPaths metadata is stamped on the obligation.
+    const persisted = mocks.writeStateWithArtifacts.mock.calls.at(
+      -1,
+    )?.[1] as unknown as SessionState;
+    const obligation = persisted.reviewAssurance?.obligations.at(-1);
+    expect(obligation?.metadata?.targetPaths).toBeUndefined();
+  });
+
+  it('initial obligation: discovery risk surfaces floor the challenge scope even without author targetPaths', async () => {
+    mocks.state = makeState('TICKET', {
+      ticket: TICKET,
+      policySnapshot: {
+        ...makeState('TICKET').policySnapshot,
+        challengePolicy: TEAM_POLICY.challengePolicy,
+      },
+    });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+    });
+    mocks.readDiscovery.mockResolvedValueOnce(discoveryWithPaths(['src/db.ts']));
+    mocks.autoAdvance.mockImplementation((s: SessionState) => ({
+      kind: 'advanced',
+      state: s,
+      evalResult: { kind: 'pending' },
+      transitions: [],
+    }));
+
+    const { plan } = await import('./plan.js');
+    const parsed = JSON.parse(
+      String(await plan.execute({ planText: '## Plan\n1. Fix' }, {} as never)),
+    );
+
+    expect(parsed.error).toBeUndefined();
+    const persisted = mocks.writeStateWithArtifacts.mock.calls.at(
+      -1,
+    )?.[1] as unknown as SessionState;
+    const obligation = persisted.reviewAssurance?.obligations.at(-1);
+    expect(obligation?.metadata?.targetPaths).toEqual(['src/db.ts']);
+  });
+
+  it('initial obligation: no challenge obligation when subagent review is disabled (no discovery read)', async () => {
+    mocks.state = makeState('TICKET', {
+      ticket: TICKET,
+      policySnapshot: {
+        ...makeState('TICKET').policySnapshot,
+        challengePolicy: TEAM_POLICY.challengePolicy,
+      },
+    });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
+      selfReview: { subagentEnabled: false, fallbackToSelf: false, strictEnforcement: false },
+    });
+    mocks.autoAdvance.mockImplementation((s: SessionState) => ({
+      kind: 'advanced',
+      state: s,
+      evalResult: { kind: 'pending' },
+      transitions: [],
+    }));
+
+    const { plan } = await import('./plan.js');
+    const parsed = JSON.parse(
+      String(await plan.execute({ planText: '## Plan\n1. Fix' }, {} as never)),
+    );
+
+    expect(parsed.error).toBeUndefined();
+    expect(mocks.readDiscovery).not.toHaveBeenCalled();
   });
 
   it('EDGE: host_task_required + agent submits INVALID reviewFindings → still succeeds (ignored)', async () => {
@@ -594,5 +689,100 @@ describe('BUG-17: plan evidence-first resolution', () => {
     );
     const parsed = JSON.parse(String(res));
     expect(parsed.error).toBeUndefined();
+  });
+
+  it('revision loop: no prior/author targetPaths and empty discovery → next obligation created, never dead-ends', async () => {
+    // Parity with architecture Mode B. The plan revision loop previously used the
+    // old resolver and hard-blocked with RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE
+    // when neither prior nor author targetPaths existed (a plan has no diff). It
+    // now derives from discovery (empty here) and creates the next obligation.
+    mocks.state = planStateWithEvidence('changes_requested');
+    mocks.state = {
+      ...mocks.state,
+      policySnapshot: {
+        ...mocks.state!.policySnapshot,
+        challengePolicy: TEAM_POLICY.challengePolicy,
+      },
+    } as SessionState;
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'host_task_required',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+    });
+    mocks.autoAdvance.mockImplementation((s: SessionState) => ({
+      kind: 'advanced',
+      state: s,
+      evalResult: { kind: 'pending' },
+      transitions: [],
+    }));
+    mocks.readDiscovery.mockResolvedValueOnce(null);
+
+    const { plan } = await import('./plan.js');
+    const parsed = JSON.parse(
+      String(
+        await plan.execute(
+          { reviewVerdict: 'changes_requested', planText: '## Plan\n1. Fix\n2. Revised' },
+          {} as never,
+        ),
+      ),
+    );
+
+    expect(parsed.error).toBeUndefined();
+    expect(parsed.code).not.toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
+    const savedState = mocks.writeStateWithArtifacts.mock.calls.at(
+      -1,
+    )?.[1] as unknown as SessionState;
+    const obligations = savedState.reviewAssurance?.obligations ?? [];
+    expect(obligations.length).toBeGreaterThanOrEqual(2);
+    expect(obligations.at(-1)?.obligationType).toBe('plan');
+    expect(obligations.at(-1)?.metadata?.targetPaths).toBeUndefined();
+  });
+
+  it('revision loop: unions author targetPaths with discovery risk surfaces on the next obligation', async () => {
+    mocks.state = planStateWithEvidence('changes_requested');
+    mocks.state = {
+      ...mocks.state,
+      policySnapshot: {
+        ...mocks.state!.policySnapshot,
+        challengePolicy: TEAM_POLICY.challengePolicy,
+      },
+    } as SessionState;
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
+      maxSelfReviewIterations: 3,
+      reviewInvocationPolicy: 'host_task_required',
+      selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+    });
+    mocks.autoAdvance.mockImplementation((s: SessionState) => ({
+      kind: 'advanced',
+      state: s,
+      evalResult: { kind: 'pending' },
+      transitions: [],
+    }));
+    mocks.readDiscovery.mockResolvedValueOnce(discoveryWithPaths(['src/db.ts']));
+
+    const { plan } = await import('./plan.js');
+    const parsed = JSON.parse(
+      String(
+        await plan.execute(
+          {
+            reviewVerdict: 'changes_requested',
+            planText: '## Plan\n1. Fix\n2. Revised',
+            targetPaths: ['src/api.ts'],
+          },
+          {} as never,
+        ),
+      ),
+    );
+
+    expect(parsed.error).toBeUndefined();
+    const savedState = mocks.writeStateWithArtifacts.mock.calls.at(
+      -1,
+    )?.[1] as unknown as SessionState;
+    const nextObligation = savedState.reviewAssurance?.obligations.at(-1);
+    expect(nextObligation?.metadata?.targetPaths).toEqual(['src/api.ts', 'src/db.ts']);
   });
 });
