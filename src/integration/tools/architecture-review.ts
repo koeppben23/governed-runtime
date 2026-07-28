@@ -35,6 +35,7 @@ import {
 } from '../review/assurance.js';
 
 import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
+import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 
@@ -169,6 +170,7 @@ function resolveArchitectureReview(
       // (finding B3): a fabricated section/digest must not satisfy a challenge.
       allowedChallengeEvidenceRefs: buildHostTaskChallengeContract(state, pendingObligation ?? null)
         ?.evidenceRefs,
+      previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(state),
     },
   });
 

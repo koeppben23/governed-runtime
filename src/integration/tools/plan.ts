@@ -64,6 +64,7 @@ import {
   requireReviewFindings,
   resolveHostTaskEffectiveFindings,
 } from './review-validation.js';
+import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import {
   appendReviewObligation,
   consumeReviewObligation,
@@ -316,6 +317,7 @@ function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
         scope.state,
         pendingObligation ?? null,
       )?.evidenceRefs,
+      previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(scope.state),
     },
   });
   return { assuranceBase, pendingObligation, expectedIteration, expectedPlanVersion, resolved };

@@ -76,6 +76,7 @@ import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
 // Review findings validation (shared with plan.ts)
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
+import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import {
   consumeReviewObligation,
   ensureReviewAssurance,
@@ -233,6 +234,7 @@ function resolveImplementationFindings(
       unresolvedImplementationChallengeIds: computeTargetedResolutionChallengeIds(input.state),
       unaddressedPriorFailIds: computeUnaddressedPriorFailIds(input.state),
       allowedChallengeEvidenceRefs: challengeContract?.evidenceRefs,
+      previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(input.state),
     },
   });
   return { pendingObligation, resolved };

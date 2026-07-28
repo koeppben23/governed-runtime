@@ -38,6 +38,8 @@ export interface ChallengeConsistencyInput {
     | undefined;
   readonly expectedObligationId?: string;
   readonly allowedEvidenceRefs?: readonly unknown[];
+  /** Challenge IDs already persisted in this session's review-findings history. */
+  readonly previouslyUsedChallengeIds?: readonly string[];
   /**
    * The IDs of challenges from the immediately preceding review iteration that
    * are addressed by a valid author resolution for the current digest and
@@ -177,7 +179,7 @@ function validateChallengeCountFlexible(
   input: ChallengeConsistencyInput,
   challenges: readonly Challenge[],
 ): ChallengeConsistencyResult {
-  const distinctness = validateChallengeSubstance(challenges);
+  const distinctness = validateChallengeSubstance(challenges, input.previouslyUsedChallengeIds);
   if (!distinctness.ok) return distinctness;
   const allowedRefs = input.allowedEvidenceRefs
     ? new Set(input.allowedEvidenceRefs.map(canonicalJsonStringify))
@@ -206,9 +208,22 @@ function validateChallengeCountFlexible(
  *    quality-based policy: challenge coverage requirements are owned by the
  *    frozen policy matrix (#747), never by this consistency authority.
  */
-function validateChallengeSubstance(challenges: readonly Challenge[]): ChallengeConsistencyResult {
+function validateChallengeSubstance(
+  challenges: readonly Challenge[],
+  previouslyUsedChallengeIds: readonly string[] | undefined,
+): ChallengeConsistencyResult {
   const floor = validateChallengeFloor(challenges);
   if (!floor.ok) return floor;
+  const previouslyUsed = new Set(previouslyUsedChallengeIds);
+  for (const challenge of challenges) {
+    if (challenge.challengeId !== undefined && previouslyUsed.has(challenge.challengeId)) {
+      return {
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_NOT_DISTINCT',
+        details: { reason: 'historical_challenge_id_reused', challengeId: challenge.challengeId },
+      };
+    }
+  }
   if (challenges.length < 2) return { ok: true };
 
   const seenIds = new Set<string>();

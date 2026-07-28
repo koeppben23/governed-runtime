@@ -27,6 +27,7 @@ import {
 } from '../../review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { validateChallengeConsistency } from '../../review/enforcement/challenge-consistency.js';
+import { collectPreviouslyUsedChallengeIds } from '../../review/challenge-history.js';
 import { buildHostTaskChallengeContract } from '../../review/host-task-policy.js';
 import { formatBlocked, writeStateWithArtifacts } from '../helpers.js';
 import { resolveChallengeClassificationEvidence } from '../review-obligation-classification.js';
@@ -550,6 +551,7 @@ export function validateSubmittedReviewFindings(
       resolutionVerdicts: findings.challengeResolutionVerdicts as Parameters<
         typeof validateChallengeConsistency
       >[0]['resolutionVerdicts'],
+      previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(state),
     });
     if (!challengeConsistency.ok) {
       return formatSubagentReviewNotInvoked(

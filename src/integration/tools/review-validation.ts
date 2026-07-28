@@ -87,6 +87,8 @@ export interface ReviewFindingsValidationContext {
    * obligation types (plan/architecture/implement/review), not implement alone.
    */
   readonly expectedObligationId?: string;
+  /** Challenge IDs already persisted in this session's review-findings history. */
+  readonly previouslyUsedChallengeIds?: readonly string[];
 }
 
 interface AttestedReviewCheckInput {
@@ -253,6 +255,7 @@ export function validateReviewFindings(
       resolutionVerdicts: findings.challengeResolutionVerdicts,
       unresolvedImplementationChallengeIds: ctx.unresolvedImplementationChallengeIds,
       unaddressedPriorFailIds: ctx.unaddressedPriorFailIds,
+      previouslyUsedChallengeIds: ctx.previouslyUsedChallengeIds,
     });
     if (!challengeConsistency.ok) {
       return formatBlocked(
@@ -546,6 +549,7 @@ interface HostTaskResolutionContext {
     readonly unresolvedImplementationChallengeIds?: readonly string[];
     readonly unaddressedPriorFailIds?: readonly string[];
     readonly allowedChallengeEvidenceRefs?: readonly unknown[];
+    readonly previouslyUsedChallengeIds?: readonly string[];
   };
 }
 
@@ -585,6 +589,7 @@ export function resolveHostTaskEffectiveFindings(
       ctx.state.unresolvedImplementationChallengeIds,
       ctx.state.allowedChallengeEvidenceRefs,
       ctx.state.unaddressedPriorFailIds,
+      ctx.state.previouslyUsedChallengeIds,
     );
     if (resolved.kind === 'resolved') {
       return {
@@ -654,6 +659,7 @@ export function resolveHostTaskEffectiveFindings(
       unaddressedPriorFailIds: ctx.state.unaddressedPriorFailIds,
       allowedEvidenceRefs: ctx.state.allowedChallengeEvidenceRefs,
       expectedObligationId: ctx.pendingObligation?.obligationId,
+      previouslyUsedChallengeIds: ctx.state.previouslyUsedChallengeIds,
     });
     if (blocked) return { blocked };
     return { effectiveFindings: ctx.input.reviewFindings as ReviewFindings };

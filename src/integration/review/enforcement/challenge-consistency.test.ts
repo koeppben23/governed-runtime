@@ -441,6 +441,46 @@ describe('review/enforcement/challenge-consistency', () => {
       });
     });
 
+    it('rejects a fresh challenge that reuses an ID from an earlier review iteration', () => {
+      const challengeId = '00000000-0000-4000-8000-00000000000f';
+      const result = validateChallengeConsistency({
+        overallVerdict: 'changes_requested',
+        requiredChallengeCount: 1,
+        requiredChallengeKind: 'implementation_challenge',
+        challenges: [
+          {
+            ...base,
+            challengeId,
+            evidenceRefs: [{ kind: 'implementation' }],
+          },
+        ],
+        previouslyUsedChallengeIds: [challengeId],
+      });
+      expect(result).toMatchObject({
+        ok: false,
+        code: 'SUBAGENT_CHALLENGE_NOT_DISTINCT',
+        details: { reason: 'historical_challenge_id_reused', challengeId },
+      });
+    });
+
+    it('accepts a fresh challenge ID when earlier review IDs differ', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'changes_requested',
+          requiredChallengeCount: 1,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [
+            {
+              ...base,
+              challengeId: '00000000-0000-4000-8000-000000000010',
+              evidenceRefs: [{ kind: 'implementation' }, { kind: 'validation_attempt' }],
+            },
+          ],
+          previouslyUsedChallengeIds: ['00000000-0000-4000-8000-00000000000f'],
+        }),
+      ).toEqual({ ok: true });
+    });
+
     it('accepts two substantively distinct challenges', () => {
       const c1 = {
         ...base,

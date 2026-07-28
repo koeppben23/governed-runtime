@@ -76,6 +76,7 @@ export function resolveHostTaskFindings(
   unresolvedImplementationChallengeIds?: readonly string[],
   allowedChallengeEvidenceRefs?: readonly unknown[],
   unaddressedPriorFailIds?: readonly string[],
+  previouslyUsedChallengeIds?: readonly string[],
 ): HostTaskFindingsResolution {
   if (!obligation || !assurance) return { kind: 'not_found' };
 
@@ -139,6 +140,7 @@ export function resolveHostTaskFindings(
           resolutionVerdicts: parsed.data.challengeResolutionVerdicts,
           unresolvedImplementationChallengeIds,
           unaddressedPriorFailIds,
+          previouslyUsedChallengeIds,
         });
         if (!challengeConsistency.ok) {
           incoherent ??= { code: challengeConsistency.code, details: challengeConsistency.details };
