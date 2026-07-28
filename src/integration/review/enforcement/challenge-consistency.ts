@@ -323,8 +323,8 @@ function validateSuppliedVerdictShape(
  * Resolution-verdict gating (#747). Every supplied resolution verdict must bind
  * to exactly one genuinely-open challenge from the preceding iteration; unknown,
  * duplicate, out-of-scope, or unexpected verdicts are rejected with a typed
- * reason. `unable_to_review` may omit verdicts (no acceptance occurs) but any
- * verdicts it does supply must still reference known, unique open IDs.
+ * reason. `unable_to_review` may omit verdicts (no acceptance occurs) or record
+ * `not_verified` for known, unique open IDs; it cannot provide closure authority.
  */
 /**
  * #747 acceptance gate: an author resolution never acts as closure. While any
@@ -377,10 +377,23 @@ function validateResolutionVerdicts(input: ChallengeConsistencyInput): Challenge
   const shapeFailure = validateSuppliedVerdictShape(supplied, openIds);
   if (shapeFailure) return shapeFailure;
 
-  // 3. unable_to_review: no acceptance is happening. Prior unresolved challenges
-  //    remain open and must not block the honest fail-closed result. Supplied
-  //    verdicts were already validated for known/unique IDs above.
+  // 3. unable_to_review: no completed assessment occurred, so it cannot close a
+  //    challenge or assert that it still fails. It may only record that a known
+  //    challenge could not be verified; the lifecycle remains open.
   if (input.overallVerdict === 'unable_to_review') {
+    for (const item of supplied) {
+      if (item.verdict !== 'not_verified') {
+        return {
+          ok: false,
+          code: 'SUBAGENT_RESOLUTION_VERDICT_INCOHERENT',
+          details: {
+            challengeId: item.challengeId,
+            overallVerdict: input.overallVerdict,
+            verdict: item.verdict,
+          },
+        };
+      }
+    }
     return { ok: true };
   }
 

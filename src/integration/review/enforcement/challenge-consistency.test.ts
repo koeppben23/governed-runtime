@@ -606,6 +606,26 @@ describe('review/enforcement/challenge-consistency', () => {
       ).toEqual({ ok: true });
     });
 
+    it.each(['resolved', 'still_failing'])(
+      'rejects unable_to_review with a %s resolution verdict',
+      (verdict) => {
+        expect(
+          validateChallengeConsistency({
+            overallVerdict: 'unable_to_review',
+            requiredChallengeCount: 2,
+            requiredChallengeKind: 'implementation_challenge',
+            challenges: [],
+            unresolvedImplementationChallengeIds: [OPEN_ID],
+            resolutionVerdicts: [{ challengeId: OPEN_ID, verdict }],
+          }),
+        ).toMatchObject({
+          ok: false,
+          code: 'SUBAGENT_RESOLUTION_VERDICT_INCOHERENT',
+          details: { challengeId: OPEN_ID, overallVerdict: 'unable_to_review', verdict },
+        });
+      },
+    );
+
     it('accepts changes_requested with prior unresolved challenge and still_failing verdict', () => {
       expect(
         validateChallengeConsistency({

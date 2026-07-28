@@ -19,7 +19,11 @@ const PASSED = '00000000-0000-4000-8000-00000000000c';
 
 type Ch = { challengeId: string; kind: string; outcome: string };
 type Vd = { challengeId: string; verdict: string };
-type Findings = { challenges?: Ch[]; challengeResolutionVerdicts?: Vd[] };
+type Findings = {
+  challenges?: Ch[];
+  challengeResolutionVerdicts?: Vd[];
+  overallVerdict?: 'accept' | 'changes_requested' | 'unable_to_review';
+};
 
 function stateWith(input: {
   digest?: string;
@@ -173,6 +177,22 @@ describe('implement re-review challenge lifecycle (#747)', () => {
       expect(isOpenImplementationChallenge(state, A)).toBe(false);
       expect(computeTargetedResolutionChallengeIds(state)).toEqual([]);
       expect(computeUnaddressedPriorFailIds(state)).toEqual([]);
+    });
+
+    it('keeps a challenge OPEN when persisted unable_to_review findings claim resolved', () => {
+      const state = stateWith({
+        digest: 'impl-3',
+        findingsList: [
+          { challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }] },
+          {
+            overallVerdict: 'unable_to_review',
+            challengeResolutionVerdicts: [{ challengeId: A, verdict: 'resolved' }],
+          },
+        ],
+        resolutions: [{ challengeId: A, implementationDigest: 'impl-3' }],
+      });
+      expect(isOpenImplementationChallenge(state, A)).toBe(true);
+      expect(computeTargetedResolutionChallengeIds(state)).toEqual([A]);
     });
 
     it('later findings override an earlier resolved verdict (re-opened by a subsequent still_failing)', () => {

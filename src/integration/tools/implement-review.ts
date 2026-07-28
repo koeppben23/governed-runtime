@@ -139,7 +139,13 @@ function projectOpenChallengeIds(state: SessionState): ReadonlySet<string> {
       }
     }
     for (const verdict of findings.challengeResolutionVerdicts ?? []) {
-      // Later findings override earlier verdicts for the same challenge.
+      // An unable_to_review record has no closure authority. Ignore a persisted
+      // incoherent `resolved` verdict rather than letting legacy/imported data
+      // close a challenge that the reviewer could not assess.
+      if (findings.overallVerdict === 'unable_to_review' && verdict.verdict === 'resolved') {
+        continue;
+      }
+      // Later completed-review findings override earlier verdicts for the same challenge.
       latestVerdict.set(verdict.challengeId, verdict.verdict);
     }
   }
