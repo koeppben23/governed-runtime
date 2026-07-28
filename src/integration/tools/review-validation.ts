@@ -244,27 +244,25 @@ export function validateReviewFindings(
     });
   }
 
-  if (obligation?.requiredChallengeCount !== undefined && obligation.requiredChallengeKind) {
-    const challengeConsistency = validateChallengeConsistency({
-      overallVerdict: findings.overallVerdict,
-      requiredChallengeCount: obligation.requiredChallengeCount,
-      requiredChallengeKind: obligation.requiredChallengeKind,
-      challenges: findings.challenges,
-      expectedObligationId: ctx.expectedObligationId ?? obligation.obligationId,
-      allowedEvidenceRefs: ctx.allowedEvidenceRefs,
-      resolutionVerdicts: findings.challengeResolutionVerdicts,
-      unresolvedImplementationChallengeIds: ctx.unresolvedImplementationChallengeIds,
-      unaddressedPriorFailIds: ctx.unaddressedPriorFailIds,
-      previouslyUsedChallengeIds: ctx.previouslyUsedChallengeIds,
-    });
-    if (!challengeConsistency.ok) {
-      return formatBlocked(
-        challengeConsistency.code,
-        Object.fromEntries(
-          Object.entries(challengeConsistency.details).map(([key, value]) => [key, String(value)]),
-        ),
-      );
-    }
+  const challengeConsistency = validateChallengeConsistency({
+    overallVerdict: findings.overallVerdict,
+    requiredChallengeCount: obligation?.requiredChallengeCount ?? 0,
+    requiredChallengeKind: obligation?.requiredChallengeKind ?? 'implementation_challenge',
+    challenges: findings.challenges,
+    expectedObligationId: ctx.expectedObligationId ?? obligation?.obligationId,
+    allowedEvidenceRefs: ctx.allowedEvidenceRefs,
+    resolutionVerdicts: findings.challengeResolutionVerdicts,
+    unresolvedImplementationChallengeIds: ctx.unresolvedImplementationChallengeIds,
+    unaddressedPriorFailIds: ctx.unaddressedPriorFailIds,
+    previouslyUsedChallengeIds: ctx.previouslyUsedChallengeIds,
+  });
+  if (!challengeConsistency.ok) {
+    return formatBlocked(
+      challengeConsistency.code,
+      Object.fromEntries(
+        Object.entries(challengeConsistency.details).map(([key, value]) => [key, String(value)]),
+      ),
+    );
   }
 
   if (ctx.strictEnforcement) return validateStrictReviewFindings(findings, ctx);

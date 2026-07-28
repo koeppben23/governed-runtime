@@ -204,6 +204,7 @@ function validateInitialPlanFindings(scope: PlanExecutionScope): string | null {
     reviewInvocationPolicy: scope.policy.reviewInvocationPolicy,
     reviewParentSessionId: scope.context.sessionID,
     reviewHostPlatform: resolveRuntimeReviewPlatform(),
+    previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(scope.state),
   });
 }
 

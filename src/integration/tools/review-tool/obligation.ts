@@ -534,31 +534,28 @@ export function validateSubmittedReviewFindings(
     );
   }
 
-  if (obligation.requiredChallengeCount !== undefined && obligation.requiredChallengeKind) {
-    const challengeConsistency = validateChallengeConsistency({
-      overallVerdict: findings.overallVerdict as
-        'accept' | 'changes_requested' | 'unable_to_review',
-      requiredChallengeCount: obligation.requiredChallengeCount,
-      requiredChallengeKind: obligation.requiredChallengeKind,
-      challenges: findings.challenges as Parameters<
-        typeof validateChallengeConsistency
-      >[0]['challenges'],
-      // Obligation-scope + evidence binding for content challenges (findings
-      // B3/B5): a content challenge must carry the active obligation id and cite
-      // the canonical content ref, not a fabricated digest.
-      expectedObligationId: obligation.obligationId,
-      allowedEvidenceRefs: buildHostTaskChallengeContract(state, obligation)?.evidenceRefs,
-      resolutionVerdicts: findings.challengeResolutionVerdicts as Parameters<
-        typeof validateChallengeConsistency
-      >[0]['resolutionVerdicts'],
-      previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(state),
-    });
-    if (!challengeConsistency.ok) {
-      return formatSubagentReviewNotInvoked(
-        `${challengeConsistency.code}: ${JSON.stringify(challengeConsistency.details)}`,
-        obligation.obligationId,
-      );
-    }
+  const challengeConsistency = validateChallengeConsistency({
+    overallVerdict: findings.overallVerdict as 'accept' | 'changes_requested' | 'unable_to_review',
+    requiredChallengeCount: obligation.requiredChallengeCount ?? 0,
+    requiredChallengeKind: obligation.requiredChallengeKind ?? 'implementation_challenge',
+    challenges: findings.challenges as Parameters<
+      typeof validateChallengeConsistency
+    >[0]['challenges'],
+    // Obligation-scope + evidence binding for content challenges (findings
+    // B3/B5): a content challenge must carry the active obligation id and cite
+    // the canonical content ref, not a fabricated digest.
+    expectedObligationId: obligation.obligationId,
+    allowedEvidenceRefs: buildHostTaskChallengeContract(state, obligation)?.evidenceRefs,
+    resolutionVerdicts: findings.challengeResolutionVerdicts as Parameters<
+      typeof validateChallengeConsistency
+    >[0]['resolutionVerdicts'],
+    previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(state),
+  });
+  if (!challengeConsistency.ok) {
+    return formatSubagentReviewNotInvoked(
+      `${challengeConsistency.code}: ${JSON.stringify(challengeConsistency.details)}`,
+      obligation.obligationId,
+    );
   }
 
   const verdict = validateStrictAttestation(

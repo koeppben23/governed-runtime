@@ -129,23 +129,21 @@ export function resolveHostTaskFindings(
         incoherent ??= { code: consistency.code, details: consistency.details };
         continue;
       }
-      if (obligation.requiredChallengeCount !== undefined && obligation.requiredChallengeKind) {
-        const challengeConsistency = validateChallengeConsistency({
-          overallVerdict: parsed.data.overallVerdict,
-          requiredChallengeCount: obligation.requiredChallengeCount,
-          requiredChallengeKind: obligation.requiredChallengeKind,
-          challenges: parsed.data.challenges,
-          expectedObligationId: obligation.obligationId,
-          allowedEvidenceRefs: allowedChallengeEvidenceRefs,
-          resolutionVerdicts: parsed.data.challengeResolutionVerdicts,
-          unresolvedImplementationChallengeIds,
-          unaddressedPriorFailIds,
-          previouslyUsedChallengeIds,
-        });
-        if (!challengeConsistency.ok) {
-          incoherent ??= { code: challengeConsistency.code, details: challengeConsistency.details };
-          continue;
-        }
+      const challengeConsistency = validateChallengeConsistency({
+        overallVerdict: parsed.data.overallVerdict,
+        requiredChallengeCount: obligation.requiredChallengeCount ?? 0,
+        requiredChallengeKind: obligation.requiredChallengeKind ?? 'implementation_challenge',
+        challenges: parsed.data.challenges,
+        expectedObligationId: obligation.obligationId,
+        allowedEvidenceRefs: allowedChallengeEvidenceRefs,
+        resolutionVerdicts: parsed.data.challengeResolutionVerdicts,
+        unresolvedImplementationChallengeIds,
+        unaddressedPriorFailIds,
+        previouslyUsedChallengeIds,
+      });
+      if (!challengeConsistency.ok) {
+        incoherent ??= { code: challengeConsistency.code, details: challengeConsistency.details };
+        continue;
       }
       return {
         kind: 'resolved',
