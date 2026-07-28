@@ -674,7 +674,10 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
     const result = validateReviewFindings(
       makeFindings({
         challenges: [
-          { ...implChallenge([IMPL_REF, FRESH_ATTEMPT_REF]), obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff' },
+          {
+            ...implChallenge([IMPL_REF, FRESH_ATTEMPT_REF]),
+            obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          },
         ],
       }),
       challengeCtx(),
@@ -689,7 +692,10 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
     const result = validateReviewFindings(
       makeFindings({
         challenges: [
-          { ...implChallenge([IMPL_REF, FRESH_ATTEMPT_REF]), obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff' },
+          {
+            ...implChallenge([IMPL_REF, FRESH_ATTEMPT_REF]),
+            obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          },
         ],
       }),
       challengeCtx({ expectedObligationId: undefined }),
