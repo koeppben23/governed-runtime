@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeState } from '../../fixtures.js';
 import { TEAM_POLICY } from '../../config/policy-presets.js';
+import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
 import type { SessionState } from '../../state/schema.js';
+import type { DiscoveryResult } from '../../discovery/types.js';
+import { discoveryRiskPaths } from '../discovery-risk-paths.js';
+import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
 
 const originalFlowguardHostPlatform = process.env.FLOWGUARD_HOST_PLATFORM;
 
@@ -45,6 +49,7 @@ const mocks = vi.hoisted(() => {
       async () => undefined,
     ),
     changedFiles: vi.fn(async () => [] as string[]),
+    readDiscovery: vi.fn(async () => null as DiscoveryResult | null),
   };
 });
 
@@ -106,6 +111,11 @@ vi.mock('../../rails/types.js', () => ({
 vi.mock('../../adapters/git.js', () => ({
   changedFiles: mocks.changedFiles,
 }));
+
+vi.mock('../../adapters/persistence-discovery.js', async (importOriginal) => {
+  const original = (await importOriginal()) as Record<string, unknown>;
+  return { ...original, readDiscovery: mocks.readDiscovery };
+});
 
 vi.mock('../../machine/evaluate.js', () => ({
   evaluate: () => ({ kind: 'pending' }),
@@ -232,7 +242,13 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(mocks.writeStateWithArtifacts).toHaveBeenCalledTimes(1);
   });
 
-  it('blocks Mode A obligation creation when challenge-path evidence is unavailable', async () => {
+  it('creates the Mode A obligation without a git diff (ADR carries no diff; no dead-end)', async () => {
+    // Regression (live SHA 5891eec): an ADR submission under an active
+    // challengePolicy used to hard-block with RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE
+    // because it has no branch/PR/targetPaths diff. Challenge classification now
+    // derives from persisted discovery evidence and the claimed task class, so a
+    // pure ADR with no detected risk surface succeeds with a TRIVIAL (count 0)
+    // obligation instead of dead-ending.
     const policySnapshot = {
       ...makeState('READY').policySnapshot,
       challengePolicy: TEAM_POLICY.challengePolicy,
@@ -241,13 +257,26 @@ describe('integration/tools/architecture (wrapper)', () => {
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);
     mocks.executeArchitecture.mockReturnValue({
       kind: 'ok',
-      state: makeState('ARCHITECTURE', { policySnapshot }),
+      state: makeState('ARCHITECTURE', {
+        policySnapshot,
+        architecture: {
+          id: 'ADR-001',
+          title: 'ADR',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          digest: 'digest-adr',
+          status: 'proposed',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      }),
       transitions: [],
     });
     mocks.resolvePolicyFromState.mockReturnValue({
       ...TEAM_POLICY,
       selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
     });
+    // Discovery absent → no detected risk surface. Git is irrelevant to an ADR:
+    // even a rejecting git diff must not change the outcome.
+    mocks.readDiscovery.mockResolvedValueOnce(null);
     mocks.changedFiles.mockRejectedValueOnce(new Error('git unavailable'));
 
     const { architecture } = await import('./architecture.js');
@@ -255,8 +284,250 @@ describe('integration/tools/architecture (wrapper)', () => {
       String(await architecture.execute({ title: 'x', adrText: 'y' }, {} as never)),
     );
 
-    expect(parsed.code).toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
-    expect(mocks.writeStateWithArtifacts).not.toHaveBeenCalled();
+    expect(parsed.phase).toBe('ARCHITECTURE');
+    expect(mocks.writeStateWithArtifacts).toHaveBeenCalledTimes(1);
+    expect(mocks.readDiscovery).toHaveBeenCalledTimes(1);
+    expect(parsed._audit).toEqual({ transitions: [] });
+    const savedState = mocks.writeStateWithArtifacts.mock.calls.at(-1)?.[1] as SessionState;
+    const obligation = savedState.reviewAssurance?.obligations.at(-1);
+    expect(obligation?.obligationType).toBe('architecture');
+    expect(obligation?.requiredChallengeCount).toBe(0);
+    expect(obligation?.metadata?.targetPaths).toBeUndefined();
+  });
+
+  it('floors the Mode A challenge count on discovery risk surfaces (no targetPaths, no git diff)', async () => {
+    // B-floor: with no author targetPaths and no git diff, the challenge count is
+    // driven by the repository's persisted risk surfaces. A detected persistence
+    // surface classifies as STANDARD, so the ADR obligation requires >= 1
+    // challenge — proving discovery evidence, not a dead-end, governs the count.
+    const discovery = {
+      surfaces: {
+        api: [],
+        persistence: [
+          {
+            id: 'repo',
+            label: 'repo',
+            classification: 'fact',
+            evidence: ['src/db/repository.ts'],
+          },
+        ],
+        cicd: [],
+        security: [],
+        layers: [],
+      },
+    } as unknown as DiscoveryResult;
+
+    const expectedPaths = discoveryRiskPaths(discovery);
+    const expectedClass = maxTaskClass(
+      assessMinimumTaskClass(expectedPaths).minimumTaskClass,
+      'TRIVIAL',
+    );
+    const expectedCount = CHALLENGE_POLICY_V1.counts[expectedClass];
+    // Guard: the fixture must exercise a non-trivial floor, else the test proves nothing.
+    expect(expectedPaths.length).toBeGreaterThan(0);
+    expect(expectedCount).toBeGreaterThan(0);
+
+    const policySnapshot = {
+      ...makeState('READY').policySnapshot,
+      challengePolicy: TEAM_POLICY.challengePolicy,
+    };
+    mocks.state = makeState('READY', { policySnapshot });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.executeArchitecture.mockReturnValue({
+      kind: 'ok',
+      state: makeState('ARCHITECTURE', {
+        policySnapshot,
+        architecture: {
+          id: 'ADR-001',
+          title: 'ADR',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          digest: 'digest-adr',
+          status: 'proposed',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      }),
+      transitions: [],
+    });
+    mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
+      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
+    });
+    mocks.readDiscovery.mockResolvedValueOnce(discovery);
+
+    const { architecture } = await import('./architecture.js');
+    const parsed = JSON.parse(
+      String(await architecture.execute({ title: 'x', adrText: 'y' }, {} as never)),
+    );
+
+    expect(parsed.phase).toBe('ARCHITECTURE');
+    const savedState = mocks.writeStateWithArtifacts.mock.calls.at(-1)?.[1] as SessionState;
+    const obligation = savedState.reviewAssurance?.obligations.at(-1);
+    expect(obligation?.requiredChallengeCount).toBe(expectedCount);
+    expect(obligation?.metadata?.targetPaths).toEqual(expectedPaths);
+  });
+
+  it('unions author targetPaths with discovery surfaces and can only raise the count (optional A)', async () => {
+    // Optional A: an author MAY hint targetPaths. They are UNIONED with the
+    // detected discovery surfaces (never replace them) and can only raise the
+    // challenge count. Here discovery alone is STANDARD (count 1); a HIGH-RISK
+    // author path lifts the union to HIGH-RISK (count 2).
+    const discovery = {
+      surfaces: {
+        api: [],
+        persistence: [
+          {
+            id: 'repo',
+            label: 'repo',
+            classification: 'fact',
+            evidence: ['src/db/repository.ts'],
+          },
+        ],
+        cicd: [],
+        security: [],
+        layers: [],
+      },
+    } as unknown as DiscoveryResult;
+    const authorPaths = ['src/migrations/001-add-table.ts'];
+    const discoveryPaths = discoveryRiskPaths(discovery);
+    const expectedUnion = [...new Set([...authorPaths, ...discoveryPaths])];
+    const expectedClass = maxTaskClass(
+      assessMinimumTaskClass(expectedUnion).minimumTaskClass,
+      'TRIVIAL',
+    );
+    const expectedCount = CHALLENGE_POLICY_V1.counts[expectedClass];
+    const discoveryOnlyCount =
+      CHALLENGE_POLICY_V1.counts[
+        maxTaskClass(assessMinimumTaskClass(discoveryPaths).minimumTaskClass, 'TRIVIAL')
+      ];
+    // Guard: the author path must strictly RAISE the count above discovery-only.
+    expect(expectedCount).toBeGreaterThan(discoveryOnlyCount);
+
+    const policySnapshot = {
+      ...makeState('READY').policySnapshot,
+      challengePolicy: TEAM_POLICY.challengePolicy,
+    };
+    mocks.state = makeState('READY', { policySnapshot });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.executeArchitecture.mockReturnValue({
+      kind: 'ok',
+      state: makeState('ARCHITECTURE', {
+        policySnapshot,
+        architecture: {
+          id: 'ADR-001',
+          title: 'ADR',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          digest: 'digest-adr',
+          status: 'proposed',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      }),
+      transitions: [],
+    });
+    mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
+      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
+    });
+    mocks.readDiscovery.mockResolvedValueOnce(discovery);
+
+    const { architecture } = await import('./architecture.js');
+    const parsed = JSON.parse(
+      String(
+        await architecture.execute(
+          { title: 'x', adrText: 'y', targetPaths: authorPaths },
+          {} as never,
+        ),
+      ),
+    );
+
+    expect(parsed.phase).toBe('ARCHITECTURE');
+    const savedState = mocks.writeStateWithArtifacts.mock.calls.at(-1)?.[1] as SessionState;
+    const obligation = savedState.reviewAssurance?.obligations.at(-1);
+    expect(obligation?.requiredChallengeCount).toBe(expectedCount);
+    expect(obligation?.metadata?.targetPaths).toEqual(expectedUnion);
+  });
+
+  it('skips the discovery read and creates no obligation when subagent review is disabled', async () => {
+    // Guard: with self-review disabled, classification short-circuits BEFORE any
+    // discovery read and creates no obligation, even under an active challengePolicy.
+    const policySnapshot = {
+      ...makeState('READY').policySnapshot,
+      challengePolicy: TEAM_POLICY.challengePolicy,
+    };
+    mocks.state = makeState('READY', { policySnapshot });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.executeArchitecture.mockReturnValue({
+      kind: 'ok',
+      state: makeState('ARCHITECTURE', {
+        policySnapshot,
+        architecture: {
+          id: 'ADR-001',
+          title: 'ADR',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          digest: 'digest-adr',
+          status: 'proposed',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      }),
+      transitions: [],
+    });
+    mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
+      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: false },
+    });
+
+    const { architecture } = await import('./architecture.js');
+    const parsed = JSON.parse(
+      String(await architecture.execute({ title: 'x', adrText: 'y' }, {} as never)),
+    );
+
+    expect(parsed.phase).toBe('ARCHITECTURE');
+    expect(parsed.reviewMode).toBe('self');
+    expect(mocks.readDiscovery).not.toHaveBeenCalled();
+    const savedState = mocks.writeStateWithArtifacts.mock.calls.at(-1)?.[1] as SessionState;
+    expect(savedState.reviewAssurance?.obligations ?? []).toHaveLength(0);
+  });
+
+  it('creates an obligation without challenge requirements and skips discovery when no challengePolicy is active', async () => {
+    // Guard: an absent challengePolicy (e.g. a solo-derived snapshot) short-circuits
+    // before the discovery read; the subagent obligation is created but carries no
+    // challenge-count requirement.
+    const policySnapshot = {
+      ...makeState('READY').policySnapshot,
+      challengePolicy: undefined,
+    };
+    mocks.state = makeState('READY', { policySnapshot });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.executeArchitecture.mockReturnValue({
+      kind: 'ok',
+      state: makeState('ARCHITECTURE', {
+        policySnapshot,
+        architecture: {
+          id: 'ADR-001',
+          title: 'ADR',
+          adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+          digest: 'digest-adr',
+          status: 'proposed',
+          createdAt: '2026-01-01T00:00:00.000Z',
+        },
+      }),
+      transitions: [],
+    });
+    mocks.resolvePolicyFromState.mockReturnValue({
+      ...TEAM_POLICY,
+      selfReview: { ...TEAM_POLICY.selfReview, subagentEnabled: true },
+    });
+
+    const { architecture } = await import('./architecture.js');
+    const parsed = JSON.parse(
+      String(await architecture.execute({ title: 'x', adrText: 'y' }, {} as never)),
+    );
+
+    expect(parsed.phase).toBe('ARCHITECTURE');
+    expect(mocks.readDiscovery).not.toHaveBeenCalled();
+    const savedState = mocks.writeStateWithArtifacts.mock.calls.at(-1)?.[1] as SessionState;
+    const obligation = savedState.reviewAssurance?.obligations.at(-1);
+    expect(obligation?.obligationType).toBe('architecture');
+    expect(obligation?.requiredChallengeCount).toBeUndefined();
   });
 
   it('blocks mixed ADR submission and review verdict', async () => {

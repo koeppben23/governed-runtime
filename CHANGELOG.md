@@ -242,6 +242,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     to the canonical matrix in `team`/`team-ci`/`regulated` (solo stays
     legacy-tolerant), matching the discoveryHealth/validationEvidence normalizers.
 
+- **Architecture ADR submission no longer dead-ends under an active challenge
+  policy.** An ADR carries no diff, so challenge classification for
+  `flowguard_architecture` (Mode A) previously resolved to `unavailable` and
+  hard-blocked with `RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE` whenever a
+  `challengePolicy` was active (`team`/`team-ci`/`regulated`) — a state the A2
+  fail-closed normalization made unavoidable for those modes. Classification now
+  derives the changed-file set from the session's persisted discovery risk
+  surfaces (a new `discoveryRiskPaths` SSOT extractor over api/persistence/cicd/
+  security surface evidence and code-surface signal locations), unioned with an
+  optional, newly accepted author-supplied `targetPaths` tool argument, and never
+  returns `unavailable`. The count stays floored by the author's `claimedTaskClass`
+  (`counts[max(computed, claimed)]`, finding C1), so the discovery-derived set and
+  any author `targetPaths` can only raise the requirement, never lower it. With no
+  detected risk surface and no `targetPaths`, the ADR classifies as TRIVIAL
+  (count 0) — a genuine "no detected risk" signal, not a block.
+
 - **Bound implementation-challenge freshness on the directly-submitted review
   path.** Challenge evidence freshness (an `implementation_challenge` must cite a
   validation attempt for the current implementation digest, from the obligation's

@@ -66,6 +66,15 @@ export const architecture: ToolDefinition = {
           'unavailable). This is a fail-closed signal: FlowGuard blocks with SUBAGENT_UNABLE_TO_REVIEW ' +
           'and recovery guidance. It never enables self-review and never approves the ADR.',
       ),
+    targetPaths: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'Optional Mode A hint: file paths this architecture decision will touch. An ADR carries no ' +
+          'diff, so challenge classification derives from the persisted discovery risk surfaces; ' +
+          'these paths are UNIONED with those surfaces (never replace them) and can only raise the ' +
+          'required challenge count, never lower it.',
+      ),
   },
   async execute(args, context) {
     try {

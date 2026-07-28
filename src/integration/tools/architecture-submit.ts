@@ -16,25 +16,47 @@ import {
   reviewObligationResponseFields,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
-import { resolveChallengeClassificationEvidence } from './review-obligation-classification.js';
+import { readDiscovery } from '../../adapters/persistence-discovery.js';
+import { discoveryRiskPaths } from '../discovery-risk-paths.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Mode A: ADR Submission
 // ═══════════════════════════════════════════════════════════════════════════
 
+/**
+ * Challenge classification for an ADR.
+ *
+ * An ADR carries no diff of its own, so `targetPaths`/branch/PR evidence is not
+ * naturally available — the historical resolver returned `unavailable` here and
+ * hard-blocked the entire architecture flow whenever a `challengePolicy` was
+ * active (team/team-ci/regulated). This derives the classification from canonical
+ * session evidence instead and NEVER dead-ends:
+ *
+ *  - changedFiles = author `targetPaths` (optional override) ∪ the repository's
+ *    detected risk surfaces (`discoveryRiskPaths`), a deterministic, persisted
+ *    source. The challenge COUNT is then floored by the author's `claimedTaskClass`
+ *    inside `createReviewObligation` (max(computed, claimed)).
+ *  - When no evidence exists (no targetPaths, no detected surfaces), the set is
+ *    empty → TRIVIAL → count 0. That is a genuine "no detected risk" signal, not a
+ *    block. In enforced modes the separate risk gate still requires a claim before
+ *    the tool runs.
+ */
 async function resolveArchitectureChallengeClassification(
   state: SessionState,
-  worktree: string | undefined,
+  wsDir: string,
   subagentEnabled: boolean,
   targetPaths?: string[],
-) {
-  if (!subagentEnabled) return { kind: 'not_required' as const };
-  return resolveChallengeClassificationEvidence(state, worktree, { targetPaths });
+): Promise<{ kind: 'not_required' } | { kind: 'available'; changedFiles: readonly string[] }> {
+  if (!subagentEnabled) return { kind: 'not_required' };
+  if (!state.policySnapshot?.challengePolicy) return { kind: 'not_required' };
+  const discovery = await readDiscovery(wsDir);
+  const changedFiles = [...new Set([...(targetPaths ?? []), ...discoveryRiskPaths(discovery)])];
+  return { kind: 'available', changedFiles };
 }
 
 interface ArchObligationContext {
   readonly state: SessionState;
-  readonly worktree: string | undefined;
+  readonly wsDir: string;
   readonly subagentEnabled: boolean;
   readonly targetPaths: string[] | undefined;
   readonly archPlanVersion: number;
@@ -44,20 +66,13 @@ interface ArchObligationContext {
 
 async function classifyAndCreateArchObligation(
   ctx: ArchObligationContext,
-): Promise<
-  { state: SessionState; obligation: ReturnType<typeof createReviewObligation> | null } | string
-> {
+): Promise<{ state: SessionState; obligation: ReturnType<typeof createReviewObligation> | null }> {
   const classification = await resolveArchitectureChallengeClassification(
     ctx.state,
-    ctx.worktree,
+    ctx.wsDir,
     ctx.subagentEnabled,
     ctx.targetPaths,
   );
-  if (classification.kind === 'unavailable') {
-    return formatBlocked('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE', {
-      reason: classification.reason,
-    });
-  }
   const resolvedTargetPaths =
     classification.kind === 'available' ? [...classification.changedFiles] : undefined;
   const metadata: Record<string, unknown> = {};
@@ -112,14 +127,13 @@ export async function handleAdrSubmission(
   const now = ctx.now();
   const classification = await classifyAndCreateArchObligation({
     state: result.state,
-    worktree: session.worktree,
+    wsDir: session.wsDir,
     subagentEnabled,
     targetPaths: args.targetPaths,
     archPlanVersion,
     now,
     policySnapshot: result.state.policySnapshot,
   });
-  if (typeof classification === 'string') return classification;
   const { state: augmentedState, obligation: nextObligation } = classification;
 
   await writeStateWithArtifacts(sessDir, augmentedState);

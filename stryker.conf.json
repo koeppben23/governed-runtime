@@ -32,6 +32,8 @@
 
     "src/integration/command-aliases.ts",
     "src/integration/tool-classification.ts",
+    "src/integration/discovery-risk-paths.ts",
+    "src/integration/tools/architecture-submit.ts",
     "src/integration/tools/review-validation-mode.ts",
     "src/integration/tools/review-validation.ts",
     "src/integration/tools/review-validation-host-task.ts",
