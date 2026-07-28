@@ -3,25 +3,35 @@ import type { SessionState } from '../../state/schema.js';
 import {
   computeTargetedResolutionChallengeIds,
   computeUnaddressedPriorFailIds,
+  isOpenImplementationChallenge,
 } from './implement-review.js';
 
 // #747 lifecycle semantics. An author resolution is advisory: it does NOT close
 // a challenge, it moves it into the set the NEXT independent reviewer must judge.
-//  - computeTargetedResolutionChallengeIds  = prior fail/not_verified ∩ resolved(current digest)
-//  - computeUnaddressedPriorFailIds         = prior fail/not_verified \ resolved(current digest)
+//  - computeTargetedResolutionChallengeIds  = open(lifecycle) ∩ resolved(current digest)
+//  - computeUnaddressedPriorFailIds         = open(lifecycle) \ resolved(current digest)
+// Open-state is projected over the WHOLE implReviewFindings history: a failing
+// origin whose latest independent verdict is not `resolved`.
 
 const A = '00000000-0000-4000-8000-00000000000a';
 const B = '00000000-0000-4000-8000-00000000000b';
 const PASSED = '00000000-0000-4000-8000-00000000000c';
 
+type Ch = { challengeId: string; kind: string; outcome: string };
+type Vd = { challengeId: string; verdict: string };
+type Findings = { challenges?: Ch[]; challengeResolutionVerdicts?: Vd[] };
+
 function stateWith(input: {
   digest?: string;
-  challenges?: { challengeId: string; kind: string; outcome: string }[];
+  challenges?: Ch[];
+  findingsList?: Findings[];
   resolutions?: { challengeId: string; implementationDigest: string }[];
 }): SessionState {
+  const implReviewFindings =
+    input.findingsList ?? (input.challenges ? [{ challenges: input.challenges }] : undefined);
   return {
     implementation: input.digest ? { digest: input.digest } : null,
-    implReviewFindings: input.challenges ? [{ challenges: input.challenges }] : undefined,
+    implReviewFindings,
     challengeResolutions: input.resolutions ?? [],
   } as unknown as SessionState;
 }
@@ -120,5 +130,70 @@ describe('implement re-review challenge lifecycle (#747)', () => {
     expect(targeted).toEqual([A]);
     expect(unaddressed).toEqual([B]);
     expect(targeted.some((id) => unaddressed.includes(id))).toBe(false);
+  });
+
+  describe('lifecycle projection across multiple review rounds (#747 multi-round)', () => {
+    it('keeps a challenge OPEN across rounds when the latest verdict is still_failing', () => {
+      // Round 1: A fails. Round 2: reviewer verdict still_failing (A is no longer
+      // re-emitted as a challenge object, only as a verdict). A must remain open.
+      const state = stateWith({
+        digest: 'impl-2',
+        findingsList: [
+          { challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }] },
+          { challengeResolutionVerdicts: [{ challengeId: A, verdict: 'still_failing' }] },
+        ],
+        resolutions: [{ challengeId: A, implementationDigest: 'impl-2' }],
+      });
+      expect(isOpenImplementationChallenge(state, A)).toBe(true);
+      expect(computeTargetedResolutionChallengeIds(state)).toEqual([A]);
+    });
+
+    it('keeps a challenge OPEN when the latest verdict is not_verified', () => {
+      const state = stateWith({
+        digest: 'impl-2',
+        findingsList: [
+          { challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }] },
+          { challengeResolutionVerdicts: [{ challengeId: A, verdict: 'not_verified' }] },
+        ],
+      });
+      expect(isOpenImplementationChallenge(state, A)).toBe(true);
+      expect(computeUnaddressedPriorFailIds(state)).toEqual([A]);
+    });
+
+    it('CLOSES a challenge once the latest independent verdict is resolved', () => {
+      const state = stateWith({
+        digest: 'impl-3',
+        findingsList: [
+          { challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }] },
+          { challengeResolutionVerdicts: [{ challengeId: A, verdict: 'still_failing' }] },
+          { challengeResolutionVerdicts: [{ challengeId: A, verdict: 'resolved' }] },
+        ],
+        resolutions: [{ challengeId: A, implementationDigest: 'impl-3' }],
+      });
+      expect(isOpenImplementationChallenge(state, A)).toBe(false);
+      expect(computeTargetedResolutionChallengeIds(state)).toEqual([]);
+      expect(computeUnaddressedPriorFailIds(state)).toEqual([]);
+    });
+
+    it('later findings override an earlier resolved verdict (re-opened by a subsequent still_failing)', () => {
+      const state = stateWith({
+        digest: 'impl-4',
+        findingsList: [
+          { challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }] },
+          { challengeResolutionVerdicts: [{ challengeId: A, verdict: 'resolved' }] },
+          { challengeResolutionVerdicts: [{ challengeId: A, verdict: 'still_failing' }] },
+        ],
+      });
+      // Latest verdict wins → open again.
+      expect(isOpenImplementationChallenge(state, A)).toBe(true);
+    });
+
+    it('an unknown id is never open', () => {
+      const state = stateWith({
+        digest: 'impl-1',
+        challenges: [{ challengeId: A, kind: 'implementation_challenge', outcome: 'fail' }],
+      });
+      expect(isOpenImplementationChallenge(state, B)).toBe(false);
+    });
   });
 });

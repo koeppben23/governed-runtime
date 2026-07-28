@@ -5,6 +5,7 @@ import { Command, isCommandAllowed } from '../../machine/commands.js';
 import type { ChallengeResolution } from '../../state/evidence.js';
 import type { SessionState } from '../../state/schema.js';
 import type { ToolDefinition } from './helpers.js';
+import { isOpenImplementationChallenge } from './implement-review.js';
 import {
   appendNextAction,
   formatBlocked,
@@ -13,27 +14,49 @@ import {
   writeStateWithArtifacts,
 } from './helpers.js';
 
-/**
- * Validate that `challengeId` names a prior implementation challenge that is
- * eligible for an author resolution: it must exist in the last implementation
- * review findings, have a FAILED outcome (`fail`/`not_verified` — a `pass`
- * challenge was never open, #747), and not already carry a resolution. Returns a
- * blocked tool result, or `null` when the challenge is resolvable.
- */
-function checkResolvableChallenge(state: SessionState, challengeId: string): string | null {
-  const challenge = state.implReviewFindings
-    ?.at(-1)
-    ?.challenges?.find(
+/** True if `challengeId` ever appeared as an implementation_challenge in the history. */
+function challengeEverRecorded(state: SessionState, challengeId: string): boolean {
+  return (state.implReviewFindings ?? []).some((findings) =>
+    (findings.challenges ?? []).some(
       (item) => item.challengeId === challengeId && item.kind === 'implementation_challenge',
-    );
-  if (!challenge) return formatBlocked('IMPLEMENTATION_CHALLENGE_UNKNOWN', { challengeId });
-  if (challenge.outcome !== 'fail' && challenge.outcome !== 'not_verified') {
-    return formatBlocked('IMPLEMENTATION_CHALLENGE_NOT_FAILED', {
-      challengeId,
-      outcome: challenge.outcome ?? '',
-    });
+    ),
+  );
+}
+
+/**
+ * Validate that `challengeId` names an implementation challenge eligible for an
+ * author resolution against the current digest (#747 multi-round lifecycle):
+ *
+ *  - it must exist somewhere in the implementation review history
+ *    (else UNKNOWN);
+ *  - it must currently be OPEN across the lifecycle — a failing-origin challenge
+ *    whose latest independent verdict is not `resolved` (else NOT_FAILED: it was
+ *    never failing, or it has already been independently resolved). Open-state is
+ *    derived from the whole history, not just the latest `challenges[]`, so a
+ *    challenge a later reviewer marked `still_failing`/`not_verified` — and which
+ *    is therefore no longer re-emitted as a challenge object — remains
+ *    resolvable;
+ *  - it must not already have a resolution for THIS implementation digest
+ *    (append-only: a new digest with fresh passing attempts may be resolved
+ *    again). Returns a blocked tool result, or `null` when resolvable.
+ */
+function checkResolvableChallenge(
+  state: SessionState,
+  challengeId: string,
+  implementationDigest: string,
+): string | null {
+  if (!challengeEverRecorded(state, challengeId)) {
+    return formatBlocked('IMPLEMENTATION_CHALLENGE_UNKNOWN', { challengeId });
   }
-  if (state.challengeResolutions.some((item) => item.challengeId === challengeId)) {
+  if (!isOpenImplementationChallenge(state, challengeId)) {
+    return formatBlocked('IMPLEMENTATION_CHALLENGE_NOT_FAILED', { challengeId });
+  }
+  if (
+    state.challengeResolutions.some(
+      (item) =>
+        item.challengeId === challengeId && item.implementationDigest === implementationDigest,
+    )
+  ) {
     return formatBlocked('IMPLEMENTATION_CHALLENGE_ALREADY_RESOLVED', { challengeId });
   }
   return null;
@@ -63,7 +86,7 @@ export const resolve_implementation_challenge: ToolDefinition = {
         }
         const implementation = state.implementation;
         if (!implementation) return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
-        const challengeBlock = checkResolvableChallenge(state, challengeId);
+        const challengeBlock = checkResolvableChallenge(state, challengeId, implementation.digest);
         if (challengeBlock) return challengeBlock;
         if (new Set(attemptIds).size !== attemptIds.length) {
           return formatBlocked('IMPLEMENTATION_VALIDATION_ATTEMPT_DUPLICATE', {

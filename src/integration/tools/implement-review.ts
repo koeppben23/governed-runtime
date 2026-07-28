@@ -102,21 +102,52 @@ function findPendingImplObligation(state: SessionState) {
 }
 
 /**
- * Prior-iteration implementation challenges that failed falsification
- * (`fail`/`not_verified`) and therefore require closure by the NEXT independent
- * reviewer. Author resolutions are advisory only (#747): recording a resolution
- * does NOT close the challenge, so these ids are the raw prior-open set before
- * splitting into "addressed by an author resolution" vs "not yet addressed".
+ * Canonical lifecycle projection of implementation-challenge open-state (#747).
+ *
+ * The open-state of a challenge cannot be read from the last findings entry
+ * alone: after a `still_failing`/`not_verified` re-review the reviewer emits
+ * FRESH challenges and carries the prior challenge forward only as a
+ * `challengeResolutionVerdicts` entry, so the original `implementation_challenge`
+ * object is no longer present in the latest `challenges[]`. This projects the
+ * whole append-only `implReviewFindings` history:
+ *
+ *  - origin: a challenge id first seen as an `implementation_challenge` whose
+ *    outcome was `fail`/`not_verified`;
+ *  - latestVerdict: the MOST RECENT independent `challengeResolutionVerdict` for
+ *    that id, in `implReviewFindings` append order (later findings win).
+ *
+ * A challenge is OPEN iff it has a failing origin AND its latest independent
+ * verdict is not `resolved` (no verdict yet ⇒ still open). Author resolutions are
+ * advisory and never appear here — they never change open-state.
+ *
+ * Note (NOT_VERIFIED, by design): ordering uses `implReviewFindings` append
+ * position; neither `ChallengeResolutionVerdict` nor `ChallengeResolution`
+ * carries an explicit iteration/obligation/flow binding in the schema, so
+ * cross-iteration binding is positional plus digest only. A schema-level binding
+ * is intentionally out of scope here.
  */
-function priorFailingImplementationChallengeIds(state: SessionState): readonly string[] {
-  const priorChallenges = state.implReviewFindings?.at(-1)?.challenges ?? [];
-  return priorChallenges
-    .filter(
-      (challenge) =>
+function projectOpenChallengeIds(state: SessionState): ReadonlySet<string> {
+  const failingOrigin = new Set<string>();
+  const latestVerdict = new Map<string, string>();
+  for (const findings of state.implReviewFindings ?? []) {
+    for (const challenge of findings.challenges ?? []) {
+      if (
         challenge.kind === 'implementation_challenge' &&
-        (challenge.outcome === 'fail' || challenge.outcome === 'not_verified'),
-    )
-    .map((challenge) => challenge.challengeId);
+        (challenge.outcome === 'fail' || challenge.outcome === 'not_verified')
+      ) {
+        failingOrigin.add(challenge.challengeId);
+      }
+    }
+    for (const verdict of findings.challengeResolutionVerdicts ?? []) {
+      // Later findings override earlier verdicts for the same challenge.
+      latestVerdict.set(verdict.challengeId, verdict.verdict);
+    }
+  }
+  const open = new Set<string>();
+  for (const id of failingOrigin) {
+    if (latestVerdict.get(id) !== 'resolved') open.add(id);
+  }
+  return open;
 }
 
 /** Challenge ids the author has recorded a resolution for against the CURRENT digest. */
@@ -130,36 +161,42 @@ function resolvedForCurrentDigestIds(state: SessionState): ReadonlySet<string> {
 
 /**
  * The challenges the NEXT independent reviewer MUST classify
- * (`resolved`/`still_failing`/`not_verified`): prior failing implementation
- * challenges for which the author HAS recorded a valid resolution against the
- * current implementation digest.
+ * (`resolved`/`still_failing`/`not_verified`): challenges that are OPEN across
+ * the lifecycle AND for which the author HAS recorded a valid resolution against
+ * the current implementation digest.
  *
  * #747: an author resolution binds the challenge to new evidence but does NOT
  * close it — closure authority belongs to the next reviewer. These ids are
  * therefore the ones that require an independent verdict, NOT ids to drop.
- *
- * Note (NOT_VERIFIED, by design): "immediately preceding iteration" is derived
- * positionally via the last `implReviewFindings` entry; neither
- * `ChallengeResolutionVerdict` nor `ChallengeResolution` carries an explicit
- * iteration/flow binding in the schema, so cross-iteration binding is positional
- * plus digest only. A schema-level binding is intentionally out of scope here.
  */
 export function computeTargetedResolutionChallengeIds(state: SessionState): readonly string[] {
+  const open = projectOpenChallengeIds(state);
   const resolvedIds = resolvedForCurrentDigestIds(state);
-  return priorFailingImplementationChallengeIds(state).filter((id) => resolvedIds.has(id));
+  return [...open].filter((id) => resolvedIds.has(id));
 }
 
 /**
- * Prior failing implementation challenges with NO valid author resolution for the
- * current digest. #747 forbids acceptance while any prior challenge remains
- * unaddressed: the author must first record a resolution (bound to the current
- * implementation digest and a passing validation attempt) before an independent
- * reviewer can close it. The findings-consistency gate fails acceptance closed
- * while this set is non-empty.
+ * Open challenges with NO valid author resolution for the current digest. #747
+ * forbids acceptance while any such challenge remains unaddressed: the author
+ * must first record a resolution (bound to the current implementation digest and
+ * a passing validation attempt) before an independent reviewer can close it. The
+ * findings-consistency gate fails acceptance closed while this set is non-empty.
  */
 export function computeUnaddressedPriorFailIds(state: SessionState): readonly string[] {
+  const open = projectOpenChallengeIds(state);
   const resolvedIds = resolvedForCurrentDigestIds(state);
-  return priorFailingImplementationChallengeIds(state).filter((id) => !resolvedIds.has(id));
+  return [...open].filter((id) => !resolvedIds.has(id));
+}
+
+/**
+ * Whether `challengeId` is an OPEN implementation challenge across the lifecycle
+ * (failing origin, latest independent verdict not `resolved`). Used by the
+ * resolution-recording boundary so an author can re-resolve a challenge that a
+ * later reviewer marked `still_failing`/`not_verified`, even though the original
+ * `implementation_challenge` object is no longer in the latest `challenges[]`.
+ */
+export function isOpenImplementationChallenge(state: SessionState, challengeId: string): boolean {
+  return projectOpenChallengeIds(state).has(challengeId);
 }
 
 function resolveImplementationFindings(

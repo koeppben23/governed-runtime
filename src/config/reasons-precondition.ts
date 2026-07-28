@@ -418,8 +418,10 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     code: 'IMPLEMENTATION_CHALLENGE_ALREADY_RESOLVED',
     category: 'precondition',
     messageTemplate:
-      'Implementation challenge {challengeId} already has advisory resolution evidence.',
-    recoverySteps: ['Do not submit a duplicate resolution for the same challenge.'],
+      'Implementation challenge {challengeId} already has advisory resolution evidence for the current implementation digest.',
+    recoverySteps: [
+      'Do not resubmit the same resolution; record a new resolution only after a further implementation change produces a new digest and fresh passing validation attempts.',
+    ],
   },
   {
     code: 'IMPLEMENTATION_CHALLENGE_NOT_FAILED',
