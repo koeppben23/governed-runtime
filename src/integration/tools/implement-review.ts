@@ -131,30 +131,33 @@ function projectOpenChallengeIds(state: SessionState): ReadonlySet<string> {
   const failingOrigin = new Set<string>();
   const latestVerdict = new Map<string, string>();
   for (const findings of state.implReviewFindings ?? []) {
-    for (const challenge of findings.challenges ?? []) {
-      if (
-        challenge.kind === 'implementation_challenge' &&
-        (challenge.outcome === 'fail' || challenge.outcome === 'not_verified')
-      ) {
-        failingOrigin.add(challenge.challengeId);
-      }
-    }
-    for (const verdict of findings.challengeResolutionVerdicts ?? []) {
-      // An unable_to_review record has no closure authority. Ignore a persisted
-      // incoherent `resolved` verdict rather than letting legacy/imported data
-      // close a challenge that the reviewer could not assess.
-      if (findings.overallVerdict === 'unable_to_review' && verdict.verdict === 'resolved') {
-        continue;
-      }
-      // Later completed-review findings override earlier verdicts for the same challenge.
-      latestVerdict.set(verdict.challengeId, verdict.verdict);
-    }
+    projectFindingsChallengeLifecycle(findings, failingOrigin, latestVerdict);
   }
   const open = new Set<string>();
   for (const id of failingOrigin) {
     if (latestVerdict.get(id) !== 'resolved') open.add(id);
   }
   return open;
+}
+
+function projectFindingsChallengeLifecycle(
+  findings: NonNullable<SessionState['implReviewFindings']>[number],
+  failingOrigin: Set<string>,
+  latestVerdict: Map<string, string>,
+): void {
+  for (const challenge of findings.challenges ?? []) {
+    if (
+      challenge.kind === 'implementation_challenge' &&
+      (challenge.outcome === 'fail' || challenge.outcome === 'not_verified')
+    ) {
+      failingOrigin.add(challenge.challengeId);
+    }
+  }
+  for (const verdict of findings.challengeResolutionVerdicts ?? []) {
+    if (findings.overallVerdict !== 'unable_to_review' || verdict.verdict !== 'resolved') {
+      latestVerdict.set(verdict.challengeId, verdict.verdict);
+    }
+  }
 }
 
 /** Challenge ids the author has recorded a resolution for against the CURRENT digest. */

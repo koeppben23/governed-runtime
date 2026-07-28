@@ -560,9 +560,7 @@ interface HostTaskResolutionResult {
 export function resolveHostTaskEffectiveFindings(
   ctx: HostTaskResolutionContext,
 ): HostTaskResolutionResult {
-  const isHostTaskMode = ctx.policy.reviewInvocationPolicy === 'host_task_required';
-
-  if (isHostTaskMode) {
+  if (ctx.policy.reviewInvocationPolicy === 'host_task_required') {
     if (ctx.input.reviewFindings) {
       // Diagnostic for error analysis: in host-task mode the agent must submit
       // the verdict ONLY — findings are resolved from captured invocation
@@ -630,40 +628,30 @@ export function resolveHostTaskEffectiveFindings(
       };
     }
     return {};
-  } else if (ctx.input.reviewFindings) {
-    const blocked = validateReviewFindings(ctx.input.reviewFindings as ReviewFindings, {
-      subagentEnabled: ctx.policy.subagentEnabled,
-      fallbackToSelf: ctx.policy.fallbackToSelf,
-      expectedPlanVersion: ctx.expected.planVersion,
-      expectedIteration: ctx.expected.iteration,
-      strictEnforcement: ctx.policy.strictEnforcement,
-      assurance: ctx.state.assurance,
-      obligationType: ctx.expected.obligationType,
-      reviewInvocationPolicy: ctx.policy.reviewInvocationPolicy,
-      reviewParentSessionId: ctx.state.sessionId,
-      reviewHostPlatform: ctx.state.reviewHostPlatform,
-      // Challenge binding for directly-submitted (non-host-captured) findings.
-      // `expectedObligationId` makes challenges obligation-scoped for EVERY
-      // challenge-bearing obligation type (plan/architecture design_challenge,
-      // implement implementation_challenge, review content_challenge), not just
-      // implementation: buildReviewObligation freezes a challenge requirement for
-      // all of them when a challengePolicy exists. `allowedEvidenceRefs` adds the
-      // freshness bound (e.g. an implementation_challenge must cite a passing
-      // validation attempt for the current implementation digest). Without these,
-      // a challenge could cite a stale, failed, foreign, or wrong-obligation
-      // reference and be accepted. Mirrors the host-captured path
-      // (resolveHostTaskFindings) so both ingestion routes bind identically.
-      unresolvedImplementationChallengeIds: ctx.state.unresolvedImplementationChallengeIds,
-      unaddressedPriorFailIds: ctx.state.unaddressedPriorFailIds,
-      allowedEvidenceRefs: ctx.state.allowedChallengeEvidenceRefs,
-      expectedObligationId: ctx.pendingObligation?.obligationId,
-      previouslyUsedChallengeIds: ctx.state.previouslyUsedChallengeIds,
-    });
-    if (blocked) return { blocked };
-    return { effectiveFindings: ctx.input.reviewFindings as ReviewFindings };
   }
+  return resolveDirectSubmittedFindings(ctx);
+}
 
-  return {};
+function resolveDirectSubmittedFindings(ctx: HostTaskResolutionContext): HostTaskResolutionResult {
+  if (!ctx.input.reviewFindings) return {};
+  const blocked = validateReviewFindings(ctx.input.reviewFindings as ReviewFindings, {
+    subagentEnabled: ctx.policy.subagentEnabled,
+    fallbackToSelf: ctx.policy.fallbackToSelf,
+    expectedPlanVersion: ctx.expected.planVersion,
+    expectedIteration: ctx.expected.iteration,
+    strictEnforcement: ctx.policy.strictEnforcement,
+    assurance: ctx.state.assurance,
+    obligationType: ctx.expected.obligationType,
+    reviewInvocationPolicy: ctx.policy.reviewInvocationPolicy,
+    reviewParentSessionId: ctx.state.sessionId,
+    reviewHostPlatform: ctx.state.reviewHostPlatform,
+    unresolvedImplementationChallengeIds: ctx.state.unresolvedImplementationChallengeIds,
+    unaddressedPriorFailIds: ctx.state.unaddressedPriorFailIds,
+    allowedEvidenceRefs: ctx.state.allowedChallengeEvidenceRefs,
+    expectedObligationId: ctx.pendingObligation?.obligationId,
+    previouslyUsedChallengeIds: ctx.state.previouslyUsedChallengeIds,
+  });
+  return blocked ? { blocked } : { effectiveFindings: ctx.input.reviewFindings as ReviewFindings };
 }
 
 export { resolveHostTaskFindings } from './review-validation-host-task.js';

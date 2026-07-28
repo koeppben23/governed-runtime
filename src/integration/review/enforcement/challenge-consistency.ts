@@ -396,20 +396,7 @@ function validateResolutionVerdicts(input: ChallengeConsistencyInput): Challenge
   //    challenge or assert that it still fails. It may only record that a known
   //    challenge could not be verified; the lifecycle remains open.
   if (input.overallVerdict === 'unable_to_review') {
-    for (const item of supplied) {
-      if (item.verdict !== 'not_verified') {
-        return {
-          ok: false,
-          code: 'SUBAGENT_RESOLUTION_VERDICT_INCOHERENT',
-          details: {
-            challengeId: item.challengeId,
-            overallVerdict: input.overallVerdict,
-            verdict: item.verdict,
-          },
-        };
-      }
-    }
-    return { ok: true };
+    return validateUnableToReviewVerdicts(supplied);
   }
 
   // 4. Every open challenge must carry exactly one verdict, with the correct
@@ -433,4 +420,20 @@ function validateResolutionVerdicts(input: ChallengeConsistencyInput): Challenge
     }
   }
   return { ok: true };
+}
+
+function validateUnableToReviewVerdicts(
+  supplied: NonNullable<ChallengeConsistencyInput['resolutionVerdicts']>,
+): ChallengeConsistencyResult {
+  const incoherent = supplied.find((item) => item.verdict !== 'not_verified');
+  if (!incoherent) return { ok: true };
+  return {
+    ok: false,
+    code: 'SUBAGENT_RESOLUTION_VERDICT_INCOHERENT',
+    details: {
+      challengeId: incoherent.challengeId,
+      overallVerdict: 'unable_to_review',
+      verdict: incoherent.verdict,
+    },
+  };
 }

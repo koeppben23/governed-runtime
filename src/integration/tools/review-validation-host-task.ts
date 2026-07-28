@@ -73,10 +73,17 @@ export type HostTaskFindingsResolution =
 export function resolveHostTaskFindings(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation | null,
-  unresolvedImplementationChallengeIds?: readonly string[],
-  allowedChallengeEvidenceRefs?: readonly unknown[],
-  unaddressedPriorFailIds?: readonly string[],
-  previouslyUsedChallengeIds?: readonly string[],
+  ...[
+    unresolvedImplementationChallengeIds,
+    allowedChallengeEvidenceRefs,
+    unaddressedPriorFailIds,
+    previouslyUsedChallengeIds,
+  ]: readonly [
+    (readonly string[] | undefined)?,
+    (readonly unknown[] | undefined)?,
+    (readonly string[] | undefined)?,
+    (readonly string[] | undefined)?,
+  ]
 ): HostTaskFindingsResolution {
   if (!obligation || !assurance) return { kind: 'not_found' };
 

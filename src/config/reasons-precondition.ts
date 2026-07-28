@@ -541,6 +541,15 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     recoverySteps: ['Omit challengeResolutionVerdicts when there is no open challenge to resolve.'],
   },
   {
+    code: 'SUBAGENT_RESOLUTION_VERDICT_INCOHERENT',
+    category: 'precondition',
+    messageTemplate:
+      'Resolution verdict {verdict} is incoherent with overall review verdict {overallVerdict} for challenge {challengeId}.',
+    recoverySteps: [
+      'When unable_to_review, omit resolution verdicts or report not_verified for known open challenges.',
+    ],
+  },
+  {
     code: 'SUBAGENT_PRIOR_CHALLENGE_UNRESOLVED',
     category: 'precondition',
     messageTemplate:
