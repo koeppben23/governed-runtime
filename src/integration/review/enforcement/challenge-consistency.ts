@@ -21,7 +21,11 @@ import { canonicalJsonStringify } from '../../../shared/canonical-json.js';
  */
 export interface ChallengeConsistencyInput {
   readonly overallVerdict: 'accept' | 'changes_requested' | 'unable_to_review';
-  readonly requiredChallengeCount: number;
+  /**
+   * Frozen challenge requirement. Undefined is the legacy no-policy state;
+   * an explicit zero requires that the reviewer omit challenges.
+   */
+  readonly requiredChallengeCount: number | undefined;
   readonly requiredChallengeKind:
     'design_challenge' | 'implementation_challenge' | 'content_challenge';
   readonly challenges:
@@ -67,6 +71,18 @@ export type ChallengeConsistencyResult =
 
 type Challenge = NonNullable<ChallengeConsistencyInput['challenges']>[number];
 
+function hasValidationAttemptReference(challenge: Challenge): boolean {
+  return (
+    challenge.evidenceRefs?.some(
+      (reference) =>
+        typeof reference === 'object' &&
+        reference !== null &&
+        'kind' in reference &&
+        reference.kind === 'validation_attempt',
+    ) === true
+  );
+}
+
 // eslint-disable-next-line complexity -- explicit fail-closed challenge checks
 function validateChallenge(
   input: ChallengeConsistencyInput,
@@ -83,7 +99,11 @@ function validateChallenge(
       details: { kind: challenge.kind, reason: 'obligation_mismatch' },
     };
   }
-  if (input.requiredChallengeCount > 0 && challenge.kind !== input.requiredChallengeKind) {
+  if (
+    input.requiredChallengeCount !== undefined &&
+    input.requiredChallengeCount > 0 &&
+    challenge.kind !== input.requiredChallengeKind
+  ) {
     return {
       ok: false,
       code: 'SUBAGENT_CHALLENGE_KIND_INCOHERENT',
@@ -110,13 +130,7 @@ function validateChallenge(
   if (
     challenge.kind === 'implementation_challenge' &&
     challenge.outcome === 'pass' &&
-    !challenge.evidenceRefs.some(
-      (reference) =>
-        typeof reference === 'object' &&
-        reference !== null &&
-        'kind' in reference &&
-        reference.kind === 'validation_attempt',
-    )
+    !hasValidationAttemptReference(challenge)
   ) {
     return {
       ok: false,
@@ -135,11 +149,6 @@ function validateChallenge(
       details: { outcome: challenge.outcome },
     };
   }
-  // A design/content challenge whose falsification SUCCEEDED (the artifact is
-  // contradicted) cannot accompany acceptance. Previously the outcome of these
-  // kinds was never checked, so a reviewer could collect a "contradicted"
-  // falsification signal and still return `accept` with no blocking issue — the
-  // signal was silently ignored (finding B4). Force a non-accept verdict.
   if (
     (challenge.kind === 'design_challenge' || challenge.kind === 'content_challenge') &&
     input.overallVerdict === 'accept' &&
@@ -165,7 +174,10 @@ export function validateChallengeConsistency(
   if (input.overallVerdict === 'unable_to_review') {
     return validateChallengeCountFlexible(input, challenges);
   }
-  if (challenges.length !== input.requiredChallengeCount) {
+  if (
+    input.requiredChallengeCount !== undefined &&
+    challenges.length !== input.requiredChallengeCount
+  ) {
     return {
       ok: false,
       code: 'SUBAGENT_CHALLENGE_COUNT_INCOHERENT',

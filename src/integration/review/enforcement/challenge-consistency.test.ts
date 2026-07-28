@@ -48,6 +48,17 @@ describe('review/enforcement/challenge-consistency', () => {
       });
     });
 
+    it('does not enforce a challenge count for legacy obligations without a frozen policy', () => {
+      expect(
+        validateChallengeConsistency({
+          overallVerdict: 'accept',
+          requiredChallengeCount: undefined,
+          requiredChallengeKind: 'implementation_challenge',
+          challenges: [implementationChallenge],
+        }),
+      ).toEqual({ ok: true });
+    });
+
     it('rejects missing count, wrong kind, missing evidence, and failed implementation evidence', () => {
       for (const challenges of [
         [implementationChallenge],

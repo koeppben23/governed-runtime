@@ -138,7 +138,7 @@ export function resolveHostTaskFindings(
       }
       const challengeConsistency = validateChallengeConsistency({
         overallVerdict: parsed.data.overallVerdict,
-        requiredChallengeCount: obligation.requiredChallengeCount ?? 0,
+        requiredChallengeCount: obligation.requiredChallengeCount,
         requiredChallengeKind: obligation.requiredChallengeKind ?? 'implementation_challenge',
         challenges: parsed.data.challenges,
         expectedObligationId: obligation.obligationId,

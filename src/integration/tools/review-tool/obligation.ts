@@ -536,7 +536,7 @@ export function validateSubmittedReviewFindings(
 
   const challengeConsistency = validateChallengeConsistency({
     overallVerdict: findings.overallVerdict as 'accept' | 'changes_requested' | 'unable_to_review',
-    requiredChallengeCount: obligation.requiredChallengeCount ?? 0,
+    requiredChallengeCount: obligation.requiredChallengeCount,
     requiredChallengeKind: obligation.requiredChallengeKind ?? 'implementation_challenge',
     challenges: findings.challenges as Parameters<
       typeof validateChallengeConsistency
