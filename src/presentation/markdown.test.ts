@@ -713,6 +713,16 @@ describe('renderMarkdown', () => {
 });
 
 describe('Presentation Language forms', () => {
+  it('does not emit trailing whitespace for an empty key-value value', () => {
+    const doc: CompactCardDocument = {
+      kind: 'compact_card',
+      density: 'compact',
+      sections: [{ kind: 'keyValue', items: [{ label: 'Root cause', value: '' }] }],
+    };
+
+    expect(renderMarkdown(doc)).toBe('**Root cause:**');
+  });
+
   it('renders the review-pending form with its sole typed conclusion', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',

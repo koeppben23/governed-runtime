@@ -228,7 +228,9 @@ function renderTitle(section: TitleSection): string {
 }
 
 function renderKeyValue(items: readonly KeyValueItem[]): string {
-  return items.map((item) => `**${item.label}:** ${item.value}`).join('\n');
+  return items
+    .map((item) => `**${item.label}:**${item.value.length > 0 ? ` ${item.value}` : ''}`)
+    .join('\n');
 }
 
 function renderCommandList(items: readonly PresentationAction[]): string {
