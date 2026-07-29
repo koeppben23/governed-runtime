@@ -38,6 +38,10 @@ import { continue_cmd as rawContinue } from './continue-tool.js';
 import { help as rawHelp } from './help-tool.js';
 import { resolve_implementation_challenge as rawResolveImplementationChallenge } from './challenge-resolution.js';
 import type { ToolDefinition, ToolResult } from './helpers.js';
+import { readConfig } from '../../adapters/persistence-config.js';
+import type { GlyphProfile } from '../../presentation/glyph-profile.js';
+import { renderMarkdown } from '../../presentation/markdown.js';
+import type { PresentationDocument } from '../../presentation/model.js';
 
 function buildFlowGuardFooter(phase: unknown): Record<string, unknown> {
   return {
@@ -53,13 +57,14 @@ function buildFlowGuardFooter(phase: unknown): Record<string, unknown> {
   };
 }
 
-function attachFooterToString(output: string): string {
+function attachFooterToString(output: string, glyphProfile?: GlyphProfile): string {
   try {
     const parsed = JSON.parse(output) as unknown;
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
       return output;
     }
     const record = parsed as Record<string, unknown>;
+    attachPresentationToBlockedResult(record, glyphProfile);
     if (!record.flowguardFooter) {
       record.flowguardFooter = buildFlowGuardFooter(record.phase);
     }
@@ -71,11 +76,56 @@ function attachFooterToString(output: string): string {
   }
 }
 
-export function attachGovernanceFooter(result: ToolResult): ToolResult {
-  if (typeof result === 'string') return attachFooterToString(result);
+/**
+ * Add the smallest shared-renderer presentation for legacy blocked JSON at the
+ * OpenCode tool boundary. Other host protocols retain their raw payloads.
+ */
+function attachPresentationToBlockedResult(
+  record: Record<string, unknown>,
+  glyphProfile?: GlyphProfile,
+): void {
+  if (
+    record.error !== true ||
+    'presentation' in record ||
+    typeof record.code !== 'string' ||
+    typeof record.message !== 'string'
+  ) {
+    return;
+  }
+
+  const document: PresentationDocument = {
+    kind: 'compact_card',
+    density: 'compact',
+    form: 'blocked',
+    sections: [
+      {
+        kind: 'blocker',
+        code: record.code,
+        text: record.message,
+        ...(typeof record.recovery === 'string' && record.recovery.length > 0
+          ? { recovery: record.recovery }
+          : {}),
+      },
+    ],
+    conclusion: {
+      kind: 'terminal',
+      message:
+        typeof record.recovery === 'string' && record.recovery.length > 0
+          ? record.recovery
+          : record.message,
+    },
+  };
+  record.presentation = { markdown: renderMarkdown(document, { glyphProfile }) };
+}
+
+export function attachGovernanceFooter(
+  result: ToolResult,
+  glyphProfile?: GlyphProfile,
+): ToolResult {
+  if (typeof result === 'string') return attachFooterToString(result, glyphProfile);
   return {
     ...result,
-    output: attachFooterToString(result.output),
+    output: attachFooterToString(result.output, glyphProfile),
     metadata: {
       ...result.metadata,
       flowguardFooter: result.metadata?.flowguardFooter ?? buildFlowGuardFooter('unknown'),
@@ -87,7 +137,16 @@ function withGovernanceFooter(toolDef: ToolDefinition): ToolDefinition {
   return {
     ...toolDef,
     async execute(args, context) {
-      return attachGovernanceFooter(await toolDef.execute(args, context));
+      const result = await toolDef.execute(args, context);
+      let glyphProfile: GlyphProfile | undefined;
+      try {
+        glyphProfile = (await readConfig(context.worktree || context.directory)).presentation
+          .opencode.glyphProfile;
+      } catch {
+        // Presentation must not replace a tool's canonical result when config
+        // loading already failed or the tool has represented that failure.
+      }
+      return attachGovernanceFooter(result, glyphProfile);
     },
   };
 }

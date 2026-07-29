@@ -45,6 +45,7 @@ import {
   buildProductNextAction,
 } from '../../presentation/index.js';
 import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js';
+import { readConfig } from '../../adapters/persistence-config.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
@@ -433,7 +434,7 @@ async function attachReviewCard(input: {
   const nextAction = resolveNextAction(finalState.phase, finalState);
   const productNext = buildProductNextAction(nextAction, finalState.phase);
   const latestReview = resp.latestReview as Record<string, unknown> | undefined;
-  resp.reviewCard = buildArchitectureReviewCard({
+  const reviewCardInput = {
     phase: finalState.phase,
     phaseLabel: PHASE_LABELS[finalState.phase],
     adrTitle: revision.currentAdr.title,
@@ -450,8 +451,14 @@ async function attachReviewCard(input: {
     productNextAction: productNext,
     isApproved: isComplete,
     forcedConvergence: input.forcedConvergence,
-  });
-  resp.presentation = { markdown: resp.reviewCard };
+  };
+  // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
+  resp.reviewCard = buildArchitectureReviewCard(reviewCardInput);
+  resp.presentation = {
+    markdown: buildArchitectureReviewCard(reviewCardInput, {
+      glyphProfile: (await readConfig(session.worktree)).presentation.opencode.glyphProfile,
+    }),
+  };
   const artifactErr = await materializeReviewCardArtifact(
     session.sessDir,
     'architecture-review-card',
