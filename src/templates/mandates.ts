@@ -243,7 +243,10 @@ Universal governance rules for every FlowGuard command:
 
 Host/profile output convention:
 
-- For the OpenCode profile, end every response with exactly one \`Next action:\` line unless the active host/profile specifies a different output convention.
+- For the OpenCode profile, end every response with exactly one visible action conclusion. When
+  \`presentation.markdown\` is rendered verbatim, its conclusion is authoritative; do not append a
+  separate \`Next action:\` line. Without a presentation, derive one fallback action from the
+  returned canonical product-next-action data.
 
 ## 12. Extended Guidance
 
@@ -308,7 +311,9 @@ export const COMPACT_COMMAND_EXECUTION = `## Governance rules
 - Use only FlowGuard tools for state changes.
 - Complete this command fully, then stop.
 - Only explicit FlowGuard commands trigger workflow actions.
-- Host convention: end every response with exactly one \`Next action:\` line (OpenCode profile).`;
+- Host convention: end every response with exactly one visible action conclusion. A verbatim
+  \`presentation.markdown\` conclusion is authoritative; otherwise derive one fallback from
+  canonical product-next-action data (OpenCode profile).`;
 
 // ---------------------------------------------------------------------------
 // Concise section text constants — extracted from conciseSectionForPhase
@@ -392,7 +397,9 @@ export const CONCISE_COMMAND_EXECUTION = `## Governance rules
 - Use only FlowGuard tools for state changes.
 - Complete the current command fully, then stop.
 - Only explicit FlowGuard commands trigger workflow actions.
-- Host convention: end every response with exactly one \`Next action:\` line (OpenCode profile).`;
+- Host convention: end every response with exactly one visible action conclusion. A verbatim
+  \`presentation.markdown\` conclusion is authoritative; otherwise derive one fallback from
+  canonical product-next-action data (OpenCode profile).`;
 
 export const CONCISE_EXTENDED_GUIDANCE = `## 12. Extended Guidance
 

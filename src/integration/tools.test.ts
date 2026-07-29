@@ -248,10 +248,13 @@ describe('integration/tools', () => {
       expect(wrapped.metadata?.flowguardFooter).toEqual({ source: 'existing-metadata' });
     });
 
-    it('governance footer leaves non-object JSON string outputs unchanged', () => {
+    it('governance footer leaves non-object JSON and Markdown string outputs unchanged', () => {
       expect(attachGovernanceFooter('[{"phase":"PLAN"}]')).toBe('[{"phase":"PLAN"}]');
       expect(attachGovernanceFooter('null')).toBe('null');
       expect(attachGovernanceFooter('"ok"')).toBe('"ok"');
+      expect(attachGovernanceFooter('## FlowGuard Help\n\nUse `/start`.')).toBe(
+        '## FlowGuard Help\n\nUse `/start`.',
+      );
     });
 
     it('barrel has exactly 16 named exports (15 tools + 1 plugin)', () => {

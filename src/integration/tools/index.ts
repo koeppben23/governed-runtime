@@ -65,7 +65,9 @@ function attachFooterToString(output: string): string {
     }
     return JSON.stringify(record);
   } catch {
-    return `${output}\n[FlowGuard | Phase: unknown | Rule: stop after failed or blocked tool result | Recovery hint: flowguard_status after compaction]`;
+    // Markdown is a public presentation surface. Do not append diagnostics that
+    // invalidate the command template's verbatim-rendering contract.
+    return output;
   }
 }
 

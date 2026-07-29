@@ -16,8 +16,10 @@ Show the currently available FlowGuard commands, or the complete reference.
    - \`--all\`: use \`{ view: "commands", scope: "all" }\`
    - \`--verbose\`: include \`verbose: true\`
 2. Call \`flowguard_help\` with the parsed arguments.
-3. Read the returned Markdown command list. Present it verbatim. The Markdown contains phase,
-   readiness, next action, and available commands. Do not summarize or restructure it.
+3. If \`verbose\` is false or omitted, read the returned Markdown command list and present it
+   verbatim. Do not summarize or restructure it.
+4. If \`verbose\` is true, the result is JSON. Present its structured fields without claiming it
+   is Markdown.
 
 ## Rules
 
@@ -28,5 +30,5 @@ ${GOVERNANCE_RULES}
 ## Done-when
 
 - Commands were retrieved through \`flowguard_help\`.
-- Markdown command list rendered verbatim.
+- Standard Markdown command list rendered verbatim, or verbose JSON rendered as structured data.
 `;

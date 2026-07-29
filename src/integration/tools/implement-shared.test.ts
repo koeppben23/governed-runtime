@@ -183,12 +183,18 @@ describe('validateImplementSequence', () => {
     expect(result).toContain('INVALID_IMPLEMENT_TOOL_SEQUENCE');
   });
 
-  it('reviewerUnavailable without verdict => INVALID_IMPLEMENT_TOOL_SEQUENCE (#499 gap closed)', () => {
+  it('reviewerUnavailable retry is allowed only at IMPL_REVIEW with implementation evidence', () => {
     const result = validateImplementSequence(
       implementArgs({ reviewerUnavailable: true }),
       state('IMPLEMENTATION'),
     );
-    expect(result).toContain('INVALID_IMPLEMENT_TOOL_SEQUENCE');
+    expect(result).toContain('IMPLEMENTATION_EVIDENCE_REQUIRED');
+    expect(
+      validateImplementSequence(
+        implementArgs({ reviewerUnavailable: true }),
+        state('IMPL_REVIEW', { implementation: {} } as Partial<SessionState>),
+      ),
+    ).toBeNull();
   });
 
   it('verdict without implementation evidence => IMPLEMENTATION_EVIDENCE_REQUIRED (mirrors verdict)', () => {

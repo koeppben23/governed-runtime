@@ -27,6 +27,7 @@ import {
   TOOL_FLOWGUARD_DECISION,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
   TOOL_FLOWGUARD_RUN_CHECK,
   TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_CONTINUE,
@@ -43,7 +44,7 @@ function sha256(value: string): string {
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
     expect(sha256(TOOL_WRAPPER)).toBe(
-      '2cf761e388f62fd387681e6e3b77bd9ac902a97978739ea54c72a44daa5e17be',
+      '7b968561ddbf6f4106e602d70362dbc7210d0071a5f1dc6ec3243e1534bc54a3',
     );
   });
 
@@ -68,7 +69,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // role/identity sentence and enriched ## 12. Extended Guidance to name the
     // owning authorities (commands/profiles/reviewer) without duplicating them.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      'a7609e99ea74257aefd620818318d9d2a7f13a954a82cdcc4aee1214b9acacfe',
+      '7c548c88db81c74930cd2c4cf86f3892ba3b8b34d3fa314cb0be6a9b6f15ab85',
     );
   });
 
@@ -221,7 +222,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '687e788d6b0b3158b6c95c0c1b743547e871dda8e9c4ffc914524c70605458ba',
+      '190eeb1862bb443fb1b234c44e162a7fcb099ef63e5da105cee52243839406b2',
     );
   });
 
@@ -271,6 +272,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_DECISION,
       TOOL_FLOWGUARD_IMPLEMENT,
       TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+      TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
       TOOL_FLOWGUARD_RUN_CHECK,
       TOOL_FLOWGUARD_REVIEW,
       TOOL_FLOWGUARD_CONTINUE,

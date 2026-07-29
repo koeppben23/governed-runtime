@@ -577,7 +577,7 @@ export const status: ToolDefinition = {
           status: 'No FlowGuard session found.',
           discoveryHealth: null,
           discoveryDrift: null,
-          next: 'Run /hydrate to bootstrap a session.',
+          next: 'Run /start to bootstrap a session.',
           governanceMandates: {
             source: 'src/templates/mandates.ts',
             projection: 'none-without-canonical-session-state',

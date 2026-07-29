@@ -10,7 +10,11 @@ import {
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 import type { CommandHookBeforeInput, ToolHookBeforeInput, ToolHookBeforeOutput } from './types.js';
 import { recordUserDecisionIntentFromCommand } from './user-decision-intent.js';
-import { getToolTraceId, type FlowGuardPluginRuntime } from './plugin-shared.js';
+import {
+  getToolTraceId,
+  type ActiveCommandScope,
+  type FlowGuardPluginRuntime,
+} from './plugin-shared.js';
 import { isFlowGuardVerdictTool } from './tool-names.js';
 import { runWithAdapterLoggerAsync } from '../logging/adapter-logger.js';
 import { runWithLogContextAsync } from '../logging/log-context.js';
@@ -30,6 +34,8 @@ export async function commandBefore(
       runtime.log.warn('decision', 'command.execute.before missing sessionID');
       return;
     }
+
+    updateCommandScope(runtime, rawSessionId, hookInput?.command ?? '');
 
     const intent = recordUserDecisionIntentFromCommand({
       sessionId: rawSessionId,
@@ -96,12 +102,50 @@ async function enforceBeforeRules(
   sessionId: string,
   args: Record<string, unknown>,
 ): Promise<void> {
+  await enforceCommandScope(runtime, toolName, sessionId);
   if (toolName === 'task') {
     await enforceTaskBefore(runtime, toolName, sessionId, args);
     return;
   }
   await enforceMutatingToolCheck(runtime, toolName, sessionId, args);
   await enforceVerdictCheck(runtime, toolName, sessionId, args);
+}
+
+function updateCommandScope(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  command: string,
+): void {
+  const normalized = command.trim().replace(/^\/+/, '');
+  const scope: ActiveCommandScope | undefined = normalized === 'check' ? 'check' : undefined;
+  if (scope) {
+    runtime.activeCommandScopes.set(sessionId, scope);
+    return;
+  }
+  runtime.activeCommandScopes.delete(sessionId);
+}
+
+async function enforceCommandScope(
+  runtime: FlowGuardPluginRuntime,
+  toolName: string,
+  sessionId: string,
+): Promise<void> {
+  const scope = runtime.activeCommandScopes.get(sessionId);
+  if (scope !== 'check') return;
+
+  const allowed = new Set(['flowguard_status', 'flowguard_run_check']);
+  if (toolName === 'flowguard_review_implementation' || toolName === 'task') {
+    const sessDir = runtime.ws.getSessionDir(sessionId);
+    const state = sessDir ? await readState(sessDir) : null;
+    if (state?.phase === 'IMPL_REVIEW') allowed.add(toolName);
+  }
+  if (allowed.has(toolName)) return;
+
+  throw buildEnforcementError(
+    'COMMAND_SCOPE_DENIED',
+    `Tool '${toolName}' is not permitted while the explicit /check command is active. Report the check result and wait for the user to invoke the next command.`,
+    { sessionId, tool: toolName, command: '/check' },
+  );
 }
 
 async function enforceTaskBefore(

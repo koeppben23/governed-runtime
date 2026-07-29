@@ -58,6 +58,7 @@ export type ToolCallMode =
   | { readonly kind: 'initial_submission' }
   | { readonly kind: 'revision' }
   | { readonly kind: 'approval' }
+  | { readonly kind: 'transport_failure_retry' }
   | { readonly kind: 'invalid'; readonly code: string; readonly params?: Record<string, string> };
 
 /**
@@ -194,6 +195,15 @@ function detectInvalidShape(
 export function classifyToolCallMode(family: ToolFamily, args: ToolCallArgsView): ToolCallMode {
   const flags = toolCallFlags(args);
   const receivedVerdict = args.reviewVerdict;
+
+  // The implementation verdict tool is the only admissible entrypoint once the
+  // workflow reaches IMPL_REVIEW. A bare reviewerUnavailable signal requests a
+  // policy-gated transport retry; it is never a verdict or findings submission.
+  if (family === 'implement' && flags.hasReviewerUnavailable) {
+    if (!flags.hasVerdict && !flags.hasFindings && !flags.hasText) {
+      return { kind: 'transport_failure_retry' };
+    }
+  }
 
   const invalid = detectInvalidShape(FAMILY_CODES[family], flags, receivedVerdict);
   if (invalid) return invalid;

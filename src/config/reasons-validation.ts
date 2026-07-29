@@ -9,6 +9,15 @@ import { REVIEW_VALIDATION_REASONS } from './reasons-validation-review.js';
 
 export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
+    code: 'HELP_ARGUMENTS_INVALID',
+    category: 'input',
+    messageTemplate: 'Invalid FlowGuard help arguments.',
+    recoverySteps: [
+      'Use view=context, view=commands with scope=available or all, or view=command with a command name',
+    ],
+  },
+
+  {
     code: 'COMMAND_NOT_ALLOWED',
     category: 'admissibility',
     messageTemplate: '{command} is not allowed in phase {phase}',
@@ -23,6 +32,16 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'input',
     messageTemplate: '{command} blocked: {reason}',
     recoverySteps: ['Fix the blocked command input or dependency and retry the command'],
+  },
+
+  {
+    code: 'COMMAND_SCOPE_DENIED',
+    category: 'admissibility',
+    messageTemplate: "'{tool}' is not permitted while {command} is active",
+    recoverySteps: [
+      'Report the current command result and stop',
+      'Wait for the user to invoke the next explicit FlowGuard command',
+    ],
   },
 
   {

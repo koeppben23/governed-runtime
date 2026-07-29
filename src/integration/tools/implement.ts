@@ -107,18 +107,22 @@ export const review_implementation: ToolDefinition = {
     "Submit the INDEPENDENT REVIEWER's verdict on the recorded implementation — " +
     'NOT user approval. Use at IMPL_REVIEW after the flowguard-reviewer subagent has ' +
     'reviewed the implementation recorded by flowguard_implement.\n' +
-    "reviewVerdict is REQUIRED: 'accept' = the reviewer accepts the implementation; the loop " +
+    "reviewVerdict is required for a reviewer result: 'accept' = the reviewer accepts the implementation; the loop " +
     'converges and advances to the EVIDENCE_REVIEW user gate (the user still approves via ' +
     "/review-decision). 'changes_requested' = the implementation needs revision; make changes " +
     'then re-record with flowguard_implement.\n' +
     'Review loop runs up to maxIterations (from policy). ' +
-    'Optionally accepts reviewFindings from the independent review agent.',
+    'Optionally accepts reviewFindings from the independent review agent. Under host_task_preferred only, ' +
+    'reviewerUnavailable without a verdict or findings reports an actual OpenCode Task transport failure and ' +
+    'requests the configured SDK transport; it never approves or persists review evidence.',
   args: {
     reviewVerdict: z
       .enum(['accept', 'changes_requested'])
+      .optional()
       .describe(
         "The INDEPENDENT REVIEWER's verdict on the implementation — NOT user approval. " +
-          "REQUIRED. 'accept' = the reviewer accepts the implementation; the loop converges and " +
+          'Required unless reporting an actual host Task transport failure with reviewerUnavailable: true. ' +
+          "'accept' = the reviewer accepts the implementation; the loop converges and " +
           'advances to the EVIDENCE_REVIEW user gate (the user still approves via /review-decision). ' +
           "'changes_requested' = the implementation needs revision.",
       ),
@@ -132,8 +136,8 @@ export const review_implementation: ToolDefinition = {
       .optional()
       .describe(
         'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
-          'unavailable). This is a fail-closed signal: FlowGuard blocks with SUBAGENT_UNABLE_TO_REVIEW ' +
-          'and recovery guidance. It never enables self-review and never approves the implementation.',
+          'unavailable). With host_task_preferred, use it alone at IMPL_REVIEW to request the configured ' +
+          'SDK transport. With host_task_required it fails closed. It never enables self-review or approval.',
       ),
   },
   async execute(args, context) {

@@ -121,8 +121,8 @@ export function buildNoSessionDocument(): PresentationDocument {
     conclusion: {
       kind: 'next_action',
       action: {
-        invocation: '/hydrate',
-        description: 'Prepare or restore a governed session.',
+        invocation: '/start',
+        description: 'Start or restore a governed session.',
         visibility: 'recommended',
       },
     },

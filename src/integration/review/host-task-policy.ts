@@ -161,6 +161,10 @@ function buildHostTaskBlockedOutput(
       `criteriaVersion=${attestationMeta.criteriaVersion}.`
     : '';
 
+  const fallback =
+    policy === 'host_task_required'
+      ? 'FALLBACK: If the Task tool cannot spawn the reviewer (error, unavailable agent, or missing infrastructure), do NOT approve and do NOT invent findings — report the transport failure and stop; independent review is mandatory and cannot be self-substituted. Setting reviewerUnavailable: true fails closed (REVIEWER_UNAVAILABLE_STRICT) with recovery guidance; it never approves or enables self-review.'
+      : 'FALLBACK: If the Task tool cannot spawn the reviewer during implementation review, do NOT approve and do NOT invent findings. Report the transport failure with flowguard_review_implementation({ reviewerUnavailable: true }) only — no verdict and no reviewFindings. FlowGuard may then use the configured SDK review transport. For other review types, report the transport failure and stop; do not submit copied or fabricated reviewFindings.';
   result.next =
     `INDEPENDENT_REVIEW_REQUIRED: ${policy === 'host_task_required' ? 'Policy requires' : 'Policy prefers'} ` +
     `a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool. ` +
@@ -171,11 +175,8 @@ function buildHostTaskBlockedOutput(
     ` The reviewer subagent must NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, flowguard_review_implementation, flowguard_architecture) in its own session.` +
     ` When it returns, submit ONLY the verdict (reviewVerdict) matching the reviewer's overallVerdict — ` +
     `the captured evidence is resolved automatically; do NOT submit, copy, or alter reviewFindings. ` +
-    `reviewVerdict is the reviewer's result, NOT user approval, and only advances to the human review gate.` +
-    ` FALLBACK: If the Task tool cannot spawn the reviewer (error, unavailable agent, or missing infrastructure), ` +
-    `do NOT approve and do NOT invent findings — report the transport failure and stop; independent review is ` +
-    `mandatory and cannot be self-substituted. Setting reviewerUnavailable: true fails closed ` +
-    `(REVIEWER_UNAVAILABLE_STRICT) with recovery guidance; it never approves or enables self-review.`;
+    `reviewVerdict is the reviewer's result, NOT user approval, and only advances to the human review gate. ` +
+    fallback;
 
   if (reviewerTaskPrompt) {
     result.reviewerTaskPrompt = reviewerTaskPrompt;
@@ -215,7 +216,7 @@ function buildHostTaskBlockedOutput(
  */
 function resolveHostTaskAction(
   invocationPolicy: string | undefined,
-  isRetry: boolean,
+  hasReportedTaskTransportFailure: boolean,
   hostEvidence: unknown,
 ): 'mutate' | 'fall_through' {
   if (invocationPolicy !== 'host_task_required' && invocationPolicy !== 'host_task_preferred') {
@@ -223,8 +224,16 @@ function resolveHostTaskAction(
   }
   if (hostEvidence) return 'mutate';
   if (invocationPolicy === 'host_task_required') return 'mutate';
-  if (!isRetry) return 'mutate';
-  return 'fall_through';
+  return hasReportedTaskTransportFailure ? 'fall_through' : 'mutate';
+}
+
+function hasReportedTaskTransportFailure(output: ToolCallEvent['output']): boolean {
+  const parsed = parseToolResult(getToolOutput(output));
+  if (!parsed || Array.isArray(parsed)) return false;
+  const failure = parsed.reviewTransportFailure;
+  if (!failure || typeof failure !== 'object' || Array.isArray(failure)) return false;
+  const record = failure as Record<string, unknown>;
+  return record.transport === 'host_task' && record.reported === true;
 }
 
 function serializeDesignEvidence(input: {
@@ -333,8 +342,6 @@ export async function handleHostTaskPolicy(
     ensureReviewAssurance(sessionState.reviewAssurance),
     obligationId,
   );
-  const isRetry = preUpdateObligation?.pluginHandshakeAt !== null;
-
   const invocations = sessionState.reviewAssurance?.invocations ?? [];
   const hostEvidence = invocations.find(
     (inv) =>
@@ -343,7 +350,11 @@ export async function handleHostTaskPolicy(
       inv.hostVisible === true,
   );
 
-  const action = resolveHostTaskAction(invocationPolicy, isRetry, hostEvidence);
+  const action = resolveHostTaskAction(
+    invocationPolicy,
+    hasReportedTaskTransportFailure(output),
+    hostEvidence,
+  );
   if (action === 'fall_through') return false;
 
   await deps.updateReviewAssurance(sessDir, (s, now2) =>

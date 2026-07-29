@@ -18,11 +18,9 @@ Arguments: $ARGUMENTS
 1. Parse optional flags from \`$ARGUMENTS\`:
    - \`--why-blocked\` | \`--evidence\` | \`--context\` | \`--readiness\`
 2. Call \`flowguard_status\` with the appropriate flag (or no args if none provided).
-3. Wenn \`presentation.markdown\` im Response vorhanden ist, gib es wörtlich
-   aus — nicht umformulieren, nicht interpretieren.
-   Andernfalls gib die fokussierte Projektion aus, ohne eigene Semantik zu
-   erfinden.
-4. If no session exists: report this and recommend \`/hydrate\`.
+3. If \`presentation.markdown\` is present in the response, print it verbatim — do not reformat
+   or interpret it. Otherwise render the focused projection without inventing semantics.
+4. If no session exists: report this and recommend \`/start\`.
 
 ## Rules
 
@@ -38,6 +36,6 @@ ${GOVERNANCE_RULES}
   rendered conclusion (the trailing \`→\`/\`•\` command line or the
   \`## Decision required\` block) is the next-action guidance — do NOT append a
   separate \`Next action:\` line.
-- Only on the fallback projection (no \`presentation.markdown\`): response ends
-  with a \`Next action:\` line.
+- Only on the fallback projection (no \`presentation.markdown\`): derive one action from
+  \`productNextAction\`; do not invent a local action.
 `;

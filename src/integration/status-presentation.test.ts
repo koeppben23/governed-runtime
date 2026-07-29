@@ -463,7 +463,7 @@ describe('buildNoSessionDocument', () => {
     expect(doc.kind).toBe('compact_card');
   });
 
-  it('recommends /hydrate', () => {
+  it('recommends the primary /start interface', () => {
     const doc = buildNoSessionDocument();
     const conclusion = doc.conclusion;
     expect(conclusion).toBeDefined();
@@ -471,7 +471,7 @@ describe('buildNoSessionDocument', () => {
     if (!conclusion) throw new Error('expected conclusion');
     expect(conclusion.kind).toBe('next_action');
     if (conclusion.kind === 'next_action') {
-      expect(conclusion.action.invocation).toBe('/hydrate');
+      expect(conclusion.action.invocation).toBe('/start');
       expect(conclusion.action.visibility).toBe('recommended');
     }
   });
