@@ -216,13 +216,15 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // (AP-B11), Test-Fitting (AP-B12), and no-workaround/cleanup rules to the
     // /implement ## Rules section. Changes the /implement body and therefore the
     // COMMANDS hash.
-    // Refreshed for branch-review base detection: the /review template now
-    // documents the auto-detected base ladder and the explicit `base=<ref>`
-    // argument for branch reviews. Changes the /review body and therefore the
-    // COMMANDS hash.
+    // Refreshed for host-task ordering hardening: SHARED_REVIEW_LOOP now
+    // instructs the reviewer Task to be issued sequentially after the preceding
+    // verdict call (never in parallel), explaining the expected fail-closed
+    // HOST_SUBAGENT_TASK_REQUIRED / no_matched_record first attempt. This is
+    // embedded in the plan/implement/architecture command bodies and therefore
+    // changes the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '665382f8344b60bd0ee9bd5806ef2d0f57dc54527c4b4bec757e5c4841851e94',
+      '654b38c2e90033733f67d3ce71457d30efac992d4651df1d79fee11302c7a1bf',
     );
   });
 
