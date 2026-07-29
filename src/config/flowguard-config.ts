@@ -194,10 +194,15 @@ export const FlowGuardConfigSchema = z.object({
   /** Transient presentation preferences; never workflow or audit authority. */
   presentation: z
     .object({
-      /** Glyph vocabulary for host-visible Markdown responses. */
-      glyphProfile: z.enum(['unicode', 'ascii']).default('unicode'),
+      /** OpenCode-only transient Markdown preferences. */
+      opencode: z
+        .object({
+          /** Glyph vocabulary for host-visible Markdown responses. */
+          glyphProfile: z.enum(['unicode', 'ascii']).default('unicode'),
+        })
+        .default({ glyphProfile: 'unicode' }),
     })
-    .default({ glyphProfile: 'unicode' }),
+    .default({ opencode: { glyphProfile: 'unicode' } }),
 
   /** Host execution configuration. Does not affect governance authority. */
   host: z

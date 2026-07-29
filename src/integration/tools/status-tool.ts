@@ -582,7 +582,7 @@ export const status: ToolDefinition = {
     try {
       const { wsDir } = await resolveWorkspacePaths(context);
       const presentation: PresentationRenderOptions = {
-        glyphProfile: (await readConfig(wsDir)).presentation.glyphProfile,
+        glyphProfile: (await readConfig(wsDir)).presentation.opencode.glyphProfile,
       };
       const { state, policy, sessDir } = await withReadOnlySession(context);
 
