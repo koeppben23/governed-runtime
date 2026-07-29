@@ -24,6 +24,7 @@ import {
   buildImplReviewPrompt,
   buildArchitectureReviewPrompt,
   selectReviewerProfileRules,
+  type ReviewVerificationEvidenceItem,
 } from './prompt-builders.js';
 import { buildReviewDiscoveryContext } from './discovery-context-loader.js';
 import type { DiscoveryReviewContext } from './discovery-context-prompt.js';
@@ -415,6 +416,8 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       criteriaVersion: reviewCtx.criteriaVersion,
       mandateDigest: reviewCtx.mandateDigest,
       discoveryContext,
+      challengeResolutions: stateChallengeResolutions(sessionState),
+      verificationEvidence: stateVerificationEvidence(sessionState),
       ...implRules,
     });
   }
@@ -434,6 +437,52 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
   }
   deps.log.warn('orchestrator', 'unsupported reviewable tool — skipping', { tool: toolName });
   return null;
+}
+
+function stateChallengeResolutions(state: SessionState) {
+  return state.challengeResolutions
+    .filter((resolution) => resolution.implementationDigest === state.implementation?.digest)
+    .map(({ challengeId, implementationDigest, validationAttemptIds, resolvedAt }) => ({
+      challengeId,
+      implementationDigest,
+      validationAttemptIds,
+      resolvedAt,
+    }));
+}
+
+/**
+ * Project runtime-executed verification evidence bound to the CURRENT
+ * implementation digest for injection into the implementation review prompt.
+ *
+ * Fail-closed digest binding: only `implementation`-scope attempts whose
+ * `implementationDigest` equals the current `implementation.digest` are
+ * projected. Stale attempts (from a prior implementation revision) are excluded
+ * — showing them would let the reviewer verify claims against outdated ground
+ * truth. When there is no current implementation digest, nothing is projected
+ * and the prompt renders an explicit NOT_VERIFIED evidence line.
+ */
+export function stateVerificationEvidence(
+  state: SessionState,
+): readonly ReviewVerificationEvidenceItem[] {
+  const currentDigest = state.implementation?.digest;
+  if (!currentDigest) return [];
+  return state.validationAttempts
+    .filter(
+      (attempt) =>
+        attempt.scope === 'implementation' && attempt.implementationDigest === currentDigest,
+    )
+    .map((attempt) => ({
+      attemptId: attempt.attemptId,
+      kind: attempt.result.kind,
+      command: attempt.result.command,
+      passed: attempt.result.passed,
+      exitCode: attempt.result.exitCode,
+      timedOut: attempt.result.timedOut,
+      executionMs: attempt.result.executionMs,
+      outputDigest: attempt.result.outputDigest,
+      detail: attempt.result.detail,
+      executedAt: attempt.result.executedAt,
+    }));
 }
 
 // ─── State + Audit Persistence Helper ────────────────────────────────────────

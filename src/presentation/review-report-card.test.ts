@@ -9,7 +9,7 @@ import { resolve } from 'node:path';
 
 async function readGolden(name: string): Promise<string> {
   const p = resolve(__dirname, '..', '..', 'testdata', 'presentation', name);
-  return readFile(p, 'utf-8');
+  return (await readFile(p, 'utf-8')).trimEnd();
 }
 
 const baseInput = {
@@ -30,6 +30,13 @@ const baseInput = {
 };
 
 describe('buildReviewReportCard', () => {
+  it('preserves default bytes when rendering a transient ASCII profile', () => {
+    const canonical = buildReviewReportCard(baseInput);
+
+    expect(buildReviewReportCard(baseInput)).toBe(canonical);
+    expect(buildReviewReportCard(baseInput, { glyphProfile: 'ascii' })).toBe(canonical);
+  });
+
   it('renders header with status and input origin', () => {
     const card = buildReviewReportCard({
       ...baseInput,

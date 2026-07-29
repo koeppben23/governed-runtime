@@ -27,6 +27,7 @@ import {
   TOOL_FLOWGUARD_DECISION,
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
   TOOL_FLOWGUARD_RUN_CHECK,
   TOOL_FLOWGUARD_REVIEW,
   TOOL_FLOWGUARD_CONTINUE,
@@ -43,7 +44,7 @@ function sha256(value: string): string {
 describe('TEMPLATE_HASH_STABILITY', () => {
   it('TOOL_WRAPPER matches compiled output hash', () => {
     expect(sha256(TOOL_WRAPPER)).toBe(
-      '2cf761e388f62fd387681e6e3b77bd9ac902a97978739ea54c72a44daa5e17be',
+      '7b968561ddbf6f4106e602d70362dbc7210d0071a5f1dc6ec3243e1534bc54a3',
     );
   });
 
@@ -68,7 +69,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // role/identity sentence and enriched ## 12. Extended Guidance to name the
     // owning authorities (commands/profiles/reviewer) without duplicating them.
     expect(sha256(FLOWGUARD_MANDATES_BODY)).toBe(
-      'a7609e99ea74257aefd620818318d9d2a7f13a954a82cdcc4aee1214b9acacfe',
+      '7c548c88db81c74930cd2c4cf86f3892ba3b8b34d3fa314cb0be6a9b6f15ab85',
     );
   });
 
@@ -92,7 +93,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // reviewer capability isolation denies direct and MCP-prefixed FlowGuard tools.
     // p39 -> p40: reviewer task delegation is denied as part of that boundary.
     expect(sha256(REVIEWER_AGENT)).toBe(
-      'ac252d555c821363decd336ad1c1b05a03d0e6df98439b3d11322311d15676a0',
+      'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
     );
   });
 
@@ -215,17 +216,19 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // (AP-B11), Test-Fitting (AP-B12), and no-workaround/cleanup rules to the
     // /implement ## Rules section. Changes the /implement body and therefore the
     // COMMANDS hash.
-    // Refreshed for branch-review base detection: the /review template now
-    // documents the auto-detected base ladder and the explicit `base=<ref>`
-    // argument for branch reviews. Changes the /review body and therefore the
-    // COMMANDS hash.
+    // Refreshed for host-task ordering hardening: SHARED_REVIEW_LOOP now
+    // instructs the reviewer Task to be issued sequentially after the preceding
+    // verdict call (never in parallel) and gives cause-agnostic fail-closed
+    // recovery guidance for HOST_SUBAGENT_TASK_REQUIRED / no_matched_record.
+    // This is embedded in the plan/implement/architecture command bodies and
+    // therefore changes the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '2ae4ab92c96c3a3e56aaea8e7d5431aab0f13e929e5c25b6f069879f2e0efd06',
+      '764da3e8dbd6f3e549a1d458f6ad767f731ecdc60388599794eee4da8e11695a',
     );
   });
 
-  it('all 23 commands present', () => {
+  it('all 24 commands present', () => {
     const expected = [
       'abort.md',
       'approve.md',
@@ -242,6 +245,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       'plan.md',
       'reject.md',
       'request-changes.md',
+      'resolve-implementation-challenge.md',
       'review-decision.md',
       'review.md',
       'start.md',
@@ -270,6 +274,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
       TOOL_FLOWGUARD_DECISION,
       TOOL_FLOWGUARD_IMPLEMENT,
       TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+      TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
       TOOL_FLOWGUARD_RUN_CHECK,
       TOOL_FLOWGUARD_REVIEW,
       TOOL_FLOWGUARD_CONTINUE,

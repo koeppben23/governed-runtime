@@ -25,6 +25,7 @@ import {
   decision,
   implement,
   review_implementation,
+  resolve_implementation_challenge,
   run_check,
   review,
   continue as continueTool,
@@ -39,7 +40,7 @@ import { benchmarkSync } from '../test-policy.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-/** All 14 exported tool names, matching the filenames OpenCode will discover. */
+/** All 15 exported tool names, matching the filenames OpenCode will discover. */
 const TOOL_NAMES = [
   'status',
   'hydrate',
@@ -48,6 +49,7 @@ const TOOL_NAMES = [
   'decision',
   'implement',
   'review_implementation',
+  'resolve_implementation_challenge',
   'run_check',
   'review',
   'continue',
@@ -66,6 +68,7 @@ const TOOLS: Record<string, unknown> = {
   decision,
   implement,
   review_implementation,
+  resolve_implementation_challenge,
   run_check,
   review,
   continue: continueTool,
@@ -83,6 +86,7 @@ const TOOLS_WITH_ARGS = [
   'plan',
   'decision',
   'review_implementation',
+  'resolve_implementation_challenge',
   'run_check',
   'abort_session',
   'architecture',
@@ -98,8 +102,8 @@ const TOOLS_WITHOUT_ARGS = ['archive', 'implement'] as const;
 describe('integration/tools', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
-    it('exports exactly 14 tools', () => {
-      expect(Object.keys(TOOLS).length).toBe(14);
+    it('exports exactly 15 tools', () => {
+      expect(Object.keys(TOOLS).length).toBe(15);
     });
 
     for (const name of TOOL_NAMES) {
@@ -244,15 +248,65 @@ describe('integration/tools', () => {
       expect(wrapped.metadata?.flowguardFooter).toEqual({ source: 'existing-metadata' });
     });
 
-    it('governance footer leaves non-object JSON string outputs unchanged', () => {
+    it('governance footer leaves non-object JSON and Markdown string outputs unchanged', () => {
       expect(attachGovernanceFooter('[{"phase":"PLAN"}]')).toBe('[{"phase":"PLAN"}]');
       expect(attachGovernanceFooter('null')).toBe('null');
       expect(attachGovernanceFooter('"ok"')).toBe('"ok"');
+      expect(attachGovernanceFooter('## FlowGuard Help\n\nUse `/start`.')).toBe(
+        '## FlowGuard Help\n\nUse `/start`.',
+      );
     });
 
-    it('barrel has exactly 15 named exports (14 tools + 1 plugin)', () => {
+    it('adds minimal presentation to blocked OpenCode JSON without changing overflow fields', () => {
+      const wrapped = attachGovernanceFooter(
+        JSON.stringify({
+          error: true,
+          code: 'AUTO_ADVANCE_OVERFLOW',
+          message: 'Auto-advance exceeded its step limit.',
+          recovery: 'Inspect the workflow topology before retrying.',
+          autoAdvanceOverflow: { phase: 'PLAN', limit: 10 },
+        }),
+      );
+      const output = JSON.parse(wrapped as string) as Record<string, unknown>;
+
+      expect(output.autoAdvanceOverflow).toEqual({ phase: 'PLAN', limit: 10 });
+      expect(output.presentation).toEqual({
+        markdown:
+          '⚠ **Blocked:** `AUTO_ADVANCE_OVERFLOW` — Auto-advance exceeded its step limit.\n' +
+          '**Recovery:** Inspect the workflow topology before retrying.\n\n' +
+          'Inspect the workflow topology before retrying.',
+      });
+    });
+
+    it('uses the requested glyph profile for wrapper-generated blocked presentations', () => {
+      const wrapped = attachGovernanceFooter(
+        JSON.stringify({ error: true, code: 'BLOCKED', message: 'Operation is blocked.' }),
+        'ascii',
+      );
+      const output = JSON.parse(wrapped as string) as Record<string, unknown>;
+
+      expect(output.presentation).toEqual({
+        markdown: '[WARN] **Blocked:** `BLOCKED` — Operation is blocked.\n\nOperation is blocked.',
+      });
+    });
+
+    it('preserves an existing blocked presentation', () => {
+      const wrapped = attachGovernanceFooter(
+        JSON.stringify({
+          error: true,
+          code: 'COMMAND_NOT_ALLOWED',
+          message: 'Command is blocked.',
+          presentation: { markdown: 'Existing presentation.' },
+        }),
+      );
+      const output = JSON.parse(wrapped as string) as Record<string, unknown>;
+
+      expect(output.presentation).toEqual({ markdown: 'Existing presentation.' });
+    });
+
+    it('barrel has exactly 16 named exports (15 tools + 1 plugin)', () => {
       const exports = Object.keys(barrel);
-      expect(exports.length).toBe(15);
+      expect(exports.length).toBe(16);
     });
   });
 

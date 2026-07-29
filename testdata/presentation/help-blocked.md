@@ -2,7 +2,7 @@
 
 **Phase:** Ready for plan approval
 **Readiness:** blocked
-**Why blocked:** Awaiting plan review decision (approve / changes_requested / reject)
+⚠ **Why blocked:** Awaiting plan review decision (approve / changes_requested / reject)
 
 ## Next
 

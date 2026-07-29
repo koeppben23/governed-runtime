@@ -41,6 +41,7 @@ export type {
   EmbeddedMarkdownSection,
   PresentationSection,
   PresentationConclusion,
+  PresentationForm,
   CompactCardDocument,
   ReviewCardDocument,
   DiagnosticCardDocument,

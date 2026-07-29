@@ -64,6 +64,7 @@ import {
   requireReviewFindings,
   resolveHostTaskEffectiveFindings,
 } from './review-validation.js';
+import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import {
   appendReviewObligation,
   consumeReviewObligation,
@@ -74,6 +75,8 @@ import {
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
+import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
+import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 // presentation imports moved to plan-response.ts
 
 // ---- re-exported from sub-modules for backward-compatible import paths ----
@@ -163,7 +166,7 @@ function validatePlanRequest(scope: PlanExecutionScope): string | null {
 function normalizeInitialPlanSubmissionArgs(args: PlanArgs, state: SessionState): PlanArgs {
   const hasPlanText = typeof args.planText === 'string' && args.planText.trim().length > 0;
   if (!hasPlanText || state.plan || state.phase !== 'TICKET') return args;
-  return { planText: args.planText };
+  return { planText: args.planText, targetPaths: args.targetPaths };
 }
 
 function validatePlanInputShape(
@@ -201,6 +204,7 @@ function validateInitialPlanFindings(scope: PlanExecutionScope): string | null {
     reviewInvocationPolicy: scope.policy.reviewInvocationPolicy,
     reviewParentSessionId: scope.context.sessionID,
     reviewHostPlatform: resolveRuntimeReviewPlatform(),
+    previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(scope.state),
   });
 }
 
@@ -218,8 +222,13 @@ function buildPlanSubmissionState(
   planEvidence: PlanEvidence,
   planVersion: number,
   reviewFindings: ReviewFindings | null,
+  classificationFiles?: readonly string[],
 ): SessionState {
   const history = scope.state.plan ? [scope.state.plan.current, ...scope.state.plan.history] : [];
+  const metadata: Record<string, unknown> = {};
+  if (classificationFiles && classificationFiles.length > 0) {
+    metadata.targetPaths = [...classificationFiles];
+  }
   const nextObligation = scope.reviewPolicy.subagentEnabled
     ? createReviewObligation({
         obligationType: 'plan',
@@ -228,6 +237,10 @@ function buildPlanSubmissionState(
         now: scope.ctx.now(),
         reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
         profileSource: 'policy_default',
+        policySnapshot: scope.state.policySnapshot,
+        changedFiles: classificationFiles,
+        claimedTaskClass: scope.state.claimedTaskClass,
+        metadata,
       })
     : null;
 
@@ -298,6 +311,14 @@ function resolveEffectivePlanFindings(scope: PlanExecutionScope) {
       assurance: scope.state.reviewAssurance,
       sessionId: scope.context.sessionID,
       reviewHostPlatform: resolveRuntimeReviewPlatform(),
+      // Bind design-challenge evidence to the plan's canonical allowed refs
+      // (finding B3): without this, a plan review challenge could cite a
+      // fabricated ADR section / digest and pass.
+      allowedChallengeEvidenceRefs: buildHostTaskChallengeContract(
+        scope.state,
+        pendingObligation ?? null,
+      )?.evidenceRefs,
+      previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(scope.state),
     },
   });
   return { assuranceBase, pendingObligation, expectedIteration, expectedPlanVersion, resolved };
@@ -417,7 +438,19 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const history = scope.state.plan ? [scope.state.plan.current, ...scope.state.plan.history] : [];
   const planVersion = history.length + 1;
   const reviewFindings = scope.args.reviewFindings ?? null;
-  const nextState = buildPlanSubmissionState(scope, planEvidence, planVersion, reviewFindings);
+  const classification = await resolvePreImplementationChallengeClassification(
+    scope.state,
+    scope.wsDir,
+    scope.reviewPolicy.subagentEnabled,
+    scope.args.targetPaths,
+  );
+  const nextState = buildPlanSubmissionState(
+    scope,
+    planEvidence,
+    planVersion,
+    reviewFindings,
+    classification.kind === 'available' ? classification.changedFiles : undefined,
+  );
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
   const advanced = autoAdvance(nextState, evalFn, scope.ctx);
   // #428: fail closed on overflow BEFORE persisting — no partially-advanced write.
@@ -512,6 +545,13 @@ export const plan: ToolDefinition = {
         'Set to true ONLY after a real reviewer-subagent spawn failure (Task tool fails, agent ' +
           'unavailable). This is a fail-closed signal: FlowGuard blocks with SUBAGENT_UNABLE_TO_REVIEW ' +
           'and recovery guidance. It never enables self-review and never approves the plan.',
+      ),
+    targetPaths: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'File paths targeted by this plan. Required when the policy mandates review challenges. ' +
+          'Provides the changed-file evidence that challenge obligations bind against.',
       ),
   },
   async execute(args, context) {

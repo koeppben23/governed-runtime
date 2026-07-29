@@ -28,43 +28,30 @@ import type { SessionState } from '../../state/schema.js';
 import { bindExternalReviewEvidence } from '../review/transport-evidence.js';
 import { REVIEW_IDENTITY_REJECTION_FIELD } from '../../shared/flowguard-identifiers.js';
 
-const PHASE_GUIDANCE: Record<
-  string,
-  { status: string; command?: string; commands?: string[]; next?: string }
-> = {
+const PHASE_GUIDANCE: Record<string, { status: string }> = {
   TICKET: {
-    status: 'Ticket captured. Continue with /plan.',
-    command: '/plan',
+    status: 'Ticket captured.',
   },
   PLAN: {
-    status: 'Plan phase active. Submit or revise the implementation plan via /plan.',
-    command: '/plan',
+    status: 'Plan phase active.',
   },
   VALIDATION: {
-    status: 'Validation phase active. Run required checks and submit results via /check.',
-    command: '/check',
+    status: 'Validation phase active.',
   },
   IMPLEMENTATION: {
-    status: 'Plan approved. Execute the implementation.',
-    command: '/implement',
+    status: 'Implementation phase active.',
   },
   IMPL_REVIEW: {
-    status:
-      'Implementation review is pending. Invoke the flowguard-reviewer via the Task tool, then submit its verdict with flowguard_review_implementation.',
-    next: 'Invoke the flowguard-reviewer via the Task tool, then submit its verdict with flowguard_review_implementation.',
+    status: 'Implementation review is pending.',
   },
   ARCHITECTURE: {
-    status:
-      'Architecture review is pending. Use /architecture with required review findings when review evidence is available.',
-    command: '/architecture',
+    status: 'Architecture review is pending.',
   },
   REVIEW: {
-    status: 'Standalone review phase active. Call /review to evaluate the session.',
-    command: '/review',
+    status: 'Standalone review phase active.',
   },
   COMPLETE: {
-    status: 'Workflow complete. Use /export to create an audit package.',
-    command: '/export',
+    status: 'Workflow complete.',
   },
 };
 
@@ -117,17 +104,14 @@ function formatUserGateGuidance(state: SessionState): string {
     state.error?.code === 'ABORTED',
     state.archiveStatus ?? null,
   );
-  const commands =
-    productNext.commands.length > 0
-      ? productNext.commands
-      : ['/approve', '/request-changes', '/reject'];
-  return appendNextAction(
-    JSON.stringify({
+  return formatContinueResponse(
+    {
       phase: state.phase,
       status: `User gate active at ${state.phase}. A human decision is required.`,
-      next: commands.join(', '),
+      decisionRequired: true,
+      decisionCommands: productNext.commands,
       _continue: { action: 'manual_decision' },
-    }),
+    },
     state,
   );
 }
@@ -137,31 +121,38 @@ function formatTerminalGuidance(state: SessionState): string {
   // completions: do not route them to /export as an audit package. /export is
   // additionally fail-closed against aborted sessions in archive-tool.ts.
   const aborted = state.error?.code === 'ABORTED';
-  return appendNextAction(
-    JSON.stringify({
+  return formatContinueResponse(
+    {
       phase: state.phase,
       status: aborted ? 'Session aborted — not a clean completion.' : 'Workflow complete.',
-      next: aborted ? '/status' : '/export',
       _continue: { action: 'terminal' },
-    }),
+    },
     state,
   );
 }
 
-function formatDeterministicGuidance(
-  state: SessionState,
-  guidance: { status: string; command?: string; commands?: string[]; next?: string },
-): string {
-  return appendNextAction(
-    JSON.stringify({
+function formatDeterministicGuidance(state: SessionState, guidance: { status: string }): string {
+  return formatContinueResponse(
+    {
       phase: state.phase,
       status: guidance.status,
-      next: guidance.next ?? guidance.command ?? '',
-      commands: guidance.commands,
       _continue: { action: 'deterministic' },
-    }),
+    },
     state,
   );
+}
+
+function formatContinueResponse(value: Record<string, unknown>, state: SessionState): string {
+  const response = JSON.parse(appendNextAction(JSON.stringify(value), state)) as Record<
+    string,
+    unknown
+  >;
+  const productNext = response.productNextAction as { text?: unknown } | undefined;
+  const commands = (productNext as { commands?: unknown } | undefined)?.commands;
+  if (Array.isArray(commands) && commands.every((command) => typeof command === 'string')) {
+    response.next = commands.join(', ');
+  }
+  return JSON.stringify(response);
 }
 
 async function tryBindTransportEvidence(context: {

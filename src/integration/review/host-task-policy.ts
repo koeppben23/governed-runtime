@@ -19,6 +19,8 @@ import type { ReviewInvocationPolicy } from '../../config/policy-types.js';
 import { findReviewObligationById, ensureReviewAssurance } from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import type { SessionState } from '../../state/schema.js';
+import type { ReviewObligation } from '../../state/evidence.js';
+import { indexMarkdownSections } from '../../shared/markdown-sections.js';
 import type { OrchestratorDeps, ToolCallEvent } from './pipeline-types.js';
 
 // ─── Host Task Policy ────────────────────────────────────────────────────────
@@ -42,6 +44,7 @@ function buildHostTaskPolicyOutput(
   policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>,
   childSessionId: string | null,
   attestationMeta: HostTaskAttestationMeta | null,
+  challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'],
 ): string | null {
   const result = parseToolResult(originalOutput);
   if (!result || Array.isArray(result)) return null;
@@ -63,7 +66,7 @@ function buildHostTaskPolicyOutput(
     return JSON.stringify(result);
   }
 
-  return buildHostTaskBlockedOutput(result, policy, attestationMeta);
+  return buildHostTaskBlockedOutput(result, policy, attestationMeta, challengeContract);
 }
 
 /**
@@ -96,6 +99,7 @@ function resolveHostTaskContext(
 function buildReviewerTaskPromptOrNull(
   attestationMeta: HostTaskAttestationMeta | null,
   ctx: { iteration: number; planVersion: number | null } | null,
+  challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'],
 ): string | null {
   if (!attestationMeta || ctx?.iteration == null) return null;
   return renderReviewerTaskPrompt({
@@ -105,6 +109,7 @@ function buildReviewerTaskPromptOrNull(
     mandateDigest: attestationMeta.mandateDigest,
     criteriaVersion: attestationMeta.criteriaVersion,
     subjectLabel: 'the artifact under review',
+    challengeContract,
   });
 }
 
@@ -112,6 +117,7 @@ function buildHostTaskBlockedOutput(
   result: Record<string, unknown>,
   policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>,
   attestationMeta: HostTaskAttestationMeta | null,
+  challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'],
 ): string {
   // The original standalone response is CONTENT_ANALYSIS_REQUIRED and carries
   // manual-findings recovery. Host-task policy replaces that contract entirely:
@@ -136,7 +142,7 @@ function buildHostTaskBlockedOutput(
   // root cause). The prompt embeds the review context via the SAME serializer the
   // matcher validates against. Only emitted when both the attestation and the
   // review context are available.
-  const reviewerTaskPrompt = buildReviewerTaskPromptOrNull(attestationMeta, ctx);
+  const reviewerTaskPrompt = buildReviewerTaskPromptOrNull(attestationMeta, ctx, challengeContract);
   const copyPromptStr = reviewerTaskPrompt
     ? ` A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it ` +
       `VERBATIM as the Task tool "prompt" argument (append the artifact content to review), ` +
@@ -155,6 +161,10 @@ function buildHostTaskBlockedOutput(
       `criteriaVersion=${attestationMeta.criteriaVersion}.`
     : '';
 
+  const fallback =
+    policy === 'host_task_required'
+      ? 'FALLBACK: If the Task tool cannot spawn the reviewer (error, unavailable agent, or missing infrastructure), do NOT approve and do NOT invent findings — report the transport failure and stop; independent review is mandatory and cannot be self-substituted. Setting reviewerUnavailable: true fails closed (REVIEWER_UNAVAILABLE_STRICT) with recovery guidance; it never approves or enables self-review.'
+      : 'FALLBACK: If the Task tool cannot spawn the reviewer during implementation review, do NOT approve and do NOT invent findings. Report the transport failure with flowguard_review_implementation({ reviewerUnavailable: true }) only — no verdict and no reviewFindings. FlowGuard may then use the configured SDK review transport. For other review types, report the transport failure and stop; do not submit copied or fabricated reviewFindings.';
   result.next =
     `INDEPENDENT_REVIEW_REQUIRED: ${policy === 'host_task_required' ? 'Policy requires' : 'Policy prefers'} ` +
     `a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool. ` +
@@ -165,11 +175,8 @@ function buildHostTaskBlockedOutput(
     ` The reviewer subagent must NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, flowguard_review_implementation, flowguard_architecture) in its own session.` +
     ` When it returns, submit ONLY the verdict (reviewVerdict) matching the reviewer's overallVerdict — ` +
     `the captured evidence is resolved automatically; do NOT submit, copy, or alter reviewFindings. ` +
-    `reviewVerdict is the reviewer's result, NOT user approval, and only advances to the human review gate.` +
-    ` FALLBACK: If the Task tool cannot spawn the reviewer (error, unavailable agent, or missing infrastructure), ` +
-    `do NOT approve and do NOT invent findings — report the transport failure and stop; independent review is ` +
-    `mandatory and cannot be self-substituted. Setting reviewerUnavailable: true fails closed ` +
-    `(REVIEWER_UNAVAILABLE_STRICT) with recovery guidance; it never approves or enables self-review.`;
+    `reviewVerdict is the reviewer's result, NOT user approval, and only advances to the human review gate. ` +
+    fallback;
 
   if (reviewerTaskPrompt) {
     result.reviewerTaskPrompt = reviewerTaskPrompt;
@@ -209,7 +216,7 @@ function buildHostTaskBlockedOutput(
  */
 function resolveHostTaskAction(
   invocationPolicy: string | undefined,
-  isRetry: boolean,
+  hasReportedTaskTransportFailure: boolean,
   hostEvidence: unknown,
 ): 'mutate' | 'fall_through' {
   if (invocationPolicy !== 'host_task_required' && invocationPolicy !== 'host_task_preferred') {
@@ -217,8 +224,108 @@ function resolveHostTaskAction(
   }
   if (hostEvidence) return 'mutate';
   if (invocationPolicy === 'host_task_required') return 'mutate';
-  if (!isRetry) return 'mutate';
-  return 'fall_through';
+  return hasReportedTaskTransportFailure ? 'fall_through' : 'mutate';
+}
+
+function hasReportedTaskTransportFailure(output: ToolCallEvent['output']): boolean {
+  const parsed = parseToolResult(getToolOutput(output));
+  if (!parsed || Array.isArray(parsed)) return false;
+  const failure = parsed.reviewTransportFailure;
+  if (!failure || typeof failure !== 'object' || Array.isArray(failure)) return false;
+  const record = failure as Record<string, unknown>;
+  return record.transport === 'host_task' && record.reported === true;
+}
+
+function serializeDesignEvidence(input: {
+  artifactKind: 'plan' | 'adr';
+  artifactDigest: string;
+  markdown: string;
+}): Record<string, unknown>[] {
+  return indexMarkdownSections(input.markdown).map((section) => ({
+    kind: 'plan_adr_section',
+    artifactKind: input.artifactKind,
+    artifactDigest: input.artifactDigest,
+    sectionPath: section.sectionPath,
+    excerptDigest: section.excerptDigest,
+  }));
+}
+
+function planChallengeEvidence(state: SessionState): Record<string, unknown>[] | undefined {
+  const plan = state.plan?.current;
+  return plan
+    ? serializeDesignEvidence({
+        artifactKind: 'plan',
+        artifactDigest: plan.digest,
+        markdown: plan.body,
+      })
+    : undefined;
+}
+
+function architectureChallengeEvidence(state: SessionState): Record<string, unknown>[] | undefined {
+  const adr = state.architecture;
+  return adr
+    ? serializeDesignEvidence({
+        artifactKind: 'adr',
+        artifactDigest: adr.digest,
+        markdown: adr.adrText,
+      })
+    : undefined;
+}
+
+function implementationChallengeEvidence(
+  state: SessionState,
+): Record<string, unknown>[] | undefined {
+  const implementationDigest = state.implementation?.digest;
+  if (!implementationDigest) return undefined;
+  const successfulAttempts = state.validationAttempts.filter(
+    (attempt) =>
+      attempt.scope === 'implementation' &&
+      attempt.implementationDigest === implementationDigest &&
+      attempt.result.passed,
+  );
+  if (successfulAttempts.length === 0) return undefined;
+  return [
+    { kind: 'implementation', implementationDigest },
+    ...successfulAttempts.map((attempt) => ({
+      kind: 'validation_attempt',
+      attemptId: attempt.attemptId,
+    })),
+  ];
+}
+
+function contentChallengeEvidence(
+  _state: SessionState,
+  obligation: ReviewObligation,
+): Record<string, unknown>[] | undefined {
+  const digest =
+    typeof obligation.metadata?.fingerprint === 'string'
+      ? obligation.metadata.fingerprint
+      : undefined;
+  return digest ? [{ kind: 'content', digest }] : undefined;
+}
+
+const CHALLENGE_EVIDENCE_BUILDERS: Record<
+  ReviewObligation['obligationType'],
+  (state: SessionState, obligation: ReviewObligation) => Record<string, unknown>[] | undefined
+> = {
+  plan: (state) => planChallengeEvidence(state),
+  architecture: (state) => architectureChallengeEvidence(state),
+  implement: (state) => implementationChallengeEvidence(state),
+  review: contentChallengeEvidence,
+};
+
+export function buildHostTaskChallengeContract(
+  state: SessionState,
+  obligation: ReviewObligation | null,
+): Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'] {
+  if (!obligation || obligation.requiredChallengeCount === undefined) return undefined;
+  const base = {
+    requiredChallengeCount: obligation.requiredChallengeCount,
+    requiredChallengeKind: obligation.requiredChallengeKind,
+  };
+  if (obligation.requiredChallengeCount === 0) return base;
+  const evidenceRefs = CHALLENGE_EVIDENCE_BUILDERS[obligation.obligationType](state, obligation);
+  return evidenceRefs ? { ...base, evidenceRefs } : base;
 }
 
 export async function handleHostTaskPolicy(
@@ -235,8 +342,6 @@ export async function handleHostTaskPolicy(
     ensureReviewAssurance(sessionState.reviewAssurance),
     obligationId,
   );
-  const isRetry = preUpdateObligation?.pluginHandshakeAt !== null;
-
   const invocations = sessionState.reviewAssurance?.invocations ?? [];
   const hostEvidence = invocations.find(
     (inv) =>
@@ -245,7 +350,11 @@ export async function handleHostTaskPolicy(
       inv.hostVisible === true,
   );
 
-  const action = resolveHostTaskAction(invocationPolicy, isRetry, hostEvidence);
+  const action = resolveHostTaskAction(
+    invocationPolicy,
+    hasReportedTaskTransportFailure(output),
+    hostEvidence,
+  );
   if (action === 'fall_through') return false;
 
   await deps.updateReviewAssurance(sessDir, (s, now2) =>
@@ -276,11 +385,13 @@ export async function handleHostTaskPolicy(
         criteriaVersion: preUpdateObligation.criteriaVersion,
       }
     : null;
+  const challengeContract = buildHostTaskChallengeContract(sessionState, preUpdateObligation);
   const mutated = buildHostTaskPolicyOutput(
     rawOutput,
     typedPolicy,
     childSessionId,
     attestationMeta,
+    challengeContract,
   );
   if (mutated) output.output = mutated;
   return true;

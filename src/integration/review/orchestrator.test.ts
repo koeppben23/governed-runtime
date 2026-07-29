@@ -418,6 +418,23 @@ describe('buildImplReviewPrompt', () => {
     expect(prompt).toContain('## Changed Files');
   });
 
+  it('renders challenge resolutions as advisory NOT_VERIFIED context', () => {
+    const prompt = buildImplReviewPrompt({
+      ...baseOpts,
+      challengeResolutions: [
+        {
+          challengeId: '11111111-1111-4111-8111-111111111111',
+          implementationDigest: 'implementation-digest',
+          validationAttemptIds: ['22222222-2222-4222-8222-222222222222'],
+          resolvedAt: '2025-01-15T12:00:00.000Z',
+        },
+      ],
+    });
+    expect(prompt).toContain('## Advisory Challenge Resolutions (NOT_VERIFIED)');
+    expect(prompt).toContain('independently verify it');
+    expect(prompt).toContain('11111111-1111-4111-8111-111111111111');
+  });
+
   // EDGE: empty changed files list
   it('handles empty changed files', () => {
     const prompt = buildImplReviewPrompt({ ...baseOpts, changedFiles: [] });

@@ -327,7 +327,10 @@ describe('identity-policy-e2e', () => {
      */
     async function advanceToPlanReview(): Promise<void> {
       await ticket.execute({ text: 'Implement identity-gated feature', source: 'user' }, ctx);
-      await plan.execute({ planText: '## Plan\n1. Implement feature' }, ctx);
+      await plan.execute(
+        { planText: '## Plan\n1. Implement feature', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
       // Independent review loop: converge to PLAN_REVIEW (team mode auto-approves)
       for (let i = 0; i < 5; i++) {
         const s = parseToolResult(await status.execute({}, ctx));

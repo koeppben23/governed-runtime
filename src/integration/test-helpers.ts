@@ -314,6 +314,7 @@ export function isBlockedResult(result: Record<string, unknown>): boolean {
  * tool tests do not run plugin hooks, so they use this helper to set the same
  * mandate-bound evidence before submitting ReviewFindings to the tool.
  */
+// eslint-disable-next-line max-lines-per-function -- shared strict-review fixture must bind evidence and invocation together
 export async function fulfillStrictReviewObligation(
   sessDir: string,
   input: {
@@ -336,6 +337,53 @@ export async function fulfillStrictReviewObligation(
   );
   if (!obligation) throw new Error('No matching review obligation found');
 
+  const challenges = Array.from({ length: obligation.requiredChallengeCount ?? 0 }, () => {
+    const challengeId = crypto.randomUUID();
+    if (obligation.requiredChallengeKind === 'implementation_challenge') {
+      return {
+        challengeId,
+        obligationId: obligation.obligationId,
+        scenario: 'Exercise the changed behavior against its implementation evidence.',
+        claim: 'The implementation handles the reviewed scenario.',
+        locations: ['implementation evidence'],
+        kind: 'implementation_challenge' as const,
+        evidenceRefs: [
+          {
+            kind: 'implementation' as const,
+            implementationDigest: state.implementation?.digest ?? 'missing-implementation-digest',
+          },
+          {
+            kind: 'validation_attempt' as const,
+            attemptId:
+              state.validationAttempts.find((a) => a.scope === 'implementation' && a.result.passed)
+                ?.attemptId ??
+              state.validationAttempts[0]?.attemptId ??
+              crypto.randomUUID(),
+          },
+        ],
+        outcome: 'pass' as const,
+      };
+    }
+    return {
+      challengeId,
+      obligationId: obligation.obligationId,
+      scenario: 'Exercise the reviewed design against its canonical section.',
+      claim: 'The design addresses the reviewed scenario.',
+      locations: ['plan section'],
+      kind: 'design_challenge' as const,
+      evidenceRefs: [
+        {
+          kind: 'plan_adr_section' as const,
+          artifactKind: 'plan' as const,
+          artifactDigest: state.plan?.current.digest ?? 'missing-plan-digest',
+          sectionPath: [{ headingDepth: 1, siblingIndex: 1, headingText: 'Plan' }],
+          excerptDigest: state.plan?.current.digest ?? 'missing-plan-digest',
+        },
+      ],
+      outcome: 'supported' as const,
+    };
+  });
+
   const findings: ReviewFindings = {
     iteration: input.iteration,
     planVersion: input.planVersion,
@@ -356,6 +404,7 @@ export async function fulfillStrictReviewObligation(
       planVersion: input.planVersion,
       reviewedBy: REVIEWER_SUBAGENT_TYPE,
     },
+    ...(challenges.length > 0 ? { challenges } : {}),
   };
 
   const isHostTask = state.policySnapshot?.reviewInvocationPolicy === 'host_task_required';

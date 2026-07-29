@@ -138,6 +138,7 @@ export function buildFinishDocument(
   return {
     kind: 'compact_card',
     density: 'compact',
+    form: f.blocker.blocked ? 'blocked' : conclusion.kind === 'terminal' ? 'terminal' : 'success',
     sections,
     conclusion,
   };

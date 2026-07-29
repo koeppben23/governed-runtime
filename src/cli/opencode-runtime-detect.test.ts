@@ -10,7 +10,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as os from 'node:os';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
-import { setAdapterLogger, resetAdapterLogger } from '../logging/adapter-logger.js';
+import {
+  setAdapterLogger,
+  resetAdapterLogger,
+  runWithAdapterLoggerAsync,
+} from '../logging/adapter-logger.js';
 import type { AdapterLogger } from '../logging/adapter-logger.js';
 
 const versionMock = vi.hoisted(() => ({ impl: (): string => '1.4.2\n' }));
@@ -65,11 +69,13 @@ describe('opencode-runtime-detect', () => {
       await writeOpencodeConfig(workdir, {
         instructions: ['.opencode/flowguard-mandates.md'],
       });
-      const evidence = await detectOpenCodeRuntimeEvidence({
-        scope: 'repo',
-        platform: 'opencode',
-        target: workdir,
-      });
+      const evidence = await runWithAdapterLoggerAsync(makeCapturingLogger(logs), () =>
+        detectOpenCodeRuntimeEvidence({
+          scope: 'repo',
+          platform: 'opencode',
+          target: workdir,
+        }),
+      );
 
       expect(evidence.version).toBe('1.4.2');
       expect(evidence.runtimeKind).toBe('cli');

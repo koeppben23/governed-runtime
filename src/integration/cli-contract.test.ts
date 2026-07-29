@@ -187,7 +187,7 @@ async function driveToComplete(context: TestToolContext = ctx): Promise<string> 
     if (lastPhase === 'READY') {
       await callOk(ticket, { text: 'Test task', source: 'user' }, context);
     } else if (lastPhase === 'TICKET') {
-      await callOk(plan, { planText: '## Plan\nTest' }, context);
+      await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] }, context);
     } else if (lastPhase === 'PLAN') {
       await callOk(plan, { reviewVerdict: 'accept' }, context);
     } else if (lastPhase === 'VALIDATION' || lastPhase === 'IMPL_VALIDATION') {
@@ -249,7 +249,7 @@ describe('HAPPY: status JSON shape is stable', () => {
   it('status at PLAN_REVIEW has policy info in appliedPolicy', async () => {
     await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
     await callOk(ticket, { text: 'Team status test', source: 'user' });
-    await callOk(plan, { planText: '## Plan\nTest' });
+    await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] });
     await callOk(plan, { reviewVerdict: 'accept' });
     const result = parseToolResult<StatusResult>(await status.execute({}, ctx));
 
@@ -262,7 +262,7 @@ describe('HAPPY: status JSON shape is stable', () => {
   it('status at implementation review has required metadata', async () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Complete test', source: 'user' });
-    await callOk(plan, { planText: '## Plan\nTest' });
+    await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] });
     await callOk(plan, { reviewVerdict: 'accept' });
     // Pass validation: discovery detects TypeScript → activeChecks=['typecheck']
     const runActiveChecks = async (): Promise<void> => {
@@ -309,7 +309,7 @@ describe('HAPPY: blocked/error output has stable structure', () => {
     });
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     await callOk(ticket, { text: 'Four eyes test', source: 'user' });
-    await callOk(plan, { planText: '## Plan\nTest' });
+    await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] });
     await callOk(plan, { reviewVerdict: 'accept' });
     const result = parseToolResult(
       await executeDecision({ verdict: 'approve', rationale: 'Same actor' }),
@@ -322,7 +322,7 @@ describe('HAPPY: blocked/error output has stable structure', () => {
   it('COMMAND_NOT_ALLOWED returns error shape with recovery hint', async () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Test', source: 'user' });
-    await callOk(plan, { planText: '## Plan\nTest' });
+    await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] });
     await callOk(plan, { reviewVerdict: 'accept' });
     // Pass validation via run_check (discovery detects TypeScript → activeChecks=['typecheck'])
     const sd = await getSessDir();
@@ -417,7 +417,7 @@ describe('HAPPY: reason codes are stable', () => {
     });
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     await callOk(ticket, { text: 'Four CLI test', source: 'user' });
-    await callOk(plan, { planText: '## Plan\nTest' });
+    await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] });
     await callOk(plan, { reviewVerdict: 'accept' });
 
     const result = parseToolResult(
@@ -430,7 +430,7 @@ describe('HAPPY: reason codes are stable', () => {
   it('triggers DECISION_IDENTITY_REQUIRED exactly', async () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     await callOk(ticket, { text: 'Identity CLI test', source: 'user' });
-    await callOk(plan, { planText: '## Plan\nTest' });
+    await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] });
     await callOk(plan, { reviewVerdict: 'accept' });
     const sessDir = await getSessDir();
     const state = await readState(sessDir);
@@ -446,7 +446,7 @@ describe('HAPPY: reason codes are stable', () => {
   it('triggers REGULATED_ACTOR_UNKNOWN exactly', async () => {
     await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
     await callOk(ticket, { text: 'Unknown actor test', source: 'user' });
-    await callOk(plan, { planText: '## Plan\nTest' });
+    await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] });
     await callOk(plan, { reviewVerdict: 'accept' });
     vi.mocked(actorMock.resolveActor).mockResolvedValue({
       id: 'unknown-cli',
@@ -490,7 +490,7 @@ describe('BAD: invalid input returns structured error', () => {
   it('decision with approve verdict returns structured result or error', async () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Test', source: 'user' });
-    await callOk(plan, { planText: '## Plan\nTest' });
+    await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] });
     await callOk(plan, { reviewVerdict: 'accept' });
     const raw = await decision.execute({ verdict: 'approve', rationale: 'Ok' }, ctx);
     const result = parseToolResult(raw);
@@ -527,7 +527,7 @@ describe('CORNER: CLI edge cases', () => {
   it('verdict enum only accepts approve/changes_requested/reject', async () => {
     await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
     await callOk(ticket, { text: 'Enum test', source: 'user' });
-    await callOk(plan, { planText: '## Plan\nTest' });
+    await callOk(plan, { planText: '## Plan\nTest', targetPaths: ['docs/test.md'] });
     await callOk(plan, { reviewVerdict: 'accept' });
     const raw = await decision.execute({ verdict: 'approve', rationale: 'Ok' }, ctx);
     const result = parseToolResult(raw);

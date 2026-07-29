@@ -2,10 +2,11 @@
  * @module integration/review/enforcement/findings-consistency
  * @description Canonical, dependency-free consistency invariant for review findings.
  *
- * SSOT for the verdict/blocking-issues coherence rule (F12). This is the ONLY
- * implementation of the rule; every boundary that ingests reviewer findings
- * MUST call this function rather than re-deriving the rule, so a later refactor
- * cannot silently diverge the two enforcement sites.
+ * SSOT for the verdict/blocking-issues coherence rule (F12) ONLY. Challenge and
+ * resolution consistency is owned by the separate `challenge-consistency.ts`
+ * authority (#747); this module must not re-derive or duplicate that logic. The
+ * architecture guard `challenge-consistency-authority-ssot.test.ts` pins the
+ * separation.
  *
  * Rule (strict emptiness): an `accept` verdict is incoherent with ANY blocking
  * issue. The rule intentionally keys on the presence of blocking issues, not on

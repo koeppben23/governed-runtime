@@ -109,6 +109,8 @@ async function deriveRuntimeKind(
 export async function detectOpenCodeRuntimeEvidence(
   params: DetectRuntimeParams,
 ): Promise<OpenCodeRuntimeEvidence> {
+  // Capture the caller's scoped logger before the asynchronous filesystem probe.
+  const logger = getAdapterLogger();
   const version = params.platform === 'opencode' ? probeCliVersion() : null;
   let runtimeKind: OpenCodeRuntimeKind;
   try {
@@ -133,9 +135,9 @@ export async function detectOpenCodeRuntimeEvidence(
   if (runtimeKind === 'unknown' && version === null) {
     // Fail-closed diagnostic: could not positively identify the runtime. This
     // is not a block (deny-list posture) but is surfaced for operators.
-    getAdapterLogger().warn('cli', 'opencode runtime evidence (undetectable)', envelope);
+    logger.warn('cli', 'opencode runtime evidence (undetectable)', envelope);
   } else {
-    getAdapterLogger().info('cli', 'opencode runtime evidence', envelope);
+    logger.info('cli', 'opencode runtime evidence', envelope);
   }
 
   return evidence;

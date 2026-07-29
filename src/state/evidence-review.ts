@@ -18,7 +18,7 @@ import {
   ReviewObligationStatus,
   ReviewVerdict,
 } from './evidence-primitives.js';
-import { DecisionIdentity } from './evidence-identity.js';
+import { ActorInfoSchema, DecisionIdentity } from './evidence-identity.js';
 
 // ─── Completeness Report ──────────────────────────────────────────────────────
 
@@ -72,6 +72,134 @@ export const Finding = z
   })
   .readonly();
 export type Finding = z.infer<typeof Finding>;
+
+/** A deterministic Markdown heading path, including presentation-only text. */
+export const MarkdownSectionPath = z
+  .array(
+    z.object({
+      headingDepth: z.number().int().min(1).max(6),
+      siblingIndex: z.number().int().positive(),
+      headingText: z.string(),
+    }),
+  )
+  .min(1)
+  .readonly();
+export type MarkdownSectionPath = z.infer<typeof MarkdownSectionPath>;
+
+/** Digest-bound reference to a Plan or ADR section excerpt. */
+export const PlanAdrSectionRef = z
+  .object({
+    kind: z.literal('plan_adr_section'),
+    artifactKind: z.enum(['plan', 'adr']),
+    artifactDigest: z.string().min(1),
+    sectionPath: MarkdownSectionPath,
+    excerptDigest: z.string().min(1),
+  })
+  .readonly();
+export type PlanAdrSectionRef = z.infer<typeof PlanAdrSectionRef>;
+
+/** Digest-bound reference to an implementation and its optional persisted diff. */
+export const ImplementationRef = z
+  .object({
+    kind: z.literal('implementation'),
+    implementationDigest: z.string().min(1),
+    diffDigest: z.string().min(1).optional(),
+  })
+  .readonly();
+export type ImplementationRef = z.infer<typeof ImplementationRef>;
+
+/** Reference to an immutable validation-attempt authority record. */
+export const ValidationAttemptRef = z
+  .object({
+    kind: z.literal('validation_attempt'),
+    attemptId: z.string().uuid(),
+  })
+  .readonly();
+export type ValidationAttemptRef = z.infer<typeof ValidationAttemptRef>;
+
+/** Digest-bound reference to content reviewed outside a Plan, ADR, or implementation. */
+export const ContentRef = z
+  .object({
+    kind: z.literal('content'),
+    digest: z.string().min(1),
+  })
+  .readonly();
+export type ContentRef = z.infer<typeof ContentRef>;
+
+/** Typed evidence references permitted in a structured review challenge. */
+export const ReviewChallengeEvidenceRef = z.discriminatedUnion('kind', [
+  PlanAdrSectionRef,
+  ImplementationRef,
+  ValidationAttemptRef,
+  ContentRef,
+]);
+export type ReviewChallengeEvidenceRef = z.infer<typeof ReviewChallengeEvidenceRef>;
+
+const ReviewChallengeBase = {
+  challengeId: z.string().uuid(),
+  obligationId: z.string().uuid(),
+  scenario: z.string().min(1),
+  claim: z.string().min(1),
+  locations: z.array(z.string().min(1)).min(1),
+};
+
+/**
+ * An evidence-bound falsification attempt. This is advisory evidence only;
+ * challenge requirement and resolution enforcement are deliberately separate.
+ */
+export const ReviewChallenge = z.discriminatedUnion('kind', [
+  z
+    .object({
+      ...ReviewChallengeBase,
+      kind: z.literal('design_challenge'),
+      evidenceRefs: z.array(PlanAdrSectionRef).min(1),
+      outcome: z.enum(['supported', 'contradicted', 'not_verified']),
+    })
+    .readonly(),
+  z
+    .object({
+      ...ReviewChallengeBase,
+      kind: z.literal('implementation_challenge'),
+      evidenceRefs: z.array(z.union([ImplementationRef, ValidationAttemptRef])).min(1),
+      outcome: z.enum(['pass', 'fail', 'not_verified']),
+    })
+    .readonly(),
+  z
+    .object({
+      ...ReviewChallengeBase,
+      kind: z.literal('content_challenge'),
+      evidenceRefs: z.array(ContentRef).min(1),
+      outcome: z.enum(['supported', 'contradicted', 'not_verified']),
+    })
+    .readonly(),
+]);
+export type ReviewChallenge = z.infer<typeof ReviewChallenge>;
+
+/**
+ * Advisory evidence that an implementation challenge was addressed by the
+ * current implementation and its immutable post-implementation checks.
+ * Resolution remains deliberately separate from review acceptance policy.
+ */
+export const ChallengeResolution = z
+  .object({
+    challengeId: z.string().uuid(),
+    implementationDigest: z.string().min(1),
+    validationAttemptIds: z.array(z.string().uuid()).min(1),
+    resolvedAt: z.string().datetime(),
+    /** Author evidence is a proposal only; it never resolves a challenge. */
+    author: ActorInfoSchema.optional(),
+  })
+  .readonly();
+export type ChallengeResolution = z.infer<typeof ChallengeResolution>;
+
+/** An independent reviewer's verdict on a prior implementation challenge resolution. */
+export const ChallengeResolutionVerdict = z
+  .object({
+    challengeId: z.string().uuid(),
+    verdict: z.enum(['resolved', 'still_failing', 'not_verified']),
+  })
+  .readonly();
+export type ChallengeResolutionVerdict = z.infer<typeof ChallengeResolutionVerdict>;
 
 /**
  * Identity information for the review actor (subagent or self).
@@ -152,6 +280,10 @@ export const ReviewFindings = z
      */
     reviewerClaimedBy: ReviewActorInfo.optional(),
     attestation: ReviewAttestation.optional(),
+    /** Optional for findings persisted before challenge capture was introduced. */
+    challenges: z.array(ReviewChallenge).optional(),
+    /** Reviewer-only verdicts for prior implementation challenge resolutions. */
+    challengeResolutionVerdicts: z.array(ChallengeResolutionVerdict).optional(),
   })
   .readonly();
 export type ReviewFindings = z.infer<typeof ReviewFindings>;
@@ -212,6 +344,13 @@ export const ReviewObligation = z.object({
   reviewProfile: ReviewProfile.optional(),
   /** Provenance of the frozen review profile (see ReviewProfileSource). */
   profileSource: ReviewProfileSource.optional(),
+  /** Challenge coverage frozen from the runtime-computed minimum task class. */
+  requiredChallengeCount: z.number().int().min(0).max(2).optional(),
+  /** The sole challenge evidence kind required for this obligation. */
+  requiredChallengeKind: z
+    .enum(['design_challenge', 'implementation_challenge', 'content_challenge'])
+    .optional(),
+  challengePolicyVersion: z.literal('challenge-policy.v1').optional(),
   /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
   metadata: z.record(z.string(), z.unknown()).optional(),
 });

@@ -57,6 +57,192 @@ export const REVIEW_FINDINGS_JSON_SCHEMA = {
     missingVerification: { type: 'array', items: { type: 'string' } },
     scopeCreep: { type: 'array', items: { type: 'string' } },
     unknowns: { type: 'array', items: { type: 'string' } },
+    challenges: {
+      type: 'array',
+      items: {
+        oneOf: [
+          {
+            type: 'object',
+            properties: {
+              challengeId: {
+                type: 'string',
+                pattern:
+                  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+              },
+              obligationId: {
+                type: 'string',
+                pattern:
+                  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+              },
+              scenario: { type: 'string', minLength: 1 },
+              claim: { type: 'string', minLength: 1 },
+              locations: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 },
+              kind: { type: 'string', const: 'design_challenge' },
+              evidenceRefs: {
+                type: 'array',
+                minItems: 1,
+                items: {
+                  type: 'object',
+                  properties: {
+                    kind: { type: 'string', const: 'plan_adr_section' },
+                    artifactKind: { type: 'string', enum: ['plan', 'adr'] },
+                    artifactDigest: { type: 'string', minLength: 1 },
+                    sectionPath: {
+                      type: 'array',
+                      minItems: 1,
+                      items: {
+                        type: 'object',
+                        properties: {
+                          headingDepth: { type: 'integer', minimum: 1, maximum: 6 },
+                          siblingIndex: { type: 'integer', minimum: 1 },
+                          headingText: { type: 'string' },
+                        },
+                        required: ['headingDepth', 'siblingIndex', 'headingText'],
+                      },
+                    },
+                    excerptDigest: { type: 'string', minLength: 1 },
+                  },
+                  required: [
+                    'kind',
+                    'artifactKind',
+                    'artifactDigest',
+                    'sectionPath',
+                    'excerptDigest',
+                  ],
+                },
+              },
+              outcome: { type: 'string', enum: ['supported', 'contradicted', 'not_verified'] },
+            },
+            required: [
+              'challengeId',
+              'obligationId',
+              'scenario',
+              'claim',
+              'locations',
+              'kind',
+              'evidenceRefs',
+              'outcome',
+            ],
+          },
+          {
+            type: 'object',
+            properties: {
+              challengeId: {
+                type: 'string',
+                pattern:
+                  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+              },
+              obligationId: {
+                type: 'string',
+                pattern:
+                  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+              },
+              scenario: { type: 'string', minLength: 1 },
+              claim: { type: 'string', minLength: 1 },
+              locations: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 },
+              kind: { type: 'string', const: 'implementation_challenge' },
+              evidenceRefs: {
+                type: 'array',
+                minItems: 1,
+                items: {
+                  oneOf: [
+                    {
+                      type: 'object',
+                      properties: {
+                        kind: { type: 'string', const: 'implementation' },
+                        implementationDigest: { type: 'string', minLength: 1 },
+                        diffDigest: { type: 'string', minLength: 1 },
+                      },
+                      required: ['kind', 'implementationDigest'],
+                    },
+                    {
+                      type: 'object',
+                      properties: {
+                        kind: { type: 'string', const: 'validation_attempt' },
+                        attemptId: {
+                          type: 'string',
+                          pattern:
+                            '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+                        },
+                      },
+                      required: ['kind', 'attemptId'],
+                    },
+                  ],
+                },
+              },
+              outcome: { type: 'string', enum: ['pass', 'fail', 'not_verified'] },
+            },
+            required: [
+              'challengeId',
+              'obligationId',
+              'scenario',
+              'claim',
+              'locations',
+              'kind',
+              'evidenceRefs',
+              'outcome',
+            ],
+          },
+          {
+            type: 'object',
+            properties: {
+              challengeId: {
+                type: 'string',
+                pattern:
+                  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+              },
+              obligationId: {
+                type: 'string',
+                pattern:
+                  '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+              },
+              scenario: { type: 'string', minLength: 1 },
+              claim: { type: 'string', minLength: 1 },
+              locations: { type: 'array', items: { type: 'string', minLength: 1 }, minItems: 1 },
+              kind: { type: 'string', const: 'content_challenge' },
+              evidenceRefs: {
+                type: 'array',
+                minItems: 1,
+                items: {
+                  type: 'object',
+                  properties: {
+                    kind: { type: 'string', const: 'content' },
+                    digest: { type: 'string', minLength: 1 },
+                  },
+                  required: ['kind', 'digest'],
+                },
+              },
+              outcome: { type: 'string', enum: ['supported', 'contradicted', 'not_verified'] },
+            },
+            required: [
+              'challengeId',
+              'obligationId',
+              'scenario',
+              'claim',
+              'locations',
+              'kind',
+              'evidenceRefs',
+              'outcome',
+            ],
+          },
+        ],
+      },
+    },
+    challengeResolutionVerdicts: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          challengeId: {
+            type: 'string',
+            pattern:
+              '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+          },
+          verdict: { type: 'string', enum: ['resolved', 'still_failing', 'not_verified'] },
+        },
+        required: ['challengeId', 'verdict'],
+      },
+    },
     reviewedBy: {
       type: 'object',
       properties: {

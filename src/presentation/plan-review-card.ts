@@ -22,6 +22,7 @@ import type {
   PresentationAction,
 } from './model.js';
 import { renderMarkdown } from './markdown.js';
+import type { PresentationRenderOptions } from './glyph-profile.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -75,7 +76,10 @@ const PLAN_ACTION_DESCRIPTIONS: Record<string, string> = {
  *   (/approve, /request-changes, /reject)
  * - terminal otherwise (productNextAction.text with no resolvable command)
  */
-export function buildPlanReviewCard(input: PlanReviewCardInput): string {
+export function buildPlanReviewCard(
+  input: PlanReviewCardInput,
+  options?: PresentationRenderOptions,
+): string {
   const { planText, phaseLabel, productNextAction, planVersion, policyMode, taskTitle } = input;
 
   const sections: PresentationSection[] = [];
@@ -122,11 +126,16 @@ export function buildPlanReviewCard(input: PlanReviewCardInput): string {
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
+    form: productNextAction.commands.some((command) =>
+      ['/approve', '/request-changes', '/reject'].includes(command),
+    )
+      ? 'decision'
+      : 'terminal',
     sections,
     conclusion: buildConclusion(productNextAction),
   };
 
-  return renderMarkdown(document);
+  return renderMarkdown(document, options);
 }
 
 // ─── Conclusion Projection ─────────────────────────────────────────────────────

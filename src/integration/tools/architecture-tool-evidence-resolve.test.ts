@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeState } from '../../fixtures.js';
 import { TEAM_POLICY } from '../../config/policy-presets.js';
+import { CHALLENGE_POLICY_V1 } from '../../config/policy-types.js';
 import type { SessionState } from '../../state/schema.js';
+import type { DiscoveryResult } from '../../discovery/types.js';
+import { discoveryRiskPaths } from '../discovery-risk-paths.js';
+import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
 import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
@@ -38,7 +42,10 @@ const mocks = vi.hoisted(() => {
       JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
     ),
     appendNextAction: vi.fn((payload: string) => payload),
-    writeStateWithArtifacts: vi.fn(async () => undefined),
+    writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<void>>(
+      async () => undefined,
+    ),
+    readDiscovery: vi.fn(async () => null as DiscoveryResult | null),
   };
 });
 
@@ -107,6 +114,11 @@ vi.mock('../../state/evidence.js', async (importOriginal) => {
     ...original,
     validateAdrSections: mocks.validateAdrSections,
   };
+});
+
+vi.mock('../../adapters/persistence-discovery.js', async (importOriginal) => {
+  const original = (await importOriginal()) as Record<string, unknown>;
+  return { ...original, readDiscovery: mocks.readDiscovery };
 });
 
 describe('architecture — BUG-15 evidence-resolve', () => {
@@ -715,6 +727,118 @@ describe('architecture — BUG-15 evidence-resolve', () => {
       const parsed = JSON.parse(String(res));
       // Should proceed with changes_requested — no BLOCKED
       expect(parsed.error).toBeUndefined();
+    });
+
+    it('Mode B (revision loop) does not dead-end with no prior/author targetPaths and empty discovery', async () => {
+      // Regression: architecture Mode B used the old resolver and hard-blocked with
+      // RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE when the prior obligation carried no
+      // targetPaths (which the Mode A fix now permits) and an ADR has no diff. It now
+      // derives from discovery (empty here) and creates the next obligation instead.
+      const base = stateWithEvidence('changes_requested');
+      mocks.state = {
+        ...base,
+        policySnapshot: { ...base.policySnapshot, challengePolicy: CHALLENGE_POLICY_V1 },
+      };
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        ...TEAM_POLICY,
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'host_task_required',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+      mocks.autoAdvance.mockReturnValue({
+        kind: 'advanced',
+        state: mocks.state,
+        evalResult: { kind: 'pending' },
+        transitions: [],
+      });
+      mocks.readDiscovery.mockResolvedValueOnce(null);
+
+      const { architecture } = await import('./architecture.js');
+      const parsed = JSON.parse(
+        String(
+          await architecture.execute(
+            {
+              reviewVerdict: 'changes_requested',
+              adrText: '## Context\nRevised\n\n## Decision\nB\n\n## Consequences\nC',
+            },
+            {} as never,
+          ),
+        ),
+      );
+
+      expect(parsed.error).toBeUndefined();
+      expect(parsed.code).not.toBe('RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE');
+      // The next-iteration obligation was created (not a dead-end).
+      const savedState = mocks.writeStateWithArtifacts.mock.calls.at(-1)?.[1] as SessionState;
+      const obligations = savedState.reviewAssurance?.obligations ?? [];
+      expect(obligations.length).toBeGreaterThanOrEqual(2);
+      expect(obligations.at(-1)?.obligationType).toBe('architecture');
+    });
+
+    it('Mode B floors the next-iteration challenge count on discovery risk surfaces', async () => {
+      const discovery = {
+        surfaces: {
+          api: [],
+          persistence: [
+            {
+              id: 'repo',
+              label: 'repo',
+              classification: 'fact',
+              evidence: ['src/db/repository.ts'],
+            },
+          ],
+          cicd: [],
+          security: [],
+          layers: [],
+        },
+      } as unknown as DiscoveryResult;
+      const expectedPaths = discoveryRiskPaths(discovery);
+      const expectedClass = maxTaskClass(
+        assessMinimumTaskClass(expectedPaths).minimumTaskClass,
+        'TRIVIAL',
+      );
+      const expectedCount = CHALLENGE_POLICY_V1.counts[expectedClass];
+      expect(expectedCount).toBeGreaterThan(0);
+
+      const base = stateWithEvidence('changes_requested');
+      mocks.state = {
+        ...base,
+        policySnapshot: { ...base.policySnapshot, challengePolicy: CHALLENGE_POLICY_V1 },
+      };
+      mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+      mocks.resolvePolicyFromState.mockReturnValue({
+        ...TEAM_POLICY,
+        maxSelfReviewIterations: 3,
+        reviewInvocationPolicy: 'host_task_required',
+        selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
+      });
+      mocks.autoAdvance.mockReturnValue({
+        kind: 'advanced',
+        state: mocks.state,
+        evalResult: { kind: 'pending' },
+        transitions: [],
+      });
+      mocks.readDiscovery.mockResolvedValueOnce(discovery);
+
+      const { architecture } = await import('./architecture.js');
+      const parsed = JSON.parse(
+        String(
+          await architecture.execute(
+            {
+              reviewVerdict: 'changes_requested',
+              adrText: '## Context\nRevised\n\n## Decision\nB\n\n## Consequences\nC',
+            },
+            {} as never,
+          ),
+        ),
+      );
+
+      expect(parsed.error).toBeUndefined();
+      const savedState = mocks.writeStateWithArtifacts.mock.calls.at(-1)?.[1] as SessionState;
+      const nextObligation = savedState.reviewAssurance?.obligations.at(-1);
+      expect(nextObligation?.requiredChallengeCount).toBe(expectedCount);
+      expect(nextObligation?.metadata?.targetPaths).toEqual(expectedPaths);
     });
   });
 });

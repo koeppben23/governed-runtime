@@ -216,7 +216,10 @@ describe('archive', () => {
       async () => {
         await hydrateSession();
         await ticket.execute({ text: 'Archive artifact evidence test', source: 'user' }, ctx);
-        await plan.execute({ planText: '## Plan\n1. Create evidence artifacts' }, ctx);
+        await plan.execute(
+          { planText: '## Plan\n1. Create evidence artifacts', targetPaths: ['docs/test.md'] },
+          ctx,
+        );
 
         const { computeFingerprint, sessionDir: resolveSessionDir } =
           await import('../adapters/workspace/index.js');
@@ -256,7 +259,7 @@ describe('archive', () => {
         // audit_chain_truncated -> archiveStatus:"failed" on a valid archive.
         await hydrateSession();
         await ticket.execute({ text: 'Idempotent re-archive test', source: 'user' }, ctx);
-        await plan.execute({ planText: '## Plan\n1. Step' }, ctx);
+        await plan.execute({ planText: '## Plan\n1. Step', targetPaths: ['docs/test.md'] }, ctx);
 
         const {
           computeFingerprint,
@@ -292,7 +295,7 @@ describe('archive', () => {
       async () => {
         await hydrateSession();
         await ticket.execute({ text: 'Archive status consistency test', source: 'user' }, ctx);
-        await plan.execute({ planText: '## Plan\n1. Step' }, ctx);
+        await plan.execute({ planText: '## Plan\n1. Step', targetPaths: ['docs/test.md'] }, ctx);
 
         const {
           computeFingerprint,
@@ -336,7 +339,10 @@ describe('archive', () => {
     it('fail-closes archive when state references plan but derived artifacts are missing', async () => {
       await hydrateSession();
       await ticket.execute({ text: 'Archive guard ticket', source: 'user' }, ctx);
-      await plan.execute({ planText: '## Plan\n1. Archive guard plan' }, ctx);
+      await plan.execute(
+        { planText: '## Plan\n1. Archive guard plan', targetPaths: ['docs/test.md'] },
+        ctx,
+      );
 
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');

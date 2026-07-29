@@ -107,7 +107,7 @@ function makeCompleteState(): SessionState {
 
 async function readGolden(name: string): Promise<string> {
   const p = resolve(__dirname, '..', '..', '..', 'testdata', 'presentation', name);
-  return readFile(p, 'utf-8');
+  return (await readFile(p, 'utf-8')).trimEnd();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -190,6 +190,15 @@ describe('renderHelp', () => {
     expect(out).toContain('## Available commands');
     expect(out).toContain('- **`/start`**');
     expect(out).not.toContain('**Ticket:**');
+  });
+
+  it('uses the requested OpenCode ASCII glyph profile for Markdown', () => {
+    const out = renderHelp(
+      noSessionResult({ blocker: { reasonCode: 'REASON', message: 'Blocked for test' } }),
+      { format: 'markdown', glyphProfile: 'ascii' },
+    );
+    expect(out).toContain('[WARN] **Why blocked:** Blocked for test [REASON]');
+    expect(out).not.toContain('⚠ **Why blocked:**');
   });
 
   it('renders a multi-line next-action summary as a single ## Next line without throwing', () => {

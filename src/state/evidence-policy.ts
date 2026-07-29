@@ -133,6 +133,20 @@ export const PolicySnapshotSchema = z
      * mode-consistent default ('core') for legacy snapshots.
      */
     reviewProfile: z.enum(['core', 'full']).optional(),
+    /**
+     * Versioned review-challenge policy. Optional intentionally: snapshots
+     * written before #747 must not acquire new challenge enforcement.
+     */
+    challengePolicy: z
+      .object({
+        version: z.literal('challenge-policy.v1'),
+        counts: z.object({
+          TRIVIAL: z.literal(0),
+          STANDARD: z.literal(1),
+          'HIGH-RISK': z.literal(2),
+        }),
+      })
+      .optional(),
     /** Runtime risk-classification enforcement frozen at hydrate time. */
     enforceRiskClassification: z.boolean().optional(),
     /** Structured downgrade override permission. Defaults closed for legacy snapshots. */

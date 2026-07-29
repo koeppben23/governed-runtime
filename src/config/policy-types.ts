@@ -90,6 +90,28 @@ export type ReviewInvocationPolicy = 'host_task_required' | 'host_task_preferred
  */
 export type ReviewProfile = 'core' | 'full';
 
+/** Versioned product decision for evidence-bound review challenges (#747). */
+export const CHALLENGE_POLICY_VERSION = 'challenge-policy.v1' as const;
+
+export type ChallengeKind = 'design_challenge' | 'implementation_challenge' | 'content_challenge';
+
+export interface ChallengePolicy {
+  readonly version: typeof CHALLENGE_POLICY_VERSION;
+  readonly counts: Readonly<{ TRIVIAL: 0; STANDARD: 1; 'HIGH-RISK': 2 }>;
+}
+
+/** Approved V1 matrix, frozen into every new session policy snapshot. */
+export const CHALLENGE_POLICY_V1: ChallengePolicy = {
+  version: CHALLENGE_POLICY_VERSION,
+  counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+};
+
+export function challengeKindForObligation(obligationType: string): ChallengeKind {
+  if (obligationType === 'implement') return 'implementation_challenge';
+  if (obligationType === 'review') return 'content_challenge';
+  return 'design_challenge';
+}
+
 /** Mandatory independent review configuration for FlowGuardPolicy. */
 export const DEFAULT_SELF_REVIEW_CONFIG: SelfReviewConfig = {
   subagentEnabled: true,
@@ -198,6 +220,16 @@ export function defaultValidationEvidenceForMode(mode: PolicyMode): ValidationEv
   return { enforcement: 'off', allowNoCommands: false };
 }
 
+/**
+ * Fail-closed challenge-policy default for a mode when a snapshot omits it.
+ * `solo` stays legacy-tolerant (no enforcement); team/team-ci/regulated fail
+ * closed to the canonical matrix so a stripped or legacy snapshot in an enforced
+ * mode cannot silently disable challenge enforcement (finding A2).
+ */
+export function defaultChallengePolicyForMode(mode: PolicyMode): ChallengePolicy | undefined {
+  return mode === 'solo' ? undefined : CHALLENGE_POLICY_V1;
+}
+
 // ─── FlowGuard Policy ─────────────────────────────────────────────────────────
 
 /**
@@ -252,6 +284,9 @@ export interface FlowGuardPolicy {
    * 'core' is the non-optional baseline; 'full' is reserved for Wave 2 (#730).
    */
   readonly reviewProfile: ReviewProfile;
+
+  /** Versioned challenge coverage policy frozen into new session snapshots. */
+  readonly challengePolicy?: ChallengePolicy;
 
   /** Audit event emission controls. */
   readonly audit: AuditPolicy;

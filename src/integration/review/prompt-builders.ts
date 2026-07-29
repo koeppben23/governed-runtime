@@ -76,6 +76,65 @@ export interface ReviewerTaskPromptInput {
   readonly criteriaVersion: string;
   /** Short human label of what is under review, e.g. "the plan", "the branch diff". */
   readonly subjectLabel: string;
+  /** Frozen challenge contract and host-authoritative references, when available. */
+  readonly challengeContract?: ReviewerChallengePromptContract;
+}
+
+export interface ReviewerChallengePromptContract {
+  readonly requiredChallengeCount: number;
+  readonly requiredChallengeKind?:
+    'design_challenge' | 'implementation_challenge' | 'content_challenge';
+  /** Canonical evidence objects the reviewer may copy into a challenge. */
+  readonly evidenceRefs?: readonly Record<string, unknown>[];
+}
+
+function challengeOutcome(kind: ReviewerChallengePromptContract['requiredChallengeKind']): string {
+  switch (kind) {
+    case 'implementation_challenge':
+      return 'pass';
+    case 'content_challenge':
+    case 'design_challenge':
+      return 'supported';
+    case undefined:
+      return 'not_verified';
+    default:
+      return 'not_verified';
+  }
+}
+
+function renderChallengeContract(
+  contract: ReviewerChallengePromptContract | undefined,
+  obligationId: string,
+): string[] {
+  if (!contract) {
+    return ['- Omit the optional challenges field; no Challenge contract was supplied.'];
+  }
+  if (contract.requiredChallengeCount === 0) {
+    return [
+      '- Challenge contract: requiredChallengeCount=0. Omit the optional challenges field entirely.',
+    ];
+  }
+  const evidenceRefs = contract.evidenceRefs ?? [];
+  const challenge = {
+    challengeId: '<fresh UUID>',
+    obligationId,
+    scenario: '<falsification scenario>',
+    claim: '<reviewed claim>',
+    locations: ['<concrete file or artifact location>'],
+    kind: contract.requiredChallengeKind,
+    evidenceRefs,
+    outcome: challengeOutcome(contract.requiredChallengeKind),
+  };
+  return [
+    `- Challenge contract: return exactly ${contract.requiredChallengeCount} ${contract.requiredChallengeKind} challenge(s).`,
+    '- Every challenge MUST use a fresh UUID challengeId and the exact obligationId below.',
+    '- Copy evidenceRefs exactly from the schema below. Do not invent or alter a digest, sectionPath, or attemptId.',
+    '- Omit challengeResolutionVerdicts unless the Task prompt explicitly supplies prior challenge IDs to resolve.',
+    `- Required challenge object shape: ${JSON.stringify(challenge)}`,
+    ...(evidenceRefs.length === 0
+      ? ['- No usable evidence reference was supplied; return unable_to_review.']
+      : []),
+  ];
 }
 
 /**
@@ -126,6 +185,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
       `${input.planVersion != null ? `, planVersion=${input.planVersion}` : ''}).`,
     '- Output ONLY the ReviewFindings JSON object as the final content of your reply:',
     '  no prose, no reasoning, and no markdown code fences before or after it.',
+    ...renderChallengeContract(input.challengeContract, input.obligationId),
     '',
     `Append the ${input.subjectLabel} content to review below this line:`,
   ].join('\n');
@@ -160,6 +220,42 @@ export interface ImplReviewPromptOpts {
   readonly profileName?: string;
   readonly profileRules?: string;
   readonly discoveryContext: DiscoveryReviewContext;
+  readonly challengeResolutions?: ReadonlyArray<{
+    challengeId: string;
+    implementationDigest: string;
+    validationAttemptIds: string[];
+    resolvedAt: string;
+  }>;
+  /**
+   * Runtime-executed verification evidence bound to the implementation under
+   * review. These are FlowGuard-executed (not agent-reported) check results, so
+   * the reviewer can falsify verification claims against ground truth instead of
+   * inferring them. Digest binding is the caller's responsibility: only evidence
+   * for the current implementation digest must be passed. When absent or empty,
+   * the section fails closed to an explicit NOT_VERIFIED line rather than being
+   * silently omitted, because "no bound evidence" is itself a review signal.
+   */
+  readonly verificationEvidence?: readonly ReviewVerificationEvidenceItem[];
+}
+
+/**
+ * A single runtime-executed verification result projected for the reviewer
+ * prompt. Fields are drawn from the immutable `ValidationAttempt.result`
+ * (executor-produced, tamper-evident via `outputDigest`). No raw stdout/stderr
+ * is carried — only the bounded `detail` summary and the integrity digest — so
+ * the section stays token-bounded while remaining independently verifiable.
+ */
+export interface ReviewVerificationEvidenceItem {
+  readonly attemptId: string;
+  readonly kind: string;
+  readonly command: string;
+  readonly passed: boolean;
+  readonly exitCode: number;
+  readonly timedOut: boolean;
+  readonly executionMs: number;
+  readonly outputDigest: string;
+  readonly detail: string;
+  readonly executedAt: string;
 }
 
 /** Options for building an architecture (ADR) review prompt. F13 slice 6. */
@@ -276,6 +372,57 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
 /**
  * Build a prompt for implementation review by the flowguard-reviewer subagent.
  */
+/**
+ * Render the executed verification evidence section for the implementation
+ * review prompt.
+ *
+ * Fail-closed: an empty list renders an explicit NOT_VERIFIED line instead of
+ * omitting the section, so the reviewer is told that no runtime evidence is
+ * bound to the current implementation — a genuine review signal, not silence.
+ *
+ * Enforcement safety: this section is emitted AFTER the attestation/context
+ * block and BEFORE the CORE_REVIEW_PROFILE_MARKER. Its own field LABELS are
+ * neutral (`durationMs`, `digest`, `exitCode`, `kind`) — no "iteration"/"version"
+ * adjacent to digits. The `command` and `detail` VALUES are executor-derived and
+ * NOT sanitized, so they could in principle contain such a token. That is safe:
+ * the L3 matcher (promptContainsValue in enforcement/extraction.ts) is a positive
+ * `.test()` presence check on the whole prompt, so an extra token here cannot
+ * REMOVE the legitimate iteration=/planVersion= tokens emitted by
+ * renderReviewContext, and injecting the CORRECT expected value is not a bypass.
+ * The section therefore cannot flip enforcement in either direction.
+ */
+export function renderVerificationEvidence(
+  evidence: readonly ReviewVerificationEvidenceItem[],
+): string[] {
+  if (evidence.length === 0) {
+    return [
+      '## Verification Evidence (executed)',
+      '',
+      '- NOT_VERIFIED: no executed verification evidence is bound to the current implementation digest.',
+      '  Treat every plan verification claim as NOT_VERIFIED unless you can independently confirm it; do not assume checks passed.',
+      '',
+    ];
+  }
+  const rows = evidence.map((item) => {
+    const status = item.timedOut ? 'TIMED_OUT' : item.passed ? 'PASS' : 'FAIL';
+    return (
+      `- [${status}] kind=${item.kind} exitCode=${item.exitCode} durationMs=${item.executionMs} ` +
+      `digest=${item.outputDigest}\n` +
+      `  command: ${item.command}\n` +
+      `  detail: ${item.detail}`
+    );
+  });
+  return [
+    '## Verification Evidence (executed)',
+    '',
+    'FlowGuard executed these checks itself (not agent-reported); exitCode/digest are tamper-evident.',
+    'Verify plan verification claims against these results. A claim not supported by a PASS here is NOT_VERIFIED.',
+    '',
+    ...rows,
+    '',
+  ];
+}
+
 export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
   const {
     changedFiles,
@@ -289,6 +436,8 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     profileName,
     profileRules,
     discoveryContext,
+    challengeResolutions = [],
+    verificationEvidence = [],
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -309,9 +458,20 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     '',
     ...(stackSection ? [stackSection, ''] : []),
     ...(discoverySection ? [discoverySection, ''] : []),
+    ...(challengeResolutions.length > 0
+      ? [
+          '## Advisory Challenge Resolutions (NOT_VERIFIED)',
+          '',
+          'These author-recorded bindings do not establish correctness or alter acceptance. Inspect the referenced challenge and validation attempts independently:',
+          JSON.stringify(challengeResolutions),
+          '',
+        ]
+      : []),
+    ...renderVerificationEvidence(verificationEvidence),
     '## Instructions',
     '',
     'Review this implementation against the approved plan and ticket.',
+    'Treat any challenge resolution as advisory NOT_VERIFIED evidence; independently verify it.',
     'Read the changed files using the read/glob/grep tools to verify correctness.',
     'Follow your review criteria for implementations.',
     'Return your findings as a single JSON object matching the ReviewFindings schema.',

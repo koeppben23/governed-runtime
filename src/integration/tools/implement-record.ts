@@ -78,6 +78,7 @@ import { writeImplementationDiffArtifact } from './implement-diff-artifact.js';
 
 // Review findings validation (shared with plan.ts)
 import { validateReviewFindings } from './review-validation.js';
+import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import { ensureReviewAssurance, reviewObligationResponseFields } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { resolveCeremonyProfile, isNonDomainConfigPath } from '../phase-tool-gate.js';
@@ -103,6 +104,7 @@ export function validateInitialReviewFindings(input: ImplementRuntime): string |
     reviewInvocationPolicy: input.policy.reviewInvocationPolicy,
     reviewParentSessionId: input.context.sessionID,
     reviewHostPlatform: resolveRuntimeReviewPlatform(),
+    previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(input.state),
   });
 }
 

@@ -70,6 +70,27 @@ function attestationText(input: PendingReviewInstructionInput): string {
   );
 }
 
+function buildHostTaskPrompt(
+  input: PendingReviewInstructionInput,
+  obligation: ReviewObligation,
+): string {
+  return renderReviewerTaskPrompt({
+    iteration: input.iteration,
+    planVersion: input.planVersion,
+    obligationId: obligation.obligationId,
+    mandateDigest: obligation.mandateDigest,
+    criteriaVersion: obligation.criteriaVersion,
+    subjectLabel: input.subjectLabel,
+    challengeContract:
+      obligation.requiredChallengeCount === undefined
+        ? undefined
+        : {
+            requiredChallengeCount: obligation.requiredChallengeCount,
+            requiredChallengeKind: obligation.requiredChallengeKind,
+          },
+  });
+}
+
 export function buildPendingReviewInstruction(
   input: PendingReviewInstructionInput,
 ): PendingReviewInstruction {
@@ -136,16 +157,7 @@ export function buildPendingReviewInstruction(
   // copy-ready reviewer prompt (built by the same renderReviewContext serializer
   // the enforcement matcher validates against) so the required context is present
   // on the first Task attempt instead of being free-composed and omitted.
-  const reviewerTaskPrompt = obligation
-    ? renderReviewerTaskPrompt({
-        iteration: input.iteration,
-        planVersion: input.planVersion,
-        obligationId: obligation.obligationId,
-        mandateDigest: obligation.mandateDigest,
-        criteriaVersion: obligation.criteriaVersion,
-        subjectLabel: input.subjectLabel,
-      })
-    : undefined;
+  const reviewerTaskPrompt = obligation ? buildHostTaskPrompt(input, obligation) : undefined;
   return {
     reviewInvocation: { ...base, status: 'pending_review' },
     next:

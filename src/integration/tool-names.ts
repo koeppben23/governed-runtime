@@ -28,6 +28,8 @@ export const TOOL_FLOWGUARD_IMPLEMENT = 'flowguard_implement';
  * evidence-record call — unrepresentable at the tool surface.
  */
 export const TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION = 'flowguard_review_implementation';
+export const TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE =
+  'flowguard_resolve_implementation_challenge';
 export const TOOL_FLOWGUARD_RUN_CHECK = 'flowguard_run_check';
 export const TOOL_FLOWGUARD_REVIEW = 'flowguard_review';
 export const TOOL_FLOWGUARD_CONTINUE = 'flowguard_continue';

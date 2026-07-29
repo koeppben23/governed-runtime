@@ -183,7 +183,7 @@ async function getSessDir(): Promise<string> {
 async function driveToValidation(): Promise<void> {
   await callOk(hydrate, { policyMode: 'solo', profileId: 'baseline' });
   await callOk(ticket, { text: 'Test task', source: 'user' });
-  await callOk(plan, { planText: '## Plan\nTest plan' });
+  await callOk(plan, { planText: '## Plan\nTest plan', targetPaths: ['docs/test.md'] });
   await callOk(plan, { reviewVerdict: 'accept' });
   // Now should be in VALIDATION phase
 }
@@ -379,6 +379,84 @@ describe('CORNER', () => {
     expect(validation).toBeDefined();
     expect(validation!.passed).toBe(true);
     expect(validation!.outputDigest).toBe('a'.repeat(64));
+  });
+
+  it('retains every baseline re-run in the ledger while replacing the current projection', async () => {
+    await driveToValidation();
+    vi.mocked(executeCheck).mockResolvedValueOnce({
+      kind: 'typecheck',
+      command: 'npx tsc --noEmit',
+      exitCode: 124,
+      passed: false,
+      executionMs: 60000,
+      outputDigest: 'd'.repeat(64),
+      stdout: '',
+      stderr: '',
+      timedOut: true,
+      startedAt: '2026-01-01T00:00:00.000Z',
+    });
+
+    await callOk(run_check, { kind: 'typecheck' });
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const state = await readState(await getSessDir());
+    expect(state!.validation).toHaveLength(1);
+    expect(state!.validationAttempts).toHaveLength(2);
+    expect(state!.validationAttempts.map((attempt) => attempt.result.outputDigest)).toEqual([
+      'd'.repeat(64),
+      'a'.repeat(64),
+    ]);
+    for (const attempt of state!.validationAttempts) {
+      expect(attempt.scope).toBe('baseline');
+      expect(attempt.attemptId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+      );
+      if (attempt.scope === 'baseline') {
+        expect(attempt.planDigest).toBe(state!.plan!.current.digest);
+      }
+    }
+  });
+
+  it('binds post-implementation validation attempts to the implementation digest', async () => {
+    await driveToValidation();
+    const sessDir = await getSessDir();
+    const state = await readState(sessDir);
+    await writeState(sessDir, {
+      ...state!,
+      phase: 'IMPL_VALIDATION',
+      implementation: {
+        changedFiles: ['src/example.ts'],
+        domainFiles: ['src/example.ts'],
+        digest: 'implementation-digest',
+        executedAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const finalState = await readState(sessDir);
+    expect(finalState!.validationAttempts).toHaveLength(1);
+    expect(finalState!.validationAttempts[0]).toMatchObject({
+      scope: 'implementation',
+      implementationDigest: 'implementation-digest',
+    });
+  });
+
+  it('fails closed when the phase-specific digest prerequisite is unavailable', async () => {
+    await driveToValidation();
+    const sessDir = await getSessDir();
+    const state = await readState(sessDir);
+    await writeState(sessDir, { ...state!, plan: null });
+
+    const baseline = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    expect(baseline.code).toBe('PLAN_REQUIRED');
+    expect(executeCheck).not.toHaveBeenCalled();
+
+    await writeState(sessDir, { ...state!, phase: 'IMPL_VALIDATION', implementation: null });
+    const implementation = parseToolResult(await run_check.execute({ kind: 'typecheck' }, ctx));
+    expect(implementation.code).toBe('IMPLEMENTATION_EVIDENCE_REQUIRED');
+    expect(executeCheck).not.toHaveBeenCalled();
+    expect((await readState(sessDir))!.validationAttempts).toEqual([]);
   });
 
   it('records failed check without advancing phase', async () => {

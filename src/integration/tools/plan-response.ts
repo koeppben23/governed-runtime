@@ -25,6 +25,7 @@ import {
   buildPlanReviewCard,
 } from '../../presentation/index.js';
 import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js';
+import { readConfig } from '../../adapters/persistence-config.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 import { evaluate } from '../../machine/evaluate.js';
 import { autoAdvance } from '../../rails/types.js';
@@ -34,12 +35,26 @@ import {
   createReviewObligation,
   findLatestObligation,
   appendReviewObligation,
+  resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
 import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
+import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
+
+function findPriorPlanTargetPaths(
+  assurance: import('../../state/schema.js').SessionState['reviewAssurance'],
+): string[] | undefined {
+  if (!assurance) return undefined;
+  const obligations = [...assurance.obligations].reverse();
+  const lastPlan = obligations.find((o) => o.obligationType === 'plan');
+  const paths = lastPlan?.metadata?.targetPaths;
+  return Array.isArray(paths) && paths.every((p: unknown) => typeof p === 'string')
+    ? paths
+    : undefined;
+}
 
 /** Extract the first non-empty line of text, truncated to 120 characters. */
 export function firstLine(text: string | undefined): string | undefined {
@@ -143,7 +158,7 @@ export async function convergedPlanReviewCardResponse(
   const { scope, finalState, ev, transitions, revision, iteration, forcedConvergence } = input;
   const nextAction = resolveNextAction(finalState.phase, finalState);
   const productNext = buildProductNextAction(nextAction, finalState.phase);
-  const reviewCard = buildPlanReviewCard({
+  const reviewCardInput = {
     planText: revision.currentPlan.body,
     phase: finalState.phase,
     phaseLabel: PHASE_LABELS[finalState.phase],
@@ -152,6 +167,11 @@ export async function convergedPlanReviewCardResponse(
     policyMode: finalState.policySnapshot?.mode,
     taskTitle: firstLine(finalState.ticket?.text),
     forcedConvergence,
+  };
+  // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
+  const reviewCard = buildPlanReviewCard(reviewCardInput);
+  const presentationMarkdown = buildPlanReviewCard(reviewCardInput, {
+    glyphProfile: (await readConfig(scope.worktree)).presentation.opencode.glyphProfile,
   });
   const artifactErr = await materializeReviewCardArtifact(
     scope.sessDir,
@@ -168,6 +188,7 @@ export async function convergedPlanReviewCardResponse(
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
     reviewCard,
+    presentation: { markdown: presentationMarkdown },
     next: formatEval(ev),
     _audit: { transitions },
   };
@@ -194,12 +215,34 @@ export async function persistNonConvergedPlanReview(
   iteration: number,
 ): Promise<string> {
   const nextPlanVersion = revision.history.length + 1;
+  const priorTargetPaths = findPriorPlanTargetPaths(finalState.reviewAssurance);
+  const targetPaths = [
+    ...new Set([...(priorTargetPaths ?? []), ...(scope.args.targetPaths ?? [])]),
+  ];
+  const classification = await resolvePreImplementationChallengeClassification(
+    finalState,
+    scope.wsDir,
+    scope.reviewPolicy.subagentEnabled,
+    targetPaths,
+  );
+  const resolvedTargetPaths =
+    classification.kind === 'available' ? [...classification.changedFiles] : undefined;
+  const metadata: Record<string, unknown> = {};
+  if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
+    metadata.targetPaths = resolvedTargetPaths;
+  }
   const nextObligation = scope.reviewPolicy.subagentEnabled
     ? createReviewObligation({
         obligationType: 'plan',
         iteration,
         planVersion: nextPlanVersion,
         now: scope.ctx.now(),
+        reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
+        profileSource: 'policy_default',
+        policySnapshot: finalState.policySnapshot,
+        changedFiles: resolvedTargetPaths,
+        claimedTaskClass: finalState.claimedTaskClass,
+        metadata,
       })
     : null;
   const stateToPersist = nextObligation

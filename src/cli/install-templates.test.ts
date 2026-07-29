@@ -85,7 +85,7 @@ describe('DEV_REPO_INVARIANTS', () => {
 
     it('COMMANDS template covers all slash commands', () => {
       const commandNames = Object.keys(COMMANDS);
-      expect(commandNames).toHaveLength(23);
+      expect(commandNames).toHaveLength(24);
       for (const expected of [
         'hydrate.md',
         'status.md',
@@ -93,6 +93,7 @@ describe('DEV_REPO_INVARIANTS', () => {
         'plan.md',
         'continue.md',
         'implement.md',
+        'resolve-implementation-challenge.md',
         'validate.md',
         'review-decision.md',
         'review.md',
@@ -418,7 +419,7 @@ describe('cli/templates', () => {
     });
 
     it('host output convention is decoupled from universal governance rules (#471)', () => {
-      // The "Next action:" line must be scoped as a host/profile convention,
+      // The visible action conclusion must be scoped as a host/profile convention,
       // not a universal governance rule. Universal governance rules (3 bullets)
       // must remain unchanged in meaning.
       expect(FLOWGUARD_MANDATES_BODY).toContain(
@@ -430,9 +431,9 @@ describe('cli/templates', () => {
       expect(FLOWGUARD_MANDATES_BODY).toContain('Host/profile output convention');
       expect(FLOWGUARD_MANDATES_BODY).toContain('For the OpenCode profile');
       expect(FLOWGUARD_MANDATES_BODY).toContain('end every response with exactly one');
-      expect(FLOWGUARD_MANDATES_BODY).toContain(
-        'unless the active host/profile specifies a different output convention',
-      );
+      expect(FLOWGUARD_MANDATES_BODY).toContain('visible action conclusion');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('presentation.markdown');
+      expect(FLOWGUARD_MANDATES_BODY).toContain('canonical product-next-action data');
       expect(COMPACT_COMMAND_EXECUTION).toContain('Host convention:');
       expect(CONCISE_COMMAND_EXECUTION).toContain('Host convention:');
       expect(FLOWGUARD_MANDATES_BODY).toContain('## Governance rules');

@@ -295,7 +295,7 @@ describe('status', () => {
       const noSession = parseToolResult(await status.execute({}, ctx));
       expect(noSession.phase).toBeNull();
       expect(noSession.status).toContain('No FlowGuard session');
-      expect(noSession.next).toBe('Run /hydrate to bootstrap a session.');
+      expect(noSession.next).toBe('Run /start to bootstrap a session.');
       expect(noSession.flowguardFooter).toMatchObject({
         authority: 'diagnostic-only',
         phase: 'unknown',
@@ -566,7 +566,7 @@ describe('status', () => {
       expect(result.phase).toBeNull();
       expect(result.finish).toBeUndefined();
       expect(result.status).toContain('No FlowGuard session');
-      expect(result.next).toBe('Run /hydrate to bootstrap a session.');
+      expect(result.next).toBe('Run /start to bootstrap a session.');
     });
 
     it('returns a Finish Card projection for an existing session', async () => {
@@ -943,7 +943,10 @@ describe('status', () => {
       })();
       await ticket.execute({ text: 'Fix the auth bug', source: 'user' }, ctx);
       await plan.execute(
-        await withStrictReviewFindings(sd, { planText: '## Plan\nTest plan' }),
+        await withStrictReviewFindings(sd, {
+          planText: '## Plan\nTest plan',
+          targetPaths: ['docs/test.md'],
+        }),
         ctx,
       );
       await plan.execute(await withStrictReviewFindings(sd, { reviewVerdict: 'accept' }), ctx);

@@ -45,6 +45,7 @@ describe('plan rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.phase).toBe('PLAN_REVIEW');
         expect(result.state.plan?.current.body).toBe('## Plan\nTest');
+        expect(result.state.plan?.current.sections).toEqual(['Plan']);
         // First submission may or may not populate history depending on rail impl
         expect(result.state.plan).toBeDefined();
       }

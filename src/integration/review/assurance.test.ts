@@ -130,6 +130,118 @@ describe('integration/review-assurance', () => {
       expect(result.blockedCode).toBeNull();
     });
 
+    it.each([
+      ['plan', [], 0, 'design_challenge'],
+      ['plan', ['src/example.ts'], 1, 'design_challenge'],
+      ['plan', ['src/state/schema.ts'], 2, 'design_challenge'],
+      ['architecture', [], 0, 'design_challenge'],
+      ['architecture', ['src/example.ts'], 1, 'design_challenge'],
+      ['architecture', ['src/state/schema.ts'], 2, 'design_challenge'],
+      ['implement', [], 0, 'implementation_challenge'],
+      ['implement', ['src/example.ts'], 1, 'implementation_challenge'],
+      ['implement', ['src/state/schema.ts'], 2, 'implementation_challenge'],
+      ['review', [], 0, 'content_challenge'],
+      ['review', ['src/example.ts'], 1, 'content_challenge'],
+      ['review', ['src/state/schema.ts'], 2, 'content_challenge'],
+    ] as const)(
+      'freezes v1 %s requirements for %j',
+      (obligationType, changedFiles, requiredChallengeCount, requiredChallengeKind) => {
+        const result = createReviewObligation({
+          obligationType,
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          changedFiles,
+          policySnapshot: {
+            challengePolicy: {
+              version: 'challenge-policy.v1',
+              counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+            },
+          },
+        });
+        expect(result).toMatchObject({
+          requiredChallengeCount,
+          requiredChallengeKind,
+          challengePolicyVersion: 'challenge-policy.v1',
+        });
+      },
+    );
+
+    describe('claimedTaskClass floors the challenge count (C1)', () => {
+      const policySnapshot = {
+        challengePolicy: {
+          version: 'challenge-policy.v1' as const,
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 } as const,
+        },
+      };
+
+      it('uses the HIGH-RISK claim even when changedFiles look doc-only', () => {
+        // The exact C1 attack: high-risk change declaring targetPaths=['docs/x.md'].
+        const result = createReviewObligation({
+          obligationType: 'plan',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          changedFiles: ['docs/x.md'],
+          claimedTaskClass: 'HIGH-RISK',
+          policySnapshot,
+        });
+        expect(result.requiredChallengeCount).toBe(2);
+      });
+
+      it('uses the computed HIGH-RISK when changedFiles outrank a low claim', () => {
+        const result = createReviewObligation({
+          obligationType: 'implement',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          changedFiles: ['src/state/schema.ts'],
+          claimedTaskClass: 'TRIVIAL',
+          policySnapshot,
+        });
+        expect(result.requiredChallengeCount).toBe(2);
+      });
+
+      it('takes the STANDARD claim over doc-only changedFiles', () => {
+        const result = createReviewObligation({
+          obligationType: 'plan',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          changedFiles: ['docs/x.md'],
+          claimedTaskClass: 'STANDARD',
+          policySnapshot,
+        });
+        expect(result.requiredChallengeCount).toBe(1);
+      });
+
+      it('defaults to the computed minimum when no claim is present', () => {
+        const result = createReviewObligation({
+          obligationType: 'plan',
+          iteration: 0,
+          planVersion: 1,
+          now: NOW,
+          changedFiles: ['docs/x.md'],
+          policySnapshot,
+        });
+        expect(result.requiredChallengeCount).toBe(0);
+      });
+    });
+
+    it('does not enforce challenges for a legacy snapshot without challengePolicy', () => {
+      const result = createReviewObligation({
+        obligationType: 'implement',
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        changedFiles: ['src/state/schema.ts'],
+        policySnapshot: {},
+      });
+      expect(result.requiredChallengeCount).toBeUndefined();
+      expect(result.requiredChallengeKind).toBeUndefined();
+      expect(result.challengePolicyVersion).toBeUndefined();
+    });
+
     it('creates p40 obligations without rewriting prior attestation values', () => {
       const priorObligations: ReviewObligation[] = [
         {

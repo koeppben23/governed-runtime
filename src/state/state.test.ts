@@ -126,6 +126,18 @@ describe('state schemas', () => {
       expect(() => SessionState.parse(state)).not.toThrow();
     });
 
+    it('SessionState defaults missing validationAttempts for legacy sessions', () => {
+      const legacy: Record<string, unknown> = { ...makeState('TICKET') };
+      delete legacy.validationAttempts;
+      expect(SessionState.parse(legacy).validationAttempts).toEqual([]);
+    });
+
+    it('SessionState defaults missing challengeResolutions for legacy sessions', () => {
+      const legacy: Record<string, unknown> = { ...makeState('TICKET') };
+      delete legacy.challengeResolutions;
+      expect(SessionState.parse(legacy).challengeResolutions).toEqual([]);
+    });
+
     it('SessionState parses legacy state without risk classification fields', () => {
       const state = makeState('TICKET', { claimedTaskClass: 'HIGH-RISK' });
       const legacy: Record<string, unknown> = { ...state };

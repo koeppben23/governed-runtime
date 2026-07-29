@@ -28,6 +28,13 @@ describe('commands', () => {
       expect(isCommandAllowed('IMPLEMENTATION', Command.IMPLEMENT)).toBe(true);
     });
 
+    it('/resolve-implementation-challenge is allowed only in IMPL_REVIEW', () => {
+      expect(isCommandAllowed('IMPL_REVIEW', Command.RESOLVE_IMPLEMENTATION_CHALLENGE)).toBe(true);
+      expect(isCommandAllowed('IMPLEMENTATION', Command.RESOLVE_IMPLEMENTATION_CHALLENGE)).toBe(
+        false,
+      );
+    });
+
     it('/review-decision is allowed at all user gates', () => {
       expect(isCommandAllowed('PLAN_REVIEW', Command.REVIEW_DECISION)).toBe(true);
       expect(isCommandAllowed('EVIDENCE_REVIEW', Command.REVIEW_DECISION)).toBe(true);
@@ -186,8 +193,8 @@ describe('commands', () => {
       expect(isCommandAllowed('TICKET', 'unknown' as Command)).toBe(false);
     });
 
-    it('Command enum has exactly 10 entries', () => {
-      expect(Object.keys(Command).length).toBe(10);
+    it('Command enum has exactly 11 entries', () => {
+      expect(Object.keys(Command).length).toBe(11);
     });
 
     it('/plan is allowed in TICKET and PLAN only (not READY)', () => {
@@ -232,6 +239,7 @@ describe('commands', () => {
         [Command.PLAN]: ['TICKET', 'PLAN'],
         [Command.CONTINUE]: '*',
         [Command.IMPLEMENT]: ['IMPLEMENTATION'],
+        [Command.RESOLVE_IMPLEMENTATION_CHALLENGE]: ['IMPL_REVIEW'],
         [Command.REVIEW_DECISION]: ['PLAN_REVIEW', 'EVIDENCE_REVIEW', 'ARCH_REVIEW'],
         [Command.VALIDATE]: ['VALIDATION'],
         [Command.REVIEW]: ['READY'],

@@ -10,6 +10,18 @@ import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 export const REVIEW_VALIDATION_REASONS = [
   {
+    code: 'IMPL_VALIDATION_EVIDENCE_REQUIRED',
+    category: 'state',
+    messageTemplate:
+      'Implementation review cannot be accepted: active verification checks have no passing execution evidence for the current implementation ({message}). Reviewer acceptance is gated on executed validation, not review verdict alone.',
+    recoverySteps: [
+      'Run flowguard_run_check for each active check in IMPL_VALIDATION until all pass',
+      'Re-record the implementation with flowguard_implement if the code changed, then re-run checks',
+      'Only submit reviewVerdict: "accept" after every active check has passing execution evidence',
+    ],
+  },
+
+  {
     code: 'SUBAGENT_REVIEW_REQUIRED',
     category: 'input',
     messageTemplate: `reviewFindings must come from ${REVIEWER_SUBAGENT_TYPE} subagent. The findings provided do not contain evidence of subagent origin.`,
@@ -313,6 +325,31 @@ export const REVIEW_VALIDATION_REASONS = [
       'Re-hydrate the session with /hydrate',
       'Run /continue before submitting a verdict to restore enforcement state',
       'Verify session-state.json is readable and contains a reviewAssurance object',
+    ],
+    quickFixCommand: '/continue',
+  },
+
+  {
+    code: 'SUBAGENT_EVIDENCE_MISSING',
+    category: 'state',
+    messageTemplate: `No persisted ${REVIEWER_SUBAGENT_TYPE} invocation evidence was found for review obligation {obligationId}. Strict review cannot approve without a fulfilled reviewer invocation.`,
+    recoverySteps: [
+      `Invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer subagent for the active obligation before submitting a verdict`,
+      'Submit the exact reviewFindings returned by that invocation',
+      'Run /continue to restore enforcement state if the invocation evidence is missing after a reload',
+    ],
+    quickFixCommand: '/continue',
+  },
+
+  {
+    code: 'SUBAGENT_MANDATE_MISMATCH',
+    category: 'state',
+    messageTemplate:
+      'The persisted subagent invocation evidence is bound to a different obligation than the active review obligation {obligationId}.',
+    recoverySteps: [
+      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} reviewer for the current obligation`,
+      'Do not submit invocation evidence captured for a previous obligation, iteration, or plan version',
+      'Run /continue to confirm the active obligation before retrying the verdict',
     ],
     quickFixCommand: '/continue',
   },

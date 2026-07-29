@@ -154,7 +154,10 @@ async function sessDir(): Promise<string> {
 async function bootstrapRegulatedPlanReview(): Promise<void> {
   await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
   await callOk(ticket, { text: 'Regulated task', source: 'user' });
-  await callOk(plan, { planText: '## Plan\nImplement the task with tests.' });
+  await callOk(plan, {
+    planText: '## Plan\nImplement the task with tests.',
+    targetPaths: ['docs/test.md'],
+  });
   for (let i = 0; i < 4 && (await phase()) !== 'PLAN_REVIEW'; i++) {
     await callOk(plan, { reviewVerdict: 'accept' });
   }

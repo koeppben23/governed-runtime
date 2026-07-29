@@ -1087,4 +1087,76 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     expect(resolveValid.findings.overallVerdict).toBe('accept');
     expect(resolveValid.invocation.childSessionId).toBe(CHILD_VALID);
   });
+
+  /**
+   * Live-runtime symptom (implement-run demo): the FIRST bind attempt emits
+   * `no_matched_record` with calledCount:1 — a reviewer Task WAS called, but its
+   * captured findings are absent because the reviewer output carried no string
+   * `overallVerdict`, so `extractCapturedFindings` returns null and the record is
+   * excluded from `matched[]` (unlike the malformed-but-parseable case above,
+   * which binds at #1). host_task_required blocks fail-closed. A sequential
+   * reviewer re-invocation with valid findings re-arms the same pending review
+   * and binds `bound`. This locks the observed first-failure → clean-retry path.
+   */
+  function noVerdictTaskResult(obligationId: string): string {
+    return JSON.stringify({
+      iteration: 0,
+      planVersion: 1,
+      reviewMode: 'subagent',
+      // overallVerdict intentionally omitted → extractCapturedFindings === null
+      blockingIssues: [],
+      majorRisks: [],
+      missingVerification: [],
+      scopeCreep: [],
+      unknowns: [],
+      reviewedBy: { sessionId: CHILD_CORRUPT },
+      reviewedAt: NOW,
+      attestation: {
+        toolObligationId: obligationId,
+        mandateDigest: REVIEW_MANDATE_DIGEST,
+        criteriaVersion: REVIEW_CRITERIA_VERSION,
+        iteration: 0,
+        planVersion: 1,
+        reviewedBy: REVIEWER_SUBAGENT_TYPE,
+      },
+    });
+  }
+
+  it('first bind emits no_matched_record (calledCount:1), sequential re-invocation binds bound', () => {
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(0, 1), NOW);
+    const obligation = pendingObligation();
+
+    // ── Reviewer run #1: Task called, but findings carry no overallVerdict ────
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+      noVerdictTaskResult(obligation.obligationId),
+      LATER,
+    );
+
+    // Bind #1 → no_matched_record: the record is subagentCalled=true but has no
+    // usable capturedFindings, so it is excluded from matched[]. This is the exact
+    // live-log diagnostic (pendingCount:1, calledCount:1).
+    const bindFirst = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    expect(bindFirst.evidence).toBeNull();
+    expect(bindFirst.bindOutcome).toBe('no_matched_record');
+    expect(bindFirst.diagnostic).toHaveProperty('pendingCount', 1);
+    expect(bindFirst.diagnostic).toHaveProperty('calledCount', 1);
+
+    // ── Reviewer run #2 (sequential re-invocation): valid findings ────────────
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+      taskResultWithAttestation(obligation.obligationId, { childSessionId: CHILD_VALID }),
+      LATER,
+    );
+
+    // Bind #2 → bound: the re-arm replaced the empty capture with a usable one.
+    const bindSecond = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    expect(bindSecond.bindOutcome).toBe('bound');
+    expect(bindSecond.evidence).not.toBeNull();
+    expect(bindSecond.evidence!.childSessionId).toBe(CHILD_VALID);
+    expect(bindSecond.evidence!.obligationId).toBe(obligation.obligationId);
+  });
 });

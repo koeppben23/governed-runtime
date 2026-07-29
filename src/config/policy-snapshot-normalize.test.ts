@@ -15,6 +15,7 @@ import {
 } from './policy-snapshot-normalize.js';
 import type { PolicySnapshot } from '../state/evidence.js';
 import { PolicyConfigurationError } from './policy-errors.js';
+import { CHALLENGE_POLICY_V1 } from './policy-types.js';
 import { sha256, soloResolution, NOW } from './policy-snapshot.test.js';
 import { freezePolicySnapshot } from './policy-snapshot.js';
 
@@ -27,6 +28,11 @@ describe('normalizePolicySnapshot', () => {
       const normalized = normalizePolicySnapshot(original);
       expect(normalized.mode).toBe('solo');
       expect(normalized.effectiveGateBehavior).toBe('auto_approve');
+    });
+
+    it('preserves the frozen challenge policy', () => {
+      const original = freezePolicySnapshot(soloResolution(), NOW, sha256);
+      expect(normalizePolicySnapshot(original).challengePolicy).toEqual(original.challengePolicy);
     });
   });
 
@@ -183,6 +189,33 @@ describe('normalizePolicySnapshot', () => {
     it('handles null input gracefully', () => {
       const result = normalizePolicySnapshot(null);
       expect(result.mode).toBe('team');
+    });
+
+    it('leaves an absent challengePolicy disabled in solo mode (legacy-tolerant)', () => {
+      const result = normalizePolicySnapshot({ mode: 'solo' });
+      expect(result.challengePolicy).toBeUndefined();
+    });
+
+    it('fails closed to the frozen matrix for an absent challengePolicy in an enforced mode (A2)', () => {
+      for (const mode of ['team', 'team-ci', 'regulated'] as const) {
+        const result = normalizePolicySnapshotWithMeta({ mode });
+        expect(result.snapshot.challengePolicy).toEqual(CHALLENGE_POLICY_V1);
+        expect(result.normalized).toBe(true);
+      }
+    });
+
+    it('fails closed to the frozen matrix when a present challengePolicy is malformed', () => {
+      const result = normalizePolicySnapshotWithMeta({
+        mode: 'team',
+        challengePolicy: { version: 'challenge-policy.v1', counts: { TRIVIAL: 9 } },
+      });
+      expect(result.snapshot.challengePolicy).toEqual(CHALLENGE_POLICY_V1);
+      expect(result.normalized).toBe(true);
+    });
+
+    it('fails closed to the frozen matrix when challengePolicy is a non-object', () => {
+      const result = normalizePolicySnapshot({ mode: 'team', challengePolicy: 'nonsense' });
+      expect(result.challengePolicy).toEqual(CHALLENGE_POLICY_V1);
     });
 
     it('handles undefined input gracefully', () => {

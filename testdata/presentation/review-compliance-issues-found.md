@@ -31,3 +31,5 @@
 - Address critical and major findings before merging.
 - Add missing verification where listed.
 - Re-run `/review` after changes if needed.
+
+Review report complete.

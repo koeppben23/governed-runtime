@@ -145,13 +145,10 @@ async function prepareReviewExecution(
   const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec);
   if (hostTaskVerdict) return hostTaskVerdict;
 
-  const missingResult = await ensureMissingAnalysisObligation(
-    sessDir,
-    state,
-    exec.args,
-    exec.now,
+  const missingResult = await ensureMissingAnalysisObligation(sessDir, state, exec.args, exec.now, {
+    worktree: exec.context.worktree,
     resolvedSource,
-  );
+  });
 
   let refInput = buildReviewReferenceInput(exec.args);
   if (resolvedSource) {
@@ -188,11 +185,17 @@ async function finishFindingsSubmission(
   exec: ReviewExecutionContext,
   refInput: ReviewReferenceInput | undefined,
 ): Promise<ReviewPreparation | string> {
-  const resolved = await resolveSubmittedReviewObligation(sessDir, state, exec.args, exec.now);
+  const resolved = await resolveSubmittedReviewObligation(
+    sessDir,
+    state,
+    exec.args,
+    exec.now,
+    exec.context.worktree,
+  );
   if (resolved.blocked || !resolved.obligation) {
     return resolved.blocked ?? formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {});
   }
-  const validationBlock = validateSubmittedReviewFindings(exec.args, resolved.obligation);
+  const validationBlock = validateSubmittedReviewFindings(state, exec.args, resolved.obligation);
   if (validationBlock) return validationBlock;
   const recorded = await recordSubmittedReviewInvocation(
     result,
@@ -292,9 +295,12 @@ function prepareHostTaskVerdictReview(
     // (accept + blocking issues). Fail closed with the canonical coherence
     // reason code — not the generic HOST_SUBAGENT_TASK_REQUIRED catch-all
     // whose recovery message would mislead about evidence availability.
-    return formatBlocked('SUBAGENT_VERDICT_FINDINGS_INCOHERENT', {
-      count: String(resolved.blockingIssueCount),
-    });
+    return formatBlocked(
+      resolved.code,
+      Object.fromEntries(
+        Object.entries(resolved.details).map(([key, value]) => [key, String(value)]),
+      ),
+    );
   }
 
   if (resolved.kind !== 'resolved') {
@@ -398,7 +404,10 @@ async function persistCompletedReview(
       prepared.validatedReviewObligation,
       args,
       now,
-      prepared.evidenceInvocationId,
+      {
+        acceptedInvocationId: prepared.evidenceInvocationId,
+        effectiveReviewFindings: prepared.effectiveReviewFindings,
+      },
     );
     const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);
     if (completion.kind === 'overflow') {
@@ -413,6 +422,7 @@ async function persistCompletedReview(
       nativeAttestationRejection: prepared.nativeAttestationRejection,
       finalState: completion.finalState,
       allTransitions: completion.allTransitions,
+      worktree: context.worktree,
     });
   });
 }
@@ -543,6 +553,13 @@ export const review: ToolDefinition = {
         'Must include reviewMode="subagent", reviewedBy, and valid attestation with ' +
         'mandateDigest and criteriaVersion.',
     ),
+    targetPaths: z
+      .array(z.string())
+      .optional()
+      .describe(
+        'File paths touched by this review. Required for risk classification when ' +
+          'challengePolicy is active and no branch/PR auto-resolution is available (e.g. text or URL review).',
+      ),
   },
   async execute(args: ReviewToolArgs, context) {
     try {

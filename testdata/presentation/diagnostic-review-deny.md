@@ -15,7 +15,8 @@ FlowGuard blocked this action.
 - valid strict attestation
 - bindable review invocation evidence
 
-## Next
+## Recovery
 
+Use the canonical recovery steps below.
 - Re-run the FlowGuard command to create a fresh review obligation and retry orchestration.
 - Run flowguard doctor if orchestration failures repeat.

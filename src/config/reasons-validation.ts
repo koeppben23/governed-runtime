@@ -9,6 +9,15 @@ import { REVIEW_VALIDATION_REASONS } from './reasons-validation-review.js';
 
 export const VALIDATION_REASONS: readonly BlockedReason[] = [
   {
+    code: 'HELP_ARGUMENTS_INVALID',
+    category: 'input',
+    messageTemplate: 'Invalid FlowGuard help arguments.',
+    recoverySteps: [
+      'Use view=context, view=commands with scope=available or all, or view=command with a command name',
+    ],
+  },
+
+  {
     code: 'COMMAND_NOT_ALLOWED',
     category: 'admissibility',
     messageTemplate: '{command} is not allowed in phase {phase}',
@@ -23,6 +32,16 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'input',
     messageTemplate: '{command} blocked: {reason}',
     recoverySteps: ['Fix the blocked command input or dependency and retry the command'],
+  },
+
+  {
+    code: 'COMMAND_SCOPE_DENIED',
+    category: 'admissibility',
+    messageTemplate: "'{tool}' is not permitted while {command} is active",
+    recoverySteps: [
+      'Report the current command result and stop',
+      'Wait for the user to invoke the next explicit FlowGuard command',
+    ],
   },
 
   {
@@ -79,8 +98,8 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'admissibility',
     messageTemplate: 'Cannot verify risk classification evidence. {reason}',
     recoverySteps: [
-      'Restore readable session state and git worktree evidence',
-      'Run flowguard_status or flowguard_hydrate before retrying mutating tools',
+      'Restore readable session state and git worktree evidence so future sessions can classify risk',
+      'This evidence failure latches the risk gate for the current session; hydrate does not clear it — start a fresh governed session to proceed',
     ],
   },
 
@@ -89,7 +108,7 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     category: 'admissibility',
     messageTemplate: 'Risk gate is already blocked for this session: {reason}',
     recoverySteps: [
-      'Reclassify the task at the required risk level or start a fresh governed session',
+      'A blocked risk gate is fail-closed and cannot be cleared in-session (hydrate and reclassification do not clear it); start a fresh governed session to proceed',
     ],
   },
 
@@ -293,6 +312,17 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Submit results for all active checks',
       'Check activeChecks in the session state via flowguard_status',
+    ],
+  },
+
+  {
+    code: 'VALIDATION_SUBJECT_CHANGED',
+    category: 'state',
+    messageTemplate:
+      'The plan or implementation under validation changed while checks were running; the results cannot be bound to a stable subject digest.',
+    recoverySteps: [
+      'Re-run flowguard_status to confirm the current phase and subject digest',
+      'Re-run the check so its attempt binds to the current plan or implementation digest',
     ],
   },
 

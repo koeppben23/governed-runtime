@@ -179,7 +179,8 @@ export const hydrate: ToolDefinition = {
       .optional()
       .describe(
         'Agent/operator risk-classification claim. Runtime still computes the minimum class. ' +
-          'On an existing session this may only update claimedTaskClass and clear a blocked riskGate.',
+          'On an existing session this may only update claimedTaskClass; a blocked riskGate ' +
+          'is NOT cleared (recovering from a blocked risk gate requires a fresh governed session).',
       ),
   },
   async execute(args, context) {

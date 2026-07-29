@@ -422,6 +422,51 @@ describe('plugin bootstrap fail-closed', () => {
       }
     });
 
+    it('SECURITY — /check scope blocks implementation tools until a new explicit command', async () => {
+      const ws = await createTestWorkspace();
+      try {
+        const sessionID = crypto.randomUUID();
+        const fp = await computeFingerprint(ws.tmpDir);
+        const sessDir = resolveSessionDir(fp.fingerprint, sessionID);
+        await fs.mkdir(sessDir, { recursive: true });
+        await writeState(sessDir, makeState('IMPLEMENTATION'));
+
+        const hooks = await FlowGuardAuditPlugin(
+          createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+        );
+        const commandBeforeHook = hooks['command.execute.before']!;
+        const toolBeforeHook = hooks['tool.execute.before']!;
+
+        await commandBeforeHook({ command: 'check', sessionID, arguments: '' }, { parts: [] });
+
+        await expect(
+          toolBeforeHook(
+            { tool: 'bash', sessionID, callID: 'c1' },
+            { args: { command: 'npm test' } },
+          ),
+        ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+        await expect(
+          toolBeforeHook({ tool: 'flowguard_implement', sessionID, callID: 'c2' }, { args: {} }),
+        ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+        await expect(
+          toolBeforeHook(
+            { tool: 'flowguard_review_implementation', sessionID, callID: 'c3' },
+            { args: {} },
+          ),
+        ).rejects.toThrow('COMMAND_SCOPE_DENIED');
+
+        await commandBeforeHook({ command: 'implement', sessionID, arguments: '' }, { parts: [] });
+        await expect(
+          toolBeforeHook(
+            { tool: 'bash', sessionID, callID: 'c4' },
+            { args: { command: 'npm test' } },
+          ),
+        ).resolves.toBeUndefined();
+      } finally {
+        await ws.cleanup();
+      }
+    });
+
     it('CORNER — read in PLAN phase is allowed (read-only tool)', async () => {
       const ws = await createTestWorkspace();
       try {

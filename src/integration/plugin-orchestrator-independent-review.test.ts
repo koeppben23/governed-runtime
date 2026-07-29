@@ -405,6 +405,22 @@ describe('runReviewOrchestration strict independent review with footer output', 
       invocationMode: 'host_subagent_task',
       hostVisible: true,
     });
+
+    await runReviewOrchestration(deps, {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Add regression tests for review orchestration.' } },
+      output: {
+        output: JSON.stringify({
+          ...JSON.parse(reviewRequiredOutput('PLAN')),
+          reviewTransportFailure: { transport: 'host_task', reported: true },
+        }),
+      },
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    });
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
   });
 
   it('host_task_preferred requests Task first without silently returning or calling SDK', async () => {
@@ -439,6 +455,50 @@ describe('runReviewOrchestration strict independent review with footer output', 
       invocationMode: 'host_subagent_task',
       hostVisible: true,
     });
+  });
+
+  it('host_task_preferred falls through to SDK only after an explicit Task transport failure', async () => {
+    const stateRef = { current: buildState('PLAN', 'plan') };
+    stateRef.current = {
+      ...stateRef.current,
+      policySnapshot: {
+        ...stateRef.current.policySnapshot!,
+        reviewInvocationPolicy: 'host_task_preferred',
+      },
+    };
+    vi.mocked(readState).mockImplementation(async () => stateRef.current);
+    const client = buildClient(buildFindings());
+    const deps = buildDeps(client, stateRef);
+    const event: ToolCallEvent = {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Add regression tests for review orchestration.' } },
+      output: { output: reviewRequiredOutput('PLAN') },
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    };
+
+    await runReviewOrchestration(deps, event);
+    expect(client.session.create).not.toHaveBeenCalled();
+
+    await runReviewOrchestration(deps, {
+      ...event,
+      output: { output: reviewRequiredOutput('PLAN') },
+    });
+
+    expect(client.session.create).not.toHaveBeenCalled();
+
+    await runReviewOrchestration(deps, {
+      ...event,
+      output: {
+        output: JSON.stringify({
+          ...JSON.parse(reviewRequiredOutput('PLAN')),
+          reviewTransportFailure: { transport: 'host_task', reported: true },
+        }),
+      },
+    });
+
+    expect(client.session.create).toHaveBeenCalledOnce();
+    expect(client.session.prompt).toHaveBeenCalledOnce();
   });
 
   it('blocks SDK path when snapshot misses reviewInvocationPolicy (fail-closed)', async () => {

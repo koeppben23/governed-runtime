@@ -44,7 +44,7 @@ export function normalizedMarkdown(content: string): NormalizedMarkdown {
       'NormalizedMarkdown: content must not start or end with a newline.',
     );
   }
-  if (/[ \t]+$/m.test(content)) {
+  if (content.split('\n').some((line) => line.endsWith(' ') || line.endsWith('\t'))) {
     throw new PresentationContractError(
       'NormalizedMarkdown: content must not contain trailing whitespace on any line.',
     );
@@ -372,13 +372,34 @@ export type PresentationConclusion =
   | {
       readonly kind: 'terminal';
       readonly message: string;
+    }
+  | {
+      /** Independent review is required before the workflow can progress. */
+      readonly kind: 'review_pending';
+      readonly message: string;
+    }
+  | {
+      /** Canonical recovery steps when no single command is authoritative. */
+      readonly kind: 'recovery';
+      readonly message: string;
+      readonly steps: readonly string[];
     };
+
+/**
+ * Semantic form of a visible FlowGuard result. Forms are presentation-only:
+ * they arrange authoritative projections but never derive workflow state,
+ * policy, evidence, or routing.
+ */
+export type PresentationForm =
+  'success' | 'blocked' | 'decision' | 'review_pending' | 'terminal' | 'diagnostic';
 
 // ─── Document Types ────────────────────────────────────────────────────────────
 
 export interface CompactCardDocument {
   readonly kind: 'compact_card';
   readonly density: 'compact';
+  /** Required for FlowGuard-produced result cards; omitted only by legacy consumers. */
+  readonly form?: PresentationForm;
   readonly sections: readonly PresentationSection[];
   /** Compact cards always carry a conclusion. */
   readonly conclusion: PresentationConclusion;
@@ -386,6 +407,8 @@ export interface CompactCardDocument {
 
 export interface ReviewCardDocument {
   readonly kind: 'review_card';
+  /** Required for FlowGuard-produced result cards; omitted only by legacy consumers. */
+  readonly form?: PresentationForm;
   readonly sections: readonly PresentationSection[];
   /** Review cards may omit a conclusion when the card presents findings only. */
   readonly conclusion?: PresentationConclusion;
@@ -393,6 +416,8 @@ export interface ReviewCardDocument {
 
 export interface DiagnosticCardDocument {
   readonly kind: 'diagnostic_card';
+  /** Required for FlowGuard-produced result cards; omitted only by legacy consumers. */
+  readonly form?: PresentationForm;
   readonly sections: readonly PresentationSection[];
   /** Diagnostic cards may omit a conclusion — blocked-action semantics are inline. */
   readonly conclusion?: PresentationConclusion;

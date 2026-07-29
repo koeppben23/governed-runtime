@@ -111,11 +111,11 @@ Your response must conform to this JSON schema. When structured output is active
 - overallVerdict MUST be "changes_requested" whenever blockingIssues is non-empty.
 - overallVerdict MAY be "accept" only if blockingIssues is empty.
 - overallVerdict MAY be "unable_to_review" only under the validity conditions above.
-- Do NOT use "unable_to_review" to avoid producing substantive findings.
-- Do NOT invent findings; every finding must be backed by evidence.
-- Do NOT accept the artifact without reading it. "accept" is the reviewer's verdict, not a user approval.
-- reviewMode MUST always be "subagent".
+- Do NOT use "unable_to_review" to avoid producing substantive findings; every finding needs evidence.
+- Do NOT accept without reading the artifact; "accept" is a reviewer verdict, not user approval; reviewMode is "subagent".
   - iteration and planVersion are provided in your task prompt. Use exactly those values.
+  - Honor the obligation's frozen \`requiredChallengeCount\` and \`requiredChallengeKind\`. Required challenges need matching digest-bound evidence. Implementation challenges with \`fail\` or \`not_verified\` cannot support acceptance. For prior author resolutions, return \`challengeResolutionVerdicts\` with your independent \`resolved\`, \`still_failing\`, or \`not_verified\` verdict; author claims have no acceptance authority.
+  - Omit \`challenges\` unless the Task prompt supplies a Challenge contract. The Task prompt is the only authority for challenge count, kind, and allowed evidence references; never invent a digest, section path, validation attempt id, or evidence reference.
 `;
 }
 
@@ -162,6 +162,7 @@ Rules:
 - reviewMode MUST always be "subagent".
 - overallVerdict MUST be "changes_requested" whenever blockingIssues is non-empty.
 - overallVerdict MAY be "unable_to_review" only for tool-failure conditions where honest review is impossible.
+- Omit \`challenges\` unless the Task prompt supplies a Challenge contract. Use only its count, kind, and allowed evidence references; never invent evidence identifiers.
 - Do not use Bash, Write, or Edit. Use only read/search tools and flowguard_review.
 `;
 }

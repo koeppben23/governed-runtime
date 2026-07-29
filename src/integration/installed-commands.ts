@@ -23,6 +23,7 @@ import {
   TOOL_FLOWGUARD_IMPLEMENT,
   TOOL_FLOWGUARD_PLAN,
   TOOL_FLOWGUARD_REVIEW,
+  TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
   TOOL_FLOWGUARD_RUN_CHECK,
   TOOL_FLOWGUARD_STATUS,
   TOOL_FLOWGUARD_TICKET,
@@ -38,6 +39,7 @@ export type InstalledCommandId =
   | 'workflow.plan'
   | 'workflow.continue'
   | 'workflow.implement'
+  | 'workflow.resolve-implementation-challenge'
   | 'workflow.validate'
   | 'workflow.review-decision'
   | 'workflow.review'
@@ -68,6 +70,7 @@ type ToolName =
   | typeof TOOL_FLOWGUARD_IMPLEMENT
   | typeof TOOL_FLOWGUARD_PLAN
   | typeof TOOL_FLOWGUARD_REVIEW
+  | typeof TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE
   | typeof TOOL_FLOWGUARD_RUN_CHECK
   | typeof TOOL_FLOWGUARD_STATUS
   | typeof TOOL_FLOWGUARD_TICKET;
@@ -154,6 +157,19 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     visibility: 'primary',
     presentationGroup: 'work',
     description: 'Record implementation evidence for the approved plan.',
+  },
+  {
+    id: 'workflow.resolve-implementation-challenge',
+    templateFile: 'resolve-implementation-challenge.md',
+    invocation: '/resolve-implementation-challenge',
+    kind: 'workflow',
+    target: {
+      toolName: TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
+      workflowCommand: Command.RESOLVE_IMPLEMENTATION_CHALLENGE,
+    },
+    visibility: 'compatibility',
+    presentationGroup: 'review',
+    description: 'Record evidence addressing an implementation review challenge.',
   },
   {
     id: 'workflow.validate',

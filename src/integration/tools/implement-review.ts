@@ -63,6 +63,7 @@ import {
 // State & Machine
 import type { SessionState } from '../../state/schema.js';
 import { evaluate, evaluateWithEvent } from '../../machine/evaluate.js';
+import { implValidationPassed } from '../../machine/guards.js';
 
 // Rail helpers
 import { applyTransition, autoAdvance } from '../../rails/types.js';
@@ -75,14 +76,17 @@ import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
 // Review findings validation (shared with plan.ts)
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
+import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import {
   consumeReviewObligation,
   ensureReviewAssurance,
   findAcceptedInvocationForFindings,
   findLatestObligation,
+  reviewObligationResponseFields,
 } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
+import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import { nextImplementationReviewIteration } from './implement-shared.js';
 function findPendingImplObligation(state: SessionState) {
@@ -99,12 +103,120 @@ function findPendingImplObligation(state: SessionState) {
   );
 }
 
+/**
+ * Canonical lifecycle projection of implementation-challenge open-state (#747).
+ *
+ * The open-state of a challenge cannot be read from the last findings entry
+ * alone: after a `still_failing`/`not_verified` re-review the reviewer emits
+ * FRESH challenges and carries the prior challenge forward only as a
+ * `challengeResolutionVerdicts` entry, so the original `implementation_challenge`
+ * object is no longer present in the latest `challenges[]`. This projects the
+ * whole append-only `implReviewFindings` history:
+ *
+ *  - origin: a challenge id first seen as an `implementation_challenge` whose
+ *    outcome was `fail`/`not_verified`;
+ *  - latestVerdict: the MOST RECENT independent `challengeResolutionVerdict` for
+ *    that id, in `implReviewFindings` append order (later findings win).
+ *
+ * A challenge is OPEN iff it has a failing origin AND its latest independent
+ * verdict is not `resolved` (no verdict yet ⇒ still open). Author resolutions are
+ * advisory and never appear here — they never change open-state.
+ *
+ * Note (NOT_VERIFIED, by design): ordering uses `implReviewFindings` append
+ * position; neither `ChallengeResolutionVerdict` nor `ChallengeResolution`
+ * carries an explicit iteration/obligation/flow binding in the schema, so
+ * cross-iteration binding is positional plus digest only. A schema-level binding
+ * is intentionally out of scope here.
+ */
+function projectOpenChallengeIds(state: SessionState): ReadonlySet<string> {
+  const failingOrigin = new Set<string>();
+  const latestVerdict = new Map<string, string>();
+  for (const findings of state.implReviewFindings ?? []) {
+    projectFindingsChallengeLifecycle(findings, failingOrigin, latestVerdict);
+  }
+  const open = new Set<string>();
+  for (const id of failingOrigin) {
+    if (latestVerdict.get(id) !== 'resolved') open.add(id);
+  }
+  return open;
+}
+
+function projectFindingsChallengeLifecycle(
+  findings: NonNullable<SessionState['implReviewFindings']>[number],
+  failingOrigin: Set<string>,
+  latestVerdict: Map<string, string>,
+): void {
+  for (const challenge of findings.challenges ?? []) {
+    if (
+      challenge.kind === 'implementation_challenge' &&
+      (challenge.outcome === 'fail' || challenge.outcome === 'not_verified')
+    ) {
+      failingOrigin.add(challenge.challengeId);
+    }
+  }
+  for (const verdict of findings.challengeResolutionVerdicts ?? []) {
+    if (findings.overallVerdict !== 'unable_to_review' || verdict.verdict !== 'resolved') {
+      latestVerdict.set(verdict.challengeId, verdict.verdict);
+    }
+  }
+}
+
+/** Challenge ids the author has recorded a resolution for against the CURRENT digest. */
+function resolvedForCurrentDigestIds(state: SessionState): ReadonlySet<string> {
+  return new Set(
+    state.challengeResolutions
+      .filter((resolution) => resolution.implementationDigest === state.implementation?.digest)
+      .map((resolution) => resolution.challengeId),
+  );
+}
+
+/**
+ * The challenges the NEXT independent reviewer MUST classify
+ * (`resolved`/`still_failing`/`not_verified`): challenges that are OPEN across
+ * the lifecycle AND for which the author HAS recorded a valid resolution against
+ * the current implementation digest.
+ *
+ * #747: an author resolution binds the challenge to new evidence but does NOT
+ * close it — closure authority belongs to the next reviewer. These ids are
+ * therefore the ones that require an independent verdict, NOT ids to drop.
+ */
+export function computeTargetedResolutionChallengeIds(state: SessionState): readonly string[] {
+  const open = projectOpenChallengeIds(state);
+  const resolvedIds = resolvedForCurrentDigestIds(state);
+  return [...open].filter((id) => resolvedIds.has(id));
+}
+
+/**
+ * Open challenges with NO valid author resolution for the current digest. #747
+ * forbids acceptance while any such challenge remains unaddressed: the author
+ * must first record a resolution (bound to the current implementation digest and
+ * a passing validation attempt) before an independent reviewer can close it. The
+ * findings-consistency gate fails acceptance closed while this set is non-empty.
+ */
+export function computeUnaddressedPriorFailIds(state: SessionState): readonly string[] {
+  const open = projectOpenChallengeIds(state);
+  const resolvedIds = resolvedForCurrentDigestIds(state);
+  return [...open].filter((id) => !resolvedIds.has(id));
+}
+
+/**
+ * Whether `challengeId` is an OPEN implementation challenge across the lifecycle
+ * (failing origin, latest independent verdict not `resolved`). Used by the
+ * resolution-recording boundary so an author can re-resolve a challenge that a
+ * later reviewer marked `still_failing`/`not_verified`, even though the original
+ * `implementation_challenge` object is no longer in the latest `challenges[]`.
+ */
+export function isOpenImplementationChallenge(state: SessionState, challengeId: string): boolean {
+  return projectOpenChallengeIds(state).has(challengeId);
+}
+
 function resolveImplementationFindings(
   input: ImplementRuntime,
   iteration: number,
   planVersion: number,
 ) {
   const pendingObligation = findPendingImplObligation(input.state);
+  const challengeContract = buildHostTaskChallengeContract(input.state, pendingObligation);
   const resolved = resolveHostTaskEffectiveFindings({
     pendingObligation,
     expected: { obligationType: 'implement', iteration, planVersion },
@@ -123,6 +235,10 @@ function resolveImplementationFindings(
       assurance: input.state.reviewAssurance,
       sessionId: input.context.sessionID,
       reviewHostPlatform: resolveRuntimeReviewPlatform(),
+      unresolvedImplementationChallengeIds: computeTargetedResolutionChallengeIds(input.state),
+      unaddressedPriorFailIds: computeUnaddressedPriorFailIds(input.state),
+      allowedChallengeEvidenceRefs: challengeContract?.evidenceRefs,
+      previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(input.state),
     },
   });
   return { pendingObligation, resolved };
@@ -295,24 +411,48 @@ async function handleApprovedReview(input: {
   return appendNextAction(JSON.stringify(response), finalState);
 }
 
-export async function handleImplReview(input: ImplementRuntime): Promise<string> {
-  const implementation = input.state.implementation;
-  if (!implementation) {
-    const receivedVerdict = input.args.reviewVerdict;
-    return formatBlocked(
-      'IMPLEMENTATION_EVIDENCE_REQUIRED',
-      receivedVerdict ? { receivedVerdict } : undefined,
-    );
+function handlePreferredTaskTransportFailure(
+  input: ImplementRuntime,
+  pendingObligation: ReturnType<typeof findPendingImplObligation>,
+): string {
+  if (!pendingObligation)
+    return formatBlocked('REVIEW_FINDINGS_REQUIRED', { action: 'implementation review' });
+  return appendNextAction(
+    JSON.stringify({
+      phase: input.state.phase,
+      status:
+        'OpenCode Task reviewer transport failure reported. Attempting the configured SDK review transport.',
+      next: 'INDEPENDENT_REVIEW_REQUIRED: Host Task transport failure was reported for the pending implementation review.',
+      ...reviewObligationResponseFields(pendingObligation),
+      reviewTransportFailure: { transport: 'host_task', reported: true },
+    }),
+    input.state,
+  );
+}
+
+function handleTaskTransportFailureRetry(input: ImplementRuntime): string | null {
+  if (input.args.reviewerUnavailable !== true) return null;
+  if (input.args.reviewVerdict !== undefined || input.args.reviewFindings !== undefined)
+    return null;
+  if (input.policy.reviewInvocationPolicy !== 'host_task_preferred') {
+    return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
+      reason: 'reviewer unavailable; independent ReviewFindings remain required',
+      recovery:
+        'Invoke a supported reviewer transport or provide policy-gated manual_attested ReviewFindings bound to the active obligation. flowguard_decision does not replace review evidence.',
+    });
   }
+  return handlePreferredTaskTransportFailure(input, findPendingImplObligation(input.state));
+}
 
-  const iteration = nextImplementationReviewIteration(input.state);
-  const planVersion = (input.state.plan?.history.length ?? 0) + 1;
-  const submittedVerdict = input.args.reviewVerdict;
-  if (!submittedVerdict)
-    return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: input.state.phase });
-
+async function handleSubmittedImplementationReview(input: {
+  runtime: ImplementRuntime;
+  iteration: number;
+  planVersion: number;
+  submittedVerdict: LoopVerdict;
+}): Promise<string> {
+  const { runtime, iteration, planVersion, submittedVerdict } = input;
   const { pendingObligation, resolved } = resolveImplementationFindings(
-    input,
+    runtime,
     iteration,
     planVersion,
   );
@@ -326,25 +466,111 @@ export async function handleImplReview(input: ImplementRuntime): Promise<string>
   if (findingsBlocked) return findingsBlocked;
 
   const { reviewedState, newReviewFindings } = appendImplReviewState({
-    runtime: input,
+    runtime,
     iteration,
     planVersion,
     effectiveFindings: resolved.effectiveFindings,
     evidenceInvocationId: resolved.evidenceInvocationId,
   });
 
-  if (input.args.reviewVerdict === 'changes_requested') {
+  if (submittedVerdict === 'changes_requested') {
     return handleChangesRequestedReview({
-      runtime: input,
+      runtime,
       reviewedState,
       iteration,
       reviewFindings: newReviewFindings,
     });
   }
+  const validationGate = implValidationEvidenceGate(runtime.state);
+  if (validationGate) return validationGate;
   return handleApprovedReview({
-    runtime: input,
+    runtime,
     reviewedState,
     iteration,
     reviewFindings: newReviewFindings,
+  });
+}
+
+export async function handleImplReview(input: ImplementRuntime): Promise<string> {
+  const implementation = input.state.implementation;
+  if (!implementation) {
+    const receivedVerdict = input.args.reviewVerdict;
+    return formatBlocked(
+      'IMPLEMENTATION_EVIDENCE_REQUIRED',
+      receivedVerdict ? { receivedVerdict } : undefined,
+    );
+  }
+
+  const iteration = nextImplementationReviewIteration(input.state);
+  const planVersion = (input.state.plan?.history.length ?? 0) + 1;
+  const transportFailureRetry = handleTaskTransportFailureRetry(input);
+  if (transportFailureRetry) return transportFailureRetry;
+  const submittedVerdict = input.args.reviewVerdict;
+  if (!submittedVerdict)
+    return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: input.state.phase });
+  return handleSubmittedImplementationReview({
+    runtime: input,
+    iteration,
+    planVersion,
+    submittedVerdict,
+  });
+}
+
+/**
+ * Defense-in-depth gate: reviewer acceptance must not advance to EVIDENCE_REVIEW
+ * unless the active verification checks actually have passing execution evidence
+ * bound to the CURRENT implementation digest.
+ *
+ * Today `IMPL_REVIEW` is only reachable via the `IMPL_VALIDATION`
+ * `implValidationPassed` gate, so on the normal path this is redundant. But
+ * acceptance must not rely solely on topology: any future inbound path to
+ * `IMPL_REVIEW`, or a topology regression, must still not accept unvalidated code.
+ *
+ * Unlike the machine guard `implValidationPassed` — which reads the digest-less
+ * `implValidation` slot and is kept sound only by the invariant that a fresh
+ * implementation clears that slot — this gate binds evidence to the current
+ * `implementation.digest` via `state.validationAttempts` (same authority as
+ * `stateVerificationEvidence`). That closes the latent fail-open where a future
+ * path could set `implementation` without clearing `implValidation`: stale-digest
+ * evidence can never satisfy this gate.
+ *
+ * Returns a BLOCKED payload, or `null` when the active checks are satisfied. The
+ * zero-`activeChecks` case defers to `implValidationPassed` so the deliberate
+ * policy-gated behavior for repos without discoverable verification commands is
+ * preserved unchanged.
+ */
+export function implValidationEvidenceGate(state: SessionState): string | null {
+  // No active checks: preserve the existing policy-gated (possibly vacuous) rule.
+  if (state.activeChecks.length === 0) {
+    return implValidationPassed(state) ? null : blockValidationEvidence(state.activeChecks, state);
+  }
+  // Active checks present: require a PASSING validation attempt bound to the
+  // current implementation digest for EVERY active check. A missing current
+  // implementation digest cannot satisfy any check.
+  const currentDigest = state.implementation?.digest;
+  const passedForCurrentDigest = new Set<string>();
+  if (currentDigest) {
+    for (const attempt of state.validationAttempts) {
+      if (
+        attempt.scope === 'implementation' &&
+        attempt.implementationDigest === currentDigest &&
+        attempt.result.passed
+      ) {
+        passedForCurrentDigest.add(attempt.result.checkId);
+      }
+    }
+  }
+  const missing = state.activeChecks.filter((checkId) => !passedForCurrentDigest.has(checkId));
+  return missing.length === 0 ? null : blockValidationEvidence(missing, state);
+}
+
+function blockValidationEvidence(missing: readonly string[], state: SessionState): string {
+  return formatBlocked('IMPL_VALIDATION_EVIDENCE_REQUIRED', {
+    message:
+      missing.length > 0
+        ? `missing passing checks for current implementation: ${missing.join(', ')}`
+        : state.implementation
+          ? 'validation evidence not satisfied'
+          : 'no implementation evidence to validate',
   });
 }

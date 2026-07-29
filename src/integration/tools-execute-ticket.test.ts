@@ -249,7 +249,7 @@ describe('ticket', () => {
     it('re-ticketing from non-TICKET phase is blocked', async () => {
       await hydrateAndTicket('First ticket');
       // Submit plan → phase advances from TICKET
-      await plan.execute({ planText: '## Plan\n1. Do stuff' }, ctx);
+      await plan.execute({ planText: '## Plan\n1. Do stuff', targetPaths: ['docs/test.md'] }, ctx);
       // Re-ticket should be blocked (not in TICKET phase)
       const raw = await ticket.execute({ text: 'Second ticket', source: 'user' }, ctx);
       const result = parseToolResult(raw);

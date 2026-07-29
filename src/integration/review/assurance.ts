@@ -16,8 +16,12 @@ import type {
   ReviewObligationType,
   ReviewProfile,
   ReviewProfileSource,
+  PolicySnapshot,
 } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
+import { challengeKindForObligation } from '../../config/policy-types.js';
+import type { TaskClass } from '../../state/schema.js';
 
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
@@ -54,8 +58,35 @@ export function createReviewObligation(input: {
   reviewProfile?: ReviewProfile;
   /** Provenance of the frozen profile. Defaults to 'policy_default'. */
   profileSource?: ReviewProfileSource;
+  /** Frozen session policy; without its challenge policy, enforcement is disabled. */
+  policySnapshot?: Pick<PolicySnapshot, 'challengePolicy'> | null;
+  /** Runtime paths are classified by the canonical phase-tool gate. */
+  changedFiles?: readonly string[];
+  /**
+   * The author's declared task class. Used as a fail-closed FLOOR on the
+   * challenge count so a high-risk change cannot collapse the requirement to 0
+   * by declaring doc-only `targetPaths` (finding C1). The count is
+   * `counts[max(computedFromChangedFiles, claimedTaskClass)]`. NOT supplied for
+   * standalone /review, whose risk is the reviewed external diff, not the
+   * session's own task-class claim.
+   */
+  claimedTaskClass?: TaskClass;
   metadata?: Record<string, unknown>;
 }): ReviewObligation {
+  const challengePolicy = input.policySnapshot?.challengePolicy;
+  const requirements = challengePolicy
+    ? {
+        requiredChallengeCount:
+          challengePolicy.counts[
+            maxTaskClass(
+              assessMinimumTaskClass(input.changedFiles ?? []).minimumTaskClass,
+              input.claimedTaskClass ?? 'TRIVIAL',
+            )
+          ],
+        requiredChallengeKind: challengeKindForObligation(input.obligationType),
+        challengePolicyVersion: challengePolicy.version,
+      }
+    : {};
   return {
     obligationId: randomUUID(),
     obligationType: input.obligationType,
@@ -74,6 +105,7 @@ export function createReviewObligation(input: {
     // supplied. The profile is fixed here, before the reviewer is invoked.
     reviewProfile: input.reviewProfile ?? 'core',
     profileSource: input.profileSource ?? 'policy_default',
+    ...requirements,
     metadata: input.metadata,
   };
 }
@@ -117,12 +149,16 @@ export function reviewObligationResponseFields(
       planVersion: obligation.planVersion,
       criteriaVersion: obligation.criteriaVersion,
       mandateDigest: obligation.mandateDigest,
+      requiredChallengeCount: obligation.requiredChallengeCount,
+      requiredChallengeKind: obligation.requiredChallengeKind,
     },
     reviewObligationId: obligation.obligationId,
     reviewObligationIteration: obligation.iteration,
     reviewObligationPlanVersion: obligation.planVersion,
     reviewCriteriaVersion: obligation.criteriaVersion,
     reviewMandateDigest: obligation.mandateDigest,
+    requiredChallengeCount: obligation.requiredChallengeCount,
+    requiredChallengeKind: obligation.requiredChallengeKind,
   };
 }
 

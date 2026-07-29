@@ -11,7 +11,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { makeState, TICKET } from '../../fixtures.js';
+import { makeState, TICKET, VALIDATION_PASSED } from '../../fixtures.js';
 import { TEAM_POLICY } from '../../config/policy-presets.js';
 import type { SessionState } from '../../state/schema.js';
 import {
@@ -255,6 +255,24 @@ function implStateWithEvidence(
       domainFiles: ['src/foo.ts'],
       executedAt: now,
     },
+    // Realistic IMPL_REVIEW state: the phase is only reachable once the active
+    // checks passed in IMPL_VALIDATION, so carry that passing evidence bound to
+    // the current implementation digest.
+    implValidation: VALIDATION_PASSED,
+    validationAttempts: [
+      {
+        attemptId: '00000000-0000-4000-8000-00000000dd01',
+        scope: 'implementation' as const,
+        implementationDigest: 'digest-impl',
+        result: { ...VALIDATION_PASSED[0]!, checkId: 'test', passed: true },
+      },
+      {
+        attemptId: '00000000-0000-4000-8000-00000000dd02',
+        scope: 'implementation' as const,
+        implementationDigest: 'digest-impl',
+        result: { ...VALIDATION_PASSED[1]!, checkId: 'lint', passed: true },
+      },
+    ],
     selfReview: {
       iteration: 0,
       maxIterations: 3,
@@ -512,6 +530,22 @@ describe('BUG-17: implement evidence-first resolution', () => {
         digest: 'digest-impl',
         executedAt: now,
       },
+      // Realistic IMPL_REVIEW state: active checks passed in IMPL_VALIDATION.
+      implValidation: VALIDATION_PASSED,
+      validationAttempts: [
+        {
+          attemptId: '00000000-0000-4000-8000-00000000ee01',
+          scope: 'implementation' as const,
+          implementationDigest: 'digest-impl',
+          result: { ...VALIDATION_PASSED[0]!, checkId: 'test', passed: true },
+        },
+        {
+          attemptId: '00000000-0000-4000-8000-00000000ee02',
+          scope: 'implementation' as const,
+          implementationDigest: 'digest-impl',
+          result: { ...VALIDATION_PASSED[1]!, checkId: 'lint', passed: true },
+        },
+      ],
       selfReview: {
         iteration: 0,
         maxIterations: 3,

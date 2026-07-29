@@ -25,6 +25,7 @@ import {
   type PresentationSection,
   type PresentationConclusion,
   type PresentationAction,
+  type PresentationForm,
   type KeyValueItem,
   type BlockerSection,
   type NoticeSection,
@@ -100,6 +101,10 @@ export function buildStatusDocument(input: FullStatusPresentationInput): Present
   return {
     kind: 'compact_card',
     density: 'compact',
+    form: presentationForm(
+      status.blocker?.reasonText !== null && status.blocker?.reasonText !== undefined,
+      conclusion,
+    ),
     sections,
     conclusion,
   };
@@ -112,6 +117,7 @@ export function buildNoSessionDocument(): PresentationDocument {
   return {
     kind: 'compact_card',
     density: 'compact',
+    form: 'success',
     sections: [
       {
         kind: 'text',
@@ -121,8 +127,8 @@ export function buildNoSessionDocument(): PresentationDocument {
     conclusion: {
       kind: 'next_action',
       action: {
-        invocation: '/hydrate',
-        description: 'Prepare or restore a governed session.',
+        invocation: '/start',
+        description: 'Start or restore a governed session.',
         visibility: 'recommended',
       },
     },
@@ -277,6 +283,11 @@ function buildPresentationConclusion(
         kind: 'terminal',
         message: conclusion.message,
       };
+    case 'review_pending':
+      return {
+        kind: 'review_pending',
+        message: conclusion.message,
+      };
   }
 }
 
@@ -286,4 +297,12 @@ function toPresentationAction(action: StatusActionProjection): PresentationActio
     description: action.description,
     visibility: action.visibility,
   };
+}
+
+function presentationForm(blocked: boolean, conclusion: PresentationConclusion): PresentationForm {
+  if (conclusion.kind === 'review_pending') return 'review_pending';
+  if (conclusion.kind === 'decision_required') return 'decision';
+  if (blocked) return 'blocked';
+  if (conclusion.kind === 'terminal') return 'terminal';
+  return 'success';
 }

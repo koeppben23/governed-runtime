@@ -24,6 +24,7 @@ import type {
   FindingItem,
 } from './model.js';
 import { renderMarkdown } from './markdown.js';
+import type { PresentationRenderOptions } from './glyph-profile.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -105,7 +106,10 @@ const ADR_ACTION_DESCRIPTIONS: Record<string, string> = {
  * - decision_required when human review commands are offered (ARCH_REVIEW)
  * - terminal otherwise (ARCH_COMPLETE / no resolvable command)
  */
-export function buildArchitectureReviewCard(input: ArchitectureReviewCardInput): string {
+export function buildArchitectureReviewCard(
+  input: ArchitectureReviewCardInput,
+  options?: PresentationRenderOptions,
+): string {
   const {
     phaseLabel,
     adrTitle,
@@ -180,11 +184,18 @@ export function buildArchitectureReviewCard(input: ArchitectureReviewCardInput):
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
+    form:
+      !isApproved &&
+      productNextAction.commands.some((command) =>
+        ['/approve', '/request-changes', '/reject'].includes(command),
+      )
+        ? 'decision'
+        : 'terminal',
     sections,
     conclusion: buildConclusion(productNextAction, isApproved),
   };
 
-  return renderMarkdown(document);
+  return renderMarkdown(document, options);
 }
 
 // ─── Findings Projection ────────────────────────────────────────────────────────

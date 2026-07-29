@@ -16,6 +16,7 @@ export {
   decision,
   implement,
   review_implementation,
+  resolve_implementation_challenge,
   run_check,
   review,
   continue,

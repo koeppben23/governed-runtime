@@ -5,8 +5,9 @@
 
 import { z } from 'zod';
 import type { ToolDefinition } from './helpers.js';
-import { formatError, withReadOnlySession } from './helpers.js';
+import { formatBlocked, formatError, withReadOnlySession } from './helpers.js';
 import { readReport } from '../../adapters/persistence.js';
+import { readConfig } from '../../adapters/persistence-config.js';
 import { buildHelpResult } from '../help/help-projection.js';
 import { renderHelp } from '../help/help-renderer.js';
 
@@ -51,10 +52,7 @@ export const help: ToolDefinition = {
     try {
       const parsed = HelpArgsSchema.safeParse(args);
       if (!parsed.success) {
-        return JSON.stringify({
-          error: true,
-          message: 'Use context, commands with scope, or command with a command name.',
-        });
+        return formatBlocked('HELP_ARGUMENTS_INVALID');
       }
       return executeHelp(parsed.data, context);
     } catch (err) {
@@ -67,6 +65,8 @@ async function executeHelp(
   view: z.infer<typeof HelpArgsSchema>,
   context: Parameters<ToolDefinition['execute']>[1],
 ): Promise<string> {
+  const glyphProfile = (await readConfig(context.worktree || context.directory)).presentation
+    .opencode.glyphProfile;
   const session = await withReadOnlySession(context);
   let reviewReport = undefined;
   if (session.sessDir) {
@@ -85,6 +85,7 @@ async function executeHelp(
   return renderHelp(result, {
     format: view.verbose ? 'json' : 'markdown',
     verbose: view.verbose ?? false,
+    glyphProfile,
     includeArtifactContent:
       view.view !== 'command' ? (view.includeArtifactContent ?? false) : false,
   });

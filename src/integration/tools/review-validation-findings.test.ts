@@ -5,6 +5,7 @@ import {
   type ReviewFindingsValidationContext,
 } from './review-validation.js';
 import type { ReviewFindings } from '../../state/evidence.js';
+import type { ReviewChallenge } from '../../state/evidence-review.js';
 import {
   hashFindings,
   REVIEW_CRITERIA_VERSION,
@@ -585,6 +586,122 @@ describe('validateReviewFindings', () => {
       );
       expect(result).toBeNull();
     });
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════════
+// implementation challenge freshness binding (Gap 2)
+// ═════════════════════════════════════════════════════════════════════════════
+
+describe('validateReviewFindings — implementation challenge freshness', () => {
+  const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
+  const FRESH_ATTEMPT_REF = {
+    kind: 'validation_attempt',
+    attemptId: '44444444-4444-4444-8444-444444444444',
+  };
+  const IMPL_REF = { kind: 'implementation', implementationDigest: 'current-digest' };
+
+  function implObligation() {
+    return {
+      obligationId: OBLIGATION_ID,
+      obligationType: 'implement' as const,
+      iteration: 0,
+      planVersion: 1,
+      criteriaVersion: REVIEW_CRITERIA_VERSION,
+      mandateDigest: REVIEW_MANDATE_DIGEST,
+      createdAt: new Date().toISOString(),
+      pluginHandshakeAt: null,
+      status: 'pending' as const,
+      invocationId: null,
+      blockedCode: null,
+      fulfilledAt: null,
+      consumedAt: null,
+      requiredChallengeCount: 1,
+      requiredChallengeKind: 'implementation_challenge' as const,
+    };
+  }
+
+  function implChallenge(evidenceRefs: readonly unknown[]): ReviewChallenge {
+    return {
+      challengeId: '33333333-3333-4333-8333-333333333333',
+      obligationId: OBLIGATION_ID,
+      scenario: 'The change breaks the failing edge case.',
+      claim: 'The new guard handles the null path.',
+      locations: ['src/foo.ts:10'],
+      kind: 'implementation_challenge' as const,
+      evidenceRefs,
+      outcome: 'pass' as const,
+    } as ReviewChallenge;
+  }
+
+  function challengeCtx(
+    overrides: Partial<ReviewFindingsValidationContext> = {},
+  ): ReviewFindingsValidationContext {
+    return makeCtx({
+      obligationType: 'implement',
+      assurance: { obligations: [implObligation()], invocations: [] },
+      allowedEvidenceRefs: [IMPL_REF, FRESH_ATTEMPT_REF],
+      expectedObligationId: OBLIGATION_ID,
+      ...overrides,
+    });
+  }
+
+  it('accepts a challenge citing a fresh, allowed validation attempt', () => {
+    const result = validateReviewFindings(
+      makeFindings({ challenges: [implChallenge([IMPL_REF, FRESH_ATTEMPT_REF])] }),
+      challengeCtx(),
+    );
+    expect(result).toBeNull();
+  });
+
+  it('rejects a challenge citing a validation attempt outside the allowed (fresh) set', () => {
+    // The stale/foreign attempt ref is NOT in allowedEvidenceRefs — the exact
+    // Gap 2 leak: previously accepted on the directly-submitted path because
+    // allowedEvidenceRefs was never passed.
+    const staleRef = {
+      kind: 'validation_attempt',
+      attemptId: '99999999-9999-4999-8999-999999999999',
+    };
+    const result = validateReviewFindings(
+      makeFindings({ challenges: [implChallenge([IMPL_REF, staleRef])] }),
+      challengeCtx(),
+    );
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('SUBAGENT_CHALLENGE_EVIDENCE_MISSING');
+  });
+
+  it('rejects a challenge whose obligationId does not match the active obligation', () => {
+    const result = validateReviewFindings(
+      makeFindings({
+        challenges: [
+          {
+            ...implChallenge([IMPL_REF, FRESH_ATTEMPT_REF]),
+            obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          },
+        ],
+      }),
+      challengeCtx(),
+    );
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('SUBAGENT_CHALLENGE_EVIDENCE_MISSING');
+  });
+
+  it('falls back to the resolved obligation id when expectedObligationId is not supplied', () => {
+    // Even without an explicit expectedObligationId in ctx, the resolved
+    // obligation binds the challenge — a foreign obligationId still fails.
+    const result = validateReviewFindings(
+      makeFindings({
+        challenges: [
+          {
+            ...implChallenge([IMPL_REF, FRESH_ATTEMPT_REF]),
+            obligationId: 'ffffffff-ffff-4fff-8fff-ffffffffffff',
+          },
+        ],
+      }),
+      challengeCtx({ expectedObligationId: undefined }),
+    );
+    expect(result).not.toBeNull();
+    expect(parseBlocked(result!).code).toBe('SUBAGENT_CHALLENGE_EVIDENCE_MISSING');
   });
 });
 

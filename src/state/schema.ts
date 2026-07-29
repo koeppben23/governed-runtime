@@ -18,6 +18,7 @@ import {
   ActorInfoSchema,
   ArchitectureDecision,
   BindingInfo,
+  ChallengeResolution,
   CheckId,
   DecisionIdentitySchema,
   ErrorInfo,
@@ -30,6 +31,7 @@ import {
   ReviewFindings,
   SelfReviewLoop,
   TicketEvidence,
+  ValidationAttempt,
   ValidationResult,
 } from './evidence.js';
 import {
@@ -291,6 +293,15 @@ export const SessionState = z.object({
   validation: z.array(ValidationResult),
 
   /**
+   * Append-only execution ledger. Unlike the current per-check projections above,
+   * this preserves every successful validation-result persistence for audit.
+   */
+  validationAttempts: z.array(ValidationAttempt).default([]),
+
+  /** Advisory challenge-resolution evidence; defaults for legacy sessions. */
+  challengeResolutions: z.array(ChallengeResolution).default([]),
+
+  /**
    * Post-implementation validation check results (IMPL_VALIDATION phase). Kept
    * separate from `validation` (the pre-implementation baseline run) so the audit
    * trail retains both the baseline and the re-run of checks against the fixed code.
@@ -309,6 +320,9 @@ export const SessionState = z.object({
 
   /** Independent review findings for /implement (parallel, NOT mixed with ImplEvidence). */
   implReviewFindings: z.array(ReviewFindings).optional(),
+
+  /** Independent review findings for standalone /review, retained append-only for audit. */
+  standaloneReviewFindings: z.array(ReviewFindings).optional(),
 
   /** P35 strict independent-review obligations and invocation evidence. */
   reviewAssurance: ReviewAssuranceState.optional(),

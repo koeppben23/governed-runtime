@@ -178,6 +178,14 @@ describe('resolvePolicyFromSnapshot', () => {
       expect(snapshot.reviewProfile).toBe('core');
       expect(resolvePolicyFromSnapshot(snapshot).reviewProfile).toBe('core');
     });
+
+    it('round-trips the versioned challenge policy', () => {
+      const snapshot = createPolicySnapshot(SOLO_POLICY, NOW, sha256);
+      expect(snapshot.challengePolicy).toEqual(SOLO_POLICY.challengePolicy);
+      expect(resolvePolicyFromSnapshot(snapshot).challengePolicy).toEqual(
+        SOLO_POLICY.challengePolicy,
+      );
+    });
   });
 
   describe('LEGACY — missing fields', () => {
@@ -196,6 +204,12 @@ describe('resolvePolicyFromSnapshot', () => {
       delete (legacy as { reviewProfile?: unknown }).reviewProfile;
       const reconstructed = resolvePolicyFromSnapshot(legacy);
       expect(reconstructed.reviewProfile).toBe('core');
+    });
+
+    it('legacy snapshot without challengePolicy keeps challenge enforcement disabled', () => {
+      const snapshot = createPolicySnapshot(REGULATED_POLICY, NOW, sha256);
+      delete (snapshot as { challengePolicy?: unknown }).challengePolicy;
+      expect(resolvePolicyFromSnapshot(snapshot).challengePolicy).toBeUndefined();
     });
   });
 });

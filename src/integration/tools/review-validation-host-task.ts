@@ -23,6 +23,7 @@ import {
   withHostTaskPath,
   type HostTaskFindingsAcceptanceRejection,
 } from './review-validation-acceptance.js';
+import { validateChallengeConsistency } from '../review/enforcement/challenge-consistency.js';
 import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
 
 /**
@@ -41,7 +42,13 @@ export type HostTaskFindingsResolution =
   | ({ readonly kind: 'resolved' } & ResolvedHostTaskFindings)
   | { readonly kind: 'rejected'; readonly rejection: HostTaskFindingsAcceptanceRejection }
   | { readonly kind: 'unparseable'; readonly detail: string }
-  | { readonly kind: 'incoherent'; readonly blockingIssueCount: number }
+  | {
+      readonly kind: 'incoherent';
+      readonly code: string;
+      readonly details: Record<string, unknown>;
+      /** Compatibility projection for the original verdict/blocker invariant. */
+      readonly blockingIssueCount?: number;
+    }
   | { readonly kind: 'not_found' };
 
 /**
@@ -62,10 +69,21 @@ export type HostTaskFindingsResolution =
  */
 // The resolver enumerates every persisted capture so an unusable record cannot
 // mask a later coherent retry; its branches are the explicit fail-closed states.
-// eslint-disable-next-line complexity
+// eslint-disable-next-line complexity, max-lines-per-function
 export function resolveHostTaskFindings(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation | null,
+  ...[
+    unresolvedImplementationChallengeIds,
+    allowedChallengeEvidenceRefs,
+    unaddressedPriorFailIds,
+    previouslyUsedChallengeIds,
+  ]: readonly [
+    (readonly string[] | undefined)?,
+    (readonly unknown[] | undefined)?,
+    (readonly string[] | undefined)?,
+    (readonly string[] | undefined)?,
+  ]
 ): HostTaskFindingsResolution {
   if (!obligation || !assurance) return { kind: 'not_found' };
 
@@ -88,7 +106,7 @@ export function resolveHostTaskFindings(
   // historically degraded to not_found), which is exactly the confusing
   // failure operators hit when the reviewer ran but its findings were corrupt.
   let unparseableDetail: string | null = null;
-  let incoherentBlockingIssueCount: number | null = null;
+  let incoherent: { code: string; details: Record<string, unknown> } | null = null;
   // An unusable earlier capture must not deadlock a later coherent retry. The
   // earlier evidence remains persisted for audit while this loop continues to
   // consider subsequent captures for the same obligation.
@@ -115,7 +133,23 @@ export function resolveHostTaskFindings(
         blockingIssueCount: parsed.data.blockingIssues.length,
       });
       if (!consistency.ok) {
-        incoherentBlockingIssueCount ??= consistency.details.blockingIssueCount;
+        incoherent ??= { code: consistency.code, details: consistency.details };
+        continue;
+      }
+      const challengeConsistency = validateChallengeConsistency({
+        overallVerdict: parsed.data.overallVerdict,
+        requiredChallengeCount: obligation.requiredChallengeCount,
+        requiredChallengeKind: obligation.requiredChallengeKind ?? 'implementation_challenge',
+        challenges: parsed.data.challenges,
+        expectedObligationId: obligation.obligationId,
+        allowedEvidenceRefs: allowedChallengeEvidenceRefs,
+        resolutionVerdicts: parsed.data.challengeResolutionVerdicts,
+        unresolvedImplementationChallengeIds,
+        unaddressedPriorFailIds,
+        previouslyUsedChallengeIds,
+      });
+      if (!challengeConsistency.ok) {
+        incoherent ??= { code: challengeConsistency.code, details: challengeConsistency.details };
         continue;
       }
       return {
@@ -128,9 +162,7 @@ export function resolveHostTaskFindings(
     // Diagnostic for error analysis: captured findings are PRESENT (filter above
     // requires capturedRawFindings != null) but FAIL schema validation. Surface it.
     const issues = parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).slice(0, 8);
-    if (unparseableDetail === null) {
-      unparseableDetail = issues.join('; ') || 'unknown schema validation failure';
-    }
+    unparseableDetail = issues.join('; ') || 'unknown schema validation failure';
     getAdapterLogger().warn(
       'flowguard_review',
       'host-task captured findings present but unparseable; treated as unparseable',
@@ -145,8 +177,15 @@ export function resolveHostTaskFindings(
   if (unparseableDetail !== null) {
     return { kind: 'unparseable', detail: unparseableDetail };
   }
-  if (incoherentBlockingIssueCount !== null) {
-    return { kind: 'incoherent', blockingIssueCount: incoherentBlockingIssueCount };
+  if (incoherent !== null) {
+    return {
+      kind: 'incoherent',
+      code: incoherent.code,
+      details: incoherent.details,
+      ...(typeof incoherent.details.blockingIssueCount === 'number'
+        ? { blockingIssueCount: incoherent.details.blockingIssueCount }
+        : {}),
+    };
   }
   return { kind: 'not_found' };
 }

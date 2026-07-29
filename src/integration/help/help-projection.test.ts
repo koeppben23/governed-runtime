@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { TEAM_POLICY } from '../../config/policy.js';
+import { getPolicyPreset, TEAM_POLICY } from '../../config/policy.js';
 import * as crypto from 'node:crypto';
 import { makeProgressedState, makeState, TICKET } from '../../fixtures.js';
 import { buildHelpResult, finishToReadiness } from './help-projection.js';
@@ -19,7 +19,10 @@ import { hydrate } from '../tools/hydrate.js';
 import { ticket } from '../tools/ticket-tool.js';
 import { plan } from '../tools/plan.js';
 import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
-import { readState } from '../../adapters/persistence.js';
+import { readState, writeState } from '../../adapters/persistence.js';
+import { writeRepoConfig } from '../../adapters/persistence-config.js';
+import { createPolicySnapshot } from '../../config/policy-snapshot.js';
+import { DEFAULT_CONFIG } from '../../config/flowguard-config.js';
 
 function makeReviewReport(
   state: ReturnType<typeof makeProgressedState>,
@@ -384,7 +387,10 @@ describe('resume end-to-end via help.execute', () => {
   it('returns ticket and plan content with version and digest after resume', async () => {
     await hydrate.execute({}, ctx);
     await ticket.execute({ text: 'Fix the auth bug in login.ts', source: 'user' }, ctx);
-    await plan.execute({ planText: '## Plan\n1. Fix auth\n2. Add tests' }, ctx);
+    await plan.execute(
+      { planText: '## Plan\n1. Fix auth\n2. Add tests', targetPaths: ['docs/test.md'] },
+      ctx,
+    );
 
     // Re-read state to verify persistence
     const fp = await computeFingerprint(ws.tmpDir);
@@ -424,6 +430,31 @@ describe('resume end-to-end via help.execute', () => {
     expect(parsed.artifacts.ticket.digest).toBeTruthy();
   });
 
+  it('uses the reachable OpenCode glyph configuration for Markdown help', async () => {
+    await writeRepoConfig(ws.tmpDir, {
+      ...DEFAULT_CONFIG,
+      schemaVersion: 'v1',
+      presentation: { opencode: { glyphProfile: 'ascii' } },
+    });
+    const fingerprint = await computeFingerprint(ws.tmpDir);
+    await writeState(sessionDir(fingerprint.fingerprint, ctx.sessionID), {
+      ...makeProgressedState('PLAN_REVIEW'),
+      policySnapshot: createPolicySnapshot(
+        getPolicyPreset('team'),
+        '2026-01-01T00:00:00.000Z',
+        () => 'digest',
+      ),
+      activeChecks: [],
+      verificationCandidates: [],
+      actorInfo: undefined,
+    });
+
+    const out = await help.execute({ view: 'context' }, ctx);
+
+    expect(out).toContain('[WARN] **Why blocked:**');
+    expect(out).not.toContain('⚠ **Why blocked:**');
+  });
+
   it('command view rejects includeArtifactContent via strict schema', async () => {
     const out = await help.execute(
       {
@@ -435,7 +466,8 @@ describe('resume end-to-end via help.execute', () => {
     );
     const parsed = JSON.parse(out as string);
     expect(parsed.error).toBe(true);
-    expect(parsed.message).toContain('Use context');
+    expect(parsed.code).toBe('HELP_ARGUMENTS_INVALID');
+    expect(parsed.recovery).toBeDefined();
   });
 });
 

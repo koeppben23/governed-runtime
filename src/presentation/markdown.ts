@@ -49,26 +49,139 @@ import type {
 } from './model.js';
 import { validateCodeLanguage, normalizedMarkdown, PresentationContractError } from './model.js';
 import { GUIDANCE_STATUS_LABELS } from './labels.js';
+import {
+  presentationGlyphs,
+  type PresentationGlyphs,
+  type PresentationRenderOptions,
+} from './glyph-profile.js';
 
 // ─── Document Renderer ─────────────────────────────────────────────────────────
 
 /**
  * Render a PresentationDocument to deterministic Markdown.
  */
-export function renderMarkdown(document: PresentationDocument): string {
+export function renderMarkdown(
+  document: PresentationDocument,
+  options: PresentationRenderOptions = {},
+): string {
+  validateDocumentContract(document);
+  const glyphs = presentationGlyphs(options);
   const renderedSections = document.sections
-    .map(renderSection)
+    .map((section) => renderSection(section, glyphs))
     .filter((s): s is string => s.length > 0);
 
   const body = renderedSections.join('\n\n');
 
   const conclusionBlock =
     document.conclusion && document.conclusion.kind !== undefined
-      ? renderConclusion(document.conclusion)
+      ? renderConclusion(document.conclusion, glyphs)
       : '';
 
   const parts = [body, conclusionBlock].filter((p) => p.length > 0);
   return parts.join('\n\n');
+}
+
+/** Enforce the semantic language contract before any Markdown is emitted. */
+function validateDocumentContract(document: PresentationDocument): void {
+  const titles = document.sections.filter((section) => section.kind === 'title');
+  if (titles.length > 1) {
+    throw new PresentationContractError(
+      'PresentationDocument: at most one TitleSection is allowed',
+    );
+  }
+  if (titles.length === 1 && document.sections[0]?.kind !== 'title') {
+    throw new PresentationContractError('PresentationDocument: TitleSection must be first');
+  }
+  if (document.kind === 'compact_card' && titles.length > 0) {
+    throw new PresentationContractError('CompactCardDocument: TitleSection is not allowed');
+  }
+
+  if (!('form' in document) || document.form === undefined) return;
+  if (!document.conclusion) {
+    throw new PresentationContractError(
+      `PresentationDocument: ${document.form} form requires exactly one conclusion`,
+    );
+  }
+
+  const conclusion = document.conclusion;
+  const hasBlocker = document.sections.some((section) => section.kind === 'blocker');
+  switch (document.form) {
+    case 'success':
+      if (hasBlocker || conclusion.kind !== 'next_action') {
+        throw new PresentationContractError(
+          'success form requires a next_action conclusion and no blocker',
+        );
+      }
+      validateRecommendedAction(conclusion.action);
+      return;
+    case 'blocked':
+      if (
+        !hasBlocker ||
+        (conclusion.kind !== 'next_action' &&
+          conclusion.kind !== 'recovery' &&
+          conclusion.kind !== 'terminal')
+      ) {
+        throw new PresentationContractError(
+          'blocked form requires a blocker and a next_action, recovery, or terminal conclusion',
+        );
+      }
+      if (conclusion.kind === 'next_action') validateRecommendedAction(conclusion.action);
+      if (conclusion.kind === 'recovery') validateRecoveryConclusion(conclusion);
+      return;
+    case 'decision':
+      if (conclusion.kind !== 'decision_required' || conclusion.actions.length === 0) {
+        throw new PresentationContractError(
+          'decision form requires non-empty decision_required actions',
+        );
+      }
+      for (const action of conclusion.actions) {
+        if (action.visibility !== 'available') {
+          throw new PresentationContractError(
+            'decision_required actions must be available, not recommended',
+          );
+        }
+      }
+      return;
+    case 'review_pending':
+      if (conclusion.kind !== 'review_pending') {
+        throw new PresentationContractError(
+          'review_pending form requires a review_pending conclusion',
+        );
+      }
+      return;
+    case 'terminal':
+      if (conclusion.kind !== 'terminal') {
+        throw new PresentationContractError('terminal form requires a terminal conclusion');
+      }
+      return;
+    case 'diagnostic':
+      if (!hasBlocker || conclusion.kind !== 'recovery') {
+        throw new PresentationContractError(
+          'diagnostic form requires a blocker and recovery conclusion',
+        );
+      }
+      validateRecoveryConclusion(conclusion);
+      return;
+  }
+}
+
+function validateRecommendedAction(action: PresentationAction): void {
+  if (action.visibility !== 'recommended') {
+    throw new PresentationContractError('next_action conclusion must contain a recommended action');
+  }
+}
+
+function validateRecoveryConclusion(
+  conclusion: Extract<PresentationConclusion, { kind: 'recovery' }>,
+): void {
+  if (conclusion.message.trim().length === 0 || conclusion.steps.length === 0) {
+    throw new PresentationContractError(
+      'recovery conclusion requires a message and at least one step',
+    );
+  }
+  if (conclusion.steps.some((step) => step.trim().length === 0)) {
+    throw new PresentationContractError('recovery conclusion steps must not be empty');
+  }
 }
 
 // ─── Section Dispatcher ────────────────────────────────────────────────────────
@@ -77,18 +190,18 @@ function sectionHeading(section: { readonly heading?: string }): string {
   return section.heading && section.heading.length > 0 ? `## ${section.heading}\n\n` : '';
 }
 
-function renderSection(section: PresentationSection): string {
+function renderSection(section: PresentationSection, glyphs: PresentationGlyphs): string {
   switch (section.kind) {
     case 'title':
       return renderTitle(section);
     case 'keyValue':
       return sectionHeading(section) + renderKeyValue(section.items);
     case 'commandList':
-      return sectionHeading(section) + renderCommandList(section.items);
+      return sectionHeading(section) + renderCommandList(section.items, glyphs);
     case 'blocker':
-      return sectionHeading(section) + renderBlocker(section);
+      return sectionHeading(section) + renderBlocker(section, glyphs.warning);
     case 'artifactList':
-      return sectionHeading(section) + renderArtifactList(section.items);
+      return sectionHeading(section) + renderArtifactList(section.items, glyphs);
     case 'findings':
       return sectionHeading(section) + renderFindings(section.groups);
     case 'checklist':
@@ -98,7 +211,7 @@ function renderSection(section: PresentationSection): string {
     case 'code':
       return sectionHeading(section) + renderCode(section);
     case 'notice':
-      return sectionHeading(section) + renderNotice(section);
+      return sectionHeading(section) + renderNotice(section, glyphs);
     case 'bulletList':
       return sectionHeading(section) + renderBulletList(section);
     case 'guidance':
@@ -106,7 +219,7 @@ function renderSection(section: PresentationSection): string {
     case 'detailedCommandList':
       return sectionHeading(section) + renderDetailedCommandList(section);
     case 'helpSummary':
-      return sectionHeading(section) + renderHelpSummary(section);
+      return sectionHeading(section) + renderHelpSummary(section, glyphs);
     case 'helpArtifact':
       return sectionHeading(section) + renderHelpArtifact(section);
     case 'embeddedMarkdown':
@@ -124,16 +237,21 @@ function renderTitle(section: TitleSection): string {
 }
 
 function renderKeyValue(items: readonly KeyValueItem[]): string {
-  return items.map((item) => `**${item.label}:** ${item.value}`).join('\n');
+  return items
+    .map((item) => `**${item.label}:**${item.value.length > 0 ? ` ${item.value}` : ''}`)
+    .join('\n');
 }
 
-function renderCommandList(items: readonly PresentationAction[]): string {
-  return items.map(renderAction).join('\n');
+function renderCommandList(
+  items: readonly PresentationAction[],
+  glyphs: PresentationGlyphs,
+): string {
+  return items.map((item) => renderAction(item, glyphs)).join('\n');
 }
 
-function renderBlocker(section: BlockerSection): string {
+function renderBlocker(section: BlockerSection, warning: string): string {
   const lines: string[] = [];
-  const symbol = '⚠';
+  const symbol = warning;
   const codeBlock = section.code ? ` \`${section.code}\`` : '';
   lines.push(`${symbol} **Blocked:**${codeBlock} — ${section.text}`);
   if (section.recovery) {
@@ -142,10 +260,10 @@ function renderBlocker(section: BlockerSection): string {
   return lines.join('\n');
 }
 
-function renderArtifactList(items: readonly ArtifactItem[]): string {
+function renderArtifactList(items: readonly ArtifactItem[], glyphs: PresentationGlyphs): string {
   return items
     .map((item) => {
-      const statusSymbol = artifactStatusSymbol(item.status);
+      const statusSymbol = artifactStatusSymbol(item.status, glyphs);
       const required = item.required ? ' (required)' : '';
       const hint = item.hint ? ` — ${item.hint}` : '';
       return `**${item.slot}:** ${statusSymbol} ${item.label}${required}${hint}`;
@@ -153,16 +271,16 @@ function renderArtifactList(items: readonly ArtifactItem[]): string {
     .join('\n');
 }
 
-function artifactStatusSymbol(status: ArtifactItem['status']): string {
+function artifactStatusSymbol(status: ArtifactItem['status'], glyphs: PresentationGlyphs): string {
   switch (status) {
     case 'complete':
-      return '✓';
+      return glyphs.verified;
     case 'missing':
-      return '✗';
+      return glyphs.failed;
     case 'not_yet_required':
-      return '—';
+      return glyphs.notApplicable;
     case 'failed':
-      return '✗';
+      return glyphs.failed;
   }
 }
 
@@ -208,11 +326,11 @@ function renderCode(section: CodeSection): string {
   return `${fence}${lang}\n${section.content}\n${fence}`;
 }
 
-function renderNotice(section: NoticeSection): string {
+function renderNotice(section: NoticeSection, glyphs: PresentationGlyphs): string {
   if (section.message.trim().length === 0) {
     throw new PresentationContractError('NoticeSection: message must not be empty');
   }
-  const symbol = noticeSymbol(section.level);
+  const symbol = noticeSymbol(section.level, glyphs);
   const lines: string[] = [];
   lines.push(`${symbol} ${section.message}`);
   for (const msg of section.additionalMessages ?? []) {
@@ -261,12 +379,12 @@ function guidanceSymbol(_status: GuidanceStatus): string {
   return '-';
 }
 
-function noticeSymbol(level: NoticeSection['level']): string {
+function noticeSymbol(level: NoticeSection['level'], glyphs: PresentationGlyphs): string {
   switch (level) {
     case 'warning':
-      return '⚠';
+      return glyphs.warning;
     case 'not_verified':
-      return '?';
+      return glyphs.notVerified;
     case 'info':
       return '-';
   }
@@ -321,7 +439,7 @@ function detailedCommandSymbol(
   return '-';
 }
 
-function renderHelpSummary(section: HelpSummarySection): string {
+function renderHelpSummary(section: HelpSummarySection, glyphs: PresentationGlyphs): string {
   const lines: string[] = [];
 
   if (section.phase) {
@@ -343,7 +461,7 @@ function renderHelpSummary(section: HelpSummarySection): string {
       parts.push(`[${section.blocker.reasonCode}]`);
     }
     if (parts.length > 0) {
-      lines.push(`**Why blocked:** ${parts.join(' ')}`);
+      lines.push(`${glyphs.warning} **Why blocked:** ${parts.join(' ')}`);
     }
   }
 
@@ -502,10 +620,10 @@ function shallowestHeadingLevel(content: string): number | null {
 
 // ─── Conclusion Renderer ───────────────────────────────────────────────────────
 
-function renderConclusion(conclusion: PresentationConclusion): string {
+function renderConclusion(conclusion: PresentationConclusion, glyphs: PresentationGlyphs): string {
   switch (conclusion.kind) {
     case 'next_action':
-      return renderAction(conclusion.action);
+      return renderAction(conclusion.action, glyphs);
     case 'decision_required': {
       // The question is free-form text sourced from upstream projections
       // (e.g. productNextAction/evalResult). Validate it against the
@@ -521,7 +639,7 @@ function renderConclusion(conclusion: PresentationConclusion): string {
       lines.push(`## Decision required\n`);
       lines.push(question);
       for (const action of conclusion.actions) {
-        lines.push(renderAction(action));
+        lines.push(renderAction(action, glyphs));
       }
       return lines.join('\n');
     }
@@ -536,13 +654,27 @@ function renderConclusion(conclusion: PresentationConclusion): string {
       }
       return message;
     }
+    case 'review_pending': {
+      const message = normalizedMarkdown(conclusion.message);
+      if (message.length === 0) {
+        throw new PresentationContractError(
+          'PresentationConclusion: review_pending message must not be empty',
+        );
+      }
+      return `## Independent review pending\n\n${message}`;
+    }
+    case 'recovery': {
+      validateRecoveryConclusion(conclusion);
+      return `## Recovery\n\n${conclusion.message}\n${conclusion.steps.map((step) => `- ${step}`).join('\n')}`;
+    }
   }
 }
 
 // ─── Action Renderer ───────────────────────────────────────────────────────────
 
-function renderAction(action: PresentationAction): string {
-  const symbol = action.visibility === 'recommended' ? '→' : '-';
+function renderAction(action: PresentationAction, glyphs: PresentationGlyphs): string {
+  const symbol =
+    action.visibility === 'recommended' ? glyphs.recommendedAction : glyphs.availableAction;
   const invocation = action.invocation ? ` \`${action.invocation}\`` : '';
   return `${symbol}${invocation} — ${action.description}`;
 }

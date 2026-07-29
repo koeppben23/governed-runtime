@@ -314,7 +314,7 @@ describe('implement', () => {
   /** Helper: reach IMPLEMENTATION phase via solo workflow. */
   async function reachImplementation(): Promise<void> {
     await hydrateAndTicket();
-    await plan.execute({ planText: '## Plan\n1. Fix auth' }, ctx);
+    await plan.execute({ planText: '## Plan\n1. Fix auth', targetPaths: ['docs/test.md'] }, ctx);
     const planReviewFindings = await fulfillReview('plan', 0, 'accept');
     await plan.execute({ reviewVerdict: 'accept', reviewFindings: planReviewFindings }, ctx);
     // Solo: PLAN_REVIEW auto-approves → VALIDATION
@@ -723,12 +723,39 @@ describe('implement', () => {
       expect(result.message).toContain('accept');
     });
 
-    it('blocks reviewerUnavailable mixed into a record-mode call with INVALID_IMPLEMENT_TOOL_SEQUENCE (#499 gap closed)', async () => {
+    it('blocks reviewerUnavailable before implementation evidence is recorded', async () => {
       await reachImplementation();
       const raw = await review_implementation.execute({ reviewerUnavailable: true }, ctx);
       const result = parseToolResult(raw);
       expect(result.error).toBe(true);
-      expect(result.code).toBe('INVALID_IMPLEMENT_TOOL_SEQUENCE');
+      expect(result.code).toBe('IMPLEMENTATION_EVIDENCE_REQUIRED');
+    });
+
+    it('reports a preferred host Task transport failure without consuming the implementation obligation', async () => {
+      await reachImplementation();
+      await implement.execute({}, ctx);
+      await passImplValidation();
+
+      const sessDir = await currentSessionDir();
+      const state = await readState(sessDir);
+      const retryState = {
+        ...state!,
+        policySnapshot: {
+          ...state!.policySnapshot!,
+          reviewInvocationPolicy: 'host_task_preferred' as const,
+        },
+      };
+      await writeState(sessDir, retryState);
+
+      const raw = await review_implementation.execute({ reviewerUnavailable: true }, ctx);
+      const result = parseToolResult(raw);
+      const after = await readState(sessDir);
+      expect(result.error).toBeUndefined();
+      expect(result.phase).toBe('IMPL_REVIEW');
+      expect(result.reviewTransportFailure).toEqual({ transport: 'host_task', reported: true });
+      expect(result.reviewObligationId).toBeTruthy();
+      expect(after?.reviewAssurance).toEqual(retryState.reviewAssurance);
+      expect(after?.implReview).toEqual(retryState.implReview);
     });
 
     it('Mode B blocks with IMPLEMENTATION_EVIDENCE_REQUIRED when implementation is null', async () => {

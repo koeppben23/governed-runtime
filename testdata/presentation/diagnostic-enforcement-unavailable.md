@@ -9,8 +9,9 @@ FlowGuard blocked this action.
 - readable FlowGuard session state
 - active plugin enforcement context
 
-## Next
+## Recovery
 
+Use the canonical recovery steps below.
 - Run flowguard doctor to verify the installation and plugin activation.
 - Inspect session directory and session-state.json permissions.
 - Re-run /hydrate after fixing workspace or session state issues.

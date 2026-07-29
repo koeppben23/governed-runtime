@@ -135,7 +135,7 @@ async function completeRegulatedSession(): Promise<{
 }> {
   await callOk(hydrate, { policyMode: 'regulated', profileId: 'baseline' });
   await callOk(ticket, { text: 'Tamper matrix ticket', source: 'user' });
-  await callOk(plan, { planText: '## Plan\n1. Build\n2. Verify' });
+  await callOk(plan, { planText: '## Plan\n1. Build\n2. Verify', targetPaths: ['docs/test.md'] });
 
   for (let i = 0; i < 4 && (await currentPhase()) !== 'PLAN_REVIEW'; i++) {
     await callOk(plan, { reviewVerdict: 'accept' });

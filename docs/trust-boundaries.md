@@ -80,6 +80,29 @@ Technically enforced:
 - Pure rails and machine logic must not log or perform side effects.
 - Mutating writes validate against Zod schemas and fail closed on invalid state.
 
+### Enforced Challenge Resolution Evidence
+
+`ChallengeResolution` records an author's claimed binding from exactly one prior
+implementation review challenge to the current implementation digest and immutable
+post-implementation validation-attempt IDs. The schema and `flowguard_resolve_implementation_challenge`
+tool reject unknown, duplicate, wrong-scope, and wrong-digest references before the
+atomic state/artifact write. Resolved actor identity is recorded only when available.
+
+Author evidence is **NOT_VERIFIED** until a subsequent independent `ReviewFindings`
+record supplies `challengeResolutionVerdicts` for every prior implementation
+challenge. Only the independent reviewer may mark a resolution `resolved`; `still_failing`
+and `not_verified` fail closed. New-session review obligations derive their required
+challenge count from the `challenge-policy.v1` policy frozen in the session snapshot and
+the phase-tool-gate runtime minimum task class (TRIVIAL 0, STANDARD 1, HIGH-RISK 2)
+floored by the author's `claimedTaskClass`, then
+freeze that result and a single flow-native kind before invocation. An absent
+`challengePolicy` is fail-closed by mode: `solo` stays legacy-tolerant (disabled),
+while `team`/`team-ci`/`regulated` fall back to the canonical matrix. Host
+captures and submitted findings use
+the same dependency-free consistency authority, so omitted evidence, wrong kinds, failed
+implementation challenges, non-distinct or placeholder challenges, contradicted
+design/content challenges, and unresolved resolutions cannot be accepted.
+
 ### Adapters
 
 | Property             | Trust Level | Reason                                                                 |

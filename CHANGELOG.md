@@ -9,6 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Defense-in-depth validation gate on reviewer acceptance.** Accepting an
+  implementation review now re-checks that every active verification check has a
+  passing execution attempt bound to the **current** `implementation.digest`
+  (via `state.validationAttempts`) before advancing to `EVIDENCE_REVIEW`.
+  Previously reviewer acceptance relied solely on the state-machine topology
+  (reaching `IMPL_REVIEW` only through the `IMPL_VALIDATION` gate); this adds an
+  independent, digest-bound barrier so any future inbound path to `IMPL_REVIEW`, a
+  topology regression, or a future mutation of `implementation` that failed to
+  clear stale `implValidation`, cannot accept unvalidated or prior-revision code.
+  Sessions with no active checks are unaffected (the deliberate zero-check
+  behavior is preserved). Blocks with the new `IMPL_VALIDATION_EVIDENCE_REQUIRED`
+  reason code.
+
+- **Evidence-grounded implementation review.** The implementation reviewer
+  prompt now carries FlowGuard-executed verification evidence (`exitCode`,
+  `passed`, `command`, `executionMs`, and the tamper-evident `outputDigest`) for
+  the current implementation, so the reviewer falsifies verification claims
+  against ground truth instead of inferring them. Only `implementation`-scope
+  validation attempts bound to the current implementation digest are injected;
+  stale, baseline, and foreign-digest attempts are excluded. When no bound
+  evidence exists the prompt renders an explicit `NOT_VERIFIED` line rather than
+  omitting the section. The reviewer remains strictly read-only — FlowGuard
+  executes the checks, not the reviewer model — and the reviewer criteria are
+  unchanged.
+
+- **Versioned frozen challenge policy (#747).** New sessions persist
+  `challenge-policy.v1` in the policy snapshot, and every review obligation reads
+  its requirement matrix from that frozen value before invocation. Snapshots from
+  before this policy remain compatible: missing `challengePolicy` disables
+  challenge count/kind enforcement rather than applying current defaults.
+
+- **Enforced review challenge matrix (#747).** Review obligations now freeze runtime-derived
+  challenge coverage (TRIVIAL 0, STANDARD 1, HIGH-RISK 2) and their flow-native challenge
+  kind. Submitted and host-captured findings reject incoherent coverage. An author-recorded
+  implementation resolution remains NOT_VERIFIED until a later independent reviewer returns
+  `resolved`, `still_failing`, or `not_verified`.
+
+- **Advisory implementation challenge resolution evidence (#747).**
+  `flowguard_resolve_implementation_challenge` is available in `IMPL_REVIEW` after
+  post-implementation validation. It persistently binds one prior implementation
+  challenge to the current implementation digest and immutable validation attempt
+  IDs, rejects unknown, duplicate, wrong-scope, and wrong-digest references, and
+  records resolved actor identity when available. Resolutions are surfaced as
+  `NOT_VERIFIED` reviewer/status context only; they do not change review acceptance
+  or policy enforcement.
+
 - **Mandatory `core` review coverage profile (Wave 1 of #730).** Every plan,
   implementation, architecture, and standalone `/review` now runs under a
   canonical, non-optional `core` review profile. The profile is frozen into the
@@ -176,7 +222,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Resolved high-severity PostCSS audit finding.** Updated the locked
+- **Hardened the review challenge feature against gaming (#747 follow-up).** Five
+  enforcement gaps in the challenge coverage feature were closed:
+  - _Distinctness + substance (B1/B2):_ the N required challenges must now be
+    substantively distinct (no duplicate `challengeId` or claim/locations/evidence
+    signature) and clear a low anti-placeholder claim floor. New codes
+    `SUBAGENT_CHALLENGE_NOT_DISTINCT`, `SUBAGENT_CHALLENGE_INSUBSTANTIAL`.
+  - _Contradicted falsification (B4):_ a `design_challenge`/`content_challenge`
+    whose outcome is `contradicted` can no longer accompany `accept`. New code
+    `SUBAGENT_CHALLENGE_CONTRADICTED`.
+  - _Evidence binding on all paths (B3/B5):_ `allowedEvidenceRefs` and
+    `expectedObligationId` are now wired on the plan, architecture, and standalone
+    review paths (previously implement-only), so a fabricated ADR section / digest
+    / content digest or a foreign obligation id is rejected.
+  - _Task-class floor (C1):_ the challenge count is floored by the author's
+    `claimedTaskClass` (`counts[max(computed, claimed)]`), so a high-risk change
+    can no longer collapse the count to 0 by declaring doc-only paths.
+  - _Fail-closed absent policy (A2):_ an absent `challengePolicy` now fails closed
+    to the canonical matrix in `team`/`team-ci`/`regulated` (solo stays
+    legacy-tolerant), matching the discoveryHealth/validationEvidence normalizers.
+
+- **Architecture ADR submission no longer dead-ends under an active challenge
+  policy.** An ADR carries no diff, so challenge classification for
+  `flowguard_architecture` (Mode A) previously resolved to `unavailable` and
+  hard-blocked with `RISK_CLASSIFICATION_EVIDENCE_UNAVAILABLE` whenever a
+  `challengePolicy` was active (`team`/`team-ci`/`regulated`) — a state the A2
+  fail-closed normalization made unavoidable for those modes. Classification now
+  derives the changed-file set from the session's persisted discovery risk
+  surfaces (a new `discoveryRiskPaths` SSOT extractor over api/persistence/cicd/
+  security surface evidence and code-surface signal locations), unioned with an
+  optional, newly accepted author-supplied `targetPaths` tool argument, and never
+  returns `unavailable`. The count stays floored by the author's `claimedTaskClass`
+  (`counts[max(computed, claimed)]`, finding C1), so the discovery-derived set and
+  any author `targetPaths` can only raise the requirement, never lower it. With no
+  detected risk surface and no `targetPaths`, the ADR classifies as TRIVIAL
+  (count 0) — a genuine "no detected risk" signal, not a block.
+
+- **Bound implementation-challenge freshness on the directly-submitted review
+  path.** Challenge evidence freshness (an `implementation_challenge` must cite a
+  validation attempt for the current implementation digest, from the obligation's
+  allowed set, under the active obligation id) was enforced only on the
+  host-captured findings path. Directly-submitted `reviewFindings` reached
+  `validateReviewFindings` without `allowedEvidenceRefs` or `expectedObligationId`,
+  so a stale, failed, or foreign validation attempt could satisfy a challenge.
+  Both ingestion routes now pass identical binding context, so the freshness and
+  obligation-scope checks in `findings-consistency.ts` apply symmetrically.
+
+- **Registered three fail-closed review reason codes (#747).**
+  `VALIDATION_SUBJECT_CHANGED` (validation subject digest changed mid-execution),
+  `SUBAGENT_EVIDENCE_MISSING`, and `SUBAGENT_MANDATE_MISMATCH` are emitted on
+  strict review/validation block paths via `formatBlocked(...)` but were absent
+  from the reason registry, so operators saw an `[UNREGISTERED_REASON: ...]`
+  placeholder instead of a message and recovery steps. All three are now
+  registered with recovery guidance. The completeness guard was strengthened to
+  also scan `formatBlocked('CODE')` / `strictBlockedOutput('CODE')` call sites,
+  not only `code:` object literals, so this class of gap fails CI in future.
+
+- **Fail-closed normalization of a malformed challenge policy (#747).** A policy
+  snapshot that carried a present-but-malformed `challengePolicy` was silently
+  coerced to `undefined`, disabling frozen challenge enforcement and downgrading
+  a required review. Malformed-but-present policies now fall back to the canonical
+  frozen `challenge-policy.v1` matrix (mirroring the `discoveryHealth` /
+  `validationEvidence` fail-closed normalizers). An absent `challengePolicy` still
+  stays legacy-compatible and does not activate enforcement.
+
   transitive `postcss` dependency to `8.5.23` and refreshed related lockfile
   entries. `npm audit --audit-level=high` now reports no high-severity findings.
 

@@ -38,6 +38,10 @@ describe('reviewer prompt JSON schema integrity', () => {
     expect(schemaBlock).toContain('"overallVerdict"');
     expect(schemaBlock).toContain('"blockingIssues"');
     expect(schemaBlock).toContain('"attestation"');
+    expect(schemaBlock).not.toContain('"evidenceRefs"');
+    expect(prompt).toContain(
+      'Omit `challenges` unless the Task prompt supplies a Challenge contract',
+    );
   });
 
   it('static REVIEWER_AGENT export contains a closed JSON Output Format block', () => {

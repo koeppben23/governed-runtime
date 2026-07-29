@@ -23,11 +23,14 @@ import type {
   ReviewProfile,
   DiscoveryHealthPolicy,
   ValidationEvidencePolicy,
+  ChallengePolicy,
 } from './policy-types.js';
 import {
   DEFAULT_SELF_REVIEW_CONFIG,
   defaultDiscoveryHealthForMode,
   defaultValidationEvidenceForMode,
+  defaultChallengePolicyForMode,
+  CHALLENGE_POLICY_V1,
 } from './policy-types.js';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { PolicyConfigurationError } from './policy-errors.js';
@@ -147,6 +150,32 @@ function normalizeReviewPolicies(
   };
 }
 
+function normalizeChallengePolicy(
+  raw: unknown,
+  fallback: ChallengePolicy | undefined,
+): NormalizedField<ChallengePolicy | undefined> {
+  // Absent field: fail closed to the mode default (solo → undefined, enforced
+  // modes → canonical matrix), so a legacy/stripped snapshot in an enforced mode
+  // cannot silently disable enforcement (finding A2). `normalized` is true only
+  // when a value is substituted.
+  if (raw === undefined) return { value: fallback, normalized: fallback !== undefined };
+  const candidate = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const counts = candidate.counts;
+  if (
+    candidate.version === 'challenge-policy.v1' &&
+    counts !== null &&
+    typeof counts === 'object' &&
+    (counts as Record<string, unknown>).TRIVIAL === 0 &&
+    (counts as Record<string, unknown>).STANDARD === 1 &&
+    (counts as Record<string, unknown>)['HIGH-RISK'] === 2
+  ) {
+    return { value: { ...CHALLENGE_POLICY_V1 }, normalized: false };
+  }
+  // Present-but-malformed: fail closed to the canonical matrix rather than
+  // dropping to undefined (which would downgrade a required review).
+  return { value: { ...CHALLENGE_POLICY_V1 }, normalized: true };
+}
+
 /**
  * Normalize a potentially incomplete or legacy policy snapshot.
  *
@@ -250,6 +279,7 @@ function normalizePolicyFields(
   allowReducedCeremony: boolean;
   discoveryHealth: DiscoveryHealthPolicy;
   validationEvidence: ValidationEvidencePolicy;
+  challengePolicy?: ChallengePolicy;
   normalized: boolean;
 } {
   let norm = false;
@@ -295,6 +325,9 @@ function normalizePolicyFields(
   );
   if (validationEvidenceResult.normalized) norm = true;
 
+  const challengePolicy = normalizeChallengePolicy(s.challengePolicy, defaults.challengePolicy);
+  if (challengePolicy.normalized) norm = true;
+
   return {
     effectiveGateBehavior,
     requireVerifiedActorsForApproval: verifiedActors.value,
@@ -306,6 +339,7 @@ function normalizePolicyFields(
     allowReducedCeremony: reducedCeremony.value,
     discoveryHealth: discoveryHealthResult.value,
     validationEvidence: validationEvidenceResult.value,
+    challengePolicy: challengePolicy.value,
     normalized: norm,
   };
 }
@@ -554,17 +588,18 @@ export function normalizePolicySnapshotWithMeta(
   const selfReviewNorm = normalizeSelfReviewCheck(s);
   const proven = extractProvenanceFields(s, mode);
 
-  const anyNormalized =
-    modeNorm ||
-    hashNorm ||
-    core.normalized ||
-    policy.normalized ||
-    assuranceNorm ||
-    idpNorm ||
-    actorNorm ||
-    auditNorm ||
-    selfReviewNorm ||
-    proven.reqModeNormalized;
+  const anyNormalized = [
+    modeNorm,
+    hashNorm,
+    core.normalized,
+    policy.normalized,
+    assuranceNorm,
+    idpNorm,
+    actorNorm,
+    auditNorm,
+    selfReviewNorm,
+    proven.reqModeNormalized,
+  ].some(Boolean);
 
   const rawSelfReview = s.selfReview as Partial<SelfReviewConfig> | null | undefined;
 
@@ -602,6 +637,7 @@ export function normalizePolicySnapshotWithMeta(
       allowReducedCeremony: policy.allowReducedCeremony,
       discoveryHealth: policy.discoveryHealth,
       validationEvidence: policy.validationEvidence,
+      ...(policy.challengePolicy ? { challengePolicy: policy.challengePolicy } : {}),
     },
     normalized: anyNormalized,
     reason: anyNormalized ? 'incomplete_snapshot_normalized' : undefined,
@@ -692,6 +728,7 @@ export function modeConsistentDefaults(mode: PolicyMode): {
   readonly allowReducedCeremony: boolean;
   readonly discoveryHealth: DiscoveryHealthPolicy;
   readonly validationEvidence: ValidationEvidencePolicy;
+  readonly challengePolicy?: ChallengePolicy;
 } {
   const base =
     mode === 'solo'
@@ -705,5 +742,6 @@ export function modeConsistentDefaults(mode: PolicyMode): {
     ...base,
     discoveryHealth: defaultDiscoveryHealthForMode(mode),
     validationEvidence: defaultValidationEvidenceForMode(mode),
+    challengePolicy: defaultChallengePolicyForMode(mode),
   };
 }

@@ -56,6 +56,42 @@ The profile is **frozen into the review obligation at creation, before any revie
 
 The profile is advisory context and provenance only. It does not transition state, satisfy an obligation, or replace ReviewFindings — the canonical reviewer remains the sole producer of binding, obligation-bound findings.
 
+### Controlled Challenge Fixture Evaluation (#747)
+
+`src/integration/review/challenge-policy-evaluation.test.ts` runs controlled,
+deterministic implementation-review fixtures twice: once with a legacy-shaped
+obligation that has no frozen challenge requirements, and once with requirements
+frozen from `challenge-policy.v1`. It resolves host-task-captured reviewer
+findings through the production host-task validation path rather than calling the
+challenge validator directly. Fixture ground truth is independently assigned and
+is intentionally allowed to disagree with structural validation.
+
+| Metric                      |       Without frozen requirements |          With frozen requirements |
+| --------------------------- | --------------------------------: | --------------------------------: |
+| Recall                      |                                0% |                               50% |
+| Precision                   |         N/A (no fixtures blocked) |                               50% |
+| Blocking rate               |                                0% |                         40% (2/5) |
+| Re-review rate              |                         20% (1/5) |                         20% (1/5) |
+| Fixture reviewer latency    | measured with `performance.now()` | measured with `performance.now()` |
+| Pipeline validation latency | measured with `performance.now()` | measured with `performance.now()` |
+
+The fixture set contains a missing-challenge case, a structurally valid but
+independently labeled semantic gap (an intentional false negative), a contested
+no-challenge control (an intentional false positive), and a valid control. It
+also executes `changes_requested`, records advisory challenge-resolution evidence
+through `resolve_implementation_challenge`, and accepts a distinct second
+host-captured reviewer finding only after that reviewer independently marks the
+resolution `resolved`. Re-review rate is therefore the observed second-review
+occurrence, not a count of blocks.
+
+These are deterministic fixture results only. `fixture reviewer latency` measures
+the deterministic fixture-reviewer artifact parsing and findings production; it is
+not reviewer-model or production latency. `pipeline validation latency` is the
+separate wall-clock execution time for host capture, validation, persistence, and
+re-review handling, measured with `performance.now()`.
+The labels and results do not establish reviewer/model quality or real-world
+false-positive and false-negative rates.
+
 ### Multi-Platform Reviewer Transport
 
 FlowGuard projects one of four reviewer transport modes in tool output:
@@ -101,6 +137,41 @@ The LLM then sees the `INDEPENDENT_REVIEW_COMPLETED` response and submits the ve
 
 **Contract:** `INDEPENDENT_REVIEW_COMPLETED` is only signaled when the reviewer's response contains valid `ReviewFindings` and matching `ReviewInvocationEvidence`. Structured output is canonical high-assurance evidence. Text compatibility is lower-assurance evidence, policy-gated, audit-visible, and never treated as equivalent to structured output. Unparseable reviewer responses never produce `COMPLETED`.
 
+### Evidence-Grounded Implementation Review
+
+The implementation reviewer prompt carries a `## Verification Evidence (executed)`
+section built from FlowGuard-executed validation attempts, so the reviewer can
+falsify verification claims against runtime ground truth instead of inferring
+them from the diff. This evidence is executor-produced (`flowguard_run_check` via
+`src/verification/executor.ts`), never agent-reported: each row exposes the
+verification `kind`, `command`, `exitCode`, pass/fail/timeout status,
+`executionMs`, and the tamper-evident `outputDigest`.
+
+Fail-closed binding rules:
+
+- **Digest binding.** Only `implementation`-scope validation attempts whose
+  `implementationDigest` equals the current `implementation.digest` are injected.
+  Stale attempts (from a prior implementation revision), `baseline`-scope
+  attempts, and foreign-digest attempts are excluded, so the reviewer never
+  verifies claims against outdated ground truth
+  (`stateVerificationEvidence` in `src/integration/review/shared-helpers.ts`).
+- **No silent omission.** When no bound evidence exists, the section renders an
+  explicit `NOT_VERIFIED: no executed verification evidence is bound to the
+current implementation digest.` line rather than being dropped — "no bound
+  evidence" is itself a review signal.
+- **Read-only reviewer preserved.** FlowGuard executes the checks; the reviewer
+  model does not. The reviewer stays strictly read-only (`bash: deny`), and the
+  reviewer criteria (`REVIEWER_CRITERIA`) are unchanged — the behavior lives in
+  the prompt builder, not in a new review authority.
+- **Enforcement-safe.** The section is emitted after the attestation/context
+  block and uses neutral field labels (`durationMs`, `digest`) so it can never
+  introduce `iteration`/`version`-adjacent digits that would displace the L3
+  prompt-integrity context tokens.
+
+This surfaces executed evidence to the reviewer; it does not yet _require_ that
+the checks were executed before review (a `NOT_VERIFIED` section is still a valid
+review input). Mandatory pre-review execution is tracked separately.
+
 ### Review Output Policy
 
 `reviewOutputPolicy` is frozen in the policy snapshot at session creation:
@@ -144,6 +215,28 @@ The reviewer subagent returns one of three `overallVerdict` values:
 - **Rails layer:** plan/implement/continue rails translate `unable_to_review` into a `BlockedResult` discriminated-union variant.
 
 Recovery: revise the artifact substantially (e.g., new `flowguard_plan({ planText })` with clearer scope) or address the prerequisite that made the artifact unreviewable (e.g., file a new ticket). A fresh artifact submission starts a new review obligation.
+
+#### Acceptance Requires Passing Validation Evidence (Defense-in-Depth)
+
+Accepting an implementation review does not advance to `EVIDENCE_REVIEW` on the
+reviewer verdict alone. Before advancing, `handleImplReview` requires that every
+active verification check has a **passing execution attempt bound to the current
+`implementation.digest`** — checked against `state.validationAttempts`
+(scope `implementation`, matching digest, `passed`), the same digest-bound
+authority used to inject verification evidence into the reviewer prompt.
+
+On the normal path this is redundant — `IMPL_REVIEW` is only reachable once the
+`IMPL_VALIDATION` gate passed — but acceptance must not rely on topology alone.
+This gate is deliberately stronger than the machine guard `implValidationPassed`,
+which reads the digest-less `implValidation` slot and stays sound only by the
+invariant that a fresh implementation clears that slot. By binding to the current
+digest instead, any future inbound path to `IMPL_REVIEW`, a topology regression,
+or a future mutation of `implementation` that failed to clear stale
+`implValidation`, still cannot accept unvalidated or prior-revision code. When the
+active checks are unsatisfied, acceptance blocks with
+`IMPL_VALIDATION_EVIDENCE_REQUIRED`. Sessions with no active checks are unaffected
+— the deliberate zero-check behavior for repos without discoverable verification
+commands is preserved.
 
 ### Fail-Closed Enforcement
 
@@ -326,6 +419,22 @@ All validation is fail-closed. Invalid findings return BLOCKED.
 | Strict enforcement   | invocation evidence already consumed | `SUBAGENT_EVIDENCE_REUSED`           |
 
 Validation logic is implemented once in `src/integration/tools/review-validation.ts` and shared by `/plan`, `/architecture`, `/implement`, and `/review` tools. The `obligationType` discriminator (`'plan' | 'architecture' | 'implement' | 'review'`) selects per-obligation criteria. Plan, architecture, and implementation reviews bind iteration/version fields; standalone `/review` additionally binds the obligation to the concrete review input fingerprint and `toolObligationId`.
+
+**Challenge freshness binding (both ingestion routes).** When an obligation
+carries a frozen challenge requirement, challenge `evidenceRefs` are validated
+against the obligation's `allowedEvidenceRefs`, and each challenge's
+`obligationId` must equal the active obligation (`expectedObligationId`). This
+obligation-scoping applies to **every** challenge-bearing obligation type —
+plan/architecture `design_challenge`, implement `implementation_challenge`, and
+standalone review `content_challenge` — not to implementation alone. For
+implementation challenges the allowed set additionally binds an `outcome='pass'`
+challenge to a validation attempt for the **current** implementation digest — a
+stale, failed, foreign, or wrong-obligation reference is rejected with
+`SUBAGENT_CHALLENGE_EVIDENCE_MISSING`. Both ingestion routes pass this binding
+context identically: the host-captured path (`resolveHostTaskFindings`) and the
+directly-submitted path
+(`resolveHostTaskEffectiveFindings` → `validateReviewFindings`). Neither route can
+accept a challenge whose evidence is outside the frozen allowed set.
 
 **Plugin-level enforcement (`src/integration/review/enforcement/enforcement.ts`):**
 

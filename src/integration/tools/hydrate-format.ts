@@ -178,7 +178,6 @@ interface HydrateCardParams {
  */
 function buildHydratePresentationCard(params: HydrateCardParams): { markdown: string } {
   const sections: PresentationSection[] = [];
-  sections.push({ kind: 'title' as const, text: 'FlowGuard session active.' });
   sections.push(buildHydrateStatusSection(params));
   sections.push(buildHydrateWorkflowsSection());
   if (params.gateNotice !== null) {
@@ -197,6 +196,7 @@ function buildHydratePresentationCard(params: HydrateCardParams): { markdown: st
   const document: CompactCardDocument = {
     kind: 'compact_card',
     density: 'compact',
+    form: 'success',
     sections,
     conclusion,
   };

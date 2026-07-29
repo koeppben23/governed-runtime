@@ -269,7 +269,7 @@ describe('run_check', () => {
   /** Helper: reach VALIDATION phase. */
   async function reachValidation(): Promise<void> {
     await hydrateAndTicket();
-    await plan.execute({ planText: '## Plan' }, ctx);
+    await plan.execute({ planText: '## Plan', targetPaths: ['docs/test.md'] }, ctx);
     const reviewFindings = await fulfillReview('plan', 0, 'accept');
     await plan.execute({ reviewVerdict: 'accept', reviewFindings }, ctx);
     // Solo: auto-advances PLAN_REVIEW → VALIDATION

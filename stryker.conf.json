@@ -32,6 +32,9 @@
 
     "src/integration/command-aliases.ts",
     "src/integration/tool-classification.ts",
+    "src/integration/discovery-risk-paths.ts",
+    "src/integration/tools/pre-implementation-challenge.ts",
+    "src/integration/tools/architecture-submit.ts",
     "src/integration/tools/review-validation-mode.ts",
     "src/integration/tools/review-validation.ts",
     "src/integration/tools/review-validation-host-task.ts",
@@ -41,6 +44,7 @@
     "src/templates/mandates.ts",
     "src/integration/review/enforcement/enforcement.ts",
     "src/integration/review/enforcement/findings-consistency.ts",
+    "src/integration/review/enforcement/challenge-consistency.ts",
     "src/integration/review/orchestrator.ts",
     "src/integration/review/orchestrator-detection.ts",
     "src/integration/review/orchestrator-output.ts",

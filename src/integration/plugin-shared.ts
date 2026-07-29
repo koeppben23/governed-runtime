@@ -26,6 +26,9 @@ type PluginWorkspaceRuntime = ReturnType<typeof createWorkspace>;
 export const FG_PREFIX = 'flowguard_';
 const TRACE_REGISTRY_LIMIT = 1000;
 
+/** Limits tool use until the host observes the next explicit user command. */
+export type ActiveCommandScope = 'check';
+
 export interface FlowGuardPluginRuntime {
   readonly ws: PluginWorkspaceRuntime;
   readonly log: PluginLogger;
@@ -35,6 +38,7 @@ export interface FlowGuardPluginRuntime {
   readonly orchestratorDeps: OrchestratorDeps;
   readonly auditDeps: AuditDeps;
   readonly toolTraceIds: Map<string, string>;
+  readonly activeCommandScopes: Map<string, ActiveCommandScope>;
   readonly setCurrentSessionId: (sessionId: string) => void;
   readonly logError: (message: string, err: unknown) => void;
 }

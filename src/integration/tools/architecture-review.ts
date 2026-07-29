@@ -31,10 +31,13 @@ import {
   findLatestUnconsumedObligation,
   appendReviewObligation,
   reviewObligationResponseFields,
+  resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 
 import { requireReviewFindings, resolveHostTaskEffectiveFindings } from './review-validation.js';
+import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
+import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 
 import {
   PHASE_LABELS,
@@ -42,6 +45,7 @@ import {
   buildProductNextAction,
 } from '../../presentation/index.js';
 import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js';
+import { readConfig } from '../../adapters/persistence-config.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 
@@ -50,6 +54,7 @@ import {
   type ArchitectureSession,
   buildArchitectureReviewInstruction,
 } from './architecture-shared.js';
+import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
 
 // ─── Mode-B Internal Types ────────────────────────────────────────────────
 
@@ -162,6 +167,11 @@ function resolveArchitectureReview(
       assurance: state.reviewAssurance,
       sessionId: context.sessionID,
       reviewHostPlatform: resolveRuntimeReviewPlatform(),
+      // Bind design-challenge evidence to the ADR's canonical allowed refs
+      // (finding B3): a fabricated section/digest must not satisfy a challenge.
+      allowedChallengeEvidenceRefs: buildHostTaskChallengeContract(state, pendingObligation ?? null)
+        ?.evidenceRefs,
+      previouslyUsedChallengeIds: collectPreviouslyUsedChallengeIds(state),
     },
   });
 
@@ -424,7 +434,7 @@ async function attachReviewCard(input: {
   const nextAction = resolveNextAction(finalState.phase, finalState);
   const productNext = buildProductNextAction(nextAction, finalState.phase);
   const latestReview = resp.latestReview as Record<string, unknown> | undefined;
-  resp.reviewCard = buildArchitectureReviewCard({
+  const reviewCardInput = {
     phase: finalState.phase,
     phaseLabel: PHASE_LABELS[finalState.phase],
     adrTitle: revision.currentAdr.title,
@@ -441,7 +451,14 @@ async function attachReviewCard(input: {
     productNextAction: productNext,
     isApproved: isComplete,
     forcedConvergence: input.forcedConvergence,
-  });
+  };
+  // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
+  resp.reviewCard = buildArchitectureReviewCard(reviewCardInput);
+  resp.presentation = {
+    markdown: buildArchitectureReviewCard(reviewCardInput, {
+      glyphProfile: (await readConfig(session.worktree)).presentation.opencode.glyphProfile,
+    }),
+  };
   const artifactErr = await materializeReviewCardArtifact(
     session.sessDir,
     'architecture-review-card',
@@ -452,17 +469,54 @@ async function attachReviewCard(input: {
   if (artifactErr) resp.artifactWarning = artifactErr;
 }
 
+function findPriorArchTargetPaths(
+  assurance: NonNullable<SessionState['reviewAssurance']>,
+): string[] | undefined {
+  const obligations = [...assurance.obligations].reverse();
+  const lastArch = obligations.find((o) => o.obligationType === 'architecture');
+  const paths = lastArch?.metadata?.targetPaths;
+  if (!Array.isArray(paths)) return undefined;
+  const stringPaths: string[] = paths.filter((p: unknown): p is string => typeof p === 'string');
+  return stringPaths.length === paths.length ? stringPaths : undefined;
+}
+
 async function persistAndFormatNonConvergedReview(
   input: ReviewResultContext,
   verdict: LoopVerdict,
 ): Promise<string> {
-  const { session, review, revision, advanced, iteration } = input;
+  const { args, session, review, revision, advanced, iteration } = input;
+  // Recover the prior obligation's paths and union them with any fresh author
+  // targetPaths. Classification derives the rest from persisted discovery risk
+  // surfaces (shared SSOT with Mode A) and NEVER dead-ends: an ADR revision that
+  // carries no diff and no detected surface classifies as TRIVIAL, not a block.
+  const priorTargetPaths = findPriorArchTargetPaths(
+    ensureReviewAssurance(advanced.state.reviewAssurance),
+  );
+  const targetPaths = [...new Set([...(priorTargetPaths ?? []), ...(args.targetPaths ?? [])])];
+  const classification = await resolvePreImplementationChallengeClassification(
+    advanced.state,
+    session.wsDir,
+    review.subagentEnabled,
+    targetPaths,
+  );
+  const resolvedTargetPaths =
+    classification.kind === 'available' ? [...classification.changedFiles] : undefined;
+  const metadata: Record<string, unknown> = {};
+  if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
+    metadata.targetPaths = resolvedTargetPaths;
+  }
   const nextObligation = review.subagentEnabled
     ? createReviewObligation({
         obligationType: 'architecture',
         iteration,
         planVersion: review.expectedPlanVersion,
         now: session.ctx.now(),
+        reviewProfile: resolveFrozenReviewProfile(advanced.state.policySnapshot),
+        profileSource: 'policy_default',
+        policySnapshot: advanced.state.policySnapshot,
+        changedFiles: resolvedTargetPaths,
+        claimedTaskClass: advanced.state.claimedTaskClass,
+        metadata,
       })
     : null;
   const stateToPersist = nextObligation

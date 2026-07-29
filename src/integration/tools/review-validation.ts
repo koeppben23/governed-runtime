@@ -37,6 +37,7 @@ import {
   formatHostTaskAcceptanceRejection,
 } from './review-validation-acceptance.js';
 import { resolveHostTaskFindings } from './review-validation-host-task.js';
+import { validateChallengeConsistency } from '../review/enforcement/challenge-consistency.js';
 import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
@@ -63,6 +64,31 @@ export interface ReviewFindingsValidationContext {
   readonly reviewParentSessionId?: string;
   /** Runtime host platform for transport-specific strict evidence validation. */
   readonly reviewHostPlatform?: 'opencode' | 'claude-code' | 'codex' | 'unknown';
+  /** Author-proposed implementation resolutions requiring independent verdicts. */
+  readonly unresolvedImplementationChallengeIds?: readonly string[];
+  /**
+   * Prior failing implementation challenges with NO valid author resolution for
+   * the current digest. Acceptance fails closed while this set is non-empty
+   * (#747: an author must record a resolution before the reviewer can close a
+   * prior challenge; author resolutions never act as closure).
+   */
+  readonly unaddressedPriorFailIds?: readonly string[];
+  /**
+   * Canonical challenge evidence references the active obligation permits. When
+   * set, submitted challenge evidenceRefs must be a subset of these. Applies to
+   * any challenge-bearing obligation; for an `implementation_challenge` this is
+   * what binds it to a passing validation attempt for the CURRENT implementation
+   * digest (freshness). Absent on non-challenge paths.
+   */
+  readonly allowedEvidenceRefs?: readonly unknown[];
+  /**
+   * Active obligation id. When set, every submitted challenge's `obligationId`
+   * must equal it — obligation-scoping applies to all challenge-bearing
+   * obligation types (plan/architecture/implement/review), not implement alone.
+   */
+  readonly expectedObligationId?: string;
+  /** Challenge IDs already persisted in this session's review-findings history. */
+  readonly previouslyUsedChallengeIds?: readonly string[];
 }
 
 interface AttestedReviewCheckInput {
@@ -144,6 +170,7 @@ function pluginEnforcementUnavailableForReviewAcceptance(input: AttestedReviewCh
  *
  * @returns formatBlocked string if validation fails, null if valid.
  */
+// eslint-disable-next-line complexity -- ordered fail-closed validation boundary
 export function validateReviewFindings(
   findings: ReviewFindings,
   ctx: ReviewFindingsValidationContext,
@@ -190,7 +217,14 @@ export function validateReviewFindings(
       count: String(consistency.details.blockingIssueCount),
     });
   }
-
+  const obligation = ctx.assurance
+    ? findLatestObligation(
+        ctx.assurance.obligations,
+        ctx.obligationType ?? 'review',
+        ctx.expectedIteration,
+        ctx.expectedPlanVersion,
+      )
+    : null;
   const expectedIteration = ctx.expectedIteration;
   const expectedPlanVersion = ctx.expectedPlanVersion;
 
@@ -208,6 +242,27 @@ export function validateReviewFindings(
       provided: String(findings.iteration),
       expected: String(expectedIteration),
     });
+  }
+
+  const challengeConsistency = validateChallengeConsistency({
+    overallVerdict: findings.overallVerdict,
+    requiredChallengeCount: obligation?.requiredChallengeCount,
+    requiredChallengeKind: obligation?.requiredChallengeKind ?? 'implementation_challenge',
+    challenges: findings.challenges,
+    expectedObligationId: ctx.expectedObligationId ?? obligation?.obligationId,
+    allowedEvidenceRefs: ctx.allowedEvidenceRefs,
+    resolutionVerdicts: findings.challengeResolutionVerdicts,
+    unresolvedImplementationChallengeIds: ctx.unresolvedImplementationChallengeIds,
+    unaddressedPriorFailIds: ctx.unaddressedPriorFailIds,
+    previouslyUsedChallengeIds: ctx.previouslyUsedChallengeIds,
+  });
+  if (!challengeConsistency.ok) {
+    return formatBlocked(
+      challengeConsistency.code,
+      Object.fromEntries(
+        Object.entries(challengeConsistency.details).map(([key, value]) => [key, String(value)]),
+      ),
+    );
   }
 
   if (ctx.strictEnforcement) return validateStrictReviewFindings(findings, ctx);
@@ -489,6 +544,10 @@ interface HostTaskResolutionContext {
     readonly assurance?: ReviewAssuranceState;
     readonly sessionId: string;
     readonly reviewHostPlatform?: 'opencode' | 'claude-code' | 'codex' | 'unknown';
+    readonly unresolvedImplementationChallengeIds?: readonly string[];
+    readonly unaddressedPriorFailIds?: readonly string[];
+    readonly allowedChallengeEvidenceRefs?: readonly unknown[];
+    readonly previouslyUsedChallengeIds?: readonly string[];
   };
 }
 
@@ -501,9 +560,7 @@ interface HostTaskResolutionResult {
 export function resolveHostTaskEffectiveFindings(
   ctx: HostTaskResolutionContext,
 ): HostTaskResolutionResult {
-  const isHostTaskMode = ctx.policy.reviewInvocationPolicy === 'host_task_required';
-
-  if (isHostTaskMode) {
+  if (ctx.policy.reviewInvocationPolicy === 'host_task_required') {
     if (ctx.input.reviewFindings) {
       // Diagnostic for error analysis: in host-task mode the agent must submit
       // the verdict ONLY — findings are resolved from captured invocation
@@ -522,7 +579,14 @@ export function resolveHostTaskEffectiveFindings(
         },
       );
     }
-    const resolved = resolveHostTaskFindings(ctx.state.assurance, ctx.pendingObligation);
+    const resolved = resolveHostTaskFindings(
+      ctx.state.assurance,
+      ctx.pendingObligation,
+      ctx.state.unresolvedImplementationChallengeIds,
+      ctx.state.allowedChallengeEvidenceRefs,
+      ctx.state.unaddressedPriorFailIds,
+      ctx.state.previouslyUsedChallengeIds,
+    );
     if (resolved.kind === 'resolved') {
       return {
         effectiveFindings: resolved.findings,
@@ -546,9 +610,12 @@ export function resolveHostTaskEffectiveFindings(
       // the host-task ingestion boundary before the findings become effective
       // evidence, so a contradictory review cannot advance the gate.
       return {
-        blocked: formatBlocked('SUBAGENT_VERDICT_FINDINGS_INCOHERENT', {
-          count: String(resolved.blockingIssueCount),
-        }),
+        blocked: formatBlocked(
+          resolved.code,
+          Object.fromEntries(
+            Object.entries(resolved.details).map(([key, value]) => [key, String(value)]),
+          ),
+        ),
       };
     }
     if (ctx.input.reviewerUnavailable === true) {
@@ -561,24 +628,30 @@ export function resolveHostTaskEffectiveFindings(
       };
     }
     return {};
-  } else if (ctx.input.reviewFindings) {
-    const blocked = validateReviewFindings(ctx.input.reviewFindings as ReviewFindings, {
-      subagentEnabled: ctx.policy.subagentEnabled,
-      fallbackToSelf: ctx.policy.fallbackToSelf,
-      expectedPlanVersion: ctx.expected.planVersion,
-      expectedIteration: ctx.expected.iteration,
-      strictEnforcement: ctx.policy.strictEnforcement,
-      assurance: ctx.state.assurance,
-      obligationType: ctx.expected.obligationType,
-      reviewInvocationPolicy: ctx.policy.reviewInvocationPolicy,
-      reviewParentSessionId: ctx.state.sessionId,
-      reviewHostPlatform: ctx.state.reviewHostPlatform,
-    });
-    if (blocked) return { blocked };
-    return { effectiveFindings: ctx.input.reviewFindings as ReviewFindings };
   }
+  return resolveDirectSubmittedFindings(ctx);
+}
 
-  return {};
+function resolveDirectSubmittedFindings(ctx: HostTaskResolutionContext): HostTaskResolutionResult {
+  if (!ctx.input.reviewFindings) return {};
+  const blocked = validateReviewFindings(ctx.input.reviewFindings as ReviewFindings, {
+    subagentEnabled: ctx.policy.subagentEnabled,
+    fallbackToSelf: ctx.policy.fallbackToSelf,
+    expectedPlanVersion: ctx.expected.planVersion,
+    expectedIteration: ctx.expected.iteration,
+    strictEnforcement: ctx.policy.strictEnforcement,
+    assurance: ctx.state.assurance,
+    obligationType: ctx.expected.obligationType,
+    reviewInvocationPolicy: ctx.policy.reviewInvocationPolicy,
+    reviewParentSessionId: ctx.state.sessionId,
+    reviewHostPlatform: ctx.state.reviewHostPlatform,
+    unresolvedImplementationChallengeIds: ctx.state.unresolvedImplementationChallengeIds,
+    unaddressedPriorFailIds: ctx.state.unaddressedPriorFailIds,
+    allowedEvidenceRefs: ctx.state.allowedChallengeEvidenceRefs,
+    expectedObligationId: ctx.pendingObligation?.obligationId,
+    previouslyUsedChallengeIds: ctx.state.previouslyUsedChallengeIds,
+  });
+  return blocked ? { blocked } : { effectiveFindings: ctx.input.reviewFindings as ReviewFindings };
 }
 
 export { resolveHostTaskFindings } from './review-validation-host-task.js';

@@ -4,7 +4,8 @@ import { validateReviewFindingsConsistency } from './findings-consistency.js';
 // F12: canonical verdict/blocking-issues coherence invariant (strict emptiness).
 // This is the single source of truth for the rule; both ingestion boundaries
 // delegate here. The matrix below fully pins the rule so a refactor cannot
-// silently narrow or widen it.
+// silently narrow or widen it. Challenge/resolution consistency lives in the
+// separate challenge-consistency authority (#747) and is tested there.
 describe('review/enforcement/findings-consistency', () => {
   describe('BAD — accept with any blocking issue is incoherent (strict emptiness)', () => {
     it('accept + 1 blocking issue → incoherent', () => {

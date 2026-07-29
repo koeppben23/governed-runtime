@@ -25,6 +25,7 @@ export type ArchitectureArgs = {
   reviewVerdict?: LoopVerdict;
   reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;
+  targetPaths?: string[];
 };
 
 export type ArchitectureSession = MutableSession;

@@ -103,9 +103,12 @@ Start the compliance review flow for the current FlowGuard session.
     - If the response contains \`pluginReviewFindings\` or the active mode accepts SDK/manual
       findings, call \`flowguard_review\` with the same content fields plus
       \`reviewFindings\` set to the complete ReviewFindings object as-is — no mapping, no array.
-    - If host-task mode reports \`duplicate_evidence\`, do not rerun the reviewer. Use the
-       already-bound reviewer verdict and call \`flowguard_review\` with \`reviewObligationId\`
-       from \`requiredReviewAttestation.toolObligationId\` plus \`reviewVerdict\`.
+     - If host-task mode reports \`duplicate_evidence\`, do not rerun the reviewer. Use the
+        already-bound reviewer verdict and call \`flowguard_review\` with \`reviewObligationId\`
+        from \`requiredReviewAttestation.toolObligationId\` plus \`reviewVerdict\`.
+     - If the Task cannot spawn the reviewer, follow the policy-specific recovery in the FlowGuard
+       response: required stops blocked; preferred retries the originating \`flowguard_review\`
+       invocation with unchanged content input. Never submit copied or fabricated findings.
 
 6. If no external content is supplied, call \`flowguard_review\` with optional \`inputOrigin\` and \`references\` only.
 
@@ -115,8 +118,8 @@ Start the compliance review flow for the current FlowGuard session.
 
 ## Presentation
 
-- If the response contains a \`reviewCard\` field, display its markdown verbatim — never summarize, truncate, or omit it.
-- The reviewCard contains the formatted review report with findings, completeness, and evidence.
+- If \`presentation.markdown\` is present, display its markdown verbatim — never summarize, truncate, or omit it; do not append a second conclusion.
+- Only when \`presentation.markdown\` is absent, display the legacy \`reviewCard\` field verbatim.
 - This is mandatory output: the user relies on it for compliance assessment.
 
 ## Verification Review Check
@@ -150,11 +153,11 @@ ${GOVERNANCE_RULES}
 ## Done-when
 
 - Compliance report generated and presented.
-- If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
+- If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the legacy \`reviewCard\` is displayed verbatim.
 - External references captured with audit provenance.
 - Discovery health and drift checked before repo-dependent quality claims.
 - Discovery-dependent claims marked NOT_VERIFIED when content could not be correlated to local Discovery.
 - Verification review checked for repo-native candidates vs generic mismatches.
 - Phase has reached REVIEW_COMPLETE.
-- Response ends with a \`Next action:\` line.
+- The canonical presentation conclusion is the only visible closure.
 `;

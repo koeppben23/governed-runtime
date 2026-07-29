@@ -197,6 +197,15 @@ describe('config/policy', () => {
       expect(REGULATED_POLICY.reviewProfile).toBe('core');
     });
 
+    it('every preset freezes challenge-policy.v1', () => {
+      for (const policy of [SOLO_POLICY, TEAM_POLICY, TEAM_CI_POLICY, REGULATED_POLICY]) {
+        expect(policy.challengePolicy).toEqual({
+          version: 'challenge-policy.v1',
+          counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
+        });
+      }
+    });
+
     it('TEAM-CI enables auto-approval with full audit', () => {
       expect(TEAM_CI_POLICY.requireHumanGates).toBe(false);
       expect(TEAM_CI_POLICY.maxSelfReviewIterations).toBe(3);
