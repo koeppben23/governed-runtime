@@ -503,6 +503,19 @@ describe('review (standalone flow)', () => {
       expect(result.phase).toBe('REVIEW_COMPLETE');
       expect(result.reviewCard).toContain('host_subagent_task');
       expect(result.reviewCard).toContain('ses_review_child_host_task');
+
+      // Regression guard for the consumeValidatedReviewObligation write path
+      // (obligation.ts): a completed host-task standalone /review must persist
+      // the resolved reviewer findings into standaloneReviewFindings. Without
+      // this assertion the append is executed but its effect is unverified, so
+      // dropping or corrupting the write survives the suite.
+      const persistedSessDir = await currentSessionDir();
+      const persistedState = await readState(persistedSessDir);
+      expect(persistedState).not.toBeNull();
+      const persistedFindings = persistedState!.standaloneReviewFindings ?? [];
+      expect(persistedFindings).toHaveLength(1);
+      expect(persistedFindings[0]!.overallVerdict).toBe('accept');
+      expect(persistedFindings[0]!.attestation?.toolObligationId).toBe(obligationId);
     });
 
     it('host_task_required verdict with an unknown obligation ID fails closed', async () => {
