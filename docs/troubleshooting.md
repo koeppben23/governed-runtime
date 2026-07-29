@@ -157,6 +157,7 @@ real, registered reason.
 | -------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------ |
 | `COMMAND_BLOCKED`          | Command input or required dependency was blocked before execution        | Fix the blocked input or dependency and retry the command                      |
 | `COMMAND_NOT_ALLOWED`      | Command is not in the allowed-phase set for current phase                | Check `docs/commands.md` "Allowed in" for the command                          |
+| `COMMAND_SCOPE_DENIED`     | Tool was invoked outside the active explicit command's permitted scope   | Report the command result and wait for the user to invoke the next command     |
 | `WRONG_PHASE`              | Tool requires a specific phase precondition                              | Run `/status` to see the current phase, then `/continue`                       |
 | `HOST_TOOL_PHASE_DENIED`   | Mutating host tool (bash/write/edit) blocked in investigation-only phase | Use read-only tools (read, glob, grep) during TICKET/PLAN/ARCHITECTURE phases  |
 | `HOST_TOOL_UNKNOWN_DENIED` | Unknown host tool denied by default                                      | Use an explicitly supported host tool or extend the canonical allow-list first |
@@ -274,6 +275,7 @@ CHECK_KIND_NOT_AVAILABLE
 CHECK_NOT_ACTIVE
 COMMAND_BLOCKED
 COMMAND_NOT_ALLOWED
+COMMAND_SCOPE_DENIED
 CONTENT_ANALYSIS_REQUIRED
 CONTINUE_AMBIGUOUS
 CONTINUE_UNKNOWN_PHASE
