@@ -35,6 +35,16 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'COMMAND_SCOPE_DENIED',
+    category: 'admissibility',
+    messageTemplate: "'{tool}' is not permitted while {command} is active",
+    recoverySteps: [
+      'Report the current command result and stop',
+      'Wait for the user to invoke the next explicit FlowGuard command',
+    ],
+  },
+
+  {
     code: 'WRONG_PHASE',
     category: 'admissibility',
     messageTemplate: 'Command is not valid in the current phase (current: {phase})',
