@@ -4,7 +4,7 @@
  *
  * Drives the real `tool.execute.after` hook exposed by FlowGuardAuditPlugin for
  * a flowguard-reviewer Task. Locks the live-runtime symptom observed in the
- * demo implement-run: a FIRST reviewer Task whose captured findings are not yet
+ * demo implement-run: a reviewer Task whose captured findings are not
  * bindable emits a fail-closed `HOST_SUBAGENT_TASK_REQUIRED` block with
  * `bindOutcome: no_matched_record`; a SEQUENTIAL re-invocation with valid
  * findings then binds and persists the invocation evidence (`bindOutcome: bound`).

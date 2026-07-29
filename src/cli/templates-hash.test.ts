@@ -218,13 +218,13 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // COMMANDS hash.
     // Refreshed for host-task ordering hardening: SHARED_REVIEW_LOOP now
     // instructs the reviewer Task to be issued sequentially after the preceding
-    // verdict call (never in parallel), explaining the expected fail-closed
-    // HOST_SUBAGENT_TASK_REQUIRED / no_matched_record first attempt. This is
-    // embedded in the plan/implement/architecture command bodies and therefore
-    // changes the COMMANDS hash.
+    // verdict call (never in parallel) and gives cause-agnostic fail-closed
+    // recovery guidance for HOST_SUBAGENT_TASK_REQUIRED / no_matched_record.
+    // This is embedded in the plan/implement/architecture command bodies and
+    // therefore changes the COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '654b38c2e90033733f67d3ce71457d30efac992d4651df1d79fee11302c7a1bf',
+      '764da3e8dbd6f3e549a1d458f6ad767f731ecdc60388599794eee4da8e11695a',
     );
   });
 
