@@ -713,6 +713,33 @@ describe('renderMarkdown', () => {
 });
 
 describe('Presentation Language forms', () => {
+  it('renders the ASCII glyph profile without Unicode status markers', () => {
+    const doc: DiagnosticCardDocument = {
+      kind: 'diagnostic_card',
+      form: 'diagnostic',
+      sections: [{ kind: 'blocker', code: 'BLOCKED', text: 'Blocked.' }],
+      conclusion: { kind: 'recovery', message: 'Recover.', steps: ['Retry.'] },
+    };
+
+    const output = renderMarkdown(doc, { glyphProfile: 'ascii' });
+    expect(output).toContain('[WARN] **Blocked:**');
+    expect(output).not.toMatch(/[⚠✓✗→]/);
+  });
+
+  it('renders not_verified notices with the profile-specific marker', () => {
+    const doc: CompactCardDocument = {
+      kind: 'compact_card',
+      density: 'compact',
+      sections: [{ kind: 'notice', level: 'not_verified', message: 'Not verified.', details: [] }],
+      conclusion: { kind: 'terminal', message: 'Complete.' },
+    };
+
+    expect(renderMarkdown(doc)).toContain('? Not verified.');
+    expect(renderMarkdown(doc, { glyphProfile: 'ascii' })).toContain(
+      '[NOT_VERIFIED] Not verified.',
+    );
+  });
+
   it('does not emit trailing whitespace for an empty key-value value', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
