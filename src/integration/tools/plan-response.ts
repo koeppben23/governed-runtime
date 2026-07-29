@@ -182,6 +182,7 @@ export async function convergedPlanReviewCardResponse(
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
     reviewCard,
+    presentation: { markdown: reviewCard },
     next: formatEval(ev),
     _audit: { transitions },
   };

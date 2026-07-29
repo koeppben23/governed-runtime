@@ -451,6 +451,7 @@ async function attachReviewCard(input: {
     isApproved: isComplete,
     forcedConvergence: input.forcedConvergence,
   });
+  resp.presentation = { markdown: resp.reviewCard };
   const artifactErr = await materializeReviewCardArtifact(
     session.sessDir,
     'architecture-review-card',

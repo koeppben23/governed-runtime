@@ -711,3 +711,70 @@ describe('renderMarkdown', () => {
     });
   });
 });
+
+describe('Presentation Language forms', () => {
+  it('renders the review-pending form with its sole typed conclusion', () => {
+    const doc: CompactCardDocument = {
+      kind: 'compact_card',
+      density: 'compact',
+      form: 'review_pending',
+      sections: [{ kind: 'keyValue', items: [{ label: 'Phase', value: 'Review' }] }],
+      conclusion: {
+        kind: 'review_pending',
+        message: 'Independent review evidence is required before the workflow can proceed.',
+      },
+    };
+
+    expect(renderMarkdown(doc)).toBe(
+      '**Phase:** Review\n\n## Independent review pending\n\nIndependent review evidence is required before the workflow can proceed.',
+    );
+  });
+
+  it('renders diagnostic recovery as the only closing section', () => {
+    const doc: DiagnosticCardDocument = {
+      kind: 'diagnostic_card',
+      form: 'diagnostic',
+      sections: [{ kind: 'blocker', code: 'CHECK_FAILED', text: 'The check failed.' }],
+      conclusion: {
+        kind: 'recovery',
+        message: 'Use the canonical recovery steps below.',
+        steps: ['Run `/check` after correcting the failure.'],
+      },
+    };
+
+    const output = renderMarkdown(doc);
+    expect(output).toContain('## Recovery');
+    expect(output).not.toContain('## Next');
+  });
+
+  it('rejects a decision form with a recommended decision action', () => {
+    const doc: CompactCardDocument = {
+      kind: 'compact_card',
+      density: 'compact',
+      form: 'decision',
+      sections: [],
+      conclusion: {
+        kind: 'decision_required',
+        question: 'Choose a decision.',
+        actions: [{ invocation: '/approve', description: 'Approve.', visibility: 'recommended' }],
+      },
+    };
+
+    expect(() => renderMarkdown(doc)).toThrow(/decision_required actions must be available/);
+  });
+
+  it('rejects a compact-card title', () => {
+    const doc: CompactCardDocument = {
+      kind: 'compact_card',
+      density: 'compact',
+      form: 'success',
+      sections: [{ kind: 'title', text: 'Not allowed here' }],
+      conclusion: {
+        kind: 'next_action',
+        action: { invocation: '/status', description: 'Inspect.', visibility: 'recommended' },
+      },
+    };
+
+    expect(() => renderMarkdown(doc)).toThrow(/CompactCardDocument: TitleSection is not allowed/);
+  });
+});

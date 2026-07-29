@@ -137,8 +137,8 @@ Revision path (when review returns changes_requested):
 ${GOVERNANCE_RULES}
 ## Presentation
 
-- If the response contains a \`reviewCard\` field, display its markdown verbatim — never summarize, truncate, or omit it.
-- The reviewCard contains the formatted implementation review with findings, verdict, and next actions.
+- If \`presentation.markdown\` is present, display its markdown verbatim — never summarize, truncate, or omit it; do not append a second conclusion.
+- Only when \`presentation.markdown\` is absent, display the legacy \`reviewCard\` field verbatim.
 - This is mandatory output: the user relies on it to make their review decision.
 
 ## Done-when
@@ -148,7 +148,7 @@ ${GOVERNANCE_RULES}
 - Implementation evidence is recorded via flowguard_implement.
 - Independent review loop has converged.
 ${DISCOVERY_REVIEW_DONE_WHEN}
-- If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
-- On the converged path: phase has advanced to EVIDENCE_REVIEW and the response ends with \`Next action: run /review-decision approve, /review-decision changes_requested, or /review-decision reject.\`
+- If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the legacy \`reviewCard\` is displayed verbatim.
+- On the converged path: phase has advanced to EVIDENCE_REVIEW and the canonical presentation conclusion is the only visible next action.
 - On a blocked path (review not converged, reviewer unavailable, or a FlowGuard error code): no \`/review-decision\` next action is emitted; the response surfaces the FlowGuard blocker and its recovery instead.
 `;

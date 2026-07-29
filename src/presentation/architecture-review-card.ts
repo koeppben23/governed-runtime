@@ -180,6 +180,13 @@ export function buildArchitectureReviewCard(input: ArchitectureReviewCardInput):
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
+    form:
+      !isApproved &&
+      productNextAction.commands.some((command) =>
+        ['/approve', '/request-changes', '/reject'].includes(command),
+      )
+        ? 'decision'
+        : 'terminal',
     sections,
     conclusion: buildConclusion(productNextAction, isApproved),
   };

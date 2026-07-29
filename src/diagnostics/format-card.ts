@@ -51,15 +51,19 @@ export function buildBlockedDiagnosticDocument(input: DiagnosticCardInput): Diag
       items: diagnostics.missingEvidence,
     });
   }
-  if (diagnostics.safeNextActions.length > 0) {
-    sections.push({
-      kind: 'bulletList',
-      heading: 'Next',
-      items: diagnostics.safeNextActions,
-    });
-  }
-
-  return { kind: 'diagnostic_card', sections };
+  return {
+    kind: 'diagnostic_card',
+    form: 'diagnostic',
+    sections,
+    conclusion: {
+      kind: 'recovery',
+      message: 'Use the canonical recovery steps below.',
+      steps:
+        diagnostics.safeNextActions.length > 0
+          ? diagnostics.safeNextActions
+          : ['Inspect the diagnostic details before retrying.'],
+    },
+  };
 }
 
 /**

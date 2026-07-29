@@ -97,11 +97,11 @@ describe('buildRailConclusion', () => {
     });
   });
 
-  describe('CORNER — terminal message (no product command)', () => {
-    it('READY with a pending standalone review obligation → terminal reviewer message', () => {
+  describe('CORNER — pending independent review', () => {
+    it('READY with a pending standalone review obligation → review-pending message', () => {
       // resolveNextAction returns RUN_REVIEWER_TASK here, whose product
       // projection has an empty command list but non-empty guidance text →
-      // a terminal conclusion carrying that text (never an invented command).
+      // a dedicated review-pending conclusion carrying that text (never an invented command).
       const obligation = createReviewObligation({
         obligationType: 'review',
         iteration: 1,
@@ -113,8 +113,8 @@ describe('buildRailConclusion', () => {
       });
       const evalResult: EvalResult = { kind: 'pending', phase: 'READY' };
       const conclusion = buildRailConclusion(state, evalResult);
-      expect(conclusion.kind).toBe('terminal');
-      if (conclusion.kind === 'terminal') {
+      expect(conclusion.kind).toBe('review_pending');
+      if (conclusion.kind === 'review_pending') {
         expect(conclusion.message).toContain('flowguard-reviewer');
       }
     });

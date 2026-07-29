@@ -118,8 +118,8 @@ Start the compliance review flow for the current FlowGuard session.
 
 ## Presentation
 
-- If the response contains a \`reviewCard\` field, display its markdown verbatim — never summarize, truncate, or omit it.
-- The reviewCard contains the formatted review report with findings, completeness, and evidence.
+- If \`presentation.markdown\` is present, display its markdown verbatim — never summarize, truncate, or omit it; do not append a second conclusion.
+- Only when \`presentation.markdown\` is absent, display the legacy \`reviewCard\` field verbatim.
 - This is mandatory output: the user relies on it for compliance assessment.
 
 ## Verification Review Check
@@ -153,11 +153,11 @@ ${GOVERNANCE_RULES}
 ## Done-when
 
 - Compliance report generated and presented.
-- If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
+- If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the legacy \`reviewCard\` is displayed verbatim.
 - External references captured with audit provenance.
 - Discovery health and drift checked before repo-dependent quality claims.
 - Discovery-dependent claims marked NOT_VERIFIED when content could not be correlated to local Discovery.
 - Verification review checked for repo-native candidates vs generic mismatches.
 - Phase has reached REVIEW_COMPLETE.
-- Response ends with a \`Next action:\` line.
+- The canonical presentation conclusion is the only visible closure.
 `;

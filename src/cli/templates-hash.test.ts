@@ -222,7 +222,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // COMMANDS hash.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '190eeb1862bb443fb1b234c44e162a7fcb099ef63e5da105cee52243839406b2',
+      '665382f8344b60bd0ee9bd5806ef2d0f57dc54527c4b4bec757e5c4841851e94',
     );
   });
 

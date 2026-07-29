@@ -797,6 +797,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(parsed.reviewCard).toBeDefined();
     expect(typeof parsed.reviewCard).toBe('string');
     expect(parsed.reviewCard).toContain('# FlowGuard Architecture Review');
+    expect(parsed.presentation).toEqual({ markdown: parsed.reviewCard });
     const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as {
       architecture?: { status?: string };
     };

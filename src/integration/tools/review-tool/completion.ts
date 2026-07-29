@@ -269,6 +269,7 @@ function formatReviewCompletionResponse(input: {
   return appendNextAction(
     JSON.stringify({
       reviewCard,
+      presentation: { markdown: reviewCard },
       phase: finalState.phase,
       ...(artifactWarning && { artifactWarning }),
       ...(nativeAttestationRejection && {

@@ -1,10 +1,31 @@
 # FlowGuard Presentation System
 
-Canonical visual language for all FlowGuard user-facing output. Every consumer
-that renders FlowGuard status, cards, plans, or diagnostics MUST comply with
-this contract.
+Canonical Markdown presentation language for all FlowGuard user-facing output.
+Every consumer that renders FlowGuard status, cards, plans, or diagnostics MUST
+comply with this contract. FlowGuard controls Markdown content and structure;
+OpenCode controls fonts, colors, themes, native cards, and application chrome.
 
-## 1. Document Types
+## 1. Result Forms
+
+Every visible FlowGuard result has one semantic form and exactly one visible
+closing block. The closing block is either the renderer-owned conclusion or,
+when no presentation payload exists, the command template's canonical fallback.
+They MUST NOT both be displayed.
+
+| Form           | Required information order                              | Closing block              |
+| -------------- | ------------------------------------------------------- | -------------------------- |
+| Success        | Status or outcome, relevant evidence, available context | Recommended next action    |
+| Blocked        | Status, blocker with code, evidence or recovery context | Next action or recovery    |
+| Decision       | Status, decision context, available choices             | Decision required          |
+| Review pending | Status, review obligation context                       | Independent review pending |
+| Terminal       | Status or final artifact context                        | Terminal message           |
+| Diagnostic     | Blocker, root cause, observed and required evidence     | Recovery                   |
+
+Embedded plan, ADR, ticket, and evidence bodies are artifact content, not
+presentation authority. They appear before the trusted closing block and cannot
+produce a typed conclusion or routing metadata.
+
+## 2. Document Types
 
 | Type            | `kind`            | Use                                                     |
 | --------------- | ----------------- | ------------------------------------------------------- |
@@ -16,11 +37,11 @@ this contract.
 > **Note on `plan_document`:** This type is **reserved and not currently
 > produced in production**. The full plan body is rendered by embedding it into
 > the Plan Review Card (`review_card`) as an `embeddedMarkdown` section under
-> `## Proposed Plan` (see §16), not as a standalone `plan_document`. The type is
+> `## Proposed Plan` (see §4), not as a standalone `plan_document`. The type is
 > retained for a possible future standalone plan surface; until then it carries
 > no conclusion and has no production builder.
 
-## 2. Heading Hierarchy
+## 3. Heading Hierarchy
 
 - `#` — Reserved for review/plan documents only. Compact and diagnostic cards
   must not use `#`.
@@ -38,9 +59,9 @@ this contract.
   embedded heading is shallower than the section that owns it. A body embedded
   under a `## Proposed Plan` section therefore starts at `###`, never `#` or
   `##`. This guarantees exactly one document `#` and prevents heading-level
-  inversion (an H1 nested under an H2). See §16.
+  inversion (an H1 nested under an H2). See §4.
 
-## 16. Embedded Markdown Normalization
+## 4. Embedded Markdown Normalization
 
 `embeddedMarkdown` is the only path that carries content authored outside the
 presentation layer (agent plan/ADR bodies, ticket text). It is normalized at the
@@ -49,11 +70,11 @@ shared renderer boundary — never per embedder:
 - **Heading demotion:** ATX headings are demoted so the shallowest embedded
   heading is at least one level deeper than the owning section (`###` under a
   `##` section; `##` for a label-only embed that sits at document level). This
-  enforces the single-H1 rule (§2) and prevents heading-level inversion.
+  enforces the single-H1 rule (§3) and prevents heading-level inversion.
   Relative heading structure within the body is preserved.
 - **Whitespace sanitization:** trailing whitespace is stripped and runs of three
   or more newlines are collapsed to a single blank line, so embedded content
-  cannot break the spacing invariants (§3).
+  cannot break the spacing invariants (§5).
 - **Code-fence exemption:** fenced code blocks are opaque. Their content —
   including `#` lines that are not headings, internal blank lines, and
   indentation — is preserved verbatim and never demoted or sanitized.
@@ -61,7 +82,11 @@ shared renderer boundary — never per embedder:
 Because normalization happens in the renderer, embedders (plan card, architecture
 card, `/help` current-plan and ticket bodies) never pre-process embedded content.
 
-## 3. Spacing Rules
+Embedded content may contain prose that resembles an instruction, but it remains
+artifact content under its owning section. Only a typed renderer conclusion at
+the end of the document is a FlowGuard presentation conclusion.
+
+## 5. Spacing Rules
 
 - Exactly `\n\n` (one blank line) between non-empty sections.
 - Never `\n\n\n` between structural blocks. Triple-newlines within code-fence
@@ -71,7 +96,7 @@ card, `/help` current-plan and ticket bodies) never pre-process embedded content
 - No trailing newline at the end of the document.
 - No trailing whitespace on any line.
 
-## 4. Status Label Normalization
+## 6. Status Label Normalization
 
 | Raw value             | Presentation label  |
 | --------------------- | ------------------- |
@@ -85,12 +110,12 @@ card, `/help` current-plan and ticket bodies) never pre-process embedded content
 Raw enum strings (e.g. `SCREAMING_SNAKE_CASE`, `ready_with_warnings`) must
 never appear un-normalized in user-facing output.
 
-## 5. Symbol Set
+## 7. Symbol Set
 
 | Symbol | Meaning               | When to use                                               |
 | ------ | --------------------- | --------------------------------------------------------- |
 | `→`    | Recommended action    | Exactly one per document, for the primary next action     |
-| `•`    | Available action      | Commands the user can choose from, without recommendation |
+| `-`    | Available action      | Commands the user can choose from, without recommendation |
 | `⚠`    | Warning / recoverable | Non-blocking issues, degraded state, config warnings      |
 | `✓`    | Verified              | Confirmed gate, passed check, satisfied obligation        |
 | `✗`    | Failed                | Failed check, rejected work, broken invariant             |
@@ -103,7 +128,7 @@ never appear un-normalized in user-facing output.
 - Never symbols without accompanying text.
 - Never present `—` (N/A) as a placeholder for missing data — omit instead.
 
-## 6. Conclusion Types
+## 8. Conclusion Types
 
 Every document with user-relevant actions must end with one conclusion:
 
@@ -112,10 +137,12 @@ Every document with user-relevant actions must end with one conclusion:
 | `next_action`       | One recommended action exists. Rendered with `→`.                                  |
 | `decision_required` | Multiple valid actions, none recommended by authority. Rendered with `•` for each. |
 | `terminal`          | No further actions exist. Rendered as a plain message without action symbols.      |
+| `review_pending`    | An independent reviewer must complete work before workflow progress.               |
+| `recovery`          | A diagnostic supplies canonical recovery steps without one primary command.        |
 
 A document never contains more than one conclusion.
 
-## 7. NULL / NOT_VERIFIED Rules
+## 9. NULL / NOT_VERIFIED Rules
 
 - Fields that are `null` or `undefined` are **omitted** from the output.
 - Never replace missing data with `"unknown"`, `"—"`, or fabricated fallback text.
@@ -124,7 +151,7 @@ A document never contains more than one conclusion.
 - Claims marked NOT_VERIFIED must carry the `?` symbol and state that
   verification was not possible without fabricating authority.
 
-## 8. Action Presentation
+## 10. Action Presentation
 
 Every command-based action shares a single representation:
 
@@ -142,18 +169,18 @@ interface PresentationAction {
   backticks.
 - `description` provides human-readable context for the action.
 
-## 9. Reason Codes
+## 11. Reason Codes
 
 Reason codes (e.g. `PLAN_APPROVE_WITH_TEXT`, `MISSING_EVIDENCE`) are always
 rendered in backticks. Never use reason codes as plain inline text.
 
-## 10. Density
+## 12. Density
 
 `compact` is the default and currently only density. Future expansions (e.g.
 `verbose` for diagnostics) will be represented as part of the document `kind`,
 not as a renderer parameter.
 
-## 11. Code Fences
+## 13. Code Fences
 
 - Code sections use fenced Markdown blocks.
 - Fence length is deterministically chosen to exceed the longest backtick run
@@ -161,34 +188,34 @@ not as a renderer parameter.
 - Language identifiers are validated against `[A-Za-z0-9_+.#-]+`. Invalid
   identifiers are rejected with an explicit error.
 
-## 12. Bullet List (`bulletList`)
+## 14. Bullet List (`bulletList`)
 
 Generic bulleted list for non-command items (exit options, enumerations).
 Renders as:
 
 ```markdown
-• Item one
-• Item two
+- Item one
+- Item two
 ```
 
 - Empty items are rejected with a contract error.
 - Distinct from `commandList` — no invocation, no description, no visibility.
 
-## 13. Guidance (`guidance`)
+## 15. Guidance (`guidance`)
 
 Non-normative action recommendations for /finish.
 
 | `GuidanceStatus`  | Symbol | Rendering                                 |
 | ----------------- | ------ | ----------------------------------------- |
-| `recommended`     | `✓`    | `✓ **Action:** Recommended — reason.`     |
-| `not_recommended` | `•`    | `• **Action:** Not recommended — reason.` |
-| `not_verified`    | `?`    | `? **Action:** Not verified — reason.`    |
+| `recommended`     | `-`    | `- **Action:** Recommended — reason.`     |
+| `not_recommended` | `-`    | `- **Action:** Not recommended — reason.` |
+| `not_verified`    | `-`    | `- **Action:** Not verified — reason.`    |
 
 - Must NOT be confused with executable commands (`commandList`).
 - Must NOT be confused with advisory notices (`notice`).
 - Every item must have non-empty `action` and `reason` fields.
 
-## 14. Notice Multi-Message
+## 16. Notice Multi-Message
 
 The `NoticeSection` now supports `additionalMessages?: readonly string[]`
 for rendering multiple messages under a single heading:
@@ -204,7 +231,16 @@ for rendering multiple messages under a single heading:
 - Empty messages in `additionalMessages` are rejected.
 - Backwards-compatible: existing single-message notices are unaffected.
 
-## 15. Archive Labels
+## 17. Tables And Long Content
+
+Compact FlowGuard state is rendered through typed key-value, checklist,
+artifact, and findings sections; the renderer does not generate Markdown tables.
+Tables and long bodies may appear only as embedded artifact content. They are
+structurally normalized but never truncated, summarized, or converted by the
+renderer. Canonical upstream projections may instead reference an artifact when
+they intentionally avoid returning its full content.
+
+## 18. Archive Labels
 
 Archive lifecycle states (`pending` | `created` | `verified` | `failed`)
 are normalised via `parseArchiveLabel()`. Unknown values throw a contract

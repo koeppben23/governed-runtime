@@ -1484,6 +1484,7 @@ describe('review (standalone flow)', () => {
         const card = result.reviewCard as string;
         expect(card).toContain('# FlowGuard Review Report');
         expect(card).toContain('Review complete');
+        expect(result.presentation).toEqual({ markdown: card });
 
         // Verify the card was persisted as an artifact.
         const { computeFingerprint, sessionDir: resolveSessionDir } =

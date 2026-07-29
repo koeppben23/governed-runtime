@@ -122,6 +122,11 @@ export function buildPlanReviewCard(input: PlanReviewCardInput): string {
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
+    form: productNextAction.commands.some((command) =>
+      ['/approve', '/request-changes', '/reject'].includes(command),
+    )
+      ? 'decision'
+      : 'terminal',
     sections,
     conclusion: buildConclusion(productNextAction),
   };
