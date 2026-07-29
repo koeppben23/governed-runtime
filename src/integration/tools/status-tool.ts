@@ -41,6 +41,8 @@ import type { DiscoveryHealthProjection } from '../../discovery/discovery-health
 import type { DiscoveryResult } from '../../discovery/types.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { readReport } from '../../adapters/persistence.js';
+import { readConfig } from '../../adapters/persistence-config.js';
+import type { PresentationRenderOptions } from '../../presentation/glyph-profile.js';
 
 // State & Machine
 import { evaluate } from '../../machine/evaluate.js';
@@ -134,6 +136,7 @@ async function resolveProjection(
   state: SessionState,
   policy: FlowGuardPolicy,
   sessDir: string,
+  presentation: PresentationRenderOptions,
 ): Promise<string | null> {
   const checkFields = buildCheckProjectionFields(state);
   // /finish is the most comprehensive focused projection and is placed first so
@@ -150,7 +153,7 @@ async function resolveProjection(
         sessionId: state.id,
         finish: finishCard,
         ...checkFields,
-        presentation: { markdown: renderMarkdown(finishDoc) },
+        presentation: { markdown: renderMarkdown(finishDoc, presentation) },
       }),
       state,
     );
@@ -165,7 +168,7 @@ async function resolveProjection(
         sessionId: state.id,
         whyBlocked: blocked,
         ...checkFields,
-        presentation: { markdown: renderMarkdown(whyDoc) },
+        presentation: { markdown: renderMarkdown(whyDoc, presentation) },
       }),
       state,
     );
@@ -346,6 +349,7 @@ interface FullStatusInput {
   readonly discovery: DiscoveryResult | null;
   readonly discoveryHealth: DiscoveryHealthProjection | null;
   readonly discoveryDrift: DiscoveryDriftStatusProjection;
+  readonly presentation: PresentationRenderOptions;
 }
 
 async function loadDiscoveryStatusContext(wsDir: string): Promise<DiscoveryStatusContext> {
@@ -474,7 +478,16 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
 }
 
 function buildFullStatusResponse(input: FullStatusInput): string {
-  const { state, policy, ev, completeness, discovery, discoveryHealth, discoveryDrift } = input;
+  const {
+    state,
+    policy,
+    ev,
+    completeness,
+    discovery,
+    discoveryHealth,
+    discoveryDrift,
+    presentation,
+  } = input;
   const projection = buildStatusProjection(state, policy);
   const implementationGuidance = buildImplementationGuidance({
     state,
@@ -488,7 +501,7 @@ function buildFullStatusResponse(input: FullStatusInput): string {
     discoveryDrift,
     remainingChecks: projection.remainingChecks,
   });
-  const presentationMarkdown = renderMarkdown(presentationDoc);
+  const presentationMarkdown = renderMarkdown(presentationDoc, presentation);
 
   const responseObj = {
     status: projection,
@@ -568,6 +581,9 @@ export const status: ToolDefinition = {
   async execute(_args, context) {
     try {
       const { wsDir } = await resolveWorkspacePaths(context);
+      const presentation: PresentationRenderOptions = {
+        glyphProfile: (await readConfig(wsDir)).presentation.glyphProfile,
+      };
       const { state, policy, sessDir } = await withReadOnlySession(context);
 
       if (!state) {
@@ -586,7 +602,7 @@ export const status: ToolDefinition = {
             runtimeAllowRequiresCanonicalStatePolicyPhaseEvidence: true,
           },
           build: buildIdentityField(),
-          presentation: { markdown: renderMarkdown(noSessionDoc) },
+          presentation: { markdown: renderMarkdown(noSessionDoc, presentation) },
         });
       }
 
@@ -594,7 +610,7 @@ export const status: ToolDefinition = {
       const completeness = evaluateCompleteness(state);
       const args = _args as StatusArgs;
 
-      const projection = await resolveProjection(args, state, policy, sessDir);
+      const projection = await resolveProjection(args, state, policy, sessDir, presentation);
       if (projection !== null) return projection;
 
       const { discovery, discoveryHealth } = await loadDiscoveryStatusContext(wsDir);
@@ -611,6 +627,7 @@ export const status: ToolDefinition = {
         discovery,
         discoveryHealth,
         discoveryDrift,
+        presentation,
       });
     } catch (err) {
       if (err instanceof ActorClaimError) {
