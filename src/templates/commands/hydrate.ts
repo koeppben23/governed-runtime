@@ -14,11 +14,12 @@ Bootstrap the FlowGuard session for this project.
 ## Steps
 
 1. Call \`flowguard_hydrate\` with no arguments.
-2. Read the returned JSON (\`phase\`, \`next\` action).
-3. Report the result:
-   - New session: confirm the session ID and READY phase.
-   - Existing session loaded: report current phase and next action.
-   - Error: report the error message.
+2. If \`presentation.markdown\` is present, print it verbatim — do not reformat, summarize, or
+   append a separate \`Next action:\` line. Its rendered conclusion is authoritative.
+3. If \`presentation.markdown\` is NOT present:
+   - If the response is blocked or contains an error: report its code, message, and recovery, then stop.
+   - Otherwise report the returned session state and render exactly one fallback action from
+     \`productNextAction\`.
 
 ## Rules
 
@@ -28,6 +29,5 @@ ${GOVERNANCE_RULES}
 ## Done-when
 
 - FlowGuard session is active (new or existing loaded).
-- Session ID, phase, and next action are reported.
-- Response ends with \`Next action: run /ticket to start a task, /architecture to create an ADR, or /review for a compliance report.\`
+- A presentation conclusion was rendered verbatim, or one product-derived fallback action was reported.
 `;

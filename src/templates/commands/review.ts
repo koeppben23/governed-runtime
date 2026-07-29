@@ -103,9 +103,12 @@ Start the compliance review flow for the current FlowGuard session.
     - If the response contains \`pluginReviewFindings\` or the active mode accepts SDK/manual
       findings, call \`flowguard_review\` with the same content fields plus
       \`reviewFindings\` set to the complete ReviewFindings object as-is — no mapping, no array.
-    - If host-task mode reports \`duplicate_evidence\`, do not rerun the reviewer. Use the
-       already-bound reviewer verdict and call \`flowguard_review\` with \`reviewObligationId\`
-       from \`requiredReviewAttestation.toolObligationId\` plus \`reviewVerdict\`.
+     - If host-task mode reports \`duplicate_evidence\`, do not rerun the reviewer. Use the
+        already-bound reviewer verdict and call \`flowguard_review\` with \`reviewObligationId\`
+        from \`requiredReviewAttestation.toolObligationId\` plus \`reviewVerdict\`.
+     - If the Task cannot spawn the reviewer, follow the policy-specific recovery in the FlowGuard
+       response: required stops blocked; preferred retries the originating \`flowguard_review\`
+       invocation with unchanged content input. Never submit copied or fabricated findings.
 
 6. If no external content is supplied, call \`flowguard_review\` with optional \`inputOrigin\` and \`references\` only.
 

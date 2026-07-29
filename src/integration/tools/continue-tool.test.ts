@@ -40,7 +40,13 @@ const mocks = vi.hoisted(() => ({
   formatError: vi.fn((err: unknown) =>
     JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
   ),
-  appendNextAction: vi.fn((p: string) => p),
+  appendNextAction: vi.fn((p: string) => {
+    const result = JSON.parse(p) as Record<string, unknown>;
+    return JSON.stringify({
+      ...result,
+      productNextAction: { text: `Canonical action for ${result.phase}` },
+    });
+  }),
   writeStateWithArtifacts: vi.fn(async () => undefined),
   formatEval: vi.fn(() => 'next'),
   // commands
@@ -129,38 +135,34 @@ describe('flowguard_continue (runtime)', () => {
 
   // ── HAPPY: deterministic guidance ─────────────────────────────────────────
 
-  it('ARCHITECTURE phase returns guidance with /architecture', async () => {
+  it('ARCHITECTURE phase derives its action from the canonical product projection', async () => {
     setPhase('ARCHITECTURE');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCHITECTURE');
-    expect(parsed.next).toBe('/architecture');
+    expect(parsed.next).toBe('Canonical action for ARCHITECTURE');
     expect(parsed._continue.action).toBe('deterministic');
   });
 
-  it('REVIEW phase returns guidance with /review', async () => {
+  it('REVIEW phase derives its action from the canonical product projection', async () => {
     setPhase('REVIEW');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('REVIEW');
-    expect(parsed.next).toBe('/review');
+    expect(parsed.next).toBe('Canonical action for REVIEW');
     expect(parsed._continue.action).toBe('deterministic');
   });
 
-  it('IMPL_REVIEW routes to the reviewer task and verdict tool, never /implement', async () => {
+  it('IMPL_REVIEW does not introduce a local reviewer command', async () => {
     setPhase('IMPL_REVIEW');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('IMPL_REVIEW');
-    expect(parsed.next).toContain('flowguard-reviewer');
-    expect(parsed.next).toContain('flowguard_review_implementation');
-    expect(parsed.next).not.toContain('/implement');
+    expect(parsed.next).toBe('Canonical action for IMPL_REVIEW');
+    expect(parsed.status).toBe('Implementation review is pending.');
   });
 
   // ── BAD: blocking on ambiguous / unknown ──────────────────────────────────
@@ -176,12 +178,11 @@ describe('flowguard_continue (runtime)', () => {
 
   it('VALIDATION phase returns guidance with /check', async () => {
     setPhase('VALIDATION');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('VALIDATION');
-    expect(parsed.next).toBe('/check');
+    expect(parsed.next).toBe('Canonical action for VALIDATION');
     expect(parsed._continue.action).toBe('deterministic');
   });
 
@@ -198,20 +199,17 @@ describe('flowguard_continue (runtime)', () => {
 
   it('PLAN_REVIEW returns user-gate manual_decision', async () => {
     setPhase('PLAN_REVIEW');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('PLAN_REVIEW');
     expect(parsed._continue.action).toBe('manual_decision');
-    expect(parsed.next).toContain('/approve');
-    expect(parsed.next).toContain('/request-changes');
-    expect(parsed.next).toContain('/reject');
+    expect(parsed.next).toBe('Canonical action for PLAN_REVIEW');
+    expect(parsed.decisionRequired).toBe(true);
   });
 
   it('EVIDENCE_REVIEW returns user-gate manual_decision', async () => {
     setPhase('EVIDENCE_REVIEW');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
@@ -221,7 +219,6 @@ describe('flowguard_continue (runtime)', () => {
 
   it('ARCH_REVIEW returns user-gate manual_decision', async () => {
     setPhase('ARCH_REVIEW');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
@@ -233,35 +230,32 @@ describe('flowguard_continue (runtime)', () => {
 
   it('COMPLETE returns terminal action', async () => {
     setPhase('COMPLETE');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/export');
+    expect(parsed.next).toBe('Canonical action for COMPLETE');
   });
 
   it('ARCH_COMPLETE returns terminal action', async () => {
     setPhase('ARCH_COMPLETE');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('ARCH_COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/export');
+    expect(parsed.next).toBe('Canonical action for ARCH_COMPLETE');
   });
 
   it('REVIEW_COMPLETE returns terminal action', async () => {
     setPhase('REVIEW_COMPLETE');
-    mocks.appendNextAction.mockImplementation((p: string) => p);
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('REVIEW_COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/export');
+    expect(parsed.next).toBe('Canonical action for REVIEW_COMPLETE');
   });
 
   it('COMPLETE aborted → redirects to /status, never /review or /export', async () => {
@@ -270,15 +264,12 @@ describe('flowguard_continue (runtime)', () => {
     const state = { phase: 'COMPLETE', error: { code: 'ABORTED', message: 'Operator aborted' } };
     mocks.state = state;
     mocks.readOnlySession = { state, policy: null };
-    mocks.appendNextAction.mockImplementation((p: string) => p);
     const { continue_cmd } = await import('./continue-tool.js');
     const res = await continue_cmd.execute({}, {} as never);
     const parsed = JSON.parse(String(res));
     expect(parsed.phase).toBe('COMPLETE');
     expect(parsed._continue.action).toBe('terminal');
-    expect(parsed.next).toBe('/status');
-    expect(parsed.next).not.toBe('/review');
-    expect(parsed.next).not.toBe('/export');
+    expect(parsed.next).toBe('Canonical action for COMPLETE');
     expect(String(parsed.status).toLowerCase()).toContain('aborted');
   });
 

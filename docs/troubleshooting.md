@@ -38,8 +38,8 @@ flowguard doctor
 **Solution:**
 
 ```bash
-# Create new session
-/hydrate
+# Create or restore a session
+/start
 
 # Or check if session exists
 ls ~/.config/opencode/workspaces/*/sessions/
@@ -297,6 +297,7 @@ FINGERPRINT_FAILED
 FOUR_EYES_ACTOR_MATCH
 GIT_COMMAND_FAILED
 GIT_NOT_FOUND
+HELP_ARGUMENTS_INVALID
 HOST_SUBAGENT_TASK_REQUIRED
 HOST_TASK_FINDINGS_UNPARSEABLE
 HOST_TOOL_PHASE_DENIED

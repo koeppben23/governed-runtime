@@ -438,7 +438,8 @@ describe('resume end-to-end via help.execute', () => {
     );
     const parsed = JSON.parse(out as string);
     expect(parsed.error).toBe(true);
-    expect(parsed.message).toContain('Use context');
+    expect(parsed.code).toBe('HELP_ARGUMENTS_INVALID');
+    expect(parsed.recovery).toBeDefined();
   });
 });
 

@@ -161,6 +161,10 @@ function buildHostTaskBlockedOutput(
       `criteriaVersion=${attestationMeta.criteriaVersion}.`
     : '';
 
+  const fallback =
+    policy === 'host_task_required'
+      ? 'FALLBACK: If the Task tool cannot spawn the reviewer (error, unavailable agent, or missing infrastructure), do NOT approve and do NOT invent findings — report the transport failure and stop; independent review is mandatory and cannot be self-substituted. Setting reviewerUnavailable: true fails closed (REVIEWER_UNAVAILABLE_STRICT) with recovery guidance; it never approves or enables self-review.'
+      : 'FALLBACK: If the Task tool cannot spawn the reviewer, do NOT approve and do NOT invent findings. Report the transport failure, then retry the originating FlowGuard review invocation with the unchanged artifact input. The retry may use the configured SDK review transport; do not submit copied or fabricated reviewFindings.';
   result.next =
     `INDEPENDENT_REVIEW_REQUIRED: ${policy === 'host_task_required' ? 'Policy requires' : 'Policy prefers'} ` +
     `a host-visible ${REVIEWER_SUBAGENT_TYPE} invocation via the OpenCode Task tool. ` +
@@ -171,11 +175,8 @@ function buildHostTaskBlockedOutput(
     ` The reviewer subagent must NOT call any FlowGuard tools (flowguard_plan, flowguard_implement, flowguard_review_implementation, flowguard_architecture) in its own session.` +
     ` When it returns, submit ONLY the verdict (reviewVerdict) matching the reviewer's overallVerdict — ` +
     `the captured evidence is resolved automatically; do NOT submit, copy, or alter reviewFindings. ` +
-    `reviewVerdict is the reviewer's result, NOT user approval, and only advances to the human review gate.` +
-    ` FALLBACK: If the Task tool cannot spawn the reviewer (error, unavailable agent, or missing infrastructure), ` +
-    `do NOT approve and do NOT invent findings — report the transport failure and stop; independent review is ` +
-    `mandatory and cannot be self-substituted. Setting reviewerUnavailable: true fails closed ` +
-    `(REVIEWER_UNAVAILABLE_STRICT) with recovery guidance; it never approves or enables self-review.`;
+    `reviewVerdict is the reviewer's result, NOT user approval, and only advances to the human review gate. ` +
+    fallback;
 
   if (reviewerTaskPrompt) {
     result.reviewerTaskPrompt = reviewerTaskPrompt;

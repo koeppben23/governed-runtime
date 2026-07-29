@@ -23,7 +23,8 @@ Run automated verification checks for the current implementation.
 4. If the final \`flowguard_run_check\` response has phase \`IMPL_REVIEW\`, immediately complete the mandatory independent implementation review before reporting completion:
    1. Invoke the \`${REVIEWER_SUBAGENT_TYPE}\` via the Task tool. If the response includes a \`reviewerTaskPrompt\` field, pass it VERBATIM as the Task tool "prompt" argument and append the implementation diff, executed verification evidence, and Discovery context below it — the canonical prompt already carries the required review context and attestation, so the first Task attempt is not blocked with \`SUBAGENT_PROMPT_MISSING_CONTEXT\`. Otherwise give it the implementation diff, executed verification evidence, and the response's \`requiredReviewAttestation\`. The reviewer MUST NOT call FlowGuard tools and MUST return its structured verdict.
    2. Call \`flowguard_review_implementation({ reviewVerdict })\` with only the verdict returned by the reviewer. Do not submit, copy, or fabricate \`reviewFindings\`; the host-task plugin binds the reviewer evidence.
-   3. Present the returned review card or recovery. Never make the subsequent human approval decision.
+    3. If the Task cannot spawn the reviewer, follow the policy-specific recovery in the FlowGuard response: required stops blocked; preferred retries the originating FlowGuard invocation with unchanged implementation input. Never fabricate findings or make the subsequent human approval decision.
+    4. Present the returned review card or recovery. Never make the subsequent human approval decision.
 5. Report which checks passed, which failed, and whether the workflow can proceed.
 ${GOVERNANCE_RULES}
 ## Done-when

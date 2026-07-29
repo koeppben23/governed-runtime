@@ -25,6 +25,7 @@ import {
   TOOL_FLOWGUARD_HELP,
 } from '../../integration/tool-names.js';
 import { COMMANDS } from './index.js';
+import { TOOL_WRAPPER } from '../wrappers/index.js';
 
 const REGISTERED_TOOLS: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_STATUS,
@@ -66,6 +67,22 @@ describe('command templates: tool reference integrity', () => {
     const body = COMMANDS['continue.md'];
     expect(body).toBeDefined();
     expect(body).toContain('flowguard_continue');
+  });
+
+  it('every command-referenced tool is exported by the installed OpenCode wrapper', () => {
+    const exportBlock = TOOL_WRAPPER.match(/export\s*\{([^}]*)\}/);
+    expect(exportBlock).not.toBeNull();
+    const exports = new Set(
+      exportBlock![1]!
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+    );
+    const missing = [...REGISTERED_TOOLS]
+      .filter((tool) => Object.values(COMMANDS).some((body) => body.includes(tool)))
+      .map((tool) => tool.replace(/^flowguard_/, ''))
+      .filter((name) => !exports.has(name));
+    expect(missing).toEqual([]);
   });
 });
 

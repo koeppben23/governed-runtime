@@ -441,6 +441,38 @@ describe('runReviewOrchestration strict independent review with footer output', 
     });
   });
 
+  it('host_task_preferred falls through to the SDK pipeline on a retry without host evidence', async () => {
+    const stateRef = { current: buildState('PLAN', 'plan') };
+    stateRef.current = {
+      ...stateRef.current,
+      policySnapshot: {
+        ...stateRef.current.policySnapshot!,
+        reviewInvocationPolicy: 'host_task_preferred',
+      },
+    };
+    vi.mocked(readState).mockImplementation(async () => stateRef.current);
+    const client = buildClient(buildFindings());
+    const deps = buildDeps(client, stateRef);
+    const event: ToolCallEvent = {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Add regression tests for review orchestration.' } },
+      output: { output: reviewRequiredOutput('PLAN') },
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    };
+
+    await runReviewOrchestration(deps, event);
+    expect(client.session.create).not.toHaveBeenCalled();
+
+    await runReviewOrchestration(deps, {
+      ...event,
+      output: { output: reviewRequiredOutput('PLAN') },
+    });
+
+    expect(client.session.create).toHaveBeenCalledOnce();
+    expect(client.session.prompt).toHaveBeenCalledOnce();
+  });
+
   it('blocks SDK path when snapshot misses reviewInvocationPolicy (fail-closed)', async () => {
     const stateRef = { current: buildState('PLAN', 'plan') };
     const { reviewInvocationPolicy: _, ...snapshotWithoutPolicy } =
