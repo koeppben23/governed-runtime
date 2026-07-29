@@ -713,6 +713,19 @@ describe('renderMarkdown', () => {
 });
 
 describe('Presentation Language forms', () => {
+  it('renders the ASCII glyph profile without Unicode status markers', () => {
+    const doc: DiagnosticCardDocument = {
+      kind: 'diagnostic_card',
+      form: 'diagnostic',
+      sections: [{ kind: 'blocker', code: 'BLOCKED', text: 'Blocked.' }],
+      conclusion: { kind: 'recovery', message: 'Recover.', steps: ['Retry.'] },
+    };
+
+    const output = renderMarkdown(doc, { glyphProfile: 'ascii' });
+    expect(output).toContain('[WARN] **Blocked:**');
+    expect(output).not.toMatch(/[⚠✓✗→]/);
+  });
+
   it('does not emit trailing whitespace for an empty key-value value', () => {
     const doc: CompactCardDocument = {
       kind: 'compact_card',
