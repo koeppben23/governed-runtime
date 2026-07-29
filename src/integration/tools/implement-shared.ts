@@ -110,8 +110,7 @@ export function buildImplementRuntime(input: {
 }
 
 export function validateImplementSequence(args: ImplementArgs, state: SessionState): string | null {
-  // 1. Canonical argument-shape validation (findings-without-verdict and
-  //    reviewerUnavailable-with-record-mode are pure-shape faults).
+  // 1. Canonical argument-shape validation.
   const mode = classifyToolCallMode('implement', {
     reviewVerdict: args.reviewVerdict,
     reviewFindings: args.reviewFindings,
@@ -128,6 +127,12 @@ export function validateImplementSequence(args: ImplementArgs, state: SessionSta
   }
   if (hasVerdict && state.phase !== 'IMPL_REVIEW') {
     return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: state.phase });
+  }
+  if (mode.kind === 'transport_failure_retry') {
+    if (!state.implementation) return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
+    if (state.phase !== 'IMPL_REVIEW') {
+      return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: state.phase });
+    }
   }
   return null;
 }

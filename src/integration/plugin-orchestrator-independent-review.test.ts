@@ -405,6 +405,22 @@ describe('runReviewOrchestration strict independent review with footer output', 
       invocationMode: 'host_subagent_task',
       hostVisible: true,
     });
+
+    await runReviewOrchestration(deps, {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Add regression tests for review orchestration.' } },
+      output: {
+        output: JSON.stringify({
+          ...JSON.parse(reviewRequiredOutput('PLAN')),
+          reviewTransportFailure: { transport: 'host_task', reported: true },
+        }),
+      },
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    });
+
+    expect(client.session.create).not.toHaveBeenCalled();
+    expect(client.session.prompt).not.toHaveBeenCalled();
   });
 
   it('host_task_preferred requests Task first without silently returning or calling SDK', async () => {
@@ -441,7 +457,7 @@ describe('runReviewOrchestration strict independent review with footer output', 
     });
   });
 
-  it('host_task_preferred falls through to the SDK pipeline on a retry without host evidence', async () => {
+  it('host_task_preferred falls through to SDK only after an explicit Task transport failure', async () => {
     const stateRef = { current: buildState('PLAN', 'plan') };
     stateRef.current = {
       ...stateRef.current,
@@ -467,6 +483,18 @@ describe('runReviewOrchestration strict independent review with footer output', 
     await runReviewOrchestration(deps, {
       ...event,
       output: { output: reviewRequiredOutput('PLAN') },
+    });
+
+    expect(client.session.create).not.toHaveBeenCalled();
+
+    await runReviewOrchestration(deps, {
+      ...event,
+      output: {
+        output: JSON.stringify({
+          ...JSON.parse(reviewRequiredOutput('PLAN')),
+          reviewTransportFailure: { transport: 'host_task', reported: true },
+        }),
+      },
     });
 
     expect(client.session.create).toHaveBeenCalledOnce();

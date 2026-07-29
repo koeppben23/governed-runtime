@@ -144,10 +144,15 @@ describe('classifyToolCallMode — invalid shapes, canonical per-family codes', 
     });
   });
 
-  it('implement: reviewerUnavailable + record mode => INVALID_IMPLEMENT_TOOL_SEQUENCE (gap closed)', () => {
+  it('implement: bare reviewerUnavailable requests a transport-failure retry', () => {
     expect(classifyToolCallMode('implement', { reviewerUnavailable: true })).toMatchObject({
-      kind: 'invalid',
-      code: 'INVALID_IMPLEMENT_TOOL_SEQUENCE',
+      kind: 'transport_failure_retry',
     });
+  });
+
+  it('implement: reviewerUnavailable with findings but no verdict remains invalid', () => {
+    expect(
+      classifyToolCallMode('implement', { reviewerUnavailable: true, reviewFindings: findings }),
+    ).toMatchObject({ kind: 'invalid', code: 'INVALID_IMPLEMENT_TOOL_SEQUENCE' });
   });
 });

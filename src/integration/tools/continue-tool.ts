@@ -148,7 +148,10 @@ function formatContinueResponse(value: Record<string, unknown>, state: SessionSt
     unknown
   >;
   const productNext = response.productNextAction as { text?: unknown } | undefined;
-  if (typeof productNext?.text === 'string') response.next = productNext.text;
+  const commands = (productNext as { commands?: unknown } | undefined)?.commands;
+  if (Array.isArray(commands) && commands.every((command) => typeof command === 'string')) {
+    response.next = commands.join(', ');
+  }
   return JSON.stringify(response);
 }
 

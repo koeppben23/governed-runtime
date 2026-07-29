@@ -254,8 +254,8 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     // Host-task contract (review-verdict disambiguation): verdict-only, and never
     // the dangerous "self-review fallback" / "submit the exact ReviewFindings" wording.
     expect(parsed.next).toContain('submit ONLY the verdict');
-    expect(parsed.next).toContain('retry the originating FlowGuard review invocation');
-    expect(parsed.next).not.toContain('report the transport failure and stop');
+    expect(parsed.next).toContain('flowguard_review_implementation({ reviewerUnavailable: true })');
+    expect(parsed.next).toContain('For other review types, report the transport failure and stop');
     expect(parsed.next).not.toMatch(/proceeds with self-review/i);
     expect(parsed.next).not.toMatch(/submit the exact ReviewFindings returned/i);
   });

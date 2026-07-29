@@ -82,6 +82,7 @@ import {
   ensureReviewAssurance,
   findAcceptedInvocationForFindings,
   findLatestObligation,
+  reviewObligationResponseFields,
 } from '../review/assurance.js';
 import { buildLatestImplementationReviewSummary } from './review-summary.js';
 import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
@@ -410,24 +411,48 @@ async function handleApprovedReview(input: {
   return appendNextAction(JSON.stringify(response), finalState);
 }
 
-export async function handleImplReview(input: ImplementRuntime): Promise<string> {
-  const implementation = input.state.implementation;
-  if (!implementation) {
-    const receivedVerdict = input.args.reviewVerdict;
-    return formatBlocked(
-      'IMPLEMENTATION_EVIDENCE_REQUIRED',
-      receivedVerdict ? { receivedVerdict } : undefined,
-    );
+function handlePreferredTaskTransportFailure(
+  input: ImplementRuntime,
+  pendingObligation: ReturnType<typeof findPendingImplObligation>,
+): string {
+  if (!pendingObligation)
+    return formatBlocked('REVIEW_FINDINGS_REQUIRED', { action: 'implementation review' });
+  return appendNextAction(
+    JSON.stringify({
+      phase: input.state.phase,
+      status:
+        'OpenCode Task reviewer transport failure reported. Attempting the configured SDK review transport.',
+      next: 'INDEPENDENT_REVIEW_REQUIRED: Host Task transport failure was reported for the pending implementation review.',
+      ...reviewObligationResponseFields(pendingObligation),
+      reviewTransportFailure: { transport: 'host_task', reported: true },
+    }),
+    input.state,
+  );
+}
+
+function handleTaskTransportFailureRetry(input: ImplementRuntime): string | null {
+  if (input.args.reviewerUnavailable !== true) return null;
+  if (input.args.reviewVerdict !== undefined || input.args.reviewFindings !== undefined)
+    return null;
+  if (input.policy.reviewInvocationPolicy !== 'host_task_preferred') {
+    return formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {
+      reason: 'reviewer unavailable; independent ReviewFindings remain required',
+      recovery:
+        'Invoke a supported reviewer transport or provide policy-gated manual_attested ReviewFindings bound to the active obligation. flowguard_decision does not replace review evidence.',
+    });
   }
+  return handlePreferredTaskTransportFailure(input, findPendingImplObligation(input.state));
+}
 
-  const iteration = nextImplementationReviewIteration(input.state);
-  const planVersion = (input.state.plan?.history.length ?? 0) + 1;
-  const submittedVerdict = input.args.reviewVerdict;
-  if (!submittedVerdict)
-    return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: input.state.phase });
-
+async function handleSubmittedImplementationReview(input: {
+  runtime: ImplementRuntime;
+  iteration: number;
+  planVersion: number;
+  submittedVerdict: LoopVerdict;
+}): Promise<string> {
+  const { runtime, iteration, planVersion, submittedVerdict } = input;
   const { pendingObligation, resolved } = resolveImplementationFindings(
-    input,
+    runtime,
     iteration,
     planVersion,
   );
@@ -441,28 +466,53 @@ export async function handleImplReview(input: ImplementRuntime): Promise<string>
   if (findingsBlocked) return findingsBlocked;
 
   const { reviewedState, newReviewFindings } = appendImplReviewState({
-    runtime: input,
+    runtime,
     iteration,
     planVersion,
     effectiveFindings: resolved.effectiveFindings,
     evidenceInvocationId: resolved.evidenceInvocationId,
   });
 
-  if (input.args.reviewVerdict === 'changes_requested') {
+  if (submittedVerdict === 'changes_requested') {
     return handleChangesRequestedReview({
-      runtime: input,
+      runtime,
       reviewedState,
       iteration,
       reviewFindings: newReviewFindings,
     });
   }
-  const validationGate = implValidationEvidenceGate(input.state);
+  const validationGate = implValidationEvidenceGate(runtime.state);
   if (validationGate) return validationGate;
   return handleApprovedReview({
-    runtime: input,
+    runtime,
     reviewedState,
     iteration,
     reviewFindings: newReviewFindings,
+  });
+}
+
+export async function handleImplReview(input: ImplementRuntime): Promise<string> {
+  const implementation = input.state.implementation;
+  if (!implementation) {
+    const receivedVerdict = input.args.reviewVerdict;
+    return formatBlocked(
+      'IMPLEMENTATION_EVIDENCE_REQUIRED',
+      receivedVerdict ? { receivedVerdict } : undefined,
+    );
+  }
+
+  const iteration = nextImplementationReviewIteration(input.state);
+  const planVersion = (input.state.plan?.history.length ?? 0) + 1;
+  const transportFailureRetry = handleTaskTransportFailureRetry(input);
+  if (transportFailureRetry) return transportFailureRetry;
+  const submittedVerdict = input.args.reviewVerdict;
+  if (!submittedVerdict)
+    return formatBlocked('IMPLEMENT_REVIEW_LOOP_REQUIRED', { phase: input.state.phase });
+  return handleSubmittedImplementationReview({
+    runtime: input,
+    iteration,
+    planVersion,
+    submittedVerdict,
   });
 }
 
