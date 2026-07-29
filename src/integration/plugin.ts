@@ -28,7 +28,7 @@ import { createPluginLogger } from './plugin-logging.js';
 import { resolvePluginSessionPolicy } from './plugin-policy.js';
 import type { OrchestratorDeps } from './plugin-orchestrator.js';
 import type { RiskEnforcementDeps } from './plugin-risk.js';
-import { type ActiveCommandScope, type FlowGuardPluginRuntime } from './plugin-shared.js';
+import { type FlowGuardPluginRuntime } from './plugin-shared.js';
 import { createOpenCodeHostAdapter } from './opencode-host-adapter.js';
 import { createWorkspace } from './plugin-workspace.js';
 import type { OrchestratorClient } from './review/orchestrator.js';
@@ -99,7 +99,6 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
 
   const orchestratorDeps = createOrchestratorDeps(ws, log, typedClient, adapter);
   const toolTraceIds = new Map<string, string>();
-  const activeCommandScopes = new Map<string, ActiveCommandScope>();
   const auditDeps = createAuditDeps(
     ws,
     log,
@@ -127,7 +126,6 @@ export const FlowGuardAuditPlugin: Plugin = async ({ client, directory, worktree
     orchestratorDeps,
     auditDeps,
     toolTraceIds,
-    activeCommandScopes,
     setCurrentSessionId: (sessionId) => {
       currentSessionId = sessionId;
     },
