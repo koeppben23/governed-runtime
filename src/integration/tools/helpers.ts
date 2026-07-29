@@ -50,7 +50,7 @@ import type { RuntimeDiagnostics } from '../../diagnostics/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
 import { renderMarkdown } from '../../presentation/index.js';
-import type { PresentationDocument } from '../../presentation/index.js';
+import type { PresentationConclusion, PresentationDocument } from '../../presentation/index.js';
 import { buildRailConclusion } from './rail-conclusion.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
 
@@ -158,13 +158,24 @@ export function buildNextActionPresentation(
   state: SessionState,
   evalResult: EvalResult,
 ): { markdown: string } {
+  const conclusion = buildRailConclusion(state, evalResult);
   const document: PresentationDocument = {
     kind: 'compact_card',
     density: 'compact',
+    form: presentationFormForConclusion(conclusion),
     sections: [],
-    conclusion: buildRailConclusion(state, evalResult),
+    conclusion,
   };
   return { markdown: renderMarkdown(document) };
+}
+
+function presentationFormForConclusion(
+  conclusion: PresentationConclusion,
+): 'success' | 'decision' | 'review_pending' | 'terminal' {
+  if (conclusion.kind === 'decision_required') return 'decision';
+  if (conclusion.kind === 'review_pending') return 'review_pending';
+  if (conclusion.kind === 'terminal') return 'terminal';
+  return 'success';
 }
 
 /** Format a RailResult for LLM consumption. Audit transitions in metadata channel. */

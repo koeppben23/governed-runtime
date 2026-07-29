@@ -25,6 +25,7 @@ import {
   buildPlanReviewCard,
 } from '../../presentation/index.js';
 import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js';
+import { readConfig } from '../../adapters/persistence-config.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 import { evaluate } from '../../machine/evaluate.js';
 import { autoAdvance } from '../../rails/types.js';
@@ -157,7 +158,7 @@ export async function convergedPlanReviewCardResponse(
   const { scope, finalState, ev, transitions, revision, iteration, forcedConvergence } = input;
   const nextAction = resolveNextAction(finalState.phase, finalState);
   const productNext = buildProductNextAction(nextAction, finalState.phase);
-  const reviewCard = buildPlanReviewCard({
+  const reviewCardInput = {
     planText: revision.currentPlan.body,
     phase: finalState.phase,
     phaseLabel: PHASE_LABELS[finalState.phase],
@@ -166,6 +167,11 @@ export async function convergedPlanReviewCardResponse(
     policyMode: finalState.policySnapshot?.mode,
     taskTitle: firstLine(finalState.ticket?.text),
     forcedConvergence,
+  };
+  // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
+  const reviewCard = buildPlanReviewCard(reviewCardInput);
+  const presentationMarkdown = buildPlanReviewCard(reviewCardInput, {
+    glyphProfile: (await readConfig(scope.worktree)).presentation.opencode.glyphProfile,
   });
   const artifactErr = await materializeReviewCardArtifact(
     scope.sessDir,
@@ -182,6 +188,7 @@ export async function convergedPlanReviewCardResponse(
     planDigest: revision.currentPlan.digest,
     selfReviewIteration: iteration,
     reviewCard,
+    presentation: { markdown: presentationMarkdown },
     next: formatEval(ev),
     _audit: { transitions },
   };

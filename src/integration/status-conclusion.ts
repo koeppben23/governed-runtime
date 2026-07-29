@@ -46,6 +46,10 @@ export type StatusConclusionProjection =
   | {
       readonly kind: 'terminal';
       readonly message: string;
+    }
+  | {
+      readonly kind: 'review_pending';
+      readonly message: string;
     };
 
 // ─── Conclusion Builder ────────────────────────────────────────────────────────
@@ -86,6 +90,13 @@ export function projectStatusConclusion(
       kind: 'decision_required',
       question: evalResult.reason,
       actions,
+    };
+  }
+
+  if (productNextAction.presentationForm === 'review_pending') {
+    return {
+      kind: 'review_pending',
+      message: productNextAction.text,
     };
   }
 

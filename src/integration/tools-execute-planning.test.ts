@@ -882,6 +882,7 @@ describe('plan', () => {
       expect(result.reviewCard).toContain('## Proposed Plan');
       expect(result.reviewCard).toContain('Implement payment validation');
       expect(result.reviewCard).toContain('## Decision required');
+      expect(result.presentation).toEqual({ markdown: result.reviewCard });
     });
 
     it('converged PLAN_REVIEW reviewCard contains recommended commands', async () => {

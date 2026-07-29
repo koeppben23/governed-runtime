@@ -23,6 +23,7 @@ import type {
   FindingItem,
 } from './model.js';
 import { renderMarkdown } from './markdown.js';
+import type { PresentationRenderOptions } from './glyph-profile.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -119,10 +120,13 @@ function categoryLabel(category: string): string {
  * 5. Evidence (obligationId, invocation source, reviewer — when present)
  * 6. Recommended follow-up (orientation, no governance commands)
  *
- * This card carries no conclusion — /review is terminal orientation, not a
- * decision gate.
+ * /review is terminal orientation, not a decision gate. It still has a typed
+ * terminal conclusion so every visible result has one authoritative closure.
  */
-export function buildReviewReportCard(input: ReviewReportCardInput): string {
+export function buildReviewReportCard(
+  input: ReviewReportCardInput,
+  options?: PresentationRenderOptions,
+): string {
   const {
     phaseLabel,
     overallStatus,
@@ -273,8 +277,10 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
+    form: 'terminal',
     sections,
+    conclusion: { kind: 'terminal', message: 'Review report complete.' },
   };
 
-  return renderMarkdown(document);
+  return renderMarkdown(document, options);
 }

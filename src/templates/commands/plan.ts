@@ -150,9 +150,9 @@ Revision path (when review returns changes_requested):
 ${GOVERNANCE_RULES}
 ## Presentation
 
-- If the response contains a \`reviewCard\` field, display its markdown verbatim — never summarize, truncate, or omit it.
-- The reviewCard contains the formatted plan review with findings, verdict, and next actions.
-- This is mandatory output: the user relies on it to make their review decision. When phase is \`PLAN_REVIEW\`, stop after presenting the reviewCard. Do not call \`flowguard_decision\`, \`/approve\`, \`/request-changes\`, or \`/reject\` yourself; only the user's next explicit command may decide the gate.
+- If \`presentation.markdown\` is present, display its markdown verbatim — never summarize, truncate, or omit it; do not append a second conclusion.
+- Only when \`presentation.markdown\` is absent, display the legacy \`reviewCard\` field verbatim.
+- This is mandatory output: the user relies on it to make their review decision. When phase is \`PLAN_REVIEW\`, stop after presenting the canonical presentation. Do not call \`flowguard_decision\`, \`/approve\`, \`/request-changes\`, or \`/reject\` yourself; only the user's next explicit command may decide the gate.
 
 ## Done-when
 
@@ -160,7 +160,7 @@ ${GOVERNANCE_RULES}
 - The \`## Verification\` section cites Source for each check OR states NOT_VERIFIED.
 - Independent review loop has converged (approved or max 3 iterations).
 ${DISCOVERY_REVIEW_DONE_WHEN}
-- If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
+- If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the legacy \`reviewCard\` is displayed verbatim.
 - On the converged path: phase has advanced to PLAN_REVIEW. The reviewCard already
   ends with its rendered next-action conclusion (a \`## Decision required\` block
   listing \`/approve\`, \`/request-changes\`, \`/reject\`) — do NOT append a separate

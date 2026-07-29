@@ -15,7 +15,9 @@ import type { ReviewExecutors } from '../../../rails/review.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
 import type { AutoAdvanceOverflow } from '../../../rails/types.js';
 import { PHASE_LABELS, buildReviewReportCard } from '../../../presentation/index.js';
+import type { PresentationRenderOptions } from '../../../presentation/glyph-profile.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
+import { readConfig } from '../../../adapters/persistence-config.js';
 import { writeReport, reportPath } from '../../../adapters/persistence.js';
 import { writeStateWithArtifacts, appendNextAction } from '../helpers.js';
 import { ensureReviewAssurance } from '../../review/assurance.js';
@@ -206,26 +208,32 @@ function reviewerSessionId(
   );
 }
 
-function buildStandaloneReviewCard(input: {
-  args: ReviewToolArgs;
-  result: StartedReviewResult;
-  finalState: SessionState;
-  report: ReviewReportResult;
-  validatedReviewObligation: ReviewObligation | null;
-}): string {
+function buildStandaloneReviewCard(
+  input: {
+    args: ReviewToolArgs;
+    result: StartedReviewResult;
+    finalState: SessionState;
+    report: ReviewReportResult;
+    validatedReviewObligation: ReviewObligation | null;
+  },
+  options?: PresentationRenderOptions,
+): string {
   const { args, result, finalState, report, validatedReviewObligation } = input;
   const boundInvocation = findBoundReviewInvocation(result, validatedReviewObligation);
-  return buildReviewReportCard({
-    phase: finalState.phase,
-    phaseLabel: PHASE_LABELS[finalState.phase],
-    overallStatus: report.overallStatus,
-    findings: report.findings ?? [],
-    completeness: reviewCardCompleteness(report),
-    inputOrigin: args.inputOrigin,
-    references: args.references as Array<{ ref: string; type: string }> | undefined,
-    obligationId: validatedReviewObligation?.obligationId,
-    ...reviewCardInvocationFields(boundInvocation, args),
-  });
+  return buildReviewReportCard(
+    {
+      phase: finalState.phase,
+      phaseLabel: PHASE_LABELS[finalState.phase],
+      overallStatus: report.overallStatus,
+      findings: report.findings ?? [],
+      completeness: reviewCardCompleteness(report),
+      inputOrigin: args.inputOrigin,
+      references: args.references as Array<{ ref: string; type: string }> | undefined,
+      obligationId: validatedReviewObligation?.obligationId,
+      ...reviewCardInvocationFields(boundInvocation, args),
+    },
+    options,
+  );
 }
 
 async function materializeStandaloneReviewCard(input: {
@@ -254,6 +262,7 @@ function formatReviewCompletionResponse(input: {
   report: ReviewReportResult;
   allTransitions: StartedReviewResult['transitions'];
   reviewCard: string;
+  presentationMarkdown: string;
   artifactWarning?: { code: string; message: string };
   nativeAttestationRejection?: NativeAttestationRejection;
 }): string {
@@ -263,12 +272,14 @@ function formatReviewCompletionResponse(input: {
     report,
     allTransitions,
     reviewCard,
+    presentationMarkdown,
     artifactWarning,
     nativeAttestationRejection,
   } = input;
   return appendNextAction(
     JSON.stringify({
       reviewCard,
+      presentation: { markdown: presentationMarkdown },
       phase: finalState.phase,
       ...(artifactWarning && { artifactWarning }),
       ...(nativeAttestationRejection && {
@@ -306,6 +317,7 @@ export async function buildReviewCompletionResponse(input: {
   finalState: SessionState;
   report: ReviewReportResult;
   allTransitions: StartedReviewResult['transitions'];
+  worktree: string;
   validatedReviewObligation: ReviewObligation | null;
   nativeAttestationRejection?: NativeAttestationRejection;
 }): Promise<string> {
@@ -316,6 +328,7 @@ export async function buildReviewCompletionResponse(input: {
     finalState,
     report,
     allTransitions,
+    worktree,
     validatedReviewObligation,
     nativeAttestationRejection,
   } = input;
@@ -332,12 +345,17 @@ export async function buildReviewCompletionResponse(input: {
     reviewCard,
     validatedReviewObligation,
   });
+  const presentationMarkdown = buildStandaloneReviewCard(
+    { args, result, finalState, report, validatedReviewObligation },
+    { glyphProfile: (await readConfig(worktree)).presentation.opencode.glyphProfile },
+  );
   return formatReviewCompletionResponse({
     finalState,
     result,
     report,
     allTransitions,
     reviewCard,
+    presentationMarkdown,
     artifactWarning,
     nativeAttestationRejection,
   });

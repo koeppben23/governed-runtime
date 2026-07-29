@@ -3,13 +3,14 @@
 import type { HelpResult, ProjectedCommand } from './help-projection.js';
 import { renderMarkdown } from '../../presentation/markdown.js';
 import { normalizedMarkdown } from '../../presentation/model.js';
+import type { PresentationRenderOptions } from '../../presentation/glyph-profile.js';
 import type {
   HelpDocument,
   PresentationSection,
   DetailedCommandVisibility,
 } from '../../presentation/model.js';
 
-export interface RenderOutput {
+export interface RenderOutput extends PresentationRenderOptions {
   readonly format: 'markdown' | 'json';
   readonly verbose?: boolean;
   readonly includeArtifactContent?: boolean;
@@ -221,5 +222,7 @@ export function renderHelp(result: HelpResult, output: RenderOutput): string {
     return renderHelpJson(result, output.verbose ?? false, includeContent);
   }
 
-  return renderMarkdown(buildHelpDocument(result, includeContent));
+  return renderMarkdown(buildHelpDocument(result, includeContent), {
+    glyphProfile: output.glyphProfile,
+  });
 }

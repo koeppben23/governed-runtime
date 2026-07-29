@@ -12,7 +12,7 @@ import type { RuntimeDiagnostics } from './types.js';
 
 async function readGolden(name: string): Promise<string> {
   const p = resolve(__dirname, '..', '..', 'testdata', 'presentation', name);
-  return readFile(p, 'utf-8');
+  return (await readFile(p, 'utf-8')).trimEnd();
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -241,7 +241,7 @@ describe('buildBlockedDiagnosticDocument', () => {
       message: 'Test.',
       diagnostics: d,
     });
-    expect(doc.conclusion).toBeUndefined();
+    expect(doc.conclusion).toMatchObject({ kind: 'recovery' });
   });
 
   it('always includes root cause even when empty', () => {

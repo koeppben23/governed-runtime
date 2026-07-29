@@ -430,6 +430,25 @@ describe('readConfig — precedence', () => {
     expect(config.profile.defaultId).toBeUndefined();
   });
 
+  it('repo glyph profile wins over the global glyph profile', async () => {
+    await writeRawConfig(
+      worktree,
+      JSON.stringify({
+        schemaVersion: 'v1',
+        presentation: { opencode: { glyphProfile: 'ascii' } },
+      }),
+    );
+    await writeGlobalConfig(
+      JSON.stringify({
+        schemaVersion: 'v1',
+        presentation: { opencode: { glyphProfile: 'unicode' } },
+      }),
+    );
+
+    const config = await readConfig(worktree);
+    expect(config.presentation.opencode.glyphProfile).toBe('ascii');
+  });
+
   // ── EDGE ───────────────────────────────────────────────────
 
   it('returned config is a deep clone (mutation safe)', async () => {

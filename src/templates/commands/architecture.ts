@@ -88,8 +88,8 @@ Revision path (when review returns changes_requested):
 ${GOVERNANCE_RULES}
 ## Presentation
 
-- If the response contains a \`reviewCard\` field, display its markdown verbatim — never summarize, truncate, or omit it.
-- The reviewCard contains the formatted architecture review with ADR details, findings, and next actions.
+- If \`presentation.markdown\` is present, display its markdown verbatim — never summarize, truncate, or omit it; do not append a second conclusion.
+- Only when \`presentation.markdown\` is absent, display the legacy \`reviewCard\` field verbatim.
 - This is mandatory output: the user relies on it to make their review decision.
 
 ## Done-when
@@ -97,9 +97,9 @@ ${GOVERNANCE_RULES}
 - ADR is created or revised with Context, Decision, and Consequences sections.
 - Independent review loop has converged (approved or max iterations reached).
 ${DISCOVERY_REVIEW_DONE_WHEN}
-- If \`reviewCard\` is present in the tool response, it is displayed verbatim in the output.
+- If \`presentation.markdown\` is present, it is displayed verbatim; otherwise the legacy \`reviewCard\` is displayed verbatim.
 - Phase has reached ARCH_REVIEW (ready for human review).
-- When \`reviewCard\` is present it already ends with its rendered next-action
+- When the canonical presentation is present it already ends with its rendered next-action
   conclusion (a \`## Decision required\` block, or a terminal message) — do NOT
   append a separate \`Next action:\` line; the rendered conclusion is canonical.
   Only when no \`reviewCard\` is present (blocked path) does the response end with

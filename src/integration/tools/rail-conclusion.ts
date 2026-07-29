@@ -80,6 +80,10 @@ export function buildRailConclusion(
     };
   }
 
+  if (productNext.presentationForm === 'review_pending') {
+    return { kind: 'review_pending', message: productNext.text };
+  }
+
   // Work remains or a terminal phase still routes to a product command
   // (e.g. COMPLETE → /export, aborted → /status): recommend the first command.
   const command = productNext.commands[0];

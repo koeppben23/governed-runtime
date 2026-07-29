@@ -25,6 +25,12 @@ import { PHASE_LABELS } from './phase-labels.js';
  */
 type ActionCode = (typeof ACTION_CODES)[keyof typeof ACTION_CODES];
 
+export interface ProductNextAction {
+  readonly text: string;
+  readonly commands: readonly string[];
+  readonly presentationForm?: 'review_pending';
+}
+
 const PRODUCT_GUIDANCE = {
   CHOOSE_FLOW: {
     text: 'Choose your workflow: /task (development), /architecture (ADR), /review (compliance).',
@@ -78,8 +84,9 @@ const PRODUCT_GUIDANCE = {
   RUN_REVIEWER_TASK: {
     text: 'Independent content review is pending. Run the flowguard-reviewer Task, then submit only its verdict with flowguard_review.',
     commands: [],
+    presentationForm: 'review_pending',
   },
-} satisfies Partial<Record<ActionCode, { text: string; commands: readonly string[] }>>;
+} satisfies Partial<Record<ActionCode, ProductNextAction>>;
 
 /**
  * Resolve product-friendly next action text and commands for a phase.
@@ -100,7 +107,7 @@ export function buildProductNextAction(
   phase: Phase,
   aborted = false,
   archiveStatus?: string | null,
-): { text: string; commands: readonly string[] } {
+): ProductNextAction {
   const code = action.code as ActionCode;
   const guidance = PRODUCT_GUIDANCE[code];
 

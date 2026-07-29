@@ -24,6 +24,17 @@ const baseInput = {
 };
 
 describe('buildArchitectureReviewCard', () => {
+  it('keeps Unicode canonical by default and supports an ASCII transient rendering', () => {
+    const input = { ...baseInput, forcedConvergence: true };
+    const canonical = buildArchitectureReviewCard(input);
+
+    expect(buildArchitectureReviewCard(input)).toBe(canonical);
+    expect(canonical).toContain('⚠ Reviewer did NOT approve this ADR.');
+    expect(buildArchitectureReviewCard(input, { glyphProfile: 'ascii' })).toContain(
+      '[WARN] Reviewer did NOT approve this ADR.',
+    );
+  });
+
   it('renders header with ADR title and status', () => {
     const card = buildArchitectureReviewCard({
       ...baseInput,

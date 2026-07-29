@@ -70,6 +70,12 @@ export function buildWhyDocument(projection: WhyPresentationProjection): Present
   return {
     kind: 'compact_card',
     density: 'compact',
+    form:
+      conclusion.kind === 'decision_required'
+        ? 'decision'
+        : projection.blocker.blocked
+          ? 'blocked'
+          : 'success',
     sections,
     conclusion,
   };

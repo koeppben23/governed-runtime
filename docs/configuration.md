@@ -511,6 +511,37 @@ Applies only to new sessions. Existing sessions retain their snapshot value.
 > (global override) or by registering a custom profile (see
 > `docs/profiles.md#custom-profiles`).
 
+### presentation.opencode.glyphProfile
+
+**Type:** `enum`
+**Values:** `unicode`, `ascii`
+**Default:** `unicode`
+
+Selects the status-marker vocabulary for transient OpenCode
+`presentation.markdown` output:
+
+```json
+{
+  "presentation": {
+    "opencode": {
+      "glyphProfile": "ascii"
+    }
+  }
+}
+```
+
+This is an OpenCode-only presentation preference, not workflow, policy, or
+audit authority. `unicode` uses the canonical markers (such as `✓`, `⚠`, and
+`→`); `ascii` substitutes only renderer-owned status and action markers (such
+as `[OK]`, `[WARN]`, and `[NEXT]`) for terminals or fonts that cannot display
+them. It does not transliterate arbitrary Markdown, embedded artifact content,
+or user-authored text.
+
+Canonical `reviewCard` artifacts remain Unicode and are preserved verbatim.
+The profile affects the separate, host-visible `presentation.markdown` field.
+Repository config takes precedence over global config, as described in
+[Config File Location](#config-file-location).
+
 ## Environment Variables
 
 | Variable                    | Description                                                                                    | Default              |

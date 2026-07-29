@@ -257,6 +257,53 @@ describe('integration/tools', () => {
       );
     });
 
+    it('adds minimal presentation to blocked OpenCode JSON without changing overflow fields', () => {
+      const wrapped = attachGovernanceFooter(
+        JSON.stringify({
+          error: true,
+          code: 'AUTO_ADVANCE_OVERFLOW',
+          message: 'Auto-advance exceeded its step limit.',
+          recovery: 'Inspect the workflow topology before retrying.',
+          autoAdvanceOverflow: { phase: 'PLAN', limit: 10 },
+        }),
+      );
+      const output = JSON.parse(wrapped as string) as Record<string, unknown>;
+
+      expect(output.autoAdvanceOverflow).toEqual({ phase: 'PLAN', limit: 10 });
+      expect(output.presentation).toEqual({
+        markdown:
+          '⚠ **Blocked:** `AUTO_ADVANCE_OVERFLOW` — Auto-advance exceeded its step limit.\n' +
+          '**Recovery:** Inspect the workflow topology before retrying.\n\n' +
+          'Inspect the workflow topology before retrying.',
+      });
+    });
+
+    it('uses the requested glyph profile for wrapper-generated blocked presentations', () => {
+      const wrapped = attachGovernanceFooter(
+        JSON.stringify({ error: true, code: 'BLOCKED', message: 'Operation is blocked.' }),
+        'ascii',
+      );
+      const output = JSON.parse(wrapped as string) as Record<string, unknown>;
+
+      expect(output.presentation).toEqual({
+        markdown: '[WARN] **Blocked:** `BLOCKED` — Operation is blocked.\n\nOperation is blocked.',
+      });
+    });
+
+    it('preserves an existing blocked presentation', () => {
+      const wrapped = attachGovernanceFooter(
+        JSON.stringify({
+          error: true,
+          code: 'COMMAND_NOT_ALLOWED',
+          message: 'Command is blocked.',
+          presentation: { markdown: 'Existing presentation.' },
+        }),
+      );
+      const output = JSON.parse(wrapped as string) as Record<string, unknown>;
+
+      expect(output.presentation).toEqual({ markdown: 'Existing presentation.' });
+    });
+
     it('barrel has exactly 16 named exports (15 tools + 1 plugin)', () => {
       const exports = Object.keys(barrel);
       expect(exports.length).toBe(16);
