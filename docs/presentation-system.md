@@ -112,6 +112,14 @@ never appear un-normalized in user-facing output.
 
 ## 7. Symbol Set
 
+The symbols below are the canonical Unicode vocabulary for review artifacts,
+including `reviewCard`. OpenCode may render the separate transient
+`presentation.markdown` field with the `presentation.opencode.glyphProfile`
+ASCII profile when configured. That fallback changes only renderer-owned status
+and action markers; it does not transliterate arbitrary Markdown, embedded
+artifact content, or user-authored text. `reviewCard` remains Unicode and must
+be displayed verbatim.
+
 | Symbol | Meaning               | When to use                                               |
 | ------ | --------------------- | --------------------------------------------------------- |
 | `→`    | Recommended action    | Exactly one per document, for the primary next action     |

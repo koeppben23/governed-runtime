@@ -219,7 +219,7 @@ function renderSection(section: PresentationSection, glyphs: PresentationGlyphs)
     case 'detailedCommandList':
       return sectionHeading(section) + renderDetailedCommandList(section);
     case 'helpSummary':
-      return sectionHeading(section) + renderHelpSummary(section);
+      return sectionHeading(section) + renderHelpSummary(section, glyphs);
     case 'helpArtifact':
       return sectionHeading(section) + renderHelpArtifact(section);
     case 'embeddedMarkdown':
@@ -439,7 +439,7 @@ function detailedCommandSymbol(
   return '-';
 }
 
-function renderHelpSummary(section: HelpSummarySection): string {
+function renderHelpSummary(section: HelpSummarySection, glyphs: PresentationGlyphs): string {
   const lines: string[] = [];
 
   if (section.phase) {
@@ -461,7 +461,7 @@ function renderHelpSummary(section: HelpSummarySection): string {
       parts.push(`[${section.blocker.reasonCode}]`);
     }
     if (parts.length > 0) {
-      lines.push(`**Why blocked:** ${parts.join(' ')}`);
+      lines.push(`${glyphs.warning} **Why blocked:** ${parts.join(' ')}`);
     }
   }
 

@@ -422,6 +422,7 @@ async function persistCompletedReview(
       nativeAttestationRejection: prepared.nativeAttestationRejection,
       finalState: completion.finalState,
       allTransitions: completion.allTransitions,
+      worktree: context.worktree,
     });
   });
 }

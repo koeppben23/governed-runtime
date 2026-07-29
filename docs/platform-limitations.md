@@ -4,6 +4,14 @@ FlowGuard's governance model was designed for in-process enforcement within the 
 
 This document enumerates each gap with its impact assessment, mitigation strategy, and residual risk classification.
 
+## Glyph Display Fallback
+
+OpenCode terminals or fonts that cannot display FlowGuard's canonical Unicode
+status markers can set `presentation.opencode.glyphProfile` to `ascii` in
+`flowguard.json`. This affects only transient `presentation.markdown` markers;
+canonical Unicode `reviewCard` artifacts and arbitrary content are unchanged.
+See [Configuration](./configuration.md#presentationopencodeglyphprofile).
+
 ## Gap Summary
 
 | #   | Gap                                                                | Impact | Residual Risk                  | Affected Platforms |

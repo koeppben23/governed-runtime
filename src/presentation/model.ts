@@ -44,7 +44,7 @@ export function normalizedMarkdown(content: string): NormalizedMarkdown {
       'NormalizedMarkdown: content must not start or end with a newline.',
     );
   }
-  if (/[ \t]+$/m.test(content)) {
+  if (content.split('\n').some((line) => line.endsWith(' ') || line.endsWith('\t'))) {
     throw new PresentationContractError(
       'NormalizedMarkdown: content must not contain trailing whitespace on any line.',
     );

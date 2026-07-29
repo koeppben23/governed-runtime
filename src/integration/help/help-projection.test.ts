@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { TEAM_POLICY } from '../../config/policy.js';
+import { getPolicyPreset, TEAM_POLICY } from '../../config/policy.js';
 import * as crypto from 'node:crypto';
 import { makeProgressedState, makeState, TICKET } from '../../fixtures.js';
 import { buildHelpResult, finishToReadiness } from './help-projection.js';
@@ -19,7 +19,10 @@ import { hydrate } from '../tools/hydrate.js';
 import { ticket } from '../tools/ticket-tool.js';
 import { plan } from '../tools/plan.js';
 import { computeFingerprint, sessionDir } from '../../adapters/workspace/index.js';
-import { readState } from '../../adapters/persistence.js';
+import { readState, writeState } from '../../adapters/persistence.js';
+import { writeRepoConfig } from '../../adapters/persistence-config.js';
+import { createPolicySnapshot } from '../../config/policy-snapshot.js';
+import { DEFAULT_CONFIG } from '../../config/flowguard-config.js';
 
 function makeReviewReport(
   state: ReturnType<typeof makeProgressedState>,
@@ -425,6 +428,31 @@ describe('resume end-to-end via help.execute', () => {
     const parsed = JSON.parse(out as string);
     expect(parsed.artifacts.ticket.content).toBeUndefined();
     expect(parsed.artifacts.ticket.digest).toBeTruthy();
+  });
+
+  it('uses the reachable OpenCode glyph configuration for Markdown help', async () => {
+    await writeRepoConfig(ws.tmpDir, {
+      ...DEFAULT_CONFIG,
+      schemaVersion: 'v1',
+      presentation: { opencode: { glyphProfile: 'ascii' } },
+    });
+    const fingerprint = await computeFingerprint(ws.tmpDir);
+    await writeState(sessionDir(fingerprint.fingerprint, ctx.sessionID), {
+      ...makeProgressedState('PLAN_REVIEW'),
+      policySnapshot: createPolicySnapshot(
+        getPolicyPreset('team'),
+        '2026-01-01T00:00:00.000Z',
+        () => 'digest',
+      ),
+      activeChecks: [],
+      verificationCandidates: [],
+      actorInfo: undefined,
+    });
+
+    const out = await help.execute({ view: 'context' }, ctx);
+
+    expect(out).toContain('[WARN] **Why blocked:**');
+    expect(out).not.toContain('⚠ **Why blocked:**');
   });
 
   it('command view rejects includeArtifactContent via strict schema', async () => {

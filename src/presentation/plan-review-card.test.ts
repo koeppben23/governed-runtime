@@ -88,6 +88,23 @@ const productNextActionPartial = {
 };
 
 describe('buildPlanReviewCard', () => {
+  it('keeps Unicode canonical by default and supports an ASCII transient rendering', () => {
+    const input = {
+      planText: 'Plan.',
+      phase: 'PLAN_REVIEW' as const,
+      phaseLabel: 'Ready for plan approval',
+      productNextAction,
+      forcedConvergence: true,
+    };
+    const canonical = buildPlanReviewCard(input);
+
+    expect(buildPlanReviewCard(input)).toBe(canonical);
+    expect(canonical).toContain('⚠ Reviewer did NOT approve this plan.');
+    expect(buildPlanReviewCard(input, { glyphProfile: 'ascii' })).toContain(
+      '[WARN] Reviewer did NOT approve this plan.',
+    );
+  });
+
   describe('HAPPY', () => {
     it('renders the full plan body without truncation', () => {
       const card = buildPlanReviewCard({

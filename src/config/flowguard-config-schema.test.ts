@@ -100,6 +100,33 @@ describe('FlowGuardConfigSchema', () => {
     }
   });
 
+  describe('presentation.opencode.glyphProfile', () => {
+    it('defaults to unicode', () => {
+      const result = FlowGuardConfigSchema.safeParse({ schemaVersion: 'v1' });
+      expect(result.success).toBe(true);
+      expect(result.data?.presentation.opencode.glyphProfile).toBe('unicode');
+    });
+
+    it('accepts unicode and ascii', () => {
+      for (const glyphProfile of ['unicode', 'ascii'] as const) {
+        const result = FlowGuardConfigSchema.safeParse({
+          schemaVersion: 'v1',
+          presentation: { opencode: { glyphProfile } },
+        });
+        expect(result.success).toBe(true);
+        expect(result.data?.presentation.opencode.glyphProfile).toBe(glyphProfile);
+      }
+    });
+
+    it('rejects an unsupported glyph profile', () => {
+      const result = FlowGuardConfigSchema.safeParse({
+        schemaVersion: 'v1',
+        presentation: { opencode: { glyphProfile: 'emoji' } },
+      });
+      expect(result.success).toBe(false);
+    });
+  });
+
   it('accepts supported host defaults', () => {
     for (const host of ['opencode', 'claude-code', 'codex'] as const) {
       const result = FlowGuardConfigSchema.safeParse({

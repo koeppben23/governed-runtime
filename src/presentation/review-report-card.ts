@@ -23,6 +23,7 @@ import type {
   FindingItem,
 } from './model.js';
 import { renderMarkdown } from './markdown.js';
+import type { PresentationRenderOptions } from './glyph-profile.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -122,7 +123,10 @@ function categoryLabel(category: string): string {
  * /review is terminal orientation, not a decision gate. It still has a typed
  * terminal conclusion so every visible result has one authoritative closure.
  */
-export function buildReviewReportCard(input: ReviewReportCardInput): string {
+export function buildReviewReportCard(
+  input: ReviewReportCardInput,
+  options?: PresentationRenderOptions,
+): string {
   const {
     phaseLabel,
     overallStatus,
@@ -278,5 +282,5 @@ export function buildReviewReportCard(input: ReviewReportCardInput): string {
     conclusion: { kind: 'terminal', message: 'Review report complete.' },
   };
 
-  return renderMarkdown(document);
+  return renderMarkdown(document, options);
 }
