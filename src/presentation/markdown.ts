@@ -384,7 +384,7 @@ function noticeSymbol(level: NoticeSection['level'], glyphs: PresentationGlyphs)
     case 'warning':
       return glyphs.warning;
     case 'not_verified':
-      return glyphs.availableAction;
+      return glyphs.notVerified;
     case 'info':
       return '-';
   }

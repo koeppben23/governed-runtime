@@ -9,6 +9,7 @@ export interface PresentationGlyphs {
   readonly warning: string;
   readonly verified: string;
   readonly failed: string;
+  readonly notVerified: string;
   readonly notApplicable: string;
   readonly recommendedAction: string;
   readonly availableAction: string;
@@ -18,6 +19,7 @@ const UNICODE_GLYPHS: PresentationGlyphs = {
   warning: '⚠',
   verified: '✓',
   failed: '✗',
+  notVerified: '?',
   notApplicable: '—',
   recommendedAction: '→',
   availableAction: '-',
@@ -27,6 +29,7 @@ const ASCII_GLYPHS: PresentationGlyphs = {
   warning: '[WARN]',
   verified: '[OK]',
   failed: '[FAIL]',
+  notVerified: '[NOT_VERIFIED]',
   notApplicable: '[N/A]',
   recommendedAction: '[NEXT]',
   availableAction: '-',
