@@ -118,6 +118,23 @@ function attachPresentationToBlockedResult(
   record.presentation = { markdown: renderMarkdown(document, { glyphProfile }) };
 }
 
+function needsPresentationProfile(result: ToolResult): boolean {
+  const output = typeof result === 'string' ? result : result.output;
+  try {
+    const parsed = JSON.parse(output) as unknown;
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
+    const record = parsed as Record<string, unknown>;
+    return (
+      record.error === true &&
+      !('presentation' in record) &&
+      typeof record.code === 'string' &&
+      typeof record.message === 'string'
+    );
+  } catch {
+    return false;
+  }
+}
+
 export function attachGovernanceFooter(
   result: ToolResult,
   glyphProfile?: GlyphProfile,
@@ -139,12 +156,14 @@ function withGovernanceFooter(toolDef: ToolDefinition): ToolDefinition {
     async execute(args, context) {
       const result = await toolDef.execute(args, context);
       let glyphProfile: GlyphProfile | undefined;
-      try {
-        glyphProfile = (await readConfig(context.worktree || context.directory)).presentation
-          .opencode.glyphProfile;
-      } catch {
-        // Presentation must not replace a tool's canonical result when config
-        // loading already failed or the tool has represented that failure.
+      if (needsPresentationProfile(result)) {
+        try {
+          glyphProfile = (await readConfig(context.worktree || context.directory)).presentation
+            .opencode.glyphProfile;
+        } catch {
+          // Presentation must not replace a tool's canonical result when config
+          // loading already failed or the tool has represented that failure.
+        }
       }
       return attachGovernanceFooter(result, glyphProfile);
     },
