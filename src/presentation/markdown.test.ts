@@ -718,9 +718,10 @@ describe('Presentation Language forms', () => {
       kind: 'compact_card',
       density: 'compact',
       sections: [{ kind: 'keyValue', items: [{ label: 'Root cause', value: '' }] }],
+      conclusion: { kind: 'terminal', message: 'Complete.' },
     };
 
-    expect(renderMarkdown(doc)).toBe('**Root cause:**');
+    expect(renderMarkdown(doc)).toBe('**Root cause:**\n\nComplete.');
   });
 
   it('renders the review-pending form with its sole typed conclusion', () => {
