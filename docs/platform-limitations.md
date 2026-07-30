@@ -162,7 +162,7 @@ FlowGuard operates at different enforcement levels depending on the host platfor
 
 **Mitigation implemented**:
 
-1. **Self-documenting tool output**: All 12 FlowGuard MCP tools return `phase` in their response. Governance state is embedded in every tool interaction.
+1. **Self-documenting tool output**: All 14 FlowGuard MCP tools return `phase` in their response. Governance state is embedded in every tool interaction.
 2. **AGENTS.md instructions**: Document `flowguard_status` as the re-orientation command after compaction.
 3. **Status tool**: `flowguard_status` returns comprehensive governance state (phase, policy mode, obligations, completeness matrix).
 

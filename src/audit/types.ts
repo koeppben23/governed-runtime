@@ -39,8 +39,18 @@ export type { ActorInfo, ActorVerificationMeta };
 /**
  * Closed set of audit event kinds.
  * Each kind has a specific detail payload structure.
+ *
+ * AUDIT_EVENT_KINDS is the single authority; the type is derived from it.
  */
-export type AuditEventKind = 'transition' | 'tool_call' | 'error' | 'lifecycle' | 'decision';
+export const AUDIT_EVENT_KINDS = [
+  'transition',
+  'tool_call',
+  'error',
+  'lifecycle',
+  'decision',
+] as const;
+
+export type AuditEventKind = (typeof AUDIT_EVENT_KINDS)[number];
 
 export type AuditFormatVersion = 'audit-chain.v1' | 'audit-chain.v2';
 

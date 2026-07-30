@@ -1,7 +1,7 @@
 import * as path from 'node:path';
 /**
  * @module integration/tools-execute.test
- * @description Execution tests for all 10 FlowGuard tool execute() functions.
+ * @description Execution tests for FlowGuard tool execute() functions.
  *
  * Tests each tool's execute() against real filesystem persistence with
  * OPENCODE_CONFIG_DIR redirected to a temp directory. Git adapter functions

@@ -222,6 +222,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Documentation inventory corrected.** 15 documentation drift findings fixed
+  across PRODUCT_IDENTITY.md, delivery-scope.md, platform-limitations.md,
+  distribution-model.md, installation.md, and phases.md. Introduced
+  `src/shared/product-inventory.ts` as the canonical SSOT for all product
+  counts, guarded by drift tests that verify every count against live code
+  authorities.
+
+- **Stryker mutate scope updated to 47 files (was 23 in tp.2).** The
+  `[1.2.0-tp.2]` changelog entry below has been corrected from `35→39` to the
+  actual `23→35` expansion; three of the four files named in the original entry
+  were never present in the tp.2 release.
+
 - **Hardened the review challenge feature against gaming (#747 follow-up).** Five
   enforcement gaps in the challenge coverage feature were closed:
   - _Distinctness + substance (B1/B2):_ the N required challenges must now be
@@ -574,9 +586,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Stryker mutation scope expanded 35→39 (Tier 3, #595).** Four canonical
-  authority files added: `flowguard-config.ts`, `policy-presets.ts`,
-  `policy-snapshot-normalize.ts`, `profile.ts`.
+- **Stryker mutation scope expanded 23→35 (Tier 3, #595).** The mutate
+  array gained `archive/content-digest.ts`, `config/profile.ts`,
+  `integration/tools/review-validation-mode.ts`, `shared/canonical-json.ts`,
+  `templates/codex-plugin.ts`, `templates/mandates.ts`, and several review
+  orchestrator sub-modules.
   `vitest.stryker.config.ts` unchanged — existing globs cover all test files.
 
 - **KNOWN_ISSUES.md structural sync (#589).** MUT1 `Tracked`→`Fixed`,

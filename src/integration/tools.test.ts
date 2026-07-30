@@ -4,7 +4,7 @@
  *
  * Since tools depend on the OpenCode runtime context (worktree, sessionID, etc.)
  * and interact with the filesystem, these tests validate:
- * - Export shape: all 12 tools exported with the correct ToolDefinition structure
+ * - Export shape: all tools exported with the correct ToolDefinition structure
  * - Descriptions: non-empty, meaningful descriptions for LLM tool discovery
  * - Args schemas: tools that accept parameters have valid Zod schemas
  * - Barrel re-exports: integration/index.ts re-exports all tools correctly
@@ -123,7 +123,7 @@ describe('integration/tools', () => {
       });
     }
 
-    it('barrel re-exports all 14 tools', () => {
+    it('barrel re-exports all tools', () => {
       for (const name of TOOL_NAMES) {
         expect((barrel as Record<string, unknown>)[name]).toBeDefined();
         expect((barrel as Record<string, unknown>)[name]).toBe(TOOLS[name]);
@@ -382,7 +382,7 @@ describe('integration/tools', () => {
     it('importing all tools is effectively free (no side effects)', () => {
       // Tools are just objects with description, args, execute.
       // No database connections, no file reads, no network calls on import.
-      // Verify by checking all 9 tools are already available (loaded on module import).
+      // Verify by checking all tools are already available (loaded on module import).
       const start = performance.now();
       for (let i = 0; i < 1000; i++) {
         for (const name of TOOL_NAMES) {

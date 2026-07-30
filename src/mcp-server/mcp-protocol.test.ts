@@ -5,7 +5,7 @@
  * Spawns the FlowGuard MCP server as a child process and communicates
  * via JSON-RPC over stdin/stdout to verify:
  * - Protocol initialization handshake
- * - tools/list returns all 13 tools with correct schemas
+ * - tools/list returns all FlowGuard tools with correct schemas
  * - tools/call with valid and invalid inputs
  * - Error handling for unknown tools, bad args, missing session state
  * - stdout is exclusively JSON-RPC (no contamination)
@@ -188,7 +188,7 @@ describe('MCP Protocol Compliance', () => {
     await new Promise((r) => setTimeout(r, 100));
   });
 
-  it('HAPPY: tools/list returns all 13 FlowGuard tools', async () => {
+  it('HAPPY: tools/list returns all FlowGuard tools', async () => {
     const resp = await client.send(makeRequest('tools/list', {}));
 
     expect(resp.error).toBeUndefined();

@@ -279,6 +279,26 @@ jobs:
         env:
           FORCE_COLOR: 0
 
+  doc-drift:
+    name: doc-drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Check documentation inventory drift
+        run: npm run check:doc-drift
+        env:
+          FORCE_COLOR: 0
+
   fuzz:
     name: fuzz
     runs-on: ubuntu-latest

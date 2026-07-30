@@ -12,7 +12,7 @@ import { isConverged } from '../../machine/guards.js';
 import type { SessionState } from '../../state/schema.js';
 import type { LoopVerdict } from '../../state/evidence.js';
 
-const REVIEW_LOOP_PHASES = new Set<SessionState['phase']>([
+export const REVIEW_LOOP_PHASES = new Set<SessionState['phase']>([
   'PLAN_REVIEW',
   'IMPL_REVIEW',
   'ARCH_REVIEW',

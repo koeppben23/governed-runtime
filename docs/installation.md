@@ -316,22 +316,23 @@ FlowGuard integrates with OpenCode via a two-level command surface:
 
 Use these commands in OpenCode chat to drive workflows:
 
-**Canonical commands (12):**
+**Canonical commands (13):**
 
-| Command                      | Description                |
-| ---------------------------- | -------------------------- |
-| `/hydrate`                   | Bootstrap session          |
-| `/status`                    | Read session view          |
-| `/ticket <text>`             | Record task                |
-| `/plan`                      | Generate plan              |
-| `/continue`                  | Auto-advance               |
-| `/validate`                  | Run checks                 |
-| `/implement`                 | Execute plan               |
-| `/review-decision <verdict>` | Human approval             |
-| `/review`                    | Generate compliance report |
-| `/architecture`              | Create/revise ADR          |
-| `/abort`                     | Terminate session          |
-| `/archive`                   | Archive session            |
+| Command                                           | Description                          |
+| ------------------------------------------------- | ------------------------------------ |
+| `/hydrate`                                        | Bootstrap session                    |
+| `/status`                                         | Read session view                    |
+| `/ticket <text>`                                  | Record task                          |
+| `/plan`                                           | Generate plan                        |
+| `/continue`                                       | Auto-advance                         |
+| `/validate`                                       | Run checks                           |
+| `/implement`                                      | Execute plan                         |
+| `/review-decision <verdict>`                      | Human approval                       |
+| `/resolve-implementation-challenge <challengeId>` | Record advisory challenge resolution |
+| `/review`                                         | Generate compliance report           |
+| `/architecture`                                   | Create/revise ADR                    |
+| `/abort`                                          | Terminate session                    |
+| `/archive`                                        | Archive session                      |
 
 `<verdict>` accepts `approve`, `changes_requested`, or `reject`.
 
