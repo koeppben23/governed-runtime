@@ -7,19 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
-
-- **Documentation inventory corrected.** 15 documentation drift findings fixed:
-  PRODUCT_IDENTITY.md, delivery-scope.md, platform-limitations.md,
-  distribution-model.md, installation.md, and phases.md now align with the
-  live code. Introduced `src/shared/product-inventory.ts` as the canonical SSOT
-  for all product counts, guarded by drift tests that verify every count against
-  live code authorities.
-- **Stryker mutate scope updated to 47 files (was 23 in tp.2).** The `[1.2.0-tp.2]`
-  changelog entry below has been corrected from `35→39` to the actual `23→35`
-  expansion; three of the four files named in the original entry were never
-  present in the tp.2 release.
-
 ### Added
 
 - **Defense-in-depth validation gate on reviewer acceptance.** Accepting an
@@ -234,6 +221,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of raw API calls; successful runs auto-close stale drift issues.
 
 ### Fixed
+
+- **Documentation inventory corrected.** 15 documentation drift findings fixed
+  across PRODUCT_IDENTITY.md, delivery-scope.md, platform-limitations.md,
+  distribution-model.md, installation.md, and phases.md. Introduced
+  `src/shared/product-inventory.ts` as the canonical SSOT for all product
+  counts, guarded by drift tests that verify every count against live code
+  authorities.
+
+- **Stryker mutate scope updated to 47 files (was 23 in tp.2).** The
+  `[1.2.0-tp.2]` changelog entry below has been corrected from `35→39` to the
+  actual `23→35` expansion; three of the four files named in the original entry
+  were never present in the tp.2 release.
 
 - **Hardened the review challenge feature against gaming (#747 follow-up).** Five
   enforcement gaps in the challenge coverage feature were closed:
