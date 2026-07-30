@@ -24,77 +24,58 @@ READY → REVIEW → REVIEW_COMPLETE
 
 ## Flow Diagram
 
-```
-                              ┌──────────┐
-                              │ /hydrate │
-                              └────┬─────┘
-                                   │
-                                   ▼
-                              ┌──────────┐
-                              │  READY   │  ◄── Command-driven (no guards)
-                              └──┬──┬──┬─┘
-                   ┌─────────────┘  │  └─────────────┐
-                   │                │                 │
-              /ticket          /architecture       /review
-                   │                │                 │
-    ═══════════════╪════════   ════╪════════════   ══╪══════════════
-    TICKET FLOW    │          ARCH FLOW    │     REVIEW FLOW   │
-    ═══════════════╪════════   ════╪════════════   ══╪══════════════
-                   ▼                ▼                 ▼
-              ┌──────────┐    ┌──────────────┐   ┌──────────┐
-              │  TICKET  │    │ ARCHITECTURE │   │  REVIEW  │
-              └────┬─────┘    └──────┬───────┘   └────┬─────┘
-                   │  auto           │  ADR review     │  auto
-                   ▼                 ▼  loop           ▼
-              ┌──────────┐    ┌──────────────┐   ┌────────────────┐
-              │   PLAN   │◄┐  │ ARCH_REVIEW  │   │REVIEW_COMPLETE │ ■
-              └────┬─────┘ │  └──┬───┬───┬───┘   └────────────────┘
-    independent   │       │     │   │   │
-    review loop   ▼       │     │   │   │ reject
-              ┌────────────┐     │   │   └──────► (READY)
-              │PLAN_REVIEW │     │   │
-              └─┬───┬───┬──┘     │   │ changes_requested
-                │   │   │        │   └──────► (ARCHITECTURE)
-                │   │   │        │
-     approve    │   │   │ reject │ approve
-                │   │   └──► (TICKET)
-                │   │                       ▼
-     changes_   │   │               ┌───────────────┐
-     requested  │   │               │ ARCH_COMPLETE  │ ■
-        ▼       │   │               └───────────────┘
-      (PLAN)    │   │                 ADR "accepted"
-                │   │                 MADR written
-                ▼   │
-           ┌────────────┐
-           │ VALIDATION │
-           └──┬─────┬───┘
-              │     │
-    ALL_PASSED│     │CHECK_FAILED
-              │     └──► (PLAN)
-              ▼
-      ┌────────────────┐
-      │IMPLEMENTATION  │
-      └───────┬────────┘
-              │  auto
-              ▼
-      ┌────────────────┐
-      │  IMPL_REVIEW   │ ◄── independent review loop
-      └───────┬────────┘
-              │  auto (converged)
-              ▼
-      ┌────────────────┐
-      │EVIDENCE_REVIEW │
-      └─┬─────┬────┬───┘
-        │     │    │
-approve │     │    │ reject
-        │     │    └──► (TICKET)
-        │     │
-        │  changes_requested
-        │     └──► (IMPLEMENTATION)
-        ▼
-   ┌──────────┐
-   │ COMPLETE  │ ■
-   └──────────┘
+```mermaid
+stateDiagram-v2
+    direction LR
+
+    [*] --> READY : /hydrate
+
+    state "TICKET FLOW" as TF
+    state "ARCH FLOW" as AF
+    state "REVIEW FLOW" as RF
+
+    READY --> TICKET : /ticket
+    READY --> ARCHITECTURE : /architecture
+    READY --> REVIEW : /review
+
+    TICKET --> PLAN : auto
+    PLAN --> PLAN_REVIEW : review converged
+
+    state PLAN {
+        [*] --> plan_label : independent review loop
+    }
+
+    PLAN_REVIEW --> VALIDATION : approve
+    PLAN_REVIEW --> PLAN : changes_requested
+    PLAN_REVIEW --> TICKET : reject
+
+    VALIDATION --> IMPLEMENTATION : all_passed
+    VALIDATION --> PLAN : check_failed
+
+    IMPLEMENTATION --> IMPL_VALIDATION : auto
+    IMPL_VALIDATION --> IMPL_REVIEW : all_passed
+    IMPL_VALIDATION --> IMPLEMENTATION : check_failed
+
+    state IMPL_REVIEW_s {
+        [*] --> impl_label : independent review loop
+    }
+
+    IMPL_REVIEW --> EVIDENCE_REVIEW : review converged
+
+    EVIDENCE_REVIEW --> COMPLETE : approve
+    EVIDENCE_REVIEW --> IMPLEMENTATION : changes_requested
+    EVIDENCE_REVIEW --> TICKET : reject
+
+    state ARCHITECTURE_s {
+        [*] --> arch_label : ADR review loop
+    }
+
+    ARCHITECTURE --> ARCH_REVIEW : review converged
+    ARCH_REVIEW --> ARCH_COMPLETE : approve
+    ARCH_REVIEW --> ARCHITECTURE : changes_requested
+    ARCH_REVIEW --> READY : reject
+
+    REVIEW --> REVIEW_COMPLETE : auto
 ```
 
 | Symbol                    | Meaning                                                                              |

@@ -143,23 +143,23 @@ Each command is tied to phase admissibility rules, evidence requirements, and st
 
 The platform offers **three independent flows** starting from a shared READY entry point:
 
-**Ticket Flow (Full Development Lifecycle):**
+```mermaid
+flowchart LR
+    HYD[/hydrate/] --> READY
+    READY --> TICKET
+    READY --> ARCH[ARCHITECTURE]
+    READY --> REVIEW
 
-```
-READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE
+    TICKET --> PLAN --> PLAN_REV[PLAN_REVIEW] --> VAL[VALIDATION] --> IMPL[IMPLEMENTATION] --> IMPL_VAL[IMPL_VALIDATION] --> IMPL_REV[IMPL_REVIEW] --> EVID_REV[EVIDENCE_REVIEW] --> COMPLETE
+
+    ARCH --> ARCH_REV[ARCH_REVIEW] --> ARCH_COMPLETE
+
+    REVIEW --> REVIEW_COMPLETE
 ```
 
-**Architecture Flow (ADR Creation):**
-
-```
-READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE
-```
-
-**Review Flow (Compliance Report):**
-
-```
-READY → REVIEW → REVIEW_COMPLETE
-```
+**Ticket Flow:** `READY → TICKET → PLAN → PLAN_REVIEW → VALIDATION → IMPLEMENTATION → IMPL_VALIDATION → IMPL_REVIEW → EVIDENCE_REVIEW → COMPLETE`
+**Architecture Flow:** `READY → ARCHITECTURE → ARCH_REVIEW → ARCH_COMPLETE`
+**Review Flow:** `READY → REVIEW → REVIEW_COMPLETE`
 
 **User Gates** (human decision required): PLAN_REVIEW, EVIDENCE_REVIEW, ARCH_REVIEW.
 
