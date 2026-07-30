@@ -9,6 +9,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Archive redaction wired into pipeline (#649, #666 follow-up).** The
+  redaction engine (`src/redaction/export-redaction.ts`) is now integrated
+  into the archive staging pipeline. Two mandatory tool parameters control
+  every export: `redactionMode` (`none`, `basic`, `pseudonymous`) and
+  `includeRaw`. Config constrains allowed combinations via `allowedModes`,
+  `allowRawExport` (default `false` — secure), and `maxAuditEvents`. The
+  pipeline is fail-closed: redacted payloads are generated first, raw
+  files copied second, manifest built last. Any redaction failure leaves
+  the staging tree empty. `excludedFiles` in the manifest is computed from
+  the canonical raw-source-path list. Tool response includes a `guidance`
+  field that suggests the complementary parameter combination (or notes
+  that raw export is not configured).
+- **`redactAuditEvent()`** redacts top-level `actorInfo` PII (`id`, `email`,
+  `displayName`) in addition to `detail`. Always clones — no reference to
+  original event survives.
+- **Redaction mode renamed:** `strict` → `pseudonymous` (stable correlation
+  tokens, not stronger than basic irreversible masking).
+
+### Changed
+
+- **Config `archive.redaction` restructured.** Old `mode` and `includeRaw`
+  fields replaced with constraint model: `allowedModes` (`.min(1)`, defaults
+  to all three), `allowRawExport` (default `false`), `maxAuditEvents`
+  (default `10_000`). Migration: set `allowRawExport: true` for raw archive
+  support.
+- **`archiveSession()` signature** now takes `ArchiveSessionOptions` with
+  `redactionMode` and `includeRaw`. Callers updated (auto-archive uses
+  `basic`/`raw=false`, regulated-completion uses `none`/`raw=true`).
+
+### Fixed
+
 - **Defense-in-depth validation gate on reviewer acceptance.** Accepting an
   implementation review now re-checks that every active verification check has a
   passing execution attempt bound to the **current** `implementation.digest`
