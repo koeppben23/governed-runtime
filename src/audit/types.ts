@@ -42,6 +42,14 @@ export type { ActorInfo, ActorVerificationMeta };
  */
 export type AuditEventKind = 'transition' | 'tool_call' | 'error' | 'lifecycle' | 'decision';
 
+export const AUDIT_EVENT_KINDS: readonly AuditEventKind[] = [
+  'transition',
+  'tool_call',
+  'error',
+  'lifecycle',
+  'decision',
+];
+
 export type AuditFormatVersion = 'audit-chain.v1' | 'audit-chain.v2';
 
 export const CURRENT_AUDIT_FORMAT_VERSION: AuditFormatVersion = 'audit-chain.v2';

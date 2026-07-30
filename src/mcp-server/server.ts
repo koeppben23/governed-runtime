@@ -46,7 +46,7 @@ import { help } from '../integration/tools/index.js';
 
 // --- Tool Registry ---
 
-const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
+export const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   status,
   hydrate,
   plan,

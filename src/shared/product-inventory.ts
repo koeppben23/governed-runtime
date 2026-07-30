@@ -1,16 +1,17 @@
 /**
  * @module shared/product-inventory
- * @description Canonical product inventory — single authority for all documented
- *              counts, sizes, and inventory numbers. Every documentation claim
- *              that states "X tools", "Y phases", etc. MUST derive from this
- *              file or be verified against it by a drift test.
+ * @description Canonical documented inventory projection — a single snapshot of
+ *              all documented counts, sizes, and inventory numbers, verified
+ *              against live runtime authorities by the drift test in
+ *              `src/documentation/__tests__/product-inventory.test.ts`.
  *
- * Rule: when you add or remove a tool, phase, profile, or collector, update the
- * corresponding count here. The drift test in
- * `src/documentation/__tests__/product-inventory.test.ts` will fail if this
- * file and the live code disagree.
+ * This file is NOT a second authority. The live code registries (enums,
+ * arrays, sets, maps) are the runtime authorities. This file documents
+ * their current sizes. When you add or remove a tool, phase, profile, or
+ * collector, update the corresponding count here — the drift test will
+ * fail until both agree.
  *
- * @version v1
+ * @version v2
  */
 
 /**

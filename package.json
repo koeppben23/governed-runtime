@@ -86,7 +86,7 @@
     "generate-docs": "node scripts/generate-docs.js",
     "generate-build-info": "node scripts/generate-build-info.js",
     "generate-doc-inventory": "node scripts/generate-doc-inventory.mjs",
-    "check:doc-drift": "npm run generate-doc-inventory && git diff --exit-code docs/_inventory.generated.md && npx vitest run --project unit src/documentation/__tests__/product-inventory.test.ts src/documentation/__tests__/comment-count-drift.test.ts",
+    "check:doc-drift": "npm run build && npm run generate-doc-inventory && git diff --exit-code docs/_inventory.generated.md && npx vitest run --project unit src/documentation/__tests__/product-inventory.test.ts src/documentation/__tests__/comment-count-drift.test.ts",
     "docs": "typedoc",
     "docs:watch": "typedoc --watch",
     "mutation": "node scripts/stryker-patch.js && stryker run",
