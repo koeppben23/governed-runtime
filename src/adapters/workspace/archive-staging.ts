@@ -196,14 +196,27 @@ async function copyEvidence(sessDir: string, archiveRoot: string): Promise<void>
   }
 }
 
+async function computeFileDigests(
+  archiveRoot: string,
+  includedFiles: string[],
+): Promise<Record<string, string>> {
+  const digests: Record<string, string> = {};
+  for (const file of includedFiles) {
+    digests[file] = hashBuffer(await fs.readFile(path.join(archiveRoot, file)));
+  }
+  return digests;
+}
+
+function optionalArray(arr: string[]): string[] | undefined {
+  return arr.length > 0 ? arr : undefined;
+}
+
 async function buildManifest(
   archiveRoot: string,
   input: ArchiveStagingInput & { redactedFiles: string[]; excludedFiles: string[] },
 ): Promise<ArchiveManifest> {
   const includedFiles = await listSessionFiles(archiveRoot);
-  const fileDigests: Record<string, string> = {};
-  for (const file of includedFiles)
-    fileDigests[file] = hashBuffer(await fs.readFile(path.join(archiveRoot, file)));
+  const fileDigests = await computeFileDigests(archiveRoot, includedFiles);
   const policyMode = input.state?.policySnapshot?.mode ?? MANIFEST_POLICY_MODE_UNKNOWN;
   const auditChainHead = getLastChainHash([...input.events]);
   const manifestBase = {
@@ -219,8 +232,8 @@ async function buildManifest(
     discoveryDigest: input.state?.discoveryDigest ?? null,
     redactionMode: input.redactionMode,
     rawIncluded: input.includeRaw,
-    redactedArtifacts: input.redactedFiles.length > 0 ? input.redactedFiles : undefined,
-    excludedFiles: input.excludedFiles.length > 0 ? input.excludedFiles : undefined,
+    redactedArtifacts: optionalArray(input.redactedFiles),
+    excludedFiles: optionalArray(input.excludedFiles),
     riskFlags: input.includeRaw ? ['raw_audit_evidence_export'] : undefined,
   };
   return {
@@ -231,7 +244,7 @@ async function buildManifest(
     rawIncluded: input.includeRaw,
     riskFlags: input.includeRaw ? ['raw_audit_evidence_export'] : [],
     redactionMode: input.redactionMode,
-    redactedArtifacts: input.redactedFiles.length > 0 ? input.redactedFiles : undefined,
-    excludedFiles: input.excludedFiles.length > 0 ? input.excludedFiles : undefined,
+    redactedArtifacts: optionalArray(input.redactedFiles),
+    excludedFiles: optionalArray(input.excludedFiles),
   };
 }
