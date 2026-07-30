@@ -54,11 +54,7 @@ function validateArchiveOptions(
   config: Awaited<ReturnType<typeof readConfig>>,
 ): void {
   const { redactionMode, includeRaw } = opts;
-  const rc = config.archive.redaction ?? {
-    allowedModes: ['none', 'basic', 'pseudonymous'] as const,
-    allowRawExport: false,
-    maxAuditEvents: 10_000,
-  };
+  const rc = config.archive.redaction;
 
   if (!rc.allowedModes.includes(redactionMode)) {
     throw new WorkspaceError(
@@ -118,11 +114,11 @@ async function archiveSessionImpl(
 
   if (
     opts.redactionMode !== 'none' &&
-    events.length > (archiveConfig.archive.redaction?.maxAuditEvents ?? 10_000)
+    events.length > archiveConfig.archive.redaction.maxAuditEvents
   ) {
     throw new WorkspaceError(
       'ARCHIVE_FAILED',
-      `Audit trail length (${events.length}) exceeds maxAuditEvents (${archiveConfig.archive.redaction?.maxAuditEvents ?? 10_000}). Increase archive.redaction.maxAuditEvents or reduce the audit trail.`,
+      `Audit trail length (${events.length}) exceeds maxAuditEvents (${archiveConfig.archive.redaction.maxAuditEvents}). Increase archive.redaction.maxAuditEvents or reduce the audit trail.`,
     );
   }
 

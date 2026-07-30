@@ -105,9 +105,9 @@ describe('readConfig', () => {
   it('returns DEFAULT_CONFIG when no config file exists', async () => {
     const config = await readConfig(tmpDir);
     expect(config).toEqual(DEFAULT_CONFIG);
-    expect(config.archive.redaction!.allowedModes).toEqual(['none', 'basic', 'pseudonymous']);
-    expect(config.archive.redaction!.allowRawExport).toBe(false);
-    expect(config.archive.redaction!.maxAuditEvents).toBe(10_000);
+    expect(config.archive.redaction.allowedModes).toEqual(['none', 'basic', 'pseudonymous']);
+    expect(config.archive.redaction.allowRawExport).toBe(false);
+    expect(config.archive.redaction.maxAuditEvents).toBe(10_000);
   });
 
   it('reads and parses a valid config file', async () => {
@@ -141,9 +141,9 @@ describe('readConfig', () => {
     // policy and profile should have defaults
     expect(config.policy).toEqual({});
     expect(config.profile).toEqual({});
-    expect(config.archive.redaction!.allowedModes).toEqual(['none', 'basic', 'pseudonymous']);
-    expect(config.archive.redaction!.allowRawExport).toBe(false);
-    expect(config.archive.redaction!.maxAuditEvents).toBe(10_000);
+    expect(config.archive.redaction.allowedModes).toEqual(['none', 'basic', 'pseudonymous']);
+    expect(config.archive.redaction.allowRawExport).toBe(false);
+    expect(config.archive.redaction.maxAuditEvents).toBe(10_000);
   });
 
   // ── BAD ────────────────────────────────────────────────────────────────

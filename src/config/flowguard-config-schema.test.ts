@@ -30,13 +30,9 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data.policy).toEqual({});
       expect(result.data.profile).toEqual({});
       expect(result.data.host).toEqual({});
-      expect(result.data.archive.redaction!.allowedModes).toEqual([
-        'none',
-        'basic',
-        'pseudonymous',
-      ]);
-      expect(result.data.archive.redaction!.allowRawExport).toBe(false);
-      expect(result.data.archive.redaction!.maxAuditEvents).toBe(10_000);
+      expect(result.data.archive.redaction.allowedModes).toEqual(['none', 'basic', 'pseudonymous']);
+      expect(result.data.archive.redaction.allowRawExport).toBe(false);
+      expect(result.data.archive.redaction.maxAuditEvents).toBe(10_000);
     }
   });
 
@@ -48,7 +44,11 @@ describe('FlowGuardConfigSchema', () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.archive.retentionDays).toBe(30);
-      expect(result.data.archive.redaction).toBeUndefined();
+      expect(result.data.archive.redaction).toEqual({
+        allowedModes: ['none', 'basic', 'pseudonymous'],
+        allowRawExport: false,
+        maxAuditEvents: 10_000,
+      });
     }
   });
 
@@ -96,9 +96,9 @@ describe('FlowGuardConfigSchema', () => {
         'type_coverage',
       ]);
       expect(result.data.host.defaultHost).toBe('claude-code');
-      expect(result.data.archive.redaction!.allowedModes).toEqual(['basic', 'pseudonymous']);
-      expect(result.data.archive.redaction!.allowRawExport).toBe(true);
-      expect(result.data.archive.redaction!.maxAuditEvents).toBe(5000);
+      expect(result.data.archive.redaction.allowedModes).toEqual(['basic', 'pseudonymous']);
+      expect(result.data.archive.redaction.allowRawExport).toBe(true);
+      expect(result.data.archive.redaction.maxAuditEvents).toBe(5000);
     }
   });
 

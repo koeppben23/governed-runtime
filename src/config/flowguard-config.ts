@@ -234,7 +234,11 @@ export const FlowGuardConfigSchema = z.object({
           /** Maximum audit events processed during redaction. Exceeding this fails the archive. */
           maxAuditEvents: z.number().int().min(1).max(100_000).default(10_000),
         })
-        .optional(),
+        .default({
+          allowedModes: ['none', 'basic', 'pseudonymous'],
+          allowRawExport: false,
+          maxAuditEvents: 10_000,
+        }),
     })
     .default({
       redaction: {

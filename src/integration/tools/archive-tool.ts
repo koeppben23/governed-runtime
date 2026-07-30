@@ -143,7 +143,7 @@ export const archive: ToolDefinition = {
       const guidance = buildArchiveGuidance(
         redactionMode,
         includeRaw,
-        config.archive.redaction?.allowRawExport ?? false,
+        config.archive.redaction.allowRawExport,
       );
 
       return appendNextAction(
