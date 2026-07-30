@@ -16,6 +16,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
+import * as path from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import {
@@ -137,6 +138,17 @@ let cleanupEnv: () => void;
 beforeEach(async () => {
   cleanupEnv = withTestEnv({ FLOWGUARD_POLICY_PATH: undefined });
   ws = await createTestWorkspace();
+  // Write config with raw export enabled for archive tests.
+  await fs.writeFile(
+    path.join(process.env.OPENCODE_CONFIG_DIR ?? '', 'flowguard.json'),
+    JSON.stringify({
+      schemaVersion: 'v1',
+      archive: {
+        redaction: { allowedModes: ['none', 'basic', 'pseudonymous'], allowRawExport: true },
+      },
+    }),
+    'utf8',
+  );
   ctx = createToolContext({
     worktree: ws.tmpDir,
     directory: ws.tmpDir,
@@ -228,7 +240,10 @@ describe('archive', () => {
         const state = await readState(sessDir);
         await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
 
-        const raw = await archive.execute({}, ctx);
+        const raw = await archive.execute(
+          { redactionMode: 'none' as const, includeRaw: true },
+          ctx,
+        );
         const result = parseToolResult(raw);
         expect(result.error).toBeUndefined();
 
@@ -277,9 +292,15 @@ describe('archive', () => {
         await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
 
         // First explicit archive.
-        await archiveSession(fp.fingerprint, ctx.sessionID);
+        await archiveSession(fp.fingerprint, ctx.sessionID, {
+          redactionMode: 'none',
+          includeRaw: true,
+        });
         // Repeated explicit archive.
-        await archiveSession(fp.fingerprint, ctx.sessionID);
+        await archiveSession(fp.fingerprint, ctx.sessionID, {
+          redactionMode: 'none',
+          includeRaw: true,
+        });
 
         const { events } = await readAuditTrail(sessDir);
         const bindingEvents = events.filter((e) => e.event === ARTIFACT_BINDING_EVENT);
@@ -308,10 +329,15 @@ describe('archive', () => {
         await writeState(sessDir, { ...state!, phase: 'COMPLETE' });
 
         // Prior explicit archive.
-        await archiveSession(fp.fingerprint, ctx.sessionID);
+        await archiveSession(fp.fingerprint, ctx.sessionID, {
+          redactionMode: 'none',
+          includeRaw: true,
+        });
 
         // Manual /export now must not race to failed.
-        const result = parseToolResult(await archive.execute({}, ctx));
+        const result = parseToolResult(
+          await archive.execute({ redactionMode: 'none' as const, includeRaw: true }, ctx),
+        );
         expect(result.error).toBeUndefined();
         expect(result.archiveStatus).toBe('verified');
         expect(String(result.status)).toContain('verified');

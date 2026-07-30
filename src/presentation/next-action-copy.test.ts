@@ -179,7 +179,10 @@ describe('buildProductNextAction', () => {
     it('SESSION_COMPLETE text enriched with phase label', () => {
       const action = { code: 'SESSION_COMPLETE', text: '', commands: [] as string[] };
       const product = buildProductNextAction(action, 'COMPLETE');
-      expect(product.text).toBe('Complete. Run /export to create a verifiable audit package.');
+      expect(product.text).toContain('Complete.');
+      expect(product.text).toContain('/export');
+      expect(product.text).toContain('redactionMode');
+      expect(product.text).toContain('includeRaw');
       expect(product.commands).toEqual(['/export']);
     });
 

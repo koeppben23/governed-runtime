@@ -20,6 +20,7 @@ import { withSpan, addFingerprint, addSessionId } from '../../telemetry/index.js
 import { createArchiveStaging } from './archive-staging.js';
 import { listSessionFiles } from './archive-files.js';
 import { archiveArtifactPath } from './archive-layout.js';
+import type { RedactionMode } from '../../redaction/export-redaction.js';
 import {
   type ArtifactBindingEntry,
   ARTIFACT_BINDING_EVENT,
@@ -27,19 +28,61 @@ import {
 } from './archive-artifact-binding.js';
 import { findBindingArtifacts } from './archive-verify-helpers.js';
 
-export async function archiveSession(fingerprint: string, sessionId: string): Promise<string> {
+export interface ArchiveSessionOptions {
+  readonly redactionMode: RedactionMode;
+  readonly includeRaw: boolean;
+}
+
+export async function archiveSession(
+  fingerprint: string,
+  sessionId: string,
+  opts: ArchiveSessionOptions,
+): Promise<string> {
   return withSpan(
     'archive.create',
     async () => {
       addFingerprint(fingerprint);
       addSessionId(sessionId);
-      return archiveSessionImpl(fingerprint, sessionId);
+      return archiveSessionImpl(fingerprint, sessionId, opts);
     },
     { 'flowguard.fingerprint': fingerprint, 'flowguard.session_id': sessionId },
   );
 }
 
-async function archiveSessionImpl(fingerprint: string, sessionId: string): Promise<string> {
+function validateArchiveOptions(
+  opts: ArchiveSessionOptions,
+  config: Awaited<ReturnType<typeof readConfig>>,
+): void {
+  const { redactionMode, includeRaw } = opts;
+  const rc = config.archive.redaction;
+
+  if (!rc.allowedModes.includes(redactionMode)) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      `Redaction mode '${redactionMode}' is not allowed (config allows: ${rc.allowedModes.join(', ')}).`,
+    );
+  }
+
+  if (redactionMode === 'none' && !includeRaw) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      'Invalid combination: redactionMode=none requires includeRaw=true. Choose basic or pseudonymous for redacted-only export.',
+    );
+  }
+
+  if (includeRaw && !rc.allowRawExport) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      'Raw export is not enabled. Set archive.redaction.allowRawExport=true in flowguard.json.',
+    );
+  }
+}
+
+async function archiveSessionImpl(
+  fingerprint: string,
+  sessionId: string,
+  opts: ArchiveSessionOptions,
+): Promise<string> {
   validateFingerprint(fingerprint);
   const validSessionId = validateSessionId(sessionId);
   const sessDir = sessionDir(fingerprint, validSessionId);
@@ -58,15 +101,8 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
   const state = await readState(sessDir);
   if (state) await verifyEvidenceArtifacts(sessDir, state);
   const archiveConfig = await readConfig();
-  if (
-    archiveConfig.archive.redaction.mode !== 'none' ||
-    archiveConfig.archive.redaction.includeRaw !== true
-  ) {
-    throw new WorkspaceError(
-      'ARCHIVE_FAILED',
-      'Archive Layout v2 exports complete raw evidence only. Migrate archive.redaction to { mode: "none", includeRaw: true } before exporting.',
-    );
-  }
+  validateArchiveOptions(opts, archiveConfig);
+
   await appendArtifactBindingAuditEvent(sessDir, validSessionId, state);
   const { events, skipped } = await readAuditTrail(sessDir);
   if (skipped > 0) {
@@ -75,6 +111,17 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
       `Refusing to archive an audit trail with ${skipped} unparseable line(s)`,
     );
   }
+
+  if (
+    opts.redactionMode !== 'none' &&
+    events.length > archiveConfig.archive.redaction.maxAuditEvents
+  ) {
+    throw new WorkspaceError(
+      'ARCHIVE_FAILED',
+      `Audit trail length (${events.length}) exceeds maxAuditEvents (${archiveConfig.archive.redaction.maxAuditEvents}). Increase archive.redaction.maxAuditEvents or reduce the audit trail.`,
+    );
+  }
+
   const staging = await createArchiveStaging({
     archiveDir,
     sessionId: validSessionId,
@@ -82,6 +129,8 @@ async function archiveSessionImpl(fingerprint: string, sessionId: string): Promi
     sessDir,
     state,
     events,
+    redactionMode: opts.redactionMode,
+    includeRaw: opts.includeRaw,
   });
   try {
     await createArchiveBundle(staging.stagingRoot, validSessionId, archivePath);

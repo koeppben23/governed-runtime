@@ -105,7 +105,9 @@ describe('readConfig', () => {
   it('returns DEFAULT_CONFIG when no config file exists', async () => {
     const config = await readConfig(tmpDir);
     expect(config).toEqual(DEFAULT_CONFIG);
-    expect(config.archive.redaction).toEqual({ mode: 'none', includeRaw: true });
+    expect(config.archive.redaction.allowedModes).toEqual(['none', 'basic', 'pseudonymous']);
+    expect(config.archive.redaction.allowRawExport).toBe(false);
+    expect(config.archive.redaction.maxAuditEvents).toBe(10_000);
   });
 
   it('reads and parses a valid config file', async () => {
@@ -115,7 +117,9 @@ describe('readConfig', () => {
       logging: { ...DEFAULT_CONFIG.logging, level: 'debug' },
       policy: { defaultMode: 'regulated' },
       profile: { defaultId: 'typescript' },
-      archive: { redaction: { mode: 'basic', includeRaw: false } },
+      archive: {
+        redaction: { allowedModes: ['basic'], allowRawExport: false, maxAuditEvents: 500 },
+      },
     };
     await writeRawConfig(tmpDir, JSON.stringify(custom));
     const config = await readConfig(tmpDir);
@@ -137,7 +141,9 @@ describe('readConfig', () => {
     // policy and profile should have defaults
     expect(config.policy).toEqual({});
     expect(config.profile).toEqual({});
-    expect(config.archive.redaction).toEqual({ mode: 'none', includeRaw: true });
+    expect(config.archive.redaction.allowedModes).toEqual(['none', 'basic', 'pseudonymous']);
+    expect(config.archive.redaction.allowRawExport).toBe(false);
+    expect(config.archive.redaction.maxAuditEvents).toBe(10_000);
   });
 
   // ── BAD ────────────────────────────────────────────────────────────────
@@ -306,7 +312,9 @@ describe('readConfig — precedence', () => {
     logging: { ...DEFAULT_CONFIG.logging, level: 'debug' },
     policy: { defaultMode: 'regulated' },
     profile: {},
-    archive: { redaction: { mode: 'basic', includeRaw: false } },
+    archive: {
+      redaction: { allowedModes: ['basic'], allowRawExport: false, maxAuditEvents: 10_000 },
+    },
   };
 
   const GLOBAL_CUSTOM: FlowGuardConfig = {
@@ -315,7 +323,9 @@ describe('readConfig — precedence', () => {
     logging: { ...DEFAULT_CONFIG.logging, level: 'warn' },
     policy: {},
     profile: { defaultId: 'global-profile' },
-    archive: { redaction: { mode: 'basic', includeRaw: false } },
+    archive: {
+      redaction: { allowedModes: ['basic'], allowRawExport: false, maxAuditEvents: 10_000 },
+    },
   };
 
   // ── HAPPY ──────────────────────────────────────────────────

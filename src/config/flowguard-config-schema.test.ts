@@ -30,8 +30,25 @@ describe('FlowGuardConfigSchema', () => {
       expect(result.data.policy).toEqual({});
       expect(result.data.profile).toEqual({});
       expect(result.data.host).toEqual({});
-      expect(result.data.archive.redaction.mode).toBe('none');
-      expect(result.data.archive.redaction.includeRaw).toBe(true);
+      expect(result.data.archive.redaction.allowedModes).toEqual(['none', 'basic', 'pseudonymous']);
+      expect(result.data.archive.redaction.allowRawExport).toBe(false);
+      expect(result.data.archive.redaction.maxAuditEvents).toBe(10_000);
+    }
+  });
+
+  it('allows partial archive config without redaction key', () => {
+    const result = FlowGuardConfigSchema.safeParse({
+      schemaVersion: 'v1',
+      archive: { retentionDays: 30 },
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.archive.retentionDays).toBe(30);
+      expect(result.data.archive.redaction).toEqual({
+        allowedModes: ['none', 'basic', 'pseudonymous'],
+        allowRawExport: false,
+        maxAuditEvents: 10_000,
+      });
     }
   });
 
@@ -56,8 +73,9 @@ describe('FlowGuardConfigSchema', () => {
       },
       archive: {
         redaction: {
-          mode: 'strict',
-          includeRaw: true,
+          allowedModes: ['basic', 'pseudonymous'],
+          allowRawExport: true,
+          maxAuditEvents: 5000,
         },
       },
     };
@@ -78,8 +96,9 @@ describe('FlowGuardConfigSchema', () => {
         'type_coverage',
       ]);
       expect(result.data.host.defaultHost).toBe('claude-code');
-      expect(result.data.archive.redaction.mode).toBe('strict');
-      expect(result.data.archive.redaction.includeRaw).toBe(true);
+      expect(result.data.archive.redaction.allowedModes).toEqual(['basic', 'pseudonymous']);
+      expect(result.data.archive.redaction.allowRawExport).toBe(true);
+      expect(result.data.archive.redaction.maxAuditEvents).toBe(5000);
     }
   });
 
@@ -783,10 +802,10 @@ describe('FlowGuardConfigSchema', () => {
   });
 
   it('accepts all redaction modes', () => {
-    for (const mode of ['none', 'basic', 'strict']) {
+    for (const mode of ['none', 'basic', 'pseudonymous']) {
       const result = FlowGuardConfigSchema.safeParse({
         schemaVersion: 'v1',
-        archive: { redaction: { mode } },
+        archive: { redaction: { allowedModes: [mode] } },
       });
       expect(result.success).toBe(true);
     }
@@ -795,7 +814,7 @@ describe('FlowGuardConfigSchema', () => {
   it('rejects invalid redaction mode', () => {
     const result = FlowGuardConfigSchema.safeParse({
       schemaVersion: 'v1',
-      archive: { redaction: { mode: 'unsafe' } },
+      archive: { redaction: { allowedModes: ['invalid'] } },
     });
     expect(result.success).toBe(false);
   });

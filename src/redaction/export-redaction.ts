@@ -8,7 +8,7 @@
 import { hashTextShort } from '../shared/hashing.js';
 import { sanitizeDiagnosticString } from '../logging/redact.js';
 
-export type RedactionMode = 'none' | 'basic' | 'strict';
+export type RedactionMode = 'none' | 'basic' | 'pseudonymous';
 
 export interface ArchiveRedactionPolicy {
   readonly mode: RedactionMode;
@@ -262,4 +262,25 @@ export function redactAuditDetail(
   }
 
   return redactUnknownStrings(out, mode, AUDIT_DETAIL_STRING_ALLOW_LIST) as Record<string, unknown>;
+}
+
+export function redactAuditEvent(
+  event: Record<string, unknown>,
+  mode: RedactionMode,
+): Record<string, unknown> {
+  const out = structuredClone(event);
+  if (mode === 'none') return out;
+
+  if (out.actorInfo && typeof out.actorInfo === 'object') {
+    const ai = out.actorInfo as Record<string, unknown>;
+    if (typeof ai.id === 'string') ai.id = stableMask(ai.id, mode);
+    if (typeof ai.email === 'string') ai.email = stableMask(ai.email, mode);
+    if (typeof ai.displayName === 'string') ai.displayName = stableMask(ai.displayName, mode);
+  }
+
+  if (out.detail && typeof out.detail === 'object') {
+    out.detail = redactAuditDetail(out.detail as Record<string, unknown>, mode);
+  }
+
+  return out;
 }

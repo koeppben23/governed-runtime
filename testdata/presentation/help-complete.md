@@ -13,7 +13,7 @@
   - `/continue` — Route to the next workflow step.
   - `/abort` — End the current workflow without presenting it as completed.
   - `/start` — Prepare or restore a governed session.
-  - `/export` — Create and verify the audit package. (aliases: `/archive`)
+  - `/export` — Export audit package as tar.gz (redactionMode: none|basic|pseudonymous, default basic; includeRaw: true|false, default false). (aliases: `/archive`)
   - `/why` — Explain the current runtime blocker.
 
 **Session artifacts:**

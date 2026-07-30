@@ -19,7 +19,10 @@ function recordArray(output: Record<string, unknown>, key: string): Array<Record
   return value as Array<Record<string, unknown>>;
 }
 
-function redactedReceipts(input: Record<string, unknown>, mode: 'basic' | 'strict'): ReceiptOutput {
+function redactedReceipts(
+  input: Record<string, unknown>,
+  mode: 'basic' | 'pseudonymous',
+): ReceiptOutput {
   return { receipts: recordArray(redactDecisionReceipts(input, mode), 'receipts') };
 }
 
@@ -56,8 +59,8 @@ describe('redaction/export-redaction', () => {
 
     it('redacts strict mode with deterministic tokenized masks', () => {
       const input = { receipts: [{ decidedBy: 'alice', rationale: 'same' }] };
-      const outA = redactedReceipts(input, 'strict');
-      const outB = redactedReceipts(input, 'strict');
+      const outA = redactedReceipts(input, 'pseudonymous');
+      const outB = redactedReceipts(input, 'pseudonymous');
       const a = outA.receipts[0] as Record<string, unknown>;
       const b = outB.receipts[0] as Record<string, unknown>;
       expect(a.decidedBy).toBe(b.decidedBy);
@@ -65,8 +68,8 @@ describe('redaction/export-redaction', () => {
     });
 
     it('strict mode produces different tokens for different inputs', () => {
-      const out1 = redactedReceipts({ receipts: [{ decidedBy: 'alice' }] }, 'strict');
-      const out2 = redactedReceipts({ receipts: [{ decidedBy: 'bob' }] }, 'strict');
+      const out1 = redactedReceipts({ receipts: [{ decidedBy: 'alice' }] }, 'pseudonymous');
+      const out2 = redactedReceipts({ receipts: [{ decidedBy: 'bob' }] }, 'pseudonymous');
       expect(out1.receipts[0]).not.toEqual(out2.receipts[0]);
     });
 
@@ -140,7 +143,7 @@ describe('redaction/export-redaction', () => {
           { ref: 'https://jira.internal.example.com/PROJ-1', title: 'PROJ-1: Internal thing' },
         ],
       };
-      const output = redactReviewReport(input, 'strict') as Record<string, unknown>;
+      const output = redactReviewReport(input, 'pseudonymous') as Record<string, unknown>;
       const refs = output.references as Array<Record<string, unknown>>;
       expect(String(refs[0]!.ref)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
       expect(String(refs[0]!.title)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
@@ -176,7 +179,7 @@ describe('redaction/export-redaction', () => {
 
     it('handles empty references array without throwing', () => {
       expect(() => redactReviewReport({ references: [] }, 'basic')).not.toThrow();
-      expect(() => redactReviewReport({ references: [] }, 'strict')).not.toThrow();
+      expect(() => redactReviewReport({ references: [] }, 'pseudonymous')).not.toThrow();
     });
 
     it('redacts deep copies without mutating original', () => {
@@ -200,12 +203,12 @@ describe('redaction/export-redaction', () => {
 
     it('handles empty receipts array without throwing', () => {
       expect(() => redactDecisionReceipts({ receipts: [] }, 'basic')).not.toThrow();
-      expect(() => redactDecisionReceipts({ receipts: [] }, 'strict')).not.toThrow();
+      expect(() => redactDecisionReceipts({ receipts: [] }, 'pseudonymous')).not.toThrow();
     });
 
     it('handles null findings in review report without throwing', () => {
       expect(() => redactReviewReport({}, 'basic')).not.toThrow();
-      expect(() => redactReviewReport({ findings: null as unknown }, 'strict')).not.toThrow();
+      expect(() => redactReviewReport({ findings: null as unknown }, 'pseudonymous')).not.toThrow();
     });
 
     it('handles null completeness without throwing', () => {
@@ -254,7 +257,7 @@ describe('redaction/export-redaction', () => {
 
     it('handles empty string values', () => {
       const input = { receipts: [{ decidedBy: '', rationale: '' }] };
-      const out = redactedReceipts(input, 'strict');
+      const out = redactedReceipts(input, 'pseudonymous');
       const r = out.receipts[0] as Record<string, unknown>;
       expect(String(r.decidedBy)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
     });
@@ -274,8 +277,8 @@ describe('redaction/export-redaction', () => {
     });
 
     it('strict mode handles empty string deterministically', () => {
-      const out1 = redactDecisionReceipts({ receipts: [{ decidedBy: '' }] }, 'strict');
-      const out2 = redactDecisionReceipts({ receipts: [{ decidedBy: '' }] }, 'strict');
+      const out1 = redactDecisionReceipts({ receipts: [{ decidedBy: '' }] }, 'pseudonymous');
+      const out2 = redactDecisionReceipts({ receipts: [{ decidedBy: '' }] }, 'pseudonymous');
       expect(out1).toEqual(out2);
     });
 
@@ -295,7 +298,7 @@ describe('redaction/export-redaction', () => {
 
     it('review report leaves non-string slot detail unchanged', () => {
       const input = { completeness: { slots: [{ detail: true as unknown }] } };
-      const out = redactReviewReport(input, 'strict') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'pseudonymous') as Record<string, unknown>;
       const slot = (
         (out.completeness as Record<string, unknown>).slots as Array<Record<string, unknown>>
       )[0]!;
@@ -329,7 +332,7 @@ describe('redaction/export-redaction', () => {
   describe('EDGE', () => {
     it('strict mode token is consistent across multiple calls with same input', () => {
       const input = { receipts: [{ decidedBy: 'alice', rationale: 'trust decision' }] };
-      const results = Array.from({ length: 5 }, () => redactedReceipts(input, 'strict'));
+      const results = Array.from({ length: 5 }, () => redactedReceipts(input, 'pseudonymous'));
       const tokens = results.map((r) =>
         String((r.receipts[0] as Record<string, unknown>).decidedBy),
       );
@@ -339,7 +342,7 @@ describe('redaction/export-redaction', () => {
     it('strict mode produces different tokens for different field values', () => {
       const out = redactedReceipts(
         { receipts: [{ decidedBy: 'alice', rationale: 'bob' }] },
-        'strict',
+        'pseudonymous',
       );
       const r = out.receipts[0] as Record<string, unknown>;
       expect(r.decidedBy).not.toBe(r.rationale);
@@ -362,7 +365,7 @@ describe('redaction/export-redaction', () => {
 
     it('strict mode review report findings message', () => {
       const input = { findings: [{ message: 'sensitive review detail' }] };
-      const out = redactReviewReport(input, 'strict') as Record<string, unknown>;
+      const out = redactReviewReport(input, 'pseudonymous') as Record<string, unknown>;
       expect(String(recordArray(out, 'findings')[0]?.message)).toMatch(
         /^\[REDACTED:[a-f0-9]{12}\]$/,
       );
@@ -410,7 +413,7 @@ describe('redaction/export-redaction', () => {
           },
         ],
       };
-      const out = redactedReceipts(raw, 'strict');
+      const out = redactedReceipts(raw, 'pseudonymous');
       const r = out.receipts[0] as Record<string, unknown>;
       const decidedByStr = String(r.decidedBy);
       const rationaleStr = String(r.rationale);
@@ -492,7 +495,7 @@ describe('redaction/export-redaction', () => {
       expect(rBasic.decidedBy).toBe('[REDACTED]');
       expect(rBasic.rationale).toBe('[REDACTED]');
 
-      const outStrict = redactDecisionReceipts(input, 'strict') as ReceiptOutput;
+      const outStrict = redactDecisionReceipts(input, 'pseudonymous') as ReceiptOutput;
       const rStrict = outStrict.receipts[0]!;
       expect(String(rStrict.decidedBy)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
       expect(String(rStrict.rationale)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
@@ -508,7 +511,7 @@ describe('redaction/export-redaction', () => {
           },
         ],
       };
-      const out = redactReviewReport(input, 'strict') as ReportOutput;
+      const out = redactReviewReport(input, 'pseudonymous') as ReportOutput;
       const finding = out.findings[0]!;
       expect(String(finding.message)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
       expect(String(finding.message)).not.toContain('RSA');
@@ -536,8 +539,8 @@ describe('redaction/export-redaction', () => {
       const receiptInput = { receipts: [{ decidedBy: 'bot', rationale: sharedValue }] };
       const reportInput = { findings: [{ checkId: 'c1', message: sharedValue }] };
 
-      const receiptOut = redactDecisionReceipts(receiptInput, 'strict') as ReceiptOutput;
-      const reportOut = redactReviewReport(reportInput, 'strict') as ReportOutput;
+      const receiptOut = redactDecisionReceipts(receiptInput, 'pseudonymous') as ReceiptOutput;
+      const reportOut = redactReviewReport(reportInput, 'pseudonymous') as ReportOutput;
 
       const receiptToken = String(receiptOut.receipts[0]!.rationale);
       const reportToken = String(reportOut.findings[0]!.message);
@@ -563,12 +566,12 @@ describe('redaction/export-redaction', () => {
       expect(rBasic.decidedBy).toBe('[REDACTED]');
       expect(rBasic.rationale).toBe('[REDACTED]');
 
-      const outStrict = redactDecisionReceipts(input, 'strict') as ReceiptOutput;
+      const outStrict = redactDecisionReceipts(input, 'pseudonymous') as ReceiptOutput;
       const rStrict = outStrict.receipts[0]!;
       expect(String(rStrict.decidedBy)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
       expect(String(rStrict.rationale)).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
 
-      const outStrictB = redactDecisionReceipts(input, 'strict') as ReceiptOutput;
+      const outStrictB = redactDecisionReceipts(input, 'pseudonymous') as ReceiptOutput;
       const rStrictB = outStrictB.receipts[0]!;
       expect(rStrictB.rationale).toBe(rStrict.rationale);
     });
@@ -657,7 +660,10 @@ describe('redaction/export-redaction', () => {
 
   describe('STRUCTURAL REDACTION', () => {
     it('sensitive keys are masked exactly once in strict mode', () => {
-      const result = redactReviewReport({ findings: [{ message: 'secret finding' }] }, 'strict');
+      const result = redactReviewReport(
+        { findings: [{ message: 'secret finding' }] },
+        'pseudonymous',
+      );
       const message = (result.findings as Array<Record<string, unknown>>)[0]?.message;
       expect(message).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
     });
@@ -665,7 +671,7 @@ describe('redaction/export-redaction', () => {
     it('sensitive keys in decision receipts are masked once', () => {
       const result = redactDecisionReceipts(
         { receipts: [{ decidedBy: 'alice', rationale: 'secret rationale' }] },
-        'strict',
+        'pseudonymous',
       );
       const r = (result.receipts as Array<Record<string, unknown>>)[0]!;
       expect(r.decidedBy).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
@@ -674,7 +680,10 @@ describe('redaction/export-redaction', () => {
     });
 
     it('sentinel-shaped value on unknown field is redacted', () => {
-      const result = redactReviewReport({ injectedSecret: '[REDACTED:deadbeefcafe]' }, 'strict');
+      const result = redactReviewReport(
+        { injectedSecret: '[REDACTED:deadbeefcafe]' },
+        'pseudonymous',
+      );
       expect(result.injectedSecret).not.toBe('[REDACTED:deadbeefcafe]');
       expect(result.injectedSecret).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
     });
@@ -734,14 +743,14 @@ describe('redaction/export-redaction', () => {
           initiatedBy: 'alice',
           actorInfo: { id: 'actor-1', displayName: 'Alice', email: 'alice@example.test' },
         },
-        'strict',
+        'pseudonymous',
       );
       expect(result.initiatedBy).toMatch(/^\[REDACTED:[a-f0-9]{12}\]$/);
 
       const ai = result.actorInfo as Record<string, unknown>;
-      expect(ai.id).toBe(stableMask('actor-1', 'strict'));
-      expect(ai.displayName).toBe(stableMask('Alice', 'strict'));
-      expect(ai.email).toBe(stableMask('alice@example.test', 'strict'));
+      expect(ai.id).toBe(stableMask('actor-1', 'pseudonymous'));
+      expect(ai.displayName).toBe(stableMask('Alice', 'pseudonymous'));
+      expect(ai.email).toBe(stableMask('alice@example.test', 'pseudonymous'));
     });
 
     it('redacts path-bearing fields in session state', () => {
@@ -830,7 +839,7 @@ describe('redaction/export-redaction', () => {
     it('sanitizes and preserves errorMessage', () => {
       const result = redactAuditDetail(
         { kind: 'error', errorMessage: '/home/user/.ssh/id_rsa: EACCES' },
-        'strict',
+        'pseudonymous',
       );
       expect(result.errorMessage).toContain('[path:id_rsa]');
       expect(result.errorMessage).not.toContain('/home/user');
@@ -856,7 +865,11 @@ describe('redaction/export-redaction', () => {
         decidedBy: `user-${i}`,
         rationale: `rationale text ${i}`,
       }));
-      const { p95Ms } = benchmarkSync(() => redactDecisionReceipts({ receipts }, 'strict'), 50, 10);
+      const { p95Ms } = benchmarkSync(
+        () => redactDecisionReceipts({ receipts }, 'pseudonymous'),
+        50,
+        10,
+      );
       expect(p95Ms).toBeLessThan(PERF_BUDGETS.redactionStrict100Ms);
     });
 

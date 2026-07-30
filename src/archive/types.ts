@@ -176,7 +176,7 @@ export const ArchiveManifestSchema = z.object({
   /** SHA-256 over the sorted file digests plus the integrity header (see content-digest.ts). */
   contentDigest: z.string(),
   /** Export redaction mode used while creating archive artifacts. */
-  redactionMode: z.enum(['none', 'basic', 'strict']).optional(),
+  redactionMode: z.enum(['none', 'basic', 'pseudonymous']).optional(),
   /** Whether raw (non-redacted) artifacts were included in archive export. */
   rawIncluded: z.boolean().optional(),
   /** Artifact paths generated as redacted export surfaces. */

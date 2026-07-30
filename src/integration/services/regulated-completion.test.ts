@@ -141,7 +141,10 @@ describe('executeRegulatedCompletion', () => {
       const state = makeRegulatedCompleteState();
       await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
 
-      expect(archiveSession).toHaveBeenCalledWith('fp', 'sid');
+      expect(archiveSession).toHaveBeenCalledWith('fp', 'sid', {
+        redactionMode: 'none',
+        includeRaw: true,
+      });
       expect(verifyArchive).toHaveBeenCalledWith('fp', 'sid');
     });
 

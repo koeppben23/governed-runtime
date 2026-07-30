@@ -217,14 +217,10 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // /implement ## Rules section. Changes the /implement body and therefore the
     // COMMANDS hash.
     // Refreshed for host-task ordering hardening: SHARED_REVIEW_LOOP now
-    // instructs the reviewer Task to be issued sequentially after the preceding
-    // verdict call (never in parallel) and gives cause-agnostic fail-closed
-    // recovery guidance for HOST_SUBAGENT_TASK_REQUIRED / no_matched_record.
-    // This is embedded in the plan/implement/architecture command bodies and
-    // therefore changes the COMMANDS hash.
+    // The ARCHIVE_COMMAND template now includes redaction parameter guidance.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '764da3e8dbd6f3e549a1d458f6ad767f731ecdc60388599794eee4da8e11695a',
+      'da19586746ba01d7771fe0608de1531fdaf1e88b62e726c2c1a0559b614fcacc',
     );
   });
 

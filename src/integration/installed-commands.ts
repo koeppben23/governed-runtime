@@ -229,7 +229,8 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     target: { toolName: TOOL_FLOWGUARD_ARCHIVE },
     visibility: 'visible_alias',
     presentationGroup: 'export',
-    description: 'Create and verify the audit package.',
+    description:
+      'Archive session as tar.gz (redactionMode: none|basic|pseudonymous, default basic; includeRaw: true|false, default false).',
   },
   {
     id: 'alias.start',
@@ -311,7 +312,8 @@ export const INSTALLED_COMMANDS: readonly InstalledCommandDefinition[] = [
     target: { toolName: TOOL_FLOWGUARD_ARCHIVE },
     visibility: 'primary',
     presentationGroup: 'export',
-    description: 'Create and verify the audit package.',
+    description:
+      'Export audit package as tar.gz (redactionMode: none|basic|pseudonymous, default basic; includeRaw: true|false, default false).',
   },
   {
     id: 'alias.why',

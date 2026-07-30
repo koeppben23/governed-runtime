@@ -9,11 +9,15 @@ export const ARCHIVE_MANIFEST_FILE = 'archive-manifest.json';
 
 export const ARCHIVE_LAYOUT = {
   state: 'state/session-state.json',
+  stateRedacted: 'state/session-state.redacted.json',
   audit: 'audit/audit.jsonl',
+  auditRedacted: 'audit/audit.redacted.jsonl',
   receipts: 'audit/decision-receipts.v1.json',
+  receiptsRedacted: 'audit/decision-receipts.redacted.v1.json',
   discovery: 'context/discovery-snapshot.json',
   profileResolution: 'context/profile-resolution-snapshot.json',
   reviewReport: 'reports/review-report.json',
+  reviewReportRedacted: 'reports/review-report.redacted.json',
 } as const;
 
 export function archiveArtifactPath(filename: string): string {

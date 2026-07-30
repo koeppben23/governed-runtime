@@ -74,7 +74,7 @@ const PRODUCT_GUIDANCE = {
     commands: ['/implement'],
   },
   SESSION_COMPLETE: {
-    text: 'Workflow complete. Run /export to create a verifiable audit package.',
+    text: 'Workflow complete. Run /export to create a verifiable audit package.\n/export parameters: redactionMode=none|basic|pseudonymous (default: basic), includeRaw=true|false (default: false)',
     commands: ['/export'],
   },
   RUN_ARCHITECTURE: {
@@ -145,7 +145,7 @@ export function buildProductNextAction(
       };
     }
     return {
-      text: `${phaseLabel}. Run /export to create a verifiable audit package.`,
+      text: `${phaseLabel}. Run /export to create a verifiable audit package.\n/export parameters: redactionMode=none|basic|pseudonymous (default: basic), includeRaw=true|false (default: false)`,
       commands: guidance.commands,
     };
   }
