@@ -62,10 +62,23 @@ export async function createArchiveStaging(
   input: ArchiveStagingInput,
 ): Promise<{ stagingRoot: string; archiveRoot: string; manifest: ArchiveManifest }> {
   const stagingRoot = await fs.mkdtemp(path.join(input.archiveDir, '.staging-'));
+  try {
+    return await buildStaging(stagingRoot, input);
+  } catch (error) {
+    await fs.rm(stagingRoot, { recursive: true, force: true }).catch(() => {});
+    throw error;
+  }
+}
+
+async function buildStaging(
+  stagingRoot: string,
+  input: ArchiveStagingInput,
+): Promise<{ stagingRoot: string; archiveRoot: string; manifest: ArchiveManifest }> {
   const archiveRoot = path.join(stagingRoot, input.sessionId);
   await fs.mkdir(archiveRoot, { recursive: true });
 
   const redactedFiles: string[] = [];
+  const rawFilesProduced: string[] = [];
 
   // ── Phase 1: Redacted payloads ──────────────────────────────────────────
   if (input.redactionMode !== 'none') {
@@ -118,16 +131,26 @@ export async function createArchiveStaging(
   // ── Phase 2: Raw files (only after successful redaction) ────────────────
   if (input.includeRaw) {
     for (const [source, target] of Object.entries(RAW_SOURCE_PATHS)) {
-      await copyIfPresent(path.join(input.sessDir, source), archivePath(archiveRoot, target));
+      const srcPath = path.join(input.sessDir, source);
+      if (await fileExists(srcPath)) {
+        await copyIfPresent(srcPath, archivePath(archiveRoot, target));
+        rawFilesProduced.push(target);
+      }
     }
-    await writeDecisionReceipts(archiveRoot, input.sessionId, input.events);
-    await copyEvidence(input.sessDir, archiveRoot);
+    const receiptsExist =
+      decisionReceipts(input.events as AuditEvent[]).filter((r) => r.sessionId === input.sessionId)
+        .length > 0;
+    if (receiptsExist) {
+      await writeDecisionReceipts(archiveRoot, input.sessionId, input.events);
+      rawFilesProduced.push(ARCHIVE_LAYOUT.receipts);
+    }
+    await copyEvidence(input.sessDir, archiveRoot, rawFilesProduced);
   }
 
   // ── Phase 3: Manifest (after all files written) ─────────────────────────
   const excludedFiles = input.includeRaw
     ? []
-    : Object.values(RAW_SOURCE_PATHS).filter((p) => !redactedFiles.includes(p));
+    : await computeExcludedFiles(input.sessDir, input.events, input.sessionId);
 
   const manifest = await buildManifest(archiveRoot, {
     ...input,
@@ -178,22 +201,69 @@ async function writeDecisionReceipts(
   );
 }
 
-async function copyEvidence(sessDir: string, archiveRoot: string): Promise<void> {
+async function copyEvidence(
+  sessDir: string,
+  archiveRoot: string,
+  produced?: string[],
+): Promise<void> {
   const files = await listSessionFiles(sessDir);
   for (const relativePath of files) {
     if (relativePath.startsWith('artifacts/')) {
-      await copyIfPresent(
-        path.join(sessDir, relativePath),
-        archivePath(archiveRoot, archiveArtifactPath(path.posix.basename(relativePath))),
-      );
+      const target = archiveArtifactPath(path.posix.basename(relativePath));
+      if (await fileExists(path.join(sessDir, relativePath))) {
+        await copyIfPresent(path.join(sessDir, relativePath), archivePath(archiveRoot, target));
+        produced?.push(target);
+      }
     }
     if (/^implementation-diff\.[a-f0-9]+\.patch$/.test(relativePath)) {
-      await copyIfPresent(
-        path.join(sessDir, relativePath),
-        archivePath(archiveRoot, archiveImplementationPath(path.posix.basename(relativePath))),
-      );
+      const target = archiveImplementationPath(path.posix.basename(relativePath));
+      if (await fileExists(path.join(sessDir, relativePath))) {
+        await copyIfPresent(path.join(sessDir, relativePath), archivePath(archiveRoot, target));
+        produced?.push(target);
+      }
     }
   }
+}
+
+/**
+ * Compute the full set of raw files that WOULD be included when includeRaw=true.
+ * These are the files intentionally excluded when includeRaw=false.
+ * Derived from the same canonical inventory used by the raw-copy phase.
+ */
+async function computeExcludedFiles(
+  sessDir: string,
+  events: readonly Record<string, unknown>[],
+  sessionId: string,
+): Promise<string[]> {
+  const excluded: string[] = [];
+
+  // RAW_SOURCE_PATHS — files that exist at source
+  for (const [source, target] of Object.entries(RAW_SOURCE_PATHS)) {
+    if (await fileExists(path.join(sessDir, source))) {
+      excluded.push(target);
+    }
+  }
+
+  // Decision receipts — if events contain decision events for this session
+  const receipts = decisionReceipts(events as AuditEvent[]).filter(
+    (r) => r.sessionId === sessionId,
+  );
+  if (receipts.length > 0) {
+    excluded.push(ARCHIVE_LAYOUT.receipts);
+  }
+
+  // Evidence files from session dir (artifacts, implementation diffs)
+  const files = await listSessionFiles(sessDir);
+  for (const relativePath of files) {
+    if (relativePath.startsWith('artifacts/')) {
+      excluded.push(archiveArtifactPath(path.posix.basename(relativePath)));
+    }
+    if (/^implementation-diff\.[a-f0-9]+\.patch$/.test(relativePath)) {
+      excluded.push(archiveImplementationPath(path.posix.basename(relativePath)));
+    }
+  }
+
+  return excluded;
 }
 
 async function computeFileDigests(
