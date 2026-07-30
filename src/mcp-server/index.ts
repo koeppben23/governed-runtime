@@ -3,7 +3,7 @@
  * @module mcp-server/index
  * @description Entry point for the FlowGuard MCP server binary (`flowguard-mcp`).
  *
- * Starts the MCP server on stdio transport, exposing all 12 FlowGuard governance
+ * Starts the MCP server on stdio transport, exposing FlowGuard governance
  * tools to supported MCP-capable hosts.
  *
  * Usage:

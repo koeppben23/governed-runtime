@@ -9,7 +9,7 @@
  * - Stateless: all state on filesystem, crash-safe restart
  * - Delegates to same rail executors as the OpenCode plugin
  *
- * The server exposes all 13 FlowGuard governance tools via the MCP protocol.
+ * The server exposes FlowGuard governance tools via the MCP protocol.
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/243
  */
@@ -84,7 +84,7 @@ export function createMcpServer(): McpServer {
   );
   const limiter = new McpExecutionLimiter(readMcpExecutionLimits());
 
-  // Register all 13 FlowGuard tools
+  // Register FlowGuard tools
   registerAllTools(
     server,
     FLOWGUARD_TOOLS,

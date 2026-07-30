@@ -3,7 +3,7 @@
  * @description Bridges FlowGuard ToolDefinition objects to MCP tool handlers.
  *
  * Responsibilities:
- * - Registers all 12 FlowGuard tools with the MCP server
+ * - Registers FlowGuard tools with the MCP server
  * - Builds ToolContext for each tool call from MCP request context
  * - Maps ToolResult (string | {output, metadata}) -> MCP CallToolResult
  * - Validates args via Zod before delegation (fail-closed on invalid input)

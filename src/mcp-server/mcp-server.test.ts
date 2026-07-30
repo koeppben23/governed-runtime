@@ -4,7 +4,7 @@
  *
  * Tests the full MCP protocol flow:
  * - Server spawns and responds to initialize
- * - tools/list returns all 13 FlowGuard tools
+ * - tools/list returns all FlowGuard tools
  * - tools/call dispatches to tool executors
  * - stdout guard prevents protocol contamination
  * - Negative paths: invalid tool, bad args, no session
@@ -692,7 +692,7 @@ describe('Stdout Guard', () => {
 // --- Tool Registry Completeness ---
 
 describe('Tool Registry', () => {
-  it('HAPPY: all 13 FlowGuard tools are importable', async () => {
+  it('HAPPY: all FlowGuard tools are importable', async () => {
     const tools = await import('../integration/tools/index.js');
     const expectedNames = [
       'status',
@@ -708,6 +708,7 @@ describe('Tool Registry', () => {
       'abort_session',
       'archive',
       'continue',
+      'help',
     ];
 
     for (const name of expectedNames) {
