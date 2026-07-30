@@ -212,7 +212,7 @@ export const FlowGuardConfigSchema = z.object({
     })
     .default({}),
 
-  /** Archive configuration. Fields reserved — logic implemented in later phases. */
+  /** Archive configuration. */
   archive: z
     .object({
       /** Number of days to retain archived sessions. Null = no auto-cleanup. */
@@ -221,17 +221,26 @@ export const FlowGuardConfigSchema = z.object({
       autoCleanupSessions: z.boolean().optional(),
       /** Custom export path for archived sessions. Null = default location. */
       exportPath: z.string().optional(),
-      /** Export redaction policy for archive artifacts. */
-      redaction: z
-        .object({
-          /** Redaction mode for export artifacts. */
-          mode: z.enum(['none', 'basic', 'strict']).default('none'),
-          /** Include raw artifacts in archive alongside redacted artifacts. */
-          includeRaw: z.boolean().default(true),
-        })
-        .default({ mode: 'none', includeRaw: true }),
+      /** Export redaction constraints for archive artifacts. */
+      redaction: z.object({
+        /** Allowed redaction modes. Must contain at least one. */
+        allowedModes: z
+          .array(z.enum(['none', 'basic', 'pseudonymous']))
+          .min(1)
+          .default(['none', 'basic', 'pseudonymous']),
+        /** Whether raw (unredacted) evidence export is permitted. Default: false (secure). */
+        allowRawExport: z.boolean().default(false),
+        /** Maximum audit events processed during redaction. Exceeding this fails the archive. */
+        maxAuditEvents: z.number().int().min(1).max(100_000).default(10_000),
+      }),
     })
-    .default({ redaction: { mode: 'none', includeRaw: true } }),
+    .default({
+      redaction: {
+        allowedModes: ['none', 'basic', 'pseudonymous'],
+        allowRawExport: false,
+        maxAuditEvents: 10_000,
+      },
+    }),
 });
 
 // ─── Types ───────────────────────────────────────────────────────────────────

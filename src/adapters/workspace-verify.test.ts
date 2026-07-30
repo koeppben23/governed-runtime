@@ -20,10 +20,22 @@ afterEach(async () => {
 async function archiveFixture() {
   configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'verify-v2-'));
   restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+  // Write config with raw export enabled for archive verification tests.
+  await fs.writeFile(
+    path.join(configDir, 'flowguard.json'),
+    JSON.stringify({
+      schemaVersion: 'v1',
+      archive: { redaction: { allowedModes: ['none'], allowRawExport: true } },
+    }),
+    'utf8',
+  );
   const sessionId = '550e8400-e29b-41d4-a716-446655440001';
   const initialized = await initWorkspace(path.resolve('.'), sessionId);
   await writeState(initialized.sessionDir, makeState('COMPLETE'));
-  await archiveSession(initialized.fingerprint, sessionId);
+  await archiveSession(initialized.fingerprint, sessionId, {
+    redactionMode: 'none',
+    includeRaw: true,
+  });
   return {
     fingerprint: initialized.fingerprint,
     sessionId,

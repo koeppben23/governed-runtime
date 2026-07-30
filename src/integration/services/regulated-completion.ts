@@ -72,7 +72,7 @@ export async function executeRegulatedCompletion(
     await appendAuditEvent(sessDir, completionEvt);
 
     // 2. Archive session (synchronous, not fire-and-forget).
-    await archiveSession(fingerprint, sessionID);
+    await archiveSession(fingerprint, sessionID, { redactionMode: 'none', includeRaw: true });
     const createdState = { ...resultState, archiveStatus: 'created' as const };
     await writeStateWithArtifacts(sessDir, createdState);
 

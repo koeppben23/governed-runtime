@@ -339,6 +339,15 @@ describe('persistence', () => {
       const cleanupEnv = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
       const sessionId = `archive-atomic-${Date.now()}`;
       try {
+        // Write config with raw export enabled for the archive test.
+        await fs.writeFile(
+          path.join(configDir, 'flowguard.json'),
+          JSON.stringify({
+            schemaVersion: 'v1',
+            archive: { redaction: { allowedModes: ['none'], allowRawExport: true } },
+          }),
+          'utf8',
+        );
         const { fingerprint, sessionDir: sessDir } = await initWorkspace(worktree, sessionId);
         const state = makeState('COMPLETE');
         await writeState(sessDir, {
@@ -353,7 +362,9 @@ describe('persistence', () => {
         await fs.writeFile(checksumPath, originalChecksum, 'utf-8');
 
         vi.mocked(fs.rename).mockRejectedValue(new Error('EXDEV — simulated failure'));
-        await expect(archiveSession(fingerprint, sessionId)).rejects.toMatchObject({
+        await expect(
+          archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true }),
+        ).rejects.toMatchObject({
           code: 'ARCHIVE_FAILED',
         });
         restoreRename();

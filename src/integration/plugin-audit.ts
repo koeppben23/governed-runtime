@@ -326,9 +326,11 @@ function scheduleSoloArchive(
     });
     return;
   }
-  archiveSession(fingerprint, sessionId).catch((err) => {
-    deps.log.warn('audit', 'auto-archive failed', { error: serializeError(err) });
-  });
+  archiveSession(fingerprint, sessionId, { redactionMode: 'basic', includeRaw: false }).catch(
+    (err) => {
+      deps.log.warn('audit', 'auto-archive failed', { error: serializeError(err) });
+    },
+  );
 }
 
 interface StrictTimestampTracker {

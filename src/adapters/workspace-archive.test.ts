@@ -23,21 +23,53 @@ async function createArchive() {
     await fs.rm(configDir, { recursive: true, force: true });
   });
   const sessionId = '550e8400-e29b-41d4-a716-446655440000';
-  const initialized = await initWorkspace(path.resolve('.'), sessionId);
+  const worktree = path.resolve('.');
+  const initialized = await initWorkspace(worktree, sessionId);
   await writeState(initialized.sessionDir, makeState('COMPLETE'));
-  const archivePath = await archiveSession(initialized.fingerprint, sessionId);
+
+  // Write config to both global and repo-scoped locations.
+  const configBody = {
+    schemaVersion: 'v1' as const,
+    archive: { redaction: { allowedModes: ['none'] as const, allowRawExport: true } },
+  };
+  await fs.writeFile(path.join(configDir, 'flowguard.json'), JSON.stringify(configBody), 'utf8');
+  const repoOpenCode = path.join(worktree, '.opencode');
+  await fs.mkdir(repoOpenCode, { recursive: true });
+  await fs.writeFile(path.join(repoOpenCode, 'flowguard.json'), JSON.stringify(configBody), 'utf8');
+  cleanups.push(async () => {
+    await fs.rm(path.join(repoOpenCode, 'flowguard.json'), { force: true });
+  });
+
+  const archivePath = await archiveSession(initialized.fingerprint, sessionId, {
+    redactionMode: 'none',
+    includeRaw: true,
+  });
   return { ...initialized, sessionId, archivePath };
 }
 
-async function writeArchiveConfig(
+async function writeConfigForTest(
   configDir: string,
-  redaction: { mode: 'none' | 'basic' | 'strict'; includeRaw: boolean },
+  redactionMode: string,
+  allowRawExport: boolean,
+  worktree?: string,
 ): Promise<void> {
-  await fs.writeFile(
-    path.join(configDir, 'flowguard.json'),
-    JSON.stringify({ schemaVersion: 'v1', archive: { redaction } }),
-    'utf8',
-  );
+  const config = {
+    schemaVersion: 'v1',
+    archive: {
+      redaction: {
+        allowedModes: [redactionMode],
+        allowRawExport,
+      },
+    },
+  };
+  // Write global config
+  await fs.writeFile(path.join(configDir, 'flowguard.json'), JSON.stringify(config), 'utf8');
+  // Also write repo-scoped config (takes priority over global)
+  if (worktree) {
+    const repoDir = path.join(worktree, '.opencode');
+    await fs.mkdir(repoDir, { recursive: true });
+    await fs.writeFile(path.join(repoDir, 'flowguard.json'), JSON.stringify(config), 'utf8');
+  }
 }
 
 async function extract(archivePath: string): Promise<string> {
@@ -57,7 +89,8 @@ describe('Archive Layout v2', () => {
     expect(manifest.layoutVersion).toBe(2);
     expect(manifest.rawIncluded).toBe(true);
     expect(manifest.includedFiles).toContain('state/session-state.json');
-    expect(manifest.includedFiles).toContain('audit/decision-receipts.v1.json');
+    // Decision receipts are only written when decision events exist.
+    // This test does not append any audit events, so receipts are skipped.
     await expect(fs.access(path.join(root, 'state/session-state.json'))).resolves.toBeUndefined();
   });
 
@@ -68,6 +101,15 @@ describe('Archive Layout v2', () => {
       restore();
       await fs.rm(configDir, { recursive: true, force: true });
     });
+    // Write config with raw export enabled.
+    await fs.writeFile(
+      path.join(configDir, 'flowguard.json'),
+      JSON.stringify({
+        schemaVersion: 'v1',
+        archive: { redaction: { allowedModes: ['none'], allowRawExport: true } },
+      }),
+      'utf8',
+    );
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
     const initialized = await initWorkspace(path.resolve('.'), sessionId);
     await writeState(initialized.sessionDir, makeState('COMPLETE'));
@@ -94,7 +136,10 @@ describe('Archive Layout v2', () => {
       },
     });
 
-    const archivePath = await archiveSession(initialized.fingerprint, sessionId);
+    const archivePath = await archiveSession(initialized.fingerprint, sessionId, {
+      redactionMode: 'none',
+      includeRaw: true,
+    });
     const root = path.join(await extract(archivePath), sessionId);
     const receipts = JSON.parse(
       await fs.readFile(path.join(root, 'audit', 'decision-receipts.v1.json'), 'utf8'),
@@ -114,22 +159,64 @@ describe('Archive Layout v2', () => {
 
   it.each([
     { mode: 'basic' as const, includeRaw: false },
-    { mode: 'none' as const, includeRaw: false },
-  ])('refuses archive creation with legacy redaction $mode/$includeRaw', async (redaction) => {
+    { mode: 'pseudonymous' as const, includeRaw: true },
+  ])('creates archive with redaction $mode includeRaw=$includeRaw', async (redaction) => {
     const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
     const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
     cleanups.push(async () => {
       restore();
       await fs.rm(configDir, { recursive: true, force: true });
     });
-    await writeArchiveConfig(configDir, redaction);
+    await fs.writeFile(
+      path.join(configDir, 'flowguard.json'),
+      JSON.stringify({
+        schemaVersion: 'v1',
+        archive: {
+          redaction: {
+            allowedModes: [redaction.mode],
+            allowRawExport: redaction.includeRaw,
+          },
+        },
+      }),
+      'utf8',
+    );
     const sessionId = '550e8400-e29b-41d4-a716-446655440000';
     const initialized = await initWorkspace(path.resolve('.'), sessionId);
     await writeState(initialized.sessionDir, makeState('COMPLETE'));
 
-    await expect(archiveSession(initialized.fingerprint, sessionId)).rejects.toMatchObject({
-      code: 'ARCHIVE_FAILED',
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: redaction.mode,
+        includeRaw: redaction.includeRaw,
+      }),
+    ).resolves.toBeDefined();
+  });
+
+  it('rejects archive with redactionMode=none and includeRaw=false', async () => {
+    const configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'archive-v2-'));
+    const restore = withTestEnv({ OPENCODE_CONFIG_DIR: configDir });
+    cleanups.push(async () => {
+      restore();
+      await fs.rm(configDir, { recursive: true, force: true });
     });
+    await fs.writeFile(
+      path.join(configDir, 'flowguard.json'),
+      JSON.stringify({
+        schemaVersion: 'v1',
+        archive: { redaction: { allowedModes: ['none'], allowRawExport: true } },
+      }),
+      'utf8',
+    );
+    const sessionId = '550e8400-e29b-41d4-a716-446655440000';
+    const initialized = await initWorkspace(path.resolve('.'), sessionId);
+    await writeState(initialized.sessionDir, makeState('COMPLETE'));
+
+    await expect(
+      archiveSession(initialized.fingerprint, sessionId, {
+        redactionMode: 'none',
+        includeRaw: false,
+      }),
+    ).rejects.toMatchObject({ code: 'ARCHIVE_FAILED' });
   });
 
   it('verifies the tarball independently of later live-session mutations', async () => {
