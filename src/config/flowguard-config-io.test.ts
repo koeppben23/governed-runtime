@@ -312,7 +312,9 @@ describe('readConfig — precedence', () => {
     logging: { ...DEFAULT_CONFIG.logging, level: 'debug' },
     policy: { defaultMode: 'regulated' },
     profile: {},
-    archive: { redaction: { mode: 'basic', includeRaw: false } },
+    archive: {
+      redaction: { allowedModes: ['basic'], allowRawExport: false, maxAuditEvents: 10_000 },
+    },
   };
 
   const GLOBAL_CUSTOM: FlowGuardConfig = {
@@ -321,7 +323,9 @@ describe('readConfig — precedence', () => {
     logging: { ...DEFAULT_CONFIG.logging, level: 'warn' },
     policy: {},
     profile: { defaultId: 'global-profile' },
-    archive: { redaction: { mode: 'basic', includeRaw: false } },
+    archive: {
+      redaction: { allowedModes: ['basic'], allowRawExport: false, maxAuditEvents: 10_000 },
+    },
   };
 
   // ── HAPPY ──────────────────────────────────────────────────
