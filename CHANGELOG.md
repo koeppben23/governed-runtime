@@ -27,19 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Redaction mode renamed:** `strict` → `pseudonymous` (stable correlation
   tokens, not stronger than basic irreversible masking).
 
-### Changed
-
-- **Config `archive.redaction` restructured.** Old `mode` and `includeRaw`
-  fields replaced with constraint model: `allowedModes` (`.min(1)`, defaults
-  to all three), `allowRawExport` (default `false`), `maxAuditEvents`
-  (default `10_000`). Migration: set `allowRawExport: true` for raw archive
-  support.
-- **`archiveSession()` signature** now takes `ArchiveSessionOptions` with
-  `redactionMode` and `includeRaw`. Callers updated (auto-archive uses
-  `basic`/`raw=false`, regulated-completion uses `none`/`raw=true`).
-
-### Fixed
-
 - **Defense-in-depth validation gate on reviewer acceptance.** Accepting an
   implementation review now re-checks that every active verification check has a
   passing execution attempt bound to the **current** `implementation.digest`
@@ -195,6 +182,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Available in all phases including terminal phases.
 
 ### Changed
+
+- **Config `archive.redaction` restructured.** Old `mode` and `includeRaw`
+  fields replaced with constraint model: `allowedModes` (`.min(1)`, defaults
+  to all three), `allowRawExport` (default `false`), `maxAuditEvents`
+  (default `10_000`). Migration: set `allowRawExport: true` for raw archive
+  support.
+- **`archiveSession()` signature** now takes `ArchiveSessionOptions` with
+  `redactionMode` and `includeRaw`. Callers updated (auto-archive uses
+  `basic`/`raw=false`, regulated-completion uses `none`/`raw=true`).
 
 - Restructured the `/plan` authoring template around an implementation-plan
   visual contract. The seven mandatory planning dimensions are preserved across
