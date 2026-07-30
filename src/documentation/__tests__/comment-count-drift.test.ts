@@ -29,7 +29,10 @@ function walkTsFiles(dir: string): string[] {
     const full = join(dir, entry.name);
     if (entry.isDirectory() && entry.name !== 'node_modules' && entry.name !== 'dist') {
       files.push(...walkTsFiles(full));
-    } else if (entry.isFile() && (extname(entry.name) === '.ts' || extname(entry.name) === '.tsx')) {
+    } else if (
+      entry.isFile() &&
+      (extname(entry.name) === '.ts' || extname(entry.name) === '.tsx')
+    ) {
       files.push(full);
     }
   }
@@ -86,9 +89,7 @@ describe('source-code comment drift prevention', () => {
         const match = content.match(pattern);
         if (match) {
           const line = content.slice(0, match.index!).split('\n').length;
-          violations.push(
-            `${rel}:${line}: "${match[0]}" matches stale-count pattern`,
-          );
+          violations.push(`${rel}:${line}: "${match[0]}" matches stale-count pattern`);
         }
       }
     }
