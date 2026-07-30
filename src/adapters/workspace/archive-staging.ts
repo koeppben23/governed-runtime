@@ -71,10 +71,7 @@ export async function createArchiveStaging(
   if (input.redactionMode !== 'none') {
     // Session state redaction
     if (input.state) {
-      const redactedState = redactSessionState(
-        input.state as unknown as Record<string, unknown>,
-        input.redactionMode,
-      );
+      const redactedState = redactSessionState(input.state, input.redactionMode);
       const target = archivePath(archiveRoot, ARCHIVE_LAYOUT.stateRedacted);
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(target, JSON.stringify(redactedState, null, 2) + '\n', 'utf-8');
@@ -84,7 +81,7 @@ export async function createArchiveStaging(
     // Audit trail redaction
     const redactedEvents: Record<string, unknown>[] = [];
     for (const event of input.events) {
-      redactedEvents.push(redactAuditEvent(event as Record<string, unknown>, input.redactionMode));
+      redactedEvents.push(redactAuditEvent(event, input.redactionMode));
     }
     if (redactedEvents.length > 0) {
       const target = archivePath(archiveRoot, ARCHIVE_LAYOUT.auditRedacted);
@@ -99,10 +96,7 @@ export async function createArchiveStaging(
       (r) => r.sessionId === input.sessionId,
     );
     if (receipts.length > 0) {
-      const redactedReceipts = redactDecisionReceipts(
-        { receipts } as Record<string, unknown>,
-        input.redactionMode,
-      );
+      const redactedReceipts = redactDecisionReceipts({ receipts }, input.redactionMode);
       const target = archivePath(archiveRoot, ARCHIVE_LAYOUT.receiptsRedacted);
       await fs.mkdir(path.dirname(target), { recursive: true });
       await fs.writeFile(target, JSON.stringify(redactedReceipts, null, 2) + '\n', 'utf-8');

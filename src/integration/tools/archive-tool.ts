@@ -84,6 +84,7 @@ export const archive: ToolDefinition = {
   args: {
     redactionMode: z
       .enum(['none', 'basic', 'pseudonymous'])
+      .default('basic')
       .describe(
         "'none' = raw evidence (requires allowRawExport in config). " +
           "'basic' = secrets masked as [REDACTED]. " +
@@ -91,6 +92,7 @@ export const archive: ToolDefinition = {
       ),
     includeRaw: z
       .boolean()
+      .default(false)
       .describe(
         'Include raw unredacted files alongside redacted copies. ' +
           'Requires allowRawExport=true in flowguard.json. ' +
@@ -114,8 +116,8 @@ export const archive: ToolDefinition = {
         return formatBlocked('ABORTED', { reason: state.error?.message ?? '' });
       }
 
-      const redactionMode = args.redactionMode as 'none' | 'basic' | 'pseudonymous';
-      const includeRaw = args.includeRaw as boolean;
+      const redactionMode = (args.redactionMode ?? 'basic') as 'none' | 'basic' | 'pseudonymous';
+      const includeRaw = (args.includeRaw ?? false) as boolean;
 
       const archivePath = await archiveSession(fingerprint, context.sessionID, {
         redactionMode,

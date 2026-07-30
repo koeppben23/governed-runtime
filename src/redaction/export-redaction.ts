@@ -268,7 +268,7 @@ export function redactAuditEvent(
   event: Record<string, unknown>,
   mode: RedactionMode,
 ): Record<string, unknown> {
-  const out = structuredClone(event) as Record<string, unknown>;
+  const out = structuredClone(event);
   if (mode === 'none') return out;
 
   if (out.actorInfo && typeof out.actorInfo === 'object') {

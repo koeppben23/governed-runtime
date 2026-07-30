@@ -95,7 +95,7 @@ const TOOLS_WITH_ARGS = [
 ] as const;
 
 /** Tools that have no arguments (args: {}). */
-const TOOLS_WITHOUT_ARGS = ['archive', 'implement'] as const;
+const TOOLS_WITHOUT_ARGS = ['implement'] as const;
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 

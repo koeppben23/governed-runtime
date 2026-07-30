@@ -107,6 +107,15 @@ let ctx: TestToolContext;
 
 beforeEach(async () => {
   ws = await createTestWorkspace();
+  // Write config with raw export enabled for archive integrity tests.
+  await fs.writeFile(
+    path.join(process.env.OPENCODE_CONFIG_DIR ?? '', 'flowguard.json'),
+    JSON.stringify({
+      schemaVersion: 'v1',
+      archive: { redaction: { allowedModes: ['none'], allowRawExport: true } },
+    }),
+    'utf8',
+  );
   ctx = createToolContext({
     worktree: ws.tmpDir,
     directory: ws.tmpDir,
