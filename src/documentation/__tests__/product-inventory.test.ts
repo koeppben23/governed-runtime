@@ -69,13 +69,8 @@ describe('product inventory vs installed command definitions authority', () => {
 
 describe('product inventory vs discovery orchestrator authority', () => {
   it('discovery collector count matches orchestrator wiring', () => {
-    const src = readFileSync(
-      join(REPO_ROOT, 'src', 'discovery', 'orchestrator.ts'),
-      'utf-8',
-    );
-    const imports = [
-      ...src.matchAll(/import \{\s*(\w+)\s*\} from '\.\/collectors\//g),
-    ];
+    const src = readFileSync(join(REPO_ROOT, 'src', 'discovery', 'orchestrator.ts'), 'utf-8');
+    const imports = [...src.matchAll(/import \{\s*(\w+)\s*\} from '\.\/collectors\//g)];
     expect(imports).toHaveLength(PRODUCT_INVENTORY.discoveryCollectors);
   });
 });
@@ -105,20 +100,12 @@ describe('product inventory vs audit event kinds authority', () => {
 describe('product inventory vs review loop authority', () => {
   it('review loop count matches REVIEW_LOOP_PHASES set', () => {
     const src = readFileSync(
-      join(
-        REPO_ROOT,
-        'src',
-        'integration',
-        'review',
-        'review-loop-progress.ts',
-      ),
+      join(REPO_ROOT, 'src', 'integration', 'review', 'review-loop-progress.ts'),
       'utf-8',
     );
-    const phases = [
-      ...src.matchAll(/'([A-Z_]+)'/g),
-    ].map((m) => m[1] ?? '').filter((p) =>
-      ['PLAN_REVIEW', 'IMPL_REVIEW', 'ARCH_REVIEW'].includes(p),
-    );
+    const phases = [...src.matchAll(/'([A-Z_]+)'/g)]
+      .map((m) => m[1] ?? '')
+      .filter((p) => ['PLAN_REVIEW', 'IMPL_REVIEW', 'ARCH_REVIEW'].includes(p));
     const unique = new Set(phases);
     expect(unique.size).toBe(PRODUCT_INVENTORY.reviewLoops);
   });
@@ -129,14 +116,7 @@ describe('product inventory vs review loop authority', () => {
 describe('product inventory vs enforcement layers authority', () => {
   it('enforcement layers count is 4 (L1-L4 documented in enforcement.ts)', () => {
     const src = readFileSync(
-      join(
-        REPO_ROOT,
-        'src',
-        'integration',
-        'review',
-        'enforcement',
-        'enforcement.ts',
-      ),
+      join(REPO_ROOT, 'src', 'integration', 'review', 'enforcement', 'enforcement.ts'),
       'utf-8',
     );
     const layerMatches = src.match(/L\d/g);
@@ -168,10 +148,7 @@ describe('product inventory vs mutation scope authority', () => {
 
 describe('product inventory vs machine commands authority', () => {
   it('machine command count matches Command enum', () => {
-    const src = readFileSync(
-      join(REPO_ROOT, 'src', 'machine', 'commands.ts'),
-      'utf-8',
-    );
+    const src = readFileSync(join(REPO_ROOT, 'src', 'machine', 'commands.ts'), 'utf-8');
     const vals = [...src.matchAll(/:\s*'([^']+)'/g)];
     expect(vals).toHaveLength(PRODUCT_INVENTORY.machineCommands);
   });
@@ -193,23 +170,15 @@ describe('product inventory vs integration tools authority', () => {
 
 describe('product inventory vs MCP tools authority', () => {
   it('MCP tool count matches FLOWGUARD_TOOLS registry', () => {
-    const src = readFileSync(
-      join(REPO_ROOT, 'src', 'mcp-server', 'server.ts'),
-      'utf-8',
-    );
-    const match = src.match(
-      /const FLOWGUARD_TOOLS[^=]*=\s*\{([^}]+)\}/s,
-    );
+    const src = readFileSync(join(REPO_ROOT, 'src', 'mcp-server', 'server.ts'), 'utf-8');
+    const match = src.match(/const FLOWGUARD_TOOLS[^=]*=\s*\{([^}]+)\}/s);
     if (!match || !match[1]) {
       throw new Error('FLOWGUARD_TOOLS registry not found in server.ts');
     }
     const entries = match[1]
       .split('\n')
       .map((l) => l.trim())
-      .filter(
-        (l) =>
-          l.length > 0 && !l.startsWith('//') && !l.startsWith('/*'),
-      );
+      .filter((l) => l.length > 0 && !l.startsWith('//') && !l.startsWith('/*'));
     expect(entries).toHaveLength(PRODUCT_INVENTORY.mcpTools);
   });
 });
@@ -219,13 +188,7 @@ describe('product inventory vs MCP tools authority', () => {
 describe('product inventory vs archive verify JSDoc authority', () => {
   it('archive verify JSDoc check count matches verifyArchive JSDoc', () => {
     const src = readFileSync(
-      join(
-        REPO_ROOT,
-        'src',
-        'adapters',
-        'workspace',
-        'archive-verify-chain.ts',
-      ),
+      join(REPO_ROOT, 'src', 'adapters', 'workspace', 'archive-verify-chain.ts'),
       'utf-8',
     );
     const checks = [...src.matchAll(/^\s*\* (\d+)\. /gm)];
