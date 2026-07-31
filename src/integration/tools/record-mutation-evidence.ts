@@ -42,9 +42,7 @@ const RECORD_MUTATION_PHASES: ReadonlySet<SessionState['phase']> = new Set([
   'COMPLETE',
 ]);
 
-function validatePreconditions(
-  state: SessionState,
-):
+function validatePreconditions(state: SessionState):
   | { readonly kind: 'ok'; readonly implementationDigest: string }
   | {
       readonly kind: 'blocked';
