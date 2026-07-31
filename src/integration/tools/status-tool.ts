@@ -58,6 +58,8 @@ import {
   bindStructuralEvidence,
   surfaceDigestMap,
 } from '../proofgraph/structural-provider.js';
+import { loadMutationReport, evaluateMutationProfiles } from '../proofgraph/mutation-provider.js';
+import { bindMutationEvidence } from '../../audit/proofgraph/mutation-binder.js';
 import { checkRegistrationConsistency } from '../proofgraph/registration-consistency.js';
 import { checkConfigDefaultConsistency } from '../proofgraph/config-default-consistency.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
@@ -142,15 +144,21 @@ function buildCheckProjectionFields(state: SessionState): Record<string, unknown
  * Build the focused, read-only ProofGraph projection response (advisory).
  * Never approves or gates; surfaces claim states, freshness, and critical gaps.
  */
-function buildProofGraphProjectionResponse(
+async function buildProofGraphProjectionResponse(
   state: SessionState,
   policy: FlowGuardPolicy,
   checkFields: Record<string, unknown>,
-): string {
+): Promise<string> {
   const now = new Date().toISOString();
   const structuralSurfaces = evaluateStructuralSurfaces();
+  const mutationEvaluations = evaluateMutationProfiles(
+    await loadMutationReport(state.binding.worktree),
+  );
   const proofGraph = summarizeProofGraph(state, now, {
-    providerResults: bindStructuralEvidence(state, structuralSurfaces, now),
+    providerResults: [
+      ...bindStructuralEvidence(state, structuralSurfaces, now),
+      ...bindMutationEvidence(state, mutationEvaluations, now),
+    ],
     surfaceDigests: surfaceDigestMap(structuralSurfaces),
   });
   const proofGraphGate = evaluateProofGraphGate(proofGraph, policy.proofGraphPolicy);
@@ -252,7 +260,7 @@ async function resolveProjection(
     );
   }
   if (args.proofGraph) {
-    return buildProofGraphProjectionResponse(state, policy, checkFields);
+    return await buildProofGraphProjectionResponse(state, policy, checkFields);
   }
   return null;
 }

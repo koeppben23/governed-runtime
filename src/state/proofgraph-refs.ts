@@ -80,6 +80,21 @@ export const StructuralSurfaceRef = z
 export type StructuralSurfaceRef = z.infer<typeof StructuralSurfaceRef>;
 
 /**
+ * Reference to an opt-in semantic mutation profile.
+ *
+ * EVIDENCE, not authority: it names the profile whose recorded mutation results
+ * (survivor status) cover the claim. Mutation evidence is revision-bound to the
+ * implementation digest, so it goes stale when the implementation changes.
+ */
+export const MutationProfileRef = z
+  .object({
+    kind: z.literal('mutation_profile'),
+    profileId: z.string().min(1),
+  })
+  .readonly();
+export type MutationProfileRef = z.infer<typeof MutationProfileRef>;
+
+/**
  * Reproducible EVIDENCE about a claim. Evidence proves or falsifies a claim but
  * never confers governing provenance.
  */
@@ -88,5 +103,6 @@ export const ClaimEvidenceRef = z.discriminatedUnion('kind', [
   ImplementationRef,
   ContentRef,
   StructuralSurfaceRef,
+  MutationProfileRef,
 ]);
 export type ClaimEvidenceRef = z.infer<typeof ClaimEvidenceRef>;

@@ -31,6 +31,15 @@ import {
   bindStructuralEvidence,
   surfaceDigestMap,
 } from '../proofgraph/structural-provider.js';
+import {
+  MUTATION_PROFILE_IDS,
+  loadMutationReport,
+  evaluateMutationProfiles,
+} from '../proofgraph/mutation-provider.js';
+import { bindMutationEvidence } from '../../audit/proofgraph/mutation-binder.js';
+
+/** Declarable mutation profile ids as a non-empty tuple for the Zod enum. */
+const MUTATION_PROFILE_ENUM = MUTATION_PROFILE_IDS as [string, ...string[]];
 import { deriveProofGraph } from '../../audit/proofgraph/derive.js';
 import { bindExecutedTestEvidence } from '../../audit/proofgraph/executed-test-binder.js';
 import { bindCounterexamples } from '../../audit/proofgraph/counterexample-binder.js';
@@ -39,6 +48,7 @@ import {
   appendNextAction,
   formatBlocked,
   formatError,
+  getWorktree,
   withMutableSessionTransaction,
   writeStateWithArtifacts,
 } from './helpers.js';
@@ -124,6 +134,7 @@ type RawClaim = {
   counterexampleCheckId?: string;
   authority?: AuthoritySource;
   structuralSurface?: string;
+  mutationProfile?: string;
 };
 
 /**
@@ -171,6 +182,12 @@ function buildDeclaredClaims(
           ? 'schema_compare'
           : 'structural_assertion',
       );
+    }
+    // A declared mutation profile likewise becomes required evidence: surviving
+    // mutants (or no recorded run) must prevent the claim from being proven.
+    if (rc.mutationProfile !== undefined) {
+      evidenceRefs.push({ kind: 'mutation_profile', profileId: rc.mutationProfile });
+      positive.push('fault_injection');
     }
     claims.push({
       claimId: claimIdFor(rc.statement),
@@ -235,6 +252,14 @@ export const declare_contract: ToolDefinition = {
                 'claim. Becomes required positive evidence and is bound to the surface digest, ' +
                 'so the claim goes STALE when that surface changes.',
             ),
+          mutationProfile: z
+            .enum(MUTATION_PROFILE_ENUM)
+            .optional()
+            .describe(
+              'Optional opt-in semantic mutation profile. Becomes required positive evidence: ' +
+                'surviving mutants make the claim UNPROVEN, and a profile with no recorded ' +
+                'mutation report is NOT_VERIFIED rather than a pass.',
+            ),
         }),
       )
       .min(1)
@@ -269,9 +294,13 @@ export const declare_contract: ToolDefinition = {
         const now = ctx.now();
         const stateWithContract = { ...state, proofContract };
         const structuralSurfaces = evaluateStructuralSurfaces();
+        const mutationEvaluations = evaluateMutationProfiles(
+          await loadMutationReport(getWorktree(context)),
+        );
         const providerResults = [
           ...bindExecutedTestEvidence(stateWithContract, now),
           ...bindStructuralEvidence(stateWithContract, structuralSurfaces, now),
+          ...bindMutationEvidence(stateWithContract, mutationEvaluations, now),
         ];
         const counterexamples = bindCounterexamples(stateWithContract, now);
         const proofGraph = deriveProofGraph(
