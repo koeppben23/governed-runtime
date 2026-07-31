@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **FlowGuard ProofGraph foundation (part of #762).** A versioned, deterministic
+  executable evidence graph that makes each critical change claim traceable from
+  approved intent to a review outcome, surfaced advisorily and never altering
+  review acceptance. New `flowguard_declare_contract` tool (admissible in
+  `IMPL_VALIDATION`/`IMPL_REVIEW`) records claims; `flowguard_status({ proofGraph:
+true })` returns the evaluated projection. Key invariants:
+  - Governing **provenance** (an approved ticket/plan/ADR/canonical authority) is
+    a distinct type from executable **evidence** (validation attempt / impl /
+    content); a claim is a governing `fact` only when an approved authority
+    resolves, otherwise a `NOT_VERIFIED` hypothesis. Validation evidence can
+    never confer provenance.
+  - Every passing provider result is **digest-bound** and freshness-checked
+    (implementation revision, or a `surface_set` digest for structural/schema
+    assertions); a changed bound surface makes evidence `STALE`, which cannot
+    satisfy a gate.
+  - Provider results carry reproducible metadata (provider id/version, exact
+    input, source + stable id, digest binding, result digest).
+  - A critical `fact` claim cannot be `PROVEN` without a **`supported`
+    counterexample** (adversarial evidence); missing/`not_verified` adversarial
+    evidence yields `NOT_VERIFIED`.
+  - Explicit states (`PROVEN`, `UNPROVEN`, `CONTRADICTED`, `STALE`, `BLOCKED`,
+    `NOT_VERIFIED`) surface residual uncertainty; a default-off policy gate can
+    only ever consider critical, evidence-backed `fact` claims. See
+    `docs/proofgraph.md`.
+
 - **Archive redaction wired into pipeline (#649, #666 follow-up).** The
   redaction engine (`src/redaction/export-redaction.ts`) is now integrated
   into the archive staging pipeline. Two mandatory tool parameters control
