@@ -18,8 +18,8 @@
  *   3. a provider errored (execution)     -> BLOCKED
  *   4. a required provider was unavailable-> NOT_VERIFIED
  *   5. a provider reported a failure      -> UNPROVEN
- *   6. a passing structural assertion, or fresh revision-bound evidence -> PROVEN
- *   7. only stale revision-bound passing evidence -> STALE
+ *   6. fresh (digest-bound) passing evidence of any kind -> PROVEN
+ *   7. only stale (superseded binding) passing evidence -> STALE
  *   8. otherwise (declared, no evidence)  -> UNPROVEN
  *
  * @version v1
@@ -30,14 +30,11 @@ import type {
   ProofClaim,
   ProofGraphProjection,
   ProofProviderResult,
+  ProofProviderBinding,
   ProofCounterexample,
 } from '../../state/proofgraph.js';
 import { PROOFGRAPH_SCHEMA_VERSION } from '../../state/proofgraph.js';
-import type {
-  ClaimVerificationState,
-  Freshness,
-  ProofProviderKind,
-} from '../../state/proofgraph-primitives.js';
+import type { ClaimVerificationState, Freshness } from '../../state/proofgraph-primitives.js';
 
 /** Immutable inputs for a single deterministic evaluation. */
 export interface ProofGraphEvaluationInput {
@@ -49,55 +46,60 @@ export interface ProofGraphEvaluationInput {
   readonly counterexamples: readonly ProofCounterexample[];
   /**
    * The current implementation revision digest, or `null` when no
-   * implementation exists yet. Evidence bound to any other digest is stale.
+   * implementation exists yet. Implementation-bound evidence bound to any other
+   * digest is stale.
    */
   readonly currentImplementationDigest: string | null;
-}
-
-/** A passing result is fresh only when bound to the current implementation digest. */
-function isFresh(
-  boundDigest: string | undefined,
-  currentImplementationDigest: string | null,
-): boolean {
-  return (
-    currentImplementationDigest !== null &&
-    boundDigest !== undefined &&
-    boundDigest === currentImplementationDigest
-  );
+  /** The current plan digest, or `null`/absent. Plan-bound evidence uses this. */
+  readonly currentPlanDigest?: string | null;
+  /**
+   * Current digest per surface id. A `surface_set`-bound result is fresh only
+   * while the current digest for its `surfaceId` still matches its bound digest.
+   */
+  readonly currentSurfaceDigests?: Readonly<Record<string, string>>;
 }
 
 /**
- * Whether a provider kind produces revision-bound evidence. Executed tests and
- * fault injections are bound to an implementation revision (freshness applies).
- * Structural and schema-comparison assertions are repo-level, not revision-bound,
- * so a passing structural result proves regardless of the implementation digest.
+ * Whether a passing result is fresh: its digest binding still matches the
+ * current revision/surface. A result with no binding is never fresh.
  */
-function isRevisionBound(kind: ProofProviderKind): boolean {
-  return kind === 'executed_test' || kind === 'fault_injection';
+function isFresh(
+  binding: ProofProviderBinding | undefined,
+  input: ProofGraphEvaluationInput,
+): boolean {
+  if (binding === undefined) return false;
+  switch (binding.kind) {
+    case 'implementation':
+      return (
+        input.currentImplementationDigest !== null &&
+        binding.digest === input.currentImplementationDigest
+      );
+    case 'plan': {
+      const currentPlanDigest = input.currentPlanDigest ?? null;
+      return currentPlanDigest !== null && binding.digest === currentPlanDigest;
+    }
+    case 'surface_set':
+      return (input.currentSurfaceDigests ?? {})[binding.surfaceId] === binding.digest;
+  }
 }
 
 function computeFreshness(
   passingResults: readonly ProofProviderResult[],
-  currentImplementationDigest: string | null,
+  input: ProofGraphEvaluationInput,
   evaluatedAt: string,
 ): Freshness | undefined {
-  const withDigest = passingResults.filter(
-    (r) => isRevisionBound(r.providerKind) && r.boundDigest !== undefined,
-  );
-  if (withDigest.length === 0) return undefined;
-  const fresh = withDigest.find((r) => isFresh(r.boundDigest, currentImplementationDigest));
-  if (fresh?.boundDigest !== undefined) {
-    return { boundDigest: fresh.boundDigest, evaluatedAt, stale: false };
-  }
-  const boundDigest = withDigest[0]!.boundDigest;
-  return boundDigest === undefined ? undefined : { boundDigest, evaluatedAt, stale: true };
+  const bound = passingResults.filter((r) => r.binding !== undefined);
+  if (bound.length === 0) return undefined;
+  const fresh = bound.find((r) => isFresh(r.binding, input));
+  const chosen = fresh ?? bound[0]!;
+  return { boundDigest: chosen.binding!.digest, evaluatedAt, stale: fresh === undefined };
 }
 
 function deriveVerificationState(
   claim: DeclaredClaim,
   results: readonly ProofProviderResult[],
   counterexamples: readonly ProofCounterexample[],
-  currentImplementationDigest: string | null,
+  input: ProofGraphEvaluationInput,
 ): ClaimVerificationState {
   // 1. Provenance is mandatory; an unsourced manifest assertion is an assumption.
   if (claim.provenance === null) return 'NOT_VERIFIED';
@@ -108,12 +110,12 @@ function deriveVerificationState(
   if (results.some((r) => r.status === 'unavailable')) return 'NOT_VERIFIED';
   // 5. A failing verdict leaves the claim unproven.
   if (results.some((r) => r.status === 'fail')) return 'UNPROVEN';
-  // 6. Non-revision-bound passing evidence (structural / schema) proves regardless
-  //    of the implementation digest; revision-bound evidence proves only when fresh.
+  // 6. Passing evidence proves only while its digest binding is fresh - this
+  //    applies to every provider kind (structural/schema included), so a pass
+  //    can never satisfy a claim after its bound surface changed.
   const passing = results.filter((r) => r.status === 'pass');
-  if (passing.some((r) => !isRevisionBound(r.providerKind))) return 'PROVEN';
-  if (passing.some((r) => isFresh(r.boundDigest, currentImplementationDigest))) return 'PROVEN';
-  // 7. The only passing evidence is revision-bound but stale.
+  if (passing.some((r) => isFresh(r.binding, input))) return 'PROVEN';
+  // 7. The only passing evidence is bound to a superseded revision/surface.
   if (passing.length > 0) return 'STALE';
   // 8. Declared with provenance but no evidence.
   return 'UNPROVEN';
@@ -126,15 +128,10 @@ function evaluateClaim(
 ): ProofClaim {
   const results = input.providerResults.filter((r) => r.claimId === claim.claimId);
   const counterexamples = input.counterexamples.filter((c) => c.claimId === claim.claimId);
-  const verificationState = deriveVerificationState(
-    claim,
-    results,
-    counterexamples,
-    input.currentImplementationDigest,
-  );
+  const verificationState = deriveVerificationState(claim, results, counterexamples, input);
   const freshness = computeFreshness(
     results.filter((r) => r.status === 'pass'),
-    input.currentImplementationDigest,
+    input,
     evaluatedAt,
   );
   return freshness === undefined

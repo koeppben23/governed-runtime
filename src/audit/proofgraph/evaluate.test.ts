@@ -45,12 +45,14 @@ function result(
   return ProofProviderResult.parse({
     claimId,
     providerKind: 'executed_test',
+    providerId: 'executed-test',
     providerVersion: '1.0.0',
-    boundDigest,
+    input: { command: 'npm test' },
+    source: { location: 'test', stableId: claimId },
+    binding: { kind: 'implementation', digest: boundDigest },
     status,
     resultDigest: SHA,
     executedAt: NOW,
-    detail: '',
   });
 }
 
@@ -216,45 +218,79 @@ describe('evaluateProofGraph', () => {
     });
   });
 
-  describe('provider-kind-aware revision binding', () => {
+  describe('surface-bound structural / schema evidence', () => {
+    const SURFACE_ID = 'command-registration';
+    const SURFACE_DIGEST = 'surface-current';
+    const surfaces = { [SURFACE_ID]: SURFACE_DIGEST };
+
     function structuralResult(
       claimId: string,
       status: ProofProviderResultType['status'],
+      surfaceDigest: string = SURFACE_DIGEST,
     ): ProofProviderResultType {
       return ProofProviderResult.parse({
         claimId,
         providerKind: 'structural_assertion',
+        providerId: 'registration-consistency',
         providerVersion: '1.0.0',
+        input: { assertion: 'registries agree' },
+        source: { location: 'src/integration/installed-commands.ts', stableId: 'registration' },
+        binding: {
+          kind: 'surface_set',
+          surfaceId: SURFACE_ID,
+          digest: surfaceDigest,
+          locations: ['src/integration/installed-commands.ts'],
+        },
         status,
         resultDigest: SHA,
         executedAt: NOW,
-        detail: 'registry consistent',
       });
     }
 
-    it('PROVEN for a passing structural assertion even with no implementation digest', () => {
+    it('PROVEN for a passing structural assertion whose surface digest is current', () => {
       const out = evaluate({
         claims: [claim(uuid(1))],
         providerResults: [structuralResult(uuid(1), 'pass')],
+        // Structural evidence does not depend on the implementation digest...
         currentImplementationDigest: null,
+        currentSurfaceDigests: surfaces,
       });
       expect(out.claims[0]!.verificationState).toBe('PROVEN');
-      expect(out.claims[0]!.freshness).toBeUndefined();
+      expect(out.claims[0]!.freshness).toEqual({
+        boundDigest: SURFACE_DIGEST,
+        evaluatedAt: NOW,
+        stale: false,
+      });
     });
 
-    it('a passing structural assertion carries no freshness (not revision-bound)', () => {
+    it('STALE when the structural surface digest no longer matches (surface changed)', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1))],
+        providerResults: [structuralResult(uuid(1), 'pass', 'surface-old')],
+        currentSurfaceDigests: surfaces,
+      });
+      expect(out.claims[0]!.verificationState).toBe('STALE');
+      expect(out.claims[0]!.freshness).toEqual({
+        boundDigest: 'surface-old',
+        evaluatedAt: NOW,
+        stale: true,
+      });
+    });
+
+    it('STALE when no current digest is known for the structural surface', () => {
       const out = evaluate({
         claims: [claim(uuid(1))],
         providerResults: [structuralResult(uuid(1), 'pass')],
+        currentSurfaceDigests: {},
       });
-      expect(out.claims[0]!.verificationState).toBe('PROVEN');
-      expect(out.claims[0]!.freshness).toBeUndefined();
+      expect(out.claims[0]!.verificationState).toBe('STALE');
     });
 
     it('a failing structural assertion is UNPROVEN', () => {
       const out = evaluate({
         claims: [claim(uuid(1))],
         providerResults: [structuralResult(uuid(1), 'fail')],
+        currentSurfaceDigests: surfaces,
       });
       expect(out.claims[0]!.verificationState).toBe('UNPROVEN');
     });

@@ -18,10 +18,12 @@ deterministic and applies this precedence (first match wins):
 | `PROVEN`       | Fresh, revision-bound passing evidence (or a passing structural check). |
 | `STALE`        | The only passing revision-bound evidence is bound to an old revision.   |
 
-Evidence produced by `executed_test` and `fault_injection` providers is
-**revision-bound**: it proves only when its bound digest matches the current
-implementation. `structural_assertion` and `schema_compare` results are
-repo-level and prove regardless of the implementation digest.
+Evidence is **digest-bound**: a passing provider result proves only while its
+binding still matches the current revision/surface. `executed_test` and
+`fault_injection` results bind to the implementation digest; `structural_assertion`
+and `schema_compare` results bind to a canonical digest over their explicit input
+surface (`surface_set`). When the bound implementation or surface changes, the
+prior pass becomes `STALE` and can no longer satisfy a gate.
 
 ## Residual-risk limitation (read this)
 

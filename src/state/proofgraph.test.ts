@@ -74,8 +74,11 @@ describe('proofgraph schemas', () => {
       const result = {
         claimId: UUID,
         providerKind: 'executed_test' as const,
+        providerId: 'executed-test',
         providerVersion: '1.0.0',
-        boundDigest: 'CURR',
+        input: { command: 'vitest run' },
+        source: { location: 'src/foo.test.ts', stableId: 'test' },
+        binding: { kind: 'implementation' as const, digest: 'CURR' },
         status: 'pass' as const,
         resultDigest: SHA,
         executedAt: NOW,
@@ -84,11 +87,34 @@ describe('proofgraph schemas', () => {
       expect(ProofProviderResult.parse(result)).toEqual(result);
     });
 
+    it('ProofProviderResult parses a structural surface_set binding', () => {
+      const result = {
+        claimId: UUID,
+        providerKind: 'structural_assertion' as const,
+        providerId: 'registration-consistency',
+        providerVersion: '1.0.0',
+        input: { assertion: 'registries agree' },
+        source: { location: 'src/integration/installed-commands.ts', stableId: 'registration' },
+        binding: {
+          kind: 'surface_set' as const,
+          surfaceId: 'command-registration',
+          digest: 'surface-digest',
+          locations: ['src/integration/installed-commands.ts'],
+        },
+        status: 'pass' as const,
+        resultDigest: SHA,
+        executedAt: NOW,
+      };
+      expect(ProofProviderResult.parse(result)).toEqual(result);
+    });
+
     it('ProofProviderResult parses an unavailable result without digests', () => {
       const result = {
         claimId: UUID,
         providerKind: 'executed_test' as const,
+        providerId: 'executed-test',
         providerVersion: '1.0.0',
+        input: {},
         status: 'unavailable' as const,
         executedAt: NOW,
         detail: 'no implementation validation attempt',
@@ -138,8 +164,10 @@ describe('proofgraph schemas', () => {
         ProofProviderResult.parse({
           claimId: UUID,
           providerKind: 'executed_test',
+          providerId: 'executed-test',
           providerVersion: '1',
-          boundDigest: 'CURR',
+          input: {},
+          binding: { kind: 'implementation', digest: 'CURR' },
           status: 'pass',
           resultDigest: 'nothex',
           executedAt: NOW,

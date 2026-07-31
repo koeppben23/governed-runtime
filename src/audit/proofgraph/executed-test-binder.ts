@@ -18,6 +18,8 @@ import type { SessionState } from '../../state/schema.js';
 import type { ProofProviderResult } from '../../state/proofgraph.js';
 import { isExecutionError } from '../../state/evidence-validation.js';
 
+/** Stable provider identity, distinct from its version. */
+export const EXECUTED_TEST_PROVIDER_ID = 'executed-test';
 /** Provider identity/version stamped on bound results. */
 export const EXECUTED_TEST_PROVIDER_VERSION = 'executed-test.v1';
 
@@ -42,7 +44,9 @@ export function bindExecutedTestEvidence(
         results.push({
           claimId: claim.claimId,
           providerKind: 'executed_test',
+          providerId: EXECUTED_TEST_PROVIDER_ID,
           providerVersion: EXECUTED_TEST_PROVIDER_VERSION,
+          input: {},
           status: 'unavailable',
           executedAt: evaluatedAt,
           detail: `no implementation validation attempt for ${ref.attemptId}`,
@@ -54,8 +58,11 @@ export function bindExecutedTestEvidence(
       results.push({
         claimId: claim.claimId,
         providerKind: 'executed_test',
+        providerId: EXECUTED_TEST_PROVIDER_ID,
         providerVersion: EXECUTED_TEST_PROVIDER_VERSION,
-        boundDigest: attempt.implementationDigest,
+        input: r.command.length > 0 ? { command: r.command } : {},
+        source: { location: r.checkId, stableId: attempt.attemptId },
+        binding: { kind: 'implementation', digest: attempt.implementationDigest },
         status,
         resultDigest: r.outputDigest,
         executedAt: r.executedAt,

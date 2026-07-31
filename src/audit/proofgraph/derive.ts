@@ -26,12 +26,14 @@ import { evaluateProofGraph } from './evaluate.js';
  * @param providerResults Executed provider results across claims.
  * @param counterexamples Executed counterexamples across claims.
  * @param evaluatedAt     ISO-8601 evaluation timestamp (caller-supplied for determinism).
+ * @param currentSurfaceDigests Current digest per surface id for `surface_set`-bound results.
  */
 export function deriveProofGraph(
   state: SessionState,
   providerResults: readonly ProofProviderResult[],
   counterexamples: readonly ProofCounterexample[],
   evaluatedAt: string,
+  currentSurfaceDigests: Readonly<Record<string, string>> = {},
 ): ProofGraphProjection {
   return evaluateProofGraph(
     {
@@ -39,6 +41,8 @@ export function deriveProofGraph(
       providerResults,
       counterexamples,
       currentImplementationDigest: state.implementation?.digest ?? null,
+      currentPlanDigest: state.plan?.current.digest ?? null,
+      currentSurfaceDigests,
     },
     evaluatedAt,
   );

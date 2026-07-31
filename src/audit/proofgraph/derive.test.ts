@@ -36,8 +36,11 @@ function passResult(boundDigest: string) {
   return {
     claimId: UUID,
     providerKind: 'executed_test' as const,
+    providerId: 'executed-test',
     providerVersion: '1.0.0',
-    boundDigest,
+    input: { command: 'npm test' },
+    source: { location: 'test', stableId: '00000000-0000-4000-8000-0000000000aa' },
+    binding: { kind: 'implementation' as const, digest: boundDigest },
     status: 'pass' as const,
     resultDigest: SHA,
     executedAt: NOW,

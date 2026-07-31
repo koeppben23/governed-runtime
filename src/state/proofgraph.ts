@@ -85,22 +85,75 @@ export const ProofGraphProjection = z
 export type ProofGraphProjection = z.infer<typeof ProofGraphProjection>;
 
 /**
- * A reproducible executable provider result, bound to an implementation
- * revision. Records provider identity/version, the bound digest, an
- * exit/result status, an output/result digest, and a timestamp - a filename or
- * test name alone is insufficient evidence.
+ * Digest binding of a provider result to the concrete surface it was computed
+ * over. Freshness is evaluated against this binding, never omitted:
  *
- * `boundDigest` and `resultDigest` are omitted only for a `status: 'unavailable'`
- * result (a required provider that could not run) - executed pass/fail/error
- * results always carry both.
+ * - `implementation` / `plan`: bound to a revision digest; a result is fresh
+ *   only while that digest is the current implementation/plan revision.
+ * - `surface_set`: bound to a canonical digest over an explicit input surface
+ *   (e.g. a set of registry/config source locations); fresh only while that
+ *   surface's current digest still matches. Structural and schema assertions
+ *   use this so they cannot prove indefinitely after their surface changes.
+ */
+export const ProofProviderBinding = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('implementation'), digest: z.string().min(1) }).readonly(),
+  z.object({ kind: z.literal('plan'), digest: z.string().min(1) }).readonly(),
+  z
+    .object({
+      kind: z.literal('surface_set'),
+      /** Stable identifier of the input surface (the freshness lookup key). */
+      surfaceId: z.string().min(1),
+      /** Canonical digest over the concrete input surface. */
+      digest: z.string().min(1),
+      /** Source locations that constitute the surface. */
+      locations: z.array(z.string().min(1)).min(1),
+    })
+    .readonly(),
+]);
+export type ProofProviderBinding = z.infer<typeof ProofProviderBinding>;
+
+/** Reproducible provider input: the exact command or a deterministic assertion input. */
+export const ProofProviderInput = z
+  .object({
+    command: z.string().min(1).optional(),
+    assertion: z.string().min(1).optional(),
+  })
+  .readonly();
+export type ProofProviderInput = z.infer<typeof ProofProviderInput>;
+
+/** Stable source/test location and identifier of a provider result. */
+export const ProofProviderSource = z
+  .object({
+    location: z.string().min(1),
+    stableId: z.string().min(1),
+  })
+  .readonly();
+export type ProofProviderSource = z.infer<typeof ProofProviderSource>;
+
+/**
+ * A reproducible executable provider result. Records the minimum metadata
+ * needed to re-run and machine-check it: a stable provider id + version, the
+ * exact reproducible `input`, the `source`/stable id, a digest `binding` to the
+ * surface it covers, an exit/result status, an output/result digest, and a
+ * timestamp. `detail` is display-only and never substitutes for these fields.
+ *
+ * `input.command`/`source`/`binding`/`resultDigest` are populated for executed
+ * (pass/fail/error) results; a `status: 'unavailable'` result (a required
+ * provider that could not run) omits `source`, `binding`, and `resultDigest`.
  */
 export const ProofProviderResult = z
   .object({
     claimId: z.string().uuid(),
     providerKind: ProofProviderKind,
+    /** Stable provider identity (e.g. 'executed-test'), distinct from its version. */
+    providerId: z.string().min(1),
     providerVersion: z.string().min(1),
-    /** Implementation digest the result is bound to (absent when unavailable). */
-    boundDigest: z.string().min(1).optional(),
+    /** Exact reproducible input (command or deterministic assertion). */
+    input: ProofProviderInput,
+    /** Source/test location + stable identifier (absent only when unavailable). */
+    source: ProofProviderSource.optional(),
+    /** Digest binding to the covered surface (absent only when unavailable). */
+    binding: ProofProviderBinding.optional(),
     status: ProofProviderStatus,
     /** SHA-256 of the provider output (absent when unavailable). */
     resultDigest: z
@@ -108,7 +161,8 @@ export const ProofProviderResult = z
       .regex(/^[a-f0-9]{64}$/)
       .optional(),
     executedAt: z.string().datetime(),
-    detail: z.string(),
+    /** Display-only detail; never a substitute for the canonical fields above. */
+    detail: z.string().optional(),
   })
   .readonly();
 export type ProofProviderResult = z.infer<typeof ProofProviderResult>;

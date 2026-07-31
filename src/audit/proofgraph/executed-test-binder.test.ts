@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   bindExecutedTestEvidence,
+  EXECUTED_TEST_PROVIDER_ID,
   EXECUTED_TEST_PROVIDER_VERSION,
 } from './executed-test-binder.js';
 import { makeState } from '../../fixtures.js';
@@ -68,9 +69,12 @@ describe('bindExecutedTestEvidence', () => {
     expect(r).toMatchObject({
       claimId: CLAIM,
       status: 'pass',
-      boundDigest: IMPL_DIGEST,
+      binding: { kind: 'implementation', digest: IMPL_DIGEST },
       resultDigest: SHA,
+      providerId: EXECUTED_TEST_PROVIDER_ID,
       providerVersion: EXECUTED_TEST_PROVIDER_VERSION,
+      input: { command: 'npm test' },
+      source: { location: 'test', stableId: ATT },
     });
   });
 
@@ -101,7 +105,8 @@ describe('bindExecutedTestEvidence', () => {
   it('emits unavailable (no digests) when the referenced attempt is missing', () => {
     const [r] = bindExecutedTestEvidence(stateWith([]), NOW);
     expect(r!.status).toBe('unavailable');
-    expect(r!.boundDigest).toBeUndefined();
+    expect(r!.binding).toBeUndefined();
+    expect(r!.source).toBeUndefined();
     expect(r!.resultDigest).toBeUndefined();
   });
 
