@@ -9,10 +9,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   MutationReport,
-  RecordedMutationEvidence,
   summarizeMutationProfile,
-  computeReportDigest,
-  verifyReportDigest,
+  computeProjectionDigest,
+  computeArtifactDigest,
   type MutationProfile,
 } from './mutation-report.js';
 
@@ -69,7 +68,12 @@ describe('summarizeMutationProfile', () => {
       report({ [EVALUATOR]: [mutant('0', 'Killed'), mutant('1', 'Timeout')] }),
       PROFILE,
     );
-    expect(s).toMatchObject({ covered: true, killedCount: 2, survivorCount: 0, excludedCount: 0 });
+    expect(s).toMatchObject({
+      covered: true,
+      killedCount: 2,
+      survivorCount: 0,
+      excludedCount: 0,
+    });
     expect(s.survivors).toEqual([]);
   });
 
@@ -124,14 +128,14 @@ describe('summarizeMutationProfile', () => {
     expect(s).toMatchObject({ killedCount: 1, survivorCount: 0 });
   });
 
-  it('is deterministic: identical reports yield an identical result digest', () => {
+  it('is deterministic: identical reports yield an identical projection digest', () => {
     const build = () => report({ [EVALUATOR]: [mutant('1', 'Survived'), mutant('0', 'Killed')] });
-    expect(summarizeMutationProfile(build(), PROFILE).resultDigest).toBe(
-      summarizeMutationProfile(build(), PROFILE).resultDigest,
+    expect(summarizeMutationProfile(build(), PROFILE).projectionDigest).toBe(
+      summarizeMutationProfile(build(), PROFILE).projectionDigest,
     );
   });
 
-  it('changes the result digest when survivor status changes', () => {
+  it('changes the projection digest when survivor status changes', () => {
     const killed = summarizeMutationProfile(
       report({ [EVALUATOR]: [mutant('0', 'Killed')] }),
       PROFILE,
@@ -140,7 +144,7 @@ describe('summarizeMutationProfile', () => {
       report({ [EVALUATOR]: [mutant('0', 'Survived')] }),
       PROFILE,
     );
-    expect(killed.resultDigest).not.toBe(survived.resultDigest);
+    expect(killed.projectionDigest).not.toBe(survived.projectionDigest);
   });
 
   it('sorts survivors deterministically across files', () => {
@@ -153,79 +157,51 @@ describe('summarizeMutationProfile', () => {
   });
 });
 
-describe('RecordedMutationEvidence envelope', () => {
-  it('parses a valid mutation-evidence.v1 envelope', () => {
-    const parsed = RecordedMutationEvidence.parse({
-      version: 'mutation-evidence.v1',
-      implementationDigest: 'a'.repeat(64),
-      command: 'npm run mutation',
-      startedAt: '2026-01-01T00:00:00.000Z',
-      completedAt: '2026-01-01T00:05:00.000Z',
-      reportDigest: 'b'.repeat(64),
-      reportPath: 'reports/mutation/mutation.json',
-      providerVersion: 'semantic-mutation.v1',
-    });
-    expect(parsed.version).toBe('mutation-evidence.v1');
-    expect(parsed.implementationDigest).toBe('a'.repeat(64));
-  });
-
-  it('fails closed on a missing required field (strict)', () => {
-    expect(() => RecordedMutationEvidence.parse({ version: 'mutation-evidence.v1' })).toThrow();
-  });
-
-  it('fails closed on extra unknown fields (strict)', () => {
-    expect(() =>
-      RecordedMutationEvidence.parse({
-        version: 'mutation-evidence.v1',
-        implementationDigest: 'a'.repeat(64),
-        command: 'npm run mutation',
-        startedAt: '2026-01-01T00:00:00.000Z',
-        completedAt: '2026-01-01T00:05:00.000Z',
-        reportDigest: 'b'.repeat(64),
-        reportPath: 'reports/mutation/mutation.json',
-        providerVersion: 'semantic-mutation.v1',
-        injected: true,
-      }),
-    ).toThrow();
-  });
-});
-
-describe('computeReportDigest', () => {
+describe('computeProjectionDigest', () => {
   it('is deterministic: same report yields the same digest', () => {
     const r = report({ [EVALUATOR]: [mutant('0', 'Killed')] });
-    expect(computeReportDigest(r)).toBe(computeReportDigest(r));
+    expect(computeProjectionDigest(r)).toBe(computeProjectionDigest(r));
   });
 
   it('differs when the report content changes', () => {
     const a = report({ [EVALUATOR]: [mutant('0', 'Killed')] });
     const b = report({ [EVALUATOR]: [mutant('0', 'Survived')] });
-    expect(computeReportDigest(a)).not.toBe(computeReportDigest(b));
+    expect(computeProjectionDigest(a)).not.toBe(computeProjectionDigest(b));
+  });
+
+  it('ignores unconsumed foreign fields (determinism vs Stryker noise)', () => {
+    const parsed = MutationReport.parse({
+      schemaVersion: '1.0',
+      projectRoot: '/repo',
+      thresholds: { high: 85, low: 80, break: 80 },
+      files: {
+        [EVALUATOR]: { language: 'typescript', source: '', mutants: [mutant('0', 'Killed')] },
+      },
+    });
+    const minimal = report({ [EVALUATOR]: [mutant('0', 'Killed')] });
+    expect(computeProjectionDigest(parsed)).toBe(computeProjectionDigest(minimal));
   });
 });
 
-describe('verifyReportDigest', () => {
-  function envelope(digest: string): RecordedMutationEvidence {
-    return RecordedMutationEvidence.parse({
-      version: 'mutation-evidence.v1',
-      implementationDigest: 'a'.repeat(64),
-      command: 'npm run mutation',
-      startedAt: '2026-01-01T00:00:00.000Z',
-      completedAt: '2026-01-01T00:05:00.000Z',
-      reportDigest: digest,
-      reportPath: 'reports/mutation/mutation.json',
-      providerVersion: 'semantic-mutation.v1',
+describe('computeArtifactDigest', () => {
+  it('covers the raw JSON bytes, not just the parsed subset', () => {
+    const withExtra = JSON.stringify({
+      schemaVersion: '1.0',
+      projectRoot: '/repo',
+      files: { [EVALUATOR]: { language: 'typescript', source: '', mutants: [] } },
     });
-  }
-
-  it('returns true when the report digest matches', () => {
-    const r = report({ [EVALUATOR]: [mutant('0', 'Killed')] });
-    expect(verifyReportDigest(envelope(computeReportDigest(r)), r)).toBe(true);
+    const minimal = JSON.stringify({
+      schemaVersion: '1.0',
+      files: { [EVALUATOR]: { mutants: [] } },
+    });
+    expect(computeArtifactDigest(withExtra)).not.toBe(computeArtifactDigest(minimal));
   });
 
-  it('returns false for a tampered report', () => {
-    const orig = report({ [EVALUATOR]: [mutant('0', 'Killed')] });
-    const env = envelope(computeReportDigest(orig));
-    const tampered = report({ [EVALUATOR]: [mutant('0', 'Survived')] });
-    expect(verifyReportDigest(env, tampered)).toBe(false);
+  it('is deterministic for identical raw input', () => {
+    const raw = JSON.stringify({
+      schemaVersion: '1.0',
+      files: { [EVALUATOR]: { mutants: [mutant('0', 'Killed')] } },
+    });
+    expect(computeArtifactDigest(raw)).toBe(computeArtifactDigest(raw));
   });
 });

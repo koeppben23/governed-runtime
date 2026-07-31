@@ -58,7 +58,11 @@ import {
   bindStructuralEvidence,
   surfaceDigestMap,
 } from '../proofgraph/structural-provider.js';
-import { loadMutationEvidence, evaluateMutationProfiles } from '../proofgraph/mutation-provider.js';
+import {
+  loadMutationReport,
+  evaluateMutationProfiles,
+  buildProfileVerdictMap,
+} from '../proofgraph/mutation-provider.js';
 import { bindMutationEvidence } from '../../audit/proofgraph/mutation-binder.js';
 import { checkRegistrationConsistency } from '../proofgraph/registration-consistency.js';
 import { checkConfigDefaultConsistency } from '../proofgraph/config-default-consistency.js';
@@ -151,15 +155,25 @@ async function buildProofGraphProjectionResponse(
 ): Promise<string> {
   const now = new Date().toISOString();
   const structuralSurfaces = evaluateStructuralSurfaces();
-  const mutationEvidence = await loadMutationEvidence(state.binding.worktree);
-  const mutationEvaluations = evaluateMutationProfiles(mutationEvidence.report);
+  const mutationReport = await loadMutationReport(state.binding.worktree);
+  const mutationSummaries = evaluateMutationProfiles(mutationReport);
+  const mutationVerdicts = new Map<
+    string,
+    { survivorCount: number; killedCount: number; covered: boolean }
+  >();
+  for (const attempt of state.mutationAttempts) {
+    const map = buildProfileVerdictMap(mutationReport, attempt.attemptId);
+    for (const [id, v] of map) {
+      mutationVerdicts.set(id, v);
+    }
+  }
   const proofGraph = summarizeProofGraph(state, now, {
     providerResults: [
       ...bindStructuralEvidence(state, structuralSurfaces, now),
-      ...bindMutationEvidence(state, mutationEvaluations, mutationEvidence.envelope, now),
+      ...bindMutationEvidence(state, mutationVerdicts, now),
     ],
     surfaceDigests: surfaceDigestMap(structuralSurfaces),
-    mutationSummaries: mutationEvaluations.flatMap((e) => (e.summary ? [e.summary] : [])),
+    mutationSummaries,
   });
   const proofGraphGate = evaluateProofGraphGate(proofGraph, policy.proofGraphPolicy);
   const registrationConsistency = checkRegistrationConsistency();

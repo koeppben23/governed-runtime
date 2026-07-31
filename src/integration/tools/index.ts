@@ -38,6 +38,7 @@ import { continue_cmd as rawContinue } from './continue-tool.js';
 import { help as rawHelp } from './help-tool.js';
 import { resolve_implementation_challenge as rawResolveImplementationChallenge } from './challenge-resolution.js';
 import { declare_contract as rawDeclareContract } from './declare-contract.js';
+import { record_mutation_evidence as rawRecordMutationEvidence } from './record-mutation-evidence.js';
 import type { ToolDefinition, ToolResult } from './helpers.js';
 import { readConfig } from '../../adapters/persistence-config.js';
 import type { GlyphProfile } from '../../presentation/glyph-profile.js';
@@ -192,6 +193,7 @@ export const resolve_implementation_challenge = withGovernanceFooter(
   rawResolveImplementationChallenge,
 );
 export const declare_contract = withGovernanceFooter(rawDeclareContract);
+export const record_mutation_evidence = withGovernanceFooter(rawRecordMutationEvidence);
 export const architecture = withGovernanceFooter(rawArchitecture);
 const continueTool = withGovernanceFooter(rawContinue);
 export { continueTool as continue };

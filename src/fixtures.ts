@@ -276,6 +276,7 @@ export function makeState(
     selfReview: null,
     validation: [],
     validationAttempts: [],
+    mutationAttempts: [],
     challengeResolutions: [],
     implValidation: [],
     implementation: null,

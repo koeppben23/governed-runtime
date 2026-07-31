@@ -167,7 +167,7 @@ describe('summarizeProofGraph reviewer projection', () => {
               status: 'Survived',
             },
           ],
-          resultDigest: 'a'.repeat(64),
+          projectionDigest: 'a'.repeat(64),
         },
       ],
     });

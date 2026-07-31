@@ -31,11 +31,7 @@ import {
   bindStructuralEvidence,
   surfaceDigestMap,
 } from '../proofgraph/structural-provider.js';
-import {
-  MUTATION_PROFILE_IDS,
-  loadMutationEvidence,
-  evaluateMutationProfiles,
-} from '../proofgraph/mutation-provider.js';
+import { MUTATION_PROFILE_IDS } from '../proofgraph/mutation-provider.js';
 import { bindMutationEvidence } from '../../audit/proofgraph/mutation-binder.js';
 
 /** Declarable mutation profile ids as a non-empty tuple for the Zod enum. */
@@ -48,7 +44,6 @@ import {
   appendNextAction,
   formatBlocked,
   formatError,
-  getWorktree,
   withMutableSessionTransaction,
   writeStateWithArtifacts,
 } from './helpers.js';
@@ -294,17 +289,14 @@ export const declare_contract: ToolDefinition = {
         const now = ctx.now();
         const stateWithContract = { ...state, proofContract };
         const structuralSurfaces = evaluateStructuralSurfaces();
-        const mutationEvidence = await loadMutationEvidence(getWorktree(context));
-        const mutationEvaluations = evaluateMutationProfiles(mutationEvidence.report);
+        const mutationVerdicts = new Map<
+          string,
+          { survivorCount: number; killedCount: number; covered: boolean }
+        >();
         const providerResults = [
           ...bindExecutedTestEvidence(stateWithContract, now),
           ...bindStructuralEvidence(stateWithContract, structuralSurfaces, now),
-          ...bindMutationEvidence(
-            stateWithContract,
-            mutationEvaluations,
-            mutationEvidence.envelope,
-            now,
-          ),
+          ...bindMutationEvidence(stateWithContract, mutationVerdicts, now),
         ];
         const counterexamples = bindCounterexamples(stateWithContract, now);
         const proofGraph = deriveProofGraph(

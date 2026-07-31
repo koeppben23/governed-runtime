@@ -22,41 +22,13 @@
  * A profile with surviving mutants yields FAILING evidence; a profile the report
  * does not cover yields `unavailable`, never a pass-by-fallback.
  *
- * @version v1
+ * @version v2 — separate artifact and projection digests
  */
 
 import { z } from 'zod';
 
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
-
-/** Envelope version for persisted mutation evidence records. */
-export const MUTATION_EVIDENCE_VERSION = 'mutation-evidence.v1' as const;
-
-/**
- * FlowGuard-owned envelope wrapping a recorded mutation run.
- *
- * Every mutation run that should serve as ProofGraph fault-injection evidence
- * MUST produce this envelope. The envelope captures the implementation revision,
- * command, start/completion timestamps, and report digest at the time the
- * mutation was executed. A raw Stryker report without this envelope is an
- * unbound legacy artifact that cannot be bound to a specific implementation
- * revision and yields NOT_VERIFIED, never a pass-by-fallback.
- */
-export const RecordedMutationEvidence = z
-  .object({
-    version: z.literal(MUTATION_EVIDENCE_VERSION),
-    implementationDigest: z.string().min(1),
-    command: z.string().min(1),
-    startedAt: z.string().datetime(),
-    completedAt: z.string().datetime(),
-    reportDigest: z.string().regex(/^[a-f0-9]{64}$/),
-    reportPath: z.string().min(1),
-    providerVersion: z.string().min(1),
-  })
-  .strict()
-  .readonly();
-export type RecordedMutationEvidence = z.infer<typeof RecordedMutationEvidence>;
 
 /** Mutant statuses defined by the mutation-testing-elements schema. */
 export const MutantStatus = z.enum([
@@ -127,8 +99,8 @@ export interface MutationProfileSummary {
   readonly survivorCount: number;
   readonly excludedCount: number;
   readonly survivors: readonly MutationSurvivor[];
-  /** SHA-256 over the canonical verdict (the provider output digest). */
-  readonly resultDigest: string;
+  /** SHA-256 over the canonical projection (the provider result digest). */
+  readonly projectionDigest: string;
 }
 
 function isSurvivor(status: MutantStatus): status is 'Survived' | 'NoCoverage' {
@@ -187,29 +159,25 @@ export function summarizeMutationProfile(
     excludedCount,
     survivors,
   };
-  return { ...verdict, resultDigest: hashText(canonicalJsonStringify(verdict)) };
+  return { ...verdict, projectionDigest: hashText(canonicalJsonStringify(verdict)) };
 }
 
 /**
- * Compute the canonical digest of a raw mutation report JSON.
- *
- * This is a SHA-256 over the canonical JSON of the parsed report. It serves as
- * the {@link RecordedMutationEvidence.reportDigest} for tamper detection: if the
- * report on disk no longer matches this digest, the evidence is invalid.
+ * Compute the projection digest — SHA-256 over the canonical JSON of the parsed
+ * report (the subset FlowGuard consumes). This is the digest of the consumer's
+ * semantic view, distinct from the artifact integrity digest.
  */
-export function computeReportDigest(report: MutationReport): string {
-  const canonical = canonicalJsonStringify(MutationReport.parse(report));
-  return hashText(canonical);
+export function computeProjectionDigest(report: MutationReport): string {
+  return hashText(canonicalJsonStringify(MutationReport.parse(report)));
 }
 
 /**
- * Verify that a persisted envelope still matches the report it was recorded for.
+ * Compute the artifact digest — SHA-256 of the raw report file bytes.
  *
- * @returns `true` when the computed digest of `report` equals `envelope.reportDigest`.
+ * This digest covers the EXACT artifact on disk, including fields FlowGuard does
+ * not consume. Tampering with any non-consumed field — or with the JSON encoding
+ * itself — changes this digest and invalidates the trusted evidence.
  */
-export function verifyReportDigest(
-  envelope: RecordedMutationEvidence,
-  report: MutationReport,
-): boolean {
-  return computeReportDigest(report) === envelope.reportDigest;
+export function computeArtifactDigest(rawReport: string): string {
+  return hashText(rawReport);
 }

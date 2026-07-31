@@ -28,6 +28,15 @@ import {
   ContentRef,
 } from './evidence-review.js';
 
+/** Reference to an immutable mutation-attempt record produced by flowguard_record_mutation_evidence. */
+export const MutationAttemptRef = z
+  .object({
+    kind: z.literal('mutation_attempt'),
+    attemptId: z.string().uuid(),
+  })
+  .readonly();
+export type MutationAttemptRef = z.infer<typeof MutationAttemptRef>;
+
 /** Reference to an approved ticket, bound to its digest. */
 export const ApprovedTicketRef = z
   .object({
@@ -104,5 +113,6 @@ export const ClaimEvidenceRef = z.discriminatedUnion('kind', [
   ContentRef,
   StructuralSurfaceRef,
   MutationProfileRef,
+  MutationAttemptRef,
 ]);
 export type ClaimEvidenceRef = z.infer<typeof ClaimEvidenceRef>;
