@@ -54,20 +54,29 @@ export function bindExecutedTestEvidence(
         continue;
       }
       const r = attempt.result;
-      const status = r.passed ? 'pass' : isExecutionError(r) ? 'error' : 'fail';
-      results.push({
+      // Executed evidence needs exactly one reproducible input; fall back to a
+      // deterministic check-id assertion when a command string is unavailable.
+      const input =
+        r.command.length > 0 ? { command: r.command } : { assertion: `check:${r.checkId}` };
+      const base = {
         claimId: claim.claimId,
-        providerKind: 'executed_test',
+        providerKind: 'executed_test' as const,
         providerId: EXECUTED_TEST_PROVIDER_ID,
         providerVersion: EXECUTED_TEST_PROVIDER_VERSION,
-        input: r.command.length > 0 ? { command: r.command } : {},
+        input,
         source: { location: r.checkId, stableId: attempt.attemptId },
-        binding: { kind: 'implementation', digest: attempt.implementationDigest },
-        status,
+        binding: { kind: 'implementation' as const, digest: attempt.implementationDigest },
         resultDigest: r.outputDigest,
         executedAt: r.executedAt,
         detail: r.command,
-      });
+      };
+      results.push(
+        r.passed
+          ? { ...base, status: 'pass' }
+          : isExecutionError(r)
+            ? { ...base, status: 'error' }
+            : { ...base, status: 'fail' },
+      );
     }
   }
   return results;

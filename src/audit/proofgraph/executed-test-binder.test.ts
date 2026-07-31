@@ -109,9 +109,10 @@ describe('bindExecutedTestEvidence', () => {
   it('emits unavailable (no digests) when the referenced attempt is missing', () => {
     const [r] = bindExecutedTestEvidence(stateWith([]), NOW);
     expect(r!.status).toBe('unavailable');
-    expect(r!.binding).toBeUndefined();
-    expect(r!.source).toBeUndefined();
-    expect(r!.resultDigest).toBeUndefined();
+    const rec = r as Record<string, unknown>;
+    expect(rec.binding).toBeUndefined();
+    expect(rec.source).toBeUndefined();
+    expect(rec.resultDigest).toBeUndefined();
   });
 
   it('emits unavailable when the attempt is baseline-scoped, not implementation', () => {

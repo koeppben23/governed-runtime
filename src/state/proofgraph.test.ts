@@ -171,12 +171,55 @@ describe('proofgraph schemas', () => {
           providerKind: 'executed_test',
           providerId: 'executed-test',
           providerVersion: '1',
-          input: {},
+          input: { command: 'npm test' },
+          source: { location: 'test', stableId: 'test' },
           binding: { kind: 'implementation', digest: 'CURR' },
           status: 'pass',
           resultDigest: 'nothex',
           executedAt: NOW,
-          detail: '',
+        }),
+      ).toThrow();
+    });
+
+    const validExecuted = {
+      claimId: UUID,
+      providerKind: 'executed_test' as const,
+      providerId: 'executed-test',
+      providerVersion: '1',
+      input: { command: 'npm test' },
+      source: { location: 'test', stableId: 'test' },
+      binding: { kind: 'implementation' as const, digest: 'CURR' },
+      status: 'pass' as const,
+      resultDigest: SHA,
+      executedAt: NOW,
+    };
+    const without = (key: string): Record<string, unknown> => {
+      const clone: Record<string, unknown> = { ...validExecuted };
+      delete clone[key];
+      return clone;
+    };
+
+    it('rejects an executed result without a binding', () => {
+      expect(() => ProofProviderResult.parse(without('binding'))).toThrow();
+    });
+
+    it('rejects an executed result without a source', () => {
+      expect(() => ProofProviderResult.parse(without('source'))).toThrow();
+    });
+
+    it('rejects an executed result without a result digest', () => {
+      expect(() => ProofProviderResult.parse(without('resultDigest'))).toThrow();
+    });
+
+    it('rejects an executed result whose input has neither command nor assertion', () => {
+      expect(() => ProofProviderResult.parse({ ...validExecuted, input: {} })).toThrow();
+    });
+
+    it('rejects an executed result whose input has BOTH command and assertion', () => {
+      expect(() =>
+        ProofProviderResult.parse({
+          ...validExecuted,
+          input: { command: 'npm test', assertion: 'x' },
         }),
       ).toThrow();
     });

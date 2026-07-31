@@ -14,7 +14,7 @@
  *
  * Verification-state precedence (first match wins):
  *   1. missing provenance                 -> NOT_VERIFIED
- *   2. a counterexample contradicted it   -> CONTRADICTED
+ *   2. a FRESH counterexample contradicted it -> CONTRADICTED
  *   3. a provider errored (execution)     -> BLOCKED
  *   4. a required provider was unavailable-> NOT_VERIFIED
  *   5. a provider reported a failure      -> UNPROVEN
@@ -87,16 +87,98 @@ function isFresh(
   }
 }
 
+/** The digest binding of a result, or `undefined` for an `unavailable` result. */
+function bindingOf(result: ProofProviderResult): ProofProviderBinding | undefined {
+  return result.status === 'unavailable' ? undefined : result.binding;
+}
+
+/**
+ * A counterexample is fresh only while bound to the current implementation
+ * revision. A stale counterexample can neither contradict the current revision
+ * nor satisfy an adversarial requirement for it.
+ */
+function isFreshCounterexample(
+  counterexample: ProofCounterexample,
+  currentImplementationDigest: string | null,
+): boolean {
+  return (
+    currentImplementationDigest !== null &&
+    counterexample.boundDigest === currentImplementationDigest
+  );
+}
+
 function computeFreshness(
   passingResults: readonly ProofProviderResult[],
   input: ProofGraphEvaluationInput,
   evaluatedAt: string,
 ): Freshness | undefined {
-  const bound = passingResults.filter((r) => r.binding !== undefined);
+  const bound = passingResults.filter((r) => bindingOf(r) !== undefined);
   if (bound.length === 0) return undefined;
-  const fresh = bound.find((r) => isFresh(r.binding, input));
+  const fresh = bound.find((r) => isFresh(bindingOf(r), input));
   const chosen = fresh ?? bound[0]!;
-  return { boundDigest: chosen.binding!.digest, evaluatedAt, stale: fresh === undefined };
+  return { boundDigest: bindingOf(chosen)!.digest, evaluatedAt, stale: fresh === undefined };
+}
+
+/** Fresh/stale adversarial (counterexample) analysis for one claim. */
+interface AdversarialAnalysis {
+  readonly freshContradicted: boolean;
+  readonly freshSupported: boolean;
+  readonly hasStaleAdversarial: boolean;
+  readonly hasFreshAdversarial: boolean;
+}
+
+function analyzeCounterexamples(
+  counterexamples: readonly ProofCounterexample[],
+  currentImplementationDigest: string | null,
+): AdversarialAnalysis {
+  let freshContradicted = false;
+  let freshSupported = false;
+  let hasStaleAdversarial = false;
+  let hasFreshAdversarial = false;
+  for (const c of counterexamples) {
+    if (c.outcome !== 'contradicted' && c.outcome !== 'supported') continue;
+    if (isFreshCounterexample(c, currentImplementationDigest)) {
+      hasFreshAdversarial = true;
+      if (c.outcome === 'contradicted') freshContradicted = true;
+      else freshSupported = true;
+    } else {
+      hasStaleAdversarial = true;
+    }
+  }
+  return { freshContradicted, freshSupported, hasStaleAdversarial, hasFreshAdversarial };
+}
+
+/** Resolve a claim's state once precedence 1-5 has not already decided it. */
+function deriveFromRequiredEvidence(
+  claim: DeclaredClaim,
+  passing: readonly ProofProviderResult[],
+  cx: AdversarialAnalysis,
+  input: ProofGraphEvaluationInput,
+): ClaimVerificationState {
+  const required = claim.requiredEvidence ?? EMPTY_REQUIRED;
+  const freshPassKinds = new Set(
+    passing.filter((r) => isFresh(bindingOf(r), input)).map((r) => r.providerKind),
+  );
+  // Required adversarial evidence: a FRESH 'supported' counterexample. A missing,
+  // stale, or 'not_verified' counterexample is unmet, never a pass-by-fallback.
+  const adversarialSatisfied = required.adversarial.every((kind) =>
+    kind === 'counterexample' ? cx.freshSupported : false,
+  );
+  // Required positive evidence: every required kind needs a fresh pass; with no
+  // explicit positive requirement, any single fresh pass suffices.
+  const positiveSatisfied =
+    required.positive.length > 0
+      ? required.positive.every((kind) => freshPassKinds.has(kind))
+      : freshPassKinds.size > 0;
+  if (adversarialSatisfied && positiveSatisfied) {
+    // A stale, unsuperseded adversarial result leaves the claim not fully fresh.
+    return cx.hasStaleAdversarial && !cx.hasFreshAdversarial ? 'STALE' : 'PROVEN';
+  }
+  if (!adversarialSatisfied) return 'NOT_VERIFIED';
+  const hasStalePositive = passing.some(
+    (r) => bindingOf(r) !== undefined && !isFresh(bindingOf(r), input),
+  );
+  return hasStalePositive ? 'STALE' : 'UNPROVEN';
 }
 
 function deriveVerificationState(
@@ -107,37 +189,21 @@ function deriveVerificationState(
 ): ClaimVerificationState {
   // 1. Provenance is mandatory; an unsourced manifest assertion is an assumption.
   if (claim.provenance === null) return 'NOT_VERIFIED';
-  // 2. An executed counterexample that falsified the claim wins over any pass.
-  if (counterexamples.some((c) => c.outcome === 'contradicted')) return 'CONTRADICTED';
+  const cx = analyzeCounterexamples(counterexamples, input.currentImplementationDigest);
+  // 2. Only a FRESH executed counterexample that falsified the claim contradicts it.
+  if (cx.freshContradicted) return 'CONTRADICTED';
   // 3./4. Distinguish an execution error (BLOCKED) from a missing provider (NOT_VERIFIED).
   if (results.some((r) => r.status === 'error')) return 'BLOCKED';
   if (results.some((r) => r.status === 'unavailable')) return 'NOT_VERIFIED';
   // 5. A failing verdict leaves the claim unproven.
   if (results.some((r) => r.status === 'fail')) return 'UNPROVEN';
   // 6.-8. Enforce the claim's policy-required evidence classes.
-  const required = claim.requiredEvidence ?? EMPTY_REQUIRED;
-  const passing = results.filter((r) => r.status === 'pass');
-  const freshPassKinds = new Set(
-    passing.filter((r) => isFresh(r.binding, input)).map((r) => r.providerKind),
+  return deriveFromRequiredEvidence(
+    claim,
+    results.filter((r) => r.status === 'pass'),
+    cx,
+    input,
   );
-  // 6. Required adversarial evidence: an executed counterexample that was
-  //    attempted and did NOT hold ('supported'). A missing or 'not_verified'
-  //    counterexample is a missing required provider, never a pass-by-fallback.
-  const adversarialSatisfied = required.adversarial.every((kind) =>
-    kind === 'counterexample' ? counterexamples.some((c) => c.outcome === 'supported') : false,
-  );
-  // 7. Required positive evidence: every required kind needs a fresh pass; with
-  //    no explicit positive requirement, any single fresh pass suffices.
-  const positiveSatisfied =
-    required.positive.length > 0
-      ? required.positive.every((kind) => freshPassKinds.has(kind))
-      : freshPassKinds.size > 0;
-  if (adversarialSatisfied && positiveSatisfied) return 'PROVEN';
-  // Required adversarial evidence is missing/unresolved - never summarized as proven.
-  if (!adversarialSatisfied) return 'NOT_VERIFIED';
-  // 8. Adversarial satisfied, but the positive evidence is only stale / insufficient.
-  if (passing.some((r) => r.binding !== undefined && !isFresh(r.binding, input))) return 'STALE';
-  return 'UNPROVEN';
 }
 
 function evaluateClaim(

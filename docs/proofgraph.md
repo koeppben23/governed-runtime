@@ -25,6 +25,13 @@ and `schema_compare` results bind to a canonical digest over their explicit inpu
 surface (`surface_set`). When the bound implementation or surface changes, the
 prior pass becomes `STALE` and can no longer satisfy a gate.
 
+An **executed** provider result (`pass`/`fail`/`error`) is schema-required — not
+just documented — to carry reproducible metadata: exactly one of a `command` or
+`assertion` input, a `source` (location + stable id), a digest `binding`, and a
+`resultDigest`. `ProofProviderResult` is a status-discriminated union, so an
+`unavailable` result cannot masquerade as executed evidence and incomplete
+evidence cannot be constructed or persisted.
+
 ## Residual-risk limitation (read this)
 
 A `PROVEN` claim means only that **all policy-required, fresh, revision-bound
@@ -81,6 +88,12 @@ stays `NOT_VERIFIED`, never `PROVEN`. This is expressed per claim via
 `requiredEvidence` (`{ positive, adversarial }`) and enforced by the evaluator; a
 missing or `not_verified` counterexample is a missing required provider, not a
 pass-by-fallback.
+
+Counterexamples are themselves **revision-bound** (`boundDigest`): only a
+counterexample bound to the current implementation digest may contradict the
+claim or satisfy its adversarial requirement. A stale counterexample can do
+neither — it cannot contradict the current revision, and it cannot stand in for
+required adversarial evidence.
 
 ## Cross-artifact consistency
 

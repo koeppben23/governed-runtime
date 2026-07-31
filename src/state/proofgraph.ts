@@ -29,7 +29,6 @@ import {
   SignalClass,
   ClaimVerificationState,
   ProofProviderKind,
-  ProofProviderStatus,
   CounterexampleOutcome,
   AdversarialEvidenceKind,
   Freshness,
@@ -130,7 +129,10 @@ export const ProofProviderBinding = z.discriminatedUnion('kind', [
 ]);
 export type ProofProviderBinding = z.infer<typeof ProofProviderBinding>;
 
-/** Reproducible provider input: the exact command or a deterministic assertion input. */
+/**
+ * Provider input for an `unavailable` result: no execution occurred, so a
+ * reproducible command/assertion may be absent.
+ */
 export const ProofProviderInput = z
   .object({
     command: z.string().min(1).optional(),
@@ -138,6 +140,17 @@ export const ProofProviderInput = z
   })
   .readonly();
 export type ProofProviderInput = z.infer<typeof ProofProviderInput>;
+
+/**
+ * Reproducible input for an EXECUTED provider result: EXACTLY ONE of an exact
+ * command or a deterministic assertion input. A source filename or test name
+ * alone is insufficient; an executed result with neither (or both) is rejected.
+ */
+export const ProofProviderExecutedInput = z.union([
+  z.object({ command: z.string().min(1), assertion: z.never().optional() }).readonly(),
+  z.object({ command: z.never().optional(), assertion: z.string().min(1) }).readonly(),
+]);
+export type ProofProviderExecutedInput = z.infer<typeof ProofProviderExecutedInput>;
 
 /** Stable source/test location and identifier of a provider result. */
 export const ProofProviderSource = z
@@ -148,41 +161,53 @@ export const ProofProviderSource = z
   .readonly();
 export type ProofProviderSource = z.infer<typeof ProofProviderSource>;
 
+/** SHA-256 hex digest of a provider's output. */
+const Sha256Digest = z.string().regex(/^[a-f0-9]{64}$/);
+
+/** Fields every provider result carries, executed or not. */
+const providerResultCommon = {
+  claimId: z.string().uuid(),
+  providerKind: ProofProviderKind,
+  /** Stable provider identity (e.g. 'executed-test'), distinct from its version. */
+  providerId: z.string().min(1),
+  providerVersion: z.string().min(1),
+  executedAt: z.string().datetime(),
+  /** Display-only detail; never a substitute for the canonical fields. */
+  detail: z.string().optional(),
+} as const;
+
 /**
- * A reproducible executable provider result. Records the minimum metadata
- * needed to re-run and machine-check it: a stable provider id + version, the
- * exact reproducible `input`, the `source`/stable id, a digest `binding` to the
- * surface it covers, an exit/result status, an output/result digest, and a
- * timestamp. `detail` is display-only and never substitutes for these fields.
- *
- * `input.command`/`source`/`binding`/`resultDigest` are populated for executed
- * (pass/fail/error) results; a `status: 'unavailable'` result (a required
- * provider that could not run) omits `source`, `binding`, and `resultDigest`.
+ * Fields an EXECUTED (pass/fail/error) provider result must carry: a reproducible
+ * `input`, a `source`/stable id, a digest `binding` to the covered surface, and a
+ * result digest. The schema — not just documentation — enforces this so
+ * incomplete evidence cannot be constructed or persisted.
  */
-export const ProofProviderResult = z
-  .object({
-    claimId: z.string().uuid(),
-    providerKind: ProofProviderKind,
-    /** Stable provider identity (e.g. 'executed-test'), distinct from its version. */
-    providerId: z.string().min(1),
-    providerVersion: z.string().min(1),
-    /** Exact reproducible input (command or deterministic assertion). */
+const executedProviderShape = {
+  ...providerResultCommon,
+  input: ProofProviderExecutedInput,
+  source: ProofProviderSource,
+  binding: ProofProviderBinding,
+  resultDigest: Sha256Digest,
+} as const;
+
+/**
+ * A reproducible executable provider result, discriminated by `status`:
+ *
+ * - `pass` / `fail` / `error` (executed): require `input` (exactly one command
+ *   or assertion), `source`, `binding`, and `resultDigest`.
+ * - `unavailable` (a required provider that could not run): carries no
+ *   `source`/`binding`/`resultDigest`, and cannot imitate an executed result.
+ */
+export const ProofProviderResult = z.discriminatedUnion('status', [
+  z.object({ ...executedProviderShape, status: z.literal('pass') }),
+  z.object({ ...executedProviderShape, status: z.literal('fail') }),
+  z.object({ ...executedProviderShape, status: z.literal('error') }),
+  z.object({
+    ...providerResultCommon,
     input: ProofProviderInput,
-    /** Source/test location + stable identifier (absent only when unavailable). */
-    source: ProofProviderSource.optional(),
-    /** Digest binding to the covered surface (absent only when unavailable). */
-    binding: ProofProviderBinding.optional(),
-    status: ProofProviderStatus,
-    /** SHA-256 of the provider output (absent when unavailable). */
-    resultDigest: z
-      .string()
-      .regex(/^[a-f0-9]{64}$/)
-      .optional(),
-    executedAt: z.string().datetime(),
-    /** Display-only detail; never a substitute for the canonical fields above. */
-    detail: z.string().optional(),
-  })
-  .readonly();
+    status: z.literal('unavailable'),
+  }),
+]);
 export type ProofProviderResult = z.infer<typeof ProofProviderResult>;
 
 /** An executed falsification scenario and its outcome, bound to a revision. */

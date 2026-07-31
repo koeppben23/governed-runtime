@@ -47,6 +47,17 @@ function result(
   status: ProofProviderResultType['status'],
   boundDigest: string = CURR,
 ): ProofProviderResultType {
+  if (status === 'unavailable') {
+    return ProofProviderResult.parse({
+      claimId,
+      providerKind: 'executed_test',
+      providerId: 'executed-test',
+      providerVersion: '1.0.0',
+      input: {},
+      status: 'unavailable',
+      executedAt: NOW,
+    });
+  }
   return ProofProviderResult.parse({
     claimId,
     providerKind: 'executed_test',
@@ -64,12 +75,13 @@ function result(
 function counterexample(
   claimId: string,
   outcome: ProofCounterexampleType['outcome'],
+  boundDigest: string = CURR,
 ): ProofCounterexampleType {
   return ProofCounterexample.parse({
     claimId,
     scenario: 'falsify',
     outcome,
-    boundDigest: CURR,
+    boundDigest,
     executedAt: NOW,
   });
 }
@@ -376,6 +388,47 @@ describe('evaluateProofGraph', () => {
         currentSurfaceDigests: { sfc: 'd' },
       });
       expect(out.claims[0]!.verificationState).toBe('UNPROVEN');
+    });
+  });
+
+  describe('counterexample freshness (revision-bound)', () => {
+    const req: RequiredEvidence = { positive: ['executed_test'], adversarial: ['counterexample'] };
+
+    it('a stale contradicted counterexample does not contradict the current revision', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1))],
+        providerResults: [result(uuid(1), 'pass', CURR)],
+        counterexamples: [counterexample(uuid(1), 'contradicted', OLD)],
+      });
+      expect(out.claims[0]!.verificationState).not.toBe('CONTRADICTED');
+      expect(out.claims[0]!.verificationState).toBe('STALE');
+    });
+
+    it('a stale supported counterexample does not satisfy an adversarial requirement', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1), { requiredEvidence: req })],
+        providerResults: [result(uuid(1), 'pass', CURR)],
+        counterexamples: [counterexample(uuid(1), 'supported', OLD)],
+      });
+      expect(out.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    });
+
+    it('a fresh contradicted counterexample wins over fresh positive evidence', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1))],
+        providerResults: [result(uuid(1), 'pass', CURR)],
+        counterexamples: [counterexample(uuid(1), 'contradicted', CURR)],
+      });
+      expect(out.claims[0]!.verificationState).toBe('CONTRADICTED');
+    });
+
+    it('a fresh supported counterexample satisfies the adversarial requirement (PROVEN)', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1), { requiredEvidence: req })],
+        providerResults: [result(uuid(1), 'pass', CURR)],
+        counterexamples: [counterexample(uuid(1), 'supported', CURR)],
+      });
+      expect(out.claims[0]!.verificationState).toBe('PROVEN');
     });
   });
 
