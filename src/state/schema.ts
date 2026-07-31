@@ -40,6 +40,7 @@ import {
   VerificationCandidatesSchema,
 } from './discovery-schemas.js';
 import { ProofGraphProjection } from './proofgraph.js';
+import { ProofContract } from './proofgraph-contract.js';
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
@@ -333,6 +334,15 @@ export const SessionState = z.object({
 
   /** Absolute path to the generated review report file (REVIEW phase, P8b). */
   reviewReportPath: z.string().nullable().default(null),
+
+  /**
+   * Thin ProofGraph contract declaration (advisory; #762).
+   *
+   * Declaration-only: names the claims a change asserts and their approved
+   * sources. Additive/`.optional()`; never a runtime authority. The evaluator
+   * derives `proofGraph` from these claims plus executed evidence.
+   */
+  proofContract: ProofContract.optional(),
 
   /**
    * Compact ProofGraph projection (advisory; #762).
