@@ -216,6 +216,58 @@ describe('evaluateProofGraph', () => {
     });
   });
 
+  describe('provider-kind-aware revision binding', () => {
+    function structuralResult(
+      claimId: string,
+      status: ProofProviderResultType['status'],
+    ): ProofProviderResultType {
+      return ProofProviderResult.parse({
+        claimId,
+        providerKind: 'structural_assertion',
+        providerVersion: '1.0.0',
+        status,
+        resultDigest: SHA,
+        executedAt: NOW,
+        detail: 'registry consistent',
+      });
+    }
+
+    it('PROVEN for a passing structural assertion even with no implementation digest', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1))],
+        providerResults: [structuralResult(uuid(1), 'pass')],
+        currentImplementationDigest: null,
+      });
+      expect(out.claims[0]!.verificationState).toBe('PROVEN');
+      expect(out.claims[0]!.freshness).toBeUndefined();
+    });
+
+    it('a passing structural assertion carries no freshness (not revision-bound)', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1))],
+        providerResults: [structuralResult(uuid(1), 'pass')],
+      });
+      expect(out.claims[0]!.verificationState).toBe('PROVEN');
+      expect(out.claims[0]!.freshness).toBeUndefined();
+    });
+
+    it('a failing structural assertion is UNPROVEN', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1))],
+        providerResults: [structuralResult(uuid(1), 'fail')],
+      });
+      expect(out.claims[0]!.verificationState).toBe('UNPROVEN');
+    });
+
+    it('still marks a stale executed-test result as STALE (revision-bound unchanged)', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1))],
+        providerResults: [result(uuid(1), 'pass', OLD)],
+      });
+      expect(out.claims[0]!.verificationState).toBe('STALE');
+    });
+  });
+
   describe('determinism', () => {
     it('sorts claims by claimId regardless of input order', () => {
       const out = evaluate({ claims: [claim(uuid(3)), claim(uuid(1)), claim(uuid(2))] });

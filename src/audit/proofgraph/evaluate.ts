@@ -18,8 +18,8 @@
  *   3. a provider errored (execution)     -> BLOCKED
  *   4. a required provider was unavailable-> NOT_VERIFIED
  *   5. a provider reported a failure      -> UNPROVEN
- *   6. fresh passing evidence exists      -> PROVEN
- *   7. only stale passing evidence exists -> STALE
+ *   6. a passing structural assertion, or fresh revision-bound evidence -> PROVEN
+ *   7. only stale revision-bound passing evidence -> STALE
  *   8. otherwise (declared, no evidence)  -> UNPROVEN
  *
  * @version v1
@@ -33,7 +33,11 @@ import type {
   ProofCounterexample,
 } from '../../state/proofgraph.js';
 import { PROOFGRAPH_SCHEMA_VERSION } from '../../state/proofgraph.js';
-import type { ClaimVerificationState, Freshness } from '../../state/proofgraph-primitives.js';
+import type {
+  ClaimVerificationState,
+  Freshness,
+  ProofProviderKind,
+} from '../../state/proofgraph-primitives.js';
 
 /** Immutable inputs for a single deterministic evaluation. */
 export interface ProofGraphEvaluationInput {
@@ -62,12 +66,24 @@ function isFresh(
   );
 }
 
+/**
+ * Whether a provider kind produces revision-bound evidence. Executed tests and
+ * fault injections are bound to an implementation revision (freshness applies).
+ * Structural and schema-comparison assertions are repo-level, not revision-bound,
+ * so a passing structural result proves regardless of the implementation digest.
+ */
+function isRevisionBound(kind: ProofProviderKind): boolean {
+  return kind === 'executed_test' || kind === 'fault_injection';
+}
+
 function computeFreshness(
   passingResults: readonly ProofProviderResult[],
   currentImplementationDigest: string | null,
   evaluatedAt: string,
 ): Freshness | undefined {
-  const withDigest = passingResults.filter((r) => r.boundDigest !== undefined);
+  const withDigest = passingResults.filter(
+    (r) => isRevisionBound(r.providerKind) && r.boundDigest !== undefined,
+  );
   if (withDigest.length === 0) return undefined;
   const fresh = withDigest.find((r) => isFresh(r.boundDigest, currentImplementationDigest));
   if (fresh?.boundDigest !== undefined) {
@@ -92,9 +108,12 @@ function deriveVerificationState(
   if (results.some((r) => r.status === 'unavailable')) return 'NOT_VERIFIED';
   // 5. A failing verdict leaves the claim unproven.
   if (results.some((r) => r.status === 'fail')) return 'UNPROVEN';
-  // 6./7. Passing evidence proves only when bound to the current revision.
+  // 6. Non-revision-bound passing evidence (structural / schema) proves regardless
+  //    of the implementation digest; revision-bound evidence proves only when fresh.
   const passing = results.filter((r) => r.status === 'pass');
+  if (passing.some((r) => !isRevisionBound(r.providerKind))) return 'PROVEN';
   if (passing.some((r) => isFresh(r.boundDigest, currentImplementationDigest))) return 'PROVEN';
+  // 7. The only passing evidence is revision-bound but stale.
   if (passing.length > 0) return 'STALE';
   // 8. Declared with provenance but no evidence.
   return 'UNPROVEN';
