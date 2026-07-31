@@ -28,9 +28,17 @@ prior pass becomes `STALE` and can no longer satisfy a gate.
 An **executed** provider result (`pass`/`fail`/`error`) is schema-required — not
 just documented — to carry reproducible metadata: exactly one of a `command` or
 `assertion` input, a `source` (location + stable id), a digest `binding`, and a
-`resultDigest`. `ProofProviderResult` is a status-discriminated union, so an
-`unavailable` result cannot masquerade as executed evidence and incomplete
-evidence cannot be constructed or persisted.
+`resultDigest`. `ProofProviderResult` is a status-discriminated union in which
+**every variant is strict**: an `unavailable` result carrying `source`,
+`binding`, or `resultDigest` is _rejected_, not silently stripped, so a
+semantically contradictory record cannot be persisted.
+
+`source` describes where evidence comes from and identifies the test/check
+_stably across executions_. Because the canonical validation authority records no
+test-file location, executed-test evidence is modelled honestly as the logical
+ledger location (`validation-check:<checkId>`, `stableId: <checkId>`) rather than
+renaming a check id into a file path; the individual execution record is
+referenced separately via `executionRecordId`.
 
 ## Residual-risk limitation (read this)
 

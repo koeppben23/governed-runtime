@@ -224,6 +224,40 @@ describe('proofgraph schemas', () => {
       ).toThrow();
     });
 
+    const unavailableResult = {
+      claimId: UUID,
+      providerKind: 'executed_test' as const,
+      providerId: 'executed-test',
+      providerVersion: '1.0.0',
+      input: {},
+      status: 'unavailable' as const,
+      executedAt: NOW,
+    };
+
+    it('rejects unavailable results carrying executed-only fields', () => {
+      expect(() =>
+        ProofProviderResult.parse({
+          ...unavailableResult,
+          source: { location: 'x', stableId: 'y' },
+          binding: { kind: 'implementation', digest: 'CURR' },
+          resultDigest: SHA,
+        }),
+      ).toThrow();
+    });
+
+    it('rejects an unavailable result carrying only a binding', () => {
+      expect(() =>
+        ProofProviderResult.parse({
+          ...unavailableResult,
+          binding: { kind: 'implementation', digest: 'CURR' },
+        }),
+      ).toThrow();
+    });
+
+    it('rejects an executed result carrying an unknown field', () => {
+      expect(() => ProofProviderResult.parse({ ...validExecuted, bogusField: 'sneaky' })).toThrow();
+    });
+
     it('rejects confidence outside [0, 1]', () => {
       expect(() => DeclaredClaim.parse({ ...base, confidence: 1.5 })).toThrow();
     });

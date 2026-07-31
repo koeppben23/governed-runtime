@@ -9,6 +9,7 @@ import {
   EXECUTED_TEST_PROVIDER_VERSION,
 } from './executed-test-binder.js';
 import { makeState } from '../../fixtures.js';
+import { ProofProviderResult } from '../../state/proofgraph.js';
 import type { SessionState } from '../../state/schema.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
@@ -78,7 +79,10 @@ describe('bindExecutedTestEvidence', () => {
       providerId: EXECUTED_TEST_PROVIDER_ID,
       providerVersion: EXECUTED_TEST_PROVIDER_VERSION,
       input: { command: 'npm test' },
-      source: { location: 'test', stableId: ATT },
+      // Honest logical ledger location; stableId is the check identity, and the
+      // single execution record is referenced separately.
+      source: { location: 'validation-check:test', stableId: 'test' },
+      executionRecordId: ATT,
     });
   });
 
@@ -130,5 +134,22 @@ describe('bindExecutedTestEvidence', () => {
       },
     });
     expect(bindExecutedTestEvidence(state, NOW)).toEqual([]);
+  });
+
+  it('emits results that satisfy the strict provider schema (executed and unavailable)', () => {
+    const executed = stateWith([
+      {
+        attemptId: ATT,
+        scope: 'implementation',
+        implementationDigest: IMPL_DIGEST,
+        result: validationResult(true),
+      },
+    ]);
+    for (const r of bindExecutedTestEvidence(executed, NOW)) {
+      expect(() => ProofProviderResult.parse(r)).not.toThrow();
+    }
+    for (const r of bindExecutedTestEvidence(stateWith([]), NOW)) {
+      expect(() => ProofProviderResult.parse(r)).not.toThrow();
+    }
   });
 });

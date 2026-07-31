@@ -24,6 +24,13 @@ export const EXECUTED_TEST_PROVIDER_ID = 'executed-test';
 export const EXECUTED_TEST_PROVIDER_VERSION = 'executed-test.v1';
 
 /**
+ * Prefix marking a source location as the LOGICAL validation-ledger location of
+ * a check. The canonical ValidationResult carries no test-file location, so
+ * evidence must not claim one; this makes the provenance explicit and honest.
+ */
+export const VALIDATION_CHECK_LOCATION_PREFIX = 'validation-check:';
+
+/**
  * Bind implementation validation attempts referenced by the session's contract
  * claims into executed-test provider results.
  *
@@ -64,7 +71,16 @@ export function bindExecutedTestEvidence(
         providerId: EXECUTED_TEST_PROVIDER_ID,
         providerVersion: EXECUTED_TEST_PROVIDER_VERSION,
         input,
-        source: { location: r.checkId, stableId: attempt.attemptId },
+        // The canonical validation authority records no test-file location, so
+        // the source is modelled honestly as the LOGICAL ledger location of the
+        // check rather than renaming a checkId into a file path. `stableId` is
+        // the check identity (stable across executions); the single execution
+        // record is referenced separately by `executionRecordId`.
+        source: {
+          location: `${VALIDATION_CHECK_LOCATION_PREFIX}${r.checkId}`,
+          stableId: r.checkId,
+        },
+        executionRecordId: attempt.attemptId,
         binding: { kind: 'implementation' as const, digest: attempt.implementationDigest },
         resultDigest: r.outputDigest,
         executedAt: r.executedAt,

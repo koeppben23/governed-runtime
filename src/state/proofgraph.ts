@@ -152,7 +152,13 @@ export const ProofProviderExecutedInput = z.union([
 ]);
 export type ProofProviderExecutedInput = z.infer<typeof ProofProviderExecutedInput>;
 
-/** Stable source/test location and identifier of a provider result. */
+/**
+ * Stable source/test location and identifier of a provider result.
+ *
+ * `location` must describe WHERE the evidence comes from, and `stableId` must
+ * identify the test/check STABLY across executions. A single execution-record id
+ * belongs in `executionRecordId`, not here.
+ */
 export const ProofProviderSource = z
   .object({
     location: z.string().min(1),
@@ -171,6 +177,13 @@ const providerResultCommon = {
   /** Stable provider identity (e.g. 'executed-test'), distinct from its version. */
   providerId: z.string().min(1),
   providerVersion: z.string().min(1),
+  /**
+   * Reference to the canonical execution record this result was bound from
+   * (e.g. a ValidationAttempt id). This identifies ONE execution and is
+   * deliberately separate from `source.stableId`, which identifies the stable
+   * test/check across executions.
+   */
+  executionRecordId: z.string().uuid().optional(),
   executedAt: z.string().datetime(),
   /** Display-only detail; never a substitute for the canonical fields. */
   detail: z.string().optional(),
@@ -195,18 +208,25 @@ const executedProviderShape = {
  *
  * - `pass` / `fail` / `error` (executed): require `input` (exactly one command
  *   or assertion), `source`, `binding`, and `resultDigest`.
- * - `unavailable` (a required provider that could not run): carries no
- *   `source`/`binding`/`resultDigest`, and cannot imitate an executed result.
+ * - `unavailable` (a required provider that could not run): must NOT carry
+ *   `source`, `binding`, or `resultDigest`.
+ *
+ * Every variant is `.strict()`: an unknown or variant-forbidden key is REJECTED,
+ * never silently stripped. At this persistence/trust boundary a semantically
+ * contradictory record (e.g. an `unavailable` result carrying a result digest)
+ * must fail closed rather than normalize into a plausible-looking one.
  */
 export const ProofProviderResult = z.discriminatedUnion('status', [
-  z.object({ ...executedProviderShape, status: z.literal('pass') }),
-  z.object({ ...executedProviderShape, status: z.literal('fail') }),
-  z.object({ ...executedProviderShape, status: z.literal('error') }),
-  z.object({
-    ...providerResultCommon,
-    input: ProofProviderInput,
-    status: z.literal('unavailable'),
-  }),
+  z.object({ ...executedProviderShape, status: z.literal('pass') }).strict(),
+  z.object({ ...executedProviderShape, status: z.literal('fail') }).strict(),
+  z.object({ ...executedProviderShape, status: z.literal('error') }).strict(),
+  z
+    .object({
+      ...providerResultCommon,
+      input: ProofProviderInput,
+      status: z.literal('unavailable'),
+    })
+    .strict(),
 ]);
 export type ProofProviderResult = z.infer<typeof ProofProviderResult>;
 
