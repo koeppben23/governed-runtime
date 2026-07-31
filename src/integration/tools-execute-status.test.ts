@@ -242,6 +242,19 @@ describe('status', () => {
       expect(result.next).toBeTruthy();
     });
 
+    it('returns the advisory ProofGraph projection when proofGraph:true', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({ proofGraph: true }, ctx));
+      expect(result.phase).toBe('READY');
+      const pg = result.proofGraph as Record<string, unknown>;
+      expect(pg).toBeDefined();
+      expect(pg.criticalClaimCount).toBe(0);
+      expect(pg.criticalUnprovenCount).toBe(0);
+      const projection = pg.projection as Record<string, unknown>;
+      expect(projection.version).toBe('proofgraph.v1');
+      expect(projection.claims).toEqual([]);
+    });
+
     it('inspects an aborted terminal session through read-only /status guidance', async () => {
       await hydrateSession();
       const aborted = parseToolResult(

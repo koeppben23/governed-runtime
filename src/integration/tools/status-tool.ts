@@ -52,6 +52,7 @@ import { ActorClaimError } from '../../adapters/actor.js';
 
 // Config
 import { evaluateCompleteness } from '../../audit/completeness.js';
+import { summarizeProofGraph } from '../../audit/proofgraph/summary.js';
 import {
   buildStatusProjection,
   buildEvidenceDetailProjection,
@@ -98,6 +99,7 @@ interface StatusArgs {
   context?: boolean;
   readiness?: boolean;
   finish?: boolean;
+  proofGraph?: boolean;
 }
 
 /**
@@ -126,6 +128,21 @@ function buildCheckProjectionFields(state: SessionState): Record<string, unknown
     verificationCandidates: state.verificationCandidates ?? [],
     ...(remainingChecks !== undefined ? { remainingChecks } : {}),
   };
+}
+
+/**
+ * Build the focused, read-only ProofGraph projection response (advisory).
+ * Never approves or gates; surfaces claim states, freshness, and critical gaps.
+ */
+function buildProofGraphProjectionResponse(
+  state: SessionState,
+  checkFields: Record<string, unknown>,
+): string {
+  const proofGraph = summarizeProofGraph(state, new Date().toISOString());
+  return appendNextAction(
+    JSON.stringify({ phase: state.phase, sessionId: state.id, proofGraph, ...checkFields }),
+    state,
+  );
 }
 
 /**
@@ -208,6 +225,9 @@ async function resolveProjection(
       }),
       state,
     );
+  }
+  if (args.proofGraph) {
+    return buildProofGraphProjectionResponse(state, checkFields);
   }
   return null;
 }
@@ -576,6 +596,13 @@ export const status: ToolDefinition = {
       .describe(
         'Return the read-only Finish Card: overall status, readiness, evidence, ' +
           'non-normative action guidance, and exit options. Never approves or mutates.',
+      ),
+    proofGraph: z
+      .boolean()
+      .optional()
+      .describe(
+        'Return the advisory ProofGraph summary: per-claim verification states, ' +
+          'freshness, and critical gaps. Read-only; never approves or gates.',
       ),
   },
   async execute(_args, context) {
