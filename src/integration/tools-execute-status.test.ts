@@ -1385,6 +1385,91 @@ describe('declare_contract', () => {
     expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
   });
 
+  // AC#11 (#762): one critical claim carrying an executed positive test, a
+  // negative/fault scenario, and a structural consistency assertion together.
+  describe('combined evidence on a single critical claim', () => {
+    const COMBINED = {
+      statement: 'the declared command surface is consistent and covered by tests',
+      checkId: 'test',
+      counterexampleCheckId: 'security',
+      authority: 'ticket' as const,
+      structuralSurface: 'command-registration' as const,
+    };
+
+    it('is PROVEN with positive + negative + structural evidence bound to one claim', async () => {
+      const sessDir = await seedImplValidation({ checkId: 'test', passed: true });
+      const result = parseToolResult(await declare_contract.execute({ claims: [COMBINED] }, ctx));
+      const claim = (result.proofGraph as Record<string, unknown>).claims as Array<
+        Record<string, unknown>
+      >;
+      expect(claim).toHaveLength(1);
+      expect(claim[0]!.critical).toBe(true);
+      expect(claim[0]!.signalClass).toBe('fact');
+      expect(claim[0]!.verificationState).toBe('PROVEN');
+
+      // All three evidence kinds are actually bound to this one claim.
+      const persisted = await readState(sessDir);
+      const declared = persisted!.proofContract!.claims[0]!;
+      expect(declared.evidenceRefs.map((r) => r.kind).sort()).toEqual([
+        'structural_surface',
+        'validation_attempt',
+      ]);
+      expect(declared.counterexampleRefs.map((r) => r.kind)).toEqual(['validation_attempt']);
+      // The structural assertion is REQUIRED evidence, not decoration.
+      expect([...declared.requiredEvidence!.positive].sort()).toEqual([
+        'executed_test',
+        'structural_assertion',
+      ]);
+      expect(declared.requiredEvidence!.adversarial).toEqual(['counterexample']);
+    });
+
+    it('is CONTRADICTED when the negative/fault scenario actually falsifies it', async () => {
+      await hydrateSession();
+      const { computeFingerprint, sessionDir: resolveSessionDir } =
+        await import('../adapters/workspace/index.js');
+      const fp = await computeFingerprint(ws.tmpDir);
+      const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+      const state = await readState(sessDir);
+      const digest = 'impl-combined';
+      const attempt = (checkId: string, passed: boolean) => ({
+        attemptId: crypto.randomUUID(),
+        scope: 'implementation' as const,
+        implementationDigest: digest,
+        result: {
+          checkId,
+          passed,
+          detail: '',
+          executedAt: NOW,
+          kind: checkId === 'security' ? ('security' as const) : ('test' as const),
+          command: 'run',
+          exitCode: passed ? 0 : 1,
+          executionMs: 5,
+          outputDigest: SHA,
+          timedOut: false,
+        },
+      });
+      await writeStateWithArtifacts(sessDir, {
+        ...state!,
+        phase: 'IMPL_VALIDATION',
+        activeChecks: ['test', 'security'],
+        ticket: {
+          text: 'approved ticket',
+          digest: 'ticket-digest',
+          source: 'user',
+          createdAt: NOW,
+        },
+        implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+        validationAttempts: [attempt('test', true), attempt('security', false)],
+      });
+      const result = parseToolResult(await declare_contract.execute({ claims: [COMBINED] }, ctx));
+      const claims = (result.proofGraph as Record<string, unknown>).claims as Array<
+        Record<string, unknown>
+      >;
+      // Falsification wins over the passing positive and structural evidence.
+      expect(claims[0]!.verificationState).toBe('CONTRADICTED');
+    });
+  });
+
   it('reports NOT_VERIFIED for a critical claim with no adversarial counterexample', async () => {
     await seedImplValidation({ checkId: 'test', passed: true });
     const result = parseToolResult(
