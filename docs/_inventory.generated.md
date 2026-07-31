@@ -22,7 +22,7 @@ Verified by `npm run check:doc-drift`.
 | Archive Finding Codes         | 20    | `src/archive/types.ts`                              |
 | Archive Verify Checks (JSDoc) | 9     | `src/adapters/workspace/archive-verify-chain.ts`    |
 | CLI Bins                      | 7     | `package.json` `bin`                                |
-| Mutation Files                | 47    | `stryker.conf.json` `mutate`                        |
+| Mutation Files                | 49    | `stryker.conf.json` `mutate`                        |
 
 ---
 
