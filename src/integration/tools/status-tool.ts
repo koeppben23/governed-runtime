@@ -53,6 +53,7 @@ import { ActorClaimError } from '../../adapters/actor.js';
 // Config
 import { evaluateCompleteness } from '../../audit/completeness.js';
 import { summarizeProofGraph } from '../../audit/proofgraph/summary.js';
+import { checkRegistrationConsistency } from '../proofgraph/registration-consistency.js';
 import {
   buildStatusProjection,
   buildEvidenceDetailProjection,
@@ -139,8 +140,15 @@ function buildProofGraphProjectionResponse(
   checkFields: Record<string, unknown>,
 ): string {
   const proofGraph = summarizeProofGraph(state, new Date().toISOString());
+  const registrationConsistency = checkRegistrationConsistency();
   return appendNextAction(
-    JSON.stringify({ phase: state.phase, sessionId: state.id, proofGraph, ...checkFields }),
+    JSON.stringify({
+      phase: state.phase,
+      sessionId: state.id,
+      proofGraph,
+      registrationConsistency,
+      ...checkFields,
+    }),
     state,
   );
 }

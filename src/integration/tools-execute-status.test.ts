@@ -253,6 +253,10 @@ describe('status', () => {
       const projection = pg.projection as Record<string, unknown>;
       expect(projection.version).toBe('proofgraph.v1');
       expect(projection.claims).toEqual([]);
+      const registration = result.registrationConsistency as Record<string, unknown>;
+      expect(registration).toBeDefined();
+      expect(registration.ok).toBe(true);
+      expect(registration.checkedCommands as number).toBeGreaterThan(0);
     });
 
     it('inspects an aborted terminal session through read-only /status guidance', async () => {
