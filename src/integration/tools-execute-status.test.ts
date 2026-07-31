@@ -1380,4 +1380,56 @@ describe('declare_contract', () => {
     expect(result.error).toBe(true);
     expect(result.code).toBe('COMMAND_NOT_ALLOWED');
   });
+
+  it('reports CONTRADICTED when a declared counterexample check failed', async () => {
+    await hydrateSession();
+    const { computeFingerprint, sessionDir: resolveSessionDir } =
+      await import('../adapters/workspace/index.js');
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+    const state = await readState(sessDir);
+    const digest = 'impl-cx';
+    function attempt(checkId: string, passed: boolean) {
+      return {
+        attemptId: crypto.randomUUID(),
+        scope: 'implementation' as const,
+        implementationDigest: digest,
+        result: {
+          checkId,
+          passed,
+          detail: '',
+          executedAt: NOW,
+          kind: checkId === 'security' ? ('security' as const) : ('test' as const),
+          command: 'run',
+          exitCode: passed ? 0 : 1,
+          executionMs: 5,
+          outputDigest: SHA,
+          timedOut: false,
+        },
+      };
+    }
+    await writeState(sessDir, {
+      ...state!,
+      phase: 'IMPL_REVIEW',
+      activeChecks: ['test', 'security'],
+      implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+      validationAttempts: [attempt('test', true), attempt('security', false)],
+    });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            { statement: 'the change is safe', checkId: 'test', counterexampleCheckId: 'security' },
+          ],
+        },
+        ctx,
+      ),
+    );
+    const claims = (result.proofGraph as Record<string, unknown>).claims as Array<
+      Record<string, unknown>
+    >;
+    expect(claims[0]!.verificationState).toBe('CONTRADICTED');
+    const persisted = await readState(sessDir);
+    expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('CONTRADICTED');
+  });
 });

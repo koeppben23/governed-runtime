@@ -24,6 +24,10 @@
           "critical": {
             "type": "boolean",
             "description": "Whether the claim is critical (default true)."
+          },
+          "counterexampleCheckId": {
+            "type": "string",
+            "description": "Optional check whose FAILURE would contradict this claim (adversarial falsification)."
           }
         },
         "additionalProperties": false

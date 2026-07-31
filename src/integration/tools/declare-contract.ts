@@ -18,10 +18,11 @@
 import * as crypto from 'node:crypto';
 import { z } from 'zod';
 
-import type { Phase } from '../../state/schema.js';
+import type { Phase, SessionState } from '../../state/schema.js';
 import type { DeclaredClaim } from '../../state/proofgraph.js';
 import { deriveProofGraph } from '../../audit/proofgraph/derive.js';
 import { bindExecutedTestEvidence } from '../../audit/proofgraph/executed-test-binder.js';
+import { bindCounterexamples } from '../../audit/proofgraph/counterexample-binder.js';
 import type { ToolDefinition } from './helpers.js';
 import {
   appendNextAction,
@@ -49,6 +50,77 @@ function claimIdFor(statement: string): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 }
 
+/** A digest-bound reference to an executed validation attempt. */
+type ValidationAttemptRef = { readonly kind: 'validation_attempt'; readonly attemptId: string };
+
+/**
+ * The latest implementation-scoped validation attempt for `checkId` at `digest`,
+ * or undefined when the check has no attempt at the current revision.
+ */
+function resolveImplAttempt(
+  attempts: SessionState['validationAttempts'],
+  checkId: string,
+  digest: string,
+): SessionState['validationAttempts'][number] | undefined {
+  return [...attempts]
+    .reverse()
+    .find(
+      (a) =>
+        a.scope === 'implementation' &&
+        a.implementationDigest === digest &&
+        a.result.checkId === checkId,
+    );
+}
+
+/** Raw claim input shape from the tool arguments. */
+type RawClaim = {
+  statement: string;
+  checkId: string;
+  critical?: boolean;
+  counterexampleCheckId?: string;
+};
+
+/**
+ * Resolve raw claim inputs into DeclaredClaims, binding each claim's evidence and
+ * optional counterexample references fail-closed to implementation attempts at
+ * `digest`. Returns the built claims, or the first checkId that could not resolve.
+ */
+function buildDeclaredClaims(
+  state: SessionState,
+  rawClaims: readonly RawClaim[],
+  digest: string,
+): { readonly claims: DeclaredClaim[] } | { readonly unresolvedCheckId: string } {
+  const claims: DeclaredClaim[] = [];
+  for (const rc of rawClaims) {
+    const evidence = resolveImplAttempt(state.validationAttempts, rc.checkId, digest);
+    if (evidence === undefined) return { unresolvedCheckId: rc.checkId };
+    const evidenceRef: ValidationAttemptRef = {
+      kind: 'validation_attempt',
+      attemptId: evidence.attemptId,
+    };
+    const counterexampleRefs: ValidationAttemptRef[] = [];
+    if (rc.counterexampleCheckId !== undefined) {
+      const counterexample = resolveImplAttempt(
+        state.validationAttempts,
+        rc.counterexampleCheckId,
+        digest,
+      );
+      if (counterexample === undefined) return { unresolvedCheckId: rc.counterexampleCheckId };
+      counterexampleRefs.push({ kind: 'validation_attempt', attemptId: counterexample.attemptId });
+    }
+    claims.push({
+      claimId: claimIdFor(rc.statement),
+      statement: rc.statement,
+      signalClass: 'fact',
+      critical: rc.critical ?? true,
+      provenance: evidenceRef,
+      evidenceRefs: [evidenceRef],
+      counterexampleRefs,
+    });
+  }
+  return { claims };
+}
+
 export const declare_contract: ToolDefinition = {
   description:
     'Declare ProofGraph contract claims for the current change. Each claim must be covered by an ' +
@@ -68,6 +140,13 @@ export const declare_contract: ToolDefinition = {
             .boolean()
             .optional()
             .describe('Whether the claim is critical (default true).'),
+          counterexampleCheckId: z
+            .string()
+            .min(1)
+            .optional()
+            .describe(
+              'Optional check whose FAILURE would contradict this claim (adversarial falsification).',
+            ),
         }),
       )
       .min(1)
@@ -87,41 +166,28 @@ export const declare_contract: ToolDefinition = {
         const implementation = state.implementation;
         if (!implementation) return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
 
-        const rawClaims = args.claims as ReadonlyArray<{
-          statement: string;
-          checkId: string;
-          critical?: boolean;
-        }>;
-        const claims: DeclaredClaim[] = [];
-        for (const rc of rawClaims) {
-          const attempt = [...state.validationAttempts]
-            .reverse()
-            .find(
-              (a) =>
-                a.scope === 'implementation' &&
-                a.implementationDigest === implementation.digest &&
-                a.result.checkId === rc.checkId,
-            );
-          if (attempt === undefined) {
-            return formatBlocked('PROOFGRAPH_CLAIM_EVIDENCE_UNRESOLVED', { checkId: rc.checkId });
-          }
-          const ref = { kind: 'validation_attempt' as const, attemptId: attempt.attemptId };
-          claims.push({
-            claimId: claimIdFor(rc.statement),
-            statement: rc.statement,
-            signalClass: 'fact',
-            critical: rc.critical ?? true,
-            provenance: ref,
-            evidenceRefs: [ref],
-            counterexampleRefs: [],
+        const built = buildDeclaredClaims(
+          state,
+          args.claims as readonly RawClaim[],
+          implementation.digest,
+        );
+        if ('unresolvedCheckId' in built) {
+          return formatBlocked('PROOFGRAPH_CLAIM_EVIDENCE_UNRESOLVED', {
+            checkId: built.unresolvedCheckId,
           });
         }
 
-        const proofContract = { version: 'contract.v1' as const, claims };
+        const proofContract = { version: 'contract.v1' as const, claims: built.claims };
         const now = ctx.now();
         const stateWithContract = { ...state, proofContract };
         const providerResults = bindExecutedTestEvidence(stateWithContract, now);
-        const proofGraph = deriveProofGraph(stateWithContract, providerResults, [], now);
+        const counterexamples = bindCounterexamples(stateWithContract, now);
+        const proofGraph = deriveProofGraph(
+          stateWithContract,
+          providerResults,
+          counterexamples,
+          now,
+        );
         const nextState = { ...state, proofContract, proofGraph };
         await writeStateWithArtifacts(sessDir, nextState);
         return appendNextAction(

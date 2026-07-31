@@ -17,6 +17,7 @@ import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import type { ClaimVerificationState } from '../../state/proofgraph-primitives.js';
 import { deriveProofGraph } from './derive.js';
 import { bindExecutedTestEvidence } from './executed-test-binder.js';
+import { bindCounterexamples } from './counterexample-binder.js';
 
 /** Per-state claim tally plus critical-claim rollups. */
 export interface ProofGraphSummary {
@@ -40,7 +41,8 @@ function emptyCounts(): Record<ClaimVerificationState, number> {
  */
 export function summarizeProofGraph(state: SessionState, evaluatedAt: string): ProofGraphSummary {
   const providerResults = bindExecutedTestEvidence(state, evaluatedAt);
-  const projection = deriveProofGraph(state, providerResults, [], evaluatedAt);
+  const counterexamples = bindCounterexamples(state, evaluatedAt);
+  const projection = deriveProofGraph(state, providerResults, counterexamples, evaluatedAt);
 
   const counts = emptyCounts();
   let criticalClaimCount = 0;
