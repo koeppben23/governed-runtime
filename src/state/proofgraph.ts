@@ -87,19 +87,26 @@ export type ProofGraphProjection = z.infer<typeof ProofGraphProjection>;
 /**
  * A reproducible executable provider result, bound to an implementation
  * revision. Records provider identity/version, the bound digest, an
- * exit/result status, an output/result digest, and a timestamp — a filename or
+ * exit/result status, an output/result digest, and a timestamp - a filename or
  * test name alone is insufficient evidence.
+ *
+ * `boundDigest` and `resultDigest` are omitted only for a `status: 'unavailable'`
+ * result (a required provider that could not run) - executed pass/fail/error
+ * results always carry both.
  */
 export const ProofProviderResult = z
   .object({
     claimId: z.string().uuid(),
     providerKind: ProofProviderKind,
     providerVersion: z.string().min(1),
-    /** Implementation digest the result is bound to. */
-    boundDigest: z.string().min(1),
+    /** Implementation digest the result is bound to (absent when unavailable). */
+    boundDigest: z.string().min(1).optional(),
     status: ProofProviderStatus,
-    /** SHA-256 of the provider output. */
-    resultDigest: z.string().regex(/^[a-f0-9]{64}$/),
+    /** SHA-256 of the provider output (absent when unavailable). */
+    resultDigest: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     executedAt: z.string().datetime(),
     detail: z.string(),
   })

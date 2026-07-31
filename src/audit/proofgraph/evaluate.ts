@@ -51,8 +51,15 @@ export interface ProofGraphEvaluationInput {
 }
 
 /** A passing result is fresh only when bound to the current implementation digest. */
-function isFresh(boundDigest: string, currentImplementationDigest: string | null): boolean {
-  return currentImplementationDigest !== null && boundDigest === currentImplementationDigest;
+function isFresh(
+  boundDigest: string | undefined,
+  currentImplementationDigest: string | null,
+): boolean {
+  return (
+    currentImplementationDigest !== null &&
+    boundDigest !== undefined &&
+    boundDigest === currentImplementationDigest
+  );
 }
 
 function computeFreshness(
@@ -60,10 +67,14 @@ function computeFreshness(
   currentImplementationDigest: string | null,
   evaluatedAt: string,
 ): Freshness | undefined {
-  if (passingResults.length === 0) return undefined;
-  const fresh = passingResults.find((r) => isFresh(r.boundDigest, currentImplementationDigest));
-  if (fresh) return { boundDigest: fresh.boundDigest, evaluatedAt, stale: false };
-  return { boundDigest: passingResults[0]!.boundDigest, evaluatedAt, stale: true };
+  const withDigest = passingResults.filter((r) => r.boundDigest !== undefined);
+  if (withDigest.length === 0) return undefined;
+  const fresh = withDigest.find((r) => isFresh(r.boundDigest, currentImplementationDigest));
+  if (fresh?.boundDigest !== undefined) {
+    return { boundDigest: fresh.boundDigest, evaluatedAt, stale: false };
+  }
+  const boundDigest = withDigest[0]!.boundDigest;
+  return boundDigest === undefined ? undefined : { boundDigest, evaluatedAt, stale: true };
 }
 
 function deriveVerificationState(

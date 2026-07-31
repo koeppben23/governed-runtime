@@ -84,6 +84,18 @@ describe('proofgraph schemas', () => {
       expect(ProofProviderResult.parse(result)).toEqual(result);
     });
 
+    it('ProofProviderResult parses an unavailable result without digests', () => {
+      const result = {
+        claimId: UUID,
+        providerKind: 'executed_test' as const,
+        providerVersion: '1.0.0',
+        status: 'unavailable' as const,
+        executedAt: NOW,
+        detail: 'no implementation validation attempt',
+      };
+      expect(ProofProviderResult.parse(result)).toEqual(result);
+    });
+
     it('ProofCounterexample parses with an outcome', () => {
       const cx = {
         claimId: UUID,
