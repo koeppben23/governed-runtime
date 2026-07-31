@@ -49,7 +49,7 @@
  */
 export const PRODUCT_INVENTORY = {
   machineCommands: 11,
-  integrationTools: 16,
+  integrationTools: 17,
   mcpTools: 15,
   installedCommandDefs: 25,
   phases: 15,
