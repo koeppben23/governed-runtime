@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_declare_contract",
+  "title": "flowguard_declare_contract",
+  "description": "Declare evidence-bound ProofGraph contract claims for the current change; advisory, never alters review acceptance.",
+  "type": "object",
+  "required": ["claims"],
+  "properties": {
+    "claims": {
+      "type": "array",
+      "description": "Claims to declare, each covered by an implementation check at the current revision.",
+      "items": {
+        "type": "object",
+        "required": ["statement", "checkId"],
+        "properties": {
+          "statement": {
+            "type": "string",
+            "description": "The behavioral claim being asserted."
+          },
+          "checkId": {
+            "type": "string",
+            "description": "Active check whose implementation attempt is the claim evidence."
+          },
+          "critical": {
+            "type": "boolean",
+            "description": "Whether the claim is critical (default true)."
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

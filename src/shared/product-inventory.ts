@@ -49,8 +49,8 @@
  */
 export const PRODUCT_INVENTORY = {
   machineCommands: 11,
-  integrationTools: 15,
-  mcpTools: 14,
+  integrationTools: 16,
+  mcpTools: 15,
   installedCommandDefs: 25,
   phases: 15,
   policyModes: 4,

@@ -197,7 +197,7 @@ describe('MCP Protocol Compliance', () => {
     const result = resp.result as { tools: Array<{ name: string; description: string }> };
     expect(result.tools).toBeDefined();
     expect(Array.isArray(result.tools)).toBe(true);
-    expect(result.tools.length).toBe(14);
+    expect(result.tools.length).toBe(15);
 
     const toolNames = result.tools.map((t) => t.name).sort();
     const expectedNames = [
@@ -205,6 +205,7 @@ describe('MCP Protocol Compliance', () => {
       'flowguard_architecture',
       'flowguard_continue',
       'flowguard_decision',
+      'flowguard_declare_contract',
       'flowguard_hydrate',
       'flowguard_implement',
       'flowguard_review_implementation',
@@ -217,7 +218,7 @@ describe('MCP Protocol Compliance', () => {
       'flowguard_help',
     ];
 
-    // We expect 14 tools - check all registered FlowGuard tools are present.
+    // We expect 15 tools - check all registered FlowGuard tools are present.
     for (const name of expectedNames) {
       expect(toolNames, `Missing tool: ${name}`).toContain(name);
     }

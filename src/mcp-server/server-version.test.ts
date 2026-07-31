@@ -70,6 +70,7 @@ vi.mock('../integration/tools/index.js', () => {
     archive: tool,
     continue: tool,
     help: tool,
+    declare_contract: tool,
   };
 });
 

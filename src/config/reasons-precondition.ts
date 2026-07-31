@@ -19,6 +19,17 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'PROOFGRAPH_CLAIM_EVIDENCE_UNRESOLVED',
+    category: 'precondition',
+    messageTemplate:
+      "No implementation validation attempt for check '{checkId}' at the current revision; a ProofGraph claim cannot be declared without resolvable, revision-bound evidence.",
+    recoverySteps: [
+      'Run /check (flowguard_run_check) so the check executes against the current implementation',
+      'Declare the claim only after the referenced check has an attempt at the current implementation digest',
+    ],
+  },
+
+  {
     code: 'CENTRAL_POLICY_MISSING',
     category: 'precondition',
     messageTemplate: 'Central policy file is missing: {message}',

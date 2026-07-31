@@ -31,6 +31,7 @@ import {
   abort_session,
   archive,
   architecture,
+  declare_contract,
 } from './tools/index.js';
 import {
   PersistenceError,
@@ -1279,5 +1280,104 @@ describe('status-prompt-contract', () => {
     const result = await statusFor('VALIDATION', 'whyBlocked');
     expect('blocker' in result).toBe(false);
     expect(hasPath(result, 'whyBlocked.reasonText')).toBe(true);
+  });
+});
+
+// =============================================================================
+// Tool: declare_contract (ProofGraph declaration, #762)
+// =============================================================================
+
+describe('declare_contract', () => {
+  const NOW = '2026-01-01T00:00:00.000Z';
+  const SHA = 'a'.repeat(64);
+
+  async function seedImplValidation(
+    overrides: { checkId?: string; passed?: boolean; digest?: string } = {},
+  ): Promise<string> {
+    const checkId = overrides.checkId ?? 'test';
+    const digest = overrides.digest ?? 'impl-digest-1';
+    await hydrateSession();
+    const { computeFingerprint, sessionDir: resolveSessionDir } =
+      await import('../adapters/workspace/index.js');
+    const fp = await computeFingerprint(ws.tmpDir);
+    const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
+    const state = await readState(sessDir);
+    await writeState(sessDir, {
+      ...state!,
+      phase: 'IMPL_VALIDATION',
+      activeChecks: [checkId],
+      implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
+      validationAttempts: [
+        {
+          attemptId: crypto.randomUUID(),
+          scope: 'implementation',
+          implementationDigest: digest,
+          result: {
+            checkId,
+            passed: overrides.passed ?? true,
+            detail: '',
+            executedAt: NOW,
+            kind: 'test',
+            command: 'npm test',
+            exitCode: (overrides.passed ?? true) ? 0 : 1,
+            executionMs: 5,
+            outputDigest: SHA,
+            timedOut: false,
+          },
+        },
+      ],
+    });
+    return sessDir;
+  }
+
+  it('declares a claim, persists the contract + projection, and reports PROVEN', async () => {
+    const sessDir = await seedImplValidation({ checkId: 'test', passed: true });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        { claims: [{ statement: 'the change is covered by the test check', checkId: 'test' }] },
+        ctx,
+      ),
+    );
+    const projection = result.proofGraph as Record<string, unknown>;
+    expect(projection).toBeDefined();
+    const claims = projection.claims as Array<Record<string, unknown>>;
+    expect(claims).toHaveLength(1);
+    expect(claims[0]!.verificationState).toBe('PROVEN');
+
+    const persisted = await readState(sessDir);
+    expect(persisted!.proofContract?.claims).toHaveLength(1);
+    expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
+  });
+
+  it('reports UNPROVEN when the covering check failed', async () => {
+    await seedImplValidation({ checkId: 'test', passed: false });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        { claims: [{ statement: 'covered by a failing check', checkId: 'test' }] },
+        ctx,
+      ),
+    );
+    const claims = (result.proofGraph as Record<string, unknown>).claims as Array<
+      Record<string, unknown>
+    >;
+    expect(claims[0]!.verificationState).toBe('UNPROVEN');
+  });
+
+  it('fails closed when the referenced check has no implementation attempt', async () => {
+    await seedImplValidation({ checkId: 'test' });
+    const result = parseToolResult(
+      await declare_contract.execute({ claims: [{ statement: 'x', checkId: 'lint' }] }, ctx),
+    );
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('PROOFGRAPH_CLAIM_EVIDENCE_UNRESOLVED');
+  });
+
+  it('is not allowed outside the implementation phases', async () => {
+    await hydrateSession();
+    const result = parseToolResult(
+      await declare_contract.execute({ claims: [{ statement: 'x', checkId: 'test' }] }, ctx),
+    );
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('COMMAND_NOT_ALLOWED');
   });
 });

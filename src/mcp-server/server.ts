@@ -43,6 +43,7 @@ import { archive } from '../integration/tools/index.js';
 // 'continue' is a reserved word - imported via namespace
 import { continue as continue_cmd } from '../integration/tools/index.js';
 import { help } from '../integration/tools/index.js';
+import { declare_contract } from '../integration/tools/index.js';
 
 // --- Tool Registry ---
 
@@ -61,6 +62,7 @@ export const FLOWGUARD_TOOLS: FlowGuardToolRegistry = {
   archive,
   continue: continue_cmd,
   help,
+  declare_contract,
 };
 
 // --- Server Factory ---
