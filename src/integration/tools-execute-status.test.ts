@@ -258,6 +258,9 @@ describe('status', () => {
       expect(registration).toBeDefined();
       expect(registration.ok).toBe(true);
       expect(registration.checkedCommands as number).toBeGreaterThan(0);
+      const configConsistency = result.configConsistency as Record<string, unknown>;
+      expect(configConsistency).toBeDefined();
+      expect(configConsistency.ok).toBe(true);
     });
 
     it('inspects an aborted terminal session through read-only /status guidance', async () => {

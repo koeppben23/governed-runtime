@@ -54,6 +54,7 @@ import { ActorClaimError } from '../../adapters/actor.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';
 import { summarizeProofGraph } from '../../audit/proofgraph/summary.js';
 import { checkRegistrationConsistency } from '../proofgraph/registration-consistency.js';
+import { checkConfigDefaultConsistency } from '../proofgraph/config-default-consistency.js';
 import {
   buildStatusProjection,
   buildEvidenceDetailProjection,
@@ -141,12 +142,14 @@ function buildProofGraphProjectionResponse(
 ): string {
   const proofGraph = summarizeProofGraph(state, new Date().toISOString());
   const registrationConsistency = checkRegistrationConsistency();
+  const configConsistency = checkConfigDefaultConsistency();
   return appendNextAction(
     JSON.stringify({
       phase: state.phase,
       sessionId: state.id,
       proofGraph,
       registrationConsistency,
+      configConsistency,
       ...checkFields,
     }),
     state,
