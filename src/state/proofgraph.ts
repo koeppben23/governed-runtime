@@ -31,11 +31,26 @@ import {
   ProofProviderKind,
   ProofProviderStatus,
   CounterexampleOutcome,
+  AdversarialEvidenceKind,
   Freshness,
 } from './proofgraph-primitives.js';
 
 /** Persisted ProofGraph projection schema version. */
 export const PROOFGRAPH_SCHEMA_VERSION = 'proofgraph.v1' as const;
+
+/**
+ * Policy-required evidence classes for a claim (the evaluator input). A claim
+ * cannot be `PROVEN` unless every required positive provider kind has a fresh
+ * pass AND every required adversarial category is satisfied. Empty arrays mean
+ * "no explicit requirement" (any fresh pass proves, no adversarial needed).
+ */
+export const RequiredEvidence = z
+  .object({
+    positive: z.array(ProofProviderKind),
+    adversarial: z.array(AdversarialEvidenceKind),
+  })
+  .readonly();
+export type RequiredEvidence = z.infer<typeof RequiredEvidence>;
 
 /**
  * Shared shape between a declared claim (evaluator input) and an evaluated
@@ -57,6 +72,8 @@ const proofClaimBase = {
   evidenceRefs: z.array(ClaimEvidenceRef),
   /** Digest-bound falsification/counterexample EVIDENCE references. */
   counterexampleRefs: z.array(ClaimEvidenceRef),
+  /** Policy-required evidence classes; absent ⇒ no explicit requirement. */
+  requiredEvidence: RequiredEvidence.optional(),
   /** Optional confidence in [0, 1] for advisory (non-fact) signals. */
   confidence: z.number().min(0).max(1).optional(),
 } as const;

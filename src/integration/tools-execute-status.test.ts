@@ -1313,7 +1313,7 @@ describe('declare_contract', () => {
     await writeStateWithArtifacts(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
-      activeChecks: [checkId],
+      activeChecks: [checkId, 'security'],
       ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
       implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
       validationAttempts: [
@@ -1334,6 +1334,23 @@ describe('declare_contract', () => {
             timedOut: false,
           },
         },
+        {
+          attemptId: crypto.randomUUID(),
+          scope: 'implementation',
+          implementationDigest: digest,
+          result: {
+            checkId: 'security',
+            passed: true,
+            detail: '',
+            executedAt: NOW,
+            kind: 'security',
+            command: 'npm run security',
+            exitCode: 0,
+            executionMs: 5,
+            outputDigest: SHA,
+            timedOut: false,
+          },
+        },
       ],
     });
     return sessDir;
@@ -1348,6 +1365,7 @@ describe('declare_contract', () => {
             {
               statement: 'the change is covered by the test check',
               checkId: 'test',
+              counterexampleCheckId: 'security',
               authority: 'ticket',
             },
           ],
@@ -1365,6 +1383,23 @@ describe('declare_contract', () => {
     const persisted = await readState(sessDir);
     expect(persisted!.proofContract?.claims).toHaveLength(1);
     expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
+  });
+
+  it('reports NOT_VERIFIED for a critical claim with no adversarial counterexample', async () => {
+    await seedImplValidation({ checkId: 'test', passed: true });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [{ statement: 'critical but unfalsified', checkId: 'test', authority: 'ticket' }],
+        },
+        ctx,
+      ),
+    );
+    const claims = (result.proofGraph as Record<string, unknown>).claims as Array<
+      Record<string, unknown>
+    >;
+    expect(claims[0]!.signalClass).toBe('fact');
+    expect(claims[0]!.verificationState).toBe('NOT_VERIFIED');
   });
 
   it('classifies a claim without an approved authority as a NOT_VERIFIED hypothesis', async () => {

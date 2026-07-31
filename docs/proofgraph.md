@@ -75,6 +75,13 @@ outcome is derived from the executed validation result:
 - the attempt passed → `supported`;
 - missing → `not_verified`.
 
+A **critical `fact` claim additionally requires** a `supported` counterexample:
+without an executed falsification that was attempted and did not hold, the claim
+stays `NOT_VERIFIED`, never `PROVEN`. This is expressed per claim via
+`requiredEvidence` (`{ positive, adversarial }`) and enforced by the evaluator; a
+missing or `not_verified` counterexample is a missing required provider, not a
+pass-by-fallback.
+
 ## Cross-artifact consistency
 
 Two pure, structural checks detect the "green CI but registries/defaults

@@ -149,15 +149,23 @@ function buildDeclaredClaims(
       counterexampleRefs.push({ kind: 'validation_attempt', attemptId: counterexample.attemptId });
     }
     const provenance = resolveAuthority(state, rc.authority);
+    const isFact = provenance !== null;
+    const critical = rc.critical ?? true;
     claims.push({
       claimId: claimIdFor(rc.statement),
       statement: rc.statement,
       // No auto-`fact`: classification follows the resolved governing authority.
-      signalClass: provenance === null ? 'hypothesis' : 'fact',
-      critical: rc.critical ?? true,
+      signalClass: isFact ? 'fact' : 'hypothesis',
+      critical,
       provenance,
       evidenceRefs: [evidenceRef],
       counterexampleRefs,
+      // A critical fact claim must survive an executed counterexample before it
+      // may be PROVEN; a missing/unresolved counterexample keeps it NOT_VERIFIED.
+      requiredEvidence: {
+        positive: ['executed_test' as const],
+        adversarial: critical && isFact ? ['counterexample' as const] : [],
+      },
     });
   }
   return { claims };

@@ -67,6 +67,14 @@ export const CounterexampleOutcome = z.enum(['supported', 'contradicted', 'not_v
 export type CounterexampleOutcome = z.infer<typeof CounterexampleOutcome>;
 
 /**
+ * A required adversarial evidence category. A critical `fact` claim must survive
+ * a `counterexample` (an executed falsification that did NOT hold) before it may
+ * be `PROVEN`; a missing or `not_verified` counterexample blocks proof.
+ */
+export const AdversarialEvidenceKind = z.enum(['counterexample']);
+export type AdversarialEvidenceKind = z.infer<typeof AdversarialEvidenceKind>;
+
+/**
  * Revision-freshness of a claim's binding evidence.
  *
  * `stale` is `true` when `boundDigest` no longer matches the current

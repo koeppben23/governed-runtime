@@ -18,9 +18,9 @@
  *   3. a provider errored (execution)     -> BLOCKED
  *   4. a required provider was unavailable-> NOT_VERIFIED
  *   5. a provider reported a failure      -> UNPROVEN
- *   6. fresh (digest-bound) passing evidence of any kind -> PROVEN
- *   7. only stale (superseded binding) passing evidence -> STALE
- *   8. otherwise (declared, no evidence)  -> UNPROVEN
+ *   6. required positive (fresh) + adversarial evidence all satisfied -> PROVEN
+ *   7. required adversarial evidence missing/unresolved -> NOT_VERIFIED
+ *   8. positive evidence only stale -> STALE, otherwise -> UNPROVEN
  *
  * @version v1
  */
@@ -31,10 +31,14 @@ import type {
   ProofGraphProjection,
   ProofProviderResult,
   ProofProviderBinding,
+  RequiredEvidence,
   ProofCounterexample,
 } from '../../state/proofgraph.js';
 import { PROOFGRAPH_SCHEMA_VERSION } from '../../state/proofgraph.js';
 import type { ClaimVerificationState, Freshness } from '../../state/proofgraph-primitives.js';
+
+/** No explicit evidence requirement: any fresh pass proves, no adversarial needed. */
+const EMPTY_REQUIRED: RequiredEvidence = { positive: [], adversarial: [] };
 
 /** Immutable inputs for a single deterministic evaluation. */
 export interface ProofGraphEvaluationInput {
@@ -110,14 +114,29 @@ function deriveVerificationState(
   if (results.some((r) => r.status === 'unavailable')) return 'NOT_VERIFIED';
   // 5. A failing verdict leaves the claim unproven.
   if (results.some((r) => r.status === 'fail')) return 'UNPROVEN';
-  // 6. Passing evidence proves only while its digest binding is fresh - this
-  //    applies to every provider kind (structural/schema included), so a pass
-  //    can never satisfy a claim after its bound surface changed.
+  // 6.-8. Enforce the claim's policy-required evidence classes.
+  const required = claim.requiredEvidence ?? EMPTY_REQUIRED;
   const passing = results.filter((r) => r.status === 'pass');
-  if (passing.some((r) => isFresh(r.binding, input))) return 'PROVEN';
-  // 7. The only passing evidence is bound to a superseded revision/surface.
-  if (passing.length > 0) return 'STALE';
-  // 8. Declared with provenance but no evidence.
+  const freshPassKinds = new Set(
+    passing.filter((r) => isFresh(r.binding, input)).map((r) => r.providerKind),
+  );
+  // 6. Required adversarial evidence: an executed counterexample that was
+  //    attempted and did NOT hold ('supported'). A missing or 'not_verified'
+  //    counterexample is a missing required provider, never a pass-by-fallback.
+  const adversarialSatisfied = required.adversarial.every((kind) =>
+    kind === 'counterexample' ? counterexamples.some((c) => c.outcome === 'supported') : false,
+  );
+  // 7. Required positive evidence: every required kind needs a fresh pass; with
+  //    no explicit positive requirement, any single fresh pass suffices.
+  const positiveSatisfied =
+    required.positive.length > 0
+      ? required.positive.every((kind) => freshPassKinds.has(kind))
+      : freshPassKinds.size > 0;
+  if (adversarialSatisfied && positiveSatisfied) return 'PROVEN';
+  // Required adversarial evidence is missing/unresolved - never summarized as proven.
+  if (!adversarialSatisfied) return 'NOT_VERIFIED';
+  // 8. Adversarial satisfied, but the positive evidence is only stale / insufficient.
+  if (passing.some((r) => r.binding !== undefined && !isFresh(r.binding, input))) return 'STALE';
   return 'UNPROVEN';
 }
 

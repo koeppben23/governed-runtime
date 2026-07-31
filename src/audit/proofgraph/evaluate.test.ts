@@ -12,6 +12,7 @@ import type {
   DeclaredClaim as DeclaredClaimType,
   ProofProviderResult as ProofProviderResultType,
   ProofCounterexample as ProofCounterexampleType,
+  RequiredEvidence,
 } from '../../state/proofgraph.js';
 
 const AUTHORITY_REF = {
@@ -305,6 +306,76 @@ describe('evaluateProofGraph', () => {
         providerResults: [result(uuid(1), 'pass', OLD)],
       });
       expect(out.claims[0]!.verificationState).toBe('STALE');
+    });
+  });
+
+  describe('policy-required evidence (adversarial + positive)', () => {
+    const req: RequiredEvidence = { positive: ['executed_test'], adversarial: ['counterexample'] };
+
+    it('NOT_VERIFIED: a critical claim requiring a counterexample has none', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1), { requiredEvidence: req })],
+        providerResults: [result(uuid(1), 'pass', CURR)],
+      });
+      expect(out.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    });
+
+    it('NOT_VERIFIED: a required counterexample that could not be verified does not pass', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1), { requiredEvidence: req })],
+        providerResults: [result(uuid(1), 'pass', CURR)],
+        counterexamples: [counterexample(uuid(1), 'not_verified')],
+      });
+      expect(out.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    });
+
+    it('PROVEN: a fresh positive pass plus a supported counterexample', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1), { requiredEvidence: req })],
+        providerResults: [result(uuid(1), 'pass', CURR)],
+        counterexamples: [counterexample(uuid(1), 'supported')],
+      });
+      expect(out.claims[0]!.verificationState).toBe('PROVEN');
+    });
+
+    it('NOT_VERIFIED: adversarial-required takes precedence even when positive is stale', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1), { requiredEvidence: req })],
+        providerResults: [result(uuid(1), 'pass', OLD)],
+      });
+      expect(out.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    });
+
+    it('STALE: adversarial satisfied but the required positive pass is stale', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1), { requiredEvidence: req })],
+        providerResults: [result(uuid(1), 'pass', OLD)],
+        counterexamples: [counterexample(uuid(1), 'supported')],
+      });
+      expect(out.claims[0]!.verificationState).toBe('STALE');
+    });
+
+    it('UNPROVEN: a fresh pass of the wrong kind does not satisfy an executed_test requirement', () => {
+      const structural = ProofProviderResult.parse({
+        claimId: uuid(1),
+        providerKind: 'structural_assertion',
+        providerId: 'x',
+        providerVersion: '1',
+        input: { assertion: 'a' },
+        source: { location: 'l', stableId: 's' },
+        binding: { kind: 'surface_set', surfaceId: 'sfc', digest: 'd', locations: ['l'] },
+        status: 'pass',
+        resultDigest: SHA,
+        executedAt: NOW,
+      });
+      const out = evaluate({
+        claims: [
+          claim(uuid(1), { requiredEvidence: { positive: ['executed_test'], adversarial: [] } }),
+        ],
+        providerResults: [structural],
+        currentSurfaceDigests: { sfc: 'd' },
+      });
+      expect(out.claims[0]!.verificationState).toBe('UNPROVEN');
     });
   });
 
