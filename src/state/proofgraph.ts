@@ -8,8 +8,9 @@
  * verification state with explicit residual uncertainty.
  *
  * Design constraints:
- * - Evidence references reuse the canonical digest-bound reference vocabulary
- *   (`ReviewChallengeEvidenceRef`) rather than duplicating it.
+ * - A claim's governing `provenance` ({@link ClaimAuthorityRef}) is a different
+ *   type from its `evidence` ({@link ClaimEvidenceRef}); a validation attempt is
+ *   evidence and can never be governing provenance.
  * - Only compact summaries, digests, and stable references live here; large
  *   provider artifacts are stored outside session state.
  * - `ProofClaim` is the EVALUATED shape (`DeclaredClaim` + `verificationState`
@@ -23,7 +24,7 @@
  */
 
 import { z } from 'zod';
-import { ReviewChallengeEvidenceRef } from './evidence-review.js';
+import { ClaimAuthorityRef, ClaimEvidenceRef } from './proofgraph-refs.js';
 import {
   SignalClass,
   ClaimVerificationState,
@@ -50,12 +51,12 @@ const proofClaimBase = {
   signalClass: SignalClass,
   /** Whether the claim is critical (subject to stricter evidence gating). */
   critical: z.boolean(),
-  /** Approved-source reference (ticket/plan/ADR/impl). `null` ⇒ unproven assumption. */
-  provenance: ReviewChallengeEvidenceRef.nullable(),
-  /** Digest-bound positive evidence references. */
-  evidenceRefs: z.array(ReviewChallengeEvidenceRef),
-  /** Digest-bound falsification/counterexample references. */
-  counterexampleRefs: z.array(ReviewChallengeEvidenceRef),
+  /** Approved GOVERNING source (ticket/plan-ADR/canonical authority). `null` ⇒ unproven assumption. */
+  provenance: ClaimAuthorityRef.nullable(),
+  /** Digest-bound positive EVIDENCE references (never governing provenance). */
+  evidenceRefs: z.array(ClaimEvidenceRef),
+  /** Digest-bound falsification/counterexample EVIDENCE references. */
+  counterexampleRefs: z.array(ClaimEvidenceRef),
   /** Optional confidence in [0, 1] for advisory (non-fact) signals. */
   confidence: z.number().min(0).max(1).optional(),
 } as const;

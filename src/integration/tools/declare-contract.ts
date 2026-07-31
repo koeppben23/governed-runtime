@@ -4,10 +4,12 @@
  *
  * The declaration path that makes the ProofGraph non-dormant: an operator/agent
  * names the claims a change asserts, each covered by an implementation
- * validation attempt (by checkId) at the current revision. The tool resolves
- * each claim's evidence fail-closed against the canonical validation ledger -
- * an unsourced claim is rejected, never recorded - persists the contract, and
- * derives + persists the ProofGraph projection.
+ * validation attempt (by checkId) at the current revision. Governing provenance
+ * is resolved SEPARATELY from the cited approved authority (ticket/plan/ADR); a
+ * claim is `fact` only when an approved authority resolves, otherwise it is a
+ * `hypothesis` surfaced as `NOT_VERIFIED`. Evidence binding stays fail-closed -
+ * an unsourced claim is rejected, never recorded - and the tool persists the
+ * contract, then derives + persists the ProofGraph projection.
  *
  * Advisory: it records evidence-bound claims and never alters review acceptance,
  * which remains owned by ReviewFindings, obligations, attestations, and policy.
@@ -20,6 +22,7 @@ import { z } from 'zod';
 
 import type { Phase, SessionState } from '../../state/schema.js';
 import type { DeclaredClaim } from '../../state/proofgraph.js';
+import type { ClaimAuthorityRef } from '../../state/proofgraph-refs.js';
 import { deriveProofGraph } from '../../audit/proofgraph/derive.js';
 import { bindExecutedTestEvidence } from '../../audit/proofgraph/executed-test-binder.js';
 import { bindCounterexamples } from '../../audit/proofgraph/counterexample-binder.js';
@@ -53,6 +56,39 @@ function claimIdFor(statement: string): string {
 /** A digest-bound reference to an executed validation attempt. */
 type ValidationAttemptRef = { readonly kind: 'validation_attempt'; readonly attemptId: string };
 
+/** Approved governing sources a claim may cite, resolved from session evidence. */
+type AuthoritySource = 'ticket' | 'plan' | 'architecture';
+
+/**
+ * Resolve a claim's cited governing authority to a digest-bound reference, or
+ * `null` when no authority was cited or the cited artifact is absent. A `null`
+ * result makes the claim an assumption (surfaced as `NOT_VERIFIED`), never a
+ * governing `fact`. Validation evidence is deliberately NOT an authority source.
+ */
+function resolveAuthority(
+  state: SessionState,
+  source: AuthoritySource | undefined,
+): ClaimAuthorityRef | null {
+  switch (source) {
+    case 'ticket':
+      return state.ticket ? { kind: 'approved_ticket', ticketDigest: state.ticket.digest } : null;
+    case 'plan':
+      return state.plan
+        ? { kind: 'canonical_authority', authorityId: 'plan', digest: state.plan.current.digest }
+        : null;
+    case 'architecture':
+      return state.architecture
+        ? {
+            kind: 'canonical_authority',
+            authorityId: 'architecture',
+            digest: state.architecture.digest,
+          }
+        : null;
+    case undefined:
+      return null;
+  }
+}
+
 /**
  * The latest implementation-scoped validation attempt for `checkId` at `digest`,
  * or undefined when the check has no attempt at the current revision.
@@ -78,12 +114,16 @@ type RawClaim = {
   checkId: string;
   critical?: boolean;
   counterexampleCheckId?: string;
+  authority?: AuthoritySource;
 };
 
 /**
- * Resolve raw claim inputs into DeclaredClaims, binding each claim's evidence and
- * optional counterexample references fail-closed to implementation attempts at
- * `digest`. Returns the built claims, or the first checkId that could not resolve.
+ * Resolve raw claim inputs into DeclaredClaims. Evidence (the covering check and
+ * optional counterexample check) is bound fail-closed to implementation attempts
+ * at `digest`. Governing provenance is resolved SEPARATELY from the cited
+ * approved authority: a claim is `fact` only when an approved authority resolves;
+ * otherwise it is a `hypothesis` with `null` provenance (surfaced NOT_VERIFIED).
+ * Returns the built claims, or the first checkId that could not resolve.
  */
 function buildDeclaredClaims(
   state: SessionState,
@@ -108,12 +148,14 @@ function buildDeclaredClaims(
       if (counterexample === undefined) return { unresolvedCheckId: rc.counterexampleCheckId };
       counterexampleRefs.push({ kind: 'validation_attempt', attemptId: counterexample.attemptId });
     }
+    const provenance = resolveAuthority(state, rc.authority);
     claims.push({
       claimId: claimIdFor(rc.statement),
       statement: rc.statement,
-      signalClass: 'fact',
+      // No auto-`fact`: classification follows the resolved governing authority.
+      signalClass: provenance === null ? 'hypothesis' : 'fact',
       critical: rc.critical ?? true,
-      provenance: evidenceRef,
+      provenance,
       evidenceRefs: [evidenceRef],
       counterexampleRefs,
     });
@@ -123,10 +165,11 @@ function buildDeclaredClaims(
 
 export const declare_contract: ToolDefinition = {
   description:
-    'Declare ProofGraph contract claims for the current change. Each claim must be covered by an ' +
-    'implementation validation attempt (by checkId) at the current revision. Available in ' +
-    'IMPL_VALIDATION and IMPL_REVIEW; advisory - it records evidence-bound claims and never alters ' +
-    'review acceptance.',
+    'Declare ProofGraph contract claims for the current change. Each claim is covered fail-closed ' +
+    'by an implementation validation attempt (by checkId) at the current revision; cite an approved ' +
+    'authority (ticket/plan/architecture) to classify a claim as a governing fact, otherwise it is ' +
+    'a NOT_VERIFIED assumption. Available in IMPL_VALIDATION and IMPL_REVIEW; advisory - it records ' +
+    'evidence-bound claims and never alters review acceptance.',
   args: {
     claims: z
       .array(
@@ -146,6 +189,14 @@ export const declare_contract: ToolDefinition = {
             .optional()
             .describe(
               'Optional check whose FAILURE would contradict this claim (adversarial falsification).',
+            ),
+          authority: z
+            .enum(['ticket', 'plan', 'architecture'])
+            .optional()
+            .describe(
+              'Approved GOVERNING source for this claim (ticket/plan/architecture). Only a ' +
+                'resolved authority classifies the claim as `fact`; without one it is a ' +
+                'NOT_VERIFIED assumption. Validation evidence is never a governing authority.',
             ),
         }),
       )

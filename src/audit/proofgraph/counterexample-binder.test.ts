@@ -12,7 +12,11 @@ const CLAIM = '00000000-0000-4000-8000-000000000001';
 const ATT = '00000000-0000-4000-8000-0000000000cc';
 const IMPL_DIGEST = 'impl-current';
 const SHA = 'a'.repeat(64);
-const CONTENT_REF = { kind: 'content' as const, digest: 'authority' };
+const AUTHORITY_REF = {
+  kind: 'canonical_authority' as const,
+  authorityId: 'ticket',
+  digest: 'authority',
+};
 const IMPL = { changedFiles: ['a.ts'], domainFiles: [], digest: IMPL_DIGEST, executedAt: NOW };
 
 function validationResult(passed: boolean) {
@@ -36,7 +40,7 @@ function claim(attemptId = ATT) {
     statement: 'the change is safe',
     signalClass: 'fact' as const,
     critical: true,
-    provenance: CONTENT_REF,
+    provenance: AUTHORITY_REF,
     evidenceRefs: [],
     counterexampleRefs: [{ kind: 'validation_attempt' as const, attemptId }],
   };

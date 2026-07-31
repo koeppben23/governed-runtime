@@ -20,7 +20,7 @@ function claim(
     statement: 'x',
     signalClass: opts.signalClass ?? 'fact',
     critical: opts.critical ?? true,
-    provenance: { kind: 'content', digest: 'd' },
+    provenance: { kind: 'canonical_authority', authorityId: 'ticket', digest: 'd' },
     evidenceRefs: [],
     counterexampleRefs: [],
     verificationState: opts.state ?? 'PROVEN',

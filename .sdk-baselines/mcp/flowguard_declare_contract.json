@@ -28,6 +28,11 @@
           "counterexampleCheckId": {
             "type": "string",
             "description": "Optional check whose FAILURE would contradict this claim (adversarial falsification)."
+          },
+          "authority": {
+            "type": "string",
+            "enum": ["ticket", "plan", "architecture"],
+            "description": "Approved GOVERNING source for this claim (ticket/plan/architecture). Only a resolved authority classifies the claim as `fact`; without one it is a NOT_VERIFIED assumption. Validation evidence is never a governing authority."
           }
         },
         "additionalProperties": false

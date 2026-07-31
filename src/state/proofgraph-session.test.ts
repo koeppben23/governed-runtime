@@ -31,7 +31,7 @@ describe('SessionState.proofGraph (#762)', () => {
             statement: 'x',
             signalClass: 'fact',
             critical: true,
-            provenance: { kind: 'content', digest: 'd' },
+            provenance: { kind: 'canonical_authority', authorityId: 'ticket', digest: 'd' },
             evidenceRefs: [],
             counterexampleRefs: [],
             verificationState: 'PROVEN',

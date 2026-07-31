@@ -41,6 +41,7 @@ import {
   writeReport,
   reportPath,
 } from '../adapters/persistence.js';
+import { writeStateWithArtifacts } from './tools/helpers.js';
 import { makeProgressedState } from '../fixtures.js';
 import type { Phase } from '../state/schema.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
@@ -1309,10 +1310,11 @@ describe('declare_contract', () => {
     const fp = await computeFingerprint(ws.tmpDir);
     const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
     const state = await readState(sessDir);
-    await writeState(sessDir, {
+    await writeStateWithArtifacts(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
       activeChecks: [checkId],
+      ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
       implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
       validationAttempts: [
         {
@@ -1341,7 +1343,15 @@ describe('declare_contract', () => {
     const sessDir = await seedImplValidation({ checkId: 'test', passed: true });
     const result = parseToolResult(
       await declare_contract.execute(
-        { claims: [{ statement: 'the change is covered by the test check', checkId: 'test' }] },
+        {
+          claims: [
+            {
+              statement: 'the change is covered by the test check',
+              checkId: 'test',
+              authority: 'ticket',
+            },
+          ],
+        },
         ctx,
       ),
     );
@@ -1349,6 +1359,7 @@ describe('declare_contract', () => {
     expect(projection).toBeDefined();
     const claims = projection.claims as Array<Record<string, unknown>>;
     expect(claims).toHaveLength(1);
+    expect(claims[0]!.signalClass).toBe('fact');
     expect(claims[0]!.verificationState).toBe('PROVEN');
 
     const persisted = await readState(sessDir);
@@ -1356,11 +1367,31 @@ describe('declare_contract', () => {
     expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
   });
 
+  it('classifies a claim without an approved authority as a NOT_VERIFIED hypothesis', async () => {
+    await seedImplValidation({ checkId: 'test', passed: true });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        { claims: [{ statement: 'unsourced assertion', checkId: 'test' }] },
+        ctx,
+      ),
+    );
+    const claims = (result.proofGraph as Record<string, unknown>).claims as Array<
+      Record<string, unknown>
+    >;
+    expect(claims[0]!.signalClass).toBe('hypothesis');
+    expect(claims[0]!.provenance).toBeNull();
+    expect(claims[0]!.verificationState).toBe('NOT_VERIFIED');
+  });
+
   it('reports UNPROVEN when the covering check failed', async () => {
     await seedImplValidation({ checkId: 'test', passed: false });
     const result = parseToolResult(
       await declare_contract.execute(
-        { claims: [{ statement: 'covered by a failing check', checkId: 'test' }] },
+        {
+          claims: [
+            { statement: 'covered by a failing check', checkId: 'test', authority: 'ticket' },
+          ],
+        },
         ctx,
       ),
     );
@@ -1415,10 +1446,11 @@ describe('declare_contract', () => {
         },
       };
     }
-    await writeState(sessDir, {
+    await writeStateWithArtifacts(sessDir, {
       ...state!,
       phase: 'IMPL_REVIEW',
       activeChecks: ['test', 'security'],
+      ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
       implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
       validationAttempts: [attempt('test', true), attempt('security', false)],
     });
@@ -1426,7 +1458,12 @@ describe('declare_contract', () => {
       await declare_contract.execute(
         {
           claims: [
-            { statement: 'the change is safe', checkId: 'test', counterexampleCheckId: 'security' },
+            {
+              statement: 'the change is safe',
+              checkId: 'test',
+              counterexampleCheckId: 'security',
+              authority: 'ticket',
+            },
           ],
         },
         ctx,

@@ -14,7 +14,11 @@ import type {
   ProofCounterexample as ProofCounterexampleType,
 } from '../../state/proofgraph.js';
 
-const CONTENT_REF = { kind: 'content' as const, digest: 'authority-digest' };
+const AUTHORITY_REF = {
+  kind: 'canonical_authority' as const,
+  authorityId: 'ticket',
+  digest: 'authority-digest',
+};
 const SHA = 'a'.repeat(64);
 const NOW = '2026-01-01T00:00:00.000Z';
 const CURR = 'impl-digest-current';
@@ -30,7 +34,7 @@ function claim(id: string, overrides: Partial<DeclaredClaimType> = {}): Declared
     statement: 'claim',
     signalClass: 'fact',
     critical: true,
-    provenance: CONTENT_REF,
+    provenance: AUTHORITY_REF,
     evidenceRefs: [],
     counterexampleRefs: [],
     ...overrides,

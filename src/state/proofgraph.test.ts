@@ -14,6 +14,11 @@ import {
 
 const UUID = '00000000-0000-4000-8000-000000000001';
 const CONTENT_REF = { kind: 'content' as const, digest: 'deadbeef' };
+const AUTHORITY_REF = {
+  kind: 'canonical_authority' as const,
+  authorityId: 'ticket',
+  digest: 'deadbeef',
+};
 const SHA = 'a'.repeat(64);
 const NOW = '2026-01-01T00:00:00.000Z';
 
@@ -25,7 +30,7 @@ describe('proofgraph schemas', () => {
         statement: 'The alias resolves to its canonical command',
         signalClass: 'fact' as const,
         critical: true,
-        provenance: CONTENT_REF,
+        provenance: AUTHORITY_REF,
         evidenceRefs: [],
         counterexampleRefs: [],
       };
@@ -52,7 +57,7 @@ describe('proofgraph schemas', () => {
         statement: 'x',
         signalClass: 'fact' as const,
         critical: true,
-        provenance: CONTENT_REF,
+        provenance: AUTHORITY_REF,
         evidenceRefs: [CONTENT_REF],
         counterexampleRefs: [],
         verificationState: 'PROVEN' as const,
@@ -140,7 +145,7 @@ describe('proofgraph schemas', () => {
       statement: 'x',
       signalClass: 'fact' as const,
       critical: true,
-      provenance: CONTENT_REF,
+      provenance: AUTHORITY_REF,
       evidenceRefs: [],
       counterexampleRefs: [],
     };
@@ -192,7 +197,7 @@ describe('proofgraph schemas', () => {
         statement: 'x',
         signalClass: 'derived_signal' as const,
         critical: false,
-        provenance: CONTENT_REF,
+        provenance: AUTHORITY_REF,
         evidenceRefs: [],
         counterexampleRefs: [],
       };

@@ -8,7 +8,11 @@ import { SessionState } from './schema.js';
 import { makeState } from '../fixtures.js';
 
 const UUID = '00000000-0000-4000-8000-000000000001';
-const CONTENT_REF = { kind: 'content' as const, digest: 'authority' };
+const AUTHORITY_REF = {
+  kind: 'canonical_authority' as const,
+  authorityId: 'ticket',
+  digest: 'authority',
+};
 
 function declaredClaim() {
   return {
@@ -16,7 +20,7 @@ function declaredClaim() {
     statement: 'the schema default matches the runtime default',
     signalClass: 'fact' as const,
     critical: true,
-    provenance: CONTENT_REF,
+    provenance: AUTHORITY_REF,
     evidenceRefs: [],
     counterexampleRefs: [],
   };
