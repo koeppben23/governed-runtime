@@ -38,6 +38,25 @@ export const TOOL_FLOWGUARD_ABORT = 'flowguard_abort_session';
 export const TOOL_FLOWGUARD_ARCHIVE = 'flowguard_archive';
 export const TOOL_FLOWGUARD_HELP = 'flowguard_help';
 
+/** The complete set of canonical FlowGuard tool names (single source of truth). */
+export const ALL_FLOWGUARD_TOOL_NAMES: ReadonlySet<string> = new Set([
+  TOOL_FLOWGUARD_STATUS,
+  TOOL_FLOWGUARD_HYDRATE,
+  TOOL_FLOWGUARD_TICKET,
+  TOOL_FLOWGUARD_PLAN,
+  TOOL_FLOWGUARD_DECISION,
+  TOOL_FLOWGUARD_IMPLEMENT,
+  TOOL_FLOWGUARD_REVIEW_IMPLEMENTATION,
+  TOOL_FLOWGUARD_RESOLVE_IMPLEMENTATION_CHALLENGE,
+  TOOL_FLOWGUARD_RUN_CHECK,
+  TOOL_FLOWGUARD_REVIEW,
+  TOOL_FLOWGUARD_CONTINUE,
+  TOOL_FLOWGUARD_ARCHITECTURE,
+  TOOL_FLOWGUARD_ABORT,
+  TOOL_FLOWGUARD_ARCHIVE,
+  TOOL_FLOWGUARD_HELP,
+]);
+
 export { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
 
 const FLOWGUARD_VERDICT_TOOLS: ReadonlySet<string> = new Set([
