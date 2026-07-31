@@ -63,6 +63,8 @@ describe('evaluateProofGraphGate', () => {
       enabled: true,
     });
     expect(decision).toMatchObject({ enforced: true, gated: false, blockingClaimIds: [] });
+    // The reason a reviewer reads must match the verdict, not merely exist.
+    expect(decision.reason).toBe('All critical fact claims are PROVEN.');
   });
 
   it('gates on a critical fact claim that is not PROVEN', () => {
@@ -71,6 +73,20 @@ describe('evaluateProofGraphGate', () => {
     });
     expect(decision.gated).toBe(true);
     expect(decision.blockingClaimIds).toEqual([UUID(1)]);
+    expect(decision.reason).toBe('1 critical fact claim(s) are not PROVEN.');
+  });
+
+  it('counts every blocking claim in the reason', () => {
+    const decision = evaluateProofGraphGate(
+      summary([
+        claim(UUID(1), { state: 'UNPROVEN' }),
+        claim(UUID(2), { state: 'STALE' }),
+        claim(UUID(3), { state: 'PROVEN' }),
+      ]),
+      { enabled: true },
+    );
+    expect(decision.blockingClaimIds).toEqual([UUID(1), UUID(2)]);
+    expect(decision.reason).toBe('2 critical fact claim(s) are not PROVEN.');
   });
 
   it('gates on a critical fact claim that is CONTRADICTED', () => {

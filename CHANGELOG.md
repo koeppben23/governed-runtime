@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **ProofGraph evidence providers, mutation reporting and reviewer projection
+  (completes #762).** Builds on the ProofGraph foundation:
+  - **Structural and schema providers.** The cross-artifact consistency checks
+    now produce real evidence: `command-registration` (`structural_assertion`)
+    and `config-defaults` (`schema_compare`). Each result is bound to a canonical
+    digest over the covered registry/schema **data**, so it is identical in a
+    checkout and an installed package and goes `STALE` when the surface changes.
+    Claims opt in via `structuralSurface`, which also makes the assertion
+    _required_ evidence.
+  - **Selective semantic mutation (opt-in).** Recorded, never executed: an
+    existing Stryker report is ingested for explicitly selected profiles
+    (`proofgraph-evaluator`, `proofgraph-gate`) and surfaced as `fault_injection`
+    evidence with survivor status. `Survived`/`NoCoverage` are survivors;
+    `CompileError`/`RuntimeError`/`Ignored`/`Pending` are excluded rather than
+    counted as detected; a missing or uncovered profile is `NOT_VERIFIED`, never
+    a pass. The repository-wide mutation job remains **not** a PR requirement.
+  - **Complete reviewer projection.** `flowguard_status({ proofGraph: true })`
+    now surfaces `counterexamples` (outcome + bound digest + `stale`), `mutation`
+    (per-profile verdicts incl. surviving mutant ids), and
+    `unresolvedAssumptions` (each non-`PROVEN` claim with an explicit reason)
+    instead of leaving them implied by the verification state.
+  - One critical claim now demonstrates an executed positive test, a
+    negative/fault scenario, and a structural consistency assertion together.
+
 - **FlowGuard ProofGraph foundation (part of #762).** A versioned, deterministic
   executable evidence graph that makes each critical change claim traceable from
   approved intent to a review outcome, surfaced advisorily and never altering

@@ -106,16 +106,59 @@ required adversarial evidence.
 ## Cross-artifact consistency
 
 Two pure, structural checks detect the "green CI but registries/defaults
-disagree" class and are surfaced advisorily:
+disagree" class. They are both standalone reports **and** evidence providers:
 
-- **Registration consistency** — every installed command's template body, target
-  tool, and workflow command is actually registered.
-- **Config-default consistency** — the config schema normalizes a minimal config,
-  every required top-level key is present after defaulting, and re-parsing the
-  normalized defaults is stable.
+- **Registration consistency** (`command-registration`, `structural_assertion`) —
+  every installed command's template body, target tool, and workflow command is
+  actually registered.
+- **Config-default consistency** (`config-defaults`, `schema_compare`) — the
+  config schema normalizes a minimal config, every required top-level key is
+  present after defaulting, and re-parsing the normalized defaults is stable.
+
+A claim opts in with `structuralSurface`, which adds a `structural_surface`
+evidence reference **and** the matching provider kind to `requiredEvidence`. The
+result is bound to a canonical digest over the covered registry/schema **data**
+(not source files, so it behaves identically in a checkout and an installed
+package). When that surface changes, the prior pass becomes `STALE` and can no
+longer satisfy the claim.
+
+## Selective semantic mutation
+
+Mutation evidence is **recorded, never executed** by FlowGuard. A repo-wide
+per-PR mutation run is documented as unreliable and is deliberately not a
+requirement; instead an already-produced Stryker report
+(`reports/mutation/mutation.json`) is ingested for explicitly selected profiles:
+
+| Profile                | Covered surface                    |
+| ---------------------- | ---------------------------------- |
+| `proofgraph-evaluator` | `src/audit/proofgraph/evaluate.ts` |
+| `proofgraph-gate`      | `src/audit/proofgraph/gate.ts`     |
+
+A claim opts in with `mutationProfile`, which adds `fault_injection` to
+`requiredEvidence`. Survivor semantics are explicit:
+
+- `Survived` and `NoCoverage` are **survivors** → failing evidence;
+- `Killed` and `Timeout` are detected;
+- `CompileError`, `RuntimeError`, `Ignored`, `Pending` are **excluded**, never
+  silently counted as detected.
+
+No recorded report, an uncovered profile, or an unknown profile yields
+`unavailable` evidence (`NOT_VERIFIED`) — never a pass-by-fallback. Mutation
+evidence binds to the implementation digest, so it goes `STALE` with the
+revision.
 
 ## Inspecting the ProofGraph
 
-`flowguard_status({ proofGraph: true })` returns the advisory projection: per-claim
-verification states and freshness, critical-claim rollups, and the registration
-and config-default consistency reports. It is read-only and never gates.
+`flowguard_status({ proofGraph: true })` returns the advisory projection. It is
+read-only and never gates. Beyond per-claim verification states and freshness it
+surfaces explicitly, rather than merely implying:
+
+- `counterexamples` — every executed adversarial outcome with its bound digest
+  and a `stale` flag;
+- `mutation` — recorded per-profile verdicts including surviving mutant ids
+  (empty when nothing was recorded, never fabricated);
+- `unresolvedAssumptions` — each non-`PROVEN` claim with a reason distinguishing
+  an unsourced assumption, a falsification, an errored provider, missing
+  evidence, and superseded (stale) evidence;
+- the registration and config-default consistency reports and the default-off
+  gate decision.
