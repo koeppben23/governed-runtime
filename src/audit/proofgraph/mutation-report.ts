@@ -198,7 +198,7 @@ export function summarizeMutationProfile(
  * report on disk no longer matches this digest, the evidence is invalid.
  */
 export function computeReportDigest(report: MutationReport): string {
-  const canonical = canonicalJsonStringify(MutationReport.parse(report) as Record<string, unknown>);
+  const canonical = canonicalJsonStringify(MutationReport.parse(report));
   return hashText(canonical);
 }
 

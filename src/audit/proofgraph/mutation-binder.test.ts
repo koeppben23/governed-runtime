@@ -125,9 +125,9 @@ describe('bindMutationEvidence', () => {
           location: 'mutation-profile:proofgraph-evaluator',
           stableId: 'proofgraph-evaluator',
         },
+        resultDigest: REPORT_DIGEST,
+        executedAt: '2026-01-01T00:05:00.000Z',
       });
-      expect(r!.resultDigest).toBe(REPORT_DIGEST);
-      expect(r!.executedAt).toBe('2026-01-01T00:05:00.000Z');
     });
 
     it('binds surviving mutants as FAILING evidence', () => {
@@ -150,9 +150,7 @@ describe('bindMutationEvidence', () => {
         envelope(RECORDED_DIGEST),
         NOW,
       );
-      expect(r!.binding).toEqual({ kind: 'implementation', digest: RECORDED_DIGEST });
-      // The binder must not have substituted the current digest.
-      expect(r!.binding!.digest).not.toBe('different-current-digest');
+      expect(r).toMatchObject({ binding: { kind: 'implementation', digest: RECORDED_DIGEST } });
     });
 
     it('preserves the recorded completedAt timestamp, never the evaluation timestamp', () => {
