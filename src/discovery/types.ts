@@ -49,6 +49,7 @@ import {
   DiscoverySummarySchema,
   type DiscoverySummary,
 } from '../state/discovery-schemas.js';
+import { SignalClass } from '../state/evidence-signal.js';
 
 // Re-export for backward compatibility
 export {
@@ -91,8 +92,11 @@ export const PROFILE_RESOLUTION_SCHEMA_VERSION = 'profile-resolution.v1' as cons
  * - fact: directly observed in the repository (file exists, config present)
  * - derived_signal: inferred from a combination of facts (framework detected from dependencies)
  * - hypothesis: low-confidence guess based on heuristics
+ *
+ * Aliased to the canonical, layer-neutral `SignalClass` (state/evidence-signal)
+ * so Discovery and ProofGraph share one vocabulary instead of duplicating it.
  */
-export const EvidenceClassSchema = z.enum(['fact', 'derived_signal', 'hypothesis']);
+export const EvidenceClassSchema = SignalClass;
 export type EvidenceClass = z.infer<typeof EvidenceClassSchema>;
 
 // ─── Collector Status ─────────────────────────────────────────────────────────
