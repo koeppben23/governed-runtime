@@ -39,6 +39,7 @@ import {
   DetectedStackSchema,
   VerificationCandidatesSchema,
 } from './discovery-schemas.js';
+import { ProofGraphProjection } from './proofgraph.js';
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
@@ -332,6 +333,16 @@ export const SessionState = z.object({
 
   /** Absolute path to the generated review report file (REVIEW phase, P8b). */
   reviewReportPath: z.string().nullable().default(null),
+
+  /**
+   * Compact ProofGraph projection (advisory; #762).
+   *
+   * Additive and `.optional()` for backward compatibility: sessions created
+   * before ProofGraph have no projection, and its absence is treated as "no
+   * graph". It never gates a workflow on its own — blocking eligibility is a
+   * policy-layer decision. Large provider artifacts live outside session state.
+   */
+  proofGraph: ProofGraphProjection.optional(),
 
   /** Next auto-generated ADR sequence number for /architecture. */
   nextAdrNumber: z.number().int().positive(),
