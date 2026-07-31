@@ -33,6 +33,9 @@ function summary(claims: ProofClaim[]): ProofGraphSummary {
     counts: { PROVEN: 0, UNPROVEN: 0, CONTRADICTED: 0, STALE: 0, BLOCKED: 0, NOT_VERIFIED: 0 },
     criticalClaimCount: 0,
     criticalUnprovenCount: 0,
+    counterexamples: [],
+    mutation: [],
+    unresolvedAssumptions: [],
   };
 }
 

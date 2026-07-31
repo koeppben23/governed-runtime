@@ -160,6 +160,7 @@ async function buildProofGraphProjectionResponse(
       ...bindMutationEvidence(state, mutationEvaluations, now),
     ],
     surfaceDigests: surfaceDigestMap(structuralSurfaces),
+    mutationSummaries: mutationEvaluations.flatMap((e) => (e.summary ? [e.summary] : [])),
   });
   const proofGraphGate = evaluateProofGraphGate(proofGraph, policy.proofGraphPolicy);
   const registrationConsistency = checkRegistrationConsistency();

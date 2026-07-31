@@ -101,3 +101,134 @@ describe('summarizeProofGraph', () => {
     expect(summary.criticalUnprovenCount).toBe(1);
   });
 });
+
+// AC#6 (#762): the projection must expose counterexample status, mutation
+// status where present, and unresolved assumptions - not merely imply them.
+describe('summarizeProofGraph reviewer projection', () => {
+  const CX_ATT = '00000000-0000-4000-8000-0000000000cc';
+
+  function passingAttempt(attemptId: string, checkId: string, digest: string, passed: boolean) {
+    return {
+      attemptId,
+      scope: 'implementation' as const,
+      implementationDigest: digest,
+      result: { ...attemptResult(passed), checkId },
+    };
+  }
+
+  function stateWithCounterexample(cxDigest: string): SessionState {
+    return makeState('IMPL_VALIDATION', {
+      implementation: IMPL,
+      proofContract: {
+        version: 'contract.v1',
+        claims: [
+          {
+            ...claim(),
+            counterexampleRefs: [{ kind: 'validation_attempt' as const, attemptId: CX_ATT }],
+          },
+        ],
+      },
+      validationAttempts: [
+        passingAttempt(ATT, 'test', IMPL_DIGEST, true),
+        passingAttempt(CX_ATT, 'security', cxDigest, true),
+      ],
+    });
+  }
+
+  it('surfaces executed counterexample outcomes explicitly', () => {
+    const summary = summarizeProofGraph(stateWithCounterexample(IMPL_DIGEST), NOW);
+    expect(summary.counterexamples).toHaveLength(1);
+    expect(summary.counterexamples[0]).toMatchObject({
+      outcome: 'supported',
+      boundDigest: IMPL_DIGEST,
+      stale: false,
+    });
+  });
+
+  it('marks a counterexample bound to a superseded revision as stale', () => {
+    const summary = summarizeProofGraph(stateWithCounterexample('old-digest'), NOW);
+    expect(summary.counterexamples[0]).toMatchObject({ stale: true });
+  });
+
+  it('surfaces recorded mutation verdicts including survivors', () => {
+    const summary = summarizeProofGraph(stateWith([]), NOW, {
+      mutationSummaries: [
+        {
+          profileId: 'proofgraph-evaluator',
+          covered: true,
+          killedCount: 4,
+          survivorCount: 1,
+          excludedCount: 0,
+          survivors: [
+            {
+              mutantId: '7',
+              location: 'src/audit/proofgraph/evaluate.ts',
+              mutatorName: 'ConditionalExpression',
+              status: 'Survived',
+            },
+          ],
+          resultDigest: 'a'.repeat(64),
+        },
+      ],
+    });
+    expect(summary.mutation).toHaveLength(1);
+    expect(summary.mutation[0]).toMatchObject({
+      profileId: 'proofgraph-evaluator',
+      survivorCount: 1,
+      killedCount: 4,
+    });
+    expect(summary.mutation[0]!.survivors[0]!.mutantId).toBe('7');
+  });
+
+  it('reports no mutation entries when nothing was recorded', () => {
+    expect(summarizeProofGraph(stateWith([]), NOW).mutation).toEqual([]);
+  });
+
+  it('lists an unsourced claim as an unresolved assumption with a reason', () => {
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL,
+      proofContract: {
+        version: 'contract.v1',
+        claims: [{ ...claim(), provenance: null, evidenceRefs: [] }],
+      },
+    });
+    const summary = summarizeProofGraph(state, NOW);
+    expect(summary.unresolvedAssumptions).toHaveLength(1);
+    expect(summary.unresolvedAssumptions[0]).toMatchObject({
+      claimId: CLAIM,
+      verificationState: 'NOT_VERIFIED',
+    });
+    expect(summary.unresolvedAssumptions[0]!.reason).toContain('no approved governing authority');
+  });
+
+  it('does not list a PROVEN claim as unresolved', () => {
+    const summary = summarizeProofGraph(
+      stateWith([
+        {
+          attemptId: ATT,
+          scope: 'implementation',
+          implementationDigest: IMPL_DIGEST,
+          result: attemptResult(true),
+        },
+      ]),
+      NOW,
+    );
+    expect(summary.counts.PROVEN).toBe(1);
+    expect(summary.unresolvedAssumptions).toEqual([]);
+  });
+
+  it('explains a STALE claim as superseded rather than merely unproven', () => {
+    const summary = summarizeProofGraph(
+      stateWith([
+        {
+          attemptId: ATT,
+          scope: 'implementation',
+          implementationDigest: 'old-digest',
+          result: attemptResult(true),
+        },
+      ]),
+      NOW,
+    );
+    expect(summary.unresolvedAssumptions[0]!.reason).toContain('superseded revision');
+  });
+});
