@@ -112,6 +112,8 @@ describe('summarizeMutationProfile', () => {
       PROFILE,
     );
     expect(s).toMatchObject({ killedCount: 0, survivorCount: 0, excludedCount: 3 });
+    // No evaluated mutants → the verdict is NOT valid evidence.
+    expect(s.covered).toBe(false);
   });
 
   it('reports covered=false when the report does not include the profile locations', () => {
@@ -154,6 +156,31 @@ describe('summarizeMutationProfile', () => {
       multi,
     );
     expect(s.survivors.map((x) => x.location)).toEqual([EVALUATOR, GATE]);
+  });
+
+  it('reports covered=false when the file exists but has zero mutants', () => {
+    const s = summarizeMutationProfile(report({ [EVALUATOR]: [] }), PROFILE);
+    expect(s.covered).toBe(false);
+  });
+
+  it('reports covered=true when NoCoverage is present (it is still a survivor)', () => {
+    const s = summarizeMutationProfile(
+      report({ [EVALUATOR]: [mutant('0', 'NoCoverage')] }),
+      PROFILE,
+    );
+    expect(s.covered).toBe(true);
+    expect(s.survivorCount).toBe(1);
+  });
+
+  it('reports covered=true with at least one killed mutant and no survivors', () => {
+    const s = summarizeMutationProfile(report({ [EVALUATOR]: [mutant('0', 'Killed')] }), PROFILE);
+    expect(s.covered).toBe(true);
+    expect(s).toMatchObject({ killedCount: 1, survivorCount: 0 });
+  });
+
+  it('reports covered=false for a surface that is absent from the report', () => {
+    const s = summarizeMutationProfile(report({}), PROFILE);
+    expect(s.covered).toBe(false);
   });
 });
 

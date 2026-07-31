@@ -56,6 +56,14 @@ function unavailable(claimId: string, evaluatedAt: string, reason: string): Proo
 
 /**
  * Resolve one `mutation_attempt` reference into a provider result.
+ *
+ * Precedence:
+ * 1. Non-zero exit code → `error` (the mutation run did not complete normally;
+ *    surviving mutants were NOT proven absent).
+ * 2. No evaluated mutants (covered=false) → already handled by caller as
+ *    `unavailable`.
+ * 3. survivors > 0 → `fail`.
+ * 4. survivors === 0 → `pass`.
  */
 function resolveFromAttempt(
   claimId: string,
@@ -64,6 +72,24 @@ function resolveFromAttempt(
   survivorCount: number,
   killedCount: number,
 ): ProofProviderResult {
+  if (attempt.exitCode !== 0) {
+    return {
+      claimId,
+      providerKind: 'fault_injection',
+      providerId: MUTATION_PROVIDER_ID,
+      providerVersion: attempt.providerVersion,
+      input: { command: attempt.command },
+      source: {
+        location: `mutation-attempt:${attempt.attemptId}`,
+        stableId: `${attempt.attemptId}:${profileId}`,
+      },
+      binding: { kind: 'implementation', digest: attempt.implementationDigest },
+      status: 'error',
+      resultDigest: attempt.projectionDigest,
+      executedAt: attempt.completedAt,
+      detail: `mutation command exited with code ${attempt.exitCode}; no valid verdict`,
+    };
+  }
   const clean = survivorCount === 0;
   return {
     claimId,

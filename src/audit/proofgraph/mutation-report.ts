@@ -93,7 +93,9 @@ export interface MutationSurvivor {
 /** Verdict for one profile evaluated against a report. */
 export interface MutationProfileSummary {
   readonly profileId: string;
-  /** False when the report covers none of the profile's locations. */
+  /** False when the report covers none of the profile's locations OR when no
+   *  mutants were actually evaluated (e.g. all were excluded, zero mutants present).
+   *  True only when at least one mutant was killed or survived. */
   readonly covered: boolean;
   readonly killedCount: number;
   readonly survivorCount: number;
@@ -124,12 +126,12 @@ export function summarizeMutationProfile(
   const survivors: MutationSurvivor[] = [];
   let killedCount = 0;
   let excludedCount = 0;
-  let covered = false;
+  let surfacePresent = false;
 
   for (const location of [...profile.locations].sort()) {
     const file = report.files[location];
     if (file === undefined) continue;
-    covered = true;
+    surfacePresent = true;
     for (const mutant of file.mutants) {
       if (isSurvivor(mutant.status)) {
         survivors.push({
@@ -153,13 +155,17 @@ export function summarizeMutationProfile(
   );
   const verdict = {
     profileId: profile.profileId,
-    covered,
     killedCount,
     survivorCount: survivors.length,
     excludedCount,
     survivors,
   };
-  return { ...verdict, projectionDigest: hashText(canonicalJsonStringify(verdict)) };
+  // covered = true ONLY when a profile file was present AND at least one
+  // mutant was actually evaluated (killed or survived). A profile with zero
+  // evaluated mutants — empty files, or only CompileError / RuntimeError /
+  // Ignored / Pending — is NOT a valid verdict. It proves nothing.
+  const covered = surfacePresent && killedCount + survivors.length > 0;
+  return { ...verdict, covered, projectionDigest: hashText(canonicalJsonStringify(verdict)) };
 }
 
 /**

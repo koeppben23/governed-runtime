@@ -199,6 +199,97 @@ describe('bindMutationEvidence', () => {
     expect(bindMutationEvidence(state, verdicts(ATTEMPT_ID), NOW)).toEqual([]);
   });
 
+  describe('exit code semantics', () => {
+    function stateWithExitCode(exitCode: number): SessionState {
+      return makeState('IMPL_VALIDATION', {
+        implementation: {
+          changedFiles: ['a.ts'],
+          domainFiles: [],
+          digest: 'impl-current',
+          executedAt: NOW,
+        },
+        proofContract: {
+          version: 'contract.v1',
+          claims: [
+            {
+              claimId: CLAIM,
+              statement: 'x',
+              signalClass: 'fact',
+              critical: true,
+              provenance: AUTHORITY_REF,
+              evidenceRefs: [
+                { kind: 'mutation_attempt', attemptId: ATTEMPT_ID, profileId: PROFILE },
+              ],
+              counterexampleRefs: [],
+            },
+          ],
+        },
+        mutationAttempts: [
+          {
+            attemptId: ATTEMPT_ID,
+            implementationDigest: RECORDED_DIGEST,
+            command: 'npm run mutation',
+            startedAt: NOW,
+            completedAt: NOW,
+            exitCode,
+            artifactDigest: 'b'.repeat(64),
+            projectionDigest: PROJ_DIGEST,
+            reportPath: 'reports/mutation/mutation.json',
+            providerVersion: MUTATION_PROVIDER_VERSION,
+          },
+        ],
+      });
+    }
+
+    it('non-zero mutation exit code yields error, never pass', () => {
+      const [r] = bindMutationEvidence(
+        stateWithExitCode(1),
+        verdicts(ATTEMPT_ID, 5, 0, true, PROFILE),
+        NOW,
+      );
+      expect(r!.status).toBe('error');
+      expect(r!.detail).toContain('exited with code 1');
+    });
+
+    it('non-zero exit code yields error even when the report had no survivors', () => {
+      // 0 survivors + non-zero exit = error, not pass
+      const [r] = bindMutationEvidence(
+        stateWithExitCode(127),
+        verdicts(ATTEMPT_ID, 10, 0, true, PROFILE),
+        NOW,
+      );
+      expect(r!.status).toBe('error');
+      expect(r!.detail).toContain('exited with code 127');
+    });
+
+    it('zero exit code with survivors yields fail', () => {
+      const [r] = bindMutationEvidence(
+        stateWithExitCode(0),
+        verdicts(ATTEMPT_ID, 5, 3, true, PROFILE),
+        NOW,
+      );
+      expect(r!.status).toBe('fail');
+    });
+
+    it('zero exit code without survivors yields pass', () => {
+      const [r] = bindMutationEvidence(
+        stateWithExitCode(0),
+        verdicts(ATTEMPT_ID, 5, 0, true, PROFILE),
+        NOW,
+      );
+      expect(r!.status).toBe('pass');
+    });
+
+    it('error results satisfy the strict provider schema', () => {
+      const [r] = bindMutationEvidence(
+        stateWithExitCode(1),
+        verdicts(ATTEMPT_ID, 5, 0, true, PROFILE),
+        NOW,
+      );
+      expect(() => ProofProviderResult.parse(r)).not.toThrow();
+    });
+  });
+
   describe('schema compliance', () => {
     it('emits results that satisfy the strict provider schema', () => {
       for (const r of bindMutationEvidence(

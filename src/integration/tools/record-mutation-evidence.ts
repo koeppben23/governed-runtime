@@ -27,6 +27,13 @@
  * digests and the implementation binding are FlowGuard-computed. A future
  * executor could upgrade these fields to genuinely attested execution evidence.
  *
+ * `implementationDigest` is bound to the current session-state implementation at
+ * RECORDING time, NOT at mutation execution time. FlowGuard proves report
+ * integrity (artifact + projection digests) against the expected file, but it
+ * cannot prove which repository revision the external mutation tool actually
+ * operated on. For a full execution attestation, the mutation run would need to
+ * be started/finished through a FlowGuard-controlled execution record.
+ *
  * Without a recorded `MutationAttempt`, a raw report on disk yields
  * `unavailable` / NOT_VERIFIED, never a pass-by-fallback.
  *
