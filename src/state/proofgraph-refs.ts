@@ -64,6 +64,22 @@ export const ClaimAuthorityRef = z.discriminatedUnion('kind', [
 export type ClaimAuthorityRef = z.infer<typeof ClaimAuthorityRef>;
 
 /**
+ * Reference to a structural/schema input surface (a `surface_set` binding key).
+ *
+ * This is EVIDENCE, not authority: it names the surface whose consistency
+ * assertion covers the claim. Freshness is resolved against the surface's
+ * current canonical digest, so a passing assertion cannot prove indefinitely
+ * after the surface changes.
+ */
+export const StructuralSurfaceRef = z
+  .object({
+    kind: z.literal('structural_surface'),
+    surfaceId: z.string().min(1),
+  })
+  .readonly();
+export type StructuralSurfaceRef = z.infer<typeof StructuralSurfaceRef>;
+
+/**
  * Reproducible EVIDENCE about a claim. Evidence proves or falsifies a claim but
  * never confers governing provenance.
  */
@@ -71,5 +87,6 @@ export const ClaimEvidenceRef = z.discriminatedUnion('kind', [
   ValidationAttemptRef,
   ImplementationRef,
   ContentRef,
+  StructuralSurfaceRef,
 ]);
 export type ClaimEvidenceRef = z.infer<typeof ClaimEvidenceRef>;

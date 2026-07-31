@@ -53,6 +53,11 @@ import { ActorClaimError } from '../../adapters/actor.js';
 // Config
 import { evaluateCompleteness } from '../../audit/completeness.js';
 import { summarizeProofGraph } from '../../audit/proofgraph/summary.js';
+import {
+  evaluateStructuralSurfaces,
+  bindStructuralEvidence,
+  surfaceDigestMap,
+} from '../proofgraph/structural-provider.js';
 import { checkRegistrationConsistency } from '../proofgraph/registration-consistency.js';
 import { checkConfigDefaultConsistency } from '../proofgraph/config-default-consistency.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
@@ -142,7 +147,12 @@ function buildProofGraphProjectionResponse(
   policy: FlowGuardPolicy,
   checkFields: Record<string, unknown>,
 ): string {
-  const proofGraph = summarizeProofGraph(state, new Date().toISOString());
+  const now = new Date().toISOString();
+  const structuralSurfaces = evaluateStructuralSurfaces();
+  const proofGraph = summarizeProofGraph(state, now, {
+    providerResults: bindStructuralEvidence(state, structuralSurfaces, now),
+    surfaceDigests: surfaceDigestMap(structuralSurfaces),
+  });
   const proofGraphGate = evaluateProofGraphGate(proofGraph, policy.proofGraphPolicy);
   const registrationConsistency = checkRegistrationConsistency();
   const configConsistency = checkConfigDefaultConsistency();

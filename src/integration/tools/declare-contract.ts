@@ -22,7 +22,15 @@ import { z } from 'zod';
 
 import type { Phase, SessionState } from '../../state/schema.js';
 import type { DeclaredClaim } from '../../state/proofgraph.js';
+import type { ProofProviderKind } from '../../state/proofgraph-primitives.js';
 import type { ClaimAuthorityRef } from '../../state/proofgraph-refs.js';
+import {
+  SURFACE_COMMAND_REGISTRATION,
+  SURFACE_CONFIG_DEFAULTS,
+  evaluateStructuralSurfaces,
+  bindStructuralEvidence,
+  surfaceDigestMap,
+} from '../proofgraph/structural-provider.js';
 import { deriveProofGraph } from '../../audit/proofgraph/derive.js';
 import { bindExecutedTestEvidence } from '../../audit/proofgraph/executed-test-binder.js';
 import { bindCounterexamples } from '../../audit/proofgraph/counterexample-binder.js';
@@ -115,6 +123,7 @@ type RawClaim = {
   critical?: boolean;
   counterexampleCheckId?: string;
   authority?: AuthoritySource;
+  structuralSurface?: string;
 };
 
 /**
@@ -151,6 +160,18 @@ function buildDeclaredClaims(
     const provenance = resolveAuthority(state, rc.authority);
     const isFact = provenance !== null;
     const critical = rc.critical ?? true;
+    const evidenceRefs: DeclaredClaim['evidenceRefs'][number][] = [evidenceRef];
+    // A declared structural surface becomes required positive evidence, so a
+    // claim cannot be proven while its consistency assertion is failing/stale.
+    const positive: ProofProviderKind[] = ['executed_test'];
+    if (rc.structuralSurface !== undefined) {
+      evidenceRefs.push({ kind: 'structural_surface', surfaceId: rc.structuralSurface });
+      positive.push(
+        rc.structuralSurface === SURFACE_CONFIG_DEFAULTS
+          ? 'schema_compare'
+          : 'structural_assertion',
+      );
+    }
     claims.push({
       claimId: claimIdFor(rc.statement),
       statement: rc.statement,
@@ -158,12 +179,12 @@ function buildDeclaredClaims(
       signalClass: isFact ? 'fact' : 'hypothesis',
       critical,
       provenance,
-      evidenceRefs: [evidenceRef],
+      evidenceRefs,
       counterexampleRefs,
       // A critical fact claim must survive an executed counterexample before it
       // may be PROVEN; a missing/unresolved counterexample keeps it NOT_VERIFIED.
       requiredEvidence: {
-        positive: ['executed_test' as const],
+        positive,
         adversarial: critical && isFact ? ['counterexample' as const] : [],
       },
     });
@@ -206,6 +227,14 @@ export const declare_contract: ToolDefinition = {
                 'resolved authority classifies the claim as `fact`; without one it is a ' +
                 'NOT_VERIFIED assumption. Validation evidence is never a governing authority.',
             ),
+          structuralSurface: z
+            .enum([SURFACE_COMMAND_REGISTRATION, SURFACE_CONFIG_DEFAULTS])
+            .optional()
+            .describe(
+              'Optional cross-artifact consistency surface whose assertion also covers this ' +
+                'claim. Becomes required positive evidence and is bound to the surface digest, ' +
+                'so the claim goes STALE when that surface changes.',
+            ),
         }),
       )
       .min(1)
@@ -239,13 +268,18 @@ export const declare_contract: ToolDefinition = {
         const proofContract = { version: 'contract.v1' as const, claims: built.claims };
         const now = ctx.now();
         const stateWithContract = { ...state, proofContract };
-        const providerResults = bindExecutedTestEvidence(stateWithContract, now);
+        const structuralSurfaces = evaluateStructuralSurfaces();
+        const providerResults = [
+          ...bindExecutedTestEvidence(stateWithContract, now),
+          ...bindStructuralEvidence(stateWithContract, structuralSurfaces, now),
+        ];
         const counterexamples = bindCounterexamples(stateWithContract, now);
         const proofGraph = deriveProofGraph(
           stateWithContract,
           providerResults,
           counterexamples,
           now,
+          surfaceDigestMap(structuralSurfaces),
         );
         const nextState = { ...state, proofContract, proofGraph };
         await writeStateWithArtifacts(sessDir, nextState);
