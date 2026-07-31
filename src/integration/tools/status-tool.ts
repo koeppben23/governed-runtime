@@ -58,7 +58,7 @@ import {
   bindStructuralEvidence,
   surfaceDigestMap,
 } from '../proofgraph/structural-provider.js';
-import { loadMutationReport, evaluateMutationProfiles } from '../proofgraph/mutation-provider.js';
+import { loadMutationEvidence, evaluateMutationProfiles } from '../proofgraph/mutation-provider.js';
 import { bindMutationEvidence } from '../../audit/proofgraph/mutation-binder.js';
 import { checkRegistrationConsistency } from '../proofgraph/registration-consistency.js';
 import { checkConfigDefaultConsistency } from '../proofgraph/config-default-consistency.js';
@@ -151,13 +151,12 @@ async function buildProofGraphProjectionResponse(
 ): Promise<string> {
   const now = new Date().toISOString();
   const structuralSurfaces = evaluateStructuralSurfaces();
-  const mutationEvaluations = evaluateMutationProfiles(
-    await loadMutationReport(state.binding.worktree),
-  );
+  const mutationEvidence = await loadMutationEvidence(state.binding.worktree);
+  const mutationEvaluations = evaluateMutationProfiles(mutationEvidence.report);
   const proofGraph = summarizeProofGraph(state, now, {
     providerResults: [
       ...bindStructuralEvidence(state, structuralSurfaces, now),
-      ...bindMutationEvidence(state, mutationEvaluations, now),
+      ...bindMutationEvidence(state, mutationEvaluations, mutationEvidence.envelope, now),
     ],
     surfaceDigests: surfaceDigestMap(structuralSurfaces),
     mutationSummaries: mutationEvaluations.flatMap((e) => (e.summary ? [e.summary] : [])),

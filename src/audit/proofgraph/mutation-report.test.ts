@@ -9,7 +9,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   MutationReport,
+  RecordedMutationEvidence,
   summarizeMutationProfile,
+  computeReportDigest,
+  verifyReportDigest,
   type MutationProfile,
 } from './mutation-report.js';
 
@@ -147,5 +150,82 @@ describe('summarizeMutationProfile', () => {
       multi,
     );
     expect(s.survivors.map((x) => x.location)).toEqual([EVALUATOR, GATE]);
+  });
+});
+
+describe('RecordedMutationEvidence envelope', () => {
+  it('parses a valid mutation-evidence.v1 envelope', () => {
+    const parsed = RecordedMutationEvidence.parse({
+      version: 'mutation-evidence.v1',
+      implementationDigest: 'a'.repeat(64),
+      command: 'npm run mutation',
+      startedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T00:05:00.000Z',
+      reportDigest: 'b'.repeat(64),
+      reportPath: 'reports/mutation/mutation.json',
+      providerVersion: 'semantic-mutation.v1',
+    });
+    expect(parsed.version).toBe('mutation-evidence.v1');
+    expect(parsed.implementationDigest).toBe('a'.repeat(64));
+  });
+
+  it('fails closed on a missing required field (strict)', () => {
+    expect(() => RecordedMutationEvidence.parse({ version: 'mutation-evidence.v1' })).toThrow();
+  });
+
+  it('fails closed on extra unknown fields (strict)', () => {
+    expect(() =>
+      RecordedMutationEvidence.parse({
+        version: 'mutation-evidence.v1',
+        implementationDigest: 'a'.repeat(64),
+        command: 'npm run mutation',
+        startedAt: '2026-01-01T00:00:00.000Z',
+        completedAt: '2026-01-01T00:05:00.000Z',
+        reportDigest: 'b'.repeat(64),
+        reportPath: 'reports/mutation/mutation.json',
+        providerVersion: 'semantic-mutation.v1',
+        injected: true,
+      }),
+    ).toThrow();
+  });
+});
+
+describe('computeReportDigest', () => {
+  it('is deterministic: same report yields the same digest', () => {
+    const r = report({ [EVALUATOR]: [mutant('0', 'Killed')] });
+    expect(computeReportDigest(r)).toBe(computeReportDigest(r));
+  });
+
+  it('differs when the report content changes', () => {
+    const a = report({ [EVALUATOR]: [mutant('0', 'Killed')] });
+    const b = report({ [EVALUATOR]: [mutant('0', 'Survived')] });
+    expect(computeReportDigest(a)).not.toBe(computeReportDigest(b));
+  });
+});
+
+describe('verifyReportDigest', () => {
+  function envelope(digest: string): RecordedMutationEvidence {
+    return RecordedMutationEvidence.parse({
+      version: 'mutation-evidence.v1',
+      implementationDigest: 'a'.repeat(64),
+      command: 'npm run mutation',
+      startedAt: '2026-01-01T00:00:00.000Z',
+      completedAt: '2026-01-01T00:05:00.000Z',
+      reportDigest: digest,
+      reportPath: 'reports/mutation/mutation.json',
+      providerVersion: 'semantic-mutation.v1',
+    });
+  }
+
+  it('returns true when the report digest matches', () => {
+    const r = report({ [EVALUATOR]: [mutant('0', 'Killed')] });
+    expect(verifyReportDigest(envelope(computeReportDigest(r)), r)).toBe(true);
+  });
+
+  it('returns false for a tampered report', () => {
+    const orig = report({ [EVALUATOR]: [mutant('0', 'Killed')] });
+    const env = envelope(computeReportDigest(orig));
+    const tampered = report({ [EVALUATOR]: [mutant('0', 'Survived')] });
+    expect(verifyReportDigest(env, tampered)).toBe(false);
   });
 });

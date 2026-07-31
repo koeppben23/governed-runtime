@@ -33,7 +33,7 @@ import {
 } from '../proofgraph/structural-provider.js';
 import {
   MUTATION_PROFILE_IDS,
-  loadMutationReport,
+  loadMutationEvidence,
   evaluateMutationProfiles,
 } from '../proofgraph/mutation-provider.js';
 import { bindMutationEvidence } from '../../audit/proofgraph/mutation-binder.js';
@@ -294,13 +294,17 @@ export const declare_contract: ToolDefinition = {
         const now = ctx.now();
         const stateWithContract = { ...state, proofContract };
         const structuralSurfaces = evaluateStructuralSurfaces();
-        const mutationEvaluations = evaluateMutationProfiles(
-          await loadMutationReport(getWorktree(context)),
-        );
+        const mutationEvidence = await loadMutationEvidence(getWorktree(context));
+        const mutationEvaluations = evaluateMutationProfiles(mutationEvidence.report);
         const providerResults = [
           ...bindExecutedTestEvidence(stateWithContract, now),
           ...bindStructuralEvidence(stateWithContract, structuralSurfaces, now),
-          ...bindMutationEvidence(stateWithContract, mutationEvaluations, now),
+          ...bindMutationEvidence(
+            stateWithContract,
+            mutationEvaluations,
+            mutationEvidence.envelope,
+            now,
+          ),
         ];
         const counterexamples = bindCounterexamples(stateWithContract, now);
         const proofGraph = deriveProofGraph(

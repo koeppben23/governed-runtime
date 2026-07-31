@@ -10,17 +10,26 @@
  * - surviving mutants  -> `fail` (the claim's tests did not detect the change);
  * - none surviving     -> `pass`;
  * - profile not covered by the report, or no report at all -> `unavailable`
- *   (surfaced as NOT_VERIFIED), never a pass-by-fallback.
+ *   (surfaced as NOT_VERIFIED), never a pass-by-fallback;
+ * - no recorded envelope (legacy Stryker JSON without `mutation-evidence.v1`) ->
+ *   every result is `unavailable` with a reason describing the missing binding.
  *
- * Mutation evidence binds to the current implementation digest, so it becomes
- * STALE as soon as the implementation changes.
+ * Critical invariant (#762):
+ * The binder MUST never substitute the current implementation digest or current
+ * timestamp into a pre-existing mutation report. It MUST use the recorded
+ * digest, command, and timestamps from the {@link RecordedMutationEvidence}
+ * envelope that was persisted when the mutation run was executed.
  *
  * @version v1
  */
 
 import type { SessionState } from '../../state/schema.js';
 import type { ProofProviderResult } from '../../state/proofgraph.js';
-import type { MutationProfile, MutationProfileSummary } from './mutation-report.js';
+import type {
+  MutationProfile,
+  MutationProfileSummary,
+  RecordedMutationEvidence,
+} from './mutation-report.js';
 
 /** Provider identity stamped on mutation results. */
 export const MUTATION_PROVIDER_ID = 'semantic-mutation';
@@ -30,7 +39,7 @@ export const MUTATION_PROVIDER_VERSION = 'semantic-mutation.v1';
 /** A profile plus its evaluated verdict, or an explicit absence. */
 export interface MutationEvaluation {
   readonly profile: MutationProfile;
-  /** Undefined when no report was available at all. */
+  /** Undefined when no report was available at all (legacy). */
   readonly summary?: MutationProfileSummary;
 }
 
@@ -49,31 +58,26 @@ function unavailable(claimId: string, evaluatedAt: string, reason: string): Proo
 
 /**
  * Resolve one claim's mutation profile reference into a provider result.
- * Every unresolved condition yields explicit `unavailable` evidence.
+ *
+ * When a valid envelope exists, the result carries the RECORDED implementation
+ * digest in its binding and the RECORDED completedAt timestamp — never the
+ * current session state's digest or the evaluation timestamp.
  */
 function resolveMutationResult(
   claimId: string,
   profileId: string,
   evaluation: MutationEvaluation | undefined,
-  implementationDigest: string | undefined,
-  evaluatedAt: string,
+  envelope: RecordedMutationEvidence,
 ): ProofProviderResult {
   if (evaluation === undefined) {
-    return unavailable(claimId, evaluatedAt, `unknown mutation profile: ${profileId}`);
+    return unavailable(claimId, envelope.completedAt, `unknown mutation profile: ${profileId}`);
   }
   const summary = evaluation.summary;
   if (summary === undefined || !summary.covered) {
     return unavailable(
       claimId,
-      evaluatedAt,
+      envelope.completedAt,
       `no recorded mutation results for profile ${profileId}`,
-    );
-  }
-  if (implementationDigest === undefined) {
-    return unavailable(
-      claimId,
-      evaluatedAt,
-      'no implementation revision to bind mutation evidence to',
     );
   }
   const clean = summary.survivorCount === 0;
@@ -81,13 +85,16 @@ function resolveMutationResult(
     claimId,
     providerKind: 'fault_injection',
     providerId: MUTATION_PROVIDER_ID,
-    providerVersion: MUTATION_PROVIDER_VERSION,
-    input: { command: evaluation.profile.command },
-    source: { location: `mutation-profile:${summary.profileId}`, stableId: summary.profileId },
-    binding: { kind: 'implementation', digest: implementationDigest },
+    providerVersion: envelope.providerVersion,
+    input: { command: envelope.command },
+    source: {
+      location: `mutation-profile:${summary.profileId}`,
+      stableId: summary.profileId,
+    },
+    binding: { kind: 'implementation', digest: envelope.implementationDigest },
     status: clean ? 'pass' : 'fail',
-    resultDigest: summary.resultDigest,
-    executedAt: evaluatedAt,
+    resultDigest: envelope.reportDigest,
+    executedAt: envelope.completedAt,
     detail: clean
       ? `${summary.killedCount} mutants detected, no survivors`
       : `${summary.survivorCount} surviving mutants (${summary.killedCount} detected)`,
@@ -97,30 +104,40 @@ function resolveMutationResult(
 /**
  * Bind recorded mutation results to the claims referencing their profile.
  *
- * @param state       Session state (contract claims + implementation digest).
- * @param evaluations Evaluated mutation profiles.
- * @param evaluatedAt ISO-8601 timestamp used for `unavailable` results.
+ * @param state          Session state (contract claims).
+ * @param evaluations    Evaluated mutation profiles.
+ * @param envelope       Recorded mutation evidence envelope, or `null` when no
+ *                       envelope was persisted alongside the mutation report.
+ *                       Without an envelope the report is an unbound legacy
+ *                       artifact — every result is `unavailable`.
+ * @param evaluatedAt    ISO-8601 timestamp used ONLY for `unavailable` results
+ *                       that have no envelope to borrow a timestamp from.
  */
 export function bindMutationEvidence(
   state: SessionState,
   evaluations: readonly MutationEvaluation[],
+  envelope: RecordedMutationEvidence | null,
   evaluatedAt: string,
 ): ProofProviderResult[] {
   const byProfile = new Map(evaluations.map((e) => [e.profile.profileId, e]));
-  const implementationDigest = state.implementation?.digest;
   const results: ProofProviderResult[] = [];
+  const isLegacy = envelope === null;
 
   for (const claim of state.proofContract?.claims ?? []) {
     for (const ref of claim.evidenceRefs) {
       if (ref.kind !== 'mutation_profile') continue;
+      if (isLegacy) {
+        results.push(
+          unavailable(
+            claim.claimId,
+            evaluatedAt,
+            `unbound legacy mutation report: no ${'mutation-evidence.v1'} envelope was persisted with this report`,
+          ),
+        );
+        continue;
+      }
       results.push(
-        resolveMutationResult(
-          claim.claimId,
-          ref.profileId,
-          byProfile.get(ref.profileId),
-          implementationDigest,
-          evaluatedAt,
-        ),
+        resolveMutationResult(claim.claimId, ref.profileId, byProfile.get(ref.profileId), envelope),
       );
     }
   }
