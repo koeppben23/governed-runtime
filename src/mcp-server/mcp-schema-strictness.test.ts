@@ -50,8 +50,8 @@ describe('MCP schema strictness (issue #565)', () => {
     await client.close();
   });
 
-  it('HAPPY: lists all 15 governance tools', () => {
-    expect(tools).toHaveLength(15);
+  it('HAPPY: lists all 16 governance tools', () => {
+    expect(tools).toHaveLength(16);
   });
 
   describe('EDGE: every tool input schema forbids unknown keys', () => {

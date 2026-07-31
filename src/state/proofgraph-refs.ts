@@ -28,11 +28,19 @@ import {
   ContentRef,
 } from './evidence-review.js';
 
-/** Reference to an immutable mutation-attempt record produced by flowguard_record_mutation_evidence. */
+/**
+ * Reference to a concrete, immutable mutation-attempt record produced by
+ * `flowguard_record_mutation_evidence`, for ONE opt-in profile.
+ *
+ * The `profileId` is part of the reference because a single recorded run covers
+ * several profiles with different verdicts: a claim must state which profile's
+ * survivor status it relies on, not merely which run happened.
+ */
 export const MutationAttemptRef = z
   .object({
     kind: z.literal('mutation_attempt'),
     attemptId: z.string().uuid(),
+    profileId: z.string().min(1),
   })
   .readonly();
 export type MutationAttemptRef = z.infer<typeof MutationAttemptRef>;

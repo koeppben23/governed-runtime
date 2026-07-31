@@ -49,6 +49,7 @@ const EXPECTED_TOOLS = [
   'flowguard_continue',
   'flowguard_help',
   'flowguard_declare_contract',
+  'flowguard_record_mutation_evidence',
 ] as const;
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -72,7 +73,7 @@ describe('SDK Contract: MCP tool registry', () => {
 
     it('version.json lists all 15 tool schemas', () => {
       const version = loadSchema('version.json');
-      expect((version.schemas as string[]).length).toBe(15);
+      expect((version.schemas as string[]).length).toBe(16);
     });
   });
 

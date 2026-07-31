@@ -7,6 +7,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { bindMutationEvidence, MUTATION_PROVIDER_VERSION } from './mutation-binder.js';
+import type { VerifiedProfileVerdict } from './mutation-binder.js';
 import { makeState } from '../../fixtures.js';
 import { ProofProviderResult } from '../../state/proofgraph.js';
 import type { SessionState } from '../../state/schema.js';
@@ -14,6 +15,7 @@ import type { SessionState } from '../../state/schema.js';
 const NOW = '2026-01-01T00:00:00.000Z';
 const CLAIM = '00000000-0000-4000-8000-000000000001';
 const ATTEMPT_ID = '00000000-0000-4000-8000-0000000000a1';
+const PROFILE = 'proofgraph-evaluator';
 const RECORDED_DIGEST = 'recorded-impl-digest';
 const PROJ_DIGEST = 'a'.repeat(64);
 const AUTHORITY_REF = {
@@ -43,7 +45,7 @@ function stateWithAttemptRef(
           signalClass: 'fact',
           critical: true,
           provenance: AUTHORITY_REF,
-          evidenceRefs: [{ kind: 'mutation_attempt', attemptId }],
+          evidenceRefs: [{ kind: 'mutation_attempt', attemptId, profileId: PROFILE }],
           counterexampleRefs: [],
         },
       ],
@@ -72,8 +74,11 @@ function verdicts(
   killed = 5,
   survivors = 0,
   covered = true,
-): Map<string, { survivorCount: number; killedCount: number; covered: boolean }> {
-  return new Map([[attemptId, { survivorCount: survivors, killedCount: killed, covered }]]);
+  profileId: string = PROFILE,
+): ReadonlyMap<string, ReadonlyMap<string, VerifiedProfileVerdict>> {
+  return new Map([
+    [attemptId, new Map([[profileId, { survivorCount: survivors, killedCount: killed, covered }]])],
+  ]);
 }
 
 describe('bindMutationEvidence', () => {
@@ -135,7 +140,7 @@ describe('bindMutationEvidence', () => {
   it('emits unavailable when verdicts have no entry for the attempt', () => {
     const [r] = bindMutationEvidence(stateWithAttemptRef(ATTEMPT_ID), new Map(), NOW);
     expect(r!.status).toBe('unavailable');
-    expect(r!.detail).toContain('no recorded profile verdicts');
+    expect(r!.detail).toContain('no digest-verified verdict');
   });
 
   it('emits unavailable for mutation_profile refs (no concrete attempt)', () => {

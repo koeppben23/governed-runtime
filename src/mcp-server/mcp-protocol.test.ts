@@ -197,7 +197,7 @@ describe('MCP Protocol Compliance', () => {
     const result = resp.result as { tools: Array<{ name: string; description: string }> };
     expect(result.tools).toBeDefined();
     expect(Array.isArray(result.tools)).toBe(true);
-    expect(result.tools.length).toBe(15);
+    expect(result.tools.length).toBe(16);
 
     const toolNames = result.tools.map((t) => t.name).sort();
     const expectedNames = [
@@ -218,7 +218,7 @@ describe('MCP Protocol Compliance', () => {
       'flowguard_help',
     ];
 
-    // We expect 15 tools - check all registered FlowGuard tools are present.
+    // We expect 16 tools - check all registered FlowGuard tools are present.
     for (const name of expectedNames) {
       expect(toolNames, `Missing tool: ${name}`).toContain(name);
     }
@@ -284,7 +284,7 @@ describe('MCP Protocol Compliance', () => {
     expect(resp.jsonrpc).toBe('2.0');
   });
 
-  it('HAPPY: tools/call invokes each of the 14 tools without protocol error', async () => {
+  it('HAPPY: tools/call invokes each of the 15 tools without protocol error', async () => {
     const allToolNames = [
       'flowguard_status',
       'flowguard_hydrate',

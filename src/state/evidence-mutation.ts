@@ -1,6 +1,6 @@
 /**
  * @module evidence-mutation
- * @description Immutable FlowGuard-attested mutation evidence records.
+ * @description Immutable records of FlowGuard-observed mutation reports.
  *
  * A `MutationAttempt` is the canonical audit-bound record of a recorded mutation
  * run. It is produced by the `flowguard_record_mutation_evidence` tool and
@@ -12,13 +12,20 @@
  * validates, and records them. A freely-editable filesystem envelope without a
  * corresponding `MutationAttempt` is NOT_VERIFIED evidence.
  *
+ * What is FlowGuard-computed vs. caller-supplied (do not conflate):
+ * - COMPUTED by FlowGuard: `artifactDigest`, `projectionDigest`, and
+ *   `implementationDigest` (derived from session state).
+ * - SUPPLIED by the caller: `command`, `startedAt`, `completedAt`, `exitCode`.
+ *   These describe a run FlowGuard did not observe and are not attested
+ *   execution evidence.
+ *
  * @version v1
  */
 
 import { z } from 'zod';
 
 /**
- * An immutable record of one FlowGuard-attested mutation report observation.
+ * An immutable record of one FlowGuard-observed mutation report.
  *
  * - `implementationDigest` is bound to the session-state implementation at the
  *   time of recording — the tool MUST derive it from session state, never from
@@ -27,6 +34,8 @@ import { z } from 'zod';
  *   evidence over the exact artifact).
  * - `projectionDigest` is the SHA-256 of the canonical parsed subset that
  *   FlowGuard's evaluator consumes (provider result digest).
+ * - `command`, `startedAt`, `completedAt` and `exitCode` are caller-supplied run
+ *   metadata describing a process FlowGuard did not execute or observe.
  */
 export const MutationAttempt = z
   .object({
@@ -34,13 +43,13 @@ export const MutationAttempt = z
     attemptId: z.string().uuid(),
     /** Implementation revision the mutation was run against (from session state). */
     implementationDigest: z.string().min(1),
-    /** Exact command that produced the report (recorded for reproducibility). */
+    /** CALLER-SUPPLIED command said to have produced the report (not executed by FlowGuard). */
     command: z.string().min(1),
-    /** ISO-8601 timestamp when the mutation run started. */
+    /** CALLER-SUPPLIED start timestamp of the mutation run (not observed by FlowGuard). */
     startedAt: z.string().datetime(),
-    /** ISO-8601 timestamp when the mutation run completed. */
+    /** CALLER-SUPPLIED completion timestamp of the mutation run (not observed by FlowGuard). */
     completedAt: z.string().datetime(),
-    /** Exit code of the mutation command. */
+    /** CALLER-SUPPLIED exit code of the mutation command (not observed by FlowGuard). */
     exitCode: z.number().int(),
     /** SHA-256 of the raw mutation report file (artifact integrity). */
     artifactDigest: z.string().regex(/^[a-f0-9]{64}$/),

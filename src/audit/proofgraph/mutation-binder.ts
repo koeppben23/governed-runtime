@@ -10,20 +10,31 @@
  * - A referenced `MutationAttempt` with no surviving mutants → `pass`;
  * - A referenced attempt with surviving mutants → `fail`;
  * - A referenced attempt that does not exist → `unavailable` (never fallback);
+ * - A referenced attempt whose report failed digest verification → `unavailable`;
  * - A `MutationProfileRef` pointing to a profile without a recorded attempt →
  *   `unavailable` (stays NOT_VERIFIED).
  *
- * Critical invariant (#762):
- * The binder uses the RECORDED implementation digest and completedAt timestamp
- * from the `MutationAttempt`, never the current session-state digest or evaluation
- * timestamp.
+ * Critical invariants (#762):
+ * - The binder uses the RECORDED implementation digest and completedAt timestamp
+ *   from the `MutationAttempt`, never the current session-state digest or
+ *   evaluation timestamp.
+ * - Verdicts are accepted only for (attempt, profile) pairs whose report was
+ *   re-verified against BOTH recorded digests, so a verdict can never be paired
+ *   with the digest of a different artifact.
  *
- * @version v2 — reads from session-state MutationAttempt[]
+ * @version v3 — profile-scoped, digest-verified verdicts
  */
 
 import type { SessionState } from '../../state/schema.js';
 import type { MutationAttempt } from '../../state/evidence-mutation.js';
 import type { ProofProviderResult } from '../../state/proofgraph.js';
+
+/** Verdict for one (attempt, profile) pair, derived from a digest-verified report. */
+export interface VerifiedProfileVerdict {
+  readonly survivorCount: number;
+  readonly killedCount: number;
+  readonly covered: boolean;
+}
 
 /** Provider identity stamped on mutation results. */
 export const MUTATION_PROVIDER_ID = 'semantic-mutation';
@@ -49,6 +60,7 @@ function unavailable(claimId: string, evaluatedAt: string, reason: string): Proo
 function resolveFromAttempt(
   claimId: string,
   attempt: MutationAttempt,
+  profileId: string,
   survivorCount: number,
   killedCount: number,
 ): ProofProviderResult {
@@ -59,34 +71,33 @@ function resolveFromAttempt(
     providerId: MUTATION_PROVIDER_ID,
     providerVersion: attempt.providerVersion,
     input: { command: attempt.command },
-    source: { location: `mutation-attempt:${attempt.attemptId}`, stableId: attempt.attemptId },
+    source: {
+      location: `mutation-attempt:${attempt.attemptId}`,
+      stableId: `${attempt.attemptId}:${profileId}`,
+    },
     binding: { kind: 'implementation', digest: attempt.implementationDigest },
     status: clean ? 'pass' : 'fail',
     resultDigest: attempt.projectionDigest,
     executedAt: attempt.completedAt,
     detail: clean
-      ? `${killedCount} mutants detected, no survivors`
-      : `${survivorCount} surviving mutants (${killedCount} detected)`,
+      ? `${profileId}: ${killedCount} mutants detected, no survivors`
+      : `${profileId}: ${survivorCount} surviving mutants (${killedCount} detected)`,
   };
 }
 
 /**
  * Bind session-state mutation attempts to the claims that reference them.
  *
- * @param state         Session state (claims + mutationAttempts).
- * @param profileVerdicts  Profile-level survivor/killed counts computed from the report
- *                         that the attempt references. Passed in because the binder is pure
- *                         and doesn't load reports.
- * @param evaluatedAt   ISO-8601 timestamp used only for `unavailable` results.
+ * @param state           Session state (claims + mutationAttempts).
+ * @param verifiedVerdicts Per-attempt, per-profile verdicts derived ONLY from
+ *                         reports whose recorded artifact AND projection digests
+ *                         were re-verified against the attempt. Computed by the
+ *                         caller because this module is pure and reads no files.
+ * @param evaluatedAt     ISO-8601 timestamp used only for `unavailable` results.
  */
 export function bindMutationEvidence(
   state: SessionState,
-  profileVerdicts: Readonly<
-    Map<
-      string,
-      { readonly survivorCount: number; readonly killedCount: number; readonly covered: boolean }
-    >
-  >,
+  verifiedVerdicts: ReadonlyMap<string, ReadonlyMap<string, VerifiedProfileVerdict>>,
   evaluatedAt: string,
 ): ProofProviderResult[] {
   const attemptsById = new Map(state.mutationAttempts.map((a) => [a.attemptId, a]));
@@ -106,21 +117,27 @@ export function bindMutationEvidence(
           );
           continue;
         }
-        // Look up the verdict for each profile the attempt covers.
-        // If no verdict is available, report unavailable.
-        const verdict = profileVerdicts.get(ref.attemptId);
+        // Absent => the attempt's report is missing or its recorded digests no
+        // longer match the artifact on disk. Never fall back to another report.
+        const verdict = verifiedVerdicts.get(ref.attemptId)?.get(ref.profileId);
         if (verdict === undefined || !verdict.covered) {
           results.push(
             unavailable(
               claim.claimId,
               evaluatedAt,
-              `mutation attempt ${ref.attemptId} has no recorded profile verdicts`,
+              `mutation attempt ${ref.attemptId} has no digest-verified verdict for profile ${ref.profileId}`,
             ),
           );
           continue;
         }
         results.push(
-          resolveFromAttempt(claim.claimId, attempt, verdict.survivorCount, verdict.killedCount),
+          resolveFromAttempt(
+            claim.claimId,
+            attempt,
+            ref.profileId,
+            verdict.survivorCount,
+            verdict.killedCount,
+          ),
         );
       }
       if (ref.kind === 'mutation_profile') {

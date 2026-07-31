@@ -31,7 +31,11 @@ import {
   bindStructuralEvidence,
   surfaceDigestMap,
 } from '../proofgraph/structural-provider.js';
-import { MUTATION_PROFILE_IDS } from '../proofgraph/mutation-provider.js';
+import {
+  MUTATION_PROFILE_IDS,
+  resolveVerifiedMutationVerdicts,
+  type VerifiedMutationVerdicts,
+} from '../proofgraph/mutation-provider.js';
 import { bindMutationEvidence } from '../../audit/proofgraph/mutation-binder.js';
 
 /** Declarable mutation profile ids as a non-empty tuple for the Zod enum. */
@@ -44,6 +48,7 @@ import {
   appendNextAction,
   formatBlocked,
   formatError,
+  getWorktree,
   withMutableSessionTransaction,
   writeStateWithArtifacts,
 } from './helpers.js';
@@ -121,6 +126,39 @@ function resolveImplAttempt(
     );
 }
 
+/**
+ * Resolve a declared mutation profile to a concrete, digest-verified attempt.
+ *
+ * Deterministic and fail-closed:
+ * - only attempts bound to the CURRENT implementation digest are eligible;
+ * - only attempts whose report passed artifact + projection digest verification
+ *   and that actually COVER the requested profile are eligible;
+ * - among eligible attempts the most recently completed one wins, with the
+ *   attemptId as a stable tie-break so the result never depends on array order.
+ *
+ * Returns `null` when nothing qualifies, so the declaration blocks instead of
+ * persisting a reference that could never be satisfied.
+ */
+function resolveMutationAttemptId(
+  state: SessionState,
+  profileId: string,
+  implementationDigest: string,
+  verdicts: VerifiedMutationVerdicts,
+): string | null {
+  const eligible = state.mutationAttempts.filter(
+    (a) =>
+      a.implementationDigest === implementationDigest &&
+      (verdicts.get(a.attemptId)?.get(profileId)?.covered ?? false),
+  );
+  if (eligible.length === 0) return null;
+  const newest = [...eligible].sort((a, b) =>
+    a.completedAt === b.completedAt
+      ? a.attemptId.localeCompare(b.attemptId)
+      : a.completedAt.localeCompare(b.completedAt),
+  );
+  return newest[newest.length - 1]!.attemptId;
+}
+
 /** Raw claim input shape from the tool arguments. */
 type RawClaim = {
   statement: string;
@@ -133,18 +171,63 @@ type RawClaim = {
 };
 
 /**
+ * Build the optional evidence references a claim opts into (structural surface,
+ * mutation profile) and the provider kinds they make REQUIRED.
+ *
+ * Returns the unresolved profile id when a declared mutation profile has no
+ * digest-verified attempt, so the declaration fails closed instead of persisting
+ * a reference that could never be satisfied.
+ */
+function buildOptionalEvidence(
+  state: SessionState,
+  rc: RawClaim,
+  digest: string,
+  verdicts: VerifiedMutationVerdicts,
+):
+  | {
+      readonly refs: DeclaredClaim['evidenceRefs'][number][];
+      readonly positive: ProofProviderKind[];
+    }
+  | { readonly unresolvedProfileId: string } {
+  const refs: DeclaredClaim['evidenceRefs'][number][] = [];
+  const positive: ProofProviderKind[] = [];
+  // A declared structural surface becomes required positive evidence, so a
+  // claim cannot be proven while its consistency assertion is failing/stale.
+  if (rc.structuralSurface !== undefined) {
+    refs.push({ kind: 'structural_surface', surfaceId: rc.structuralSurface });
+    positive.push(
+      rc.structuralSurface === SURFACE_CONFIG_DEFAULTS ? 'schema_compare' : 'structural_assertion',
+    );
+  }
+  // A declared mutation profile is resolved to a CONCRETE, digest-verified
+  // attempt, so surviving mutants (or a missing run) keep the claim unproven.
+  if (rc.mutationProfile !== undefined) {
+    const attemptId = resolveMutationAttemptId(state, rc.mutationProfile, digest, verdicts);
+    if (attemptId === null) return { unresolvedProfileId: rc.mutationProfile };
+    refs.push({ kind: 'mutation_attempt', attemptId, profileId: rc.mutationProfile });
+    positive.push('fault_injection');
+  }
+  return { refs, positive };
+}
+
+/**
  * Resolve raw claim inputs into DeclaredClaims. Evidence (the covering check and
  * optional counterexample check) is bound fail-closed to implementation attempts
  * at `digest`. Governing provenance is resolved SEPARATELY from the cited
  * approved authority: a claim is `fact` only when an approved authority resolves;
  * otherwise it is a `hypothesis` with `null` provenance (surfaced NOT_VERIFIED).
- * Returns the built claims, or the first checkId that could not resolve.
+ * Returns the built claims, the first checkId that could not resolve, or the
+ * first mutation profile with no digest-verified attempt at this revision.
  */
 function buildDeclaredClaims(
   state: SessionState,
   rawClaims: readonly RawClaim[],
   digest: string,
-): { readonly claims: DeclaredClaim[] } | { readonly unresolvedCheckId: string } {
+  verdicts: VerifiedMutationVerdicts,
+):
+  | { readonly claims: DeclaredClaim[] }
+  | { readonly unresolvedCheckId: string }
+  | { readonly unresolvedProfileId: string } {
   const claims: DeclaredClaim[] = [];
   for (const rc of rawClaims) {
     const evidence = resolveImplAttempt(state.validationAttempts, rc.checkId, digest);
@@ -166,24 +249,10 @@ function buildDeclaredClaims(
     const provenance = resolveAuthority(state, rc.authority);
     const isFact = provenance !== null;
     const critical = rc.critical ?? true;
-    const evidenceRefs: DeclaredClaim['evidenceRefs'][number][] = [evidenceRef];
-    // A declared structural surface becomes required positive evidence, so a
-    // claim cannot be proven while its consistency assertion is failing/stale.
-    const positive: ProofProviderKind[] = ['executed_test'];
-    if (rc.structuralSurface !== undefined) {
-      evidenceRefs.push({ kind: 'structural_surface', surfaceId: rc.structuralSurface });
-      positive.push(
-        rc.structuralSurface === SURFACE_CONFIG_DEFAULTS
-          ? 'schema_compare'
-          : 'structural_assertion',
-      );
-    }
-    // A declared mutation profile likewise becomes required evidence: surviving
-    // mutants (or no recorded run) must prevent the claim from being proven.
-    if (rc.mutationProfile !== undefined) {
-      evidenceRefs.push({ kind: 'mutation_profile', profileId: rc.mutationProfile });
-      positive.push('fault_injection');
-    }
+    const optional = buildOptionalEvidence(state, rc, digest, verdicts);
+    if ('unresolvedProfileId' in optional) return optional;
+    const evidenceRefs: DeclaredClaim['evidenceRefs'][number][] = [evidenceRef, ...optional.refs];
+    const positive: ProofProviderKind[] = ['executed_test', ...optional.positive];
     claims.push({
       claimId: claimIdFor(rc.statement),
       statement: rc.statement,
@@ -274,14 +343,22 @@ export const declare_contract: ToolDefinition = {
         const implementation = state.implementation;
         if (!implementation) return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
 
+        const worktree = getWorktree(context);
+        const verdicts = await resolveVerifiedMutationVerdicts(worktree, state.mutationAttempts);
         const built = buildDeclaredClaims(
           state,
           args.claims as readonly RawClaim[],
           implementation.digest,
+          verdicts,
         );
         if ('unresolvedCheckId' in built) {
           return formatBlocked('PROOFGRAPH_CLAIM_EVIDENCE_UNRESOLVED', {
             checkId: built.unresolvedCheckId,
+          });
+        }
+        if ('unresolvedProfileId' in built) {
+          return formatBlocked('PROOFGRAPH_MUTATION_ATTEMPT_UNRESOLVED', {
+            profileId: built.unresolvedProfileId,
           });
         }
 
@@ -289,14 +366,10 @@ export const declare_contract: ToolDefinition = {
         const now = ctx.now();
         const stateWithContract = { ...state, proofContract };
         const structuralSurfaces = evaluateStructuralSurfaces();
-        const mutationVerdicts = new Map<
-          string,
-          { survivorCount: number; killedCount: number; covered: boolean }
-        >();
         const providerResults = [
           ...bindExecutedTestEvidence(stateWithContract, now),
           ...bindStructuralEvidence(stateWithContract, structuralSurfaces, now),
-          ...bindMutationEvidence(stateWithContract, mutationVerdicts, now),
+          ...bindMutationEvidence(stateWithContract, verdicts, now),
         ];
         const counterexamples = bindCounterexamples(stateWithContract, now);
         const proofGraph = deriveProofGraph(

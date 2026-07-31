@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mcp/flowguard_record_mutation_evidence",
+  "title": "flowguard_record_mutation_evidence",
+  "description": "Record an observed mutation report as immutable session-state evidence; the implementation digest is bound from session state, never from caller input.",
+  "type": "object",
+  "required": ["command", "startedAt", "completedAt", "exitCode"],
+  "properties": {
+    "command": {
+      "type": "string",
+      "description": "Exact command that produced the mutation report."
+    },
+    "startedAt": {
+      "type": "string",
+      "description": "ISO-8601 timestamp when the mutation run started."
+    },
+    "completedAt": {
+      "type": "string",
+      "description": "ISO-8601 timestamp when the mutation run completed."
+    },
+    "exitCode": {
+      "type": "number",
+      "description": "Exit code of the mutation command."
+    },
+    "reportPath": {
+      "type": "string",
+      "description": "Repository-relative path to the saved mutation report."
+    }
+  },
+  "additionalProperties": false
+}

@@ -61,7 +61,7 @@ import {
 import {
   loadMutationReport,
   evaluateMutationProfiles,
-  buildProfileVerdictMap,
+  resolveVerifiedMutationVerdicts,
 } from '../proofgraph/mutation-provider.js';
 import { bindMutationEvidence } from '../../audit/proofgraph/mutation-binder.js';
 import { checkRegistrationConsistency } from '../proofgraph/registration-consistency.js';
@@ -155,18 +155,14 @@ async function buildProofGraphProjectionResponse(
 ): Promise<string> {
   const now = new Date().toISOString();
   const structuralSurfaces = evaluateStructuralSurfaces();
+  // Profile summaries for the reviewer projection come from the default report;
+  // claim-binding verdicts come ONLY from per-attempt digest-verified reports.
   const mutationReport = await loadMutationReport(state.binding.worktree);
   const mutationSummaries = evaluateMutationProfiles(mutationReport);
-  const mutationVerdicts = new Map<
-    string,
-    { survivorCount: number; killedCount: number; covered: boolean }
-  >();
-  for (const attempt of state.mutationAttempts) {
-    const map = buildProfileVerdictMap(mutationReport, attempt.attemptId);
-    for (const [id, v] of map) {
-      mutationVerdicts.set(id, v);
-    }
-  }
+  const mutationVerdicts = await resolveVerifiedMutationVerdicts(
+    state.binding.worktree,
+    state.mutationAttempts,
+  );
   const proofGraph = summarizeProofGraph(state, now, {
     providerResults: [
       ...bindStructuralEvidence(state, structuralSurfaces, now),

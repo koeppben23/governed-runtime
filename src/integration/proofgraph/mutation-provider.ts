@@ -21,6 +21,7 @@
  * @version v2 — session-state attempts replace filesystem envelopes
  */
 
+import * as crypto from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import * as path from 'node:path';
 
@@ -33,6 +34,7 @@ import {
   type MutationProfileSummary,
 } from '../../audit/proofgraph/mutation-report.js';
 import type { MutationAttempt } from '../../state/evidence-mutation.js';
+import type { VerifiedProfileVerdict } from '../../audit/proofgraph/mutation-binder.js';
 
 /** Default location of the recorded mutation report (Stryker `json` reporter). */
 export const MUTATION_REPORT_RELATIVE_PATH = path.join('reports', 'mutation', 'mutation.json');
@@ -172,25 +174,65 @@ export function evaluateMutationProfiles(report: MutationReport | null): Mutatio
   return MUTATION_PROFILES.map((profile) => summarizeMutationProfile(report, profile));
 }
 
+/** Verdict for one (attempt, profile) pair, derived from a DIGEST-VERIFIED report. */
+export type { VerifiedProfileVerdict } from '../../audit/proofgraph/mutation-binder.js';
+
 /**
- * Build a profile verdict map keyed by attempt ID, for the binder.
- *
- * Evaluates profiles from the report and maps them to the attempt that
- * recorded them. The binder uses this to resolve `mutation_attempt` refs.
+ * Per-attempt verified verdicts: `attemptId -> profileId -> verdict`.
+ * An attempt whose report failed verification is absent, so the binder emits
+ * explicit `unavailable` evidence instead of a verdict from the wrong artifact.
  */
-export function buildProfileVerdictMap(
-  report: MutationReport | null,
-  attemptId: string,
-): Map<
+export type VerifiedMutationVerdicts = ReadonlyMap<
   string,
-  { readonly survivorCount: number; readonly killedCount: number; readonly covered: boolean }
-> {
-  const map = new Map<string, { survivorCount: number; killedCount: number; covered: boolean }>();
-  if (report === null) return map;
-  const summaries = evaluateMutationProfiles(report);
-  const covered = summaries.some((s) => s.covered);
-  const totalKilled = summaries.reduce((sum, s) => sum + s.killedCount, 0);
-  const totalSurvivors = summaries.reduce((sum, s) => sum + s.survivorCount, 0);
-  map.set(attemptId, { survivorCount: totalSurvivors, killedCount: totalKilled, covered });
-  return map;
+  ReadonlyMap<string, VerifiedProfileVerdict>
+>;
+
+/**
+ * Resolve digest-verified profile verdicts for the recorded mutation attempts.
+ *
+ * Each attempt is evaluated against ITS OWN `reportPath`, and only after BOTH
+ * recorded digests match the artifact currently on disk:
+ *
+ * 1. `artifactDigest` over the exact raw bytes, and
+ * 2. `projectionDigest` over the canonical parsed subset.
+ *
+ * If the report is missing, unreadable, unparseable, or either digest differs,
+ * the attempt yields NO verdict. This prevents a replaced `mutation.json` from
+ * supplying survivor counts for an unrelated historical attempt, which would
+ * otherwise pair a verdict from artifact B with the recorded digest of A.
+ *
+ * @param worktree Repository root the attempt report paths are resolved against.
+ * @param attempts Recorded mutation attempts from session state.
+ */
+export async function resolveVerifiedMutationVerdicts(
+  worktree: string,
+  attempts: readonly MutationAttempt[],
+): Promise<VerifiedMutationVerdicts> {
+  const verified = new Map<string, ReadonlyMap<string, VerifiedProfileVerdict>>();
+  for (const attempt of attempts) {
+    const raw = await loadReportRaw(worktree, attempt.reportPath);
+    if (raw === null) continue;
+    if (computeArtifactDigest(raw) !== attempt.artifactDigest) continue;
+
+    let report: MutationReport;
+    try {
+      const result = MutationReport.safeParse(JSON.parse(raw));
+      if (!result.success) continue;
+      report = result.data;
+    } catch {
+      continue;
+    }
+    if (computeProjectionDigest(report) !== attempt.projectionDigest) continue;
+
+    const byProfile = new Map<string, VerifiedProfileVerdict>();
+    for (const summary of evaluateMutationProfiles(report)) {
+      byProfile.set(summary.profileId, {
+        survivorCount: summary.survivorCount,
+        killedCount: summary.killedCount,
+        covered: summary.covered,
+      });
+    }
+    verified.set(attempt.attemptId, byProfile);
+  }
+  return verified;
 }

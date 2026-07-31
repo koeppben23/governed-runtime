@@ -1,6 +1,6 @@
 /**
  * @module integration/tools/record-mutation-evidence
- * @description flowguard_record_mutation_evidence — attest a completed mutation run.
+ * @description flowguard_record_mutation_evidence — record an observed mutation report.
  *
  * This is the canonical producer of `MutationAttempt` records. An agent that has
  * just completed a mutation run calls this tool to create an immutable,
@@ -12,6 +12,20 @@
  * 3. Computes both `artifactDigest` (SHA-256 of the raw file) and
  *    `projectionDigest` (SHA-256 of the canonical consumer subset).
  * 4. Persists the `MutationAttempt` in session state.
+ *
+ * Scope of the resulting claim — deliberately precise:
+ *
+ *   FlowGuard OBSERVED a report at a point in time, hashed it, and bound it to
+ *   the current implementation digest.
+ *
+ * NOT:
+ *
+ *   FlowGuard executed this command with this exit code in this time window.
+ *
+ * `command`, `startedAt`, `completedAt`, and `exitCode` are CALLER-SUPPLIED run
+ * metadata; FlowGuard neither executes nor observes the process. Only the two
+ * digests and the implementation binding are FlowGuard-computed. A future
+ * executor could upgrade these fields to genuinely attested execution evidence.
  *
  * Without a recorded `MutationAttempt`, a raw report on disk yields
  * `unavailable` / NOT_VERIFIED, never a pass-by-fallback.
