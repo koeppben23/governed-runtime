@@ -261,6 +261,10 @@ describe('status', () => {
       const configConsistency = result.configConsistency as Record<string, unknown>;
       expect(configConsistency).toBeDefined();
       expect(configConsistency.ok).toBe(true);
+      const gate = result.proofGraphGate as Record<string, unknown>;
+      expect(gate).toBeDefined();
+      expect(gate.enforced).toBe(false);
+      expect(gate.gated).toBe(false);
     });
 
     it('inspects an aborted terminal session through read-only /status guidance', async () => {

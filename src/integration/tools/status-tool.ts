@@ -55,6 +55,7 @@ import { evaluateCompleteness } from '../../audit/completeness.js';
 import { summarizeProofGraph } from '../../audit/proofgraph/summary.js';
 import { checkRegistrationConsistency } from '../proofgraph/registration-consistency.js';
 import { checkConfigDefaultConsistency } from '../proofgraph/config-default-consistency.js';
+import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
 import {
   buildStatusProjection,
   buildEvidenceDetailProjection,
@@ -138,9 +139,11 @@ function buildCheckProjectionFields(state: SessionState): Record<string, unknown
  */
 function buildProofGraphProjectionResponse(
   state: SessionState,
+  policy: FlowGuardPolicy,
   checkFields: Record<string, unknown>,
 ): string {
   const proofGraph = summarizeProofGraph(state, new Date().toISOString());
+  const proofGraphGate = evaluateProofGraphGate(proofGraph, policy.proofGraphPolicy);
   const registrationConsistency = checkRegistrationConsistency();
   const configConsistency = checkConfigDefaultConsistency();
   return appendNextAction(
@@ -148,6 +151,7 @@ function buildProofGraphProjectionResponse(
       phase: state.phase,
       sessionId: state.id,
       proofGraph,
+      proofGraphGate,
       registrationConsistency,
       configConsistency,
       ...checkFields,
@@ -238,7 +242,7 @@ async function resolveProjection(
     );
   }
   if (args.proofGraph) {
-    return buildProofGraphProjectionResponse(state, checkFields);
+    return buildProofGraphProjectionResponse(state, policy, checkFields);
   }
   return null;
 }
