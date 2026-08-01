@@ -10,6 +10,7 @@ import type { ReviewReferenceInput } from '../../../rails/review.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import type { ReviewFindings } from '../../../state/evidence.js';
 import type { ToolContext } from '../helpers.js';
+import type { StandaloneReviewObjective } from '../../../state/standalone-review.js';
 
 export type StartedReviewResult = Extract<ReturnType<typeof startReviewFlow>, { kind: 'ok' }>;
 
@@ -63,5 +64,7 @@ export type ReviewToolArgs = {
   reviewObligationId?: string;
   reviewVerdict?: 'accept' | 'changes_requested';
   reviewFindings?: ReviewFindings;
+  /** Optional structured objectives; omitted uses the canonical static profile. */
+  objectives?: StandaloneReviewObjective[];
   targetPaths?: string[];
 };

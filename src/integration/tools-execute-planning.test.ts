@@ -545,6 +545,41 @@ describe('plan', () => {
   });
 
   describe('Plan revision invariants', () => {
+    it('persists structured claim declarations with the submitted plan', async () => {
+      await hydrateSession({ policyMode: 'team' });
+      await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
+      await plan.execute(
+        {
+          planText: '## Plan',
+          claims: [
+            {
+              claimId: '00000000-0000-4000-8000-000000000004',
+              statement: 'Invalid credentials are rejected.',
+              critical: true,
+              authoritySectionId: 'authentication',
+              expectedCheckId: 'test',
+            },
+          ],
+          targetPaths: ['docs/test.md'],
+        },
+        ctx,
+      );
+
+      const state = await readState(await currentSessionDir());
+      expect(state!.plan?.claimDeclarations).toEqual({
+        flow: 'plan',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000004',
+            statement: 'Invalid credentials are rejected.',
+            critical: true,
+            authoritySectionId: 'authentication',
+            expectedCheckId: 'test',
+          },
+        ],
+      });
+    });
+
     it('keeps plan evidence when PLAN_REVIEW changes_requested returns to PLAN', async () => {
       await hydrateSession({ policyMode: 'team' });
       await ticket.execute({ text: 'Fix bug', source: 'user' }, ctx);
@@ -641,6 +676,12 @@ describe('plan', () => {
       expect(decisionResult.error).not.toBe(true);
       const state = await readState(await currentSessionDir());
       expect(state!.phase).toBe('VALIDATION');
+      expect(state!.plan?.approvalCertificate).toMatchObject({
+        flow: 'plan',
+        authorityDigest: state!.plan?.current.digest,
+        approvedBy: expect.any(String),
+        certificateId: expect.any(String),
+      });
     });
 
     it('TEAM: human changes_requested sends the force-converged plan back to PLAN', async () => {

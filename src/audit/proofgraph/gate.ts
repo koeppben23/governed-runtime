@@ -40,7 +40,7 @@ export interface ProofGraphGatePolicy {
  * @param policy  The ProofGraph gating policy, or undefined (treated as disabled).
  */
 export function evaluateProofGraphGate(
-  summary: ProofGraphSummary,
+  summary: Pick<ProofGraphSummary, 'projection'>,
   policy: ProofGraphGatePolicy | undefined,
 ): ProofGraphGateDecision {
   if (policy?.enabled !== true) {

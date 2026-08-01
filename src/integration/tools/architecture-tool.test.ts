@@ -749,6 +749,56 @@ describe('integration/tools/architecture (wrapper)', () => {
     expect(JSON.parse(String(res)).status).toContain('iteration 1/3');
   });
 
+  it('invalidates a prior approval certificate when the ADR is revised', async () => {
+    mocks.state = makeState('ARCHITECTURE', {
+      architecture: {
+        id: 'ADR-001',
+        title: 'ADR',
+        adrText: '## Context\nA\n\n## Decision\nB\n\n## Consequences\nC',
+        digest: 'digest-adr',
+        status: 'proposed',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        approvalCertificate: {
+          flow: 'architecture',
+          authorityDigest: 'digest-adr',
+          claimDeclarationsDigest: 'claims-digest',
+          decisionAttestationDigest: 'decision-digest',
+          approvedAt: '2026-01-01T00:00:00.000Z',
+          approvedBy: 'reviewer',
+          certificateId: '00000000-0000-4000-8000-000000000001',
+        },
+      },
+      selfReview: {
+        iteration: 0,
+        maxIterations: 3,
+        prevDigest: null,
+        currDigest: 'digest-adr',
+        revisionDelta: 'major',
+        verdict: 'changes_requested',
+      },
+    });
+    mocks.requireStateForMutation.mockResolvedValue(mocks.state);
+    mocks.autoAdvance.mockImplementation((state: SessionState) => ({
+      kind: 'advanced',
+      state,
+      evalResult: { kind: 'pending' },
+      transitions: [],
+    }));
+
+    const { architecture } = await import('./architecture.js');
+    await architecture.execute(
+      {
+        reviewVerdict: 'changes_requested',
+        adrText: '## Context\nA2\n\n## Decision\nB\n\n## Consequences\nC',
+        reviewFindings: makeFindings({ iteration: 0, overallVerdict: 'changes_requested' }),
+      },
+      {} as never,
+    );
+
+    const writtenState = mocks.writeStateWithArtifacts.mock.calls[0]?.[1] as SessionState;
+    expect(writtenState.architecture?.approvalCertificate).toBeUndefined();
+  });
+
   it('returns converged status and finalizes accepted architecture', async () => {
     mocks.state = makeState('ARCHITECTURE', {
       architecture: {

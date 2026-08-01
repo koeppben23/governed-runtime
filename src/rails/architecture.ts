@@ -22,6 +22,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { ArchitectureDecision, LoopVerdict, RevisionDelta } from '../state/evidence.js';
+import type { ArchitectureClaimDeclaration } from '../state/proofgraph-approval.js';
 import { validateAdrSections } from '../state/evidence.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext, TransitionRecord } from './types.js';
@@ -41,6 +42,8 @@ export interface ArchitectureInput {
   readonly title: string;
   /** Full ADR body in Markdown (MADR format). */
   readonly adrText: string;
+  /** Structured claims made by this ADR version. */
+  readonly claims?: ArchitectureClaimDeclaration[];
 }
 
 // ─── Rail ─────────────────────────────────────────────────────────────────────
@@ -97,6 +100,9 @@ export function executeArchitecture(
     status: 'proposed',
     createdAt: ctx.now(),
     digest: ctx.digest(input.adrText),
+    ...(input.claims
+      ? { claimDeclarations: { flow: 'architecture' as const, claims: input.claims } }
+      : {}),
   };
 
   // 6. Build state with ADR + initial self-review loop

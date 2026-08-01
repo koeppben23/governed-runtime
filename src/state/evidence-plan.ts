@@ -8,6 +8,7 @@
 import { z } from 'zod';
 import { LoopVerdict, RevisionDelta } from './evidence-primitives.js';
 import { ReviewFindings } from './evidence-review.js';
+import { PlanApprovalCertificate, PlanClaimDeclarations } from './proofgraph-approval.js';
 
 /** A single plan version (immutable snapshot). */
 export const PlanEvidence = z.object({
@@ -34,6 +35,10 @@ export const PlanRecord = z
     current: PlanEvidence,
     history: z.array(PlanEvidence),
     reviewFindings: z.array(ReviewFindings).optional(),
+    /** User-declared ProofGraph claims for the current plan authority. */
+    claimDeclarations: PlanClaimDeclarations.optional(),
+    /** User approval certificate bound to the current plan authority. */
+    approvalCertificate: PlanApprovalCertificate.optional(),
   })
   .readonly();
 export type PlanRecord = z.infer<typeof PlanRecord>;

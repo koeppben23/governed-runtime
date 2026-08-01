@@ -16,6 +16,17 @@ import type { BlockedReason } from './reasons-types.js';
 /** Reason codes for recording and consuming ProofGraph mutation evidence. */
 export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
   {
+    code: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
+    category: 'precondition',
+    messageTemplate:
+      'Evidence approval is blocked because critical fact claim(s) are not PROVEN: {claimIds}.',
+    recoverySteps: [
+      'Record fresh evidence that proves every listed critical fact claim',
+      'Return to EVIDENCE_REVIEW and approve after the persisted ProofGraph is PROVEN',
+    ],
+  },
+
+  {
     code: 'PROOFGRAPH_MUTATION_PHASE_INELIGIBLE',
     category: 'precondition',
     messageTemplate:

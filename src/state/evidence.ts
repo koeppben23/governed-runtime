@@ -51,6 +51,11 @@ export type * from './evidence-plan.js';
 export * from './evidence-architecture.js';
 export type * from './evidence-architecture.js';
 
+// ─── ProofGraph Approval ───────────────────────────────────────────────────────
+
+export * from './proofgraph-approval.js';
+export type * from './proofgraph-approval.js';
+
 // ─── Review (findings, obligations, assurance, completeness, report, decision) ─
 
 export * from './evidence-review.js';

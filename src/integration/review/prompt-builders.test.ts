@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { ReviewChallenge } from '../../state/evidence-review.js';
-import { renderReviewerTaskPrompt } from './prompt-builders.js';
+import {
+  buildArchitectureReviewPrompt,
+  buildImplReviewPrompt,
+  buildPlanReviewPrompt,
+  buildReviewContentPrompt,
+  renderPersistedProofGraphContext,
+  renderReviewerTaskPrompt,
+} from './prompt-builders.js';
 
 const BASE_INPUT = {
   iteration: 0,
@@ -58,5 +65,78 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
         locations: ['ADR: Decision'],
       }).success,
     ).toBe(true);
+  });
+});
+
+describe('renderPersistedProofGraphContext', () => {
+  it('reports persisted coverage and critical unresolved claims without evaluating providers', () => {
+    const text = renderPersistedProofGraphContext({
+      version: 'proofgraph.v1',
+      evaluatedAt: '2026-01-01T00:00:00.000Z',
+      claims: [
+        {
+          claimId: '11111111-1111-4111-8111-111111111111',
+          statement: 'The critical path rejects invalid input.',
+          signalClass: 'fact',
+          critical: true,
+          provenance: null,
+          evidenceRefs: [],
+          counterexampleRefs: [],
+          verificationState: 'NOT_VERIFIED',
+        },
+        {
+          claimId: '22222222-2222-4222-8222-222222222222',
+          statement: 'The non-critical path remains compatible.',
+          signalClass: 'fact',
+          critical: false,
+          provenance: null,
+          evidenceRefs: [],
+          counterexampleRefs: [],
+          verificationState: 'PROVEN',
+        },
+      ],
+    }).join('\n');
+
+    expect(text).toContain('Coverage: 1/2 claims PROVEN; 1 unresolved.');
+    expect(text).toContain('[NOT_VERIFIED] 11111111-1111-4111-8111-111111111111');
+    expect(text).toContain('not a review verdict or reviewer authority');
+  });
+
+  it('fails closed when no persisted projection is available', () => {
+    expect(renderPersistedProofGraphContext(undefined).join('\n')).toContain(
+      'Coverage: NOT_DECLARED',
+    );
+  });
+});
+
+describe('ProofGraph prompt context', () => {
+  const proofGraph = {
+    version: 'proofgraph.v1' as const,
+    evaluatedAt: '2026-01-01T00:00:00.000Z',
+    claims: [],
+  };
+  const common = {
+    ticketText: 'ticket',
+    obligationId: BASE_INPUT.obligationId,
+    mandateDigest: BASE_INPUT.mandateDigest,
+    criteriaVersion: BASE_INPUT.criteriaVersion,
+    iteration: BASE_INPUT.iteration,
+    planVersion: BASE_INPUT.planVersion,
+    discoveryContext: {},
+    proofGraph,
+  };
+
+  it('is included in plan, architecture, implementation, and standalone prompts', () => {
+    const prompts = [
+      buildPlanReviewPrompt({ ...common, planText: 'plan' }),
+      buildArchitectureReviewPrompt({ ...common, adrText: 'adr', adrTitle: 'ADR-1' }),
+      buildImplReviewPrompt({ ...common, planText: 'plan', changedFiles: [] }),
+      buildReviewContentPrompt({ ...common, content: 'content' }),
+    ];
+
+    for (const prompt of prompts) {
+      expect(prompt).toContain('## ProofGraph Context (persisted, advisory)');
+      expect(prompt).toContain('Coverage: 0/0 claims PROVEN; 0 unresolved.');
+    }
   });
 });

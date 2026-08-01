@@ -42,6 +42,7 @@ import {
 } from './discovery-schemas.js';
 import { ProofGraphProjection } from './proofgraph.js';
 import { ProofContract } from './proofgraph-contract.js';
+import { StandaloneReviewEvidence } from './standalone-review.js';
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
 
@@ -342,6 +343,9 @@ export const SessionState = z.object({
 
   /** Absolute path to the generated review report file (REVIEW phase, P8b). */
   reviewReportPath: z.string().nullable().default(null),
+
+  /** Append-only deterministic task preparation and completion evidence for /review. */
+  standaloneReviewEvidence: z.array(StandaloneReviewEvidence).default([]),
 
   /**
    * Thin ProofGraph contract declaration (advisory; #762).

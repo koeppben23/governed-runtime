@@ -235,7 +235,16 @@ function applyAdrRevision(
 
   const revisedDigest = ctx.digest(revisedText);
   revisionDelta = revisedDigest === prevDigest ? 'none' : 'minor';
-  currentAdr = { ...currentAdr, adrText: revisedText, digest: revisedDigest };
+  currentAdr = {
+    ...currentAdr,
+    adrText: revisedText,
+    digest: revisedDigest,
+    ...(args.claims
+      ? { claimDeclarations: { flow: 'architecture' as const, claims: args.claims } }
+      : {}),
+    // A revision makes a prior human approval attest to a superseded ADR.
+    approvalCertificate: undefined,
+  };
   return { currentAdr, prevDigest, revisionDelta };
 }
 

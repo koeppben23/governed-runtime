@@ -18,6 +18,13 @@ const VALID_INPUT: ArchitectureInput = {
   adrText: VALID_ADR_TEXT,
 };
 
+const ARCHITECTURE_CLAIM = {
+  claimId: '00000000-0000-4000-8000-000000000003',
+  statement: 'PostgreSQL provides the primary persistence store.',
+  critical: true,
+  authoritySectionId: 'decision',
+};
+
 describe('executeArchitecture', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
@@ -45,6 +52,22 @@ describe('executeArchitecture', () => {
         expect(result.state.selfReview!.iteration).toBe(0);
         expect(result.state.selfReview!.verdict).toBe('changes_requested');
         expect(result.state.selfReview!.revisionDelta).toBe('major');
+      }
+    });
+
+    it('stores structured claim declarations on the ADR authority', () => {
+      const result = executeArchitecture(
+        makeState('READY'),
+        { ...VALID_INPUT, claims: [ARCHITECTURE_CLAIM] },
+        ctx,
+      );
+
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') {
+        expect(result.state.architecture?.claimDeclarations).toEqual({
+          flow: 'architecture',
+          claims: [ARCHITECTURE_CLAIM],
+        });
       }
     });
 

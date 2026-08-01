@@ -53,7 +53,85 @@ const CONVERGED_SELF_REVIEW = {
   decidedAt: FIXED_TIME,
 };
 
+const PLAN_CLAIM = {
+  claimId: '00000000-0000-4000-8000-000000000003',
+  statement: 'The login flow rejects invalid credentials.',
+  critical: true,
+  authoritySectionId: 'authentication',
+  expectedCheckId: 'test',
+};
+
+const ARCHITECTURE_CLAIM = {
+  claimId: '00000000-0000-4000-8000-000000000004',
+  statement: 'The selected architecture keeps service data durable.',
+  critical: true,
+  authoritySectionId: 'decision',
+};
+
 describe('review-decision rail', () => {
+  it('creates an immutable certificate for the approved plan claims', () => {
+    const state = makeState('PLAN_REVIEW', {
+      plan: {
+        current: PLAN_RECORD.current,
+        history: PLAN_RECORD.history,
+        claimDeclarations: { flow: 'plan', claims: [PLAN_CLAIM] },
+      },
+    });
+
+    const result = executeReviewDecision(
+      state,
+      { verdict: 'approve', rationale: 'approved', decidedBy: 'reviewer-1' },
+      baseCtx,
+    );
+
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.state.plan?.approvalCertificate).toEqual({
+        flow: 'plan',
+        authorityDigest: PLAN_RECORD.current.digest,
+        claimDeclarationsDigest: baseCtx.digest(
+          '{"claims":[{"authoritySectionId":"authentication","claimId":"00000000-0000-4000-8000-000000000003","critical":true,"expectedCheckId":"test","statement":"The login flow rejects invalid credentials."}],"flow":"plan"}',
+        ),
+        decisionAttestationDigest: baseCtx.digest(
+          '{"decidedAt":"2026-01-01T00:00:00.000Z","decidedBy":"reviewer-1","rationale":"approved","verdict":"approve"}',
+        ),
+        approvedAt: FIXED_TIME,
+        approvedBy: 'reviewer-1',
+        certificateId: expect.any(String),
+      });
+      expect(result.state.plan?.history).toEqual(PLAN_RECORD.history);
+    }
+  });
+
+  it('creates an immutable certificate for approved architecture claims', () => {
+    const architecture = {
+      ...ARCHITECTURE_DECISION,
+      claimDeclarations: { flow: 'architecture' as const, claims: [ARCHITECTURE_CLAIM] },
+    };
+    const result = executeReviewDecision(
+      makeState('ARCH_REVIEW', { architecture }),
+      { verdict: 'approve', rationale: 'approved', decidedBy: 'reviewer-1' },
+      baseCtx,
+    );
+
+    expect(result.kind).toBe('ok');
+    if (result.kind === 'ok') {
+      expect(result.state.architecture?.approvalCertificate).toEqual({
+        flow: 'architecture',
+        authorityDigest: architecture.digest,
+        claimDeclarationsDigest: baseCtx.digest(
+          '{"claims":[{"authoritySectionId":"decision","claimId":"00000000-0000-4000-8000-000000000004","critical":true,"statement":"The selected architecture keeps service data durable."}],"flow":"architecture"}',
+        ),
+        decisionAttestationDigest: baseCtx.digest(
+          '{"decidedAt":"2026-01-01T00:00:00.000Z","decidedBy":"reviewer-1","rationale":"approved","verdict":"approve"}',
+        ),
+        approvedAt: FIXED_TIME,
+        approvedBy: 'reviewer-1',
+        certificateId: expect.any(String),
+      });
+    }
+  });
+
   it('reject at ARCH_REVIEW clears architecture and selfReview', () => {
     const state = makeState('ARCH_REVIEW', {
       architecture: ARCHITECTURE_DECISION,
@@ -662,8 +740,20 @@ describe('review-decision rail', () => {
     });
 
     it('changes_requested at ARCH_REVIEW clears selfReview', () => {
+      const approvedArchitecture = {
+        ...ARCHITECTURE_DECISION,
+        approvalCertificate: {
+          flow: 'architecture' as const,
+          authorityDigest: ARCHITECTURE_DECISION.digest,
+          claimDeclarationsDigest: 'claims-digest',
+          decisionAttestationDigest: 'decision-digest',
+          approvedAt: FIXED_TIME,
+          approvedBy: 'reviewer',
+          certificateId: '00000000-0000-4000-8000-000000000001',
+        },
+      };
       const state = makeState('ARCH_REVIEW', {
-        architecture: ARCHITECTURE_DECISION,
+        architecture: approvedArchitecture,
         selfReview: CONVERGED_SELF_REVIEW,
       });
       const result = executeReviewDecision(
@@ -676,6 +766,7 @@ describe('review-decision rail', () => {
         expect(result.state.selfReview).toBeNull();
         // architecture should still be present
         expect(result.state.architecture).not.toBeNull();
+        expect(result.state.architecture?.approvalCertificate).toBeUndefined();
       }
     });
 

@@ -284,6 +284,7 @@ export function makeState(
     implReview: null,
     reviewDecision: null,
     reviewReportPath: null,
+    standaloneReviewEvidence: [],
     nextAdrNumber: 1,
     activeProfile: null,
     activeChecks: ['test', 'lint'],

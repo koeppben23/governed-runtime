@@ -92,6 +92,7 @@ import {
   activateImplementationReviewObligation,
   nextImplementationReviewIteration,
 } from './implement-shared.js';
+import { materializeApprovedPlanContract } from '../proofgraph/materialize-contract.js';
 // Mode A
 export function validateInitialReviewFindings(input: ImplementRuntime): string | null {
   if (!input.args.reviewFindings) return null;
@@ -385,7 +386,14 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
     return formatAutoAdvanceOverflow(advanced);
   }
   const { state: finalState, transitions } = advanced;
-  const activated = activateImplementationReviewObligation(finalState, {
+  const stateWithMaterializedContract =
+    finalState.phase === 'IMPL_REVIEW'
+      ? {
+          ...finalState,
+          proofContract: materializeApprovedPlanContract(finalState),
+        }
+      : finalState;
+  const activated = activateImplementationReviewObligation(stateWithMaterializedContract, {
     subagentEnabled: input.subagentEnabled,
     iteration: reviewIteration,
     planVersion,

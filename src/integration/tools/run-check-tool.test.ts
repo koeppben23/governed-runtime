@@ -442,6 +442,58 @@ describe('CORNER', () => {
     });
   });
 
+  it('materializes approved-plan claims with the current implementation attempt at IMPL_REVIEW', async () => {
+    await driveToValidation();
+    const sessDir = await getSessDir();
+    const state = await readState(sessDir);
+    const claimId = '11111111-1111-4111-8111-111111111111';
+    await writeState(sessDir, {
+      ...state!,
+      phase: 'IMPL_VALIDATION',
+      implementation: {
+        changedFiles: ['src/example.ts'],
+        domainFiles: ['src/example.ts'],
+        digest: 'implementation-digest',
+        executedAt: '2026-01-01T00:00:00.000Z',
+      },
+      plan: {
+        ...state!.plan!,
+        claimDeclarations: {
+          flow: 'plan',
+          claims: [
+            {
+              claimId,
+              statement: 'approved plan behavior is implemented',
+              critical: true,
+              authoritySectionId: 'implementation',
+              expectedCheckId: 'typecheck',
+            },
+          ],
+        },
+        approvalCertificate: {
+          flow: 'plan',
+          authorityDigest: state!.plan!.current.digest,
+          claimDeclarationsDigest: 'claims-digest',
+          decisionAttestationDigest: 'decision-digest',
+          approvedAt: '2026-01-01T00:00:00.000Z',
+          approvedBy: 'approver',
+          certificateId: '00000000-0000-4000-8000-000000000001',
+        },
+      },
+    });
+
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const finalState = await readState(sessDir);
+    expect(finalState!.phase).toBe('IMPL_REVIEW');
+    expect(finalState!.proofContract?.claims[0]?.evidenceRefs).toEqual([
+      {
+        kind: 'validation_attempt',
+        attemptId: finalState!.validationAttempts[0]!.attemptId,
+      },
+    ]);
+  });
+
   it('fails closed when the phase-specific digest prerequisite is unavailable', async () => {
     await driveToValidation();
     const sessDir = await getSessDir();

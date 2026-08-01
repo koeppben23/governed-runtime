@@ -59,6 +59,7 @@ import type {
   ReviewFindings,
 } from '../../state/evidence.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
+import { PlanClaimDeclaration as PlanClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
 import {
   validateReviewFindings,
   requireReviewFindings,
@@ -166,7 +167,7 @@ function validatePlanRequest(scope: PlanExecutionScope): string | null {
 function normalizeInitialPlanSubmissionArgs(args: PlanArgs, state: SessionState): PlanArgs {
   const hasPlanText = typeof args.planText === 'string' && args.planText.trim().length > 0;
   if (!hasPlanText || state.plan || state.phase !== 'TICKET') return args;
-  return { planText: args.planText, targetPaths: args.targetPaths };
+  return { planText: args.planText, claims: args.claims, targetPaths: args.targetPaths };
 }
 
 function validatePlanInputShape(
@@ -252,6 +253,9 @@ function buildPlanSubmissionState(
       reviewFindings: reviewFindings
         ? [...(scope.state.plan?.reviewFindings ?? []), reviewFindings]
         : scope.state.plan?.reviewFindings,
+      claimDeclarations: scope.args.claims
+        ? { flow: 'plan', claims: scope.args.claims }
+        : scope.state.plan?.claimDeclarations,
     },
     // #428: a new plan invalidates any prior validation evidence. Without this
     // reset, a stale failed-check result (passed:false) survives the re-plan and
@@ -386,6 +390,9 @@ function buildReviewedPlanState(
       current: revision.currentPlan,
       history: revision.history,
       reviewFindings: newReviewFindings,
+      claimDeclarations: scope.args.claims
+        ? { flow: 'plan', claims: scope.args.claims }
+        : scope.state.plan?.claimDeclarations,
     },
     selfReview: {
       iteration: scope.state.selfReview!.iteration + 1,
@@ -522,6 +529,12 @@ export const plan: ToolDefinition = {
       .describe(
         'Plan body text (markdown). Required for Mode A (initial submission) ' +
           "and when reviewVerdict is 'changes_requested' (revised plan).",
+      ),
+    claims: z
+      .array(PlanClaimDeclarationSchema)
+      .optional()
+      .describe(
+        'Pre-evidence claims made by this plan version. Each names its governing plan section and expected implementation check.',
       ),
     reviewVerdict: z
       .enum(['accept', 'changes_requested'])

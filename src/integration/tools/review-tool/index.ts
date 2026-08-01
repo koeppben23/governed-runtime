@@ -56,7 +56,13 @@ import {
 import { resolveBranchReviewSource } from '../../../adapters/gh-cli.js';
 import { prepareReviewContent } from '../../../rails/review.js';
 import { findReviewObligationById } from '../../review/assurance.js';
+import { appendReviewObligation } from '../../review/assurance.js';
 import { writeStateWithArtifacts } from '../helpers.js';
+import {
+  appendCompletedReviewEvidence,
+  appendPreparedReviewEvidence,
+  prepareStandaloneReviewEvidence,
+} from './preparation.js';
 
 // ─── Content Digest Binding ─────────────────────────────────────────────────
 
@@ -373,6 +379,21 @@ async function prepareReviewWithoutExternalCalls(
       policy: state.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
     });
     if (typeof prepared === 'string') return prepared;
+    const taskEvidence = prepareStandaloneReviewEvidence(args, now);
+    const stateWithTaskEvidence: SessionState = {
+      // Preparation records intent before reviewer work, but does not materialize
+      // the REVIEW transition. The existing completion rail remains authoritative.
+      ...state,
+      ...(prepared.pendingObligation && {
+        reviewAssurance: appendReviewObligation(state.reviewAssurance, prepared.pendingObligation),
+      }),
+      standaloneReviewEvidence: appendPreparedReviewEvidence(
+        state.standaloneReviewEvidence,
+        taskEvidence,
+      ),
+    };
+    // The prepared entry is durable before a reviewer can be instructed.
+    await writeStateWithArtifacts(sessDir, stateWithTaskEvidence);
     return { ...prepared, sessDir, now };
   });
 }
@@ -409,6 +430,19 @@ async function persistCompletedReview(
         effectiveReviewFindings: prepared.effectiveReviewFindings,
       },
     );
+    const taskEvidence = prepareStandaloneReviewEvidence(args, now);
+    result = {
+      ...result,
+      state: {
+        ...result.state,
+        standaloneReviewEvidence: appendCompletedReviewEvidence({
+          evidence: state.standaloneReviewEvidence,
+          prepared: taskEvidence,
+          completedAt: now,
+          findings: prepared.effectiveReviewFindings ?? args.reviewFindings,
+        }),
+      },
+    };
     const completion = await persistReviewCompletion(sessDir, result, reviewResult, ctx);
     if (completion.kind === 'overflow') {
       return formatAutoAdvanceOverflow(completion.overflow);
@@ -560,6 +594,19 @@ export const review: ToolDefinition = {
         'File paths touched by this review. Required for risk classification when ' +
           'challengePolicy is active and no branch/PR auto-resolution is available (e.g. text or URL review).',
       ),
+    objectives: z
+      .array(
+        z.object({
+          objectiveId: z
+            .string()
+            .min(1)
+            .regex(/^[a-z][a-z0-9_-]*$/),
+          statement: z.string().min(1),
+        }),
+      )
+      .min(1)
+      .optional()
+      .describe('Optional structured review objectives. Omit to use the canonical static profile.'),
   },
   async execute(args: ReviewToolArgs, context) {
     try {

@@ -26,6 +26,12 @@ export async function refreshProofGraph(
   state: SessionState,
   evaluatedAt: string,
 ): Promise<ProofGraphProjection> {
+  // Claimless sessions have no provider bindings to evaluate. Persist the empty
+  // projection without filesystem or registry I/O so unrelated flow writes do
+  // not inherit ProofGraph provider failure modes.
+  if (!state.proofContract || state.proofContract.claims.length === 0) {
+    return summarizeProofGraph(state, evaluatedAt).projection;
+  }
   const structuralSurfaces = evaluateStructuralSurfaces();
   const mutationVerdicts = await resolveVerifiedMutationVerdicts(
     state.binding.worktree,

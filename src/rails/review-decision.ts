@@ -37,12 +37,18 @@ import type {
   ValidationResult,
   DecisionIdentity,
 } from '../state/evidence.js';
+import type {
+  ArchitectureApprovalCertificate,
+  PlanApprovalCertificate,
+} from '../state/proofgraph-approval.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext, TransitionRecord } from './types.js';
 import { applyTransition } from './types.js';
 import { blocked } from '../config/reasons.js';
 import { compareActorIdentity, isAssuranceAtLeast } from '../identity/actor-info.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -158,7 +164,13 @@ function applyStateClearingPattern(state: SessionState, verdict: ReviewVerdict):
     };
   }
   if (state.phase === 'ARCH_REVIEW') {
-    return { ...state, selfReview: null };
+    return {
+      ...state,
+      architecture: state.architecture
+        ? { ...state.architecture, approvalCertificate: undefined }
+        : null,
+      selfReview: null,
+    };
   }
 
   return state;
@@ -242,6 +254,140 @@ function enforceApprovalIdentity(
   return verifyAssuranceThreshold(input, ctx);
 }
 
+/** Enforce ProofGraph only for the governed lifecycle's final evidence approval. */
+function enforceProofGraphEvidenceApproval(
+  state: SessionState,
+  input: ReviewDecisionInput,
+  ctx: RailContext,
+): RailBlocked | null {
+  if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve' || !state.proofGraph) {
+    return null;
+  }
+  const decision = evaluateProofGraphGate(
+    { projection: state.proofGraph },
+    ctx.policy?.proofGraphPolicy,
+  );
+  if (!decision.gated) return null;
+  return blocked('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN', {
+    claimIds: decision.blockingClaimIds.join(', '),
+  });
+}
+
+/**
+ * Bind the human approval to the exact immutable plan version and its claims.
+ * The certificate digest deliberately excludes itself and uses the injected
+ * digest authority so rail callers retain control of cryptographic hashing.
+ */
+function createPlanApprovalCertificate(
+  plan: NonNullable<SessionState['plan']>,
+  decision: ReviewDecision,
+  ctx: RailContext,
+): PlanApprovalCertificate {
+  const claimDeclarations = plan.claimDeclarations ?? { flow: 'plan' as const, claims: [] };
+  const claimDeclarationsDigest = ctx.digest(canonicalJsonStringify(claimDeclarations));
+  const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(decision));
+  const certificateIdDigest = ctx.digest(
+    canonicalJsonStringify({
+      authorityDigest: plan.current.digest,
+      claimDeclarationsDigest,
+      decisionAttestationDigest,
+      approvedAt: decision.decidedAt,
+      approvedBy: decision.decidedBy,
+    }),
+  );
+  const certificateIdHex = certificateIdDigest
+    .toLowerCase()
+    .replaceAll(/[^a-f0-9]/g, '')
+    .padEnd(32, '0')
+    .slice(0, 32);
+  const certificateId = `${certificateIdHex.slice(0, 8)}-${certificateIdHex.slice(8, 12)}-4${certificateIdHex.slice(13, 16)}-8${certificateIdHex.slice(17, 20)}-${certificateIdHex.slice(20)}`;
+  return {
+    flow: 'plan',
+    authorityDigest: plan.current.digest,
+    claimDeclarationsDigest,
+    decisionAttestationDigest,
+    approvedAt: decision.decidedAt,
+    approvedBy: decision.decidedBy,
+    certificateId,
+  };
+}
+
+function createArchitectureApprovalCertificate(
+  architecture: NonNullable<SessionState['architecture']>,
+  decision: ReviewDecision,
+  ctx: RailContext,
+): ArchitectureApprovalCertificate {
+  const claimDeclarations = architecture.claimDeclarations ?? {
+    flow: 'architecture' as const,
+    claims: [],
+  };
+  const claimDeclarationsDigest = ctx.digest(canonicalJsonStringify(claimDeclarations));
+  const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(decision));
+  const certificateIdDigest = ctx.digest(
+    canonicalJsonStringify({
+      authorityDigest: architecture.digest,
+      claimDeclarationsDigest,
+      decisionAttestationDigest,
+      approvedAt: decision.decidedAt,
+      approvedBy: decision.decidedBy,
+    }),
+  );
+  const certificateIdHex = certificateIdDigest
+    .toLowerCase()
+    .replaceAll(/[^a-f0-9]/g, '')
+    .padEnd(32, '0')
+    .slice(0, 32);
+  const certificateId = `${certificateIdHex.slice(0, 8)}-${certificateIdHex.slice(8, 12)}-4${certificateIdHex.slice(13, 16)}-8${certificateIdHex.slice(17, 20)}-${certificateIdHex.slice(20)}`;
+  return {
+    flow: 'architecture',
+    authorityDigest: architecture.digest,
+    claimDeclarationsDigest,
+    decisionAttestationDigest,
+    approvedAt: decision.decidedAt,
+    approvedBy: decision.decidedBy,
+    certificateId,
+  };
+}
+
+function approvalCertificatePatch(
+  state: SessionState,
+  input: ReviewDecisionInput,
+  decision: ReviewDecision,
+  ctx: RailContext,
+): Partial<Pick<SessionState, 'plan' | 'architecture'>> {
+  if (
+    state.phase === 'PLAN_REVIEW' &&
+    input.verdict === 'approve' &&
+    state.plan &&
+    !state.plan.approvalCertificate
+  ) {
+    return {
+      plan: {
+        ...state.plan,
+        approvalCertificate: createPlanApprovalCertificate(state.plan, decision, ctx),
+      },
+    };
+  }
+  if (
+    state.phase === 'ARCH_REVIEW' &&
+    input.verdict === 'approve' &&
+    state.architecture &&
+    !state.architecture.approvalCertificate
+  ) {
+    return {
+      architecture: {
+        ...state.architecture,
+        approvalCertificate: createArchitectureApprovalCertificate(
+          state.architecture,
+          decision,
+          ctx,
+        ),
+      },
+    };
+  }
+  return {};
+}
+
 // ─── Rail ─────────────────────────────────────────────────────────────────────
 
 export function executeReviewDecision(
@@ -267,6 +413,8 @@ export function executeReviewDecision(
   if (input.verdict === 'approve') {
     const identityBlock = enforceApprovalIdentity(state, input, ctx);
     if (identityBlock) return identityBlock;
+    const proofGraphBlock = enforceProofGraphEvidenceApproval(state, input, ctx);
+    if (proofGraphBlock) return proofGraphBlock;
   }
 
   // 4. Resolve target phase via topology
@@ -288,9 +436,17 @@ export function executeReviewDecision(
     ...(input.decisionIdentity ? { decisionIdentity: input.decisionIdentity } : {}),
   };
 
+  // A certificate is created only for the first human approval at its flow's gate;
+  // an existing immutable certificate is never rewritten.
+  const certificatePatch = approvalCertificatePatch(state, input, decision, ctx);
+
   // 6. Apply state clearing pattern based on gate + verdict
   const clearedState = applyStateClearingPattern(
-    { ...state, reviewDecision: decision },
+    {
+      ...state,
+      reviewDecision: decision,
+      ...certificatePatch,
+    },
     input.verdict,
   );
 

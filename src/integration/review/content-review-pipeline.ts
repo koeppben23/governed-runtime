@@ -134,6 +134,7 @@ export async function runReviewContentPipeline(
     profileName,
     profileRules,
     discoveryContext,
+    proofGraph: sessionState.proofGraph,
   });
 
   const policies = getReviewerPolicies(sessionState);

@@ -400,6 +400,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       criteriaVersion: reviewCtx.criteriaVersion,
       mandateDigest: reviewCtx.mandateDigest,
       discoveryContext,
+      proofGraph: sessionState.proofGraph,
       ...planRules,
     });
   }
@@ -418,6 +419,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       discoveryContext,
       challengeResolutions: stateChallengeResolutions(sessionState),
       verificationEvidence: stateVerificationEvidence(sessionState),
+      proofGraph: sessionState.proofGraph,
       ...implRules,
     });
   }
@@ -432,6 +434,7 @@ export function buildToolPrompt(params: BuildToolPromptParams): string | null {
       criteriaVersion: reviewCtx.criteriaVersion,
       mandateDigest: reviewCtx.mandateDigest,
       discoveryContext,
+      proofGraph: sessionState.proofGraph,
       ...archRules,
     });
   }

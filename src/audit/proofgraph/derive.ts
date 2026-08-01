@@ -35,9 +35,16 @@ export function deriveProofGraph(
   evaluatedAt: string,
   currentSurfaceDigests: Readonly<Record<string, string>> = {},
 ): ProofGraphProjection {
+  const standaloneClaims = new Map(
+    state.standaloneReviewEvidence.flatMap((evidence) =>
+      evidence.task.claims.map((claim) => [claim.claimId, claim] as const),
+    ),
+  );
   return evaluateProofGraph(
     {
-      claims: state.proofContract?.claims ?? [],
+      // Standalone-review objectives are hypotheses with null provenance. They
+      // can therefore appear in the graph without ever becoming false claims.
+      claims: [...(state.proofContract?.claims ?? []), ...standaloneClaims.values()],
       providerResults,
       counterexamples,
       currentImplementationDigest: state.implementation?.digest ?? null,

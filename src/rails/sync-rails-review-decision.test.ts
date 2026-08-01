@@ -9,8 +9,35 @@ import {
   DECISION_IDENTITY_VERIFIED_REVIEWER,
 } from '../fixtures.js';
 import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy.js';
+import type { ProofGraphProjection } from '../state/proofgraph.js';
 
 const ctx = createTestContext();
+const PROOFGRAPH_GATE_POLICY = {
+  ...TEAM_POLICY,
+  proofGraphPolicy: { version: 'proofgraph-policy.v1' as const, enabled: true },
+};
+
+function proofGraph(
+  signalClass: 'fact' | 'hypothesis' = 'fact',
+  verificationState: 'PROVEN' | 'UNPROVEN' = 'UNPROVEN',
+): ProofGraphProjection {
+  return {
+    version: 'proofgraph.v1',
+    evaluatedAt: '2026-01-01T00:00:00.000Z',
+    claims: [
+      {
+        claimId: '00000000-0000-4000-8000-000000000762',
+        statement: 'The protected behavior holds.',
+        signalClass,
+        critical: true,
+        provenance: { kind: 'canonical_authority', authorityId: 'ticket', digest: 'digest' },
+        evidenceRefs: [],
+        counterexampleRefs: [],
+        verificationState,
+      },
+    ],
+  };
+}
 
 describe('review-decision rail', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -48,6 +75,31 @@ describe('review-decision rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.phase).toBe('COMPLETE');
       }
+    });
+
+    it('blocks EVIDENCE_REVIEW approval when enabled policy has an unproven critical fact', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        { ...state, proofGraph: proofGraph() },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        { ...ctx, policy: PROOFGRAPH_GATE_POLICY },
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') {
+        expect(result.code).toBe('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
+        expect(result.reason).toContain('00000000-0000-4000-8000-000000000762');
+      }
+    });
+
+    it('does not apply the gate to hypothesis claims', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        { ...state, proofGraph: proofGraph('hypothesis') },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        { ...ctx, policy: PROOFGRAPH_GATE_POLICY },
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') expect(result.state.phase).toBe('COMPLETE');
     });
 
     it('changes_requested at PLAN_REVIEW → PLAN', () => {
@@ -145,6 +197,16 @@ describe('review-decision rail', () => {
         expect(result.code).toBe('INVALID_VERDICT');
         expect(result.reason).toBeDefined();
       }
+    });
+
+    it('does not apply the gate to standalone review phases', () => {
+      const result = executeReviewDecision(
+        makeState('REVIEW_COMPLETE', { proofGraph: proofGraph() }),
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'r' },
+        { ...ctx, policy: PROOFGRAPH_GATE_POLICY },
+      );
+      expect(result.kind).toBe('blocked');
+      if (result.kind === 'blocked') expect(result.code).toBe('COMMAND_NOT_ALLOWED');
     });
   });
 
@@ -478,6 +540,17 @@ describe('review-decision rail', () => {
         expect(result.state.architecture).not.toBeNull();
         expect(result.state.selfReview).not.toBeNull();
       }
+    });
+
+    it('does not apply the gate to PLAN_REVIEW approval', () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const result = executeReviewDecision(
+        { ...state, proofGraph: proofGraph() },
+        { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer-1' },
+        { ...ctx, policy: PROOFGRAPH_GATE_POLICY },
+      );
+      expect(result.kind).toBe('ok');
+      if (result.kind === 'ok') expect(result.state.phase).toBe('VALIDATION');
     });
 
     it('changes_requested at ARCH_REVIEW → ARCHITECTURE with cleared selfReview', () => {

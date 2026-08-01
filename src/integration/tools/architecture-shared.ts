@@ -9,6 +9,7 @@ import { formatBlocked } from './helpers.js';
 import type { MutableSession } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
+import type { ArchitectureClaimDeclaration } from '../../state/proofgraph-approval.js';
 import { ensureReviewAssurance, createReviewObligation } from '../review/assurance.js';
 import { classifyToolCallMode } from './review-validation-mode.js';
 import {
@@ -22,6 +23,7 @@ import { buildPendingReviewInstruction } from '../review/pending-instruction.js'
 export type ArchitectureArgs = {
   title?: string;
   adrText?: string;
+  claims?: ArchitectureClaimDeclaration[];
   reviewVerdict?: LoopVerdict;
   reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;

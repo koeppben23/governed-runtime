@@ -11,6 +11,7 @@ import type { ToolDefinition } from './helpers.js';
 import { withMutableSessionTransaction, formatError } from './helpers.js';
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
+import { ArchitectureClaimDeclaration as ArchitectureClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { validateInitialSubmissionGate } from './architecture-shared.js';
 import { toolCallFlags } from './review-validation-mode.js';
@@ -42,6 +43,12 @@ export const architecture: ToolDefinition = {
         'Full ADR body in MADR Markdown format. ' +
           'Must include ## Context, ## Decision, and ## Consequences sections. ' +
           "Required for Mode A and when reviewVerdict is 'changes_requested'.",
+      ),
+    claims: z
+      .array(ArchitectureClaimDeclarationSchema)
+      .optional()
+      .describe(
+        'Pre-evidence claims made by this ADR version. Each identifies its governing ADR section and is bound into any human approval certificate.',
       ),
     reviewVerdict: z
       .enum(['accept', 'changes_requested'])

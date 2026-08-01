@@ -716,6 +716,47 @@ describe('review (standalone flow)', () => {
       expect(result.inputOrigin).toBe('manual_text');
     });
 
+    it('persists append-only deterministic prepared and completed review evidence', async () => {
+      const content = { text: 'Manual review text content', inputOrigin: 'manual_text' as const };
+      const obligationId = await obtainObligationUuid(content);
+      const sessDir = await currentSessionDir();
+      const preparedState = await readState(sessDir);
+      const preparedEvidence = preparedState!.standaloneReviewEvidence;
+
+      expect(preparedEvidence).toHaveLength(1);
+      expect(preparedEvidence[0]).toMatchObject({
+        kind: 'prepared',
+        task: {
+          profileVersion: 'standalone-review-objectives.v1',
+          objectives: expect.any(Array),
+        },
+      });
+      expect(preparedEvidence[0]!.task.claims).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ signalClass: 'hypothesis', provenance: null }),
+        ]),
+      );
+
+      await review.execute(
+        { ...content, reviewFindings: buildAnalysisFindings('accept', obligationId) },
+        ctx,
+      );
+      const completedState = await readState(sessDir);
+      const completedEvidence = completedState!.standaloneReviewEvidence;
+
+      expect(completedEvidence).toHaveLength(2);
+      expect(completedEvidence[0]).toEqual(preparedEvidence[0]);
+      const completed = completedEvidence[1]!;
+      expect(completed).toMatchObject({
+        kind: 'completed',
+        preparedEvidenceId: preparedEvidence[0]!.evidenceId,
+        requestedDigests: preparedEvidence[0]!.requestedDigests,
+      });
+      if (completed.kind !== 'completed') throw new TypeError('Expected completed review evidence');
+      expect(completed.findingsDigest).toMatch(/^[a-f0-9]{64}$/);
+      expect(completed.attestationDigest).toMatch(/^[a-f0-9]{64}$/);
+    });
+
     it('non-content review (no external content) succeeds without reviewFindings', async () => {
       await hydrateAndGetReady();
 

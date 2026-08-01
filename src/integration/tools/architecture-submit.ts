@@ -78,7 +78,11 @@ export async function handleAdrSubmission(
   if (!args.title) return formatBlocked('EMPTY_ADR_TITLE');
   if (!args.adrText) return formatBlocked('EMPTY_ADR_TEXT');
 
-  const result = executeArchitecture(state, { title: args.title, adrText: args.adrText }, ctx);
+  const result = executeArchitecture(
+    state,
+    { title: args.title, adrText: args.adrText, claims: args.claims },
+    ctx,
+  );
 
   if (result.kind === 'blocked') {
     return JSON.stringify({

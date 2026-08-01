@@ -13,6 +13,7 @@
  */
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
+import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import {
   buildDiscoveryContextSection,
   type DiscoveryReviewContext,
@@ -205,6 +206,8 @@ export interface PlanReviewPromptOpts {
   readonly profileName?: string;
   readonly profileRules?: string;
   readonly discoveryContext: DiscoveryReviewContext;
+  /** Persisted advisory projection only; prompt construction never evaluates providers. */
+  readonly proofGraph?: ProofGraphProjection;
 }
 
 /** Options for building an implementation review prompt. */
@@ -220,6 +223,8 @@ export interface ImplReviewPromptOpts {
   readonly profileName?: string;
   readonly profileRules?: string;
   readonly discoveryContext: DiscoveryReviewContext;
+  /** Persisted advisory projection only; prompt construction never evaluates providers. */
+  readonly proofGraph?: ProofGraphProjection;
   readonly challengeResolutions?: ReadonlyArray<{
     challengeId: string;
     implementationDigest: string;
@@ -271,6 +276,8 @@ export interface ArchitectureReviewPromptOpts {
   readonly profileName?: string;
   readonly profileRules?: string;
   readonly discoveryContext: DiscoveryReviewContext;
+  /** Persisted advisory projection only; prompt construction never evaluates providers. */
+  readonly proofGraph?: ProofGraphProjection;
 }
 
 // ─── Internal Helpers ────────────────────────────────────────────────────────
@@ -295,6 +302,42 @@ function buildStackProfileSection(
     lines.push('## Stack Review Rules', '', profileRules, '');
   }
   return lines.join('\n');
+}
+
+/** Render the stored projection without deriving fresh evidence or provider results. */
+export function renderPersistedProofGraphContext(
+  proofGraph: ProofGraphProjection | undefined,
+): string[] {
+  if (!proofGraph) {
+    return [
+      '## ProofGraph Context (persisted, advisory)',
+      '',
+      '- Coverage: NOT_DECLARED (no persisted ProofGraph projection is available).',
+      '',
+    ];
+  }
+
+  const provenCount = proofGraph.claims.filter(
+    (claim) => claim.verificationState === 'PROVEN',
+  ).length;
+  const criticalUnresolved = proofGraph.claims.filter(
+    (claim) => claim.critical && claim.verificationState !== 'PROVEN',
+  );
+  return [
+    '## ProofGraph Context (persisted, advisory)',
+    '',
+    `- Coverage: ${provenCount}/${proofGraph.claims.length} claims PROVEN; ${proofGraph.claims.length - provenCount} unresolved.`,
+    '- This is persisted advisory context, not a review verdict or reviewer authority. Independently assess every claim.',
+    ...(criticalUnresolved.length === 0
+      ? ['- Critical unresolved claims: none recorded.']
+      : [
+          '- Critical unresolved claims:',
+          ...criticalUnresolved.map(
+            (claim) => `  - [${claim.verificationState}] ${claim.claimId}: ${claim.statement}`,
+          ),
+        ]),
+    '',
+  ];
 }
 
 // ─── Prompt Builders ─────────────────────────────────────────────────────────
@@ -336,6 +379,7 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     profileName,
     profileRules,
     discoveryContext,
+    proofGraph,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -352,6 +396,7 @@ export function buildPlanReviewPrompt(opts: PlanReviewPromptOpts): string {
     '',
     ...(stackSection ? [stackSection, ''] : []),
     ...(discoverySection ? [discoverySection, ''] : []),
+    ...renderPersistedProofGraphContext(proofGraph),
     '## Instructions',
     '',
     'Review this plan against the ticket requirements. Follow your review criteria',
@@ -438,6 +483,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     discoveryContext,
     challengeResolutions = [],
     verificationEvidence = [],
+    proofGraph,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -458,6 +504,7 @@ export function buildImplReviewPrompt(opts: ImplReviewPromptOpts): string {
     '',
     ...(stackSection ? [stackSection, ''] : []),
     ...(discoverySection ? [discoverySection, ''] : []),
+    ...renderPersistedProofGraphContext(proofGraph),
     ...(challengeResolutions.length > 0
       ? [
           '## Advisory Challenge Resolutions (NOT_VERIFIED)',
@@ -504,6 +551,7 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     profileName,
     profileRules,
     discoveryContext,
+    proofGraph,
   } = opts;
   const stackSection = buildStackProfileSection(profileName, profileRules);
   const discoverySection = buildDiscoveryContextSection(discoveryContext);
@@ -520,6 +568,7 @@ export function buildArchitectureReviewPrompt(opts: ArchitectureReviewPromptOpts
     '',
     ...(stackSection ? [stackSection, ''] : []),
     ...(discoverySection ? [discoverySection, ''] : []),
+    ...renderPersistedProofGraphContext(proofGraph),
     '## Instructions',
     '',
     'Review this ADR against the ticket and your review criteria for Architecture',
@@ -560,6 +609,8 @@ export function buildReviewContentPrompt(opts: {
   // The loader always returns a populated (possibly "unavailable") context, so the
   // section renders even when Discovery is degraded — never silently omitted.
   discoveryContext: DiscoveryReviewContext;
+  /** Persisted advisory projection only; prompt construction never evaluates providers. */
+  proofGraph?: ProofGraphProjection;
 }): string {
   const stackSection = buildStackProfileSection(opts.profileName, opts.profileRules);
   const discoverySection = buildDiscoveryContextSection(opts.discoveryContext);
@@ -585,6 +636,7 @@ export function buildReviewContentPrompt(opts: {
   if (discoverySection) {
     lines.push(discoverySection, '');
   }
+  lines.push(...renderPersistedProofGraphContext(opts.proofGraph));
   lines.push(
     'CONTENT TO REVIEW:',
     '```',

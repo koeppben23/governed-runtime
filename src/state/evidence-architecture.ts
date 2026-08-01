@@ -8,6 +8,10 @@
 import { z } from 'zod';
 import { AdrStatus } from './evidence-primitives.js';
 import { ReviewFindings } from './evidence-review.js';
+import {
+  ArchitectureApprovalCertificate,
+  ArchitectureClaimDeclarations,
+} from './proofgraph-approval.js';
 
 /**
  * Required MADR sections in the ADR text.
@@ -56,6 +60,10 @@ export const ArchitectureDecision = z
      * equivalently by all consumers.
      */
     reviewFindings: z.array(ReviewFindings).optional(),
+    /** User-declared ProofGraph claims for this architecture decision. */
+    claimDeclarations: ArchitectureClaimDeclarations.optional(),
+    /** User approval certificate bound to this architecture decision. */
+    approvalCertificate: ArchitectureApprovalCertificate.optional(),
   })
   .readonly();
 export type ArchitectureDecision = z.infer<typeof ArchitectureDecision>;
