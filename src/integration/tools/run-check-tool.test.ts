@@ -33,6 +33,8 @@ import {
 } from '../../adapters/workspace/index.js';
 import { executeCheck } from '../../verification/executor.js';
 import { PersistenceError } from '../../adapters/persistence.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { hashText } from '../../shared/hashing.js';
 import { withSessionWriteLockRetry } from '../../adapters/lock-retry.js';
 import {
   resetAdapterLogger,
@@ -473,8 +475,21 @@ describe('CORNER', () => {
         approvalCertificate: {
           flow: 'plan',
           authorityDigest: state!.plan!.current.digest,
-          claimDeclarationsDigest: 'claims-digest',
-          decisionAttestationDigest: 'decision-digest',
+          claimDeclarationsDigest: hashText(
+            canonicalJsonStringify({
+              flow: 'plan',
+              claims: [
+                {
+                  claimId,
+                  statement: 'approved plan behavior is implemented',
+                  critical: true,
+                  authoritySectionId: 'implementation',
+                  expectedCheckId: 'typecheck',
+                },
+              ],
+            }),
+          ),
+          decisionAttestationDigest: hashText('decision'),
           approvedAt: '2026-01-01T00:00:00.000Z',
           approvedBy: 'approver',
           certificateId: '00000000-0000-4000-8000-000000000001',
