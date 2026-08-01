@@ -53,6 +53,17 @@ import { ActorClaimError } from '../../adapters/actor.js';
 // Config
 import { evaluateCompleteness } from '../../audit/completeness.js';
 import { summarizeProofGraph } from '../../audit/proofgraph/summary.js';
+import {
+  evaluateStructuralSurfaces,
+  bindStructuralEvidence,
+  surfaceDigestMap,
+} from '../proofgraph/structural-provider.js';
+import {
+  loadMutationReport,
+  evaluateMutationProfiles,
+  resolveVerifiedMutationVerdicts,
+} from '../proofgraph/mutation-provider.js';
+import { bindMutationEvidence } from '../../audit/proofgraph/mutation-binder.js';
 import { checkRegistrationConsistency } from '../proofgraph/registration-consistency.js';
 import { checkConfigDefaultConsistency } from '../proofgraph/config-default-consistency.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
@@ -137,12 +148,29 @@ function buildCheckProjectionFields(state: SessionState): Record<string, unknown
  * Build the focused, read-only ProofGraph projection response (advisory).
  * Never approves or gates; surfaces claim states, freshness, and critical gaps.
  */
-function buildProofGraphProjectionResponse(
+async function buildProofGraphProjectionResponse(
   state: SessionState,
   policy: FlowGuardPolicy,
   checkFields: Record<string, unknown>,
-): string {
-  const proofGraph = summarizeProofGraph(state, new Date().toISOString());
+): Promise<string> {
+  const now = new Date().toISOString();
+  const structuralSurfaces = evaluateStructuralSurfaces();
+  // Profile summaries for the reviewer projection come from the default report;
+  // claim-binding verdicts come ONLY from per-attempt digest-verified reports.
+  const mutationReport = await loadMutationReport(state.binding.worktree);
+  const mutationSummaries = evaluateMutationProfiles(mutationReport);
+  const mutationVerdicts = await resolveVerifiedMutationVerdicts(
+    state.binding.worktree,
+    state.mutationAttempts,
+  );
+  const proofGraph = summarizeProofGraph(state, now, {
+    providerResults: [
+      ...bindStructuralEvidence(state, structuralSurfaces, now),
+      ...bindMutationEvidence(state, mutationVerdicts, now),
+    ],
+    surfaceDigests: surfaceDigestMap(structuralSurfaces),
+    mutationSummaries,
+  });
   const proofGraphGate = evaluateProofGraphGate(proofGraph, policy.proofGraphPolicy);
   const registrationConsistency = checkRegistrationConsistency();
   const configConsistency = checkConfigDefaultConsistency();
@@ -242,7 +270,7 @@ async function resolveProjection(
     );
   }
   if (args.proofGraph) {
-    return buildProofGraphProjectionResponse(state, policy, checkFields);
+    return await buildProofGraphProjectionResponse(state, policy, checkFields);
   }
   return null;
 }

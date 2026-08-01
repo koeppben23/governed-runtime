@@ -38,6 +38,7 @@ export const TOOL_FLOWGUARD_ABORT = 'flowguard_abort_session';
 export const TOOL_FLOWGUARD_ARCHIVE = 'flowguard_archive';
 export const TOOL_FLOWGUARD_HELP = 'flowguard_help';
 export const TOOL_FLOWGUARD_DECLARE_CONTRACT = 'flowguard_declare_contract';
+export const TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE = 'flowguard_record_mutation_evidence';
 
 /** The complete set of canonical FlowGuard tool names (single source of truth). */
 export const ALL_FLOWGUARD_TOOL_NAMES: ReadonlySet<string> = new Set([
@@ -57,6 +58,7 @@ export const ALL_FLOWGUARD_TOOL_NAMES: ReadonlySet<string> = new Set([
   TOOL_FLOWGUARD_ARCHIVE,
   TOOL_FLOWGUARD_HELP,
   TOOL_FLOWGUARD_DECLARE_CONTRACT,
+  TOOL_FLOWGUARD_RECORD_MUTATION_EVIDENCE,
 ]);
 
 export { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';

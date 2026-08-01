@@ -32,6 +32,7 @@
 import { PRECONDITION_REASONS } from './reasons-precondition.js';
 import { VALIDATION_REASONS } from './reasons-validation.js';
 import { INFRA_REASONS } from './reasons-infra.js';
+import { PROOFGRAPH_REASONS } from './reasons-proofgraph.js';
 import type { BlockedReason, FormattedBlock, ReasonWarningSink } from './reasons-types.js';
 
 export type {
@@ -176,6 +177,7 @@ export const defaultReasonRegistry = new BlockedReasonRegistry();
 defaultReasonRegistry.registerAll(PRECONDITION_REASONS);
 defaultReasonRegistry.registerAll(VALIDATION_REASONS);
 defaultReasonRegistry.registerAll(INFRA_REASONS);
+defaultReasonRegistry.registerAll(PROOFGRAPH_REASONS);
 defaultReasonRegistry.freeze();
 
 // ─── Convenience Helper ───────────────────────────────────────────────────────

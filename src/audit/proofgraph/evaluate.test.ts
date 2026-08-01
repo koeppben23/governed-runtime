@@ -432,6 +432,156 @@ describe('evaluateProofGraph', () => {
     });
   });
 
+  describe('plan-bound evidence freshness', () => {
+    const PLAN = 'plan-digest-current';
+
+    function planResult(claimId: string, digest: string): ProofProviderResultType {
+      return ProofProviderResult.parse({
+        claimId,
+        providerKind: 'executed_test',
+        providerId: 'executed-test',
+        providerVersion: '1.0.0',
+        input: { command: 'npm test' },
+        source: { location: 'test', stableId: claimId },
+        binding: { kind: 'plan', digest },
+        status: 'pass',
+        resultDigest: SHA,
+        executedAt: NOW,
+      });
+    }
+
+    it('PROVEN when plan-bound evidence matches the current plan digest', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1))],
+        providerResults: [planResult(uuid(1), PLAN)],
+        currentPlanDigest: PLAN,
+      });
+      expect(out.claims[0]!.verificationState).toBe('PROVEN');
+    });
+
+    it('STALE when the plan digest has moved on', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1))],
+        providerResults: [planResult(uuid(1), 'plan-old')],
+        currentPlanDigest: PLAN,
+      });
+      expect(out.claims[0]!.verificationState).toBe('STALE');
+    });
+
+    it('STALE when there is no current plan digest at all', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1))],
+        providerResults: [planResult(uuid(1), PLAN)],
+        currentPlanDigest: null,
+      });
+      expect(out.claims[0]!.verificationState).toBe('STALE');
+    });
+  });
+
+  describe('multiple required positive evidence kinds', () => {
+    const bothRequired: RequiredEvidence = {
+      positive: ['executed_test', 'structural_assertion'],
+      adversarial: [],
+    };
+    const SURFACE = { surfaceId: 'sfc', digest: 'sfc-current' };
+
+    function structural(claimId: string, digest: string): ProofProviderResultType {
+      return ProofProviderResult.parse({
+        claimId,
+        providerKind: 'structural_assertion',
+        providerId: 'registration-consistency',
+        providerVersion: '1.0.0',
+        input: { assertion: 'registries agree' },
+        source: { location: 'l', stableId: 's' },
+        binding: {
+          kind: 'surface_set',
+          surfaceId: SURFACE.surfaceId,
+          digest,
+          locations: ['l'],
+        },
+        status: 'pass',
+        resultDigest: SHA,
+        executedAt: NOW,
+      });
+    }
+
+    it('PROVEN only when EVERY required kind has a fresh pass', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1), { requiredEvidence: bothRequired })],
+        providerResults: [result(uuid(1), 'pass', CURR), structural(uuid(1), SURFACE.digest)],
+        currentSurfaceDigests: { [SURFACE.surfaceId]: SURFACE.digest },
+      });
+      expect(out.claims[0]!.verificationState).toBe('PROVEN');
+    });
+
+    it('not PROVEN when only the executed test is present (structural missing)', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1), { requiredEvidence: bothRequired })],
+        providerResults: [result(uuid(1), 'pass', CURR)],
+        currentSurfaceDigests: { [SURFACE.surfaceId]: SURFACE.digest },
+      });
+      expect(out.claims[0]!.verificationState).not.toBe('PROVEN');
+    });
+
+    it('not PROVEN when only the structural assertion is present (test missing)', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1), { requiredEvidence: bothRequired })],
+        providerResults: [structural(uuid(1), SURFACE.digest)],
+        currentSurfaceDigests: { [SURFACE.surfaceId]: SURFACE.digest },
+      });
+      expect(out.claims[0]!.verificationState).not.toBe('PROVEN');
+    });
+
+    it('STALE when one required kind is fresh but the other is superseded', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1), { requiredEvidence: bothRequired })],
+        providerResults: [result(uuid(1), 'pass', CURR), structural(uuid(1), 'sfc-old')],
+        currentSurfaceDigests: { [SURFACE.surfaceId]: SURFACE.digest },
+      });
+      expect(out.claims[0]!.verificationState).toBe('STALE');
+    });
+  });
+
+  describe('evidence isolation between claims', () => {
+    it('does not let one claim be proven by another claim evidence', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1)), claim(uuid(2))],
+        // Only claim 1 has evidence; claim 2 must not borrow it.
+        providerResults: [result(uuid(1), 'pass', CURR)],
+      });
+      expect(out.claims[0]!.verificationState).toBe('PROVEN');
+      expect(out.claims[1]!.verificationState).toBe('UNPROVEN');
+    });
+
+    it('does not let one claim be contradicted by another claim counterexample', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1)), claim(uuid(2))],
+        providerResults: [result(uuid(1), 'pass', CURR), result(uuid(2), 'pass', CURR)],
+        counterexamples: [counterexample(uuid(1), 'contradicted', CURR)],
+      });
+      expect(out.claims[0]!.verificationState).toBe('CONTRADICTED');
+      expect(out.claims[1]!.verificationState).toBe('PROVEN');
+    });
+
+    it('does not let one claim be blocked by another claim errored provider', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1)), claim(uuid(2))],
+        providerResults: [result(uuid(1), 'error'), result(uuid(2), 'pass', CURR)],
+      });
+      expect(out.claims[0]!.verificationState).toBe('BLOCKED');
+      expect(out.claims[1]!.verificationState).toBe('PROVEN');
+    });
+
+    it('computes freshness per claim, not across claims', () => {
+      const out = evaluate({
+        claims: [claim(uuid(1)), claim(uuid(2))],
+        providerResults: [result(uuid(1), 'pass', OLD), result(uuid(2), 'pass', CURR)],
+      });
+      expect(out.claims[0]!.freshness).toMatchObject({ boundDigest: OLD, stale: true });
+      expect(out.claims[1]!.freshness).toMatchObject({ boundDigest: CURR, stale: false });
+    });
+  });
+
   describe('determinism', () => {
     it('sorts claims by claimId regardless of input order', () => {
       const out = evaluate({ claims: [claim(uuid(3)), claim(uuid(1)), claim(uuid(2))] });

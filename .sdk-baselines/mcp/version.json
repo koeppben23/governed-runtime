@@ -8,20 +8,21 @@
     "version": "1.2.0-tp.1"
   },
   "schemas": [
-    "flowguard_status.json",
-    "flowguard_hydrate.json",
-    "flowguard_plan.json",
-    "flowguard_implement.json",
-    "flowguard_review_implementation.json",
-    "flowguard_architecture.json",
-    "flowguard_decision.json",
-    "flowguard_run_check.json",
-    "flowguard_ticket.json",
-    "flowguard_review.json",
     "flowguard_abort_session.json",
+    "flowguard_architecture.json",
     "flowguard_archive.json",
     "flowguard_continue.json",
+    "flowguard_decision.json",
+    "flowguard_declare_contract.json",
     "flowguard_help.json",
-    "flowguard_declare_contract.json"
+    "flowguard_hydrate.json",
+    "flowguard_implement.json",
+    "flowguard_plan.json",
+    "flowguard_record_mutation_evidence",
+    "flowguard_review.json",
+    "flowguard_review_implementation.json",
+    "flowguard_run_check.json",
+    "flowguard_status.json",
+    "flowguard_ticket.json"
   ]
 }

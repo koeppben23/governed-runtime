@@ -33,6 +33,16 @@
             "type": "string",
             "enum": ["ticket", "plan", "architecture"],
             "description": "Approved GOVERNING source for this claim (ticket/plan/architecture). Only a resolved authority classifies the claim as `fact`; without one it is a NOT_VERIFIED assumption. Validation evidence is never a governing authority."
+          },
+          "structuralSurface": {
+            "type": "string",
+            "enum": ["command-registration", "config-defaults"],
+            "description": "Optional cross-artifact consistency surface whose assertion also covers this claim. Becomes required positive evidence and is bound to the surface digest, so the claim goes STALE when that surface changes."
+          },
+          "mutationProfile": {
+            "type": "string",
+            "enum": ["proofgraph-evaluator", "proofgraph-gate"],
+            "description": "Optional opt-in semantic mutation profile. Becomes required positive evidence: surviving mutants make the claim UNPROVEN, and a profile with no recorded mutation report is NOT_VERIFIED rather than a pass."
           }
         },
         "additionalProperties": false

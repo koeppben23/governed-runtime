@@ -93,11 +93,11 @@ function bindingOf(result: ProofProviderResult): ProofProviderBinding | undefine
 }
 
 /**
- * A counterexample is fresh only while bound to the current implementation
+ * Whether a counterexample is fresh: bound to the current implementation
  * revision. A stale counterexample can neither contradict the current revision
  * nor satisfy an adversarial requirement for it.
  */
-function isFreshCounterexample(
+export function isFreshCounterexample(
   counterexample: ProofCounterexample,
   currentImplementationDigest: string | null,
 ): boolean {

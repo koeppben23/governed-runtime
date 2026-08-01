@@ -24,6 +24,7 @@ import {
   ErrorInfo,
   ImplEvidence,
   ImplReviewResult,
+  MutationAttempt,
   PlanRecord,
   PolicySnapshotSchema,
   ReviewAssuranceState,
@@ -299,6 +300,13 @@ export const SessionState = z.object({
    * this preserves every successful validation-result persistence for audit.
    */
   validationAttempts: z.array(ValidationAttempt).default([]),
+
+  /**
+   * Append-only mutation-attempt ledger (#762). Records every FlowGuard-attested
+   * mutation report observation, with implementation binding, artifact/projection
+   * digests, and reproducibility metadata. Produced by flowguard_record_mutation_evidence.
+   */
+  mutationAttempts: z.array(MutationAttempt).default([]),
 
   /** Advisory challenge-resolution evidence; defaults for legacy sessions. */
   challengeResolutions: z.array(ChallengeResolution).default([]),

@@ -49,8 +49,8 @@
  */
 export const PRODUCT_INVENTORY = {
   machineCommands: 11,
-  integrationTools: 16,
-  mcpTools: 15,
+  integrationTools: 17,
+  mcpTools: 16,
   installedCommandDefs: 25,
   phases: 15,
   policyModes: 4,
@@ -62,7 +62,7 @@ export const PRODUCT_INVENTORY = {
   archiveFindingCodes: 20,
   archiveVerifyJsdocChecks: 9,
   cliBins: 7,
-  mutationFiles: 47,
+  mutationFiles: 49,
 } as const;
 
 export type ProductInventory = typeof PRODUCT_INVENTORY;

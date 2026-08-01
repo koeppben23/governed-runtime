@@ -71,6 +71,11 @@ export type * from './evidence-policy.js';
 export * from './evidence-audit.js';
 export type * from './evidence-audit.js';
 
+// ─── Mutation ───────────────────────────────────────────────────────────────────
+
+export * from './evidence-mutation.js';
+export type * from './evidence-mutation.js';
+
 // ─── Timestamp ─────────────────────────────────────────────────────────────────
 
 export * from './evidence-timestamp.js';

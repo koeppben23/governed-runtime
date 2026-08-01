@@ -28,6 +28,23 @@ import {
   ContentRef,
 } from './evidence-review.js';
 
+/**
+ * Reference to a concrete, immutable mutation-attempt record produced by
+ * `flowguard_record_mutation_evidence`, for ONE opt-in profile.
+ *
+ * The `profileId` is part of the reference because a single recorded run covers
+ * several profiles with different verdicts: a claim must state which profile's
+ * survivor status it relies on, not merely which run happened.
+ */
+export const MutationAttemptRef = z
+  .object({
+    kind: z.literal('mutation_attempt'),
+    attemptId: z.string().uuid(),
+    profileId: z.string().min(1),
+  })
+  .readonly();
+export type MutationAttemptRef = z.infer<typeof MutationAttemptRef>;
+
 /** Reference to an approved ticket, bound to its digest. */
 export const ApprovedTicketRef = z
   .object({
@@ -64,6 +81,37 @@ export const ClaimAuthorityRef = z.discriminatedUnion('kind', [
 export type ClaimAuthorityRef = z.infer<typeof ClaimAuthorityRef>;
 
 /**
+ * Reference to a structural/schema input surface (a `surface_set` binding key).
+ *
+ * This is EVIDENCE, not authority: it names the surface whose consistency
+ * assertion covers the claim. Freshness is resolved against the surface's
+ * current canonical digest, so a passing assertion cannot prove indefinitely
+ * after the surface changes.
+ */
+export const StructuralSurfaceRef = z
+  .object({
+    kind: z.literal('structural_surface'),
+    surfaceId: z.string().min(1),
+  })
+  .readonly();
+export type StructuralSurfaceRef = z.infer<typeof StructuralSurfaceRef>;
+
+/**
+ * Reference to an opt-in semantic mutation profile.
+ *
+ * EVIDENCE, not authority: it names the profile whose recorded mutation results
+ * (survivor status) cover the claim. Mutation evidence is revision-bound to the
+ * implementation digest, so it goes stale when the implementation changes.
+ */
+export const MutationProfileRef = z
+  .object({
+    kind: z.literal('mutation_profile'),
+    profileId: z.string().min(1),
+  })
+  .readonly();
+export type MutationProfileRef = z.infer<typeof MutationProfileRef>;
+
+/**
  * Reproducible EVIDENCE about a claim. Evidence proves or falsifies a claim but
  * never confers governing provenance.
  */
@@ -71,5 +119,8 @@ export const ClaimEvidenceRef = z.discriminatedUnion('kind', [
   ValidationAttemptRef,
   ImplementationRef,
   ContentRef,
+  StructuralSurfaceRef,
+  MutationProfileRef,
+  MutationAttemptRef,
 ]);
 export type ClaimEvidenceRef = z.infer<typeof ClaimEvidenceRef>;

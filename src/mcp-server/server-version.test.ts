@@ -71,6 +71,7 @@ vi.mock('../integration/tools/index.js', () => {
     continue: tool,
     help: tool,
     declare_contract: tool,
+    record_mutation_evidence: tool,
   };
 });
 
