@@ -216,11 +216,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // (AP-B11), Test-Fitting (AP-B12), and no-workaround/cleanup rules to the
     // /implement ## Rules section. Changes the /implement body and therefore the
     // COMMANDS hash.
-    // Refreshed for host-task ordering hardening: SHARED_REVIEW_LOOP now
-    // The ARCHIVE_COMMAND template now includes redaction parameter guidance.
+    // Refreshed for default redacted sharing exports: ARCHIVE_COMMAND now calls
+    // flowguard_archive without arguments unless a non-default export is requested.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'da19586746ba01d7771fe0608de1531fdaf1e88b62e726c2c1a0559b614fcacc',
+      'db77dfc63b7073e653466932a3f5baacad287508f504716d141246c9828f2a90',
     );
   });
 
