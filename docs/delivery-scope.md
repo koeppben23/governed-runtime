@@ -64,7 +64,7 @@ These features are available in FlowGuard 1.2.0.
 | **3 review loops**       | Delivered | Plan, Architecture (ADR), Implementation — all subagent-driven by default with iteration limit + digest-stop convergence             |
 | **11 Machine Commands**  | Delivered | hydrate, ticket, plan, continue, implement, resolve-implementation-challenge, validate, review-decision, architecture, review, abort |
 | **8 product commands**   | Delivered | start, task, approve, request-changes, reject, check, export, why (+ status read-only)                                               |
-| **15 Integration Tools** | Delivered | OpenCode tool exports (14 via MCP)                                                                                                   |
+| **17 Integration Tools** | Delivered | OpenCode tool exports (16 via MCP)                                                                                                   |
 | **5 event kinds**        | Delivered | transition, tool_call, error, lifecycle, decision                                                                                    |
 
 ### Audit & Compliance

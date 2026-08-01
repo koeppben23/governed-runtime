@@ -10,7 +10,7 @@
  * - Delegates to same rail executors as the OpenCode plugin
  *
  * The server exposes FlowGuard governance tools via the MCP protocol.
- * 14 of 15 Integration Tools are registered here (see docs/mcp-tool-surface.md
+ * 16 of 17 Integration Tools are registered here (see docs/mcp-tool-surface.md
  * for the one asymmetric exclusion).
  *
  * @see https://github.com/koeppben23/governed-runtime/issues/243

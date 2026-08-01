@@ -69,7 +69,7 @@ FlowGuard manages several types of data with different retention requirements. T
 - SHA-256 file hashes in manifest
 - Content digest for complete archive
 
-### Archive Contents
+### Raw-Evidence Archive Contents
 
 ```
 {sessionId}.tar.gz
@@ -86,13 +86,17 @@ FlowGuard manages several types of data with different retention requirements. T
     └── architecture-review-card.<digest>.{md,json}  # ADR evidence (architecture flow)
 ```
 
-Archive Layout v2 includes complete raw evidence by default under
-`archive.redaction.mode=none, includeRaw=true`; the manifest records
-`rawIncluded: true` and the `raw_audit_evidence_export` risk flag. Legacy
-redaction settings (`basic`, `strict`, or `includeRaw=false`) fail archive
-creation and must be migrated. Redacted sharing export is a future separate
-feature. ADRs are emitted as `architecture-review-card.*` evidence artifacts
+Archive Layout v2 defaults to a redacted sharing archive (`basic`,
+`includeRaw=false`), which is `not_verifiable` because canonical raw evidence is
+intentionally omitted. An authorized raw export uses
+`redactionMode=none, includeRaw=true` after enabling
+`archive.redaction.allowRawExport`; its manifest records `rawIncluded: true` and
+the `raw_audit_evidence_export` risk flag. ADRs are emitted as `architecture-review-card.*` evidence artifacts
 under `artifacts/` — there is no top-level `adr/` directory in the archive.
+
+Redacted sharing archives use the corresponding `*.redacted.*` state, audit,
+receipt, and review-report paths when present; they do not contain the raw paths
+shown above.
 
 ### Archive Verification
 

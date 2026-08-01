@@ -89,6 +89,17 @@ const wsOriginals = vi.hoisted(() => ({
   verifyArchive:
     null as unknown as (typeof import('../adapters/workspace/index.js'))['verifyArchive'],
 }));
+const regulatedArchiveMock = vi.hoisted(() => ({
+  archiveRegulatedEvidence: vi.fn(),
+}));
+const regulatedVerificationMock = vi.hoisted(() => ({
+  verifyRegulatedArchive: vi.fn().mockResolvedValue({
+    passed: true,
+    findings: [],
+    manifest: null,
+    verifiedAt: '2026-01-01T00:00:00.000Z',
+  }),
+}));
 
 vi.mock('../adapters/workspace', async (importOriginal) => {
   const original = await importOriginal<typeof import('../adapters/workspace/index.js')>();
@@ -100,6 +111,9 @@ vi.mock('../adapters/workspace', async (importOriginal) => {
     verifyArchive: vi.fn(original.verifyArchive),
   };
 });
+
+vi.mock('../adapters/workspace/archive.js', () => regulatedArchiveMock);
+vi.mock('../adapters/workspace/archive-verify-chain.js', () => regulatedVerificationMock);
 
 // ─── Actor Mock (P27) ────────────────────────────────────────────────────────
 // Mock resolveActor to return a deterministic actor for integration tests.
@@ -145,6 +159,8 @@ vi.mock('../verification/executor', () => ({
 // Lazy import for per-test overrides
 const gitMock = await import('../adapters/git.js');
 const wsMock = await import('../adapters/workspace/index.js');
+const regulatedArchive = await import('../adapters/workspace/archive.js');
+const regulatedVerification = await import('../adapters/workspace/archive-verify-chain.js');
 const actorMock = await import('../adapters/actor.js');
 
 // ─── Capability Gates ────────────────────────────────────────────────────────
@@ -165,6 +181,16 @@ beforeEach(async () => {
     directory: ws.tmpDir,
     sessionID: `ses_${crypto.randomUUID().replace(/-/g, '')}`,
   });
+  vi.mocked(regulatedArchive.archiveRegulatedEvidence).mockImplementation(
+    (fingerprint, sessionId) =>
+      wsMock.archiveSession(fingerprint, sessionId, { redactionMode: 'none', includeRaw: true }),
+  );
+  vi.mocked(regulatedVerification.verifyRegulatedArchive).mockResolvedValue({
+    passed: true,
+    findings: [],
+    manifest: null,
+    verifiedAt: '2026-01-01T00:00:00.000Z',
+  });
 });
 
 afterEach(async () => {
@@ -174,6 +200,13 @@ afterEach(async () => {
   // queues. If a P26 test fails before consuming its once-mocks, the stale
   // values leak into subsequent tests (e.g. archive manifest test).
   vi.mocked(wsMock.archiveSession).mockReset().mockImplementation(wsOriginals.archiveSession);
+  vi.mocked(regulatedArchive.archiveRegulatedEvidence).mockReset();
+  vi.mocked(regulatedVerification.verifyRegulatedArchive).mockReset().mockResolvedValue({
+    passed: true,
+    findings: [],
+    manifest: null,
+    verifiedAt: '2026-01-01T00:00:00.000Z',
+  });
   vi.mocked(wsMock.verifyArchive).mockReset().mockImplementation(wsOriginals.verifyArchive);
   // Reset actor mock to default deterministic value (P27/P34)
   vi.mocked(actorMock.resolveActor)
@@ -321,7 +354,7 @@ describe('P26: regulated archive completion', () => {
     it('regulated + archive success + verify pass → archiveStatus: verified', async () => {
       const sessDir = await reachRegulatedEvidenceReview();
       vi.mocked(wsMock.archiveSession).mockResolvedValueOnce('/fake/archive.tar.gz');
-      vi.mocked(wsMock.verifyArchive).mockResolvedValueOnce({
+      vi.mocked(regulatedVerification.verifyRegulatedArchive).mockResolvedValueOnce({
         passed: true,
         findings: [],
         manifest: null,
@@ -359,7 +392,7 @@ describe('P26: regulated archive completion', () => {
     it('regulated + archive ok + verify fails → archiveStatus: failed', async () => {
       const sessDir = await reachRegulatedEvidenceReview();
       vi.mocked(wsMock.archiveSession).mockResolvedValueOnce('/fake/archive.tar.gz');
-      vi.mocked(wsMock.verifyArchive).mockResolvedValueOnce({
+      vi.mocked(regulatedVerification.verifyRegulatedArchive).mockResolvedValueOnce({
         passed: false,
         findings: [
           {
@@ -514,7 +547,9 @@ describe('P26: regulated archive completion', () => {
     it('regulated + verify throws → archiveStatus: failed (fail-closed)', async () => {
       const sessDir = await reachRegulatedEvidenceReview();
       vi.mocked(wsMock.archiveSession).mockResolvedValueOnce('/fake/archive.tar.gz');
-      vi.mocked(wsMock.verifyArchive).mockRejectedValueOnce(new Error('Verification I/O error'));
+      vi.mocked(regulatedVerification.verifyRegulatedArchive).mockRejectedValueOnce(
+        new Error('Verification I/O error'),
+      );
 
       const raw = await executeDecision({ verdict: 'approve', rationale: 'Ship it' });
       const result = parseToolResult(raw);
@@ -564,7 +599,7 @@ describe('P26: regulated archive completion', () => {
         callOrder.push('archiveSession');
         return '/fake/archive.tar.gz';
       });
-      vi.mocked(wsMock.verifyArchive).mockResolvedValueOnce({
+      vi.mocked(regulatedVerification.verifyRegulatedArchive).mockResolvedValueOnce({
         passed: true,
         findings: [],
         manifest: null,
@@ -592,7 +627,7 @@ describe('P26: regulated archive completion', () => {
       // writes the event and sets archiveStatus (which the plugin uses to skip its own).
       const sessDir = await reachRegulatedEvidenceReview();
       vi.mocked(wsMock.archiveSession).mockResolvedValueOnce('/fake/archive.tar.gz');
-      vi.mocked(wsMock.verifyArchive).mockResolvedValueOnce({
+      vi.mocked(regulatedVerification.verifyRegulatedArchive).mockResolvedValueOnce({
         passed: true,
         findings: [],
         manifest: null,

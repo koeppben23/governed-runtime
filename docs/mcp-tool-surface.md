@@ -1,7 +1,7 @@
 # MCP Tool Surface
 
-FlowGuard exposes **15 Integration Tools** (`src/integration/tools/index.ts`).
-**14 of these** are registered in the MCP server
+FlowGuard exposes **17 Integration Tools** (`src/integration/tools/index.ts`).
+**16 of these** are registered in the MCP server
 (`src/mcp-server/server.ts` `FLOWGUARD_TOOLS`). One tool is not available via
 MCP.
 
@@ -10,10 +10,9 @@ MCP.
 **`flowguard_resolve_implementation_challenge`** is the only Integration Tool
 not registered in the MCP surface.
 
-This is an existing **capability asymmetry** — the tool was introduced
-(2026-07-26) after the last MCP registry update (2026-07-19) and has not been
-wired into the MCP server. There is no evidence in code, commit history, or
-design documentation of an intentional exclusion decision.
+This is an intentional capability asymmetry: the tool records advisory
+implementation-review evidence and is not required to complete the governed
+review flow.
 
 ## Tool Behaviour
 
@@ -34,11 +33,5 @@ functional gap — the same review outcome can be reached without it.
 
 ## Resolution
 
-A future change should either:
-
-- **Wire the tool into MCP** (add to `FLOWGUARD_TOOLS`, update SDK baselines,
-  update MCP protocol tests), or
-- **Document an explicit exclusion decision** with a rationale in
-  `src/mcp-server/server.ts` and this file.
-
-Until resolved, this file serves as the canonical reference for the asymmetry.
+If this advisory operation must be available to MCP consumers, add it to
+`FLOWGUARD_TOOLS` and update the SDK baseline and MCP protocol tests.

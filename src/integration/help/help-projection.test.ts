@@ -77,6 +77,16 @@ describe('buildHelpResult', () => {
     expect(result.archiveVerification.status).toBe('not_created');
   });
 
+  it('surfaces a redacted archive as not verifiable rather than failed', () => {
+    const result = buildHelpResult(
+      { ...makeProgressedState('COMPLETE'), archiveStatus: 'not_verifiable' },
+      TEAM_POLICY,
+      { view: 'context' },
+    );
+    expect(result.archiveVerification.status).toBe('not_verifiable');
+    expect(result.archiveVerification.summary).toContain('intentionally excludes raw evidence');
+  });
+
   it('blocks export for aborted sessions', () => {
     const result = buildHelpResult(
       makeState('COMPLETE', {

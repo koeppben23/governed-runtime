@@ -216,6 +216,7 @@ describe('MCP Protocol Compliance', () => {
       'flowguard_run_check',
       'flowguard_archive',
       'flowguard_help',
+      'flowguard_record_mutation_evidence',
     ];
 
     // We expect 16 tools - check all registered FlowGuard tools are present.
@@ -284,7 +285,7 @@ describe('MCP Protocol Compliance', () => {
     expect(resp.jsonrpc).toBe('2.0');
   });
 
-  it('HAPPY: tools/call invokes each of the 15 tools without protocol error', async () => {
+  it('HAPPY: tools/call invokes each registered tool without protocol error', async () => {
     const allToolNames = [
       'flowguard_status',
       'flowguard_hydrate',
@@ -300,6 +301,8 @@ describe('MCP Protocol Compliance', () => {
       'flowguard_archive',
       'flowguard_continue',
       'flowguard_help',
+      'flowguard_declare_contract',
+      'flowguard_record_mutation_evidence',
     ];
 
     for (const toolName of allToolNames) {
@@ -311,7 +314,16 @@ describe('MCP Protocol Compliance', () => {
           ? { reviewVerdict: 'accept' }
           : toolName === 'flowguard_help'
             ? { view: 'context' }
-            : {};
+            : toolName === 'flowguard_declare_contract'
+              ? { claims: [{ statement: 'MCP protocol invocation', checkId: 'build' }] }
+              : toolName === 'flowguard_record_mutation_evidence'
+                ? {
+                    command: 'npm run mutation',
+                    startedAt: '2026-01-01T00:00:00.000Z',
+                    completedAt: '2026-01-01T00:01:00.000Z',
+                    exitCode: 0,
+                  }
+                : {};
       const resp = await client.send(
         makeRequest('tools/call', {
           name: toolName,

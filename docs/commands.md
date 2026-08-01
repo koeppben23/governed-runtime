@@ -365,17 +365,24 @@ Archive a completed session as a `.tar.gz` file with integrity verification.
 
 - `{workspace}/sessions/archive/{sessionId}.tar.gz`
 - `{sessionId}.tar.gz.sha256`
+
+Regulated clean completion stores its mandatory raw-evidence package separately
+as `regulated-{sessionId}.tar.gz`; later sharing exports cannot overwrite it.
+
 - `archive-manifest.json`
 - `audit/decision-receipts.v1.json`
 - `reports/review-report.json` (when review report exists)
 
-Archive Layout v2 exports complete raw evidence (`archive.redaction.mode=none`,
-`includeRaw=true`) and records `rawIncluded: true` with the
-`raw_audit_evidence_export` manifest risk flag. Legacy redaction settings
-(`basic`, `strict`, or `includeRaw=false`) fail archive creation; migrate them
-before exporting. Redacted sharing export is a future separate feature.
+Archive Layout v2 defaults to a redacted sharing archive (`basic`,
+`includeRaw=false`). It reports `not_verifiable` because canonical state and the
+audit chain are intentionally omitted. A confidential raw export requires
+`archive.redaction.allowRawExport=true` and `redactionMode=none, includeRaw=true`;
+it records `rawIncluded: true` with the `raw_audit_evidence_export` risk flag and
+is eligible for `verifyArchive()`.
 
-External references recorded via `/ticket` are part of authoritative runtime state and remain raw in `state/session-state.json` and `reports/review-report.json`.
+External references recorded via `/ticket` remain raw in the canonical
+`state/session-state.json` and `reports/review-report.json` of a raw-evidence
+archive. Redacted sharing archives contain only their redacted projections.
 
 **Verification:** `verifyArchive()` (defined in
 `src/adapters/workspace/archive.ts`) validates integrity. Possible finding
@@ -387,7 +394,7 @@ codes).
 
 **Regulated mode:** In regulated mode, clean completion (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) triggers
 synchronous archive creation + verification. The `archiveStatus` field on session state tracks the lifecycle
-(`pending` → `created` → `verified` or `failed`). Checksum sidecar failure is fatal in regulated mode.
+(`pending` → `created` → `verified` or `failed`). Checksum sidecar failure is fatal in regulated mode. Manual redacted sharing exports use `not_verifiable`, never `failed`, when raw evidence was intentionally excluded.
 
 **Note:** This is an operational export action. The original session is preserved.
 

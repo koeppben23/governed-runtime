@@ -46,6 +46,7 @@ import {
 } from './archive-verify-manifest.js';
 import { fileExists } from './archive-files.js';
 import { type ArtifactBindingEntry } from './archive-artifact-binding.js';
+import { archiveFileName } from './archive.js';
 
 // Timestamp token verification is lazy-imported to avoid requiring optional
 // 'asn1js'/'pkijs' packages at module load time. Only needed during archive verification.
@@ -84,7 +85,23 @@ export async function verifyArchive(
     async () => {
       addFingerprint(fingerprint);
       addSessionId(sessionId);
-      return verifyArchiveImpl(fingerprint, sessionId);
+      return verifyArchiveImpl(fingerprint, sessionId, false);
+    },
+    { 'flowguard.fingerprint': fingerprint, 'flowguard.session_id': sessionId },
+  );
+}
+
+/** Verify the immutable raw-evidence archive created during regulated completion. */
+export async function verifyRegulatedArchive(
+  fingerprint: string,
+  sessionId: string,
+): Promise<ArchiveVerification> {
+  return withSpan(
+    'archive.verify',
+    async () => {
+      addFingerprint(fingerprint);
+      addSessionId(sessionId);
+      return verifyArchiveImpl(fingerprint, sessionId, true);
     },
     { 'flowguard.fingerprint': fingerprint, 'flowguard.session_id': sessionId },
   );
@@ -562,8 +579,9 @@ async function verifyArchiveIntegrity(
   manifest: ArchiveManifest,
   findings: ArchiveFinding[],
   state: import('../../state/schema.js').SessionState | null,
+  archiveTarPath: string,
 ): Promise<void> {
-  const { sessDir, fingerprint, validSessionId } = location;
+  const { sessDir } = location;
   // Strict authority and completeness checks run BEFORE the content digest so a
   // mode/anchor tamper surfaces explicitly rather than only as a digest mismatch.
   const strict = resolveStrictMode(state);
@@ -571,8 +589,6 @@ async function verifyArchiveIntegrity(
   await verifyAuditChainIntegrity(sessDir, manifest, findings, state, strict);
   addContentDigestFindings(manifest, findings);
 
-  const archiveCheckDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
-  const archiveTarPath = path.join(archiveCheckDir, `${validSessionId}.tar.gz`);
   const checksumSidecarPath = `${archiveTarPath}.sha256`;
   await verifyArchiveChecksum(archiveTarPath, checksumSidecarPath, strict, findings);
 }
@@ -582,12 +598,16 @@ async function verifyArchiveIntegrity(
 async function verifyArchiveImpl(
   fingerprint: string,
   sessionId: string,
+  regulatedEvidence: boolean,
 ): Promise<ArchiveVerification> {
   validateFingerprint(fingerprint);
   const validSessionId = validateSessionId(sessionId);
 
   const archiveCheckDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
-  const archiveTarPath = path.join(archiveCheckDir, `${validSessionId}.tar.gz`);
+  const archiveTarPath = path.join(
+    archiveCheckDir,
+    archiveFileName(validSessionId, regulatedEvidence),
+  );
   const findings: ArchiveFinding[] = [];
   const extractionRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'flowguard-archive-verify-'));
   const sessDir = path.join(extractionRoot, validSessionId);
@@ -659,6 +679,7 @@ async function verifyArchiveImpl(
       manifest,
       findings,
       state,
+      archiveTarPath,
     );
 
     const result = buildVerificationResult(findings, manifest);

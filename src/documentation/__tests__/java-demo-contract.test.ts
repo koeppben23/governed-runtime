@@ -79,6 +79,15 @@ describe('Java Task Manager demo contract', () => {
     expect(ticket).toMatch(/(?:replace.*Javadoc|Javadoc.*active regression)/is);
     expect(readme).toContain('assert `$.taskId`, and update its Javadoc');
     expect(demoScript).toContain('die `taskId`-Fehlerantwort prüfen');
+    expect(demoScript).toContain('flowguard_declare_contract');
+    expect(demoScript).toContain('flowguard_status({ proofGraph: true })');
+    expect(demoScript).toContain('checkId: "build"');
+    expect(demoScript).toContain('counterexampleCheckId: "build"');
+    expect(demoScript).toContain('authority: "ticket"');
+    expect(demoScript).toContain('structuralSurface: "command-registration"');
+    expect(readme).toContain('archiveStatus: not_verifiable');
+    expect(demoScript).toContain('archiveStatus: not_verifiable');
+    expect(readme).toContain('/export redactionMode=none includeRaw=true');
 
     // The committed seed must remain the reproducible failing baseline, not the fix.
     expect(controllerTest).toContain('@Disabled("Regression: PUT /tasks/{id} returns HTTP 500');

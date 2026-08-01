@@ -29,7 +29,7 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 - `INDEPENDENT_REVIEW_REQUIRED` → subagent invoked
 - Architecture Review Card with reviewer findings
 - `/approve` → `ARCH_COMPLETE`
-- `/export` → `archiveStatus: verified`
+- `/export` → `archiveStatus: not_verifiable` for the default redacted sharing archive
 
 ### 2. Screen Recording — Part 2: Implementation (~5–6 min)
 
@@ -51,7 +51,7 @@ Capture: OpenCode window + terminal side-by-side. The recording should show:
 - `/approve` → COMPLETE
 - `./mvnw test` — 16 green, 0 skipped
 - `/finish` Finish Card (`overallStatus: READY`, non-normative `actionGuidance`, `exitOptions`)
-- `/export` response (`archiveStatus: verified`, `Session archived and verified.`)
+- `/export` response (`archiveStatus: not_verifiable` for the default redacted sharing archive)
 
 ### 3. Screen Recording — Part 3: Review (~3–5 min)
 
@@ -71,14 +71,15 @@ subagent findings, `REVIEW_COMPLETE`.
 After a successful live or recorded run, keep two separate assets available:
 
 1. **Workspace** — for visible source and generated artifacts (checkpoints, diffs).
-2. **Verified evidence archive** — stored outside the workspace under the
-   OpenCode config directory.
+2. **Evidence archive** — stored outside the workspace under the OpenCode
+   config directory. A verified archive additionally requires the confidential
+   raw-evidence export described in `DEMO_SCRIPT.md`.
 
 ```bash
 # Keep the workspace as a visual fallback exhibit.
 test -d /tmp/flowguard-java-demo
 
-# Locate verified session archives in the OpenCode workspace state.
+# Locate session archives in the OpenCode workspace state.
 # The exact archive path is emitted by the /export command response.
 find ~/.config/opencode/workspaces -path '*/archive/*.tar.gz' -type f -print
 ```

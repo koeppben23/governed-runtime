@@ -81,8 +81,8 @@ cd demos/java-task-manager
 
 | Action                  | What I Say                                                                                                                                                              |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/export`               | "Ich exportiere das Architecture-Evidence-Archiv. FlowGuard erzeugt ein verifizierbares Paket mit ADR, Review-Findings, Audit-Trail und Manifest."                      |
-| Show `/export` response | "`archiveStatus: verified` — das Archiv wurde direkt nach der Erstellung verifiziert."                                                                                  |
+| `/export`               | "Ich exportiere ein redigiertes Sharing-Archiv mit ADR, Review-Findings, Audit-Trail-Projektionen und Manifest."                                                        |
+| Show `/export` response | "`archiveStatus: not_verifiable` ist ehrlich: Ohne rohe State- und Audit-Dateien kann die kanonische Hash-Chain nicht geprüft werden."                                  |
 | Archive location        | "Das Archiv liegt unter `~/.config/opencode/workspaces/.../archive/`. Es uberlebt Workspace-Resets — die Archive sind außerhalb des Projektverzeichnisses gespeichert." |
 
 ### Transition to Part 2
@@ -200,6 +200,19 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 ---
 
+### Step 6c — Declare the ProofGraph Contract
+
+> The implementation check has executed against the current revision. Before the
+> independent implementation review, bind the ticket's behavioral requirement to
+> that runtime evidence and inspect the resulting advisory ProofGraph projection.
+
+| Action                                                                                                                                                                                                                                                             | Phase       | What I Say                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `flowguard_declare_contract({ claims: [{ statement: "PUT /tasks/non-existent-id returns HTTP 404 and preserves taskId in the error body.", checkId: "build", counterexampleCheckId: "build", authority: "ticket", structuralSurface: "command-registration" }] })` | IMPL_REVIEW | "Der Claim stammt aus dem genehmigten Ticket. FlowGuard bindet ihn an den von FlowGuard selbst ausgeführten Maven-Check, den aktivierten Negativfall und die strukturelle Konsistenz der registrierten FlowGuard-Commands. Würde der Negativtest fehlschlagen, widerspräche das dem Claim; eine driftende Command-Registrierung macht die Evidenz ebenfalls nicht beweiskräftig." |
+| `flowguard_status({ proofGraph: true })`                                                                                                                                                                                                                           | IMPL_REVIEW | "Die ProofGraph-Projektion zeigt den Claim und seinen Evidenzzustand. `PROVEN` ist advisory Evidence, keine zusätzliche Freigabe und kein Ersatz für das unabhängige Review oder das Human Gate."                                                                                                                                                                                 |
+
+---
+
 ### Step 7 — Independent Implementation Review
 
 > Under `team` policy, once the post-implementation checks pass (`IMPL_VALIDATION`),
@@ -253,8 +266,8 @@ then `git checkout -- .` to reset before the FlowGuard demo.
 
 | Action                   | What I Say                                                                                                                                                                             |
 | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/export`                | "Ich exportiere das Audit-Archive. FlowGuard erzeugt ein verifizierbares Paket mit allen Artefakten."                                                                                  |
-| Show `/export` response  | "Die `/export`-Antwort zeigt: `archiveStatus: verified` und `Session archived and verified.` — FlowGuard hat das Archiv direkt nach der Erstellung verifiziert."                       |
+| `/export`                | "Ich exportiere ein redigiertes Sharing-Archiv mit allen freigegebenen Artefakten."                                                                                                    |
+| Show `/export` response  | "Die Antwort zeigt `archiveStatus: not_verifiable`: Das Archiv ist erstellt, enthält aber absichtlich keine Rohdaten für eine kanonische Chain-Verifikation."                          |
 | Show export archive path | "Das Archiv liegt in `~/.config/opencode/workspaces/.../archive/` — außerhalb des Projektverzeichnisses. Es uberlebt Workspace-Resets und ist unabhängig von der aktiven MCP-Session." |
 
 ---
@@ -386,3 +399,10 @@ If someone in the audience knows the other name, this is why both exist:
 - **Transition between Part 1 and Part 2:** Close OpenCode Desktop, reopen the same
   workspace. No snapshot restore is needed — the Architecture flow does not modify files.
   A fresh MCP transport gives a clean READY session for the Implementation flow.
+- **Verified auditor export:** A complete raw-evidence archive requires global
+  `archive.redaction.allowRawExport=true` and the explicit invocation
+  `/export redactionMode=none includeRaw=true`. It contains unredacted evidence
+  and must be handled as confidential material. The default redacted export is
+  intentionally `not_verifiable`, not a failed integrity check.
+  This permission applies to manual exports; regulated clean completion creates
+  its mandatory local raw-evidence archive automatically.

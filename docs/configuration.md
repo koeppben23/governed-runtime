@@ -403,24 +403,33 @@ Archive verification (`verifyArchive`) selects strict mode automatically when
 `manifest.policyMode === 'regulated'`. Unknown or non-regulated policy modes remain
 legacy-tolerant for backward compatibility.
 
-### archive.redaction.mode
+### Archive export redaction
 
 **Type:** `enum`
-**Values:** `none`, `basic`, `strict`
-**Default:** `none`
+**Values:** `none`, `basic`, `pseudonymous`
+**Default:** `basic` for the `/archive` and `/export` tool arguments
 
-Archive Layout v2 requires `none` and exports a complete raw-evidence package.
+`basic` and `pseudonymous` create redacted sharing archives. They are intentionally
+`not_verifiable`, because canonical audit-chain verification requires raw state
+and audit evidence.
 
-`basic` and `strict` are legacy settings. Archive creation fails until they are migrated to `none`. Redacted sharing export is a future, separate feature.
+`none` requires `includeRaw=true` and `archive.redaction.allowRawExport=true`; it
+creates a confidential raw-evidence package eligible for verification.
 
-### archive.redaction.includeRaw
+This permission applies to user-requested exports. A regulated clean completion
+always creates its mandatory local raw-evidence archive and verifies it; that
+system-owned completion path does not depend on the manual-export setting.
 
-**Type:** `boolean`
-**Default:** `true`
+### `/archive` `includeRaw` Argument
 
-Archive Layout v2 requires `true` and includes raw evidence. Archive manifests record `rawIncluded: true` and the `raw_audit_evidence_export` risk flag.
+**Type:** `boolean` tool argument
+**Default:** `false`
 
-`false` is a legacy setting and causes archive creation to fail. Migrate it to `true` before creating an archive.
+Set `true` only for authorized raw-evidence exports. Archive manifests then record
+`rawIncluded: true` and the `raw_audit_evidence_export` risk flag.
+
+With `false`, the archive is a redacted sharing package and reports
+`not_verifiable` rather than an integrity failure.
 
 ### Discovery
 

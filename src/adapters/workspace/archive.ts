@@ -1,6 +1,6 @@
 /**
  * @module workspace/archive
- * @description Creates complete raw-evidence Archive Layout v2 packages.
+ * @description Creates Archive Layout v2 packages for raw evidence or redacted sharing.
  */
 
 import * as crypto from 'node:crypto';
@@ -33,17 +33,49 @@ export interface ArchiveSessionOptions {
   readonly includeRaw: boolean;
 }
 
+export function archiveFileName(sessionId: string, regulatedEvidence = false): string {
+  return `${regulatedEvidence ? 'regulated-' : ''}${sessionId}.tar.gz`;
+}
+
 export async function archiveSession(
   fingerprint: string,
   sessionId: string,
   opts: ArchiveSessionOptions,
+): Promise<string> {
+  return archiveWithAuthorization(fingerprint, sessionId, opts, false);
+}
+
+/**
+ * Create the mandatory raw-evidence package for a regulated completion.
+ *
+ * This is intentionally separate from the user-requested archive API: the
+ * regulated completion service is the only production caller. It is not a
+ * configurable sharing export and is not re-exported by the workspace barrel.
+ */
+export async function archiveRegulatedEvidence(
+  fingerprint: string,
+  sessionId: string,
+): Promise<string> {
+  return archiveWithAuthorization(
+    fingerprint,
+    sessionId,
+    { redactionMode: 'none', includeRaw: true },
+    true,
+  );
+}
+
+async function archiveWithAuthorization(
+  fingerprint: string,
+  sessionId: string,
+  opts: ArchiveSessionOptions,
+  regulatedEvidence: boolean,
 ): Promise<string> {
   return withSpan(
     'archive.create',
     async () => {
       addFingerprint(fingerprint);
       addSessionId(sessionId);
-      return archiveSessionImpl(fingerprint, sessionId, opts);
+      return archiveSessionImpl(fingerprint, sessionId, opts, regulatedEvidence);
     },
     { 'flowguard.fingerprint': fingerprint, 'flowguard.session_id': sessionId },
   );
@@ -52,11 +84,12 @@ export async function archiveSession(
 function validateArchiveOptions(
   opts: ArchiveSessionOptions,
   config: Awaited<ReturnType<typeof readConfig>>,
+  rawEvidenceAuthorized: boolean,
 ): void {
   const { redactionMode, includeRaw } = opts;
   const rc = config.archive.redaction;
 
-  if (!rc.allowedModes.includes(redactionMode)) {
+  if (!rawEvidenceAuthorized && !rc.allowedModes.includes(redactionMode)) {
     throw new WorkspaceError(
       'ARCHIVE_FAILED',
       `Redaction mode '${redactionMode}' is not allowed (config allows: ${rc.allowedModes.join(', ')}).`,
@@ -70,7 +103,7 @@ function validateArchiveOptions(
     );
   }
 
-  if (includeRaw && !rc.allowRawExport) {
+  if (includeRaw && !rc.allowRawExport && !rawEvidenceAuthorized) {
     throw new WorkspaceError(
       'ARCHIVE_FAILED',
       'Raw export is not enabled. Set archive.redaction.allowRawExport=true in flowguard.json.',
@@ -78,16 +111,29 @@ function validateArchiveOptions(
   }
 }
 
+function assertRegulatedEvidenceState(
+  state: import('../../state/schema.js').SessionState | null,
+): void {
+  if (state?.policySnapshot.mode === 'regulated' && !state.error) {
+    return;
+  }
+  throw new WorkspaceError(
+    'ARCHIVE_FAILED',
+    'Mandatory regulated evidence archive requires a clean regulated session.',
+  );
+}
+
 async function archiveSessionImpl(
   fingerprint: string,
   sessionId: string,
   opts: ArchiveSessionOptions,
+  regulatedEvidence: boolean,
 ): Promise<string> {
   validateFingerprint(fingerprint);
   const validSessionId = validateSessionId(sessionId);
   const sessDir = sessionDir(fingerprint, validSessionId);
   const archiveDir = path.join(workspacesHome(), fingerprint, 'sessions', 'archive');
-  const archivePath = path.join(archiveDir, `${validSessionId}.tar.gz`);
+  const archivePath = path.join(archiveDir, archiveFileName(validSessionId, regulatedEvidence));
   try {
     await fs.access(sessDir);
     await fs.mkdir(archiveDir, { recursive: true });
@@ -100,8 +146,9 @@ async function archiveSessionImpl(
 
   const state = await readState(sessDir);
   if (state) await verifyEvidenceArtifacts(sessDir, state);
-  const archiveConfig = await readConfig();
-  validateArchiveOptions(opts, archiveConfig);
+  if (regulatedEvidence) assertRegulatedEvidenceState(state);
+  const archiveConfig = regulatedEvidence ? undefined : await readConfig();
+  if (archiveConfig) validateArchiveOptions(opts, archiveConfig, false);
 
   await appendArtifactBindingAuditEvent(sessDir, validSessionId, state);
   const { events, skipped } = await readAuditTrail(sessDir);
@@ -114,11 +161,11 @@ async function archiveSessionImpl(
 
   if (
     opts.redactionMode !== 'none' &&
-    events.length > archiveConfig.archive.redaction.maxAuditEvents
+    events.length > archiveConfig!.archive.redaction.maxAuditEvents
   ) {
     throw new WorkspaceError(
       'ARCHIVE_FAILED',
-      `Audit trail length (${events.length}) exceeds maxAuditEvents (${archiveConfig.archive.redaction.maxAuditEvents}). Increase archive.redaction.maxAuditEvents or reduce the audit trail.`,
+      `Audit trail length (${events.length}) exceeds maxAuditEvents (${archiveConfig!.archive.redaction.maxAuditEvents}). Increase archive.redaction.maxAuditEvents or reduce the audit trail.`,
     );
   }
 

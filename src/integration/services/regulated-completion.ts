@@ -11,12 +11,14 @@
 
 import type { SessionState } from '../../state/schema.js';
 import { appendAuditEvent, readAuditTrail } from '../../adapters/persistence-audit.js';
-import { archiveSession, verifyArchive } from '../../adapters/workspace/index.js';
+import { archiveRegulatedEvidence } from '../../adapters/workspace/archive.js';
+import { verifyRegulatedArchive } from '../../adapters/workspace/archive-verify-chain.js';
 import { createLifecycleEvent } from '../../audit/types.js';
 import { getLastChainHash } from '../../audit/integrity.js';
 import { writeStateWithArtifacts } from '../tools/helpers.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { serializeError } from '../../logging/error-serialize.js';
+import { isTerminalPhase } from '../../machine/topology.js';
 
 /**
  * Execute the P26 regulated completion chain: audit emit → archive → verify.
@@ -46,6 +48,9 @@ export async function executeRegulatedCompletion(
   sessionID: string,
   resultState: SessionState,
 ): Promise<SessionState> {
+  if (!isTerminalPhase(resultState.phase) || resultState.error) {
+    return { ...resultState, archiveStatus: 'failed' as const };
+  }
   const pendingState = { ...resultState, archiveStatus: 'pending' as const };
   await writeStateWithArtifacts(sessDir, pendingState);
 
@@ -72,12 +77,12 @@ export async function executeRegulatedCompletion(
     await appendAuditEvent(sessDir, completionEvt);
 
     // 2. Archive session (synchronous, not fire-and-forget).
-    await archiveSession(fingerprint, sessionID, { redactionMode: 'none', includeRaw: true });
+    await archiveRegulatedEvidence(fingerprint, sessionID);
     const createdState = { ...resultState, archiveStatus: 'created' as const };
     await writeStateWithArtifacts(sessDir, createdState);
 
     // 3. Verify archive integrity.
-    const verification = await verifyArchive(fingerprint, sessionID);
+    const verification = await verifyRegulatedArchive(fingerprint, sessionID);
     finalState = {
       ...resultState,
       archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),

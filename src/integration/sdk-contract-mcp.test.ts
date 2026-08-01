@@ -20,6 +20,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import * as path from 'node:path';
+import { FLOWGUARD_TOOLS } from '../mcp-server/server.js';
 
 // ─── Baseline Loading ────────────────────────────────────────────────────────
 
@@ -57,6 +58,10 @@ const EXPECTED_TOOLS = [
 // ═══════════════════════════════════════════════════════════════════════════════
 
 describe('SDK Contract: MCP tool registry', () => {
+  it('registers flowguard_declare_contract in the live MCP server tool map', () => {
+    expect(FLOWGUARD_TOOLS.declare_contract).toBeDefined();
+  });
+
   describe('HAPPY: baseline directory and version.json exist', () => {
     it('.sdk-baselines/mcp/ directory exists', () => {
       expect(existsSync(mcpBaseDir)).toBe(true);

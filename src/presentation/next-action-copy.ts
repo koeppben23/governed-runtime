@@ -138,6 +138,14 @@ export function buildProductNextAction(
         commands: ['/status'],
       };
     }
+    if (archiveStatus === 'not_verifiable') {
+      return {
+        text:
+          `${phaseLabel}. A redacted sharing archive was created, but it cannot verify the canonical audit chain without raw evidence. ` +
+          'Create a confidential raw archive only when authorized.',
+        commands: ['/status', '/export'],
+      };
+    }
     if (archiveStatus === 'failed') {
       return {
         text: `${phaseLabel}. Audit package verification failed. Inspect the failure with /status, then retry /export after recovery.`,
