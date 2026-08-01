@@ -148,6 +148,21 @@ describe('policyMode — from policySnapshot', () => {
   });
 });
 
+describe('proofGraph — persisted coverage summary', () => {
+  const policy = getPolicyPreset('solo');
+
+  it('marks missing structured claim declarations as not declared', () => {
+    const projection = buildStatusProjection(makeMinimalState('READY'), policy);
+
+    expect(projection.proofGraph).toEqual({
+      coverage: 'NOT_DECLARED',
+      claimCount: 0,
+      provenCount: 0,
+      unprovenCount: 0,
+    });
+  });
+});
+
 describe('productNextAction — aborted terminal session (governance integrity)', () => {
   const policy = getPolicyPreset('solo');
 

@@ -91,6 +91,11 @@ describe('writeStateWithArtifacts — artifacts-first ordering', () => {
       expect(read).not.toBeNull();
       expect(read!.phase).toBe('TICKET');
       expect(read!.id).toBe(state.id);
+      expect(read!.proofGraph).toMatchObject({
+        version: 'proofgraph.v1',
+        claims: [],
+        evaluatedAt: state.transition?.at ?? state.createdAt,
+      });
     });
 
     it('writes state and artifacts for a state with plan (generates artifacts)', async () => {

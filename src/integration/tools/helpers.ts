@@ -53,6 +53,7 @@ import { renderMarkdown } from '../../presentation/index.js';
 import type { PresentationConclusion, PresentationDocument } from '../../presentation/index.js';
 import { buildRailConclusion } from './rail-conclusion.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
+import { refreshProofGraph } from '../proofgraph/refresh.js';
 
 const lockedSessionDir = new AsyncLocalStorage<string>();
 
@@ -407,12 +408,31 @@ export async function writeStateWithArtifactsAlreadyLocked(
     });
   }
 
-  // 2. Pre-compute serialized form and hash (identical to what writeState would produce)
-  const serialized = JSON.stringify(result.data, null, 2) + '\n';
+  // 2. Persist a graph for every flow. This only evaluates explicitly declared,
+  // structured claims; an absent contract therefore remains an empty projection.
+  const stateWithProofGraph = {
+    ...result.data,
+    proofGraph: await refreshProofGraph(
+      result.data,
+      result.data.transition?.at ?? result.data.createdAt,
+    ),
+  };
+  const refreshed = SessionState.safeParse(stateWithProofGraph);
+  if (!refreshed.success) {
+    throw Object.assign(
+      new Error(`Refusing to persist invalid ProofGraph: ${refreshed.error.message}`),
+      {
+        code: 'SCHEMA_VALIDATION_FAILED',
+      },
+    );
+  }
+
+  // 3. Pre-compute serialized form and hash (identical to what writeState would produce)
+  const serialized = JSON.stringify(refreshed.data, null, 2) + '\n';
   const preComputedStateHash = hashText(serialized);
 
-  await materializeEvidenceArtifacts(sessDir, nextState, preComputedStateHash);
-  await writeStateAlreadyLocked(sessDir, nextState);
+  await materializeEvidenceArtifacts(sessDir, refreshed.data, preComputedStateHash);
+  await writeStateAlreadyLocked(sessDir, refreshed.data);
 }
 
 export async function writeStateWithArtifacts(

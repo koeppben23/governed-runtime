@@ -27,22 +27,16 @@ import type { ClaimAuthorityRef } from '../../state/proofgraph-refs.js';
 import {
   SURFACE_COMMAND_REGISTRATION,
   SURFACE_CONFIG_DEFAULTS,
-  evaluateStructuralSurfaces,
-  bindStructuralEvidence,
-  surfaceDigestMap,
 } from '../proofgraph/structural-provider.js';
 import {
   MUTATION_PROFILE_IDS,
   resolveVerifiedMutationVerdicts,
   type VerifiedMutationVerdicts,
 } from '../proofgraph/mutation-provider.js';
-import { bindMutationEvidence } from '../../audit/proofgraph/mutation-binder.js';
 
 /** Declarable mutation profile ids as a non-empty tuple for the Zod enum. */
 const MUTATION_PROFILE_ENUM = MUTATION_PROFILE_IDS as [string, ...string[]];
-import { deriveProofGraph } from '../../audit/proofgraph/derive.js';
-import { bindExecutedTestEvidence } from '../../audit/proofgraph/executed-test-binder.js';
-import { bindCounterexamples } from '../../audit/proofgraph/counterexample-binder.js';
+import { refreshProofGraph } from '../proofgraph/refresh.js';
 import type { ToolDefinition } from './helpers.js';
 import {
   appendNextAction,
@@ -363,22 +357,8 @@ export const declare_contract: ToolDefinition = {
         }
 
         const proofContract = { version: 'contract.v1' as const, claims: built.claims };
-        const now = ctx.now();
         const stateWithContract = { ...state, proofContract };
-        const structuralSurfaces = evaluateStructuralSurfaces();
-        const providerResults = [
-          ...bindExecutedTestEvidence(stateWithContract, now),
-          ...bindStructuralEvidence(stateWithContract, structuralSurfaces, now),
-          ...bindMutationEvidence(stateWithContract, verdicts, now),
-        ];
-        const counterexamples = bindCounterexamples(stateWithContract, now);
-        const proofGraph = deriveProofGraph(
-          stateWithContract,
-          providerResults,
-          counterexamples,
-          now,
-          surfaceDigestMap(structuralSurfaces),
-        );
+        const proofGraph = await refreshProofGraph(stateWithContract, ctx.now());
         const nextState = { ...state, proofContract, proofGraph };
         await writeStateWithArtifacts(sessDir, nextState);
         return appendNextAction(

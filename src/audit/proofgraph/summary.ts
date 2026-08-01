@@ -72,6 +72,35 @@ export interface ProofGraphSummary {
   readonly unresolvedAssumptions: readonly UnresolvedAssumption[];
 }
 
+/** Compact coverage summary for standard status surfaces. */
+export interface PersistedProofGraphSummary {
+  readonly coverage: 'NOT_DECLARED' | 'NOT_VERIFIED' | 'PROVEN';
+  readonly claimCount: number;
+  readonly provenCount: number;
+  readonly unprovenCount: number;
+}
+
+/**
+ * Summarize the persisted projection without executing providers. An empty graph
+ * is never reported as healthy: it means no structured claims were declared.
+ */
+export function summarizePersistedProofGraph(state: SessionState): PersistedProofGraphSummary {
+  const claims = state.proofGraph?.claims ?? [];
+  const provenCount = claims.filter((claim) => claim.verificationState === 'PROVEN').length;
+  const unprovenCount = claims.length - provenCount;
+  return {
+    coverage:
+      state.proofContract === undefined
+        ? 'NOT_DECLARED'
+        : unprovenCount === 0 && claims.length > 0
+          ? 'PROVEN'
+          : 'NOT_VERIFIED',
+    claimCount: claims.length,
+    provenCount,
+    unprovenCount,
+  };
+}
+
 /**
  * Evidence supplied by callers that own I/O or live registries (e.g. structural
  * surfaces). This module stays pure: it never reads the filesystem or evaluates

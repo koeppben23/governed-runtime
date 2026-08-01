@@ -48,10 +48,13 @@ import {
   type StatusConclusionProjection,
 } from './status-conclusion.js';
 import type { KnownPresentationStatusInput } from '../presentation/labels.js';
+import {
+  summarizePersistedProofGraph,
+  type PersistedProofGraphSummary,
+} from '../audit/proofgraph/summary.js';
 
 // Re-export for consumers
 export type { StatusActionProjection, StatusConclusionProjection };
-
 // ─── Projection Types ─────────────────────────────────────────────────────────
 
 /**
@@ -79,7 +82,6 @@ export interface StatusProjection {
   } | null;
   /** Archive lifecycle status. */
   archiveStatus: string | null;
-
   /** Commands that are currently admissible. */
   allowedCommands: string[];
   /** Next action guidance from the machine (canonical commands). */
@@ -92,7 +94,6 @@ export interface StatusProjection {
     primaryCommand: string | null;
     summary: string;
   };
-
   /**
    * Active blocker, if the current phase is waiting or pending.
    * reasonCode is null when no structured code exists in the canonical source.
@@ -101,7 +102,6 @@ export interface StatusProjection {
     reasonCode: string | null;
     reasonText: string | null;
   } | null;
-
   /** Evidence completeness summary. */
   evidenceSummary: {
     present: number;
@@ -109,6 +109,7 @@ export interface StatusProjection {
     notYetRequired: number;
     failed: number;
   };
+  proofGraph: PersistedProofGraphSummary;
   /** Review loop progress during review phases (null when not in a review phase). */
   reviewLoop: ReviewLoopProgress | null;
   /**
@@ -359,6 +360,7 @@ export function buildStatusProjection(
       notYetRequired: completeness.summary.notYetRequired,
       failed: completeness.summary.failed,
     },
+    proofGraph: summarizePersistedProofGraph(state),
     reviewLoop: getReviewLoopProgress(state),
     remainingChecks:
       state.phase === 'VALIDATION' && state.activeChecks.length > 0

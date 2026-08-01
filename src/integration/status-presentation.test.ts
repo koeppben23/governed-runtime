@@ -133,6 +133,7 @@ function makeBaseProjection(overrides: Partial<StatusProjection> = {}): StatusPr
     productNextAction: { primaryCommand: '/hydrate', summary: '' },
     blocker: null,
     evidenceSummary: { present: 0, missing: 0, notYetRequired: 7, failed: 0 },
+    proofGraph: { coverage: 'NOT_DECLARED', claimCount: 0, provenCount: 0, unprovenCount: 0 },
     reviewLoop: null,
     readiness: 'READY',
     conclusion: {
