@@ -66,6 +66,7 @@ const ARCHITECTURE_CLAIM = {
   statement: 'The selected architecture keeps service data durable.',
   critical: true,
   authoritySectionId: 'decision',
+  expectedCheckId: 'test',
 };
 
 describe('review-decision rail', () => {
@@ -120,7 +121,7 @@ describe('review-decision rail', () => {
         flow: 'architecture',
         authorityDigest: architecture.digest,
         claimDeclarationsDigest: baseCtx.digest(
-          '{"claims":[{"authoritySectionId":"decision","claimId":"00000000-0000-4000-8000-000000000004","critical":true,"statement":"The selected architecture keeps service data durable."}],"flow":"architecture"}',
+          '{"claims":[{"authoritySectionId":"decision","claimId":"00000000-0000-4000-8000-000000000004","critical":true,"expectedCheckId":"test","statement":"The selected architecture keeps service data durable."}],"flow":"architecture"}',
         ),
         decisionAttestationDigest: baseCtx.digest(
           '{"decidedAt":"2026-01-01T00:00:00.000Z","decidedBy":"reviewer-1","rationale":"approved","verdict":"approve"}',

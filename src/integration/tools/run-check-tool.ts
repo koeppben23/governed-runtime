@@ -79,7 +79,7 @@ import {
   activateImplementationReviewObligation,
   nextImplementationReviewIteration,
 } from './implement-shared.js';
-import { materializeApprovedPlanContract } from '../proofgraph/materialize-contract.js';
+import { materializeApprovedPlanContractResult } from '../proofgraph/materialize-contract.js';
 
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
 const RUN_CHECK_RETRIES = RUN_CHECK_RETRY_DELAYS_MS.length;
@@ -219,13 +219,17 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       const advanced = autoAdvance(nextState, (s) => evaluate(s, railCtx.policy), railCtx);
       if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
 
-      const stateWithMaterializedContract =
+      const materialized =
         advanced.state.phase === 'IMPL_REVIEW'
-          ? {
-              ...advanced.state,
-              proofContract: materializeApprovedPlanContract(advanced.state),
-            }
-          : advanced.state;
+          ? materializeApprovedPlanContractResult(advanced.state)
+          : null;
+      const stateWithMaterializedContract = materialized
+        ? {
+            ...advanced.state,
+            proofContract: materialized.contract,
+            proofContractCoverage: [...materialized.coverage],
+          }
+        : advanced.state;
       const activated = activateImplementationReviewObligation(stateWithMaterializedContract, {
         subagentEnabled: freshPolicy.selfReview?.subagentEnabled ?? false,
         iteration: nextImplementationReviewIteration(advanced.state),

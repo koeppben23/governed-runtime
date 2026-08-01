@@ -5,6 +5,7 @@ import {
 } from './standalone-review.js';
 import { deriveProofGraph } from '../audit/proofgraph/derive.js';
 import { makeState } from '../fixtures.js';
+import { prepareStandaloneReviewEvidence } from '../integration/tools/review-tool/preparation.js';
 
 describe('standalone review deterministic task', () => {
   it('uses canonical defaults and stable null-provenance hypothesis claims', () => {
@@ -73,5 +74,23 @@ describe('standalone review deterministic task', () => {
     expect(projection.claims.every((claim) => claim.verificationState === 'NOT_VERIFIED')).toBe(
       true,
     );
+  });
+
+  it('binds a branch review subject to its resolved head rather than its mutable branch name', () => {
+    const args = { branch: 'feature', base: 'main' };
+    const first = prepareStandaloneReviewEvidence(args, '2026-01-01T00:00:00.000Z', {
+      branch: 'feature',
+      baseBranch: 'main',
+      resolvedBranchSha: 'a'.repeat(40),
+      resolvedBaseSha: 'b'.repeat(40),
+    });
+    const second = prepareStandaloneReviewEvidence(args, '2026-01-01T00:00:00.000Z', {
+      branch: 'feature',
+      baseBranch: 'main',
+      resolvedBranchSha: 'c'.repeat(40),
+      resolvedBaseSha: 'b'.repeat(40),
+    });
+
+    expect(second.task.subjectDigest).not.toBe(first.task.subjectDigest);
   });
 });

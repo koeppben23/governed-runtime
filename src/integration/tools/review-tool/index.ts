@@ -379,7 +379,7 @@ async function prepareReviewWithoutExternalCalls(
       policy: state.policySnapshot?.reviewInvocationPolicy ?? 'host_task_required',
     });
     if (typeof prepared === 'string') return prepared;
-    const taskEvidence = prepareStandaloneReviewEvidence(args, now);
+    const taskEvidence = prepareStandaloneReviewEvidence(args, now, prepared.refInput);
     const stateWithTaskEvidence: SessionState = {
       // Preparation records intent before reviewer work, but does not materialize
       // the REVIEW transition. The existing completion rail remains authoritative.
@@ -430,7 +430,7 @@ async function persistCompletedReview(
         effectiveReviewFindings: prepared.effectiveReviewFindings,
       },
     );
-    const taskEvidence = prepareStandaloneReviewEvidence(args, now);
+    const taskEvidence = prepareStandaloneReviewEvidence(args, now, prepared.refInput);
     result = {
       ...result,
       state: {

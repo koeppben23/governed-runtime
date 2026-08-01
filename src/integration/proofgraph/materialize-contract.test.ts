@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { makeState } from '../../fixtures.js';
-import { materializeApprovedPlanContract } from './materialize-contract.js';
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { hashText } from '../../shared/hashing.js';
+import {
+  materializeApprovedPlanContract,
+  materializeApprovedPlanContractResult,
+} from './materialize-contract.js';
 
 const PLAN_DIGEST = 'approved-plan';
 const IMPL_DIGEST = 'current-implementation';
@@ -31,8 +36,24 @@ function stateWithClaims() {
       approvalCertificate: {
         flow: 'plan',
         authorityDigest: PLAN_DIGEST,
-        claimDeclarationsDigest: 'claims-digest',
-        decisionAttestationDigest: 'decision-digest',
+        claimDeclarationsDigest: hashText(
+          canonicalJsonStringify({
+            flow: 'plan',
+            claims: [
+              {
+                claimId: CLAIM_ID,
+                statement: 'the approved plan behavior is implemented',
+                critical: true,
+                authoritySectionId: 'implementation',
+                expectedCheckId: 'test',
+                counterexampleCheckId: 'security',
+                structuralSurface: 'command-registration',
+                mutationProfile: 'semantic',
+              },
+            ],
+          }),
+        ),
+        decisionAttestationDigest: 'a'.repeat(64),
         approvedAt: NOW,
         approvedBy: 'user',
         certificateId: '00000000-0000-4000-8000-000000000001',
@@ -81,20 +102,39 @@ describe('materializeApprovedPlanContract', () => {
     expect(contract.claims[0]!.evidenceRefs).toEqual([
       { kind: 'validation_attempt', attemptId: ATTEMPT_ID },
       { kind: 'structural_surface', surfaceId: 'command-registration' },
-      { kind: 'mutation_profile', profileId: 'semantic' },
     ]);
     expect(contract.claims[0]!.provenance).toEqual({
       kind: 'canonical_authority',
       authorityId: 'plan',
       digest: PLAN_DIGEST,
+      approval: {
+        certificateId: '00000000-0000-4000-8000-000000000001',
+        claimDeclarationsDigest:
+          stateWithClaims().plan!.approvalCertificate!.claimDeclarationsDigest,
+        decisionAttestationDigest: 'a'.repeat(64),
+        declarationId: CLAIM_ID,
+      },
     });
   });
 
-  it('records explicit empty coverage when no current implementation evidence exists', () => {
+  it('retains a claim with required executed-test coverage when its expected check is absent', () => {
     const state = stateWithClaims();
     const contract = materializeApprovedPlanContract({ ...state, validationAttempts: [] });
 
-    expect(contract).toEqual({ version: 'contract.v1', claims: [] });
+    expect(contract.claims).toHaveLength(1);
+    expect(contract.claims[0]!.evidenceRefs).toEqual([
+      { kind: 'structural_surface', surfaceId: 'command-registration' },
+    ]);
+    expect(contract.claims[0]!.requiredEvidence).toEqual({
+      positive: ['executed_test', 'structural_assertion', 'fault_injection'],
+      adversarial: ['counterexample'],
+    });
+    expect(
+      materializeApprovedPlanContractResult({ ...state, validationAttempts: [] }).coverage,
+    ).toEqual([
+      { claimId: CLAIM_ID, cause: 'missing_expected_check' },
+      { claimId: CLAIM_ID, cause: 'unverified_mutation_profile' },
+    ]);
   });
 
   it('fails closed when an approved certificate is absent or stale', () => {
@@ -113,5 +153,21 @@ describe('materializeApprovedPlanContract', () => {
 
     expect(withoutCertificate).toEqual({ version: 'contract.v1', claims: [] });
     expect(staleCertificate).toEqual({ version: 'contract.v1', claims: [] });
+  });
+
+  it('fails closed when the certificate declaration digest is not canonical', () => {
+    const state = stateWithClaims();
+    const contract = materializeApprovedPlanContract({
+      ...state,
+      plan: {
+        ...state.plan!,
+        approvalCertificate: {
+          ...state.plan!.approvalCertificate!,
+          claimDeclarationsDigest: 'b'.repeat(64),
+        },
+      },
+    });
+
+    expect(contract).toEqual({ version: 'contract.v1', claims: [] });
   });
 });

@@ -64,6 +64,16 @@ export const CanonicalAuthorityRef = z
     /** Stable identifier of the authority (e.g. 'plan', 'architecture'). */
     authorityId: z.string().min(1),
     digest: z.string().min(1),
+    /** Immutable human-approval binding for a materialized declaration. */
+    approval: z
+      .object({
+        certificateId: z.string().uuid(),
+        claimDeclarationsDigest: z.string().regex(/^[a-f0-9]{64}$/),
+        decisionAttestationDigest: z.string().regex(/^[a-f0-9]{64}$/),
+        declarationId: z.string().uuid(),
+      })
+      .readonly()
+      .optional(),
   })
   .readonly();
 export type CanonicalAuthorityRef = z.infer<typeof CanonicalAuthorityRef>;

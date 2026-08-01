@@ -41,7 +41,7 @@ import {
   VerificationCandidatesSchema,
 } from './discovery-schemas.js';
 import { ProofGraphProjection } from './proofgraph.js';
-import { ProofContract } from './proofgraph-contract.js';
+import { ProofContract, ProofContractCoverage } from './proofgraph-contract.js';
 import { StandaloneReviewEvidence } from './standalone-review.js';
 
 // ─── Phase ────────────────────────────────────────────────────────────────────
@@ -355,6 +355,9 @@ export const SessionState = z.object({
    * derives `proofGraph` from these claims plus executed evidence.
    */
   proofContract: ProofContract.optional(),
+
+  /** Cause-specific gaps from the most recent approved-plan materialization. */
+  proofContractCoverage: z.array(ProofContractCoverage).optional(),
 
   /**
    * Compact ProofGraph projection (advisory; #762).

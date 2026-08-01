@@ -13,8 +13,9 @@ import {
 } from '../../../state/standalone-review.js';
 import type { ReviewFindings } from '../../../state/evidence.js';
 import type { ReviewToolArgs } from './types.js';
+import type { ReviewReferenceInput } from '../../../rails/review.js';
 
-function subjectDigest(args: ReviewToolArgs): string {
+function subjectDigest(args: ReviewToolArgs, refInput?: ReviewReferenceInput): string {
   // Subject input is digest-bound review evidence; it is not a claim authority.
   return hashText(
     canonicalJsonStringify({
@@ -24,6 +25,10 @@ function subjectDigest(args: ReviewToolArgs): string {
       prNumber: args.prNumber,
       branch: args.branch,
       base: args.base,
+      // A branch name is mutable. Bind the standalone task to the immutable
+      // resolved commits captured by its review obligation when available.
+      resolvedBranchSha: refInput?.resolvedBranchSha,
+      resolvedBaseSha: refInput?.resolvedBaseSha,
       url: args.url,
     }),
   );
@@ -32,9 +37,10 @@ function subjectDigest(args: ReviewToolArgs): string {
 export function prepareStandaloneReviewEvidence(
   args: ReviewToolArgs,
   preparedAt: string,
+  refInput?: ReviewReferenceInput,
 ): StandaloneReviewPreparedEvidence {
   const { task, requestedDigests } = createStandaloneReviewTask({
-    subjectDigest: subjectDigest(args),
+    subjectDigest: subjectDigest(args, refInput),
     objectives: args.objectives,
   });
   return { kind: 'prepared', evidenceId: randomUUID(), preparedAt, task, requestedDigests };

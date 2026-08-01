@@ -33,6 +33,7 @@ const ARCHITECTURE_CLAIM = {
   statement: 'The decision preserves the intended behavior.',
   critical: true,
   authoritySectionId: 'decision',
+  expectedCheckId: 'test',
 };
 
 describe('ProofGraph approval schemas', () => {
@@ -66,6 +67,15 @@ describe('ProofGraph approval schemas', () => {
       PlanClaimDeclarations.parse({
         flow: 'plan',
         claims: [{ ...PLAN_CLAIM, expectedCheckId: undefined, evidenceRefs: [] }],
+      }),
+    ).toThrow();
+  });
+
+  it('requires architecture declarations to name their expected implementation check', () => {
+    expect(() =>
+      ArchitectureClaimDeclarations.parse({
+        flow: 'architecture',
+        claims: [{ ...ARCHITECTURE_CLAIM, expectedCheckId: undefined }],
       }),
     ).toThrow();
   });

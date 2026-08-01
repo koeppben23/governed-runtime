@@ -23,6 +23,7 @@ const ARCHITECTURE_CLAIM = {
   statement: 'PostgreSQL provides the primary persistence store.',
   critical: true,
   authoritySectionId: 'decision',
+  expectedCheckId: 'test',
 };
 
 describe('executeArchitecture', () => {
