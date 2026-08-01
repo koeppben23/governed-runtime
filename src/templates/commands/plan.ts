@@ -84,37 +84,53 @@ ${DISCOVERY_REVIEW_CAPTURE}
    \`## Verification\` — Numbered list citing the command AND its Source
    (e.g., \`Source: package.json#scripts.test\`). State \`NOT_VERIFIED\` with
    recovery steps if no repo-native candidate is available.
-4. Call \`flowguard_plan({ planText })\` with only planText set to the full plan markdown.
-5. Read the response. The \`next\` field contains the review workflow instructions.
+4. Derive the structured claim declarations for this plan version. Each claim names
+   ONE falsifiable behavioral statement, the plan section that governs it, and the
+   check expected to establish it after implementation:
+   - \`claimId\`: fresh UUID.
+   - \`statement\`: the behavior or forbidden state asserted.
+   - \`critical\`: true when the change is unsafe to approve without this claim.
+   - \`authoritySectionId\`: the governing \`## Implementation\` step or section.
+   - \`expectedCheckId\`: the check kind that must pass (from \`activeChecks\` /
+     \`verificationCandidates\`, e.g. \`build\`).
+   - \`counterexampleCheckId\`: the check whose FAILURE would falsify the claim.
+     REQUIRED whenever \`critical\` is true — a critical claim without it can never
+     become PROVEN and is rejected at submission.
+   Declare at least one claim per critical behavioral change. Do NOT invent claims
+   that the plan does not actually assert.
+5. Call \`flowguard_plan({ planText, claims })\` with the full plan markdown and the
+   declarations from step 4.
+6. Read the response. The \`next\` field contains the review workflow instructions.
 
 Payload contract for \`flowguard_plan\`:
-- Initial submission: the FIRST call MUST be exactly \`flowguard_plan({ planText })\`. NEVER include \`reviewVerdict\`, \`reviewFindings\`, or \`reviewerUnavailable\` in the first call — a prefilled verdict is a fabrication-of-convergence attempt and is rejected (the tool routes a verdict-bearing first call back to \`INDEPENDENT_REVIEW_REQUIRED\`).
+- Initial submission: the FIRST call MUST be \`flowguard_plan({ planText, claims })\`. NEVER include \`reviewVerdict\`, \`reviewFindings\`, or \`reviewerUnavailable\` in the first call — a prefilled verdict is a fabrication-of-convergence attempt and is rejected (the tool routes a verdict-bearing first call back to \`INDEPENDENT_REVIEW_REQUIRED\`).
+- Claims are pre-evidence declarations, not proof. They are bound into the plan approval certificate and materialized as ProofGraph fact claims after implementation; a declaration without its expected check remains unproven and is reported as a coverage gap.
 - Record the reviewer verdict after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict })\` (verdict only — the plugin resolves the reviewer findings from captured evidence; do NOT submit or alter \`reviewFindings\`, not even an empty placeholder object); SDK/manual-attested modes also include the reviewer's exact \`reviewFindings\`. \`reviewVerdict: "accept"\` is the reviewer's acceptance, NOT user approval.
-- Revision after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <complete revised plan> })\`; SDK/manual-attested modes also include the exact reviewer output as \`reviewFindings\`.
+- Revision after review: host_task_required mode calls \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <complete revised plan>, claims: <complete revised claims> })\`; SDK/manual-attested modes also include the exact reviewer output as \`reviewFindings\`.
 - Never submit placeholder, diagnostic, or manually fabricated \`reviewFindings\`.
 - Set \`reviewerUnavailable: true\` only after an actual Task/subagent spawn failure; never set it preemptively.
 - After every FlowGuard call, stop and interpret \`phase\`, \`next\`, \`reviewInvocation\`, and any error code before constructing the next payload.
 
 ### Phase 3: Review Loop
 
-6. Follow the \`next\` field instructions exactly:
+7. Follow the \`next\` field instructions exactly:
 ${SHARED_REVIEW_LOOP({
   toolName: 'flowguard_plan',
   artifactName: 'plan',
-  reviseParams: 'planText: <revised>',
+  reviseParams: 'planText: <revised>, claims: <revised>',
   changesRequestedExtra: '',
-  strictRecoveryCall: 'flowguard_plan({ planText: <same plan text> })',
+  strictRecoveryCall: 'flowguard_plan({ planText: <same plan text>, claims: <same claims> })',
   strictRecoveryVerb: 'Re-submit',
   strictRecoveryNoun: 're-submissions',
   iterationNote: '(max 3 iterations)',
-  repeatStep: 6,
+  repeatStep: 7,
   subagentExtra: '',
   fallbackExtra: ', or infrastructure missing',
   unableDescription:
     'e.g., contradictory inputs, missing prerequisites, or scope ambiguity that prevents critique',
   unableRecoveryA: '/ticket the prerequisite work first',
   unableRecoveryB:
-    'revise the plan substantially (new flowguard_plan({ planText }) submission, which starts a fresh review obligation)',
+    'revise the plan substantially (new flowguard_plan({ planText, claims }) submission, which starts a fresh review obligation)',
 })}
 
 ## Planning discipline
@@ -126,6 +142,9 @@ ${SHARED_REVIEW_LOOP({
 ## Rules
 
 - Every plan step names a specific file path and concrete change (never "implement the feature").
+- Declare structured \`claims\` on every plan submission and revision; a plan that asserts critical behavior without a claim leaves the ProofGraph contract empty.
+- Never declare a claim the plan does not assert, and never name a check that is not active in this session.
+- A critical claim blocks the final evidence approval while its declared evidence is missing, stale, or contradicted. Declare \`critical: true\` only for behavior that genuinely must hold, and always with a falsifying counterexample check.
 - Always complete the independent review before proceeding (use plugin findings or the reviewer subagent).
 - When revising a plan, include the COMPLETE plan text (not a diff).
 - Cite Source for each verification check, or state NOT_VERIFIED with recovery steps.
@@ -139,11 +158,11 @@ ${SHARED_REVIEW_LOOP({
 
 Happy path:
 1. \`flowguard_status\` → phase: TICKET, ticket present
-2. \`flowguard_plan({ planText })\` → returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
+2. \`flowguard_plan({ planText, claims })\` → returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
 3. \`flowguard_plan({ reviewVerdict: "accept" })\` → PLAN_REVIEW (user gate — the USER approves via /review-decision; this call does NOT approve the plan)
 
 Revision path (when review returns changes_requested):
-1. \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <revised> })\`
+1. \`flowguard_plan({ reviewVerdict: "changes_requested", planText: <revised>, claims: <revised> })\`
 2. → new review starts, returns \`next: "INDEPENDENT_REVIEW_COMPLETED: ..."\`
 3. \`flowguard_plan({ reviewVerdict: "accept" })\` → PLAN_REVIEW (user gate — the USER decides via /review-decision)
 

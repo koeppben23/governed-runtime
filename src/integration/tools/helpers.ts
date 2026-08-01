@@ -399,7 +399,7 @@ export async function requireStateForMutation(sessDir: string): Promise<SessionS
 export async function writeStateWithArtifactsAlreadyLocked(
   sessDir: string,
   nextState: SessionState,
-): Promise<void> {
+): Promise<SessionState> {
   // 1. Validate BEFORE any I/O — fail-closed
   const result = SessionState.safeParse(nextState);
   if (!result.success) {
@@ -433,23 +433,23 @@ export async function writeStateWithArtifactsAlreadyLocked(
 
   await materializeEvidenceArtifacts(sessDir, refreshed.data, preComputedStateHash);
   await writeStateAlreadyLocked(sessDir, refreshed.data);
+  // Return the persisted state so callers render the REFRESHED ProofGraph rather
+  // than the pre-write projection they passed in (#762).
+  return refreshed.data;
 }
 
 export async function writeStateWithArtifacts(
   sessDir: string,
   nextState: SessionState,
-): Promise<void> {
+): Promise<SessionState> {
   if (lockedSessionDir.getStore() === sessDir) {
-    await writeStateWithArtifactsAlreadyLocked(sessDir, nextState);
-    return;
+    return writeStateWithArtifactsAlreadyLocked(sessDir, nextState);
   }
 
   // 3. Materialize artifacts and write state atomically under the session lock
-  await withSessionWriteLock(sessDir, async () => {
-    await lockedSessionDir.run(sessDir, () =>
-      writeStateWithArtifactsAlreadyLocked(sessDir, nextState),
-    );
-  });
+  return withSessionWriteLock(sessDir, async () =>
+    lockedSessionDir.run(sessDir, () => writeStateWithArtifactsAlreadyLocked(sessDir, nextState)),
+  );
 }
 
 /** Context handed to a {@link withSessionWriteTransaction} callback. */

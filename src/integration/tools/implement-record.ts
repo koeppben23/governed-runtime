@@ -87,6 +87,7 @@ import {
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { buildReviewerProofContext } from '../review/proof-context.js';
 import type { ImplementRuntime, ImplementationCeremony } from './implement-shared.js';
 import {
   activateImplementationReviewObligation,
@@ -173,6 +174,7 @@ function buildImplRecordedResponse(input: {
         iteration: input.reviewIteration,
         planVersion: input.planVersion,
         subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
+        proofContext: buildReviewerProofContext(input.finalState),
       })
     : null;
   const nextAction = resolveNextAction(input.finalState.phase, input.finalState);
@@ -334,6 +336,15 @@ export async function handleImplRecord(
   const nextState: SessionState = {
     ...input.state,
     implementation: implEvidence,
+    // #762: bind the risk classification to the exact revision it describes, so a
+    // gate rail can consult it without re-deriving it from a later file set.
+    implementationRiskAssessment: {
+      computedMinimumTaskClass: ceremony.computedMinimumTaskClass,
+      touchedSurfaces: [...ceremony.touchedSurfaces],
+      assessedFrom: 'implementation_changed_files',
+      assessedFileCount: files.length,
+      implementationDigest: implEvidence.digest,
+    },
     // Fresh implementation invalidates any prior post-implementation checks; the
     // machine advances to IMPL_VALIDATION where the checks are re-run against the
     // new code (prevents a stale IMPL_VALIDATION failure from looping).
@@ -403,12 +414,15 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
     planVersion,
     now: input.ctx.now(),
   });
-  await writeStateWithArtifacts(input.sessDir, activated.state);
+  // The persisted state carries the REFRESHED ProofGraph derived from the freshly
+  // materialized contract; rendering `activated.state` would emit the pre-write
+  // projection and understate claim coverage in the reviewer prompt (#762).
+  const persisted = await writeStateWithArtifacts(input.sessDir, activated.state);
 
   return appendNextAction(
     JSON.stringify(
       buildImplRecordedResponse({
-        finalState: activated.state,
+        finalState: persisted,
         files,
         domainFiles,
         reviewIteration,
@@ -421,6 +435,6 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
         baselineScoping: args.baselineScoping,
       }),
     ),
-    activated.state,
+    persisted,
   );
 }

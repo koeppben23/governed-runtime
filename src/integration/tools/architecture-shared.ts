@@ -17,6 +17,7 @@ import {
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { buildReviewerProofContext } from '../review/proof-context.js';
 
 // ─── Shared Types ─────────────────────────────────────────────────────────
 
@@ -93,6 +94,8 @@ export function buildArchitectureReviewInstruction(input: {
   iteration: number;
   planVersion: number;
   subjectLabel: string;
+  /** State whose declarations/graph the reviewer prompt must reflect (#762). */
+  state: SessionState;
 }): {
   next: string;
   reviewInvocation?: ReturnType<typeof buildPendingReviewInstruction>['reviewInvocation'];
@@ -121,6 +124,7 @@ export function buildArchitectureReviewInstruction(input: {
     iteration: input.iteration,
     planVersion: input.planVersion,
     subjectLabel: input.subjectLabel,
+    proofContext: buildReviewerProofContext(input.state),
   });
   return { next: instruction.next, reviewInvocation: instruction.reviewInvocation };
 }

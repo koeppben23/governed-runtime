@@ -108,7 +108,7 @@ export async function handleAdrSubmission(
   });
   const { state: augmentedState, obligation: nextObligation } = classification;
 
-  await writeStateWithArtifacts(sessDir, augmentedState);
+  const persisted = await writeStateWithArtifacts(sessDir, augmentedState);
 
   const instruction = buildArchitectureReviewInstruction({
     policy: session.policy,
@@ -117,6 +117,7 @@ export async function handleAdrSubmission(
     iteration: 0,
     planVersion: archPlanVersion,
     subjectLabel: 'full ADR text, ADR title, and ticket text',
+    state: persisted,
   });
   const modeAResponse: Record<string, unknown> = {
     phase: augmentedState.phase,

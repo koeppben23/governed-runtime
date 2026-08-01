@@ -534,7 +534,7 @@ async function persistAndFormatNonConvergedReview(
         reviewAssurance: appendReviewObligation(advanced.state.reviewAssurance, nextObligation),
       }
     : advanced.state;
-  await writeStateWithArtifacts(session.sessDir, stateToPersist);
+  const persisted = await writeStateWithArtifacts(session.sessDir, stateToPersist);
   const instruction = buildArchitectureReviewInstruction({
     policy: session.policy,
     subagentEnabled: review.subagentEnabled,
@@ -542,6 +542,7 @@ async function persistAndFormatNonConvergedReview(
     iteration,
     planVersion: review.expectedPlanVersion,
     subjectLabel: 'revised ADR text, ADR title, and ticket text',
+    state: persisted,
   });
 
   const resp: Record<string, unknown> = {

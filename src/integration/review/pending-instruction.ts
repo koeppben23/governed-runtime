@@ -20,6 +20,12 @@ export interface PendingReviewInstructionInput {
   readonly iteration: number;
   readonly planVersion: number;
   readonly subjectLabel: string;
+  /**
+   * Persisted, advisory ProofGraph context lines (#762) from
+   * {@link buildReviewerProofContext}. Threaded from the calling tool so the
+   * copy-ready Task prompt carries the same claim context as the SDK path.
+   */
+  readonly proofContext?: readonly string[];
 }
 
 export interface PendingReviewInstruction {
@@ -88,6 +94,7 @@ function buildHostTaskPrompt(
             requiredChallengeCount: obligation.requiredChallengeCount,
             requiredChallengeKind: obligation.requiredChallengeKind,
           },
+    proofContext: input.proofContext,
   });
 }
 

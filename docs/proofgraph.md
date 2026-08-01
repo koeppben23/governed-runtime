@@ -53,8 +53,34 @@ evidence for that claim succeeded**. It does **not** mean:
 Those remain human-review responsibilities. ProofGraph surfaces residual
 uncertainty explicitly (`UNPROVEN`, `CONTRADICTED`, `STALE`, `BLOCKED`,
 `NOT_VERIFIED`) precisely so that unverifiable claims never appear more certain
-than they are. It is **advisory** and never alters review acceptance, which
-remains owned by ReviewFindings, obligations, attestations, and validation.
+than they are.
+
+## What ProofGraph enforces
+
+For **critical, plan-certified `fact` claims**, FlowGuard prevents the final
+evidence approval while the declared, revision-bound positive and adversarial
+evidence does not establish the claim as `PROVEN`. `PROVEN` denotes satisfied
+evidence requirements, not objective absence of defects.
+
+Enforcement is unconditional and has no policy switch. A switch would mean that
+an author declares a claim critical, has it human-approved, and the system then
+ignores whether it was ever proven — which contradicts the meaning of
+`critical`. The blast radius is bounded by the eligibility rule instead:
+
+- only at the `EVIDENCE_REVIEW` human gate, on approval;
+- only for `fact` claims materialized from a valid plan approval certificate;
+- only when the author declared them `critical`;
+- `derived_signal` (architecture) and `hypothesis` (standalone review) claims are
+  never gate-eligible and remain advisory;
+- a session that declares no critical claim is unaffected.
+
+Everything else remains owned by ReviewFindings, obligations, attestations, and
+validation. ProofGraph adds one blocking condition; it replaces no authority.
+
+Because a critical claim requires executed adversarial evidence, a critical
+declaration without a counterexample check could never become `PROVEN`. Such a
+declaration is therefore rejected when it is authored
+(`PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE`) rather than blocking the approval later.
 
 ## Declaring claims
 
@@ -149,8 +175,9 @@ revision.
 
 ## Inspecting the ProofGraph
 
-`flowguard_status({ proofGraph: true })` returns the advisory projection. It is
-read-only and never gates. Beyond per-claim verification states and freshness it
+`flowguard_status({ proofGraph: true })` returns the projection. Reading it is
+read-only and never gates; the gate itself acts only at the `EVIDENCE_REVIEW`
+approval. Beyond per-claim verification states and freshness it
 surfaces explicitly, rather than merely implying:
 
 - `counterexamples` — every executed adversarial outcome with its bound digest
@@ -160,5 +187,5 @@ surfaces explicitly, rather than merely implying:
 - `unresolvedAssumptions` — each non-`PROVEN` claim with a reason distinguishing
   an unsourced assumption, a falsification, an errored provider, missing
   evidence, and superseded (stale) evidence;
-- the registration and config-default consistency reports and the default-off
-  gate decision.
+- the registration and config-default consistency reports and the gate decision
+  (`enforced` is a constant compatibility field; enforcement is unconditional).

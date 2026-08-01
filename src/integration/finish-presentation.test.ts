@@ -8,7 +8,7 @@ import { resolve } from 'node:path';
 import type { SessionState } from '../state/schema.js';
 import { renderMarkdown } from '../presentation/markdown.js';
 import { buildFinishDocument } from './finish-presentation.js';
-import { buildFinishCard } from './status.js';
+import { buildFinishCard } from './status-finish.js';
 import { buildFinishPresentationProjection } from './status-why-finish.js';
 import { makeState, makeProgressedState } from '../fixtures.js';
 import { getPolicyPreset } from '../config/policy.js';

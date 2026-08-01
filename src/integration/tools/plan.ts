@@ -60,6 +60,9 @@ import type {
 } from '../../state/evidence.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { PlanClaimDeclaration as PlanClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
+import { validateProofClaimContract } from '../proofgraph/claim-contract.js';
+import { STRUCTURAL_SURFACE_IDS } from '../proofgraph/structural-provider.js';
+import { MUTATION_PROFILE_IDS } from '../proofgraph/mutation-provider.js';
 import {
   validateReviewFindings,
   requireReviewFindings,
@@ -175,13 +178,49 @@ function validatePlanInputShape(
   input: PlanInputFlags,
   state: SessionState,
 ): string | null {
-  return validateSubmissionInputShape(args, input) ?? validateReviewInputShape(input, state);
+  return (
+    validateSubmissionInputShape(args, input) ??
+    validateReviewInputShape(input, state) ??
+    validatePlanClaimContract(args, state)
+  );
 }
 
 function validateSubmissionInputShape(args: PlanArgs, input: PlanInputFlags): string | null {
   const mode = classifyPlanCall(args, input);
   if (mode.kind === 'invalid') return formatBlocked(mode.code, mode.params);
   return null;
+}
+
+/**
+ * Reject a claim set that could never become PROVEN (#762).
+ *
+ * Runs before any plan evidence, digest, or state is produced, so a semantically
+ * invalid declaration never reaches a certificate.
+ */
+function validatePlanClaimContract(args: PlanArgs, state: SessionState): string | null {
+  if (!args.claims || args.claims.length === 0) return null;
+  const result = validateProofClaimContract({
+    source: 'plan',
+    activeChecks: state.activeChecks,
+    allowedSurfaces: STRUCTURAL_SURFACE_IDS,
+    allowedMutationProfiles: MUTATION_PROFILE_IDS,
+    claims: args.claims.map((claim) => ({
+      claimId: claim.claimId,
+      statement: claim.statement,
+      critical: claim.critical,
+      positiveCheckId: claim.expectedCheckId,
+      counterexampleCheckId: claim.counterexampleCheckId,
+      structuralSurface: claim.structuralSurface,
+      mutationProfile: claim.mutationProfile,
+      authoritySectionId: claim.authoritySectionId,
+    })),
+  });
+  if (result.kind === 'ok') return null;
+  return formatBlocked('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE', {
+    claimRef: result.claimRef,
+    field: result.field,
+    detail: result.detail,
+  });
 }
 
 function validateReviewInputShape(input: PlanInputFlags, state: SessionState): string | null {

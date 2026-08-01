@@ -522,7 +522,9 @@ describe('plan', () => {
 
       expect(result.error).toBe(true);
       expect(result.code).toBe('PLAN_SUBMISSION_MIXED_INPUTS');
-      expect(result.recovery).toContain('Submit the plan with flowguard_plan({ planText }) only');
+      expect(result.recovery).toContain(
+        'Submit the plan with flowguard_plan({ planText, claims }) — no verdict inputs',
+      );
       await expectStateStillInPlan();
     });
 
@@ -555,9 +557,9 @@ describe('plan', () => {
             {
               claimId: '00000000-0000-4000-8000-000000000004',
               statement: 'Invalid credentials are rejected.',
-              critical: true,
+              critical: false,
               authoritySectionId: 'authentication',
-              expectedCheckId: 'test',
+              expectedCheckId: 'typecheck',
             },
           ],
           targetPaths: ['docs/test.md'],
@@ -572,9 +574,9 @@ describe('plan', () => {
           {
             claimId: '00000000-0000-4000-8000-000000000004',
             statement: 'Invalid credentials are rejected.',
-            critical: true,
+            critical: false,
             authoritySectionId: 'authentication',
-            expectedCheckId: 'test',
+            expectedCheckId: 'typecheck',
           },
         ],
       });

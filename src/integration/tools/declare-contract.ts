@@ -11,7 +11,8 @@
  * an unsourced claim is rejected, never recorded - and the tool persists the
  * contract, then derives + persists the ProofGraph projection.
  *
- * Advisory: it records evidence-bound claims and never alters review acceptance,
+ * Advisory: its claims carry no approval certificate, so they are never
+ * gate-eligible; it records evidence-bound claims and never alters review acceptance,
  * which remains owned by ReviewFindings, obligations, attestations, and policy.
  *
  * @version v1
@@ -27,7 +28,9 @@ import type { ClaimAuthorityRef } from '../../state/proofgraph-refs.js';
 import {
   SURFACE_COMMAND_REGISTRATION,
   SURFACE_CONFIG_DEFAULTS,
+  STRUCTURAL_SURFACE_IDS,
 } from '../proofgraph/structural-provider.js';
+import { validateProofClaimContract } from '../proofgraph/claim-contract.js';
 import {
   MUTATION_PROFILE_IDS,
   resolveVerifiedMutationAttempt,
@@ -125,7 +128,7 @@ function resolveImplAttempt(
 type RawClaim = {
   statement: string;
   checkId: string;
-  critical?: boolean;
+  critical: boolean;
   counterexampleCheckId?: string;
   authority?: AuthoritySource;
   structuralSurface?: string;
@@ -219,7 +222,7 @@ function buildDeclaredClaims(
     }
     const provenance = resolveAuthority(state, rc.authority);
     const isFact = provenance !== null;
-    const critical = rc.critical ?? true;
+    const critical = rc.critical;
     const optional = buildOptionalEvidence(state, rc, digest, verdicts);
     if ('unresolvedProfileId' in optional) return optional;
     const evidenceRefs: DeclaredClaim['evidenceRefs'][number][] = [evidenceRef, ...optional.refs];
@@ -244,6 +247,38 @@ function buildDeclaredClaims(
   return { claims };
 }
 
+/**
+ * Reject a claim set that could never become PROVEN (#762).
+ *
+ * `critical` is required here rather than defaulted: an omitted field must never
+ * silently produce a claim that can block the final approval.
+ */
+function validateDeclaredClaimContract(
+  rawClaims: readonly RawClaim[],
+  state: SessionState,
+): string | null {
+  const result = validateProofClaimContract({
+    source: 'declare_contract',
+    activeChecks: state.activeChecks,
+    allowedSurfaces: STRUCTURAL_SURFACE_IDS,
+    allowedMutationProfiles: MUTATION_PROFILE_IDS,
+    claims: rawClaims.map((claim) => ({
+      statement: claim.statement,
+      critical: claim.critical,
+      positiveCheckId: claim.checkId,
+      counterexampleCheckId: claim.counterexampleCheckId,
+      structuralSurface: claim.structuralSurface,
+      mutationProfile: claim.mutationProfile,
+    })),
+  });
+  if (result.kind === 'ok') return null;
+  return formatBlocked('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE', {
+    claimRef: result.claimRef,
+    field: result.field,
+    detail: result.detail,
+  });
+}
+
 export const declare_contract: ToolDefinition = {
   description:
     'Declare ProofGraph contract claims for the current change. Each claim is covered fail-closed ' +
@@ -262,8 +297,11 @@ export const declare_contract: ToolDefinition = {
             .describe('Active check whose implementation attempt is the claim evidence.'),
           critical: z
             .boolean()
-            .optional()
-            .describe('Whether the claim is critical (default true).'),
+            .describe(
+              'Whether the claim is critical. Required and explicit: a critical claim can block ' +
+                'the final approval, so it must never be assumed. A critical claim additionally ' +
+                'requires counterexampleCheckId.',
+            ),
           counterexampleCheckId: z
             .string()
             .min(1)
@@ -313,6 +351,14 @@ export const declare_contract: ToolDefinition = {
         }
         const implementation = state.implementation;
         if (!implementation) return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
+
+        // #762: reject a claim set that could never become PROVEN before any
+        // evidence is resolved or persisted.
+        const contractViolation = validateDeclaredClaimContract(
+          args.claims as readonly RawClaim[],
+          state,
+        );
+        if (contractViolation) return contractViolation;
 
         const worktree = getWorktree(context);
         const verdicts = await resolveVerifiedMutationVerdicts(worktree, state.mutationAttempts);

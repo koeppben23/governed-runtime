@@ -112,6 +112,25 @@ export const ReducedCeremonyDecision = z
   .readonly();
 export type ReducedCeremonyDecision = z.infer<typeof ReducedCeremonyDecision>;
 
+/**
+ * Risk classification bound to the exact implementation revision it describes.
+ *
+ * Persisted so gate rails can consult it without importing the integration-layer
+ * classifier. The `implementationDigest` binding is the invariant: an assessment
+ * whose digest no longer matches the current implementation is superseded and
+ * must never justify a gate decision (#762).
+ */
+export const ImplementationRiskAssessment = z
+  .object({
+    computedMinimumTaskClass: TaskClass,
+    touchedSurfaces: z.array(z.string()),
+    assessedFrom: z.literal('implementation_changed_files'),
+    assessedFileCount: z.number().int().nonnegative(),
+    implementationDigest: z.string().min(1),
+  })
+  .readonly();
+export type ImplementationRiskAssessment = z.infer<typeof ImplementationRiskAssessment>;
+
 /** Persistent risk gate state. A blocked gate must stop the next mutating tool. */
 export const RiskGate = z.discriminatedUnion('status', [
   z.object({
@@ -272,6 +291,12 @@ export const SessionState = z.object({
 
   /** Persistent runtime risk gate block state for mutating host tools. */
   riskGate: RiskGate.optional(),
+
+  /**
+   * Revision-bound risk classification of the recorded implementation (#762).
+   * Optional for backward compatibility with sessions recorded before this field.
+   */
+  implementationRiskAssessment: ImplementationRiskAssessment.optional(),
 
   /** Persistent Discovery health gate block state for mutating host tools (#399). */
   discoveryHealthGate: DiscoveryHealthGate.optional(),

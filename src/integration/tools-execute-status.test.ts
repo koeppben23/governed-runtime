@@ -264,7 +264,9 @@ describe('status', () => {
       expect(configConsistency.ok).toBe(true);
       const gate = result.proofGraphGate as Record<string, unknown>;
       expect(gate).toBeDefined();
-      expect(gate.enforced).toBe(false);
+      // Enforcement is unconditional (#762); `enforced` is a compatibility constant.
+      expect(gate.enforced).toBe(true);
+      // Nothing is gated: this session declares no certificate-authorized claim.
       expect(gate.gated).toBe(false);
     });
 
@@ -1300,7 +1302,13 @@ describe('declare_contract', () => {
   const SHA = 'a'.repeat(64);
 
   async function seedImplValidation(
-    overrides: { checkId?: string; passed?: boolean; digest?: string } = {},
+    overrides: {
+      checkId?: string;
+      passed?: boolean;
+      digest?: string;
+      /** Active checks deliberately left without an implementation attempt. */
+      unattemptedChecks?: string[];
+    } = {},
   ): Promise<string> {
     const checkId = overrides.checkId ?? 'test';
     const digest = overrides.digest ?? 'impl-digest-1';
@@ -1313,7 +1321,7 @@ describe('declare_contract', () => {
     await writeStateWithArtifacts(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
-      activeChecks: [checkId, 'security'],
+      activeChecks: [checkId, 'security', ...(overrides.unattemptedChecks ?? [])],
       ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
       implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
       validationAttempts: [
@@ -1365,6 +1373,7 @@ describe('declare_contract', () => {
             {
               statement: 'the change is covered by the test check',
               checkId: 'test',
+              critical: true,
               counterexampleCheckId: 'security',
               authority: 'ticket',
             },
@@ -1391,6 +1400,7 @@ describe('declare_contract', () => {
     const COMBINED = {
       statement: 'the declared command surface is consistent and covered by tests',
       checkId: 'test',
+      critical: true,
       counterexampleCheckId: 'security',
       authority: 'ticket' as const,
       structuralSurface: 'command-registration' as const,
@@ -1470,28 +1480,49 @@ describe('declare_contract', () => {
     });
   });
 
-  it('reports NOT_VERIFIED for a critical claim with no adversarial counterexample', async () => {
+  it('rejects a critical claim that declares no adversarial counterexample', async () => {
+    // Such a claim could never become PROVEN, so it is refused at declaration
+    // time rather than recorded as permanently NOT_VERIFIED (#762).
     await seedImplValidation({ checkId: 'test', passed: true });
     const result = parseToolResult(
       await declare_contract.execute(
         {
-          claims: [{ statement: 'critical but unfalsified', checkId: 'test', authority: 'ticket' }],
+          claims: [
+            {
+              statement: 'critical but unfalsified',
+              checkId: 'test',
+              critical: true,
+              authority: 'ticket',
+            },
+          ],
         },
         ctx,
       ),
     );
-    const claims = (result.proofGraph as Record<string, unknown>).claims as Array<
-      Record<string, unknown>
-    >;
-    expect(claims[0]!.signalClass).toBe('fact');
-    expect(claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
+    expect(String(result.message)).toContain('counterexampleCheckId');
+  });
+
+  it('rejects a claim referencing a check that is not active', async () => {
+    await seedImplValidation({ checkId: 'test', passed: true });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        { claims: [{ statement: 'x', checkId: 'nonexistent', critical: false }] },
+        ctx,
+      ),
+    );
+    expect(result.error).toBe(true);
+    expect(result.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
+    // The public field name must be the one the caller supplied.
+    expect(String(result.message)).toContain('checkId');
   });
 
   it('classifies a claim without an approved authority as a NOT_VERIFIED hypothesis', async () => {
     await seedImplValidation({ checkId: 'test', passed: true });
     const result = parseToolResult(
       await declare_contract.execute(
-        { claims: [{ statement: 'unsourced assertion', checkId: 'test' }] },
+        { claims: [{ statement: 'unsourced assertion', checkId: 'test', critical: false }] },
         ctx,
       ),
     );
@@ -1509,7 +1540,12 @@ describe('declare_contract', () => {
       await declare_contract.execute(
         {
           claims: [
-            { statement: 'covered by a failing check', checkId: 'test', authority: 'ticket' },
+            {
+              statement: 'covered by a failing check',
+              checkId: 'test',
+              critical: false,
+              authority: 'ticket',
+            },
           ],
         },
         ctx,
@@ -1521,10 +1557,13 @@ describe('declare_contract', () => {
     expect(claims[0]!.verificationState).toBe('UNPROVEN');
   });
 
-  it('fails closed when the referenced check has no implementation attempt', async () => {
-    await seedImplValidation({ checkId: 'test' });
+  it('fails closed when an active check has no implementation attempt', async () => {
+    await seedImplValidation({ checkId: 'test', unattemptedChecks: ['lint'] });
     const result = parseToolResult(
-      await declare_contract.execute({ claims: [{ statement: 'x', checkId: 'lint' }] }, ctx),
+      await declare_contract.execute(
+        { claims: [{ statement: 'x', checkId: 'lint', critical: false }] },
+        ctx,
+      ),
     );
     expect(result.error).toBe(true);
     expect(result.code).toBe('PROOFGRAPH_CLAIM_EVIDENCE_UNRESOLVED');
@@ -1533,7 +1572,10 @@ describe('declare_contract', () => {
   it('is not allowed outside the implementation phases', async () => {
     await hydrateSession();
     const result = parseToolResult(
-      await declare_contract.execute({ claims: [{ statement: 'x', checkId: 'test' }] }, ctx),
+      await declare_contract.execute(
+        { claims: [{ statement: 'x', checkId: 'test', critical: false }] },
+        ctx,
+      ),
     );
     expect(result.error).toBe(true);
     expect(result.code).toBe('COMMAND_NOT_ALLOWED');
@@ -1581,6 +1623,7 @@ describe('declare_contract', () => {
             {
               statement: 'the change is safe',
               checkId: 'test',
+              critical: true,
               counterexampleCheckId: 'security',
               authority: 'ticket',
             },

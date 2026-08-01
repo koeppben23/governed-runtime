@@ -218,9 +218,19 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // COMMANDS hash.
     // Refreshed for default redacted sharing exports: ARCHIVE_COMMAND now calls
     // flowguard_archive without arguments unless a non-default export is requested.
+    // Refreshed for #762 ProofGraph claim declarations: /plan now submits
+    // flowguard_plan({ planText, claims }) and /architecture submits
+    // flowguard_architecture({ title, adrText, claims }). The previous bodies
+    // instructed claim-free call forms, which made the claim surface unreachable
+    // through the installed product path. Changes both bodies and therefore the
+    // COMMANDS hash.
+    // Refreshed again for the unconditional ProofGraph gate: /plan now documents
+    // counterexampleCheckId as REQUIRED for critical claims and states that a
+    // critical claim blocks the final evidence approval while its evidence is
+    // missing, stale, or contradicted.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'db77dfc63b7073e653466932a3f5baacad287508f504716d141246c9828f2a90',
+      '04cfa5780c62ca3cbb348754325e8d0c0e06f5b2c5dcccd82d8cf8f83629a158',
     );
   });
 

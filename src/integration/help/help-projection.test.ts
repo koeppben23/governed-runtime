@@ -3,7 +3,7 @@ import { getPolicyPreset, TEAM_POLICY } from '../../config/policy.js';
 import * as crypto from 'node:crypto';
 import { makeProgressedState, makeState, TICKET } from '../../fixtures.js';
 import { buildHelpResult, finishToReadiness } from './help-projection.js';
-import { buildFinishCard } from '../status.js';
+import { buildFinishCard } from '../status-finish.js';
 import { resolveCurrentReviewReport } from '../review/report-coherence.js';
 import type { ReviewReport } from '../../state/evidence.js';
 import { evaluateCompleteness } from '../../audit/completeness.js';

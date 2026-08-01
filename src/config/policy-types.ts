@@ -106,27 +106,6 @@ export const CHALLENGE_POLICY_V1: ChallengePolicy = {
   counts: { TRIVIAL: 0, STANDARD: 1, 'HIGH-RISK': 2 },
 };
 
-/** Versioned product decision for ProofGraph policy-gated blocking (#762). */
-export const PROOFGRAPH_POLICY_VERSION = 'proofgraph-policy.v1' as const;
-
-/**
- * ProofGraph gating policy. Governs whether critical, evidence-backed `fact`
- * claims that are not PROVEN may block a workflow. Disabled by default and until
- * rollout validation: an absent or disabled policy never gates. Only `fact`
- * claims are ever gate-eligible; `derived_signal` and `hypothesis` remain
- * advisory.
- */
-export interface ProofGraphPolicy {
-  readonly version: typeof PROOFGRAPH_POLICY_VERSION;
-  readonly enabled: boolean;
-}
-
-/** The fail-closed default: ProofGraph gating is disabled until rollout validation. */
-export const PROOFGRAPH_POLICY_DISABLED: ProofGraphPolicy = {
-  version: PROOFGRAPH_POLICY_VERSION,
-  enabled: false,
-};
-
 export function challengeKindForObligation(obligationType: string): ChallengeKind {
   if (obligationType === 'implement') return 'implementation_challenge';
   if (obligationType === 'review') return 'content_challenge';
@@ -308,9 +287,6 @@ export interface FlowGuardPolicy {
 
   /** Versioned challenge coverage policy frozen into new session snapshots. */
   readonly challengePolicy?: ChallengePolicy;
-
-  /** ProofGraph gating policy (#762). Absent/disabled by default; never gates until enabled. */
-  readonly proofGraphPolicy?: ProofGraphPolicy;
 
   /** Audit event emission controls. */
   readonly audit: AuditPolicy;

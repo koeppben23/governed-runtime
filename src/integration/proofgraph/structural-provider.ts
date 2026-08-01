@@ -42,6 +42,15 @@ export const SURFACE_COMMAND_REGISTRATION = 'command-registration';
 /** Stable identifier of the config-default consistency surface. */
 export const SURFACE_CONFIG_DEFAULTS = 'config-defaults';
 
+/**
+ * Every structural surface a claim may opt into. Single source for tool-boundary
+ * validation, so a declaration cannot name a surface that produces no evidence.
+ */
+export const STRUCTURAL_SURFACE_IDS = [
+  SURFACE_COMMAND_REGISTRATION,
+  SURFACE_CONFIG_DEFAULTS,
+] as const;
+
 /** Provider version stamped on structural/schema results. */
 export const STRUCTURAL_PROVIDER_VERSION = 'structural.v1';
 

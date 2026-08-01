@@ -14,6 +14,7 @@
  * @test-policy HAPPY, BAD, CORNER
  */
 
+import type { SessionState } from '../../state/schema.js';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // ── Shared mock handle ──────────────────────────────────────────────────────
@@ -50,7 +51,7 @@ const mocks = vi.hoisted(() => ({
       },
     });
   }),
-  writeStateWithArtifacts: vi.fn(async () => undefined),
+  writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
   formatEval: vi.fn(() => 'next'),
   // commands
   isCommandAllowed: vi.fn(() => true),

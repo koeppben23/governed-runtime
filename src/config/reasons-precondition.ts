@@ -193,7 +193,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Invalid flowguard_plan call sequence: plan submission and review verdict inputs must be separate calls.',
     recoverySteps: [
-      'Submit the plan first with flowguard_plan({ planText }) only',
+      'Submit the plan first with flowguard_plan({ planText, claims }) — no verdict inputs',
       'Do not include reviewVerdict, reviewFindings, or reviewerUnavailable in the plan submission call',
       'Read the tool response next field before constructing the review verdict call',
     ],
@@ -206,7 +206,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Plan submission included reviewFindings without a verdict. Findings belong to the verdict call, not the initial submission.',
     recoverySteps: [
-      'Submit the plan with flowguard_plan({ planText }) only',
+      'Submit the plan with flowguard_plan({ planText, claims }) — no verdict inputs',
       'Add reviewFindings in the verdict call: flowguard_plan({ reviewVerdict, reviewFindings })',
     ],
     quickFixCommand: '/plan',
@@ -294,7 +294,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'Invalid flowguard_architecture call sequence: ADR submission and review verdict inputs must be separate calls.',
     recoverySteps: [
-      'Submit the ADR first with flowguard_architecture({ title, adrText }) only',
+      'Submit the ADR first with flowguard_architecture({ title, adrText, claims }) — no verdict inputs',
       'Do not include reviewVerdict in the ADR submission call',
       'During an active ADR review loop, submit only reviewVerdict and revised adrText when changes are requested',
     ],
@@ -307,7 +307,7 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
     messageTemplate:
       'ADR submission included a review verdict. Submission and verdict are separate calls.',
     recoverySteps: [
-      'Submit the ADR with flowguard_architecture({ title, adrText }) only',
+      'Submit the ADR with flowguard_architecture({ title, adrText, claims }) — no verdict inputs',
       'Submit the review verdict separately: flowguard_architecture({ reviewVerdict })',
     ],
     quickFixCommand: '/architecture',

@@ -23,12 +23,11 @@ import { describe, it, expect } from 'vitest';
 import type { SessionState } from '../state/schema.js';
 import type { ReviewReport } from '../state/evidence.js';
 import {
-  buildFinishCard,
-  deriveFinishOverallStatus,
   buildReadinessProjection,
   buildEvidenceDetailProjection,
   buildBlockedProjection,
 } from './status.js';
+import { buildFinishCard, deriveFinishOverallStatus } from './status-finish.js';
 import { getPolicyPreset } from '../config/policy.js';
 import { resolveNextAction } from '../machine/next-action.js';
 import { evaluateCompleteness } from '../audit/completeness.js';

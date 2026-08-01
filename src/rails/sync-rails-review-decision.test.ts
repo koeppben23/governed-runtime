@@ -12,14 +12,19 @@ import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy.js';
 import type { ProofGraphProjection } from '../state/proofgraph.js';
 
 const ctx = createTestContext();
-const PROOFGRAPH_GATE_POLICY = {
-  ...TEAM_POLICY,
-  proofGraphPolicy: { version: 'proofgraph-policy.v1' as const, enabled: true },
-};
+
+/** Human-approval binding; only a certificate-authorized claim is gate-eligible. */
+const APPROVAL = {
+  certificateId: '00000000-0000-4000-8000-0000000000ce',
+  claimDeclarationsDigest: 'a'.repeat(64),
+  decisionAttestationDigest: 'b'.repeat(64),
+  declarationId: '00000000-0000-4000-8000-0000000000de',
+} as const;
 
 function proofGraph(
   signalClass: 'fact' | 'hypothesis' = 'fact',
   verificationState: 'PROVEN' | 'UNPROVEN' = 'UNPROVEN',
+  certified = true,
 ): ProofGraphProjection {
   return {
     version: 'proofgraph.v1',
@@ -30,7 +35,12 @@ function proofGraph(
         statement: 'The protected behavior holds.',
         signalClass,
         critical: true,
-        provenance: { kind: 'canonical_authority', authorityId: 'ticket', digest: 'digest' },
+        provenance: {
+          kind: 'canonical_authority',
+          authorityId: 'plan',
+          digest: 'digest',
+          ...(certified ? { approval: APPROVAL } : {}),
+        },
         evidenceRefs: [],
         counterexampleRefs: [],
         verificationState,
@@ -77,12 +87,13 @@ describe('review-decision rail', () => {
       }
     });
 
-    it('blocks EVIDENCE_REVIEW approval when enabled policy has an unproven critical fact', () => {
+    it('blocks EVIDENCE_REVIEW approval on an unproven critical fact without any policy', () => {
+      // Enforcement is unconditional (#762): no policy configuration is involved.
       const state = makeProgressedState('EVIDENCE_REVIEW');
       const result = executeReviewDecision(
         { ...state, proofGraph: proofGraph() },
         { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
-        { ...ctx, policy: PROOFGRAPH_GATE_POLICY },
+        ctx,
       );
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') {
@@ -96,7 +107,7 @@ describe('review-decision rail', () => {
       const result = executeReviewDecision(
         { ...state, proofGraph: proofGraph('hypothesis') },
         { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
-        { ...ctx, policy: PROOFGRAPH_GATE_POLICY },
+        ctx,
       );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') expect(result.state.phase).toBe('COMPLETE');
@@ -203,7 +214,7 @@ describe('review-decision rail', () => {
       const result = executeReviewDecision(
         makeState('REVIEW_COMPLETE', { proofGraph: proofGraph() }),
         { verdict: 'approve', rationale: 'ok', decidedBy: 'r' },
-        { ...ctx, policy: PROOFGRAPH_GATE_POLICY },
+        ctx,
       );
       expect(result.kind).toBe('blocked');
       if (result.kind === 'blocked') expect(result.code).toBe('COMMAND_NOT_ALLOWED');
@@ -547,7 +558,7 @@ describe('review-decision rail', () => {
       const result = executeReviewDecision(
         { ...state, proofGraph: proofGraph() },
         { verdict: 'approve', rationale: 'LGTM', decidedBy: 'reviewer-1' },
-        { ...ctx, policy: PROOFGRAPH_GATE_POLICY },
+        ctx,
       );
       expect(result.kind).toBe('ok');
       if (result.kind === 'ok') expect(result.state.phase).toBe('VALIDATION');

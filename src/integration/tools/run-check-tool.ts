@@ -75,6 +75,7 @@ import {
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { buildReviewerProofContext } from '../review/proof-context.js';
 import {
   activateImplementationReviewObligation,
   nextImplementationReviewIteration,
@@ -236,7 +237,9 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         planVersion: (advanced.state.plan?.history.length ?? 0) + 1,
         now: railCtx.now(),
       });
-      await writeStateWithArtifactsAlreadyLocked(sessDir, activated.state);
+      // The persisted state carries the REFRESHED ProofGraph derived from the
+      // freshly materialized contract (#762).
+      const persisted = await writeStateWithArtifactsAlreadyLocked(sessDir, activated.state);
       logger.info('tool', 'check_persisted', {
         sessionId,
         checkId: kind,
@@ -251,7 +254,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         originalState: freshState,
         passedIds,
         advanced,
-        finalState: activated.state,
+        finalState: persisted,
         nextObligation: activated.obligation,
         policy: freshPolicy,
       });
@@ -471,6 +474,7 @@ function formatRunCheckResponse(input: {
         iteration: input.nextObligation.iteration,
         planVersion: input.nextObligation.planVersion,
         subjectLabel: 'implementation summary, changed files, approved plan text, and ticket text',
+        proofContext: buildReviewerProofContext(finalState),
       })
     : null;
   return appendNextAction(

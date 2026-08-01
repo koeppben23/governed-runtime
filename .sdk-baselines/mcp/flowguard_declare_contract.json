@@ -11,7 +11,7 @@
       "description": "Claims to declare, each covered by an implementation check at the current revision.",
       "items": {
         "type": "object",
-        "required": ["statement", "checkId"],
+        "required": ["statement", "checkId", "critical"],
         "properties": {
           "statement": {
             "type": "string",
@@ -23,7 +23,7 @@
           },
           "critical": {
             "type": "boolean",
-            "description": "Whether the claim is critical (default true)."
+            "description": "Whether the claim is critical. Required and explicit: a critical claim can block the final approval, so it must never be assumed. A critical claim additionally requires counterexampleCheckId."
           },
           "counterexampleCheckId": {
             "type": "string",

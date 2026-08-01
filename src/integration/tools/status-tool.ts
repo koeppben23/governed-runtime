@@ -73,8 +73,8 @@ import {
   buildBlockedProjection,
   buildContextProjection,
   buildReadinessProjection,
-  buildFinishCard,
 } from '../status.js';
+import { buildFinishCard } from '../status-finish.js';
 import {
   buildWhyPresentationProjection,
   buildFinishPresentationProjection,
@@ -171,7 +171,7 @@ async function buildProofGraphProjectionResponse(
     surfaceDigests: surfaceDigestMap(structuralSurfaces),
     mutationSummaries,
   });
-  const proofGraphGate = evaluateProofGraphGate(proofGraph, policy.proofGraphPolicy);
+  const proofGraphGate = evaluateProofGraphGate(proofGraph);
   const registrationConsistency = checkRegistrationConsistency();
   const configConsistency = checkConfigDefaultConsistency();
   return appendNextAction(

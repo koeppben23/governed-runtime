@@ -14,6 +14,7 @@
 
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
+import { renderPersistedProofGraphContext } from './proof-context.js';
 import {
   buildDiscoveryContextSection,
   type DiscoveryReviewContext,
@@ -79,6 +80,14 @@ export interface ReviewerTaskPromptInput {
   readonly subjectLabel: string;
   /** Frozen challenge contract and host-authoritative references, when available. */
   readonly challengeContract?: ReviewerChallengePromptContract;
+  /**
+   * Persisted, advisory ProofGraph context lines (#762), produced by
+   * {@link buildReviewerProofContext}. Supplied by the caller so this renderer
+   * stays free of state access. Omitted only when no session state is resolvable;
+   * the host-task prompt would otherwise silently drop the reviewer's claim
+   * context while the SDK path retains it.
+   */
+  readonly proofContext?: readonly string[];
 }
 
 export interface ReviewerChallengePromptContract {
@@ -188,6 +197,7 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     '  no prose, no reasoning, and no markdown code fences before or after it.',
     ...renderChallengeContract(input.challengeContract, input.obligationId),
     '',
+    ...(input.proofContext && input.proofContext.length > 0 ? [...input.proofContext] : []),
     `Append the ${input.subjectLabel} content to review below this line:`,
   ].join('\n');
 }
@@ -302,42 +312,6 @@ function buildStackProfileSection(
     lines.push('## Stack Review Rules', '', profileRules, '');
   }
   return lines.join('\n');
-}
-
-/** Render the stored projection without deriving fresh evidence or provider results. */
-export function renderPersistedProofGraphContext(
-  proofGraph: ProofGraphProjection | undefined,
-): string[] {
-  if (!proofGraph) {
-    return [
-      '## ProofGraph Context (persisted, advisory)',
-      '',
-      '- Coverage: NOT_DECLARED (no persisted ProofGraph projection is available).',
-      '',
-    ];
-  }
-
-  const provenCount = proofGraph.claims.filter(
-    (claim) => claim.verificationState === 'PROVEN',
-  ).length;
-  const criticalUnresolved = proofGraph.claims.filter(
-    (claim) => claim.critical && claim.verificationState !== 'PROVEN',
-  );
-  return [
-    '## ProofGraph Context (persisted, advisory)',
-    '',
-    `- Coverage: ${provenCount}/${proofGraph.claims.length} claims PROVEN; ${proofGraph.claims.length - provenCount} unresolved.`,
-    '- This is persisted advisory context, not a review verdict or reviewer authority. Independently assess every claim.',
-    ...(criticalUnresolved.length === 0
-      ? ['- Critical unresolved claims: none recorded.']
-      : [
-          '- Critical unresolved claims:',
-          ...criticalUnresolved.map(
-            (claim) => `  - [${claim.verificationState}] ${claim.claimId}: ${claim.statement}`,
-          ),
-        ]),
-    '',
-  ];
 }
 
 // ─── Prompt Builders ─────────────────────────────────────────────────────────

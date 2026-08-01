@@ -5,9 +5,9 @@ import {
   buildImplReviewPrompt,
   buildPlanReviewPrompt,
   buildReviewContentPrompt,
-  renderPersistedProofGraphContext,
   renderReviewerTaskPrompt,
 } from './prompt-builders.js';
+import { renderPersistedProofGraphContext } from './proof-context.js';
 
 const BASE_INPUT = {
   iteration: 0,

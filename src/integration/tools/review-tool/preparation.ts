@@ -62,6 +62,29 @@ export function appendPreparedReviewEvidence(
   return [...evidence, prepared];
 }
 
+/**
+ * Resolve the prepared entry still awaiting completion.
+ *
+ * The subject digest can legitimately change between preparation and completion
+ * (a branch name resolves to an immutable SHA only once the obligation exists),
+ * which makes the recomputed `taskDigest` a non-identity. Binding on it appended
+ * a second prepared+completed pair and duplicated every hypothesis claim in the
+ * ProofGraph projection (#762).
+ */
+function pendingPreparedEvidence(
+  evidence: readonly StandaloneReviewEvidence[],
+): StandaloneReviewPreparedEvidence | undefined {
+  const completedPreparedIds = new Set(
+    evidence.filter((entry) => entry.kind === 'completed').map((entry) => entry.preparedEvidenceId),
+  );
+  return evidence
+    .filter(
+      (entry): entry is StandaloneReviewPreparedEvidence =>
+        entry.kind === 'prepared' && !completedPreparedIds.has(entry.evidenceId),
+    )
+    .at(-1);
+}
+
 export function appendCompletedReviewEvidence(input: {
   readonly evidence: readonly StandaloneReviewEvidence[];
   readonly prepared: StandaloneReviewPreparedEvidence;
@@ -69,11 +92,14 @@ export function appendCompletedReviewEvidence(input: {
   readonly findings?: ReviewFindings;
 }): StandaloneReviewEvidence[] {
   const { evidence, prepared, completedAt, findings } = input;
-  const existingPrepared = evidence.find(
+  const exactPrepared = evidence.find(
     (entry): entry is StandaloneReviewPreparedEvidence =>
       entry.kind === 'prepared' &&
       entry.requestedDigests.taskDigest === prepared.requestedDigests.taskDigest,
   );
+  // Exact digest match first (unchanged subject); otherwise bind the outstanding
+  // prepared entry so a resolved branch SHA cannot fork the evidence chain.
+  const existingPrepared = exactPrepared ?? pendingPreparedEvidence(evidence);
   const boundPrepared = existingPrepared ?? prepared;
   const { findingsDigest, attestationDigest } = reviewFindingsDigests(findings);
   const completed: StandaloneReviewCompletedEvidence = {

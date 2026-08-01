@@ -10,6 +10,7 @@ import { parseToolResult, getToolOutput } from '../plugin-helpers.js';
 import { extractContentMeta } from './enforcement/extraction.js';
 import { REVIEWER_SUBAGENT_TYPE } from './enforcement/types.js';
 import { renderReviewContext, renderReviewerTaskPrompt } from './prompt-builders.js';
+import { buildReviewerProofContext } from './proof-context.js';
 import { REVIEW_COMPLETED_PREFIX, extractReviewContext } from './orchestrator.js';
 import {
   REASON_HOST_SUBAGENT_TASK_REQUIRED,
@@ -39,13 +40,18 @@ interface HostTaskAttestationMeta {
   readonly criteriaVersion: string;
 }
 
-function buildHostTaskPolicyOutput(
-  originalOutput: string,
-  policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>,
-  childSessionId: string | null,
-  attestationMeta: HostTaskAttestationMeta | null,
-  challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'],
-): string | null {
+/** Inputs required to render the host-task instruction for one invocation. */
+interface HostTaskOutputInput {
+  readonly originalOutput: string;
+  readonly policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>;
+  readonly childSessionId: string | null;
+  readonly attestationMeta: HostTaskAttestationMeta | null;
+  readonly challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'];
+  readonly proofContext: readonly string[];
+}
+
+function buildHostTaskPolicyOutput(input: HostTaskOutputInput): string | null {
+  const { originalOutput, policy, childSessionId } = input;
   const result = parseToolResult(originalOutput);
   if (!result || Array.isArray(result)) return null;
   if (childSessionId) {
@@ -66,7 +72,7 @@ function buildHostTaskPolicyOutput(
     return JSON.stringify(result);
   }
 
-  return buildHostTaskBlockedOutput(result, policy, attestationMeta, challengeContract);
+  return buildHostTaskBlockedOutput(result, input);
 }
 
 /**
@@ -100,6 +106,7 @@ function buildReviewerTaskPromptOrNull(
   attestationMeta: HostTaskAttestationMeta | null,
   ctx: { iteration: number; planVersion: number | null } | null,
   challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'],
+  proofContext: readonly string[],
 ): string | null {
   if (!attestationMeta || ctx?.iteration == null) return null;
   return renderReviewerTaskPrompt({
@@ -110,15 +117,15 @@ function buildReviewerTaskPromptOrNull(
     criteriaVersion: attestationMeta.criteriaVersion,
     subjectLabel: 'the artifact under review',
     challengeContract,
+    proofContext,
   });
 }
 
 function buildHostTaskBlockedOutput(
   result: Record<string, unknown>,
-  policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>,
-  attestationMeta: HostTaskAttestationMeta | null,
-  challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'],
+  input: HostTaskOutputInput,
 ): string {
+  const { policy, attestationMeta, challengeContract, proofContext } = input;
   // The original standalone response is CONTENT_ANALYSIS_REQUIRED and carries
   // manual-findings recovery. Host-task policy replaces that contract entirely:
   // only captured Task evidence plus a matching verdict can complete this path.
@@ -142,7 +149,12 @@ function buildHostTaskBlockedOutput(
   // root cause). The prompt embeds the review context via the SAME serializer the
   // matcher validates against. Only emitted when both the attestation and the
   // review context are available.
-  const reviewerTaskPrompt = buildReviewerTaskPromptOrNull(attestationMeta, ctx, challengeContract);
+  const reviewerTaskPrompt = buildReviewerTaskPromptOrNull(
+    attestationMeta,
+    ctx,
+    challengeContract,
+    proofContext,
+  );
   const copyPromptStr = reviewerTaskPrompt
     ? ` A ready-to-use reviewer prompt is provided in the reviewerTaskPrompt field — pass it ` +
       `VERBATIM as the Task tool "prompt" argument (append the artifact content to review), ` +
@@ -386,13 +398,18 @@ export async function handleHostTaskPolicy(
       }
     : null;
   const challengeContract = buildHostTaskChallengeContract(sessionState, preUpdateObligation);
-  const mutated = buildHostTaskPolicyOutput(
-    rawOutput,
-    typedPolicy,
+  // #762: the host-task prompt is the prompt the reviewer actually receives under
+  // host_task_* policy. It MUST carry the same persisted ProofGraph context as the
+  // SDK path, otherwise the claim context is silently dropped for every flow.
+  const proofContext = buildReviewerProofContext(sessionState);
+  const mutated = buildHostTaskPolicyOutput({
+    originalOutput: rawOutput,
+    policy: typedPolicy,
     childSessionId,
     attestationMeta,
     challengeContract,
-  );
+    proofContext,
+  });
   if (mutated) output.output = mutated;
   return true;
 }

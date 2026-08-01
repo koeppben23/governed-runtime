@@ -16,6 +16,18 @@ import type { BlockedReason } from './reasons-types.js';
 /** Reason codes for recording and consuming ProofGraph mutation evidence. */
 export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
   {
+    code: 'PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE',
+    category: 'precondition',
+    messageTemplate:
+      "Claim '{claimRef}' cannot be declared: {field} — {detail}. A claim that cannot become PROVEN would block the final approval permanently, so it is rejected at declaration time.",
+    recoverySteps: [
+      'Correct the named field for that claim and resubmit the complete declaration set',
+      'A critical claim needs both an expected check and a counterexample check that would falsify it',
+      'Reference only checks that are active in this session, and registered surfaces/profiles',
+    ],
+  },
+
+  {
     code: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
     category: 'precondition',
     messageTemplate:

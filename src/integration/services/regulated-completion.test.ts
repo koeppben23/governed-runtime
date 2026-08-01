@@ -66,7 +66,7 @@ const helperMocks = vi.hoisted(() => ({
 }));
 
 vi.mock('../tools/helpers.js', () => ({
-  writeStateWithArtifacts: vi.fn().mockResolvedValue(undefined),
+  writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: unknown) => state),
   withMutableSession: vi.fn(async () => {
     const paths = await helperMocks.resolveWorkspacePaths();
     const state = await helperMocks.requireStateForMutation();

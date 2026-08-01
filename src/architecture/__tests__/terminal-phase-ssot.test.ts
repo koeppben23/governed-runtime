@@ -54,6 +54,12 @@ const SINGLE_PHASE_ALLOWLIST: readonly SinglePhaseAllowance[] = [
     reason: 'flow-specific finalization: MADR on ARCH_COMPLETE, regulated artifact on COMPLETE',
   },
   {
+    file: 'integration/proofgraph/materialize-architecture.ts',
+    max: 1,
+    reason:
+      'validates that an ADR approval certificate belongs to the architecture-flow terminal only',
+  },
+  {
     file: 'integration/plugin-audit.ts',
     max: 1,
     reason: 'detects the ticket-flow COMPLETE transition specifically (not terminal membership)',

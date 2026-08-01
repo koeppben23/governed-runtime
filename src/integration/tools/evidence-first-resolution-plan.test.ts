@@ -56,7 +56,7 @@ const mocks = vi.hoisted(() => {
       }),
     ),
     appendNextAction: vi.fn((payload: string) => payload),
-    writeStateWithArtifacts: vi.fn(async (_sessDir: string, _state: SessionState) => undefined),
+    writeStateWithArtifacts: vi.fn(async (_sessDir: string, state: SessionState) => state),
     extractSections: vi.fn(() => []),
     readDiscovery: vi.fn(async () => null as unknown),
   };

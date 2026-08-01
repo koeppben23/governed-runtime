@@ -11,10 +11,10 @@ import type { ReviewReport } from '../../state/evidence.js';
 import { PHASE_LABELS } from '../../presentation/phase-labels.js';
 import {
   buildStatusProjection,
-  buildFinishCard,
   buildEvidenceDetailProjection,
   type FinishOverallStatus,
 } from '../status.js';
+import { buildFinishCard } from '../status-finish.js';
 import { evaluateArchivePreflight, type CommandPreflight } from '../archive-preflight.js';
 import {
   getInstalledCommand,

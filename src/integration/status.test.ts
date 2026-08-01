@@ -159,6 +159,44 @@ describe('proofGraph — persisted coverage summary', () => {
       claimCount: 0,
       provenCount: 0,
       unprovenCount: 0,
+      contractClaimCount: 0,
+      hypothesisCount: 0,
+    });
+  });
+
+  it('separates advisory hypotheses from contract coverage so both stay readable', () => {
+    // A standalone review contributes hypotheses without declaring a contract.
+    // Reporting NOT_DECLARED next to a non-zero claimCount is only coherent when
+    // the two populations are counted separately (#762).
+    const state = makeMinimalState('REVIEW_COMPLETE');
+    const projection = buildStatusProjection(
+      {
+        ...state,
+        proofGraph: {
+          version: 'proofgraph.v1',
+          evaluatedAt: '2026-01-01T00:00:00.000Z',
+          claims: [
+            {
+              claimId: '77777777-7777-4777-8777-777777777777',
+              statement: 'The reviewed subject behaves correctly.',
+              signalClass: 'hypothesis',
+              critical: false,
+              verificationState: 'NOT_VERIFIED',
+              provenance: null,
+              evidenceRefs: [],
+              counterexampleRefs: [],
+            },
+          ],
+        },
+      },
+      policy,
+    );
+
+    expect(projection.proofGraph).toMatchObject({
+      coverage: 'NOT_DECLARED',
+      claimCount: 1,
+      contractClaimCount: 0,
+      hypothesisCount: 1,
     });
   });
 });

@@ -22,6 +22,7 @@
 
     "src/audit/proofgraph/evaluate.ts",
     "src/audit/proofgraph/gate.ts",
+    "src/integration/proofgraph/claim-contract.ts",
 
     "src/config/policy.ts",
     "src/config/reasons.ts",

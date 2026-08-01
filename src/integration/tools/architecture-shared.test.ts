@@ -167,6 +167,7 @@ describe('buildArchitectureReviewInstruction', () => {
       iteration: 0,
       planVersion: 1,
       subjectLabel: 'ADR',
+      state: state('ARCHITECTURE'),
     });
     expect(result.next).toContain('Self-review needed');
     expect(result.reviewInvocation).toBeUndefined();
@@ -183,6 +184,7 @@ describe('buildArchitectureReviewInstruction', () => {
       iteration: 0,
       planVersion: 1,
       subjectLabel: 'ADR',
+      state: state('ARCHITECTURE'),
     });
     expect(result.next).toBe('faux-review-instruction');
   });

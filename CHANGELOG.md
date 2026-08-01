@@ -9,6 +9,65 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Unconditional ProofGraph enforcement and a fail-closed claim contract
+  (#762).** The gate previously depended on a `proofGraphPolicy` switch that no
+  config, preset, or resolver could reach — it could never fire. A switch is also
+  wrong in principle: it would mean an author declares a claim critical, has it
+  human-approved, and the system then ignores whether it was ever proven.
+  - **Enforcement is unconditional.** `proofGraphPolicy`,
+    `PROOFGRAPH_POLICY_DISABLED`, and `ProofGraphPolicy` are removed. The blast
+    radius is bounded by eligibility instead: only at the `EVIDENCE_REVIEW`
+    approval, only for `critical` `fact` claims that carry a plan/ADR **approval
+    certificate**. A claim self-declared through `flowguard_declare_contract`
+    has provenance but no certificate and stays advisory, so an author cannot
+    impose a blocking obligation that no human approved.
+  - **Unprovable claims are rejected where they are authored.** A critical claim
+    requires executed adversarial evidence, so a critical declaration without a
+    counterexample check could never become `PROVEN`. `/plan` and
+    `/declare-contract` now share one validator
+    (`PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE`) that also rejects inactive checks,
+    unregistered structural surfaces and mutation profiles, duplicate claim
+    identities, and plan claims without a governing section. Nothing is
+    persisted and no digest is computed unless the whole set validates.
+    Diagnostics use each tool's public field names.
+  - **Revision-bound risk assessment.** `implementationRiskAssessment` persists
+    the computed task class, touched surfaces, and the implementation digest it
+    was derived from, so a superseded classification can never justify a gate
+    decision.
+  - **Early, non-binding warning.** `/plan` surfaces `proofGraphRiskWarning` when
+    declared `targetPaths` look HIGH-RISK and no critical claim is declared.
+    Explicitly heuristic: target paths are a forecast, the binding assessment
+    comes from the implementation's actual changed files.
+
+- **ProofGraph product-path integration (completes #762).** The claim surface was
+  implemented but unreachable through the product: the tool schemas accepted
+  `claims` while every installed command instructed a claim-free submission, and
+  the reviewer prompt actually delivered under `host_task_*` policy carried no
+  ProofGraph context. Sessions therefore completed with an empty contract while
+  the feature looked complete.
+  - **Claims reach the tools.** `/plan` now submits
+    `flowguard_plan({ planText, claims })` and `/architecture` submits
+    `flowguard_architecture({ title, adrText, claims })`, in the installed
+    commands and the Claude Code plugin skills. A contract test fails on any
+    reintroduced claim-free call form.
+  - **Reviewers receive the graph.** One renderer now feeds every transport, so
+    the host-task Task prompt carries the same persisted ProofGraph context,
+    declaration preview, certificate binding and coverage gaps as the SDK path.
+  - **Declaration preview before approval.** Plan and ADR declarations are shown
+    to the reviewer as explicit pre-evidence intent. They are deliberately not
+    materialized as graph claims before approval, since no implementation
+    revision exists to bind them to.
+  - **Architecture claims are materialized advisorily.** Approved ADR
+    declarations become certificate-bound `derived_signal` claims. They are never
+    `fact`: an ADR binds to named review evidence that no provider can execute, so
+    gating them would block every architecture approval permanently.
+  - **Auditable approval chain.** `flowguard_status` projects
+    `proofApprovals`: certificate digests, the bound implementation revision, and
+    per-claim evidence counts and verification state.
+  - **Readable coverage.** The status summary separates `contractClaimCount` from
+    `hypothesisCount`, so `NOT_DECLARED` beside a non-zero claim count is no
+    longer contradictory.
+
 - **ProofGraph evidence providers, mutation reporting and reviewer projection
   (completes #762).** Builds on the ProofGraph foundation:
   - **Structural and schema providers.** The cross-artifact consistency checks
@@ -232,6 +291,12 @@ true })` returns the evaluated projection. Key invariants:
 
 ### Changed
 
+- **BREAKING (`flowguard_declare_contract`): `critical` is now required.** It
+  previously defaulted to `true`, which would silently create claims capable of
+  blocking the final approval. The MCP schema baseline is updated accordingly.
+- `proofGraphGate.enforced` is now always `true` for compatibility; the gate no
+  longer supports policy disablement.
+
 - **Config `archive.redaction` restructured.** Old `mode` and `includeRaw`
   fields replaced with constraint model: `allowedModes` (`.min(1)`, defaults
   to all three), `allowRawExport` (default `false`), `maxAuditEvents`
@@ -297,6 +362,13 @@ true })` returns the evaluated projection. Key invariants:
   instead of raw API calls; successful runs auto-close stale drift issues.
 
 ### Fixed
+
+- **Duplicated standalone-review hypotheses (#762).** Review completion rebound
+  evidence via a recomputed `taskDigest`. Because a branch subject only resolves
+  to an immutable SHA after preparation, the digest legitimately changed, forking
+  the evidence chain and doubling every hypothesis claim in the projection
+  (3 objectives surfaced as 6 claims). Completion now binds to the outstanding
+  prepared entry by `evidenceId`.
 
 - **Documentation inventory corrected.** 15 documentation drift findings fixed
   across PRODUCT_IDENTITY.md, delivery-scope.md, platform-limitations.md,

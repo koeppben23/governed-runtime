@@ -72,12 +72,25 @@ export interface ProofGraphSummary {
   readonly unresolvedAssumptions: readonly UnresolvedAssumption[];
 }
 
-/** Compact coverage summary for standard status surfaces. */
+/**
+ * Compact coverage summary for standard status surfaces.
+ *
+ * `coverage` describes the DECLARED CONTRACT only. A session can legitimately
+ * report `NOT_DECLARED` while carrying claims: standalone review contributes
+ * advisory hypotheses that are deliberately not part of any contract. The split
+ * counts make that combination self-explanatory instead of contradictory (#762).
+ */
 export interface PersistedProofGraphSummary {
+  /** Coverage of the certificate-bound contract, NOT of advisory hypotheses. */
   readonly coverage: 'NOT_DECLARED' | 'NOT_VERIFIED' | 'PROVEN';
+  /** Total claims in the projection: contract claims plus advisory hypotheses. */
   readonly claimCount: number;
   readonly provenCount: number;
   readonly unprovenCount: number;
+  /** Claims originating from a declared contract (subset of `claimCount`). */
+  readonly contractClaimCount: number;
+  /** Advisory review hypotheses with no governing authority (subset of `claimCount`). */
+  readonly hypothesisCount: number;
 }
 
 /**
@@ -88,6 +101,7 @@ export function summarizePersistedProofGraph(state: SessionState): PersistedProo
   const claims = state.proofGraph?.claims ?? [];
   const provenCount = claims.filter((claim) => claim.verificationState === 'PROVEN').length;
   const unprovenCount = claims.length - provenCount;
+  const contractClaimCount = state.proofContract?.claims.length ?? 0;
   return {
     coverage:
       state.proofContract === undefined
@@ -98,6 +112,8 @@ export function summarizePersistedProofGraph(state: SessionState): PersistedProo
     claimCount: claims.length,
     provenCount,
     unprovenCount,
+    contractClaimCount,
+    hypothesisCount: claims.filter((claim) => claim.signalClass === 'hypothesis').length,
   };
 }
 

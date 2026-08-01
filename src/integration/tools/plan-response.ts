@@ -38,6 +38,9 @@ import {
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';
+import { buildReviewerProofContext } from '../review/proof-context.js';
+import { buildHeuristicRiskWarning } from '../proofgraph/claim-contract.js';
+import { assessMinimumTaskClass } from '../phase-tool-gate.js';
 import {
   resolveRuntimeReviewPlatform,
   resolveReviewOrchestrationMode,
@@ -80,6 +83,7 @@ export function buildPlanSubmissionResponse(
     iteration: 0,
     planVersion,
     subjectLabel: 'full plan text and ticket text',
+    state: finalState,
   });
   const response: Record<string, unknown> = {
     phase: finalState.phase,
@@ -93,6 +97,13 @@ export function buildPlanSubmissionResponse(
     reviewInvocation: reviewInstruction.reviewInvocation,
     _audit: { transitions },
   };
+  // #762: advisory only. Surfaces a foreseeable late block early; never gates.
+  const riskWarning = buildHeuristicRiskWarning({
+    targetPaths: scope.args.targetPaths,
+    assessedTaskClass: assessMinimumTaskClass(scope.args.targetPaths ?? []).minimumTaskClass,
+    criticalClaimCount: (scope.args.claims ?? []).filter((claim) => claim.critical).length,
+  });
+  if (riskWarning) response.proofGraphRiskWarning = riskWarning;
   if (reviewFindings) response.latestReview = latestPlanReviewSummary(reviewFindings, planVersion);
   return response;
 }
@@ -103,6 +114,8 @@ export function buildPlanReviewInstruction(input: {
   iteration: number;
   planVersion: number;
   subjectLabel: string;
+  /** State whose declarations/graph the reviewer prompt must reflect (#762). */
+  state: SessionState;
 }) {
   const platform = resolveRuntimeReviewPlatform();
   const mode = resolveReviewOrchestrationMode({
@@ -119,6 +132,7 @@ export function buildPlanReviewInstruction(input: {
     iteration: input.iteration,
     planVersion: input.planVersion,
     subjectLabel: input.subjectLabel,
+    proofContext: buildReviewerProofContext(input.state),
   });
 }
 
@@ -274,6 +288,7 @@ export function nonConvergedPlanResponse(
     iteration: scope.state.selfReview!.iteration + 1,
     planVersion: nextPlanVersion,
     subjectLabel: 'revised plan text and ticket text',
+    state: finalState,
   });
   return {
     phase: finalState.phase,

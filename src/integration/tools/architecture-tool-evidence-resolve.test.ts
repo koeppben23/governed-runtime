@@ -42,8 +42,8 @@ const mocks = vi.hoisted(() => {
       JSON.stringify({ error: true, code: 'INTERNAL_ERROR', message: String(err) }),
     ),
     appendNextAction: vi.fn((payload: string) => payload),
-    writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<void>>(
-      async () => undefined,
+    writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<SessionState>>(
+      async (_sessDir: string, state: SessionState) => state,
     ),
     readDiscovery: vi.fn(async () => null as DiscoveryResult | null),
   };

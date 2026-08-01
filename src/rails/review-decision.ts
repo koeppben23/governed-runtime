@@ -258,15 +258,11 @@ function enforceApprovalIdentity(
 function enforceProofGraphEvidenceApproval(
   state: SessionState,
   input: ReviewDecisionInput,
-  ctx: RailContext,
 ): RailBlocked | null {
   if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve' || !state.proofGraph) {
     return null;
   }
-  const decision = evaluateProofGraphGate(
-    { projection: state.proofGraph },
-    ctx.policy?.proofGraphPolicy,
-  );
+  const decision = evaluateProofGraphGate({ projection: state.proofGraph });
   if (!decision.gated) return null;
   return blocked('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN', {
     claimIds: decision.blockingClaimIds.join(', '),
@@ -413,7 +409,7 @@ export function executeReviewDecision(
   if (input.verdict === 'approve') {
     const identityBlock = enforceApprovalIdentity(state, input, ctx);
     if (identityBlock) return identityBlock;
-    const proofGraphBlock = enforceProofGraphEvidenceApproval(state, input, ctx);
+    const proofGraphBlock = enforceProofGraphEvidenceApproval(state, input);
     if (proofGraphBlock) return proofGraphBlock;
   }
 

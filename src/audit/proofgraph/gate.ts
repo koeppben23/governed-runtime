@@ -2,60 +2,69 @@
  * @module audit/proofgraph/gate
  * @description Pure ProofGraph gate decision.
  *
- * Encodes the policy-gating invariants without touching workflow transitions:
- * only critical, evidence-backed `fact` claims are gate-eligible; a claim that
- * is not PROVEN blocks only when gating is enabled by policy. `derived_signal`
- * and `hypothesis` claims are never gate-eligible - they remain advisory.
+ * Encodes the gating invariants without touching workflow transitions: only
+ * critical, evidence-backed `fact` claims are gate-eligible. `derived_signal`
+ * and `hypothesis` claims are never gate-eligible — they remain advisory.
  *
- * The gate is disabled by default and until rollout validation: an absent or
- * disabled policy yields a non-gating decision. The decision is computed and
- * surfaced; it does not itself block a governed transition.
+ * Enforcement is UNCONDITIONAL. A policy switch would mean that a user declares
+ * a claim as critical, has it human-approved, and the system then ignores
+ * whether it was ever proven — which contradicts the meaning of `critical`. The
+ * blast radius is already narrow by construction: a session without critical
+ * fact claims has nothing to gate.
+ *
+ * The decision is computed and surfaced; it does not itself block a governed
+ * transition.
  *
  * @version v1
  */
 
 import type { ProofGraphSummary } from './summary.js';
+import type { ProofClaim } from '../../state/proofgraph.js';
 
 /** The evaluated ProofGraph gate decision. */
 export interface ProofGraphGateDecision {
-  /** Whether the policy has gating enabled at all. */
-  readonly enforced: boolean;
-  /** Whether the gate would block (only possible when enforced). */
+  /**
+   * Compatibility field. ProofGraph enforcement is unconditional for eligible
+   * claims and no longer depends on policy; retained as a constant so the
+   * `flowguard_status({ proofGraph: true })` projection stays stable for
+   * consumers. Removal belongs to an explicit schema version.
+   */
+  readonly enforced: true;
+  /** Whether the gate blocks. */
   readonly gated: boolean;
-  /** Critical fact claims that are not PROVEN (the blocking set when enforced). */
+  /** Critical, certificate-authorized fact claims that are not PROVEN. */
   readonly blockingClaimIds: readonly string[];
   /** Human-readable rationale. */
   readonly reason: string;
 }
 
-/** Structural view of the ProofGraph policy (kept import-free of the config layer). */
-export interface ProofGraphGatePolicy {
-  readonly enabled: boolean;
+/**
+ * Whether a claim may block at all.
+ *
+ * Certificate authorization is required, not merely `fact` provenance: only a
+ * declaration that passed the human plan/ADR approval carries an `approval`
+ * binding. A claim self-declared after implementation (via
+ * `flowguard_declare_contract`) has provenance but no certificate, and must stay
+ * advisory — otherwise an author could impose a blocking obligation on their own
+ * approval without any human having approved that obligation.
+ */
+function isGateEligible(claim: ProofClaim): boolean {
+  if (!claim.critical || claim.signalClass !== 'fact') return false;
+  return (
+    claim.provenance?.kind === 'canonical_authority' && claim.provenance.approval !== undefined
+  );
 }
 
 /**
  * Evaluate the ProofGraph gate for a session summary.
  *
  * @param summary The session's ProofGraph summary.
- * @param policy  The ProofGraph gating policy, or undefined (treated as disabled).
  */
 export function evaluateProofGraphGate(
   summary: Pick<ProofGraphSummary, 'projection'>,
-  policy: ProofGraphGatePolicy | undefined,
 ): ProofGraphGateDecision {
-  if (policy?.enabled !== true) {
-    return {
-      enforced: false,
-      gated: false,
-      blockingClaimIds: [],
-      reason: 'ProofGraph gating is disabled by policy.',
-    };
-  }
   const blockingClaimIds = summary.projection.claims
-    .filter(
-      (claim) =>
-        claim.critical && claim.signalClass === 'fact' && claim.verificationState !== 'PROVEN',
-    )
+    .filter((claim) => isGateEligible(claim) && claim.verificationState !== 'PROVEN')
     .map((claim) => claim.claimId);
   return {
     enforced: true,

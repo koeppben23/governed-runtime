@@ -55,8 +55,8 @@ const mocks = vi.hoisted(() => {
       }),
     ),
     appendNextAction: vi.fn((payload: string) => payload),
-    writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<void>>(
-      async () => undefined,
+    writeStateWithArtifacts: vi.fn<(sessDir: string, state: SessionState) => Promise<SessionState>>(
+      async (_sessDir: string, state: SessionState) => state,
     ),
     extractSections: vi.fn(() => []),
     changedFiles: vi.fn(async () => ['src/foo.ts']),
@@ -381,6 +381,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
     let persistedState: unknown = null;
     mocks.writeStateWithArtifacts.mockImplementation(async (_dir: string, s: SessionState) => {
       persistedState = s;
+      return s;
     });
     mocks.autoAdvance.mockImplementation((s: unknown) => ({
       kind: 'advanced',

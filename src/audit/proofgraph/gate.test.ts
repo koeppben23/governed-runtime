@@ -1,7 +1,11 @@
 /**
  * @module audit/proofgraph/gate.test
- * @description Pure ProofGraph gate decision (#762): default-off, fact-only,
+ * @description Pure ProofGraph gate decision (#762): unconditional, fact-only,
  * critical, PROVEN-required.
+ *
+ * Enforcement is no longer policy-switchable. What bounds the blast radius is
+ * the eligibility rule itself, so these tests pin exactly which claims can and
+ * cannot block.
  */
 import { describe, it, expect } from 'vitest';
 import { evaluateProofGraphGate } from './gate.js';
@@ -11,16 +15,34 @@ import type { ClaimVerificationState, SignalClass } from '../../state/proofgraph
 
 const NOW = '2026-01-01T00:00:00.000Z';
 
+const APPROVAL = {
+  certificateId: '00000000-0000-4000-8000-0000000000ce',
+  claimDeclarationsDigest: 'a'.repeat(64),
+  decisionAttestationDigest: 'b'.repeat(64),
+  declarationId: '00000000-0000-4000-8000-0000000000de',
+} as const;
+
 function claim(
   claimId: string,
-  opts: { signalClass?: SignalClass; critical?: boolean; state?: ClaimVerificationState } = {},
+  opts: {
+    signalClass?: SignalClass;
+    critical?: boolean;
+    state?: ClaimVerificationState;
+    /** Omit to model a self-declared claim that never passed a human approval. */
+    certified?: boolean;
+  } = {},
 ): ProofClaim {
   return {
     claimId,
     statement: 'x',
     signalClass: opts.signalClass ?? 'fact',
     critical: opts.critical ?? true,
-    provenance: { kind: 'canonical_authority', authorityId: 'ticket', digest: 'd' },
+    provenance: {
+      kind: 'canonical_authority',
+      authorityId: 'plan',
+      digest: 'd',
+      ...(opts.certified === false ? {} : { approval: APPROVAL }),
+    },
     evidenceRefs: [],
     counterexampleRefs: [],
     verificationState: opts.state ?? 'PROVEN',
@@ -42,35 +64,25 @@ function summary(claims: ProofClaim[]): ProofGraphSummary {
 const UUID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 describe('evaluateProofGraphGate', () => {
-  it('does not gate when the policy is absent', () => {
-    const decision = evaluateProofGraphGate(
-      summary([claim(UUID(1), { state: 'UNPROVEN' })]),
-      undefined,
-    );
-    expect(decision).toMatchObject({ enforced: false, gated: false, blockingClaimIds: [] });
+  it('does not gate a session without any claims', () => {
+    const decision = evaluateProofGraphGate(summary([]));
+    expect(decision).toMatchObject({ enforced: true, gated: false, blockingClaimIds: [] });
   });
 
-  it('does not gate when the policy is disabled', () => {
-    const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'UNPROVEN' })]), {
-      enabled: false,
-    });
-    expect(decision.enforced).toBe(false);
-    expect(decision.gated).toBe(false);
+  it('reports enforcement as unconditional', () => {
+    // Compatibility constant: consumers of flowguard_status still read this field.
+    expect(evaluateProofGraphGate(summary([])).enforced).toBe(true);
   });
 
-  it('does not gate an enabled policy when all critical fact claims are PROVEN', () => {
-    const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'PROVEN' })]), {
-      enabled: true,
-    });
+  it('does not gate when all critical fact claims are PROVEN', () => {
+    const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'PROVEN' })]));
     expect(decision).toMatchObject({ enforced: true, gated: false, blockingClaimIds: [] });
     // The reason a reviewer reads must match the verdict, not merely exist.
     expect(decision.reason).toBe('All critical fact claims are PROVEN.');
   });
 
   it('gates on a critical fact claim that is not PROVEN', () => {
-    const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'UNPROVEN' })]), {
-      enabled: true,
-    });
+    const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'UNPROVEN' })]));
     expect(decision.gated).toBe(true);
     expect(decision.blockingClaimIds).toEqual([UUID(1)]);
     expect(decision.reason).toBe('1 critical fact claim(s) are not PROVEN.');
@@ -83,25 +95,31 @@ describe('evaluateProofGraphGate', () => {
         claim(UUID(2), { state: 'STALE' }),
         claim(UUID(3), { state: 'PROVEN' }),
       ]),
-      { enabled: true },
     );
     expect(decision.blockingClaimIds).toEqual([UUID(1), UUID(2)]);
     expect(decision.reason).toBe('2 critical fact claim(s) are not PROVEN.');
   });
 
   it('gates on a critical fact claim that is CONTRADICTED', () => {
-    const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'CONTRADICTED' })]), {
-      enabled: true,
-    });
+    const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'CONTRADICTED' })]));
     expect(decision.gated).toBe(true);
   });
 
   it('does not gate a non-critical fact claim', () => {
     const decision = evaluateProofGraphGate(
       summary([claim(UUID(1), { critical: false, state: 'UNPROVEN' })]),
-      { enabled: true },
     );
     expect(decision.gated).toBe(false);
+  });
+
+  it('does not gate a critical fact claim that carries no approval certificate', () => {
+    // Self-declared after implementation: no human ever approved this obligation,
+    // so it must stay advisory rather than block the approver.
+    const decision = evaluateProofGraphGate(
+      summary([claim(UUID(1), { state: 'UNPROVEN', certified: false })]),
+    );
+    expect(decision.gated).toBe(false);
+    expect(decision.blockingClaimIds).toEqual([]);
   });
 
   it('does not gate a critical derived_signal or hypothesis claim (fact-only)', () => {
@@ -109,7 +127,7 @@ describe('evaluateProofGraphGate', () => {
       claim(UUID(1), { signalClass: 'derived_signal', state: 'UNPROVEN' }),
       claim(UUID(2), { signalClass: 'hypothesis', state: 'CONTRADICTED' }),
     ];
-    const decision = evaluateProofGraphGate(summary(claims), { enabled: true });
+    const decision = evaluateProofGraphGate(summary(claims));
     expect(decision.gated).toBe(false);
     expect(decision.blockingClaimIds).toEqual([]);
   });

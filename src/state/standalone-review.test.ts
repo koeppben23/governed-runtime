@@ -5,7 +5,11 @@ import {
 } from './standalone-review.js';
 import { deriveProofGraph } from '../audit/proofgraph/derive.js';
 import { makeState } from '../fixtures.js';
-import { prepareStandaloneReviewEvidence } from '../integration/tools/review-tool/preparation.js';
+import {
+  appendCompletedReviewEvidence,
+  appendPreparedReviewEvidence,
+  prepareStandaloneReviewEvidence,
+} from '../integration/tools/review-tool/preparation.js';
 
 describe('standalone review deterministic task', () => {
   it('uses canonical defaults and stable null-provenance hypothesis claims', () => {
@@ -92,5 +96,57 @@ describe('standalone review deterministic task', () => {
     });
 
     expect(second.task.subjectDigest).not.toBe(first.task.subjectDigest);
+  });
+
+  it('completes the outstanding prepared entry when the subject digest drifted', () => {
+    // Preparation runs before the branch resolves to an immutable SHA, so the
+    // completion recomputes a different taskDigest. Binding on that digest forked
+    // the evidence chain and duplicated every hypothesis claim (#762).
+    const args = { branch: 'feature', base: 'main' };
+    const prepared = prepareStandaloneReviewEvidence(args, '2026-01-01T00:00:00.000Z');
+    const recomputed = prepareStandaloneReviewEvidence(args, '2026-01-01T00:00:01.000Z', {
+      branch: 'feature',
+      baseBranch: 'main',
+      resolvedBranchSha: 'a'.repeat(40),
+      resolvedBaseSha: 'b'.repeat(40),
+    });
+    expect(recomputed.requestedDigests.taskDigest).not.toBe(prepared.requestedDigests.taskDigest);
+
+    const evidence = appendCompletedReviewEvidence({
+      evidence: appendPreparedReviewEvidence([], prepared),
+      prepared: recomputed,
+      completedAt: '2026-01-01T00:00:02.000Z',
+    });
+
+    expect(evidence.filter((entry) => entry.kind === 'prepared')).toHaveLength(1);
+    expect(evidence.filter((entry) => entry.kind === 'completed')).toHaveLength(1);
+    const completed = evidence.find((entry) => entry.kind === 'completed');
+    expect(completed?.preparedEvidenceId).toBe(prepared.evidenceId);
+  });
+
+  it('keeps the hypothesis claim count at the objective count across the full lifecycle', () => {
+    const args = { branch: 'feature', base: 'main' };
+    const prepared = prepareStandaloneReviewEvidence(args, '2026-01-01T00:00:00.000Z');
+    const recomputed = prepareStandaloneReviewEvidence(args, '2026-01-01T00:00:01.000Z', {
+      branch: 'feature',
+      baseBranch: 'main',
+      resolvedBranchSha: 'a'.repeat(40),
+      resolvedBaseSha: 'b'.repeat(40),
+    });
+    const standaloneReviewEvidence = appendCompletedReviewEvidence({
+      evidence: appendPreparedReviewEvidence([], prepared),
+      prepared: recomputed,
+      completedAt: '2026-01-01T00:00:02.000Z',
+    });
+
+    const projection = deriveProofGraph(
+      makeState('REVIEW_COMPLETE', { standaloneReviewEvidence }),
+      [],
+      [],
+      '2026-01-01T00:00:03.000Z',
+    );
+
+    expect(projection.claims).toHaveLength(prepared.task.claims.length);
+    expect(projection.claims).toHaveLength(3);
   });
 });
