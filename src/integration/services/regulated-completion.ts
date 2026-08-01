@@ -3,7 +3,7 @@
  * @description P26 regulated archive lifecycle: audit emit → archive → verify.
  *
  * Scope: EVIDENCE_REVIEW + APPROVE → COMPLETE in regulated mode.
- * Fail-closed: any failure in the chain produces archiveStatus: 'failed'.
+ * Fail-closed: any failure in the chain produces regulatedArchiveStatus: 'failed'.
  * No partial success can leak — the entire chain is atomic from the caller's perspective.
  *
  * @version v1
@@ -32,15 +32,15 @@ import { isTerminalPhase } from '../../machine/topology.js';
  * - !result.state.error
  *
  * Fail-closed semantics:
- * - Writes archiveStatus 'pending' before starting the chain.
- * - On any failure in the chain, returns state with archiveStatus 'failed'.
+ * - Writes regulatedArchiveStatus 'pending' before starting the chain.
+ * - On any failure in the chain, returns state with regulatedArchiveStatus 'failed'.
  * - Only returns 'verified' when archive passes integrity check.
  *
  * @param sessDir - Session directory path
  * @param fingerprint - Workspace fingerprint
  * @param sessionID - Session identifier
  * @param resultState - The COMPLETE state from the rail
- * @returns Final state with archiveStatus set
+ * @returns Final state with regulatedArchiveStatus set
  */
 export async function executeRegulatedCompletion(
   sessDir: string,
@@ -49,9 +49,17 @@ export async function executeRegulatedCompletion(
   resultState: SessionState,
 ): Promise<SessionState> {
   if (!isTerminalPhase(resultState.phase) || resultState.error) {
-    return { ...resultState, archiveStatus: 'failed' as const };
+    return {
+      ...resultState,
+      regulatedArchiveStatus: 'failed' as const,
+      archiveStatus: 'failed' as const,
+    };
   }
-  const pendingState = { ...resultState, archiveStatus: 'pending' as const };
+  const pendingState = {
+    ...resultState,
+    regulatedArchiveStatus: 'pending' as const,
+    archiveStatus: 'pending' as const,
+  };
   await writeStateWithArtifacts(sessDir, pendingState);
 
   getAdapterLogger().info('services', 'Starting regulated completion chain', {
@@ -78,18 +86,23 @@ export async function executeRegulatedCompletion(
 
     // 2. Archive session (synchronous, not fire-and-forget).
     await archiveRegulatedEvidence(fingerprint, sessionID);
-    const createdState = { ...resultState, archiveStatus: 'created' as const };
+    const createdState = {
+      ...resultState,
+      regulatedArchiveStatus: 'created' as const,
+      archiveStatus: 'created' as const,
+    };
     await writeStateWithArtifacts(sessDir, createdState);
 
     // 3. Verify archive integrity.
     const verification = await verifyRegulatedArchive(fingerprint, sessionID);
     finalState = {
       ...resultState,
+      regulatedArchiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
       archiveStatus: verification.passed ? ('verified' as const) : ('failed' as const),
     };
     getAdapterLogger().info('services', 'Regulated completion chain finished', {
       sessionID,
-      archiveStatus: finalState.archiveStatus,
+      archiveStatus: finalState.regulatedArchiveStatus,
       archivePassed: verification.passed,
     });
   } catch (err) {
@@ -98,7 +111,11 @@ export async function executeRegulatedCompletion(
       fingerprint,
       error: serializeError(err),
     });
-    finalState = { ...resultState, archiveStatus: 'failed' as const };
+    finalState = {
+      ...resultState,
+      regulatedArchiveStatus: 'failed' as const,
+      archiveStatus: 'failed' as const,
+    };
   }
 
   return finalState;

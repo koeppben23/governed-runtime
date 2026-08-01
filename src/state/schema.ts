@@ -508,26 +508,19 @@ export const SessionState = z.object({
   /** Session creation timestamp (set once by init()). */
   createdAt: z.string().datetime(),
 
-  /**
-   * Archive lifecycle status for completed sessions.
-   *
-   * Regulated clean completions use this as their evidence lifecycle. Manual
-   * exports also record their latest result for operator status projections.
-   *
-   * - `pending`  — archive creation in progress
-   * - `created`  — archive created, verification pending
-   * - `verified` — archive created and verification passed
-   * - `not_verifiable` — redacted sharing archive intentionally excludes raw evidence
-   * - `failed`   — archive creation or verification failed
-   *
-   * Invariant: a regulated clean completion is verified only by its mandatory
-   * raw-evidence archive; optional later sharing exports never replace that state.
-   *
-   * Added in P26 — .optional() for backward compatibility (no schema version bump).
-   */
+  /** @deprecated Legacy combined archive status. New writes use the fields below. */
   archiveStatus: z
     .enum(['pending', 'created', 'verified', 'not_verifiable', 'failed'])
     .nullable()
     .optional(),
+  /** Lifecycle of the immutable raw-evidence package required at regulated completion. */
+  regulatedArchiveStatus: z
+    .enum(['pending', 'created', 'verified', 'failed'])
+    .nullable()
+    .optional(),
+  /** Result of the most recent user-requested archive export. */
+  lastExportStatus: z.enum(['verified', 'not_verifiable', 'failed']).nullable().optional(),
+  /** Classification of the most recent user-requested archive export. */
+  lastExportKind: z.enum(['redacted', 'raw']).nullable().optional(),
 });
 export type SessionState = z.infer<typeof SessionState>;

@@ -133,6 +133,7 @@ describe('executeRegulatedCompletion', () => {
       const result = await executeRegulatedCompletion('/sess', 'fp', 'sid', state);
 
       expect(result.archiveStatus).toBe('verified');
+      expect(result.regulatedArchiveStatus).toBe('verified');
     });
 
     it('writes pending state first', async () => {

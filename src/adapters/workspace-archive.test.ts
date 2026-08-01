@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -79,6 +80,18 @@ async function extract(archivePath: string): Promise<string> {
   cleanups.push(async () => fs.rm(destination, { recursive: true, force: true }));
   await promisify(execFile)('tar', ['xzf', archivePath, '-C', destination]);
   return destination;
+}
+
+async function appendCompletionAuditEvent(sessDir: string, sessionId: string): Promise<void> {
+  await appendAuditEvent(sessDir, {
+    id: crypto.randomUUID(),
+    sessionId,
+    phase: 'COMPLETE',
+    event: 'lifecycle:session_completed',
+    timestamp: '2026-01-01T00:00:00.000Z',
+    actor: 'machine',
+    detail: { action: 'session_completed' },
+  });
 }
 
 describe('Archive Layout v2', () => {
@@ -236,6 +249,7 @@ describe('Archive Layout v2', () => {
       initialized.sessionDir,
       makeState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
     );
+    await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
 
     await expect(
       archiveRegulatedEvidence(initialized.fingerprint, sessionId),
@@ -257,6 +271,7 @@ describe('Archive Layout v2', () => {
       initialized.sessionDir,
       makeState('COMPLETE', { policySnapshot: REGULATED_POLICY_SNAPSHOT }),
     );
+    await appendCompletionAuditEvent(initialized.sessionDir, sessionId);
 
     const regulatedPath = await archiveRegulatedEvidence(initialized.fingerprint, sessionId);
     const sharingPath = await archiveSession(initialized.fingerprint, sessionId, {

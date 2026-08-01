@@ -123,6 +123,24 @@ function assertRegulatedEvidenceState(
   );
 }
 
+function assertCompletionAuditEvent(
+  events: readonly { readonly event: string; readonly detail: Record<string, unknown> }[],
+): void {
+  if (
+    events.some(
+      (event) =>
+        event.event === 'lifecycle:session_completed' &&
+        event.detail.action === 'session_completed',
+    )
+  ) {
+    return;
+  }
+  throw new WorkspaceError(
+    'ARCHIVE_FAILED',
+    'Mandatory regulated evidence archive requires the canonical session_completed audit event.',
+  );
+}
+
 async function archiveSessionImpl(
   fingerprint: string,
   sessionId: string,
@@ -158,6 +176,7 @@ async function archiveSessionImpl(
       `Refusing to archive an audit trail with ${skipped} unparseable line(s)`,
     );
   }
+  if (regulatedEvidence) assertCompletionAuditEvent(events);
 
   if (
     opts.redactionMode !== 'none' &&

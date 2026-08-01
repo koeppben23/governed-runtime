@@ -253,6 +253,8 @@ describe('archive', () => {
           'redacted sharing archive',
         );
         expect(persisted?.archiveStatus).toBe('verified');
+        expect(persisted?.lastExportStatus).toBe('not_verifiable');
+        expect(persisted?.lastExportKind).toBe('redacted');
       },
     );
 

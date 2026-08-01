@@ -151,9 +151,9 @@ if (result.passed) {
 In regulated mode (`policySnapshot.mode === 'regulated'`), clean completion
 (`EVIDENCE_REVIEW → APPROVE → COMPLETE`) requires archive creation **and**
 verification to succeed. The decision tool emits `session_completed` to the
-audit trail **before** calling `archiveSession()`, ensuring the archive
-contains the terminal lifecycle event. The `archiveStatus` field on session
-state tracks the archive lifecycle:
+audit trail **before** calling `archiveRegulatedEvidence()`, ensuring the archive
+contains the terminal lifecycle event. The `regulatedArchiveStatus` field on
+session state tracks the immutable regulated-evidence lifecycle:
 
 | Status     | Meaning                                 |
 | ---------- | --------------------------------------- |
@@ -163,14 +163,15 @@ state tracks the archive lifecycle:
 | `failed`   | Archive creation or verification failed |
 
 **Invariant:** A regulated session with `phase === 'COMPLETE'` and
-`archiveStatus !== 'verified'` (and no `error`) is NOT a clean regulated
+`regulatedArchiveStatus !== 'verified'` (and no `error`) is NOT a clean regulated
 completion. Status/doctor tools should surface this as degraded.
 
-**Manual exports** record their own latest result in `archiveStatus` for all
-policy modes. This does not replace a previously verified regulated completion
-status. Solo sessions may use the audit plugin's fire-and-forget archive path.
-Team sessions never archive on completion: `/export` is the explicit archive
-action.
+**Manual exports** record their own result independently in `lastExportStatus`
+(`verified`, `not_verifiable`, or `failed`) and `lastExportKind` (`raw` or
+`redacted`). They never change `regulatedArchiveStatus`. `archiveStatus` remains
+a deprecated compatibility mirror for the regulated lifecycle only. Solo sessions
+may use the audit plugin's fire-and-forget archive path. Team sessions never
+archive on completion: `/export` is the explicit archive action.
 
 **Aborted sessions** (`error.code === 'ABORTED'`) do not trigger the regulated
 archive lifecycle. Abort is an emergency escape with no archive guarantee.

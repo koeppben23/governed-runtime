@@ -84,18 +84,6 @@ function redactedArchiveIntegrityStatus(): { archiveStatus: 'not_verifiable'; st
   };
 }
 
-function persistedArchiveStatus(
-  state: Awaited<ReturnType<typeof readState>>,
-  archiveStatus: 'verified' | 'not_verifiable' | 'failed',
-): 'verified' | 'not_verifiable' | 'failed' {
-  // A regulated completion's verified raw-evidence archive is immutable lifecycle
-  // evidence. A later optional sharing export must not degrade that conclusion.
-  if (state?.policySnapshot.mode === 'regulated' && state.archiveStatus === 'verified') {
-    return 'verified';
-  }
-  return archiveStatus;
-}
-
 export const archive: ToolDefinition = {
   description:
     'Archive a completed FlowGuard session as a tar.gz file with configurable redaction. ' +
@@ -149,7 +137,8 @@ export const archive: ToolDefinition = {
         : redactedArchiveIntegrityStatus();
       const archivedState = {
         ...state,
-        archiveStatus: persistedArchiveStatus(state, archiveStatus),
+        lastExportStatus: archiveStatus,
+        lastExportKind: includeRaw ? ('raw' as const) : ('redacted' as const),
       };
       await writeStateWithArtifacts(sessDir, archivedState);
       getAdapterLogger().info('machine', 'session_archived', {
