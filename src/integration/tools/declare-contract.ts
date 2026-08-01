@@ -30,6 +30,7 @@ import {
 } from '../proofgraph/structural-provider.js';
 import {
   MUTATION_PROFILE_IDS,
+  resolveVerifiedMutationAttempt,
   resolveVerifiedMutationVerdicts,
   type VerifiedMutationVerdicts,
 } from '../proofgraph/mutation-provider.js';
@@ -120,39 +121,6 @@ function resolveImplAttempt(
     );
 }
 
-/**
- * Resolve a declared mutation profile to a concrete, digest-verified attempt.
- *
- * Deterministic and fail-closed:
- * - only attempts bound to the CURRENT implementation digest are eligible;
- * - only attempts whose report passed artifact + projection digest verification
- *   and that actually COVER the requested profile are eligible;
- * - among eligible attempts the most recently completed one wins, with the
- *   attemptId as a stable tie-break so the result never depends on array order.
- *
- * Returns `null` when nothing qualifies, so the declaration blocks instead of
- * persisting a reference that could never be satisfied.
- */
-function resolveMutationAttemptId(
-  state: SessionState,
-  profileId: string,
-  implementationDigest: string,
-  verdicts: VerifiedMutationVerdicts,
-): string | null {
-  const eligible = state.mutationAttempts.filter(
-    (a) =>
-      a.implementationDigest === implementationDigest &&
-      (verdicts.get(a.attemptId)?.get(profileId)?.covered ?? false),
-  );
-  if (eligible.length === 0) return null;
-  const newest = [...eligible].sort((a, b) =>
-    a.completedAt === b.completedAt
-      ? a.attemptId.localeCompare(b.attemptId)
-      : a.completedAt.localeCompare(b.completedAt),
-  );
-  return newest[newest.length - 1]!.attemptId;
-}
-
 /** Raw claim input shape from the tool arguments. */
 type RawClaim = {
   statement: string;
@@ -196,9 +164,18 @@ function buildOptionalEvidence(
   // A declared mutation profile is resolved to a CONCRETE, digest-verified
   // attempt, so surviving mutants (or a missing run) keep the claim unproven.
   if (rc.mutationProfile !== undefined) {
-    const attemptId = resolveMutationAttemptId(state, rc.mutationProfile, digest, verdicts);
-    if (attemptId === null) return { unresolvedProfileId: rc.mutationProfile };
-    refs.push({ kind: 'mutation_attempt', attemptId, profileId: rc.mutationProfile });
+    const attempt = resolveVerifiedMutationAttempt(
+      state.mutationAttempts,
+      rc.mutationProfile,
+      digest,
+      verdicts,
+    );
+    if (attempt === null) return { unresolvedProfileId: rc.mutationProfile };
+    refs.push({
+      kind: 'mutation_attempt',
+      attemptId: attempt.attemptId,
+      profileId: rc.mutationProfile,
+    });
     positive.push('fault_injection');
   }
   return { refs, positive };

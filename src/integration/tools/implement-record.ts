@@ -387,7 +387,9 @@ export async function persistImplRecordAndRespond(args: PersistImplRecordArgs): 
   }
   const { state: finalState, transitions } = advanced;
   const materialized =
-    finalState.phase === 'IMPL_REVIEW' ? materializeApprovedPlanContractResult(finalState) : null;
+    finalState.phase === 'IMPL_REVIEW'
+      ? await materializeApprovedPlanContractResult(finalState, input.worktree)
+      : null;
   const stateWithMaterializedContract = materialized
     ? {
         ...finalState,

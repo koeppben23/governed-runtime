@@ -188,6 +188,29 @@ export type VerifiedMutationVerdicts = ReadonlyMap<
 >;
 
 /**
+ * Resolve a profile to the newest digest-verified attempt for the current
+ * implementation. The attempt id tie-break keeps selection deterministic.
+ */
+export function resolveVerifiedMutationAttempt(
+  attempts: readonly MutationAttempt[],
+  profileId: string,
+  implementationDigest: string,
+  verdicts: VerifiedMutationVerdicts,
+): MutationAttempt | null {
+  const eligible = attempts.filter(
+    (attempt) =>
+      attempt.implementationDigest === implementationDigest &&
+      (verdicts.get(attempt.attemptId)?.get(profileId)?.covered ?? false),
+  );
+  if (eligible.length === 0) return null;
+  return [...eligible].sort((a, b) =>
+    a.completedAt === b.completedAt
+      ? a.attemptId.localeCompare(b.attemptId)
+      : a.completedAt.localeCompare(b.completedAt),
+  )[eligible.length - 1]!;
+}
+
+/**
  * Resolve digest-verified profile verdicts for the recorded mutation attempts.
  *
  * Each attempt is evaluated against ITS OWN `reportPath`, and only after BOTH

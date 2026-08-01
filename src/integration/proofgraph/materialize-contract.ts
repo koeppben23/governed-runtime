@@ -9,9 +9,14 @@
  */
 
 import type { ProofContract, ProofContractCoverage } from '../../state/proofgraph-contract.js';
+import type { PlanClaimDeclaration } from '../../state/proofgraph-approval.js';
 import type { SessionState } from '../../state/schema.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
+import {
+  resolveVerifiedMutationAttempt,
+  resolveVerifiedMutationVerdicts,
+} from './mutation-provider.js';
 
 const EMPTY_CONTRACT: ProofContract = { version: 'contract.v1', claims: [] };
 
@@ -20,6 +25,57 @@ export type MaterializedPlanContract = {
   readonly coverage: readonly ProofContractCoverage[];
 };
 
+function resolveMutationAttempt(
+  state: SessionState,
+  declaration: PlanClaimDeclaration,
+  implementationDigest: string,
+  mutationVerdicts: Awaited<ReturnType<typeof resolveVerifiedMutationVerdicts>>,
+) {
+  if (!declaration.mutationProfile) return null;
+  return resolveVerifiedMutationAttempt(
+    state.mutationAttempts,
+    declaration.mutationProfile,
+    implementationDigest,
+    mutationVerdicts,
+  );
+}
+
+function evidenceRefs(
+  expectedAttempts: SessionState['validationAttempts'],
+  declaration: PlanClaimDeclaration,
+  mutationAttempt: ReturnType<typeof resolveMutationAttempt>,
+) {
+  const refs: ProofContract['claims'][number]['evidenceRefs'][number][] = expectedAttempts.map(
+    (attempt) => ({ kind: 'validation_attempt' as const, attemptId: attempt.attemptId }),
+  );
+  if (declaration.structuralSurface) {
+    refs.push({ kind: 'structural_surface', surfaceId: declaration.structuralSurface });
+  }
+  if (declaration.mutationProfile && mutationAttempt) {
+    refs.push({
+      kind: 'mutation_attempt',
+      attemptId: mutationAttempt.attemptId,
+      profileId: declaration.mutationProfile,
+    });
+  }
+  return refs;
+}
+
+function requiredEvidence(declaration: PlanClaimDeclaration) {
+  const positive: NonNullable<ProofContract['claims'][number]['requiredEvidence']>['positive'] = [
+    'executed_test',
+  ];
+  if (declaration.structuralSurface) {
+    positive.push(
+      declaration.structuralSurface === 'config-defaults'
+        ? 'schema_compare'
+        : 'structural_assertion',
+    );
+  }
+  if (declaration.mutationProfile) positive.push('fault_injection');
+  return { positive, adversarial: declaration.critical ? ['counterexample' as const] : [] };
+}
+
 /**
  * Produce the explicit implementation-review coverage contract.
  *
@@ -27,20 +83,34 @@ export type MaterializedPlanContract = {
  * approved declarations. A declaration whose current implementation evidence is
  * missing remains in the contract with its required evidence unmet.
  */
-export function materializeApprovedPlanContract(state: SessionState): ProofContract {
-  return materializeApprovedPlanContractResult(state).contract;
+export async function materializeApprovedPlanContract(
+  state: SessionState,
+  worktree: string,
+): Promise<ProofContract> {
+  return (await materializeApprovedPlanContractResult(state, worktree)).contract;
 }
 
 /** Materialize the contract and persistable causes for coverage gaps. */
-export function materializeApprovedPlanContractResult(
+export async function materializeApprovedPlanContractResult(
   state: SessionState,
-): MaterializedPlanContract {
-  const certificate = approvedPlanCertificate(state);
+  worktree: string,
+): Promise<MaterializedPlanContract> {
+  const certificate = validateApprovedPlanCertificate(state);
   const implementationDigest = state.implementation?.digest;
   const declarations = state.plan?.claimDeclarations;
-  if (!certificate || !implementationDigest || !declarations || declarations.claims.length === 0) {
-    return { contract: EMPTY_CONTRACT, coverage: [] };
+  if (!declarations || declarations.claims.length === 0) {
+    return { contract: EMPTY_CONTRACT, coverage: [{ cause: 'missing_declarations' }] };
   }
+  if (certificate.kind !== 'valid') {
+    return {
+      contract: EMPTY_CONTRACT,
+      coverage: [{ cause: certificate.cause }],
+    };
+  }
+  if (!implementationDigest) {
+    return { contract: EMPTY_CONTRACT, coverage: [{ cause: 'missing_implementation' }] };
+  }
+  const mutationVerdicts = await resolveVerifiedMutationVerdicts(worktree, state.mutationAttempts);
 
   const attempts = state.validationAttempts.filter(
     (attempt) =>
@@ -54,9 +124,13 @@ export function materializeApprovedPlanContractResult(
     if (expectedAttempts.length === 0) {
       coverage.push({ claimId: declaration.claimId, cause: 'missing_expected_check' });
     }
-    if (declaration.mutationProfile) {
-      // Materialization has no artifact-verification input. Do not bind an
-      // arbitrary record; the provider must resolve a verified concrete attempt.
+    const mutationAttempt = resolveMutationAttempt(
+      state,
+      declaration,
+      implementationDigest,
+      mutationVerdicts,
+    );
+    if (declaration.mutationProfile && mutationAttempt === null) {
       coverage.push({ claimId: declaration.claimId, cause: 'unverified_mutation_profile' });
     }
     const counterexampleAttempts = declaration.counterexampleCheckId
@@ -70,59 +144,46 @@ export function materializeApprovedPlanContractResult(
       provenance: {
         kind: 'canonical_authority' as const,
         authorityId: 'plan',
-        digest: certificate.authorityDigest,
+        digest: certificate.certificate.authorityDigest,
         approval: {
-          certificateId: certificate.certificateId,
-          claimDeclarationsDigest: certificate.claimDeclarationsDigest,
-          decisionAttestationDigest: certificate.decisionAttestationDigest,
+          certificateId: certificate.certificate.certificateId,
+          claimDeclarationsDigest: certificate.certificate.claimDeclarationsDigest,
+          decisionAttestationDigest: certificate.certificate.decisionAttestationDigest,
           declarationId: declaration.claimId,
         },
       },
-      evidenceRefs: [
-        ...expectedAttempts.map((attempt) => ({
-          kind: 'validation_attempt' as const,
-          attemptId: attempt.attemptId,
-        })),
-        ...(declaration.structuralSurface
-          ? [{ kind: 'structural_surface' as const, surfaceId: declaration.structuralSurface }]
-          : []),
-      ],
+      evidenceRefs: evidenceRefs(expectedAttempts, declaration, mutationAttempt),
       counterexampleRefs: counterexampleAttempts.map((attempt) => ({
         kind: 'validation_attempt' as const,
         attemptId: attempt.attemptId,
       })),
-      // Missing expected checks and unresolved mutation profiles must remain
-      // visible as required evidence, never disappear with the declaration.
-      requiredEvidence: {
-        positive: [
-          'executed_test' as const,
-          ...(declaration.structuralSurface
-            ? [
-                declaration.structuralSurface === 'config-defaults'
-                  ? ('schema_compare' as const)
-                  : ('structural_assertion' as const),
-              ]
-            : []),
-          ...(declaration.mutationProfile ? ['fault_injection' as const] : []),
-        ],
-        adversarial: declaration.critical ? ['counterexample' as const] : [],
-      },
+      requiredEvidence: requiredEvidence(declaration),
     };
   });
   return { contract: { version: 'contract.v1', claims }, coverage };
 }
 
-function approvedPlanCertificate(
-  state: SessionState,
-): NonNullable<SessionState['plan']>['approvalCertificate'] | null {
+type CertificateValidation =
+  | {
+      readonly kind: 'valid';
+      readonly certificate: NonNullable<NonNullable<SessionState['plan']>['approvalCertificate']>;
+    }
+  | { readonly kind: 'invalid'; readonly cause: 'missing_certificate' | 'invalid_certificate' };
+
+function validateApprovedPlanCertificate(state: SessionState): CertificateValidation {
   const plan = state.plan;
   const certificate = plan?.approvalCertificate;
   // The certificate is the PLAN_REVIEW approval. A later implementation-review
   // decision is unrelated, and a certificate for another plan digest is stale.
-  if (state.phase !== 'IMPL_REVIEW' || !plan || !certificate) return null;
-  if (certificate.authorityDigest !== plan.current.digest) return null;
+  if (!certificate) return { kind: 'invalid', cause: 'missing_certificate' };
+  if (state.phase !== 'IMPL_REVIEW' || !plan) {
+    return { kind: 'invalid', cause: 'invalid_certificate' };
+  }
+  if (certificate.authorityDigest !== plan.current.digest) {
+    return { kind: 'invalid', cause: 'invalid_certificate' };
+  }
   const declarations = plan.claimDeclarations ?? { flow: 'plan' as const, claims: [] };
   return certificate.claimDeclarationsDigest === hashText(canonicalJsonStringify(declarations))
-    ? certificate
-    : null;
+    ? { kind: 'valid', certificate }
+    : { kind: 'invalid', cause: 'invalid_certificate' };
 }

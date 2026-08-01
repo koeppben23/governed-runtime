@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { makeState } from '../../fixtures.js';
+import {
+  computeArtifactDigest,
+  computeProjectionDigest,
+} from '../../audit/proofgraph/mutation-report.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 import {
@@ -95,8 +102,8 @@ function stateWithClaims() {
 }
 
 describe('materializeApprovedPlanContract', () => {
-  it('materializes approved pre-evidence claims with current implementation attempts only', () => {
-    const contract = materializeApprovedPlanContract(stateWithClaims());
+  it('materializes approved pre-evidence claims with current implementation attempts only', async () => {
+    const contract = await materializeApprovedPlanContract(stateWithClaims(), process.cwd());
 
     expect(contract.claims).toHaveLength(1);
     expect(contract.claims[0]!.evidenceRefs).toEqual([
@@ -117,9 +124,12 @@ describe('materializeApprovedPlanContract', () => {
     });
   });
 
-  it('retains a claim with required executed-test coverage when its expected check is absent', () => {
+  it('retains a claim with required executed-test coverage when its expected check is absent', async () => {
     const state = stateWithClaims();
-    const contract = materializeApprovedPlanContract({ ...state, validationAttempts: [] });
+    const contract = await materializeApprovedPlanContract(
+      { ...state, validationAttempts: [] },
+      process.cwd(),
+    );
 
     expect(contract.claims).toHaveLength(1);
     expect(contract.claims[0]!.evidenceRefs).toEqual([
@@ -130,44 +140,150 @@ describe('materializeApprovedPlanContract', () => {
       adversarial: ['counterexample'],
     });
     expect(
-      materializeApprovedPlanContractResult({ ...state, validationAttempts: [] }).coverage,
+      (
+        await materializeApprovedPlanContractResult(
+          { ...state, validationAttempts: [] },
+          process.cwd(),
+        )
+      ).coverage,
     ).toEqual([
       { claimId: CLAIM_ID, cause: 'missing_expected_check' },
       { claimId: CLAIM_ID, cause: 'unverified_mutation_profile' },
     ]);
   });
 
-  it('fails closed when an approved certificate is absent or stale', () => {
-    const state = stateWithClaims();
-    const withoutCertificate = materializeApprovedPlanContract({
-      ...state,
-      plan: { ...state.plan!, approvalCertificate: undefined },
-    });
-    const staleCertificate = materializeApprovedPlanContract({
-      ...state,
-      plan: {
-        ...state.plan!,
-        approvalCertificate: { ...state.plan!.approvalCertificate!, authorityDigest: 'other-plan' },
+  it('binds the newest digest-verified current mutation attempt on later materialization', async () => {
+    const worktree = await mkdtemp(path.join(tmpdir(), 'flowguard-materialize-'));
+    const reportPath = 'reports/mutation/mutation.json';
+    const rawReport = JSON.stringify({
+      schemaVersion: '1',
+      files: {
+        'src/audit/proofgraph/evaluate.ts': {
+          mutants: [{ id: '1', mutatorName: 'BooleanLiteral', status: 'Killed' }],
+        },
       },
     });
+    try {
+      await mkdir(path.join(worktree, 'reports', 'mutation'), { recursive: true });
+      await writeFile(path.join(worktree, reportPath), rawReport, 'utf8');
+      const initial = stateWithClaims();
+      const declarations = {
+        flow: 'plan' as const,
+        claims: [
+          {
+            ...initial.plan!.claimDeclarations!.claims[0]!,
+            mutationProfile: 'proofgraph-evaluator',
+          },
+        ],
+      };
+      const state = {
+        ...initial,
+        plan: {
+          ...initial.plan!,
+          claimDeclarations: declarations,
+          approvalCertificate: {
+            ...initial.plan!.approvalCertificate!,
+            claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
+          },
+        },
+      };
+      const materialized = await materializeApprovedPlanContractResult(
+        {
+          ...state,
+          mutationAttempts: [
+            {
+              attemptId: '33333333-3333-4333-8333-333333333333',
+              implementationDigest: IMPL_DIGEST,
+              command: 'npm run mutation',
+              startedAt: NOW,
+              completedAt: '2026-01-01T00:01:00.000Z',
+              exitCode: 0,
+              artifactDigest: computeArtifactDigest(rawReport),
+              projectionDigest: computeProjectionDigest(JSON.parse(rawReport)),
+              reportPath,
+              providerVersion: 'semantic-mutation.v1',
+            },
+          ],
+        },
+        worktree,
+      );
+
+      expect(materialized.contract.claims[0]!.evidenceRefs).toContainEqual({
+        kind: 'mutation_attempt',
+        attemptId: '33333333-3333-4333-8333-333333333333',
+        profileId: 'proofgraph-evaluator',
+      });
+      expect(materialized.coverage).not.toContainEqual({
+        claimId: CLAIM_ID,
+        cause: 'unverified_mutation_profile',
+      });
+    } finally {
+      await rm(worktree, { recursive: true, force: true });
+    }
+  });
+
+  it('records diagnostic coverage when declarations or approval eligibility are absent', async () => {
+    const state = stateWithClaims();
+    await expect(
+      materializeApprovedPlanContractResult(
+        { ...state, plan: { ...state.plan!, claimDeclarations: undefined } },
+        process.cwd(),
+      ),
+    ).resolves.toMatchObject({ coverage: [{ cause: 'missing_declarations' }] });
+    await expect(
+      materializeApprovedPlanContractResult(
+        { ...state, plan: { ...state.plan!, approvalCertificate: undefined } },
+        process.cwd(),
+      ),
+    ).resolves.toMatchObject({ coverage: [{ cause: 'missing_certificate' }] });
+    await expect(
+      materializeApprovedPlanContractResult({ ...state, implementation: null }, process.cwd()),
+    ).resolves.toMatchObject({ coverage: [{ cause: 'missing_implementation' }] });
+  });
+
+  it('fails closed with invalid certificate coverage when a certificate is stale', async () => {
+    const state = stateWithClaims();
+    const withoutCertificate = await materializeApprovedPlanContract(
+      { ...state, plan: { ...state.plan!, approvalCertificate: undefined } },
+      process.cwd(),
+    );
+    const staleCertificate = await materializeApprovedPlanContract(
+      {
+        ...state,
+        plan: {
+          ...state.plan!,
+          approvalCertificate: {
+            ...state.plan!.approvalCertificate!,
+            authorityDigest: 'other-plan',
+          },
+        },
+      },
+      process.cwd(),
+    );
 
     expect(withoutCertificate).toEqual({ version: 'contract.v1', claims: [] });
     expect(staleCertificate).toEqual({ version: 'contract.v1', claims: [] });
   });
 
-  it('fails closed when the certificate declaration digest is not canonical', () => {
+  it('fails closed when the certificate declaration digest is not canonical', async () => {
     const state = stateWithClaims();
-    const contract = materializeApprovedPlanContract({
-      ...state,
-      plan: {
-        ...state.plan!,
-        approvalCertificate: {
-          ...state.plan!.approvalCertificate!,
-          claimDeclarationsDigest: 'b'.repeat(64),
+    const result = await materializeApprovedPlanContractResult(
+      {
+        ...state,
+        plan: {
+          ...state.plan!,
+          approvalCertificate: {
+            ...state.plan!.approvalCertificate!,
+            claimDeclarationsDigest: 'b'.repeat(64),
+          },
         },
       },
-    });
+      process.cwd(),
+    );
 
-    expect(contract).toEqual({ version: 'contract.v1', claims: [] });
+    expect(result).toEqual({
+      contract: { version: 'contract.v1', claims: [] },
+      coverage: [{ cause: 'invalid_certificate' }],
+    });
   });
 });

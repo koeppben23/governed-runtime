@@ -221,7 +221,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
 
       const materialized =
         advanced.state.phase === 'IMPL_REVIEW'
-          ? materializeApprovedPlanContractResult(advanced.state)
+          ? await materializeApprovedPlanContractResult(advanced.state, freshState.binding.worktree)
           : null;
       const stateWithMaterializedContract = materialized
         ? {

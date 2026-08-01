@@ -33,7 +33,7 @@ const ARCHITECTURE_CLAIM = {
   statement: 'The decision preserves the intended behavior.',
   critical: true,
   authoritySectionId: 'decision',
-  expectedCheckId: 'test',
+  requiredReviewEvidence: ['architecture-review'],
 };
 
 describe('ProofGraph approval schemas', () => {
@@ -71,11 +71,20 @@ describe('ProofGraph approval schemas', () => {
     ).toThrow();
   });
 
-  it('requires architecture declarations to name their expected implementation check', () => {
+  it('requires architecture declarations to name their required review evidence', () => {
     expect(() =>
       ArchitectureClaimDeclarations.parse({
         flow: 'architecture',
-        claims: [{ ...ARCHITECTURE_CLAIM, expectedCheckId: undefined }],
+        claims: [{ ...ARCHITECTURE_CLAIM, requiredReviewEvidence: undefined }],
+      }),
+    ).toThrow();
+  });
+
+  it('rejects implementation-specific semantics on architecture declarations', () => {
+    expect(() =>
+      ArchitectureClaimDeclarations.parse({
+        flow: 'architecture',
+        claims: [{ ...ARCHITECTURE_CLAIM, expectedCheckId: 'test' }],
       }),
     ).toThrow();
   });

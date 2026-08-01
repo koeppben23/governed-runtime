@@ -30,15 +30,14 @@ export const PlanClaimDeclaration = z
   .readonly();
 export type PlanClaimDeclaration = z.infer<typeof PlanClaimDeclaration>;
 
-/** An ADR claim names the checks expected to cover and falsify it after implementation. */
+/** An ADR claim names the review evidence and assumptions for the decision. */
 export const ArchitectureClaimDeclaration = z
   .object({
     ...preEvidenceClaimDeclaration,
-    expectedCheckId: z.string().min(1),
-    counterexampleCheckId: z.string().min(1).optional(),
-    structuralSurface: z.string().min(1).optional(),
-    mutationProfile: z.string().min(1).optional(),
+    requiredReviewEvidence: z.array(z.string().min(1)),
+    assumptions: z.array(z.string().min(1)).optional(),
   })
+  .strict()
   .readonly();
 export type ArchitectureClaimDeclaration = z.infer<typeof ArchitectureClaimDeclaration>;
 

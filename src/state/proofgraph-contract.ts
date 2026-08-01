@@ -35,8 +35,15 @@ export type ProofContract = z.infer<typeof ProofContract>;
 /** Cause-specific coverage gaps recorded when approved declarations materialize. */
 export const ProofContractCoverage = z
   .object({
-    claimId: z.string().uuid(),
-    cause: z.enum(['missing_expected_check', 'unverified_mutation_profile']),
+    claimId: z.string().uuid().optional(),
+    cause: z.enum([
+      'missing_declarations',
+      'missing_certificate',
+      'invalid_certificate',
+      'missing_implementation',
+      'missing_expected_check',
+      'unverified_mutation_profile',
+    ]),
   })
   .readonly();
 export type ProofContractCoverage = z.infer<typeof ProofContractCoverage>;
