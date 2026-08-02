@@ -13,7 +13,6 @@ import { buildHostTaskEvidence } from './review/evidence-binding.js';
 import {
   appendInvocationEvidence,
   ensureReviewAssurance,
-  appendReviewAttempt,
   staleObligationAttempts,
   updateAttemptStatus,
 } from './review/assurance.js';
@@ -71,6 +70,58 @@ export async function handleHostTaskEvidence(
     });
 
     const eState = deps.ws.getEnforcementState(sessionId);
+
+    // Bind the child session to the pre-created attempt BEFORE any callback
+    // processing. The attempt was created at obligation time without a
+    // childSessionId; we now have the real childSessionId from the
+    // enforcement state. This is persisted before buildHostTaskEvidence
+    // runs, so resolveExistingAttempt finds it by exact childSessionId match.
+    const calledReview = [...eState.pendingReviews.values()].find(
+      (p) => p.subagentCalled && p.subagentRecord?.sessionId,
+    );
+    if (calledReview?.subagentRecord?.sessionId) {
+      const childId = calledReview.subagentRecord.sessionId;
+      const preCreatedAttempt = state.reviewAssurance?.attempts?.find(
+        (a) => !a.childSessionId && a.status === 'created',
+      );
+      if (preCreatedAttempt) {
+        const updatedAssurance = updateAttemptStatus(
+          ensureReviewAssurance(state.reviewAssurance),
+          preCreatedAttempt.attemptId,
+          'created',
+          now,
+          childId,
+        );
+        // Write the attempt's childSessionId binding before the callback
+        // processes — the callback must not be the one to establish the link.
+        await deps.ws.updateReviewAssurance(sessDir, (s: SessionState) => ({
+          ...s,
+          reviewAssurance: updatedAssurance,
+        }));
+        // Refresh the state so buildHostTaskEvidence sees the updated attempts.
+        const refreshed = await readState(sessDir);
+        if (refreshed) {
+          const bindResult = buildHostTaskEvidence(
+            eState,
+            sessionId,
+            refreshed.reviewAssurance?.obligations ?? obligations,
+            refreshed.reviewAssurance?.invocations ?? invocations,
+            now,
+            refreshed.reviewAssurance?.attempts,
+          );
+          await applyHostTaskBindResult({
+            deps,
+            sessDir,
+            sessionId,
+            policy,
+            bindResult,
+            hookOutput,
+          });
+          return;
+        }
+      }
+    }
+
     const attempts = state.reviewAssurance?.attempts;
     const bindResult = buildHostTaskEvidence(
       eState,
@@ -168,22 +219,22 @@ async function persistHostTaskEvidence(
     const assurance = ensureReviewAssurance(s.reviewAssurance);
     const withInvocation = appendInvocationEvidence(assurance, evidence);
     if (bindResult.attempt) {
-      // Stale any prior attempts for this obligation, then append the new one.
-      const deduped = staleObligationAttempts(
+      const now = evidence.fulfilledAt ?? evidence.invokedAt ?? new Date().toISOString();
+      // Update the existing attempt record in-place — never append a duplicate.
+      const marked = updateAttemptStatus(
         withInvocation,
+        bindResult.attempt.attemptId,
+        'bound',
+        now,
+      );
+      // Stale any OTHER non-bound attempts for the same obligation.
+      const deduped = staleObligationAttempts(
+        marked,
         evidence.obligationId,
         bindResult.attempt.attemptId,
-        evidence.fulfilledAt ?? evidence.invokedAt ?? new Date().toISOString(),
+        now,
       );
-      const boundAttempt = {
-        ...bindResult.attempt,
-        status: 'bound' as const,
-        completedAt: evidence.fulfilledAt ?? evidence.invokedAt ?? new Date().toISOString(),
-      };
-      return {
-        ...s,
-        reviewAssurance: appendReviewAttempt(deduped, boundAttempt),
-      };
+      return { ...s, reviewAssurance: deduped };
     }
     return { ...s, reviewAssurance: withInvocation };
   });

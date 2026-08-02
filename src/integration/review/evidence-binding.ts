@@ -229,19 +229,7 @@ function resolveExistingAttempt(
   childSessionId: string,
   obligation: ReviewObligation,
 ): { attempt: ReviewAttempt } | HostTaskBindResult {
-  // Primary lookup: match by childSessionId (set when enforcement records
-  // the Task invocation). Pre-created attempts lack childSessionId — fall
-  // back to obligationId + obligationType match for the first callback.
-  let existing = existingAttempts.find((a) => a.childSessionId === childSessionId);
-  if (!existing) {
-    existing = existingAttempts.find(
-      (a) =>
-        !a.childSessionId &&
-        a.obligationId === obligation.obligationId &&
-        a.obligationType === obligation.obligationType &&
-        a.status === 'created',
-    );
-  }
+  const existing = existingAttempts.find((a) => a.childSessionId === childSessionId);
   if (!existing) {
     return {
       evidence: null,
@@ -249,13 +237,9 @@ function resolveExistingAttempt(
       diagnostic: {
         childSessionId,
         message:
-          'No attempt record found for this child session. Attempts are created before invocation — a late or unknown callback cannot bind.',
+          'No attempt record found for this child session. The child session must be bound to an attempt at Task-start time — callbacks without a known invocation are rejected.',
       },
     };
-  }
-  // Bind the child session to a pre-created attempt that lacked one.
-  if (!existing.childSessionId) {
-    existing = { ...existing, childSessionId };
   }
   if (existing.obligationId !== obligation.obligationId) {
     return {

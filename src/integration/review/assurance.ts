@@ -472,6 +472,7 @@ export function updateAttemptStatus(
   attemptId: string,
   status: ReviewAttempt['status'],
   now: string,
+  childSessionId?: string,
 ): ReviewAssuranceState {
   const base = ensureReviewAssurance(assurance);
   if (!base.attempts) return base;
@@ -480,7 +481,12 @@ export function updateAttemptStatus(
     attempts: base.attempts.map((a) =>
       a.attemptId !== attemptId
         ? a
-        : { ...a, status, completedAt: status !== 'created' ? now : a.completedAt },
+        : {
+            ...a,
+            status,
+            completedAt: status !== 'created' ? now : a.completedAt,
+            ...(childSessionId && !a.childSessionId ? { childSessionId } : {}),
+          },
     ),
   };
 }
