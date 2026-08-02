@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     declared `targetPaths` look HIGH-RISK and no critical claim is declared.
     Explicitly heuristic: target paths are a forecast, the binding assessment
     comes from the implementation's actual changed files.
+  - **Specific HIGH-RISK triggers require a critical fact.** The implementation
+    assessment now retains `riskTriggers` beside its existing path list. A
+    current assessment with `state_integrity`, `audit_authority`,
+    `identity_boundary`, `approval_authority`, `policy_authority`, `migration`,
+    `distribution_integrity`, or `command_contract` requires at least one
+    certificate-authorized critical `fact` claim at final evidence approval.
+    `ceremony_only` retains HIGH-RISK review ceremony without creating a claim
+    requirement. Assessments written before trigger classification are
+    superseded and cannot justify final approval.
 
 - **ProofGraph product-path integration (completes #762).** The claim surface was
   implemented but unreachable through the product: the tool schemas accepted

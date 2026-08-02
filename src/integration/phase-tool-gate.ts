@@ -16,7 +16,7 @@
  * @version v1
  */
 
-import type { Phase, SessionState, TaskClass } from '../state/schema.js';
+import type { Phase, RiskTrigger, SessionState, TaskClass } from '../state/schema.js';
 import { randomUUID } from 'node:crypto';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -98,6 +98,7 @@ export interface RiskClassificationDecision extends PhaseGateResult {
   readonly claimedTaskClass?: TaskClass;
   readonly minimumTaskClass: TaskClass;
   readonly touchedSurfaces: readonly string[];
+  readonly riskTriggers: readonly RiskTrigger[];
   readonly changedFiles: readonly string[];
 }
 
@@ -116,6 +117,7 @@ export interface CeremonyProfileDecision {
   readonly claimedTaskClass?: TaskClass;
   readonly computedMinimumTaskClass: TaskClass;
   readonly touchedSurfaces: readonly string[];
+  readonly riskTriggers: readonly RiskTrigger[];
 }
 
 export interface CeremonyProfileInput {
@@ -255,46 +257,95 @@ export function maxTaskClass(a: TaskClass, b: TaskClass): TaskClass {
   return TASK_CLASS_ORDER[a] >= TASK_CLASS_ORDER[b] ? a : b;
 }
 
-function classifyPath(filePath: string): { minimumTaskClass: TaskClass; surface: string } {
+const RISK_TRIGGER_RULES: ReadonlyArray<{
+  readonly trigger: Exclude<RiskTrigger, 'ceremony_only'>;
+  readonly pattern: RegExp;
+}> = [
+  { trigger: 'state_integrity', pattern: /^src\/(state|machine)\// },
+  { trigger: 'audit_authority', pattern: /^src\/(audit\/|adapters\/persistence-audit)/ },
+  { trigger: 'identity_boundary', pattern: /^src\/(identity|security)\// },
+  { trigger: 'approval_authority', pattern: /^src\/(integration\/review\/|rails\/review)/ },
+  {
+    trigger: 'policy_authority',
+    pattern: /^src\/config\/(.*(policy|schema|resolver|preset|default).*|flowguard-config\.ts)$/,
+  },
+  { trigger: 'migration', pattern: /(^|\/)migration(s)?(\/|[-_].*)/ },
+  {
+    trigger: 'distribution_integrity',
+    pattern:
+      /^(package(-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb|scripts\/(release|install|uninstall)|src\/cli\/(install|uninstall|release))|(^|\/)(release|installer?)(\/|[-_].*)/,
+  },
+  {
+    trigger: 'command_contract',
+    pattern:
+      /^src\/(templates\/commands\/|templates\/mandates\.ts|rendering\/mandates-renderer\.ts|templates\/mandates-reviewer-criteria\.ts)/,
+  },
+];
+
+function riskTriggersForPath(p: string): readonly Exclude<RiskTrigger, 'ceremony_only'>[] {
+  return RISK_TRIGGER_RULES.filter((rule) => rule.pattern.test(p))
+    .map((rule) => rule.trigger)
+    .sort();
+}
+
+function classifyPath(filePath: string): {
+  minimumTaskClass: TaskClass;
+  surface: string;
+  riskTriggers: readonly Exclude<RiskTrigger, 'ceremony_only'>[];
+} {
   const p = normalizePathForRisk(filePath);
   if (
     HIGH_RISK_EXACT.has(p) ||
     HIGH_RISK_PREFIXES.some((prefix) => p.startsWith(prefix)) ||
     HIGH_RISK_RE.some((pattern) => pattern.test(p))
   ) {
-    return { minimumTaskClass: 'HIGH-RISK', surface: p };
+    return { minimumTaskClass: 'HIGH-RISK', surface: p, riskTriggers: riskTriggersForPath(p) };
   }
   // Root-level tool/editor config (opencode.json, tsconfig.json, ...) is not a
   // governed domain surface and must not impose a STANDARD floor. High-risk
   // config (package.json, lockfiles, .opencode/) already returned above.
   if (isNonDomainConfigPath(p)) {
-    return { minimumTaskClass: 'TRIVIAL', surface: p };
+    return { minimumTaskClass: 'TRIVIAL', surface: p, riskTriggers: [] };
   }
   if (p === 'CHANGELOG.md' || GOVERNANCE_DOC_RE.test(p)) {
-    return { minimumTaskClass: 'STANDARD', surface: p };
+    return { minimumTaskClass: 'STANDARD', surface: p, riskTriggers: [] };
   }
   if (p.endsWith('.test.ts') || p.endsWith('.spec.ts')) {
-    return { minimumTaskClass: 'STANDARD', surface: p };
+    return { minimumTaskClass: 'STANDARD', surface: p, riskTriggers: [] };
   }
   if (p.endsWith('.md')) {
-    return { minimumTaskClass: 'TRIVIAL', surface: p };
+    return { minimumTaskClass: 'TRIVIAL', surface: p, riskTriggers: [] };
   }
-  return { minimumTaskClass: 'STANDARD', surface: p };
+  return { minimumTaskClass: 'STANDARD', surface: p, riskTriggers: [] };
 }
 
 export function assessMinimumTaskClass(paths: readonly string[]): {
   readonly minimumTaskClass: TaskClass;
   readonly touchedSurfaces: readonly string[];
+  readonly riskTriggers: readonly RiskTrigger[];
 } {
-  if (paths.length === 0) return { minimumTaskClass: 'TRIVIAL', touchedSurfaces: [] };
+  if (paths.length === 0) {
+    return { minimumTaskClass: 'TRIVIAL', touchedSurfaces: [], riskTriggers: [] };
+  }
   let minimumTaskClass: TaskClass = 'TRIVIAL';
   const touchedSurfaces = new Set<string>();
+  const riskTriggers = new Set<Exclude<RiskTrigger, 'ceremony_only'>>();
   for (const filePath of paths) {
     const classified = classifyPath(filePath);
     minimumTaskClass = maxTaskClass(minimumTaskClass, classified.minimumTaskClass);
     touchedSurfaces.add(classified.surface);
+    classified.riskTriggers.forEach((trigger) => riskTriggers.add(trigger));
   }
-  return { minimumTaskClass, touchedSurfaces: [...touchedSurfaces].sort() };
+  return {
+    minimumTaskClass,
+    touchedSurfaces: [...touchedSurfaces].sort(),
+    // Ceremony-only marks a HIGH-RISK result whose matching paths have no
+    // specific ProofGraph authority. It never accompanies a specific trigger.
+    riskTriggers:
+      minimumTaskClass === 'HIGH-RISK' && riskTriggers.size === 0
+        ? ['ceremony_only']
+        : [...riskTriggers].sort(),
+  };
 }
 
 export function isRiskClassificationAllowed(
@@ -317,6 +368,7 @@ export function isRiskClassificationAllowed(
       claimedTaskClass: state.claimedTaskClass,
       minimumTaskClass: assessment.minimumTaskClass,
       touchedSurfaces: assessment.touchedSurfaces,
+      riskTriggers: assessment.riskTriggers,
       changedFiles: uniquePaths,
     };
   }
@@ -330,6 +382,7 @@ export function isRiskClassificationAllowed(
       decisionId,
       minimumTaskClass: assessment.minimumTaskClass,
       touchedSurfaces: assessment.touchedSurfaces,
+      riskTriggers: assessment.riskTriggers,
       changedFiles: uniquePaths,
     };
   }
@@ -348,6 +401,7 @@ export function isRiskClassificationAllowed(
       claimedTaskClass,
       minimumTaskClass: assessment.minimumTaskClass,
       touchedSurfaces: assessment.touchedSurfaces,
+      riskTriggers: assessment.riskTriggers,
       changedFiles: uniquePaths,
     };
   }
@@ -358,6 +412,7 @@ export function isRiskClassificationAllowed(
     claimedTaskClass,
     minimumTaskClass: assessment.minimumTaskClass,
     touchedSurfaces: assessment.touchedSurfaces,
+    riskTriggers: assessment.riskTriggers,
     changedFiles: uniquePaths,
   };
 }
@@ -382,6 +437,7 @@ export function resolveCeremonyProfile(input: CeremonyProfileInput): CeremonyPro
     claimedTaskClass: input.state.claimedTaskClass,
     computedMinimumTaskClass: assessment.minimumTaskClass,
     touchedSurfaces: assessment.touchedSurfaces,
+    riskTriggers: assessment.riskTriggers,
   };
 
   if (input.state.policySnapshot.allowReducedCeremony !== true) {

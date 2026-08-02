@@ -102,6 +102,83 @@ describe('review-decision rail', () => {
       }
     });
 
+    it('blocks a specific implementation trigger without a critical fact claim', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        {
+          ...state,
+          implementation: {
+            changedFiles: ['src/state/schema.ts'],
+            domainFiles: ['src/state/schema.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'HIGH-RISK',
+            touchedSurfaces: ['src/state/schema.ts'],
+            riskTriggers: ['state_integrity'],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 1,
+            implementationDigest: 'implementation-digest',
+          },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_CRITICAL_FACT_REQUIRED' });
+    });
+
+    it('does not impose a critical fact requirement for ceremony_only', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        {
+          ...state,
+          implementation: {
+            changedFiles: ['src/archive/verify.ts'],
+            domainFiles: ['src/archive/verify.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'HIGH-RISK',
+            touchedSurfaces: ['src/archive/verify.ts'],
+            riskTriggers: ['ceremony_only'],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 1,
+            implementationDigest: 'implementation-digest',
+          },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result).toMatchObject({ kind: 'ok' });
+    });
+
+    it('blocks an assessment that predates trigger classification', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        {
+          ...state,
+          implementation: {
+            changedFiles: ['src/state/schema.ts'],
+            domainFiles: ['src/state/schema.ts'],
+            digest: 'implementation-digest',
+            executedAt: '2026-01-01T00:00:00.000Z',
+          },
+          implementationRiskAssessment: {
+            computedMinimumTaskClass: 'HIGH-RISK',
+            touchedSurfaces: ['src/state/schema.ts'],
+            assessedFrom: 'implementation_changed_files',
+            assessedFileCount: 1,
+            implementationDigest: 'implementation-digest',
+          },
+        },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_RISK_ASSESSMENT_STALE' });
+    });
+
     it('does not apply the gate to hypothesis claims', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
       const result = executeReviewDecision(

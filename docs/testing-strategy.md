@@ -171,7 +171,7 @@ they are not a per-area carve-out.
 
 ### Scope
 
-49 files are mutated, covering the fail-closed governance core
+50 files are mutated, covering the fail-closed governance core
 (see `stryker.conf.json` for the canonical list):
 
 | Area                                                                                                                                                                                                                                                                                                                                                 | Files  | Representative score            |

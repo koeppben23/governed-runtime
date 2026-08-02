@@ -20,6 +20,7 @@
 
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofClaim } from '../../state/proofgraph.js';
+import type { RiskTrigger } from '../../state/schema.js';
 
 /** The evaluated ProofGraph gate decision. */
 export interface ProofGraphGateDecision {
@@ -36,6 +37,15 @@ export interface ProofGraphGateDecision {
   readonly blockingClaimIds: readonly string[];
   /** Human-readable rationale. */
   readonly reason: string;
+  /** Why the decision gates, or `clear` when it does not. */
+  readonly kind: 'clear' | 'risk_assessment_stale' | 'critical_fact_required' | 'facts_unproven';
+  /** Specific persisted authority triggers relevant to the requirement. */
+  readonly relevantTriggers: readonly Exclude<RiskTrigger, 'ceremony_only'>[];
+}
+
+export interface ImplementationRiskAssessmentForGate {
+  readonly implementationDigest: string;
+  readonly riskTriggers?: readonly RiskTrigger[];
 }
 
 /**
@@ -55,16 +65,72 @@ function isGateEligible(claim: ProofClaim): boolean {
   );
 }
 
+/** A gate may use only an assessment bound to this implementation and trigger taxonomy. */
+export function isRiskAssessmentCurrent(
+  assessment: ImplementationRiskAssessmentForGate | undefined,
+  implementationDigest: string | undefined,
+): boolean {
+  return (
+    assessment !== undefined &&
+    implementationDigest !== undefined &&
+    assessment.implementationDigest === implementationDigest &&
+    Array.isArray(assessment.riskTriggers)
+  );
+}
+
+function relevantTriggers(
+  assessment: ImplementationRiskAssessmentForGate | undefined,
+): readonly Exclude<RiskTrigger, 'ceremony_only'>[] {
+  return (assessment?.riskTriggers ?? []).filter(
+    (trigger): trigger is Exclude<RiskTrigger, 'ceremony_only'> => trigger !== 'ceremony_only',
+  );
+}
+
 /**
  * Evaluate the ProofGraph gate for a session summary.
  *
  * @param summary The session's ProofGraph summary.
  */
 export function evaluateProofGraphGate(
-  summary: Pick<ProofGraphSummary, 'projection'>,
+  input: Pick<ProofGraphSummary, 'projection'> & {
+    readonly implementationDigest?: string;
+    readonly riskAssessment?: ImplementationRiskAssessmentForGate;
+  },
 ): ProofGraphGateDecision {
-  const blockingClaimIds = summary.projection.claims
-    .filter((claim) => isGateEligible(claim) && claim.verificationState !== 'PROVEN')
+  const triggers = relevantTriggers(input.riskAssessment);
+  // Change-1 assessments exist but lack `riskTriggers`; they are explicitly
+  // superseded. Fully legacy sessions without any persisted assessment retain
+  // the original claim-only gate because no classification was ever asserted.
+  if (
+    input.riskAssessment !== undefined &&
+    input.implementationDigest !== undefined &&
+    !isRiskAssessmentCurrent(input.riskAssessment, input.implementationDigest)
+  ) {
+    return {
+      enforced: true,
+      gated: true,
+      blockingClaimIds: [],
+      reason:
+        'The implementation risk assessment is missing, stale, or predates trigger classification; record a fresh implementation assessment before approval.',
+      kind: 'risk_assessment_stale',
+      relevantTriggers: [],
+    };
+  }
+
+  const eligibleClaims = input.projection.claims.filter(isGateEligible);
+  if (triggers.length > 0 && eligibleClaims.length === 0) {
+    return {
+      enforced: true,
+      gated: true,
+      blockingClaimIds: [],
+      reason: `A critical, certificate-authorized fact claim is required for: ${triggers.join(', ')}.`,
+      kind: 'critical_fact_required',
+      relevantTriggers: triggers,
+    };
+  }
+
+  const blockingClaimIds = eligibleClaims
+    .filter((claim) => claim.verificationState !== 'PROVEN')
     .map((claim) => claim.claimId);
   return {
     enforced: true,
@@ -74,5 +140,7 @@ export function evaluateProofGraphGate(
       blockingClaimIds.length > 0
         ? `${blockingClaimIds.length} critical fact claim(s) are not PROVEN.`
         : 'All critical fact claims are PROVEN.',
+    kind: blockingClaimIds.length > 0 ? 'facts_unproven' : 'clear',
+    relevantTriggers: triggers,
   };
 }

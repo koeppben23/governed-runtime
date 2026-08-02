@@ -14,10 +14,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildHeuristicRiskWarning,
-  isRiskAssessmentCurrent,
   validateProofClaimContract,
   type NormalizedClaimDeclaration,
 } from './claim-contract.js';
+import { isRiskAssessmentCurrent } from '../../audit/proofgraph/gate.js';
 
 const CLAIM_A = '10000000-0000-4000-8000-00000000000a';
 const CLAIM_B = '10000000-0000-4000-8000-00000000000b';
@@ -174,16 +174,26 @@ describe('validateProofClaimContract — public field language', () => {
 
 describe('isRiskAssessmentCurrent', () => {
   it('accepts an assessment bound to the current revision', () => {
-    expect(isRiskAssessmentCurrent({ implementationDigest: 'abc' }, 'abc')).toBe(true);
+    expect(isRiskAssessmentCurrent({ implementationDigest: 'abc', riskTriggers: [] }, 'abc')).toBe(
+      true,
+    );
   });
 
   it('rejects an assessment bound to a superseded revision', () => {
-    expect(isRiskAssessmentCurrent({ implementationDigest: 'old' }, 'abc')).toBe(false);
+    expect(isRiskAssessmentCurrent({ implementationDigest: 'old', riskTriggers: [] }, 'abc')).toBe(
+      false,
+    );
   });
 
   it('rejects a missing assessment or a missing revision', () => {
     expect(isRiskAssessmentCurrent(undefined, 'abc')).toBe(false);
-    expect(isRiskAssessmentCurrent({ implementationDigest: 'abc' }, undefined)).toBe(false);
+    expect(
+      isRiskAssessmentCurrent({ implementationDigest: 'abc', riskTriggers: [] }, undefined),
+    ).toBe(false);
+  });
+
+  it('treats a pre-trigger assessment as superseded', () => {
+    expect(isRiskAssessmentCurrent({ implementationDigest: 'abc' }, 'abc')).toBe(false);
   });
 });
 

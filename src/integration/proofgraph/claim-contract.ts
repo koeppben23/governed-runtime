@@ -244,14 +244,6 @@ export function validateProofClaimContract(input: ClaimContractInput): ClaimCont
  * Whether an implementation risk assessment still describes the current
  * revision. A superseded assessment must never justify a gate decision.
  */
-export function isRiskAssessmentCurrent(
-  assessment: { readonly implementationDigest: string } | undefined,
-  implementationDigest: string | undefined,
-): boolean {
-  if (!assessment || implementationDigest === undefined) return false;
-  return assessment.implementationDigest === implementationDigest;
-}
-
 /** Advisory-only projection of a heuristic pre-implementation risk signal. */
 export interface HeuristicRiskWarning {
   readonly computedMinimumTaskClass: TaskClass;

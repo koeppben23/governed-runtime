@@ -41,7 +41,7 @@ import { summarizeProofGraph, summarizePersistedProofGraph } from '../audit/proo
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
 import { buildProofApprovalProjection } from './proofgraph/approval-projection.js';
 import { buildReviewerProofContext } from './review/proof-context.js';
-import { isRiskAssessmentCurrent } from './proofgraph/claim-contract.js';
+import { isRiskAssessmentCurrent } from '../audit/proofgraph/gate.js';
 import { makeState, TICKET, IMPL_EVIDENCE, FIXED_TIME } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
 import type { PlanClaimDeclaration } from '../state/proofgraph-approval.js';
@@ -447,6 +447,7 @@ describe('implementation risk assessment (runtime)', () => {
         assessedFrom: 'implementation_changed_files',
         assessedFileCount: 1,
         implementationDigest: IMPL_EVIDENCE.digest,
+        riskTriggers: ['state_integrity'],
       },
     });
 
@@ -464,6 +465,7 @@ describe('implementation risk assessment (runtime)', () => {
         assessedFrom: 'implementation_changed_files',
         assessedFileCount: 1,
         implementationDigest: IMPL_EVIDENCE.digest,
+        riskTriggers: ['state_integrity'],
       },
     });
 

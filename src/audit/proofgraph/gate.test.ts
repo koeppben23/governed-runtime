@@ -131,4 +131,41 @@ describe('evaluateProofGraphGate', () => {
     expect(decision.gated).toBe(false);
     expect(decision.blockingClaimIds).toEqual([]);
   });
+
+  it('requires a certified critical fact for a specific risk trigger', () => {
+    const decision = evaluateProofGraphGate({
+      ...summary([]),
+      implementationDigest: 'implementation-digest',
+      riskAssessment: {
+        implementationDigest: 'implementation-digest',
+        riskTriggers: ['state_integrity'],
+      },
+    });
+    expect(decision).toMatchObject({
+      gated: true,
+      kind: 'critical_fact_required',
+      relevantTriggers: ['state_integrity'],
+    });
+  });
+
+  it('does not impose a critical fact requirement for ceremony_only', () => {
+    const decision = evaluateProofGraphGate({
+      ...summary([]),
+      implementationDigest: 'implementation-digest',
+      riskAssessment: {
+        implementationDigest: 'implementation-digest',
+        riskTriggers: ['ceremony_only'],
+      },
+    });
+    expect(decision).toMatchObject({ gated: false, kind: 'clear', relevantTriggers: [] });
+  });
+
+  it('blocks a legacy assessment that has no trigger taxonomy', () => {
+    const decision = evaluateProofGraphGate({
+      ...summary([]),
+      implementationDigest: 'implementation-digest',
+      riskAssessment: { implementationDigest: 'implementation-digest' },
+    });
+    expect(decision).toMatchObject({ gated: true, kind: 'risk_assessment_stale' });
+  });
 });

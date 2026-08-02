@@ -39,6 +39,29 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'PROOFGRAPH_CRITICAL_FACT_REQUIRED',
+    category: 'precondition',
+    messageTemplate:
+      'Evidence approval is blocked because {triggers} requires at least one critical, certificate-authorized fact claim.',
+    recoverySteps: [
+      'Request changes to return to implementation, then add a critical plan claim with expected and counterexample checks',
+      'Obtain plan approval so the declaration receives its certificate binding',
+      'Record fresh evidence that proves the critical fact claim before requesting approval again',
+    ],
+  },
+
+  {
+    code: 'PROOFGRAPH_RISK_ASSESSMENT_STALE',
+    category: 'precondition',
+    messageTemplate:
+      'Evidence approval is blocked because the implementation risk assessment is missing, stale, or predates trigger classification.',
+    recoverySteps: [
+      'Request changes to return to implementation and record a fresh implementation assessment',
+      'Do not approve until the assessment is bound to the current implementation digest and includes risk triggers',
+    ],
+  },
+
+  {
     code: 'PROOFGRAPH_MUTATION_PHASE_INELIGIBLE',
     category: 'precondition',
     messageTemplate:

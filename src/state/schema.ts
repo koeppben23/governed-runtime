@@ -99,6 +99,20 @@ export type Phase = z.infer<typeof Phase>;
 export const TaskClass = z.enum(['TRIVIAL', 'STANDARD', 'HIGH-RISK']);
 export type TaskClass = z.infer<typeof TaskClass>;
 
+/** Specific authority affected by a HIGH-RISK implementation change. */
+export const RiskTrigger = z.enum([
+  'state_integrity',
+  'audit_authority',
+  'identity_boundary',
+  'approval_authority',
+  'policy_authority',
+  'migration',
+  'distribution_integrity',
+  'command_contract',
+  'ceremony_only',
+]);
+export type RiskTrigger = z.infer<typeof RiskTrigger>;
+
 /** Runtime decision that implementation review ceremony was explicitly reduced. */
 export const ReducedCeremonyDecision = z
   .object({
@@ -124,6 +138,9 @@ export const ImplementationRiskAssessment = z
   .object({
     computedMinimumTaskClass: TaskClass,
     touchedSurfaces: z.array(z.string()),
+    // Optional for sessions written before #762 Change 2. Consumers must treat
+    // its absence as superseded rather than silently inferring a trigger.
+    riskTriggers: z.array(RiskTrigger).optional(),
     assessedFrom: z.literal('implementation_changed_files'),
     assessedFileCount: z.number().int().nonnegative(),
     implementationDigest: z.string().min(1),

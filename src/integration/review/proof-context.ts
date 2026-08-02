@@ -15,6 +15,7 @@
 
 import type { SessionState } from '../../state/schema.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
+import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
 
 /** Bound on rendered list entries so a large graph cannot dominate the prompt. */
 const MAX_RENDERED_ENTRIES = 20;
@@ -176,6 +177,32 @@ export function renderCoverageGaps(state: SessionState): string[] {
   ];
 }
 
+/** Render the persisted critical-fact requirement without performing fresh classification. */
+export function renderCriticalClaimRequirement(state: SessionState): string[] {
+  if (!state.implementation) return [];
+  const decision = evaluateProofGraphGate({
+    projection: state.proofGraph ?? { version: 'proofgraph.v1', claims: [], evaluatedAt: '' },
+    implementationDigest: state.implementation.digest,
+    riskAssessment: state.implementationRiskAssessment,
+  });
+  if (decision.kind === 'risk_assessment_stale') {
+    return [
+      '## Critical Fact Claim Requirement (persisted)',
+      '',
+      '- Status: NOT_VERIFIED. The implementation risk assessment is missing, stale, or predates trigger classification.',
+      '',
+    ];
+  }
+  if (decision.relevantTriggers.length === 0) return [];
+  return [
+    '## Critical Fact Claim Requirement (persisted)',
+    '',
+    `- Relevant triggers: ${decision.relevantTriggers.join(', ')}.`,
+    '- At least one critical, certificate-authorized fact claim is required before final evidence approval.',
+    '',
+  ];
+}
+
 /**
  * Compose the full reviewer-facing ProofGraph context.
  *
@@ -187,5 +214,6 @@ export function buildReviewerProofContext(state: SessionState): string[] {
     ...renderPersistedProofGraphContext(state.proofGraph),
     ...renderDeclarationPreview(state),
     ...renderCoverageGaps(state),
+    ...renderCriticalClaimRequirement(state),
   ];
 }

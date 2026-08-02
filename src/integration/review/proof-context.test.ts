@@ -208,4 +208,26 @@ describe('host-task reviewer prompt carries ProofGraph context', () => {
     });
     expect(prompt).toContain('Coverage: NOT_DECLARED');
   });
+
+  it('renders the persisted critical fact requirement for a specific trigger', () => {
+    const state = makeState('IMPL_REVIEW', {
+      implementation: {
+        changedFiles: ['src/state/schema.ts'],
+        domainFiles: ['src/state/schema.ts'],
+        digest: 'implementation-digest',
+        executedAt: '2026-01-01T00:00:00.000Z',
+      },
+      implementationRiskAssessment: {
+        computedMinimumTaskClass: 'HIGH-RISK',
+        touchedSurfaces: ['src/state/schema.ts'],
+        riskTriggers: ['state_integrity'],
+        assessedFrom: 'implementation_changed_files',
+        assessedFileCount: 1,
+        implementationDigest: 'implementation-digest',
+      },
+    });
+    expect(buildReviewerProofContext(state).join('\n')).toContain(
+      'Relevant triggers: state_integrity',
+    );
+  });
 });

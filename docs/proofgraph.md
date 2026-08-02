@@ -72,7 +72,23 @@ ignores whether it was ever proven — which contradicts the meaning of
 - only when the author declared them `critical`;
 - `derived_signal` (architecture) and `hypothesis` (standalone review) claims are
   never gate-eligible and remain advisory;
-- a session that declares no critical claim is unaffected.
+- a session whose implementation has only `ceremony_only` risk triggers is
+  unaffected.
+
+For an implementation with a specific persisted risk trigger, FlowGuard also
+requires at least one certificate-authorized critical `fact` claim before final
+evidence approval. The trigger taxonomy is `state_integrity`, `audit_authority`,
+`identity_boundary`, `approval_authority`, `policy_authority`, `migration`,
+`distribution_integrity`, and `command_contract`. A trigger is computed from the
+actual changed files, bound to the implementation digest, and rendered to the
+reviewer. Multiple specific triggers are retained. `ceremony_only` preserves the
+existing HIGH-RISK ceremony for broad sensitive surfaces but never creates this
+claim requirement.
+
+Assessments persisted before risk triggers existed are treated as superseded at
+the final gate. Request changes, record a fresh implementation assessment, and
+then request approval again; FlowGuard does not infer a trigger from an old path
+list at the approval boundary.
 
 Everything else remains owned by ReviewFindings, obligations, attestations, and
 validation. ProofGraph adds one blocking condition; it replaces no authority.
@@ -95,7 +111,7 @@ flowguard_declare_contract({
     {
       statement: "the change is covered by the test check",
       checkId: "test",              // evidence: a passing attempt PROVES the claim
-      critical: true,               // optional (default true)
+      critical: true,               // required
       counterexampleCheckId: "security" // optional: a check whose FAILURE contradicts the claim
     }
   ]

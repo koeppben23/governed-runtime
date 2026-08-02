@@ -259,11 +259,23 @@ function enforceProofGraphEvidenceApproval(
   state: SessionState,
   input: ReviewDecisionInput,
 ): RailBlocked | null {
-  if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve' || !state.proofGraph) {
+  if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve') {
     return null;
   }
-  const decision = evaluateProofGraphGate({ projection: state.proofGraph });
+  const decision = evaluateProofGraphGate({
+    projection: state.proofGraph ?? { version: 'proofgraph.v1', claims: [], evaluatedAt: '' },
+    implementationDigest: state.implementation?.digest,
+    riskAssessment: state.implementationRiskAssessment,
+  });
   if (!decision.gated) return null;
+  if (decision.kind === 'risk_assessment_stale') {
+    return blocked('PROOFGRAPH_RISK_ASSESSMENT_STALE', {});
+  }
+  if (decision.kind === 'critical_fact_required') {
+    return blocked('PROOFGRAPH_CRITICAL_FACT_REQUIRED', {
+      triggers: decision.relevantTriggers.join(', '),
+    });
+  }
   return blocked('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN', {
     claimIds: decision.blockingClaimIds.join(', '),
   });

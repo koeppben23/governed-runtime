@@ -341,6 +341,7 @@ export async function handleImplRecord(
     implementationRiskAssessment: {
       computedMinimumTaskClass: ceremony.computedMinimumTaskClass,
       touchedSurfaces: [...ceremony.touchedSurfaces],
+      riskTriggers: [...ceremony.riskTriggers],
       assessedFrom: 'implementation_changed_files',
       assessedFileCount: files.length,
       implementationDigest: implEvidence.digest,

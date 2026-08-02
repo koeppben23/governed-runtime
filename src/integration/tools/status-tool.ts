@@ -171,7 +171,11 @@ async function buildProofGraphProjectionResponse(
     surfaceDigests: surfaceDigestMap(structuralSurfaces),
     mutationSummaries,
   });
-  const proofGraphGate = evaluateProofGraphGate(proofGraph);
+  const proofGraphGate = evaluateProofGraphGate({
+    ...proofGraph,
+    implementationDigest: state.implementation?.digest,
+    riskAssessment: state.implementationRiskAssessment,
+  });
   const registrationConsistency = checkRegistrationConsistency();
   const configConsistency = checkConfigDefaultConsistency();
   return appendNextAction(
