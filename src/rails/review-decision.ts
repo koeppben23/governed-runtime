@@ -41,6 +41,7 @@ import type {
   ArchitectureApprovalCertificate,
   PlanApprovalCertificate,
 } from '../state/proofgraph-approval.js';
+import { authorizedCriticalPlanClaimIds } from '../state/proofgraph-approval.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import { evaluate, evaluateWithEvent } from '../machine/evaluate.js';
 import type { RailResult, RailBlocked, RailContext, TransitionRecord } from './types.js';
@@ -263,11 +264,17 @@ function enforceProofGraphEvidenceApproval(
     return null;
   }
   const decision = evaluateProofGraphGate({
-    projection: state.proofGraph ?? { version: 'proofgraph.v1', claims: [], evaluatedAt: '' },
+    projection: state.proofGraph,
+    authorizedCriticalClaimIds: authorizedCriticalPlanClaimIds(state.plan),
     implementationDigest: state.implementation?.digest,
     riskAssessment: state.implementationRiskAssessment,
   });
   if (!decision.gated) return null;
+  if (decision.kind === 'evaluation_unavailable') {
+    return blocked('PROOFGRAPH_EVALUATION_UNAVAILABLE', {
+      claimIds: decision.blockingClaimIds.join(', '),
+    });
+  }
   if (decision.kind === 'risk_assessment_stale') {
     return blocked('PROOFGRAPH_RISK_ASSESSMENT_STALE', {});
   }

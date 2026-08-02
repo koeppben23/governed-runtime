@@ -98,6 +98,12 @@ declaration without a counterexample check could never become `PROVEN`. Such a
 declaration is therefore rejected when it is authored
 (`PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE`) rather than blocking the approval later.
 
+If a current plan approval certificate authorizes a critical declaration but its
+claim is absent from the persisted ProofGraph projection, final evidence approval
+blocks with `PROOFGRAPH_EVALUATION_UNAVAILABLE`. A missing projection is never
+interpreted as an empty declaration set; request changes and restore the
+evaluation before approval.
+
 ## Declaring claims
 
 `flowguard_declare_contract` (admissible in `IMPL_VALIDATION` / `IMPL_REVIEW`)

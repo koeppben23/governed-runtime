@@ -9,6 +9,8 @@
  */
 
 import { z } from 'zod';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { hashText } from '../shared/hashing.js';
 
 /** A claim declaration captured before implementation evidence exists. */
 const preEvidenceClaimDeclaration = {
@@ -99,3 +101,33 @@ export const FlowClaimDeclarations = z.discriminatedUnion('flow', [
   ArchitectureClaimDeclarations,
 ]);
 export type FlowClaimDeclarations = z.infer<typeof FlowClaimDeclarations>;
+
+/** Minimal plan authority shape needed to verify its approval certificate. */
+export interface PlanClaimAuthority {
+  readonly current: { readonly digest: string };
+  readonly claimDeclarations?: PlanClaimDeclarations;
+  readonly approvalCertificate?: PlanApprovalCertificate;
+}
+
+/** Whether the certificate binds the plan's current declaration set exactly. */
+export function hasCurrentPlanApprovalCertificate(
+  plan: PlanClaimAuthority | null | undefined,
+): plan is PlanClaimAuthority & { readonly approvalCertificate: PlanApprovalCertificate } {
+  if (!plan?.approvalCertificate) return false;
+  if (plan.approvalCertificate.authorityDigest !== plan.current.digest) return false;
+  const declarations = plan.claimDeclarations ?? { flow: 'plan' as const, claims: [] };
+  return (
+    plan.approvalCertificate.claimDeclarationsDigest ===
+    hashText(canonicalJsonStringify(declarations))
+  );
+}
+
+/** Critical plan claims authorized by the certificate bound to the current plan. */
+export function authorizedCriticalPlanClaimIds(
+  plan: PlanClaimAuthority | null | undefined,
+): readonly string[] {
+  if (!hasCurrentPlanApprovalCertificate(plan)) return [];
+  return (plan.claimDeclarations?.claims ?? [])
+    .filter((claim) => claim.critical)
+    .map((claim) => claim.claimId);
+}

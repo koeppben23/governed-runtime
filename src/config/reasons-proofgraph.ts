@@ -51,6 +51,17 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'PROOFGRAPH_EVALUATION_UNAVAILABLE',
+    category: 'precondition',
+    messageTemplate:
+      'Evidence approval is blocked because certificate-authorized critical plan claim(s) have no persisted ProofGraph evaluation: {claimIds}.',
+    recoverySteps: [
+      'Request changes to return to implementation and restore the missing ProofGraph projection',
+      'Do not approve until every certificate-authorized critical plan claim is present and evaluated',
+    ],
+  },
+
+  {
     code: 'PROOFGRAPH_RISK_ASSESSMENT_STALE',
     category: 'precondition',
     messageTemplate:

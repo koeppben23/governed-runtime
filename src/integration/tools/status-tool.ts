@@ -26,6 +26,7 @@ import {
 
 import type { SessionState } from '../../state/schema.js';
 import type { ReviewFindings } from '../../state/evidence.js';
+import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { CompletenessReport } from '../../audit/completeness.js';
@@ -172,7 +173,8 @@ async function buildProofGraphProjectionResponse(
     mutationSummaries,
   });
   const proofGraphGate = evaluateProofGraphGate({
-    ...proofGraph,
+    projection: proofGraph.projection,
+    authorizedCriticalClaimIds: authorizedCriticalPlanClaimIds(state.plan),
     implementationDigest: state.implementation?.digest,
     riskAssessment: state.implementationRiskAssessment,
   });

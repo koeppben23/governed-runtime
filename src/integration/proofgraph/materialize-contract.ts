@@ -9,10 +9,11 @@
  */
 
 import type { ProofContract, ProofContractCoverage } from '../../state/proofgraph-contract.js';
-import type { PlanClaimDeclaration } from '../../state/proofgraph-approval.js';
+import {
+  hasCurrentPlanApprovalCertificate,
+  type PlanClaimDeclaration,
+} from '../../state/proofgraph-approval.js';
 import type { SessionState } from '../../state/schema.js';
-import { canonicalJsonStringify } from '../../shared/canonical-json.js';
-import { hashText } from '../../shared/hashing.js';
 import {
   resolveVerifiedMutationAttempt,
   resolveVerifiedMutationVerdicts,
@@ -179,11 +180,7 @@ function validateApprovedPlanCertificate(state: SessionState): CertificateValida
   if (state.phase !== 'IMPL_REVIEW' || !plan) {
     return { kind: 'invalid', cause: 'invalid_certificate' };
   }
-  if (certificate.authorityDigest !== plan.current.digest) {
-    return { kind: 'invalid', cause: 'invalid_certificate' };
-  }
-  const declarations = plan.claimDeclarations ?? { flow: 'plan' as const, claims: [] };
-  return certificate.claimDeclarationsDigest === hashText(canonicalJsonStringify(declarations))
+  return hasCurrentPlanApprovalCertificate(plan)
     ? { kind: 'valid', certificate }
     : { kind: 'invalid', cause: 'invalid_certificate' };
 }

@@ -38,7 +38,12 @@ export interface ProofGraphGateDecision {
   /** Human-readable rationale. */
   readonly reason: string;
   /** Why the decision gates, or `clear` when it does not. */
-  readonly kind: 'clear' | 'risk_assessment_stale' | 'critical_fact_required' | 'facts_unproven';
+  readonly kind:
+    | 'clear'
+    | 'evaluation_unavailable'
+    | 'risk_assessment_stale'
+    | 'critical_fact_required'
+    | 'facts_unproven';
   /** Specific persisted authority triggers relevant to the requirement. */
   readonly relevantTriggers: readonly Exclude<RiskTrigger, 'ceremony_only'>[];
 }
@@ -91,13 +96,30 @@ function relevantTriggers(
  *
  * @param summary The session's ProofGraph summary.
  */
-export function evaluateProofGraphGate(
-  input: Pick<ProofGraphSummary, 'projection'> & {
-    readonly implementationDigest?: string;
-    readonly riskAssessment?: ImplementationRiskAssessmentForGate;
-  },
-): ProofGraphGateDecision {
+export function evaluateProofGraphGate(input: {
+  readonly projection?: ProofGraphSummary['projection'];
+  /** Critical plan claims independently authorized by the current certificate. */
+  readonly authorizedCriticalClaimIds?: readonly string[];
+  readonly implementationDigest?: string;
+  readonly riskAssessment?: ImplementationRiskAssessmentForGate;
+}): ProofGraphGateDecision {
   const triggers = relevantTriggers(input.riskAssessment);
+  const eligibleClaims = (input.projection?.claims ?? []).filter(isGateEligible);
+  const eligibleClaimIds = new Set(eligibleClaims.map((claim) => claim.claimId));
+  const missingAuthorizedClaimIds = (input.authorizedCriticalClaimIds ?? []).filter(
+    (claimId) => !eligibleClaimIds.has(claimId),
+  );
+  if (missingAuthorizedClaimIds.length > 0) {
+    return {
+      enforced: true,
+      gated: true,
+      blockingClaimIds: missingAuthorizedClaimIds,
+      reason:
+        'Certificate-authorized critical plan claim(s) have no persisted ProofGraph evaluation.',
+      kind: 'evaluation_unavailable',
+      relevantTriggers: triggers,
+    };
+  }
   // Change-1 assessments exist but lack `riskTriggers`; they are explicitly
   // superseded. Fully legacy sessions without any persisted assessment retain
   // the original claim-only gate because no classification was ever asserted.
@@ -117,7 +139,6 @@ export function evaluateProofGraphGate(
     };
   }
 
-  const eligibleClaims = input.projection.claims.filter(isGateEligible);
   if (triggers.length > 0 && eligibleClaims.length === 0) {
     return {
       enforced: true,

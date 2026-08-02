@@ -69,6 +69,17 @@ describe('evaluateProofGraphGate', () => {
     expect(decision).toMatchObject({ enforced: true, gated: false, blockingClaimIds: [] });
   });
 
+  it('blocks when a certificate-authorized critical claim is absent from the projection', () => {
+    const decision = evaluateProofGraphGate({
+      authorizedCriticalClaimIds: [UUID(1)],
+    });
+    expect(decision).toMatchObject({
+      gated: true,
+      kind: 'evaluation_unavailable',
+      blockingClaimIds: [UUID(1)],
+    });
+  });
+
   it('reports enforcement as unconditional', () => {
     // Compatibility constant: consumers of flowguard_status still read this field.
     expect(evaluateProofGraphGate(summary([])).enforced).toBe(true);

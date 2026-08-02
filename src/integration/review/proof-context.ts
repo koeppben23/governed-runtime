@@ -15,6 +15,7 @@
 
 import type { SessionState } from '../../state/schema.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
+import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
 
 /** Bound on rendered list entries so a large graph cannot dominate the prompt. */
@@ -181,7 +182,8 @@ export function renderCoverageGaps(state: SessionState): string[] {
 export function renderCriticalClaimRequirement(state: SessionState): string[] {
   if (!state.implementation) return [];
   const decision = evaluateProofGraphGate({
-    projection: state.proofGraph ?? { version: 'proofgraph.v1', claims: [], evaluatedAt: '' },
+    projection: state.proofGraph,
+    authorizedCriticalClaimIds: authorizedCriticalPlanClaimIds(state.plan),
     implementationDigest: state.implementation.digest,
     riskAssessment: state.implementationRiskAssessment,
   });

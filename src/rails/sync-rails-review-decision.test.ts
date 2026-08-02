@@ -10,6 +10,8 @@ import {
 } from '../fixtures.js';
 import { REGULATED_POLICY, TEAM_POLICY } from '../config/policy.js';
 import type { ProofGraphProjection } from '../state/proofgraph.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { hashText } from '../shared/hashing.js';
 
 const ctx = createTestContext();
 
@@ -49,6 +51,39 @@ function proofGraph(
   };
 }
 
+function withCertifiedCriticalPlan(state: ReturnType<typeof makeProgressedState>) {
+  const declarations = {
+    flow: 'plan' as const,
+    claims: [
+      {
+        claimId: '00000000-0000-4000-8000-000000000763',
+        statement: 'The protected behavior holds.',
+        critical: true,
+        authoritySectionId: 'proof',
+        expectedCheckId: 'test',
+        counterexampleCheckId: 'security',
+      },
+    ],
+  };
+  const plan = state.plan!;
+  return {
+    ...state,
+    plan: {
+      ...plan,
+      claimDeclarations: declarations,
+      approvalCertificate: {
+        flow: 'plan' as const,
+        authorityDigest: plan.current.digest,
+        claimDeclarationsDigest: hashText(canonicalJsonStringify(declarations)),
+        decisionAttestationDigest: 'decision-digest',
+        approvedAt: '2026-01-01T00:00:00.000Z',
+        approvedBy: 'reviewer-1',
+        certificateId: '00000000-0000-4000-8000-000000000764',
+      },
+    },
+  };
+}
+
 describe('review-decision rail', () => {
   // ─── HAPPY ─────────────────────────────────────────────────
   describe('HAPPY', () => {
@@ -85,6 +120,31 @@ describe('review-decision rail', () => {
       if (result.kind === 'ok') {
         expect(result.state.phase).toBe('COMPLETE');
       }
+    });
+
+    it('blocks when a certificate-authorized critical plan claim has no ProofGraph projection', () => {
+      const state = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'));
+      const result = executeReviewDecision(
+        { ...state, proofGraph: undefined },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result).toMatchObject({
+        kind: 'blocked',
+        code: 'PROOFGRAPH_EVALUATION_UNAVAILABLE',
+      });
+      if (result.kind === 'blocked')
+        expect(result.reason).toContain('00000000-0000-4000-8000-000000000763');
+    });
+
+    it('allows a missing ProofGraph projection when no critical plan claim is authorized', () => {
+      const state = makeProgressedState('EVIDENCE_REVIEW');
+      const result = executeReviewDecision(
+        { ...state, proofGraph: undefined },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result).toMatchObject({ kind: 'ok' });
     });
 
     it('blocks EVIDENCE_REVIEW approval on an unproven critical fact without any policy', () => {

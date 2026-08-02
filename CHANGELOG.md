@@ -47,6 +47,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `ceremony_only` retains HIGH-RISK review ceremony without creating a claim
     requirement. Assessments written before trigger classification are
     superseded and cannot justify final approval.
+  - **Missing evaluations fail closed.** A certificate-authorized critical plan
+    claim missing from the persisted ProofGraph projection now blocks final
+    evidence approval (`PROOFGRAPH_EVALUATION_UNAVAILABLE`) rather than being
+    interpreted as an empty graph.
 
 - **ProofGraph product-path integration (completes #762).** The claim surface was
   implemented but unreachable through the product: the tool schemas accepted
@@ -122,8 +126,8 @@ true })` returns the evaluated projection. Key invariants:
     counterexample** (adversarial evidence); missing/`not_verified` adversarial
     evidence yields `NOT_VERIFIED`.
   - Explicit states (`PROVEN`, `UNPROVEN`, `CONTRADICTED`, `STALE`, `BLOCKED`,
-    `NOT_VERIFIED`) surface residual uncertainty; a default-off policy gate can
-    only ever consider critical, evidence-backed `fact` claims. See
+    `NOT_VERIFIED`) surface residual uncertainty; unconditional enforcement only
+    considers certificate-authorized critical `fact` claims. See
     `docs/proofgraph.md`.
 
 - **Archive redaction wired into pipeline (#649, #666 follow-up).** The
