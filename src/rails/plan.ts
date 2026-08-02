@@ -26,6 +26,7 @@
 
 import type { SessionState } from '../state/schema.js';
 import type { TicketEvidence, PlanEvidence, LoopVerdict } from '../state/evidence.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 import { Command, isCommandAllowed } from '../machine/commands.js';
 import type { RailResult, RailContext } from './types.js';
 import {
@@ -95,16 +96,24 @@ export async function executePlan(
   }
 
   // 4. Create initial plan evidence
+  const contentDigest = ctx.digest(planBody);
   const currentPlan: PlanEvidence = {
     body: planBody,
-    digest: ctx.digest(planBody),
+    digest: contentDigest,
     sections: projectMarkdownHeadings(planBody),
     createdAt: ctx.now(),
+    recordDigest: computeRecordDigest({
+      contentDigest,
+      planVersion: 1,
+      supersedesRecordDigest: null,
+      originatingReviewObligationId: null,
+      revisionReason: null,
+    }),
     planVersion: 1,
     supersedesRecordDigest: null,
     originatingReviewObligationId: null,
     revisionReason: null,
-    lineageStatus: 'verified',
+    lineageStatus: 'verified' as const,
   };
 
   // 5. Preserve version history
@@ -125,8 +134,15 @@ export async function executePlan(
           digest: ctx.digest(review.revisedBody),
           sections: projectMarkdownHeadings(review.revisedBody),
           createdAt: ctx.now(),
+          recordDigest: computeRecordDigest({
+            contentDigest: ctx.digest(review.revisedBody),
+            planVersion: (plan.planVersion ?? 1) + 1,
+            supersedesRecordDigest: plan.recordDigest,
+            originatingReviewObligationId: null,
+            revisionReason: 'Review requested changes',
+          }),
           planVersion: (plan.planVersion ?? 1) + 1,
-          supersedesRecordDigest: plan.digest,
+          supersedesRecordDigest: plan.recordDigest,
           originatingReviewObligationId: null,
           revisionReason: 'Review requested changes',
           lineageStatus: 'verified' as const,

@@ -23,7 +23,7 @@ describe('evidence-plan', () => {
       expect(parsed.createdAt).toBe(plan.createdAt);
       expect(parsed.planVersion).toBe(1);
       expect(parsed.supersedesRecordDigest).toBeNull();
-      expect(parsed.lineageStatus).toBe('verified');
+      expect(parsed.lineageStatus).toBe('unavailable');
     });
 
     it('PlanRecord parses record with history', () => {

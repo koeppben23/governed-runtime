@@ -29,6 +29,7 @@ import { createTestAdapter } from './test-adapter-helper.js';
 import { TOOL_FLOWGUARD_PLAN } from './tool-names.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 import type { OrchestratorClient } from './review/types.js';
 
 const PARENT_SESSION_ID = 'parent-session-ssot-1';
@@ -258,6 +259,13 @@ describe('BUG-09: plan text SSOT enforcement', () => {
             digest: 'digest-empty',
             sections: [] as string[],
             createdAt: NOW,
+            recordDigest: computeRecordDigest({
+              contentDigest: 'digest-empty',
+              planVersion: 1,
+              supersedesRecordDigest: null,
+              originatingReviewObligationId: null,
+              revisionReason: null,
+            }),
             planVersion: 1,
             supersedesRecordDigest: null,
             originatingReviewObligationId: null,
@@ -311,6 +319,13 @@ describe('BUG-09: plan text SSOT enforcement', () => {
             digest: 'digest-long',
             sections: ['Plan'] as string[],
             createdAt: NOW,
+            recordDigest: computeRecordDigest({
+              contentDigest: 'digest-long',
+              planVersion: 1,
+              supersedesRecordDigest: null,
+              originatingReviewObligationId: null,
+              revisionReason: null,
+            }),
             planVersion: 1,
             supersedesRecordDigest: null,
             originatingReviewObligationId: null,

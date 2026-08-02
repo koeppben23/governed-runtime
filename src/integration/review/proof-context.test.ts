@@ -105,6 +105,10 @@ describe('renderDeclarationPreview', () => {
           approvedAt: '2026-01-01T00:00:00.000Z',
           approvedBy: 'approver',
           certificateId: '44444444-4444-4444-8444-444444444444',
+          planVersion: 1,
+          planRecordDigest: 'record-digest',
+          reviewObligationId: null,
+          reviewEvidenceDigest: null,
         },
       },
     };

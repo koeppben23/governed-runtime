@@ -9,6 +9,7 @@ import {
 } from './proofgraph-approval.js';
 import { SessionState } from './schema.js';
 import { makeState } from '../fixtures.js';
+import { computeRecordDigest } from './evidence-plan.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 const CERTIFICATE = {
@@ -19,6 +20,10 @@ const CERTIFICATE = {
   approvedAt: NOW,
   approvedBy: 'user@example.test',
   certificateId: '00000000-0000-4000-8000-000000000001',
+  planVersion: 1,
+  planRecordDigest: 'record-digest',
+  reviewObligationId: null,
+  reviewEvidenceDigest: null,
 };
 const PLAN_CLAIM = {
   claimId: '00000000-0000-4000-8000-000000000002',
@@ -99,6 +104,13 @@ describe('ProofGraph approval schemas', () => {
               digest: 'plan-digest',
               sections: [],
               createdAt: NOW,
+              recordDigest: computeRecordDigest({
+                contentDigest: 'plan-digest',
+                planVersion: 1,
+                supersedesRecordDigest: null,
+                originatingReviewObligationId: null,
+                revisionReason: null,
+              }),
               planVersion: 1,
               supersedesRecordDigest: null,
               originatingReviewObligationId: null,
@@ -131,6 +143,13 @@ describe('ProofGraph approval schemas', () => {
             digest: 'plan-digest',
             sections: [],
             createdAt: NOW,
+            recordDigest: computeRecordDigest({
+              contentDigest: 'plan-digest',
+              planVersion: 1,
+              supersedesRecordDigest: null,
+              originatingReviewObligationId: null,
+              revisionReason: null,
+            }),
             planVersion: 1,
             supersedesRecordDigest: null,
             originatingReviewObligationId: null,

@@ -19,6 +19,7 @@ import {
   REVIEW_MANDATE_DIGEST,
   hashFindings,
 } from '../review/assurance.js';
+import { computeRecordDigest } from '../../state/evidence-plan.js';
 
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -245,6 +246,13 @@ function implStateWithEvidence(
         digest: 'digest-plan',
         sections: [],
         createdAt: now,
+        recordDigest: computeRecordDigest({
+          contentDigest: 'digest-plan',
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+        }),
         planVersion: 1,
         supersedesRecordDigest: null,
         originatingReviewObligationId: null,
@@ -410,6 +418,13 @@ describe('BUG-17: implement evidence-first resolution', () => {
           digest: 'digest-plan',
           sections: [],
           createdAt: now,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'digest-plan',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
           planVersion: 1,
           supersedesRecordDigest: null,
           originatingReviewObligationId: null,
@@ -535,6 +550,13 @@ describe('BUG-17: implement evidence-first resolution', () => {
           digest: 'digest-plan',
           sections: [],
           createdAt: now,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'digest-plan',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
           planVersion: 1,
           supersedesRecordDigest: null,
           originatingReviewObligationId: null,

@@ -89,7 +89,7 @@ describe('state schemas', () => {
       const parsed = PlanEvidence.parse(plan);
       expect(parsed.body).toBe(plan.body);
       expect(parsed.planVersion).toBe(1);
-      expect(parsed.lineageStatus).toBe('verified');
+      expect(parsed.lineageStatus).toBe('unavailable');
     });
 
     it('ValidationResult parses valid result', () => {

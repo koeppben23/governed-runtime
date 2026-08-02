@@ -46,6 +46,7 @@ import { makeProgressedState } from '../fixtures.js';
 import type { Phase } from '../state/schema.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
 
@@ -1447,6 +1448,13 @@ describe('declare_contract', () => {
           digest: 'plan-digest',
           sections: [],
           createdAt: NOW,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'plan-digest',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
           planVersion: 1,
           supersedesRecordDigest: null,
           originatingReviewObligationId: null,

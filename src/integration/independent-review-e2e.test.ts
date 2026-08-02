@@ -53,6 +53,7 @@ import {
 } from '../adapters/workspace/index.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import type { SessionState } from '../state/schema.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -155,6 +156,13 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
           digest: 'plan-digest',
           sections: ['Plan'],
           createdAt: now,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'plan-digest',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
           planVersion: 1,
           supersedesRecordDigest: null,
           originatingReviewObligationId: null,

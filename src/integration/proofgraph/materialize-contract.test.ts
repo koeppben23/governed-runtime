@@ -9,6 +9,7 @@ import {
 } from '../../audit/proofgraph/mutation-report.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
+import { computeRecordDigest } from '../../state/evidence-plan.js';
 import {
   materializeApprovedPlanContract,
   materializeApprovedPlanContractResult,
@@ -28,6 +29,13 @@ function stateWithClaims() {
         digest: PLAN_DIGEST,
         sections: [],
         createdAt: NOW,
+        recordDigest: computeRecordDigest({
+          contentDigest: PLAN_DIGEST,
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+        }),
         planVersion: 1,
         supersedesRecordDigest: null,
         originatingReviewObligationId: null,
@@ -74,6 +82,10 @@ function stateWithClaims() {
         approvedAt: NOW,
         approvedBy: 'user',
         certificateId: '00000000-0000-4000-8000-000000000001',
+        planVersion: 1,
+        planRecordDigest: 'record-digest',
+        reviewObligationId: null,
+        reviewEvidenceDigest: null,
       },
     },
     reviewDecision: {

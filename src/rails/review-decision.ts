@@ -297,15 +297,26 @@ function createPlanApprovalCertificate(
   plan: NonNullable<SessionState['plan']>,
   decision: ReviewDecision,
   ctx: RailContext,
+  reviewObligationId?: string | null,
+  reviewEvidenceDigest?: string | null,
 ): PlanApprovalCertificate {
   const claimDeclarations = plan.claimDeclarations ?? { flow: 'plan' as const, claims: [] };
   const claimDeclarationsDigest = ctx.digest(canonicalJsonStringify(claimDeclarations));
   const decisionAttestationDigest = ctx.digest(canonicalJsonStringify(decision));
+  const planVersion = plan.current.planVersion;
+  const planRecordDigest = plan.current.recordDigest;
+  const obligationId = reviewObligationId ?? null;
+  const evidenceDigest = reviewEvidenceDigest ?? null;
+
   const certificateIdDigest = ctx.digest(
     canonicalJsonStringify({
       authorityDigest: plan.current.digest,
       claimDeclarationsDigest,
       decisionAttestationDigest,
+      planVersion,
+      planRecordDigest,
+      reviewObligationId: obligationId,
+      reviewEvidenceDigest: evidenceDigest,
       approvedAt: decision.decidedAt,
       approvedBy: decision.decidedBy,
     }),
@@ -324,6 +335,10 @@ function createPlanApprovalCertificate(
     approvedAt: decision.decidedAt,
     approvedBy: decision.decidedBy,
     certificateId,
+    planVersion,
+    planRecordDigest,
+    reviewObligationId: obligationId,
+    reviewEvidenceDigest: evidenceDigest,
   };
 }
 
@@ -364,6 +379,20 @@ function createArchitectureApprovalCertificate(
   };
 }
 
+function resolveAcceptedPlanReviewEvidence(state: SessionState): [string | null, string | null] {
+  const acceptedObligation = [...(state.reviewAssurance?.obligations ?? [])]
+    .reverse()
+    .find(
+      (o) => o.obligationType === 'plan' && (o.status === 'fulfilled' || o.status === 'consumed'),
+    );
+  const acceptedEvidence = acceptedObligation?.invocationId
+    ? state.reviewAssurance?.invocations.find(
+        (inv) => inv.invocationId === acceptedObligation.invocationId,
+      )
+    : null;
+  return [acceptedObligation?.obligationId ?? null, acceptedEvidence?.findingsHash ?? null];
+}
+
 function approvalCertificatePatch(
   state: SessionState,
   input: ReviewDecisionInput,
@@ -379,7 +408,12 @@ function approvalCertificatePatch(
     return {
       plan: {
         ...state.plan,
-        approvalCertificate: createPlanApprovalCertificate(state.plan, decision, ctx),
+        approvalCertificate: createPlanApprovalCertificate(
+          state.plan,
+          decision,
+          ctx,
+          ...resolveAcceptedPlanReviewEvidence(state),
+        ),
       },
     };
   }

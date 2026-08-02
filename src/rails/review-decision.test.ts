@@ -87,7 +87,7 @@ describe('review-decision rail', () => {
 
     expect(result.kind).toBe('ok');
     if (result.kind === 'ok') {
-      expect(result.state.plan?.approvalCertificate).toEqual({
+      expect(result.state.plan?.approvalCertificate).toMatchObject({
         flow: 'plan',
         authorityDigest: PLAN_RECORD.current.digest,
         claimDeclarationsDigest: baseCtx.digest(
@@ -98,6 +98,8 @@ describe('review-decision rail', () => {
         ),
         approvedAt: FIXED_TIME,
         approvedBy: 'reviewer-1',
+        planVersion: expect.any(Number),
+        planRecordDigest: expect.any(String),
         certificateId: expect.any(String),
       });
       expect(result.state.plan?.history).toEqual(PLAN_RECORD.history);

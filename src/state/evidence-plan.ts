@@ -9,6 +9,41 @@ import { z } from 'zod';
 import { LoopVerdict, RevisionDelta } from './evidence-primitives.js';
 import { ReviewFindings } from './evidence-review.js';
 import { PlanApprovalCertificate, PlanClaimDeclarations } from './proofgraph-approval.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { hashText } from '../shared/hashing.js';
+
+export const PLAN_RECORD_DOMAIN = 'flowguard.plan-record.v1';
+
+/**
+ * Compute the cryptographic record digest for a plan version.
+ *
+ * Binds the content identity, version, predecessor, originating obligation,
+ * and revision reason into a single domain-separated hash. The digest proves
+ * that this record is the legitimate successor of its `supersedesRecordDigest`
+ * predecessor — change ANY of the lineage metadata and the digest changes.
+ *
+ * The content itself is represented by the existing `digest` (content hash);
+ * the record digest inherits that via inclusion.
+ */
+export function computeRecordDigest(input: {
+  contentDigest: string;
+  planVersion: number;
+  supersedesRecordDigest: string | null;
+  originatingReviewObligationId: string | null;
+  revisionReason: string | null;
+}): string {
+  return hashText(
+    PLAN_RECORD_DOMAIN +
+      '\n' +
+      canonicalJsonStringify({
+        contentDigest: input.contentDigest,
+        planVersion: input.planVersion,
+        supersedesRecordDigest: input.supersedesRecordDigest,
+        originatingReviewObligationId: input.originatingReviewObligationId,
+        revisionReason: input.revisionReason,
+      }),
+  );
+}
 
 export const LineageStatus = z.enum(['verified', 'legacy_inferred', 'unavailable']);
 export type LineageStatus = z.infer<typeof LineageStatus>;
@@ -22,21 +57,35 @@ export const PlanEvidence = z.object({
   createdAt: z.string().datetime(),
 
   // ── Lineage (Commit 3) ──────────────────────────────────────────────
+  /**
+   * Cryptographic record digest: domain-separated hash of (contentDigest,
+   * planVersion, supersedesRecordDigest, originatingReviewObligationId,
+   * revisionReason). Computed by `computeRecordDigest()`.
+   * Defaults to a sentinel for backward-compatible legacy parsing; controlled
+   * construction paths (buildPlanEvidence) always override with a real value.
+   */
+  recordDigest: z.string().min(1).default('unavailable-record-digest'),
   /** Immutable version number within this plan's lineage (1-based). */
   planVersion: z.number().int().positive().default(1),
   /**
    * Record-digest of the immediate predecessor, or null for v1.
-   * This is a cryptographic reference, not a content hash — it proves
-   * that this version genuinely succeeds the referenced predecessor.
+   * References the predecessor's `recordDigest`, NOT its content `digest`.
    */
   supersedesRecordDigest: z.string().nullable().default(null),
   /** The review obligation that triggered this revision, or null for fresh. */
   originatingReviewObligationId: z.string().uuid().nullable().default(null),
   /** Human or machine summary of why this revision was created. */
   revisionReason: z.string().nullable().default(null),
-  /** Trust status of the lineage: verified (post-Commit-3), legacy_inferred
-   *  (migrated from pre-lineage data), or unavailable (truly unknown). */
-  lineageStatus: LineageStatus.default('verified'),
+  /**
+   * Trust status of the lineage.
+   * - 'verified': computed by `computeRecordDigest` from authoritative fields.
+   * - 'legacy_inferred': reconstructed from pre-lineage data (best-effort, not
+   *    cryptographically guaranteed).
+   * - 'unavailable': plan was parsed from legacy data with no lineage metadata.
+   *    The Zod schema default is 'unavailable' — only the controlled creation
+   *    paths in buildPlanEvidence() override this to 'verified'.
+   */
+  lineageStatus: LineageStatus.default('unavailable'),
 });
 export type PlanEvidence = z.infer<typeof PlanEvidence>;
 

@@ -79,6 +79,10 @@ function withCertifiedCriticalPlan(state: ReturnType<typeof makeProgressedState>
         approvedAt: '2026-01-01T00:00:00.000Z',
         approvedBy: 'reviewer-1',
         certificateId: '00000000-0000-4000-8000-000000000764',
+        planVersion: 1,
+        planRecordDigest: 'record-digest',
+        reviewObligationId: null,
+        reviewEvidenceDigest: null,
       },
     },
   };

@@ -36,7 +36,18 @@ export interface NormalizedChallenge {
 
 export interface NormalizeResult {
   challenges: NormalizedChallenge[];
+  /** Non-empty ONLY when the result is still usable (auto-refs). Hard errors throw. */
   warnings: string[];
+}
+
+export class DuplicateClientReferenceError extends Error {
+  constructor(
+    public readonly ref: string,
+    public readonly index: number,
+  ) {
+    super(`Duplicate clientReference "${ref}" at index ${index}`);
+    this.name = 'DuplicateClientReferenceError';
+  }
 }
 
 /**
@@ -62,10 +73,7 @@ export function normalizeChallenges(
     const ref = input.clientReference ?? `auto-${idx}`;
 
     if (usedRefs.has(ref)) {
-      warnings.push(
-        `Duplicate clientReference "${ref}" at index ${idx}; ` +
-          `challenge identity is still unique (host-generated challengeId).`,
-      );
+      throw new DuplicateClientReferenceError(ref, idx);
     }
     usedRefs.add(ref);
 

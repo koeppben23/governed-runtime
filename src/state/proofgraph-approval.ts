@@ -60,24 +60,19 @@ const approvalCertificateShape = {
   certificateId: z.string().uuid(),
 } as const;
 
-export const ProofGraphApprovalCertificate = z
-  .object({ flow: ProofGraphApprovalFlow, ...approvalCertificateShape })
-  .readonly();
-export type ProofGraphApprovalCertificate = z.infer<typeof ProofGraphApprovalCertificate>;
-
 /** A common certificate constrained for plan approval persistence. */
 export const PlanApprovalCertificate = z
   .object({
     flow: z.literal('plan'),
     ...approvalCertificateShape,
     /** Immutable plan version this certificate was issued against. */
-    planVersion: z.number().int().positive().optional(),
+    planVersion: z.number().int().positive(),
     /** Record-digest of the plan this certificate binds (content + lineage). */
-    planRecordDigest: z.string().min(1).optional(),
+    planRecordDigest: z.string().min(1),
     /** The review obligation whose evidence was accepted for this approval. */
-    reviewObligationId: z.string().uuid().optional(),
+    reviewObligationId: z.string().uuid().nullable(),
     /** Digest of the review invocation evidence that satisfied the obligation. */
-    reviewEvidenceDigest: z.string().min(1).optional(),
+    reviewEvidenceDigest: z.string().min(1).nullable(),
   })
   .readonly();
 export type PlanApprovalCertificate = z.infer<typeof PlanApprovalCertificate>;
@@ -87,6 +82,12 @@ export const ArchitectureApprovalCertificate = z
   .object({ flow: z.literal('architecture'), ...approvalCertificateShape })
   .readonly();
 export type ArchitectureApprovalCertificate = z.infer<typeof ArchitectureApprovalCertificate>;
+
+export const ProofGraphApprovalCertificate = z.discriminatedUnion('flow', [
+  PlanApprovalCertificate,
+  ArchitectureApprovalCertificate,
+]);
+export type ProofGraphApprovalCertificate = z.infer<typeof ProofGraphApprovalCertificate>;
 
 /** Claims declared against the current plan authority. */
 export const PlanClaimDeclarations = z
@@ -115,7 +116,11 @@ export type FlowClaimDeclarations = z.infer<typeof FlowClaimDeclarations>;
 
 /** Minimal plan authority shape needed to verify its approval certificate. */
 export interface PlanClaimAuthority {
-  readonly current: { readonly digest: string; readonly planVersion?: number };
+  readonly current: {
+    readonly digest: string;
+    readonly planVersion?: number;
+    readonly recordDigest?: string;
+  };
   readonly claimDeclarations?: PlanClaimDeclarations;
   readonly approvalCertificate?: PlanApprovalCertificate;
 }
@@ -127,6 +132,7 @@ export function hasCurrentPlanApprovalCertificate(
   if (!plan?.approvalCertificate) return false;
   if (plan.approvalCertificate.authorityDigest !== plan.current.digest) return false;
   // Versionsbindung: Ein Zertifikat für v1 autorisiert nicht v2.
+  // Legacy-Zertifikate ohne planVersion werden übersprungen (backward compat).
   if (
     plan.approvalCertificate.planVersion != null &&
     plan.current.planVersion != null &&

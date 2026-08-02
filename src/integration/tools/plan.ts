@@ -58,6 +58,7 @@ import type {
   RevisionDelta,
   ReviewFindings,
 } from '../../state/evidence.js';
+import { computeRecordDigest } from '../../state/evidence-plan.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { PlanClaimDeclaration as PlanClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
 import { validateProofClaimContract } from '../proofgraph/claim-contract.js';
@@ -258,16 +259,29 @@ function buildPlanEvidence(
     revisionReason?: string | null;
   },
 ): PlanEvidence {
+  const contentDigest = scope.ctx.digest(planBody);
+  const planVersion = lineage?.planVersion ?? 1;
+  const supersedesRecordDigest = lineage?.supersedesRecordDigest ?? null;
+  const originatingReviewObligationId = lineage?.originatingReviewObligationId ?? null;
+  const revisionReason = lineage?.revisionReason ?? null;
+
   return {
     body: planBody,
-    digest: scope.ctx.digest(planBody),
+    digest: contentDigest,
     sections: extractSections(planBody),
     createdAt: scope.ctx.now(),
-    planVersion: lineage?.planVersion ?? 1,
-    supersedesRecordDigest: lineage?.supersedesRecordDigest ?? null,
-    originatingReviewObligationId: lineage?.originatingReviewObligationId ?? null,
-    revisionReason: lineage?.revisionReason ?? null,
-    lineageStatus: 'verified',
+    recordDigest: computeRecordDigest({
+      contentDigest,
+      planVersion,
+      supersedesRecordDigest,
+      originatingReviewObligationId,
+      revisionReason,
+    }),
+    planVersion,
+    supersedesRecordDigest,
+    originatingReviewObligationId,
+    revisionReason,
+    lineageStatus: 'verified' as const,
   };
 }
 
@@ -423,7 +437,7 @@ function applyPlanRevision(scope: PlanExecutionScope): PlanRevisionResult | stri
   const predecessorVersion = currentPlan.planVersion;
   const revised = buildPlanEvidence(revisedBody, scope, {
     planVersion: predecessorVersion + 1,
-    supersedesRecordDigest: currentPlan.digest,
+    supersedesRecordDigest: currentPlan.recordDigest,
     revisionReason: 'Review requested changes',
   });
   revisionDelta = revised.digest === prevDigest ? 'none' : 'minor';
@@ -502,11 +516,11 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
 
   const predecessorVersion = scope.state.plan?.current.planVersion;
   const planVersion = predecessorVersion ? predecessorVersion + 1 : 1;
-  const predecessorDigest = scope.state.plan?.current.digest ?? null;
+  const predecessorRecordDigest = scope.state.plan?.current.recordDigest ?? null;
 
   const planEvidence = buildPlanEvidence(planBody, scope, {
     planVersion,
-    supersedesRecordDigest: predecessorDigest,
+    supersedesRecordDigest: predecessorRecordDigest,
     revisionReason: scope.state.plan ? 'Revision after changes requested' : null,
   });
   const reviewFindings = scope.args.reviewFindings ?? null;

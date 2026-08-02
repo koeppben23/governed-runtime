@@ -22,6 +22,7 @@ import type {
   BindingInfo,
   PolicySnapshot,
 } from './state/evidence.js';
+import { computeRecordDigest } from './state/evidence-plan.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -135,6 +136,13 @@ export const PLAN_EVIDENCE: PlanEvidence = {
   digest: 'digest-of-plan',
   sections: ['Plan'],
   createdAt: FIXED_TIME,
+  recordDigest: computeRecordDigest({
+    contentDigest: 'digest-of-plan',
+    planVersion: 1,
+    supersedesRecordDigest: null,
+    originatingReviewObligationId: null,
+    revisionReason: null,
+  }),
   planVersion: 1,
   supersedesRecordDigest: null,
   originatingReviewObligationId: null,

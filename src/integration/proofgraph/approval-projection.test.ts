@@ -41,6 +41,10 @@ function contractState(overrides: Partial<SessionState> = {}): SessionState {
         approvedAt: '2026-01-01T00:00:00.000Z',
         approvedBy: 'approver',
         certificateId: CERTIFICATE_ID,
+        planVersion: 1,
+        planRecordDigest: 'record-digest',
+        reviewObligationId: null,
+        reviewEvidenceDigest: null,
       },
     },
     proofContract: {

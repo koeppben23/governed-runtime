@@ -35,6 +35,7 @@ import { createPolicySnapshot } from '../config/policy-snapshot.js';
 import { makeState } from '../fixtures.js';
 import { isCommandAllowed, Command } from '../machine/commands.js';
 import { USER_GATES, TERMINAL } from '../machine/topology.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 
 // ─── Test Fixtures ────────────────────────────────────────────────────────────
 
@@ -269,6 +270,13 @@ describe('status.ts MUTATION_KILL matrix', () => {
           digest: 'plan-digest',
           sections: [],
           createdAt: fixedTime,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'plan-digest',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
           planVersion: 1,
           supersedesRecordDigest: null,
           originatingReviewObligationId: null,

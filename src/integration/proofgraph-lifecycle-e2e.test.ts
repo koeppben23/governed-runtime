@@ -36,6 +36,7 @@ import type { ReviewFindings } from '../state/evidence.js';
 import { executeReviewDecision } from '../rails/review-decision.js';
 import { createTestContext } from '../testing.js';
 import { hashText } from '../shared/hashing.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 import { materializeApprovedPlanContractResult } from './proofgraph/materialize-contract.js';
 import { summarizeProofGraph, summarizePersistedProofGraph } from '../audit/proofgraph/summary.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
@@ -511,6 +512,13 @@ describe('ProofGraph materialization and gate (runtime)', () => {
           digest: 'plan-digest',
           sections: [],
           createdAt: FIXED_TIME,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'plan-digest',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
           planVersion: 1,
           supersedesRecordDigest: null,
           originatingReviewObligationId: null,

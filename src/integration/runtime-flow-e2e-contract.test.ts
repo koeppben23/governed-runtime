@@ -43,6 +43,7 @@ import {
 } from './review/assurance.js';
 import { makeState, TICKET } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
 
 // Mock the verification executor to avoid real subprocess execution
 vi.mock('../verification/executor', () => ({
@@ -298,6 +299,13 @@ describe('FlowGuard tool-level E2E', () => {
                 digest: 'abc',
                 sections: [],
                 createdAt: FIXED_TIME,
+                recordDigest: computeRecordDigest({
+                  contentDigest: 'abc',
+                  planVersion: 1,
+                  supersedesRecordDigest: null,
+                  originatingReviewObligationId: null,
+                  revisionReason: null,
+                }),
                 planVersion: 1,
                 supersedesRecordDigest: null,
                 originatingReviewObligationId: null,
