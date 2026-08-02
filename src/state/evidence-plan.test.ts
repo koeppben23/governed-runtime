@@ -16,7 +16,14 @@ describe('evidence-plan', () => {
         sections: ['Plan'],
         createdAt: FIXED_TIME,
       };
-      expect(PlanEvidence.parse(plan)).toEqual(plan);
+      const parsed = PlanEvidence.parse(plan);
+      expect(parsed.body).toBe(plan.body);
+      expect(parsed.digest).toBe(plan.digest);
+      expect(parsed.sections).toEqual(plan.sections);
+      expect(parsed.createdAt).toBe(plan.createdAt);
+      expect(parsed.planVersion).toBe(1);
+      expect(parsed.supersedesRecordDigest).toBeNull();
+      expect(parsed.lineageStatus).toBe('verified');
     });
 
     it('PlanRecord parses record with history', () => {
@@ -25,17 +32,30 @@ describe('evidence-plan', () => {
         digest: 'digest-v2',
         sections: ['Plan'],
         createdAt: FIXED_TIME,
+        planVersion: 2,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified' as const,
       };
       const record = { current, history: [] };
-      expect(PlanRecord.parse(record)).toEqual(record);
+      expect(PlanRecord.parse(record).current).toMatchObject(current);
     });
 
     it('PlanRecord with empty history is valid', () => {
-      const record = {
-        current: { body: 'Plan', digest: 'abc', sections: [], createdAt: FIXED_TIME },
-        history: [],
+      const current = {
+        body: 'Plan',
+        digest: 'abc',
+        sections: [],
+        createdAt: FIXED_TIME,
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified' as const,
       };
-      expect(PlanRecord.parse(record)).toEqual(record);
+      const record = { current, history: [] };
+      expect(PlanRecord.parse(record).current).toMatchObject(current);
     });
 
     it('SelfReviewLoop parses converged state', () => {
@@ -110,7 +130,10 @@ describe('evidence-plan', () => {
         sections: [],
         createdAt: FIXED_TIME,
       };
-      expect(PlanEvidence.parse(plan)).toEqual(plan);
+      const parsed = PlanEvidence.parse(plan);
+      expect(parsed.body).toBe(plan.body);
+      expect(parsed.digest).toBe(plan.digest);
+      expect(parsed.planVersion).toBe(1);
     });
 
     it('PlanRecord rejects missing history', () => {

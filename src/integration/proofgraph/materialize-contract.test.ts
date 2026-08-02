@@ -23,7 +23,17 @@ const NOW = '2026-01-01T00:00:00.000Z';
 function stateWithClaims() {
   const state = makeState('IMPL_REVIEW', {
     plan: {
-      current: { body: 'approved plan', digest: PLAN_DIGEST, sections: [], createdAt: NOW },
+      current: {
+        body: 'approved plan',
+        digest: PLAN_DIGEST,
+        sections: [],
+        createdAt: NOW,
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+        lineageStatus: 'verified' as const,
+      },
       history: [],
       claimDeclarations: {
         flow: 'plan',

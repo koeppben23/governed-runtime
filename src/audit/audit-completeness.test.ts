@@ -821,7 +821,17 @@ describe('audit completeness', () => {
       const state = makeState('IMPLEMENTATION', {
         ...makeProgressedState('IMPLEMENTATION'),
         plan: {
-          current: { body: 'plan', digest: longDigest, sections: [], createdAt: FIXED_TIME },
+          current: {
+            body: 'plan',
+            digest: longDigest,
+            sections: [],
+            createdAt: FIXED_TIME,
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+            lineageStatus: 'verified' as const,
+          },
           history: [],
         },
       });

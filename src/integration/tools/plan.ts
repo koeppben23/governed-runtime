@@ -248,12 +248,26 @@ function validateInitialPlanFindings(scope: PlanExecutionScope): string | null {
   });
 }
 
-function buildPlanEvidence(planBody: string, scope: PlanExecutionScope): PlanEvidence {
+function buildPlanEvidence(
+  planBody: string,
+  scope: PlanExecutionScope,
+  lineage?: {
+    planVersion: number;
+    supersedesRecordDigest?: string | null;
+    originatingReviewObligationId?: string | null;
+    revisionReason?: string | null;
+  },
+): PlanEvidence {
   return {
     body: planBody,
     digest: scope.ctx.digest(planBody),
     sections: extractSections(planBody),
     createdAt: scope.ctx.now(),
+    planVersion: lineage?.planVersion ?? 1,
+    supersedesRecordDigest: lineage?.supersedesRecordDigest ?? null,
+    originatingReviewObligationId: lineage?.originatingReviewObligationId ?? null,
+    revisionReason: lineage?.revisionReason ?? null,
+    lineageStatus: 'verified',
   };
 }
 
@@ -275,6 +289,7 @@ function buildPlanSubmissionState(
         iteration: 0,
         planVersion,
         now: scope.ctx.now(),
+        subjectDigest: planEvidence.digest,
         reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
         profileSource: 'policy_default',
         policySnapshot: scope.state.policySnapshot,
@@ -405,7 +420,12 @@ function applyPlanRevision(scope: PlanExecutionScope): PlanRevisionResult | stri
   const revisedBody = scope.args.planText?.trim();
   if (!revisedBody) return formatBlocked('REVISED_PLAN_REQUIRED');
 
-  const revised = buildPlanEvidence(revisedBody, scope);
+  const predecessorVersion = currentPlan.planVersion;
+  const revised = buildPlanEvidence(revisedBody, scope, {
+    planVersion: predecessorVersion + 1,
+    supersedesRecordDigest: currentPlan.digest,
+    revisionReason: 'Review requested changes',
+  });
   revisionDelta = revised.digest === prevDigest ? 'none' : 'minor';
   history = [currentPlan, ...history];
   currentPlan = revised;
@@ -480,9 +500,15 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const planBody = scope.args.planText?.trim();
   if (!planBody) return formatBlocked('EMPTY_PLAN');
 
-  const planEvidence = buildPlanEvidence(planBody, scope);
-  const history = scope.state.plan ? [scope.state.plan.current, ...scope.state.plan.history] : [];
-  const planVersion = history.length + 1;
+  const predecessorVersion = scope.state.plan?.current.planVersion;
+  const planVersion = predecessorVersion ? predecessorVersion + 1 : 1;
+  const predecessorDigest = scope.state.plan?.current.digest ?? null;
+
+  const planEvidence = buildPlanEvidence(planBody, scope, {
+    planVersion,
+    supersedesRecordDigest: predecessorDigest,
+    revisionReason: scope.state.plan ? 'Revision after changes requested' : null,
+  });
   const reviewFindings = scope.args.reviewFindings ?? null;
   const classification = await resolvePreImplementationChallengeClassification(
     scope.state,

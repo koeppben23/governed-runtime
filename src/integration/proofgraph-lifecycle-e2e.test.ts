@@ -506,7 +506,17 @@ describe('ProofGraph materialization and gate (runtime)', () => {
       ticket: TICKET,
       activeChecks: ACTIVE_CHECKS,
       plan: {
-        current: { body: PLAN_TEXT, digest: 'plan-digest', sections: [], createdAt: FIXED_TIME },
+        current: {
+          body: PLAN_TEXT,
+          digest: 'plan-digest',
+          sections: [],
+          createdAt: FIXED_TIME,
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
+        },
         history: [],
         reviewFindings: undefined,
         claimDeclarations: { flow: 'plan', claims: [CRITICAL_CLAIM] },

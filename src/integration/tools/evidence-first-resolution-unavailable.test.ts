@@ -214,6 +214,11 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
           digest: 'digest-plan',
           sections: [],
           createdAt: now,
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
         },
         history: [],
         reviewFindings: [],
@@ -258,7 +263,17 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
   function implStateNoEvidence() {
     return makeState('IMPL_REVIEW', {
       plan: {
-        current: { body: '## Plan', digest: 'digest-plan', sections: [], createdAt: now },
+        current: {
+          body: '## Plan',
+          digest: 'digest-plan',
+          sections: [],
+          createdAt: now,
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
+        },
         history: [],
         reviewFindings: [],
       },

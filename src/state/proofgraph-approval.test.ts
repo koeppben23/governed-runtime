@@ -94,7 +94,17 @@ describe('ProofGraph approval schemas', () => {
       SessionState.parse(
         makeState('PLAN_REVIEW', {
           plan: {
-            current: { body: 'Plan', digest: 'plan-digest', sections: [], createdAt: NOW },
+            current: {
+              body: 'Plan',
+              digest: 'plan-digest',
+              sections: [],
+              createdAt: NOW,
+              planVersion: 1,
+              supersedesRecordDigest: null,
+              originatingReviewObligationId: null,
+              revisionReason: null,
+              lineageStatus: 'verified' as const,
+            },
             history: [],
             approvalCertificate: {
               ...CERTIFICATE,
@@ -116,7 +126,17 @@ describe('ProofGraph approval schemas', () => {
     const state = SessionState.parse(
       makeState('PLAN_REVIEW', {
         plan: {
-          current: { body: 'Plan', digest: 'plan-digest', sections: [], createdAt: NOW },
+          current: {
+            body: 'Plan',
+            digest: 'plan-digest',
+            sections: [],
+            createdAt: NOW,
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+            lineageStatus: 'verified' as const,
+          },
           history: [],
           claimDeclarations: { flow: 'plan', claims: [PLAN_CLAIM] },
           approvalCertificate: CERTIFICATE,

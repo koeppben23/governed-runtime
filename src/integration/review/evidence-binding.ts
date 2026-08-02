@@ -17,6 +17,7 @@ import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../tool-names.js'
 import { obligationTypeForTool } from './obligation-tools.js';
 import { buildInvocationEvidence, hashFindings, hashText } from './assurance.js';
 import { getBranchProvenanceFields } from './review-provenance.js';
+import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence-review.js';
 
 /**
  * Build host-subagent-task invocation evidence from enforcement state and persisted obligations.
@@ -67,6 +68,15 @@ export function buildHostTaskEvidence(
     childSessionId,
     now,
   );
+
+  // Pre-binding schema validation: reject invalid reviewer output before
+  // persisting it as capturedRawFindings.
+  const schemaCheck = validateNormalizedFindings(
+    normalizedFindings,
+    matchedObligation.obligationId,
+    childSessionId,
+  );
+  if (schemaCheck) return schemaCheck;
 
   const findingsHash = hashFindings(normalizedFindings);
   const duplicate = checkDuplicateHostTaskEvidence(
@@ -400,6 +410,31 @@ function buildHostReviewedBy(childSessionId: string): Record<string, unknown> {
     actorSource: 'unknown',
     actorAssurance: 'best_effort',
   };
+}
+
+function validateNormalizedFindings(
+  normalizedFindings: Record<string, unknown>,
+  obligationId: string,
+  childSessionId: string,
+): HostTaskBindResult | null {
+  const schemaResult = ReviewFindingsSchema.safeParse(normalizedFindings);
+  if (!schemaResult.success) {
+    const issues = schemaResult.error.issues.map(
+      (issue) => `${issue.path.join('.')}: ${issue.message}`,
+    );
+    return {
+      evidence: null,
+      bindOutcome: 'no_findings',
+      diagnostic: {
+        childSessionId,
+        obligationId,
+        validationOutcome: 'schema_invalid' as const,
+        schemaErrors: issues.slice(0, 10),
+        message: 'Reviewer output failed schema validation before binding',
+      },
+    };
+  }
+  return null;
 }
 
 function checkDuplicateHostTaskEvidence(

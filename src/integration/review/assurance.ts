@@ -52,6 +52,14 @@ export function createReviewObligation(input: {
   planVersion: number;
   now: string;
   /**
+   * Digest of the subject artifact (plan digest, implementation digest, or
+   * reviewed content digest). Frozen at obligation creation so the host can
+   * verify at binding time that the reviewer's evidence addresses exactly this
+   * subject — not a different plan version or different branch. Never supplied
+   * by or echoed from the reviewer.
+   */
+  subjectDigest?: string;
+  /**
    * Mandatory review coverage profile frozen into the obligation at creation,
    * before any reviewer invocation. Defaults to the fail-closed 'core' baseline.
    */
@@ -106,6 +114,7 @@ export function createReviewObligation(input: {
     reviewProfile: input.reviewProfile ?? 'core',
     profileSource: input.profileSource ?? 'policy_default',
     ...requirements,
+    subjectDigest: input.subjectDigest,
     metadata: input.metadata,
   };
 }

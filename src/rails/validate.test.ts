@@ -23,7 +23,17 @@ const ctx: RailContext = {
 
 function planWith(body: string): PlanRecord {
   return {
-    current: { body, digest: 'd', sections: [], createdAt: FIXED_TIME },
+    current: {
+      body,
+      digest: 'd',
+      sections: [],
+      createdAt: FIXED_TIME,
+      planVersion: 1,
+      supersedesRecordDigest: null,
+      originatingReviewObligationId: null,
+      revisionReason: null,
+      lineageStatus: 'verified' as const,
+    },
     history: [],
   };
 }

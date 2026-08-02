@@ -10,12 +10,33 @@ import { LoopVerdict, RevisionDelta } from './evidence-primitives.js';
 import { ReviewFindings } from './evidence-review.js';
 import { PlanApprovalCertificate, PlanClaimDeclarations } from './proofgraph-approval.js';
 
+export const LineageStatus = z.enum(['verified', 'legacy_inferred', 'unavailable']);
+export type LineageStatus = z.infer<typeof LineageStatus>;
+
 /** A single plan version (immutable snapshot). */
 export const PlanEvidence = z.object({
   body: z.string().min(1),
+  /** Content-based identity: SHA-256 of the plan text alone. */
   digest: z.string().min(1),
   sections: z.array(z.string()),
   createdAt: z.string().datetime(),
+
+  // ── Lineage (Commit 3) ──────────────────────────────────────────────
+  /** Immutable version number within this plan's lineage (1-based). */
+  planVersion: z.number().int().positive().default(1),
+  /**
+   * Record-digest of the immediate predecessor, or null for v1.
+   * This is a cryptographic reference, not a content hash — it proves
+   * that this version genuinely succeeds the referenced predecessor.
+   */
+  supersedesRecordDigest: z.string().nullable().default(null),
+  /** The review obligation that triggered this revision, or null for fresh. */
+  originatingReviewObligationId: z.string().uuid().nullable().default(null),
+  /** Human or machine summary of why this revision was created. */
+  revisionReason: z.string().nullable().default(null),
+  /** Trust status of the lineage: verified (post-Commit-3), legacy_inferred
+   *  (migrated from pre-lineage data), or unavailable (truly unknown). */
+  lineageStatus: LineageStatus.default('verified'),
 });
 export type PlanEvidence = z.infer<typeof PlanEvidence>;
 

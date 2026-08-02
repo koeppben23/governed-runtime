@@ -126,7 +126,7 @@ function renderChallengeContract(
   }
   const evidenceRefs = contract.evidenceRefs ?? [];
   const challenge = {
-    challengeId: '<fresh UUID>',
+    clientReference: '<your-ref>',
     obligationId,
     scenario: '<falsification scenario>',
     claim: '<reviewed claim>',
@@ -137,7 +137,7 @@ function renderChallengeContract(
   };
   return [
     `- Challenge contract: return exactly ${contract.requiredChallengeCount} ${contract.requiredChallengeKind} challenge(s).`,
-    '- Every challenge MUST use a fresh UUID challengeId and the exact obligationId below.',
+    '- Every challenge MUST use a fresh, unique clientReference (e.g. "c1", "c2") and the exact obligationId below.',
     '- Copy evidenceRefs exactly from the schema below. Do not invent or alter a digest, sectionPath, or attemptId.',
     '- Omit challengeResolutionVerdicts unless the Task prompt explicitly supplies prior challenge IDs to resolve.',
     `- Required challenge object shape: ${JSON.stringify(challenge)}`,

@@ -135,6 +135,11 @@ export const PLAN_EVIDENCE: PlanEvidence = {
   digest: 'digest-of-plan',
   sections: ['Plan'],
   createdAt: FIXED_TIME,
+  planVersion: 1,
+  supersedesRecordDigest: null,
+  originatingReviewObligationId: null,
+  revisionReason: null,
+  lineageStatus: 'verified',
 };
 
 export const PLAN_RECORD: PlanRecord = {

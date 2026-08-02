@@ -67,7 +67,18 @@ export type ProofGraphApprovalCertificate = z.infer<typeof ProofGraphApprovalCer
 
 /** A common certificate constrained for plan approval persistence. */
 export const PlanApprovalCertificate = z
-  .object({ flow: z.literal('plan'), ...approvalCertificateShape })
+  .object({
+    flow: z.literal('plan'),
+    ...approvalCertificateShape,
+    /** Immutable plan version this certificate was issued against. */
+    planVersion: z.number().int().positive().optional(),
+    /** Record-digest of the plan this certificate binds (content + lineage). */
+    planRecordDigest: z.string().min(1).optional(),
+    /** The review obligation whose evidence was accepted for this approval. */
+    reviewObligationId: z.string().uuid().optional(),
+    /** Digest of the review invocation evidence that satisfied the obligation. */
+    reviewEvidenceDigest: z.string().min(1).optional(),
+  })
   .readonly();
 export type PlanApprovalCertificate = z.infer<typeof PlanApprovalCertificate>;
 
@@ -104,7 +115,7 @@ export type FlowClaimDeclarations = z.infer<typeof FlowClaimDeclarations>;
 
 /** Minimal plan authority shape needed to verify its approval certificate. */
 export interface PlanClaimAuthority {
-  readonly current: { readonly digest: string };
+  readonly current: { readonly digest: string; readonly planVersion?: number };
   readonly claimDeclarations?: PlanClaimDeclarations;
   readonly approvalCertificate?: PlanApprovalCertificate;
 }
@@ -115,6 +126,14 @@ export function hasCurrentPlanApprovalCertificate(
 ): plan is PlanClaimAuthority & { readonly approvalCertificate: PlanApprovalCertificate } {
   if (!plan?.approvalCertificate) return false;
   if (plan.approvalCertificate.authorityDigest !== plan.current.digest) return false;
+  // Versionsbindung: Ein Zertifikat für v1 autorisiert nicht v2.
+  if (
+    plan.approvalCertificate.planVersion != null &&
+    plan.current.planVersion != null &&
+    plan.approvalCertificate.planVersion !== plan.current.planVersion
+  ) {
+    return false;
+  }
   const declarations = plan.claimDeclarations ?? { flow: 'plan' as const, claims: [] };
   return (
     plan.approvalCertificate.claimDeclarationsDigest ===

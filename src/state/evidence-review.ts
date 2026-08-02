@@ -20,6 +20,51 @@ import {
 } from './evidence-primitives.js';
 import { ActorInfoSchema, DecisionIdentity } from './evidence-identity.js';
 
+// ─── Review Attempt (Invocation Envelope) ─────────────────────────────────────
+
+export const ReviewAttemptStatusValues = [
+  'created',
+  'captured',
+  'rejected',
+  'bound',
+  'stale',
+  'expired',
+] as const;
+
+export const ReviewAttemptStatus = z.enum(ReviewAttemptStatusValues);
+export type ReviewAttemptStatus = z.infer<typeof ReviewAttemptStatus>;
+
+export const ReviewAttempt = z.object({
+  attemptId: z.string().uuid(),
+  obligationId: z.string().uuid(),
+  obligationType: ReviewObligationType,
+  subjectDigest: z.string().min(1),
+  ordinal: z.number().int().nonnegative(),
+  childSessionId: z.string().optional(),
+  status: ReviewAttemptStatus,
+  createdAt: z.string().datetime(),
+  completedAt: z.string().datetime().optional(),
+});
+export type ReviewAttempt = z.infer<typeof ReviewAttempt>;
+
+// ─── Reviewer Challenge Input (non-authoritative, pre-normalization) ──────────
+
+export const ReviewerChallengeInput = z.object({
+  clientReference: z
+    .string()
+    .min(1)
+    .max(64)
+    .regex(/^[a-zA-Z0-9_-]+$/)
+    .optional(),
+  scenario: z.string().min(1),
+  claim: z.string().min(1),
+  locations: z.array(z.string().min(1)).min(1),
+  kind: z.enum(['design_challenge', 'implementation_challenge', 'content_challenge']),
+  evidenceRefs: z.array(z.unknown()).min(1),
+  outcome: z.enum(['supported', 'contradicted', 'not_verified']),
+});
+export type ReviewerChallengeInput = z.infer<typeof ReviewerChallengeInput>;
+
 // ─── Completeness Report ──────────────────────────────────────────────────────
 
 export const EvidenceSlotStatusSchema = z.object({
@@ -351,6 +396,19 @@ export const ReviewObligation = z.object({
     .enum(['design_challenge', 'implementation_challenge', 'content_challenge'])
     .optional(),
   challengePolicyVersion: z.literal('challenge-policy.v1').optional(),
+  /**
+   * Digest of the subject artifact (plan, implementation, or reviewed content)
+   * frozen at obligation creation. This is the host-authoritative identity of
+   * what must be reviewed — never supplied by or echoed from the reviewer.
+   * Used at binding time to prevent cross-artifact evidence attachment.
+   */
+  subjectDigest: z.string().min(1).optional(),
+  /**
+   * Ordered attempt IDs associated with this obligation.
+   * Each reviewer Task invocation creates a new attempt; the latest attempt at
+   * the highest ordinal is the authoritative one for binding.
+   */
+  attemptIds: z.array(z.string().uuid()).optional(),
   /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
   metadata: z.record(z.string(), z.unknown()).optional(),
 });

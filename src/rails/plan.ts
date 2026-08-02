@@ -100,6 +100,11 @@ export async function executePlan(
     digest: ctx.digest(planBody),
     sections: projectMarkdownHeadings(planBody),
     createdAt: ctx.now(),
+    planVersion: 1,
+    supersedesRecordDigest: null,
+    originatingReviewObligationId: null,
+    revisionReason: null,
+    lineageStatus: 'verified',
   };
 
   // 5. Preserve version history
@@ -120,6 +125,11 @@ export async function executePlan(
           digest: ctx.digest(review.revisedBody),
           sections: projectMarkdownHeadings(review.revisedBody),
           createdAt: ctx.now(),
+          planVersion: (plan.planVersion ?? 1) + 1,
+          supersedesRecordDigest: plan.digest,
+          originatingReviewObligationId: null,
+          revisionReason: 'Review requested changes',
+          lineageStatus: 'verified' as const,
         },
       };
     }

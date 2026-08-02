@@ -86,7 +86,10 @@ describe('state schemas', () => {
         sections: ['Plan'],
         createdAt: FIXED_TIME,
       };
-      expect(PlanEvidence.parse(plan)).toEqual(plan);
+      const parsed = PlanEvidence.parse(plan);
+      expect(parsed.body).toBe(plan.body);
+      expect(parsed.planVersion).toBe(1);
+      expect(parsed.lineageStatus).toBe('verified');
     });
 
     it('ValidationResult parses valid result', () => {

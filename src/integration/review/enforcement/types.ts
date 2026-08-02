@@ -129,6 +129,53 @@ export type HostTaskBindOutcome =
   | 'field_mismatch'
   | 'duplicate_evidence';
 
+// ─── Phase-Separated Capture Pipeline Outcomes ─────────────────────────────────
+
+/** Outcome of the capture phase (did the Task tool produce output?). */
+export type CaptureOutcome = 'captured' | 'capture_failed';
+
+/** Outcome of the extraction phase (could JSON be recovered from the output?). */
+export type ExtractionOutcome =
+  'exact_payload' | 'recovered_payload' | 'payload_not_found' | 'payload_ambiguous';
+
+/** Outcome of the validation phase (did the payload pass schema + identity checks?). */
+export type ValidationOutcome = 'valid' | 'schema_invalid' | 'client_reference_invalid';
+
+/** Assurance level for the capture quality. */
+export type CaptureAssurance = 'exact_json' | 'structured_recovered';
+
+/**
+ * Aggregated result for a single review attempt across all phases.
+ *
+ * Phases execute in order: Capture → Extraction → Validation → Binding.
+ * Each phase only populates when the previous phase succeeded.
+ */
+export interface ReviewAttemptResult {
+  readonly attemptId: string;
+  readonly captureOutcome: CaptureOutcome;
+  readonly extractionOutcome?: ExtractionOutcome;
+  readonly validationOutcome?: ValidationOutcome;
+  readonly bindOutcome?: HostTaskBindOutcome;
+  readonly captureAssurance?: CaptureAssurance;
+  readonly reasonCode?: string;
+  readonly diagnostics?: Record<string, unknown>;
+}
+
+/** Retry budget configuration per phase. */
+export interface ReviewerRetryBudget {
+  readonly capture: number;
+  readonly extraction: number;
+  readonly validation: number;
+  readonly total: number;
+}
+
+export const DEFAULT_RETRY_BUDGET: ReviewerRetryBudget = {
+  capture: 2,
+  extraction: 2,
+  validation: 1,
+  total: 3,
+};
+
 /**
  * Structured result from buildHostTaskEvidence.
  *

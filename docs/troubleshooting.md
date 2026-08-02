@@ -212,6 +212,21 @@ real, registered reason.
 | `REVIEW_TRANSPORT_EVIDENCE_INVALID`         | External review-evidence transport JSON is malformed or unbindable            | Regenerate evidence with valid obligation-bound `ReviewFindings`                                                     |
 | `REVIEW_ASSURANCE_STATE_UNAVAILABLE`        | Strict review assurance state cannot be read                                  | Re-hydrate; if persistent, restore from archive                                                                      |
 
+### Review Envelope Validation
+
+| Code                                  | Description                                       | Solution                                                                                |
+| ------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `ENVELOPE_CAPTURE_FAILED`             | Reviewer Task tool produced no bindable output    | Re-invoke the reviewer subagent; verify it is reachable                                 |
+| `ENVELOPE_PAYLOAD_NOT_FOUND`          | Reviewer output contained no extractable JSON     | Re-invoke the reviewer and ensure it returns ONLY the ReviewFindings JSON               |
+| `ENVELOPE_PAYLOAD_AMBIGUOUS`          | Multiple JSON candidates in reviewer output       | Re-invoke the reviewer and ensure exactly one JSON object is returned                   |
+| `ENVELOPE_SCHEMA_INVALID`             | Reviewer output failed schema validation          | Re-invoke the reviewer with the canonical prompt; check all required fields are present |
+| `ENVELOPE_CLIENT_REFERENCE_INVALID`   | Challenge clientReference is invalid or duplicate | Re-invoke the reviewer with unique, valid clientReference values per challenge          |
+| `ENVELOPE_DUPLICATE_CLIENT_REFERENCE` | Duplicate clientReference across challenges       | Re-invoke the reviewer with unique clientReference values per challenge                 |
+| `ENVELOPE_SUBJECT_MISMATCH`           | Reviewer evidence bound to wrong artifact digest  | Re-invoke the reviewer for the correct artifact version                                 |
+| `ENVELOPE_OBLIGATION_NOT_OPEN`        | Review obligation is not in pending state         | Verify obligation status; start a fresh review cycle if consumed                        |
+| `ENVELOPE_STALE_ATTEMPT`              | Review attempt superseded by a newer attempt      | Use the latest attempt; re-invoke if needed                                             |
+| `ENVELOPE_RETRY_BUDGET_EXHAUSTED`     | Reviewer capture retries exhausted                | Inspect diagnostics for each failed attempt; run `flowguard doctor`                     |
+
 ### Identity & Approvals
 
 | Code                           | Description                                                             | Solution                                                                                                              |
@@ -290,6 +305,16 @@ EMPTY_ADR_TEXT
 EMPTY_ADR_TITLE
 EMPTY_PLAN
 EMPTY_TICKET
+ENVELOPE_CAPTURE_FAILED
+ENVELOPE_CLIENT_REFERENCE_INVALID
+ENVELOPE_DUPLICATE_CLIENT_REFERENCE
+ENVELOPE_OBLIGATION_NOT_OPEN
+ENVELOPE_PAYLOAD_AMBIGUOUS
+ENVELOPE_PAYLOAD_NOT_FOUND
+ENVELOPE_RETRY_BUDGET_EXHAUSTED
+ENVELOPE_SCHEMA_INVALID
+ENVELOPE_STALE_ATTEMPT
+ENVELOPE_SUBJECT_MISMATCH
 EVIDENCE_ARTIFACT_IMMUTABLE
 EVIDENCE_ARTIFACT_MISMATCH
 EVIDENCE_ARTIFACT_MISSING

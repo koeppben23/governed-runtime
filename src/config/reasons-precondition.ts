@@ -6,6 +6,7 @@
  */
 import type { BlockedReason } from './reasons-types.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../shared/flowguard-identifiers.js';
+import { ENVELOPE_PRECONDITION_REASONS } from './reasons-envelope.js';
 
 export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
@@ -136,6 +137,9 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
       'Do not hand-edit the captured findings; the host-task evidence is the single source of truth and corrupt captures cannot be substituted by submitting reviewFindings',
     ],
   },
+
+  // ─── Review Envelope Validation — re-exported from reasons-envelope.ts ──────
+  ...ENVELOPE_PRECONDITION_REASONS,
 
   {
     code: 'REVIEW_OBLIGATION_UNRESOLVED',

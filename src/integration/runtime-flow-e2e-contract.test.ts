@@ -293,7 +293,17 @@ describe('FlowGuard tool-level E2E', () => {
           makeState('IMPLEMENTATION', {
             ticket: TICKET,
             plan: {
-              current: { body: '# Plan', digest: 'abc', sections: [], createdAt: FIXED_TIME },
+              current: {
+                body: '# Plan',
+                digest: 'abc',
+                sections: [],
+                createdAt: FIXED_TIME,
+                planVersion: 1,
+                supersedesRecordDigest: null,
+                originatingReviewObligationId: null,
+                revisionReason: null,
+                lineageStatus: 'verified' as const,
+              },
               history: [],
               reviewFindings: undefined,
             },
