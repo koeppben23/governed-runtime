@@ -447,6 +447,37 @@ export function appendObligationWithAttempt(
   return staleObligationAttempts(withAttempt, obligation.obligationId, attempt.attemptId, now);
 }
 
+/**
+ * Create a new attempt for an EXISTING obligation (retry / re-invocation).
+ *
+ * Unlike createObligationAndAttempt (which creates a new obligation), this
+ * attaches a new attempt to an already-persisted obligation. Previous
+ * non-bound attempts for this obligation are staled — so a late callback
+ * from the previous reviewer invocation is hard-rejected.
+ *
+ * @returns Updated assurance state with the new attempt persisted.
+ */
+export function createAttemptForExistingObligation(
+  assurance: ReviewAssuranceState | undefined,
+  obligation: ReviewObligation,
+  childSessionId: string,
+  now: string,
+): ReviewAssuranceState {
+  const base = ensureReviewAssurance(assurance);
+  const ordinal =
+    (base.attempts?.filter((a) => a.obligationId === obligation.obligationId).length ?? 0) + 1;
+  const attempt = createReviewAttempt({
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest!,
+    ordinal,
+    childSessionId,
+    now,
+  });
+  const withAttempt = appendReviewAttempt(base, attempt);
+  return staleObligationAttempts(withAttempt, obligation.obligationId, attempt.attemptId, now);
+}
+
 export function appendReviewAttempt(
   assurance: ReviewAssuranceState,
   attempt: ReviewAttempt,

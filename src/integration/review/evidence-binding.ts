@@ -51,17 +51,64 @@ export function buildHostTaskEvidence(
   const { latest, childSessionId, obligationType: oType, rawFindings } = latestResult;
   const attestation = rawFindings.attestation as Record<string, unknown> | undefined;
   const attestationInfo = resolveAttestationInfo(attestation);
-  const obligationMatch = matchBindableObligation(obligations, oType, attestationInfo);
-  if ('bindOutcome' in obligationMatch) return obligationMatch;
-  const matchedObligation = obligationMatch.obligation;
 
-  // Attempt resolution: look up the invocation attempt for this child session.
-  // Attempts are created BEFORE the reviewer subagent is invoked (by the tool
-  // creating the review obligation), so a late callback without a match
-  // means the invocation was never recorded — reject.
-  const resolvedAttempt = resolveExistingAttempt(attempts ?? [], childSessionId, matchedObligation);
+  // Attempt is the primary binding authority — resolve it FIRST by childSessionId.
+  // The obligation is then loaded from the attempt, not matched heuristically.
+  const resolvedAttempt = resolveAttemptBySession(attempts ?? [], childSessionId);
   if ('bindOutcome' in resolvedAttempt) return resolvedAttempt;
   const attempt = resolvedAttempt.attempt;
+
+  // Load the exact obligation the attempt was created for.
+  const obligatedObligation = obligations.find((o) => o.obligationId === attempt.obligationId);
+  if (!obligatedObligation) {
+    return {
+      evidence: null,
+      bindOutcome: 'no_matching_obligation',
+      diagnostic: {
+        attemptId: attempt.attemptId,
+        obligationId: attempt.obligationId,
+        message: 'Attempt references an obligation that does not exist in the current state.',
+      },
+    };
+  }
+
+  // Cross-check: the obliged obligation type must be consistent with the tool
+  // that triggered this review. An attempt for a 'plan' obligation cannot bind
+  // evidence from an 'implementation' tool invocation.
+  if (obligatedObligation.obligationType !== oType) {
+    return {
+      evidence: null,
+      bindOutcome: 'field_mismatch',
+      diagnostic: {
+        attemptId: attempt.attemptId,
+        attemptObligationType: attempt.obligationType,
+        enforcementObligationType: oType,
+        message: 'Attempt obligation type does not match the enforcement tool type.',
+      },
+      attempt: { ...attempt, status: 'rejected' as const, completedAt: now },
+    };
+  }
+
+  // Attestation consistency: if the reviewer attested to a specific obligation,
+  // it must be the same one the attempt was created for.
+  if (
+    attestationInfo.hasValidAttestation &&
+    attestationInfo.attestedObligationId !== attempt.obligationId
+  ) {
+    return {
+      evidence: null,
+      bindOutcome: 'field_mismatch',
+      diagnostic: {
+        attemptId: attempt.attemptId,
+        attestedObligationId: attestationInfo.attestedObligationId,
+        attemptObligationId: attempt.obligationId,
+        message: 'Reviewer attested to a different obligation than the one bound to this attempt.',
+      },
+      attempt: { ...attempt, status: 'rejected' as const, completedAt: now },
+    };
+  }
+
+  const matchedObligation = obligatedObligation;
 
   // Subject-digest binding: compare the attempt's frozen subject digest
   // (set from the obligation at creation time) against the obligation's
@@ -224,10 +271,9 @@ function noFindings(tool: string, childSessionId: string): HostTaskBindResult {
   return { evidence: null, bindOutcome: 'no_findings', diagnostic: { tool, childSessionId } };
 }
 
-function resolveExistingAttempt(
+function resolveAttemptBySession(
   existingAttempts: ReviewAttempt[],
   childSessionId: string,
-  obligation: ReviewObligation,
 ): { attempt: ReviewAttempt } | HostTaskBindResult {
   const existing = existingAttempts.find((a) => a.childSessionId === childSessionId);
   if (!existing) {
@@ -238,18 +284,6 @@ function resolveExistingAttempt(
         childSessionId,
         message:
           'No attempt record found for this child session. The child session must be bound to an attempt at Task-start time — callbacks without a known invocation are rejected.',
-      },
-    };
-  }
-  if (existing.obligationId !== obligation.obligationId) {
-    return {
-      evidence: null,
-      bindOutcome: 'field_mismatch',
-      diagnostic: {
-        attemptId: existing.attemptId,
-        attemptObligationId: existing.obligationId,
-        matchedObligationId: obligation.obligationId,
-        message: 'Attempt belongs to a different obligation; cross-obligation binding rejected.',
       },
     };
   }
@@ -282,63 +316,6 @@ function resolveAttestationInfo(attestation: Record<string, unknown> | undefined
   return {
     attestedObligationId,
     hasValidAttestation: !!attestedObligationId && uuidRe.test(attestedObligationId),
-  };
-}
-
-function matchBindableObligation(
-  obligations: ReviewObligation[],
-  obligationType: ReviewObligation['obligationType'],
-  attestationInfo: ReturnType<typeof resolveAttestationInfo>,
-): { obligation: ReviewObligation } | HostTaskBindResult {
-  const obligation = attestationInfo.hasValidAttestation
-    ? obligations.find((o) =>
-        isMatchingAttestedObligation(o, obligationType, attestationInfo.attestedObligationId),
-      )
-    : latestToolMatchedObligation(obligations, obligationType);
-  if (!obligation) return noMatchingObligation(obligations, obligationType, attestationInfo);
-  return { obligation };
-}
-
-function isMatchingAttestedObligation(
-  obligation: ReviewObligation,
-  obligationType: ReviewObligation['obligationType'],
-  attestedObligationId: string | null,
-): boolean {
-  return (
-    obligation.obligationId === attestedObligationId &&
-    obligation.obligationType === obligationType &&
-    obligation.status !== 'consumed' &&
-    obligation.consumedAt === null
-  );
-}
-
-function latestToolMatchedObligation(
-  obligations: ReviewObligation[],
-  obligationType: ReviewObligation['obligationType'],
-): ReviewObligation | undefined {
-  const candidates = obligations
-    .filter(
-      (o) =>
-        o.obligationType === obligationType && o.status !== 'consumed' && o.consumedAt === null,
-    )
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  return candidates[0];
-}
-
-function noMatchingObligation(
-  obligations: ReviewObligation[],
-  obligationType: ReviewObligation['obligationType'],
-  attestationInfo: ReturnType<typeof resolveAttestationInfo>,
-): HostTaskBindResult {
-  return {
-    evidence: null,
-    bindOutcome: 'no_matching_obligation',
-    diagnostic: {
-      attestedObligationId: attestationInfo.attestedObligationId,
-      obligationType,
-      availableObligations: obligations.length,
-      bindingMode: attestationInfo.hasValidAttestation ? 'attestation' : 'tool_fallback',
-    },
   };
 }
 
