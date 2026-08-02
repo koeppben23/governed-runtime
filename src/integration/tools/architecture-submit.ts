@@ -32,9 +32,11 @@ interface ArchObligationContext {
   readonly policySnapshot: NonNullable<SessionState['policySnapshot']>;
 }
 
-async function classifyAndCreateArchObligation(
-  ctx: ArchObligationContext,
-): Promise<{ state: SessionState; obligation: ReturnType<typeof createReviewObligation> | null }> {
+async function classifyAndCreateArchObligation(ctx: ArchObligationContext): Promise<{
+  state: SessionState;
+  obligation: ReturnType<typeof createReviewObligation> | null;
+  attemptId: string | null;
+}> {
   const classification = await resolvePreImplementationChallengeClassification(
     ctx.state,
     ctx.wsDir,
@@ -62,17 +64,22 @@ async function classifyAndCreateArchObligation(
         metadata,
       })
     : null;
+  let archAttemptId: string | null = null;
   const augmentedState = obligation
-    ? {
-        ...ctx.state,
-        reviewAssurance: appendObligationWithAttempt(
+    ? (() => {
+        const withAttempt = appendObligationWithAttempt(
           ctx.state.reviewAssurance,
           obligation,
           ctx.now,
-        ),
-      }
+        );
+        archAttemptId = withAttempt.attemptId;
+        return {
+          ...ctx.state,
+          reviewAssurance: withAttempt.assurance,
+        };
+      })()
     : ctx.state;
-  return { state: augmentedState, obligation };
+  return { state: augmentedState, obligation, attemptId: archAttemptId };
 }
 
 export async function handleAdrSubmission(

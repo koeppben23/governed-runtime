@@ -83,12 +83,13 @@ function trackReviewRequired(
   reviewTool: PendingReviewTool,
   next: string,
   now: string,
+  attemptId?: string | null,
   obligationId?: string | null,
 ): void {
   state.pendingReviews.set(reviewTool, {
     tool: reviewTool,
     requestedAt: now,
-    attemptId: null,
+    attemptId: attemptId ?? null,
     obligationId: obligationId ?? null,
     subagentCalled: false,
     subagentRecord: null,
@@ -189,9 +190,10 @@ function trackRequiredReview(
     : (context.signalOwner as PendingReviewTool);
   const next = typeof parsed.next === 'string' ? parsed.next : '';
   if (next.startsWith(REVIEW_REQUIRED_PREFIX) && (context.isReviewContent || context.signalOwner)) {
+    const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
     const obligationId =
       typeof parsed.reviewObligationId === 'string' ? parsed.reviewObligationId : null;
-    trackReviewRequired(state, recordKey, next, now, obligationId);
+    trackReviewRequired(state, recordKey, next, now, attemptId, obligationId);
   }
 }
 

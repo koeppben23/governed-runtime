@@ -78,6 +78,11 @@ export function buildPlanSubmissionResponse(
   const nextObligation = scope.reviewPolicy.subagentEnabled
     ? findLatestObligation(finalState.reviewAssurance?.obligations ?? [], 'plan', 0, planVersion)
     : null;
+  const planAttemptId = nextObligation
+    ? (finalState.reviewAssurance?.attempts?.find(
+        (a) => a.obligationId === nextObligation.obligationId && a.status === 'created',
+      )?.attemptId ?? null)
+    : null;
   const reviewInstruction = buildPlanReviewInstruction({
     scope,
     obligation: nextObligation,
@@ -93,7 +98,7 @@ export function buildPlanSubmissionResponse(
     selfReviewIteration: 0,
     maxSelfReviewIterations: scope.maxSelfReviewIterations,
     reviewMode: scope.reviewPolicy.subagentEnabled ? 'subagent' : 'self',
-    ...reviewObligationResponseFields(nextObligation),
+    ...reviewObligationResponseFields(nextObligation, planAttemptId),
     next: reviewInstruction.next,
     reviewInvocation: reviewInstruction.reviewInvocation,
     _audit: { transitions },

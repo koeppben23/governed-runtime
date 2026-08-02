@@ -44,9 +44,9 @@ export function activateImplementationReviewObligation(
     planVersion: number;
     now: string;
   },
-): { state: SessionState; obligation: ReviewObligation | null } {
+): { state: SessionState; obligation: ReviewObligation | null; attemptId: string | null } {
   if (state.phase !== 'IMPL_REVIEW' || state.reducedCeremony !== null || !input.subagentEnabled) {
-    return { state, obligation: null };
+    return { state, obligation: null, attemptId: null };
   }
 
   const obligation = createReviewObligation({
@@ -61,12 +61,14 @@ export function activateImplementationReviewObligation(
     changedFiles: state.implementation?.changedFiles ?? [],
     claimedTaskClass: state.claimedTaskClass,
   });
+  const withAttempt = appendObligationWithAttempt(state.reviewAssurance, obligation, input.now);
   return {
     state: {
       ...state,
-      reviewAssurance: appendObligationWithAttempt(state.reviewAssurance, obligation, input.now),
+      reviewAssurance: withAttempt.assurance,
     },
     obligation,
+    attemptId: withAttempt.attemptId,
   };
 }
 

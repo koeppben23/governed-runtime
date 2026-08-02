@@ -307,7 +307,7 @@ export async function persistReviewObligation(
       state.reviewAssurance,
       obligation,
       obligation.createdAt,
-    ),
+    ).assurance,
   });
 }
 

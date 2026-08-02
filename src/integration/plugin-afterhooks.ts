@@ -60,6 +60,7 @@ import { strictBlockedOutput, getToolMetadata, getToolCallID } from './plugin-he
 import { ensureReviewAssurance, updateAttemptStatus } from './review/assurance.js';
 import { readState as readPersistedState } from '../adapters/persistence.js';
 import type { SessionState } from '../state/schema.js';
+import type { ReviewAttempt } from '../state/evidence.js';
 export async function toolAfter(
   runtime: FlowGuardPluginRuntime,
   input: unknown,
@@ -398,12 +399,10 @@ export async function handleCompaction(
 }
 
 /**
- * Bind a child session to the pre-created attempt for the obligation
- * identified by the enforcement state's pending review record.
- *
- * The pending review carries the obligationId from the tool output, which
- * is a unique obligation identity — not a type classification. This makes
- * the match deterministic even with multiple obligations of the same type.
+ * Bind a child session to the attempt identified by the enforcement state's
+ * pending review record. Uses attemptId as the primary authority when
+ * available; falls back to obligationId (still identity-based) for paths
+ * where the tool produces an obligationId but no attemptId in its output.
  */
 async function bindAttemptSession(
   runtime: FlowGuardPluginRuntime,
@@ -419,17 +418,66 @@ async function bindAttemptSession(
   const eState = runtime.ws.getEnforcementState(sessionId);
   for (const pending of eState.pendingReviews.values()) {
     if (pending.subagentRecord?.sessionId !== childSessionId) continue;
-    const obligationId = pending.obligationId;
-    if (!obligationId) break;
-    const preCreatedAttempt = state.reviewAssurance?.attempts?.find(
-      (a) => a.obligationId === obligationId && !a.childSessionId && a.status === 'created',
-    );
-    if (!preCreatedAttempt) break;
+
+    if (!pending.obligationId) {
+      runtime.log.warn('host-task', 'bind attempt aborted', {
+        reason: 'pending_obligation_id_missing',
+        childSessionId,
+      });
+      return;
+    }
+
+    let attempt: ReviewAttempt | undefined;
+    if (pending.attemptId) {
+      attempt = state.reviewAssurance?.attempts?.find((a) => a.attemptId === pending.attemptId);
+      if (attempt && attempt.obligationId !== pending.obligationId) {
+        runtime.log.warn('host-task', 'bind attempt aborted', {
+          reason: 'attempt_obligation_mismatch',
+          attemptObligationId: attempt.obligationId,
+          pendingObligationId: pending.obligationId,
+        });
+        return;
+      }
+    } else {
+      attempt = state.reviewAssurance?.attempts?.find(
+        (a) =>
+          a.obligationId === pending.obligationId && !a.childSessionId && a.status === 'created',
+      );
+    }
+
+    if (!attempt) {
+      runtime.log.warn('host-task', 'bind attempt aborted', {
+        reason: 'pending_attempt_not_found',
+        attemptId: pending.attemptId,
+        obligationId: pending.obligationId,
+        childSessionId,
+      });
+      return;
+    }
+
+    if (attempt.childSessionId) {
+      runtime.log.warn('host-task', 'bind attempt aborted', {
+        reason: 'attempt_already_bound',
+        attemptId: attempt.attemptId,
+        childSessionId,
+      });
+      return;
+    }
+
+    if (attempt.status !== 'created') {
+      runtime.log.warn('host-task', 'bind attempt aborted', {
+        reason: 'attempt_not_created',
+        attemptId: attempt.attemptId,
+        status: attempt.status,
+      });
+      return;
+    }
+
     await runtime.ws.updateReviewAssurance(sessDir, (s: SessionState) => ({
       ...s,
       reviewAssurance: updateAttemptStatus(
         ensureReviewAssurance(s.reviewAssurance),
-        preCreatedAttempt.attemptId,
+        attempt.attemptId,
         'created',
         now,
         childSessionId,

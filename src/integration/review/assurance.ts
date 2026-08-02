@@ -159,6 +159,7 @@ export function appendReviewObligation(
 
 export function reviewObligationResponseFields(
   obligation: ReviewObligation | null,
+  attemptId?: string | null,
 ): Record<string, unknown> {
   if (!obligation) return {};
   return {
@@ -179,6 +180,7 @@ export function reviewObligationResponseFields(
     reviewMandateDigest: obligation.mandateDigest,
     requiredChallengeCount: obligation.requiredChallengeCount,
     requiredChallengeKind: obligation.requiredChallengeKind,
+    ...(attemptId ? { reviewAttemptId: attemptId } : {}),
   };
 }
 
@@ -431,7 +433,7 @@ export function appendObligationWithAttempt(
   assurance: ReviewAssuranceState | undefined,
   obligation: ReviewObligation,
   now: string,
-): ReviewAssuranceState {
+): { assurance: ReviewAssuranceState; attemptId: string } {
   const base = ensureReviewAssurance(assurance);
   const ordinal =
     (base.attempts?.filter((a) => a.obligationId === obligation.obligationId).length ?? 0) + 1;
@@ -444,7 +446,15 @@ export function appendObligationWithAttempt(
   });
   const withObligation = { ...base, obligations: [...base.obligations, obligation] };
   const withAttempt = appendReviewAttempt(withObligation, attempt);
-  return staleObligationAttempts(withAttempt, obligation.obligationId, attempt.attemptId, now);
+  return {
+    assurance: staleObligationAttempts(
+      withAttempt,
+      obligation.obligationId,
+      attempt.attemptId,
+      now,
+    ),
+    attemptId: attempt.attemptId,
+  };
 }
 
 /**

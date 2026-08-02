@@ -530,15 +530,20 @@ async function persistAndFormatNonConvergedReview(
         metadata,
       })
     : null;
+  let archAttemptId: string | null = null;
   const stateToPersist = nextObligation
-    ? {
-        ...advanced.state,
-        reviewAssurance: appendObligationWithAttempt(
+    ? (() => {
+        const withAttempt = appendObligationWithAttempt(
           advanced.state.reviewAssurance,
           nextObligation,
           session.ctx.now(),
-        ),
-      }
+        );
+        archAttemptId = withAttempt.attemptId;
+        return {
+          ...advanced.state,
+          reviewAssurance: withAttempt.assurance,
+        };
+      })()
     : advanced.state;
   const persisted = await writeStateWithArtifacts(session.sessDir, stateToPersist);
   const instruction = buildArchitectureReviewInstruction({
@@ -559,7 +564,7 @@ async function persistAndFormatNonConvergedReview(
     selfReviewIteration: iteration,
     revisionDelta: revision.revisionDelta,
     reviewMode: review.subagentEnabled ? 'subagent' : 'self',
-    ...reviewObligationResponseFields(nextObligation),
+    ...reviewObligationResponseFields(nextObligation, archAttemptId),
     next: instruction.next,
     ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: advanced.transitions },
