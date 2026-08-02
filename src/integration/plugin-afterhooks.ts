@@ -57,7 +57,6 @@ import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './pl
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import { strictBlockedOutput, getToolMetadata, getToolCallID } from './plugin-helpers.js';
-import { obligationTypeForTool } from './review/obligation-tools.js';
 import { ensureReviewAssurance, updateAttemptStatus } from './review/assurance.js';
 import { readState as readPersistedState } from '../adapters/persistence.js';
 import type { SessionState } from '../state/schema.js';
@@ -399,15 +398,12 @@ export async function handleCompaction(
 }
 
 /**
- * Bind a child session to the pre-created attempt that matches the
- * pending review's obligation type. The attempt was created at obligation
- * time without a childSessionId; we now have the real childSessionId from
- * the Task invocation output.
+ * Bind a child session to the pre-created attempt for the obligation
+ * identified by the enforcement state's pending review record.
  *
- * This runs in the afterhook AFTER enforcement tracking has recorded the
- * child session, but BEFORE the evidence binding callback processes it.
- * The callback must never be the one to establish the invocation-attempt
- * link — this function is the authoritative binding point.
+ * The pending review carries the obligationId from the tool output, which
+ * is a unique obligation identity — not a type classification. This makes
+ * the match deterministic even with multiple obligations of the same type.
  */
 async function bindAttemptSession(
   runtime: FlowGuardPluginRuntime,
@@ -421,16 +417,14 @@ async function bindAttemptSession(
   if (!state) return;
 
   const eState = runtime.ws.getEnforcementState(sessionId);
-  // Find the pending review whose child session was just recorded.
-  // Iterate by tool name so we can derive the obligation type.
-  for (const [toolName, pending] of eState.pendingReviews.entries()) {
+  for (const pending of eState.pendingReviews.values()) {
     if (pending.subagentRecord?.sessionId !== childSessionId) continue;
-    const oType = obligationTypeForTool(toolName);
-    if (!oType) continue;
+    const obligationId = pending.obligationId;
+    if (!obligationId) break;
     const preCreatedAttempt = state.reviewAssurance?.attempts?.find(
-      (a) => !a.childSessionId && a.status === 'created' && a.obligationType === oType,
+      (a) => a.obligationId === obligationId && !a.childSessionId && a.status === 'created',
     );
-    if (!preCreatedAttempt) continue;
+    if (!preCreatedAttempt) break;
     await runtime.ws.updateReviewAssurance(sessDir, (s: SessionState) => ({
       ...s,
       reviewAssurance: updateAttemptStatus(

@@ -64,6 +64,10 @@ export interface PendingReview {
   readonly tool: PendingReviewTool;
   /** ISO 8601 timestamp when the requirement was signaled. */
   readonly requestedAt: string;
+  /** The host-authoritative attempt ID created alongside the obligation. */
+  attemptId: string | null;
+  /** The obligation ID the attempt was created for. */
+  obligationId: string | null;
   /** Whether a Task call to flowguard-reviewer has been made (Level 1). */
   subagentCalled: boolean;
   /** Record of the actual subagent call, if made (Level 2). */

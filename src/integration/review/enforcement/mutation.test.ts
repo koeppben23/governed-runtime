@@ -267,6 +267,8 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 0, expectedPlanVersion: 1 },
@@ -287,6 +289,8 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: null, // Content meta extraction failed
@@ -310,6 +314,8 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: null,
@@ -328,6 +334,8 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 2, expectedPlanVersion: 1 },
@@ -348,6 +356,8 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 0, expectedPlanVersion: 3 },
@@ -368,6 +378,8 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 1, expectedPlanVersion: 2 },
@@ -398,6 +410,8 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: null,
@@ -420,6 +434,8 @@ describe('review-enforcement mutation kills', () => {
         state.pendingReviews.set('flowguard_plan', {
           tool: 'flowguard_plan',
           requestedAt: NOW,
+          attemptId: null,
+          obligationId: null,
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: null,
