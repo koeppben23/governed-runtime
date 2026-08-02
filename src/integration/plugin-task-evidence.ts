@@ -65,7 +65,15 @@ export async function handleHostTaskEvidence(
     });
 
     const eState = deps.ws.getEnforcementState(sessionId);
-    const bindResult = buildHostTaskEvidence(eState, sessionId, obligations, invocations, now);
+    const expectedSubject = state.plan?.current.digest ?? null;
+    const bindResult = buildHostTaskEvidence(
+      eState,
+      sessionId,
+      obligations,
+      invocations,
+      now,
+      expectedSubject,
+    );
     await applyHostTaskBindResult({ deps, sessDir, sessionId, policy, bindResult, hookOutput });
   } catch (err) {
     deps.logError('host task evidence creation failed', err);

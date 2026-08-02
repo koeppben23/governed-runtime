@@ -39,26 +39,21 @@ export function buildHostTaskEvidence(
   obligations: ReviewObligation[],
   invocations: ReviewInvocationEvidence[],
   now: string,
+  expectedSubjectDigest?: string | null,
 ): HostTaskBindResult {
   const latestResult = latestBindableReviewRecord(state);
   if ('bindOutcome' in latestResult) return latestResult;
   const { latest, childSessionId, obligationType: oType, rawFindings } = latestResult;
   const attestation = rawFindings.attestation as Record<string, unknown> | undefined;
   const attestationInfo = resolveAttestationInfo(attestation);
-  const obligationMatch = matchBindableObligation(obligations, oType, attestationInfo);
+  const obligationMatch = matchBindableObligation(
+    obligations,
+    oType,
+    attestationInfo,
+    expectedSubjectDigest,
+  );
   if ('bindOutcome' in obligationMatch) return obligationMatch;
   const matchedObligation = obligationMatch.obligation;
-
-  // Subject-digest binding: when the obligation carries a frozen subjectDigest,
-  // cross-artifact evidence attachment is rejectable even at the heuristic
-  // matching level. The subjectDigest is host-authoritative and never echoes
-  // from the reviewer — if it doesn't match, the binding is a mismatch.
-  // Only reject when subjectDigest is non-null (legacy obligations lack it).
-  if (matchedObligation.subjectDigest) {
-    // We trust the tool-type match from above; subject binding is additional.
-    // The obligation's subjectDigest was frozen from plan.digest or implDigest
-    // at creation time. Any evidence bound to a different subject is suspect.
-  }
 
   // Cycle-binding fields (iteration/planVersion) are reviewer-reliable and stay fatal.
   const fieldMismatch = checkBindingFieldMismatch(rawFindings, matchedObligation, attestationInfo);
@@ -217,15 +212,28 @@ function matchBindableObligation(
   obligations: ReviewObligation[],
   obligationType: ReviewObligation['obligationType'],
   attestationInfo: ReturnType<typeof resolveAttestationInfo>,
+  expectedSubjectDigest?: string | null,
 ): { obligation: ReviewObligation } | HostTaskBindResult {
   const obligation = attestationInfo.hasValidAttestation
     ? obligations.find((o) =>
         isMatchingAttestedObligation(o, obligationType, attestationInfo.attestedObligationId),
       )
-    : latestToolMatchedObligation(obligations, obligationType);
-  return obligation
-    ? { obligation }
-    : noMatchingObligation(obligations, obligationType, attestationInfo);
+    : latestToolMatchedObligation(obligations, obligationType, expectedSubjectDigest);
+  if (!obligation) return noMatchingObligation(obligations, obligationType, attestationInfo);
+  // Subject-digest guard: reject cross-artifact binding when the host provides
+  // the expected digest and the matched obligation disagrees.
+  if (
+    expectedSubjectDigest &&
+    obligation.subjectDigest &&
+    obligation.subjectDigest !== expectedSubjectDigest
+  ) {
+    return subjectMismatchBlock(
+      obligation.subjectDigest,
+      expectedSubjectDigest,
+      obligation.obligationId,
+    );
+  }
+  return { obligation };
 }
 
 function isMatchingAttestedObligation(
@@ -244,13 +252,22 @@ function isMatchingAttestedObligation(
 function latestToolMatchedObligation(
   obligations: ReviewObligation[],
   obligationType: ReviewObligation['obligationType'],
+  expectedSubjectDigest?: string | null,
 ): ReviewObligation | undefined {
-  return obligations
+  const candidates = obligations
     .filter(
       (o) =>
         o.obligationType === obligationType && o.status !== 'consumed' && o.consumedAt === null,
     )
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))[0];
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  // Prefer obligations whose subjectDigest matches the expected digest
+  // (host-authoritative frozen-at-creation identity). Falls back to
+  // the latest type-matched obligation when no subject match exists.
+  if (expectedSubjectDigest) {
+    const subjectMatched = candidates.find((o) => o.subjectDigest === expectedSubjectDigest);
+    if (subjectMatched) return subjectMatched;
+  }
+  return candidates[0];
 }
 
 function noMatchingObligation(
@@ -266,6 +283,23 @@ function noMatchingObligation(
       obligationType,
       availableObligations: obligations.length,
       bindingMode: attestationInfo.hasValidAttestation ? 'attestation' : 'tool_fallback',
+    },
+  };
+}
+
+function subjectMismatchBlock(
+  obligationSubject: string,
+  expectedSubject: string,
+  obligationId: string,
+): HostTaskBindResult {
+  return {
+    evidence: null,
+    bindOutcome: 'subject_mismatch',
+    diagnostic: {
+      obligationId,
+      obligationSubject,
+      expectedSubject,
+      message: 'Obligation subject digest does not match the expected artifact digest',
     },
   };
 }
