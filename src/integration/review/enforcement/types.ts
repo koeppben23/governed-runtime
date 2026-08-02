@@ -130,7 +130,9 @@ export type HostTaskBindOutcome =
   | 'duplicate_evidence'
   | 'schema_invalid'
   | 'subject_mismatch'
-  | 'stale_attempt';
+  | 'stale_attempt'
+  | 'idempotent_bound'
+  | 'idempotent_rejected';
 
 // ─── Phase-Separated Capture Pipeline Outcomes ─────────────────────────────────
 
@@ -193,4 +195,6 @@ export interface HostTaskBindResult {
   bindOutcome: HostTaskBindOutcome;
   /** Structured diagnostic metadata (safe to JSON.stringify). */
   diagnostic: Record<string, unknown>;
+  /** The review attempt that was resolved/created during binding (for persistence). */
+  attempt?: import('../../../state/evidence.js').ReviewAttempt;
 }

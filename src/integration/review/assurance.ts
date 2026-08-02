@@ -17,6 +17,7 @@ import type {
   ReviewProfile,
   ReviewProfileSource,
   PolicySnapshot,
+  ReviewAttempt,
 } from '../../state/evidence.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
@@ -37,7 +38,7 @@ export function getReviewMandateDigest(): string {
 }
 
 export function emptyReviewAssurance(): ReviewAssuranceState {
-  return { obligations: [], invocations: [] };
+  return { obligations: [], invocations: [], attempts: [] };
 }
 
 export function ensureReviewAssurance(
@@ -143,6 +144,7 @@ export function appendReviewObligation(
   return {
     obligations: [...base.obligations, obligation],
     invocations: base.invocations,
+    attempts: base.attempts,
   };
 }
 
@@ -296,6 +298,7 @@ export function consumeReviewObligation(
         consumedByObligationId: obligation.obligationId,
       };
     }),
+    attempts: assurance.attempts,
   };
 }
 
@@ -336,6 +339,84 @@ export function findAcceptedInvocationForFindings(
 
 export function hashFindings(findings: Record<string, unknown>): string {
   return hashText(JSON.stringify(findings));
+}
+
+// ─── Review Attempt Lifecycle ──────────────────────────────────────────────────
+
+export function createReviewAttempt(input: {
+  obligationId: string;
+  obligationType: ReviewObligationType;
+  subjectDigest?: string;
+  ordinal: number;
+  childSessionId?: string;
+  now: string;
+}): ReviewAttempt {
+  return {
+    attemptId: randomUUID(),
+    obligationId: input.obligationId,
+    obligationType: input.obligationType,
+    subjectDigest: input.subjectDigest ?? 'pending-subject-digest',
+    ordinal: input.ordinal,
+    childSessionId: input.childSessionId,
+    status: 'created',
+    createdAt: input.now,
+  };
+}
+
+export function appendReviewAttempt(
+  assurance: ReviewAssuranceState,
+  attempt: ReviewAttempt,
+): ReviewAssuranceState {
+  const base = ensureReviewAssurance(assurance);
+  return { ...base, attempts: [...(base.attempts ?? []), attempt] };
+}
+
+export function resolveAttempt(
+  assurance: ReviewAssuranceState | undefined,
+  childSessionId: string,
+): ReviewAttempt | null {
+  const base = ensureReviewAssurance(assurance);
+  return (
+    base.attempts?.find(
+      (a) => a.childSessionId === childSessionId && a.status !== 'stale' && a.status !== 'expired',
+    ) ?? null
+  );
+}
+
+export function updateAttemptStatus(
+  assurance: ReviewAssuranceState,
+  attemptId: string,
+  status: ReviewAttempt['status'],
+  now: string,
+): ReviewAssuranceState {
+  const base = ensureReviewAssurance(assurance);
+  if (!base.attempts) return base;
+  return {
+    ...base,
+    attempts: base.attempts.map((a) =>
+      a.attemptId !== attemptId
+        ? a
+        : { ...a, status, completedAt: status !== 'created' ? now : a.completedAt },
+    ),
+  };
+}
+
+export function staleObligationAttempts(
+  assurance: ReviewAssuranceState,
+  obligationId: string,
+  exceptAttemptId: string,
+  now: string,
+): ReviewAssuranceState {
+  const base = ensureReviewAssurance(assurance);
+  if (!base.attempts) return base;
+  return {
+    ...base,
+    attempts: base.attempts.map((a) =>
+      a.obligationId === obligationId && a.attemptId !== exceptAttemptId && a.status !== 'bound'
+        ? { ...a, status: 'stale' as const, completedAt: now }
+        : a,
+    ),
+  };
 }
 
 export function buildInvocationEvidence(input: {

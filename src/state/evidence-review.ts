@@ -499,6 +499,7 @@ export const ReviewAssuranceState = z
   .object({
     obligations: z.array(ReviewObligation),
     invocations: z.array(ReviewInvocationEvidence),
+    attempts: z.array(ReviewAttempt).optional(),
   })
   .readonly();
 export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;

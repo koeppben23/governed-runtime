@@ -10,7 +10,12 @@
 
 import { readState } from '../adapters/persistence.js';
 import { buildHostTaskEvidence } from './review/evidence-binding.js';
-import { appendInvocationEvidence, ensureReviewAssurance } from './review/assurance.js';
+import {
+  appendInvocationEvidence,
+  ensureReviewAssurance,
+  appendReviewAttempt,
+  staleObligationAttempts,
+} from './review/assurance.js';
 import { appendReviewAuditEvent } from './review/audit-events.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
@@ -66,6 +71,7 @@ export async function handleHostTaskEvidence(
 
     const eState = deps.ws.getEnforcementState(sessionId);
     const expectedSubject = state.plan?.current.digest ?? null;
+    const attempts = state.reviewAssurance?.attempts;
     const bindResult = buildHostTaskEvidence(
       eState,
       sessionId,
@@ -73,6 +79,7 @@ export async function handleHostTaskEvidence(
       invocations,
       now,
       expectedSubject,
+      attempts,
     );
     await applyHostTaskBindResult({ deps, sessDir, sessionId, policy, bindResult, hookOutput });
   } catch (err) {
@@ -154,10 +161,24 @@ async function persistHostTaskEvidence(
     childSessionId: evidence.childSessionId,
     findingsHash: evidence.findingsHash,
   });
-  await deps.ws.updateReviewAssurance(sessDir, (s: SessionState) => ({
-    ...s,
-    reviewAssurance: appendInvocationEvidence(ensureReviewAssurance(s.reviewAssurance), evidence),
-  }));
+  await deps.ws.updateReviewAssurance(sessDir, (s: SessionState) => {
+    const assurance = ensureReviewAssurance(s.reviewAssurance);
+    const withInvocation = appendInvocationEvidence(assurance, evidence);
+    if (bindResult.attempt) {
+      // Stale any prior attempts for this obligation, then append the new one.
+      const deduped = staleObligationAttempts(
+        withInvocation,
+        evidence.obligationId,
+        bindResult.attempt.attemptId,
+        evidence.fulfilledAt ?? evidence.invokedAt ?? new Date().toISOString(),
+      );
+      return {
+        ...s,
+        reviewAssurance: appendReviewAttempt(deduped, bindResult.attempt),
+      };
+    }
+    return { ...s, reviewAssurance: withInvocation };
+  });
   const updated = await readState(sessDir);
   await appendReviewAuditEvent(
     sessDir,

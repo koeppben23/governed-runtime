@@ -11,8 +11,13 @@
  * @version v1
  */
 
-import type { ReviewInvocationEvidence, ReviewObligation } from '../../state/evidence.js';
+import type {
+  ReviewInvocationEvidence,
+  ReviewObligation,
+  ReviewAttempt,
+} from '../../state/evidence.js';
 import type { SessionEnforcementState, HostTaskBindResult } from './enforcement/types.js';
+import { randomUUID } from 'node:crypto';
 import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../tool-names.js';
 import { obligationTypeForTool } from './obligation-tools.js';
 import { buildInvocationEvidence, hashFindings, hashText } from './assurance.js';
@@ -40,7 +45,8 @@ export function buildHostTaskEvidence(
   invocations: ReviewInvocationEvidence[],
   now: string,
   expectedSubjectDigest?: string | null,
-): HostTaskBindResult {
+  attempts?: ReviewAttempt[],
+): HostTaskBindResult & { attempt?: ReviewAttempt } {
   const latestResult = latestBindableReviewRecord(state);
   if ('bindOutcome' in latestResult) return latestResult;
   const { latest, childSessionId, obligationType: oType, rawFindings } = latestResult;
@@ -54,6 +60,18 @@ export function buildHostTaskEvidence(
   );
   if ('bindOutcome' in obligationMatch) return obligationMatch;
   const matchedObligation = obligationMatch.obligation;
+
+  // Attempt resolution: look up or create the invocation attempt for this
+  // child session. The attempt is the host-authoritative invocation record
+  // that prevents late/stale callbacks from producing evidence.
+  const resolvedAttempt = resolveOrCreateAttempt(
+    matchedObligation,
+    attempts ?? [],
+    childSessionId,
+    now,
+  );
+  if ('bindOutcome' in resolvedAttempt) return resolvedAttempt;
+  const attempt = resolvedAttempt.attempt;
 
   // Cycle-binding fields (iteration/planVersion) are reviewer-reliable and stay fatal.
   const fieldMismatch = checkBindingFieldMismatch(rawFindings, matchedObligation, attestationInfo);
@@ -193,6 +211,57 @@ function noObligationType(tool: string): HostTaskBindResult {
 
 function noFindings(tool: string, childSessionId: string): HostTaskBindResult {
   return { evidence: null, bindOutcome: 'no_findings', diagnostic: { tool, childSessionId } };
+}
+
+function resolveOrCreateAttempt(
+  obligation: ReviewObligation,
+  existingAttempts: ReviewAttempt[],
+  childSessionId: string,
+  now: string,
+): { attempt: ReviewAttempt } | HostTaskBindResult {
+  // Look up an existing attempt by childSessionId (idempotent for same session).
+  const existing = existingAttempts.find(
+    (a) => a.childSessionId === childSessionId && a.obligationId === obligation.obligationId,
+  );
+  if (existing) {
+    // Already bound or rejected: idempotent — no re-binding.
+    if (existing.status === 'bound' || existing.status === 'rejected') {
+      return {
+        evidence: null,
+        bindOutcome: existing.status === 'bound' ? 'idempotent_bound' : 'idempotent_rejected',
+        diagnostic: {
+          attemptId: existing.attemptId,
+          status: existing.status,
+        },
+      };
+    }
+    // Stale or expired: refuse binding.
+    if (existing.status === 'stale' || existing.status === 'expired') {
+      return {
+        evidence: null,
+        bindOutcome: 'stale_attempt',
+        diagnostic: {
+          attemptId: existing.attemptId,
+          status: existing.status,
+        },
+      };
+    }
+    return { attempt: existing };
+  }
+  // Create a new attempt for this child session.
+  const ordinal =
+    existingAttempts.filter((a) => a.obligationId === obligation.obligationId).length + 1;
+  const newAttempt: ReviewAttempt = {
+    attemptId: randomUUID(),
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest ?? 'pending-subject-digest',
+    ordinal,
+    childSessionId,
+    status: 'created',
+    createdAt: now,
+  };
+  return { attempt: newAttempt };
 }
 
 function resolveAttestationInfo(attestation: Record<string, unknown> | undefined): {
