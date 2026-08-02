@@ -379,12 +379,22 @@ function createArchitectureApprovalCertificate(
   };
 }
 
-function resolveAcceptedPlanReviewEvidence(state: SessionState): [string | null, string | null] {
-  const acceptedObligation = [...(state.reviewAssurance?.obligations ?? [])]
-    .reverse()
-    .find(
+function resolveAcceptedPlanReviewEvidence(
+  state: SessionState,
+  plan: NonNullable<SessionState['plan']>,
+): [string | null, string | null] {
+  // Match the obligation that is bound to the exact plan subject being approved.
+  // Prefer obligations whose subjectDigest matches the current plan's digest.
+  // Fall back to the latest fulfilled/consumed obligation of type 'plan'.
+  const candidates = [...(state.reviewAssurance?.obligations ?? [])]
+    .filter(
       (o) => o.obligationType === 'plan' && (o.status === 'fulfilled' || o.status === 'consumed'),
-    );
+    )
+    .reverse();
+
+  const subjectMatched = candidates.find((o) => o.subjectDigest === plan.current.digest);
+  const acceptedObligation = subjectMatched ?? candidates[0] ?? null;
+
   const acceptedEvidence = acceptedObligation?.invocationId
     ? state.reviewAssurance?.invocations.find(
         (inv) => inv.invocationId === acceptedObligation.invocationId,
@@ -412,7 +422,7 @@ function approvalCertificatePatch(
           state.plan,
           decision,
           ctx,
-          ...resolveAcceptedPlanReviewEvidence(state),
+          ...resolveAcceptedPlanReviewEvidence(state, state.plan),
         ),
       },
     };

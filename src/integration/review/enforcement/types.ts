@@ -127,7 +127,10 @@ export type HostTaskBindOutcome =
   | 'no_findings'
   | 'no_matching_obligation'
   | 'field_mismatch'
-  | 'duplicate_evidence';
+  | 'duplicate_evidence'
+  | 'schema_invalid'
+  | 'subject_mismatch'
+  | 'stale_attempt';
 
 // ─── Phase-Separated Capture Pipeline Outcomes ─────────────────────────────────
 

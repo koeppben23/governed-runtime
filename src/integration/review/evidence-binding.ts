@@ -424,11 +424,10 @@ function validateNormalizedFindings(
     );
     return {
       evidence: null,
-      bindOutcome: 'no_findings',
+      bindOutcome: 'schema_invalid',
       diagnostic: {
         childSessionId,
         obligationId,
-        validationOutcome: 'schema_invalid' as const,
         schemaErrors: issues.slice(0, 10),
         message: 'Reviewer output failed schema validation before binding',
       },

@@ -419,7 +419,10 @@ function blockedInvalidPlanFindings(
   return null;
 }
 
-function applyPlanRevision(scope: PlanExecutionScope): PlanRevisionResult | string {
+function applyPlanRevision(
+  scope: PlanExecutionScope,
+  originatingReviewObligationId?: string | null,
+): PlanRevisionResult | string {
   const state = scope.state;
   const verdict = scope.args.reviewVerdict as LoopVerdict;
   const prevDigest = state.plan!.current.digest;
@@ -438,6 +441,7 @@ function applyPlanRevision(scope: PlanExecutionScope): PlanRevisionResult | stri
   const revised = buildPlanEvidence(revisedBody, scope, {
     planVersion: predecessorVersion + 1,
     supersedesRecordDigest: currentPlan.recordDigest,
+    originatingReviewObligationId: originatingReviewObligationId ?? null,
     revisionReason: 'Review requested changes',
   });
   revisionDelta = revised.digest === prevDigest ? 'none' : 'minor';
@@ -571,7 +575,7 @@ async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {
   );
   if (blocked) return blocked;
 
-  const revision = applyPlanRevision(scope);
+  const revision = applyPlanRevision(scope, lookup.pendingObligation?.obligationId);
   if (typeof revision === 'string') return revision;
   const consumedAssurance = consumePlanObligation(
     scope,

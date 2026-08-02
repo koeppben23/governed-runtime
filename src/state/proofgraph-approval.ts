@@ -118,8 +118,8 @@ export type FlowClaimDeclarations = z.infer<typeof FlowClaimDeclarations>;
 export interface PlanClaimAuthority {
   readonly current: {
     readonly digest: string;
-    readonly planVersion?: number;
-    readonly recordDigest?: string;
+    readonly planVersion: number;
+    readonly recordDigest: string;
   };
   readonly claimDeclarations?: PlanClaimDeclarations;
   readonly approvalCertificate?: PlanApprovalCertificate;
@@ -132,14 +132,10 @@ export function hasCurrentPlanApprovalCertificate(
   if (!plan?.approvalCertificate) return false;
   if (plan.approvalCertificate.authorityDigest !== plan.current.digest) return false;
   // Versionsbindung: Ein Zertifikat für v1 autorisiert nicht v2.
-  // Legacy-Zertifikate ohne planVersion werden übersprungen (backward compat).
-  if (
-    plan.approvalCertificate.planVersion != null &&
-    plan.current.planVersion != null &&
-    plan.approvalCertificate.planVersion !== plan.current.planVersion
-  ) {
-    return false;
-  }
+  if (plan.approvalCertificate.planVersion !== plan.current.planVersion) return false;
+  // Record-Digest-Bindung: Gleicher Plantext + gleiche Version, aber anderer
+  // recordDigest (z.B. andere Lineage-Metadaten) invalidiert das Zertifikat.
+  if (plan.approvalCertificate.planRecordDigest !== plan.current.recordDigest) return false;
   const declarations = plan.claimDeclarations ?? { flow: 'plan' as const, claims: [] };
   return (
     plan.approvalCertificate.claimDeclarationsDigest ===
