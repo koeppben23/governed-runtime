@@ -211,12 +211,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       const allResults = mergeValidationResult(freshState, validationResult);
       const passedIds = new Set(allResults.filter((v) => v.passed).map((v) => v.checkId));
       const validationAttempt = buildValidationAttempt(subject, validationResult);
-      const nextState = buildNextValidationState(
-        freshState,
-        allResults,
-        passedIds,
-        validationAttempt,
-      );
+      const nextState = buildNextValidationState(freshState, allResults, validationAttempt);
       const advanced = autoAdvance(nextState, (s) => evaluate(s, railCtx.policy), railCtx);
       if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
 
@@ -407,10 +402,8 @@ function buildValidationAttempt(
 function buildNextValidationState(
   state: SessionState,
   validation: ValidationResult[],
-  passedIds: Set<string>,
   validationAttempt: ValidationAttempt,
 ): SessionState {
-  const allPassed = state.activeChecks.every((id) => passedIds.has(id));
   const hasExecutionError = validation.some(isExecutionError);
 
   if (state.phase === 'IMPL_VALIDATION') {
@@ -419,7 +412,7 @@ function buildNextValidationState(
     // plan); clear implementation so the agent must re-run /implement and the machine
     // does not immediately re-fire IMPL_COMPLETE into an advance loop. Execution
     // errors (timeout/not-found) stay in IMPL_VALIDATION for a retry.
-    const genuinelyFailed = !allPassed && !hasExecutionError;
+    const genuinelyFailed = validation.some((result) => !result.passed) && !hasExecutionError;
     return {
       ...state,
       implValidation: validation,
@@ -432,7 +425,7 @@ function buildNextValidationState(
   // F5: preserve plan evidence when the non-pass is an execution error (timeout /
   // command-not-found). The machine stays in VALIDATION (CHECK_ERRORED) for a retry
   // rather than routing to PLAN, so the approved plan must survive.
-  const clearPlanEvidence = !allPassed && !hasExecutionError;
+  const clearPlanEvidence = validation.some((result) => !result.passed) && !hasExecutionError;
   return {
     ...state,
     validation,

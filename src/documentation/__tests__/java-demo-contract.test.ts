@@ -90,6 +90,7 @@ describe('Java Task Manager demo contract', () => {
     expect(demoPackage).toContain('"test": "./mvnw -Dtest=TaskControllerTest test"');
     expect(proofGraphVariants).toContain('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
     expect(proofGraphVariants).toContain('flowguard_record_mutation_evidence');
+    expect(proofGraphVariants).toContain('./demos/run-proofgraph-variants.sh');
     expect(readme).toContain('archiveStatus: not_verifiable');
     expect(demoScript).toContain('archiveStatus: not_verifiable');
     expect(readme).toContain('/export redactionMode=none includeRaw=true');

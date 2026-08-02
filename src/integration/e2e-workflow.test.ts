@@ -40,6 +40,7 @@ import {
   abort_session,
   archive,
   architecture,
+  declare_contract,
 } from './tools/index.js';
 import { readState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
@@ -1166,5 +1167,103 @@ describe('e2e-workflow', () => {
       const elapsed = Date.now() - start;
       expect(elapsed).toBeLessThan(8000);
     });
+  });
+});
+
+// =============================================================================
+// Reproducible ProofGraph demo fixtures
+// =============================================================================
+
+describe('ProofGraph demo fixtures', () => {
+  const PLAN_TEXT = '## Plan\n1. Demonstrate certificate-bound ProofGraph claims.';
+  const PLAN_CLAIM = {
+    claimId: '10000000-0000-4000-8000-000000000001',
+    statement: 'The governed change satisfies its approved behavior.',
+    critical: true,
+    authoritySectionId: 'step-1',
+    expectedCheckId: 'build',
+    counterexampleCheckId: 'test',
+  } as const;
+
+  async function driveToImplementationReview(mutationProfile?: 'proofgraph-evaluator') {
+    await fs.writeFile(
+      `${ws.tmpDir}/package.json`,
+      JSON.stringify({ scripts: { build: 'true', test: 'true' } }),
+      'utf8',
+    );
+    await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
+    await callOk(ticket, { text: 'Demonstrate ProofGraph evidence.', source: 'user' });
+    await callOk(plan, {
+      planText: PLAN_TEXT,
+      claims: [{ ...PLAN_CLAIM, ...(mutationProfile ? { mutationProfile } : {}) }],
+    });
+    for (let i = 0; i < 5 && (await getPhase()) !== 'PLAN_REVIEW'; i++) {
+      await callOk(plan, { reviewVerdict: 'accept' });
+    }
+    expect(await getPhase()).toBe('PLAN_REVIEW');
+    await callOk(decision, { verdict: 'approve', rationale: 'Approve demo plan.' });
+    await passValidation();
+    expect(await getPhase()).toBe('IMPLEMENTATION');
+    await callOk(implement, {});
+    expect((await readState(await getSessDir()))?.implementation).not.toBeNull();
+    await passValidation();
+    expect(await getPhase()).toBe('IMPL_REVIEW');
+  }
+
+  it('manual advisory merge appends without replacing certificate-bound plan facts', async () => {
+    await driveToImplementationReview();
+    const sessDir = await getSessDir();
+    const before = await readState(sessDir);
+    const planFact = before!.proofContract!.claims[0]!;
+    const coverage = before!.proofContractCoverage;
+
+    await callOk(declare_contract, {
+      claims: [
+        {
+          statement: 'The change has an additional documented property.',
+          checkId: 'test',
+          critical: false,
+          authority: 'plan',
+        },
+      ],
+    });
+
+    const after = await readState(sessDir);
+    expect(after!.proofContract?.claims).toHaveLength(2);
+    expect(after!.proofContract?.claims[0]).toEqual(planFact);
+    expect(after!.proofContractCoverage).toEqual(coverage);
+    expect(after!.proofContract?.claims[1]).toMatchObject({
+      signalClass: 'fact',
+      provenance: { authorityId: 'plan' },
+    });
+    expect(after!.proofContract?.claims[1]?.provenance).not.toHaveProperty('approval');
+  });
+
+  it('blocks final approval when a certificate-bound fact lacks required mutation evidence', async () => {
+    await driveToImplementationReview('proofgraph-evaluator');
+    const sessDir = await getSessDir();
+    const materialized = await readState(sessDir);
+    expect(materialized!.proofContractCoverage).toContainEqual({
+      claimId: PLAN_CLAIM.claimId,
+      cause: 'unverified_mutation_profile',
+    });
+    expect(materialized!.proofGraph?.claims[0]?.verificationState).not.toBe('PROVEN');
+
+    await callOk(review_implementation, { reviewVerdict: 'accept' });
+    expect(await getPhase()).toBe('EVIDENCE_REVIEW');
+
+    recordUserDecisionIntent({
+      sessionId: ctx.sessionID,
+      command: '/review-decision',
+      expectedVerdict: 'approve',
+    });
+    const blocked = parseToolResult(
+      await decision.execute(
+        { verdict: 'approve', rationale: 'Demonstrate final ProofGraph gate.' },
+        ctx,
+      ),
+    );
+    expect(blocked.code).toBe('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
+    expect(await getPhase()).toBe('EVIDENCE_REVIEW');
   });
 });

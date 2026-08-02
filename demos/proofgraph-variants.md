@@ -2,12 +2,17 @@
 
 These variants are separate from `java-task-manager/DEMO_SCRIPT.md`. The Java
 task-manager happy path demonstrates only certificate-authorized plan claims.
+Run the executable fixtures with:
+
+```bash
+./demos/run-proofgraph-variants.sh
+```
 
 ## Manual Advisory Merge
 
-Run this after a session has reached `IMPL_REVIEW` with implementation evidence.
-It demonstrates that manual claims are additive and cannot replace the approved
-plan contract.
+The fixture drives a governed session to `IMPL_REVIEW`, then declares an
+additional manual claim. It verifies that manual claims are additive and cannot
+replace the approved plan contract.
 
 ```text
 flowguard_declare_contract({
@@ -30,19 +35,11 @@ Expected result:
 
 ## Final Gate Block
 
-Use a disposable checkout of FlowGuard itself. This variant needs the
-`proofgraph-evaluator` mutation profile and therefore is not part of the Java
-task-manager fixture.
-
-1. Record a normal ticket and plan for a small, reviewable change under
-   `src/audit/proofgraph/evaluate.ts`.
-2. Declare one critical plan claim with distinct active checks and
-   `mutationProfile: "proofgraph-evaluator"`.
-3. Approve the plan, implement the change, and pass both validation checks.
-4. Deliberately do not record mutation evidence with
-   `flowguard_record_mutation_evidence`.
-5. Complete the independent implementation review through the normal host-task
-   path, then request final approval.
+The fixture creates a disposable FlowGuard workspace with distinct active
+`build` and `test` checks. It drives the real tools through plan approval,
+implementation, both validations, and implementation review. Its critical plan
+claim requires the `proofgraph-evaluator` mutation profile, but deliberately
+does not record mutation evidence with `flowguard_record_mutation_evidence`.
 
 The claim reaches `EVIDENCE_REVIEW` but remains not PROVEN because its required
 fault-injection provider is not verified. The final approval must fail with
