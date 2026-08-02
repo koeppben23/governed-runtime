@@ -19,7 +19,6 @@ import {
 import { appendReviewAuditEvent } from './review/audit-events.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
-import { obligationTypeForTool } from './review/obligation-tools.js';
 
 import type { PluginWorkspace } from './plugin-workspace.js';
 import type { SessionState } from '../state/schema.js';
@@ -72,73 +71,16 @@ export async function handleHostTaskEvidence(
 
     const eState = deps.ws.getEnforcementState(sessionId);
 
-    // Bind the child session to the correct pre-created attempt BEFORE any
-    // callback processing. The enforcement state maps tool names to pending
-    // reviews; each tool corresponds to an obligation type. We match the
-    // pre-created attempt by obligation type, not globally by "first created".
-    // This ensures parallel reviews don't cross-correlate.
-    for (const [toolName, pending] of eState.pendingReviews.entries()) {
-      if (!pending.subagentCalled || !pending.subagentRecord?.sessionId) continue;
-      const childId = pending.subagentRecord.sessionId;
-      const oType = obligationTypeForTool(toolName);
-      if (!oType) continue;
-      const preCreatedAttempt = state.reviewAssurance?.attempts?.find(
-        (a) => !a.childSessionId && a.status === 'created' && a.obligationType === oType,
-      );
-      if (!preCreatedAttempt) continue;
-
-      const updatedAssurance = updateAttemptStatus(
-        ensureReviewAssurance(state.reviewAssurance),
-        preCreatedAttempt.attemptId,
-        'created',
-        now,
-        childId,
-      );
-      await deps.ws.updateReviewAssurance(sessDir, (s: SessionState) => ({
-        ...s,
-        reviewAssurance: updatedAssurance,
-      }));
-      const refreshed = await readState(sessDir);
-      if (refreshed) {
-        const bindResult = buildHostTaskEvidence(
-          eState,
-          sessionId,
-          refreshed.reviewAssurance?.obligations ?? obligations,
-          refreshed.reviewAssurance?.invocations ?? invocations,
-          now,
-          refreshed.reviewAssurance?.attempts,
-        );
-        await applyHostTaskBindResult({
-          deps,
-          sessDir,
-          sessionId,
-          policy,
-          bindResult,
-          hookOutput,
-        });
-      }
-      return;
-    }
-
-    // Fallback: no pre-created attempt matched the pending review's obligation
-    // type. If the attempt was pre-bound by another path, resolveAttemptBySession
-    // will find it by childSessionId. Otherwise unknown_attempt is returned.
-    const fallbackResult = buildHostTaskEvidence(
+    const attempts = state.reviewAssurance?.attempts;
+    const bindResult = buildHostTaskEvidence(
       eState,
       sessionId,
       obligations,
       invocations,
       now,
-      state.reviewAssurance?.attempts,
+      attempts,
     );
-    await applyHostTaskBindResult({
-      deps,
-      sessDir,
-      sessionId,
-      policy,
-      bindResult: fallbackResult,
-      hookOutput,
-    });
+    await applyHostTaskBindResult({ deps, sessDir, sessionId, policy, bindResult, hookOutput });
   } catch (err) {
     deps.logError('host task evidence creation failed', err);
     hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {

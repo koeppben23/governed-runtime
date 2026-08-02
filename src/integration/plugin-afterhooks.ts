@@ -57,6 +57,10 @@ import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './pl
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import { strictBlockedOutput, getToolMetadata, getToolCallID } from './plugin-helpers.js';
+import { obligationTypeForTool } from './review/obligation-tools.js';
+import { ensureReviewAssurance, updateAttemptStatus } from './review/assurance.js';
+import { readState as readPersistedState } from '../adapters/persistence.js';
+import type { SessionState } from '../state/schema.js';
 export async function toolAfter(
   runtime: FlowGuardPluginRuntime,
   input: unknown,
@@ -266,6 +270,11 @@ async function handleTaskAfter(
     runtime.logError('enforcement tracking failed', err);
   }
   if (taskArgs.subagent_type === REVIEWER_SUBAGENT_TYPE) {
+    // Bind the child session to the pre-created attempt atomically
+    // BEFORE the evidence binding callback runs.
+    if (resolvedChildSessionId) {
+      await bindAttemptSession(runtime, ctx.sessionId, resolvedChildSessionId, ctx.now);
+    }
     await handleHostTaskEvidence(
       { ws: runtime.ws, log: runtime.log, logError: runtime.logError },
       ctx.sessionId,
@@ -387,4 +396,51 @@ export async function handleCompaction(
     const context = await buildCompactionContext(compactionDeps, sessionId);
     if (context) output.context.push(context);
   });
+}
+
+/**
+ * Bind a child session to the pre-created attempt that matches the
+ * pending review's obligation type. The attempt was created at obligation
+ * time without a childSessionId; we now have the real childSessionId from
+ * the Task invocation output.
+ *
+ * This runs in the afterhook AFTER enforcement tracking has recorded the
+ * child session, but BEFORE the evidence binding callback processes it.
+ * The callback must never be the one to establish the invocation-attempt
+ * link — this function is the authoritative binding point.
+ */
+async function bindAttemptSession(
+  runtime: FlowGuardPluginRuntime,
+  sessionId: string,
+  childSessionId: string,
+  now: string,
+): Promise<void> {
+  const sessDir = runtime.ws.getSessionDir(sessionId);
+  if (!sessDir) return;
+  const state = await readPersistedState(sessDir);
+  if (!state) return;
+
+  const eState = runtime.ws.getEnforcementState(sessionId);
+  // Find the pending review whose child session was just recorded.
+  // Iterate by tool name so we can derive the obligation type.
+  for (const [toolName, pending] of eState.pendingReviews.entries()) {
+    if (pending.subagentRecord?.sessionId !== childSessionId) continue;
+    const oType = obligationTypeForTool(toolName);
+    if (!oType) continue;
+    const preCreatedAttempt = state.reviewAssurance?.attempts?.find(
+      (a) => !a.childSessionId && a.status === 'created' && a.obligationType === oType,
+    );
+    if (!preCreatedAttempt) continue;
+    await runtime.ws.updateReviewAssurance(sessDir, (s: SessionState) => ({
+      ...s,
+      reviewAssurance: updateAttemptStatus(
+        ensureReviewAssurance(s.reviewAssurance),
+        preCreatedAttempt.attemptId,
+        'created',
+        now,
+        childSessionId,
+      ),
+    }));
+    return;
+  }
 }
