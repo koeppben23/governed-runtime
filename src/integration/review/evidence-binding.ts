@@ -69,6 +69,7 @@ export function buildHostTaskEvidence(
         obligationId: attempt.obligationId,
         message: 'Attempt references an obligation that does not exist in the current state.',
       },
+      attempt: { ...attempt, status: 'rejected' as const, completedAt: now },
     };
   }
 
@@ -279,7 +280,7 @@ function resolveAttemptBySession(
   if (!existing) {
     return {
       evidence: null,
-      bindOutcome: 'no_matching_obligation',
+      bindOutcome: 'unknown_attempt',
       diagnostic: {
         childSessionId,
         message:

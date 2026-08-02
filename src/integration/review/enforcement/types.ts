@@ -132,7 +132,8 @@ export type HostTaskBindOutcome =
   | 'subject_mismatch'
   | 'stale_attempt'
   | 'idempotent_bound'
-  | 'idempotent_rejected';
+  | 'idempotent_rejected'
+  | 'unknown_attempt';
 
 // ─── Phase-Separated Capture Pipeline Outcomes ─────────────────────────────────
 
