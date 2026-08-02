@@ -264,6 +264,29 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     expect(state!.phase).toBe('TICKET');
   });
 
+  it('rejects a critical claim that reuses its positive check at submission', async () => {
+    env = await boot('plan-same-check');
+    await writeStateWithArtifacts(
+      env.sDir,
+      makeState('TICKET', { ticket: TICKET, activeChecks: ACTIVE_CHECKS }),
+    );
+
+    const raw = await plan.execute(
+      {
+        planText: PLAN_TEXT,
+        claims: [{ ...CRITICAL_CLAIM, counterexampleCheckId: 'build' }],
+      },
+      env.tc,
+    );
+    const parsed = JSON.parse(String(raw));
+
+    expect(parsed.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
+    expect(String(parsed.message)).toContain('counterexampleCheckId');
+    const state = await readState(env.sDir);
+    expect(state!.plan).toBeFalsy();
+    expect(state!.phase).toBe('TICKET');
+  });
+
   it('rejects a claim referencing a check that is not active', async () => {
     env = await boot('plan-inactive-check');
     await writeStateWithArtifacts(

@@ -43,6 +43,7 @@ describe('plan command template declares claims', () => {
       'critical',
       'authoritySectionId',
       'expectedCheckId',
+      'counterexampleCheckId',
     ]) {
       expect(PLAN_TEMPLATE).toContain(field);
     }
@@ -88,6 +89,7 @@ describe('claude-code plugin skills stay contract-aligned', () => {
   it('submits plan claims through the MCP tool', () => {
     expect(planSkill).toContain('flowguard_plan({ planText, claims })');
     expect(planSkill).not.toContain('flowguard_plan({ planText })');
+    expect(planSkill).toContain('distinct `counterexampleCheckId`');
   });
 
   it('submits architecture claims through the MCP tool', () => {

@@ -118,7 +118,7 @@ flowguard_declare_contract({
       statement: "the change is covered by the test check",
       checkId: "test",              // evidence: a passing attempt PROVES the claim
       critical: true,               // required
-      counterexampleCheckId: "security" // optional: a check whose FAILURE contradicts the claim
+      counterexampleCheckId: "security" // required for critical claims; a distinct check whose FAILURE contradicts the claim
     }
   ]
 })
@@ -126,6 +126,12 @@ flowguard_declare_contract({
 
 The tool persists the contract and the derived projection to session state and
 returns the evaluated projection.
+
+When a certificate-bound plan contract already exists, manually declared claims
+are appended without rewriting the materialized plan claims or their evidence.
+Manual claims may resolve to `fact` when they cite a governing authority, but
+they carry no approval certificate and therefore remain advisory at the final
+gate.
 
 ## Falsification (counterexamples)
 
@@ -138,7 +144,8 @@ outcome is derived from the executed validation result:
 - the attempt passed → `supported`;
 - missing → `not_verified`.
 
-A **critical `fact` claim additionally requires** a `supported` counterexample:
+A **critical `fact` claim additionally requires** a `supported` counterexample from a
+check distinct from its positive check:
 without an executed falsification that was attempted and did not hold, the claim
 stays `NOT_VERIFIED`, never `PROVEN`. This is expressed per claim via
 `requiredEvidence` (`{ positive, adversarial }`) and enforced by the evaluator; a

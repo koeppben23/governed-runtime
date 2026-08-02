@@ -255,6 +255,20 @@ describe('status', () => {
       const projection = pg.projection as Record<string, unknown>;
       expect(projection.version).toBe('proofgraph.v1');
       expect(projection.claims).toEqual([]);
+      expect(result.persistedProofGraph).toEqual({
+        coverage: 'NOT_DECLARED',
+        claimCount: 0,
+        provenCount: 0,
+        unprovenCount: 0,
+        contractClaimCount: 0,
+        hypothesisCount: 0,
+      });
+      expect(result.proofApprovals).toEqual({
+        certificates: [],
+        implementationDigest: null,
+        claims: [],
+        coverageGaps: [],
+      });
       const registration = result.registrationConsistency as Record<string, unknown>;
       expect(registration).toBeDefined();
       expect(registration.ok).toBe(true);
@@ -1394,6 +1408,140 @@ describe('declare_contract', () => {
     expect(persisted!.proofGraph?.claims[0]?.verificationState).toBe('PROVEN');
   });
 
+  it('appends a manual plan-provenanced fact without changing certificate-bound claims or coverage', async () => {
+    const sessDir = await seedImplValidation({ checkId: 'test', passed: true });
+    const state = await readState(sessDir);
+    const existingClaim = {
+      claimId: '10000000-0000-4000-8000-000000000001',
+      statement: 'The approved behavior remains covered.',
+      signalClass: 'fact' as const,
+      critical: true,
+      provenance: {
+        kind: 'canonical_authority' as const,
+        authorityId: 'plan' as const,
+        digest: 'approved-plan-digest',
+        approval: {
+          certificateId: '20000000-0000-4000-8000-000000000002',
+          claimDeclarationsDigest: SHA,
+          decisionAttestationDigest: SHA,
+          declarationId: '10000000-0000-4000-8000-000000000001',
+        },
+      },
+      evidenceRefs: [
+        { kind: 'validation_attempt' as const, attemptId: state!.validationAttempts[0]!.attemptId },
+      ],
+      counterexampleRefs: [
+        { kind: 'validation_attempt' as const, attemptId: state!.validationAttempts[1]!.attemptId },
+      ],
+      requiredEvidence: {
+        positive: ['executed_test' as const],
+        adversarial: ['counterexample' as const],
+      },
+    };
+    const coverage = [{ claimId: existingClaim.claimId, cause: 'missing_expected_check' as const }];
+    await writeStateWithArtifacts(sessDir, {
+      ...state!,
+      plan: {
+        current: {
+          body: 'manual authority plan',
+          digest: 'plan-digest',
+          sections: [],
+          createdAt: NOW,
+        },
+        history: [],
+      },
+      proofContract: { version: 'contract.v1', claims: [existingClaim] },
+      proofContractCoverage: coverage,
+    });
+
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            {
+              statement: 'The manual plan-provenanced fact is covered.',
+              checkId: 'test',
+              critical: true,
+              counterexampleCheckId: 'security',
+              authority: 'plan',
+            },
+          ],
+        },
+        ctx,
+      ),
+    );
+    expect(result.error).toBeUndefined();
+
+    const persisted = await readState(sessDir);
+    expect(persisted!.proofContract?.claims).toHaveLength(2);
+    expect(persisted!.proofContract?.claims[0]).toEqual(existingClaim);
+    expect(persisted!.proofContractCoverage).toEqual(coverage);
+    const manual = persisted!.proofContract!.claims[1]!;
+    expect(manual).toMatchObject({ signalClass: 'fact', provenance: { authorityId: 'plan' } });
+    expect(
+      manual.provenance?.kind === 'canonical_authority' && manual.provenance.approval,
+    ).toBeUndefined();
+
+    const statusResult = parseToolResult(await status.execute({ proofGraph: true }, ctx));
+    expect(statusResult.persistedProofGraph).toMatchObject({
+      claimCount: 2,
+      contractClaimCount: 2,
+    });
+    expect(statusResult.proofApprovals).toMatchObject({
+      implementationDigest: 'impl-digest-1',
+      coverageGaps: coverage,
+    });
+    expect((statusResult.proofApprovals as { claims: unknown[] }).claims).toHaveLength(2);
+    expect(
+      (statusResult.proofGraph as { projection: { claims: unknown[] } }).projection.claims,
+    ).toHaveLength(2);
+  });
+
+  it('blocks a derived manual claim id collision without mutating state', async () => {
+    const sessDir = await seedImplValidation();
+    const statement = 'A colliding manual claim.';
+    const hash = crypto
+      .createHash('sha1')
+      .update(Buffer.from('6ba7b8109dad11d180b400c04fd430c8', 'hex'))
+      .update(statement, 'utf8')
+      .digest();
+    hash[6] = (hash[6]! & 0x0f) | 0x50;
+    hash[8] = (hash[8]! & 0x3f) | 0x80;
+    const hex = hash.subarray(0, 16).toString('hex');
+    const claimId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+    const state = await readState(sessDir);
+    await writeStateWithArtifacts(sessDir, {
+      ...state!,
+      proofContract: {
+        version: 'contract.v1',
+        claims: [
+          {
+            claimId,
+            statement: 'Existing claim with the derived id.',
+            signalClass: 'hypothesis',
+            critical: false,
+            provenance: null,
+            evidenceRefs: [],
+            counterexampleRefs: [],
+          },
+        ],
+      },
+    });
+    const before = await readState(sessDir);
+
+    const result = parseToolResult(
+      await declare_contract.execute(
+        { claims: [{ statement, checkId: 'test', critical: false }] },
+        ctx,
+      ),
+    );
+
+    expect(result.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
+    expect(String(result.message)).toContain('statement');
+    expect(String(result.message)).toContain(claimId);
+    expect(await readState(sessDir)).toEqual(before);
+  });
+
   // AC#11 (#762): one critical claim carrying an executed positive test, a
   // negative/fault scenario, and a structural consistency assertion together.
   describe('combined evidence on a single critical claim', () => {
@@ -1502,6 +1650,29 @@ describe('declare_contract', () => {
     expect(result.error).toBe(true);
     expect(result.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
     expect(String(result.message)).toContain('counterexampleCheckId');
+  });
+
+  it('rejects a critical claim that reuses its positive check as the counterexample', async () => {
+    await seedImplValidation({ checkId: 'test', passed: true });
+    const result = parseToolResult(
+      await declare_contract.execute(
+        {
+          claims: [
+            {
+              statement: 'critical but not independently falsified',
+              checkId: 'test',
+              critical: true,
+              counterexampleCheckId: 'test',
+              authority: 'ticket',
+            },
+          ],
+        },
+        ctx,
+      ),
+    );
+
+    expect(result.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
+    expect(String(result.message)).toContain('distinct from its positive check');
   });
 
   it('rejects a claim referencing a check that is not active', async () => {

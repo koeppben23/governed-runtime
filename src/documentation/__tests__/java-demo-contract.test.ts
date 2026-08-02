@@ -19,6 +19,7 @@ const TICKET_PATH = path.join(SEED_DIR, 'TICKET.md');
 const ADR_TICKET_PATH = path.join(SEED_DIR, 'ADR_TICKET.md');
 const README_PATH = path.join(DEMO_DIR, 'README.md');
 const DEMO_SCRIPT_PATH = path.join(DEMO_DIR, 'DEMO_SCRIPT.md');
+const PROOFGRAPH_VARIANTS_PATH = path.join(REPO_ROOT, 'demos', 'proofgraph-variants.md');
 const CONTROLLER_TEST_PATH = path.join(
   SEED_DIR,
   'src',
@@ -67,24 +68,28 @@ function extractSection(markdown: string, heading: string): string {
 
 describe('Java Task Manager demo contract', () => {
   it('keeps the ticket and runbook explicit about the complete regression fix', async () => {
-    const [ticket, readme, demoScript, controllerTest] = await Promise.all([
-      fs.readFile(TICKET_PATH, 'utf-8'),
-      fs.readFile(README_PATH, 'utf-8'),
-      fs.readFile(DEMO_SCRIPT_PATH, 'utf-8'),
-      fs.readFile(CONTROLLER_TEST_PATH, 'utf-8'),
-    ]);
+    const [ticket, readme, demoScript, controllerTest, demoPackage, proofGraphVariants] =
+      await Promise.all([
+        fs.readFile(TICKET_PATH, 'utf-8'),
+        fs.readFile(README_PATH, 'utf-8'),
+        fs.readFile(DEMO_SCRIPT_PATH, 'utf-8'),
+        fs.readFile(CONTROLLER_TEST_PATH, 'utf-8'),
+        fs.readFile(path.join(DEMO_DIR, 'seed', 'package.json'), 'utf-8'),
+        fs.readFile(PROOFGRAPH_VARIANTS_PATH, 'utf-8'),
+      ]);
 
     expect(ticket).toMatch(/remove.*@Disabled/is);
     expect(ticket).toMatch(/jsonPath\("\$\.taskId"\).*non-existent-id/is);
     expect(ticket).toMatch(/(?:replace.*Javadoc|Javadoc.*active regression)/is);
     expect(readme).toContain('assert `$.taskId`, and update its Javadoc');
     expect(demoScript).toContain('die `taskId`-Fehlerantwort prüfen');
-    expect(demoScript).toContain('flowguard_declare_contract');
     expect(demoScript).toContain('flowguard_status({ proofGraph: true })');
-    expect(demoScript).toContain('checkId: "build"');
-    expect(demoScript).toContain('counterexampleCheckId: "build"');
-    expect(demoScript).toContain('authority: "ticket"');
-    expect(demoScript).toContain('structuralSurface: "command-registration"');
+    expect(demoScript).toContain('contractClaimCount: 2');
+    expect(demoScript).toContain('proofGraphGate.gated: false');
+    expect(demoPackage).toContain('"build": "./mvnw verify"');
+    expect(demoPackage).toContain('"test": "./mvnw -Dtest=TaskControllerTest test"');
+    expect(proofGraphVariants).toContain('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
+    expect(proofGraphVariants).toContain('flowguard_record_mutation_evidence');
     expect(readme).toContain('archiveStatus: not_verifiable');
     expect(demoScript).toContain('archiveStatus: not_verifiable');
     expect(readme).toContain('/export redactionMode=none includeRaw=true');

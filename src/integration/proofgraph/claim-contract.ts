@@ -135,13 +135,24 @@ function checkCriticalContract(
   input: ClaimContractInput,
   claim: NormalizedClaimDeclaration,
 ): ClaimContractResult | null {
-  if (!claim.critical || claim.counterexampleCheckId !== undefined) return null;
-  return invalid(
-    input.source,
-    claim,
-    'counterexampleCheckId',
-    'a critical claim requires a counterexample check; without it the claim can never become PROVEN and would block the final approval permanently',
-  );
+  if (!claim.critical) return null;
+  if (claim.counterexampleCheckId === undefined) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleCheckId',
+      'a critical claim requires a counterexample check; without it the claim can never become PROVEN and would block the final approval permanently',
+    );
+  }
+  if (claim.counterexampleCheckId === claim.positiveCheckId) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleCheckId',
+      'a critical claim requires a counterexample check distinct from its positive check; the same execution cannot serve as both confirmation and adversarial falsification',
+    );
+  }
+  return null;
 }
 
 /** Rule 4: an inactive check produces evidence that can never resolve. */

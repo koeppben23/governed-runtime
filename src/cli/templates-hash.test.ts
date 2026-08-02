@@ -230,7 +230,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // missing, stale, or contradicted.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      '04cfa5780c62ca3cbb348754325e8d0c0e06f5b2c5dcccd82d8cf8f83629a158',
+      '1d99696bac9987aab728fd85184dc85300a989d0bf9e2ae14dbb548aca765e4f',
     );
   });
 

@@ -23,6 +23,26 @@ function makeReadFile(files: Record<string, string | undefined>) {
 
 describe('verification planner', () => {
   describe('HAPPY', () => {
+    it('prefers distinct demo package scripts over a Maven wrapper', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
+        allFiles: ['package.json', 'pom.xml', 'mvnw'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: {
+              build: './mvnw verify',
+              test: './mvnw -Dtest=TaskControllerTest test',
+            },
+          }),
+        }),
+      });
+
+      expect(candidates).toMatchObject([
+        { kind: 'build', command: 'npm run build', source: 'package.json:scripts.build' },
+        { kind: 'test', command: 'npm run test', source: 'package.json:scripts.test' },
+      ]);
+    });
+
     it('uses package scripts with detected pnpm and suppresses vitest fallback', async () => {
       const detectedStack = makeDetectedStack([
         { kind: 'buildTool', id: 'pnpm', evidence: 'pnpm-lock.yaml' },

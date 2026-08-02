@@ -279,6 +279,31 @@ function validateDeclaredClaimContract(
   });
 }
 
+/**
+ * Reject a manual declaration that would replace an existing claim identity.
+ * Manual ids are derived from statements, so check them before resolving any
+ * evidence providers or mutation reports.
+ */
+function validateMergedClaimIds(
+  rawClaims: readonly RawClaim[],
+  state: SessionState,
+): string | null {
+  const existingIds = new Set((state.proofContract?.claims ?? []).map((claim) => claim.claimId));
+  const requestedIds = new Set<string>();
+  for (const claim of rawClaims) {
+    const derivedClaimId = claimIdFor(claim.statement);
+    if (existingIds.has(derivedClaimId) || requestedIds.has(derivedClaimId)) {
+      return formatBlocked('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE', {
+        claimRef: claim.statement,
+        field: 'statement',
+        detail: `derives claimId '${derivedClaimId}', which already exists in the current ProofGraph contract`,
+      });
+    }
+    requestedIds.add(derivedClaimId);
+  }
+  return null;
+}
+
 export const declare_contract: ToolDefinition = {
   description:
     'Declare ProofGraph contract claims for the current change. Each claim is covered fail-closed ' +
@@ -300,14 +325,14 @@ export const declare_contract: ToolDefinition = {
             .describe(
               'Whether the claim is critical. Required and explicit: a critical claim can block ' +
                 'the final approval, so it must never be assumed. A critical claim additionally ' +
-                'requires counterexampleCheckId.',
+                'requires a distinct counterexampleCheckId.',
             ),
           counterexampleCheckId: z
             .string()
             .min(1)
             .optional()
             .describe(
-              'Optional check whose FAILURE would contradict this claim (adversarial falsification).',
+              'Optional distinct check whose FAILURE would contradict this claim (adversarial falsification); required for critical claims.',
             ),
           authority: z
             .enum(['ticket', 'plan', 'architecture'])
@@ -360,6 +385,9 @@ export const declare_contract: ToolDefinition = {
         );
         if (contractViolation) return contractViolation;
 
+        const mergeViolation = validateMergedClaimIds(args.claims as readonly RawClaim[], state);
+        if (mergeViolation) return mergeViolation;
+
         const worktree = getWorktree(context);
         const verdicts = await resolveVerifiedMutationVerdicts(worktree, state.mutationAttempts);
         const built = buildDeclaredClaims(
@@ -379,7 +407,12 @@ export const declare_contract: ToolDefinition = {
           });
         }
 
-        const proofContract = { version: 'contract.v1' as const, claims: built.claims };
+        // Preserve certificate-bound claims exactly as materialized. Manual claims
+        // have no approval binding and therefore remain advisory at the final gate.
+        const proofContract = {
+          version: 'contract.v1' as const,
+          claims: [...(state.proofContract?.claims ?? []), ...built.claims],
+        };
         const stateWithContract = { ...state, proofContract };
         const proofGraph = await refreshProofGraph(stateWithContract, ctx.now());
         const nextState = { ...state, proofContract, proofGraph };
@@ -387,7 +420,7 @@ export const declare_contract: ToolDefinition = {
         return appendNextAction(
           JSON.stringify({
             phase: nextState.phase,
-            status: 'ProofGraph contract declared; projection recorded.',
+            status: 'ProofGraph claims added; projection recorded.',
             proofGraph,
           }),
           nextState,

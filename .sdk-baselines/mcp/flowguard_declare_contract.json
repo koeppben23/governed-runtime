@@ -23,11 +23,11 @@
           },
           "critical": {
             "type": "boolean",
-            "description": "Whether the claim is critical. Required and explicit: a critical claim can block the final approval, so it must never be assumed. A critical claim additionally requires counterexampleCheckId."
+            "description": "Whether the claim is critical. Required and explicit: a critical claim can block the final approval, so it must never be assumed. A critical claim additionally requires a distinct counterexampleCheckId."
           },
           "counterexampleCheckId": {
             "type": "string",
-            "description": "Optional check whose FAILURE would contradict this claim (adversarial falsification)."
+            "description": "Optional distinct check whose FAILURE would contradict this claim (adversarial falsification); required for critical claims."
           },
           "authority": {
             "type": "string",

@@ -73,6 +73,34 @@ describe('validateProofClaimContract — critical contract', () => {
     expect(result.field).toBe('counterexampleCheckId');
     expect(result.detail).toContain('never become PROVEN');
   });
+
+  it('rejects a critical claim that reuses its positive check as the counterexample', () => {
+    const claim = planClaim({ counterexampleCheckId: 'build' });
+    const result = validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] });
+
+    expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleCheckId' });
+    if (result.kind !== 'invalid') return;
+    expect(result.detail).toContain('distinct from its positive check');
+  });
+
+  it('reports the same-check violation using declare_contract public fields', () => {
+    const claim = planClaim({ claimId: undefined, counterexampleCheckId: 'build' });
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'declare_contract',
+      claims: [claim],
+    });
+
+    expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleCheckId' });
+  });
+
+  it('allows a non-critical claim to reuse an optional counterexample check', () => {
+    const claim = planClaim({ critical: false, counterexampleCheckId: 'build' });
+
+    expect(validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] })).toEqual({
+      kind: 'ok',
+    });
+  });
 });
 
 describe('validateProofClaimContract — check references', () => {

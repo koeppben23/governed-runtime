@@ -53,7 +53,10 @@ import { ActorClaimError } from '../../adapters/actor.js';
 
 // Config
 import { evaluateCompleteness } from '../../audit/completeness.js';
-import { summarizeProofGraph } from '../../audit/proofgraph/summary.js';
+import {
+  summarizePersistedProofGraph,
+  summarizeProofGraph,
+} from '../../audit/proofgraph/summary.js';
 import {
   evaluateStructuralSurfaces,
   bindStructuralEvidence,
@@ -68,6 +71,7 @@ import { bindMutationEvidence } from '../../audit/proofgraph/mutation-binder.js'
 import { checkRegistrationConsistency } from '../proofgraph/registration-consistency.js';
 import { checkConfigDefaultConsistency } from '../proofgraph/config-default-consistency.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
+import { buildProofApprovalProjection } from '../proofgraph/approval-projection.js';
 import {
   buildStatusProjection,
   buildEvidenceDetailProjection,
@@ -185,6 +189,8 @@ async function buildProofGraphProjectionResponse(
       phase: state.phase,
       sessionId: state.id,
       proofGraph,
+      persistedProofGraph: summarizePersistedProofGraph(state),
+      proofApprovals: buildProofApprovalProjection(state),
       proofGraphGate,
       registrationConsistency,
       configConsistency,
