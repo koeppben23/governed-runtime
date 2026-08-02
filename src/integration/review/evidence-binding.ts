@@ -71,12 +71,17 @@ export function buildHostTaskEvidence(
       matchedObligation.subjectDigest ?? 'missing',
       attempt.subjectDigest,
       matchedObligation.obligationId,
+      attempt,
     );
   }
 
   // Cycle-binding fields (iteration/planVersion) are reviewer-reliable and stay fatal.
   const fieldMismatch = checkBindingFieldMismatch(rawFindings, matchedObligation, attestationInfo);
-  if (fieldMismatch) return fieldMismatch;
+  if (fieldMismatch)
+    return {
+      ...fieldMismatch,
+      attempt: { ...attempt, status: 'rejected' as const, completedAt: now },
+    };
 
   // Host-only constants (mandateDigest/criteriaVersion/reviewedBy) are installed-mandate
   // values the host already owns; they are NOT reviewer-chosen. The LLM reviewer cannot
@@ -101,7 +106,11 @@ export function buildHostTaskEvidence(
     matchedObligation.obligationId,
     childSessionId,
   );
-  if (schemaCheck) return schemaCheck;
+  if (schemaCheck)
+    return {
+      ...schemaCheck,
+      attempt: { ...attempt, status: 'rejected' as const, completedAt: now },
+    };
 
   const findingsHash = hashFindings(normalizedFindings);
   const duplicate = checkDuplicateHostTaskEvidence(
@@ -110,7 +119,7 @@ export function buildHostTaskEvidence(
     childSessionId,
     findingsHash,
   );
-  if (duplicate) return duplicate;
+  if (duplicate) return { ...duplicate, attempt };
 
   const promptHash = hashText(
     `${oType}:${matchedObligation.iteration}:${matchedObligation.planVersion}`,
@@ -152,6 +161,7 @@ export function buildHostTaskEvidence(
   return {
     evidence,
     bindOutcome: 'bound',
+    attempt,
     diagnostic: {
       obligationId: matchedObligation.obligationId,
       childSessionId,
@@ -219,7 +229,19 @@ function resolveExistingAttempt(
   childSessionId: string,
   obligation: ReviewObligation,
 ): { attempt: ReviewAttempt } | HostTaskBindResult {
-  const existing = existingAttempts.find((a) => a.childSessionId === childSessionId);
+  // Primary lookup: match by childSessionId (set when enforcement records
+  // the Task invocation). Pre-created attempts lack childSessionId — fall
+  // back to obligationId + obligationType match for the first callback.
+  let existing = existingAttempts.find((a) => a.childSessionId === childSessionId);
+  if (!existing) {
+    existing = existingAttempts.find(
+      (a) =>
+        !a.childSessionId &&
+        a.obligationId === obligation.obligationId &&
+        a.obligationType === obligation.obligationType &&
+        a.status === 'created',
+    );
+  }
   if (!existing) {
     return {
       evidence: null,
@@ -230,6 +252,10 @@ function resolveExistingAttempt(
           'No attempt record found for this child session. Attempts are created before invocation — a late or unknown callback cannot bind.',
       },
     };
+  }
+  // Bind the child session to a pre-created attempt that lacked one.
+  if (!existing.childSessionId) {
+    existing = { ...existing, childSessionId };
   }
   if (existing.obligationId !== obligation.obligationId) {
     return {
@@ -336,6 +362,7 @@ function subjectMismatchBlock(
   obligationSubject: string,
   expectedSubject: string,
   obligationId: string,
+  attempt?: ReviewAttempt,
 ): HostTaskBindResult {
   return {
     evidence: null,
@@ -346,6 +373,15 @@ function subjectMismatchBlock(
       expectedSubject,
       message: 'Obligation subject digest does not match the expected artifact digest',
     },
+    ...(attempt
+      ? {
+          attempt: {
+            ...attempt,
+            status: 'rejected' as const,
+            completedAt: new Date().toISOString(),
+          },
+        }
+      : {}),
   };
 }
 
