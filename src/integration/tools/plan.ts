@@ -522,9 +522,19 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
   const planVersion = predecessorVersion ? predecessorVersion + 1 : 1;
   const predecessorRecordDigest = scope.state.plan?.current.recordDigest ?? null;
 
+  // Resolve the review obligation whose changes_requested verdict triggered
+  // this revision, so the record digest proves which obligation caused it.
+  const originatingReviewObligationId =
+    [...(scope.state.reviewAssurance?.obligations ?? [])]
+      .reverse()
+      .find(
+        (o) => o.obligationType === 'plan' && (o.status === 'fulfilled' || o.status === 'consumed'),
+      )?.obligationId ?? null;
+
   const planEvidence = buildPlanEvidence(planBody, scope, {
     planVersion,
     supersedesRecordDigest: predecessorRecordDigest,
+    originatingReviewObligationId,
     revisionReason: scope.state.plan ? 'Revision after changes requested' : null,
   });
   const reviewFindings = scope.args.reviewFindings ?? null;

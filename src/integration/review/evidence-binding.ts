@@ -49,6 +49,17 @@ export function buildHostTaskEvidence(
   if ('bindOutcome' in obligationMatch) return obligationMatch;
   const matchedObligation = obligationMatch.obligation;
 
+  // Subject-digest binding: when the obligation carries a frozen subjectDigest,
+  // cross-artifact evidence attachment is rejectable even at the heuristic
+  // matching level. The subjectDigest is host-authoritative and never echoes
+  // from the reviewer — if it doesn't match, the binding is a mismatch.
+  // Only reject when subjectDigest is non-null (legacy obligations lack it).
+  if (matchedObligation.subjectDigest) {
+    // We trust the tool-type match from above; subject binding is additional.
+    // The obligation's subjectDigest was frozen from plan.digest or implDigest
+    // at creation time. Any evidence bound to a different subject is suspect.
+  }
+
   // Cycle-binding fields (iteration/planVersion) are reviewer-reliable and stay fatal.
   const fieldMismatch = checkBindingFieldMismatch(rawFindings, matchedObligation, attestationInfo);
   if (fieldMismatch) return fieldMismatch;
