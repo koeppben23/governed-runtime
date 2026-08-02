@@ -200,6 +200,7 @@ describe('plan / architecture Mode-B review contract', () => {
           iteration: 0,
           planVersion: 1,
           now: NOW(),
+          subjectDigest: 'test',
         });
         const f = findings(obl.obligationId);
         const fh = hashFindings(f);
@@ -239,6 +240,7 @@ describe('plan / architecture Mode-B review contract', () => {
           iteration: 0,
           planVersion: 1,
           now: NOW(),
+          subjectDigest: 'test',
         });
         const f = findings(obl.obligationId);
         const fh = hashFindings(f);

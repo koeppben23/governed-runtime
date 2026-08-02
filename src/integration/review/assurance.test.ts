@@ -46,6 +46,7 @@ function makeObligation(overrides?: Partial<ReviewObligation>): ReviewObligation
     iteration: 0,
     planVersion: 1,
     now: NOW,
+    subjectDigest: 'test',
     ...overrides,
   });
 }
@@ -122,6 +123,7 @@ describe('integration/review-assurance', () => {
         iteration: 0,
         planVersion: 1,
         now: NOW,
+        subjectDigest: 'test',
       });
       expect(result.obligationType).toBe('plan');
       expect(result.status).toBe('pending');
@@ -151,6 +153,7 @@ describe('integration/review-assurance', () => {
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
           changedFiles,
           policySnapshot: {
             challengePolicy: {
@@ -182,6 +185,7 @@ describe('integration/review-assurance', () => {
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
           changedFiles: ['docs/x.md'],
           claimedTaskClass: 'HIGH-RISK',
           policySnapshot,
@@ -195,6 +199,7 @@ describe('integration/review-assurance', () => {
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
           changedFiles: ['src/state/schema.ts'],
           claimedTaskClass: 'TRIVIAL',
           policySnapshot,
@@ -208,6 +213,7 @@ describe('integration/review-assurance', () => {
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
           changedFiles: ['docs/x.md'],
           claimedTaskClass: 'STANDARD',
           policySnapshot,
@@ -221,6 +227,7 @@ describe('integration/review-assurance', () => {
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
           changedFiles: ['docs/x.md'],
           policySnapshot,
         });
@@ -234,6 +241,7 @@ describe('integration/review-assurance', () => {
         iteration: 0,
         planVersion: 1,
         now: NOW,
+        subjectDigest: 'test',
         changedFiles: ['src/state/schema.ts'],
         policySnapshot: {},
       });
@@ -288,7 +296,7 @@ describe('integration/review-assurance', () => {
 
     it('returns ensured assurance unchanged when obligation is null', () => {
       const result = appendReviewObligation(undefined, null);
-      expect(result).toEqual({ obligations: [], invocations: [] });
+      expect(result).toEqual({ obligations: [], invocations: [], attempts: [] });
     });
   });
 

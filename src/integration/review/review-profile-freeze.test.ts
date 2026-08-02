@@ -51,6 +51,7 @@ describe('review profile freeze (Wave 1 — #730)', () => {
         iteration: 0,
         planVersion: 1,
         now: NOW,
+        subjectDigest: 'test',
       });
       expect(obligation.reviewProfile).toBe('core');
       expect(obligation.profileSource).toBe('policy_default');
@@ -64,6 +65,7 @@ describe('review profile freeze (Wave 1 — #730)', () => {
         iteration: 1,
         planVersion: 2,
         now: NOW,
+        subjectDigest: 'test',
         reviewProfile: 'full',
         profileSource: 'runtime_required_full',
       });

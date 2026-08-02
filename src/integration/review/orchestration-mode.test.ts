@@ -70,6 +70,7 @@ describe('pending review instruction renderer', () => {
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
+      subjectDigest: 'test',
     });
     const instruction = buildPendingReviewInstruction({
       mode: 'external_instruction_pending',

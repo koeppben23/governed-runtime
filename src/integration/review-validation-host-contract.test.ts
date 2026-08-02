@@ -377,6 +377,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
         });
         const findingsP = strictFindings({ iteration: 0, planVersion: 1 });
         const fhP = hashFindings(findingsP);
@@ -425,6 +426,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
         });
         const findingsI = strictFindings({ iteration: 0, planVersion: 1 });
         const fhI = hashFindings(findingsI);
@@ -491,6 +493,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           iteration: 0,
           planVersion: 1,
           now: NOW,
+          subjectDigest: 'test',
         });
         const findingsA = strictFindings({ iteration: 0, planVersion: 1 });
         const fhA = hashFindings(findingsA);

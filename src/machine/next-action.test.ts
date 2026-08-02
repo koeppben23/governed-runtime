@@ -238,6 +238,7 @@ describe('resolveNextAction', () => {
         iteration: 1,
         planVersion: 1,
         now: '2026-01-01T00:00:00.000Z',
+        subjectDigest: 'test',
       });
       const state = makeState('READY', {
         reviewAssurance: { obligations: [obligation], invocations: [] },

@@ -16,6 +16,7 @@ import {
   REVIEW_MANDATE_DIGEST,
   REVIEW_CRITERIA_VERSION,
   createReviewObligation,
+  appendObligationWithAttempt,
   appendReviewObligation,
   resolveFrozenReviewProfile,
   findLatestPendingReviewObligation,
@@ -302,7 +303,11 @@ export async function persistReviewObligation(
 ): Promise<void> {
   await writeStateWithArtifacts(sessDir, {
     ...state,
-    reviewAssurance: appendReviewObligation(state.reviewAssurance, obligation),
+    reviewAssurance: appendObligationWithAttempt(
+      state.reviewAssurance,
+      obligation,
+      obligation.createdAt,
+    ),
   });
 }
 
@@ -353,6 +358,7 @@ async function createNewReviewObligation(
       iteration: 1,
       planVersion: 1,
       now: input.now,
+      subjectDigest: input.fingerprint,
       reviewProfile: resolveFrozenReviewProfile(input.state.policySnapshot),
       profileSource: 'policy_default',
       policySnapshot: input.state.policySnapshot,

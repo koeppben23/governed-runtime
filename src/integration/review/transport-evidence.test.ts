@@ -52,6 +52,7 @@ describe('external review transport evidence binding', () => {
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
+      subjectDigest: 'test',
     });
     const state = makeState('PLAN', {
       ticket: TICKET,
@@ -80,6 +81,7 @@ describe('external review transport evidence binding', () => {
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
+      subjectDigest: 'test',
     });
     await writeFile(
       join(sessDir, 'review-evidence', 'ok.json'),
@@ -113,6 +115,7 @@ describe('external review transport evidence binding', () => {
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
+      subjectDigest: 'test',
     });
     await writeFile(
       join(sessDir, 'review-evidence', 'same-actor.json'),
@@ -155,6 +158,7 @@ describe('external review transport evidence binding', () => {
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
+      subjectDigest: 'test',
     });
     await writeFile(
       join(sessDir, 'review-evidence', 'normalized-same-actor.json'),
@@ -191,6 +195,7 @@ describe('external review transport evidence binding', () => {
       iteration: 0,
       planVersion: 1,
       now: '2026-01-01T00:00:00.000Z',
+      subjectDigest: 'test',
     });
     await writeFile(
       join(sessDir, 'review-evidence', 'missing-reviewer-actor.json'),

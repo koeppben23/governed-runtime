@@ -145,6 +145,7 @@ async function resolveCapturedFixture(
     iteration: 0,
     planVersion: 1,
     now: '2026-07-26T00:00:00.000Z',
+    subjectDigest: 'test',
     changedFiles: ['src/example.ts'],
     policySnapshot: frozen ? { challengePolicy: CHALLENGE_POLICY_V1 } : {},
   });
@@ -188,6 +189,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
     iteration: 0,
     planVersion: 1,
     now: '2026-07-26T00:00:00.000Z',
+    subjectDigest: 'test',
     changedFiles: ['src/example.ts'],
     policySnapshot: frozen ? { challengePolicy: CHALLENGE_POLICY_V1 } : {},
   });
@@ -278,6 +280,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
     iteration: 1,
     planVersion: 1,
     now: '2026-07-26T00:01:00.000Z',
+    subjectDigest: 'test',
     changedFiles: ['src/example.ts'],
     policySnapshot: frozen ? { challengePolicy: CHALLENGE_POLICY_V1 } : {},
   });

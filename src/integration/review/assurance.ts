@@ -58,8 +58,11 @@ export function createReviewObligation(input: {
    * verify at binding time that the reviewer's evidence addresses exactly this
    * subject — not a different plan version or different branch. Never supplied
    * by or echoed from the reviewer.
+   *
+   * Required. Obligations without an authoritative subjectDigest are fail-closed
+   * rejected; no binding is possible without a proven subject identity.
    */
-  subjectDigest?: string;
+  subjectDigest: string;
   /**
    * Mandatory review coverage profile frozen into the obligation at creation,
    * before any reviewer invocation. Defaults to the fail-closed 'core' baseline.
@@ -82,6 +85,12 @@ export function createReviewObligation(input: {
   claimedTaskClass?: TaskClass;
   metadata?: Record<string, unknown>;
 }): ReviewObligation {
+  if (!input.subjectDigest || input.subjectDigest.length === 0) {
+    throw new Error(
+      'FAIL_CLOSED: createReviewObligation requires a non-empty subjectDigest. ' +
+        'Obligations without an authoritative subject identity cannot produce bindable evidence.',
+    );
+  }
   const challengePolicy = input.policySnapshot?.challengePolicy;
   const requirements = challengePolicy
     ? {
@@ -343,10 +352,18 @@ export function hashFindings(findings: Record<string, unknown>): string {
 
 // ─── Review Attempt Lifecycle ──────────────────────────────────────────────────
 
+/**
+ * Create a ReviewAttempt record BEFORE the reviewer subagent is invoked.
+ *
+ * This is the central security invariant: the attempt MUST exist in the
+ * assurance state before any callback can arrive. When a newer attempt is
+ * created for the same obligation, older non-bound attempts become stale.
+ * Late callbacks for stale attempts are rejected at binding time.
+ */
 export function createReviewAttempt(input: {
   obligationId: string;
   obligationType: ReviewObligationType;
-  subjectDigest?: string;
+  subjectDigest: string;
   ordinal: number;
   childSessionId?: string;
   now: string;
@@ -355,12 +372,79 @@ export function createReviewAttempt(input: {
     attemptId: randomUUID(),
     obligationId: input.obligationId,
     obligationType: input.obligationType,
-    subjectDigest: input.subjectDigest ?? 'pending-subject-digest',
+    subjectDigest: input.subjectDigest,
     ordinal: input.ordinal,
     childSessionId: input.childSessionId,
     status: 'created',
     createdAt: input.now,
   };
+}
+
+/**
+ * Create an obligation and its initial attempt atomically.
+ *
+ * The attempt is persisted alongside the obligation at creation time,
+ * BEFORE the reviewer subagent is invoked. This satisfies the core
+ * security invariant that attempts are invocation envelopes, not
+ * post-hoc callback records.
+ *
+ * Existing non-bound attempts for the same obligation are staled.
+ */
+export function createObligationAndAttempt(
+  assurance: ReviewAssuranceState | undefined,
+  obligationInput: Parameters<typeof createReviewObligation>[0],
+  now: string,
+): { assurance: ReviewAssuranceState; obligation: ReviewObligation; attempt: ReviewAttempt } {
+  const obligation = createReviewObligation(obligationInput);
+  const ordinal =
+    (ensureReviewAssurance(assurance).attempts?.filter(
+      (a) => a.obligationId === obligation.obligationId,
+    ).length ?? 0) + 1;
+  const attempt = createReviewAttempt({
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligationInput.subjectDigest,
+    ordinal,
+    now,
+  });
+  const withObligation = appendReviewObligation(assurance, obligation);
+  const withAttempt = appendReviewAttempt(withObligation, attempt);
+  const deduped = staleObligationAttempts(
+    withAttempt,
+    obligation.obligationId,
+    attempt.attemptId,
+    now,
+  );
+  return { assurance: deduped, obligation, attempt };
+}
+
+/**
+ * Append an obligation AND its initial attempt to the assurance state atomically.
+ *
+ * This is the simplest integration point for call sites that currently call
+ * `appendReviewObligation`. The attempt is created BEFORE any reviewer subagent
+ * is invoked, satisfying the core security invariant.
+ *
+ * @returns Updated assurance state with obligation and attempt persisted.
+ */
+export function appendObligationWithAttempt(
+  assurance: ReviewAssuranceState | undefined,
+  obligation: ReviewObligation,
+  now: string,
+): ReviewAssuranceState {
+  const base = ensureReviewAssurance(assurance);
+  const ordinal =
+    (base.attempts?.filter((a) => a.obligationId === obligation.obligationId).length ?? 0) + 1;
+  const attempt = createReviewAttempt({
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest!,
+    ordinal,
+    now,
+  });
+  const withObligation = { ...base, obligations: [...base.obligations, obligation] };
+  const withAttempt = appendReviewAttempt(withObligation, attempt);
+  return staleObligationAttempts(withAttempt, obligation.obligationId, attempt.attemptId, now);
 }
 
 export function appendReviewAttempt(

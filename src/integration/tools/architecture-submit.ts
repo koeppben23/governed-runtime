@@ -11,8 +11,8 @@ import { formatBlocked, appendNextAction, writeStateWithArtifacts } from './help
 import type { SessionState } from '../../state/schema.js';
 import { executeArchitecture } from '../../rails/architecture.js';
 import {
+  appendObligationWithAttempt,
   createReviewObligation,
-  appendReviewObligation,
   reviewObligationResponseFields,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
@@ -53,6 +53,7 @@ async function classifyAndCreateArchObligation(
         iteration: 0,
         planVersion: ctx.archPlanVersion,
         now: ctx.now,
+        subjectDigest: ctx.state.architecture?.digest ?? `arch-submit-${ctx.archPlanVersion}`,
         reviewProfile: resolveFrozenReviewProfile(ctx.policySnapshot),
         profileSource: 'policy_default',
         policySnapshot: ctx.policySnapshot,
@@ -64,7 +65,11 @@ async function classifyAndCreateArchObligation(
   const augmentedState = obligation
     ? {
         ...ctx.state,
-        reviewAssurance: appendReviewObligation(ctx.state.reviewAssurance, obligation),
+        reviewAssurance: appendObligationWithAttempt(
+          ctx.state.reviewAssurance,
+          obligation,
+          ctx.now,
+        ),
       }
     : ctx.state;
   return { state: augmentedState, obligation };

@@ -13,7 +13,7 @@ import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { ReviewFindings, ReviewObligation } from '../../state/evidence.js';
 import type { resolveCeremonyProfile } from '../phase-tool-gate.js';
 import {
-  appendReviewObligation,
+  appendObligationWithAttempt,
   createReviewObligation,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
@@ -54,6 +54,7 @@ export function activateImplementationReviewObligation(
     iteration: input.iteration,
     planVersion: input.planVersion,
     now: input.now,
+    subjectDigest: state.implementation?.digest ?? `impl-${input.now}`,
     reviewProfile: resolveFrozenReviewProfile(state.policySnapshot),
     profileSource: 'policy_default',
     policySnapshot: state.policySnapshot,
@@ -63,7 +64,7 @@ export function activateImplementationReviewObligation(
   return {
     state: {
       ...state,
-      reviewAssurance: appendReviewObligation(state.reviewAssurance, obligation),
+      reviewAssurance: appendObligationWithAttempt(state.reviewAssurance, obligation, input.now),
     },
     obligation,
   };

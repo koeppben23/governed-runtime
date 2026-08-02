@@ -73,6 +73,7 @@ import { collectPreviouslyUsedChallengeIds } from '../review/challenge-history.j
 import {
   appendReviewObligation,
   consumeReviewObligation,
+  createObligationAndAttempt,
   createReviewObligation,
   ensureReviewAssurance,
   findAcceptedInvocationForFindings,
@@ -297,21 +298,26 @@ function buildPlanSubmissionState(
   if (classificationFiles && classificationFiles.length > 0) {
     metadata.targetPaths = [...classificationFiles];
   }
-  const nextObligation = scope.reviewPolicy.subagentEnabled
-    ? createReviewObligation({
-        obligationType: 'plan',
-        iteration: 0,
-        planVersion,
-        now: scope.ctx.now(),
-        subjectDigest: planEvidence.digest,
-        reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
-        profileSource: 'policy_default',
-        policySnapshot: scope.state.policySnapshot,
-        changedFiles: classificationFiles,
-        claimedTaskClass: scope.state.claimedTaskClass,
-        metadata,
-      })
+  const attemptResult = scope.reviewPolicy.subagentEnabled
+    ? createObligationAndAttempt(
+        scope.state.reviewAssurance,
+        {
+          obligationType: 'plan',
+          iteration: 0,
+          planVersion,
+          now: scope.ctx.now(),
+          subjectDigest: planEvidence.digest,
+          reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
+          profileSource: 'policy_default',
+          policySnapshot: scope.state.policySnapshot,
+          changedFiles: classificationFiles,
+          claimedTaskClass: scope.state.claimedTaskClass,
+          metadata,
+        },
+        scope.ctx.now(),
+      )
     : null;
+  const nextObligation = attemptResult?.obligation ?? null;
 
   return {
     ...scope.state,
@@ -340,7 +346,9 @@ function buildPlanSubmissionState(
       revisionDelta: 'major',
       verdict: 'changes_requested',
     },
-    reviewAssurance: appendReviewObligation(scope.state.reviewAssurance, nextObligation),
+    reviewAssurance:
+      attemptResult?.assurance ??
+      appendReviewObligation(scope.state.reviewAssurance, nextObligation),
     error: null,
   };
 }

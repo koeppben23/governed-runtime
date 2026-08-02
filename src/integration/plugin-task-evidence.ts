@@ -15,6 +15,7 @@ import {
   ensureReviewAssurance,
   appendReviewAttempt,
   staleObligationAttempts,
+  updateAttemptStatus,
 } from './review/assurance.js';
 import { appendReviewAuditEvent } from './review/audit-events.js';
 import { strictBlockedOutput } from './plugin-helpers.js';
@@ -70,7 +71,6 @@ export async function handleHostTaskEvidence(
     });
 
     const eState = deps.ws.getEnforcementState(sessionId);
-    const expectedSubject = state.plan?.current.digest ?? null;
     const attempts = state.reviewAssurance?.attempts;
     const bindResult = buildHostTaskEvidence(
       eState,
@@ -78,7 +78,6 @@ export async function handleHostTaskEvidence(
       obligations,
       invocations,
       now,
-      expectedSubject,
       attempts,
     );
     await applyHostTaskBindResult({ deps, sessDir, sessionId, policy, bindResult, hookOutput });
@@ -105,6 +104,10 @@ async function applyHostTaskBindResult(input: {
   if (bindResult.evidence) {
     await persistHostTaskEvidence(deps, sessDir, sessionId, bindResult);
     return;
+  }
+  // Persist the attempt status even when binding failed (rejected/stale).
+  if (bindResult.attempt) {
+    await persistAttemptStatus(deps, sessDir, bindResult);
   }
   if (policy === 'host_task_required') {
     blockRequiredHostTaskEvidence(deps, sessionId, policy, bindResult, hookOutput);
@@ -172,9 +175,14 @@ async function persistHostTaskEvidence(
         bindResult.attempt.attemptId,
         evidence.fulfilledAt ?? evidence.invokedAt ?? new Date().toISOString(),
       );
+      const boundAttempt = {
+        ...bindResult.attempt,
+        status: 'bound' as const,
+        completedAt: evidence.fulfilledAt ?? evidence.invokedAt ?? new Date().toISOString(),
+      };
       return {
         ...s,
-        reviewAssurance: appendReviewAttempt(deduped, bindResult.attempt),
+        reviewAssurance: appendReviewAttempt(deduped, boundAttempt),
       };
     }
     return { ...s, reviewAssurance: withInvocation };
@@ -194,6 +202,26 @@ async function persistHostTaskEvidence(
       bindOutcome: bindResult.bindOutcome,
     },
   );
+}
+
+async function persistAttemptStatus(
+  deps: HostTaskEvidenceDeps,
+  sessDir: string,
+  bindResult: HostTaskBindResult,
+): Promise<void> {
+  const attempt = bindResult.attempt;
+  if (!attempt) return;
+  const status =
+    bindResult.bindOutcome === 'stale_attempt' ? ('stale' as const) : ('rejected' as const);
+  await deps.ws.updateReviewAssurance(sessDir, (s: SessionState) => ({
+    ...s,
+    reviewAssurance: updateAttemptStatus(
+      ensureReviewAssurance(s.reviewAssurance),
+      attempt.attemptId,
+      status,
+      new Date().toISOString(),
+    ),
+  }));
 }
 
 function blockRequiredHostTaskEvidence(

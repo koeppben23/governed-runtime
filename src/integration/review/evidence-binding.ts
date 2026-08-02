@@ -44,7 +44,6 @@ export function buildHostTaskEvidence(
   obligations: ReviewObligation[],
   invocations: ReviewInvocationEvidence[],
   now: string,
-  expectedSubjectDigest?: string | null,
   attempts?: ReviewAttempt[],
 ): HostTaskBindResult & { attempt?: ReviewAttempt } {
   const latestResult = latestBindableReviewRecord(state);
@@ -52,26 +51,28 @@ export function buildHostTaskEvidence(
   const { latest, childSessionId, obligationType: oType, rawFindings } = latestResult;
   const attestation = rawFindings.attestation as Record<string, unknown> | undefined;
   const attestationInfo = resolveAttestationInfo(attestation);
-  const obligationMatch = matchBindableObligation(
-    obligations,
-    oType,
-    attestationInfo,
-    expectedSubjectDigest,
-  );
+  const obligationMatch = matchBindableObligation(obligations, oType, attestationInfo);
   if ('bindOutcome' in obligationMatch) return obligationMatch;
   const matchedObligation = obligationMatch.obligation;
 
-  // Attempt resolution: look up or create the invocation attempt for this
-  // child session. The attempt is the host-authoritative invocation record
-  // that prevents late/stale callbacks from producing evidence.
-  const resolvedAttempt = resolveOrCreateAttempt(
-    matchedObligation,
-    attempts ?? [],
-    childSessionId,
-    now,
-  );
+  // Attempt resolution: look up the invocation attempt for this child session.
+  // Attempts are created BEFORE the reviewer subagent is invoked (by the tool
+  // creating the review obligation), so a late callback without a match
+  // means the invocation was never recorded — reject.
+  const resolvedAttempt = resolveExistingAttempt(attempts ?? [], childSessionId, matchedObligation);
   if ('bindOutcome' in resolvedAttempt) return resolvedAttempt;
   const attempt = resolvedAttempt.attempt;
+
+  // Subject-digest binding: compare the attempt's frozen subject digest
+  // (set from the obligation at creation time) against the obligation's
+  // subject digest. This prevents cross-artifact evidence attachment.
+  if (attempt.subjectDigest !== matchedObligation.subjectDigest) {
+    return subjectMismatchBlock(
+      matchedObligation.subjectDigest ?? 'missing',
+      attempt.subjectDigest,
+      matchedObligation.obligationId,
+    );
+  }
 
   // Cycle-binding fields (iteration/planVersion) are reviewer-reliable and stay fatal.
   const fieldMismatch = checkBindingFieldMismatch(rawFindings, matchedObligation, attestationInfo);
@@ -213,55 +214,52 @@ function noFindings(tool: string, childSessionId: string): HostTaskBindResult {
   return { evidence: null, bindOutcome: 'no_findings', diagnostic: { tool, childSessionId } };
 }
 
-function resolveOrCreateAttempt(
-  obligation: ReviewObligation,
+function resolveExistingAttempt(
   existingAttempts: ReviewAttempt[],
   childSessionId: string,
-  now: string,
+  obligation: ReviewObligation,
 ): { attempt: ReviewAttempt } | HostTaskBindResult {
-  // Look up an existing attempt by childSessionId (idempotent for same session).
-  const existing = existingAttempts.find(
-    (a) => a.childSessionId === childSessionId && a.obligationId === obligation.obligationId,
-  );
-  if (existing) {
-    // Already bound or rejected: idempotent — no re-binding.
-    if (existing.status === 'bound' || existing.status === 'rejected') {
-      return {
-        evidence: null,
-        bindOutcome: existing.status === 'bound' ? 'idempotent_bound' : 'idempotent_rejected',
-        diagnostic: {
-          attemptId: existing.attemptId,
-          status: existing.status,
-        },
-      };
-    }
-    // Stale or expired: refuse binding.
-    if (existing.status === 'stale' || existing.status === 'expired') {
-      return {
-        evidence: null,
-        bindOutcome: 'stale_attempt',
-        diagnostic: {
-          attemptId: existing.attemptId,
-          status: existing.status,
-        },
-      };
-    }
-    return { attempt: existing };
+  const existing = existingAttempts.find((a) => a.childSessionId === childSessionId);
+  if (!existing) {
+    return {
+      evidence: null,
+      bindOutcome: 'no_matching_obligation',
+      diagnostic: {
+        childSessionId,
+        message:
+          'No attempt record found for this child session. Attempts are created before invocation — a late or unknown callback cannot bind.',
+      },
+    };
   }
-  // Create a new attempt for this child session.
-  const ordinal =
-    existingAttempts.filter((a) => a.obligationId === obligation.obligationId).length + 1;
-  const newAttempt: ReviewAttempt = {
-    attemptId: randomUUID(),
-    obligationId: obligation.obligationId,
-    obligationType: obligation.obligationType,
-    subjectDigest: obligation.subjectDigest ?? 'pending-subject-digest',
-    ordinal,
-    childSessionId,
-    status: 'created',
-    createdAt: now,
-  };
-  return { attempt: newAttempt };
+  if (existing.obligationId !== obligation.obligationId) {
+    return {
+      evidence: null,
+      bindOutcome: 'field_mismatch',
+      diagnostic: {
+        attemptId: existing.attemptId,
+        attemptObligationId: existing.obligationId,
+        matchedObligationId: obligation.obligationId,
+        message: 'Attempt belongs to a different obligation; cross-obligation binding rejected.',
+      },
+    };
+  }
+  // Already bound or rejected: idempotent — no re-binding.
+  if (existing.status === 'bound' || existing.status === 'rejected') {
+    return {
+      evidence: null,
+      bindOutcome: existing.status === 'bound' ? 'idempotent_bound' : 'idempotent_rejected',
+      diagnostic: { attemptId: existing.attemptId, status: existing.status },
+    };
+  }
+  // Stale or expired: refuse binding.
+  if (existing.status === 'stale' || existing.status === 'expired') {
+    return {
+      evidence: null,
+      bindOutcome: 'stale_attempt',
+      diagnostic: { attemptId: existing.attemptId, status: existing.status },
+    };
+  }
+  return { attempt: existing };
 }
 
 function resolveAttestationInfo(attestation: Record<string, unknown> | undefined): {
@@ -281,27 +279,13 @@ function matchBindableObligation(
   obligations: ReviewObligation[],
   obligationType: ReviewObligation['obligationType'],
   attestationInfo: ReturnType<typeof resolveAttestationInfo>,
-  expectedSubjectDigest?: string | null,
 ): { obligation: ReviewObligation } | HostTaskBindResult {
   const obligation = attestationInfo.hasValidAttestation
     ? obligations.find((o) =>
         isMatchingAttestedObligation(o, obligationType, attestationInfo.attestedObligationId),
       )
-    : latestToolMatchedObligation(obligations, obligationType, expectedSubjectDigest);
+    : latestToolMatchedObligation(obligations, obligationType);
   if (!obligation) return noMatchingObligation(obligations, obligationType, attestationInfo);
-  // Subject-digest guard: reject cross-artifact binding when the host provides
-  // the expected digest and the matched obligation disagrees.
-  if (
-    expectedSubjectDigest &&
-    obligation.subjectDigest &&
-    obligation.subjectDigest !== expectedSubjectDigest
-  ) {
-    return subjectMismatchBlock(
-      obligation.subjectDigest,
-      expectedSubjectDigest,
-      obligation.obligationId,
-    );
-  }
   return { obligation };
 }
 
@@ -321,7 +305,6 @@ function isMatchingAttestedObligation(
 function latestToolMatchedObligation(
   obligations: ReviewObligation[],
   obligationType: ReviewObligation['obligationType'],
-  expectedSubjectDigest?: string | null,
 ): ReviewObligation | undefined {
   const candidates = obligations
     .filter(
@@ -329,13 +312,6 @@ function latestToolMatchedObligation(
         o.obligationType === obligationType && o.status !== 'consumed' && o.consumedAt === null,
     )
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  // Prefer obligations whose subjectDigest matches the expected digest
-  // (host-authoritative frozen-at-creation identity). Falls back to
-  // the latest type-matched obligation when no subject match exists.
-  if (expectedSubjectDigest) {
-    const subjectMatched = candidates.find((o) => o.subjectDigest === expectedSubjectDigest);
-    if (subjectMatched) return subjectMatched;
-  }
   return candidates[0];
 }
 

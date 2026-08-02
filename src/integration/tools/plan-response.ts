@@ -32,6 +32,7 @@ import { autoAdvance } from '../../rails/types.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import {
   reviewObligationResponseFields,
+  createObligationAndAttempt,
   createReviewObligation,
   findLatestObligation,
   appendReviewObligation,
@@ -245,25 +246,28 @@ export async function persistNonConvergedPlanReview(
   if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
     metadata.targetPaths = resolvedTargetPaths;
   }
-  const nextObligation = scope.reviewPolicy.subagentEnabled
-    ? createReviewObligation({
-        obligationType: 'plan',
-        iteration,
-        planVersion: nextPlanVersion,
-        now: scope.ctx.now(),
-        reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
-        profileSource: 'policy_default',
-        policySnapshot: finalState.policySnapshot,
-        changedFiles: resolvedTargetPaths,
-        claimedTaskClass: finalState.claimedTaskClass,
-        metadata,
-      })
+  const attemptResult = scope.reviewPolicy.subagentEnabled
+    ? createObligationAndAttempt(
+        finalState.reviewAssurance,
+        {
+          obligationType: 'plan',
+          iteration,
+          planVersion: nextPlanVersion,
+          now: scope.ctx.now(),
+          subjectDigest: revision.currentPlan.digest,
+          reviewProfile: resolveFrozenReviewProfile(finalState.policySnapshot),
+          profileSource: 'policy_default',
+          policySnapshot: finalState.policySnapshot,
+          changedFiles: resolvedTargetPaths,
+          claimedTaskClass: finalState.claimedTaskClass,
+          metadata,
+        },
+        scope.ctx.now(),
+      )
     : null;
-  const stateToPersist = nextObligation
-    ? {
-        ...finalState,
-        reviewAssurance: appendReviewObligation(finalState.reviewAssurance, nextObligation),
-      }
+  const nextObligation = attemptResult?.obligation ?? null;
+  const stateToPersist = attemptResult
+    ? { ...finalState, reviewAssurance: attemptResult.assurance }
     : finalState;
   await writeStateWithArtifacts(scope.sessDir, stateToPersist);
   return appendNextAction(

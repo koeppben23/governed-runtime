@@ -23,13 +23,14 @@ import type { LoopVerdict, RevisionDelta, ReviewFindings } from '../../state/evi
 import { validateAdrSections } from '../../state/evidence.js';
 
 import {
+  appendObligationWithAttempt,
+  appendReviewObligation,
   consumeReviewObligation,
   createReviewObligation,
   ensureReviewAssurance,
   findAcceptedInvocationForFindings,
   findLatestObligation,
   findLatestUnconsumedObligation,
-  appendReviewObligation,
   reviewObligationResponseFields,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
@@ -520,6 +521,7 @@ async function persistAndFormatNonConvergedReview(
         iteration,
         planVersion: review.expectedPlanVersion,
         now: session.ctx.now(),
+        subjectDigest: advanced.state.architecture?.digest ?? `arch-${review.expectedPlanVersion}`,
         reviewProfile: resolveFrozenReviewProfile(advanced.state.policySnapshot),
         profileSource: 'policy_default',
         policySnapshot: advanced.state.policySnapshot,
@@ -531,7 +533,11 @@ async function persistAndFormatNonConvergedReview(
   const stateToPersist = nextObligation
     ? {
         ...advanced.state,
-        reviewAssurance: appendReviewObligation(advanced.state.reviewAssurance, nextObligation),
+        reviewAssurance: appendObligationWithAttempt(
+          advanced.state.reviewAssurance,
+          nextObligation,
+          session.ctx.now(),
+        ),
       }
     : advanced.state;
   const persisted = await writeStateWithArtifacts(session.sessDir, stateToPersist);
