@@ -33,9 +33,7 @@ import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import {
   reviewObligationResponseFields,
   createObligationAndAttempt,
-  createReviewObligation,
   findLatestObligation,
-  appendReviewObligation,
   resolveFrozenReviewProfile,
 } from '../review/assurance.js';
 import { buildPendingReviewInstruction } from '../review/pending-instruction.js';

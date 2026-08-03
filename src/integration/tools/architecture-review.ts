@@ -24,7 +24,6 @@ import { validateAdrSections } from '../../state/evidence.js';
 
 import {
   appendObligationWithAttempt,
-  appendReviewObligation,
   consumeReviewObligation,
   createReviewObligation,
   ensureReviewAssurance,

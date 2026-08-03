@@ -74,7 +74,6 @@ import {
   appendReviewObligation,
   consumeReviewObligation,
   createObligationAndAttempt,
-  createReviewObligation,
   ensureReviewAssurance,
   findAcceptedInvocationForFindings,
   findLatestObligation,

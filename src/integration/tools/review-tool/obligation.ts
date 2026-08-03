@@ -17,7 +17,6 @@ import {
   REVIEW_CRITERIA_VERSION,
   createReviewObligation,
   appendObligationWithAttempt,
-  appendReviewObligation,
   resolveFrozenReviewProfile,
   findLatestPendingReviewObligation,
   findReviewObligationById,
