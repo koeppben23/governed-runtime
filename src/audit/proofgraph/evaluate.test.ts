@@ -166,6 +166,10 @@ describe('evaluateProofGraph', () => {
       const out = evaluate({ claims: [claim(uuid(1))] });
       expect(out.claims[0]!.verificationState).toBe('UNPROVEN');
       expect(out.claims[0]!.freshness).toBeUndefined();
+      // The key is OMITTED, not set to undefined: the projection is persisted and
+      // canonically digested, so an explicit `freshness: undefined` would change
+      // the serialized shape.
+      expect(Object.hasOwn(out.claims[0]!, 'freshness')).toBe(false);
     });
   });
 
@@ -393,6 +397,31 @@ describe('evaluateProofGraph', () => {
 
   describe('counterexample freshness (revision-bound)', () => {
     const req: RequiredEvidence = { positive: ['executed_test'], adversarial: ['counterexample'] };
+
+    it('a fresh counterexample supersedes a co-existing stale one', () => {
+      // A stale adversarial result alone leaves the claim not fully fresh, but a
+      // fresh one for the same claim supersedes it: the claim is PROVEN, not STALE.
+      const out = evaluate({
+        claims: [claim(uuid(1), { requiredEvidence: req })],
+        providerResults: [result(uuid(1), 'pass', CURR)],
+        counterexamples: [
+          counterexample(uuid(1), 'supported', OLD),
+          counterexample(uuid(1), 'supported', CURR),
+        ],
+      });
+      expect(out.claims[0]!.verificationState).toBe('PROVEN');
+    });
+
+    it('a stale counterexample alone leaves an otherwise proven claim STALE', () => {
+      const out = evaluate({
+        claims: [
+          claim(uuid(1), { requiredEvidence: { positive: ['executed_test'], adversarial: [] } }),
+        ],
+        providerResults: [result(uuid(1), 'pass', CURR)],
+        counterexamples: [counterexample(uuid(1), 'supported', OLD)],
+      });
+      expect(out.claims[0]!.verificationState).toBe('STALE');
+    });
 
     it('a stale contradicted counterexample does not contradict the current revision', () => {
       const out = evaluate({

@@ -8,7 +8,7 @@
  * cannot block.
  */
 import { describe, it, expect } from 'vitest';
-import { evaluateProofGraphGate } from './gate.js';
+import { evaluateProofGraphGate, isRiskAssessmentCurrent } from './gate.js';
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofClaim } from '../../state/proofgraph.js';
 import type { ClaimVerificationState, SignalClass } from '../../state/proofgraph-primitives.js';
@@ -178,5 +178,70 @@ describe('evaluateProofGraphGate', () => {
       riskAssessment: { implementationDigest: 'implementation-digest' },
     });
     expect(decision).toMatchObject({ gated: true, kind: 'risk_assessment_stale' });
+  });
+
+  // The following pin the discriminating conditions of the risk-assessment path.
+  // Without them the corresponding branches can be inverted without any test
+  // noticing (confirmed by surviving mutants).
+
+  it('treats a matching digest with a non-array trigger taxonomy as NOT current', () => {
+    // Same implementation digest, but riskTriggers is not an array: the
+    // assessment predates the taxonomy and must not be accepted as current.
+    expect(
+      isRiskAssessmentCurrent(
+        { implementationDigest: 'implementation-digest' },
+        'implementation-digest',
+      ),
+    ).toBe(false);
+    expect(
+      isRiskAssessmentCurrent(
+        { implementationDigest: 'implementation-digest', riskTriggers: [] },
+        'implementation-digest',
+      ),
+    ).toBe(true);
+  });
+
+  it('does not report a stale assessment when there is no implementation digest to bind to', () => {
+    // riskAssessment present but no implementation digest: the assessment cannot
+    // be judged stale against a revision that does not exist, so the gate falls
+    // through to the claim-only decision instead of blocking.
+    const decision = evaluateProofGraphGate({
+      ...summary([]),
+      riskAssessment: { implementationDigest: 'other', riskTriggers: [] },
+    });
+    expect(decision.kind).not.toBe('risk_assessment_stale');
+    expect(decision).toMatchObject({ gated: false, kind: 'clear' });
+  });
+
+  it('does not demand another critical fact when an eligible claim already exists', () => {
+    // triggers present AND an eligible claim present: the critical-fact
+    // requirement is already satisfied, so the gate must judge that claim
+    // instead of demanding one.
+    const decision = evaluateProofGraphGate({
+      ...summary([claim(UUID(1), { state: 'PROVEN' })]),
+      implementationDigest: 'implementation-digest',
+      riskAssessment: {
+        implementationDigest: 'implementation-digest',
+        riskTriggers: ['state_integrity'],
+      },
+    });
+    expect(decision.kind).not.toBe('critical_fact_required');
+    expect(decision).toMatchObject({ gated: false, kind: 'clear' });
+  });
+
+  it('does not report missing evaluation when every authorized claim is present', () => {
+    // The authorized id resolves to an eligible claim, so the
+    // evaluation_unavailable path must not trigger.
+    const decision = evaluateProofGraphGate({
+      ...summary([claim(UUID(1), { state: 'PROVEN' })]),
+      authorizedCriticalClaimIds: [UUID(1)],
+    });
+    expect(decision.kind).not.toBe('evaluation_unavailable');
+    expect(decision).toMatchObject({ gated: false, kind: 'clear', blockingClaimIds: [] });
+  });
+
+  it('classifies an unproven eligible claim as facts_unproven, not clear', () => {
+    const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'UNPROVEN' })]));
+    expect(decision).toMatchObject({ gated: true, kind: 'facts_unproven' });
   });
 });
