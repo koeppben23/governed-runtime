@@ -285,6 +285,37 @@ function buildPlanEvidence(
   };
 }
 
+/** Register the plan review obligation and its first attempt, when review applies. */
+function createPlanReviewAttempt(
+  scope: PlanExecutionScope,
+  planEvidence: PlanEvidence,
+  planVersion: number,
+  classificationFiles?: readonly string[],
+): ReturnType<typeof createObligationAndAttempt> | null {
+  if (!scope.reviewPolicy.subagentEnabled) return null;
+  const metadata: Record<string, unknown> = {};
+  if (classificationFiles && classificationFiles.length > 0) {
+    metadata.targetPaths = [...classificationFiles];
+  }
+  return createObligationAndAttempt(
+    scope.state.reviewAssurance,
+    {
+      obligationType: 'plan',
+      iteration: 0,
+      planVersion,
+      now: scope.ctx.now(),
+      subjectDigest: planEvidence.digest,
+      reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
+      profileSource: 'policy_default',
+      policySnapshot: scope.state.policySnapshot,
+      changedFiles: classificationFiles,
+      claimedTaskClass: scope.state.claimedTaskClass,
+      metadata,
+    },
+    scope.ctx.now(),
+  );
+}
+
 function buildPlanSubmissionState(
   scope: PlanExecutionScope,
   planEvidence: PlanEvidence,
@@ -293,29 +324,12 @@ function buildPlanSubmissionState(
   classificationFiles?: readonly string[],
 ): SessionState {
   const history = scope.state.plan ? [scope.state.plan.current, ...scope.state.plan.history] : [];
-  const metadata: Record<string, unknown> = {};
-  if (classificationFiles && classificationFiles.length > 0) {
-    metadata.targetPaths = [...classificationFiles];
-  }
-  const attemptResult = scope.reviewPolicy.subagentEnabled
-    ? createObligationAndAttempt(
-        scope.state.reviewAssurance,
-        {
-          obligationType: 'plan',
-          iteration: 0,
-          planVersion,
-          now: scope.ctx.now(),
-          subjectDigest: planEvidence.digest,
-          reviewProfile: resolveFrozenReviewProfile(scope.state.policySnapshot),
-          profileSource: 'policy_default',
-          policySnapshot: scope.state.policySnapshot,
-          changedFiles: classificationFiles,
-          claimedTaskClass: scope.state.claimedTaskClass,
-          metadata,
-        },
-        scope.ctx.now(),
-      )
-    : null;
+  const attemptResult = createPlanReviewAttempt(
+    scope,
+    planEvidence,
+    planVersion,
+    classificationFiles,
+  );
   const nextObligation = attemptResult?.obligation ?? null;
 
   return {
@@ -528,21 +542,11 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
 
   const predecessorVersion = scope.state.plan?.current.planVersion;
   const planVersion = predecessorVersion ? predecessorVersion + 1 : 1;
-  const predecessorRecordDigest = scope.state.plan?.current.recordDigest ?? null;
-
-  // Resolve the review obligation whose changes_requested verdict triggered
-  // this revision, so the record digest proves which obligation caused it.
-  const originatingReviewObligationId =
-    [...(scope.state.reviewAssurance?.obligations ?? [])]
-      .reverse()
-      .find(
-        (o) => o.obligationType === 'plan' && (o.status === 'fulfilled' || o.status === 'consumed'),
-      )?.obligationId ?? null;
 
   const planEvidence = buildPlanEvidence(planBody, scope, {
     planVersion,
-    supersedesRecordDigest: predecessorRecordDigest,
-    originatingReviewObligationId,
+    supersedesRecordDigest: scope.state.plan?.current.recordDigest ?? null,
+    originatingReviewObligationId: originatingPlanReviewObligationId(scope),
     revisionReason: scope.state.plan ? 'Revision after changes requested' : null,
   });
   const reviewFindings = scope.args.reviewFindings ?? null;
@@ -577,6 +581,20 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     transitions,
   });
   return appendNextAction(JSON.stringify(response), finalState);
+}
+
+/**
+ * The review obligation whose changes_requested verdict triggered this revision,
+ * so the plan record digest proves which obligation caused it.
+ */
+function originatingPlanReviewObligationId(scope: PlanExecutionScope): string | null {
+  return (
+    [...(scope.state.reviewAssurance?.obligations ?? [])]
+      .reverse()
+      .find(
+        (o) => o.obligationType === 'plan' && (o.status === 'fulfilled' || o.status === 'consumed'),
+      )?.obligationId ?? null
+  );
 }
 
 async function handlePlanReview(scope: PlanExecutionScope): Promise<string> {

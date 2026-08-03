@@ -490,6 +490,11 @@ function findPriorArchTargetPaths(
   return stringPaths.length === paths.length ? stringPaths : undefined;
 }
 
+/** Obligation metadata carrying the resolved target paths, when any were resolved. */
+function targetPathsMetadata(resolved: readonly string[] | undefined): Record<string, unknown> {
+  return resolved && resolved.length > 0 ? { targetPaths: [...resolved] } : {};
+}
+
 async function persistAndFormatNonConvergedReview(
   input: ReviewResultContext,
   verdict: LoopVerdict,
@@ -511,10 +516,6 @@ async function persistAndFormatNonConvergedReview(
   );
   const resolvedTargetPaths =
     classification.kind === 'available' ? [...classification.changedFiles] : undefined;
-  const metadata: Record<string, unknown> = {};
-  if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
-    metadata.targetPaths = resolvedTargetPaths;
-  }
   const nextObligation = review.subagentEnabled
     ? createReviewObligation({
         obligationType: 'architecture',
@@ -527,7 +528,7 @@ async function persistAndFormatNonConvergedReview(
         policySnapshot: advanced.state.policySnapshot,
         changedFiles: resolvedTargetPaths,
         claimedTaskClass: advanced.state.claimedTaskClass,
-        metadata,
+        metadata: targetPathsMetadata(resolvedTargetPaths),
       })
     : null;
   let archAttemptId: string | null = null;

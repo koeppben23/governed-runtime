@@ -101,15 +101,19 @@ export function buildPlanSubmissionResponse(
     reviewInvocation: reviewInstruction.reviewInvocation,
     _audit: { transitions },
   };
-  // #762: advisory only. Surfaces a foreseeable late block early; never gates.
-  const riskWarning = buildHeuristicRiskWarning({
+  const riskWarning = planRiskWarning(scope);
+  if (riskWarning) response.proofGraphRiskWarning = riskWarning;
+  if (reviewFindings) response.latestReview = latestPlanReviewSummary(reviewFindings, planVersion);
+  return response;
+}
+
+/** #762: advisory only. Surfaces a foreseeable late block early; never gates. */
+function planRiskWarning(scope: PlanExecutionScope): ReturnType<typeof buildHeuristicRiskWarning> {
+  return buildHeuristicRiskWarning({
     targetPaths: scope.args.targetPaths,
     assessedTaskClass: assessMinimumTaskClass(scope.args.targetPaths ?? []).minimumTaskClass,
     criticalClaimCount: (scope.args.claims ?? []).filter((claim) => claim.critical).length,
   });
-  if (riskWarning) response.proofGraphRiskWarning = riskWarning;
-  if (reviewFindings) response.latestReview = latestPlanReviewSummary(reviewFindings, planVersion);
-  return response;
 }
 
 export function buildPlanReviewInstruction(input: {
