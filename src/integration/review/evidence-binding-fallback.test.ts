@@ -719,3 +719,80 @@ describe('binding outcomes use the injected host time', () => {
     expect(result.attempt?.completedAt).toBe(LATER);
   });
 });
+
+// ─── Superseded attempts ─────────────────────────────────────────────────────
+//
+// A retry stales the attempt it supersedes. If that older reviewer session then
+// calls back, its capture must be refused: otherwise one obligation could end up
+// with two evidence records, one per session.
+describe('a superseded attempt refuses a late callback', () => {
+  it('reports stale_attempt for a staled attempt', () => {
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
+    const obligation = pendingObligation();
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+      taskResultWithAttestation(obligation.obligationId),
+      LATER,
+    );
+
+    const superseded = [attemptFor(obligation, undefined, { status: 'stale' })];
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: superseded,
+    });
+
+    expect(result.bindOutcome).toBe('stale_attempt');
+    expect(result.evidence).toBeNull();
+  });
+
+  it('reports stale_attempt for an expired attempt', () => {
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
+    const obligation = pendingObligation();
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+      taskResultWithAttestation(obligation.obligationId),
+      LATER,
+    );
+
+    const expired = [attemptFor(obligation, undefined, { status: 'expired' })];
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: expired,
+    });
+
+    expect(result.bindOutcome).toBe('stale_attempt');
+    expect(result.evidence).toBeNull();
+  });
+
+  it('is idempotent rather than additive for an already bound attempt', () => {
+    // The same session calling back twice must not append a second record.
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
+    const obligation = pendingObligation();
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+      taskResultWithAttestation(obligation.obligationId),
+      LATER,
+    );
+
+    const bound = [attemptFor(obligation, undefined, { status: 'bound' })];
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: bound,
+    });
+
+    expect(result.bindOutcome).toBe('idempotent_bound');
+    expect(result.evidence).toBeNull();
+  });
+});

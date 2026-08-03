@@ -157,6 +157,13 @@ function reviewerOutput(childSessionId: string): string {
   });
 }
 
+/** Reviewer output without a verdict: not bindable, so the attempt is spent. */
+function unusableReviewerOutput(childSessionId: string): string {
+  const parsed = JSON.parse(reviewerOutput(childSessionId)) as Record<string, unknown>;
+  delete parsed.overallVerdict;
+  return JSON.stringify(parsed);
+}
+
 const reviewerArgs = {
   subagent_type: REVIEWER_SUBAGENT_TYPE,
   prompt: 'iteration=0, planVersion=1 - review this plan critically for the auth feature.',
@@ -308,5 +315,57 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
     expect(attempts).toHaveLength(1);
     expect(attempts[0]?.attemptId).toBe(ATTEMPT_ID);
     expect((state?.reviewAssurance?.invocations ?? []).length).toBeGreaterThan(0);
+  });
+
+  // ─── Organic sequence: invocation, rejection, retry, late callback ──────────
+
+  it('a late callback from the superseded session adds no second evidence record', async () => {
+    // Reaches the retry state organically instead of seeding it, then replays the
+    // FIRST reviewer session after it was superseded. The obligation must still
+    // carry exactly one evidence record.
+    const ws = await createTestWorkspace();
+    cleanupWs = ws.cleanup;
+    await execFileAsync('git', ['init'], { cwd: ws.tmpDir });
+    const sessionID = crypto.randomUUID();
+    const sessDir = await seedSession(ws.tmpDir, sessionID);
+
+    const hooks = await FlowGuardAuditPlugin(
+      createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+    );
+    const afterHook = hooks['tool.execute.after']!;
+
+    await afterHook(
+      { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
+      { title: 'flowguard_plan', output: planReviewRequiredOutput(), metadata: {} },
+    );
+
+    // 1. First reviewer returns an unusable capture: the attempt is spent.
+    await afterHook(
+      { tool: 'task', sessionID, callID: 'call-1', args: reviewerArgs },
+      { title: 'task', output: unusableReviewerOutput(CHILD_FIRST), metadata: {} },
+    );
+    const afterFirst = await readState(sessDir);
+    expect(afterFirst?.reviewAssurance?.invocations ?? []).toHaveLength(0);
+
+    // 2. Retry from a new session: re-arm, bind, evidence recorded.
+    await afterHook(
+      { tool: 'task', sessionID, callID: 'call-2', args: reviewerArgs },
+      { title: 'task', output: reviewerOutput(CHILD_RETRY), metadata: {} },
+    );
+    const afterRetry = await readState(sessDir);
+    expect(afterRetry?.reviewAssurance?.invocations ?? []).toHaveLength(1);
+
+    // 3. The superseded first session calls back late.
+    await afterHook(
+      { tool: 'task', sessionID, callID: 'call-late', args: reviewerArgs },
+      { title: 'task', output: reviewerOutput(CHILD_FIRST), metadata: {} },
+    );
+
+    const finalState = await readState(sessDir);
+    const forObligation = (finalState?.reviewAssurance?.invocations ?? []).filter(
+      (inv) => inv.obligationId === OBLIGATION_ID,
+    );
+    expect(forObligation, 'one obligation carries at most one evidence record').toHaveLength(1);
+    expect(forObligation[0]?.childSessionId).toBe(CHILD_RETRY);
   });
 });
