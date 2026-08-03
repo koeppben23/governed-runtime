@@ -21,6 +21,20 @@ const ATTEMPT_ID = '11111111-1111-4111-8111-111111111111';
 const CLAIM_ID = '22222222-2222-4222-8222-222222222222';
 const NOW = '2026-01-01T00:00:00.000Z';
 
+/**
+ * The plan's record digest. The approval certificate binds this exact value:
+ * `hasCurrentPlanApprovalCertificate` rejects a certificate whose
+ * `planRecordDigest` differs from the plan's, so the fixture must derive both
+ * from the same computation rather than using a placeholder literal.
+ */
+const PLAN_RECORD_DIGEST = computeRecordDigest({
+  contentDigest: PLAN_DIGEST,
+  planVersion: 1,
+  supersedesRecordDigest: null,
+  originatingReviewObligationId: null,
+  revisionReason: null,
+});
+
 function stateWithClaims() {
   const state = makeState('IMPL_REVIEW', {
     plan: {
@@ -29,13 +43,7 @@ function stateWithClaims() {
         digest: PLAN_DIGEST,
         sections: [],
         createdAt: NOW,
-        recordDigest: computeRecordDigest({
-          contentDigest: PLAN_DIGEST,
-          planVersion: 1,
-          supersedesRecordDigest: null,
-          originatingReviewObligationId: null,
-          revisionReason: null,
-        }),
+        recordDigest: PLAN_RECORD_DIGEST,
         planVersion: 1,
         supersedesRecordDigest: null,
         originatingReviewObligationId: null,
@@ -83,7 +91,7 @@ function stateWithClaims() {
         approvedBy: 'user',
         certificateId: '00000000-0000-4000-8000-000000000001',
         planVersion: 1,
-        planRecordDigest: 'record-digest',
+        planRecordDigest: PLAN_RECORD_DIGEST,
         reviewObligationId: null,
         reviewEvidenceDigest: null,
       },
