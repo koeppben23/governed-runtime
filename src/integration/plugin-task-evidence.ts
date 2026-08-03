@@ -71,7 +71,7 @@ export async function handleHostTaskEvidence(
 
     const eState = deps.ws.getEnforcementState(sessionId);
 
-    const attempts = state.reviewAssurance?.attempts;
+    const attempts = state.reviewAssurance?.attempts ?? [];
     const bindResult = buildHostTaskEvidence(
       eState,
       sessionId,

@@ -54,6 +54,7 @@ import {
   taskResultWithAttestation,
   pendingObligation,
   setupFullCycle,
+  attemptFor,
 } from '../plugin-host-task-diagnostics-helpers.js';
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -65,7 +66,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
 
   describe('HAPPY', () => {
     it('bound — returns evidence with diagnostic metadata when all fields match', () => {
-      const { state, obligation } = setupFullCycle();
+      const { state, obligation, attempts } = setupFullCycle();
 
       const result: HostTaskBindResult = buildHostTaskEvidence(
         state,
@@ -73,6 +74,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         [obligation],
         [],
         LATER,
+        attempts,
       );
 
       expect(result.evidence).not.toBeNull();
@@ -100,7 +102,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       // Mode A registered but no Task call made → subagentCalled=false
       onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [], [], LATER, []);
 
       expect(result.evidence).toBeNull();
       expect(result.bindOutcome).toBe('no_matched_record');
@@ -138,7 +140,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         LATER,
       );
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [], [], LATER, []);
 
       expect(result.evidence).toBeNull();
       expect(result.bindOutcome).toBe('no_child_session');
@@ -172,7 +174,8 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       );
 
       // BUG-20: With the fallback, this now BINDS successfully instead of failing
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const attempts = [attemptFor(obligation)];
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(result.evidence).not.toBeNull();
       expect(result.bindOutcome).toBe('bound');
@@ -181,9 +184,9 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
     });
 
     it('no_matching_obligation — attestedObligationId does not match any obligation', () => {
-      const { state } = setupFullCycle();
+      const { state, attempts } = setupFullCycle();
       // Pass an empty obligations array → no match via attestation path
-      const result = buildHostTaskEvidence(state, SESSION_ID, [], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [], [], LATER, attempts);
 
       expect(result.evidence).toBeNull();
       expect(result.bindOutcome).toBe('no_matching_obligation');
@@ -195,7 +198,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
 
     it('field_mismatch — iteration mismatch between findings and obligation', () => {
       // Setup cycle with iteration=0
-      const { state, obligation } = setupFullCycle({ iteration: 0, planVersion: 1 });
+      const { state, obligation, attempts } = setupFullCycle({ iteration: 0, planVersion: 1 });
 
       // Pass obligation with iteration=5 → mismatch
       const mismatchedObligation = pendingObligation({
@@ -204,7 +207,9 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         planVersion: 1,
       });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [mismatchedObligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [mismatchedObligation], [], LATER, [
+        attemptFor(mismatchedObligation, CHILD_SESSION_ID),
+      ]);
 
       expect(result.evidence).toBeNull();
       expect(result.bindOutcome).toBe('field_mismatch');
@@ -214,13 +219,13 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
     });
 
     it('duplicate_evidence — same childSessionId+findingsHash already exists', () => {
-      const { state, obligation } = setupFullCycle();
+      const { state, obligation, attempts } = setupFullCycle();
 
       // F8: buildHostTaskEvidence normalizes findings (host-authoritative
       // reviewedAt/reviewedBy + attestation consolidation) BEFORE hashing, so
       // the duplicate hash must be derived from the actually-bound evidence
       // rather than the raw reviewer findings.
-      const firstBind = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const firstBind = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
       expect(firstBind.bindOutcome).toBe('bound');
       const fHash = firstBind.evidence!.findingsHash;
 
@@ -244,6 +249,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         [obligation],
         [existingInvocation],
         LATER,
+        attempts,
       );
 
       expect(result.evidence).toBeNull();
@@ -283,7 +289,8 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         '2026-05-10T12:01:00.000Z',
       );
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const attempts = [attemptFor(obligation, 'ses_earlier')];
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       // Should use the latest completedAt record (implement tool)
       expect(result.bindOutcome).toBe('bound');
@@ -295,11 +302,11 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
     it('host-authoritative — confabulated mandateDigest binds, surfaced as divergence', () => {
       // Real reviewer behavior: the LLM was given the obligation UUID but not the
       // 64-hex mandateDigest, so it confabulated one. The obligation itself is correct.
-      const { state, obligation } = setupFullCycle({
+      const { state, obligation, attempts } = setupFullCycle({
         attestationMandateDigest: '2a768e45-aef2-4951-b5aa-f178c78afcab',
       });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       // Binds host-authoritatively instead of fatally rejecting on the echoed constant.
       expect(result.bindOutcome).toBe('bound');
@@ -313,11 +320,11 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
     });
 
     it('host-authoritative — confabulated criteriaVersion binds, surfaced as divergence', () => {
-      const { state, obligation } = setupFullCycle({
+      const { state, obligation, attempts } = setupFullCycle({
         attestationCriteriaVersion: 'plan-review-v1',
       });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(result.bindOutcome).toBe('bound');
       expect(result.diagnostic.hostConstantDivergence).toContain('criteriaVersion');
@@ -327,7 +334,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
 
     it('empty enforcement state — no_matched_record with zero counts', () => {
       const state = createSessionState();
-      const result = buildHostTaskEvidence(state, SESSION_ID, [], [], NOW);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [], [], NOW, []);
 
       expect(result.evidence).toBeNull();
       expect(result.bindOutcome).toBe('no_matched_record');
@@ -335,14 +342,16 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
     });
 
     it('obligation with status consumed is excluded from matching', () => {
-      const { state, obligation } = setupFullCycle();
+      const { state, obligation, attempts } = setupFullCycle();
       const consumed = pendingObligation({
         obligationId: obligation.obligationId,
         status: 'consumed',
         consumedAt: NOW,
       });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [consumed], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [consumed], [], LATER, [
+        attemptFor(consumed, CHILD_SESSION_ID),
+      ]);
 
       expect(result.evidence).toBeNull();
       expect(result.bindOutcome).toBe('no_matching_obligation');
@@ -353,8 +362,8 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
 
   describe('EDGE', () => {
     it('diagnostic object is JSON-serializable — no circular refs', () => {
-      const { state, obligation } = setupFullCycle();
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const { state, obligation, attempts } = setupFullCycle();
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       // Must not throw
       const serialized = JSON.stringify(result.diagnostic);
@@ -381,7 +390,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
     });
 
     it('field_mismatch reports all cycle-binding mismatches; host constants are not fatal', () => {
-      const { state, obligation } = setupFullCycle();
+      const { state, obligation, attempts } = setupFullCycle();
 
       // Mismatch iteration + planVersion (fatal) plus criteriaVersion (host constant).
       const mismatchedObligation = pendingObligation({
@@ -391,7 +400,9 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         criteriaVersion: 'wrong-criteria',
       });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [mismatchedObligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [mismatchedObligation], [], LATER, [
+        attemptFor(mismatchedObligation, CHILD_SESSION_ID),
+      ]);
 
       expect(result.bindOutcome).toBe('field_mismatch');
       const fields = result.diagnostic.mismatchFields as string[];
@@ -422,7 +433,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         },
       });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [], [], LATER, []);
 
       expect(result.evidence).toBeNull();
       expect(result.bindOutcome).toBe('no_obligation_type');
@@ -434,12 +445,12 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
 
   describe('SMOKE', () => {
     it('full bind lifecycle — create obligation, run cycle, get evidence', () => {
-      const { state, obligation } = setupFullCycle({
+      const { state, obligation, attempts } = setupFullCycle({
         iteration: 2,
         planVersion: 3,
       });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       // Bound with correct fields
       expect(result.bindOutcome).toBe('bound');
@@ -458,10 +469,10 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
 
   describe('E2E', () => {
     it('successive bind attempts: first succeeds, second is duplicate', () => {
-      const { state, obligation } = setupFullCycle();
+      const { state, obligation, attempts } = setupFullCycle();
 
       // First bind — should succeed
-      const first = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const first = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
       expect(first.bindOutcome).toBe('bound');
       expect(first.evidence).not.toBeNull();
 
@@ -472,6 +483,7 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         [obligation],
         [first.evidence!],
         LATER,
+        attempts,
       );
       expect(second.bindOutcome).toBe('duplicate_evidence');
       expect(second.evidence).toBeNull();
@@ -500,7 +512,8 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         LATER,
       );
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const attempts = [attemptFor(obligation)];
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(result.bindOutcome).toBe('bound');
       expect(result.evidence).not.toBeNull();
@@ -511,12 +524,12 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
       // Reproduces the real run: the reviewer copied the obligation UUID into
       // mandateDigest and invented criteriaVersion. Binding must succeed AND the
       // bound evidence must resolve cleanly through resolveHostTaskFindings.
-      const { state, obligation } = setupFullCycle({
+      const { state, obligation, attempts } = setupFullCycle({
         attestationMandateDigest: '2a768e45-aef2-4951-b5aa-f178c78afcab',
         attestationCriteriaVersion: 'plan-review-v1',
       });
 
-      const bind = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const bind = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
       expect(bind.bindOutcome).toBe('bound');
       expect(bind.diagnostic.hostConstantDivergence).toEqual(
         expect.arrayContaining(['mandateDigest', 'criteriaVersion']),
@@ -564,6 +577,11 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         toolObligationId: obligationId,
         mandateDigest: REVIEW_MANDATE_DIGEST,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
+        // ReviewAttestation requires the reviewed iteration/planVersion: the
+        // attestation states WHAT was reviewed, so omitting them makes the
+        // findings schema-invalid before binding.
+        iteration,
+        planVersion,
         reviewedBy: REVIEWER_SUBAGENT_TYPE,
       },
     });
@@ -619,7 +637,14 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       context,
     );
 
-    return { state, obligation, resolvedChildSessionId };
+    return {
+      state,
+      obligation,
+      resolvedChildSessionId,
+      // The invocation envelope production records before the reviewer runs,
+      // bound to whichever child session this tier actually resolved.
+      attempts: [attemptFor(obligation, resolvedChildSessionId ?? 'ses_embedded_001')],
+    };
   }
 
   // ─── HAPPY ─────────────────────────────────────────────────
@@ -630,9 +655,9 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         metadata: { sessionID: 'ses_meta_001' },
         callID: 'call-001',
       };
-      const { state, obligation } = setupCycleWithContext({ context: ctx });
+      const { state, obligation, attempts } = setupCycleWithContext({ context: ctx });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(result.bindOutcome).toBe('bound');
       expect(result.evidence).not.toBeNull();
@@ -645,9 +670,9 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         metadata: { unrelated: 'data' },
         callID: 'call-42',
       };
-      const { state, obligation } = setupCycleWithContext({ context: ctx });
+      const { state, obligation, attempts } = setupCycleWithContext({ context: ctx });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(result.bindOutcome).toBe('bound');
       expect(result.evidence).not.toBeNull();
@@ -658,9 +683,9 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       const ctx: TaskToolContext = {
         metadata: { sessionId: 'ses_camel_001' },
       };
-      const { state, obligation } = setupCycleWithContext({ context: ctx });
+      const { state, obligation, attempts } = setupCycleWithContext({ context: ctx });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(result.bindOutcome).toBe('bound');
       expect(result.evidence!.childSessionId).toBe('ses_camel_001');
@@ -672,12 +697,12 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
   describe('BAD', () => {
     it('no context, no embedded sessionId → no_child_session (original BUG-14 path)', () => {
       // No TaskToolContext at all — the pre-BUG-14 behavior
-      const { state, obligation } = setupCycleWithContext({
+      const { state, obligation, attempts } = setupCycleWithContext({
         context: undefined,
         includeEmbeddedSessionId: false,
       });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       // This is the original BUG-14 failure: no child session can be resolved
       expect(result.evidence).toBeNull();
@@ -686,12 +711,12 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
 
     it('empty metadata + no callID → no_child_session', () => {
       const ctx: TaskToolContext = { metadata: {}, callID: '' };
-      const { state, obligation } = setupCycleWithContext({
+      const { state, obligation, attempts } = setupCycleWithContext({
         context: ctx,
         includeEmbeddedSessionId: false,
       });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(result.evidence).toBeNull();
       expect(result.bindOutcome).toBe('no_child_session');
@@ -702,9 +727,9 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         metadata: { sessionID: '' },
         callID: 'call-fallback',
       };
-      const { state, obligation } = setupCycleWithContext({ context: ctx });
+      const { state, obligation, attempts } = setupCycleWithContext({ context: ctx });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       // Empty string is falsy, falls to Tier 3
       expect(result.bindOutcome).toBe('bound');
@@ -722,12 +747,12 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         metadata: { sessionID: 'ses_meta_override' },
         callID: 'call-override',
       };
-      const { state, obligation } = setupCycleWithContext({
+      const { state, obligation, attempts } = setupCycleWithContext({
         context: ctx,
         includeEmbeddedSessionId: true,
       });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(result.bindOutcome).toBe('bound');
       // Tier 1 wins — NOT the embedded 'ses_embedded_001'
@@ -752,7 +777,8 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         // No context — Tier 2 text extraction kicks in
       );
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const attempts = [attemptFor(obligation, 'ses_text_extracted')];
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(result.bindOutcome).toBe('bound');
       expect(result.evidence!.childSessionId).toBe('ses_text_extracted');
@@ -762,9 +788,9 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       const ctx: TaskToolContext = {
         metadata: { id: 'ses_generic_id' },
       };
-      const { state, obligation } = setupCycleWithContext({ context: ctx });
+      const { state, obligation, attempts } = setupCycleWithContext({ context: ctx });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(result.bindOutcome).toBe('bound');
       expect(result.evidence!.childSessionId).toBe('ses_generic_id');
@@ -774,11 +800,11 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       const ctx1: TaskToolContext = { callID: 'call-aaa' };
       const ctx2: TaskToolContext = { callID: 'call-bbb' };
 
-      const { state: s1, obligation: o1 } = setupCycleWithContext({ context: ctx1 });
-      const { state: s2, obligation: o2 } = setupCycleWithContext({ context: ctx2 });
+      const { state: s1, obligation: o1, attempts: a1 } = setupCycleWithContext({ context: ctx1 });
+      const { state: s2, obligation: o2, attempts: a2 } = setupCycleWithContext({ context: ctx2 });
 
-      const r1 = buildHostTaskEvidence(s1, SESSION_ID, [o1], [], LATER);
-      const r2 = buildHostTaskEvidence(s2, SESSION_ID, [o2], [], LATER);
+      const r1 = buildHostTaskEvidence(s1, SESSION_ID, [o1], [], LATER, a1);
+      const r2 = buildHostTaskEvidence(s2, SESSION_ID, [o2], [], LATER, a2);
 
       expect(r1.evidence!.childSessionId).toBe('derived:call:call-aaa');
       expect(r2.evidence!.childSessionId).toBe('derived:call:call-bbb');
@@ -794,15 +820,22 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         metadata: { sessionID: 'ses_hash_check' },
         callID: 'call-hash',
       };
-      const { state, obligation } = setupCycleWithContext({ context: ctx });
+      const { state, obligation, attempts } = setupCycleWithContext({ context: ctx });
 
-      const r1 = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const r1 = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(r1.bindOutcome).toBe('bound');
       expect(r1.diagnostic).toHaveProperty('findingsHash');
 
       // Second bind with same evidence → duplicate, confirming hash is stable
-      const r2 = buildHostTaskEvidence(state, SESSION_ID, [obligation], [r1.evidence!], LATER);
+      const r2 = buildHostTaskEvidence(
+        state,
+        SESSION_ID,
+        [obligation],
+        [r1.evidence!],
+        LATER,
+        attempts,
+      );
       expect(r2.bindOutcome).toBe('duplicate_evidence');
       expect(r2.diagnostic).toHaveProperty('findingsHash', r1.diagnostic.findingsHash);
     });
@@ -829,7 +862,8 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         ctx,
       );
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const attempts = [attemptFor(obligation)];
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       // Session ID is resolved via Tier 3 but output has no parseable findings
       // → binding depends on whether capturedFindings is non-null
@@ -842,9 +876,9 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         metadata: undefined,
         callID: 'call-no-meta',
       };
-      const { state, obligation } = setupCycleWithContext({ context: ctx });
+      const { state, obligation, attempts } = setupCycleWithContext({ context: ctx });
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(result.bindOutcome).toBe('bound');
       expect(result.evidence!.childSessionId).toBe('derived:call:call-no-meta');
@@ -888,7 +922,8 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
       );
 
       // Step 4: Build evidence
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const attempts = [attemptFor(obligation)];
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       // Step 5: Verify bound
       expect(result.bindOutcome).toBe('bound');
@@ -908,10 +943,10 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         metadata: { sessionID: 'ses_e2e_tier1' },
         callID: 'call-e2e-001',
       };
-      const { state, obligation } = setupCycleWithContext({ context: ctx });
+      const { state, obligation, attempts } = setupCycleWithContext({ context: ctx });
 
       // First bind succeeds
-      const first = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const first = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
       expect(first.bindOutcome).toBe('bound');
       expect(first.evidence!.childSessionId).toBe('ses_e2e_tier1');
 
@@ -922,6 +957,7 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         [obligation],
         [first.evidence!],
         LATER,
+        attempts,
       );
       expect(second.bindOutcome).toBe('duplicate_evidence');
       expect(second.evidence).toBeNull();
@@ -947,7 +983,8 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         { callID },
       );
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const attempts = [attemptFor(obligation)];
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(result.bindOutcome).toBe('bound');
       expect(result.evidence).not.toBeNull();
@@ -974,7 +1011,8 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         LATER,
       );
 
-      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+      const attempts = [attemptFor(obligation, 'ses_backward_compat')];
+      const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       expect(result.bindOutcome).toBe('bound');
       expect(result.evidence!.childSessionId).toBe('ses_backward_compat');
@@ -1042,7 +1080,17 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
 
     // Bind #1 succeeds — binding does NOT validate the ReviewFindings schema
     // (bind-before-validate), so the corrupt capture becomes a bound invocation.
-    const bindCorrupt = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    // Each reviewer run has its OWN invocation envelope, so the re-run below
+    // must present a second attempt bound to its new child session.
+    const attemptCorrupt = attemptFor(obligation, CHILD_CORRUPT);
+    const attemptValid = attemptFor(obligation, CHILD_VALID, {
+      attemptId: `${obligation.obligationId}-rerun`,
+      ordinal: 1,
+    });
+    const bindCorrupt = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, [
+      attemptCorrupt,
+      attemptValid,
+    ]);
     expect(bindCorrupt.bindOutcome).toBe('bound');
     expect(bindCorrupt.evidence).not.toBeNull();
     expect(bindCorrupt.evidence!.childSessionId).toBe(CHILD_CORRUPT);
@@ -1070,7 +1118,10 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     // Bind #2 — the re-arm overwrote the corrupt capture with the valid one, so
     // this binds fresh evidence. New child session + new findings hash → NOT a
     // duplicate_evidence (this is precisely the deadlock that is now fixed).
-    const bindValid = buildHostTaskEvidence(state, SESSION_ID, [obligation], invocations, LATER);
+    const bindValid = buildHostTaskEvidence(state, SESSION_ID, [obligation], invocations, LATER, [
+      attemptCorrupt,
+      attemptValid,
+    ]);
     expect(bindValid.bindOutcome).toBe('bound');
     expect(bindValid.evidence).not.toBeNull();
     expect(bindValid.evidence!.childSessionId).toBe(CHILD_VALID);
@@ -1138,7 +1189,16 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     // Bind #1 → no_matched_record: the record is subagentCalled=true but has no
     // usable capturedFindings, so it is excluded from matched[]. This is the exact
     // live-log diagnostic (pendingCount:1, calledCount:1).
-    const bindFirst = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    // Run #2 below re-invokes with a new child session, so both envelopes exist.
+    const attemptsSequential = [attemptFor(obligation, CHILD_VALID)];
+    const bindFirst = buildHostTaskEvidence(
+      state,
+      SESSION_ID,
+      [obligation],
+      [],
+      LATER,
+      attemptsSequential,
+    );
     expect(bindFirst.evidence).toBeNull();
     expect(bindFirst.bindOutcome).toBe('no_matched_record');
     expect(bindFirst.diagnostic).toHaveProperty('pendingCount', 1);
@@ -1153,7 +1213,14 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     );
 
     // Bind #2 → bound: the re-arm replaced the empty capture with a usable one.
-    const bindSecond = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const bindSecond = buildHostTaskEvidence(
+      state,
+      SESSION_ID,
+      [obligation],
+      [],
+      LATER,
+      attemptsSequential,
+    );
     expect(bindSecond.bindOutcome).toBe('bound');
     expect(bindSecond.evidence).not.toBeNull();
     expect(bindSecond.evidence!.childSessionId).toBe(CHILD_VALID);

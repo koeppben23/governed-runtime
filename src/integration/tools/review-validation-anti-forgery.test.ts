@@ -971,6 +971,7 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       assurance.obligations,
       assurance.invocations,
       now,
+      [],
     );
 
     expect(bindResult.evidence).not.toBeNull();

@@ -30,6 +30,7 @@ import {
   modeAResponse,
   validPrompt,
   pendingObligation,
+  attemptFor,
 } from '../plugin-host-task-diagnostics-helpers.js';
 
 const CONFABULATED_AT = '2026-01-01T00:00:00.000Z';
@@ -88,13 +89,13 @@ function setupConfabulatedCycle() {
     LATER,
     { metadata: { sessionID: CHILD_SESSION_ID }, callID: 'call_provenance_001' },
   );
-  return { state, obligation };
+  return { state, obligation, attempts: [attemptFor(obligation, CHILD_SESSION_ID)] };
 }
 
 describe('F8: host-authoritative reviewer provenance', () => {
   it('overwrites confabulated reviewedAt with the host invocation timestamp', () => {
-    const { state, obligation } = setupConfabulatedCycle();
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const { state, obligation, attempts } = setupConfabulatedCycle();
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
     expect(result.bindOutcome).toBe('bound');
     const raw = result.evidence?.capturedRawFindings as Record<string, unknown>;
@@ -103,15 +104,15 @@ describe('F8: host-authoritative reviewer provenance', () => {
   });
 
   it('preserves the confabulated reviewedAt as untrusted reviewerClaimedAt', () => {
-    const { state, obligation } = setupConfabulatedCycle();
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const { state, obligation, attempts } = setupConfabulatedCycle();
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
     const raw = result.evidence?.capturedRawFindings as Record<string, unknown>;
     expect(raw.reviewerClaimedAt).toBe(CONFABULATED_AT);
   });
 
   it('overwrites the guessed reviewedBy.sessionId with the resolved child session id', () => {
-    const { state, obligation } = setupConfabulatedCycle();
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const { state, obligation, attempts } = setupConfabulatedCycle();
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
     const raw = result.evidence?.capturedRawFindings as Record<string, unknown>;
     const reviewedBy = raw.reviewedBy as Record<string, unknown>;
     expect(reviewedBy.sessionId).toBe(CHILD_SESSION_ID);
@@ -119,8 +120,8 @@ describe('F8: host-authoritative reviewer provenance', () => {
   });
 
   it('builds the ENTIRE reviewedBy block host-authoritatively — no model fields leak through', () => {
-    const { state, obligation } = setupConfabulatedCycle();
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const { state, obligation, attempts } = setupConfabulatedCycle();
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
     const raw = result.evidence?.capturedRawFindings as Record<string, unknown>;
     const reviewedBy = raw.reviewedBy as Record<string, unknown>;
     // The confabulated actorId/actorSource/actorAssurance MUST NOT survive.
@@ -136,8 +137,8 @@ describe('F8: host-authoritative reviewer provenance', () => {
   });
 
   it('preserves the complete guessed reviewedBy as untrusted reviewerClaimedBy', () => {
-    const { state, obligation } = setupConfabulatedCycle();
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const { state, obligation, attempts } = setupConfabulatedCycle();
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
     const raw = result.evidence?.capturedRawFindings as Record<string, unknown>;
     const claimedBy = raw.reviewerClaimedBy as Record<string, unknown>;
     expect(claimedBy).toEqual({
@@ -189,7 +190,8 @@ describe('F8: host-authoritative reviewer provenance', () => {
       LATER,
       { metadata: { sessionID: CHILD_SESSION_ID }, callID: 'call_provenance_003' },
     );
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const attempts = [attemptFor(obligation)];
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
     const raw = result.evidence?.capturedRawFindings as Record<string, unknown>;
     const reviewedBy = raw.reviewedBy as Record<string, unknown>;
     expect(reviewedBy.actorSource).toBe('unknown');
@@ -204,8 +206,8 @@ describe('F8: host-authoritative reviewer provenance', () => {
   });
 
   it('produces capturedRawFindings that still satisfy the Zod ReviewFindings schema', () => {
-    const { state, obligation } = setupConfabulatedCycle();
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const { state, obligation, attempts } = setupConfabulatedCycle();
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
     const raw = result.evidence?.capturedRawFindings;
     const parsed = ReviewFindings.safeParse(raw);
     expect(parsed.success).toBe(true);
@@ -245,7 +247,8 @@ describe('F8: host-authoritative reviewer provenance', () => {
       LATER,
       { metadata: { sessionID: CHILD_SESSION_ID }, callID: 'call_provenance_002' },
     );
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER);
+    const attempts = [attemptFor(obligation)];
+    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
     const raw = result.evidence?.capturedRawFindings as Record<string, unknown>;
     expect(raw.reviewedAt).toBe(LATER);
     // Time matches the host binding time → no divergent claimed time to record.

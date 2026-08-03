@@ -21,7 +21,10 @@ import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../tool-names.js'
 import { obligationTypeForTool } from './obligation-tools.js';
 import { buildInvocationEvidence, hashFindings, hashText } from './assurance.js';
 import { getBranchProvenanceFields } from './review-provenance.js';
-import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence-review.js';
+import {
+  ReviewActorInfo,
+  ReviewFindings as ReviewFindingsSchema,
+} from '../../state/evidence-review.js';
 
 /**
  * Build host-subagent-task invocation evidence from enforcement state and persisted obligations.
@@ -35,6 +38,10 @@ import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence-rev
  * @param obligations - Persisted review obligations from session state
  * @param invocations - Persisted invocation evidence from session state
  * @param now - ISO 8601 timestamp
+ * @param attempts - Recorded invocation attempts. REQUIRED: the attempt is the
+ *   primary binding authority, so callers must be explicit about which
+ *   invocation envelopes exist. Passing an empty array means "no invocation was
+ *   ever recorded", which correctly yields `unknown_attempt`.
  * @returns HostTaskBindResult with evidence (or null) plus diagnostic metadata
  */
 export function buildHostTaskEvidence(
@@ -43,7 +50,7 @@ export function buildHostTaskEvidence(
   obligations: ReviewObligation[],
   invocations: ReviewInvocationEvidence[],
   now: string,
-  attempts?: ReviewAttempt[],
+  attempts: readonly ReviewAttempt[],
 ): HostTaskBindResult & { attempt?: ReviewAttempt } {
   const latestResult = latestBindableReviewRecord(state);
   if ('bindOutcome' in latestResult) return latestResult;
@@ -53,7 +60,7 @@ export function buildHostTaskEvidence(
 
   // Attempt is the primary binding authority — resolve it FIRST by childSessionId.
   // The obligation is then loaded from the attempt, not matched heuristically.
-  const resolvedAttempt = resolveAttemptBySession(attempts ?? [], childSessionId);
+  const resolvedAttempt = resolveAttemptBySession(attempts, childSessionId);
   if ('bindOutcome' in resolvedAttempt) return resolvedAttempt;
   const attempt = resolvedAttempt.attempt;
 
@@ -272,7 +279,7 @@ function noFindings(tool: string, childSessionId: string): HostTaskBindResult {
 }
 
 function resolveAttemptBySession(
-  existingAttempts: ReviewAttempt[],
+  existingAttempts: readonly ReviewAttempt[],
   childSessionId: string,
 ): { attempt: ReviewAttempt } | HostTaskBindResult {
   const existing = existingAttempts.find((a) => a.childSessionId === childSessionId);
@@ -468,8 +475,18 @@ function applyHostProvenance(
   // Preserve the complete original model block whenever one was supplied — not
   // only when the claimed sessionId diverges. actorId/actorSource/actorAssurance
   // can be confabulated even when the sessionId happens to match.
+  //
+  // `reviewerClaimedBy` is diagnostics-only and never audit authority, so it must
+  // never be able to fail the bind: a reviewer that emits a malformed block (for
+  // example `reviewedBy: {}`) would otherwise make the whole invocation
+  // schema_invalid even though the host-authoritative `reviewedBy` below is
+  // correct. Retain it only when it actually satisfies the actor shape.
   if (claimedBy && typeof claimedBy === 'object' && !Array.isArray(claimedBy)) {
-    result.reviewerClaimedBy = claimedBy;
+    if (ReviewActorInfo.safeParse(claimedBy).success) {
+      result.reviewerClaimedBy = claimedBy;
+    } else {
+      delete result.reviewerClaimedBy;
+    }
   }
   result.reviewedBy = buildHostReviewedBy(childSessionId);
 

@@ -14,7 +14,7 @@ import {
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './review/assurance.js';
-import type { ReviewObligation } from '../state/evidence.js';
+import type { ReviewAttempt, ReviewObligation } from '../state/evidence.js';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -111,8 +111,34 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
 }
 
 /**
+ * Build the invocation attempt that production records BEFORE the reviewer
+ * subagent runs, already bound to its child session.
+ *
+ * Binding resolves a callback against this envelope, so a test that exercises a
+ * successful bind must provide it exactly as `createObligationAndAttempt` plus
+ * the Task-start child-session binding would have produced it.
+ */
+export function attemptFor(
+  obligation: ReviewObligation,
+  childSessionId: string = CHILD_SESSION_ID,
+  overrides: Partial<ReviewAttempt> = {},
+): ReviewAttempt {
+  return {
+    attemptId: `att-${obligation.obligationId}`,
+    obligationId: obligation.obligationId,
+    obligationType: obligation.obligationType,
+    subjectDigest: obligation.subjectDigest ?? 'diagnostics-test-subject',
+    ordinal: 0,
+    childSessionId,
+    status: 'created',
+    createdAt: NOW,
+    ...overrides,
+  };
+}
+
+/**
  * Set up a full enforcement cycle: Mode A → Task call → enforcement state ready.
- * Returns the obligation and the enforcement state.
+ * Returns the obligation, the enforcement state, and the recorded attempts.
  */
 export function setupFullCycle(
   opts: {
@@ -166,5 +192,5 @@ export function setupFullCycle(
     LATER,
   );
 
-  return { state, obligation };
+  return { state, obligation, attempts: [attemptFor(obligation, childSessionId)] };
 }
