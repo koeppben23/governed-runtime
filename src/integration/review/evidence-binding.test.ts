@@ -289,7 +289,13 @@ describe('buildHostTaskEvidence — HostTaskBindResult diagnostics (F5)', () => 
         '2026-05-10T12:01:00.000Z',
       );
 
-      const attempts = [attemptFor(obligation, 'ses_earlier')];
+      const attempts = [
+        attemptFor(obligation, 'ses_earlier'),
+        attemptFor(obligation, 'ses_latest', {
+          attemptId: `${obligation.obligationId}-latest`,
+          ordinal: 1,
+        }),
+      ];
       const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       // Should use the latest completedAt record (implement tool)
@@ -921,8 +927,8 @@ describe('buildHostTaskEvidence — tiered session ID resolution (BUG-14)', () =
         { metadata, callID },
       );
 
-      // Step 4: Build evidence
-      const attempts = [attemptFor(obligation)];
+      // Step 4: Build evidence — the envelope is bound to the resolved session
+      const attempts = [attemptFor(obligation, resolved!)];
       const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
 
       // Step 5: Verify bound

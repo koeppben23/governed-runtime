@@ -79,6 +79,24 @@ export function buildHostTaskEvidence(
     };
   }
 
+  // A consumed obligation has already been decided; attaching further evidence
+  // to it would let a late or repeated callback reopen a closed review. The
+  // previous obligation-matching pass excluded consumed obligations, and moving
+  // to attempt-first resolution must not silently drop that invariant.
+  if (obligatedObligation.status === 'consumed') {
+    return {
+      evidence: null,
+      bindOutcome: 'no_matching_obligation',
+      diagnostic: {
+        attemptId: attempt.attemptId,
+        obligationId: obligatedObligation.obligationId,
+        obligationStatus: obligatedObligation.status,
+        message: 'Attempt references an obligation that was already consumed.',
+      },
+      attempt: { ...attempt, status: 'rejected' as const, completedAt: now },
+    };
+  }
+
   // Cross-check: the obliged obligation type must be consistent with the tool
   // that triggered this review. An attempt for a 'plan' obligation cannot bind
   // evidence from an 'implementation' tool invocation.
