@@ -147,6 +147,7 @@ function pluginHandshakeAssurance(
   obligationType: (typeof ALL_OBLIGATION_TYPES)[number],
 ): ReviewAssuranceState {
   return {
+    attempts: [],
     obligations: [
       {
         obligationId: OBLIGATION_ID,
@@ -397,6 +398,7 @@ describe('assurance lifecycle persistence across hosts', () => {
               : o,
           ),
           invocations: assurance.invocations,
+          attempts: [],
         };
         assurance = appendInvocationEvidence(assurance, invocationP);
         assurance = consumeReviewObligation(assurance, obligationP, NOW, INVOCATION_ID_PLAN);
@@ -445,6 +447,7 @@ describe('assurance lifecycle persistence across hosts', () => {
               : o,
           ),
           invocations: implAssurance.invocations,
+          attempts: [],
         };
         implAssurance = appendInvocationEvidence(implAssurance, invocationI);
         implAssurance = consumeReviewObligation(
@@ -512,6 +515,7 @@ describe('assurance lifecycle persistence across hosts', () => {
               : o,
           ),
           invocations: archAssurance.invocations,
+          attempts: [],
         };
         archAssurance = appendInvocationEvidence(archAssurance, invocationA);
         archAssurance = consumeReviewObligation(

@@ -94,6 +94,7 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
       ],
       // NO invocations → no host evidence → buildHostTaskPolicyOutput(null) path
       invocations: [],
+      attempts: [],
     },
     ...overrides,
   });

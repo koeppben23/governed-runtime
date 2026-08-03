@@ -120,6 +120,7 @@ async function seedStrictPlanSession(worktree: string, sessionID: string) {
           },
         ],
         invocations: [],
+        attempts: [],
       },
     }),
   );

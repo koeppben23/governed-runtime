@@ -87,6 +87,7 @@ function buildState(strictEnforcement: boolean): SessionState {
         },
       ],
       invocations: [],
+      attempts: [],
     },
   });
 }
@@ -123,6 +124,7 @@ function buildAlreadyBlockedState(): SessionState {
         },
       ],
       invocations: [],
+      attempts: [],
     },
   });
 }
@@ -443,6 +445,7 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
             },
           ],
           invocations: [],
+          attempts: [],
         },
       });
       const stateRef = { current: state };

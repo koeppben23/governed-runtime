@@ -328,7 +328,7 @@ export async function fulfillStrictReviewObligation(
   const state = await readState(sessDir);
   if (!state) throw new Error('No test session state found');
 
-  const assurance = state.reviewAssurance ?? { obligations: [], invocations: [] };
+  const assurance = state.reviewAssurance ?? { obligations: [], invocations: [], attempts: [] };
   const obligation = findLatestObligation(
     assurance.obligations,
     input.obligationType,
@@ -445,6 +445,7 @@ export async function fulfillStrictReviewObligation(
           : item,
       ),
       invocations: [...assurance.invocations, invocation],
+      attempts: assurance.attempts,
     },
   });
 

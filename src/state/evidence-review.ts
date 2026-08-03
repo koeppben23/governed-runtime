@@ -401,6 +401,11 @@ export const ReviewObligation = z.object({
    * frozen at obligation creation. This is the host-authoritative identity of
    * what must be reviewed — never supplied by or echoed from the reviewer.
    * Used at binding time to prevent cross-artifact evidence attachment.
+   *
+   * NOTE: `ReviewAttempt.subjectDigest` is REQUIRED and binding compares the two
+   * for equality, so an obligation without a subject digest can never bind. This
+   * field should become required as well; that is a separate change because it
+   * touches ~37 fixtures across the review suites.
    */
   subjectDigest: z.string().min(1).optional(),
   /**
@@ -494,12 +499,20 @@ export const ReviewInvocationEvidence = z
   .readonly();
 export type ReviewInvocationEvidence = z.infer<typeof ReviewInvocationEvidence>;
 
-/** Persistent strict review assurance state. */
+/**
+ * Persistent strict review assurance state.
+ *
+ * `attempts` is REQUIRED, not optional. Binding resolves a callback against a
+ * pre-recorded invocation attempt, so an assurance state without an attempts
+ * array would make every obligation permanently unbindable while looking valid.
+ * Requiring the array makes that state unrepresentable and fails fast at the
+ * schema boundary instead of silently at binding time.
+ */
 export const ReviewAssuranceState = z
   .object({
     obligations: z.array(ReviewObligation),
     invocations: z.array(ReviewInvocationEvidence),
-    attempts: z.array(ReviewAttempt).optional(),
+    attempts: z.array(ReviewAttempt),
   })
   .readonly();
 export type ReviewAssuranceState = z.infer<typeof ReviewAssuranceState>;

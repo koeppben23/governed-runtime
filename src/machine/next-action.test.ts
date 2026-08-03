@@ -241,7 +241,7 @@ describe('resolveNextAction', () => {
         subjectDigest: 'test',
       });
       const state = makeState('READY', {
-        reviewAssurance: { obligations: [obligation], invocations: [] },
+        reviewAssurance: { obligations: [obligation], invocations: [], attempts: [] },
       });
       const action = resolveNextAction('READY', state);
       expectAction(action, ACTION_CODES.RUN_REVIEWER_TASK, []);

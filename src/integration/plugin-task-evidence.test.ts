@@ -67,6 +67,7 @@ function makeStateInfo(policyMode: string = 'host_task_required'): SessionState 
     reviewAssurance: {
       obligations: [],
       invocations: [],
+      attempts: [],
     },
   }) as SessionState;
 }
@@ -76,6 +77,7 @@ function mockWs(overrides: Partial<PluginWorkspace> = {}): PluginWorkspace {
     getSessionDir: vi.fn().mockReturnValue('/tmp/sess'),
     getEnforcementState: vi.fn().mockReturnValue({
       invocations: [],
+      attempts: [],
       lastDecisionId: null,
       sessionId: SESSION_ID,
     }),
@@ -113,10 +115,12 @@ beforeEach(() => {
   mockEnsureReviewAssurance.mockReturnValue({
     obligations: [],
     invocations: [],
+    attempts: [],
   });
   mockAppendInvocationEvidence.mockReturnValue({
     obligations: [],
     invocations: [{}],
+    attempts: [],
   });
   mockStrictBlockedOutput.mockImplementation(
     (code, detail) => `BLOCKED: ${code} (${JSON.stringify(detail)})`,

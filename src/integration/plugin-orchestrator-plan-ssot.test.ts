@@ -108,6 +108,7 @@ function buildState(overrides: Partial<SessionState> = {}): SessionState {
         },
       ],
       invocations: [],
+      attempts: [],
     },
     ...overrides,
   });

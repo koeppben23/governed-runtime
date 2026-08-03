@@ -246,6 +246,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
         selfReview: { subagentEnabled: true, fallbackToSelf: false, strictEnforcement: false },
       },
       reviewAssurance: {
+        attempts: [],
         obligations: [
           {
             obligationId: OBLIGATION_ID,
@@ -331,6 +332,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
           },
         ],
         invocations: [],
+        attempts: [],
       },
     });
   }

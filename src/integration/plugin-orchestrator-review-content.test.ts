@@ -161,6 +161,7 @@ function buildSessionState(
         },
       ],
       invocations: seedInvocations,
+      attempts: [],
     },
   });
 }

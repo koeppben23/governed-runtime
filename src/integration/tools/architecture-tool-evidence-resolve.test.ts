@@ -226,6 +226,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          attempts: [],
           obligations: [
             {
               obligationId: OBLIGATION_ID,
@@ -306,6 +307,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          attempts: [],
           obligations: [
             {
               obligationId: OBLIGATION_ID,
@@ -398,6 +400,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          attempts: [],
           obligations: [
             {
               obligationId: OBLIGATION_ID,
@@ -526,6 +529,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
         reviewAssurance: {
           obligations: [],
           invocations: [],
+          attempts: [],
         },
       });
       mocks.state = stateNoEvidence;

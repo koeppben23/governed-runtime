@@ -106,7 +106,7 @@ describe('integration/review-assurance', () => {
 
   describe('ensureReviewAssurance', () => {
     it('returns the given assurance when defined', () => {
-      const existing = { obligations: [makeObligation()], invocations: [] };
+      const existing = { obligations: [makeObligation()], invocations: [], attempts: [] };
       expect(ensureReviewAssurance(existing)).toBe(existing);
     });
 
@@ -286,7 +286,7 @@ describe('integration/review-assurance', () => {
       const invocation = makeInvocation();
       const obligation = makeObligation();
       const result = appendReviewObligation(
-        { obligations: [], invocations: [invocation] },
+        { obligations: [], invocations: [invocation], attempts: [] },
         obligation,
       );
 
@@ -408,7 +408,7 @@ describe('integration/review-assurance', () => {
         invocationId: '00000000-0000-4000-8000-000000000002',
       };
       const result = consumeReviewObligation(
-        { obligations: [obligation], invocations: [invocation] },
+        { obligations: [obligation], invocations: [invocation], attempts: [] },
         obligation,
         NOW,
       );
@@ -419,7 +419,7 @@ describe('integration/review-assurance', () => {
     });
 
     it('returns the same assurance when obligation is null', () => {
-      const assurance = { obligations: [makeObligation()], invocations: [] };
+      const assurance = { obligations: [makeObligation()], invocations: [], attempts: [] };
       expect(consumeReviewObligation(assurance, null, NOW)).toBe(assurance);
     });
 
@@ -445,6 +445,7 @@ describe('integration/review-assurance', () => {
       const assurance = {
         obligations: [obligation],
         invocations: [rejectedInvocation, acceptedInvocation],
+        attempts: [],
       };
 
       const accepted = findAcceptedInvocationForFindings(assurance, obligation, findings);
@@ -481,6 +482,7 @@ describe('integration/review-assurance', () => {
       const assurance = {
         obligations: [fulfilledObligation],
         invocations: [duplicateInvocation, boundInvocation],
+        attempts: [],
       };
 
       const accepted = findAcceptedInvocationForFindings(assurance, fulfilledObligation, findings);

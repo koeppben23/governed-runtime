@@ -147,6 +147,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
           },
         ],
         invocations: [],
+        attempts: [],
       }),
       bindResult.evidence!,
     );
@@ -228,6 +229,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
           },
         ],
         invocations: [],
+        attempts: [],
       }),
       bindResult.evidence!,
     );
@@ -301,6 +303,7 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
           },
         ],
         invocations: [],
+        attempts: [],
       }),
       bindResult.evidence!,
     );
@@ -385,6 +388,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
           },
         ],
         invocations: [],
+        attempts: [],
       }),
       bindResult.evidence!,
     );
@@ -435,6 +439,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
           },
         ],
         invocations: [],
+        attempts: [],
       }),
       bindResult.evidence!,
     );
@@ -473,6 +478,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
         },
       ],
       invocations: [],
+      attempts: [],
     });
     const resolved = resolveHostTaskFindings(assurance, obligation);
     expect(resolved.kind).toBe('not_found');
@@ -507,6 +513,7 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
           },
         ],
         invocations: [],
+        attempts: [],
       }),
       bindResult.evidence!,
     );

@@ -37,6 +37,7 @@ describe('getReviewLoopProgress', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          attempts: [],
           obligations: [],
           invocations: [
             {
@@ -239,6 +240,7 @@ describe('getReviewLoopProgress', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          attempts: [],
           obligations: [],
           invocations: [
             {
@@ -283,6 +285,7 @@ describe('getReviewLoopProgress', () => {
           verdict: 'changes_requested',
         },
         reviewAssurance: {
+          attempts: [],
           obligations: [],
           invocations: [
             {

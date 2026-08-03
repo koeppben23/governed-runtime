@@ -286,6 +286,7 @@ function planStateWithEvidence(
       verdict: 'changes_requested',
     },
     reviewAssurance: {
+      attempts: [],
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -476,6 +477,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
       reviewAssurance: {
         obligations: [],
         invocations: [],
+        attempts: [],
       },
     });
     mocks.state = stateNoEvidence;
@@ -703,6 +705,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
           },
         ],
         invocations: [manualAttestedInvocation({ obligationType: 'plan', findings })],
+        attempts: [],
       },
     });
     mocks.requireStateForMutation.mockResolvedValue(mocks.state);

@@ -489,6 +489,7 @@ function buildReviewedPlanState(
     reviewAssurance: {
       obligations: consumedAssurance.obligations,
       invocations: consumedAssurance.invocations,
+      attempts: consumedAssurance.attempts,
     },
     error: null,
   };

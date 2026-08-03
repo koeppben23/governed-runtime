@@ -66,6 +66,7 @@ function strictAssuranceFixture(
   findings: ReviewFindings = strictFindings(),
 ): NonNullable<ReviewFindingsValidationContext['assurance']> {
   return {
+    attempts: [],
     obligations: [
       {
         obligationId: '11111111-1111-4111-8111-111111111111',
@@ -639,7 +640,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
   ): ReviewFindingsValidationContext {
     return makeCtx({
       obligationType: 'implement',
-      assurance: { obligations: [implObligation()], invocations: [] },
+      assurance: { obligations: [implObligation()], invocations: [], attempts: [] },
       allowedEvidenceRefs: [IMPL_REF, FRESH_ATTEMPT_REF],
       expectedObligationId: OBLIGATION_ID,
       ...overrides,

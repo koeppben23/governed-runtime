@@ -492,6 +492,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
           },
         ],
         invocations: [],
+        attempts: [],
       }),
       bindResult.evidence!,
     );
@@ -558,7 +559,7 @@ describe('BUG-20: attestation-free fallback binding', () => {
 
     // Step 4: Resolve findings from evidence (what plan.ts:380 does)
     const assurance = appendInvocationEvidence(
-      ensureReviewAssurance({ obligations: [obligation], invocations: [] }),
+      ensureReviewAssurance({ obligations: [obligation], invocations: [], attempts: [] }),
       bindResult.evidence!,
     );
     const resolved = resolveHostTaskFindings(assurance, obligation);

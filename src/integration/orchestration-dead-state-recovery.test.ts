@@ -163,6 +163,7 @@ async function setupPlanDeadState(blockedCount = 1): Promise<void> {
     reviewAssurance: {
       obligations: blockedObligations,
       invocations: state.reviewAssurance?.invocations ?? [],
+      attempts: [],
     },
   };
 
@@ -214,6 +215,7 @@ async function setupImplementDeadState(blockedCount = 1): Promise<void> {
     reviewAssurance: {
       obligations: blockedObligations,
       invocations: [],
+      attempts: [],
     },
   };
 
@@ -255,6 +257,7 @@ async function setupArchitectureDeadState(blockedCount = 1): Promise<void> {
     reviewAssurance: {
       obligations: blockedObligations,
       invocations: [],
+      attempts: [],
     },
   };
 
@@ -467,6 +470,7 @@ describe('architecture — dead-state recovery (Fix 2c)', () => {
         reviewAssurance: {
           obligations: [makePendingObligation('architecture', 0, 1)],
           invocations: [],
+          attempts: [],
         },
       };
       await writeState(sessDir, updatedState);

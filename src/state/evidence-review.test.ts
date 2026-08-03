@@ -250,8 +250,14 @@ describe('evidence-review', () => {
     });
 
     it('ReviewAssuranceState parses valid assurance state', () => {
-      const state = { obligations: [], invocations: [] };
+      const state = { obligations: [], invocations: [], attempts: [] };
       expect(ReviewAssuranceState.parse(state)).toEqual(state);
+    });
+
+    it('ReviewAssuranceState rejects an assurance state without attempts', () => {
+      // attempts is the invocation envelope binding depends on: an assurance
+      // state without it would look valid while being permanently unbindable.
+      expect(() => ReviewAssuranceState.parse({ obligations: [], invocations: [] })).toThrow();
     });
   });
 

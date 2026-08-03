@@ -76,6 +76,7 @@ function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings
 }
 
 type ReviewAssuranceFixture = {
+  attempts: [];
   obligations: ReviewObligation[];
   invocations: ReviewInvocationEvidence[];
 };
@@ -84,6 +85,7 @@ function strictAssuranceFixture(
   findings: ReviewFindings = strictFindings(),
 ): ReviewAssuranceFixture {
   return {
+    attempts: [],
     obligations: [
       {
         obligationId: '11111111-1111-4111-8111-111111111111',

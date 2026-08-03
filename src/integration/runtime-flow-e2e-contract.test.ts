@@ -191,6 +191,7 @@ async function inject(
         o.obligationId === obl.obligationId ? newObl : o,
       ),
       invocations: [...state.reviewAssurance!.invocations, inv],
+      attempts: [],
     },
     reviewDecision: {
       verdict: 'approve',

@@ -1051,7 +1051,7 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     // Verdict resolution #1 → UNPARSEABLE (majorRisks missing). This is the
     // state that used to strand the obligation forever.
     const resolveCorrupt = resolveHostTaskFindings(
-      { obligations: [obligation], invocations },
+      { obligations: [obligation], invocations, attempts: [] },
       obligation,
     );
     expect(resolveCorrupt.kind).toBe('unparseable');
@@ -1079,7 +1079,7 @@ describe('host-task deadlock recovery (structural re-arm, end-to-end)', () => {
     // Verdict resolution #2 → RESOLVED. The resolver iterates all invocations,
     // skips the still-unparseable corrupt one, and returns the valid re-capture.
     const resolveValid = resolveHostTaskFindings(
-      { obligations: [obligation], invocations },
+      { obligations: [obligation], invocations, attempts: [] },
       obligation,
     );
     expect(resolveValid.kind).toBe('resolved');

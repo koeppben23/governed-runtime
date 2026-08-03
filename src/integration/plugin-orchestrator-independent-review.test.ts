@@ -163,6 +163,7 @@ function buildState(
         },
       ],
       invocations: [],
+      attempts: [],
     },
   });
 }

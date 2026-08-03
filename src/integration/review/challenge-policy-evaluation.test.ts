@@ -169,7 +169,7 @@ async function resolveCapturedFixture(
     capturedRawFindings: findings,
   });
   const result = resolveHostTaskFindings(
-    { obligations: [obligation], invocations: [invocation] },
+    { obligations: [obligation], invocations: [invocation], attempts: [] },
     obligation,
   );
   return { blocked: result.kind !== 'resolved', reviewerLatencyMs };
@@ -227,7 +227,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
   });
   expect(
     resolveHostTaskFindings(
-      { obligations: [firstObligation], invocations: [firstInvocation] },
+      { obligations: [firstObligation], invocations: [firstInvocation], attempts: [] },
       firstObligation,
     ).kind,
   ).toBe('resolved');
@@ -242,7 +242,11 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
         executedAt: '2026-07-26T00:00:00.000Z',
       },
       implReviewFindings: [firstFindings],
-      reviewAssurance: { obligations: [firstObligation], invocations: [firstInvocation] },
+      reviewAssurance: {
+        obligations: [firstObligation],
+        invocations: [firstInvocation],
+        attempts: [],
+      },
       validationAttempts: [
         {
           attemptId,
@@ -301,7 +305,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
     capturedRawFindings: secondFindings,
   });
   const reReview = resolveHostTaskFindings(
-    { obligations: [secondObligation], invocations: [secondInvocation] },
+    { obligations: [secondObligation], invocations: [secondInvocation], attempts: [] },
     secondObligation,
     state ? computeTargetedResolutionChallengeIds(state) : undefined,
     undefined,

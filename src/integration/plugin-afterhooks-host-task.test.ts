@@ -81,6 +81,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
           },
         ],
         invocations: [],
+        attempts: [],
       },
     }),
   );

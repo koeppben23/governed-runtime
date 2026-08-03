@@ -183,7 +183,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
 
     // Simulate persisting and reading back — the full consumption chain
     const assurance = appendInvocationEvidence(
-      ensureReviewAssurance({ obligations: [obligation], invocations: [] }),
+      ensureReviewAssurance({ obligations: [obligation], invocations: [], attempts: [] }),
       bindResult.evidence!,
     );
 
@@ -210,7 +210,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     expect(bindResult.evidence!.capturedVerdict).toBe('changes_requested');
 
     const assurance = appendInvocationEvidence(
-      ensureReviewAssurance({ obligations: [obligation], invocations: [] }),
+      ensureReviewAssurance({ obligations: [obligation], invocations: [], attempts: [] }),
       bindResult.evidence!,
     );
 
@@ -273,7 +273,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
 
     // Verify consumable
     const assurance = appendInvocationEvidence(
-      ensureReviewAssurance({ obligations: [obligation], invocations: [] }),
+      ensureReviewAssurance({ obligations: [obligation], invocations: [], attempts: [] }),
       result.evidence!,
     );
     expect(resolveHostTaskFindings(assurance, obligation).kind).toBe('resolved');
@@ -311,7 +311,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
 
     // No attestation in original → spread drops nothing → still consumable
     const assurance = appendInvocationEvidence(
-      ensureReviewAssurance({ obligations: [obligation], invocations: [] }),
+      ensureReviewAssurance({ obligations: [obligation], invocations: [], attempts: [] }),
       result.evidence!,
     );
     const resolved = resolveHostTaskFindings(assurance, obligation);
@@ -392,7 +392,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     expect(stored.attestation).toBeUndefined();
 
     const assurance = appendInvocationEvidence(
-      ensureReviewAssurance({ obligations: [obligation], invocations: [] }),
+      ensureReviewAssurance({ obligations: [obligation], invocations: [], attempts: [] }),
       result.evidence!,
     );
     expect(resolveHostTaskFindings(assurance, obligation).kind).toBe('resolved');
@@ -430,7 +430,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
 
     // attestation: null → stripped → stored without attestation → consumable
     const assurance = appendInvocationEvidence(
-      ensureReviewAssurance({ obligations: [obligation], invocations: [] }),
+      ensureReviewAssurance({ obligations: [obligation], invocations: [], attempts: [] }),
       result.evidence!,
     );
     expect(resolveHostTaskFindings(assurance, obligation).kind).toBe('resolved');
@@ -596,7 +596,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
 
     // Step 3: Persist + resolve (simulate what plan.ts:380 does)
     const assurance = appendInvocationEvidence(
-      ensureReviewAssurance({ obligations: [obligation], invocations: [] }),
+      ensureReviewAssurance({ obligations: [obligation], invocations: [], attempts: [] }),
       bindResult.evidence!,
     );
 
@@ -625,7 +625,7 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
 
     // Persist
     const assurance = appendInvocationEvidence(
-      ensureReviewAssurance({ obligations: [obligation], invocations: [] }),
+      ensureReviewAssurance({ obligations: [obligation], invocations: [], attempts: [] }),
       bindResult.evidence!,
     );
 
