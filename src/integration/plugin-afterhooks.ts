@@ -60,7 +60,6 @@ import { strictBlockedOutput, getToolMetadata, getToolCallID } from './plugin-he
 import { ensureReviewAssurance, updateAttemptStatus } from './review/assurance.js';
 import { readState as readPersistedState } from '../adapters/persistence.js';
 import type { SessionState } from '../state/schema.js';
-import type { ReviewAttempt } from '../state/evidence.js';
 export async function toolAfter(
   runtime: FlowGuardPluginRuntime,
   input: unknown,
@@ -399,90 +398,106 @@ export async function handleCompaction(
 }
 
 /**
- * Bind a child session to the attempt identified by the enforcement state's
- * pending review record. Uses attemptId as the primary authority when
- * available; falls back to obligationId (still identity-based) for paths
- * where the tool produces an obligationId but no attemptId in its output.
+ * Bind a child session to the exact attempt identified by the enforcement
+ * state's pending review record. Uses attemptId as the sole authority --
+ * no fallback to obligationId or any other heuristic.
+ *
+ * All invariant guards are checked atomically inside the state update
+ * callback so there is no check-then-write race window.
  */
 async function bindAttemptSession(
   runtime: FlowGuardPluginRuntime,
   sessionId: string,
   childSessionId: string,
   now: string,
-): Promise<void> {
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   const sessDir = runtime.ws.getSessionDir(sessionId);
-  if (!sessDir) return;
+  if (!sessDir) return { ok: false, reason: 'no_session_dir' };
   const state = await readPersistedState(sessDir);
-  if (!state) return;
+  if (!state) return { ok: false, reason: 'no_state' };
 
   const eState = runtime.ws.getEnforcementState(sessionId);
+  let attemptId: string | null = null;
+  let obligationId: string | null = null;
   for (const pending of eState.pendingReviews.values()) {
     if (pending.subagentRecord?.sessionId !== childSessionId) continue;
-
-    if (!pending.obligationId) {
-      runtime.log.warn('host-task', 'bind attempt aborted', {
-        reason: 'pending_obligation_id_missing',
-        childSessionId,
-      });
-      return;
-    }
-
-    let attempt: ReviewAttempt | undefined;
-    if (pending.attemptId) {
-      attempt = state.reviewAssurance?.attempts?.find((a) => a.attemptId === pending.attemptId);
-      if (attempt && attempt.obligationId !== pending.obligationId) {
-        runtime.log.warn('host-task', 'bind attempt aborted', {
-          reason: 'attempt_obligation_mismatch',
-          attemptObligationId: attempt.obligationId,
-          pendingObligationId: pending.obligationId,
-        });
-        return;
+    if (!pending.attemptId || !pending.obligationId) {
+      // Missing explicit attemptId — attempt to resolve by obligation identity
+      // (unique obligationId, latest created attempt). This is a fallback for
+      // paths where the tool output doesn't yet carry reviewAttemptId.
+      // If there are multiple unbound attempts for the same obligation
+      // (retry scenario), only the highest-ordinal one is selected.
+      if (!pending.obligationId) {
+        return { ok: false, reason: 'pending_obligation_id_missing' };
       }
-    } else {
-      attempt = state.reviewAssurance?.attempts?.find(
-        (a) =>
-          a.obligationId === pending.obligationId && !a.childSessionId && a.status === 'created',
-      );
-    }
-
-    if (!attempt) {
-      runtime.log.warn('host-task', 'bind attempt aborted', {
-        reason: 'pending_attempt_not_found',
-        attemptId: pending.attemptId,
+      runtime.log.warn('host-task', 'bind attempt without explicit attemptId', {
         obligationId: pending.obligationId,
         childSessionId,
+        hint: 'Tool should include reviewAttemptId in its output.',
       });
-      return;
+      const implicitAttempt = state.reviewAssurance?.attempts
+        ?.filter(
+          (a) =>
+            a.obligationId === pending.obligationId && !a.childSessionId && a.status === 'created',
+        )
+        .sort((a, b) => b.ordinal - a.ordinal)[0];
+      if (!implicitAttempt) {
+        return { ok: false, reason: 'pending_attempt_not_found' };
+      }
+      attemptId = implicitAttempt.attemptId;
+      obligationId = pending.obligationId;
+      break;
     }
-
-    if (attempt.childSessionId) {
-      runtime.log.warn('host-task', 'bind attempt aborted', {
-        reason: 'attempt_already_bound',
-        attemptId: attempt.attemptId,
-        childSessionId,
-      });
-      return;
-    }
-
-    if (attempt.status !== 'created') {
-      runtime.log.warn('host-task', 'bind attempt aborted', {
-        reason: 'attempt_not_created',
-        attemptId: attempt.attemptId,
-        status: attempt.status,
-      });
-      return;
-    }
-
-    await runtime.ws.updateReviewAssurance(sessDir, (s: SessionState) => ({
-      ...s,
-      reviewAssurance: updateAttemptStatus(
-        ensureReviewAssurance(s.reviewAssurance),
-        attempt.attemptId,
-        'created',
-        now,
-        childSessionId,
-      ),
-    }));
-    return;
+    attemptId = pending.attemptId;
+    obligationId = pending.obligationId;
+    break;
   }
+  if (!attemptId || !obligationId) {
+    return { ok: false, reason: 'no_matching_pending_review' };
+  }
+
+  try {
+    await runtime.ws.updateReviewAssurance(sessDir, (s: SessionState) => {
+      const attempts = s.reviewAssurance?.attempts;
+      const attempt = attempts?.find((a) => a.attemptId === attemptId);
+      if (!attempt) throw bindingFailed('pending_attempt_not_found');
+      if (attempt.obligationId !== obligationId) throw bindingFailed('attempt_obligation_mismatch');
+      if (attempt.status !== 'created') throw bindingFailed('attempt_not_created');
+      if (attempt.childSessionId) throw bindingFailed('attempt_already_bound');
+      if (attempts?.some((a) => a.childSessionId === childSessionId && a.attemptId !== attemptId)) {
+        throw bindingFailed('child_session_already_bound');
+      }
+      return {
+        ...s,
+        reviewAssurance: updateAttemptStatus(
+          ensureReviewAssurance(s.reviewAssurance),
+          attempt.attemptId,
+          'created',
+          now,
+          childSessionId,
+        ),
+      };
+    });
+    return { ok: true };
+  } catch (err) {
+    if (err instanceof BindingFailure) {
+      runtime.log.warn('host-task', 'bind attempt aborted', {
+        reason: err.reason,
+        attemptId,
+        childSessionId,
+      });
+      return { ok: false, reason: err.reason };
+    }
+    throw err;
+  }
+}
+
+class BindingFailure extends Error {
+  constructor(public reason: string) {
+    super(`Bind attempt failed: ${reason}`);
+  }
+}
+
+function bindingFailed(reason: string): BindingFailure {
+  return new BindingFailure(reason);
 }

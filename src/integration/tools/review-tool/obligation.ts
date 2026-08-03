@@ -300,15 +300,17 @@ export async function persistReviewObligation(
   sessDir: string,
   state: SessionState,
   obligation: ReviewObligation,
-): Promise<void> {
+): Promise<string> {
+  const result = appendObligationWithAttempt(
+    state.reviewAssurance,
+    obligation,
+    obligation.createdAt,
+  );
   await writeStateWithArtifacts(sessDir, {
     ...state,
-    reviewAssurance: appendObligationWithAttempt(
-      state.reviewAssurance,
-      obligation,
-      obligation.createdAt,
-    ).assurance,
+    reviewAssurance: result.assurance,
   });
+  return result.attemptId;
 }
 
 interface NewReviewObligationInput {
@@ -378,7 +380,7 @@ export async function ensureMissingAnalysisObligation(
   args: ReviewToolArgs,
   now: string,
   context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource'>,
-): Promise<{ message: string | null; obligation?: ReviewObligation }> {
+): Promise<{ message: string | null; obligation?: ReviewObligation; attemptId?: string }> {
   const sourceResult = validateReviewContentSource(args);
   if (sourceResult.kind === 'none') return { message: null };
   if (sourceResult.kind === 'incomplete') {
@@ -408,7 +410,12 @@ export async function ensureMissingAnalysisObligation(
     });
     if (created.blocked) return { message: created.blocked };
     obligation = created.obligation!;
-    await persistReviewObligation(sessDir, state, obligation);
+    const attemptId = await persistReviewObligation(sessDir, state, obligation);
+    return {
+      message: formatMissingContentAnalysis(obligation.obligationId),
+      obligation,
+      attemptId,
+    };
   }
   return { message: formatMissingContentAnalysis(obligation.obligationId), obligation };
 }

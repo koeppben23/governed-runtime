@@ -164,6 +164,7 @@ async function prepareReviewExecution(
     refInput = {
       ...refInput,
       reviewObligationId: missingResult.obligation.obligationId,
+      ...(missingResult.attemptId && { reviewAttemptId: missingResult.attemptId }),
     };
   }
   if (exec.args.reviewFindings === undefined) {
