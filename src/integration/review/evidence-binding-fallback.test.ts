@@ -687,3 +687,35 @@ describe('BUG-20: attestation-free fallback binding', () => {
     expect(bindResult.evidence!.obligationId).toBe(obligation.obligationId);
   });
 });
+
+// ─── Deterministic binding timestamps ────────────────────────────────────────
+//
+// No audit outcome of this state machine may read the system clock: every
+// rejected attempt must carry exactly the host time that was injected, or the
+// audit trail is not reproducible from its inputs.
+describe('binding outcomes use the injected host time', () => {
+  it('subject mismatch stales the attempt at the injected now', () => {
+    const state = createSessionState();
+    onFlowGuardToolAfter(state, 'flowguard_plan', {}, modeAResponse(), NOW);
+    const obligation = pendingObligation();
+    onTaskToolAfter(
+      state,
+      { subagent_type: REVIEWER_SUBAGENT_TYPE, prompt: validPrompt() },
+      taskResultWithAttestation(obligation.obligationId),
+      LATER,
+    );
+
+    // The attempt names a different subject than the obligation it points at.
+    const attempts = [attemptFor(obligation, undefined, { subjectDigest: 'other-subject' })];
+
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts,
+    });
+
+    expect(result.bindOutcome).toBe('subject_mismatch');
+    expect(result.attempt?.status).toBe('rejected');
+    expect(result.attempt?.completedAt).toBe(LATER);
+  });
+});

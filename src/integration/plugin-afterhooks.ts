@@ -442,9 +442,10 @@ export async function handleCompaction(
 /**
  * Attach a fresh attempt for a sequential reviewer re-invocation.
  *
- * Fails closed when the obligation can no longer legitimately receive evidence:
- * a consumed or blocked obligation must never be re-armed, otherwise a late or
- * replayed reviewer Task could attach evidence to an already-settled decision.
+ * Fails closed when the obligation can no longer legitimately receive evidence.
+ * `fulfilled` counts as settled: accepted evidence already exists, and the
+ * window between fulfilment and consumption must not stay open for a second,
+ * independent evidence record.
  */
 function rearmAttempt(
   assurance: ReviewAssuranceState,
@@ -454,10 +455,52 @@ function rearmAttempt(
 ): ReviewAssuranceState {
   const obligation = assurance.obligations.find((o) => o.obligationId === spent.obligationId);
   if (!obligation) throw bindingFailed('rearm_obligation_not_found');
-  if (obligation.status === 'consumed' || obligation.status === 'blocked') {
+  if (
+    obligation.status === 'fulfilled' ||
+    obligation.status === 'consumed' ||
+    obligation.status === 'blocked'
+  ) {
     throw bindingFailed('rearm_obligation_settled');
   }
   return createAttemptForExistingObligation(assurance, obligation, childSessionId, now);
+}
+
+/**
+ * Resolve the assurance state for a reviewer child session, by attempt status.
+ *
+ * The status decides whether the session may occupy the pre-registered slot, may
+ * re-arm a spent one, or must be refused outright. Treating every non-virgin
+ * attempt as re-armable let a `bound` attempt spawn a second attempt while the
+ * first kept its evidence, so one obligation could carry two independent
+ * evidence records.
+ */
+function assuranceForBoundSession(
+  assurance: ReviewAssuranceState,
+  attempt: ReviewAttempt,
+  childSessionId: string,
+  now: string,
+): ReviewAssuranceState {
+  switch (attempt.status) {
+    case 'created':
+      // The pre-registered slot is still open.
+      if (!attempt.childSessionId) {
+        return updateAttemptStatus(assurance, attempt.attemptId, 'created', now, childSessionId);
+      }
+      // Interrupted: correlated with an earlier child session that never produced
+      // a capture. The retry gets its own attempt and the interrupted one is
+      // staled by createAttemptForExistingObligation.
+      return rearmAttempt(assurance, attempt, childSessionId, now);
+    case 'rejected':
+    case 'stale':
+    case 'expired':
+      // Spent without usable evidence: an explicit retry is legitimate.
+      return rearmAttempt(assurance, attempt, childSessionId, now);
+    case 'bound':
+    case 'captured':
+      // Evidence already exists for this attempt. Re-arming would keep that
+      // record AND open a second one under the same obligation.
+      throw bindingFailed('attempt_already_bound');
+  }
 }
 
 async function bindAttemptSession(
@@ -499,25 +542,9 @@ async function bindAttemptSession(
         // another: otherwise a single child session could satisfy two attempts.
         throw bindingFailed('child_session_already_bound');
       }
-      if (attempt.status === 'created' && !attempt.childSessionId) {
-        return {
-          ...s,
-          reviewAssurance: updateAttemptStatus(
-            assurance,
-            attempt.attemptId,
-            'created',
-            now,
-            childSessionId,
-          ),
-        };
-      }
-      // Re-arm: the pre-registered attempt was already spent (a previous reviewer
-      // Task bound it, or its capture was rejected). A sequential re-invocation
-      // gets a NEW attempt so it can still satisfy the obligation, and the spent
-      // attempt is staled so a late callback from it is hard-rejected.
       return {
         ...s,
-        reviewAssurance: rearmAttempt(assurance, attempt, childSessionId, now),
+        reviewAssurance: assuranceForBoundSession(assurance, attempt, childSessionId, now),
       };
     });
     return { ok: true };

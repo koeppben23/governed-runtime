@@ -52,7 +52,7 @@ export async function handleHostTaskEvidence(
   try {
     const bound = await bindReviewerEvidence(deps, sessionId, now);
     if (!bound) return;
-    await applyHostTaskBindResult({ ...bound, deps, sessionId, hookOutput });
+    await applyHostTaskBindResult({ ...bound, deps, sessionId, hookOutput, now });
   } catch (err) {
     deps.logError('host task evidence creation failed', err);
     hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
@@ -115,15 +115,17 @@ async function applyHostTaskBindResult(input: {
   policy: string;
   bindResult: HostTaskBindResult;
   hookOutput: { output?: string };
+  /** Injected host time; no audit outcome reads the clock itself. */
+  now: string;
 }): Promise<void> {
-  const { deps, sessDir, sessionId, policy, bindResult, hookOutput } = input;
+  const { deps, sessDir, sessionId, policy, bindResult, hookOutput, now } = input;
   if (bindResult.evidence) {
-    await persistHostTaskEvidence(deps, sessDir, sessionId, bindResult);
+    await persistHostTaskEvidence(deps, sessDir, sessionId, bindResult, now);
     return;
   }
   // Persist the attempt status even when binding failed (rejected/stale).
   if (bindResult.attempt) {
-    await persistAttemptStatus(deps, sessDir, bindResult);
+    await persistAttemptStatus(deps, sessDir, bindResult, now);
   }
   if (policy === 'host_task_required') {
     blockRequiredHostTaskEvidence(deps, sessionId, policy, bindResult, hookOutput);
@@ -141,6 +143,7 @@ async function persistHostTaskEvidence(
   sessDir: string,
   sessionId: string,
   bindResult: HostTaskBindResult,
+  now: string,
 ): Promise<void> {
   const evidence = bindResult.evidence;
   if (!evidence) return;
@@ -184,20 +187,17 @@ async function persistHostTaskEvidence(
     const assurance = ensureReviewAssurance(s.reviewAssurance);
     const withInvocation = appendInvocationEvidence(assurance, evidence);
     if (bindResult.attempt) {
-      const now = evidence.fulfilledAt ?? evidence.invokedAt ?? new Date().toISOString();
+      // The evidence timestamps are the authoritative completion time; `now` is
+      // the injected host clock, used only when the evidence carries neither.
+      const at = evidence.fulfilledAt ?? evidence.invokedAt ?? now;
       // Update the existing attempt record in-place — never append a duplicate.
-      const marked = updateAttemptStatus(
-        withInvocation,
-        bindResult.attempt.attemptId,
-        'bound',
-        now,
-      );
+      const marked = updateAttemptStatus(withInvocation, bindResult.attempt.attemptId, 'bound', at);
       // Stale any OTHER non-bound attempts for the same obligation.
       const deduped = staleObligationAttempts(
         marked,
         evidence.obligationId,
         bindResult.attempt.attemptId,
-        now,
+        at,
       );
       return { ...s, reviewAssurance: deduped };
     }
@@ -224,6 +224,7 @@ async function persistAttemptStatus(
   deps: HostTaskEvidenceDeps,
   sessDir: string,
   bindResult: HostTaskBindResult,
+  now: string,
 ): Promise<void> {
   const attempt = bindResult.attempt;
   if (!attempt) return;
@@ -235,7 +236,7 @@ async function persistAttemptStatus(
       ensureReviewAssurance(s.reviewAssurance),
       attempt.attemptId,
       status,
-      new Date().toISOString(),
+      now,
     ),
   }));
 }

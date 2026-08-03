@@ -162,6 +162,7 @@ function resolveObligationForAttempt(
       attempt.subjectDigest,
       obligation.obligationId,
       attempt,
+      now,
     );
   }
 
@@ -430,7 +431,9 @@ function subjectMismatchBlock(
   obligationSubject: string,
   expectedSubject: string,
   obligationId: string,
-  attempt?: ReviewAttempt,
+  attempt: ReviewAttempt | undefined,
+  /** Injected host time. No audit outcome of this state machine reads the clock. */
+  now: string,
 ): HostTaskBindResult {
   return {
     evidence: null,
@@ -441,15 +444,7 @@ function subjectMismatchBlock(
       expectedSubject,
       message: 'Obligation subject digest does not match the expected artifact digest',
     },
-    ...(attempt
-      ? {
-          attempt: {
-            ...attempt,
-            status: 'rejected' as const,
-            completedAt: new Date().toISOString(),
-          },
-        }
-      : {}),
+    ...(attempt ? { attempt: staleAttempt(attempt, now) } : {}),
   };
 }
 
