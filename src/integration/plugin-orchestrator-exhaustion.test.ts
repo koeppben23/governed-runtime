@@ -73,6 +73,7 @@ function buildState(strictEnforcement: boolean): SessionState {
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
+          subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -110,6 +111,7 @@ function buildAlreadyBlockedState(): SessionState {
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
+          subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -431,6 +433,7 @@ describe('BUG-07: obligation blocked after total invocation failure', () => {
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'plan',
+              subjectDigest: 'test-subject-digest',
               iteration: 1,
               planVersion: 1,
               criteriaVersion: REVIEW_CRITERIA_VERSION,

@@ -11,6 +11,7 @@ import { hashText, hashTextShort } from '../../../shared/hashing.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
+import type { ReviewAssuranceState } from '../../../state/evidence-review.js';
 import type { ReviewReferenceInput } from '../../../rails/review.js';
 import {
   REVIEW_MANDATE_DIGEST,
@@ -295,11 +296,19 @@ export function matchesReviewObligationInput(
 
 // ─── Obligation lifecycle ────────────────────────────────────────────────────
 
+/**
+ * Persist a new obligation together with its attempt.
+ *
+ * Returns the assurance state that was actually written. Callers MUST layer
+ * further updates onto this value, never onto the pre-write snapshot they read
+ * at transaction start: that snapshot has no attempt, and re-deriving from it
+ * silently drops the attempt record the host needs to bind reviewer evidence.
+ */
 export async function persistReviewObligation(
   sessDir: string,
   state: SessionState,
   obligation: ReviewObligation,
-): Promise<string> {
+): Promise<{ attemptId: string; assurance: ReviewAssuranceState }> {
   const result = appendObligationWithAttempt(
     state.reviewAssurance,
     obligation,
@@ -309,7 +318,7 @@ export async function persistReviewObligation(
     ...state,
     reviewAssurance: result.assurance,
   });
-  return result.attemptId;
+  return { attemptId: result.attemptId, assurance: result.assurance };
 }
 
 interface NewReviewObligationInput {
@@ -379,7 +388,13 @@ export async function ensureMissingAnalysisObligation(
   args: ReviewToolArgs,
   now: string,
   context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource'>,
-): Promise<{ message: string | null; obligation?: ReviewObligation; attemptId?: string }> {
+): Promise<{
+  message: string | null;
+  obligation?: ReviewObligation;
+  attemptId?: string;
+  /** Set only when this call wrote state; authoritative over the caller's snapshot. */
+  assurance?: ReviewAssuranceState;
+}> {
   const sourceResult = validateReviewContentSource(args);
   if (sourceResult.kind === 'none') return { message: null };
   if (sourceResult.kind === 'incomplete') {
@@ -409,11 +424,12 @@ export async function ensureMissingAnalysisObligation(
     });
     if (created.blocked) return { message: created.blocked };
     obligation = created.obligation!;
-    const attemptId = await persistReviewObligation(sessDir, state, obligation);
+    const persisted = await persistReviewObligation(sessDir, state, obligation);
     return {
       message: formatMissingContentAnalysis(obligation.obligationId),
       obligation,
-      attemptId,
+      attemptId: persisted.attemptId,
+      assurance: persisted.assurance,
     };
   }
   return { message: formatMissingContentAnalysis(obligation.obligationId), obligation };

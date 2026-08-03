@@ -17,7 +17,11 @@ import {
   RECOVERY_HOST_SUBAGENT_TASK,
 } from '../../shared/flowguard-identifiers.js';
 import type { ReviewInvocationPolicy } from '../../config/policy-types.js';
-import { findReviewObligationById, ensureReviewAssurance } from './assurance.js';
+import {
+  findReviewObligationById,
+  ensureReviewAssurance,
+  findBindableAttempt,
+} from './assurance.js';
 import { updateObligation } from './obligation-state.js';
 import type { SessionState } from '../../state/schema.js';
 import type { ReviewObligation } from '../../state/evidence.js';
@@ -46,6 +50,12 @@ interface HostTaskOutputInput {
   readonly policy: Extract<ReviewInvocationPolicy, 'host_task_required' | 'host_task_preferred'>;
   readonly childSessionId: string | null;
   readonly attestationMeta: HostTaskAttestationMeta | null;
+  /**
+   * Attempt the reviewer Task will be bound to. Emitted as `reviewAttemptId` so
+   * enforcement tracking can carry it into the pending review; without it the
+   * host cannot correlate the child session and reviewer evidence is dropped.
+   */
+  readonly attemptId: string | null;
   readonly challengeContract: Parameters<typeof renderReviewerTaskPrompt>[0]['challengeContract'];
   readonly proofContext: readonly string[];
 }
@@ -216,7 +226,20 @@ function buildHostTaskBlockedOutput(
     hostVisible: true,
     recovery: [RECOVERY_HOST_SUBAGENT_TASK],
   };
+  applyBindableAttemptId(result, input.attemptId);
   return JSON.stringify(result);
+}
+
+/**
+ * Emit the attempt the host binds the reviewer child session to.
+ *
+ * The record/content tools already carry their own host-authoritative
+ * reviewAttemptId; that value is never overwritten here.
+ */
+function applyBindableAttemptId(result: Record<string, unknown>, attemptId: string | null): void {
+  if (!attemptId) return;
+  if (typeof result.reviewAttemptId === 'string') return;
+  result.reviewAttemptId = attemptId;
 }
 
 /**
@@ -402,11 +425,13 @@ export async function handleHostTaskPolicy(
   // host_task_* policy. It MUST carry the same persisted ProofGraph context as the
   // SDK path, otherwise the claim context is silently dropped for every flow.
   const proofContext = buildReviewerProofContext(sessionState);
+  const bindableAttempt = findBindableAttempt(sessionState.reviewAssurance, obligationId);
   const mutated = buildHostTaskPolicyOutput({
     originalOutput: rawOutput,
     policy: typedPolicy,
     childSessionId,
     attestationMeta,
+    attemptId: bindableAttempt?.attemptId ?? null,
     challengeContract,
     proofContext,
   });

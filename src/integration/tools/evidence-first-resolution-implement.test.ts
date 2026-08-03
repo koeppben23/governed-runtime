@@ -300,6 +300,7 @@ function implStateWithEvidence(
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'implement',
+          subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -603,6 +604,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'implement',
+            subjectDigest: 'test-subject-digest',
             iteration: 1,
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,

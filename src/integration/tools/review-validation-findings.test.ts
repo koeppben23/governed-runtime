@@ -71,6 +71,7 @@ function strictAssuranceFixture(
       {
         obligationId: '11111111-1111-4111-8111-111111111111',
         obligationType: 'plan' as const,
+        subjectDigest: 'test-subject-digest',
         iteration: 0,
         planVersion: 1,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -606,6 +607,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
     return {
       obligationId: OBLIGATION_ID,
       obligationType: 'implement' as const,
+      subjectDigest: 'test-subject-digest',
       iteration: 0,
       planVersion: 1,
       criteriaVersion: REVIEW_CRITERIA_VERSION,

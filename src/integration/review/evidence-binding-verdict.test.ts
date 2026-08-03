@@ -48,7 +48,11 @@ describe('buildHostTaskEvidence — capturedVerdict (BUG-15)', () => {
   it('HAPPY: evidence includes capturedVerdict from captured findings', () => {
     const { state, obligation, attempts } = setupFullCycle({ iteration: 0, planVersion: 1 });
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.bindOutcome).toBe('bound');
     expect(result.evidence).not.toBeNull();
@@ -70,7 +74,11 @@ describe('buildHostTaskEvidence — capturedVerdict (BUG-15)', () => {
     );
 
     const attempts = [attemptFor(obligation)];
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.bindOutcome).toBe('bound');
     expect(result.evidence!.capturedVerdict).toBe('changes_requested');
@@ -90,7 +98,11 @@ describe('buildHostTaskEvidence — capturedVerdict (BUG-15)', () => {
       LATER,
     );
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [pendingObligation()], [], LATER, []);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [pendingObligation()],
+      invocations: [],
+      attempts: [],
+    });
 
     // Should fail to bind because capturedFindings is null → no_findings
     expect(result.evidence).toBeNull();
@@ -99,12 +111,18 @@ describe('buildHostTaskEvidence — capturedVerdict (BUG-15)', () => {
 
   it('SMOKE: capturedVerdict is deterministic across calls', () => {
     const { state, obligation, attempts } = setupFullCycle();
-    const r1 = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const r1 = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     // Build a fresh obligation (same ID) to avoid duplicate check
     const obligation2 = pendingObligation({ obligationId: obligation.obligationId });
-    const r2 = buildHostTaskEvidence(state, SESSION_ID, [obligation2], [], LATER, [
-      attemptFor(obligation2, CHILD_SESSION_ID),
-    ]);
+    const r2 = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation2],
+      invocations: [],
+      attempts: [attemptFor(obligation2, CHILD_SESSION_ID)],
+    });
 
     expect(r1.evidence!.capturedVerdict).toBe('accept');
     expect(r2.evidence!.capturedVerdict).toBe('accept');
@@ -134,7 +152,11 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
 
     // 3. Build host-task evidence
     const attempts = [attemptFor(obligation)];
-    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(bindResult.bindOutcome).toBe('bound');
     expect(bindResult.evidence).not.toBeNull();
     expect(bindResult.evidence!.capturedVerdict).toBe('changes_requested');
@@ -220,7 +242,11 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
     );
 
     const attempts = [attemptFor(obligation)];
-    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(bindResult.evidence!.capturedVerdict).toBe('changes_requested');
 
     const assurance = appendInvocationEvidence(
@@ -295,7 +321,11 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
     );
 
     const attempts = [attemptFor(obligation)];
-    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(bindResult.evidence!.capturedVerdict).toBe('accept');
 
     const assurance = appendInvocationEvidence(
@@ -364,7 +394,11 @@ describe('BUG-15 E2E: full revision loop — changes_requested → Mode B verdic
 describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent reconstruction)', () => {
   it('E2E: buildHostTaskEvidence stores capturedRawFindings in evidence', () => {
     const { state, obligation, attempts } = setupFullCycle();
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.bindOutcome).toBe('bound');
     expect(result.evidence).not.toBeNull();
@@ -378,7 +412,11 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
   it('E2E: resolveHostTaskFindings reads findings from evidence (no agent findings needed)', () => {
     // Full cycle: Mode A → reviewer → buildHostTaskEvidence → capturedRawFindings
     const { state, obligation, attempts } = setupFullCycle();
-    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(bindResult.evidence).not.toBeNull();
 
@@ -430,14 +468,11 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
       LATER,
     );
 
-    const bindResult = buildHostTaskEvidence(
-      freshState,
-      SESSION_ID,
-      [obligation],
-      [],
-      LATER,
-      attempts,
-    );
+    const bindResult = buildHostTaskEvidence(freshState, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(bindResult.evidence).not.toBeNull();
     expect(bindResult.evidence!.capturedRawFindings!.overallVerdict).toBe('changes_requested');
 
@@ -477,14 +512,11 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
     const obligation = pendingObligation();
     const attempts = [attemptFor(obligation)];
-    const bindResult = buildHostTaskEvidence(
-      freshState,
-      SESSION_ID,
-      [obligation],
-      [],
-      LATER,
-      attempts,
-    );
+    const bindResult = buildHostTaskEvidence(freshState, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     // No evidence when rawFindings is null
     expect(bindResult.evidence).toBeNull();
 
@@ -508,7 +540,11 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
   it('SMOKE: capturedRawFindings hash matches findingsHash in evidence (consistency)', () => {
     const { state, obligation, attempts } = setupFullCycle();
-    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(bindResult.evidence).not.toBeNull();
     const evidence = bindResult.evidence!;
@@ -521,7 +557,11 @@ describe('BUG-15 Stufe 2 E2E: evidence-based findings resolution (no agent recon
 
   it('SMOKE: evidence-resolve is deterministic (same result on repeated calls)', () => {
     const { state, obligation, attempts } = setupFullCycle();
-    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     const assurance = appendInvocationEvidence(
       ensureReviewAssurance({

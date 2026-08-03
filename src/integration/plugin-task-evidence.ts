@@ -50,37 +50,9 @@ export async function handleHostTaskEvidence(
   });
 
   try {
-    const sessDir = deps.ws.getSessionDir(sessionId);
-    if (!sessDir) return;
-
-    const state = await readState(sessDir);
-    if (!state) return;
-
-    const policy = state.policySnapshot?.reviewInvocationPolicy;
-    if (policy !== 'host_task_required' && policy !== 'host_task_preferred') return;
-
-    const obligations = state.reviewAssurance?.obligations ?? [];
-    const invocations = state.reviewAssurance?.invocations ?? [];
-
-    deps.log.info('host-task', 'bind attempt', {
-      sessionId,
-      policy,
-      pendingObligationCount: obligations.filter((o) => o.status === 'pending').length,
-      totalInvocations: invocations.length,
-    });
-
-    const eState = deps.ws.getEnforcementState(sessionId);
-
-    const attempts = state.reviewAssurance?.attempts ?? [];
-    const bindResult = buildHostTaskEvidence(
-      eState,
-      sessionId,
-      obligations,
-      invocations,
-      now,
-      attempts,
-    );
-    await applyHostTaskBindResult({ deps, sessDir, sessionId, policy, bindResult, hookOutput });
+    const bound = await bindReviewerEvidence(deps, sessionId, now);
+    if (!bound) return;
+    await applyHostTaskBindResult({ ...bound, deps, sessionId, hookOutput });
   } catch (err) {
     deps.logError('host task evidence creation failed', err);
     hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
@@ -90,6 +62,50 @@ export async function handleHostTaskEvidence(
       reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
     });
   }
+}
+
+/**
+ * Resolve the session and bind the captured reviewer evidence.
+ *
+ * Returns null when this session is not under a host-task policy, i.e. when
+ * reviewer Task evidence is not the authoritative source for it.
+ */
+async function bindReviewerEvidence(
+  deps: HostTaskEvidenceDeps,
+  sessionId: string,
+  now: string,
+): Promise<{
+  sessDir: string;
+  policy: 'host_task_required' | 'host_task_preferred';
+  bindResult: ReturnType<typeof buildHostTaskEvidence>;
+} | null> {
+  const sessDir = deps.ws.getSessionDir(sessionId);
+  if (!sessDir) return null;
+
+  const state = await readState(sessDir);
+  if (!state) return null;
+
+  const policy = state.policySnapshot?.reviewInvocationPolicy;
+  if (policy !== 'host_task_required' && policy !== 'host_task_preferred') return null;
+
+  const obligations = state.reviewAssurance?.obligations ?? [];
+  const invocations = state.reviewAssurance?.invocations ?? [];
+  const attempts = state.reviewAssurance?.attempts ?? [];
+
+  deps.log.info('host-task', 'bind attempt', {
+    sessionId,
+    policy,
+    pendingObligationCount: obligations.filter((o) => o.status === 'pending').length,
+    totalInvocations: invocations.length,
+  });
+
+  const eState = deps.ws.getEnforcementState(sessionId);
+  const bindResult = buildHostTaskEvidence(eState, sessionId, now, {
+    obligations,
+    invocations,
+    attempts,
+  });
+  return { sessDir, policy, bindResult };
 }
 
 async function applyHostTaskBindResult(input: {

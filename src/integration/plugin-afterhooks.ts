@@ -57,7 +57,12 @@ import { enforceRiskClassificationAfterBash as enforceRiskAfterBash } from './pl
 import { enforceDiscoveryHealthAfterBash } from './plugin-discovery-health.js';
 import { trackTaskEnforcement } from './plugin-enforcement-tracking.js';
 import { strictBlockedOutput, getToolMetadata, getToolCallID } from './plugin-helpers.js';
-import { ensureReviewAssurance, updateAttemptStatus } from './review/assurance.js';
+import {
+  ensureReviewAssurance,
+  updateAttemptStatus,
+  createAttemptForExistingObligation,
+} from './review/assurance.js';
+import type { ReviewAssuranceState, ReviewAttempt } from '../state/evidence-review.js';
 import { readState as readPersistedState } from '../adapters/persistence.js';
 import type { SessionState } from '../state/schema.js';
 export async function toolAfter(
@@ -77,14 +82,15 @@ export async function toolAfter(
       runtime.log.info('hook', 'tool.execute.after', {
         tool: toolName,
       });
-      await handleAfterDiagnostics(runtime, {
+      const afterCtx: AfterHookContext = {
         toolName,
         sessionId,
         input,
         hookInput,
         hookOutput,
         now,
-      });
+      };
+      await handleAfterDiagnostics(runtime, afterCtx);
       await handleBashAfter(runtime, toolName, sessionId, hookOutput);
       await runOrchestrator(runtime.orchestratorDeps, {
         toolName,
@@ -93,6 +99,7 @@ export async function toolAfter(
         sessionId,
         now,
       });
+      trackReviewableEnforcement(runtime, afterCtx);
       await runFlowGuardAuditAfter({ runtime, toolName, input, output, sessionId, hookOutput });
     });
   });
@@ -134,6 +141,27 @@ function isReviewableFlowGuardTool(toolName: string): boolean {
 }
 
 function handleReviewableAfter(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): void {
+  // Diagnostics observe the tool's own output: the host-task rewrite replaces
+  // `code` wholesale, so running these afterwards would suppress real rejections.
+  logNativeEnforcementDenial(runtime, ctx.sessionId, ctx.hookOutput);
+  logHostTaskRejection(runtime, ctx.sessionId, ctx.hookOutput);
+  logIdentityRejection(runtime, ctx.sessionId, ctx.hookOutput);
+  if (ctx.toolName === TOOL_FLOWGUARD_REVIEW)
+    logNativeAttestationRejection(runtime, ctx.sessionId, ctx.hookOutput);
+  logAutoAdvanceOverflow(runtime, ctx.sessionId, ctx.hookOutput);
+}
+
+/**
+ * Track review enforcement against the output the agent actually receives.
+ *
+ * Must run AFTER orchestration: the host-task handshake is what rewrites a
+ * standalone /review response into INDEPENDENT_REVIEW_REQUIRED and attaches the
+ * reviewAttemptId. Tracking the pre-orchestration output registered a pending
+ * review with a null attempt id, so the reviewer child session could never be
+ * bound and the captured evidence was discarded.
+ */
+function trackReviewableEnforcement(runtime: FlowGuardPluginRuntime, ctx: AfterHookContext): void {
+  if (!isReviewableFlowGuardTool(ctx.toolName)) return;
   try {
     trackFlowGuardEnforcement(
       runtime.ws.getEnforcementState(ctx.sessionId),
@@ -145,12 +173,6 @@ function handleReviewableAfter(runtime: FlowGuardPluginRuntime, ctx: AfterHookCo
   } catch (err) {
     runtime.logError('enforcement tracking failed', err);
   }
-  logNativeEnforcementDenial(runtime, ctx.sessionId, ctx.hookOutput);
-  logHostTaskRejection(runtime, ctx.sessionId, ctx.hookOutput);
-  logIdentityRejection(runtime, ctx.sessionId, ctx.hookOutput);
-  if (ctx.toolName === TOOL_FLOWGUARD_REVIEW)
-    logNativeAttestationRejection(runtime, ctx.sessionId, ctx.hookOutput);
-  logAutoAdvanceOverflow(runtime, ctx.sessionId, ctx.hookOutput);
 }
 
 function logNativeEnforcementDenial(
@@ -417,6 +439,27 @@ export async function handleCompaction(
  * All invariant guards are checked atomically inside the state update
  * callback so there is no check-then-write race window.
  */
+/**
+ * Attach a fresh attempt for a sequential reviewer re-invocation.
+ *
+ * Fails closed when the obligation can no longer legitimately receive evidence:
+ * a consumed or blocked obligation must never be re-armed, otherwise a late or
+ * replayed reviewer Task could attach evidence to an already-settled decision.
+ */
+function rearmAttempt(
+  assurance: ReviewAssuranceState,
+  spent: ReviewAttempt,
+  childSessionId: string,
+  now: string,
+): ReviewAssuranceState {
+  const obligation = assurance.obligations.find((o) => o.obligationId === spent.obligationId);
+  if (!obligation) throw bindingFailed('rearm_obligation_not_found');
+  if (obligation.status === 'consumed' || obligation.status === 'blocked') {
+    throw bindingFailed('rearm_obligation_settled');
+  }
+  return createAttemptForExistingObligation(assurance, obligation, childSessionId, now);
+}
+
 async function bindAttemptSession(
   runtime: FlowGuardPluginRuntime,
   sessionId: string,
@@ -446,24 +489,35 @@ async function bindAttemptSession(
 
   try {
     await runtime.ws.updateReviewAssurance(sessDir, (s: SessionState) => {
-      const attempts = s.reviewAssurance?.attempts;
+      const assurance = ensureReviewAssurance(s.reviewAssurance);
+      const attempts = assurance.attempts;
       const attempt = attempts?.find((a) => a.attemptId === attemptId);
       if (!attempt) throw bindingFailed('pending_attempt_not_found');
       if (attempt.obligationId !== obligationId) throw bindingFailed('attempt_obligation_mismatch');
-      if (attempt.status !== 'created') throw bindingFailed('attempt_not_created');
-      if (attempt.childSessionId) throw bindingFailed('attempt_already_bound');
-      if (attempts?.some((a) => a.childSessionId === childSessionId && a.attemptId !== attemptId)) {
+      if (attempts?.some((a) => a.childSessionId === childSessionId)) {
+        // One reviewer session binds at most once, whether to this attempt or
+        // another: otherwise a single child session could satisfy two attempts.
         throw bindingFailed('child_session_already_bound');
       }
+      if (attempt.status === 'created' && !attempt.childSessionId) {
+        return {
+          ...s,
+          reviewAssurance: updateAttemptStatus(
+            assurance,
+            attempt.attemptId,
+            'created',
+            now,
+            childSessionId,
+          ),
+        };
+      }
+      // Re-arm: the pre-registered attempt was already spent (a previous reviewer
+      // Task bound it, or its capture was rejected). A sequential re-invocation
+      // gets a NEW attempt so it can still satisfy the obligation, and the spent
+      // attempt is staled so a late callback from it is hard-rejected.
       return {
         ...s,
-        reviewAssurance: updateAttemptStatus(
-          ensureReviewAssurance(s.reviewAssurance),
-          attempt.attemptId,
-          'created',
-          now,
-          childSessionId,
-        ),
+        reviewAssurance: rearmAttempt(assurance, attempt, childSessionId, now),
       };
     });
     return { ok: true };

@@ -18,6 +18,7 @@ function reviewObligation(): ReviewObligation {
   return {
     obligationId: OBLIGATION_ID,
     obligationType: 'review',
+    subjectDigest: 'test-subject-digest',
     iteration: 0,
     planVersion: 1,
     criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -32,7 +33,7 @@ function reviewObligation(): ReviewObligation {
     requiredChallengeCount: 1,
     requiredChallengeKind: 'content_challenge',
     metadata: { fingerprint: FINGERPRINT },
-  } as ReviewObligation;
+  };
 }
 
 function contentChallenge(overrides: Record<string, unknown> = {}) {

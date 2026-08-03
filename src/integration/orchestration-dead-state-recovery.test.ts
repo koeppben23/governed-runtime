@@ -96,6 +96,7 @@ function makeBlockedObligation(
   return {
     obligationId: crypto.randomUUID(),
     obligationType,
+    subjectDigest: 'test-subject-digest-blocked',
     iteration,
     planVersion,
     criteriaVersion: 'p37-v1',
@@ -107,7 +108,7 @@ function makeBlockedObligation(
     invocationId: null,
     fulfilledAt: null,
     consumedAt: null,
-  } as ReviewObligation;
+  };
 }
 
 /** Create a pending (active) review obligation. */
@@ -119,6 +120,7 @@ function makePendingObligation(
   return {
     obligationId: crypto.randomUUID(),
     obligationType,
+    subjectDigest: 'test-subject-digest-pending',
     iteration,
     planVersion,
     criteriaVersion: 'p37-v1',
@@ -130,7 +132,7 @@ function makePendingObligation(
     invocationId: null,
     fulfilledAt: null,
     consumedAt: null,
-  } as ReviewObligation;
+  };
 }
 
 /** Hydrate a session and advance to PLAN phase with blocked obligation. */

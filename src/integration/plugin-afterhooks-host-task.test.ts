@@ -32,6 +32,8 @@ import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
 const execFileAsync = promisify(execFile);
 
 const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
+const ATTEMPT_ID = '11111111-2222-4111-8111-111111111111';
+const SUBJECT_DIGEST = 'host-task-plan-subject-digest';
 const CHILD_VALID = 'ses_child_valid_e2e';
 
 function createMockInput(overrides: Record<string, unknown> = {}) {
@@ -78,10 +80,23 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             blockedCode: null,
             fulfilledAt: null,
             consumedAt: null,
+            subjectDigest: SUBJECT_DIGEST,
           },
         ],
         invocations: [],
-        attempts: [],
+        // The attempt exists before the reviewer runs and is still unbound: the
+        // host correlates the child session at Task time.
+        attempts: [
+          {
+            attemptId: ATTEMPT_ID,
+            obligationId: OBLIGATION_ID,
+            obligationType: 'plan' as const,
+            subjectDigest: SUBJECT_DIGEST,
+            ordinal: 0,
+            status: 'created' as const,
+            createdAt: now,
+          },
+        ],
       },
     }),
   );
@@ -113,7 +128,7 @@ function noVerdictReviewerOutput(): string {
 }
 
 /** Reviewer Task output with a valid, bindable verdict. */
-function validReviewerOutput(): string {
+function validReviewerOutput(childSessionId: string = CHILD_VALID): string {
   return JSON.stringify({
     iteration: 0,
     planVersion: 1,
@@ -124,7 +139,7 @@ function validReviewerOutput(): string {
     missingVerification: [],
     scopeCreep: [],
     unknowns: [],
-    reviewedBy: { sessionId: CHILD_VALID },
+    reviewedBy: { sessionId: childSessionId },
     reviewedAt: '2026-05-10T12:00:00.000Z',
     attestation: {
       toolObligationId: OBLIGATION_ID,
@@ -149,6 +164,7 @@ function planReviewRequiredOutput(): string {
     selfReviewIteration: 0,
     reviewMode: 'subagent',
     reviewObligationId: OBLIGATION_ID,
+    reviewAttemptId: ATTEMPT_ID,
     reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
     reviewMandateDigest: REVIEW_MANDATE_DIGEST,
     next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
@@ -234,6 +250,110 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
       expect(invocations[0]!.childSessionId).toBe(CHILD_VALID);
       expect(invocations[0]!.hostVisible).toBe(true);
       expect(invocations[0]!.invocationMode).toBe('host_subagent_task');
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('refuses to re-arm a consumed obligation: a late reviewer Task cannot reopen a settled review', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      await execFileAsync('git', ['init'], { cwd: ws.tmpDir });
+      const sessionID = crypto.randomUUID();
+      const sessDir = await seedHostTaskPlanSession(ws.tmpDir, sessionID);
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const afterHook = hooks['tool.execute.after']!;
+      const reviewerArgs = {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
+        prompt: 'iteration=0, planVersion=1 - review this plan critically for the auth feature.',
+      };
+
+      await afterHook(
+        { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
+        { title: 'flowguard_plan', output: planReviewRequiredOutput(), metadata: {} },
+      );
+
+      // A first reviewer Task returns an unusable capture, so the attempt is
+      // spent but the obligation is still awaiting review.
+      await afterHook(
+        { tool: 'task', sessionID, callID: 'call-first', args: reviewerArgs },
+        { title: 'task', output: noVerdictReviewerOutput(), metadata: {} },
+      );
+      const spent = await readState(sessDir);
+      expect(spent?.reviewAssurance?.invocations ?? []).toHaveLength(0);
+
+      // The obligation is then settled through another route.
+      await writeState(sessDir, {
+        ...spent!,
+        reviewAssurance: {
+          ...spent!.reviewAssurance!,
+          obligations: spent!.reviewAssurance!.obligations.map((o) => ({
+            ...o,
+            status: 'consumed' as const,
+            consumedAt: new Date().toISOString(),
+          })),
+        },
+      });
+
+      // The retry would have to re-arm the spent attempt. A settled obligation
+      // must refuse that, otherwise a late reviewer reopens a closed decision.
+      const output: { title: string; output: string; metadata: Record<string, unknown> } = {
+        title: 'task',
+        output: validReviewerOutput(),
+        metadata: {},
+      };
+      await afterHook({ tool: 'task', sessionID, callID: 'call-late', args: reviewerArgs }, output);
+
+      // Fail closed: no invocation, and no fresh attempt minted to carry one.
+      const after = await readState(sessDir);
+      expect(after?.reviewAssurance?.invocations ?? []).toHaveLength(0);
+      expect(
+        after?.reviewAssurance?.attempts ?? [],
+        'a settled obligation must not be re-armed',
+      ).toHaveLength(1);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+
+  it('refuses to bind the same reviewer child session twice', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      await execFileAsync('git', ['init'], { cwd: ws.tmpDir });
+      const sessionID = crypto.randomUUID();
+      const sessDir = await seedHostTaskPlanSession(ws.tmpDir, sessionID);
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const afterHook = hooks['tool.execute.after']!;
+      const reviewerArgs = {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
+        prompt: 'iteration=0, planVersion=1 - review this plan critically for the auth feature.',
+      };
+
+      await afterHook(
+        { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
+        { title: 'flowguard_plan', output: planReviewRequiredOutput(), metadata: {} },
+      );
+
+      // Both Task callbacks report the SAME reviewer session id.
+      for (const callID of ['call-a', 'call-b']) {
+        await afterHook(
+          { tool: 'task', sessionID, callID, args: reviewerArgs },
+          { title: 'task', output: validReviewerOutput(), metadata: {} },
+        );
+      }
+
+      // One reviewer session satisfies at most one attempt.
+      const after = await readState(sessDir);
+      expect(after?.reviewAssurance?.invocations ?? []).toHaveLength(1);
+      expect(
+        (after?.reviewAssurance?.attempts ?? []).filter((a) => a.childSessionId === CHILD_VALID),
+      ).toHaveLength(1);
     } finally {
       await ws.cleanup();
     }

@@ -683,6 +683,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
           {
             obligationId: '00000000-0000-4000-8000-bug21pending01',
             obligationType: 'plan' as const,
+            subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,
             criteriaVersion: 'v1',
@@ -722,6 +723,7 @@ describe('BUG-21: null-verdict tolerance (enforceBeforeVerdict)', () => {
           {
             obligationId: '00000000-0000-4000-8000-bug21impl0001',
             obligationType: 'implement' as const,
+            subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,
             criteriaVersion: 'v1',

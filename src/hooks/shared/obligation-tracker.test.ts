@@ -14,6 +14,7 @@ function makeObligation(overrides: Partial<ReviewObligation> = {}): ReviewObliga
   return {
     obligationId: FIXED_UUID,
     obligationType: 'plan',
+    subjectDigest: 'test-subject-digest',
     iteration: 1,
     planVersion: 1,
     criteriaVersion: 'v1',

@@ -504,6 +504,7 @@ describe('review-enforcement mutation kills', () => {
             {
               obligationId: '00000000-0000-4000-8000-000000000001',
               obligationType: 'plan' as const,
+              subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
               criteriaVersion: 'v1',
@@ -543,6 +544,7 @@ describe('review-enforcement mutation kills', () => {
             {
               obligationId: '00000000-0000-4000-8000-000000000002',
               obligationType: 'plan' as const,
+              subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
               criteriaVersion: 'v1',

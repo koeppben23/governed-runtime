@@ -123,6 +123,7 @@ describe('plugin-review-state', () => {
     return {
       obligationId: id,
       obligationType: 'plan',
+      subjectDigest: 'test-subject-digest',
       iteration: 0,
       planVersion: 1,
       criteriaVersion: '2.0.0',

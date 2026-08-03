@@ -25,6 +25,8 @@ import {
   hasEvidenceReuse,
   findAcceptedInvocationForFindings,
   validateStrictAttestation,
+  findBindableAttempt,
+  createReviewAttempt,
   REVIEW_CRITERIA_VERSION,
   REVIEW_MANDATE_DIGEST,
 } from './assurance.js';
@@ -34,6 +36,7 @@ import type {
   ReviewInvocationEvidence,
   ReviewFindings,
 } from '../../state/evidence.js';
+import type { ReviewAttempt } from '../../state/evidence-review.js';
 import { ReviewInvocationEvidence as ReviewInvocationEvidenceSchema } from '../../state/evidence.js';
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -915,5 +918,65 @@ describe('integration/review-assurance', () => {
         ).toBe('SUBAGENT_MANDATE_MISSING');
       });
     });
+  });
+});
+
+describe('findBindableAttempt', () => {
+  const OBLIGATION_A = '00000000-0000-4000-8000-00000000aaaa';
+  const OBLIGATION_B = '00000000-0000-4000-8000-00000000bbbb';
+
+  function attempt(overrides: Partial<ReviewAttempt> & { ordinal: number }): ReviewAttempt {
+    return {
+      ...createReviewAttempt({
+        obligationId: OBLIGATION_A,
+        obligationType: 'plan',
+        subjectDigest: 'subject',
+        ordinal: overrides.ordinal,
+        now: NOW,
+      }),
+      ...overrides,
+    };
+  }
+
+  function assuranceWith(attempts: ReviewAttempt[]) {
+    return { ...emptyReviewAssurance(), attempts };
+  }
+
+  it('returns the unbound, created attempt for the obligation', () => {
+    const target = attempt({ ordinal: 0 });
+    const result = findBindableAttempt(assuranceWith([target]), OBLIGATION_A);
+    expect(result?.attemptId).toBe(target.attemptId);
+  });
+
+  it('ignores attempts belonging to a different obligation', () => {
+    const foreign = attempt({ ordinal: 0, obligationId: OBLIGATION_B });
+    expect(findBindableAttempt(assuranceWith([foreign]), OBLIGATION_A)).toBeNull();
+  });
+
+  it('ignores an attempt that is already bound to a reviewer session', () => {
+    // A bound attempt is spent: handing it out again would let a second reviewer
+    // session attach evidence through the first one's envelope.
+    const bound = attempt({ ordinal: 0, childSessionId: 'ses_child' });
+    expect(findBindableAttempt(assuranceWith([bound]), OBLIGATION_A)).toBeNull();
+  });
+
+  it.each(['captured', 'rejected', 'bound', 'stale', 'expired'] as const)(
+    'ignores an attempt with status %s',
+    (status) => {
+      const spent = attempt({ ordinal: 0, status });
+      expect(findBindableAttempt(assuranceWith([spent]), OBLIGATION_A)).toBeNull();
+    },
+  );
+
+  it('prefers the highest ordinal when several attempts qualify', () => {
+    const older = attempt({ ordinal: 1 });
+    const newer = attempt({ ordinal: 2 });
+    const result = findBindableAttempt(assuranceWith([older, newer]), OBLIGATION_A);
+    expect(result?.attemptId).toBe(newer.attemptId);
+  });
+
+  it('returns null when no attempt exists at all', () => {
+    expect(findBindableAttempt(emptyReviewAssurance(), OBLIGATION_A)).toBeNull();
+    expect(findBindableAttempt(undefined, OBLIGATION_A)).toBeNull();
   });
 });

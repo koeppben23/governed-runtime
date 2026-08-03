@@ -56,7 +56,6 @@ import {
 import { resolveBranchReviewSource } from '../../../adapters/gh-cli.js';
 import { prepareReviewContent } from '../../../rails/review.js';
 import { findReviewObligationById } from '../../review/assurance.js';
-import { appendReviewObligation } from '../../review/assurance.js';
 import { writeStateWithArtifacts } from '../helpers.js';
 import {
   appendCompletedReviewEvidence,
@@ -130,23 +129,31 @@ function withCwd(
   return { ...refInput, cwd };
 }
 
+/**
+ * Resolve the immutable branch source, but only when an obligation is being
+ * created. An explicit host-task continuation is bound to its existing
+ * obligation and must not re-resolve refs.
+ */
+function resolveObligationBranchSource(
+  exec: ReviewExecutionContext,
+): ReturnType<typeof resolveBranchReviewSource> | undefined {
+  if (!exec.args.branch) return undefined;
+  if (exec.args.reviewFindings !== undefined) return undefined;
+  const isHostTaskVerdictContinuation =
+    exec.policy === 'host_task_required' &&
+    exec.args.reviewVerdict !== undefined &&
+    exec.args.reviewObligationId !== undefined;
+  if (isHostTaskVerdictContinuation) return undefined;
+  return resolveBranchReviewSource(exec.args.branch, exec.args.base, exec.context.worktree);
+}
+
 async function prepareReviewExecution(
   sessDir: string,
   state: SessionState,
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
 ): Promise<ReviewPreparation | string> {
-  // Resolve immutable branch source only when creating an obligation. An explicit
-  // host-task continuation is bound to its existing obligation and must not re-resolve refs.
-  const isFindingsSubmission = exec.args.reviewFindings !== undefined;
-  const isHostTaskVerdictContinuation =
-    exec.policy === 'host_task_required' &&
-    exec.args.reviewVerdict !== undefined &&
-    exec.args.reviewObligationId !== undefined;
-  const resolvedSource =
-    exec.args.branch && !isFindingsSubmission && !isHostTaskVerdictContinuation
-      ? resolveBranchReviewSource(exec.args.branch, exec.args.base, exec.context.worktree)
-      : undefined;
+  const resolvedSource = resolveObligationBranchSource(exec);
 
   const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec);
   if (hostTaskVerdict) return hostTaskVerdict;
@@ -173,6 +180,7 @@ async function prepareReviewExecution(
       refInput: withCwd(refInput, exec.context.worktree),
       validatedReviewObligation: null,
       pendingObligation: missingResult.obligation,
+      persistedAssurance: missingResult.assurance,
       blockMessage: missingResult.message ?? undefined,
     };
   }
@@ -385,9 +393,10 @@ async function prepareReviewWithoutExternalCalls(
       // Preparation records intent before reviewer work, but does not materialize
       // the REVIEW transition. The existing completion rail remains authoritative.
       ...state,
-      ...(prepared.pendingObligation && {
-        reviewAssurance: appendReviewObligation(state.reviewAssurance, prepared.pendingObligation),
-      }),
+      // Obligation preparation already persisted the obligation AND its attempt.
+      // Re-deriving from `state` (read before that write) dropped the attempt, so
+      // the host could never bind reviewer evidence for a standalone /review.
+      ...(prepared.persistedAssurance && { reviewAssurance: prepared.persistedAssurance }),
       standaloneReviewEvidence: appendPreparedReviewEvidence(
         state.standaloneReviewEvidence,
         taskEvidence,

@@ -168,7 +168,11 @@ describe('BUG-20: attestation-free fallback binding', () => {
   it('HAPPY: bound via tool-fallback when attestation is completely absent', () => {
     const { state, obligation, attempts } = setupFallbackCycle();
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.evidence).not.toBeNull();
     expect(result.bindOutcome).toBe('bound');
@@ -185,7 +189,11 @@ describe('BUG-20: attestation-free fallback binding', () => {
     // attestation.toolObligationId = "not_provided_in_prompt"
     const { state, obligation, attempts } = setupFallbackCycle({ usePlaceholder: true });
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.evidence).not.toBeNull();
     expect(result.bindOutcome).toBe('bound');
@@ -196,7 +204,11 @@ describe('BUG-20: attestation-free fallback binding', () => {
   it('HAPPY: changes_requested verdict flows through fallback binding', () => {
     const { state, obligation, attempts } = setupFallbackCycle({ verdict: 'changes_requested' });
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.evidence).not.toBeNull();
     expect(result.bindOutcome).toBe('bound');
@@ -210,7 +222,11 @@ describe('BUG-20: attestation-free fallback binding', () => {
     const { state, attempts } = setupFallbackCycle();
 
     // All obligations consumed — pass empty array
-    const result = buildHostTaskEvidence(state, SESSION_ID, [], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.evidence).toBeNull();
     expect(result.bindOutcome).toBe('no_matching_obligation');
@@ -226,9 +242,11 @@ describe('BUG-20: attestation-free fallback binding', () => {
       consumedAt: NOW,
     });
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [consumedObligation], [], LATER, [
-      attemptFor(consumedObligation, CHILD_SESSION_ID),
-    ]);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [consumedObligation],
+      invocations: [],
+      attempts: [attemptFor(consumedObligation, CHILD_SESSION_ID)],
+    });
 
     expect(result.evidence).toBeNull();
     expect(result.bindOutcome).toBe('no_matching_obligation');
@@ -241,9 +259,11 @@ describe('BUG-20: attestation-free fallback binding', () => {
 
     const wrongIteration = pendingObligation({ iteration: 5, planVersion: 1 });
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [wrongIteration], [], LATER, [
-      attemptFor(wrongIteration, CHILD_SESSION_ID),
-    ]);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [wrongIteration],
+      invocations: [],
+      attempts: [attemptFor(wrongIteration, CHILD_SESSION_ID)],
+    });
 
     expect(result.evidence).toBeNull();
     expect(result.bindOutcome).toBe('field_mismatch');
@@ -258,70 +278,75 @@ describe('BUG-20: attestation-free fallback binding', () => {
 
   // ─── EDGE ──────────────────────────────────────────────────────────────────
 
-  it('EDGE: fallback picks most recent obligation when multiple unconsumed exist (by createdAt)', () => {
-    const { state, attempts } = setupFallbackCycle({ iteration: 0, planVersion: 1 });
+  it('EDGE: the attempt selects the obligation even when a newer unconsumed one exists', () => {
+    // Recency used to decide which obligation received the evidence. Under
+    // attempt-first resolution the recorded invocation envelope decides, which
+    // is the stronger property: creating a newer obligation cannot divert
+    // evidence away from the one the reviewer was actually invoked for.
+    const { state, obligation, attempts } = setupFallbackCycle({ iteration: 0, planVersion: 1 });
 
-    const olderObligation = pendingObligation({
-      iteration: 0,
-      planVersion: 1,
-      createdAt: '2026-05-10T10:00:00.000Z',
-    } as Partial<ReviewObligation>);
     const newerObligation = pendingObligation({
       iteration: 0,
       planVersion: 1,
       createdAt: '2026-05-10T11:00:00.000Z',
     } as Partial<ReviewObligation>);
 
-    const result = buildHostTaskEvidence(
-      state,
-      SESSION_ID,
-      [olderObligation, newerObligation],
-      [],
-      LATER,
-      attempts,
-    );
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation, newerObligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.evidence).not.toBeNull();
     expect(result.bindOutcome).toBe('bound');
-    // Should pick the NEWER obligation (sorted by createdAt descending)
-    expect(result.evidence!.obligationId).toBe(newerObligation.obligationId);
+    // The attempt's obligation wins — NOT the newer one.
+    expect(result.evidence!.obligationId).toBe(obligation.obligationId);
+    expect(result.evidence!.obligationId).not.toBe(newerObligation.obligationId);
     expect(result.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
   });
 
-  it('EDGE: valid UUID attestation that does not match any obligation → no_matching_obligation (no fallback to tool)', () => {
-    // If the reviewer DID produce a valid UUID but it doesn't match, the primary path
-    // is used and fails. There is NO fallback — this prevents stale attestations from
-    // accidentally binding to wrong obligations.
+  it('EDGE: valid UUID attestation whose obligation is absent → no_matching_obligation (no fallback to tool)', () => {
+    // If the reviewer DID produce a valid UUID but the obligation it was invoked
+    // for is gone, the bind fails outright. There is NO fallback — this prevents
+    // stale attestations from accidentally binding to a different obligation.
     const { state, attempts } = setupFullCycle();
 
-    // The attestation in setupFullCycle has the correct obligation UUID, but we pass
-    // a DIFFERENT obligation with a different ID
+    // A different obligation is present; the attempt still references the one the
+    // reviewer was actually invoked for, which is NOT in the list.
     const differentObligation = pendingObligation();
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [differentObligation], [], LATER, [
-      attemptFor(differentObligation, CHILD_SESSION_ID),
-    ]);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [differentObligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.evidence).toBeNull();
     expect(result.bindOutcome).toBe('no_matching_obligation');
     expect(result.diagnostic).toHaveProperty('bindingMode', 'attestation');
+    expect(result.diagnostic).toHaveProperty('availableObligations', 1);
   });
 
-  it('EDGE: fallback skips obligations of wrong type', () => {
-    const { state, attempts } = setupFallbackCycle();
+  it('EDGE: an obligation of the wrong type is rejected, not bound', () => {
+    const { state } = setupFallbackCycle();
 
     // Obligation is type 'implement' but tool is 'flowguard_plan' → oType = 'plan'
     const wrongType = pendingObligation({
       obligationType: 'implement' as const,
     } as Partial<ReviewObligation>);
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [wrongType], [], LATER, [
-      attemptFor(wrongType, CHILD_SESSION_ID),
-    ]);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [wrongType],
+      invocations: [],
+      attempts: [attemptFor(wrongType, CHILD_SESSION_ID)],
+    });
 
+    // Attempt-first resolution finds the obligation and then rejects it on the
+    // type cross-check, which names both sides instead of a generic "no match".
     expect(result.evidence).toBeNull();
-    expect(result.bindOutcome).toBe('no_matching_obligation');
-    expect(result.diagnostic).toHaveProperty('obligationType', 'plan');
+    expect(result.bindOutcome).toBe('field_mismatch');
+    expect(result.diagnostic).toHaveProperty('attemptObligationType', 'implement');
+    expect(result.diagnostic).toHaveProperty('enforcementObligationType', 'plan');
   });
 
   // ─── CORNER ────────────────────────────────────────────────────────────────
@@ -360,7 +385,11 @@ describe('BUG-20: attestation-free fallback binding', () => {
     );
 
     const attempts = [attemptFor(obligation)];
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.evidence).not.toBeNull();
     expect(result.bindOutcome).toBe('bound');
@@ -401,7 +430,11 @@ describe('BUG-20: attestation-free fallback binding', () => {
     );
 
     const attempts = [attemptFor(obligation)];
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.evidence).not.toBeNull();
     expect(result.bindOutcome).toBe('bound');
@@ -413,7 +446,11 @@ describe('BUG-20: attestation-free fallback binding', () => {
   it('REGRESSION: valid attestation still binds via primary path (unchanged behavior)', () => {
     const { state, obligation, attempts } = setupFullCycle();
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.evidence).not.toBeNull();
     expect(result.bindOutcome).toBe('bound');
@@ -434,14 +471,11 @@ describe('BUG-20: attestation-free fallback binding', () => {
       mandateDigest: 'wrong_digest_value',
     });
 
-    const resultWithAttestation = buildHostTaskEvidence(
-      state,
-      SESSION_ID,
-      [divergentObligation],
-      [],
-      LATER,
-      [attemptFor(divergentObligation, CHILD_SESSION_ID)],
-    );
+    const resultWithAttestation = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [divergentObligation],
+      invocations: [],
+      attempts: [attemptFor(divergentObligation, CHILD_SESSION_ID)],
+    });
     expect(resultWithAttestation.bindOutcome).toBe('bound');
     expect(resultWithAttestation.diagnostic.hostConstantDivergence).toContain('mandateDigest');
     expect(resultWithAttestation.diagnostic).toHaveProperty('bindingMode', 'attestation');
@@ -458,14 +492,11 @@ describe('BUG-20: attestation-free fallback binding', () => {
       mandateDigest: 'some_completely_different_digest_that_would_normally_fail',
     });
 
-    const resultNoAttestation = buildHostTaskEvidence(
-      state,
-      SESSION_ID,
-      [obligationWithCustomDigest],
-      [],
-      LATER,
-      [attemptFor(obligationWithCustomDigest, CHILD_SESSION_ID)],
-    );
+    const resultNoAttestation = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligationWithCustomDigest],
+      invocations: [],
+      attempts: [attemptFor(obligationWithCustomDigest, CHILD_SESSION_ID)],
+    });
     // Should BIND because mandateDigest is NOT checked in fallback mode
     expect(resultNoAttestation.evidence).not.toBeNull();
     expect(resultNoAttestation.bindOutcome).toBe('bound');
@@ -477,8 +508,16 @@ describe('BUG-20: attestation-free fallback binding', () => {
   it('SMOKE: fallback binding is deterministic across repeated calls', () => {
     const { state, obligation, attempts } = setupFallbackCycle();
 
-    const r1 = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
-    const r2 = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const r1 = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
+    const r2 = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(r1.bindOutcome).toBe('bound');
     expect(r2.bindOutcome).toBe('bound');
@@ -490,7 +529,11 @@ describe('BUG-20: attestation-free fallback binding', () => {
   it('SMOKE: fallback-bound evidence is consumable by resolveHostTaskFindings', () => {
     const { state, obligation, attempts } = setupFallbackCycle();
 
-    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(bindResult.evidence).not.toBeNull();
 
     // Simulate persisting and reading back
@@ -562,8 +605,12 @@ describe('BUG-20: attestation-free fallback binding', () => {
     );
 
     // Step 3: Build evidence — THIS IS THE FIX
-    const attempts = [attemptFor(obligation)];
-    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const attempts = [attemptFor(obligation, 'ses_reviewer_xyz')];
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(bindResult.evidence).not.toBeNull();
     expect(bindResult.bindOutcome).toBe('bound');
@@ -625,8 +672,12 @@ describe('BUG-20: attestation-free fallback binding', () => {
       LATER,
     );
 
-    const attempts = [attemptFor(obligation)];
-    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const attempts = [attemptFor(obligation, 'ses_child_real')];
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     // BEFORE FIX: bindOutcome was 'no_attestation' or 'no_matching_obligation'
     // AFTER FIX: fallback binding succeeds

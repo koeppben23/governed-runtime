@@ -9,6 +9,7 @@ function obligation(): ReviewObligation {
   return {
     obligationId: '11111111-1111-4111-8111-111111111111',
     obligationType: 'implement',
+    subjectDigest: 'test-subject-digest',
     iteration: 1,
     planVersion: 1,
     criteriaVersion: 'criteria-v1',

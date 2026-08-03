@@ -147,6 +147,7 @@ function buildSessionState(
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'review',
+          subjectDigest: 'test-subject-digest',
           iteration: 1,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,

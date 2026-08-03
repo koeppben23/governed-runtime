@@ -231,6 +231,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
+              subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
               criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -312,6 +313,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
+              subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
               criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -405,6 +407,7 @@ describe('architecture — BUG-15 evidence-resolve', () => {
             {
               obligationId: OBLIGATION_ID,
               obligationType: 'architecture',
+              subjectDigest: 'test-subject-digest',
               iteration: 0,
               planVersion: 1,
               criteriaVersion: REVIEW_CRITERIA_VERSION,

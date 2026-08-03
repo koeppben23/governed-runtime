@@ -440,7 +440,7 @@ export function appendObligationWithAttempt(
   const attempt = createReviewAttempt({
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
-    subjectDigest: obligation.subjectDigest!,
+    subjectDigest: obligation.subjectDigest,
     ordinal,
     now,
   });
@@ -479,7 +479,7 @@ export function createAttemptForExistingObligation(
   const attempt = createReviewAttempt({
     obligationId: obligation.obligationId,
     obligationType: obligation.obligationType,
-    subjectDigest: obligation.subjectDigest!,
+    subjectDigest: obligation.subjectDigest,
     ordinal,
     childSessionId,
     now,
@@ -506,6 +506,27 @@ export function resolveAttempt(
       (a) => a.childSessionId === childSessionId && a.status !== 'stale' && a.status !== 'expired',
     ) ?? null
   );
+}
+
+/**
+ * The attempt a host Task can still be bound to for `obligationId`.
+ *
+ * Bindable means: created but not yet correlated with a reviewer child session,
+ * and not superseded (`appendObligationWithAttempt` stales earlier attempts, so
+ * at most one attempt per obligation qualifies). Returns the highest ordinal if
+ * that invariant is ever violated, and null when no attempt can accept a
+ * binding — callers must not fall back to an arbitrary attempt.
+ */
+export function findBindableAttempt(
+  assurance: ReviewAssuranceState | undefined,
+  obligationId: string,
+): ReviewAttempt | null {
+  const base = ensureReviewAssurance(assurance);
+  const candidates = (base.attempts ?? []).filter(
+    (a) => a.obligationId === obligationId && a.status === 'created' && !a.childSessionId,
+  );
+  if (candidates.length === 0) return null;
+  return candidates.reduce((best, a) => (a.ordinal > best.ordinal ? a : best));
 }
 
 export function updateAttemptStatus(

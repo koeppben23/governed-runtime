@@ -39,6 +39,7 @@ describe('resolveHostTaskFindings', () => {
     return {
       obligationId: OBLIGATION_ID,
       obligationType: 'plan' as const,
+      subjectDigest: 'test-subject-digest',
       iteration: 0,
       planVersion: 1,
       criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -616,6 +617,7 @@ describe('resolveHostTaskEffectiveFindings — directly-submitted challenge fres
     return {
       obligationId: CHALLENGE_OBLIGATION_ID,
       obligationType: 'implement' as const,
+      subjectDigest: 'test-subject-digest',
       iteration: 0,
       planVersion: 1,
       criteriaVersion: REVIEW_CRITERIA_VERSION,

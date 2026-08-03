@@ -60,6 +60,9 @@ function parseDiagnosticCode(result: string): string | undefined {
   return parsed.diagnostics?.diagnosticCode;
 }
 
+/** Subject digest shared by the plan obligation and its reviewer attempt. */
+const ANTI_FORGERY_SUBJECT_DIGEST = 'anti-forgery-plan-subject-digest';
+
 function strictFindings(overrides: Partial<ReviewFindings> = {}): ReviewFindings {
   return makeFindings({
     reviewedBy: { sessionId: 'ses_child' },
@@ -90,6 +93,7 @@ function strictAssuranceFixture(
       {
         obligationId: '11111111-1111-4111-8111-111111111111',
         obligationType: 'plan' as const,
+        subjectDigest: 'test-subject-digest',
         iteration: 0,
         planVersion: 1,
         criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -946,6 +950,8 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       pluginHandshakeAt: now,
       invocationId: null,
       fulfilledAt: null,
+      // Binding requires the obligation and its attempt to name the same subject.
+      subjectDigest: ANTI_FORGERY_SUBJECT_DIGEST,
     };
     assurance.invocations = [];
 
@@ -965,14 +971,25 @@ describe('anti-forgery — manual findings without persisted evidence', () => {
       JSON.stringify(findings),
       now,
     );
-    const bindResult = buildHostTaskEvidence(
-      enforcementState,
-      'ses_parent',
-      assurance.obligations,
-      assurance.invocations,
-      now,
-      [],
-    );
+    const bindResult = buildHostTaskEvidence(enforcementState, 'ses_parent', now, {
+      obligations: assurance.obligations,
+      invocations: assurance.invocations,
+      // Binding is attempt-first: the host pre-registers the attempt and binds
+      attempts:
+        // the reviewer child session to it before evidence can be captured.
+        [
+          {
+            attemptId: '33333333-3333-4333-8333-333333333333',
+            obligationId: assurance.obligations[0]!.obligationId,
+            obligationType: 'plan',
+            subjectDigest: ANTI_FORGERY_SUBJECT_DIGEST,
+            ordinal: 0,
+            childSessionId: 'ses_child',
+            status: 'created',
+            createdAt: now,
+          },
+        ],
+    });
 
     expect(bindResult.evidence).not.toBeNull();
     const assuranceWithTaskEvidence = appendInvocationEvidence(

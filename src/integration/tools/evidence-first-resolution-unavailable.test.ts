@@ -251,6 +251,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'plan',
+            subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -318,6 +319,7 @@ describe('BUG-19: reviewerUnavailable fail-closed handling', () => {
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'implement',
+            subjectDigest: 'test-subject-digest',
             iteration: 1,
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,

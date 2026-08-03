@@ -493,8 +493,11 @@ describe('CORNER', () => {
           approvedAt: '2026-01-01T00:00:00.000Z',
           approvedBy: 'approver',
           certificateId: '00000000-0000-4000-8000-000000000001',
-          planVersion: 1,
-          planRecordDigest: 'record-digest',
+          // The certificate is bound to the CURRENT plan record: a hardcoded
+          // version or record digest makes it stale, and materialization then
+          // yields an empty contract instead of the claims under test.
+          planVersion: state!.plan!.current.planVersion,
+          planRecordDigest: state!.plan!.current.recordDigest,
           reviewObligationId: null,
           reviewEvidenceDigest: null,
         },

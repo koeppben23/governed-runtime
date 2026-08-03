@@ -83,14 +83,14 @@ function trackReviewRequired(
   reviewTool: PendingReviewTool,
   next: string,
   now: string,
-  attemptId?: string | null,
-  obligationId?: string | null,
+  /** Identifiers the emitting tool published so the host can bind the reviewer. */
+  binding: { readonly attemptId?: string | null; readonly obligationId?: string | null },
 ): void {
   state.pendingReviews.set(reviewTool, {
     tool: reviewTool,
     requestedAt: now,
-    attemptId: attemptId ?? null,
-    obligationId: obligationId ?? null,
+    attemptId: binding.attemptId ?? null,
+    obligationId: binding.obligationId ?? null,
     subagentCalled: false,
     subagentRecord: null,
     contentMeta: extractContentMeta(next),
@@ -193,7 +193,7 @@ function trackRequiredReview(
     const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
     const obligationId =
       typeof parsed.reviewObligationId === 'string' ? parsed.reviewObligationId : null;
-    trackReviewRequired(state, recordKey, next, now, attemptId, obligationId);
+    trackReviewRequired(state, recordKey, next, now, { attemptId, obligationId });
   }
 }
 

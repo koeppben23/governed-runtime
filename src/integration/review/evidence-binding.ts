@@ -44,14 +44,141 @@ import {
  *   ever recorded", which correctly yields `unknown_attempt`.
  * @returns HostTaskBindResult with evidence (or null) plus diagnostic metadata
  */
+/**
+ * Transport contract for the captured findings.
+ *
+ * F8: findings recovered from an embedded/brace-balanced block (mixed model
+ * output) are downgraded from structured_high so the audit trail reflects the
+ * lower provenance confidence. The whole contract must agree — a recovered block
+ * was NOT clean structured output, so reviewOutputMode, structuredOutputUsed,
+ * and extractionMethod are set consistently rather than left at their
+ * structured-output defaults. Binding still proceeds.
+ */
+function transportContract(latest: PendingReviewRecord) {
+  return latest.capturedFindings?.extractionMethod === 'recovered_block'
+    ? {
+        reviewAssuranceLevel: 'structured_recovered' as const,
+        reviewOutputMode: 'text_compat' as const,
+        structuredOutputUsed: false,
+        extractionMethod: 'outermost_braces' as const,
+      }
+    : { reviewAssuranceLevel: 'structured_high' as const };
+}
+
+/** Mark an attempt as spent so a later callback from it is hard-rejected. */
+function staleAttempt(attempt: ReviewAttempt, now: string): ReviewAttempt {
+  return { ...attempt, status: 'rejected' as const, completedAt: now };
+}
+
+/** A rejection that also stales the attempt that produced it. */
+function attemptRejection(
+  attempt: ReviewAttempt,
+  now: string,
+  bindOutcome: HostTaskBindResult['bindOutcome'],
+  diagnostic: Record<string, unknown>,
+): HostTaskBindResult & { attempt: ReviewAttempt; obligation?: undefined } {
+  return {
+    evidence: null,
+    bindOutcome,
+    diagnostic,
+    attempt: staleAttempt(attempt, now),
+  };
+}
+
+/**
+ * Validate that `attempt` may carry evidence for the obligation it names.
+ *
+ * Returns a rejection block, or the obligation the attempt is bound to. Kept
+ * separate from the binding body so each fail-closed rule stays individually
+ * readable: attempt-first resolution is the security boundary of this module.
+ */
+function resolveObligationForAttempt(
+  attempt: ReviewAttempt,
+  obligations: ReviewObligation[],
+  oType: ReviewObligation['obligationType'],
+  attestationInfo: AttestationInfo,
+  now: string,
+):
+  | { obligation: ReviewObligation }
+  | (HostTaskBindResult & { attempt?: ReviewAttempt; obligation?: undefined }) {
+  const bindingMode = bindingModeOf(attestationInfo);
+  const obligation = obligations.find((o) => o.obligationId === attempt.obligationId);
+  if (!obligation) {
+    return attemptRejection(attempt, now, 'no_matching_obligation', {
+      attemptId: attempt.attemptId,
+      obligationId: attempt.obligationId,
+      attestedObligationId: attestationInfo.attestedObligationId,
+      obligationType: oType,
+      availableObligations: obligations.length,
+      bindingMode,
+      message: 'Attempt references an obligation that does not exist in the current state.',
+    });
+  }
+
+  // A consumed obligation has already been decided; attaching further evidence
+  // to it would let a late or repeated callback reopen a closed review.
+  if (obligation.status === 'consumed') {
+    return attemptRejection(attempt, now, 'no_matching_obligation', {
+      attemptId: attempt.attemptId,
+      obligationId: obligation.obligationId,
+      obligationStatus: obligation.status,
+      bindingMode,
+      message: 'Attempt references an obligation that was already consumed.',
+    });
+  }
+
+  // An attempt for a 'plan' obligation cannot bind evidence from an
+  // 'implementation' tool invocation.
+  if (obligation.obligationType !== oType) {
+    return attemptRejection(attempt, now, 'field_mismatch', {
+      attemptId: attempt.attemptId,
+      attemptObligationType: attempt.obligationType,
+      enforcementObligationType: oType,
+      bindingMode,
+      message: 'Attempt obligation type does not match the enforcement tool type.',
+    });
+  }
+
+  // If the reviewer attested to a specific obligation, it must be the one the
+  // attempt was created for.
+  if (
+    attestationInfo.hasValidAttestation &&
+    attestationInfo.attestedObligationId !== attempt.obligationId
+  ) {
+    return attemptRejection(attempt, now, 'field_mismatch', {
+      attemptId: attempt.attemptId,
+      attestedObligationId: attestationInfo.attestedObligationId,
+      attemptObligationId: attempt.obligationId,
+      bindingMode,
+      message: 'Reviewer attested to a different obligation than the one bound to this attempt.',
+    });
+  }
+
+  // Subject-digest binding: the attempt's frozen subject digest must name the
+  // same artifact as the obligation, preventing cross-artifact attachment.
+  if (attempt.subjectDigest !== obligation.subjectDigest) {
+    return subjectMismatchBlock(
+      obligation.subjectDigest,
+      attempt.subjectDigest,
+      obligation.obligationId,
+      attempt,
+    );
+  }
+
+  return { obligation };
+}
+
 export function buildHostTaskEvidence(
   state: SessionEnforcementState,
   sessionId: string,
-  obligations: ReviewObligation[],
-  invocations: ReviewInvocationEvidence[],
   now: string,
-  attempts: readonly ReviewAttempt[],
+  records: {
+    readonly obligations: ReviewObligation[];
+    readonly invocations: ReviewInvocationEvidence[];
+    readonly attempts: readonly ReviewAttempt[];
+  },
 ): HostTaskBindResult & { attempt?: ReviewAttempt } {
+  const { obligations, invocations, attempts } = records;
   const latestResult = latestBindableReviewRecord(state);
   if ('bindOutcome' in latestResult) return latestResult;
   const { latest, childSessionId, obligationType: oType, rawFindings } = latestResult;
@@ -64,96 +191,19 @@ export function buildHostTaskEvidence(
   if ('bindOutcome' in resolvedAttempt) return resolvedAttempt;
   const attempt = resolvedAttempt.attempt;
 
-  // Load the exact obligation the attempt was created for.
-  const obligatedObligation = obligations.find((o) => o.obligationId === attempt.obligationId);
-  if (!obligatedObligation) {
-    return {
-      evidence: null,
-      bindOutcome: 'no_matching_obligation',
-      diagnostic: {
-        attemptId: attempt.attemptId,
-        obligationId: attempt.obligationId,
-        message: 'Attempt references an obligation that does not exist in the current state.',
-      },
-      attempt: { ...attempt, status: 'rejected' as const, completedAt: now },
-    };
-  }
-
-  // A consumed obligation has already been decided; attaching further evidence
-  // to it would let a late or repeated callback reopen a closed review. The
-  // previous obligation-matching pass excluded consumed obligations, and moving
-  // to attempt-first resolution must not silently drop that invariant.
-  if (obligatedObligation.status === 'consumed') {
-    return {
-      evidence: null,
-      bindOutcome: 'no_matching_obligation',
-      diagnostic: {
-        attemptId: attempt.attemptId,
-        obligationId: obligatedObligation.obligationId,
-        obligationStatus: obligatedObligation.status,
-        message: 'Attempt references an obligation that was already consumed.',
-      },
-      attempt: { ...attempt, status: 'rejected' as const, completedAt: now },
-    };
-  }
-
-  // Cross-check: the obliged obligation type must be consistent with the tool
-  // that triggered this review. An attempt for a 'plan' obligation cannot bind
-  // evidence from an 'implementation' tool invocation.
-  if (obligatedObligation.obligationType !== oType) {
-    return {
-      evidence: null,
-      bindOutcome: 'field_mismatch',
-      diagnostic: {
-        attemptId: attempt.attemptId,
-        attemptObligationType: attempt.obligationType,
-        enforcementObligationType: oType,
-        message: 'Attempt obligation type does not match the enforcement tool type.',
-      },
-      attempt: { ...attempt, status: 'rejected' as const, completedAt: now },
-    };
-  }
-
-  // Attestation consistency: if the reviewer attested to a specific obligation,
-  // it must be the same one the attempt was created for.
-  if (
-    attestationInfo.hasValidAttestation &&
-    attestationInfo.attestedObligationId !== attempt.obligationId
-  ) {
-    return {
-      evidence: null,
-      bindOutcome: 'field_mismatch',
-      diagnostic: {
-        attemptId: attempt.attemptId,
-        attestedObligationId: attestationInfo.attestedObligationId,
-        attemptObligationId: attempt.obligationId,
-        message: 'Reviewer attested to a different obligation than the one bound to this attempt.',
-      },
-      attempt: { ...attempt, status: 'rejected' as const, completedAt: now },
-    };
-  }
-
-  const matchedObligation = obligatedObligation;
-
-  // Subject-digest binding: compare the attempt's frozen subject digest
-  // (set from the obligation at creation time) against the obligation's
-  // subject digest. This prevents cross-artifact evidence attachment.
-  if (attempt.subjectDigest !== matchedObligation.subjectDigest) {
-    return subjectMismatchBlock(
-      matchedObligation.subjectDigest ?? 'missing',
-      attempt.subjectDigest,
-      matchedObligation.obligationId,
-      attempt,
-    );
-  }
+  const obligationResult = resolveObligationForAttempt(
+    attempt,
+    obligations,
+    oType,
+    attestationInfo,
+    now,
+  );
+  if (!obligationResult.obligation) return obligationResult;
+  const matchedObligation = obligationResult.obligation;
 
   // Cycle-binding fields (iteration/planVersion) are reviewer-reliable and stay fatal.
   const fieldMismatch = checkBindingFieldMismatch(rawFindings, matchedObligation, attestationInfo);
-  if (fieldMismatch)
-    return {
-      ...fieldMismatch,
-      attempt: { ...attempt, status: 'rejected' as const, completedAt: now },
-    };
+  if (fieldMismatch) return { ...fieldMismatch, attempt: staleAttempt(attempt, now) };
 
   // Host-only constants (mandateDigest/criteriaVersion/reviewedBy) are installed-mandate
   // values the host already owns; they are NOT reviewer-chosen. The LLM reviewer cannot
@@ -178,11 +228,7 @@ export function buildHostTaskEvidence(
     matchedObligation.obligationId,
     childSessionId,
   );
-  if (schemaCheck)
-    return {
-      ...schemaCheck,
-      attempt: { ...attempt, status: 'rejected' as const, completedAt: now },
-    };
+  if (schemaCheck) return { ...schemaCheck, attempt: staleAttempt(attempt, now) };
 
   const findingsHash = hashFindings(normalizedFindings);
   const duplicate = checkDuplicateHostTaskEvidence(
@@ -193,30 +239,42 @@ export function buildHostTaskEvidence(
   );
   if (duplicate) return { ...duplicate, attempt };
 
-  const promptHash = hashText(
-    `${oType}:${matchedObligation.iteration}:${matchedObligation.planVersion}`,
-  );
+  return assembleBoundEvidence({
+    latest,
+    sessionId,
+    childSessionId,
+    oType,
+    attempt,
+    obligation: matchedObligation,
+    normalizedFindings,
+    findingsHash,
+    hostConstantDivergence,
+    attestationInfo,
+    now,
+  });
+}
 
-  // F8: findings recovered from an embedded/brace-balanced block (mixed model
-  // output) are downgraded from structured_high so the audit trail reflects the
-  // lower provenance confidence. The whole transport contract must agree — a
-  // recovered block was NOT clean structured output, so reviewOutputMode,
-  // structuredOutputUsed, and extractionMethod are set consistently rather than
-  // left at their structured-output defaults. Binding still proceeds.
-  const recovered = latest.capturedFindings?.extractionMethod === 'recovered_block';
-  const transport = recovered
-    ? {
-        reviewAssuranceLevel: 'structured_recovered' as const,
-        reviewOutputMode: 'text_compat' as const,
-        structuredOutputUsed: false,
-        extractionMethod: 'outermost_braces' as const,
-      }
-    : { reviewAssuranceLevel: 'structured_high' as const };
+/** Build the bound invocation evidence once every fail-closed check has passed. */
+function assembleBoundEvidence(input: {
+  latest: PendingReviewRecord;
+  sessionId: string;
+  childSessionId: string;
+  oType: ReviewObligation['obligationType'];
+  attempt: ReviewAttempt;
+  obligation: ReviewObligation;
+  normalizedFindings: Record<string, unknown>;
+  findingsHash: string;
+  hostConstantDivergence: readonly string[];
+  attestationInfo: AttestationInfo;
+  now: string;
+}): HostTaskBindResult & { attempt?: ReviewAttempt } {
+  const { latest, childSessionId, oType, obligation, findingsHash, now } = input;
+  const promptHash = hashText(`${oType}:${obligation.iteration}:${obligation.planVersion}`);
 
   const evidence = buildInvocationEvidence({
-    obligationId: matchedObligation.obligationId,
+    obligationId: obligation.obligationId,
     obligationType: oType,
-    parentSessionId: sessionId,
+    parentSessionId: input.sessionId,
     childSessionId,
     invocationMode: 'host_subagent_task',
     hostVisible: true,
@@ -224,22 +282,24 @@ export function buildHostTaskEvidence(
     findingsHash,
     invokedAt: now,
     source: 'host-orchestrated',
-    ...transport,
+    ...transportContract(latest),
     capturedVerdict: latest.capturedFindings?.overallVerdict,
-    capturedRawFindings: normalizedFindings,
-    ...getBranchProvenanceFields(matchedObligation),
+    capturedRawFindings: input.normalizedFindings,
+    ...getBranchProvenanceFields(obligation),
   });
 
   return {
     evidence,
     bindOutcome: 'bound',
-    attempt,
+    attempt: input.attempt,
     diagnostic: {
-      obligationId: matchedObligation.obligationId,
+      obligationId: obligation.obligationId,
       childSessionId,
       findingsHash,
-      bindingMode: attestationInfo.hasValidAttestation ? 'attestation' : 'tool_fallback',
-      ...(hostConstantDivergence.length > 0 ? { hostConstantDivergence } : {}),
+      bindingMode: bindingModeOf(input.attestationInfo),
+      ...(input.hostConstantDivergence.length > 0
+        ? { hostConstantDivergence: input.hostConstantDivergence }
+        : {}),
     },
   };
 }
@@ -331,10 +391,13 @@ function resolveAttemptBySession(
   return { attempt: existing };
 }
 
-function resolveAttestationInfo(attestation: Record<string, unknown> | undefined): {
+/** Reviewer-supplied attestation, reduced to what binding decisions depend on. */
+interface AttestationInfo {
   attestedObligationId: string | null;
   hasValidAttestation: boolean;
-} {
+}
+
+function resolveAttestationInfo(attestation: Record<string, unknown> | undefined): AttestationInfo {
   const attestedObligationId =
     typeof attestation?.toolObligationId === 'string' ? attestation.toolObligationId : null;
   const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -342,6 +405,25 @@ function resolveAttestationInfo(attestation: Record<string, unknown> | undefined
     attestedObligationId,
     hasValidAttestation: !!attestedObligationId && uuidRe.test(attestedObligationId),
   };
+}
+
+/**
+ * Which provenance carried this binding.
+ *
+ * The obligation itself is always resolved from the recorded invocation attempt
+ * — this value does NOT say how the obligation was chosen. It records whether
+ * the reviewer additionally presented a valid self-attestation naming its
+ * obligation (`attestation`), or whether the binding rested solely on the
+ * host-observed Task correlation (`tool_fallback`).
+ *
+ * It is emitted on EVERY outcome decided after attestation resolution, not just
+ * on success: when a bind fails, knowing whether the reviewer attested at all is
+ * the first thing needed to diagnose it.
+ */
+function bindingModeOf(
+  attestationInfo: ReturnType<typeof resolveAttestationInfo>,
+): 'attestation' | 'tool_fallback' {
+  return attestationInfo.hasValidAttestation ? 'attestation' : 'tool_fallback';
 }
 
 function subjectMismatchBlock(
@@ -384,7 +466,7 @@ function checkBindingFieldMismatch(
     diagnostic: {
       attestedObligationId: attestationInfo.attestedObligationId,
       mismatchFields,
-      bindingMode: attestationInfo.hasValidAttestation ? 'attestation' : 'tool_fallback',
+      bindingMode: bindingModeOf(attestationInfo),
     },
   };
 }

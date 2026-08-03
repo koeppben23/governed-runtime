@@ -9,6 +9,7 @@ import type { startReviewFlow, executeReview } from '../../../rails/review.js';
 import type { ReviewReferenceInput } from '../../../rails/review.js';
 import type { ReviewObligation } from '../../../state/evidence.js';
 import type { ReviewFindings } from '../../../state/evidence.js';
+import type { ReviewAssuranceState } from '../../../state/evidence-review.js';
 import type { ToolContext } from '../helpers.js';
 import type { StandaloneReviewObjective } from '../../../state/standalone-review.js';
 
@@ -39,6 +40,11 @@ export type ReviewPreparation = {
   validatedReviewObligation: ReviewObligation | null;
   /** Newly created pending obligation (first content-aware call). */
   pendingObligation?: ReviewObligation;
+  /**
+   * Assurance state actually written while preparing the obligation, including
+   * its attempt. Authoritative over the caller's pre-write snapshot.
+   */
+  persistedAssurance?: ReviewAssuranceState;
   /** Blocking message to return after content preparation (e.g. CONTENT_ANALYSIS_REQUIRED). */
   blockMessage?: string;
   effectiveReviewFindings?: ReviewFindings;

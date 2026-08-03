@@ -403,11 +403,11 @@ export const ReviewObligation = z.object({
    * Used at binding time to prevent cross-artifact evidence attachment.
    *
    * NOTE: `ReviewAttempt.subjectDigest` is REQUIRED and binding compares the two
-   * for equality, so an obligation without a subject digest can never bind. This
-   * field should become required as well; that is a separate change because it
-   * touches ~37 fixtures across the review suites.
+   * for equality, so an obligation without a subject digest can never bind.
+   * Required here as well, so the compiler — not a runtime bind failure —
+   * surfaces any site that forgets to freeze the subject.
    */
-  subjectDigest: z.string().min(1).optional(),
+  subjectDigest: z.string().min(1),
   /**
    * Ordered attempt IDs associated with this obligation.
    * Each reviewer Task invocation creates a new attempt; the latest attempt at

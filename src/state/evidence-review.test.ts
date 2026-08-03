@@ -210,6 +210,7 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        subjectDigest: 'sha256-subject',
         iteration: 0,
         planVersion: 1,
         criteriaVersion: 'v1',
@@ -441,6 +442,7 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'review' as const,
+        subjectDigest: 'sha256-subject',
         iteration: 0,
         planVersion: 1,
         criteriaVersion: 'v1',
@@ -455,6 +457,31 @@ describe('evidence-review', () => {
         metadata: { inputFingerprint: 'abc', customField: 42 },
       };
       expect(ReviewObligation.parse(obligation)).toEqual(obligation);
+    });
+
+    it('ReviewObligation rejects a missing subjectDigest', () => {
+      // The subject digest is the host-authoritative identity of what must be
+      // reviewed. Binding compares it against the attempt, so an obligation
+      // without one can never bind: it must be rejected at the schema boundary
+      // rather than persisted and fail later as an unexplained subject mismatch.
+      const withoutSubject = {
+        obligationId: FIXED_UUID,
+        obligationType: 'review' as const,
+        iteration: 0,
+        planVersion: 1,
+        criteriaVersion: 'v1',
+        mandateDigest: 'sha256-mandate',
+        createdAt: FIXED_TIME,
+        pluginHandshakeAt: null,
+        status: 'pending' as const,
+        invocationId: null,
+        blockedCode: null,
+        fulfilledAt: null,
+        consumedAt: null,
+      };
+      const result = ReviewObligation.safeParse(withoutSubject);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues.map((issue) => issue.path.join('.'))).toContain('subjectDigest');
     });
   });
 
@@ -486,6 +513,7 @@ describe('evidence-review', () => {
       const obligation = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        subjectDigest: 'sha256-subject',
         iteration: 0,
         planVersion: 1,
         criteriaVersion: 'v1',
@@ -507,6 +535,7 @@ describe('evidence-review', () => {
       const legacy = {
         obligationId: FIXED_UUID,
         obligationType: 'plan' as const,
+        subjectDigest: 'sha256-subject',
         iteration: 0,
         planVersion: 1,
         criteriaVersion: 'v1',

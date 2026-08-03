@@ -60,6 +60,8 @@ const execFileAsync = promisify(execFile);
 const PARENT_SESSION = 'ses_parent_e2e';
 const CHILD_SESSION = 'ses_child_real_e2e';
 const OBLIGATION_ID = '2a8f1c40-1111-4aaa-8bbb-cccccccccccc';
+const ATTEMPT_ID = '3b9f1c40-2222-4aaa-8bbb-cccccccccccc';
+const SUBJECT_DIGEST = 'e2e-plan-subject-digest';
 
 type Hooks = Awaited<ReturnType<typeof FlowGuardAuditPlugin>>;
 
@@ -89,6 +91,11 @@ function planModeAOutput(): { output: string; metadata: Record<string, unknown> 
       selfReviewIteration: 0,
       reviewMode: 'subagent',
       reviewObligationId: OBLIGATION_ID,
+      // The real flowguard_plan emits the attempt id alongside the obligation
+      // id (assurance.ts buildReviewRequiredPayload). Enforcement tracking
+      // parses it into the pending review, and the Task after-hook binds the
+      // reviewer child session to exactly this attempt.
+      reviewAttemptId: ATTEMPT_ID,
       reviewCriteriaVersion: REVIEW_CRITERIA_VERSION,
       reviewMandateDigest: REVIEW_MANDATE_DIGEST,
       next: 'INDEPENDENT_REVIEW_REQUIRED: iteration=0, planVersion=1',
@@ -194,6 +201,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,
             mandateDigest: REVIEW_MANDATE_DIGEST,
+            subjectDigest: SUBJECT_DIGEST,
             createdAt: now,
             pluginHandshakeAt: null,
             status: 'pending',
@@ -204,7 +212,21 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
           },
         ],
         invocations: [],
-        attempts: [],
+        // Production records the attempt when the obligation is created, before
+        // the reviewer subagent runs. The attempt is deliberately UNBOUND here:
+        // the host binds the real child session id at Task time, and
+        // bindAttemptSession rejects an already-bound attempt.
+        attempts: [
+          {
+            attemptId: ATTEMPT_ID,
+            obligationId: OBLIGATION_ID,
+            obligationType: 'plan' as const,
+            subjectDigest: SUBJECT_DIGEST,
+            ordinal: 0,
+            status: 'created' as const,
+            createdAt: now,
+          },
+        ],
       },
     }),
   );
@@ -422,6 +444,14 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
 
     // The obligation must be persisted and pending after Call 1.
     const afterCall1 = await readState(sessDir);
+    // Call 1 must persist the obligation AND its attempt: the attempt is what the
+    // host later binds the reviewer child session to.
+    expect(
+      (afterCall1?.reviewAssurance?.attempts ?? []).filter(
+        (a) => a.obligationType === 'review' && a.status === 'created' && !a.childSessionId,
+      ),
+      'bindable attempt persisted by Call 1',
+    ).toHaveLength(1);
     const pendingAfterCall1 = (afterCall1?.reviewAssurance?.obligations ?? []).filter(
       (o) => o.obligationType === 'review' && o.status === 'pending',
     );
@@ -439,10 +469,20 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
 
     // flowguard_review after-hook: the orchestrator runs handleHostTaskPolicy
     // (host-task handshake) on the SAME output the tool returned.
+    const reviewOut = { title: 'Review', output: String(call1Raw), metadata: {} };
     await afterHook(
       { tool: 'flowguard_review', sessionID: PARENT_SESSION, callID: 'c-review', args: {} },
-      { title: 'Review', output: String(call1Raw), metadata: {} },
+      reviewOut,
     );
+    {
+      // The handshake rewrite is the emitter of INDEPENDENT_REVIEW_REQUIRED on
+      // this path, so it must also surface the attempt the host binds to.
+      const rewritten = JSON.parse(reviewOut.output) as Record<string, unknown>;
+      expect(String(rewritten.next ?? '')).toContain('INDEPENDENT_REVIEW_REQUIRED');
+      expect(rewritten.reviewAttemptId).toBe(
+        (afterCall1?.reviewAssurance?.attempts ?? [])[0]?.attemptId,
+      );
+    }
 
     // The obligation must STILL be pending after the handshake (the log shows it
     // becomes 0 — that is the bug).

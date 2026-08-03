@@ -291,6 +291,7 @@ function planStateWithEvidence(
         {
           obligationId: OBLIGATION_ID,
           obligationType: 'plan',
+          subjectDigest: 'test-subject-digest',
           iteration: 0,
           planVersion: 1,
           criteriaVersion: REVIEW_CRITERIA_VERSION,
@@ -691,6 +692,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
           {
             obligationId: OBLIGATION_ID,
             obligationType: 'plan',
+            subjectDigest: 'test-subject-digest',
             iteration: 0,
             planVersion: 1,
             criteriaVersion: REVIEW_CRITERIA_VERSION,

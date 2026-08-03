@@ -163,7 +163,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
   it('HAPPY: invalid attestation stripped — capturedRawFindings has no attestation field', () => {
     const { state, obligation, attempts } = setupInvalidAttestationCycle();
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.evidence).not.toBeNull();
     expect(result.bindOutcome).toBe('bound');
@@ -179,7 +183,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
   it('HAPPY: stripped findings are consumable by resolveHostTaskFindings', () => {
     const { state, obligation, attempts } = setupInvalidAttestationCycle();
 
-    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(bindResult.evidence).not.toBeNull();
 
     // Simulate persisting and reading back — the full consumption chain
@@ -206,7 +214,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       verdict: 'changes_requested',
     });
 
-    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(bindResult.evidence).not.toBeNull();
     expect(bindResult.evidence!.capturedVerdict).toBe('changes_requested');
 
@@ -255,7 +267,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     // With capturedFindings=null, the filter in buildHostTaskEvidence (line 680)
     // excludes the record from matched[], yielding no_matched_record.
     const attempts = [attemptFor(obligation)];
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(result.evidence).toBeNull();
     expect(result.bindOutcome).toBe('no_matched_record');
   });
@@ -267,7 +283,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       toolObligationId: 'not_provided_in_prompt',
     });
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.evidence).not.toBeNull();
     const stored = result.evidence!.capturedRawFindings as Record<string, unknown>;
@@ -309,7 +329,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     );
 
     const attempts = [attemptFor(obligation)];
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(result.evidence).not.toBeNull();
 
     // No attestation in original → spread drops nothing → still consumable
@@ -326,7 +350,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
   it('EDGE: all non-attestation fields preserved exactly after strip', () => {
     const { state, obligation, attempts } = setupInvalidAttestationCycle();
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     const stored = result.evidence!.capturedRawFindings as Record<string, unknown>;
 
     // Every field except attestation must be present and unchanged
@@ -387,7 +415,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     );
 
     const attempts = [attemptFor(obligation)];
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(result.evidence).not.toBeNull();
 
     // attestation was a string → toolObligationId extraction fails →
@@ -430,7 +462,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     );
 
     const attempts = [attemptFor(obligation)];
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(result.evidence).not.toBeNull();
 
     // attestation: null → stripped → stored without attestation → consumable
@@ -446,7 +482,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
   it('REGRESSION: valid attestation is NOT stripped — primary path preserved', () => {
     const { state, obligation, attempts } = setupFullCycle();
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(result.evidence).not.toBeNull();
     expect(result.diagnostic).toHaveProperty('bindingMode', 'attestation');
@@ -463,7 +503,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
   it('REGRESSION: findingsHash matches capturedRawFindings after strip (consistency)', () => {
     const { state, obligation, attempts } = setupInvalidAttestationCycle();
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(result.evidence).not.toBeNull();
 
     // Hash was computed from normalized (stripped) findings.
@@ -475,7 +519,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
   it('REGRESSION: findingsHash matches capturedRawFindings with valid attestation too', () => {
     const { state, obligation, attempts } = setupFullCycle();
 
-    const result = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const result = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(result.evidence).not.toBeNull();
 
     // With valid attestation, normalizedFindings === rawFindings → hash consistent
@@ -488,8 +536,16 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
   it('SMOKE: normalization is deterministic — same result on repeated builds', () => {
     const { state, obligation, attempts } = setupInvalidAttestationCycle();
 
-    const r1 = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
-    const r2 = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const r1 = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
+    const r2 = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
 
     expect(r1.evidence!.findingsHash).toBe(r2.evidence!.findingsHash);
     const s1 = r1.evidence!.capturedRawFindings as Record<string, unknown>;
@@ -529,8 +585,16 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
       LATER,
     );
 
-    const r1 = buildHostTaskEvidence(state1, SESSION_ID, [obligation1], [], LATER, []);
-    const r2 = buildHostTaskEvidence(state2, SESSION_ID, [obligation2], [], LATER, []);
+    const r1 = buildHostTaskEvidence(state1, SESSION_ID, LATER, {
+      obligations: [obligation1],
+      invocations: [],
+      attempts: [attemptFor(obligation1)],
+    });
+    const r2 = buildHostTaskEvidence(state2, SESSION_ID, LATER, {
+      obligations: [obligation2],
+      invocations: [],
+      attempts: [attemptFor(obligation2)],
+    });
 
     // Both have different garbage attestation but identical core findings
     // After strip, hashes must match
@@ -589,8 +653,12 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     );
 
     // Step 1: Bind
-    const attempts = [attemptFor(obligation)];
-    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const attempts = [attemptFor(obligation, 'ses_reviewer_real')];
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(bindResult.evidence).not.toBeNull();
     expect(bindResult.bindOutcome).toBe('bound');
     expect(bindResult.diagnostic).toHaveProperty('bindingMode', 'tool_fallback');
@@ -622,7 +690,11 @@ describe('BUG-20b: invalid attestation normalization before storage', () => {
     const { state, obligation, attempts } = setupInvalidAttestationCycle({ verdict: 'accept' });
 
     // Bind
-    const bindResult = buildHostTaskEvidence(state, SESSION_ID, [obligation], [], LATER, attempts);
+    const bindResult = buildHostTaskEvidence(state, SESSION_ID, LATER, {
+      obligations: [obligation],
+      invocations: [],
+      attempts: attempts,
+    });
     expect(bindResult.evidence).not.toBeNull();
 
     // Hash consistency
