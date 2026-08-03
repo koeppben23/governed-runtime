@@ -156,6 +156,8 @@ export type HostTaskBindOutcome =
   | 'field_mismatch'
   | 'duplicate_evidence'
   | 'schema_invalid'
+  | 'client_reference_invalid'
+  | 'challenge_contract_violation'
   | 'subject_mismatch'
   | 'stale_attempt'
   | 'idempotent_bound'

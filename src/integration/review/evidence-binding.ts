@@ -22,6 +22,10 @@ import { obligationTypeForTool } from './obligation-tools.js';
 import { buildInvocationEvidence, hashFindings, hashText } from './assurance.js';
 import { getBranchProvenanceFields } from './review-provenance.js';
 import {
+  checkChallengeContract,
+  normalizeFindingsChallenges,
+} from './enforcement/challenge-binding.js';
+import {
   ReviewActorInfo,
   ReviewFindings as ReviewFindingsSchema,
 } from '../../state/evidence-review.js';
@@ -214,22 +218,15 @@ export function buildHostTaskEvidence(
   // diagnostics rather than fatally rejected.
   const hostConstantDivergence = hostConstantDivergentFields(matchedObligation, attestation);
 
-  const normalizedFindings = normalizeHostTaskFindings(
+  const prepared = prepareBindableFindings({
     rawFindings,
-    matchedObligation,
-    attestationInfo.hasValidAttestation,
+    obligation: matchedObligation,
+    hasValidAttestation: attestationInfo.hasValidAttestation,
     childSessionId,
     now,
-  );
-
-  // Pre-binding schema validation: reject invalid reviewer output before
-  // persisting it as capturedRawFindings.
-  const schemaCheck = validateNormalizedFindings(
-    normalizedFindings,
-    matchedObligation.obligationId,
-    childSessionId,
-  );
-  if (schemaCheck) return { ...schemaCheck, attempt: staleAttempt(attempt, now) };
+  });
+  if ('bindOutcome' in prepared) return { ...prepared, attempt: staleAttempt(attempt, now) };
+  const normalizedFindings = prepared.findings;
 
   const findingsHash = hashFindings(normalizedFindings);
   const duplicate = checkDuplicateHostTaskEvidence(
@@ -609,6 +606,54 @@ function buildHostReviewedBy(childSessionId: string): Record<string, unknown> {
     actorSource: 'unknown',
     actorAssurance: 'best_effort',
   };
+}
+
+/**
+ * Turn raw reviewer output into findings that may be persisted as evidence.
+ *
+ * Ordering is a correctness contract, not a preference:
+ *  1. Host provenance overwrites reviewer-authored identity and timestamps.
+ *  2. Challenge identity is minted host-side. The canonical prompt asks for a
+ *     `clientReference` slug and never for a `challengeId`, so skipping this
+ *     makes EVERY prompt-compliant reviewer output `schema_invalid`.
+ *  3. The canonical schema gate runs — the single authority on payload validity.
+ *  4. The obligation's frozen challenge contract is checked, so evidence that
+ *     the verdict is guaranteed to reject never consumes the attempt.
+ *
+ * @returns The bindable findings, or the rejection that stops the bind.
+ */
+function prepareBindableFindings(input: {
+  rawFindings: Record<string, unknown>;
+  obligation: ReviewObligation;
+  hasValidAttestation: boolean;
+  childSessionId: string;
+  now: string;
+}): { findings: Record<string, unknown> } | HostTaskBindResult {
+  const { rawFindings, obligation, hasValidAttestation, childSessionId, now } = input;
+
+  const provenanceFindings = normalizeHostTaskFindings(
+    rawFindings,
+    obligation,
+    hasValidAttestation,
+    childSessionId,
+    now,
+  );
+
+  const normalization = normalizeFindingsChallenges(
+    provenanceFindings,
+    obligation.obligationId,
+    childSessionId,
+  );
+  if ('bindOutcome' in normalization) return normalization;
+  const findings = normalization.findings;
+
+  const schemaCheck = validateNormalizedFindings(findings, obligation.obligationId, childSessionId);
+  if (schemaCheck) return schemaCheck;
+
+  const contractCheck = checkChallengeContract(findings, obligation, childSessionId);
+  if (contractCheck) return contractCheck;
+
+  return { findings };
 }
 
 function validateNormalizedFindings(

@@ -139,7 +139,7 @@ function renderChallengeContract(
   }
   const evidenceRefs = contract.evidenceRefs ?? [];
   const challenge = {
-    clientReference: '<your-ref>',
+    clientReference: 'c1',
     obligationId,
     scenario: '<falsification scenario>',
     claim: '<reviewed claim>',

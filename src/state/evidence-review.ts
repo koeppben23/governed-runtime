@@ -47,24 +47,6 @@ export const ReviewAttempt = z.object({
 });
 export type ReviewAttempt = z.infer<typeof ReviewAttempt>;
 
-// ─── Reviewer Challenge Input (non-authoritative, pre-normalization) ──────────
-
-export const ReviewerChallengeInput = z.object({
-  clientReference: z
-    .string()
-    .min(1)
-    .max(64)
-    .regex(/^[a-zA-Z0-9_-]+$/)
-    .optional(),
-  scenario: z.string().min(1),
-  claim: z.string().min(1),
-  locations: z.array(z.string().min(1)).min(1),
-  kind: z.enum(['design_challenge', 'implementation_challenge', 'content_challenge']),
-  evidenceRefs: z.array(z.unknown()).min(1),
-  outcome: z.enum(['supported', 'contradicted', 'not_verified']),
-});
-export type ReviewerChallengeInput = z.infer<typeof ReviewerChallengeInput>;
-
 // ─── Completeness Report ──────────────────────────────────────────────────────
 
 export const EvidenceSlotStatusSchema = z.object({
@@ -180,45 +162,81 @@ export const ReviewChallengeEvidenceRef = z.discriminatedUnion('kind', [
 ]);
 export type ReviewChallengeEvidenceRef = z.infer<typeof ReviewChallengeEvidenceRef>;
 
+/**
+ * Reviewer-supplied correlation slug for a challenge.
+ *
+ * The reviewer never mints a challenge identity — the host does. This slug is
+ * the reviewer's own handle for a challenge within a single payload; the host
+ * maps it to the canonical `challengeId` during normalization and retains it so
+ * the audit trail stays correlatable to the reviewer's original output.
+ */
+export const ChallengeClientReference = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^[a-zA-Z0-9_-]+$/);
+
 const ReviewChallengeBase = {
   challengeId: z.string().uuid(),
   obligationId: z.string().uuid(),
+  clientReference: ChallengeClientReference.optional(),
   scenario: z.string().min(1),
   claim: z.string().min(1),
   locations: z.array(z.string().min(1)).min(1),
 };
+
+const DesignChallenge = z.object({
+  ...ReviewChallengeBase,
+  kind: z.literal('design_challenge'),
+  evidenceRefs: z.array(PlanAdrSectionRef).min(1),
+  outcome: z.enum(['supported', 'contradicted', 'not_verified']),
+});
+
+const ImplementationChallenge = z.object({
+  ...ReviewChallengeBase,
+  kind: z.literal('implementation_challenge'),
+  evidenceRefs: z.array(z.union([ImplementationRef, ValidationAttemptRef])).min(1),
+  outcome: z.enum(['pass', 'fail', 'not_verified']),
+});
+
+const ContentChallenge = z.object({
+  ...ReviewChallengeBase,
+  kind: z.literal('content_challenge'),
+  evidenceRefs: z.array(ContentRef).min(1),
+  outcome: z.enum(['supported', 'contradicted', 'not_verified']),
+});
 
 /**
  * An evidence-bound falsification attempt. This is advisory evidence only;
  * challenge requirement and resolution enforcement are deliberately separate.
  */
 export const ReviewChallenge = z.discriminatedUnion('kind', [
-  z
-    .object({
-      ...ReviewChallengeBase,
-      kind: z.literal('design_challenge'),
-      evidenceRefs: z.array(PlanAdrSectionRef).min(1),
-      outcome: z.enum(['supported', 'contradicted', 'not_verified']),
-    })
-    .readonly(),
-  z
-    .object({
-      ...ReviewChallengeBase,
-      kind: z.literal('implementation_challenge'),
-      evidenceRefs: z.array(z.union([ImplementationRef, ValidationAttemptRef])).min(1),
-      outcome: z.enum(['pass', 'fail', 'not_verified']),
-    })
-    .readonly(),
-  z
-    .object({
-      ...ReviewChallengeBase,
-      kind: z.literal('content_challenge'),
-      evidenceRefs: z.array(ContentRef).min(1),
-      outcome: z.enum(['supported', 'contradicted', 'not_verified']),
-    })
-    .readonly(),
+  DesignChallenge.readonly(),
+  ImplementationChallenge.readonly(),
+  ContentChallenge.readonly(),
 ]);
 export type ReviewChallenge = z.infer<typeof ReviewChallenge>;
+
+// ─── Reviewer Challenge Input (non-authoritative, pre-normalization) ──────────
+
+/**
+ * The challenge shape a reviewer subagent is asked to produce.
+ *
+ * Derived from the canonical {@link ReviewChallenge} by omitting the
+ * host-assigned `challengeId`, so the reviewer-facing contract and the binding
+ * authority can never drift apart. A hand-maintained copy previously declared a
+ * single flat `outcome` enum, which could not express an implementation
+ * challenge (`pass` / `fail`) at all.
+ *
+ * This type documents the contract; the canonical {@link ReviewFindings} schema
+ * remains the sole runtime gate at binding time.
+ */
+export const ReviewerChallengeInput = z.discriminatedUnion('kind', [
+  DesignChallenge.omit({ challengeId: true }).readonly(),
+  ImplementationChallenge.omit({ challengeId: true }).readonly(),
+  ContentChallenge.omit({ challengeId: true }).readonly(),
+]);
+export type ReviewerChallengeInput = z.infer<typeof ReviewerChallengeInput>;
 
 /**
  * Advisory evidence that an implementation challenge was addressed by the

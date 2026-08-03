@@ -49,8 +49,10 @@ describe('renderReviewerTaskPrompt challenge contract', () => {
     expect(prompt).toContain('return exactly 1 design_challenge challenge(s)');
     expect(prompt).toContain(JSON.stringify(evidenceRef));
     // The reviewer supplies only a client-side reference; the canonical
-    // challengeId is host-assigned, so the prompt must never ask for one.
-    expect(prompt).toContain('"clientReference":"<your-ref>"');
+    // challengeId is host-assigned, so the prompt must never ask for one. The
+    // example must itself satisfy the clientReference format, otherwise a
+    // reviewer copying the shape verbatim is rejected by the canonical schema.
+    expect(prompt).toContain('"clientReference":"c1"');
     expect(prompt).not.toContain('"challengeId"');
     expect(prompt).toContain('"obligationId":"11111111-1111-4111-8111-111111111111"');
     expect(prompt).toContain('"kind":"design_challenge"');

@@ -288,6 +288,44 @@ describe('reviewer attempt lifecycle through the real hooks', () => {
     },
   );
 
+  // ─── Retry from the SAME reviewer session (host `task_id` reuse) ────────────
+
+  it.each([['rejected'], ['stale'], ['expired']] as const)(
+    'allows a %s attempt to be retried from the same reviewer session',
+    async (attemptStatus) => {
+      // An agent that continues the reviewer subagent via `task_id` reuses the
+      // child session. Refusing that outright stranded the obligation: the spent
+      // attempt is no longer bindable either, so no path could produce evidence.
+      const sessDir = await driveReviewerTask(
+        { attemptStatus, attemptChildSessionId: CHILD_FIRST },
+        CHILD_FIRST,
+      );
+
+      const state = await readState(sessDir);
+      const attempts = state?.reviewAssurance?.attempts ?? [];
+      const retry = attempts.find((a) => a.attemptId !== ATTEMPT_ID);
+
+      expect(attempts.length).toBeGreaterThan(1);
+      expect(retry?.childSessionId).toBe(CHILD_FIRST);
+    },
+  );
+
+  it.each([['bound'], ['captured']] as const)(
+    'still refuses a %s attempt retried from the same reviewer session',
+    async (attemptStatus) => {
+      // Narrowing the guard must not reopen the hole it was built for: a session
+      // that already holds evidence may never bind a second record.
+      const sessDir = await driveReviewerTask(
+        { attemptStatus, attemptChildSessionId: CHILD_FIRST },
+        CHILD_FIRST,
+      );
+
+      const state = await readState(sessDir);
+      expect(state?.reviewAssurance?.attempts ?? []).toHaveLength(1);
+      expect(state?.reviewAssurance?.invocations ?? []).toHaveLength(0);
+    },
+  );
+
   it('stales an interrupted created attempt before the retry takes over', async () => {
     // Correlated with an earlier child session but never captured: the retry must
     // not reuse that slot, and a late callback from it must not still bind.

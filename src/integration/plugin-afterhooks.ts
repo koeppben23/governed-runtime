@@ -65,6 +65,14 @@ import {
 import type { ReviewAssuranceState, ReviewAttempt } from '../state/evidence-review.js';
 import { readState as readPersistedState } from '../adapters/persistence.js';
 import type { SessionState } from '../state/schema.js';
+
+/**
+ * Attempt statuses that already carry reviewer evidence. Only these block a
+ * reviewer child session from binding again; a spent attempt without usable
+ * evidence must stay retryable.
+ */
+const EVIDENCE_HOLDING_ATTEMPT_STATUSES = new Set<ReviewAttempt['status']>(['bound', 'captured']);
+
 export async function toolAfter(
   runtime: FlowGuardPluginRuntime,
   input: unknown,
@@ -537,9 +545,18 @@ async function bindAttemptSession(
       const attempt = attempts?.find((a) => a.attemptId === attemptId);
       if (!attempt) throw bindingFailed('pending_attempt_not_found');
       if (attempt.obligationId !== obligationId) throw bindingFailed('attempt_obligation_mismatch');
-      if (attempts?.some((a) => a.childSessionId === childSessionId)) {
-        // One reviewer session binds at most once, whether to this attempt or
-        // another: otherwise a single child session could satisfy two attempts.
+      if (
+        attempts?.some(
+          (a) =>
+            a.childSessionId === childSessionId && EVIDENCE_HOLDING_ATTEMPT_STATUSES.has(a.status),
+        )
+      ) {
+        // One reviewer session may hold evidence at most once, whether on this
+        // attempt or another: otherwise a single child session could satisfy two
+        // attempts. A spent attempt that never produced usable evidence
+        // (`rejected`, `stale`, `expired`) leaves the session free to retry —
+        // blocking those too would strand the obligation after any rejected bind,
+        // because a spent attempt is no longer bindable either.
         throw bindingFailed('child_session_already_bound');
       }
       return {

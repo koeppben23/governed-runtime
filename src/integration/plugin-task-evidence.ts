@@ -241,6 +241,24 @@ async function persistAttemptStatus(
   }));
 }
 
+/** Upper bound for the diagnostic detail surfaced to the calling agent. */
+const MAX_BIND_DETAIL_LENGTH = 300;
+
+/**
+ * The host-authored explanation for a failed bind, bounded for output safety.
+ *
+ * Without it the agent only learns THAT no evidence bound, not why, and retries
+ * blindly against the same failure. Only the host-built `message` is forwarded —
+ * never raw reviewer payload or schema dumps.
+ */
+function bindDetail(bindResult: HostTaskBindResult): string | undefined {
+  const message = bindResult.diagnostic?.message;
+  if (typeof message !== 'string' || message.length === 0) return undefined;
+  return message.length > MAX_BIND_DETAIL_LENGTH
+    ? `${message.slice(0, MAX_BIND_DETAIL_LENGTH)}…`
+    : message;
+}
+
 function blockRequiredHostTaskEvidence(
   deps: HostTaskEvidenceDeps,
   sessionId: string,
@@ -254,11 +272,13 @@ function blockRequiredHostTaskEvidence(
     bindOutcome: bindResult.bindOutcome,
     ...bindResult.diagnostic,
   });
+  const detail = bindDetail(bindResult);
   hookOutput.output = strictBlockedOutput('HOST_SUBAGENT_TASK_REQUIRED', {
     reason: `${REVIEWER_SUBAGENT_TYPE} Task call did not produce bindable host-task evidence`,
     policy,
     policyMode: policy,
     bindOutcome: bindResult.bindOutcome,
+    ...(detail ? { detail } : {}),
     reviewerSubagentType: REVIEWER_SUBAGENT_TYPE,
   });
 }

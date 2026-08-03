@@ -2,93 +2,87 @@
  * @module integration/review-enforcement-normalize
  * @description Host-authoritative normalization of reviewer challenge output.
  *
- * Reviewer-generated `clientReference` slugs are mapped to FlowGuard-generated
- * UUID `challengeId` values. The reviewer never defines a challenge identity —
- * only the host does. Duplicate `clientReference` within a single payload is
- * rejected.
+ * The reviewer subagent never defines a challenge identity — only the host does.
+ * The canonical reviewer prompt therefore asks for a `clientReference` slug (see
+ * `renderReviewerTaskPrompt`), and this module maps each slug to a host-minted
+ * UUID `challengeId` before the canonical schema gate runs.
+ *
+ * Normalization is deliberately mechanical: it assigns host-authoritative
+ * identity and nothing else. It never validates challenge shape, so the
+ * canonical `ReviewFindings` schema stays the single runtime gate and there is
+ * exactly one place that can reject reviewer output.
  *
  * @version v1
  */
 
 import { randomUUID } from 'node:crypto';
 
-export interface ReviewerChallengeInput {
-  clientReference?: string;
-  scenario: string;
-  claim: string;
-  locations: string[];
-  kind: 'design_challenge' | 'implementation_challenge' | 'content_challenge';
-  evidenceRefs: unknown[];
-  outcome: string;
-}
+/** Outcome of mapping reviewer challenge slugs onto host-minted identities. */
+export type NormalizeChallengesResult =
+  | { readonly ok: true; readonly challenges: readonly Record<string, unknown>[] }
+  | {
+      readonly ok: false;
+      readonly code: 'duplicate_client_reference';
+      readonly clientReference: string;
+      readonly index: number;
+    };
 
-export interface NormalizedChallenge {
-  challengeId: string;
-  obligationId: string;
-  clientReference?: string;
-  scenario: string;
-  claim: string;
-  locations: string[];
-  kind: 'design_challenge' | 'implementation_challenge' | 'content_challenge';
-  evidenceRefs: unknown[];
-  outcome: string;
-}
-
-export interface NormalizeResult {
-  challenges: NormalizedChallenge[];
-  /** Non-empty ONLY when the result is still usable (auto-refs). Hard errors throw. */
-  warnings: string[];
-}
-
-export class DuplicateClientReferenceError extends Error {
-  constructor(
-    public readonly ref: string,
-    public readonly index: number,
-  ) {
-    super(`Duplicate clientReference "${ref}" at index ${index}`);
-    this.name = 'DuplicateClientReferenceError';
-  }
+/** Read a reviewer-supplied `clientReference`, or null when none was provided. */
+function readClientReference(entry: Record<string, unknown>): string | null {
+  const ref = entry.clientReference;
+  return typeof ref === 'string' && ref.length > 0 ? ref : null;
 }
 
 /**
- * Normalize reviewer-provided challenge inputs into host-authoritative challenges.
+ * Assign host-authoritative identity to reviewer-supplied challenges.
  *
- * - Generates a UUID `challengeId` for each input (never trusts the reviewer).
- * - Maps `clientReference` to generated `challengeId` for audit correlation.
- * - Rejects duplicate `clientReference` values within a single payload.
- * - Assigns auto-generated references (`auto-1`, `auto-2`, ...) when no
- *   `clientReference` is supplied.
+ * - Mints a fresh `challengeId` for every entry; a reviewer-supplied one is
+ *   always discarded, never trusted.
+ * - Stamps the bound `obligationId`, mirroring how `reviewedBy` / `reviewedAt`
+ *   are host-stamped. A challenge cannot name an obligation other than the one
+ *   its findings payload is being bound to.
+ * - Preserves a supplied `clientReference` for audit correlation, and rejects
+ *   duplicates within a single payload because they would make the mapping from
+ *   reviewer slug to canonical `challengeId` ambiguous.
+ * - Never invents a `clientReference` when the reviewer omitted one.
+ *
+ * Non-object entries pass through untouched so the canonical schema gate — not
+ * this function — produces the authoritative rejection.
+ *
+ * @param inputs - Raw, unvalidated `challenges` entries from reviewer output.
+ * @param obligationId - The obligation the findings payload is bound to.
+ * @param newChallengeId - Identity factory; injectable for deterministic tests.
  */
 export function normalizeChallenges(
-  inputs: ReviewerChallengeInput[],
+  inputs: readonly unknown[],
   obligationId: string,
-): NormalizeResult {
-  const challenges: NormalizedChallenge[] = [];
-  const warnings: string[] = [];
+  newChallengeId: () => string = randomUUID,
+): NormalizeChallengesResult {
+  const challenges: Record<string, unknown>[] = [];
   const usedRefs = new Set<string>();
 
-  let idx = 0;
-  for (const input of inputs) {
-    idx++;
-    const ref = input.clientReference ?? `auto-${idx}`;
-
-    if (usedRefs.has(ref)) {
-      throw new DuplicateClientReferenceError(ref, idx);
+  for (const [index, input] of inputs.entries()) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      challenges.push(input as Record<string, unknown>);
+      continue;
     }
-    usedRefs.add(ref);
+
+    const entry = input as Record<string, unknown>;
+    const ref = readClientReference(entry);
+    if (ref !== null) {
+      if (usedRefs.has(ref)) {
+        return { ok: false, code: 'duplicate_client_reference', clientReference: ref, index };
+      }
+      usedRefs.add(ref);
+    }
 
     challenges.push({
-      challengeId: randomUUID(),
+      ...entry,
+      challengeId: newChallengeId(),
       obligationId,
-      clientReference: ref,
-      scenario: input.scenario,
-      claim: input.claim,
-      locations: [...input.locations],
-      kind: input.kind,
-      evidenceRefs: [...input.evidenceRefs],
-      outcome: input.outcome,
+      ...(ref === null ? {} : { clientReference: ref }),
     });
   }
 
-  return { challenges, warnings };
+  return { ok: true, challenges };
 }

@@ -297,6 +297,78 @@ describe('handleHostTaskEvidence', () => {
       expect(ws.updateReviewAssurance).not.toHaveBeenCalled();
     });
 
+    it('forwards the host-authored bind reason so the agent can correct it', async () => {
+      // Without an actionable detail the agent only learns THAT nothing bound and
+      // retries blindly into the same failure.
+      mockReadState.mockResolvedValue(makeStateInfo('host_task_required'));
+      mockBuildHostTaskEvidence.mockReturnValue({
+        evidence: null,
+        bindOutcome: 'challenge_contract_violation',
+        diagnostic: {
+          required: 2,
+          actual: 0,
+          message: 'Reviewer supplied 0 challenge(s) but the obligation requires exactly 2.',
+        },
+      });
+
+      await handleHostTaskEvidence(
+        { ws: mockWs(), log: mockLog(), logError: vi.fn() },
+        SESSION_ID,
+        'child-1',
+        now,
+        hookOutput,
+      );
+
+      expect(mockStrictBlockedOutput).toHaveBeenCalledWith(
+        'HOST_SUBAGENT_TASK_REQUIRED',
+        expect.objectContaining({
+          bindOutcome: 'challenge_contract_violation',
+          detail: 'Reviewer supplied 0 challenge(s) but the obligation requires exactly 2.',
+        }),
+      );
+    });
+
+    it('truncates an oversized bind reason instead of forwarding it whole', async () => {
+      mockReadState.mockResolvedValue(makeStateInfo('host_task_required'));
+      mockBuildHostTaskEvidence.mockReturnValue({
+        evidence: null,
+        bindOutcome: 'client_reference_invalid',
+        diagnostic: { message: 'x'.repeat(500) },
+      });
+
+      await handleHostTaskEvidence(
+        { ws: mockWs(), log: mockLog(), logError: vi.fn() },
+        SESSION_ID,
+        'child-1',
+        now,
+        hookOutput,
+      );
+
+      const payload = mockStrictBlockedOutput.mock.calls.at(-1)?.[1] as { detail?: string };
+      expect(payload.detail).toHaveLength(301);
+      expect(payload.detail?.endsWith('…')).toBe(true);
+    });
+
+    it('omits detail entirely when the bind produced no host-authored reason', async () => {
+      mockReadState.mockResolvedValue(makeStateInfo('host_task_required'));
+      mockBuildHostTaskEvidence.mockReturnValue({
+        evidence: null,
+        bindOutcome: 'no_match',
+        diagnostic: { reason: 'no findings' },
+      });
+
+      await handleHostTaskEvidence(
+        { ws: mockWs(), log: mockLog(), logError: vi.fn() },
+        SESSION_ID,
+        'child-1',
+        now,
+        hookOutput,
+      );
+
+      const payload = mockStrictBlockedOutput.mock.calls.at(-1)?.[1] as Record<string, unknown>;
+      expect(payload).not.toHaveProperty('detail');
+    });
+
     it('catch block writes blocked output on readState error', async () => {
       mockReadState.mockRejectedValue(new Error('disk read error'));
       const ws = mockWs();
