@@ -40,6 +40,70 @@ const reviewSeverityMap: Record<string, 'info' | 'warning' | 'error'> = {
   warning: 'warning',
 };
 
+// ─── Challenge projection ────────────────────────────────────────────────────
+
+/**
+ * Severity of a challenge outcome, from the author's point of view.
+ *
+ * `contradicted` / `fail` mean the reviewer's falsification attempt SUCCEEDED:
+ * the claim under test did not hold. That is the most actionable result a review
+ * produces. `not_verified` means the attempt could not be carried out, which is
+ * an open risk rather than a confirmed defect. `supported` / `pass` record that
+ * the claim withstood the attempt.
+ */
+const CHALLENGE_OUTCOME_SEVERITY: Record<string, 'info' | 'warning' | 'error'> = {
+  contradicted: 'error',
+  fail: 'error',
+  not_verified: 'warning',
+  supported: 'info',
+  pass: 'info',
+};
+
+/**
+ * Project reviewer challenges into report findings.
+ *
+ * Challenges are the most substantive artifact a review produces - an
+ * evidence-bound falsification attempt with a concrete scenario and at least one
+ * location (`ReviewChallenge.locations` is `.min(1)`, so unlike a plain finding
+ * they are always located). They were dropped entirely from the report, so the
+ * author never saw them.
+ */
+function challengeFindings(
+  reviewFindings: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const challenges = reviewFindings.challenges;
+  if (!Array.isArray(challenges)) return [];
+  return challenges.flatMap((entry) => challengeFinding(entry));
+}
+
+/** Project one challenge, or nothing when it lacks the fields a reader needs. */
+function challengeFinding(entry: unknown): Array<Record<string, unknown>> {
+  if (typeof entry !== 'object' || entry === null) return [];
+  const challenge = entry as Record<string, unknown>;
+  const outcome = stringField(challenge.outcome);
+  const scenario = stringField(challenge.scenario);
+  if (!outcome || !scenario) return [];
+  const claim = stringField(challenge.claim);
+  const location = challengeLocation(challenge.locations);
+  return [
+    {
+      severity: CHALLENGE_OUTCOME_SEVERITY[outcome] ?? 'warning',
+      category: stringField(challenge.kind) || 'challenge',
+      message: `[${outcome}] ${scenario}${claim ? ` - claim under test: ${claim}` : ''}`,
+      ...(location ? { location } : {}),
+    },
+  ];
+}
+
+function stringField(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+function challengeLocation(value: unknown): string {
+  if (!Array.isArray(value)) return '';
+  return value.filter((entry): entry is string => typeof entry === 'string').join(', ');
+}
+
 // ─── Report building ─────────────────────────────────────────────────────────
 
 export function mapReviewFindingsToReport(reviewFindings: Record<string, unknown>): Array<{
@@ -66,6 +130,7 @@ export function mapReviewFindingsToReport(reviewFindings: Record<string, unknown
       category: 'unknown',
       message,
     })),
+    ...challengeFindings(reviewFindings),
   ];
 
   return allFindings

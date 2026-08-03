@@ -369,7 +369,11 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
     // Reproduces the demo-log regression: previously the agent free-composed a
     // prompt WITHOUT iteration=/planVersion= and was blocked with
     // SUBAGENT_PROMPT_MISSING_CONTEXT on the first attempt. The canonical
-    // reviewerTaskPrompt must clear enforcement immediately.
+    // reviewerTaskPrompt must clear the context requirement immediately.
+    //
+    // The canonical prompt ends by instructing the agent to append the artifact,
+    // so the first attempt that follows that instruction is the prompt PLUS the
+    // artifact. The instruction block on its own is asserted separately below.
     const state = buildState();
     const stateRef = { current: state };
     vi.mocked(readState).mockResolvedValue(stateRef.current);
@@ -388,14 +392,45 @@ describe('BUG-16: buildHostTaskPolicyOutput preserves iteration/planVersion', ()
 
     // Register the pending review from the (mutated) tool output, exactly as the
     // plugin hook does, then run the real enforcement gate against the canonical
-    // prompt the agent is told to paste.
+    // prompt the agent is told to paste, with the artifact appended below it.
+    const enfState = createSessionState();
+    onFlowGuardToolAfter(enfState, TOOL_FLOWGUARD_PLAN, {}, toolOutput.output, NOW);
+    const result = enforceBeforeSubagentCall(enfState, {
+      subagent_type: REVIEWER_SUBAGENT_TYPE,
+      prompt: `${reviewerTaskPrompt}\n\n## Plan\n1. Fix auth\n2. Add tests\n`,
+    });
+    expect(result.allowed).toBe(true);
+  });
+
+  it('F10: the instruction block alone is blocked for the artifact, not for context', async () => {
+    // The length floor and the iteration/planVersion match are both satisfied by
+    // the canonical prompt by itself. Only the artifact requirement separates a
+    // real review from dispatching a reviewer with nothing to review, and the
+    // block must name that reason so the agent can act on it.
+    const state = buildState();
+    const stateRef = { current: state };
+    vi.mocked(readState).mockResolvedValue(stateRef.current);
+    const deps = buildDeps(stateRef);
+    const toolOutput = { output: reviewRequiredOutput(2, 3) };
+    const event: ToolCallEvent = {
+      toolName: TOOL_FLOWGUARD_PLAN,
+      input: { args: { planText: 'Plan text' } },
+      output: toolOutput,
+      sessionId: PARENT_SESSION_ID,
+      now: NOW,
+    };
+    await runReviewOrchestration(deps, event);
+    const reviewerTaskPrompt = JSON.parse(toolOutput.output).reviewerTaskPrompt as string;
+
     const enfState = createSessionState();
     onFlowGuardToolAfter(enfState, TOOL_FLOWGUARD_PLAN, {}, toolOutput.output, NOW);
     const result = enforceBeforeSubagentCall(enfState, {
       subagent_type: REVIEWER_SUBAGENT_TYPE,
       prompt: reviewerTaskPrompt,
     });
-    expect(result.allowed).toBe(true);
+
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_ARTIFACT_MISSING');
   });
 
   it('F10: a demo-log-style free-composed prompt (no iteration=/planVersion=) is still blocked', async () => {

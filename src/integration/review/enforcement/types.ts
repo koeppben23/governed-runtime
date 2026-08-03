@@ -74,6 +74,18 @@ export interface PendingReview {
   subagentRecord: SubagentRecord | null;
   /** Content metadata for prompt integrity validation (Level 3). */
   contentMeta: ContentMeta | null;
+  /**
+   * Trailing marker of the canonical reviewer prompt FlowGuard emitted, when it
+   * emitted one.
+   *
+   * The canonical prompt ends by instructing the agent to append the artifact
+   * below that line. Recording the marker lets enforcement verify that the agent
+   * actually appended something instead of pasting the instruction block alone:
+   * the prompt-length and iteration/planVersion checks are all satisfied by the
+   * canonical prompt by itself, so without this a reviewer could be dispatched
+   * with no artifact at all and nothing would notice.
+   */
+  canonicalPromptAnchor: string | null;
   /** Actual findings from the subagent response (Level 4). */
   capturedFindings: CapturedFindings | null;
 }
@@ -107,6 +119,17 @@ export type EnforcementResult =
 
 /** The prefix that FlowGuard tools use to signal subagent review is required. */
 export const REVIEW_REQUIRED_PREFIX = 'INDEPENDENT_REVIEW_REQUIRED';
+
+/**
+ * Opening of the trailing line of the canonical reviewer prompt, which tells the
+ * agent to append the artifact below it.
+ *
+ * Shared contract between the emitter (renderReviewerTaskPrompt) and the checker
+ * (enforceBeforeSubagentCall), which locates it to verify that something was
+ * actually appended. Held here for the same reason as REVIEW_REQUIRED_PREFIX:
+ * emitter and enforcement must never drift apart.
+ */
+export const CANONICAL_PROMPT_APPEND_MARKER = 'Append the';
 
 /** The subagent type name for the FlowGuard reviewer. */
 export { REVIEWER_SUBAGENT_TYPE } from '../../tool-names.js';

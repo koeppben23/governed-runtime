@@ -193,6 +193,7 @@ real, registered reason.
 | `SUBAGENT_SESSION_MISMATCH`                 | L2 — `reviewedBy.sessionId` does not match actual subagent session            | Do not edit `reviewedBy.sessionId`; the runtime authoritatively sets it                                              |
 | `SUBAGENT_PROMPT_EMPTY`                     | L3 — subagent prompt < 200 chars                                              | Use the runtime-built review prompt (do not hand-craft)                                                              |
 | `SUBAGENT_PROMPT_MISSING_CONTEXT`           | L3 — prompt missing iteration or planVersion context                          | Use the runtime-built prompt                                                                                         |
+| `SUBAGENT_PROMPT_ARTIFACT_MISSING`          | L3 - prompt ends at the canonical instruction block with nothing appended     | Append the content to review below the final line of `reviewerTaskPrompt`                                            |
 | `SUBAGENT_FINDINGS_VERDICT_MISMATCH`        | L4 — submitted overallVerdict differs from actual subagent verdict            | Submit the findings exactly as returned by the orchestrator                                                          |
 | `SUBAGENT_FINDINGS_ISSUES_MISMATCH`         | L4 — submitted blockingIssues count differs from actual count                 | Submit the findings exactly as returned                                                                              |
 | `SUBAGENT_VERDICT_FINDINGS_INCOHERENT`      | Captured review is self-contradictory: `accept` verdict with blocking issues  | Return a non-accept verdict, or reclassify/resolve the blocking issues, then re-review                               |
@@ -433,6 +434,7 @@ SUBAGENT_FINDINGS_VERDICT_MISMATCH
 SUBAGENT_MANDATE_MISMATCH
 SUBAGENT_PROMPT_EMPTY
 SUBAGENT_PROMPT_MISSING_CONTEXT
+SUBAGENT_PROMPT_ARTIFACT_MISSING
 SUBAGENT_CHALLENGE_CONTRADICTED
 SUBAGENT_CHALLENGE_COUNT_INCOHERENT
 SUBAGENT_CHALLENGE_EVIDENCE_MISSING

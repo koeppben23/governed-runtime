@@ -272,6 +272,7 @@ describe('review-enforcement mutation kills', () => {
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 0, expectedPlanVersion: 1 },
+          canonicalPromptAnchor: null,
           capturedFindings: null,
         });
 
@@ -294,6 +295,7 @@ describe('review-enforcement mutation kills', () => {
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: null, // Content meta extraction failed
+          canonicalPromptAnchor: null,
           capturedFindings: null,
         });
 
@@ -319,6 +321,7 @@ describe('review-enforcement mutation kills', () => {
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: null,
+          canonicalPromptAnchor: null,
           capturedFindings: null,
         });
 
@@ -339,6 +342,7 @@ describe('review-enforcement mutation kills', () => {
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 2, expectedPlanVersion: 1 },
+          canonicalPromptAnchor: null,
           capturedFindings: null,
         });
 
@@ -361,6 +365,7 @@ describe('review-enforcement mutation kills', () => {
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 0, expectedPlanVersion: 3 },
+          canonicalPromptAnchor: null,
           capturedFindings: null,
         });
 
@@ -383,6 +388,7 @@ describe('review-enforcement mutation kills', () => {
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: { expectedIteration: 1, expectedPlanVersion: 2 },
+          canonicalPromptAnchor: null,
           capturedFindings: null,
         });
 
@@ -415,6 +421,7 @@ describe('review-enforcement mutation kills', () => {
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: null,
+          canonicalPromptAnchor: null,
           capturedFindings: null,
         });
 
@@ -439,6 +446,7 @@ describe('review-enforcement mutation kills', () => {
           subagentCalled: false,
           subagentRecord: null,
           contentMeta: null,
+          canonicalPromptAnchor: null,
           capturedFindings: null,
         });
 

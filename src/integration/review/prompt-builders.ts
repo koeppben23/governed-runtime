@@ -15,6 +15,7 @@
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import { renderPersistedProofGraphContext } from './proof-context.js';
+import { CANONICAL_PROMPT_APPEND_MARKER } from './enforcement/types.js';
 import {
   buildDiscoveryContextSection,
   type DiscoveryReviewContext,
@@ -88,6 +89,18 @@ export interface ReviewerTaskPromptInput {
    * context while the SDK path retains it.
    */
   readonly proofContext?: readonly string[];
+  /**
+   * Artifact context lines (approved plan, changed files, executed verification
+   * evidence, reviewed-revision provenance), produced by
+   * {@link buildReviewerArtifactContext}. Supplied by the caller for the same
+   * reason as {@link ReviewerTaskPromptInput.proofContext}: this renderer stays
+   * free of state access.
+   *
+   * Without it the host-task reviewer - the reviewer that actually runs under
+   * every shipped policy preset - judges an artifact without knowing what was
+   * promised, what changed, or which checks were executed.
+   */
+  readonly artifactContext?: readonly string[];
 }
 
 export interface ReviewerChallengePromptContract {
@@ -197,8 +210,11 @@ export function renderReviewerTaskPrompt(input: ReviewerTaskPromptInput): string
     '  no prose, no reasoning, and no markdown code fences before or after it.',
     ...renderChallengeContract(input.challengeContract, input.obligationId),
     '',
+    ...(input.artifactContext && input.artifactContext.length > 0
+      ? [...input.artifactContext]
+      : []),
     ...(input.proofContext && input.proofContext.length > 0 ? [...input.proofContext] : []),
-    `Append the ${input.subjectLabel} content to review below this line:`,
+    `${CANONICAL_PROMPT_APPEND_MARKER} ${input.subjectLabel} content to review below this line:`,
   ].join('\n');
 }
 

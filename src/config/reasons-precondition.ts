@@ -608,6 +608,17 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'SUBAGENT_PROMPT_ARTIFACT_MISSING',
+    category: 'precondition',
+    messageTemplate: `The ${REVIEWER_SUBAGENT_TYPE} prompt ends at the canonical instruction block with no artifact appended below it. A reviewer cannot review an empty subject.`,
+    recoverySteps: [
+      'Append the content to review below the final line of the canonical reviewerTaskPrompt',
+      'Use the plan text, implementation diff, ADR, or reviewed branch diff as appropriate for the obligation',
+      `Re-invoke the ${REVIEWER_SUBAGENT_TYPE} subagent with the artifact included`,
+    ],
+  },
+
+  {
     code: 'SUBAGENT_REVIEW_NOT_INVOKED',
     category: 'precondition',
     messageTemplate: `FlowGuard signaled INDEPENDENT_REVIEW_REQUIRED but no Task call to ${REVIEWER_SUBAGENT_TYPE} was detected. Call the subagent before submitting a verdict.`,

@@ -35,7 +35,7 @@ import {
   type EnforcementResult,
   type PendingReviewTool,
   REVIEW_REQUIRED_PREFIX,
-  MIN_SUBAGENT_PROMPT_LENGTH,
+  CANONICAL_PROMPT_APPEND_MARKER,
 } from './types.js';
 import {
   extractContentMeta,
@@ -44,6 +44,7 @@ import {
   promptContainsValue,
 } from './extraction.js';
 import { validateReviewFindingsConsistency } from './findings-consistency.js';
+export { enforceBeforeSubagentCall } from './prompt-integrity.js';
 
 import { REVIEWER_SUBAGENT_TYPE, TOOL_FLOWGUARD_REVIEW } from '../../tool-names.js';
 import {
@@ -84,7 +85,11 @@ function trackReviewRequired(
   next: string,
   now: string,
   /** Identifiers the emitting tool published so the host can bind the reviewer. */
-  binding: { readonly attemptId?: string | null; readonly obligationId?: string | null },
+  binding: {
+    readonly attemptId?: string | null;
+    readonly obligationId?: string | null;
+    readonly canonicalPromptAnchor?: string | null;
+  },
 ): void {
   state.pendingReviews.set(reviewTool, {
     tool: reviewTool,
@@ -94,6 +99,7 @@ function trackReviewRequired(
     subagentCalled: false,
     subagentRecord: null,
     contentMeta: extractContentMeta(next),
+    canonicalPromptAnchor: binding.canonicalPromptAnchor ?? null,
     capturedFindings: null,
   });
 }
@@ -107,6 +113,7 @@ function trackContentAnalysis(state: SessionEnforcementState, now: string): void
     subagentCalled: false,
     subagentRecord: null,
     contentMeta: { expectedIteration: 1, expectedPlanVersion: 1 },
+    canonicalPromptAnchor: null,
     capturedFindings: null,
   });
 }
@@ -193,87 +200,26 @@ function trackRequiredReview(
     const attemptId = typeof parsed.reviewAttemptId === 'string' ? parsed.reviewAttemptId : null;
     const obligationId =
       typeof parsed.reviewObligationId === 'string' ? parsed.reviewObligationId : null;
-    trackReviewRequired(state, recordKey, next, now, { attemptId, obligationId });
+    trackReviewRequired(state, recordKey, next, now, {
+      attemptId,
+      obligationId,
+      canonicalPromptAnchor: canonicalPromptAnchorOf(parsed),
+    });
   }
 }
 
 /**
- * Enforce prompt integrity before allowing a subagent call (Level 3).
- * Called in tool.execute.before for task calls with subagent_type=flowguard-reviewer.
+ * Trailing append instruction of the canonical reviewer prompt FlowGuard emitted.
  *
- * Validates:
- * 1. Prompt meets minimum length (catches empty/trivial prompts)
- * 2. Prompt contains expected iteration value (contextual match)
- * 3. Prompt contains expected planVersion value (contextual match, plan only)
- *
- * @param state - Session enforcement state (read-only check)
- * @param taskArgs - Task tool call arguments
- * @returns Enforcement result
+ * Returns null when no canonical prompt was emitted, in which case the agent
+ * legitimately free-composes and the append check does not apply.
  */
-function checkReviewContext(
-  pendingReviews: PendingReview[],
-  prompt: string,
-  strictEnforcement: boolean,
-): { hasMatch: boolean; missingFields: string[]; blockReason?: EnforcementResult } {
-  const missingFields: string[] = [];
-  for (const pending of pendingReviews) {
-    if (!pending.contentMeta) {
-      if (strictEnforcement) {
-        return {
-          hasMatch: false,
-          missingFields,
-          blockReason: {
-            allowed: false,
-            code: 'SUBAGENT_CONTEXT_UNVERIFIABLE',
-            reason:
-              'Content meta extraction failed — cannot validate subagent context in strict mode. The FlowGuard tool response must include structured review obligation metadata.',
-          },
-        };
-      }
-      return { hasMatch: true, missingFields };
-    }
-    const { expectedIteration, expectedPlanVersion } = pending.contentMeta;
-    const hasIteration = promptContainsValue(prompt, 'iteration', expectedIteration);
-    const hasPlanVersion =
-      expectedPlanVersion === null || promptContainsValue(prompt, 'version', expectedPlanVersion);
-    if (hasIteration && hasPlanVersion) return { hasMatch: true, missingFields };
-    if (!hasIteration) missingFields.push(`iteration=${expectedIteration}`);
-    if (!hasPlanVersion && expectedPlanVersion !== null)
-      missingFields.push(`planVersion=${expectedPlanVersion}`);
-  }
-  return { hasMatch: false, missingFields };
-}
-
-export function enforceBeforeSubagentCall(
-  state: SessionEnforcementState,
-  taskArgs: Record<string, unknown>,
-  strictEnforcement = false,
-): EnforcementResult {
-  const subagentType = typeof taskArgs.subagent_type === 'string' ? taskArgs.subagent_type : '';
-  if (subagentType !== REVIEWER_SUBAGENT_TYPE) return { allowed: true };
-
-  const prompt = typeof taskArgs.prompt === 'string' ? taskArgs.prompt : '';
-  const pendingReviews = [...state.pendingReviews.values()].filter((p) => !p.subagentCalled);
-  if (pendingReviews.length === 0) return { allowed: true };
-
-  if (prompt.length < MIN_SUBAGENT_PROMPT_LENGTH) {
-    return {
-      allowed: false,
-      code: 'SUBAGENT_PROMPT_EMPTY',
-      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} is too short (${prompt.length} chars, minimum ${MIN_SUBAGENT_PROMPT_LENGTH}). Include the plan/implementation text, ticket text, iteration, and planVersion.`,
-    };
-  }
-
-  const ctx = checkReviewContext(pendingReviews, prompt, strictEnforcement);
-  if (ctx.blockReason) return ctx.blockReason;
-  if (!ctx.hasMatch) {
-    return {
-      allowed: false,
-      code: 'SUBAGENT_PROMPT_MISSING_CONTEXT',
-      reason: `FlowGuard enforcement: the prompt for ${REVIEWER_SUBAGENT_TYPE} does not contain the expected review context. Missing: ${[...new Set(ctx.missingFields)].join(', ')}. Include the iteration and planVersion values from the FlowGuard tool response.`,
-    };
-  }
-  return { allowed: true };
+function canonicalPromptAnchorOf(parsed: Record<string, unknown>): string | null {
+  const prompt = parsed.reviewerTaskPrompt;
+  if (typeof prompt !== 'string') return null;
+  const lines = prompt.split('\n');
+  const anchor = lines.reverse().find((line) => line.startsWith(CANONICAL_PROMPT_APPEND_MARKER));
+  return anchor ?? null;
 }
 
 /**

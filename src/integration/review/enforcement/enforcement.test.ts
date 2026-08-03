@@ -1884,3 +1884,101 @@ describe('review-enforcement', () => {
     });
   });
 });
+
+// ─── L3: the artifact must actually be appended ──────────────────────────────
+//
+// The length floor and the iteration/planVersion match are both satisfied by the
+// canonical reviewer prompt on its own, so before this guard a reviewer could be
+// dispatched with the instruction block and nothing to review while every
+// enforcement level reported success.
+describe('L3 artifact presence', () => {
+  const ANCHOR = 'Append the artifact under review content to review below this line:';
+
+  function canonicalPrompt(): string {
+    return (
+      `You are the flowguard-reviewer subagent performing an independent, ` +
+      `falsification-first review of the artifact under review.\n` +
+      `Review context: iteration=0, planVersion=1.\n` +
+      `Rules:\n- Do not fabricate a verdict of convenience; ground every finding in evidence.\n` +
+      `- Return a complete ReviewFindings JSON object with overallVerdict and blockingIssues.\n` +
+      ANCHOR
+    );
+  }
+
+  function modeAWithCanonicalPrompt(): string {
+    return JSON.stringify({
+      phase: 'PLAN',
+      next:
+        `${REVIEW_REQUIRED_PREFIX}: Call the flowguard-reviewer subagent via Task tool. ` +
+        `iteration=0, planVersion=1.`,
+      reviewerTaskPrompt: canonicalPrompt(),
+    });
+  }
+
+  function pendingStateWithCanonicalPrompt() {
+    const state = createSessionState();
+    onFlowGuardToolAfter(
+      state,
+      'flowguard_plan',
+      { planText: '## Plan' },
+      modeAWithCanonicalPrompt(),
+      NOW,
+    );
+    return state;
+  }
+
+  it('blocks a prompt that ends at the canonical instruction block', () => {
+    const state = pendingStateWithCanonicalPrompt();
+
+    const result = enforceBeforeSubagentCall(state, {
+      subagent_type: 'flowguard-reviewer',
+      prompt: canonicalPrompt(),
+    });
+
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_ARTIFACT_MISSING');
+  });
+
+  it('blocks when only whitespace follows the instruction block', () => {
+    const state = pendingStateWithCanonicalPrompt();
+
+    const result = enforceBeforeSubagentCall(state, {
+      subagent_type: 'flowguard-reviewer',
+      prompt: canonicalPrompt() + '\n\n   \n',
+    });
+
+    expect(result.allowed).toBe(false);
+    if (!result.allowed) expect(result.code).toBe('SUBAGENT_PROMPT_ARTIFACT_MISSING');
+  });
+
+  it('allows a prompt with the artifact appended below the instruction block', () => {
+    const state = pendingStateWithCanonicalPrompt();
+
+    const result = enforceBeforeSubagentCall(state, {
+      subagent_type: 'flowguard-reviewer',
+      prompt: canonicalPrompt() + '\n\n## Plan\n1. Fix the auth bug\n2. Add a regression test\n',
+    });
+
+    expect(result.allowed).toBe(true);
+  });
+
+  it('does not apply when FlowGuard emitted no canonical prompt', () => {
+    // A legitimately free-composed prompt (no reviewerTaskPrompt was emitted)
+    // must keep passing on the existing context rules alone.
+    const state = createSessionState();
+    onFlowGuardToolAfter(
+      state,
+      'flowguard_plan',
+      { planText: '## Plan' },
+      modeASubagentResponse({ iteration: 0, planVersion: 1 }),
+      NOW,
+    );
+
+    const result = enforceBeforeSubagentCall(state, {
+      subagent_type: 'flowguard-reviewer',
+      prompt: validSubagentPrompt({ iteration: 0, planVersion: 1 }),
+    });
+
+    expect(result.allowed).toBe(true);
+  });
+});
