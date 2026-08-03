@@ -272,7 +272,20 @@ async function handleTaskAfter(
     // Bind the child session to the pre-created attempt atomically
     // BEFORE the evidence binding callback runs.
     if (resolvedChildSessionId) {
-      await bindAttemptSession(runtime, ctx.sessionId, resolvedChildSessionId, ctx.now);
+      const binding = await bindAttemptSession(
+        runtime,
+        ctx.sessionId,
+        resolvedChildSessionId,
+        ctx.now,
+      );
+      if (!binding.ok) {
+        runtime.log.warn('host-task', 'start binding failed, aborting evidence processing', {
+          reason: binding.reason,
+          sessionId: ctx.sessionId,
+          childSessionId: resolvedChildSessionId,
+        });
+        return;
+      }
     }
     await handleHostTaskEvidence(
       { ws: runtime.ws, log: runtime.log, logError: runtime.logError },
@@ -398,9 +411,8 @@ export async function handleCompaction(
 }
 
 /**
- * Bind a child session to the exact attempt identified by the enforcement
- * state's pending review record. Uses attemptId as the sole authority --
- * no fallback to obligationId or any other heuristic.
+ * Bind a child session to the attempt identified by the enforcement state's
+ * pending review record. Uses pending.attemptId as the sole authority.
  *
  * All invariant guards are checked atomically inside the state update
  * callback so there is no check-then-write race window.
@@ -422,31 +434,7 @@ async function bindAttemptSession(
   for (const pending of eState.pendingReviews.values()) {
     if (pending.subagentRecord?.sessionId !== childSessionId) continue;
     if (!pending.attemptId || !pending.obligationId) {
-      // Missing explicit attemptId — attempt to resolve by obligation identity
-      // (unique obligationId, latest created attempt). This is a fallback for
-      // paths where the tool output doesn't yet carry reviewAttemptId.
-      // If there are multiple unbound attempts for the same obligation
-      // (retry scenario), only the highest-ordinal one is selected.
-      if (!pending.obligationId) {
-        return { ok: false, reason: 'pending_obligation_id_missing' };
-      }
-      runtime.log.warn('host-task', 'bind attempt without explicit attemptId', {
-        obligationId: pending.obligationId,
-        childSessionId,
-        hint: 'Tool should include reviewAttemptId in its output.',
-      });
-      const implicitAttempt = state.reviewAssurance?.attempts
-        ?.filter(
-          (a) =>
-            a.obligationId === pending.obligationId && !a.childSessionId && a.status === 'created',
-        )
-        .sort((a, b) => b.ordinal - a.ordinal)[0];
-      if (!implicitAttempt) {
-        return { ok: false, reason: 'pending_attempt_not_found' };
-      }
-      attemptId = implicitAttempt.attemptId;
-      obligationId = pending.obligationId;
-      break;
+      return { ok: false, reason: 'pending_attempt_id_missing' };
     }
     attemptId = pending.attemptId;
     obligationId = pending.obligationId;

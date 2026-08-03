@@ -118,7 +118,11 @@ export async function handleAdrSubmission(
     now,
     policySnapshot: result.state.policySnapshot,
   });
-  const { state: augmentedState, obligation: nextObligation } = classification;
+  const {
+    state: augmentedState,
+    obligation: nextObligation,
+    attemptId: subAttemptId,
+  } = classification;
 
   const persisted = await writeStateWithArtifacts(sessDir, augmentedState);
 
@@ -139,7 +143,7 @@ export async function handleAdrSubmission(
     selfReviewIteration: 0,
     maxSelfReviewIterations: policy.maxSelfReviewIterations,
     reviewMode: subagentEnabled ? 'subagent' : 'self',
-    ...reviewObligationResponseFields(nextObligation),
+    ...reviewObligationResponseFields(nextObligation, subAttemptId),
     next: instruction.next,
     ...(instruction.reviewInvocation ? { reviewInvocation: instruction.reviewInvocation } : {}),
     _audit: { transitions: result.transitions },
