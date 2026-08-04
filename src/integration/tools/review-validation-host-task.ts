@@ -46,6 +46,7 @@ export type HostTaskFindingsResolution =
       readonly kind: 'incoherent';
       readonly code: string;
       readonly details: Record<string, unknown>;
+      readonly childSessionId: string;
       /** Compatibility projection for the original verdict/blocker invariant. */
       readonly blockingIssueCount?: number;
     }
@@ -106,7 +107,11 @@ export function resolveHostTaskFindings(
   // historically degraded to not_found), which is exactly the confusing
   // failure operators hit when the reviewer ran but its findings were corrupt.
   let unparseableDetail: string | null = null;
-  let incoherent: { code: string; details: Record<string, unknown> } | null = null;
+  let incoherent: {
+    code: string;
+    details: Record<string, unknown>;
+    childSessionId: string;
+  } | null = null;
   // An unusable earlier capture must not deadlock a later coherent retry. The
   // earlier evidence remains persisted for audit while this loop continues to
   // consider subsequent captures for the same obligation.
@@ -133,7 +138,11 @@ export function resolveHostTaskFindings(
         blockingIssueCount: parsed.data.blockingIssues.length,
       });
       if (!consistency.ok) {
-        incoherent ??= { code: consistency.code, details: consistency.details };
+        incoherent ??= {
+          code: consistency.code,
+          details: consistency.details,
+          childSessionId: invocation.childSessionId,
+        };
         continue;
       }
       const challengeConsistency = validateChallengeConsistency({
@@ -149,7 +158,11 @@ export function resolveHostTaskFindings(
         previouslyUsedChallengeIds,
       });
       if (!challengeConsistency.ok) {
-        incoherent ??= { code: challengeConsistency.code, details: challengeConsistency.details };
+        incoherent ??= {
+          code: challengeConsistency.code,
+          details: challengeConsistency.details,
+          childSessionId: invocation.childSessionId,
+        };
         continue;
       }
       return {
@@ -182,6 +195,7 @@ export function resolveHostTaskFindings(
       kind: 'incoherent',
       code: incoherent.code,
       details: incoherent.details,
+      childSessionId: incoherent.childSessionId,
       ...(typeof incoherent.details.blockingIssueCount === 'number'
         ? { blockingIssueCount: incoherent.details.blockingIssueCount }
         : {}),

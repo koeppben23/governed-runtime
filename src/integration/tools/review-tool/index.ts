@@ -285,20 +285,15 @@ async function rejectIncoherentAttempt(
   sessDir: string,
   state: SessionState,
   obligation: ReviewObligation,
+  childSessionId: string,
   now: string,
 ): Promise<void> {
   const assurance = state.reviewAssurance;
   if (!assurance) return;
-  const invocation = assurance.invocations
-    .filter((item) => item.obligationId === obligation.obligationId)
-    .at(-1);
-  const attempt = invocation
-    ? assurance.attempts?.find(
-        (item) =>
-          item.obligationId === obligation.obligationId &&
-          item.childSessionId === invocation.childSessionId,
-      )
-    : undefined;
+  const attempt = assurance.attempts?.find(
+    (item) =>
+      item.obligationId === obligation.obligationId && item.childSessionId === childSessionId,
+  );
   if (!attempt) return;
   const rejectedState: SessionState = {
     ...state,
@@ -307,7 +302,7 @@ async function rejectIncoherentAttempt(
       attempt.attemptId,
       'rejected',
       now,
-      invocation?.childSessionId,
+      childSessionId,
     ),
   };
   await writeStateWithArtifacts(sessDir, rejectedState);
@@ -339,7 +334,7 @@ async function prepareHostTaskVerdictReview(
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
 
   if (resolved.kind === 'incoherent') {
-    await rejectIncoherentAttempt(sessDir, state, obligation, exec.now);
+    await rejectIncoherentAttempt(sessDir, state, obligation, resolved.childSessionId, exec.now);
     return formatBlocked(
       resolved.code,
       Object.fromEntries(

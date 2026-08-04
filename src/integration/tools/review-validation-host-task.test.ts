@@ -599,6 +599,83 @@ describe('resolveHostTaskFindings', () => {
     if (result.kind !== 'resolved') throw new Error('expected resolved findings');
     expect(result.findings.overallVerdict).toBe('unable_to_review');
   });
+
+  it('incoherent resolution carries the childSessionId of the offending invocation', () => {
+    // P1 fix: the incoherent result MUST carry the exact childSessionId so the
+    // verdict path can identify the attempt to reject without array-position
+    // heuristics (.at(-1)). This test fails if childSessionId is ever removed
+    // from the incoherent branch.
+    const childId = 'ses_incoherent_child';
+    const offensiveRawFindings = {
+      ...validRawFindings,
+      overallVerdict: 'accept',
+      blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+    };
+    const assurance = {
+      obligations: [makeObligation()],
+      invocations: [
+        makeHostTaskInvocation({
+          childSessionId: childId,
+          capturedVerdict: 'accept',
+          capturedRawFindings: offensiveRawFindings,
+          findingsHash: hashFindings(offensiveRawFindings),
+        }),
+      ],
+      attempts: [],
+    };
+    const result = resolveHostTaskFindings(assurance, makeObligation());
+    expect(result.kind).toBe('incoherent');
+    if (result.kind !== 'incoherent') throw new Error('expected incoherent');
+    expect(result.childSessionId).toBe(childId);
+  });
+
+  it('incoherent result carries the childSessionId of the challenge-consistency failure', () => {
+    const childId = 'ses_challenge_incoherent_child';
+    const challengeRawFindings = {
+      ...validRawFindings,
+      overallVerdict: 'accept',
+      challenges: [
+        {
+          challengeId: '11111111-1111-4111-8111-111111111111',
+          obligationId: '22222222-2222-4222-8222-222222222222',
+          scenario: 'the system fails under load',
+          claim: 'the system handles concurrent users',
+          locations: ['src/service.ts'],
+          kind: 'design_challenge',
+          outcome: 'not_verified',
+          evidenceRefs: [
+            {
+              kind: 'plan_adr_section',
+              artifactKind: 'plan',
+              artifactDigest: 'a'.repeat(64),
+              sectionPath: [{ headingDepth: 2, siblingIndex: 1, headingText: 'Decision' }],
+              excerptDigest: 'a'.repeat(64),
+            },
+          ],
+        },
+      ],
+    };
+    const assurance = {
+      obligations: [makeObligation({ requiredChallengeCount: 1 })],
+      invocations: [
+        makeHostTaskInvocation({
+          childSessionId: childId,
+          capturedVerdict: 'accept',
+          capturedRawFindings: challengeRawFindings,
+          findingsHash: hashFindings(challengeRawFindings),
+        }),
+      ],
+      attempts: [],
+    };
+    const result = resolveHostTaskFindings(
+      assurance,
+      makeObligation({ requiredChallengeCount: 1 }),
+    );
+    expect(result.kind).toBe('incoherent');
+    if (result.kind !== 'incoherent') throw new Error('expected incoherent');
+    expect(result.childSessionId).toBe(childId);
+    expect(result.code).toBe('SUBAGENT_CHALLENGE_EVIDENCE_MISSING');
+  });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
