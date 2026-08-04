@@ -45,7 +45,10 @@ import { buildReviewerProofContext } from './review/proof-context.js';
 import { isRiskAssessmentCurrent } from '../audit/proofgraph/gate.js';
 import { makeState, TICKET, IMPL_EVIDENCE, FIXED_TIME } from '../fixtures.js';
 import type { SessionState } from '../state/schema.js';
-import type { PlanClaimDeclaration } from '../state/proofgraph-approval.js';
+import type {
+  PlanClaimDeclaration,
+  PlanClaimDeclarationInput,
+} from '../state/proofgraph-approval.js';
 
 vi.mock('../verification/executor', () => ({
   executeCheck: vi.fn().mockResolvedValue({
@@ -77,6 +80,15 @@ const CRITICAL_CLAIM: PlanClaimDeclaration = {
   authoritySectionId: 'implementation-step-1',
   expectedCheckId: 'build',
   // A critical claim is only PROVEN with executed adversarial evidence.
+  counterexampleCheckId: 'regression',
+};
+
+/** Public input shape — claimId is host-minted. */
+const CRITICAL_CLAIM_INPUT: PlanClaimDeclarationInput = {
+  statement: 'updateTask returns 404 for an unknown id instead of 500.',
+  critical: true,
+  authoritySectionId: 'implementation-step-1',
+  expectedCheckId: 'build',
   counterexampleCheckId: 'regression',
 };
 
@@ -216,7 +228,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
       makeState('TICKET', { ticket: TICKET, activeChecks: ACTIVE_CHECKS }),
     );
 
-    const raw = await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM] }, env.tc);
+    const raw = await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM_INPUT] }, env.tc);
     expect(String(raw)).not.toContain('INTERNAL_ERROR');
 
     const state = await readState(env.sDir);
@@ -229,7 +241,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
       env.sDir,
       makeState('TICKET', { ticket: TICKET, activeChecks: ACTIVE_CHECKS }),
     );
-    await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM] }, env.tc);
+    await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM_INPUT] }, env.tc);
 
     const state = await readState(env.sDir);
     const context = buildReviewerProofContext(state!).join('\n');
@@ -251,7 +263,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     const raw = await plan.execute(
       {
         planText: PLAN_TEXT,
-        claims: [{ ...CRITICAL_CLAIM, counterexampleCheckId: undefined }],
+        claims: [{ ...CRITICAL_CLAIM_INPUT, counterexampleCheckId: undefined }],
       },
       env.tc,
     );
@@ -275,7 +287,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     const raw = await plan.execute(
       {
         planText: PLAN_TEXT,
-        claims: [{ ...CRITICAL_CLAIM, counterexampleCheckId: 'build' }],
+        claims: [{ ...CRITICAL_CLAIM_INPUT, counterexampleCheckId: 'build' }],
       },
       env.tc,
     );
@@ -295,7 +307,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
       makeState('TICKET', { ticket: TICKET, activeChecks: ['build'] }),
     );
 
-    const raw = await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM] }, env.tc);
+    const raw = await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM_INPUT] }, env.tc);
     const parsed = JSON.parse(String(raw));
 
     expect(parsed.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
@@ -331,7 +343,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
       env.sDir,
       makeState('TICKET', { ticket: TICKET, activeChecks: ACTIVE_CHECKS }),
     );
-    await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM] }, env.tc);
+    await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM_INPUT] }, env.tc);
     const submitted = await readState(env.sDir);
 
     const approved = executeReviewDecision(
@@ -634,5 +646,105 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     expect(projection.claims[0]?.certificateId).toBe(
       projection.certificates[0]?.certificateId ?? null,
     );
+  });
+
+  it('binds the review evidence digest into the plan certificate', () => {
+    const findingsHash = 'a'.repeat(64);
+    const obligationId = '33333333-1111-4111-8111-111111111111';
+    const invocationId = '44444444-2222-4222-8222-222222222222';
+    const state = makeState('PLAN_REVIEW', {
+      ticket: TICKET,
+      activeChecks: ACTIVE_CHECKS,
+      plan: {
+        current: {
+          body: PLAN_TEXT,
+          digest: 'plan-digest',
+          sections: [],
+          createdAt: FIXED_TIME,
+          recordDigest: computeRecordDigest({
+            contentDigest: 'plan-digest',
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+          }),
+          planVersion: 1,
+          supersedesRecordDigest: null,
+          originatingReviewObligationId: null,
+          revisionReason: null,
+          lineageStatus: 'verified' as const,
+        },
+        history: [],
+        reviewFindings: undefined,
+        claimDeclarations: { flow: 'plan', claims: [CRITICAL_CLAIM] },
+      },
+      reviewAssurance: {
+        obligations: [
+          {
+            obligationId,
+            obligationType: 'plan' as const,
+            subjectDigest: 'plan-digest',
+            iteration: 0,
+            planVersion: 1,
+            criteriaVersion: 'p40-v1',
+            mandateDigest: 'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
+            createdAt: FIXED_TIME,
+            pluginHandshakeAt: FIXED_TIME,
+            status: 'fulfilled' as const,
+            invocationId,
+            blockedCode: null,
+            fulfilledAt: FIXED_TIME,
+            consumedAt: null,
+            requiredChallengeCount: undefined,
+          },
+        ],
+        invocations: [
+          {
+            invocationId,
+            obligationId,
+            obligationType: 'plan' as const,
+            parentSessionId: 'ses_parent',
+            childSessionId: 'ses_child',
+            agentType: 'flowguard-reviewer' as const,
+            invocationMode: 'host_subagent_task' as const,
+            hostVisible: true,
+            promptHash: 'abc',
+            mandateDigest: 'e78b6bab98fcf033874fcc07e17d87aaff73fca47b1a28209e5dd4a1a28eedb7',
+            criteriaVersion: 'p40-v1',
+            findingsHash,
+            invokedAt: FIXED_TIME,
+            fulfilledAt: FIXED_TIME,
+            consumedByObligationId: null,
+            reviewOutputMode: 'structured_output' as const,
+            structuredOutputUsed: true,
+            reviewAssuranceLevel: 'structured_high' as const,
+            attemptId: '55555555-3333-4333-8333-333333333333',
+          },
+        ],
+        attempts: [
+          {
+            attemptId: '55555555-3333-4333-8333-333333333333',
+            obligationId,
+            obligationType: 'plan' as const,
+            subjectDigest: 'plan-digest',
+            childSessionId: 'ses_child',
+            ordinal: 0,
+            status: 'bound' as const,
+            createdAt: FIXED_TIME,
+          },
+        ],
+      },
+    });
+    const approved = executeReviewDecision(
+      state,
+      { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
+      realDigestContext(),
+    );
+    if (approved.kind !== 'ok') throw new Error('plan approval failed');
+    const cert = approved.state.plan?.approvalCertificate;
+    expect(cert).toBeDefined();
+    expect(cert!.reviewObligationId).toBe(obligationId);
+    expect(cert!.reviewEvidenceDigest).toBe(findingsHash);
+    expect(cert!.reviewEvidenceDigest).toMatch(/^[0-9a-f]{64}$/);
   });
 });

@@ -52,19 +52,21 @@ const preEvidenceClaimDeclaration = {
 } as const;
 
 /** A plan claim names the checks expected to cover and falsify it after implementation. */
-const planBase = z.object({
-  ...preEvidenceClaimDeclaration,
-  expectedCheckId: z.string().min(1),
-  counterexampleCheckId: z.string().min(1).optional(),
-  structuralSurface: z.string().min(1).optional(),
-  mutationProfile: z.string().min(1).optional(),
-});
+const planBase = z
+  .object({
+    ...preEvidenceClaimDeclaration,
+    expectedCheckId: z.string().min(1),
+    counterexampleCheckId: z.string().min(1).optional(),
+    structuralSurface: z.string().min(1).optional(),
+    mutationProfile: z.string().min(1).optional(),
+  })
+  .strict();
 
 export const PlanClaimDeclaration = planBase.readonly();
 export type PlanClaimDeclaration = z.infer<typeof PlanClaimDeclaration>;
 
 /** Public input for a plan claim — claimId is minted host-side. */
-export const PlanClaimDeclarationInput = planBase.omit({ claimId: true });
+export const PlanClaimDeclarationInput = planBase.omit({ claimId: true }).strict();
 export type PlanClaimDeclarationInput = z.infer<typeof PlanClaimDeclarationInput>;
 
 /**

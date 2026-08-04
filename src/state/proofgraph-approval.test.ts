@@ -224,15 +224,16 @@ describe('PlanClaimDeclarationInput', () => {
     expect(parsed).toMatchObject({ statement: 'test', critical: true, authoritySectionId: 's1' });
   });
 
-  it('silently strips a user-supplied claimId', () => {
-    const parsed = PlanClaimDeclarationInput.parse({
-      claimId: '10000000-0000-4000-8000-000000000001',
-      statement: 'test',
-      critical: true,
-      authoritySectionId: 's1',
-      expectedCheckId: 'build',
-    });
-    expect(parsed).not.toHaveProperty('claimId');
+  it('rejects a caller-supplied claimId', () => {
+    expect(() =>
+      PlanClaimDeclarationInput.parse({
+        claimId: '10000000-0000-4000-8000-000000000001',
+        statement: 'test',
+        critical: true,
+        authoritySectionId: 's1',
+        expectedCheckId: 'build',
+      }),
+    ).toThrow();
   });
 });
 

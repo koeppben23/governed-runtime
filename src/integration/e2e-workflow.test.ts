@@ -866,6 +866,11 @@ describe('e2e-workflow', () => {
       expect(typeof arch.iteration).toBe('number');
       expect(typeof arch.reviewedAt).toBe('string');
       expect(arch.blockingIssueCount).toBe(0);
+      // Regression: the status projection MUST use the host-authoritative
+      // iteration from selfReview, not the reviewer-echoed 0-based value
+      // from persisted review findings.
+      expect(result.selfReviewIteration).toBe(1);
+      expect(arch.iteration).toBe(result.selfReviewIteration);
     });
 
     it('architecture team flow with explicit decisions', async () => {
