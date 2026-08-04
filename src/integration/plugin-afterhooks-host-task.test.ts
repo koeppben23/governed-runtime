@@ -28,6 +28,11 @@ import {
 } from '../adapters/workspace/index.js';
 import { REVIEW_CRITERIA_VERSION, REVIEW_MANDATE_DIGEST } from './review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from './review/enforcement/types.js';
+import { executeReviewDecision } from '../rails/review-decision.js';
+import { computeRecordDigest } from '../state/evidence-plan.js';
+import { createTestContext } from '../testing.js';
+import { FIXED_TIME } from '../fixtures.js';
+import { hashText } from '../shared/hashing.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -354,6 +359,142 @@ describe('reviewer host-task after-hook: no_matched_record → sequential re-inv
       expect(
         (after?.reviewAssurance?.attempts ?? []).filter((a) => a.childSessionId === CHILD_VALID),
       ).toHaveLength(1);
+    } finally {
+      await ws.cleanup();
+    }
+  });
+});
+
+describe('host-task evidence → plan certificate lineage', () => {
+  let configDir: string;
+  let cleanupEnv: () => void;
+
+  beforeEach(async () => {
+    configDir = await fs.mkdtemp(path.join(os.tmpdir(), 'fg-host-task-cert-'));
+    cleanupEnv = withTestEnv({
+      OPENCODE_CONFIG_DIR: configDir,
+      FLOWGUARD_REQUIRE_TEST_CONFIG_DIR: '1',
+    });
+  });
+
+  afterEach(async () => {
+    cleanupEnv();
+    await fs.rm(configDir, { recursive: true, force: true });
+  });
+
+  it('fulfills the obligation and produces a certificate with reviewEvidenceDigest', async () => {
+    const ws = await createTestWorkspace();
+    try {
+      await execFileAsync('git', ['init'], { cwd: ws.tmpDir });
+      const sessionID = crypto.randomUUID();
+      const sessDir = await seedHostTaskPlanSession(ws.tmpDir, sessionID);
+
+      const hooks = await FlowGuardAuditPlugin(
+        createMockInput({ worktree: ws.tmpDir, directory: ws.tmpDir }),
+      );
+      const afterHook = hooks['tool.execute.after']!;
+      const reviewerArgs = {
+        subagent_type: REVIEWER_SUBAGENT_TYPE,
+        prompt: 'iteration=0, planVersion=1 — review this plan critically for the auth feature.',
+      };
+
+      // Register the pending review (same pattern as the recovery test).
+      await afterHook(
+        { tool: 'flowguard_plan', sessionID, callID: 'call-plan', args: {} },
+        { title: 'flowguard_plan', output: planReviewRequiredOutput(), metadata: {} },
+      );
+
+      // Simulate reviewer Task completion — exercises plugin-task-evidence.ts.
+      const taskOutput: { title: string; output: string; metadata: Record<string, unknown> } = {
+        title: 'task',
+        output: validReviewerOutput(),
+        metadata: {},
+      };
+      await afterHook(
+        { tool: 'task', sessionID, callID: 'call-task', args: reviewerArgs },
+        taskOutput,
+      );
+
+      expect(taskOutput.output).not.toContain('HOST_SUBAGENT_TASK_REQUIRED');
+
+      const state = await readState(sessDir);
+      expect(state).toBeDefined();
+
+      const obligation = state!.reviewAssurance?.obligations.find(
+        (o) => o.obligationId === OBLIGATION_ID,
+      );
+      expect(obligation).toBeDefined();
+      // Critical: the plugin hook must have fulfilled the obligation.
+      // Removing fulfillObligation from plugin-task-evidence.ts makes this fail.
+      expect(obligation?.status).toBe('fulfilled');
+      expect(obligation?.invocationId).toBeTruthy();
+
+      const invocation = state!.reviewAssurance?.invocations.find(
+        (inv) => inv.invocationId === obligation?.invocationId,
+      );
+      expect(invocation).toBeDefined();
+      expect(invocation?.obligationId).toBe(OBLIGATION_ID);
+
+      const attempt = state!.reviewAssurance?.attempts.find((a) => a.attemptId === ATTEMPT_ID);
+      expect(attempt?.status).toBe('bound');
+
+      // Write plan content and advance to PLAN_REVIEW for certificate creation.
+      const now = new Date().toISOString();
+      const planRecord = computeRecordDigest({
+        contentDigest: 'plan-cert-digest',
+        planVersion: 1,
+        supersedesRecordDigest: null,
+        originatingReviewObligationId: null,
+        revisionReason: null,
+      });
+      await writeState(sessDir, {
+        ...state!,
+        phase: 'PLAN_REVIEW' as const,
+        plan: {
+          current: {
+            body: '## Plan\n1. Fix the thing.',
+            digest: 'plan-cert-digest',
+            sections: [],
+            createdAt: now,
+            recordDigest: planRecord,
+            planVersion: 1,
+            supersedesRecordDigest: null,
+            originatingReviewObligationId: null,
+            revisionReason: null,
+            lineageStatus: 'verified' as const,
+          },
+          history: [],
+          reviewFindings: undefined,
+          claimDeclarations: {
+            flow: 'plan' as const,
+            claims: [
+              {
+                claimId: 'a1b2c3d4-e5f6-7890-8abc-def123456789',
+                statement: 'The change preserves the intended behavior.',
+                critical: true,
+                authoritySectionId: 's1',
+                expectedCheckId: 'build',
+              },
+            ],
+          },
+        },
+      });
+
+      const reviewState = await readState(sessDir);
+      expect(reviewState).toBeDefined();
+
+      const approved = executeReviewDecision(
+        reviewState!,
+        { verdict: 'approve', rationale: 'ok', decidedBy: 'approver' },
+        createTestContext(FIXED_TIME, hashText),
+      );
+      if (approved.kind !== 'ok') throw new Error('plan approval failed');
+
+      const cert = approved.state.plan?.approvalCertificate;
+      expect(cert).toBeDefined();
+      expect(cert!.reviewObligationId).toBe(OBLIGATION_ID);
+      expect(cert!.reviewEvidenceDigest).toBe(invocation?.findingsHash);
+      expect(cert!.reviewEvidenceDigest).toMatch(/^[0-9a-f]{64}$/);
     } finally {
       await ws.cleanup();
     }
