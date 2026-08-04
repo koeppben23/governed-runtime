@@ -46,10 +46,15 @@ export type HostTaskFindingsResolution =
       readonly kind: 'incoherent';
       readonly code: string;
       readonly details: Record<string, unknown>;
-      /** The exact persisted attempt that produced the incoherent findings. */
+      readonly invocationId: string;
       readonly attemptId: string;
       /** Compatibility projection for the original verdict/blocker invariant. */
       readonly blockingIssueCount?: number;
+    }
+  | {
+      readonly kind: 'attempt_lineage_unavailable';
+      readonly invocationId: string;
+      readonly obligationId: string;
     }
   | { readonly kind: 'not_found' };
 
@@ -111,6 +116,7 @@ export function resolveHostTaskFindings(
   let incoherent: {
     code: string;
     details: Record<string, unknown>;
+    invocationId: string;
     attemptId: string;
   } | null = null;
   // An unusable earlier capture must not deadlock a later coherent retry. The
@@ -139,15 +145,18 @@ export function resolveHostTaskFindings(
         blockingIssueCount: parsed.data.blockingIssues.length,
       });
       if (!consistency.ok) {
-        const attempt = assurance.attempts?.find(
-          (a) =>
-            a.obligationId === obligation.obligationId &&
-            a.childSessionId === invocation.childSessionId,
-        );
+        if (!invocation.attemptId) {
+          return {
+            kind: 'attempt_lineage_unavailable',
+            invocationId: invocation.invocationId,
+            obligationId: obligation.obligationId,
+          };
+        }
         incoherent ??= {
           code: consistency.code,
           details: consistency.details,
-          attemptId: attempt?.attemptId ?? '',
+          invocationId: invocation.invocationId,
+          attemptId: invocation.attemptId,
         };
         continue;
       }
@@ -164,15 +173,18 @@ export function resolveHostTaskFindings(
         previouslyUsedChallengeIds,
       });
       if (!challengeConsistency.ok) {
-        const attempt = assurance.attempts?.find(
-          (a) =>
-            a.obligationId === obligation.obligationId &&
-            a.childSessionId === invocation.childSessionId,
-        );
+        if (!invocation.attemptId) {
+          return {
+            kind: 'attempt_lineage_unavailable',
+            invocationId: invocation.invocationId,
+            obligationId: obligation.obligationId,
+          };
+        }
         incoherent ??= {
           code: challengeConsistency.code,
           details: challengeConsistency.details,
-          attemptId: attempt?.attemptId ?? '',
+          invocationId: invocation.invocationId,
+          attemptId: invocation.attemptId,
         };
         continue;
       }
@@ -206,6 +218,7 @@ export function resolveHostTaskFindings(
       kind: 'incoherent',
       code: incoherent.code,
       details: incoherent.details,
+      invocationId: incoherent.invocationId,
       attemptId: incoherent.attemptId,
       ...(typeof incoherent.details.blockingIssueCount === 'number'
         ? { blockingIssueCount: incoherent.details.blockingIssueCount }

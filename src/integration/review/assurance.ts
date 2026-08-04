@@ -603,6 +603,8 @@ export function buildInvocationEvidence(input: {
   resolvedBaseSha?: string | null;
   /** SHA-256 digest of the extracted/reviewed content (branch reviews only). */
   reviewedContentDigest?: string | null;
+  /** Persisted attempt ID bound at evidence-assembly time. */
+  attemptId?: string;
 }): ReviewInvocationEvidence {
   const reviewOutputMode = input.reviewOutputMode ?? 'structured_output';
   const structuredOutputUsed =
@@ -633,6 +635,7 @@ export function buildInvocationEvidence(input: {
     resolvedBranchSha: input.resolvedBranchSha ?? null,
     resolvedBaseSha: input.resolvedBaseSha ?? null,
     reviewedContentDigest: input.reviewedContentDigest ?? null,
+    ...(input.attemptId ? { attemptId: input.attemptId } : {}),
     ...buildOptionalInvocationFields(input),
   };
 }

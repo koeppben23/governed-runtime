@@ -295,7 +295,18 @@ function implStateWithEvidence(
       verdict: 'changes_requested',
     },
     reviewAssurance: {
-      attempts: [],
+      attempts: [
+        {
+          attemptId: OBLIGATION_ID.replace(/^(\w{8})/, 'd0000001'),
+          obligationId: OBLIGATION_ID,
+          obligationType: 'implement' as const,
+          subjectDigest: 'test-subject-digest',
+          childSessionId: 'ses_child',
+          ordinal: 0,
+          status: 'bound' as const,
+          createdAt: now,
+        },
+      ],
       obligations: [
         {
           obligationId: OBLIGATION_ID,
@@ -336,6 +347,7 @@ function implStateWithEvidence(
           consumedByObligationId: null,
           capturedVerdict: verdict,
           capturedRawFindings: rawFindings,
+          attemptId: OBLIGATION_ID.replace(/^(\w{8})/, 'd0000001'),
         },
       ],
     },

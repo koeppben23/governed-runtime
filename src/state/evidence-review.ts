@@ -446,6 +446,10 @@ export const ReviewInvocationEvidence = z
     parentSessionId: z.string().min(1),
     childSessionId: z.string().min(1),
     agentType: z.literal(REVIEWER_SUBAGENT_TYPE),
+    /** Persisted attempt identity. Populated at binding time from the host-authoritative
+     *  attempt. Optional for legacy records; absent lineage MUST be treated as a hard
+     *  blocker (attempt_lineage_unavailable) by any status-mutating path. */
+    attemptId: z.string().uuid().optional(),
     /** How the reviewer was invoked: host-visible Task tool, SDK, manual attested, or
      *  manual attested corroborated by a FlowGuard-captured host hook (native_subagent_attested). */
     invocationMode: z.enum([

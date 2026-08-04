@@ -353,6 +353,8 @@ describe('review (standalone flow)', () => {
       source: 'host-orchestrated',
       capturedVerdict: findings.overallVerdict,
       capturedRawFindings: findings,
+      attemptId: state.reviewAssurance?.attempts?.find((a) => a.obligationId === obligationId)
+        ?.attemptId,
     });
     await writeState(sessDir, {
       ...state,

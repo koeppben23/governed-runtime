@@ -19,6 +19,7 @@ import type { ReviewInvocationEvidence, ReviewObligation } from '../../state/evi
 describe('resolveHostTaskFindings', () => {
   const OBLIGATION_ID = '11111111-1111-4111-8111-111111111111';
   const INVOCATION_ID = '22222222-2222-4222-8222-222222222222';
+  const ATTEMPT_ID = '55555555-5555-4555-8555-555555555555';
   const now = new Date().toISOString();
 
   const validRawFindings: Record<string, unknown> = {
@@ -79,6 +80,7 @@ describe('resolveHostTaskFindings', () => {
       reviewOutputMode: 'structured_output',
       structuredOutputUsed: true,
       reviewAssuranceLevel: 'structured_high',
+      attemptId: ATTEMPT_ID,
       ...overrides,
     };
   }
@@ -672,6 +674,7 @@ describe('resolveHostTaskFindings', () => {
       invocations: [
         makeHostTaskInvocation({
           childSessionId: childId,
+          attemptId: targetAttemptId,
           capturedVerdict: 'accept',
           capturedRawFindings: challengeRawFindings,
           findingsHash: hashFindings(challengeRawFindings),
@@ -698,6 +701,136 @@ describe('resolveHostTaskFindings', () => {
     if (result.kind !== 'incoherent') throw new Error('expected incoherent');
     expect(result.attemptId).toBe(targetAttemptId);
     expect(result.code).toBe('SUBAGENT_CHALLENGE_EVIDENCE_MISSING');
+  });
+
+  it('returns the exact persisted attemptId from invocation (not derived)', () => {
+    const specificAttemptId = '77777777-7777-4777-8777-777777777777';
+    const invocation = makeHostTaskInvocation({
+      attemptId: specificAttemptId,
+      capturedRawFindings: {
+        ...validRawFindings,
+        overallVerdict: 'accept',
+        blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+      },
+      findingsHash: hashFindings({
+        ...validRawFindings,
+        overallVerdict: 'accept',
+        blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+      }),
+    });
+    const result = resolveHostTaskFindings(
+      {
+        obligations: [makeObligation()],
+        invocations: [invocation],
+        attempts: [
+          {
+            attemptId: '88888888-8888-4888-8888-888888888888',
+            obligationId: OBLIGATION_ID,
+            obligationType: 'plan' as const,
+            subjectDigest: 'test-subject-digest',
+            childSessionId: 'ses_child',
+            ordinal: 0,
+            status: 'bound' as const,
+            createdAt: now,
+          },
+          {
+            attemptId: specificAttemptId,
+            obligationId: OBLIGATION_ID,
+            obligationType: 'plan' as const,
+            subjectDigest: 'test-subject-digest',
+            childSessionId: 'ses_child',
+            ordinal: 1,
+            status: 'bound' as const,
+            createdAt: now,
+          },
+        ],
+      },
+      makeObligation(),
+    );
+    expect(result).toMatchObject({
+      kind: 'incoherent',
+      attemptId: specificAttemptId,
+    });
+  });
+
+  it('does not derive attempt identity from childSessionId', () => {
+    const correctAttemptId = '99999999-9999-4999-8999-999999999999';
+    const sharedChildId = 'ses_shared';
+    const invocation = makeHostTaskInvocation({
+      attemptId: correctAttemptId,
+      childSessionId: sharedChildId,
+      capturedRawFindings: {
+        ...validRawFindings,
+        overallVerdict: 'accept',
+        blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+      },
+      findingsHash: hashFindings({
+        ...validRawFindings,
+        overallVerdict: 'accept',
+        blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+      }),
+    });
+    const result = resolveHostTaskFindings(
+      {
+        obligations: [makeObligation()],
+        invocations: [invocation],
+        attempts: [
+          {
+            attemptId: 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa',
+            obligationId: OBLIGATION_ID,
+            obligationType: 'plan' as const,
+            subjectDigest: 'test-subject-digest',
+            childSessionId: sharedChildId,
+            ordinal: 0,
+            status: 'bound' as const,
+            createdAt: now,
+          },
+          {
+            attemptId: correctAttemptId,
+            obligationId: OBLIGATION_ID,
+            obligationType: 'plan' as const,
+            subjectDigest: 'test-subject-digest',
+            childSessionId: 'ses_other',
+            ordinal: 1,
+            status: 'bound' as const,
+            createdAt: now,
+          },
+        ],
+      },
+      makeObligation(),
+    );
+    expect(result).toMatchObject({
+      kind: 'incoherent',
+      attemptId: correctAttemptId,
+    });
+  });
+
+  it('returns attempt_lineage_unavailable when invocation has no attemptId', () => {
+    const invocation = makeHostTaskInvocation({
+      attemptId: undefined,
+      capturedRawFindings: {
+        ...validRawFindings,
+        overallVerdict: 'accept',
+        blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+      },
+      findingsHash: hashFindings({
+        ...validRawFindings,
+        overallVerdict: 'accept',
+        blockingIssues: [{ severity: 'minor', category: 'quality', message: 'stale' }],
+      }),
+    });
+    const result = resolveHostTaskFindings(
+      {
+        obligations: [makeObligation()],
+        invocations: [invocation],
+        attempts: [],
+      },
+      makeObligation(),
+    );
+    expect(result).toMatchObject({
+      kind: 'attempt_lineage_unavailable',
+      invocationId: INVOCATION_ID,
+    });
   });
 });
 

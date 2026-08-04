@@ -281,24 +281,41 @@ function getHostTaskVerdictContinuation(
   return { reviewObligationId, reviewVerdict };
 }
 
+type AttemptRejectionResult =
+  | { ok: true }
+  | {
+      ok: false;
+      code:
+        'REVIEW_ASSURANCE_UNAVAILABLE' | 'REVIEW_ATTEMPT_ID_MISSING' | 'REVIEW_ATTEMPT_NOT_FOUND';
+      details: Record<string, string>;
+    };
+
 async function rejectIncoherentAttempt(
   sessDir: string,
   state: SessionState,
   attemptId: string,
   now: string,
-): Promise<void> {
-  if (!attemptId) return;
+): Promise<AttemptRejectionResult> {
   const assurance = state.reviewAssurance;
-  if (!assurance) return;
+  if (!assurance) {
+    return { ok: false, code: 'REVIEW_ASSURANCE_UNAVAILABLE', details: {} };
+  }
+  if (!attemptId) {
+    return { ok: false, code: 'REVIEW_ATTEMPT_ID_MISSING', details: {} };
+  }
   const attempt = assurance.attempts?.find((item) => item.attemptId === attemptId);
-  if (!attempt) return;
+  if (!attempt) {
+    return { ok: false, code: 'REVIEW_ATTEMPT_NOT_FOUND', details: { attemptId } };
+  }
   const rejectedState: SessionState = {
     ...state,
     reviewAssurance: updateAttemptStatus(assurance, attempt.attemptId, 'rejected', now),
   };
   await writeStateWithArtifacts(sessDir, rejectedState);
+  return { ok: true };
 }
 
+// eslint-disable-next-line complexity -- explicit fail-closed host-task verdict resolution
 async function prepareHostTaskVerdictReview(
   sessDir: string,
   state: SessionState,
@@ -325,13 +342,23 @@ async function prepareHostTaskVerdictReview(
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
 
   if (resolved.kind === 'incoherent') {
-    await rejectIncoherentAttempt(sessDir, state, resolved.attemptId, exec.now);
+    const rejection = await rejectIncoherentAttempt(sessDir, state, resolved.attemptId, exec.now);
+    if (!rejection.ok) {
+      return formatBlocked(rejection.code, rejection.details);
+    }
     return formatBlocked(
       resolved.code,
       Object.fromEntries(
         Object.entries(resolved.details).map(([key, value]) => [key, String(value)]),
       ),
     );
+  }
+
+  if (resolved.kind === 'attempt_lineage_unavailable') {
+    return formatBlocked('REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE', {
+      invocationId: resolved.invocationId,
+      obligationId: resolved.obligationId,
+    });
   }
 
   if (resolved.kind !== 'resolved') {

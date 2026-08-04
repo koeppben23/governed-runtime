@@ -290,6 +290,7 @@ function assembleBoundEvidence(input: {
     findingsHash,
     invokedAt: now,
     source: 'host-orchestrated',
+    attemptId: input.attempt.attemptId,
     ...transportContract(latest),
     capturedVerdict: latest.capturedFindings?.overallVerdict,
     capturedRawFindings: input.normalizedFindings,

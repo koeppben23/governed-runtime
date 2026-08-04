@@ -618,6 +618,14 @@ export function resolveHostTaskEffectiveFindings(
         ),
       };
     }
+    if (resolved.kind === 'attempt_lineage_unavailable') {
+      return {
+        blocked: formatBlocked('REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE', {
+          invocationId: resolved.invocationId,
+          obligationId: resolved.obligationId,
+        }),
+      };
+    }
     if (ctx.input.reviewerUnavailable === true) {
       return {
         blocked: formatBlocked('REVIEWER_UNAVAILABLE_STRICT', {

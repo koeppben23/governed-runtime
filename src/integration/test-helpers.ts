@@ -423,6 +423,13 @@ export async function fulfillStrictReviewObligation(
     // evidence (capturedRawFindings) rather than from agent-submitted args.
     // Without this, resolveHostTaskFindings returns null → REVIEW_FINDINGS_REQUIRED.
     ...(isHostTask ? { capturedRawFindings: findings } : {}),
+    ...(isHostTask
+      ? {
+          attemptId: state.reviewAssurance?.attempts?.find(
+            (a) => a.obligationId === obligation.obligationId,
+          )?.attemptId,
+        }
+      : {}),
   });
   const obligationAcceptedByReviewer = !isHostTask;
 
