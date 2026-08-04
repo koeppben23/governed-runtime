@@ -158,6 +158,8 @@ export type HostTaskBindOutcome =
   | 'schema_invalid'
   | 'client_reference_invalid'
   | 'challenge_contract_violation'
+  | 'challenge_evidence_unknown'
+  | 'findings_incoherent'
   | 'subject_mismatch'
   | 'stale_attempt'
   | 'idempotent_bound'

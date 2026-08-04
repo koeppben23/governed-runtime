@@ -25,6 +25,7 @@ import {
   checkChallengeContract,
   normalizeFindingsChallenges,
 } from './enforcement/challenge-binding.js';
+import { validateReviewFindingsConsistency } from './enforcement/findings-consistency.js';
 import {
   ReviewActorInfo,
   ReviewFindings as ReviewFindingsSchema,
@@ -181,9 +182,10 @@ export function buildHostTaskEvidence(
     readonly obligations: ReviewObligation[];
     readonly invocations: ReviewInvocationEvidence[];
     readonly attempts: readonly ReviewAttempt[];
+    readonly allowedEvidenceRefs?: readonly unknown[];
   },
 ): HostTaskBindResult & { attempt?: ReviewAttempt } {
-  const { obligations, invocations, attempts } = records;
+  const { obligations, invocations, attempts, allowedEvidenceRefs } = records;
   const latestResult = latestBindableReviewRecord(state);
   if ('bindOutcome' in latestResult) return latestResult;
   const { latest, childSessionId, obligationType: oType, rawFindings } = latestResult;
@@ -224,8 +226,15 @@ export function buildHostTaskEvidence(
     hasValidAttestation: attestationInfo.hasValidAttestation,
     childSessionId,
     now,
+    allowedEvidenceRefs,
   });
-  if ('bindOutcome' in prepared) return { ...prepared, attempt: staleAttempt(attempt, now) };
+  if ('bindOutcome' in prepared) {
+    const rejectedAttempt =
+      prepared.bindOutcome === 'findings_incoherent'
+        ? { ...attempt, status: 'rejected' as const, completedAt: now }
+        : staleAttempt(attempt, now);
+    return { ...prepared, attempt: rejectedAttempt };
+  }
   const normalizedFindings = prepared.findings;
 
   const findingsHash = hashFindings(normalizedFindings);
@@ -265,6 +274,7 @@ function assembleBoundEvidence(input: {
   hostConstantDivergence: readonly string[];
   attestationInfo: AttestationInfo;
   now: string;
+  allowedEvidenceRefs?: readonly unknown[];
 }): HostTaskBindResult & { attempt?: ReviewAttempt } {
   const { latest, childSessionId, oType, obligation, findingsHash, now } = input;
   const promptHash = hashText(`${oType}:${obligation.iteration}:${obligation.planVersion}`);
@@ -628,8 +638,10 @@ function prepareBindableFindings(input: {
   hasValidAttestation: boolean;
   childSessionId: string;
   now: string;
+  allowedEvidenceRefs?: readonly unknown[];
 }): { findings: Record<string, unknown> } | HostTaskBindResult {
-  const { rawFindings, obligation, hasValidAttestation, childSessionId, now } = input;
+  const { rawFindings, obligation, hasValidAttestation, childSessionId, now, allowedEvidenceRefs } =
+    input;
 
   const provenanceFindings = normalizeHostTaskFindings(
     rawFindings,
@@ -643,12 +655,35 @@ function prepareBindableFindings(input: {
     provenanceFindings,
     obligation.obligationId,
     childSessionId,
+    allowedEvidenceRefs,
   );
   if ('bindOutcome' in normalization) return normalization;
   const findings = normalization.findings;
 
   const schemaCheck = validateNormalizedFindings(findings, obligation.obligationId, childSessionId);
   if (schemaCheck) return schemaCheck;
+
+  const overallVerdict = findings.overallVerdict;
+  const blockingIssues = findings.blockingIssues;
+  if (typeof overallVerdict === 'string' && Array.isArray(blockingIssues)) {
+    const consistency = validateReviewFindingsConsistency({
+      overallVerdict,
+      blockingIssueCount: blockingIssues.length,
+    });
+    if (!consistency.ok) {
+      return {
+        evidence: null,
+        bindOutcome: 'findings_incoherent',
+        diagnostic: {
+          childSessionId,
+          obligationId: obligation.obligationId,
+          code: consistency.code,
+          ...consistency.details,
+          message: 'Reviewer findings are internally incoherent and the attempt was rejected.',
+        },
+      };
+    }
+  }
 
   const contractCheck = checkChallengeContract(findings, obligation, childSessionId);
   if (contractCheck) return contractCheck;

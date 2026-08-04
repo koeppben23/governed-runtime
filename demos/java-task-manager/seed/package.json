@@ -2,6 +2,6 @@
   "private": true,
   "scripts": {
     "build": "./mvnw verify",
-    "test": "./mvnw -Dtest=TaskControllerTest test"
+    "test": "./mvnw test"
   }
 }

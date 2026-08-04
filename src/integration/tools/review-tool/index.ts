@@ -55,7 +55,7 @@ import {
 } from './completion.js';
 import { resolveBranchReviewSource } from '../../../adapters/gh-cli.js';
 import { prepareReviewContent } from '../../../rails/review.js';
-import { findReviewObligationById } from '../../review/assurance.js';
+import { findReviewObligationById, updateAttemptStatus } from '../../review/assurance.js';
 import { writeStateWithArtifacts } from '../helpers.js';
 import {
   appendCompletedReviewEvidence,
@@ -155,7 +155,7 @@ async function prepareReviewExecution(
 ): Promise<ReviewPreparation | string> {
   const resolvedSource = resolveObligationBranchSource(exec);
 
-  const hostTaskVerdict = prepareHostTaskVerdictReview(state, result, exec);
+  const hostTaskVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
   if (hostTaskVerdict) return hostTaskVerdict;
 
   const missingResult = await ensureMissingAnalysisObligation(sessDir, state, exec.args, exec.now, {
@@ -281,11 +281,44 @@ function getHostTaskVerdictContinuation(
   return { reviewObligationId, reviewVerdict };
 }
 
-function prepareHostTaskVerdictReview(
+async function rejectIncoherentAttempt(
+  sessDir: string,
+  state: SessionState,
+  obligation: ReviewObligation,
+  now: string,
+): Promise<void> {
+  const assurance = state.reviewAssurance;
+  if (!assurance) return;
+  const invocation = assurance.invocations
+    .filter((item) => item.obligationId === obligation.obligationId)
+    .at(-1);
+  const attempt = invocation
+    ? assurance.attempts?.find(
+        (item) =>
+          item.obligationId === obligation.obligationId &&
+          item.childSessionId === invocation.childSessionId,
+      )
+    : undefined;
+  if (!attempt) return;
+  const rejectedState: SessionState = {
+    ...state,
+    reviewAssurance: updateAttemptStatus(
+      assurance,
+      attempt.attemptId,
+      'rejected',
+      now,
+      invocation?.childSessionId,
+    ),
+  };
+  await writeStateWithArtifacts(sessDir, rejectedState);
+}
+
+async function prepareHostTaskVerdictReview(
+  sessDir: string,
   state: SessionState,
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
-): ReviewPreparation | string | null {
+): Promise<ReviewPreparation | string | null> {
   // A verdict without an ID is an allowed first call. It must create (or reissue
   // instructions for) an obligation rather than guessing a continuation identity.
   const continuation = getHostTaskVerdictContinuation(exec);
@@ -306,10 +339,7 @@ function prepareHostTaskVerdictReview(
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
 
   if (resolved.kind === 'incoherent') {
-    // F12: the host-captured record is internally self-contradictory
-    // (accept + blocking issues). Fail closed with the canonical coherence
-    // reason code — not the generic HOST_SUBAGENT_TASK_REQUIRED catch-all
-    // whose recovery message would mislead about evidence availability.
+    await rejectIncoherentAttempt(sessDir, state, obligation, exec.now);
     return formatBlocked(
       resolved.code,
       Object.fromEntries(

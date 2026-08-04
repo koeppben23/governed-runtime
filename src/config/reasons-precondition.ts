@@ -495,7 +495,8 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   {
     code: 'SUBAGENT_CHALLENGE_EVIDENCE_MISSING',
     category: 'precondition',
-    messageTemplate: 'Independent review challenge of kind {kind} has no evidence references.',
+    messageTemplate:
+      'Independent review challenge of kind {kind} has invalid evidence references ({reason}).',
     recoverySteps: ['Bind each challenge to at least one canonical evidence reference.'],
   },
   {

@@ -87,7 +87,7 @@ describe('Java Task Manager demo contract', () => {
     expect(demoScript).toContain('contractClaimCount: 2');
     expect(demoScript).toContain('proofGraphGate.gated: false');
     expect(demoPackage).toContain('"build": "./mvnw verify"');
-    expect(demoPackage).toContain('"test": "./mvnw -Dtest=TaskControllerTest test"');
+    expect(demoPackage).toContain('"test": "./mvnw test"');
     expect(proofGraphVariants).toContain('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN');
     expect(proofGraphVariants).toContain('flowguard_record_mutation_evidence');
     expect(proofGraphVariants).toContain('./demos/run-proofgraph-variants.sh');

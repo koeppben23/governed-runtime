@@ -9,6 +9,7 @@
  */
 
 import { readState } from '../adapters/persistence.js';
+import { buildHostTaskChallengeContract } from './review/host-task-policy.js';
 import { buildHostTaskEvidence } from './review/evidence-binding.js';
 import {
   appendInvocationEvidence,
@@ -104,6 +105,10 @@ async function bindReviewerEvidence(
     obligations,
     invocations,
     attempts,
+    allowedEvidenceRefs: buildHostTaskChallengeContract(
+      state,
+      obligations.find((o) => o.status === 'pending') ?? null,
+    )?.evidenceRefs,
   });
   return { sessDir, policy, bindResult };
 }
