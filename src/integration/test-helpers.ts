@@ -314,7 +314,7 @@ export function isBlockedResult(result: Record<string, unknown>): boolean {
  * tool tests do not run plugin hooks, so they use this helper to set the same
  * mandate-bound evidence before submitting ReviewFindings to the tool.
  */
-// eslint-disable-next-line max-lines-per-function -- shared strict-review fixture must bind evidence and invocation together
+// eslint-disable-next-line complexity, max-lines-per-function -- shared strict-review fixture must bind evidence, attempt lineage, and invocation together
 export async function fulfillStrictReviewObligation(
   sessDir: string,
   input: {

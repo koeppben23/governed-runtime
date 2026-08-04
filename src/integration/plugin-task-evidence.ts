@@ -71,6 +71,7 @@ export async function handleHostTaskEvidence(
  * Returns null when this session is not under a host-task policy, i.e. when
  * reviewer Task evidence is not the authoritative source for it.
  */
+// eslint-disable-next-line complexity -- host-task evidence binding resolves multiple fail-closed states
 async function bindReviewerEvidence(
   deps: HostTaskEvidenceDeps,
   sessionId: string,
