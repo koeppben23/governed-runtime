@@ -118,4 +118,48 @@ export const ENVELOPE_PRECONDITION_REASONS: readonly BlockedReason[] = [
       'If the issue is environmental (network, subagent unreachable), address it and start a fresh session',
     ],
   },
+
+  {
+    code: 'REVIEW_ASSURANCE_UNAVAILABLE',
+    category: 'precondition',
+    messageTemplate:
+      'Review assurance state is not available. The rejection of an incoherent attempt cannot proceed without assurance to mutate.',
+    recoverySteps: [
+      'Ensure the session has an active review obligation with an attempt before submitting a verdict',
+      'Re-run /review to create a fresh obligation and attempt',
+    ],
+  },
+
+  {
+    code: 'REVIEW_ATTEMPT_ID_MISSING',
+    category: 'precondition',
+    messageTemplate:
+      'The attempt identity (attemptId) is missing from the reviewer invocation evidence. The attempt cannot be rejected.',
+    recoverySteps: [
+      'This is a legacy data condition; re-invoke the reviewer subagent for a fresh attempt',
+      'New invocations created by the binding path automatically carry the attemptId',
+    ],
+  },
+
+  {
+    code: 'REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE',
+    category: 'precondition',
+    messageTemplate:
+      'Invocation {invocationId} under obligation {obligationId} has no persisted attempt lineage. The attempt-owner relationship cannot be verified.',
+    recoverySteps: [
+      'Re-invoke the reviewer subagent for a fresh attempt',
+      'The stale invocation is retained for audit but cannot be used for attempt status changes',
+    ],
+  },
+
+  {
+    code: 'REVIEW_ATTEMPT_NOT_FOUND',
+    category: 'precondition',
+    messageTemplate:
+      'Attempt {attemptId} referenced by the reviewer invocation was not found in the assurance state.',
+    recoverySteps: [
+      'Verify the attempt exists in the session with flowguard_status',
+      'If the attempt was removed or corrupted, re-invoke the reviewer for a fresh attempt',
+    ],
+  },
 ];

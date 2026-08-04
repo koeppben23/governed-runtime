@@ -212,6 +212,10 @@ real, registered reason.
 | `REVIEW_SELF_APPROVAL_DENIED`               | Manual-attested findings came from the governed parent session                | Invoke `flowguard-reviewer` in a distinct session                                                                    |
 | `REVIEW_TRANSPORT_EVIDENCE_INVALID`         | External review-evidence transport JSON is malformed or unbindable            | Regenerate evidence with valid obligation-bound `ReviewFindings`                                                     |
 | `REVIEW_ASSURANCE_STATE_UNAVAILABLE`        | Strict review assurance state cannot be read                                  | Re-hydrate; if persistent, restore from archive                                                                      |
+| `REVIEW_ATTEMPT_ID_MISSING`                 | Invocation lacks a persisted attemptId (legacy data)                          | Re-invoke the reviewer subagent for a fresh attempt                                                                  |
+| `REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE`        | Invocation has no attempt lineage; cannot determine which attempt to reject   | Re-invoke the reviewer; the stale invocation is retained for audit                                                   |
+| `REVIEW_ATTEMPT_NOT_FOUND`                  | Attempt referenced by invocation was not found in assurance state             | Verify the attempt exists with flowguard_status; re-invoke reviewer if corrupt                                       |
+| `REVIEW_ASSURANCE_UNAVAILABLE`              | Review assurance state missing; cannot reject an incoherent attempt           | Ensure the session has an active review obligation with an attempt                                                   |
 
 ### Review Envelope Validation
 
@@ -394,6 +398,10 @@ PROOFGRAPH_RISK_ASSESSMENT_STALE
 READ_FAILED
 REGULATED_ACTOR_UNKNOWN
 REVIEW_ASSURANCE_STATE_UNAVAILABLE
+REVIEW_ATTEMPT_ID_MISSING
+REVIEW_ATTEMPT_LINEAGE_UNAVAILABLE
+REVIEW_ATTEMPT_NOT_FOUND
+REVIEW_ASSURANCE_UNAVAILABLE
 REVIEW_CARD_ARTIFACT_IMMUTABLE
 REVIEW_CARD_ARTIFACT_WRITE_FAILED
 REVIEW_CONTENT_SOURCE_INCOMPLETE
