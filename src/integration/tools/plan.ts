@@ -60,7 +60,8 @@ import type {
 } from '../../state/evidence.js';
 import { computeRecordDigest } from '../../state/evidence-plan.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
-import { PlanClaimDeclaration as PlanClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
+import { PlanClaimDeclarationInput as PlanClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
+import { normalizePlanClaims } from '../../state/proofgraph-approval.js';
 import { validateProofClaimContract } from '../proofgraph/claim-contract.js';
 import { STRUCTURAL_SURFACE_IDS } from '../proofgraph/structural-provider.js';
 import { MUTATION_PROFILE_IDS } from '../proofgraph/mutation-provider.js';
@@ -200,12 +201,13 @@ function validateSubmissionInputShape(args: PlanArgs, input: PlanInputFlags): st
  */
 function validatePlanClaimContract(args: PlanArgs, state: SessionState): string | null {
   if (!args.claims || args.claims.length === 0) return null;
+  const normalized = normalizePlanClaims(args.claims)!;
   const result = validateProofClaimContract({
     source: 'plan',
     activeChecks: state.activeChecks,
     allowedSurfaces: STRUCTURAL_SURFACE_IDS,
     allowedMutationProfiles: MUTATION_PROFILE_IDS,
-    claims: args.claims.map((claim) => ({
+    claims: normalized.map((claim) => ({
       claimId: claim.claimId,
       statement: claim.statement,
       critical: claim.critical,
@@ -341,7 +343,7 @@ function buildPlanSubmissionState(
         ? [...(scope.state.plan?.reviewFindings ?? []), reviewFindings]
         : scope.state.plan?.reviewFindings,
       claimDeclarations: scope.args.claims
-        ? { flow: 'plan', claims: scope.args.claims }
+        ? { flow: 'plan', claims: normalizePlanClaims(scope.args.claims)! }
         : scope.state.plan?.claimDeclarations,
     },
     // #428: a new plan invalidates any prior validation evidence. Without this
@@ -489,7 +491,7 @@ function buildReviewedPlanState(
       history: revision.history,
       reviewFindings: newReviewFindings,
       claimDeclarations: scope.args.claims
-        ? { flow: 'plan', claims: scope.args.claims }
+        ? { flow: 'plan', claims: normalizePlanClaims(scope.args.claims)! }
         : scope.state.plan?.claimDeclarations,
     },
     selfReview: {

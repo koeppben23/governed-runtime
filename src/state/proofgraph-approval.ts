@@ -11,6 +11,37 @@
 import { z } from 'zod';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
+import * as crypto from 'node:crypto';
+
+/** RFC 4122 DNS namespace, used to derive stable UUIDv5 claim identities. */
+const CLAIM_NAMESPACE = Buffer.from('6ba7b8109dad11d180b400c04fd430c8', 'hex');
+
+function normalizeClaimStatement(statement: string): string {
+  return statement.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+/**
+ * Derive a deterministic UUIDv5 for a claim so that identical declarations
+ * in the same authority section produce the same claimId across idempotent
+ * retries, while the same statement in a different authority section or flow
+ * produces a distinct identity.
+ */
+export function mintProofGraphClaimId(input: {
+  flow: 'plan' | 'architecture';
+  statement: string;
+  authoritySectionId: string;
+}): string {
+  const seed = [
+    input.flow,
+    input.authoritySectionId,
+    normalizeClaimStatement(input.statement),
+  ].join('\u001f');
+  const hash = crypto.createHash('sha1').update(CLAIM_NAMESPACE).update(seed, 'utf8').digest();
+  hash[6] = (hash[6]! & 0x0f) | 0x50; // version 5
+  hash[8] = (hash[8]! & 0x3f) | 0x80; // RFC 4122 variant
+  const hex = hash.subarray(0, 16).toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+}
 
 /** A claim declaration captured before implementation evidence exists. */
 const preEvidenceClaimDeclaration = {
@@ -21,27 +52,70 @@ const preEvidenceClaimDeclaration = {
 } as const;
 
 /** A plan claim names the checks expected to cover and falsify it after implementation. */
-export const PlanClaimDeclaration = z
-  .object({
-    ...preEvidenceClaimDeclaration,
-    expectedCheckId: z.string().min(1),
-    counterexampleCheckId: z.string().min(1).optional(),
-    structuralSurface: z.string().min(1).optional(),
-    mutationProfile: z.string().min(1).optional(),
-  })
-  .readonly();
+const planBase = z.object({
+  ...preEvidenceClaimDeclaration,
+  expectedCheckId: z.string().min(1),
+  counterexampleCheckId: z.string().min(1).optional(),
+  structuralSurface: z.string().min(1).optional(),
+  mutationProfile: z.string().min(1).optional(),
+});
+
+export const PlanClaimDeclaration = planBase.readonly();
 export type PlanClaimDeclaration = z.infer<typeof PlanClaimDeclaration>;
 
+/** Public input for a plan claim — claimId is minted host-side. */
+export const PlanClaimDeclarationInput = planBase.omit({ claimId: true });
+export type PlanClaimDeclarationInput = z.infer<typeof PlanClaimDeclarationInput>;
+
+/**
+ * Normalize architecture claim inputs to persisted declarations by minting a
+ * deterministic claimId host-side.
+ */
+export function normalizeArchitectureClaims(
+  claims: readonly ArchitectureClaimDeclarationInput[] | undefined,
+): ArchitectureClaimDeclaration[] | undefined {
+  return claims?.map((claim) => ({
+    ...claim,
+    claimId: mintProofGraphClaimId({
+      flow: 'architecture',
+      statement: claim.statement,
+      authoritySectionId: claim.authoritySectionId,
+    }),
+  })) as ArchitectureClaimDeclaration[];
+}
+
+/**
+ * Normalize plan claim inputs to persisted declarations by minting a
+ * deterministic claimId host-side.
+ */
+export function normalizePlanClaims(
+  claims: readonly PlanClaimDeclarationInput[] | undefined,
+): PlanClaimDeclaration[] | undefined {
+  return claims?.map((claim) => ({
+    ...claim,
+    claimId: mintProofGraphClaimId({
+      flow: 'plan',
+      statement: claim.statement,
+      authoritySectionId: claim.authoritySectionId,
+    }),
+  })) as PlanClaimDeclaration[];
+}
+
 /** An ADR claim names the review evidence and assumptions for the decision. */
-export const ArchitectureClaimDeclaration = z
+const archBase = z
   .object({
     ...preEvidenceClaimDeclaration,
     requiredReviewEvidence: z.array(z.string().min(1)),
     assumptions: z.array(z.string().min(1)).optional(),
   })
-  .strict()
-  .readonly();
+  .strict();
+
+export const ArchitectureClaimDeclaration = archBase.readonly();
 export type ArchitectureClaimDeclaration = z.infer<typeof ArchitectureClaimDeclaration>;
+
+/** Public input for an ADR claim — claimId is minted host-side. */
+export const ArchitectureClaimDeclarationInput = archBase.omit({ claimId: true }).strict();
+export type ArchitectureClaimDeclarationInput = z.infer<typeof ArchitectureClaimDeclarationInput>;
 
 /** Flows that can produce a user approval certificate. */
 export const ProofGraphApprovalFlow = z.enum(['plan', 'architecture']);

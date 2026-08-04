@@ -48,6 +48,7 @@ import { materializeReviewCardArtifact } from '../../adapters/workspace/index.js
 import { readConfig } from '../../adapters/persistence-config.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
+import { normalizeArchitectureClaims } from '../../state/proofgraph-approval.js';
 
 import {
   type ArchitectureArgs,
@@ -240,7 +241,12 @@ function applyAdrRevision(
     adrText: revisedText,
     digest: revisedDigest,
     ...(args.claims
-      ? { claimDeclarations: { flow: 'architecture' as const, claims: args.claims } }
+      ? {
+          claimDeclarations: {
+            flow: 'architecture' as const,
+            claims: normalizeArchitectureClaims(args.claims)!,
+          },
+        }
       : {}),
     // A revision makes a prior human approval attest to a superseded ADR.
     approvalCertificate: undefined,

@@ -11,7 +11,7 @@ import type { ToolDefinition } from './helpers.js';
 import { withMutableSessionTransaction, formatError } from './helpers.js';
 
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
-import { ArchitectureClaimDeclaration as ArchitectureClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
+import { ArchitectureClaimDeclarationInput as ArchitectureClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { validateInitialSubmissionGate } from './architecture-shared.js';
 import { toolCallFlags } from './review-validation-mode.js';

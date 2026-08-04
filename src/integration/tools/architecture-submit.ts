@@ -10,6 +10,7 @@ import { buildArchitectureReviewInstruction } from './architecture-shared.js';
 import { formatBlocked, appendNextAction, writeStateWithArtifacts } from './helpers.js';
 import type { SessionState } from '../../state/schema.js';
 import { executeArchitecture } from '../../rails/architecture.js';
+import { normalizeArchitectureClaims } from '../../state/proofgraph-approval.js';
 import {
   appendObligationWithAttempt,
   createReviewObligation,
@@ -90,9 +91,10 @@ export async function handleAdrSubmission(
   if (!args.title) return formatBlocked('EMPTY_ADR_TITLE');
   if (!args.adrText) return formatBlocked('EMPTY_ADR_TEXT');
 
+  const claims = normalizeArchitectureClaims(args.claims);
   const result = executeArchitecture(
     state,
-    { title: args.title, adrText: args.adrText, claims: args.claims },
+    { title: args.title, adrText: args.adrText, claims },
     ctx,
   );
 

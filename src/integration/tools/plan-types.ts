@@ -11,13 +11,13 @@ import type {
   RevisionDelta,
   ReviewFindings,
 } from '../../state/evidence.js';
-import type { PlanClaimDeclaration } from '../../state/proofgraph-approval.js';
+import type { PlanClaimDeclarationInput } from '../../state/proofgraph-approval.js';
 import type { MutableSession, ToolContext } from './helpers.js';
 import { classifyToolCallMode, toolCallFlags } from './review-validation-mode.js';
 
 export type PlanArgs = {
   planText?: string;
-  claims?: PlanClaimDeclaration[];
+  claims?: PlanClaimDeclarationInput[];
   reviewVerdict?: 'accept' | 'changes_requested';
   reviewFindings?: ReviewFindings;
   reviewerUnavailable?: boolean;

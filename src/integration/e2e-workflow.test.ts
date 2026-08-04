@@ -1177,7 +1177,7 @@ describe('e2e-workflow', () => {
 describe('ProofGraph demo fixtures', () => {
   const PLAN_TEXT = '## Plan\n1. Demonstrate certificate-bound ProofGraph claims.';
   const PLAN_CLAIM = {
-    claimId: '10000000-0000-4000-8000-000000000001',
+    claimId: 'a7728939-52e4-5d3b-bac2-b4b1ac99b3ad',
     statement: 'The governed change satisfies its approved behavior.',
     critical: true,
     authoritySectionId: 'step-1',

@@ -291,13 +291,13 @@ async function resolveProjection(
 
 function latestReviewSummary(
   findings: ReadonlyArray<ReviewFindings> | null | undefined,
-  opts: { includePlanVersion: boolean },
+  opts: { includePlanVersion: boolean; hostIteration?: number },
 ): Record<string, unknown> | null {
   if (!findings || findings.length === 0) return null;
-  const latest = findings[findings.length - 1];
+  const latest = findings.at(-1);
   if (!latest) return null;
   return {
-    iteration: latest.iteration,
+    iteration: opts.hostIteration ?? latest.iteration,
     ...(opts.includePlanVersion ? { planVersion: latest.planVersion } : {}),
     overallVerdict: latest.overallVerdict,
     blockingIssueCount: latest.blockingIssues.length,
@@ -538,6 +538,7 @@ function buildImplementationStatus(state: SessionState): Record<string, unknown>
     }),
     latestArchitectureReview: latestReviewSummary(state.architecture?.reviewFindings ?? null, {
       includePlanVersion: true,
+      hostIteration: state.selfReview?.iteration,
     }),
     hasReviewDecision: state.reviewDecision !== null,
     reviewVerdict: state.reviewDecision?.verdict ?? null,

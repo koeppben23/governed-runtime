@@ -693,12 +693,18 @@ export function fulfillObligation(
   now: string,
 ): ReviewAssuranceState {
   const base = ensureReviewAssurance(assurance);
+  const obligation = base.obligations.find((item) => item.obligationId === obligationId);
+  if (!obligation) throw new Error(`Review obligation not found: ${obligationId}`);
+  if (obligation.status !== 'pending') {
+    if (obligation.status === 'fulfilled' && obligation.invocationId === invocationId) return base;
+    throw new Error(`Cannot fulfill review obligation in status ${obligation.status}`);
+  }
   return {
     ...base,
-    obligations: base.obligations.map((o) =>
-      o.obligationId !== obligationId
-        ? o
-        : { ...o, status: 'fulfilled' as const, invocationId, fulfilledAt: now },
+    obligations: base.obligations.map((item) =>
+      item.obligationId !== obligationId
+        ? item
+        : { ...item, status: 'fulfilled' as const, invocationId, fulfilledAt: now },
     ),
   };
 }

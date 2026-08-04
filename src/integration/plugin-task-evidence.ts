@@ -14,6 +14,7 @@ import { buildHostTaskEvidence } from './review/evidence-binding.js';
 import {
   appendInvocationEvidence,
   ensureReviewAssurance,
+  fulfillObligation,
   staleObligationAttempts,
   updateAttemptStatus,
 } from './review/assurance.js';
@@ -191,23 +192,32 @@ async function persistHostTaskEvidence(
   });
   await deps.ws.updateReviewAssurance(sessDir, (s: SessionState) => {
     const assurance = ensureReviewAssurance(s.reviewAssurance);
+    const at = evidence.fulfilledAt ?? evidence.invokedAt ?? now;
+
     const withInvocation = appendInvocationEvidence(assurance, evidence);
-    if (bindResult.attempt) {
-      // The evidence timestamps are the authoritative completion time; `now` is
-      // the injected host clock, used only when the evidence carries neither.
-      const at = evidence.fulfilledAt ?? evidence.invokedAt ?? now;
-      // Update the existing attempt record in-place — never append a duplicate.
-      const marked = updateAttemptStatus(withInvocation, bindResult.attempt.attemptId, 'bound', at);
-      // Stale any OTHER non-bound attempts for the same obligation.
-      const deduped = staleObligationAttempts(
-        marked,
-        evidence.obligationId,
-        bindResult.attempt.attemptId,
-        at,
-      );
-      return { ...s, reviewAssurance: deduped };
+    const fulfilled = fulfillObligation(
+      withInvocation,
+      evidence.obligationId,
+      evidence.invocationId,
+      at,
+    );
+
+    if (!bindResult.attempt) {
+      return { ...s, reviewAssurance: fulfilled };
     }
-    return { ...s, reviewAssurance: withInvocation };
+
+    // The evidence timestamps are the authoritative completion time; `now` is
+    // the injected host clock, used only when the evidence carries neither.
+    // Update the existing attempt record in-place — never append a duplicate.
+    const marked = updateAttemptStatus(fulfilled, bindResult.attempt.attemptId, 'bound', at);
+    // Stale any OTHER non-bound attempts for the same obligation.
+    const deduped = staleObligationAttempts(
+      marked,
+      evidence.obligationId,
+      bindResult.attempt.attemptId,
+      at,
+    );
+    return { ...s, reviewAssurance: deduped };
   });
   const updated = await readState(sessDir);
   await appendReviewAuditEvent(

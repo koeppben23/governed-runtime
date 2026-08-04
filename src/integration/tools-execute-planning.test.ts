@@ -555,7 +555,7 @@ describe('plan', () => {
           planText: '## Plan',
           claims: [
             {
-              claimId: '00000000-0000-4000-8000-000000000004',
+              claimId: 'ed04dda1-96d3-569f-8acc-af53500de638',
               statement: 'Invalid credentials are rejected.',
               critical: false,
               authoritySectionId: 'authentication',
@@ -572,7 +572,7 @@ describe('plan', () => {
         flow: 'plan',
         claims: [
           {
-            claimId: '00000000-0000-4000-8000-000000000004',
+            claimId: 'ed04dda1-96d3-569f-8acc-af53500de638',
             statement: 'Invalid credentials are rejected.',
             critical: false,
             authoritySectionId: 'authentication',

@@ -6,6 +6,9 @@ import {
   FlowClaimDeclarations,
   PlanClaimDeclarations,
   ProofGraphApprovalCertificate,
+  mintProofGraphClaimId,
+  PlanClaimDeclarationInput,
+  ArchitectureClaimDeclarationInput,
 } from './proofgraph-approval.js';
 import { SessionState } from './schema.js';
 import { makeState } from '../fixtures.js';
@@ -164,5 +167,100 @@ describe('ProofGraph approval schemas', () => {
     );
 
     expect(state.plan?.approvalCertificate?.certificateId).toBe(CERTIFICATE.certificateId);
+  });
+});
+
+describe('mintProofGraphClaimId', () => {
+  it('produces a deterministic UUID for identical inputs', () => {
+    const a = mintProofGraphClaimId({ flow: 'plan', statement: 'test', authoritySectionId: 's1' });
+    const b = mintProofGraphClaimId({ flow: 'plan', statement: 'test', authoritySectionId: 's1' });
+    expect(a).toBe(b);
+    expect(a).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+
+  it('produces different IDs for different flows', () => {
+    const plan = mintProofGraphClaimId({
+      flow: 'plan',
+      statement: 'test',
+      authoritySectionId: 's1',
+    });
+    const arch = mintProofGraphClaimId({
+      flow: 'architecture',
+      statement: 'test',
+      authoritySectionId: 's1',
+    });
+    expect(plan).not.toBe(arch);
+  });
+
+  it('produces different IDs for different authority sections', () => {
+    const a = mintProofGraphClaimId({ flow: 'plan', statement: 'test', authoritySectionId: 's1' });
+    const b = mintProofGraphClaimId({ flow: 'plan', statement: 'test', authoritySectionId: 's2' });
+    expect(a).not.toBe(b);
+  });
+
+  it('normalises whitespace and casing in the statement', () => {
+    const a = mintProofGraphClaimId({
+      flow: 'plan',
+      statement: '  The Change  Preserves Behavior.  ',
+      authoritySectionId: 's1',
+    });
+    const b = mintProofGraphClaimId({
+      flow: 'plan',
+      statement: 'the change preserves behavior.',
+      authoritySectionId: 's1',
+    });
+    expect(a).toBe(b);
+  });
+});
+
+describe('PlanClaimDeclarationInput', () => {
+  it('parses claims without a claimId', () => {
+    const parsed = PlanClaimDeclarationInput.parse({
+      statement: 'test',
+      critical: true,
+      authoritySectionId: 's1',
+      expectedCheckId: 'build',
+    });
+    expect(parsed).toMatchObject({ statement: 'test', critical: true, authoritySectionId: 's1' });
+  });
+
+  it('silently strips a user-supplied claimId', () => {
+    const parsed = PlanClaimDeclarationInput.parse({
+      claimId: '10000000-0000-4000-8000-000000000001',
+      statement: 'test',
+      critical: true,
+      authoritySectionId: 's1',
+      expectedCheckId: 'build',
+    });
+    expect(parsed).not.toHaveProperty('claimId');
+  });
+});
+
+describe('ArchitectureClaimDeclarationInput', () => {
+  it('parses claims without a claimId', () => {
+    const parsed = ArchitectureClaimDeclarationInput.parse({
+      statement: 'test',
+      critical: false,
+      authoritySectionId: 's1',
+      requiredReviewEvidence: ['evidence'],
+    });
+    expect(parsed).toMatchObject({
+      statement: 'test',
+      critical: false,
+      authoritySectionId: 's1',
+      requiredReviewEvidence: ['evidence'],
+    });
+  });
+
+  it('rejects a user-supplied claimId', () => {
+    expect(() =>
+      ArchitectureClaimDeclarationInput.parse({
+        claimId: '10000000-0000-4000-8000-000000000001',
+        statement: 'test',
+        critical: false,
+        authoritySectionId: 's1',
+        requiredReviewEvidence: ['evidence'],
+      }),
+    ).toThrow();
   });
 });
