@@ -46,7 +46,8 @@ export type HostTaskFindingsResolution =
       readonly kind: 'incoherent';
       readonly code: string;
       readonly details: Record<string, unknown>;
-      readonly childSessionId: string;
+      /** The exact persisted attempt that produced the incoherent findings. */
+      readonly attemptId: string;
       /** Compatibility projection for the original verdict/blocker invariant. */
       readonly blockingIssueCount?: number;
     }
@@ -110,7 +111,7 @@ export function resolveHostTaskFindings(
   let incoherent: {
     code: string;
     details: Record<string, unknown>;
-    childSessionId: string;
+    attemptId: string;
   } | null = null;
   // An unusable earlier capture must not deadlock a later coherent retry. The
   // earlier evidence remains persisted for audit while this loop continues to
@@ -138,10 +139,15 @@ export function resolveHostTaskFindings(
         blockingIssueCount: parsed.data.blockingIssues.length,
       });
       if (!consistency.ok) {
+        const attempt = assurance.attempts?.find(
+          (a) =>
+            a.obligationId === obligation.obligationId &&
+            a.childSessionId === invocation.childSessionId,
+        );
         incoherent ??= {
           code: consistency.code,
           details: consistency.details,
-          childSessionId: invocation.childSessionId,
+          attemptId: attempt?.attemptId ?? '',
         };
         continue;
       }
@@ -158,10 +164,15 @@ export function resolveHostTaskFindings(
         previouslyUsedChallengeIds,
       });
       if (!challengeConsistency.ok) {
+        const attempt = assurance.attempts?.find(
+          (a) =>
+            a.obligationId === obligation.obligationId &&
+            a.childSessionId === invocation.childSessionId,
+        );
         incoherent ??= {
           code: challengeConsistency.code,
           details: challengeConsistency.details,
-          childSessionId: invocation.childSessionId,
+          attemptId: attempt?.attemptId ?? '',
         };
         continue;
       }
@@ -195,7 +206,7 @@ export function resolveHostTaskFindings(
       kind: 'incoherent',
       code: incoherent.code,
       details: incoherent.details,
-      childSessionId: incoherent.childSessionId,
+      attemptId: incoherent.attemptId,
       ...(typeof incoherent.details.blockingIssueCount === 'number'
         ? { blockingIssueCount: incoherent.details.blockingIssueCount }
         : {}),

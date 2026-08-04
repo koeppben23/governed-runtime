@@ -284,26 +284,17 @@ function getHostTaskVerdictContinuation(
 async function rejectIncoherentAttempt(
   sessDir: string,
   state: SessionState,
-  obligation: ReviewObligation,
-  childSessionId: string,
+  attemptId: string,
   now: string,
 ): Promise<void> {
+  if (!attemptId) return;
   const assurance = state.reviewAssurance;
   if (!assurance) return;
-  const attempt = assurance.attempts?.find(
-    (item) =>
-      item.obligationId === obligation.obligationId && item.childSessionId === childSessionId,
-  );
+  const attempt = assurance.attempts?.find((item) => item.attemptId === attemptId);
   if (!attempt) return;
   const rejectedState: SessionState = {
     ...state,
-    reviewAssurance: updateAttemptStatus(
-      assurance,
-      attempt.attemptId,
-      'rejected',
-      now,
-      childSessionId,
-    ),
+    reviewAssurance: updateAttemptStatus(assurance, attempt.attemptId, 'rejected', now),
   };
   await writeStateWithArtifacts(sessDir, rejectedState);
 }
@@ -334,7 +325,7 @@ async function prepareHostTaskVerdictReview(
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
 
   if (resolved.kind === 'incoherent') {
-    await rejectIncoherentAttempt(sessDir, state, obligation, resolved.childSessionId, exec.now);
+    await rejectIncoherentAttempt(sessDir, state, resolved.attemptId, exec.now);
     return formatBlocked(
       resolved.code,
       Object.fromEntries(

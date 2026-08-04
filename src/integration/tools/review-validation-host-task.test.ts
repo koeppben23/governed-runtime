@@ -600,12 +600,12 @@ describe('resolveHostTaskFindings', () => {
     expect(result.findings.overallVerdict).toBe('unable_to_review');
   });
 
-  it('incoherent resolution carries the childSessionId of the offending invocation', () => {
-    // P1 fix: the incoherent result MUST carry the exact childSessionId so the
-    // verdict path can identify the attempt to reject without array-position
-    // heuristics (.at(-1)). This test fails if childSessionId is ever removed
-    // from the incoherent branch.
+  it('incoherent resolution carries the attemptId of the offending invocation', () => {
+    // The incoherent result MUST carry the exact persisted attemptId so the
+    // verdict path can reject the correct attempt by identity — not by
+    // obligation+childSessionId lookup or array-position heuristics.
     const childId = 'ses_incoherent_child';
+    const targetAttemptId = '55555555-5555-4555-8555-555555555555';
     const offensiveRawFindings = {
       ...validRawFindings,
       overallVerdict: 'accept',
@@ -621,16 +621,28 @@ describe('resolveHostTaskFindings', () => {
           findingsHash: hashFindings(offensiveRawFindings),
         }),
       ],
-      attempts: [],
+      attempts: [
+        {
+          attemptId: targetAttemptId,
+          obligationId: OBLIGATION_ID,
+          obligationType: 'plan' as const,
+          subjectDigest: 'test-subject-digest',
+          childSessionId: childId,
+          ordinal: 0,
+          status: 'bound' as const,
+          createdAt: now,
+        },
+      ],
     };
     const result = resolveHostTaskFindings(assurance, makeObligation());
     expect(result.kind).toBe('incoherent');
     if (result.kind !== 'incoherent') throw new Error('expected incoherent');
-    expect(result.childSessionId).toBe(childId);
+    expect(result.attemptId).toBe(targetAttemptId);
   });
 
-  it('incoherent result carries the childSessionId of the challenge-consistency failure', () => {
+  it('incoherent result carries the attemptId of the challenge-consistency failure', () => {
     const childId = 'ses_challenge_incoherent_child';
+    const targetAttemptId = '66666666-6666-4666-8666-666666666666';
     const challengeRawFindings = {
       ...validRawFindings,
       overallVerdict: 'accept',
@@ -665,7 +677,18 @@ describe('resolveHostTaskFindings', () => {
           findingsHash: hashFindings(challengeRawFindings),
         }),
       ],
-      attempts: [],
+      attempts: [
+        {
+          attemptId: targetAttemptId,
+          obligationId: OBLIGATION_ID,
+          obligationType: 'plan' as const,
+          subjectDigest: 'test-subject-digest',
+          childSessionId: childId,
+          ordinal: 0,
+          status: 'bound' as const,
+          createdAt: now,
+        },
+      ],
     };
     const result = resolveHostTaskFindings(
       assurance,
@@ -673,7 +696,7 @@ describe('resolveHostTaskFindings', () => {
     );
     expect(result.kind).toBe('incoherent');
     if (result.kind !== 'incoherent') throw new Error('expected incoherent');
-    expect(result.childSessionId).toBe(childId);
+    expect(result.attemptId).toBe(targetAttemptId);
     expect(result.code).toBe('SUBAGENT_CHALLENGE_EVIDENCE_MISSING');
   });
 });
