@@ -119,6 +119,13 @@ export function resolveHostTaskFindings(
     invocationId: string;
     attemptId: string;
   } | null = null;
+  // A legacy invocation without attempt lineage must not cause an immediate
+  // return — a later coherent retry must still be found. Accumulate the first
+  // missing-lineage invocation and continue scanning.
+  let unavailableLineage: {
+    invocationId: string;
+    obligationId: string;
+  } | null = null;
   // An unusable earlier capture must not deadlock a later coherent retry. The
   // earlier evidence remains persisted for audit while this loop continues to
   // consider subsequent captures for the same obligation.
@@ -146,11 +153,11 @@ export function resolveHostTaskFindings(
       });
       if (!consistency.ok) {
         if (!invocation.attemptId) {
-          return {
-            kind: 'attempt_lineage_unavailable',
+          unavailableLineage ??= {
             invocationId: invocation.invocationId,
             obligationId: obligation.obligationId,
           };
+          continue;
         }
         incoherent ??= {
           code: consistency.code,
@@ -174,11 +181,11 @@ export function resolveHostTaskFindings(
       });
       if (!challengeConsistency.ok) {
         if (!invocation.attemptId) {
-          return {
-            kind: 'attempt_lineage_unavailable',
+          unavailableLineage ??= {
             invocationId: invocation.invocationId,
             obligationId: obligation.obligationId,
           };
+          continue;
         }
         incoherent ??= {
           code: challengeConsistency.code,
@@ -210,8 +217,12 @@ export function resolveHostTaskFindings(
     );
   }
 
-  if (unparseableDetail !== null) {
-    return { kind: 'unparseable', detail: unparseableDetail };
+  if (unavailableLineage !== null) {
+    return {
+      kind: 'attempt_lineage_unavailable',
+      invocationId: unavailableLineage.invocationId,
+      obligationId: unavailableLineage.obligationId,
+    };
   }
   if (incoherent !== null) {
     return {
@@ -224,6 +235,9 @@ export function resolveHostTaskFindings(
         ? { blockingIssueCount: incoherent.details.blockingIssueCount }
         : {}),
     };
+  }
+  if (unparseableDetail !== null) {
+    return { kind: 'unparseable', detail: unparseableDetail };
   }
   return { kind: 'not_found' };
 }

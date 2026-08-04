@@ -832,6 +832,56 @@ describe('resolveHostTaskFindings', () => {
       invocationId: INVOCATION_ID,
     });
   });
+
+  it('RECOVERY: resolves a later coherent capture after a legacy incoherent capture without attemptId', () => {
+    const legacyIncoherent = {
+      ...validRawFindings,
+      overallVerdict: 'accept',
+      blockingIssues: [
+        { severity: 'major', category: 'correctness', message: 'legacy contradiction' },
+      ],
+    };
+
+    const coherentRetry = {
+      ...validRawFindings,
+      overallVerdict: 'changes_requested',
+      blockingIssues: [
+        { severity: 'major', category: 'correctness', message: 'valid retry finding' },
+      ],
+    };
+
+    const retryInvocationId = '77777777-7777-4777-8777-777777777777';
+    const retryAttemptId = '88888888-8888-4888-8888-888888888888';
+
+    const result = resolveHostTaskFindings(
+      {
+        obligations: [makeObligation()],
+        attempts: [],
+        invocations: [
+          makeHostTaskInvocation({
+            invocationId: '66666666-6666-4666-8666-666666666666',
+            attemptId: undefined,
+            capturedRawFindings: legacyIncoherent,
+            findingsHash: hashFindings(legacyIncoherent),
+          }),
+          makeHostTaskInvocation({
+            invocationId: retryInvocationId,
+            attemptId: retryAttemptId,
+            childSessionId: 'ses_retry',
+            capturedVerdict: 'changes_requested',
+            capturedRawFindings: coherentRetry,
+            findingsHash: hashFindings(coherentRetry),
+          }),
+        ],
+      },
+      makeObligation(),
+    );
+
+    expect(result.kind).toBe('resolved');
+    if (result.kind !== 'resolved') throw new Error('expected resolved retry');
+    expect(result.invocationId).toBe(retryInvocationId);
+    expect(result.invocation.attemptId).toBe(retryAttemptId);
+  });
 });
 
 // ═════════════════════════════════════════════════════════════════════════════
