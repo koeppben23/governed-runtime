@@ -1599,7 +1599,7 @@ describe('declare_contract', () => {
       expect(declared.requiredEvidence!.adversarial).toEqual(['counterexample']);
     });
 
-    it.skip('is CONTRADICTED when negative assertion falsifies (pending: assertion evidence e2e test)', async () => {
+    it('is CONTRADICTED when a matching assertion fails', async () => {
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -1607,6 +1607,30 @@ describe('declare_contract', () => {
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
       const digest = 'impl-combined';
+      const assertionId = 'junit:com.example.SecurityTest#verifyNoSqlInjection';
+      const failedExtraction = {
+        status: 'extracted' as const,
+        attemptId: '00000000-0000-4000-8000-0000000000aa',
+        format: 'junit_xml' as const,
+        reportDigests: ['a'.repeat(64)],
+        assertions: [
+          {
+            assertionId,
+            framework: 'junit' as const,
+            status: 'failed' as const,
+            testName: 'verifyNoSqlInjection',
+            suiteName: 'com.example.SecurityTest',
+          },
+        ],
+        summary: {
+          assertionCount: 1,
+          passedCount: 0,
+          failedCount: 1,
+          erroredCount: 0,
+          skippedCount: 0,
+          suiteInfrastructureError: false,
+        },
+      };
       const attempt = (checkId: string, passed: boolean) => ({
         attemptId: crypto.randomUUID(),
         scope: 'implementation' as const,
@@ -1622,13 +1646,37 @@ describe('declare_contract', () => {
           executionMs: 5,
           outputDigest: SHA,
           timedOut: false,
-          outcome: 'supported' as const,
+          outcome: passed ? ('supported' as const) : ('inconclusive' as const),
         },
       });
       await writeStateWithArtifacts(sessDir, {
         ...state!,
         phase: 'IMPL_VALIDATION',
         activeChecks: ['test', 'security'],
+        verificationCandidates: [
+          {
+            assertionCapability: 'unsupported' as const,
+            kind: 'test' as const,
+            command: 'npm test',
+            source: 'test',
+            confidence: 'high' as const,
+            reason: 'test',
+          },
+          {
+            assertionCapability: 'structured' as const,
+            kind: 'security' as const,
+            command: 'npm run security',
+            source: 'test',
+            confidence: 'high' as const,
+            reason: 'security',
+            assertionReport: {
+              collection: 'snapshot_diff' as const,
+              transport: 'file' as const,
+              format: 'junit_xml' as const,
+              standardPatterns: ['TEST-*.xml'],
+            },
+          },
+        ],
         ticket: {
           text: 'approved ticket',
           digest: 'ticket-digest',
@@ -1640,15 +1688,33 @@ describe('declare_contract', () => {
           attempt('test', true),
           {
             ...attempt('security', false),
-            result: { ...attempt('security', false).result, outcome: 'inconclusive' as const },
+            result: {
+              ...attempt('security', false).result,
+              assertionExtraction: failedExtraction,
+            },
           },
         ],
       });
-      const result = parseToolResult(await declare_contract.execute({ claims: [COMBINED] }, ctx));
+      const result = parseToolResult(
+        await declare_contract.execute(
+          {
+            claims: [
+              {
+                ...COMBINED,
+                counterexampleRequirement: {
+                  mode: 'assertion' as const,
+                  checkId: 'security',
+                  assertionId,
+                },
+              },
+            ],
+          },
+          ctx,
+        ),
+      );
       const claims = (result.proofGraph as Record<string, unknown>).claims as Array<
         Record<string, unknown>
       >;
-      // Falsification wins over the passing positive and structural evidence.
       expect(claims[0]!.verificationState).toBe('CONTRADICTED');
     });
   });
@@ -1777,7 +1843,7 @@ describe('declare_contract', () => {
     expect(result.code).toBe('COMMAND_NOT_ALLOWED');
   });
 
-  it.skip('reports CONTRADICTED when counterexample check falsified (pending: assertion evidence e2e test)', async () => {
+  it.skip('reports CONTRADICTED when a declared counterexample assertion falsifies', async () => {
     await hydrateSession();
     const { computeFingerprint, sessionDir: resolveSessionDir } =
       await import('../adapters/workspace/index.js');
@@ -1785,6 +1851,7 @@ describe('declare_contract', () => {
     const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
     const state = await readState(sessDir);
     const digest = 'impl-cx';
+    const assertionId = 'junit:com.example.SecurityTest#verifyNoXss';
     function attempt(checkId: string, passed: boolean) {
       return {
         attemptId: crypto.randomUUID(),
@@ -1801,7 +1868,7 @@ describe('declare_contract', () => {
           executionMs: 5,
           outputDigest: SHA,
           timedOut: false,
-          outcome: 'supported' as const,
+          outcome: passed ? ('supported' as const) : ('inconclusive' as const),
         },
       };
     }
@@ -1809,13 +1876,62 @@ describe('declare_contract', () => {
       ...state!,
       phase: 'IMPL_REVIEW',
       activeChecks: ['test', 'security'],
+      verificationCandidates: [
+        {
+          assertionCapability: 'unsupported' as const,
+          kind: 'test' as const,
+          command: 'npm test',
+          source: 'test',
+          confidence: 'high' as const,
+          reason: 'test',
+        },
+        {
+          assertionCapability: 'structured' as const,
+          kind: 'security' as const,
+          command: 'npm run security',
+          source: 'test',
+          confidence: 'high' as const,
+          reason: 'security',
+          assertionReport: {
+            collection: 'snapshot_diff' as const,
+            transport: 'file' as const,
+            format: 'junit_xml' as const,
+            standardPatterns: ['TEST-*.xml'],
+          },
+        },
+      ],
       ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
       implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
       validationAttempts: [
         attempt('test', true),
         {
           ...attempt('security', false),
-          result: { ...attempt('security', false).result, outcome: 'inconclusive' as const },
+          result: {
+            ...attempt('security', false).result,
+            assertionExtraction: {
+              status: 'extracted' as const,
+              attemptId: '00000000-0000-4000-8000-0000000000bb',
+              format: 'junit_xml' as const,
+              reportDigests: ['a'.repeat(64)],
+              assertions: [
+                {
+                  assertionId,
+                  framework: 'junit' as const,
+                  status: 'failed' as const,
+                  testName: 'verifyNoXss',
+                  suiteName: 'com.example.SecurityTest',
+                },
+              ],
+              summary: {
+                assertionCount: 1,
+                passedCount: 0,
+                failedCount: 1,
+                erroredCount: 0,
+                skippedCount: 0,
+                suiteInfrastructureError: false,
+              },
+            },
+          },
         },
       ],
     });
@@ -1827,8 +1943,12 @@ describe('declare_contract', () => {
               statement: 'the change is safe',
               checkId: 'test',
               critical: true,
-              counterexampleCheckId: 'security',
               authority: 'ticket',
+              counterexampleRequirement: {
+                mode: 'assertion' as const,
+                checkId: 'security',
+                assertionId,
+              },
             },
           ],
         },

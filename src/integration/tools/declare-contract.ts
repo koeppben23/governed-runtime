@@ -22,7 +22,11 @@ import * as crypto from 'node:crypto';
 import { z } from 'zod';
 
 import type { Phase, SessionState } from '../../state/schema.js';
-import type { DeclaredClaim } from '../../state/proofgraph.js';
+import { CounterexampleRequirement } from '../../state/proofgraph.js';
+import type {
+  CounterexampleRequirement as CounterexampleRequirementType,
+  DeclaredClaim,
+} from '../../state/proofgraph.js';
 import type { ProofProviderKind } from '../../state/proofgraph-primitives.js';
 import type { ClaimAuthorityRef } from '../../state/proofgraph-refs.js';
 import {
@@ -133,6 +137,7 @@ type RawClaim = {
   authority?: AuthoritySource;
   structuralSurface?: string;
   mutationProfile?: string;
+  counterexampleRequirement?: CounterexampleRequirementType;
 };
 
 /**
@@ -242,6 +247,7 @@ function buildDeclaredClaims(
         positive,
         adversarial: critical && isFact ? ['counterexample' as const] : [],
       },
+      counterexampleRequirement: rc.counterexampleRequirement,
     });
   }
   return { claims };
@@ -281,30 +287,50 @@ function validateDeclaredClaimContract(
 
 /**
  * Gate assertion-mode counterexample requirements: the session must have a
- * test verification candidate with structured assertion capability.
+ * verification candidate with structured assertion capability matching the
+ * requirement's checkId.  For assertion mode, the assertionId prefix must
+ * also match the candidate's report format.
  */
 function validateAssertionCapabilityGate(
   rawClaims: readonly RawClaim[],
   state: SessionState,
 ): string | null {
+  const PREFIX_FORMAT_MAP: Record<string, string> = {
+    'junit:': 'junit_xml',
+    'vitest:': 'vitest_json',
+    'jest:': 'jest_json',
+    'go:': 'go_test_json',
+  };
+
   for (const declaration of rawClaims) {
-    if (
-      (declaration as Record<string, unknown>).counterexampleRequirement !== undefined &&
-      typeof (declaration as Record<string, unknown>).counterexampleRequirement === 'object' &&
-      (
-        (declaration as Record<string, unknown>).counterexampleRequirement as Record<
-          string,
-          unknown
-        >
-      ).mode === 'assertion'
-    ) {
-      const candidate = state.verificationCandidates?.find(
-        (c) => c.kind === 'test' && c.assertionCapability === 'structured',
+    const requirement = declaration.counterexampleRequirement;
+    if (!requirement) continue;
+
+    const candidate = state.verificationCandidates?.find(
+      (c) => c.kind === requirement.checkId && c.assertionCapability === 'structured',
+    );
+    if (!candidate) {
+      return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+        reason: `Verification check '${requirement.checkId}' does not support structured assertion evidence for counterexample binding.`,
+      });
+    }
+
+    if (requirement.mode === 'assertion') {
+      const prefix = Object.keys(PREFIX_FORMAT_MAP).find((p) =>
+        requirement.assertionId.startsWith(p),
       );
-      if (!candidate) {
+      if (!prefix) {
         return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-          reason:
-            'Test check does not support structured assertion evidence for counterexample binding.',
+          reason: `Assertion ID '${requirement.assertionId}' has an unrecognized prefix. Supported: junit:, vitest:, jest:, go:.`,
+        });
+      }
+      const expectedFormat = PREFIX_FORMAT_MAP[prefix]!;
+      if (
+        (candidate as { assertionReport?: { format: string } }).assertionReport?.format !==
+        expectedFormat
+      ) {
+        return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+          reason: `Assertion format mismatch: '${requirement.assertionId}' prefix requires '${expectedFormat}' but candidate has '${(candidate as { assertionReport?: { format: string } }).assertionReport?.format}'.`,
         });
       }
     }
@@ -391,6 +417,10 @@ export const declare_contract: ToolDefinition = {
                 'surviving mutants make the claim UNPROVEN, and a profile with no recorded ' +
                 'mutation report is NOT_VERIFIED rather than a pass.',
             ),
+          counterexampleRequirement: CounterexampleRequirement.optional().describe(
+            'Optional counterexample binding requirement. mode=check: legacy check-level counterexample. ' +
+              'mode=assertion: targeted counterexample bound to a concrete assertion (junit:/vitest:/jest:/go: prefix).',
+          ),
         }),
       )
       .min(1)

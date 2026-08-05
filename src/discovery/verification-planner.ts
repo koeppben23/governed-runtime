@@ -82,6 +82,16 @@ function addCandidate(
   byKind: Map<VerificationCandidateKind, VerificationCandidate>,
   candidate: VerificationCandidate,
 ): void {
+  const existing = byKind.get(candidate.kind);
+  // Structured candidates upgrade unsupported ones; never downgrade
+  if (
+    existing &&
+    candidate.assertionCapability === 'structured' &&
+    existing.assertionCapability === 'unsupported'
+  ) {
+    byKind.set(candidate.kind, candidate);
+    return;
+  }
   if (byKind.has(candidate.kind)) return;
   byKind.set(candidate.kind, candidate);
 }

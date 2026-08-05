@@ -177,7 +177,8 @@ async function executeRunCheckPhased(
       getWorktree(context),
       attemptId,
     );
-    fullCommand = guard.candidate.command + commandSuffix(prepared.spec, prepared.attemptId);
+    fullCommand =
+      `${guard.candidate.command} ${commandSuffix(prepared.spec, prepared.attemptId)}`.trim();
   }
   const evidence = await executeCheck({
     kind,
