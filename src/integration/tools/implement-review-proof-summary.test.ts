@@ -13,6 +13,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   resolveSubmittedReviewProofResponse,
+  buildImplReviewConvergedMarkdown,
   type ResolvedSubmittedReviewProof,
 } from './implement-review.js';
 import {
@@ -21,7 +22,6 @@ import {
 } from '../proofgraph/proof-summary-projectors.js';
 import { formatBlocked } from './helpers.js';
 import { makeState, IMPL_EVIDENCE } from '../../fixtures.js';
-import { renderCompactProofSection } from '../../presentation/proof-summary.js';
 
 function proofGraphState() {
   return makeState('IMPL_REVIEW', {
@@ -126,33 +126,51 @@ describe('completion path', () => {
 });
 
 describe('presentation.markdown rendering contract', () => {
-  it('changes_requested response includes ProofGraph section', () => {
+  it('changes_requested markdown via buildImplReviewConvergedMarkdown', () => {
     const summary = projectImplementationProofStatus(proofGraphState());
-    const markdown = [
+    const markdown = buildImplReviewConvergedMarkdown(
       'Implementation review iteration 1/3. Changes requested.',
-      '',
-      renderCompactProofSection(summary!),
-      '',
-      '→ Make the requested code changes, then call flowguard_implement to re-record.',
-    ].join('\n');
+      summary!,
+    );
     expect(markdown).toContain('## ProofGraph');
-    expect(markdown).not.toContain('If submitted for approval now:');
-    expect(markdown).toContain('→ Make the requested code changes');
+    expect(markdown).toContain(
+      '→ Continue to completion or run flowguard_status for review context.',
+    );
   });
 
-  it('accept response includes ProofGraph section', () => {
+  it('accept markdown shows current_gate', () => {
     const summary = projectImplementationProofStatus(proofGraphState(), {
       decisionContext: 'current_gate',
     });
-    const markdown = [
+    const markdown = buildImplReviewConvergedMarkdown(
       'Implementation review converged at iteration 1. Reviewer accepted.',
-      '',
-      renderCompactProofSection(summary!),
-      '',
-      '→ Continue to completion.',
-    ].join('\n');
+      summary!,
+    );
     expect(markdown).toContain('## ProofGraph');
     expect(markdown).toContain('All critical claims PROVEN');
     expect(markdown).not.toContain('If submitted for approval now:');
+  });
+
+  it('unable_to_review blocked response contains presentation.markdown', () => {
+    const blocked = formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+      obligationId: 'obl-1',
+    });
+    const state = proofGraphState();
+    const summary = projectImplementationProofStatus(state);
+    const result = resolveSubmittedReviewProofResponse({
+      findingsBlocked: blocked,
+      preTransitionState: state,
+      reviewedState: state,
+      verdict: 'unable_to_review',
+    });
+    expect(result.kind).toBe('blocked');
+    if (result.kind !== 'blocked') throw new Error('Expected blocked');
+    const parsed = JSON.parse(result.response);
+    expect(parsed.presentation).toBeDefined();
+    expect(parsed.presentation.markdown).toContain('## Implementation review blocked');
+    expect(parsed.presentation.markdown).toContain('## ProofGraph');
+    expect(parsed.presentation.markdown).toContain(
+      '→ Restore independent review capability and retry the implementation review.',
+    );
   });
 });

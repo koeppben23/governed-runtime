@@ -100,7 +100,41 @@ function attachProofSummaryToBlockedResponse(
   if (!proofSummary) return blockedResponse;
   const parsed = JSON.parse(blockedResponse) as Record<string, unknown>;
   parsed.proofSummary = proofSummary;
+  parsed.presentation = {
+    markdown: buildImplReviewBlockedMarkdown(
+      String(parsed.message ?? 'The independent review could not be completed.'),
+      proofSummary,
+    ),
+  };
   return JSON.stringify(parsed);
+}
+
+function buildImplReviewBlockedMarkdown(
+  message: string,
+  proofSummary: CompactProofPresentation,
+): string {
+  return [
+    '## Implementation review blocked',
+    '',
+    message,
+    '',
+    renderCompactProofSection(proofSummary),
+    '',
+    '→ Restore independent review capability and retry the implementation review.',
+  ].join('\n');
+}
+
+export function buildImplReviewConvergedMarkdown(
+  statusLine: string,
+  proofSummary: CompactProofPresentation,
+): string {
+  return [
+    statusLine,
+    '',
+    renderCompactProofSection(proofSummary),
+    '',
+    '→ Continue to completion or run flowguard_status for review context.',
+  ].join('\n');
 }
 
 function proofDecisionContextForVerdict(
@@ -453,13 +487,10 @@ async function handleChangesRequestedReview(input: {
   if (input.proofSummary) {
     response.proofSummary = input.proofSummary;
     response.presentation = {
-      markdown: [
+      markdown: buildImplReviewConvergedMarkdown(
         `Implementation review iteration ${input.iteration}/${input.runtime.maxImplReviewIterations}. Changes requested.`,
-        '',
-        renderCompactProofSection(input.proofSummary),
-        '',
-        '→ Make the requested code changes, then call flowguard_implement to re-record.',
-      ].join('\n'),
+        input.proofSummary,
+      ),
     };
   }
   return appendNextAction(JSON.stringify(response), finalState);
@@ -499,13 +530,7 @@ async function handleApprovedReview(input: {
         ? `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`
         : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
     response.presentation = {
-      markdown: [
-        statusLine,
-        '',
-        renderCompactProofSection(input.proofSummary),
-        '',
-        '→ Continue to completion or run flowguard_status for review context.',
-      ].join('\n'),
+      markdown: buildImplReviewConvergedMarkdown(statusLine, input.proofSummary),
     };
   }
 
