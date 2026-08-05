@@ -70,6 +70,7 @@ const BASE_CONTEXT: DiscoveryReviewContext = {
   },
   verificationCandidates: [
     {
+      assertionCapability: 'unsupported' as const,
       kind: 'test',
       command: 'npm test',
       source: 'package.json:scripts.test',
@@ -83,6 +84,7 @@ const BASE_CONTEXT: DiscoveryReviewContext = {
       plan: PLAN_RECORD,
       verificationCandidates: [
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'test',
           command: 'npm test',
           source: 'package.json:scripts.test',
@@ -158,6 +160,7 @@ describe('buildDiscoveryContextSection', () => {
   it('enforces bounds and does not dump full artifacts', () => {
     const section = buildDiscoveryContextSection({
       verificationCandidates: Array.from({ length: 10 }, (_, index) => ({
+        assertionCapability: 'unsupported' as const,
         kind: 'test' as const,
         command: `npm test -- ${index}`,
         source: `package.json:${index}`,

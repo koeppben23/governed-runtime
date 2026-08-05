@@ -73,17 +73,17 @@ describe('bindCounterexamples', () => {
     expect(cx).toMatchObject({ claimId: CLAIM, outcome: 'not_verified', boundDigest: IMPL_DIGEST });
   });
 
-  it('maps a falsified result to contradicted', () => {
+  it('maps an inconclusive result to not_verified', () => {
     const state = stateWith([
       {
         attemptId: ATT,
         scope: 'implementation',
         implementationDigest: IMPL_DIGEST,
-        result: { ...validationResult(false), outcome: 'falsified' as const },
+        result: { ...validationResult(false), outcome: 'inconclusive' as const },
       },
     ]);
     const [cx] = bindCounterexamples(state, NOW);
-    expect(cx).toMatchObject({ claimId: CLAIM, outcome: 'contradicted', boundDigest: IMPL_DIGEST });
+    expect(cx).toMatchObject({ claimId: CLAIM, outcome: 'not_verified', boundDigest: IMPL_DIGEST });
   });
 
   it('maps outcome=blocked to blocked', () => {

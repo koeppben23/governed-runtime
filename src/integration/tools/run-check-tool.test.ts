@@ -282,6 +282,7 @@ describe('BAD', () => {
       verificationCandidates: [
         ...(state!.verificationCandidates ?? []),
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'security' as const,
           command: 'npm audit',
           source: 'manual',
@@ -740,6 +741,7 @@ describe('CONCURRENCY', () => {
       verificationCandidates: [
         ...(s!.verificationCandidates ?? []),
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'lint',
           command: 'npm run lint',
           source: 'discovery' as const,
@@ -747,6 +749,7 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'test',
           command: 'npm test',
           source: 'discovery' as const,
@@ -754,6 +757,7 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'build',
           command: 'npm run build',
           source: 'discovery' as const,

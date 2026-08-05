@@ -27,8 +27,6 @@ function toCounterexampleOutcome(result: ValidationResult): CounterexampleOutcom
   switch (result.outcome) {
     case 'supported':
       return 'supported';
-    case 'falsified':
-      return 'contradicted';
     case 'inconclusive':
       return 'not_verified';
     case 'blocked':

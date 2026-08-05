@@ -11,7 +11,7 @@
 
 import { z } from 'zod';
 import { CheckId } from './evidence-primitives.js';
-import { VerificationCandidateKindSchema } from './discovery-schemas.js';
+import { VerificationCandidateKindSchema, AssertionReportFormat } from './discovery-schemas.js';
 
 export const RepairGuidanceCategory = z.enum([
   'typecheck',
@@ -87,8 +87,82 @@ export type RepairGuidance = z.infer<typeof RepairGuidance>;
  * No agent self-report: all fields are runtime-produced, not agent-supplied.
  */
 
-export const ValidationOutcome = z.enum(['supported', 'falsified', 'inconclusive', 'blocked']);
+export const ValidationOutcome = z.enum(['supported', 'inconclusive', 'blocked']);
 export type ValidationOutcome = z.infer<typeof ValidationOutcome>;
+
+// ─── Structured Assertion Evidence ───────────────────────────────────────────
+
+export const StructuredAssertionFramework = z.enum([
+  'junit',
+  'vitest',
+  'jest',
+  'pytest',
+  'go_test',
+]);
+export type StructuredAssertionFramework = z.infer<typeof StructuredAssertionFramework>;
+
+export const StructuredAssertionEvidence = z
+  .object({
+    /** Stable identifier, e.g. junit:com.example.Test#method */
+    assertionId: z.string().min(1),
+    /** Framework that produced this assertion */
+    framework: StructuredAssertionFramework,
+    /** Assertion-level status */
+    status: z.enum(['passed', 'failed', 'errored', 'skipped']),
+    /** Suite or package name */
+    suiteName: z.string().min(1).optional(),
+    /** Human-readable test name */
+    testName: z.string().min(1),
+    /** Workspace-relative source file */
+    sourceFile: z.string().min(1).optional(),
+    /** Duration in milliseconds */
+    durationMs: z.number().nonnegative().optional(),
+    /** Failure details (only for status='failed') */
+    failure: z
+      .object({
+        type: z.string().optional(),
+        message: z.string().optional(),
+        detailDigest: z.string().min(1).optional(),
+      })
+      .optional(),
+  })
+  .readonly();
+export type StructuredAssertionEvidence = z.infer<typeof StructuredAssertionEvidence>;
+
+export const AssertionExtractionSummary = z.object({
+  assertionCount: z.number().int().nonnegative(),
+  passedCount: z.number().int().nonnegative(),
+  failedCount: z.number().int().nonnegative(),
+  erroredCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  suiteInfrastructureError: z.boolean(),
+});
+export type AssertionExtractionSummary = z.infer<typeof AssertionExtractionSummary>;
+
+export const AssertionExtractionResult = z.discriminatedUnion('status', [
+  z.object({
+    status: z.literal('not_configured'),
+  }),
+  z.object({
+    status: z.literal('blocked'),
+    reason: z.string().min(1),
+  }),
+  z.object({
+    status: z.literal('inconclusive'),
+    reason: z.string().min(1),
+  }),
+  z.object({
+    status: z.literal('extracted'),
+    attemptId: z.string().uuid(),
+    format: AssertionReportFormat,
+    reportDigests: z.array(z.string().min(1)).min(1),
+    assertions: z.array(StructuredAssertionEvidence),
+    summary: AssertionExtractionSummary,
+  }),
+]);
+export type AssertionExtractionResult = z.infer<typeof AssertionExtractionResult>;
+
+// ─── Validation Result ──────────────────────────────────────────────────────
 
 export const ValidationResult = z
   .object({
@@ -112,10 +186,12 @@ export const ValidationResult = z
     outputDigest: z.string().regex(/^[a-f0-9]{64}$/),
     /** Whether the process was killed due to timeout. */
     timedOut: z.boolean(),
-    /** Classified evidence outcome. */
+    /** Classified evidence outcome (check-level, not claim-level). */
     outcome: ValidationOutcome,
     /** Human-readable reason for the outcome classification. */
     classificationReason: z.string().min(1).optional(),
+    /** Structured assertion extraction result (only for assertionCapability='structured'). */
+    assertionExtraction: AssertionExtractionResult.optional(),
     /** Derived advisory repair guidance; never validation evidence authority. */
     derivedRepairGuidance: RepairGuidance.optional(),
   })

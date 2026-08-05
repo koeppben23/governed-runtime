@@ -16,6 +16,17 @@
 
 import { z } from 'zod';
 
+// ─── Assertion Report Format ─────────────────────────────────────────────────
+
+/** Format identifier for structured assertion report parsers. */
+export const AssertionReportFormat = z.enum([
+  'junit_xml',
+  'jest_json',
+  'vitest_json',
+  'go_test_json',
+]);
+export type AssertionReportFormat = z.infer<typeof AssertionReportFormat>;
+
 // ─── Topology (subset for state) ─────────────────────────────────────────────
 
 /** Topology kind: monorepo, single-project, or unknown. */
@@ -46,19 +57,51 @@ export type VerificationCandidateKind = z.infer<typeof VerificationCandidateKind
 export const VerificationCandidateConfidenceSchema = z.enum(['high', 'medium', 'low']);
 export type VerificationCandidateConfidence = z.infer<typeof VerificationCandidateConfidenceSchema>;
 
+// ─── Assertion Report Specification ──────────────────────────────────────────
+
+export const AssertionReportSpec = z.discriminatedUnion('transport', [
+  z.object({
+    transport: z.literal('file'),
+    format: AssertionReportFormat,
+    outputArgumentTemplate: z.string().min(1),
+    resultPatternTemplate: z.string().min(1),
+  }),
+  z.object({
+    transport: z.literal('stdout'),
+    format: AssertionReportFormat,
+  }),
+]);
+export type AssertionReportSpec = z.infer<typeof AssertionReportSpec>;
+
 /**
  * Evidence-backed verification command candidate.
  *
  * Advisory only: this command is a planning suggestion, not an execution result
  * and not an instruction to auto-run it.
+ *
+ * Discriminated by assertionCapability:
+ *  - unsupported: no structured assertion evidence available
+ *  - structured: assertionReport defines how to extract assertion evidence
  */
-export const VerificationCandidateSchema = z.object({
-  kind: VerificationCandidateKindSchema,
-  command: z.string().min(1),
-  source: z.string().min(1),
-  confidence: VerificationCandidateConfidenceSchema,
-  reason: z.string().min(1),
-});
+export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapability', [
+  z.object({
+    assertionCapability: z.literal('unsupported'),
+    kind: VerificationCandidateKindSchema,
+    command: z.string().min(1),
+    source: z.string().min(1),
+    confidence: VerificationCandidateConfidenceSchema,
+    reason: z.string().min(1),
+  }),
+  z.object({
+    assertionCapability: z.literal('structured'),
+    kind: VerificationCandidateKindSchema,
+    command: z.string().min(1),
+    source: z.string().min(1),
+    confidence: VerificationCandidateConfidenceSchema,
+    reason: z.string().min(1),
+    assertionReport: AssertionReportSpec,
+  }),
+]);
 export type VerificationCandidate = z.infer<typeof VerificationCandidateSchema>;
 
 /** Deterministic ordered list of advisory verification candidates. */
