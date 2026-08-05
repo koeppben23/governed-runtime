@@ -1843,7 +1843,7 @@ describe('declare_contract', () => {
     expect(result.code).toBe('COMMAND_NOT_ALLOWED');
   });
 
-  it.skip('reports CONTRADICTED when a declared counterexample assertion falsifies', async () => {
+  it('reports CONTRADICTED when a declared counterexample assertion falsifies', async () => {
     await hydrateSession();
     const { computeFingerprint, sessionDir: resolveSessionDir } =
       await import('../adapters/workspace/index.js');

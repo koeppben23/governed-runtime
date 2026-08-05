@@ -216,13 +216,14 @@ function buildDeclaredClaims(
       attemptId: evidence.attemptId,
     };
     const counterexampleRefs: ValidationAttemptRef[] = [];
-    if (rc.counterexampleCheckId !== undefined) {
+    const counterexampleCheckId = rc.counterexampleRequirement?.checkId ?? rc.counterexampleCheckId;
+    if (counterexampleCheckId !== undefined) {
       const counterexample = resolveImplAttempt(
         state.validationAttempts,
-        rc.counterexampleCheckId,
+        counterexampleCheckId,
         digest,
       );
-      if (counterexample === undefined) return { unresolvedCheckId: rc.counterexampleCheckId };
+      if (counterexample === undefined) return { unresolvedCheckId: counterexampleCheckId };
       counterexampleRefs.push({ kind: 'validation_attempt', attemptId: counterexample.attemptId });
     }
     const provenance = resolveAuthority(state, rc.authority);
@@ -272,7 +273,8 @@ function validateDeclaredClaimContract(
       statement: claim.statement,
       critical: claim.critical,
       positiveCheckId: claim.checkId,
-      counterexampleCheckId: claim.counterexampleCheckId,
+      counterexampleCheckId:
+        claim.counterexampleRequirement?.checkId ?? claim.counterexampleCheckId,
       structuralSurface: claim.structuralSurface,
       mutationProfile: claim.mutationProfile,
     })),
@@ -306,33 +308,37 @@ function validateAssertionCapabilityGate(
     const requirement = declaration.counterexampleRequirement;
     if (!requirement) continue;
 
-    const candidate = state.verificationCandidates?.find(
-      (c) => c.kind === requirement.checkId && c.assertionCapability === 'structured',
-    );
+    const candidate = state.verificationCandidates?.find((c) => c.kind === requirement.checkId);
     if (!candidate) {
       return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-        reason: `Verification check '${requirement.checkId}' does not support structured assertion evidence for counterexample binding.`,
+        reason: `Verification check '${requirement.checkId}' is not in the active verification candidates.`,
       });
     }
 
-    if (requirement.mode === 'assertion') {
-      const prefix = Object.keys(PREFIX_FORMAT_MAP).find((p) =>
-        requirement.assertionId.startsWith(p),
-      );
-      if (!prefix) {
-        return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-          reason: `Assertion ID '${requirement.assertionId}' has an unrecognized prefix. Supported: junit:, vitest:, jest:, go:.`,
-        });
-      }
-      const expectedFormat = PREFIX_FORMAT_MAP[prefix]!;
-      if (
-        (candidate as { assertionReport?: { format: string } }).assertionReport?.format !==
-        expectedFormat
-      ) {
-        return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-          reason: `Assertion format mismatch: '${requirement.assertionId}' prefix requires '${expectedFormat}' but candidate has '${(candidate as { assertionReport?: { format: string } }).assertionReport?.format}'.`,
-        });
-      }
+    if (requirement.mode === 'check') continue;
+
+    if (candidate.assertionCapability !== 'structured') {
+      return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+        reason: `Verification check '${requirement.checkId}' does not support structured assertion evidence for assertion-mode counterexample binding.`,
+      });
+    }
+
+    const prefix = Object.keys(PREFIX_FORMAT_MAP).find((p) =>
+      requirement.assertionId.startsWith(p),
+    );
+    if (!prefix) {
+      return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+        reason: `Assertion ID '${requirement.assertionId}' has an unrecognized prefix. Supported: junit:, vitest:, jest:, go:.`,
+      });
+    }
+    const expectedFormat = PREFIX_FORMAT_MAP[prefix]!;
+    if (
+      (candidate as { assertionReport?: { format: string } }).assertionReport?.format !==
+      expectedFormat
+    ) {
+      return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+        reason: `Assertion format mismatch: '${requirement.assertionId}' prefix requires '${expectedFormat}' but candidate has '${(candidate as { assertionReport?: { format: string } }).assertionReport?.format}'.`,
+      });
     }
   }
   return null;
