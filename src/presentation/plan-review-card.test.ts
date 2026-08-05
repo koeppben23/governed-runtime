@@ -624,4 +624,41 @@ describe('plan review golden fixtures', () => {
     });
     expect(card).toBe(await readGolden('review-plan-changes-requested.md'));
   });
+
+  it('injects proof obligations section when proofSummary is provided', () => {
+    const card = buildPlanReviewCard({
+      planText: fullPlanBody,
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      productNextAction: {
+        text: 'Review the plan.',
+        commands: ['/approve', '/request-changes'],
+      },
+      planVersion: 1,
+      proofSummary: {
+        kind: 'declaration',
+        flow: 'plan',
+        claimCount: 2,
+        criticalCount: 1,
+      },
+    });
+    expect(card).toContain('## Proof obligations');
+    expect(card).toContain('2 plan claim(s) declared');
+    expect(card).toContain('1 critical');
+    expect(card).toContain('AWAITING EVIDENCE');
+  });
+
+  it('omits proof obligations section when proofSummary is absent', () => {
+    const card = buildPlanReviewCard({
+      planText: fullPlanBody,
+      phase: 'PLAN_REVIEW',
+      phaseLabel: 'Ready for plan approval',
+      productNextAction: {
+        text: 'Review the plan.',
+        commands: ['/approve', '/request-changes'],
+      },
+      planVersion: 1,
+    });
+    expect(card).not.toContain('## Proof obligations');
+  });
 });

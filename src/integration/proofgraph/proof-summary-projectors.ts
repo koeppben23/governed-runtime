@@ -26,6 +26,10 @@ import type {
   ClaimVerificationState,
 } from '../../presentation/proof-summary.js';
 
+// ─── Decision context ───────────────────────────────────────────────────────
+
+type ProofDecisionContext = 'current_gate' | 'prospective_approval' | 'completion';
+
 // ─── Claim reason (derived from verification state) ─────────────────────────
 
 function claimReason(state: ClaimVerificationState): string | undefined {
@@ -97,18 +101,30 @@ const HEADLINE_ORDER: readonly ClaimVerificationState[] = [
   'PROVEN',
 ];
 
+/** Only non-proven states are highlighted as problems. */
+const HIGHLIGHT_ORDER: ReadonlyArray<Exclude<ClaimVerificationState, 'PROVEN'>> = [
+  'CONTRADICTED',
+  'BLOCKED',
+  'STALE',
+  'UNPROVEN',
+  'NOT_VERIFIED',
+];
+
 function computeHeadlineStatus(
   claims: readonly ProofClaim[],
   gate: ProofGraphGateDecision,
 ): ClaimVerificationState {
   if (claims.length === 0) return 'NOT_VERIFIED';
-  if (gate.gated && gate.kind === 'facts_unproven') {
-    const blockingIds = new Set(gate.blockingClaimIds);
-    const blockingClaims = claims.filter((c) => blockingIds.has(c.claimId));
-    for (const state of HEADLINE_ORDER) {
-      if (blockingClaims.some((c) => c.verificationState === state)) return state;
+  if (gate.gated) {
+    if (gate.kind === 'facts_unproven') {
+      const blockingIds = new Set(gate.blockingClaimIds);
+      const blockingClaims = claims.filter((c) => blockingIds.has(c.claimId));
+      for (const state of HIGHLIGHT_ORDER) {
+        if (blockingClaims.some((c) => c.verificationState === state)) return state;
+      }
+      return 'NOT_VERIFIED';
     }
-    return 'NOT_VERIFIED';
+    return 'BLOCKED';
   }
   for (const state of HEADLINE_ORDER) {
     if (claims.some((c) => c.verificationState === state)) return state;
@@ -226,31 +242,63 @@ export function projectArchitectureDecisionClaims(
   };
 }
 
-export function projectImplementationProofStatus(
-  state: SessionState,
-  gate?: ProofGraphGateDecision,
-): CompactProofPresentation | null {
-  const claims = state.proofGraph?.claims ?? [];
-  if (claims.length === 0) return null;
-  const gateResult =
-    gate ??
+function primReason(gate: ProofGraphGateDecision): { primaryReason?: string } {
+  if (!gate.gated || gate.kind === 'facts_unproven') return {};
+  switch (gate.kind) {
+    case 'evaluation_unavailable':
+      return {
+        primaryReason:
+          'The ProofGraph evaluator could not produce a verdict — a required input (implementation, plan, or risk assessment) is missing or invalid.',
+      };
+    case 'risk_assessment_stale':
+      return {
+        primaryReason:
+          'The implementation risk assessment is outdated and must be refreshed before the gate can clear.',
+      };
+    case 'critical_fact_required':
+      return {
+        primaryReason:
+          'At least one mandatory critical claim is undeclared. Declare the claim in your plan first.',
+      };
+    case 'clear':
+      return {};
+    default:
+      return {
+        primaryReason: 'Evidence gate is blocking: the required proof is not established.',
+      };
+  }
+}
+
+function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision }) {
+  return (
+    opts?.gate ??
     evaluateProofGraphGate({
       projection: state.proofGraph,
       authorizedCriticalClaimIds: authorizedCriticalPlanClaimIds(state.plan),
       implementationDigest: state.implementation?.digest,
       riskAssessment: state.implementationRiskAssessment,
-    });
+    })
+  );
+}
+
+function buildEvaluationResult(
+  state: SessionState,
+  gateResult: ProofGraphGateDecision,
+  decisionContext: ProofDecisionContext,
+): CompactProofPresentation {
+  const claims = state.proofGraph?.claims ?? [];
   const summary = summarizePersistedProofGraph(state);
   const tallies = tallyClaims(claims);
-  return {
+  const result: CompactProofPresentation = {
     kind: 'evaluation',
     claimCount: summary.claimCount,
     coverage: summary.coverage,
     headlineStatus: computeHeadlineStatus(claims, gateResult),
+    ...primReason(gateResult),
     highlightedClaims: selectHighlightedClaims(claims, state.plan?.claimDeclarations),
     evidenceFreshness: deriveEvidenceFreshness(claims),
     revisionDigest: state.implementation?.digest,
-    decisionContext: gate ? 'current_gate' : 'prospective_approval',
+    decisionContext: decisionContext,
     ...tallies,
     criticalCount: tallies.criticalCount,
     provenCount: tallies.provenCount,
@@ -260,8 +308,22 @@ export function projectImplementationProofStatus(
     unprovenCount: tallies.unprovenCount,
     notVerifiedCount: tallies.notVerifiedCount,
   };
+  return result;
+}
+
+export function projectImplementationProofStatus(
+  state: SessionState,
+  opts?: { gate?: ProofGraphGateDecision; decisionContext?: ProofDecisionContext },
+): CompactProofPresentation | null {
+  const claims = state.proofGraph?.claims ?? [];
+  if (claims.length === 0) return null;
+  const gateResult = resolveGate(state, opts);
+  const context =
+    opts?.decisionContext ??
+    (opts?.gate ? ('current_gate' as const) : ('prospective_approval' as const));
+  return buildEvaluationResult(state, gateResult, context);
 }
 
 export function projectCompletionProofStatus(state: SessionState): CompactProofPresentation | null {
-  return projectImplementationProofStatus(state);
+  return projectImplementationProofStatus(state, { decisionContext: 'completion' });
 }

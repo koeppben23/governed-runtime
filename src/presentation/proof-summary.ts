@@ -44,14 +44,17 @@ export type CompactProofPresentation =
       readonly notVerifiedCount: number;
       readonly coverage: 'NOT_DECLARED' | 'NOT_VERIFIED' | 'PROVEN';
       readonly headlineStatus: ClaimVerificationState;
+      /** Primary reason when the gate blocks without a specific claim (e.g. evaluation_unavailable). */
+      readonly primaryReason?: string;
       readonly highlightedClaims?: readonly CompactProofClaim[];
       readonly evidenceFreshness?: 'CURRENT' | 'STALE' | 'NOT_VERIFIED';
       readonly revisionDigest?: string;
       /**
-       * Whether this evaluation is at the actual gate (`current_gate`) or a
-       * preview of what would happen at approval (`prospective_approval`).
+       * Whether this evaluation is at the actual gate (`current_gate`), a
+       * preview of what would happen at approval (`prospective_approval`),
+       * or a completion summary (`completion`).
        */
-      readonly decisionContext: 'current_gate' | 'prospective_approval';
+      readonly decisionContext: 'current_gate' | 'prospective_approval' | 'completion';
     };
 
 // ─── Renderer ───────────────────────────────────────────────────────────────
@@ -118,6 +121,10 @@ function renderEvaluationSection(p: CompactProofPresentation & { kind: 'evaluati
         }
         lines.push('');
       }
+    } else if (p.primaryReason) {
+      lines.push('');
+      lines.push(p.primaryReason);
+      lines.push('');
     }
   } else {
     lines.push('');

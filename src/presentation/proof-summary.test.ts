@@ -47,7 +47,7 @@ function makeEvaluation(
     staleCount?: number;
     unprovenCount?: number;
     notVerifiedCount?: number;
-    decisionContext?: 'current_gate' | 'prospective_approval';
+    decisionContext?: 'current_gate' | 'prospective_approval' | 'completion';
     revisionDigest?: string;
     evidenceFreshness?: 'CURRENT' | 'STALE' | 'NOT_VERIFIED';
   },
@@ -209,6 +209,34 @@ describe('renderCompactProofSection', () => {
       ];
       const result = renderCompactProofSection(pres);
       expect(result).toContain('If submitted for approval now:');
+    });
+
+    it('renders completion context without approval language', () => {
+      const pres = makeEvaluation('UNPROVEN', {
+        unprovenCount: 1,
+        decisionContext: 'completion',
+      });
+      (pres as Record<string, unknown>).highlightedClaims = [
+        {
+          claimId: 'e'.repeat(36),
+          statement: 'Final unresolved claim.',
+          status: 'UNPROVEN',
+          critical: true,
+          reason: 'The available evidence does not establish this claim.',
+        },
+      ];
+      const result = renderCompactProofSection(pres);
+      expect(result).not.toContain('If submitted for approval');
+      expect(result).not.toContain('Current status:');
+      expect(result).toContain('UNPROVEN');
+    });
+
+    it('renders primaryReason when there are no highlighted claims', () => {
+      const pres = makeEvaluation('BLOCKED', { blockedCount: 0 });
+      (pres as Record<string, unknown>).primaryReason =
+        'The ProofGraph evaluator could not produce a verdict.';
+      const result = renderCompactProofSection(pres);
+      expect(result).toContain('The ProofGraph evaluator could not produce a verdict');
     });
 
     it('tally includes all relevant counts', () => {

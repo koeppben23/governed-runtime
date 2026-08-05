@@ -19,6 +19,7 @@ import {
   projectPlanProofObligations,
   projectArchitectureDecisionClaims,
   projectImplementationProofStatus,
+  projectCompletionProofStatus,
 } from './proof-summary-projectors.js';
 import type { ProofClaim } from '../../state/proofgraph.js';
 import type { SessionState } from '../../state/schema.js';
@@ -35,7 +36,17 @@ function proofClaim(opts: {
     statement: opts.statement,
     signalClass: 'fact',
     critical: opts.critical,
-    provenance: { kind: 'approved_ticket', ticketDigest: 'aaaa'.repeat(16) },
+    provenance: {
+      kind: 'canonical_authority',
+      authorityId: 'plan',
+      digest: 'aaaa'.repeat(16),
+      approval: {
+        certificateId: '11111111-1111-1111-1111-111111111111',
+        claimDeclarationsDigest: 'b'.repeat(64),
+        decisionAttestationDigest: 'c'.repeat(64),
+        declarationId: '22222222-2222-2222-2222-222222222222',
+      },
+    },
     evidenceRefs: [],
     counterexampleRefs: [],
     verificationState: opts.verificationState,
@@ -45,6 +56,7 @@ function proofClaim(opts: {
 
 function makeEvalState(claims: ProofClaim[]): SessionState {
   const base = makeState('IMPLEMENTATION');
+  const authorizedIds = claims.filter((c) => c.critical).map((c) => c.claimId);
   return {
     ...base,
     proofGraph: { version: 'proofgraph.v1' as const, claims, evaluatedAt: '2025-01-01T00:00:00Z' },
@@ -61,8 +73,20 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
         },
       ],
     },
-    plan: PLAN_RECORD,
-    implementationRiskAssessment: { kind: 'pending' as const },
+    plan: {
+      ...PLAN_RECORD,
+      claimDeclarations: {
+        flow: 'plan' as const,
+        claims: claims.map((c) => ({
+          claimId: c.claimId,
+          statement: c.statement,
+          critical: c.critical,
+          expectedCheckId: 'check-1',
+          authoritySectionId: 'sec-1',
+        })),
+      },
+    },
+    implementationRiskAssessment: undefined,
   } as unknown as SessionState;
 }
 
@@ -229,5 +253,19 @@ describe('projectImplementationProofStatus', () => {
       proofGraph: undefined,
     };
     expect(projectImplementationProofStatus(state)).toBeNull();
+  });
+
+  it('sets decisionContext to completion for projectCompletionProofStatus', () => {
+    const claims = [
+      proofClaim({
+        claimId: '77777777-7777-7777-7777-777777777777',
+        statement: 'Unproven claim',
+        critical: true,
+        verificationState: 'UNPROVEN',
+      }),
+    ];
+    const result = projectCompletionProofStatus(makeEvalState(claims));
+    expect(result).not.toBeNull();
+    expect((result as Record<string, unknown>).decisionContext).toBe('completion');
   });
 });
