@@ -1,4 +1,4 @@
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { relative, resolve, sep, dirname, basename, join } from 'node:path';
 import { createHash } from 'node:crypto';
 
@@ -186,12 +186,11 @@ async function takeSnapshot(cwd: string, patterns: string[]): Promise<ReportFile
       const fullPath = resolve(cwd, relPath);
       if (!isWithinCwd(fullPath, cwd)) continue;
 
-      const info = await stat(fullPath);
-      if (info.size > MAX_FILE_BYTES) continue;
-
       const content = await readFile(fullPath);
+      if (content.length > MAX_FILE_BYTES) continue;
+
       const digest = sha256(content);
-      snapshot.push({ path: relPath, digest, size: info.size });
+      snapshot.push({ path: relPath, digest, size: content.length });
     }
   }
   return snapshot;
@@ -232,16 +231,15 @@ async function parseAndMergeFiles(
       };
     }
 
-    const info = await stat(fullPath);
-    if (info.size > MAX_FILE_BYTES) {
+    const content = await readFile(fullPath, 'utf-8');
+    if (content.length > MAX_FILE_BYTES) {
       return {
         status: 'blocked',
         attemptId,
-        reason: `file too large: ${relPath} (${info.size} bytes, max ${MAX_FILE_BYTES})`,
+        reason: `file too large: ${relPath} (${content.length} bytes, max ${MAX_FILE_BYTES})`,
       };
     }
 
-    const content = await readFile(fullPath, 'utf-8');
     const parsed = parseWithFormat(format, content, relPath);
     allAssertions.push(...parsed.assertions);
     allSummaries.push(parsed.summary);

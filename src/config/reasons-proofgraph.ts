@@ -124,4 +124,16 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
       'Record the evidence at the current implementation digest, then declare the claim',
     ],
   },
+
+  {
+    code: 'UNSUPPORTED_ASSERTION_CAPABILITY',
+    category: 'precondition',
+    messageTemplate:
+      "Verification check '{checkId}' does not support structured assertion evidence for counterexample binding.",
+    recoverySteps: [
+      'Use a verification command that produces structured test reports (e.g. Maven Surefire, Gradle, Vitest, Jest)',
+      'Ensure the project is configured with a recognized test framework',
+      'Alternatively, use mode=check for non-assertion counterexample requirements',
+    ],
+  },
 ];
