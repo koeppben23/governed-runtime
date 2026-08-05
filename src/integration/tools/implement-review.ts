@@ -91,6 +91,7 @@ import type { ImplementRuntime } from './implement-shared.js';
 import { nextImplementationReviewIteration } from './implement-shared.js';
 import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import type { CompactProofPresentation } from '../../presentation/proof-summary.js';
+import { renderCompactProofSection } from '../../presentation/proof-summary.js';
 
 function attachProofSummaryToBlockedResponse(
   blockedResponse: string,
@@ -451,6 +452,15 @@ async function handleChangesRequestedReview(input: {
   addLatestImplementationReview(response, input.reviewFindings);
   if (input.proofSummary) {
     response.proofSummary = input.proofSummary;
+    response.presentation = {
+      markdown: [
+        `Implementation review iteration ${input.iteration}/${input.runtime.maxImplReviewIterations}. Changes requested.`,
+        '',
+        renderCompactProofSection(input.proofSummary),
+        '',
+        '→ Make the requested code changes, then call flowguard_implement to re-record.',
+      ].join('\n'),
+    };
   }
   return appendNextAction(JSON.stringify(response), finalState);
 }
@@ -484,6 +494,19 @@ async function handleApprovedReview(input: {
 
   if (input.proofSummary) {
     response.proofSummary = input.proofSummary;
+    const statusLine =
+      input.runtime.args.reviewVerdict === 'accept'
+        ? `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`
+        : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
+    response.presentation = {
+      markdown: [
+        statusLine,
+        '',
+        renderCompactProofSection(input.proofSummary),
+        '',
+        '→ Continue to completion or run flowguard_status for review context.',
+      ].join('\n'),
+    };
   }
 
   if (input.runtime.args.reviewVerdict === 'accept') {

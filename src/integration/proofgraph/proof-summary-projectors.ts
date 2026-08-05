@@ -144,7 +144,7 @@ function selectHighlightedClaims(
 ): CompactProofClaim[] {
   const planById = new Map((planDeclarations?.claims ?? []).map((d) => [d.claimId, d] as const));
   const results: CompactProofClaim[] = [];
-  for (const state of HEADLINE_ORDER) {
+  for (const state of HIGHLIGHT_ORDER) {
     for (const claim of claims) {
       if (claim.verificationState !== state || claim.claimId === results[0]?.claimId) continue;
       const planDecl = planById.get(claim.claimId);
@@ -160,7 +160,8 @@ function selectHighlightedClaims(
     }
     if (results.length >= 3) break;
   }
-  return results;
+  // Defensive: PROVEN must never appear in highlights regardless of order array changes.
+  return results.filter((c) => c.status !== 'PROVEN');
 }
 
 // ─── Count tallies ──────────────────────────────────────────────────────────

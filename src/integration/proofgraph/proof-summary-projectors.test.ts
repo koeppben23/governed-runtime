@@ -247,6 +247,47 @@ describe('projectImplementationProofStatus', () => {
     expect((result as Record<string, unknown>).unprovenCount).toBe(1);
   });
 
+  it('never includes PROVEN claims in highlightedClaims', () => {
+    const claims = [
+      proofClaim({
+        claimId: 'aaaaaaaa-1111-1111-1111-111111111111',
+        statement: 'CONTRADICTED claim',
+        critical: true,
+        verificationState: 'CONTRADICTED',
+      }),
+      proofClaim({
+        claimId: 'bbbbbbbb-2222-2222-2222-222222222222',
+        statement: 'PROVEN claim',
+        critical: true,
+        verificationState: 'PROVEN',
+      }),
+      proofClaim({
+        claimId: 'cccccccc-3333-3333-3333-333333333333',
+        statement: 'UNPROVEN claim',
+        critical: true,
+        verificationState: 'UNPROVEN',
+      }),
+      proofClaim({
+        claimId: 'dddddddd-4444-4444-4444-444444444444',
+        statement: 'PROVEN claim 2',
+        critical: true,
+        verificationState: 'PROVEN',
+      }),
+    ];
+    const result = projectImplementationProofStatus(makeEvalState(claims));
+    expect(result).not.toBeNull();
+    const evalResult = result as Record<string, unknown>;
+    const highlighted = evalResult.highlightedClaims as Array<Record<string, unknown>> | undefined;
+    expect(highlighted).toBeDefined();
+    const first = highlighted?.[0];
+    expect(first).toBeDefined();
+    // Only non-PROVEN claims should appear
+    const statuses = highlighted!.map((c) => c.status);
+    expect(statuses).not.toContain('PROVEN');
+    // CONTRADICTED has highest priority, should be first
+    expect(String(first!.status)).toBe('CONTRADICTED');
+  });
+
   it('returns null when proofGraph is undefined', () => {
     const state: SessionState = {
       ...makeState('IMPLEMENTATION'),

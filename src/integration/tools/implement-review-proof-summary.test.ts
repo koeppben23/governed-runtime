@@ -15,9 +15,13 @@ import {
   resolveSubmittedReviewProofResponse,
   type ResolvedSubmittedReviewProof,
 } from './implement-review.js';
-import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projectors.js';
+import {
+  projectCompletionProofStatus,
+  projectImplementationProofStatus,
+} from '../proofgraph/proof-summary-projectors.js';
 import { formatBlocked } from './helpers.js';
 import { makeState, IMPL_EVIDENCE } from '../../fixtures.js';
+import { renderCompactProofSection } from '../../presentation/proof-summary.js';
 
 function proofGraphState() {
   return makeState('IMPL_REVIEW', {
@@ -118,5 +122,37 @@ describe('completion path', () => {
     if (summary?.kind === 'evaluation') {
       expect(summary.decisionContext).toBe('completion');
     }
+  });
+});
+
+describe('presentation.markdown rendering contract', () => {
+  it('changes_requested response includes ProofGraph section', () => {
+    const summary = projectImplementationProofStatus(proofGraphState());
+    const markdown = [
+      'Implementation review iteration 1/3. Changes requested.',
+      '',
+      renderCompactProofSection(summary!),
+      '',
+      '→ Make the requested code changes, then call flowguard_implement to re-record.',
+    ].join('\n');
+    expect(markdown).toContain('## ProofGraph');
+    expect(markdown).not.toContain('If submitted for approval now:');
+    expect(markdown).toContain('→ Make the requested code changes');
+  });
+
+  it('accept response includes ProofGraph section', () => {
+    const summary = projectImplementationProofStatus(proofGraphState(), {
+      decisionContext: 'current_gate',
+    });
+    const markdown = [
+      'Implementation review converged at iteration 1. Reviewer accepted.',
+      '',
+      renderCompactProofSection(summary!),
+      '',
+      '→ Continue to completion.',
+    ].join('\n');
+    expect(markdown).toContain('## ProofGraph');
+    expect(markdown).toContain('All critical claims PROVEN');
+    expect(markdown).not.toContain('If submitted for approval now:');
   });
 });
