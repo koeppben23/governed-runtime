@@ -367,6 +367,8 @@ describe('CORNER', () => {
           executionMs: 200,
           outputDigest: 'b'.repeat(64),
           timedOut: false,
+          outcome: 'inconclusive' as const,
+          classificationReason: 'non-zero exit code',
         },
       ],
     };

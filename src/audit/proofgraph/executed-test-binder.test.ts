@@ -36,6 +36,7 @@ function validationResult(passed: boolean, over: Record<string, unknown> = {}) {
     executionMs: 5,
     outputDigest: SHA,
     timedOut: false,
+    outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
     ...over,
   };
 }

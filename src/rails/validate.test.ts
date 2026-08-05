@@ -59,6 +59,7 @@ function makeValidationResult(checkId: string, passed: boolean, detail: string):
     executionMs: 1000,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
+    outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
   };
 }
 
@@ -287,6 +288,7 @@ describe('validate rail', () => {
           executionMs: 300_000,
           outputDigest: 'a'.repeat(64),
           timedOut: true,
+          outcome: 'blocked' as const,
         })),
       };
       const result = await executeValidate(state, ctx, executors);

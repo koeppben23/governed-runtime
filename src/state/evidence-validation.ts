@@ -86,6 +86,10 @@ export type RepairGuidance = z.infer<typeof RepairGuidance>;
  *
  * No agent self-report: all fields are runtime-produced, not agent-supplied.
  */
+
+export const ValidationOutcome = z.enum(['supported', 'falsified', 'inconclusive', 'blocked']);
+export type ValidationOutcome = z.infer<typeof ValidationOutcome>;
+
 export const ValidationResult = z
   .object({
     /** Which active check this result satisfies (derived from verificationCandidate kind). */
@@ -108,6 +112,10 @@ export const ValidationResult = z
     outputDigest: z.string().regex(/^[a-f0-9]{64}$/),
     /** Whether the process was killed due to timeout. */
     timedOut: z.boolean(),
+    /** Classified evidence outcome. */
+    outcome: ValidationOutcome,
+    /** Human-readable reason for the outcome classification. */
+    classificationReason: z.string().min(1).optional(),
     /** Derived advisory repair guidance; never validation evidence authority. */
     derivedRepairGuidance: RepairGuidance.optional(),
   })

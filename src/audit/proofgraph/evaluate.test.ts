@@ -76,13 +76,16 @@ function counterexample(
   claimId: string,
   outcome: ProofCounterexampleType['outcome'],
   boundDigest: string = CURR,
+  overrides: Partial<Pick<ProofCounterexampleType, 'attemptId' | 'checkId' | 'executedAt'>> = {},
 ): ProofCounterexampleType {
   return ProofCounterexample.parse({
     claimId,
+    attemptId: overrides.attemptId ?? '00000000-0000-4000-8000-0000000000cc',
+    checkId: overrides.checkId ?? 'test',
     scenario: 'falsify',
     outcome,
     boundDigest,
-    executedAt: NOW,
+    executedAt: overrides.executedAt ?? NOW,
   });
 }
 

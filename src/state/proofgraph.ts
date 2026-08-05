@@ -234,6 +234,10 @@ export type ProofProviderResult = z.infer<typeof ProofProviderResult>;
 export const ProofCounterexample = z
   .object({
     claimId: z.string().uuid(),
+    /** The validation attempt that produced this counterexample. */
+    attemptId: z.string().uuid(),
+    /** The check kind that was executed (e.g. 'build', 'test'). */
+    checkId: z.string().min(1),
     scenario: z.string().min(1),
     outcome: CounterexampleOutcome,
     boundDigest: z.string().min(1),

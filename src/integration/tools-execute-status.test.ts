@@ -1355,6 +1355,7 @@ describe('declare_contract', () => {
             executionMs: 5,
             outputDigest: SHA,
             timedOut: false,
+            outcome: 'supported' as const,
           },
         },
         {
@@ -1372,6 +1373,7 @@ describe('declare_contract', () => {
             executionMs: 5,
             outputDigest: SHA,
             timedOut: false,
+            outcome: 'supported' as const,
           },
         },
       ],
@@ -1617,6 +1619,7 @@ describe('declare_contract', () => {
           executionMs: 5,
           outputDigest: SHA,
           timedOut: false,
+          outcome: 'supported' as const,
         },
       });
       await writeStateWithArtifacts(sessDir, {
@@ -1789,6 +1792,7 @@ describe('declare_contract', () => {
           executionMs: 5,
           outputDigest: SHA,
           timedOut: false,
+          outcome: 'supported' as const,
         },
       };
     }

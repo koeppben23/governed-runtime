@@ -54,6 +54,7 @@ function validationResult(checkId: string): ValidationResult {
     executionMs: 1,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
+    outcome: 'supported',
   };
 }
 

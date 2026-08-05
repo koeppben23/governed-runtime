@@ -124,6 +124,7 @@ function stateWithClaims() {
           executionMs: 1,
           outputDigest: 'a'.repeat(64),
           timedOut: false,
+          outcome: 'supported' as const,
         },
       },
     ],

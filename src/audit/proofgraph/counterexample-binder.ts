@@ -18,6 +18,20 @@
 import type { SessionState } from '../../state/schema.js';
 import type { ProofCounterexample } from '../../state/proofgraph.js';
 import type { CounterexampleOutcome } from '../../state/proofgraph-primitives.js';
+import type { ValidationResult } from '../../state/evidence-validation.js';
+
+function toCounterexampleOutcome(result: ValidationResult): CounterexampleOutcome {
+  switch (result.outcome) {
+    case 'supported':
+      return 'supported';
+    case 'falsified':
+      return 'contradicted';
+    case 'inconclusive':
+      return 'not_verified';
+    case 'blocked':
+      return 'blocked';
+  }
+}
 
 /**
  * Bind the counterexample references declared on a session's contract claims to
@@ -42,6 +56,8 @@ export function bindCounterexamples(
       if (attempt === undefined || attempt.scope !== 'implementation') {
         counterexamples.push({
           claimId: claim.claimId,
+          attemptId: ref.attemptId,
+          checkId: '',
           scenario: `unresolved counterexample attempt ${ref.attemptId}`,
           outcome: 'not_verified',
           boundDigest: currentDigest,
@@ -49,9 +65,11 @@ export function bindCounterexamples(
         });
         continue;
       }
-      const outcome: CounterexampleOutcome = attempt.result.passed ? 'supported' : 'contradicted';
+      const outcome = toCounterexampleOutcome(attempt.result);
       counterexamples.push({
         claimId: claim.claimId,
+        attemptId: attempt.attemptId,
+        checkId: attempt.result.checkId,
         scenario: `falsification via check '${attempt.result.checkId}'`,
         outcome,
         boundDigest: attempt.implementationDigest,

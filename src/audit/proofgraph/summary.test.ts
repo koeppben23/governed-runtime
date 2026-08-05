@@ -31,6 +31,7 @@ function attemptResult(passed: boolean) {
     executionMs: 5,
     outputDigest: SHA,
     timedOut: false,
+    outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
   };
 }
 

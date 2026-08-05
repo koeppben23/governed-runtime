@@ -106,6 +106,7 @@ describe('evidence-validation', () => {
           executionMs: 1500,
           outputDigest: VALID_DIGEST,
           timedOut: false,
+          outcome: 'supported' as const,
         },
       });
       expect(result.scope).toBe('baseline');
@@ -217,6 +218,7 @@ describe('evidence-validation', () => {
             executionMs: 1500,
             outputDigest: VALID_DIGEST,
             timedOut: false,
+            outcome: 'supported' as const,
           },
         }),
       ).toThrow();

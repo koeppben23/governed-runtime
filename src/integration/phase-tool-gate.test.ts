@@ -31,6 +31,7 @@ function validationResult(checkId: string) {
     executionMs: 1,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
+    outcome: 'supported' as const,
   };
 }
 
@@ -543,6 +544,7 @@ describe('phase-tool-gate', () => {
             executionMs: 100,
             outputDigest: 'a'.repeat(64),
             timedOut: false,
+            outcome: 'supported' as const,
           },
           {
             checkId: 'lint',
@@ -555,6 +557,7 @@ describe('phase-tool-gate', () => {
             executionMs: 100,
             outputDigest: 'b'.repeat(64),
             timedOut: false,
+            outcome: 'supported' as const,
           },
         ],
       });

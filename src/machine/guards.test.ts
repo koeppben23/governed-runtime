@@ -375,6 +375,7 @@ describe('guards', () => {
             executionMs: 1,
             outputDigest: 'a'.repeat(64),
             timedOut: false,
+            outcome: 'supported' as const,
           },
         ],
       });
@@ -412,6 +413,7 @@ describe('guards', () => {
             executionMs: 1,
             outputDigest: 'a'.repeat(64),
             timedOut: false,
+            outcome: 'supported' as const,
           },
         ],
       });
@@ -434,6 +436,7 @@ describe('guards', () => {
             executionMs: 1,
             outputDigest: 'a'.repeat(64),
             timedOut: false,
+            outcome: 'supported' as const,
           },
         ],
       });
@@ -457,6 +460,8 @@ describe('guards', () => {
             executionMs: 1,
             outputDigest: 'a'.repeat(64),
             timedOut: false,
+            outcome: 'inconclusive' as const,
+            classificationReason: 'non-zero exit code',
           },
         ],
       });
@@ -518,6 +523,7 @@ describe('guards', () => {
             executionMs: 1,
             outputDigest: 'a'.repeat(64),
             timedOut: false,
+            outcome: 'supported' as const,
           },
           {
             checkId: 'test_quality',
@@ -530,6 +536,7 @@ describe('guards', () => {
             executionMs: 1,
             outputDigest: 'a'.repeat(64),
             timedOut: false,
+            outcome: 'supported' as const,
           },
           {
             checkId: 'rollback_safety',
@@ -542,6 +549,7 @@ describe('guards', () => {
             executionMs: 1,
             outputDigest: 'a'.repeat(64),
             timedOut: false,
+            outcome: 'supported' as const,
           },
         ],
       });
@@ -563,6 +571,7 @@ describe('guards', () => {
             executionMs: 1,
             outputDigest: 'a'.repeat(64),
             timedOut: false,
+            outcome: 'supported' as const,
           },
           {
             checkId: 'rollback_safety',
@@ -575,6 +584,8 @@ describe('guards', () => {
             executionMs: 1,
             outputDigest: 'a'.repeat(64),
             timedOut: false,
+            outcome: 'inconclusive' as const,
+            classificationReason: 'non-zero exit code',
           },
         ],
       });

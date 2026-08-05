@@ -212,8 +212,13 @@ function evaluateClaim(
   evaluatedAt: string,
 ): ProofClaim {
   const results = input.providerResults.filter((r) => r.claimId === claim.claimId);
-  const counterexamples = input.counterexamples.filter((c) => c.claimId === claim.claimId);
-  const verificationState = deriveVerificationState(claim, results, counterexamples, input);
+  const rawCounterexamples = input.counterexamples.filter((c) => c.claimId === claim.claimId);
+  const selection = selectCurrentCounterexamples(rawCounterexamples);
+
+  const verificationState = selection.conflicting
+    ? 'NOT_VERIFIED'
+    : deriveVerificationState(claim, results, selection.counterexamples, input);
+
   const freshness = computeFreshness(
     results.filter((r) => r.status === 'pass'),
     input,
@@ -222,6 +227,87 @@ function evaluateClaim(
   return freshness === undefined
     ? { ...claim, verificationState }
     : { ...claim, verificationState, freshness };
+}
+
+// ─── Supersession: deterministische Attempt-Auswahl ─────────────────────────
+
+type AttemptKey = string;
+
+interface CurrentCounterexampleSelection {
+  counterexamples: readonly ProofCounterexample[];
+  conflicting: boolean;
+  conflictReason?: string;
+}
+
+interface CounterexampleGroupResolution {
+  status: 'current' | 'conflicting';
+  value?: ProofCounterexample;
+  values?: readonly ProofCounterexample[];
+}
+
+function resolveAttemptHistory(
+  sortedNewestFirst: readonly ProofCounterexample[],
+): CounterexampleGroupResolution {
+  const latest = sortedNewestFirst[0] as ProofCounterexample;
+  const older = sortedNewestFirst.slice(1);
+
+  const next = older[0];
+  if (next !== undefined && next.executedAt === latest.executedAt) {
+    const outcomes = new Set(
+      sortedNewestFirst.filter((c) => c.executedAt === latest.executedAt).map((c) => c.outcome),
+    );
+    if (outcomes.size > 1) {
+      return {
+        status: 'conflicting',
+        values: sortedNewestFirst.filter((c) => c.executedAt === latest.executedAt),
+      };
+    }
+  }
+
+  if (latest.outcome === 'contradicted') {
+    return { status: 'current', value: latest };
+  }
+
+  const hasOlderContradiction = older.some((c) => c.outcome === 'contradicted');
+  if (hasOlderContradiction) {
+    return { status: 'conflicting', values: sortedNewestFirst };
+  }
+
+  return { status: 'current', value: latest };
+}
+
+function selectCurrentCounterexamples(
+  counterexamples: readonly ProofCounterexample[],
+): CurrentCounterexampleSelection {
+  const groups = new Map<AttemptKey, ProofCounterexample[]>();
+
+  for (const c of counterexamples) {
+    const key = `${c.claimId}:${c.checkId}:${c.boundDigest}`;
+    const existing = groups.get(key) ?? [];
+    existing.push(c);
+    groups.set(key, existing);
+  }
+
+  const resolved: ProofCounterexample[] = [];
+  let conflicting = false;
+  let conflictReason: string | undefined;
+
+  for (const [, group] of groups) {
+    if (group.length === 1) {
+      resolved.push(group[0]!);
+      continue;
+    }
+    const sorted = [...group].sort((a, b) => b.executedAt.localeCompare(a.executedAt));
+    const resolution = resolveAttemptHistory(sorted);
+    if (resolution.status === 'current' && resolution.value) {
+      resolved.push(resolution.value);
+    } else {
+      conflicting = true;
+      conflictReason = `conflicting counterexample outcomes at revision ${group[0]!.boundDigest.slice(0, 12)}`;
+    }
+  }
+
+  return { counterexamples: resolved, conflicting, conflictReason };
 }
 
 /**

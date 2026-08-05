@@ -57,7 +57,11 @@ import { executeCheck } from '../../verification/executor.js';
 import { deriveRepairGuidance } from '../../verification/repair-guidance.js';
 
 // Evidence types
-import type { ValidationAttempt, ValidationResult } from '../../state/evidence-validation.js';
+import type {
+  ValidationAttempt,
+  ValidationResult,
+  ValidationOutcome,
+} from '../../state/evidence-validation.js';
 import { isExecutionError } from '../../state/evidence-validation.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 
@@ -342,8 +346,20 @@ function buildValidationResult(
     executionMs: evidence.executionMs,
     outputDigest: evidence.outputDigest,
     timedOut: evidence.timedOut,
+    outcome: classifyOutcome(evidence),
+    classificationReason: evidence.passed
+      ? undefined
+      : `exitCode=${evidence.exitCode}, timedOut=${evidence.timedOut}`,
     derivedRepairGuidance,
   };
+}
+
+function classifyOutcome(evidence: CheckEvidence): ValidationOutcome {
+  if (evidence.passed) return 'supported';
+  if (evidence.timedOut) return 'blocked';
+  const output = `${evidence.stdout}\n${evidence.stderr}`.trim();
+  if (output.length === 0) return 'blocked';
+  return 'inconclusive';
 }
 
 function formatValidationDetail(evidence: CheckEvidence): string {
