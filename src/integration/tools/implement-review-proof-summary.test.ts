@@ -1,17 +1,18 @@
 /**
  * @test-policy
- * REGRESSION: unable_to_review injection → `formatBlocked` JSON is valid and can carry proofSummary.
- * REGRESSION: accept → projectImplementationProofStatus with decisionContext: 'current_gate' yields
- *             the correct context.
- * REGRESSION: changes_requested → projectImplementationProofStatus without override yields
- *             prospective_approval.
- * REGRESSION: Gate-block (e.g. no authorized claims → critical_fact_required) → BLOCKED headline,
- *             primaryReason present.
- * INTEGRATION: exercises real projectors and formatBlocked — the same functions used in the
- *             production implement-review pipeline.
+ * REGRESSION: attachProofSummaryToBlockedResponse → proofSummary survives serialization round-trip.
+ * REGRESSION: proofDecisionContextForVerdict → 'current_gate' for accept, 'prospective_approval' for changes_requested.
+ * REGRESSION: acceptance test verifies decisionContext override reaches the projector output.
+ * REGRESSION: Gate-block (critical_fact_required) → headlineStatus is BLOCKED, primaryReason present.
+ * CONTRACT: The production helpers in implement-review.ts are the single source of truth for both
+ *           the pipeline and these tests — mutations to the helpers will break these tests.
  */
 
 import { describe, expect, it } from 'vitest';
+import {
+  attachProofSummaryToBlockedResponse,
+  proofDecisionContextForVerdict,
+} from './implement-review.js';
 import {
   projectImplementationProofStatus,
   projectCompletionProofStatus,
@@ -19,7 +20,9 @@ import {
 import { formatBlocked } from './helpers.js';
 import { makeState, IMPL_EVIDENCE } from '../../fixtures.js';
 
-function proofGraphState(extra?: Partial<Record<string, unknown>>) {
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function proofGraphState() {
   return makeState('IMPL_REVIEW', {
     implementation: IMPL_EVIDENCE,
     proofGraph: {
@@ -48,49 +51,49 @@ function proofGraphState(extra?: Partial<Record<string, unknown>>) {
       ],
       evaluatedAt: '2025-01-01T00:00:00Z',
     },
-    ...(extra ?? {}),
   });
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe('implement-review proof-summary regressions', () => {
-  describe('unable_to_review JSON injection contract', () => {
-    it('formatBlocked output is valid JSON and can carry proofSummary', () => {
+describe('implement-review proof-summary wiring regressions', () => {
+  describe('attachProofSummaryToBlockedResponse', () => {
+    it('returns original blocked response when proofSummary is null', () => {
       const blocked = formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
         obligationId: 'obl-1',
-        iteration: '1',
       });
-      // parse-serialize round-trip — must not throw
-      const parsed = JSON.parse(blocked);
+      const result = attachProofSummaryToBlockedResponse(blocked, null);
+      expect(result).toBe(blocked);
+    });
+
+    it('injects proofSummary into blocked JSON', () => {
+      const blocked = formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+        obligationId: 'obl-1',
+      });
+      const summary = projectImplementationProofStatus(proofGraphState());
+      const result = attachProofSummaryToBlockedResponse(blocked, summary);
+      const parsed = JSON.parse(result);
       expect(parsed.error).toBe(true);
       expect(parsed.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
       expect(parsed.message).toBeDefined();
-
-      // Inject proofSummary (same pattern as handleSubmittedImplementationReview)
-      const state = proofGraphState();
-      const summary = projectImplementationProofStatus(state);
-      if (summary) {
-        parsed.proofSummary = summary;
-      }
-      const reSerialized = JSON.stringify(parsed);
-
-      // The re-serialized output must contain both the block reason AND proof
-      const final = JSON.parse(reSerialized);
-      expect(final.error).toBe(true);
-      expect(final.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
-      expect(final.proofSummary).toBeDefined();
-      if (final.proofSummary?.kind === 'evaluation') {
-        expect(final.proofSummary.decisionContext).toBe('prospective_approval');
-      }
+      expect(parsed.proofSummary).toBeDefined();
+      expect(parsed.proofSummary.kind).toBe('evaluation');
     });
   });
 
-  describe('accept path decisionContext', () => {
-    it('yields current_gate when explicitly set', () => {
-      const state = proofGraphState();
-      const summary = projectImplementationProofStatus(state, {
-        decisionContext: 'current_gate',
+  describe('proofDecisionContextForVerdict', () => {
+    it("returns 'current_gate' for accept", () => {
+      expect(proofDecisionContextForVerdict('accept')).toBe('current_gate');
+    });
+
+    it("returns 'prospective_approval' for changes_requested", () => {
+      expect(proofDecisionContextForVerdict('changes_requested')).toBe('prospective_approval');
+    });
+
+    it('accept path projector with decisionContext yields current_gate', () => {
+      const dc = proofDecisionContextForVerdict('accept');
+      const summary = projectImplementationProofStatus(proofGraphState(), {
+        decisionContext: dc,
       });
       expect(summary).not.toBeNull();
       if (summary?.kind === 'evaluation') {
@@ -99,21 +102,9 @@ describe('implement-review proof-summary regressions', () => {
     });
   });
 
-  describe('changes_requested / pre-branch default', () => {
-    it('yields prospective_approval without override', () => {
-      const state = proofGraphState();
-      const summary = projectImplementationProofStatus(state);
-      expect(summary).not.toBeNull();
-      if (summary?.kind === 'evaluation') {
-        expect(summary.decisionContext).toBe('prospective_approval');
-      }
-    });
-  });
-
-  describe('completion path decisionContext', () => {
-    it('yields completion via projectCompletionProofStatus', () => {
-      const state = proofGraphState();
-      const summary = projectCompletionProofStatus(state);
+  describe('completion path', () => {
+    it('projectCompletionProofStatus yields completion', () => {
+      const summary = projectCompletionProofStatus(proofGraphState());
       expect(summary).not.toBeNull();
       if (summary?.kind === 'evaluation') {
         expect(summary.decisionContext).toBe('completion');

@@ -91,6 +91,37 @@ import type { ImplementRuntime } from './implement-shared.js';
 import { nextImplementationReviewIteration } from './implement-shared.js';
 import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import type { CompactProofPresentation } from '../../presentation/proof-summary.js';
+
+/**
+ * Inject a proofSummary into an already-serialized `formatBlocked` response.
+ *
+ * Exported so regression tests can verify the injection contract without
+ * exercising the entire `handleSubmittedImplementationReview` pipeline.
+ */
+export function attachProofSummaryToBlockedResponse(
+  blockedResponse: string,
+  proofSummary: CompactProofPresentation | null,
+): string {
+  if (!proofSummary) return blockedResponse;
+  const parsed = JSON.parse(blockedResponse) as Record<string, unknown>;
+  parsed.proofSummary = proofSummary;
+  return JSON.stringify(parsed);
+}
+
+/**
+ * Derive the `decisionContext` for implementation review responses.
+ *
+ * `accept` → `current_gate` (verdict cleared, actual gate decision)
+ * `changes_requested` → `prospective_approval` (needs revision first)
+ *
+ * Exported so tests and production share one authoritative derivation.
+ */
+export function proofDecisionContextForVerdict(
+  verdict: LoopVerdict,
+): 'current_gate' | 'prospective_approval' {
+  return verdict === 'accept' ? 'current_gate' : 'prospective_approval';
+}
+
 function findPendingImplObligation(state: SessionState) {
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
   return (
@@ -480,12 +511,7 @@ async function handleSubmittedImplementationReview(input: {
     pendingObligation?.obligationId ?? 'unknown',
   );
   if (findingsBlocked) {
-    if (proofSummary) {
-      const parsed = JSON.parse(findingsBlocked) as Record<string, unknown>;
-      parsed.proofSummary = proofSummary;
-      return JSON.stringify(parsed);
-    }
-    return findingsBlocked;
+    return attachProofSummaryToBlockedResponse(findingsBlocked, proofSummary);
   }
 
   const { reviewedState, newReviewFindings } = appendImplReviewState({
@@ -510,7 +536,7 @@ async function handleSubmittedImplementationReview(input: {
   // Accept: the verdict cleared the gate, so the decision context is current_gate.
   const acceptProofSummary =
     projectImplementationProofStatus(reviewedState, {
-      decisionContext: 'current_gate',
+      decisionContext: proofDecisionContextForVerdict(submittedVerdict),
     }) ?? undefined;
   return handleApprovedReview({
     runtime,
