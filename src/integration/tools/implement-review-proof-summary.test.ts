@@ -56,6 +56,38 @@ function proofGraphState() {
   });
 }
 
+function negativeProofGraphState() {
+  return makeState('IMPL_REVIEW', {
+    implementation: IMPL_EVIDENCE,
+    proofGraph: {
+      version: 'proofgraph.v1' as const,
+      claims: [
+        {
+          claimId: '99999999-9999-9999-9999-999999999999',
+          statement: 'Falsified claim',
+          signalClass: 'fact' as const,
+          critical: true,
+          provenance: {
+            kind: 'canonical_authority' as const,
+            authorityId: 'plan',
+            digest: 'aaaa'.repeat(16),
+            approval: {
+              certificateId: '11111111-1111-1111-1111-111111111111',
+              claimDeclarationsDigest: 'b'.repeat(64),
+              decisionAttestationDigest: 'c'.repeat(64),
+              declarationId: '22222222-2222-2222-2222-222222222222',
+            },
+          },
+          evidenceRefs: [],
+          counterexampleRefs: [],
+          verificationState: 'CONTRADICTED' as const,
+        },
+      ],
+      evaluatedAt: '2025-01-01T00:00:00Z',
+    },
+  });
+}
+
 describe('resolveSubmittedReviewProofResponse — branch resolver', () => {
   const blockedJson = formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
     obligationId: 'obl-1',
@@ -138,6 +170,20 @@ describe('presentation.markdown rendering contract', () => {
       '→ Make the requested code changes, then call flowguard_implement to re-record.',
     );
     expect(markdown).not.toContain('→ Continue to completion');
+  });
+
+  it('changes_requested with negative state shows prospective approval language', () => {
+    const summary = projectImplementationProofStatus(negativeProofGraphState());
+    const markdown = buildImplReviewChangesRequestedMarkdown(
+      'Implementation review iteration 1/3. Changes requested.',
+      summary!,
+    );
+    expect(markdown).toContain('## ProofGraph');
+    expect(markdown).toContain('If submitted for approval now:');
+    expect(markdown).toContain('CONTRADICTED');
+    expect(markdown).toContain(
+      '→ Make the requested code changes, then call flowguard_implement to re-record.',
+    );
   });
 
   it('accept markdown shows current_gate', () => {
