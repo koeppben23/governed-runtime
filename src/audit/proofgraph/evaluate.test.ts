@@ -635,4 +635,127 @@ describe('evaluateProofGraph', () => {
       expect(out.version).toBe('proofgraph.v1');
     });
   });
+
+  describe('counterexample supersession', () => {
+    const id = uuid(99);
+    const T0 = '2026-01-01T00:00:00.000Z';
+    const T1 = '2026-01-01T00:01:00.000Z';
+    const T2 = '2026-01-01T00:02:00.000Z';
+
+    it('blocked superseded by supported → supported wins (safe supersession)', () => {
+      const out = evaluate({
+        claims: [claim(id)],
+        providerResults: [result(id, 'pass')],
+        counterexamples: [
+          counterexample(id, 'blocked', CURR, { executedAt: T1 }),
+          counterexample(id, 'supported', CURR, { executedAt: T2 }),
+        ],
+      });
+      expect(out.claims[0]!.verificationState).toBe('PROVEN');
+    });
+
+    it('supported superseded by contradicted → contradicted wins (latest authoritative)', () => {
+      const out = evaluate({
+        claims: [claim(id)],
+        counterexamples: [
+          counterexample(id, 'supported', CURR, { executedAt: T1 }),
+          counterexample(id, 'contradicted', CURR, { executedAt: T2 }),
+        ],
+      });
+      expect(out.claims[0]!.verificationState).toBe('CONTRADICTED');
+    });
+
+    it('contradicted superseded by supported → conflicting → NOT_VERIFIED', () => {
+      const out = evaluate({
+        claims: [claim(id)],
+        counterexamples: [
+          counterexample(id, 'contradicted', CURR, { executedAt: T1 }),
+          counterexample(id, 'supported', CURR, { executedAt: T2 }),
+        ],
+      });
+      expect(out.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    });
+
+    it('same timestamp + conflicting outcomes → NOT_VERIFIED', () => {
+      const out = evaluate({
+        claims: [claim(id)],
+        counterexamples: [
+          counterexample(id, 'contradicted', CURR, { executedAt: T0 }),
+          counterexample(id, 'supported', CURR, { executedAt: T0 }),
+        ],
+      });
+      expect(out.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+    });
+
+    it('different checkIds → no supersession (both retained independently)', () => {
+      const out = evaluate({
+        claims: [claim(id)],
+        providerResults: [result(id, 'pass')],
+        counterexamples: [
+          counterexample(id, 'supported', CURR, { checkId: 'test', executedAt: T0 }),
+          counterexample(id, 'contradicted', CURR, { checkId: 'build', executedAt: T2 }),
+        ],
+      });
+      expect(out.claims[0]!.verificationState).toBe('CONTRADICTED');
+    });
+
+    it('different boundDigests → no supersession (both retained independently)', () => {
+      const out = evaluate({
+        claims: [claim(id)],
+        counterexamples: [
+          counterexample(id, 'supported', 'digest-old', { executedAt: T1 }),
+          counterexample(id, 'contradicted', CURR, { executedAt: T2 }),
+        ],
+      });
+      expect(out.claims[0]!.verificationState).toBe('CONTRADICTED');
+    });
+
+    it('counterexampleRefs are unchanged after supersession (audit invariance)', () => {
+      const c = claim(id);
+      const out = evaluate({
+        claims: [c],
+        counterexamples: [
+          counterexample(id, 'blocked', CURR, { executedAt: T1 }),
+          counterexample(id, 'supported', CURR, { executedAt: T2 }),
+        ],
+      });
+      expect(out.claims[0]!.counterexampleRefs).toEqual(c.counterexampleRefs);
+    });
+
+    it('fresh blocked counterexample → Claim BLOCKED', () => {
+      const out = evaluate({
+        claims: [claim(id)],
+        counterexamples: [counterexample(id, 'blocked', CURR)],
+      });
+      expect(out.claims[0]!.verificationState).toBe('BLOCKED');
+    });
+
+    it('stale blocked counterexample does not block (not fresh)', () => {
+      const out = evaluate({
+        claims: [claim(id)],
+        providerResults: [result(id, 'pass')],
+        counterexamples: [counterexample(id, 'blocked', 'old-digest')],
+      });
+      expect(out.claims[0]!.verificationState).toBe('STALE');
+    });
+  });
+
+  describe('regression: failed check is not contradiction', () => {
+    const T0 = '2026-01-01T00:00:00.000Z';
+    const T1 = '2026-01-01T00:01:00.000Z';
+
+    it('exitCode 1 + retry success → not CONTRADICTED', () => {
+      const id = uuid(77);
+      const out = evaluate({
+        claims: [claim(id)],
+        providerResults: [result(id, 'pass')],
+        counterexamples: [
+          counterexample(id, 'not_verified', CURR, { executedAt: T0 }),
+          counterexample(id, 'supported', CURR, { executedAt: T1 }),
+        ],
+      });
+      expect(out.claims[0]!.verificationState).not.toBe('CONTRADICTED');
+      expect(out.claims[0]!.verificationState).toBe('PROVEN');
+    });
+  });
 });

@@ -3,14 +3,17 @@
  * @description Bind declared counterexample references to executed outcomes.
  *
  * Falsification-first, evidence-bound: a claim's counterexample references name
- * an implementation validation attempt whose FAILURE would contradict the claim.
- * The outcome is derived from the attempt's executed result, never asserted:
- *   - the attempt failed  -> `contradicted` (the falsification succeeded)
- *   - the attempt passed   -> `supported` (the falsification attempt did not hold)
- *   - missing / wrong scope -> `not_verified`
+ * an implementation validation attempt whose explicit falsification or
+ * verified support produces a decisive outcome:
+ *   - explicit falsified  → contradicted (the falsification succeeded)
+ *   - supported           → supported  (the falsification attempt did not hold)
+ *   - inconclusive        → not_verified (failed but not a falsification)
+ *   - blocked             → blocked (could not execute; timeout, crash, no output)
+ *   - missing / wrong scope → not_verified
  *
  * A `contradicted` counterexample makes the evaluator report the claim as
  * CONTRADICTED, which wins over any passing positive evidence.
+ * A `blocked` counterexample makes the evaluator report the claim as BLOCKED.
  *
  * @version v1
  */
@@ -57,7 +60,7 @@ export function bindCounterexamples(
         counterexamples.push({
           claimId: claim.claimId,
           attemptId: ref.attemptId,
-          checkId: '',
+          checkId: 'unresolved_validation_attempt',
           scenario: `unresolved counterexample attempt ${ref.attemptId}`,
           outcome: 'not_verified',
           boundDigest: currentDigest,

@@ -32,7 +32,7 @@ function makeEvidence(overrides: Partial<ExecutionEvidence> = {}): ExecutionEvid
 describe('HAPPY', () => {
   it('returns unavailable for passing checks', () => {
     const evidence = makeEvidence({ passed: true, exitCode: 0 });
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'supported');
 
     expect(guidance).toMatchObject({
       kind: 'derived_repair_guidance',
@@ -55,7 +55,7 @@ describe('HAPPY', () => {
         "src/app.ts(10,5): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.",
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     expect(guidance.status).toBe('available');
     if (guidance.status !== 'available') throw new Error('expected available');
     expect(guidance.category).toBe('typecheck');
@@ -74,7 +74,7 @@ describe('HAPPY', () => {
       stdout: 'src/auth/login.ts:42:15   error    Unexpected console statement  no-console',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     expect(guidance.status).toBe('available');
     if (guidance.status !== 'available') throw new Error('expected available');
     expect(guidance.category).toBe('lint');
@@ -92,7 +92,7 @@ describe('HAPPY', () => {
       stdout: 'FAIL  src/users.test.ts > creates user\nAssertionError: expected false to be true',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     expect(guidance.status).toBe('available');
     if (guidance.status !== 'available') throw new Error('expected available');
     expect(guidance.category).toBe('test');
@@ -107,7 +107,7 @@ describe('HAPPY', () => {
       stdout: "Module not found: Error:Cannot resolve 'lodash' in src/utils/helpers.ts",
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     expect(guidance.status).toBe('available');
     if (guidance.status !== 'available') throw new Error('expected available');
     expect(guidance.category).toBe('build');
@@ -126,7 +126,7 @@ describe('BAD', () => {
       stderr: '\x00\x01\x02 garbage !!! ### ??? nonsense text without patterns',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     expect(guidance).toMatchObject({
       status: 'unavailable',
       reason: 'unparseable',
@@ -148,7 +148,7 @@ describe('CORNER', () => {
       stderr: 'ERROR: Coverage threshold for branches (80%) not met: 72.5%',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     expect(guidance.status).toBe('available');
     if (guidance.status !== 'available') throw new Error('expected available');
     expect(guidance.category).toBe('coverage');
@@ -162,7 +162,7 @@ describe('CORNER', () => {
       stdout: 'found 1 high severity vulnerability (GHSA-xxxx-yyyy-zzzz)\n  lodash < 4.17.21',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     expect(guidance.status).toBe('available');
     if (guidance.status !== 'available') throw new Error('expected available');
     expect(guidance.category).toBe('security');
@@ -177,7 +177,7 @@ describe('CORNER', () => {
         'Code style issues found in 3 files. Run Prettier to fix.\nsrc/app.ts\nsrc/helpers.ts',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     expect(guidance.status).toBe('available');
     if (guidance.status !== 'available') throw new Error('expected available');
     expect(guidance.category).toBe('format');
@@ -191,7 +191,7 @@ describe('CORNER', () => {
       stdout: 'Test run failed with 2 error(s). Process exited.',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     // No specific test framework pattern matched, no file locations → unparseable
     expect(guidance.status).toBe('unavailable');
     if (guidance.status === 'unavailable') expect(guidance.reason).toBe('unparseable');
@@ -206,7 +206,7 @@ describe('CORNER', () => {
       stdout: 'partial output before kill',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     expect(guidance.status).toBe('available');
     if (guidance.status !== 'available') throw new Error('expected available');
     expect(guidance.category).toBe('timeout');
@@ -223,7 +223,7 @@ describe('CORNER', () => {
       stderr: 'internal warning: slow plugin',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     expect(guidance.status).toBe('available');
     if (guidance.status !== 'available') throw new Error('expected available');
     expect(guidance.evidence.length).toBeGreaterThan(0);
@@ -239,7 +239,7 @@ describe('CORNER', () => {
       stdout: lines.join('\n'),
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     if (guidance.status !== 'available') throw new Error('expected available');
     expect(guidance.evidence.length).toBeLessThanOrEqual(5);
     expect(guidance.affectedLocations.length).toBeLessThanOrEqual(10);
@@ -253,7 +253,7 @@ describe('CORNER', () => {
       stdout: 'src/ctrl.ts(1,2): \x00\x1f\x07error\x1b  TS1234: control chars',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     if (guidance.status !== 'available') throw new Error('expected available');
     for (const e of guidance.evidence) {
       // eslint-disable-next-line no-control-regex
@@ -271,7 +271,7 @@ describe('CORNER', () => {
       stdout: `src/evil.ts(1,1): error TS9999: ${malicious}`,
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     // The location is extracted, the excerpt is sanitized, but guidance does not act on the malicious text
     expect(guidance.status).toBe('available');
     if (guidance.status !== 'available') throw new Error('expected available');
@@ -295,7 +295,7 @@ describe('EDGE', () => {
       stdout: 'src/mod.ts(1,10): error TS2322: type mismatch',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
 
     expect(evidence.passed).toBe(false);
     expect(evidence.exitCode).toBe(1);
@@ -315,7 +315,7 @@ describe('EDGE', () => {
       stdout: big,
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     // Should not crash and should still find the error location
     expect(guidance.status).toBe('available');
     if (guidance.status !== 'available') throw new Error('expected available');
@@ -331,7 +331,7 @@ describe('EDGE', () => {
       stderr: '',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'falsified');
     expect(guidance.status).toBe('unavailable');
     if (guidance.status === 'unavailable') expect(guidance.reason).toBe('unparseable');
   });

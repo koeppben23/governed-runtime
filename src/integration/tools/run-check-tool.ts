@@ -162,13 +162,15 @@ async function executeRunCheckPhased(
     command: guard.candidate.command,
     cwd: getWorktree(context),
   });
-  const derivedRepairGuidance = evidence.passed ? undefined : deriveRepairGuidance(evidence);
+  const outcome = classifyOutcome(evidence);
+  const derivedRepairGuidance = deriveRepairGuidance(evidence, outcome);
 
   // ── Phase C: Persist with lock retry ──
   return persistCheckResultWithRetry({
     kind,
     evidence,
     derivedRepairGuidance,
+    outcome,
     subject,
     sessDir,
     sessionId: context.sessionID,
@@ -180,7 +182,8 @@ async function executeRunCheckPhased(
 interface PersistCheckInput {
   kind: VerificationCandidateKind;
   evidence: Awaited<ReturnType<typeof executeCheck>>;
-  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
+  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
+  outcome: ValidationOutcome;
   subject: ValidationSubject;
   sessDir: string;
   sessionId: string;
@@ -189,7 +192,7 @@ interface PersistCheckInput {
 // The lock-retry callback keeps execution and persistence intentionally separated.
 // eslint-disable-next-line max-lines-per-function
 async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<ToolResult> {
-  const { kind, evidence, derivedRepairGuidance, subject, sessDir, sessionId } = input;
+  const { kind, evidence, derivedRepairGuidance, outcome, subject, sessDir, sessionId } = input;
   const logger = getAdapterLogger();
   return withSessionWriteLockRetry(
     sessDir,
@@ -210,6 +213,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       const validationResult = buildValidationResult(
         reGuard.checkId,
         evidence,
+        outcome,
         derivedRepairGuidance,
       );
       const allResults = mergeValidationResult(freshState, validationResult);
@@ -333,7 +337,8 @@ type CheckEvidence = Awaited<ReturnType<typeof executeCheck>>;
 function buildValidationResult(
   checkId: string,
   evidence: CheckEvidence,
-  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined,
+  outcome: ValidationOutcome,
+  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>,
 ): ValidationResult {
   return {
     checkId,
@@ -346,7 +351,7 @@ function buildValidationResult(
     executionMs: evidence.executionMs,
     outputDigest: evidence.outputDigest,
     timedOut: evidence.timedOut,
-    outcome: classifyOutcome(evidence),
+    outcome,
     classificationReason: evidence.passed
       ? undefined
       : `exitCode=${evidence.exitCode}, timedOut=${evidence.timedOut}`,

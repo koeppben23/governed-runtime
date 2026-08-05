@@ -1024,7 +1024,7 @@ describe('status', () => {
         kind: 'derived_repair_guidance',
         advisory: true,
         source: 'run_check_output',
-        status: 'available',
+        status: 'unavailable',
       });
 
       // Verify status surfaces the guidance
@@ -1041,7 +1041,7 @@ describe('status', () => {
         kind: 'derived_repair_guidance',
         advisory: true,
         source: 'run_check_output',
-        status: 'available',
+        status: 'unavailable',
       });
       expect(statusGuidance.notVerified).toEqual(
         expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
