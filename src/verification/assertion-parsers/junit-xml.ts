@@ -113,7 +113,7 @@ export function parseJUnitXml(xmlContent: string, _fileName: string): JUnitParse
       status,
       suiteName: tc.classname.split('.').slice(0, -1).join('.') || undefined,
       testName: tc.name,
-      sourceFile: `${tc.classname.replace(/\./g, '/')}.java`,
+      sourceFile: undefined,
       durationMs: undefined,
       failure,
     });

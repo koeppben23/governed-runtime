@@ -80,7 +80,11 @@ const CRITICAL_CLAIM: PlanClaimDeclaration = {
   authoritySectionId: 'implementation-step-1',
   expectedCheckId: 'build',
   // A critical claim is only PROVEN with executed adversarial evidence.
-  counterexampleCheckId: 'regression',
+  counterexampleRequirement: {
+    mode: 'assertion' as const,
+    checkId: 'regression',
+    assertionId: 'junit:counterexample',
+  },
 };
 
 /** Public input shape — claimId is host-minted. */
@@ -89,7 +93,11 @@ const CRITICAL_CLAIM_INPUT: PlanClaimDeclarationInput = {
   critical: true,
   authoritySectionId: 'implementation-step-1',
   expectedCheckId: 'build',
-  counterexampleCheckId: 'regression',
+  counterexampleRequirement: {
+    mode: 'assertion' as const,
+    checkId: 'regression',
+    assertionId: 'junit:counterexample',
+  },
 };
 
 const PLAN_TEXT = [
@@ -194,9 +202,38 @@ function attempt(
 
 /** Positive check plus the executed falsification attempt the claim declares. */
 function fullEvidence(): SessionState['validationAttempts'] {
+  const cx = attempt(COUNTEREXAMPLE_ATTEMPT_ID, 'regression', true, 'test');
   return [
     attempt(ATTEMPT_ID, 'build', true),
-    attempt(COUNTEREXAMPLE_ATTEMPT_ID, 'regression', true, 'test'),
+    {
+      ...cx,
+      result: {
+        ...cx.result,
+        assertionExtraction: {
+          status: 'extracted' as const,
+          attemptId: COUNTEREXAMPLE_ATTEMPT_ID,
+          format: 'junit_xml' as const,
+          reportDigests: ['a'.repeat(64)],
+          assertions: [
+            {
+              assertionId: 'junit:counterexample',
+              framework: 'junit' as const,
+              status: 'passed' as const,
+              testName: 'counterexample',
+              suiteName: 'counterexample',
+            },
+          ],
+          summary: {
+            assertionCount: 1,
+            passedCount: 1,
+            failedCount: 0,
+            erroredCount: 0,
+            skippedCount: 0,
+            suiteInfrastructureError: false,
+          },
+        },
+      },
+    },
   ];
 }
 
@@ -264,7 +301,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     const raw = await plan.execute(
       {
         planText: PLAN_TEXT,
-        claims: [{ ...CRITICAL_CLAIM_INPUT, counterexampleCheckId: undefined }],
+        claims: [{ ...CRITICAL_CLAIM_INPUT, counterexampleRequirement: undefined }],
       },
       env.tc,
     );
@@ -288,14 +325,23 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     const raw = await plan.execute(
       {
         planText: PLAN_TEXT,
-        claims: [{ ...CRITICAL_CLAIM_INPUT, counterexampleCheckId: 'build' }],
+        claims: [
+          {
+            ...CRITICAL_CLAIM_INPUT,
+            counterexampleRequirement: {
+              mode: 'assertion' as const,
+              checkId: 'build',
+              assertionId: 'junit:counterexample',
+            },
+          },
+        ],
       },
       env.tc,
     );
     const parsed = JSON.parse(String(raw));
 
     expect(parsed.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
-    expect(String(parsed.message)).toContain('counterexampleCheckId');
+    expect(String(parsed.message)).toContain('counterexampleRequirement');
     const state = await readState(env.sDir);
     expect(state!.plan).toBeFalsy();
     expect(state!.phase).toBe('TICKET');

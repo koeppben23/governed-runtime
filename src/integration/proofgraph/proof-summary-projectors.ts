@@ -217,7 +217,11 @@ export function projectPlanProofObligations(
   if (!claims || claims.length === 0) return null;
   const criticalCount = claims.filter((c) => c.critical).length;
   const falsificationReady = claims.filter(
-    (c) => c.critical && (c as { counterexampleCheckId?: string }).counterexampleCheckId,
+    (c) =>
+      c.critical &&
+      ((c as { counterexampleRequirement?: { checkId: string } }).counterexampleRequirement
+        ?.checkId ??
+        (c as { counterexampleCheckId?: string }).counterexampleCheckId),
   ).length;
   const missingFalsification = criticalCount - falsificationReady;
   return {

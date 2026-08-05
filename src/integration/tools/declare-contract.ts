@@ -133,7 +133,6 @@ type RawClaim = {
   statement: string;
   checkId: string;
   critical: boolean;
-  counterexampleCheckId?: string;
   authority?: AuthoritySource;
   structuralSurface?: string;
   mutationProfile?: string;
@@ -204,31 +203,8 @@ function resolveCounterexampleRef(
   digest: string,
 ):
   | { readonly refs: ValidationAttemptRef[] }
-  | {
-      readonly error:
-        | { readonly unresolvedCheckId: string }
-        | {
-            readonly mismatchedCounterexampleCheckId: {
-              readonly legacy: string;
-              readonly requirement: string;
-            };
-          };
-    } {
-  if (
-    rc.counterexampleCheckId !== undefined &&
-    rc.counterexampleRequirement?.checkId !== undefined &&
-    rc.counterexampleCheckId !== rc.counterexampleRequirement.checkId
-  ) {
-    return {
-      error: {
-        mismatchedCounterexampleCheckId: {
-          legacy: rc.counterexampleCheckId,
-          requirement: rc.counterexampleRequirement.checkId,
-        },
-      },
-    };
-  }
-  const checkId = rc.counterexampleRequirement?.checkId ?? rc.counterexampleCheckId;
+  | { readonly error: { readonly unresolvedCheckId: string } } {
+  const checkId = rc.counterexampleRequirement?.checkId;
   if (checkId === undefined) return { refs: [] };
   const attempt = resolveImplAttempt(state.validationAttempts, checkId, digest);
   if (attempt === undefined) return { error: { unresolvedCheckId: checkId } };
@@ -243,13 +219,7 @@ function buildDeclaredClaims(
 ):
   | { readonly claims: DeclaredClaim[] }
   | { readonly unresolvedCheckId: string }
-  | { readonly unresolvedProfileId: string }
-  | {
-      readonly mismatchedCounterexampleCheckId: {
-        readonly legacy: string;
-        readonly requirement: string;
-      };
-    } {
+  | { readonly unresolvedProfileId: string } {
   const claims: DeclaredClaim[] = [];
   for (const rc of rawClaims) {
     const evidence = resolveImplAttempt(state.validationAttempts, rc.checkId, digest);
@@ -308,8 +278,7 @@ function validateDeclaredClaimContract(
       statement: claim.statement,
       critical: claim.critical,
       positiveCheckId: claim.checkId,
-      counterexampleCheckId:
-        claim.counterexampleRequirement?.checkId ?? claim.counterexampleCheckId,
+      counterexampleRequirement: claim.counterexampleRequirement,
       structuralSurface: claim.structuralSurface,
       mutationProfile: claim.mutationProfile,
     })),
@@ -425,14 +394,7 @@ export const declare_contract: ToolDefinition = {
             .describe(
               'Whether the claim is critical. Required and explicit: a critical claim can block ' +
                 'the final approval, so it must never be assumed. A critical claim additionally ' +
-                'requires a distinct counterexampleCheckId.',
-            ),
-          counterexampleCheckId: z
-            .string()
-            .min(1)
-            .optional()
-            .describe(
-              'Optional check for adversarial counterexample binding (mode=check: check-level evidence only, never auto-contradicted; mode=assertion: requires structured assertion evidence). Required for critical claims in check mode.',
+                'requires a distinct counterexample requirement.',
             ),
           authority: z
             .enum(['ticket', 'plan', 'architecture'])
@@ -514,13 +476,6 @@ export const declare_contract: ToolDefinition = {
         if ('unresolvedProfileId' in built) {
           return formatBlocked('PROOFGRAPH_MUTATION_ATTEMPT_UNRESOLVED', {
             profileId: built.unresolvedProfileId,
-          });
-        }
-        if ('mismatchedCounterexampleCheckId' in built) {
-          return formatBlocked('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE', {
-            field: 'counterexampleRequirement.checkId',
-            detail:
-              'counterexampleCheckId and counterexampleRequirement.checkId must match when both are supplied',
           });
         }
 

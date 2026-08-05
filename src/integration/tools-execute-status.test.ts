@@ -1380,6 +1380,24 @@ describe('declare_contract', () => {
           },
         },
       ],
+      verificationCandidates: [
+        {
+          assertionCapability: 'unsupported' as const,
+          kind: checkId as 'test',
+          command: 'npm test',
+          source: 'test',
+          confidence: 'high' as const,
+          reason: 'test',
+        },
+        {
+          assertionCapability: 'unsupported' as const,
+          kind: 'security' as 'security',
+          command: 'npm run security',
+          source: 'test',
+          confidence: 'high' as const,
+          reason: 'security',
+        },
+      ],
     });
     return sessDir;
   }
@@ -1394,7 +1412,7 @@ describe('declare_contract', () => {
               statement: 'the change is covered by the test check',
               checkId: 'test',
               critical: true,
-              counterexampleCheckId: 'security',
+              counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
               authority: 'ticket',
             },
           ],
@@ -1480,7 +1498,7 @@ describe('declare_contract', () => {
               statement: 'The manual plan-provenanced fact is covered.',
               checkId: 'test',
               critical: true,
-              counterexampleCheckId: 'security',
+              counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
               authority: 'plan',
             },
           ],
@@ -1567,7 +1585,7 @@ describe('declare_contract', () => {
       statement: 'the declared command surface is consistent and covered by tests',
       checkId: 'test',
       critical: true,
-      counterexampleCheckId: 'security',
+      counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
       authority: 'ticket' as const,
       structuralSurface: 'command-registration' as const,
     };
@@ -1740,7 +1758,7 @@ describe('declare_contract', () => {
     );
     expect(result.error).toBe(true);
     expect(result.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
-    expect(String(result.message)).toContain('counterexampleCheckId');
+    expect(String(result.message)).toContain('counterexampleRequirement');
   });
 
   it('rejects a critical claim that reuses its positive check as the counterexample', async () => {
@@ -1753,7 +1771,11 @@ describe('declare_contract', () => {
               statement: 'critical but not independently falsified',
               checkId: 'test',
               critical: true,
-              counterexampleCheckId: 'test',
+              counterexampleRequirement: {
+                mode: 'assertion' as const,
+                checkId: 'test',
+                assertionId: 'junit:com.example.Test#testMethod',
+              },
               authority: 'ticket',
             },
           ],

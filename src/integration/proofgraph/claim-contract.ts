@@ -24,6 +24,7 @@
  */
 
 import type { TaskClass } from '../../state/schema.js';
+import type { CounterexampleRequirement } from '../../state/proofgraph.js';
 
 /** Write boundary a declaration arrived through; selects the public field names. */
 export type ClaimContractSource = 'plan' | 'declare_contract';
@@ -39,7 +40,7 @@ export interface NormalizedClaimDeclaration {
   readonly statement: string;
   readonly critical: boolean;
   readonly positiveCheckId: string;
-  readonly counterexampleCheckId?: string;
+  readonly counterexampleRequirement?: CounterexampleRequirement;
   readonly structuralSurface?: string;
   readonly mutationProfile?: string;
   /** Present only for plan declarations; architecture/contract flows omit it. */
@@ -69,7 +70,7 @@ export type ClaimContractResult =
 const FIELD_LABELS: Readonly<Record<ClaimContractSource, Readonly<Record<string, string>>>> = {
   plan: {
     positiveCheckId: 'expectedCheckId',
-    counterexampleCheckId: 'counterexampleCheckId',
+    counterexampleRequirement: 'counterexampleRequirement',
     critical: 'critical',
     claimId: 'claimId',
     structuralSurface: 'structuralSurface',
@@ -78,7 +79,7 @@ const FIELD_LABELS: Readonly<Record<ClaimContractSource, Readonly<Record<string,
   },
   declare_contract: {
     positiveCheckId: 'checkId',
-    counterexampleCheckId: 'counterexampleCheckId',
+    counterexampleRequirement: 'counterexampleRequirement',
     critical: 'critical',
     claimId: 'statement',
     structuralSurface: 'structuralSurface',
@@ -136,20 +137,20 @@ function checkCriticalContract(
   claim: NormalizedClaimDeclaration,
 ): ClaimContractResult | null {
   if (!claim.critical) return null;
-  if (claim.counterexampleCheckId === undefined) {
+  if (!claim.counterexampleRequirement) {
     return invalid(
       input.source,
       claim,
-      'counterexampleCheckId',
-      'a critical claim requires a counterexample check; without it the claim can never become PROVEN and would block the final approval permanently',
+      'counterexampleRequirement',
+      'a critical claim requires a counterexample requirement; without it the claim can never become PROVEN.',
     );
   }
-  if (claim.counterexampleCheckId === claim.positiveCheckId) {
+  if (claim.counterexampleRequirement.checkId === claim.positiveCheckId) {
     return invalid(
       input.source,
       claim,
-      'counterexampleCheckId',
-      'a critical claim requires a counterexample check distinct from its positive check; the same execution cannot serve as both confirmation and adversarial falsification',
+      'counterexampleRequirement',
+      'a critical claim requires a counterexample requirement distinct from its positive check.',
     );
   }
   return null;
@@ -170,12 +171,12 @@ function checkCheckReferences(
       `'${claim.positiveCheckId}' is not an active check; active checks are: ${known}`,
     );
   }
-  if (claim.counterexampleCheckId !== undefined && !active.has(claim.counterexampleCheckId)) {
+  if (claim.counterexampleRequirement && !active.has(claim.counterexampleRequirement.checkId)) {
     return invalid(
       input.source,
       claim,
-      'counterexampleCheckId',
-      `'${claim.counterexampleCheckId}' is not an active check; active checks are: ${known}`,
+      'counterexampleRequirement',
+      `'${claim.counterexampleRequirement.checkId}' is not an active check; active checks are: ${known}`,
     );
   }
   return null;
@@ -228,6 +229,25 @@ function checkAuthoritySection(
   );
 }
 
+/** Rule 7: assertion-mode counterexample requirement must include an assertionId. */
+function checkCounterexampleAssertion(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): ClaimContractResult | null {
+  if (
+    claim.counterexampleRequirement?.mode === 'assertion' &&
+    !claim.counterexampleRequirement.assertionId
+  ) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.assertionId',
+      'assertion-mode counterexample requirement must include an assertionId',
+    );
+  }
+  return null;
+}
+
 /**
  * Validate the full claim set atomically.
  *
@@ -245,7 +265,8 @@ export function validateProofClaimContract(input: ClaimContractInput): ClaimCont
       checkCriticalContract(input, claim) ??
       checkCheckReferences(input, claim) ??
       checkRegistries(input, claim) ??
-      checkAuthoritySection(input, claim);
+      checkAuthoritySection(input, claim) ??
+      checkCounterexampleAssertion(input, claim);
     if (violation) return violation;
   }
   return { kind: 'ok' };
