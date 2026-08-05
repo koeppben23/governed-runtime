@@ -1633,7 +1633,13 @@ describe('declare_contract', () => {
           createdAt: NOW,
         },
         implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
-        validationAttempts: [attempt('test', true), attempt('security', false)],
+        validationAttempts: [
+          attempt('test', true),
+          {
+            ...attempt('security', false),
+            result: { ...attempt('security', false).result, outcome: 'falsified' as const },
+          },
+        ],
       });
       const result = parseToolResult(await declare_contract.execute({ claims: [COMBINED] }, ctx));
       const claims = (result.proofGraph as Record<string, unknown>).claims as Array<
@@ -1802,7 +1808,13 @@ describe('declare_contract', () => {
       activeChecks: ['test', 'security'],
       ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
       implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
-      validationAttempts: [attempt('test', true), attempt('security', false)],
+      validationAttempts: [
+        attempt('test', true),
+        {
+          ...attempt('security', false),
+          result: { ...attempt('security', false).result, outcome: 'falsified' as const },
+        },
+      ],
     });
     const result = parseToolResult(
       await declare_contract.execute(

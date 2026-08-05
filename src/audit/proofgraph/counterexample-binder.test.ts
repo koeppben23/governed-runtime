@@ -59,7 +59,7 @@ function stateWith(
 }
 
 describe('bindCounterexamples', () => {
-  it('maps a failing counterexample check to contradicted', () => {
+  it('maps a failing counterexample check to not_verified (inconclusive)', () => {
     const state = stateWith([
       {
         attemptId: ATT,
@@ -69,7 +69,33 @@ describe('bindCounterexamples', () => {
       },
     ]);
     const [cx] = bindCounterexamples(state, NOW);
+    expect(cx).toMatchObject({ claimId: CLAIM, outcome: 'not_verified', boundDigest: IMPL_DIGEST });
+  });
+
+  it('maps a falsified result to contradicted', () => {
+    const state = stateWith([
+      {
+        attemptId: ATT,
+        scope: 'implementation',
+        implementationDigest: IMPL_DIGEST,
+        result: { ...validationResult(false), outcome: 'falsified' as const },
+      },
+    ]);
+    const [cx] = bindCounterexamples(state, NOW);
     expect(cx).toMatchObject({ claimId: CLAIM, outcome: 'contradicted', boundDigest: IMPL_DIGEST });
+  });
+
+  it('maps outcome=blocked to blocked', () => {
+    const state = stateWith([
+      {
+        attemptId: ATT,
+        scope: 'implementation',
+        implementationDigest: IMPL_DIGEST,
+        result: { ...validationResult(false), outcome: 'blocked' as const, timedOut: true },
+      },
+    ]);
+    const [cx] = bindCounterexamples(state, NOW);
+    expect(cx!.outcome).toBe('blocked');
   });
 
   it('maps a passing counterexample check to supported', () => {
