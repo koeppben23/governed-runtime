@@ -61,7 +61,7 @@ describe('resolveSubmittedReviewProofResponse — branch resolver', () => {
       findingsBlocked: blockedJson,
       preTransitionState: proofGraphState(),
       reviewedState: proofGraphState(),
-      verdict: 'accept',
+      verdict: 'unable_to_review',
     });
     expect(result.kind).toBe('blocked');
     if (result.kind !== 'blocked') throw new Error('Expected blocked');
