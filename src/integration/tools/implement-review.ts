@@ -137,6 +137,19 @@ export function buildImplReviewConvergedMarkdown(
   ].join('\n');
 }
 
+export function buildImplReviewChangesRequestedMarkdown(
+  statusLine: string,
+  proofSummary: CompactProofPresentation,
+): string {
+  return [
+    statusLine,
+    '',
+    renderCompactProofSection(proofSummary),
+    '',
+    '→ Make the requested code changes, then call flowguard_implement to re-record.',
+  ].join('\n');
+}
+
 function proofDecisionContextForVerdict(
   verdict: LoopVerdict,
 ): 'current_gate' | 'prospective_approval' {
@@ -487,7 +500,7 @@ async function handleChangesRequestedReview(input: {
   if (input.proofSummary) {
     response.proofSummary = input.proofSummary;
     response.presentation = {
-      markdown: buildImplReviewConvergedMarkdown(
+      markdown: buildImplReviewChangesRequestedMarkdown(
         `Implementation review iteration ${input.iteration}/${input.runtime.maxImplReviewIterations}. Changes requested.`,
         input.proofSummary,
       ),

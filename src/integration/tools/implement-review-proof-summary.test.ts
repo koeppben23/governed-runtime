@@ -14,6 +14,7 @@ import { describe, expect, it } from 'vitest';
 import {
   resolveSubmittedReviewProofResponse,
   buildImplReviewConvergedMarkdown,
+  buildImplReviewChangesRequestedMarkdown,
   type ResolvedSubmittedReviewProof,
 } from './implement-review.js';
 import {
@@ -126,16 +127,17 @@ describe('completion path', () => {
 });
 
 describe('presentation.markdown rendering contract', () => {
-  it('changes_requested markdown via buildImplReviewConvergedMarkdown', () => {
+  it('changes_requested uses correct conclusion, not completion', () => {
     const summary = projectImplementationProofStatus(proofGraphState());
-    const markdown = buildImplReviewConvergedMarkdown(
+    const markdown = buildImplReviewChangesRequestedMarkdown(
       'Implementation review iteration 1/3. Changes requested.',
       summary!,
     );
     expect(markdown).toContain('## ProofGraph');
     expect(markdown).toContain(
-      '→ Continue to completion or run flowguard_status for review context.',
+      '→ Make the requested code changes, then call flowguard_implement to re-record.',
     );
+    expect(markdown).not.toContain('→ Continue to completion');
   });
 
   it('accept markdown shows current_gate', () => {
