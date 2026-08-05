@@ -29,27 +29,15 @@ interface JUnitParseResult {
   summary: AssertionExtractionSummary;
 }
 
-interface JUnitTestCase {
-  classname: string;
-  name: string;
-  time?: number;
-  failure?: { type?: string; message?: string; detail: string };
-  error?: { type?: string; message?: string; detail: string };
-  skipped?: true;
-}
-
 function sha256(content: string): string {
   return createHash('sha256').update(content, 'utf-8').digest('hex');
 }
 
-export function parseJUnitXml(xmlContent: string, fileName: string): JUnitParseResult {
+export function parseJUnitXml(xmlContent: string, _fileName: string): JUnitParseResult {
   const assertions: StructuredAssertionEvidence[] = [];
   let suiteInfrastructureError = false;
 
   const testCaseRegex = /<testcase\b[^>]*classname="([^"]*)"\s+name="([^"]*)"[^>]*>/g;
-  const failureRegex = /<failure\b[^>]*>([\s\S]*?)<\/failure>/g;
-  const errorRegex = /<error\b[^>]*>([\s\S]*?)<\/error>/g;
-  const skippedRegex = /<skipped\b[^/>]*\/?>/g;
 
   // Detect suite-level infrastructure errors (errors attribute on testsuite)
   const suiteErrorsMatch = /<testsuite\b[^>]*errors="(\d+)"/.exec(xmlContent);
