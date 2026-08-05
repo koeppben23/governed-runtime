@@ -507,12 +507,17 @@ async function handleSubmittedImplementationReview(input: {
   }
   const validationGate = implValidationEvidenceGate(runtime.state);
   if (validationGate) return validationGate;
+  // Accept: the verdict cleared the gate, so the decision context is current_gate.
+  const acceptProofSummary =
+    projectImplementationProofStatus(reviewedState, {
+      decisionContext: 'current_gate',
+    }) ?? undefined;
   return handleApprovedReview({
     runtime,
     reviewedState,
     iteration,
     reviewFindings: newReviewFindings,
-    proofSummary,
+    proofSummary: acceptProofSummary,
   });
 }
 

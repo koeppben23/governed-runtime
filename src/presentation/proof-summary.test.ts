@@ -231,6 +231,29 @@ describe('renderCompactProofSection', () => {
       expect(result).toContain('UNPROVEN');
     });
 
+    it('renders primaryReason alongside highlighted claims (not instead)', () => {
+      const pres = makeEvaluation('BLOCKED', { blockedCount: 1 });
+      (pres as Record<string, unknown>).primaryReason =
+        'The implementation risk assessment is outdated and must be refreshed.';
+      (pres as Record<string, unknown>).highlightedClaims = [
+        {
+          claimId: 'f'.repeat(36),
+          statement: 'Additional claim still unresolved.',
+          status: 'UNPROVEN',
+          critical: true,
+          reason: 'The available evidence does not establish this claim.',
+        },
+      ];
+      const result = renderCompactProofSection(pres);
+      // Both the gate reason and the claim detail appear
+      expect(result).toContain('The implementation risk assessment is outdated');
+      expect(result).toContain('"Additional claim still unresolved."');
+      // The gate reason must appear before the claim detail
+      const reasonIdx = result.indexOf('risk assessment is outdated');
+      const claimIdx = result.indexOf('Additional claim');
+      expect(reasonIdx).toBeLessThan(claimIdx);
+    });
+
     it('renders primaryReason when there are no highlighted claims', () => {
       const pres = makeEvaluation('BLOCKED', { blockedCount: 0 });
       (pres as Record<string, unknown>).primaryReason =

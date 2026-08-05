@@ -109,6 +109,13 @@ function renderEvaluationSection(p: CompactProofPresentation & { kind: 'evaluati
       lines.push(headlineLabel);
     }
 
+    // Gate reason always appears directly after the headline when present,
+    // never hidden behind unrelated claim details.
+    if (p.primaryReason) {
+      lines.push('');
+      lines.push(p.primaryReason);
+    }
+
     if (p.highlightedClaims && p.highlightedClaims.length > 0) {
       lines.push('');
       for (const claim of p.highlightedClaims) {
@@ -121,10 +128,6 @@ function renderEvaluationSection(p: CompactProofPresentation & { kind: 'evaluati
         }
         lines.push('');
       }
-    } else if (p.primaryReason) {
-      lines.push('');
-      lines.push(p.primaryReason);
-      lines.push('');
     }
   } else {
     lines.push('');
@@ -170,7 +173,7 @@ function renderHeadlineLabel(status: ClaimVerificationState): string {
     case 'CONTRADICTED':
       return 'CONTRADICTED — fresh adversarial evidence falsified at least one critical claim';
     case 'BLOCKED':
-      return 'BLOCKED — a required evidence provider could not produce a verdict';
+      return 'BLOCKED — the evidence gate cannot clear';
     case 'STALE':
       return 'STALE — previously recorded evidence is no longer current';
     case 'UNPROVEN':
