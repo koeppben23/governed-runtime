@@ -22,7 +22,10 @@ import type {
   PresentationAction,
 } from './model.js';
 import { renderMarkdown } from './markdown.js';
+import { normalizedMarkdown } from './model.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
+import type { CompactProofPresentation } from './proof-summary.js';
+import { renderCompactProofSection } from './proof-summary.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -50,6 +53,8 @@ export interface PlanReviewCardInput {
    * human reviewer does not mistake the gate for a reviewer-approved plan.
    */
   forcedConvergence?: boolean;
+  /** Compact ProofGraph summary for the review card (pre-approval declarations). */
+  proofSummary?: CompactProofPresentation;
 }
 
 // ─── Action Descriptions ───────────────────────────────────────────────────────
@@ -115,6 +120,12 @@ export function buildPlanReviewCard(
       ],
       details: [],
     });
+  }
+
+  // ── Proof obligations (pre-approval) ───────────────────────────────
+  if (input.proofSummary) {
+    const rendered = renderCompactProofSection(input.proofSummary);
+    sections.push({ kind: 'text', content: normalizedMarkdown(rendered) });
   }
 
   // ── Plan Body (verbatim) ───────────────────────────────────────────

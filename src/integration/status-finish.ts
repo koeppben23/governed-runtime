@@ -14,6 +14,7 @@ import type { SessionState } from '../state/schema.js';
 import type { FlowGuardPolicy } from '../config/policy.js';
 import type { ReviewReport } from '../state/evidence.js';
 import { resolveNextAction } from '../machine/next-action.js';
+import { projectCompletionProofStatus } from './proofgraph/proof-summary-projectors.js';
 import { isTerminalPhase } from '../machine/topology.js';
 import {
   buildEvidenceDetailProjection,
@@ -213,5 +214,6 @@ export function buildFinishCard(
       consumesObligations: false,
       triggersExport: false,
     },
+    proofSummary: projectCompletionProofStatus(state) ?? undefined,
   };
 }

@@ -89,6 +89,8 @@ import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import { nextImplementationReviewIteration } from './implement-shared.js';
+import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
+import type { CompactProofPresentation } from '../../presentation/proof-summary.js';
 function findPendingImplObligation(state: SessionState) {
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
   return (
@@ -336,6 +338,7 @@ async function handleChangesRequestedReview(input: {
   reviewedState: SessionState;
   iteration: number;
   reviewFindings: ReviewFindings[];
+  proofSummary?: CompactProofPresentation | null;
 }): Promise<string> {
   const target = evaluateWithEvent(input.runtime.state.phase, 'CHANGES_REQUESTED');
   if (target === undefined) {
@@ -375,6 +378,9 @@ async function handleChangesRequestedReview(input: {
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
+  if (input.proofSummary) {
+    response.proofSummary = input.proofSummary;
+  }
   return appendNextAction(JSON.stringify(response), finalState);
 }
 
@@ -383,6 +389,7 @@ async function handleApprovedReview(input: {
   reviewedState: SessionState;
   iteration: number;
   reviewFindings: ReviewFindings[];
+  proofSummary?: CompactProofPresentation | null;
 }): Promise<string> {
   const advanced = autoAdvance(
     input.reviewedState,
@@ -403,6 +410,10 @@ async function handleApprovedReview(input: {
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
+
+  if (input.proofSummary) {
+    response.proofSummary = input.proofSummary;
+  }
 
   if (input.runtime.args.reviewVerdict === 'accept') {
     response.status = `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`;
@@ -459,12 +470,23 @@ async function handleSubmittedImplementationReview(input: {
   );
   if (resolved.blocked) return resolved.blocked;
 
+  // Compute proof summary from the current state BEFORE the unable_to_review
+  // block — the user needs proof context even when the reviewer couldn't assess.
+  const proofSummary = projectImplementationProofStatus(runtime.state);
+
   const findingsBlocked = validateEffectiveFindings(
     resolved.effectiveFindings,
     submittedVerdict,
     pendingObligation?.obligationId ?? 'unknown',
   );
-  if (findingsBlocked) return findingsBlocked;
+  if (findingsBlocked) {
+    if (proofSummary) {
+      const parsed = JSON.parse(findingsBlocked) as Record<string, unknown>;
+      parsed.proofSummary = proofSummary;
+      return JSON.stringify(parsed);
+    }
+    return findingsBlocked;
+  }
 
   const { reviewedState, newReviewFindings } = appendImplReviewState({
     runtime,
@@ -480,6 +502,7 @@ async function handleSubmittedImplementationReview(input: {
       reviewedState,
       iteration,
       reviewFindings: newReviewFindings,
+      proofSummary,
     });
   }
   const validationGate = implValidationEvidenceGate(runtime.state);
@@ -489,6 +512,7 @@ async function handleSubmittedImplementationReview(input: {
     reviewedState,
     iteration,
     reviewFindings: newReviewFindings,
+    proofSummary,
   });
 }
 
