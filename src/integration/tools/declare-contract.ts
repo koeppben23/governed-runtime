@@ -397,7 +397,7 @@ export const declare_contract: ToolDefinition = {
             .min(1)
             .optional()
             .describe(
-              'Optional distinct check whose FAILURE would contradict this claim (adversarial falsification); required for critical claims.',
+              'Optional check for adversarial counterexample binding (mode=check: check-level evidence only, never auto-contradicted; mode=assertion: requires structured assertion evidence). Required for critical claims in check mode.',
             ),
           authority: z
             .enum(['ticket', 'plan', 'architecture'])

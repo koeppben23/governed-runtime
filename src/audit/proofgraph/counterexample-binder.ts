@@ -5,7 +5,7 @@
  * Falsification-first, evidence-bound: a claim's counterexample references name
  * an implementation validation attempt whose explicit falsification or
  * verified support produces a decisive outcome:
- *   - explicit falsified  → contradicted (the falsification succeeded)
+ *   - matching structured assertion failed → contradicted
  *   - supported           → supported  (the falsification attempt did not hold)
  *   - inconclusive        → not_verified (failed but not a falsification)
  *   - blocked             → blocked (could not execute; timeout, crash, no output)
