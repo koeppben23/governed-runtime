@@ -1,26 +1,23 @@
 /**
  * @test-policy
- * REGRESSION: attachProofSummaryToBlockedResponse → proofSummary survives serialization round-trip.
- * REGRESSION: proofDecisionContextForVerdict → 'current_gate' for accept, 'prospective_approval' for changes_requested.
- * REGRESSION: acceptance test verifies decisionContext override reaches the projector output.
- * REGRESSION: Gate-block (critical_fact_required) → headlineStatus is BLOCKED, primaryReason present.
- * CONTRACT: The production helpers in implement-review.ts are the single source of truth for both
- *           the pipeline and these tests — mutations to the helpers will break these tests.
+ * REGRESSION: buildBlockedImplReviewResponse → proofSummary survives serialization round-trip.
+ * REGRESSION: projectProofSummaryForVerdict → 'current_gate' for accept, 'prospective_approval' otherwise.
+ * REGRESSION: completion → projectCompletionProofStatus yields 'completion' context.
+ * CONTRACT: The exported orchestrators in implement-review.ts are the single source of truth
+ *           for both the handler and these tests. Removing an orchestrator call from the handler
+ *           does NOT break a test that only calls inner helpers — but removing the call to
+ *           buildBlockedImplReviewResponse or projectProofSummaryForVerdict from the handler WILL
+ *           break tests that call these same orchestrators.
  */
 
 import { describe, expect, it } from 'vitest';
 import {
-  attachProofSummaryToBlockedResponse,
-  proofDecisionContextForVerdict,
+  buildBlockedImplReviewResponse,
+  projectProofSummaryForVerdict,
 } from './implement-review.js';
-import {
-  projectImplementationProofStatus,
-  projectCompletionProofStatus,
-} from '../proofgraph/proof-summary-projectors.js';
+import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import { formatBlocked } from './helpers.js';
 import { makeState, IMPL_EVIDENCE } from '../../fixtures.js';
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
 
 function proofGraphState() {
   return makeState('IMPL_REVIEW', {
@@ -54,24 +51,18 @@ function proofGraphState() {
   });
 }
 
-// ─── Tests ──────────────────────────────────────────────────────────────────
-
-describe('implement-review proof-summary wiring regressions', () => {
-  describe('attachProofSummaryToBlockedResponse', () => {
+describe('implement-review proof-summary orchestrator regressions', () => {
+  describe('buildBlockedImplReviewResponse', () => {
     it('returns original blocked response when proofSummary is null', () => {
-      const blocked = formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
-        obligationId: 'obl-1',
-      });
-      const result = attachProofSummaryToBlockedResponse(blocked, null);
+      const blocked = formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId: 'obl-1' });
+      const result = buildBlockedImplReviewResponse(blocked, null);
       expect(result).toBe(blocked);
     });
 
-    it('injects proofSummary into blocked JSON', () => {
-      const blocked = formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
-        obligationId: 'obl-1',
-      });
-      const summary = projectImplementationProofStatus(proofGraphState());
-      const result = attachProofSummaryToBlockedResponse(blocked, summary);
+    it('injects proofSummary into blocked JSON (full handler contract)', () => {
+      const blocked = formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId: 'obl-1' });
+      const summary = projectProofSummaryForVerdict(proofGraphState(), 'accept');
+      const result = buildBlockedImplReviewResponse(blocked, summary);
       const parsed = JSON.parse(result);
       expect(parsed.error).toBe(true);
       expect(parsed.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
@@ -81,29 +72,34 @@ describe('implement-review proof-summary wiring regressions', () => {
     });
   });
 
-  describe('proofDecisionContextForVerdict', () => {
-    it("returns 'current_gate' for accept", () => {
-      expect(proofDecisionContextForVerdict('accept')).toBe('current_gate');
-    });
-
-    it("returns 'prospective_approval' for changes_requested", () => {
-      expect(proofDecisionContextForVerdict('changes_requested')).toBe('prospective_approval');
-    });
-
-    it('accept path projector with decisionContext yields current_gate', () => {
-      const dc = proofDecisionContextForVerdict('accept');
-      const summary = projectImplementationProofStatus(proofGraphState(), {
-        decisionContext: dc,
-      });
+  describe('projectProofSummaryForVerdict', () => {
+    it("accept → 'current_gate'", () => {
+      const summary = projectProofSummaryForVerdict(proofGraphState(), 'accept');
       expect(summary).not.toBeNull();
       if (summary?.kind === 'evaluation') {
         expect(summary.decisionContext).toBe('current_gate');
       }
     });
+
+    it("changes_requested → 'prospective_approval'", () => {
+      const summary = projectProofSummaryForVerdict(proofGraphState(), 'changes_requested');
+      expect(summary).not.toBeNull();
+      if (summary?.kind === 'evaluation') {
+        expect(summary.decisionContext).toBe('prospective_approval');
+      }
+    });
+
+    it("unable_to_review → 'prospective_approval' (non-accept fallback)", () => {
+      const summary = projectProofSummaryForVerdict(proofGraphState(), 'unable_to_review');
+      expect(summary).not.toBeNull();
+      if (summary?.kind === 'evaluation') {
+        expect(summary.decisionContext).toBe('prospective_approval');
+      }
+    });
   });
 
   describe('completion path', () => {
-    it('projectCompletionProofStatus yields completion', () => {
+    it('projectCompletionProofStatus → completion', () => {
       const summary = projectCompletionProofStatus(proofGraphState());
       expect(summary).not.toBeNull();
       if (summary?.kind === 'evaluation') {
