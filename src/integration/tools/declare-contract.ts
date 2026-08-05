@@ -198,6 +198,43 @@ function buildOptionalEvidence(
  * Returns the built claims, the first checkId that could not resolve, or the
  * first mutation profile with no digest-verified attempt at this revision.
  */
+function resolveCounterexampleRef(
+  state: SessionState,
+  rc: RawClaim,
+  digest: string,
+):
+  | { readonly refs: ValidationAttemptRef[] }
+  | {
+      readonly error:
+        | { readonly unresolvedCheckId: string }
+        | {
+            readonly mismatchedCounterexampleCheckId: {
+              readonly legacy: string;
+              readonly requirement: string;
+            };
+          };
+    } {
+  if (
+    rc.counterexampleCheckId !== undefined &&
+    rc.counterexampleRequirement?.checkId !== undefined &&
+    rc.counterexampleCheckId !== rc.counterexampleRequirement.checkId
+  ) {
+    return {
+      error: {
+        mismatchedCounterexampleCheckId: {
+          legacy: rc.counterexampleCheckId,
+          requirement: rc.counterexampleRequirement.checkId,
+        },
+      },
+    };
+  }
+  const checkId = rc.counterexampleRequirement?.checkId ?? rc.counterexampleCheckId;
+  if (checkId === undefined) return { refs: [] };
+  const attempt = resolveImplAttempt(state.validationAttempts, checkId, digest);
+  if (attempt === undefined) return { error: { unresolvedCheckId: checkId } };
+  return { refs: [{ kind: 'validation_attempt', attemptId: attempt.attemptId }] };
+}
+
 function buildDeclaredClaims(
   state: SessionState,
   rawClaims: readonly RawClaim[],
@@ -206,7 +243,13 @@ function buildDeclaredClaims(
 ):
   | { readonly claims: DeclaredClaim[] }
   | { readonly unresolvedCheckId: string }
-  | { readonly unresolvedProfileId: string } {
+  | { readonly unresolvedProfileId: string }
+  | {
+      readonly mismatchedCounterexampleCheckId: {
+        readonly legacy: string;
+        readonly requirement: string;
+      };
+    } {
   const claims: DeclaredClaim[] = [];
   for (const rc of rawClaims) {
     const evidence = resolveImplAttempt(state.validationAttempts, rc.checkId, digest);
@@ -215,17 +258,9 @@ function buildDeclaredClaims(
       kind: 'validation_attempt',
       attemptId: evidence.attemptId,
     };
-    const counterexampleRefs: ValidationAttemptRef[] = [];
-    const counterexampleCheckId = rc.counterexampleRequirement?.checkId ?? rc.counterexampleCheckId;
-    if (counterexampleCheckId !== undefined) {
-      const counterexample = resolveImplAttempt(
-        state.validationAttempts,
-        counterexampleCheckId,
-        digest,
-      );
-      if (counterexample === undefined) return { unresolvedCheckId: counterexampleCheckId };
-      counterexampleRefs.push({ kind: 'validation_attempt', attemptId: counterexample.attemptId });
-    }
+    const counterexampleResolution = resolveCounterexampleRef(state, rc, digest);
+    if ('error' in counterexampleResolution) return counterexampleResolution.error;
+    const counterexampleRefs = counterexampleResolution.refs;
     const provenance = resolveAuthority(state, rc.authority);
     const isFact = provenance !== null;
     const critical = rc.critical;
@@ -479,6 +514,13 @@ export const declare_contract: ToolDefinition = {
         if ('unresolvedProfileId' in built) {
           return formatBlocked('PROOFGRAPH_MUTATION_ATTEMPT_UNRESOLVED', {
             profileId: built.unresolvedProfileId,
+          });
+        }
+        if ('mismatchedCounterexampleCheckId' in built) {
+          return formatBlocked('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE', {
+            field: 'counterexampleRequirement.checkId',
+            detail:
+              'counterexampleCheckId and counterexampleRequirement.checkId must match when both are supplied',
           });
         }
 

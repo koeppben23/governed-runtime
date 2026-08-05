@@ -126,9 +126,12 @@ export const StructuredAssertionEvidence = z
       })
       .optional(),
   })
-  .refine((data) => data.status === 'failed' || data.failure === undefined, {
-    message: 'failure details only allowed when status is failed',
-  })
+  .refine(
+    (data) => data.status === 'failed' || data.status === 'errored' || data.failure === undefined,
+    {
+      message: 'failure details only allowed when status is failed or errored',
+    },
+  )
   .readonly();
 export type StructuredAssertionEvidence = z.infer<typeof StructuredAssertionEvidence>;
 
