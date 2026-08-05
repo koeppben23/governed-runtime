@@ -1391,7 +1391,7 @@ describe('declare_contract', () => {
         },
         {
           assertionCapability: 'unsupported' as const,
-          kind: 'security' as 'security',
+          kind: 'security' as const,
           command: 'npm run security',
           source: 'test',
           confidence: 'high' as const,
