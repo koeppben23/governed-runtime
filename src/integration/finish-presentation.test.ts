@@ -211,17 +211,10 @@ describe('buildFinishDocument', () => {
         evaluatedAt: '2025-01-01T00:00:00Z',
       },
       implementation: {
+        changedFiles: ['src/foo.ts'],
+        domainFiles: ['src/foo.ts'],
         digest: 'impl-digest',
-        files: [{ path: 'src/foo.ts', status: 'modified' as const, contentHash: 'abc' }],
-        history: [
-          {
-            kind: 'impl_record' as const,
-            id: 'evt-1',
-            ts: '2025-01-01T00:00:00Z',
-            phase: 'IMPLEMENTATION',
-            digest: 'impl-digest',
-          },
-        ],
+        executedAt: '2025-01-01T00:00:00Z',
       },
     });
     const card = buildFinishCard(state, getPolicyPreset('solo'));
