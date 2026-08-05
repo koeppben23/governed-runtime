@@ -22,11 +22,9 @@ import * as crypto from 'node:crypto';
 import { z } from 'zod';
 
 import type { Phase, SessionState } from '../../state/schema.js';
-import { CounterexampleRequirement } from '../../state/proofgraph.js';
-import type {
-  CounterexampleRequirement as CounterexampleRequirementType,
-  DeclaredClaim,
-} from '../../state/proofgraph.js';
+import { AssertionCounterexampleRequirement } from '../../state/proofgraph-approval.js';
+import type { AssertionCounterexampleRequirement as AssertionCounterexampleRequirementType } from '../../state/proofgraph-approval.js';
+import type { DeclaredClaim } from '../../state/proofgraph.js';
 import type { ProofProviderKind } from '../../state/proofgraph-primitives.js';
 import type { ClaimAuthorityRef } from '../../state/proofgraph-refs.js';
 import {
@@ -136,7 +134,7 @@ type RawClaim = {
   authority?: AuthoritySource;
   structuralSurface?: string;
   mutationProfile?: string;
-  counterexampleRequirement?: CounterexampleRequirementType;
+  counterexampleRequirement?: AssertionCounterexampleRequirementType;
 };
 
 /**
@@ -319,8 +317,6 @@ function validateAssertionCapabilityGate(
       });
     }
 
-    if (requirement.mode === 'check') continue;
-
     if (candidate.assertionCapability !== 'structured') {
       return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
         reason: `Verification check '${requirement.checkId}' does not support structured assertion evidence for assertion-mode counterexample binding.`,
@@ -420,9 +416,8 @@ export const declare_contract: ToolDefinition = {
                 'surviving mutants make the claim UNPROVEN, and a profile with no recorded ' +
                 'mutation report is NOT_VERIFIED rather than a pass.',
             ),
-          counterexampleRequirement: CounterexampleRequirement.optional().describe(
-            'Optional counterexample binding requirement. mode=check: legacy check-level counterexample. ' +
-              'mode=assertion: targeted counterexample bound to a concrete assertion (junit:/vitest:/jest:/go: prefix).',
+          counterexampleRequirement: AssertionCounterexampleRequirement.optional().describe(
+            'Assertion-mode counterexample requirement: binds a specific test assertion whose failure contradicts this claim (junit:/vitest:/jest:/go: prefix).',
           ),
         }),
       )
