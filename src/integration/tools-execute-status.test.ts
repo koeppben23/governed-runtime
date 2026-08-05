@@ -1599,7 +1599,7 @@ describe('declare_contract', () => {
       expect(declared.requiredEvidence!.adversarial).toEqual(['counterexample']);
     });
 
-    it.skip('is CONTRADICTED when the negative/fault scenario actually falsifies it (pending assertion evidence)', async () => {
+    it.skip('is CONTRADICTED when negative assertion falsifies (pending: assertion evidence e2e test)', async () => {
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -1777,7 +1777,7 @@ describe('declare_contract', () => {
     expect(result.code).toBe('COMMAND_NOT_ALLOWED');
   });
 
-  it.skip('reports CONTRADICTED when a declared counterexample check failed (pending assertion evidence)', async () => {
+  it.skip('reports CONTRADICTED when counterexample check falsified (pending: assertion evidence e2e test)', async () => {
     await hydrateSession();
     const { computeFingerprint, sessionDir: resolveSessionDir } =
       await import('../adapters/workspace/index.js');

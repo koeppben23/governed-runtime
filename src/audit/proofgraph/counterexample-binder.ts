@@ -19,7 +19,7 @@
  */
 
 import type { SessionState } from '../../state/schema.js';
-import type { ProofCounterexample } from '../../state/proofgraph.js';
+import type { ProofCounterexample, CounterexampleRequirement } from '../../state/proofgraph.js';
 import type { CounterexampleOutcome } from '../../state/proofgraph-primitives.js';
 import type { ValidationResult } from '../../state/evidence-validation.js';
 
@@ -31,6 +31,37 @@ function toCounterexampleOutcome(result: ValidationResult): CounterexampleOutcom
       return 'not_verified';
     case 'blocked':
       return 'blocked';
+  }
+}
+
+function classifyClaimOutcome(
+  result: ValidationResult,
+  requirement?: CounterexampleRequirement,
+): CounterexampleOutcome {
+  if (!requirement) return toCounterexampleOutcome(result);
+
+  if (result.checkId !== requirement.checkId) return 'not_verified';
+
+  if (requirement.mode === 'check') {
+    const base = toCounterexampleOutcome(result);
+    return base === 'contradicted' ? 'not_verified' : base;
+  }
+
+  const extraction = result.assertionExtraction;
+  if (!extraction || extraction.status !== 'extracted') return 'not_verified';
+
+  const assertion = extraction.assertions.find((a) => a.assertionId === requirement.assertionId);
+  if (!assertion) return 'not_verified';
+
+  switch (assertion.status) {
+    case 'failed':
+      return 'contradicted';
+    case 'passed':
+      return 'supported';
+    case 'errored':
+      return 'blocked';
+    case 'skipped':
+      return 'not_verified';
   }
 }
 
@@ -66,7 +97,10 @@ export function bindCounterexamples(
         });
         continue;
       }
-      const outcome = toCounterexampleOutcome(attempt.result);
+      const requirement = claim.counterexampleRequirement;
+      const outcome = requirement
+        ? classifyClaimOutcome(attempt.result, requirement)
+        : toCounterexampleOutcome(attempt.result);
       counterexamples.push({
         claimId: claim.claimId,
         attemptId: attempt.attemptId,

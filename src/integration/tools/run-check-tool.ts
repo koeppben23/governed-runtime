@@ -23,6 +23,8 @@
  * @version v2 (#504 — separate check execution from lock acquisition)
  */
 
+import { randomUUID } from 'node:crypto';
+
 import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
 import {
   withReadOnlySession,
@@ -63,7 +65,16 @@ import type {
   ValidationOutcome,
 } from '../../state/evidence-validation.js';
 import { isExecutionError } from '../../state/evidence-validation.js';
+import type { AssertionExtractionResult } from '../../state/evidence-validation.js';
 import type { ReviewObligation } from '../../state/evidence.js';
+
+import type { AssertionCapability, AssertionReportSpec } from '../../state/discovery-schemas.js';
+
+import {
+  prepareAssertionExtraction,
+  completeAssertionExtraction,
+  commandSuffix,
+} from '../../verification/assertion-extractor.js';
 
 // Adapter — lock retry
 import { withSessionWriteLockRetry, PersistenceError } from '../../adapters/lock-retry.js';
@@ -157,12 +168,31 @@ async function executeRunCheckPhased(
   const subject = freezeValidationSubject(state);
 
   // ── Phase B: Execute check (NO lock — subprocess runs independently) ──
+  const attemptId = randomUUID();
+  let prepared: Awaited<ReturnType<typeof prepareAssertionExtraction>> | undefined;
+  let fullCommand = guard.candidate.command;
+  if (guard.candidate.assertionCapability === 'structured' && guard.candidate.assertionReport) {
+    prepared = await prepareAssertionExtraction(
+      guard.candidate.assertionReport,
+      getWorktree(context),
+      attemptId,
+    );
+    fullCommand = guard.candidate.command + commandSuffix(prepared.spec, prepared.attemptId);
+  }
   const evidence = await executeCheck({
     kind,
-    command: guard.candidate.command,
+    command: fullCommand,
     cwd: getWorktree(context),
   });
-  const outcome = classifyOutcome(evidence);
+  let extraction: AssertionExtractionResult | undefined;
+  if (prepared) {
+    extraction = await completeAssertionExtraction(prepared, evidence);
+  }
+  const outcome = classifyValidationOutcome(
+    evidence,
+    extraction,
+    guard.candidate.assertionCapability,
+  );
   const derivedRepairGuidance = deriveRepairGuidance(evidence, outcome);
 
   // ── Phase C: Persist with lock retry ──
@@ -171,6 +201,8 @@ async function executeRunCheckPhased(
     evidence,
     derivedRepairGuidance,
     outcome,
+    extraction,
+    attemptId,
     subject,
     sessDir,
     sessionId: context.sessionID,
@@ -184,6 +216,8 @@ interface PersistCheckInput {
   evidence: Awaited<ReturnType<typeof executeCheck>>;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
   outcome: ValidationOutcome;
+  extraction?: AssertionExtractionResult;
+  attemptId: string;
   subject: ValidationSubject;
   sessDir: string;
   sessionId: string;
@@ -192,7 +226,17 @@ interface PersistCheckInput {
 // The lock-retry callback keeps execution and persistence intentionally separated.
 // eslint-disable-next-line max-lines-per-function
 async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<ToolResult> {
-  const { kind, evidence, derivedRepairGuidance, outcome, subject, sessDir, sessionId } = input;
+  const {
+    kind,
+    evidence,
+    derivedRepairGuidance,
+    outcome,
+    extraction,
+    attemptId,
+    subject,
+    sessDir,
+    sessionId,
+  } = input;
   const logger = getAdapterLogger();
   return withSessionWriteLockRetry(
     sessDir,
@@ -215,10 +259,11 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         evidence,
         outcome,
         derivedRepairGuidance,
+        extraction,
       );
       const allResults = mergeValidationResult(freshState, validationResult);
       const passedIds = new Set(allResults.filter((v) => v.passed).map((v) => v.checkId));
-      const validationAttempt = buildValidationAttempt(subject, validationResult);
+      const validationAttempt = buildValidationAttempt(subject, validationResult, attemptId);
       const nextState = buildNextValidationState(freshState, allResults, validationAttempt);
       const advanced = autoAdvance(nextState, (s) => evaluate(s, railCtx.policy), railCtx);
       if (advanced.kind === 'overflow') return formatAutoAdvanceOverflow(advanced);
@@ -293,7 +338,17 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
 function validateRunCheckRequest(
   kind: VerificationCandidateKind,
   state: SessionState,
-): string | { checkId: string; candidate: { kind: VerificationCandidateKind; command: string } } {
+):
+  | string
+  | {
+      checkId: string;
+      candidate: {
+        kind: VerificationCandidateKind;
+        command: string;
+        assertionCapability: AssertionCapability;
+        assertionReport?: AssertionReportSpec;
+      };
+    } {
   if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
     return formatBlocked('COMMAND_NOT_ALLOWED', { command: '/run_check', phase: state.phase });
   }
@@ -339,6 +394,7 @@ function buildValidationResult(
   evidence: CheckEvidence,
   outcome: ValidationOutcome,
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>,
+  extraction?: AssertionExtractionResult,
 ): ValidationResult {
   return {
     checkId,
@@ -356,15 +412,34 @@ function buildValidationResult(
       ? undefined
       : `exitCode=${evidence.exitCode}, timedOut=${evidence.timedOut}`,
     derivedRepairGuidance,
+    assertionExtraction: extraction,
   };
 }
 
-function classifyOutcome(evidence: CheckEvidence): ValidationOutcome {
-  if (evidence.passed) return 'supported';
-  if (evidence.timedOut) return 'blocked';
-  const output = `${evidence.stdout}\n${evidence.stderr}`.trim();
-  if (output.length === 0) return 'blocked';
-  return 'inconclusive';
+function classifyValidationOutcome(
+  execution: CheckEvidence,
+  extraction: AssertionExtractionResult | undefined,
+  capability: AssertionCapability,
+): ValidationOutcome {
+  if (execution.timedOut) return 'blocked';
+
+  if (capability === 'structured' && extraction) {
+    switch (extraction.status) {
+      case 'blocked':
+        return 'blocked';
+      case 'inconclusive':
+        return 'inconclusive';
+      case 'not_configured':
+        return 'blocked';
+      case 'extracted':
+        if (extraction.summary.suiteInfrastructureError) return 'blocked';
+        return execution.passed ? 'supported' : 'inconclusive';
+    }
+  }
+
+  if (execution.passed) return 'supported';
+  const output = `${execution.stdout}\n${execution.stderr}`.trim();
+  return output.length === 0 ? 'blocked' : 'inconclusive';
 }
 
 function formatValidationDetail(evidence: CheckEvidence): string {
@@ -416,8 +491,9 @@ function validationSubjectBlock(state: SessionState, subject: ValidationSubject)
 function buildValidationAttempt(
   subject: ValidationSubject,
   result: ValidationResult,
+  attemptId: string,
 ): ValidationAttempt {
-  return { attemptId: crypto.randomUUID(), ...subject, result };
+  return { attemptId, ...subject, result };
 }
 
 function buildNextValidationState(

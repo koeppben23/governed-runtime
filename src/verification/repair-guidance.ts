@@ -102,7 +102,7 @@ export function deriveRepairGuidance(
   );
 }
 
-function parseFailureOutput(evidence: ExecutionEvidence): ParsedOutput {
+export function parseFailureOutput(evidence: ExecutionEvidence): ParsedOutput {
   const lines = outputLines(evidence);
   const hasMeaningfulOutput = lines.some((line) => line.text.length > 0);
   const locations = collectLocations(lines);

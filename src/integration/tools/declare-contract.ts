@@ -280,6 +280,39 @@ function validateDeclaredClaimContract(
 }
 
 /**
+ * Gate assertion-mode counterexample requirements: the session must have a
+ * test verification candidate with structured assertion capability.
+ */
+function validateAssertionCapabilityGate(
+  rawClaims: readonly RawClaim[],
+  state: SessionState,
+): string | null {
+  for (const declaration of rawClaims) {
+    if (
+      (declaration as Record<string, unknown>).counterexampleRequirement !== undefined &&
+      typeof (declaration as Record<string, unknown>).counterexampleRequirement === 'object' &&
+      (
+        (declaration as Record<string, unknown>).counterexampleRequirement as Record<
+          string,
+          unknown
+        >
+      ).mode === 'assertion'
+    ) {
+      const candidate = state.verificationCandidates?.find(
+        (c) => c.kind === 'test' && c.assertionCapability === 'structured',
+      );
+      if (!candidate) {
+        return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+          reason:
+            'Test check does not support structured assertion evidence for counterexample binding.',
+        });
+      }
+    }
+  }
+  return null;
+}
+
+/**
  * Reject a manual declaration that would replace an existing claim identity.
  * Manual ids are derived from statements, so check them before resolving any
  * evidence providers or mutation reports.
@@ -387,6 +420,12 @@ export const declare_contract: ToolDefinition = {
 
         const mergeViolation = validateMergedClaimIds(args.claims as readonly RawClaim[], state);
         if (mergeViolation) return mergeViolation;
+
+        const capabilityGate = validateAssertionCapabilityGate(
+          args.claims as readonly RawClaim[],
+          state,
+        );
+        if (capabilityGate) return capabilityGate;
 
         const worktree = getWorktree(context);
         const verdicts = await resolveVerifiedMutationVerdicts(worktree, state.mutationAttempts);

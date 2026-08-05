@@ -59,14 +59,22 @@ export type VerificationCandidateConfidence = z.infer<typeof VerificationCandida
 
 // ─── Assertion Report Specification ──────────────────────────────────────────
 
-export const AssertionReportSpec = z.discriminatedUnion('transport', [
+export const AssertionReportSpec = z.discriminatedUnion('collection', [
   z.object({
+    collection: z.literal('run_specific'),
     transport: z.literal('file'),
     format: AssertionReportFormat,
     outputArgumentTemplate: z.string().min(1),
     resultPatternTemplate: z.string().min(1),
   }),
   z.object({
+    collection: z.literal('snapshot_diff'),
+    transport: z.literal('file'),
+    format: AssertionReportFormat,
+    standardPatterns: z.array(z.string().min(1)).min(1),
+  }),
+  z.object({
+    collection: z.literal('stdout'),
     transport: z.literal('stdout'),
     format: AssertionReportFormat,
   }),
@@ -103,6 +111,7 @@ export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapabi
   }),
 ]);
 export type VerificationCandidate = z.infer<typeof VerificationCandidateSchema>;
+export type AssertionCapability = VerificationCandidate['assertionCapability'];
 
 /** Deterministic ordered list of advisory verification candidates. */
 export const VerificationCandidatesSchema = z.array(VerificationCandidateSchema);

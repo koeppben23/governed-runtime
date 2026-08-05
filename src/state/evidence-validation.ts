@@ -117,7 +117,7 @@ export const StructuredAssertionEvidence = z
     sourceFile: z.string().min(1).optional(),
     /** Duration in milliseconds */
     durationMs: z.number().nonnegative().optional(),
-    /** Failure details (only for status='failed') */
+    /** Failure details (only for status='failed'; forbidden otherwise) */
     failure: z
       .object({
         type: z.string().optional(),
@@ -125,6 +125,9 @@ export const StructuredAssertionEvidence = z
         detailDigest: z.string().min(1).optional(),
       })
       .optional(),
+  })
+  .refine((data) => data.status === 'failed' || data.failure === undefined, {
+    message: 'failure details only allowed when status is failed',
   })
   .readonly();
 export type StructuredAssertionEvidence = z.infer<typeof StructuredAssertionEvidence>;
@@ -145,10 +148,12 @@ export const AssertionExtractionResult = z.discriminatedUnion('status', [
   }),
   z.object({
     status: z.literal('blocked'),
+    attemptId: z.string().uuid(),
     reason: z.string().min(1),
   }),
   z.object({
     status: z.literal('inconclusive'),
+    attemptId: z.string().uuid(),
     reason: z.string().min(1),
   }),
   z.object({

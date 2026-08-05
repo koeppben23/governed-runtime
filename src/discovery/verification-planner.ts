@@ -156,24 +156,36 @@ function addWrapperCandidates(
   if (rootFiles.has('mvnw') || rootFiles.has('mvnw.cmd')) {
     const hasPosixWrapper = rootFiles.has('mvnw');
     addCandidate(byKind, {
-      assertionCapability: 'unsupported' as const,
+      assertionCapability: 'structured' as const,
       kind: 'build',
       command: hasPosixWrapper ? './mvnw verify' : 'mvnw.cmd verify',
       source: hasPosixWrapper ? 'repo:mvnw' : 'repo:mvnw.cmd',
       confidence: 'high',
       reason: 'Maven wrapper detected; wrapper command is preferred over global Maven binary',
+      assertionReport: {
+        collection: 'snapshot_diff' as const,
+        transport: 'file' as const,
+        format: 'junit_xml' as const,
+        standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+      },
     });
   }
 
   if (rootFiles.has('gradlew') || rootFiles.has('gradlew.bat')) {
     const hasPosixWrapper = rootFiles.has('gradlew');
     addCandidate(byKind, {
-      assertionCapability: 'unsupported' as const,
+      assertionCapability: 'structured' as const,
       kind: 'test',
       command: hasPosixWrapper ? './gradlew check' : 'gradlew.bat check',
       source: hasPosixWrapper ? 'repo:gradlew' : 'repo:gradlew.bat',
       confidence: 'high',
       reason: 'Gradle wrapper detected; wrapper command is preferred over global Gradle binary',
+      assertionReport: {
+        collection: 'snapshot_diff' as const,
+        transport: 'file' as const,
+        format: 'junit_xml' as const,
+        standardPatterns: ['build/test-results/test/TEST-*.xml'],
+      },
     });
   }
 }
@@ -213,23 +225,38 @@ function addFallbackCandidates(
 
   if (ids.has('testFramework:vitest')) {
     addCandidate(byKind, {
-      assertionCapability: 'unsupported' as const,
+      assertionCapability: 'structured' as const,
       kind: 'test',
       command: fallbackCommand(packageManager, 'vitest run'),
       source: 'detectedStack:testFramework:vitest',
       confidence: 'medium',
       reason: `Vitest detected and no repo-native test script found; using ${packageManager} fallback`,
+      assertionReport: {
+        collection: 'run_specific' as const,
+        transport: 'file' as const,
+        format: 'vitest_json' as const,
+        outputArgumentTemplate:
+          '--reporter=json --outputFile=.flowguard/reports/{attemptId}/vitest.json',
+        resultPatternTemplate: '.flowguard/reports/{attemptId}/vitest.json',
+      },
     });
   }
 
   if (ids.has('testFramework:jest')) {
     addCandidate(byKind, {
-      assertionCapability: 'unsupported' as const,
+      assertionCapability: 'structured' as const,
       kind: 'test',
       command: fallbackCommand(packageManager, 'jest'),
       source: 'detectedStack:testFramework:jest',
       confidence: 'medium',
       reason: `Jest detected and no repo-native test script found; using ${packageManager} fallback`,
+      assertionReport: {
+        collection: 'run_specific' as const,
+        transport: 'file' as const,
+        format: 'jest_json' as const,
+        outputArgumentTemplate: '--json --outputFile=.flowguard/reports/{attemptId}/jest.json',
+        resultPatternTemplate: '.flowguard/reports/{attemptId}/jest.json',
+      },
     });
   }
 
