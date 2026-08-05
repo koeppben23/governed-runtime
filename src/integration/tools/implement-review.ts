@@ -92,9 +92,6 @@ import { nextImplementationReviewIteration } from './implement-shared.js';
 import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import type { CompactProofPresentation } from '../../presentation/proof-summary.js';
 
-/**
- * Inject a proofSummary into an already-serialized `formatBlocked` response.
- */
 function attachProofSummaryToBlockedResponse(
   blockedResponse: string,
   proofSummary: CompactProofPresentation | null,
@@ -105,43 +102,64 @@ function attachProofSummaryToBlockedResponse(
   return JSON.stringify(parsed);
 }
 
-/**
- * Build a blocked implementation review response that carries proof context.
- *
- * The handler and tests MUST call THIS orchestrator, not the inner helpers,
- * so that removing the orchestrator call from the handler also breaks the
- * corresponding test.
- */
-export function buildBlockedImplReviewResponse(
-  blockedResponse: string,
-  proofSummary: CompactProofPresentation | null,
-): string {
-  return attachProofSummaryToBlockedResponse(blockedResponse, proofSummary);
-}
-
-/**
- * Derive the `decisionContext` for implementation review responses.
- */
 function proofDecisionContextForVerdict(
   verdict: LoopVerdict,
 ): 'current_gate' | 'prospective_approval' {
   return verdict === 'accept' ? 'current_gate' : 'prospective_approval';
 }
 
-/**
- * Project a proof summary with the correct decision context for a verdict.
- *
- * The handler and tests MUST call THIS orchestrator, not the inner helpers,
- * so that removing the orchestrator call from the handler also breaks the
- * corresponding test.
- */
-export function projectProofSummaryForVerdict(
+function projectProofSummaryForVerdict(
   state: SessionState,
   verdict: LoopVerdict,
 ): CompactProofPresentation | null {
   return projectImplementationProofStatus(state, {
     decisionContext: proofDecisionContextForVerdict(verdict),
   });
+}
+
+export type ResolvedSubmittedReviewProof =
+  | {
+      readonly kind: 'blocked';
+      readonly response: string;
+    }
+  | {
+      readonly kind: 'proceed';
+      readonly proofSummary: CompactProofPresentation | null;
+    };
+
+/**
+ * Branch logic for the proof context in a submitted implementation review.
+ *
+ * 1. If findings are blocked → blocked response with injected proof summary.
+ * 2. If changes_requested → proceed with pre-transition (prospective) summary.
+ * 3. If accept → proceed with post-review (current_gate) summary.
+ *
+ * Both the handler and tests call this function. Mutating the branch decisions
+ * inside this function will break the corresponding tests.
+ */
+export function resolveSubmittedReviewProofResponse(input: {
+  findingsBlocked: string | null;
+  preTransitionState: SessionState;
+  reviewedState: SessionState;
+  verdict: LoopVerdict;
+}): ResolvedSubmittedReviewProof {
+  const preProof = projectImplementationProofStatus(input.preTransitionState);
+
+  if (input.findingsBlocked) {
+    return {
+      kind: 'blocked',
+      response: attachProofSummaryToBlockedResponse(input.findingsBlocked, preProof),
+    };
+  }
+
+  if (input.verdict === 'changes_requested') {
+    return { kind: 'proceed', proofSummary: preProof };
+  }
+
+  return {
+    kind: 'proceed',
+    proofSummary: projectProofSummaryForVerdict(input.reviewedState, input.verdict),
+  };
 }
 
 function findPendingImplObligation(state: SessionState) {
@@ -523,18 +541,11 @@ async function handleSubmittedImplementationReview(input: {
   );
   if (resolved.blocked) return resolved.blocked;
 
-  // Compute proof summary from the current state BEFORE the unable_to_review
-  // block — the user needs proof context even when the reviewer couldn't assess.
-  const proofSummary = projectImplementationProofStatus(runtime.state);
-
   const findingsBlocked = validateEffectiveFindings(
     resolved.effectiveFindings,
     submittedVerdict,
     pendingObligation?.obligationId ?? 'unknown',
   );
-  if (findingsBlocked) {
-    return buildBlockedImplReviewResponse(findingsBlocked, proofSummary);
-  }
 
   const { reviewedState, newReviewFindings } = appendImplReviewState({
     runtime,
@@ -543,6 +554,16 @@ async function handleSubmittedImplementationReview(input: {
     effectiveFindings: resolved.effectiveFindings,
     evidenceInvocationId: resolved.evidenceInvocationId,
   });
+
+  const proofDecision = resolveSubmittedReviewProofResponse({
+    findingsBlocked,
+    preTransitionState: runtime.state,
+    reviewedState,
+    verdict: submittedVerdict,
+  });
+  if (proofDecision.kind === 'blocked') return proofDecision.response;
+
+  const proofSummary = proofDecision.proofSummary;
 
   if (submittedVerdict === 'changes_requested') {
     return handleChangesRequestedReview({
@@ -555,15 +576,12 @@ async function handleSubmittedImplementationReview(input: {
   }
   const validationGate = implValidationEvidenceGate(runtime.state);
   if (validationGate) return validationGate;
-  // Accept: the verdict cleared the gate, so the decision context is current_gate.
-  const acceptProofSummary =
-    projectProofSummaryForVerdict(reviewedState, submittedVerdict) ?? undefined;
   return handleApprovedReview({
     runtime,
     reviewedState,
     iteration,
     reviewFindings: newReviewFindings,
-    proofSummary: acceptProofSummary,
+    proofSummary: proofSummary ?? undefined,
   });
 }
 

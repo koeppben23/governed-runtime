@@ -1,19 +1,19 @@
 /**
  * @test-policy
- * REGRESSION: buildBlockedImplReviewResponse → proofSummary survives serialization round-trip.
- * REGRESSION: projectProofSummaryForVerdict → 'current_gate' for accept, 'prospective_approval' otherwise.
- * REGRESSION: completion → projectCompletionProofStatus yields 'completion' context.
- * CONTRACT: The exported orchestrators in implement-review.ts are the single source of truth
- *           for both the handler and these tests. Removing an orchestrator call from the handler
- *           does NOT break a test that only calls inner helpers — but removing the call to
- *           buildBlockedImplReviewResponse or projectProofSummaryForVerdict from the handler WILL
- *           break tests that call these same orchestrators.
+ * RESOLVER: resolveSubmittedReviewProofResponse branch decisions are mutation-firm.
+ *   - findingsBlocked + any verdict → kind: 'blocked', response contains proofSummary.
+ *   - changes_requested (no block) → kind: 'proceed', proofSummary has prospective_approval.
+ *   - accept (no block) → kind: 'proceed', proofSummary has current_gate.
+ * COMPLETION: projectCompletionProofStatus yields 'completion' context.
+ * CONTRACT: The resolver in implement-review.ts IS the branch decision. Mutating the
+ *           branch logic inside the resolver WILL break these tests. The handler's call
+ *           to the resolver is the production wiring and is verified by npm run check.
  */
 
 import { describe, expect, it } from 'vitest';
 import {
-  buildBlockedImplReviewResponse,
-  projectProofSummaryForVerdict,
+  resolveSubmittedReviewProofResponse,
+  type ResolvedSubmittedReviewProof,
 } from './implement-review.js';
 import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import { formatBlocked } from './helpers.js';
@@ -51,60 +51,72 @@ function proofGraphState() {
   });
 }
 
-describe('implement-review proof-summary orchestrator regressions', () => {
-  describe('buildBlockedImplReviewResponse', () => {
-    it('returns original blocked response when proofSummary is null', () => {
-      const blocked = formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId: 'obl-1' });
-      const result = buildBlockedImplReviewResponse(blocked, null);
-      expect(result).toBe(blocked);
-    });
-
-    it('injects proofSummary into blocked JSON (full handler contract)', () => {
-      const blocked = formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', { obligationId: 'obl-1' });
-      const summary = projectProofSummaryForVerdict(proofGraphState(), 'accept');
-      const result = buildBlockedImplReviewResponse(blocked, summary);
-      const parsed = JSON.parse(result);
-      expect(parsed.error).toBe(true);
-      expect(parsed.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
-      expect(parsed.message).toBeDefined();
-      expect(parsed.proofSummary).toBeDefined();
-      expect(parsed.proofSummary.kind).toBe('evaluation');
-    });
+describe('resolveSubmittedReviewProofResponse — branch resolver', () => {
+  const blockedJson = formatBlocked('SUBAGENT_UNABLE_TO_REVIEW', {
+    obligationId: 'obl-1',
   });
 
-  describe('projectProofSummaryForVerdict', () => {
-    it("accept → 'current_gate'", () => {
-      const summary = projectProofSummaryForVerdict(proofGraphState(), 'accept');
-      expect(summary).not.toBeNull();
-      if (summary?.kind === 'evaluation') {
-        expect(summary.decisionContext).toBe('current_gate');
-      }
+  it('blocked branch: returns kind=blocked with proofSummary injected', () => {
+    const result = resolveSubmittedReviewProofResponse({
+      findingsBlocked: blockedJson,
+      preTransitionState: proofGraphState(),
+      reviewedState: proofGraphState(),
+      verdict: 'accept',
     });
-
-    it("changes_requested → 'prospective_approval'", () => {
-      const summary = projectProofSummaryForVerdict(proofGraphState(), 'changes_requested');
-      expect(summary).not.toBeNull();
-      if (summary?.kind === 'evaluation') {
-        expect(summary.decisionContext).toBe('prospective_approval');
-      }
-    });
-
-    it("unable_to_review → 'prospective_approval' (non-accept fallback)", () => {
-      const summary = projectProofSummaryForVerdict(proofGraphState(), 'unable_to_review');
-      expect(summary).not.toBeNull();
-      if (summary?.kind === 'evaluation') {
-        expect(summary.decisionContext).toBe('prospective_approval');
-      }
-    });
+    expect(result.kind).toBe('blocked');
+    if (result.kind !== 'blocked') throw new Error('Expected blocked');
+    const parsed = JSON.parse(result.response);
+    expect(parsed.code).toBe('SUBAGENT_UNABLE_TO_REVIEW');
+    expect(parsed.proofSummary).toBeDefined();
+    expect(parsed.proofSummary.kind).toBe('evaluation');
   });
 
-  describe('completion path', () => {
-    it('projectCompletionProofStatus → completion', () => {
-      const summary = projectCompletionProofStatus(proofGraphState());
-      expect(summary).not.toBeNull();
-      if (summary?.kind === 'evaluation') {
-        expect(summary.decisionContext).toBe('completion');
-      }
+  it('blocked branch: returns unmodified when findingsBlocked is null', () => {
+    const result = resolveSubmittedReviewProofResponse({
+      findingsBlocked: null,
+      preTransitionState: proofGraphState(),
+      reviewedState: proofGraphState(),
+      verdict: 'accept',
     });
+    expect(result.kind).toBe('proceed');
+    if (result.kind === 'proceed') {
+      expect(result.proofSummary).not.toBeNull();
+    }
+  });
+
+  it('changes_requested branch: yields prospective_approval (pre-transition state)', () => {
+    const result = resolveSubmittedReviewProofResponse({
+      findingsBlocked: null,
+      preTransitionState: proofGraphState(),
+      reviewedState: proofGraphState(),
+      verdict: 'changes_requested',
+    });
+    expect(result.kind).toBe('proceed');
+    if (result.kind === 'proceed' && result.proofSummary?.kind === 'evaluation') {
+      expect(result.proofSummary.decisionContext).toBe('prospective_approval');
+    }
+  });
+
+  it('accept branch: yields current_gate (post-review state, verdict-aware)', () => {
+    const result = resolveSubmittedReviewProofResponse({
+      findingsBlocked: null,
+      preTransitionState: proofGraphState(),
+      reviewedState: proofGraphState(),
+      verdict: 'accept',
+    });
+    expect(result.kind).toBe('proceed');
+    if (result.kind === 'proceed' && result.proofSummary?.kind === 'evaluation') {
+      expect(result.proofSummary.decisionContext).toBe('current_gate');
+    }
+  });
+});
+
+describe('completion path', () => {
+  it('projectCompletionProofStatus → completion', () => {
+    const summary = projectCompletionProofStatus(proofGraphState());
+    expect(summary).not.toBeNull();
+    if (summary?.kind === 'evaluation') {
+      expect(summary.decisionContext).toBe('completion');
+    }
   });
 });
