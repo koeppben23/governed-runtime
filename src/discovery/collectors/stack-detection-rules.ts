@@ -339,6 +339,11 @@ export const FRAMEWORK_CONFIG_RULES: ReadonlyArray<{
     category: 'testFramework',
   },
   {
+    id: 'go_test',
+    configFiles: ['go.mod'],
+    category: 'testFramework',
+  },
+  {
     id: 'webpack',
     configFiles: ['webpack.config.js'],
     category: 'framework',
