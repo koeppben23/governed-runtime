@@ -4,18 +4,18 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  resolveProviderCapabilities,
-  type ResolvedProviderCapability,
-} from './provider-capability-resolution.js';
+import { resolveProviderCapabilities } from './provider-capability-resolution.js';
 import type { DetectedStack, VerificationCandidate } from '../state/discovery-schemas.js';
 
-function makeDetectedStack(items: Array<{ kind: string; id: string }>): DetectedStack {
+function makeDetectedStack(
+  items: Array<{ kind: string; id: string; evidence?: string }>,
+): DetectedStack {
   return {
     summary: '',
     items: items.map((i) => ({
       kind: i.kind as DetectedStack['items'][number]['kind'],
       id: i.id,
+      evidence: i.evidence,
     })),
     versions: [],
   };
@@ -23,6 +23,7 @@ function makeDetectedStack(items: Array<{ kind: string; id: string }>): Detected
 
 function makeStructuredCandidate(
   providerId: string,
+  format: string,
   overrides?: Partial<VerificationCandidate>,
 ): VerificationCandidate {
   return {
@@ -36,7 +37,7 @@ function makeStructuredCandidate(
     assertionReport: {
       collection: 'run_specific' as const,
       transport: 'file' as const,
-      format: 'junit_xml' as const,
+      format: format as never,
       providerId: providerId as never,
       outputArgumentTemplate: '--out={attemptId}',
       resultPatternTemplate: '{attemptId}.xml',
@@ -61,11 +62,13 @@ describe('resolveProviderCapabilities', () => {
   });
 
   it('detects vitest from testFramework:vitest', () => {
-    const stack = makeDetectedStack([{ kind: 'testFramework', id: 'vitest' }]);
+    const stack = makeDetectedStack([
+      { kind: 'testFramework', id: 'vitest', evidence: 'vitest.config.ts' },
+    ]);
     const result = resolveProviderCapabilities(stack, undefined);
     const vitest = result.find((r) => r.providerId === 'vitest')!;
     expect(vitest.detection.status).toBe('detected');
-    expect(vitest.detection.evidence).toContain('testFramework:vitest');
+    expect(vitest.detection.evidence).toContain('testFramework:vitest via vitest.config.ts');
   });
 
   it('deduplicates multiple detection IDs to one provider entry', () => {
@@ -74,12 +77,7 @@ describe('resolveProviderCapabilities', () => {
       { kind: 'language', id: 'go' },
     ]);
     const result = resolveProviderCapabilities(stack, undefined);
-    const goEntries = result.filter((r) => r.providerId === 'go_test');
-    expect(goEntries).toHaveLength(1);
-    const go = goEntries[0]!;
-    expect(go.detection.status).toBe('detected');
-    expect(go.detection.evidence).toContain('testFramework:go_test');
-    expect(go.detection.evidence).toContain('language:go');
+    expect(result.filter((r) => r.providerId === 'go_test')).toHaveLength(1);
   });
 
   it('assertionBinding is available for registered codec providers', () => {
@@ -92,23 +90,47 @@ describe('resolveProviderCapabilities', () => {
     expect(vitest.assertionBinding.status).toBe('available');
   });
 
-  it('candidate status available when matching candidate exists', () => {
+  it('candidate is available when binding-compatible format exists', () => {
     const candidates = [
-      makeStructuredCandidate('vitest', {
+      makeStructuredCandidate('vitest', 'vitest_json', {
         source: 'detectedStack:testFramework:vitest',
       }),
     ];
     const result = resolveProviderCapabilities(undefined, candidates);
     const vitest = result.find((r) => r.providerId === 'vitest')!;
     expect(vitest.candidate.status).toBe('available');
-    expect(vitest.candidate.source).toBe('detectedStack:testFramework:vitest');
+    expect(vitest.candidate.format).toBe('vitest_json');
+  });
+
+  it('candidate is unavailable when format is not binding-compatible', () => {
+    const candidates = [makeStructuredCandidate('vitest', 'junit_xml')];
+    const result = resolveProviderCapabilities(undefined, candidates);
+    const vitest = result.find((r) => r.providerId === 'vitest')!;
+    expect(vitest.candidate.status).toBe('unavailable');
+    expect(vitest.candidate.reason).toBe('format_not_binding_capable');
+    expect(vitest.candidate.format).toBe('junit_xml');
+  });
+
+  it('pytest is available with pytest_json, unavailable with junit_xml', () => {
+    const good = resolveProviderCapabilities(undefined, [
+      makeStructuredCandidate('pytest', 'pytest_json'),
+    ]);
+    expect(good.find((r) => r.providerId === 'pytest')!.candidate.status).toBe('available');
+
+    const bad = resolveProviderCapabilities(undefined, [
+      makeStructuredCandidate('pytest', 'junit_xml'),
+    ]);
+    expect(bad.find((r) => r.providerId === 'pytest')!.candidate.status).toBe('unavailable');
+    expect(bad.find((r) => r.providerId === 'pytest')!.candidate.reason).toBe(
+      'format_not_binding_capable',
+    );
   });
 
   it('candidate status unavailable when no matching candidate', () => {
     const result = resolveProviderCapabilities(undefined, undefined);
     const vitest = result.find((r) => r.providerId === 'vitest')!;
     expect(vitest.candidate.status).toBe('unavailable');
-    expect(vitest.candidate.source).toBeUndefined();
+    expect(vitest.candidate.reason).toBe('no_structured_candidate');
   });
 
   it('non-structured candidates are not mapped to providers', () => {

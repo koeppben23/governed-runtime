@@ -38,7 +38,9 @@ export interface ResolvedProviderCapability {
 
   candidate: {
     status: 'available' | 'unavailable';
+    format?: ReportFormatId;
     source?: string;
+    reason?: 'no_structured_candidate' | 'format_not_binding_capable';
   };
 }
 
@@ -50,28 +52,55 @@ function buildDetectionMap(detectedStack: DetectedStack | undefined): Map<Provid
     const detId = `${item.kind}:${item.id}` as const;
     const desc = DESCRIPTOR_BY_DETECTION.get(detId);
     if (!desc) continue;
+    const entry = item.evidence ? `${detId} via ${item.evidence}` : detId;
     const existing = map.get(desc.providerId);
     if (existing) {
-      existing.push(detId);
+      existing.push(entry);
     } else {
-      map.set(desc.providerId, [detId]);
+      map.set(desc.providerId, [entry]);
     }
   }
   return map;
 }
 
+type CandidateInfo = { candidate: VerificationCandidate; formatId: ReportFormatId };
+
 function buildCandidateMap(
   candidates: readonly VerificationCandidate[] | undefined,
-): Map<ProviderId, VerificationCandidate> {
-  const map = new Map<ProviderId, VerificationCandidate>();
+): Map<ProviderId, CandidateInfo> {
+  const map = new Map<ProviderId, CandidateInfo>();
   for (const c of candidates ?? []) {
     if (c.assertionCapability !== 'structured') continue;
-    const report = (c as { assertionReport?: { providerId?: ProviderId } }).assertionReport;
-    if (report?.providerId && !map.has(report.providerId)) {
-      map.set(report.providerId, c);
+    const report = (c as { assertionReport?: { providerId?: ProviderId; format?: ReportFormatId } })
+      .assertionReport;
+    if (!report?.providerId) continue;
+    const formatId = report.format;
+    if (!formatId) continue;
+    if (!map.has(report.providerId)) {
+      map.set(report.providerId, { candidate: c, formatId });
     }
   }
   return map;
+}
+
+function resolveCandidate(
+  info: CandidateInfo | undefined,
+  bindingFormats: ReadonlySet<ReportFormatId> | undefined,
+): ResolvedProviderCapability['candidate'] {
+  if (!info) return { status: 'unavailable', reason: 'no_structured_candidate' };
+  const isBinding = bindingFormats?.has(info.formatId) === true;
+  if (!isBinding) {
+    return {
+      status: 'unavailable',
+      format: info.formatId,
+      reason: 'format_not_binding_capable',
+    };
+  }
+  return {
+    status: 'available',
+    format: info.formatId,
+    source: info.candidate.source,
+  };
 }
 
 export function resolveProviderCapabilities(
@@ -88,7 +117,6 @@ export function resolveProviderCapabilities(
     const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(desc.providerId);
     const bindingAvailable =
       codec !== undefined && bindingFormats?.has(desc.preferredAssertionFormat) === true;
-    const matchingCandidate = candidateMap.get(desc.providerId);
 
     results.push({
       providerId: desc.providerId,
@@ -101,10 +129,7 @@ export function resolveProviderCapabilities(
         status: bindingAvailable ? 'available' : 'unsupported',
         format: bindingAvailable ? desc.preferredAssertionFormat : undefined,
       },
-      candidate: {
-        status: matchingCandidate ? 'available' : 'unavailable',
-        source: matchingCandidate?.source,
-      },
+      candidate: resolveCandidate(candidateMap.get(desc.providerId), bindingFormats),
     });
   }
 

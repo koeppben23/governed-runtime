@@ -14,15 +14,11 @@
  */
 
 import type { DetectedStack, VerificationCandidate, VerificationCandidateKind } from './types.js';
-import { ASSERTION_PROFILES, type PlannerContext } from './assertion-provider-catalog.js';
-
-const WRAPPER_PROFILE_IDS = new Set(['junit-maven-wrapper', 'junit-gradle-wrapper']);
-const FALLBACK_PROFILE_IDS = new Set([
-  'vitest-fallback',
-  'jest-fallback',
-  'pytest-json-fallback',
-  'go-test-stdout',
-]);
+import {
+  WRAPPER_PROFILES,
+  FALLBACK_PROFILES,
+  type PlannerContext,
+} from './assertion-provider-catalog.js';
 
 type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 
@@ -73,12 +69,12 @@ export async function planVerificationCandidates(
   addScriptCandidates(byKind, scripts, packageManager);
 
   // Wrapper profiles (mvnw, gradlew) — run before fallbacks
-  applyProfiles(byKind, ctx, WRAPPER_PROFILE_IDS);
+  applyProfiles(byKind, ctx, WRAPPER_PROFILES);
 
   addNonAssertionFallbacks(byKind, detectedStackIds, packageManager);
 
   // Assertion fallback profiles — only if no candidate exists for the kind
-  applyProfiles(byKind, ctx, FALLBACK_PROFILE_IDS);
+  applyProfiles(byKind, ctx, FALLBACK_PROFILES);
 
   return [...byKind.values()].sort((a, b) => {
     const orderDiff = KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
@@ -90,10 +86,12 @@ export async function planVerificationCandidates(
 function applyProfiles(
   byKind: Map<VerificationCandidateKind, VerificationCandidate>,
   ctx: PlannerContext,
-  profileIds: ReadonlySet<string>,
+  profiles: ReadonlyArray<{
+    readonly kind: VerificationCandidateKind;
+    createCandidate(ctx: PlannerContext): VerificationCandidate | null;
+  }>,
 ): void {
-  for (const profile of ASSERTION_PROFILES) {
-    if (!profileIds.has(profile.profileId)) continue;
+  for (const profile of profiles) {
     if (byKind.has(profile.kind)) continue;
 
     const candidate = profile.createCandidate(ctx);

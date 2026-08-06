@@ -291,3 +291,17 @@ export const DESCRIPTOR_BY_DETECTION: ReadonlyMap<DetectionId, AssertionProvider
       desc.detectionIds.map((detId) => [detId, desc] as const),
     ),
   );
+
+/** Wrapper-Profile (root-file-based, before fallbacks). */
+export const WRAPPER_PROFILES: readonly ExecutionProfile[] = [
+  jUnitMavenWrapperProfile,
+  jUnitGradleWrapperProfile,
+];
+
+/** Fallback-Profile (detected-stack-based, after wrappers). */
+export const FALLBACK_PROFILES: readonly ExecutionProfile[] = [
+  vitestFallbackProfile,
+  jestFallbackProfile,
+  pytestJsonProfile,
+  goTestStdoutProfile,
+];
