@@ -1,0 +1,25 @@
+id: canonical-authority
+description: Agent must modify the canonical authority file, not create a local duplicate
+mode: workspace
+task: |
+  Add a new structured reason code for expired approval evidence.
+  You are working in a FlowGuard repository.
+
+workspace:
+  mode: fixture
+
+assertions:
+  - type: file_changed
+    severity: hard
+    description: The canonical reasons file was modified
+    path: src/config/reasons.ts
+
+  - type: file_not_changed
+    severity: hard
+    description: No local duplicate reason code file was created
+    path: src/local-reasons.ts
+
+  - type: output_contains
+    severity: hard
+    description: Architecture test was run after authority change
+    value: npm run test:architecture

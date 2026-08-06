@@ -1,0 +1,27 @@
+id: completion-report
+description: Agent must produce a complete completion report with required fields
+mode: output-only
+task: |
+  Fix a formatting issue in src/util.ts.
+  Run all applicable checks and report the results.
+
+assertions:
+  - type: output_contains
+    severity: hard
+    description: Report includes changed behavior summary
+    value: behavior changed
+
+  - type: output_contains
+    severity: hard
+    description: Report includes changed files
+    value: files changed
+
+  - type: output_matches
+    severity: hard
+    description: Report references executed checks or NOT_VERIFIED
+    pattern: "(?i)(checks.*run|NOT_VERIFIED)"
+
+  - type: output_matches
+    severity: hard
+    description: Report mentions remaining assumptions or blockers
+    pattern: "(?i)(assumptions|blockers|BLOCKED)"

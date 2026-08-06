@@ -121,7 +121,10 @@ function lineNumber(content, index) {
 // ── Default ignore set ────────────────────────────────────────────────
 
 /** Paths excluded when linting the real repository root. */
-export const DEFAULT_IGNORED_PATHS = ['scripts/__tests__/fixtures'];
+export const DEFAULT_IGNORED_PATHS = [
+  'scripts/__tests__/fixtures',
+  'evals/agent-instructions/cases',
+];
 
 // ── Lint entry ────────────────────────────────────────────────────────
 

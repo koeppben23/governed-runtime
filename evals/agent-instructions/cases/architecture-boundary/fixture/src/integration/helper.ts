@@ -1,0 +1,1 @@
+// src/integration/helper.ts — must not be imported by machine/

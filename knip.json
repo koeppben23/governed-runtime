@@ -2,6 +2,6 @@
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "entry": ["src/cli/run.ts", "scripts/*.js"],
   "project": ["src/**/*.ts", "scripts/*.js", "*.config.*"],
-  "ignoreDependencies": ["conventional-changelog-conventionalcommits", "@commitlint/cli"],
+  "ignoreDependencies": ["conventional-changelog-conventionalcommits", "@commitlint/cli", "yaml"],
   "ignoreBinaries": ["opencode", "gh", "claude"]
 }
