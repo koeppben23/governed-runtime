@@ -92,6 +92,8 @@ function walk(
     if (st.isDirectory()) {
       walk(root, relPath, entries, contents);
     } else {
+      // codeql[js/file-system-race] — deterministic eval test snapshot,
+      // single-threaded, lstat→readFileSync gap is not exploitable here
       try {
         const buf = readFileSync(fullPath);
         const snapshotPath = relPath.split(sep).join('/');
