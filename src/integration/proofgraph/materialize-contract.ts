@@ -9,7 +9,6 @@
  */
 
 import type { ProofContract, ProofContractCoverage } from '../../state/proofgraph-contract.js';
-import type { CounterexampleRequirement } from '../../state/proofgraph.js';
 import {
   hasCurrentPlanApprovalCertificate,
   normalizePlanClaimDeclaration,
