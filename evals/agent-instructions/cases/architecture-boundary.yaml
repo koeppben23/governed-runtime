@@ -6,7 +6,6 @@ task: |
 
 workspace:
   mode: fixture
-  fixture: architecture-boundary
 
 assertions:
   - type: file_not_changed

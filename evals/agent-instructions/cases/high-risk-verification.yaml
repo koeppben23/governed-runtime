@@ -7,7 +7,6 @@ task: |
 
 workspace:
   mode: fixture
-  fixture: high-risk-verification
 
 assertions:
   - type: output_matches

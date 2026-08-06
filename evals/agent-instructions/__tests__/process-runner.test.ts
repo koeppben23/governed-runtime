@@ -80,7 +80,10 @@ describe('process-runner', () => {
     };
     const outcome = await runProcess(c, FIXTURE, 'test prompt', true);
     expect(outcome.status).toBe('runner_error');
-    expect(['spawn', 'signal'].includes(outcome.errorKind)).toBe(true);
+    expect(outcome).toMatchObject({
+      status: 'runner_error',
+      errorKind: 'spawn',
+    });
   });
 
   it('passes the prompt to the process via stdin', async () => {

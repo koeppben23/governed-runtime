@@ -120,7 +120,6 @@ export const EvalCaseSchema = z.discriminatedUnion('mode', [
     mode: z.literal('workspace'),
     workspace: z.object({
       mode: z.literal('fixture'),
-      fixture: pathSchema,
     }),
     assertions: AssertionSchema.array().min(1),
   }),
@@ -131,9 +130,9 @@ export const EvalCaseSchema = z.discriminatedUnion('mode', [
     mode: z.literal('output-only'),
     workspace: z
       .object({
-        mode: z.enum(['empty', 'none']),
+        mode: z.literal('empty'),
       })
-      .default({ mode: 'none' }),
+      .default({ mode: 'empty' }),
     assertions: AssertionSchema.array().min(1),
   }),
 ]);
@@ -191,3 +190,18 @@ export const EvalSummarySchema = z.object({
 });
 
 export type EvalSummary = z.infer<typeof EvalSummarySchema>;
+
+// ── Internal execution types ──────────────────────────────────────────
+
+import type { RunnerOutcome } from './runners/process-runner.js';
+
+export interface ExecutedEvalCase {
+  evalCase: EvalCase;
+  result: EvalCaseResult;
+  outcome: RunnerOutcome;
+}
+
+export interface ExecutedRun {
+  runner: string;
+  cases: ExecutedEvalCase[];
+}

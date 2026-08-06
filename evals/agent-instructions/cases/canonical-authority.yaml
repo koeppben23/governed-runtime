@@ -7,7 +7,6 @@ task: |
 
 workspace:
   mode: fixture
-  fixture: canonical-authority
 
 assertions:
   - type: file_changed

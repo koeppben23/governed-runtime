@@ -6,13 +6,11 @@ import { loadCases } from './load-cases.js';
 import { runProcess } from './runners/process-runner.js';
 import { evaluateAllAssertions, type AssertionContext } from './assertions.js';
 import { scoreCase, summarizeResults } from './score.js';
-import type { RunnerConfig, EvalCaseResult } from './schema.js';
+import type { RunnerConfig, ExecutedEvalCase, EvalCaseResult } from './schema.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const CASES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'cases');
 const RESULTS_DIR = join(ROOT, 'eval-results');
-
-// ── Helpers ──────────────────────────────────────────────────────────
 
 function makeEmptyDir(): { dir: string; cleanup: () => void } {
   const dir = join(tmpdir(), `eval-empty-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
@@ -29,11 +27,9 @@ function makeEmptyDir(): { dir: string; cleanup: () => void } {
   };
 }
 
-// ── Main entry ────────────────────────────────────────────────────────
-
-export async function runEval(config: RunnerConfig): Promise<EvalCaseResult[]> {
+export async function runEval(config: RunnerConfig): Promise<ExecutedEvalCase[]> {
   const cases = loadCases(CASES_DIR).sort((a, b) => a.id.localeCompare(b.id));
-  const results: EvalCaseResult[] = [];
+  const results: ExecutedEvalCase[] = [];
 
   for (const evalCase of cases) {
     const startMs = Date.now();
@@ -57,9 +53,8 @@ export async function runEval(config: RunnerConfig): Promise<EvalCaseResult[]> {
     }
 
     if (outcome.status === 'runner_error') {
-      results.push(
-        scoreCase(evalCase.id, [], Date.now() - startMs, outcome.message),
-      );
+      const er = scoreCase(evalCase.id, [], Date.now() - startMs, outcome.message);
+      results.push({ evalCase, result: er, outcome });
       continue;
     }
 
@@ -79,17 +74,29 @@ export async function runEval(config: RunnerConfig): Promise<EvalCaseResult[]> {
         ? {
             beforeFiles: outcome.beforeSnapshot.size,
             afterFiles: outcome.afterSnapshot.size,
-            changed: Array.from(outcome.afterSnapshot.keys()).filter((k) => {
-              const b = outcome.beforeSnapshot.get(k);
-              const a = outcome.afterSnapshot.get(k);
-              return !b || !a ? b !== a : b.sha256 !== a.sha256;
-            }),
+            changed: (() => {
+              const allFiles = new Set([
+                ...outcome.beforeSnapshot.keys(),
+                ...outcome.afterSnapshot.keys(),
+              ]);
+              return Array.from(allFiles).filter((k) => {
+                const b = outcome.beforeSnapshot.get(k);
+                const a = outcome.afterSnapshot.get(k);
+                return !b || !a ? b !== a : b.sha256 !== a.sha256;
+              });
+            })(),
           }
         : undefined;
 
-    results.push(
-      scoreCase(evalCase.id, assertionResults, Date.now() - startMs, undefined, snapshotSummary),
+    const result = scoreCase(
+      evalCase.id,
+      assertionResults,
+      Date.now() - startMs,
+      undefined,
+      snapshotSummary,
     );
+
+    results.push({ evalCase, result, outcome });
   }
 
   return results;
@@ -97,18 +104,30 @@ export async function runEval(config: RunnerConfig): Promise<EvalCaseResult[]> {
 
 // ── Report persistence ────────────────────────────────────────────────
 
-export function writeReports(
-  runnerName: string,
-  results: EvalCaseResult[],
-  runId?: string,
-): string {
+export function writeReports(executed: ExecutedEvalCase[], runId?: string): string {
+  const runnerName = executed[0]?.result.caseId ? 'eval-run' : 'eval-run';
   const id = runId ?? `run-${Date.now()}`;
   const runDir = join(RESULTS_DIR, id);
   const casesDir = join(runDir, 'cases');
   mkdirSync(casesDir, { recursive: true });
 
-  const summary = summarizeResults(runnerName, results);
+  const caseResults = executed.map((e) => e.result);
+  const summary = summarizeResults(runnerName, caseResults);
   writeFileSync(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2));
+
+  for (const e of executed) {
+    const caseDir = join(casesDir, e.evalCase.id);
+    mkdirSync(caseDir, { recursive: true });
+
+    writeFileSync(join(caseDir, 'prompt.txt'), e.evalCase.task + '\n');
+
+    if (e.outcome.status === 'completed' || e.outcome.status === 'runner_error') {
+      writeFileSync(join(caseDir, 'stdout.txt'), e.outcome.stdout || '');
+      writeFileSync(join(caseDir, 'stderr.txt'), e.outcome.stderr || '');
+    }
+
+    writeFileSync(join(caseDir, 'result.json'), JSON.stringify(e.result, null, 2));
+  }
 
   const mdLines = [
     `# Eval Run: ${runnerName}`,

@@ -8,7 +8,6 @@ task: |
 
 workspace:
   mode: fixture
-  fixture: instruction-conflict
 
 assertions:
   - type: output_contains
