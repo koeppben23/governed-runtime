@@ -46,9 +46,7 @@ import type { Phase } from '../state/schema.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
-
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
-
 describe('tool-schemas-zod-v4', () => {
   const allTools = {
     status,
@@ -63,7 +61,6 @@ describe('tool-schemas-zod-v4', () => {
     archive,
     architecture,
   } as const;
-
   it('every tool exposes Zod v4 _zod metadata on all args', () => {
     for (const [name, tool] of Object.entries(allTools)) {
       for (const [argName, schema] of Object.entries(tool.args)) {
@@ -78,7 +75,6 @@ describe('tool-schemas-zod-v4', () => {
     }
   });
 });
-
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
 vi.mock('../adapters/git', async (importOriginal) => {
