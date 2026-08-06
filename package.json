@@ -41,6 +41,7 @@
     "clean": "node scripts/clean-dist.js",
     "build": "npm run clean && npm run sync-version && npm run generate-docs && tsc && npm run generate-doc-inventory && npm run generate-build-info",
     "check:esm": "node scripts/check-esm-imports.js",
+    "check:agent-instructions": "node scripts/check-agent-instructions.mjs",
     "check:actions-pinned": "node scripts/check-github-actions-pinned.js",
     "check:node-toolchain": "node scripts/check-node-toolchain-consistency.mjs",
     "check:prod": "tsc --noEmit -p tsconfig.json",
