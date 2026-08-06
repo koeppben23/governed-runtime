@@ -91,11 +91,15 @@ function walk(
     if (st.isSymbolicLink()) continue;
     if (st.isDirectory()) {
       walk(root, relPath, entries, contents);
-    } else if (st.isFile()) {
-      const buf = readFileSync(fullPath);
-      const snapshotPath = relPath.split(sep).join('/');
-      entries.set(snapshotPath, { sha256: sha256(buf), bytes: buf.length });
-      contents.set(snapshotPath, buf.toString('utf-8'));
+    } else {
+      try {
+        const buf = readFileSync(fullPath);
+        const snapshotPath = relPath.split(sep).join('/');
+        entries.set(snapshotPath, { sha256: sha256(buf), bytes: buf.length });
+        contents.set(snapshotPath, buf.toString('utf-8'));
+      } catch {
+        // file was removed or changed between lstat and read — skip
+      }
     }
   }
 }
