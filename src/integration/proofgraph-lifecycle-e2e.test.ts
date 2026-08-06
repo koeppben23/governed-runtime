@@ -83,7 +83,7 @@ const CRITICAL_CLAIM: PlanClaimDeclaration = {
   counterexampleRequirement: {
     mode: 'assertion' as const,
     checkId: 'regression',
-    assertionId: 'junit:counterexample',
+    assertion: { providerId: 'junit', localId: 'counterexample' },
   },
 };
 
@@ -96,7 +96,7 @@ const CRITICAL_CLAIM_INPUT: PlanClaimDeclarationInput = {
   counterexampleRequirement: {
     mode: 'assertion' as const,
     checkId: 'regression',
-    assertionId: 'junit:counterexample',
+    assertion: { providerId: 'junit', localId: 'counterexample' },
   },
 };
 
@@ -216,8 +216,8 @@ function fullEvidence(): SessionState['validationAttempts'] {
           reportDigests: ['a'.repeat(64)],
           assertions: [
             {
-              assertionId: 'junit:counterexample',
-              framework: 'junit' as const,
+              assertion: { providerId: 'junit', localId: 'counterexample' },
+              providerId: 'junit',
               status: 'passed' as const,
               testName: 'counterexample',
               suiteName: 'counterexample',
@@ -331,7 +331,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
             counterexampleRequirement: {
               mode: 'assertion' as const,
               checkId: 'build',
-              assertionId: 'junit:counterexample',
+              assertion: { providerId: 'junit', localId: 'counterexample' },
             },
           },
         ],

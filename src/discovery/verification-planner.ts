@@ -176,6 +176,7 @@ function addWrapperCandidates(
         collection: 'snapshot_diff' as const,
         transport: 'file' as const,
         format: 'junit_xml' as const,
+        providerId: 'junit' as const,
         standardPatterns: ['target/surefire-reports/TEST-*.xml'],
       },
     });
@@ -194,6 +195,7 @@ function addWrapperCandidates(
         collection: 'snapshot_diff' as const,
         transport: 'file' as const,
         format: 'junit_xml' as const,
+        providerId: 'junit' as const,
         standardPatterns: ['build/test-results/test/TEST-*.xml'],
       },
     });
@@ -245,6 +247,7 @@ function addFallbackCandidates(
         collection: 'run_specific' as const,
         transport: 'file' as const,
         format: 'vitest_json' as const,
+        providerId: 'vitest' as const,
         outputArgumentTemplate:
           '--reporter=json --outputFile=.flowguard/reports/{attemptId}/vitest.json',
         resultPatternTemplate: '.flowguard/reports/{attemptId}/vitest.json',
@@ -264,6 +267,7 @@ function addFallbackCandidates(
         collection: 'run_specific' as const,
         transport: 'file' as const,
         format: 'jest_json' as const,
+        providerId: 'jest' as const,
         outputArgumentTemplate: '--json --outputFile=.flowguard/reports/{attemptId}/jest.json',
         resultPatternTemplate: '.flowguard/reports/{attemptId}/jest.json',
       },

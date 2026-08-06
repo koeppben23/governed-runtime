@@ -283,7 +283,7 @@ describe('persistence', () => {
             counterexampleRequirement: {
               mode: 'assertion',
               checkId: 'security',
-              assertionId: 'junit:x#y',
+              assertion: { providerId: 'junit', localId: 'x#y' },
             },
           },
         ],
@@ -296,7 +296,7 @@ describe('persistence', () => {
       expect(claim?.counterexampleRequirement).toEqual({
         mode: 'assertion',
         checkId: 'security',
-        assertionId: 'junit:x#y',
+        assertion: { providerId: 'junit', localId: 'x#y' },
       });
       expect(claim?.critical).toBe(false);
     });
@@ -325,7 +325,7 @@ describe('persistence', () => {
             counterexampleRequirement: {
               mode: 'assertion',
               checkId: 'security',
-              assertionId: 'junit:x#y',
+              assertion: { providerId: 'junit', localId: 'x#y' },
             },
           },
         ],
@@ -343,7 +343,7 @@ describe('persistence', () => {
       expect(claims![1]?.counterexampleRequirement).toEqual({
         mode: 'assertion',
         checkId: 'security',
-        assertionId: 'junit:x#y',
+        assertion: { providerId: 'junit', localId: 'x#y' },
       });
     });
 

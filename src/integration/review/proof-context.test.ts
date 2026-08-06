@@ -182,7 +182,7 @@ describe('renderDeclarationPreview', () => {
               counterexampleRequirement: {
                 mode: 'assertion',
                 checkId: 'security',
-                assertionId: 'junit:com.example.Test#method',
+                assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
               },
             },
           ],
@@ -190,9 +190,7 @@ describe('renderDeclarationPreview', () => {
       },
     };
     const text = renderDeclarationPreview(state).join('\n');
-    expect(text).toContain(
-      'counterexample check: security (assertion: junit:com.example.Test#method)',
-    );
+    expect(text).toContain('counterexample check: security (assertion: com.example.Test#method)');
   });
 
   it('renders nothing when no declarations exist', () => {

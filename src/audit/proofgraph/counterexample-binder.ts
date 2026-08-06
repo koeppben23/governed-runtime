@@ -50,7 +50,11 @@ function classifyClaimOutcome(
   const extraction = result.assertionExtraction;
   if (!extraction || extraction.status !== 'extracted') return 'not_verified';
 
-  const assertion = extraction.assertions.find((a) => a.assertionId === requirement.assertionId);
+  const assertion = extraction.assertions.find(
+    (a) =>
+      a.assertion.providerId === requirement.assertion.providerId &&
+      a.assertion.localId === requirement.assertion.localId,
+  );
   if (!assertion) return 'not_verified';
 
   switch (assertion.status) {

@@ -1,14 +1,11 @@
 import type {
   AssertionExtractionSummary,
   StructuredAssertionEvidence,
-  StructuredAssertionFramework,
 } from '../../state/evidence-validation.js';
+import type { ProviderId } from '../../state/evidence-validation.js';
+import type { AssertionIdentity } from '../../state/assertion-identity.js';
+import type { ParseContext, ParserResult } from './types.js';
 import { createHash } from 'node:crypto';
-
-interface VitestJsonResult {
-  assertions: StructuredAssertionEvidence[];
-  summary: AssertionExtractionSummary;
-}
 
 interface VitestAssertionResult {
   ancestorTitles?: string[];
@@ -37,16 +34,26 @@ function mapStatus(raw: string): 'passed' | 'failed' | 'skipped' {
   return 'skipped';
 }
 
-function buildAssertionId(filePath: string, ancestorTitles: string[], title: string): string {
-  const normalized = filePath.replace(/\\/g, '/');
-  const chain = ancestorTitles.join('::');
-  if (chain) {
-    return `vitest:${normalized}::${chain}::${title}`;
-  }
-  return `vitest:${normalized}::${title}`;
+function normalizeFilePath(filePath: string): string {
+  return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
-export function parseVitestJson(jsonText: string): VitestJsonResult {
+export function buildVitestLocalId(
+  filePath: string,
+  ancestorTitles: string[],
+  title: string,
+): string {
+  const normalized = normalizeFilePath(filePath);
+  const chain = ancestorTitles.join('::');
+  if (chain) {
+    return `${normalized}::${chain}::${title}`;
+  }
+  return `${normalized}::${title}`;
+}
+
+export function parseVitestJson(jsonText: string, context: ParseContext): ParserResult {
+  const providerId: ProviderId = context.providerId;
+
   let report: VitestJsonReport;
   try {
     report = JSON.parse(jsonText) as VitestJsonReport;
@@ -71,7 +78,8 @@ export function parseVitestJson(jsonText: string): VitestJsonResult {
       const rawStatus = ar.status ?? 'passed';
       const status = mapStatus(rawStatus);
       const testTitle = ar.title ?? 'unknown';
-      const assertionId = buildAssertionId(fileName, ancestors, testTitle);
+      const localId = buildVitestLocalId(fileName, ancestors, testTitle);
+      const assertion: AssertionIdentity = { providerId, localId };
 
       let failure: StructuredAssertionEvidence['failure'];
       if (status === 'failed') {
@@ -83,8 +91,8 @@ export function parseVitestJson(jsonText: string): VitestJsonResult {
       }
 
       assertions.push({
-        assertionId,
-        framework: 'vitest' as StructuredAssertionFramework,
+        assertion,
+        providerId,
         status,
         suiteName: ancestors.length > 0 ? ancestors.join(' > ') : undefined,
         testName: testTitle,
@@ -100,7 +108,7 @@ export function parseVitestJson(jsonText: string): VitestJsonResult {
   };
 }
 
-function emptyResult(): VitestJsonResult {
+function emptyResult(): ParserResult {
   return {
     assertions: [],
     summary: {

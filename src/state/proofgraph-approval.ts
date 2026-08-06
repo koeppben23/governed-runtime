@@ -12,6 +12,7 @@ import { z } from 'zod';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
 import { CounterexampleRequirement } from './proofgraph.js';
+import { AssertionIdentity } from './assertion-identity.js';
 import * as crypto from 'node:crypto';
 
 /** RFC 4122 DNS namespace, used to derive stable UUIDv5 claim identities. */
@@ -57,7 +58,7 @@ export const AssertionCounterexampleRequirement = z
   .object({
     mode: z.literal('assertion'),
     checkId: z.string().min(1),
-    assertionId: z.string().min(1),
+    assertion: AssertionIdentity,
   })
   .readonly();
 export type AssertionCounterexampleRequirement = z.infer<typeof AssertionCounterexampleRequirement>;

@@ -27,6 +27,7 @@ import type { AssertionCounterexampleRequirement as AssertionCounterexampleRequi
 import type { DeclaredClaim } from '../../state/proofgraph.js';
 import type { ProofProviderKind } from '../../state/proofgraph-primitives.js';
 import type { ClaimAuthorityRef } from '../../state/proofgraph-refs.js';
+import { ASSERTION_FORMATS_BY_PROVIDER } from '../../verification/assertion-parsers/registry.js';
 import {
   SURFACE_COMMAND_REGISTRATION,
   SURFACE_CONFIG_DEFAULTS,
@@ -299,13 +300,6 @@ function validateAssertionCapabilityGate(
   rawClaims: readonly RawClaim[],
   state: SessionState,
 ): string | null {
-  const PREFIX_FORMAT_MAP: Record<string, string> = {
-    'junit:': 'junit_xml',
-    'vitest:': 'vitest_json',
-    'jest:': 'jest_json',
-    'go:': 'go_test_json',
-  };
-
   for (const declaration of rawClaims) {
     const requirement = declaration.counterexampleRequirement;
     if (!requirement) continue;
@@ -323,22 +317,22 @@ function validateAssertionCapabilityGate(
       });
     }
 
-    const prefix = Object.keys(PREFIX_FORMAT_MAP).find((p) =>
-      requirement.assertionId.startsWith(p),
-    );
-    if (!prefix) {
-      return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-        reason: `Assertion ID '${requirement.assertionId}' has an unrecognized prefix. Supported: junit:, vitest:, jest:, go:.`,
-      });
-    }
-    const expectedFormat = PREFIX_FORMAT_MAP[prefix]!;
-    if (
-      (candidate as { assertionReport?: { format: string } }).assertionReport?.format !==
-      expectedFormat
-    ) {
-      return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-        reason: `Assertion format mismatch: '${requirement.assertionId}' prefix requires '${expectedFormat}' but candidate has '${(candidate as { assertionReport?: { format: string } }).assertionReport?.format}'.`,
-      });
+    if (requirement.mode === 'assertion') {
+      const providerId = requirement.assertion.providerId;
+      const assertionFormats = ASSERTION_FORMATS_BY_PROVIDER.get(providerId);
+      if (!assertionFormats || assertionFormats.size === 0) {
+        return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+          reason: `Provider '${providerId}' does not support assertion-level counterexample binding.`,
+        });
+      }
+      const candidateFormat = (candidate as { assertionReport?: { format: string } })
+        .assertionReport?.format;
+      if (!candidateFormat || !assertionFormats.has(candidateFormat)) {
+        const supported = [...assertionFormats].join(', ');
+        return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+          reason: `Provider '${providerId}' requires assertion format in [${supported}] but candidate has '${candidateFormat}'.`,
+        });
+      }
     }
   }
   return null;

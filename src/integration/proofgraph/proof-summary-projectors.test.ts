@@ -165,7 +165,7 @@ describe('projectPlanProofObligations', () => {
           counterexampleRequirement: {
             mode: 'assertion' as const,
             checkId: 'security',
-            assertionId: 'junit:com.example.Test#method',
+            assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
           },
         },
       ],

@@ -368,6 +368,152 @@ function migrateLegacyPlanClaims(json: unknown): void {
   }
 }
 
+// ─── Legacy Assertion Identity Migration ──────────────────────────────────────
+
+const LEGACY_PROVIDER_BY_PREFIX: Readonly<Record<string, string>> = {
+  junit: 'junit',
+  vitest: 'vitest',
+  jest: 'jest',
+  pytest: 'pytest',
+  go: 'go_test',
+  go_test: 'go_test',
+};
+
+function migrateLegacyAssertionIdentities(json: unknown): void {
+  if (!json || typeof json !== 'object') return;
+  const s = json as Record<string, unknown>;
+
+  migrateClaimDeclarationAssertions(s);
+  migrateEvidenceAssertions(s);
+}
+
+function migrateClaimDeclarationAssertions(s: Record<string, unknown>): void {
+  const plan = s.plan;
+  if (!plan || typeof plan !== 'object') return;
+  const p = plan as Record<string, unknown>;
+  const declarations = p.claimDeclarations;
+  if (!declarations || typeof declarations !== 'object') return;
+  const d = declarations as Record<string, unknown>;
+  const claims = d.claims;
+  if (!Array.isArray(claims)) return;
+
+  let hasLegacyAssertion = false;
+  for (const claim of claims) {
+    if (!claim || typeof claim !== 'object') continue;
+    const c = claim as Record<string, unknown>;
+    const req = c.counterexampleRequirement;
+    if (!req || typeof req !== 'object') continue;
+    const r = req as Record<string, unknown>;
+    if (r.mode !== 'assertion') continue;
+    if (r.assertionId === undefined) continue;
+    if (r.assertion !== undefined) {
+      throw new PersistenceError(
+        'SCHEMA_VALIDATION_FAILED',
+        'Legacy assertion claim has both assertionId and assertion fields',
+      );
+    }
+
+    const assertionId = String(r.assertionId);
+    const parts = assertionId.split(':');
+    if (parts.length < 2) {
+      throw new PersistenceError(
+        'SCHEMA_VALIDATION_FAILED',
+        `Legacy assertionId missing prefix: ${assertionId}`,
+      );
+    }
+    const prefix = parts[0]!;
+    const localId = parts.slice(1).join(':');
+    const providerId = LEGACY_PROVIDER_BY_PREFIX[prefix];
+    if (!providerId) {
+      throw new PersistenceError(
+        'SCHEMA_VALIDATION_FAILED',
+        `Unknown legacy assertion prefix '${prefix}:' in ${assertionId}`,
+      );
+    }
+
+    hasLegacyAssertion = true;
+    r.assertion = { providerId, localId };
+    delete r.assertionId;
+  }
+
+  if (hasLegacyAssertion) {
+    delete p.approvalCertificate;
+  }
+}
+
+function migrateEvidenceAssertions(s: Record<string, unknown>): void {
+  const attempts = s.validationAttempts;
+  if (!Array.isArray(attempts)) return;
+
+  for (const attempt of attempts) {
+    if (!attempt || typeof attempt !== 'object') continue;
+    const a = attempt as Record<string, unknown>;
+    const result = a.result;
+    if (!result || typeof result !== 'object') continue;
+    const r = result as Record<string, unknown>;
+    const extraction = r.assertionExtraction;
+    if (!extraction || typeof extraction !== 'object') continue;
+    const e = extraction as Record<string, unknown>;
+    if (e.status !== 'extracted') continue;
+    const assertions = e.assertions;
+    if (!Array.isArray(assertions)) continue;
+
+    for (const assertion of assertions) {
+      if (!assertion || typeof assertion !== 'object') continue;
+      const asr = assertion as Record<string, unknown>;
+      if (asr.assertionId === undefined) continue;
+      if (asr.assertion !== undefined) {
+        throw new PersistenceError(
+          'SCHEMA_VALIDATION_FAILED',
+          'Legacy assertion evidence has both assertionId and assertion fields',
+        );
+      }
+      if (asr.framework === undefined) {
+        throw new PersistenceError(
+          'SCHEMA_VALIDATION_FAILED',
+          'Legacy assertion evidence missing framework field',
+        );
+      }
+      if (asr.providerId !== undefined) {
+        throw new PersistenceError(
+          'SCHEMA_VALIDATION_FAILED',
+          'Legacy assertion evidence has both framework and providerId fields',
+        );
+      }
+
+      const assertionId = String(asr.assertionId);
+      const parts = assertionId.split(':');
+      if (parts.length < 2) {
+        throw new PersistenceError(
+          'SCHEMA_VALIDATION_FAILED',
+          `Legacy assertionId missing prefix: ${assertionId}`,
+        );
+      }
+      const prefix = parts[0]!;
+      const framework = String(asr.framework);
+
+      const providerId = LEGACY_PROVIDER_BY_PREFIX[prefix];
+      if (!providerId) {
+        throw new PersistenceError(
+          'SCHEMA_VALIDATION_FAILED',
+          `Unknown legacy assertion prefix '${prefix}:' in ${assertionId}`,
+        );
+      }
+      if (providerId !== LEGACY_PROVIDER_BY_PREFIX[framework]) {
+        throw new PersistenceError(
+          'SCHEMA_VALIDATION_FAILED',
+          `Legacy assertion prefix '${prefix}:' does not match framework '${framework}'`,
+        );
+      }
+
+      asr.assertion = { providerId, localId: parts.slice(1).join(':') };
+      asr.providerId = providerId;
+      delete asr.assertionId;
+      delete asr.framework;
+    }
+  }
+}
+
 export async function readState(sessionDir: string): Promise<SessionState | null> {
   const filePath = statePath(sessionDir);
 
@@ -405,6 +551,8 @@ export async function readState(sessionDir: string): Promise<SessionState | null
   migrateLegacyValidationOutcomes(json);
 
   migrateLegacyPlanClaims(json);
+
+  migrateLegacyAssertionIdentities(json);
 
   const result = SessionState.safeParse(json);
   if (!result.success) {

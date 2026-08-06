@@ -108,7 +108,7 @@ function renderPlanDeclarations(state: SessionState): string[] {
             ? [
                 `counterexample check: ${claim.counterexampleRequirement.checkId}` +
                   (claim.counterexampleRequirement.mode === 'assertion'
-                    ? ` (assertion: ${claim.counterexampleRequirement.assertionId})`
+                    ? ` (assertion: ${claim.counterexampleRequirement.assertion.localId})`
                     : ''),
               ]
             : []),

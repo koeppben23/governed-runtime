@@ -94,7 +94,7 @@ ${DISCOVERY_REVIEW_CAPTURE}
    - \`expectedCheckId\`: the check kind that must pass (from \`activeChecks\` /
      \`verificationCandidates\`, e.g. \`build\`).
     - \`counterexampleRequirement\`: an assertion-mode requirement for critical claims.
-      Example: \`{ mode: "assertion", checkId: "test", assertionId: "junit:com.example.SecurityTest#verifyNoXss" }\`.
+      Example: \`{ mode: "assertion", checkId: "test", assertion: { providerId: "junit", localId: "com.example.SecurityTest#verifyNoXss" } }\`.
       REQUIRED whenever \`critical\` is true — a critical claim without it can never
       become PROVEN and is rejected at submission. \`checkId\` MUST differ from
       \`expectedCheckId\`; \`assertionId\` identifies the specific test assertion

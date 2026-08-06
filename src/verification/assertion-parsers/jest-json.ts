@@ -1,14 +1,11 @@
 import type {
   AssertionExtractionSummary,
   StructuredAssertionEvidence,
-  StructuredAssertionFramework,
 } from '../../state/evidence-validation.js';
+import type { ProviderId } from '../../state/evidence-validation.js';
+import type { AssertionIdentity } from '../../state/assertion-identity.js';
+import type { ParseContext, ParserResult } from './types.js';
 import { createHash } from 'node:crypto';
-
-interface JestJsonResult {
-  assertions: StructuredAssertionEvidence[];
-  summary: AssertionExtractionSummary;
-}
 
 interface JestAssertionResult {
   ancestorTitles?: string[];
@@ -38,16 +35,26 @@ function mapStatus(raw: string): 'passed' | 'failed' | 'skipped' {
   return 'skipped';
 }
 
-function buildAssertionId(filePath: string, ancestorTitles: string[], title: string): string {
-  const normalized = filePath.replace(/\\/g, '/');
-  const chain = ancestorTitles.join('::');
-  if (chain) {
-    return `jest:${normalized}::${chain}::${title}`;
-  }
-  return `jest:${normalized}::${title}`;
+function normalizeFilePath(filePath: string): string {
+  return filePath.replace(/\\/g, '/').replace(/^\.\//, '');
 }
 
-export function parseJestJson(jsonText: string): JestJsonResult {
+export function buildJestLocalId(
+  filePath: string,
+  ancestorTitles: string[],
+  title: string,
+): string {
+  const normalized = normalizeFilePath(filePath);
+  const chain = ancestorTitles.join('::');
+  if (chain) {
+    return `${normalized}::${chain}::${title}`;
+  }
+  return `${normalized}::${title}`;
+}
+
+export function parseJestJson(jsonText: string, context: ParseContext): ParserResult {
+  const providerId: ProviderId = context.providerId;
+
   let report: JestJsonReport;
   try {
     report = JSON.parse(jsonText) as JestJsonReport;
@@ -72,7 +79,8 @@ export function parseJestJson(jsonText: string): JestJsonResult {
       const rawStatus = ar.status ?? 'passed';
       const status = mapStatus(rawStatus);
       const testTitle = ar.title ?? 'unknown';
-      const assertionId = buildAssertionId(fileName, ancestors, testTitle);
+      const localId = buildJestLocalId(fileName, ancestors, testTitle);
+      const assertion: AssertionIdentity = { providerId, localId };
 
       let failure: StructuredAssertionEvidence['failure'];
       if (status === 'failed') {
@@ -89,8 +97,8 @@ export function parseJestJson(jsonText: string): JestJsonResult {
       }
 
       assertions.push({
-        assertionId,
-        framework: 'jest' as StructuredAssertionFramework,
+        assertion,
+        providerId,
         status,
         suiteName: ancestors.length > 0 ? ancestors.join(' > ') : undefined,
         testName: testTitle,
@@ -107,7 +115,7 @@ export function parseJestJson(jsonText: string): JestJsonResult {
   };
 }
 
-function emptyResult(): JestJsonResult {
+function emptyResult(): ParserResult {
   return {
     assertions: [],
     summary: {

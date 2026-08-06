@@ -7,12 +7,10 @@ import type {
   AssertionExtractionResult,
   AssertionExtractionSummary,
 } from '../state/evidence-validation.js';
-import type { AssertionReportFormat, AssertionReportSpec } from '../state/discovery-schemas.js';
+import type { ReportFormatId, ProviderId } from '../state/assertion-identity.js';
+import type { AssertionReportSpec } from '../state/discovery-schemas.js';
 
-import { parseJUnitXml } from './assertion-parsers/junit-xml.js';
-import { parseJestJson } from './assertion-parsers/jest-json.js';
-import { parseVitestJson } from './assertion-parsers/vitest-json.js';
-import { parseGoTestJson } from './assertion-parsers/go-test-json.js';
+import { PARSER_BY_FORMAT } from './assertion-parsers/registry.js';
 
 const MAX_FILES_PER_PATTERN = 100;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -35,6 +33,19 @@ export interface PreparedAssertionExtraction {
 interface ParserResult {
   assertions: import('../state/evidence-validation.js').StructuredAssertionEvidence[];
   summary: AssertionExtractionSummary;
+}
+
+function parseWithFormat(
+  format: ReportFormatId,
+  providerId: ProviderId,
+  content: string,
+  fileName: string,
+): ParserResult {
+  const parser = PARSER_BY_FORMAT.get(format);
+  if (!parser) {
+    throw new Error(`unsupported assertion report format: ${format}`);
+  }
+  return parser.parse(content, fileName, { providerId });
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -78,15 +89,22 @@ export async function completeAssertionExtraction(
   try {
     switch (spec.collection) {
       case 'stdout':
-        return extractFromStdout(attemptId, spec.format, execution.stdout);
+        return extractFromStdout(attemptId, spec.format, spec.providerId, execution.stdout);
 
       case 'run_specific':
-        return extractFromRunSpecific(attemptId, spec.format, cwd, prepared.runSpecificPattern!);
+        return extractFromRunSpecific(
+          attemptId,
+          spec.format,
+          spec.providerId,
+          cwd,
+          prepared.runSpecificPattern!,
+        );
 
       case 'snapshot_diff':
         return extractFromSnapshotDiff(
           attemptId,
           spec.format,
+          spec.providerId,
           cwd,
           spec.standardPatterns,
           prepared.preExecutionSnapshot ?? [],
@@ -102,10 +120,11 @@ export async function completeAssertionExtraction(
 
 async function extractFromStdout(
   attemptId: string,
-  format: AssertionReportFormat,
+  format: ReportFormatId,
+  providerId: ProviderId,
   stdout: string,
 ): Promise<AssertionExtractionResult> {
-  const parsed = parseWithFormat(format, stdout, '<stdout>');
+  const parsed = parseWithFormat(format, providerId, stdout, '<stdout>');
   if (!parsed.assertions.length) {
     return {
       status: 'inconclusive',
@@ -126,7 +145,8 @@ async function extractFromStdout(
 
 async function extractFromRunSpecific(
   attemptId: string,
-  format: AssertionReportFormat,
+  format: ReportFormatId,
+  providerId: ProviderId,
   cwd: string,
   pattern: string,
 ): Promise<AssertionExtractionResult> {
@@ -141,12 +161,13 @@ async function extractFromRunSpecific(
       reason: `too many report files: ${paths.length} (max ${MAX_FILES_PER_PATTERN})`,
     };
   }
-  return parseAndMergeFiles(attemptId, format, cwd, paths);
+  return parseAndMergeFiles(attemptId, format, providerId, cwd, paths);
 }
 
 async function extractFromSnapshotDiff(
   attemptId: string,
-  format: AssertionReportFormat,
+  format: ReportFormatId,
+  providerId: ProviderId,
   cwd: string,
   patterns: string[],
   preSnapshot: ReportFileSnapshot[],
@@ -168,7 +189,7 @@ async function extractFromSnapshotDiff(
       reason: `too many changed report files: ${changedPaths.length} (max ${MAX_FILES_PER_PATTERN})`,
     };
   }
-  return parseAndMergeFiles(attemptId, format, cwd, changedPaths);
+  return parseAndMergeFiles(attemptId, format, providerId, cwd, changedPaths);
 }
 
 // ─── Snapshot & Diff ────────────────────────────────────────────────────────
@@ -213,7 +234,8 @@ function diffSnapshots(pre: ReportFileSnapshot[], post: ReportFileSnapshot[]): s
 
 async function parseAndMergeFiles(
   attemptId: string,
-  format: AssertionReportFormat,
+  format: ReportFormatId,
+  providerId: ProviderId,
   cwd: string,
   paths: string[],
 ): Promise<AssertionExtractionResult> {
@@ -240,7 +262,7 @@ async function parseAndMergeFiles(
       };
     }
 
-    const parsed = parseWithFormat(format, content, relPath);
+    const parsed = parseWithFormat(format, providerId, content, relPath);
     allAssertions.push(...parsed.assertions);
     allSummaries.push(parsed.summary);
     digests.push(sha256(content));
@@ -262,25 +284,6 @@ async function parseAndMergeFiles(
     assertions: allAssertions,
     summary: mergeSummaries(allSummaries),
   };
-}
-
-function parseWithFormat(
-  format: AssertionReportFormat,
-  content: string,
-  fileName: string,
-): ParserResult {
-  switch (format) {
-    case 'junit_xml':
-      return parseJUnitXml(content, fileName);
-    case 'jest_json':
-      return parseJestJson(content);
-    case 'vitest_json':
-      return parseVitestJson(content);
-    case 'go_test_json':
-      return parseGoTestJson(content);
-    default:
-      throw new Error(`unsupported assertion report format: ${format}`);
-  }
 }
 
 // ─── Summary Merging ────────────────────────────────────────────────────────

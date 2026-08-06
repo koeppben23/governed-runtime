@@ -1322,12 +1322,14 @@ function makeStructuredSecurityCandidate() {
       collection: 'snapshot_diff' as const,
       transport: 'file' as const,
       format: 'junit_xml' as const,
+      providerId: 'junit',
       standardPatterns: ['TEST-*.xml'],
     },
   };
 }
 
 function makeAssertionExtraction(assertionId: string, status: 'passed' | 'failed') {
+  const localId = assertionId.includes(':') ? assertionId.split(':')[1]! : assertionId;
   return {
     status: 'extracted' as const,
     attemptId: '00000000-0000-4000-8000-0000000000dd',
@@ -1335,8 +1337,8 @@ function makeAssertionExtraction(assertionId: string, status: 'passed' | 'failed
     reportDigests: ['a'.repeat(64)],
     assertions: [
       {
-        assertionId,
-        framework: 'junit' as const,
+        assertion: { providerId: 'junit', localId },
+        providerId: 'junit',
         status,
         testName: 'verify',
         suiteName: 'com.example.SecurityTest',
@@ -1450,7 +1452,7 @@ describe('declare_contract', () => {
               counterexampleRequirement: {
                 mode: 'assertion' as const,
                 checkId: 'security',
-                assertionId: 'junit:com.example.SecurityTest#verify',
+                assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
               },
               authority: 'ticket',
             },
@@ -1540,7 +1542,7 @@ describe('declare_contract', () => {
               counterexampleRequirement: {
                 mode: 'assertion' as const,
                 checkId: 'security',
-                assertionId: 'junit:com.example.SecurityTest#verify',
+                assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
               },
               authority: 'plan',
             },
@@ -1631,7 +1633,7 @@ describe('declare_contract', () => {
       counterexampleRequirement: {
         mode: 'assertion' as const,
         checkId: 'security',
-        assertionId: 'junit:com.example.SecurityTest#verify',
+        assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
       },
       authority: 'ticket' as const,
       structuralSurface: 'command-registration' as const,
@@ -1672,7 +1674,6 @@ describe('declare_contract', () => {
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
       const digest = 'impl-combined';
-      const assertionId = 'junit:com.example.SecurityTest#verifyNoSqlInjection';
       const failedExtraction = {
         status: 'extracted' as const,
         attemptId: '00000000-0000-4000-8000-0000000000aa',
@@ -1680,8 +1681,11 @@ describe('declare_contract', () => {
         reportDigests: ['a'.repeat(64)],
         assertions: [
           {
-            assertionId,
-            framework: 'junit' as const,
+            assertion: {
+              providerId: 'junit',
+              localId: 'com.example.SecurityTest#verifyNoSqlInjection',
+            },
+            providerId: 'junit',
             status: 'failed' as const,
             testName: 'verifyNoSqlInjection',
             suiteName: 'com.example.SecurityTest',
@@ -1738,6 +1742,7 @@ describe('declare_contract', () => {
               collection: 'snapshot_diff' as const,
               transport: 'file' as const,
               format: 'junit_xml' as const,
+              providerId: 'junit',
               standardPatterns: ['TEST-*.xml'],
             },
           },
@@ -1769,7 +1774,10 @@ describe('declare_contract', () => {
                 counterexampleRequirement: {
                   mode: 'assertion' as const,
                   checkId: 'security',
-                  assertionId,
+                  assertion: {
+                    providerId: 'junit',
+                    localId: 'com.example.SecurityTest#verifyNoSqlInjection',
+                  },
                 },
               },
             ],
@@ -1821,7 +1829,7 @@ describe('declare_contract', () => {
               counterexampleRequirement: {
                 mode: 'assertion' as const,
                 checkId: 'test',
-                assertionId: 'junit:com.example.Test#testMethod',
+                assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
               },
               authority: 'ticket',
             },
@@ -1981,7 +1989,7 @@ describe('declare_contract', () => {
               counterexampleRequirement: {
                 mode: 'assertion' as const,
                 checkId: 'security',
-                assertionId,
+                assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verifyNoXss' },
               },
             },
           ],
