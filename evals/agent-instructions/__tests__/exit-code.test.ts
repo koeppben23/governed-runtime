@@ -29,7 +29,6 @@ function makeExecuted(
       afterSnapshot: new Map(),
       beforeContent: new Map(),
       afterContent: new Map(),
-      redactionValues: [],
     },
   };
 }

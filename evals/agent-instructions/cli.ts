@@ -26,12 +26,20 @@
  */
 
 import { readFileSync, appendFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { resolve, dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { RunnerConfigSchema } from './schema.js';
 import { runEval, writeReports } from './run.js';
 import { determineExitCode } from './exit-code.js';
 import { renderGitHubSummary } from './github-summary.js';
+
+const REPO_ROOT = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+);
 
 async function main(): Promise<void> {
   const { values } = parseArgs({
@@ -79,9 +87,8 @@ async function main(): Promise<void> {
     config.timeoutMs = ms;
   }
 
-  const repoRoot = process.cwd();
-  const executed = await runEval(config, repoRoot, values.case);
-  const runDir = writeReports(config.name, executed);
+  const { executed, redactionValues } = await runEval(config, REPO_ROOT, values.case);
+  const runDir = writeReports(config.name, executed, { redactionValues });
 
   // GitHub Step Summary
   if (process.env.GITHUB_STEP_SUMMARY) {

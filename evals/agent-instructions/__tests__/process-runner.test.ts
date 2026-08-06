@@ -26,7 +26,7 @@ function sha256File(p: string): string {
 
 describe('process-runner', () => {
   it('captures stdout from a passing process', async () => {
-    const outcome = await runProcess(config(['pass']), FIXTURE, 'test prompt', true, process.cwd());
+    const outcome = await runProcess(config(['pass']), FIXTURE, 'test prompt', true, process.cwd(), {});
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
       expect(outcome.stdout).toContain('All checks passed');
@@ -35,7 +35,7 @@ describe('process-runner', () => {
   });
 
   it('captures stderr', async () => {
-    const outcome = await runProcess(config(['exit-1']), FIXTURE, 'test prompt', true, process.cwd());
+    const outcome = await runProcess(config(['exit-1']), FIXTURE, 'test prompt', true, process.cwd(), {});
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
       expect(outcome.stderr).toContain('something went wrong');
@@ -46,7 +46,7 @@ describe('process-runner', () => {
   it('detects timeout', async () => {
     const c = config(['timeout']);
     c.timeoutMs = 2000;
-    const outcome = await runProcess(c, FIXTURE, 'test prompt', true, process.cwd());
+    const outcome = await runProcess(c, FIXTURE, 'test prompt', true, process.cwd(), {});
     expect(outcome.status).toBe('runner_error');
     expect(outcome).toMatchObject({
       status: 'runner_error',
@@ -55,7 +55,7 @@ describe('process-runner', () => {
   });
 
   it('detects process crash (exit code != 0)', async () => {
-    const outcome = await runProcess(config(['crash']), FIXTURE, 'test prompt', true, process.cwd());
+    const outcome = await runProcess(config(['crash']), FIXTURE, 'test prompt', true, process.cwd(), {});
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
       expect(outcome.exitCode).toBe(137);
@@ -63,7 +63,7 @@ describe('process-runner', () => {
   });
 
   it('detects file creation in workspace', async () => {
-    const outcome = await runProcess(config(['workspace-write']), FIXTURE, 'test prompt', true, process.cwd());
+    const outcome = await runProcess(config(['workspace-write']), FIXTURE, 'test prompt', true, process.cwd(), {});
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
       const hasNewFile = outcome.afterSnapshot.has('new-file.txt') ||
@@ -80,7 +80,7 @@ describe('process-runner', () => {
       args: [],
       timeoutMs: 5000,
     };
-    const outcome = await runProcess(c, FIXTURE, 'test prompt', true, process.cwd());
+    const outcome = await runProcess(c, FIXTURE, 'test prompt', true, process.cwd(), {});
     expect(outcome.status).toBe('runner_error');
     expect(outcome).toMatchObject({
       status: 'runner_error',
@@ -89,7 +89,7 @@ describe('process-runner', () => {
   });
 
   it('passes the prompt to the process via stdin', async () => {
-    const outcome = await runProcess(config(['echo-stdin']), FIXTURE, 'Hello from eval', true, process.cwd());
+    const outcome = await runProcess(config(['echo-stdin']), FIXTURE, 'Hello from eval', true, process.cwd(), {});
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
       expect(outcome.stdout).toContain('Hello from eval');
@@ -109,7 +109,7 @@ describe('process-runner', () => {
       timeoutMs: 10_000,
     };
 
-    await runProcess(c, fixtureDir, 'test prompt', true, process.cwd());
+    await runProcess(c, fixtureDir, 'test prompt', true, process.cwd(), {});
     const hashAfter = sha256File(join(fixtureDir, 'data.txt'));
 
     expect(hashBefore).toBe(hashAfter);

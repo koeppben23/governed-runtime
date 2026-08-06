@@ -151,7 +151,7 @@ const RunnerBase = {
   timeoutMs: z.number().int().positive().default(600_000),
 };
 
-export const RunnerConfigSchema = z.discriminatedUnion('promptTransport', [
+const InnerRunnerConfigSchema = z.discriminatedUnion('promptTransport', [
   z.object({
     ...RunnerBase,
     promptTransport: z.literal('stdin'),
@@ -176,7 +176,21 @@ export const RunnerConfigSchema = z.discriminatedUnion('promptTransport', [
   }),
 ]);
 
-export type RunnerConfig = z.infer<typeof RunnerConfigSchema>;
+export const RunnerConfigSchema = z.preprocess(
+  (input) => {
+    if (
+      typeof input === 'object' &&
+      input !== null &&
+      !('promptTransport' in input)
+    ) {
+      return { ...(input as Record<string, unknown>), promptTransport: 'stdin' };
+    }
+    return input;
+  },
+  InnerRunnerConfigSchema,
+);
+
+export type RunnerConfig = z.infer<typeof InnerRunnerConfigSchema>;
 
 // ── Result schemas ────────────────────────────────────────────────────
 

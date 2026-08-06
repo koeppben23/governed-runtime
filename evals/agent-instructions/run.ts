@@ -10,6 +10,40 @@ import { scoreCase, summarizeResults } from './score.js';
 import { redactSecrets } from './redact.js';
 import type { RunnerConfig, ExecutedEvalCase, EvalCaseResult } from './schema.js';
 
+// ── Environment resolution ──────────────────────────────────────────
+
+export interface ResolvedEnv {
+  childEnv: NodeJS.ProcessEnv;
+  redactionValues: string[];
+}
+
+export function resolveRunnerEnv(config: RunnerConfig): ResolvedEnv {
+  const redactionValues: string[] = [];
+  const childEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...(config.staticEnv ?? {}),
+  };
+
+  const missing: string[] = [];
+  for (const name of config.secretEnvNames ?? []) {
+    const val = process.env[name];
+    if (val === undefined) {
+      missing.push(name);
+      continue;
+    }
+    childEnv[name] = val;
+    redactionValues.push(val);
+  }
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required environment variable(s):\n${missing.map((m) => `  - ${m}`).join('\n')}`,
+    );
+  }
+
+  return { childEnv, redactionValues };
+}
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const CASES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'cases');
 const RESULTS_DIR = join(ROOT, 'eval-results');
@@ -32,12 +66,15 @@ export async function runEval(
   config: RunnerConfig,
   repoRoot: string,
   caseIds?: string[],
-): Promise<ExecutedEvalCase[]> {
+): Promise<{ executed: ExecutedEvalCase[]; redactionValues: string[] }> {
+  const env = resolveRunnerEnv(config);
+
   let cases = loadCases(CASES_DIR).sort((a, b) => a.id.localeCompare(b.id));
 
   if (caseIds && caseIds.length > 0) {
-    const idSet = new Set(caseIds);
-    const unknown = caseIds.filter((id) => !cases.some((c) => c.id === id));
+    const requestedIds = [...new Set(caseIds)];
+    const idSet = new Set(requestedIds);
+    const unknown = requestedIds.filter((id) => !cases.some((c) => c.id === id));
     if (unknown.length > 0) {
       throw new Error(`Unknown case ID(s): ${unknown.join(', ')}`);
     }
@@ -64,7 +101,7 @@ export async function runEval(
       cleanupTemp = empty.cleanup;
     }
 
-    const outcome = await runProcess(config, fixtureRoot, evalCase.task, forceCopy, repoRoot);
+    const outcome = await runProcess(config, fixtureRoot, evalCase.task, forceCopy, repoRoot, env.childEnv);
 
     if (cleanupTemp) {
       cleanupTemp();
@@ -117,7 +154,7 @@ export async function runEval(
     results.push({ evalCase, result, outcome });
   }
 
-  return results;
+  return { executed: results, redactionValues: env.redactionValues };
 }
 
 // ── Report persistence ────────────────────────────────────────────────
@@ -145,7 +182,7 @@ export function writeReports(
     const caseDir = join(casesDir, e.evalCase.id);
     mkdirSync(caseDir, { recursive: true });
 
-    writeFileSync(join(caseDir, 'prompt.txt'), e.evalCase.task + '\n');
+    writeFileSync(join(caseDir, 'prompt.txt'), redactSecrets(e.evalCase.task + '\n', redactionValues));
 
     if (e.outcome.status === 'completed' || e.outcome.status === 'runner_error') {
       writeFileSync(
@@ -192,7 +229,7 @@ export function writeReports(
     '',
     ...summary.cases.map((c) => `- **${c.caseId}**: ${c.verdict}`),
   ];
-  writeFileSync(join(runDir, 'summary.md'), mdLines.join('\n') + '\n');
+  writeFileSync(join(runDir, 'summary.md'), redactSecrets(mdLines.join('\n') + '\n', redactionValues));
 
   return runDir;
 }

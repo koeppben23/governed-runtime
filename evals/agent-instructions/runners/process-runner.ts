@@ -26,7 +26,6 @@ export interface CompletedOutcome {
   afterSnapshot: WorkspaceSnapshot;
   beforeContent: Map<string, string>;
   afterContent: Map<string, string>;
-  redactionValues: string[];
 }
 
 export interface RunnerErrorOutcome {
@@ -35,7 +34,6 @@ export interface RunnerErrorOutcome {
   message: string;
   stdout: string;
   stderr: string;
-  redactionValues: string[];
 }
 
 export type RunnerOutcome = CompletedOutcome | RunnerErrorOutcome;
@@ -157,9 +155,10 @@ export async function runProcess(
   prompt: string,
   forceCopy: boolean,
   repoRoot: string,
+  childEnv: NodeJS.ProcessEnv,
 ): Promise<RunnerOutcome> {
   const ws = setupWorkspace(fixtureRoot, forceCopy);
-  if ('status' in ws) return { ...ws, redactionValues: [] };
+  if ('status' in ws) return ws;
 
   const { workspaceRoot, cleanup } = ws;
 
@@ -171,31 +170,9 @@ export async function runProcess(
   );
   const useStdin = config.promptTransport === 'stdin';
   if (!useStdin) {
-    // argument transport: replace {prompt} in exactly one position
-    // already validated by schema
     for (let i = 0; i < resolvedArgs.length; i++) {
       resolvedArgs[i] = resolvedArgs[i].replace('{prompt}', prompt);
     }
-  }
-
-  // Build child env
-  const redactionValues: string[] = [];
-  const childEnv: NodeJS.ProcessEnv = { ...process.env, ...(config.staticEnv ?? {}) };
-  for (const name of config.secretEnvNames ?? []) {
-    const val = process.env[name];
-    if (val === undefined) {
-      cleanup();
-      return {
-        status: 'runner_error',
-        errorKind: 'internal',
-        message: `Missing required environment variable: ${name}`,
-        stdout: '',
-        stderr: '',
-        redactionValues: [],
-      };
-    }
-    childEnv[name] = val;
-    redactionValues.push(val);
   }
 
   let child: ChildProcess;
@@ -217,13 +194,12 @@ export async function runProcess(
         message: `Failed to spawn "${config.command}": ${(err as Error).message}`,
         stdout: '',
         stderr: '',
-        redactionValues: [],
       });
       return;
     }
 
     let stdout = '';
-    let stderr = '';
+    let stderrOut = '';
     let settled = false;
 
     const finish = (outcome: RunnerOutcome) => {
@@ -237,7 +213,7 @@ export async function runProcess(
       stdout += chunk.toString('utf-8');
     });
     child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf-8');
+      stderrOut += chunk.toString('utf-8');
     });
 
     const timer = setTimeout(() => {
@@ -247,8 +223,7 @@ export async function runProcess(
         errorKind: 'timeout',
         message: `Process timed out after ${config.timeoutMs}ms`,
         stdout,
-        stderr,
-        redactionValues,
+        stderr: stderrOut,
       });
     }, config.timeoutMs);
 
@@ -259,8 +234,7 @@ export async function runProcess(
         errorKind: 'spawn',
         message: `Process error: ${err.message}`,
         stdout,
-        stderr,
-        redactionValues,
+        stderr: stderrOut,
       });
     });
 
@@ -273,8 +247,7 @@ export async function runProcess(
           errorKind: 'signal',
           message: `Process terminated by signal ${signal}`,
           stdout,
-          stderr,
-          redactionValues,
+          stderr: stderrOut,
         });
         return;
       }
@@ -288,17 +261,15 @@ export async function runProcess(
         status: 'completed',
         exitCode,
         stdout,
-        stderr,
+        stderr: stderrOut,
         durationMs,
         beforeSnapshot: before.entries,
         afterSnapshot: after.entries,
         beforeContent: before.contents,
         afterContent: after.contents,
-        redactionValues,
       });
     });
 
-    // Write prompt to stdin (stdin transport) or close immediately (argument)
     if (useStdin) {
       child.stdin?.end(prompt);
     } else {
