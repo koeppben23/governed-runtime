@@ -46,13 +46,14 @@ function readFile(root, path) {
 }
 
 function isIgnored(relativePath, ignoredPaths) {
-  const normalized = normalizeRepoPath(relativePath);
-  for (const ignored of ignoredPaths) {
-    if (normalized === ignored || normalized.startsWith(`${ignored}/`)) {
-      return true;
-    }
-  }
-  return false;
+  const normalizedPath = normalizeRepoPath(relativePath);
+  return ignoredPaths.some((ignoredPath) => {
+    const normalizedIgnored = normalizeRepoPath(ignoredPath);
+    return (
+      normalizedPath === normalizedIgnored ||
+      normalizedPath.startsWith(`${normalizedIgnored}/`)
+    );
+  });
 }
 
 function walkDir(root, relativeDir, result, targetName) {

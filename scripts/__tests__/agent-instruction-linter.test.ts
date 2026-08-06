@@ -152,10 +152,10 @@ describe('lintAgentInstructions', () => {
     expect(commitDiag).toBeDefined();
   });
 
-  it('excludes paths matching ignoredPaths', () => {
+  it('normalizes Windows-style ignored paths', () => {
     const result = lintAgentInstructions({
       root: join(FIXTURES, 'nested-git-rule-weakening'),
-      ignoredPaths: ['src/machine/AGENTS.md'],
+      ignoredPaths: ['.\\src\\machine'],
     });
     expect(result.ok).toBe(true);
     expect(result.diagnostics).toHaveLength(0);
@@ -182,12 +182,6 @@ describe('formatDiagnostics', () => {
     ]);
     expect(output).toContain('WARN');
     expect(output).toContain('advisory');
-  });
-
-  it('does not end the process', () => {
-    // Library module must not call process.exit()
-    // Verified by the fact that we can call these functions in-test
-    // without the test process terminating.
   });
 });
 
