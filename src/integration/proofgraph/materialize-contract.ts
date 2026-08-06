@@ -9,9 +9,9 @@
  */
 
 import type { ProofContract, ProofContractCoverage } from '../../state/proofgraph-contract.js';
-import type { CounterexampleRequirement } from '../../state/proofgraph.js';
 import {
   hasCurrentPlanApprovalCertificate,
+  normalizePlanClaimDeclaration,
   type PlanClaimDeclaration,
 } from '../../state/proofgraph-approval.js';
 import type { SessionState } from '../../state/schema.js';
@@ -132,15 +132,8 @@ export async function materializeApprovedPlanContractResult(
     if (declaration.mutationProfile && mutationAttempt === null) {
       coverage.push({ claimId: declaration.claimId, cause: 'unverified_mutation_profile' });
     }
-    const declarationRecord = declaration as Record<string, unknown>;
-    const existingRequirement = declarationRecord['counterexampleRequirement'] as
-      CounterexampleRequirement | undefined;
-    const legacyCheckId = declarationRecord['counterexampleCheckId'] as string | undefined;
-    const requirement: CounterexampleRequirement | undefined =
-      existingRequirement ??
-      (legacyCheckId !== undefined
-        ? { mode: 'check' as const, checkId: legacyCheckId }
-        : undefined);
+    const normalized = normalizePlanClaimDeclaration(declaration);
+    const requirement = normalized.counterexampleRequirement;
     const counterexampleCheckId = requirement?.checkId;
     const counterexampleAttempts = counterexampleCheckId
       ? attempts.filter((attempt) => attempt.result.checkId === counterexampleCheckId)

@@ -6,13 +6,21 @@ import {
   FlowClaimDeclarations,
   PlanClaimDeclarations,
   ProofGraphApprovalCertificate,
+  PlanApprovalCertificate,
   mintProofGraphClaimId,
   PlanClaimDeclarationInput,
   ArchitectureClaimDeclarationInput,
+  normalizePlanClaimDeclaration,
+  hasCurrentPlanApprovalCertificate,
+  type PlanClaimDeclaration,
+  type NormalizedPlanClaim,
+  type PlanClaimAuthority,
 } from './proofgraph-approval.js';
 import { SessionState } from './schema.js';
 import { makeState } from '../fixtures.js';
 import { computeRecordDigest } from './evidence-plan.js';
+import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 const CERTIFICATE = {
@@ -263,5 +271,158 @@ describe('ArchitectureClaimDeclarationInput', () => {
         requiredReviewEvidence: ['evidence'],
       }),
     ).toThrow();
+  });
+});
+
+describe('normalizePlanClaimDeclaration', () => {
+  const BASE = {
+    claimId: '00000000-0000-4000-8000-000000000001',
+    statement: 'test',
+    critical: true,
+    authoritySectionId: 's1',
+    expectedCheckId: 'test',
+  } as const;
+
+  it('preserves assertion requirement unchanged', () => {
+    const input: PlanClaimDeclaration = {
+      ...BASE,
+      counterexampleRequirement: {
+        mode: 'assertion' as const,
+        checkId: 'security',
+        assertionId: 'junit:com.example.Test#method',
+      },
+    };
+    const result = normalizePlanClaimDeclaration(input);
+    expect(result.counterexampleRequirement).toEqual({
+      mode: 'assertion',
+      checkId: 'security',
+      assertionId: 'junit:com.example.Test#method',
+    });
+  });
+
+  it('normalizes legacy counterexampleCheckId to mode=check', () => {
+    const input: PlanClaimDeclaration = {
+      ...BASE,
+      counterexampleCheckId: 'security',
+    } as PlanClaimDeclaration;
+    const result = normalizePlanClaimDeclaration(input);
+    expect(result.counterexampleRequirement).toEqual({
+      mode: 'check',
+      checkId: 'security',
+    });
+  });
+
+  it('returns undefined for missing counterexample', () => {
+    const input = { ...BASE } as PlanClaimDeclaration;
+    const result = normalizePlanClaimDeclaration(input);
+    expect(result.counterexampleRequirement).toBeUndefined();
+  });
+
+  it('does not include counterexampleCheckId in normalized result', () => {
+    const input: PlanClaimDeclaration = {
+      ...BASE,
+      counterexampleCheckId: 'security',
+    } as PlanClaimDeclaration;
+    const result = normalizePlanClaimDeclaration(input) as Record<string, unknown>;
+    expect(result['counterexampleCheckId']).toBeUndefined();
+  });
+
+  it('does not mutate the input object', () => {
+    const input: PlanClaimDeclaration = {
+      ...BASE,
+      counterexampleCheckId: 'security',
+    } as PlanClaimDeclaration;
+    const original = { ...input };
+    normalizePlanClaimDeclaration(input);
+    expect(input).toEqual(original);
+  });
+
+  it('preserves all other claim fields unchanged', () => {
+    const input: PlanClaimDeclaration = {
+      ...BASE,
+      counterexampleRequirement: {
+        mode: 'assertion' as const,
+        checkId: 'sec',
+        assertionId: 'junit:x#y',
+      },
+      structuralSurface: 'command-registration',
+      mutationProfile: 'all-killed',
+    };
+    const result = normalizePlanClaimDeclaration(input);
+    expect(result.claimId).toBe(BASE.claimId);
+    expect(result.statement).toBe(BASE.statement);
+    expect(result.critical).toBe(BASE.critical);
+    expect(result.authoritySectionId).toBe(BASE.authoritySectionId);
+    expect(result.expectedCheckId).toBe(BASE.expectedCheckId);
+    expect(result.structuralSurface).toBe('command-registration');
+    expect(result.mutationProfile).toBe('all-killed');
+  });
+});
+
+describe('certificate integrity with legacy claims', () => {
+  const NOW = '2026-01-01T00:00:00.000Z';
+  const LEGACY_CLAIM = {
+    claimId: '00000000-0000-4000-8000-000000000002',
+    statement: 'legacy',
+    critical: true,
+    authoritySectionId: 's1',
+    expectedCheckId: 'test',
+    counterexampleCheckId: 'security',
+  } as const;
+
+  function makeCertificate(digest: string) {
+    return PlanApprovalCertificate.parse({
+      flow: 'plan',
+      authorityDigest: 'plan-digest',
+      planVersion: 1,
+      planRecordDigest: 'rec-digest',
+      claimDeclarationsDigest: digest,
+      decisionAttestationDigest: 'dec-digest',
+      approvedAt: NOW,
+      approvedBy: 'test',
+      certificateId: '00000000-0000-4000-8000-000000000003',
+      reviewObligationId: null,
+      reviewEvidenceDigest: null,
+    });
+  }
+
+  function makePlan(
+    declarations: PlanClaimDeclarations,
+    certificate: PlanApprovalCertificate,
+  ): PlanClaimAuthority {
+    return {
+      current: { digest: 'plan-digest', planVersion: 1, recordDigest: 'rec-digest' },
+      claimDeclarations: declarations,
+      approvalCertificate: certificate,
+    };
+  }
+
+  const legacyDeclarations: PlanClaimDeclarations = {
+    flow: 'plan',
+    claims: [LEGACY_CLAIM as PlanClaimDeclaration],
+  };
+
+  it('legacy claim with counterexampleCheckId passes certificate digest validation against original persisted form', () => {
+    const digest = hashText(canonicalJsonStringify(legacyDeclarations));
+    const plan = makePlan(legacyDeclarations, makeCertificate(digest));
+    expect(hasCurrentPlanApprovalCertificate(plan)).toBe(true);
+  });
+
+  it('certificate with digest of normalized form is REJECTED for legacy persisted claim', () => {
+    const normalizedClaim = normalizePlanClaimDeclaration(LEGACY_CLAIM as PlanClaimDeclaration);
+    const normalizedDeclarations: PlanClaimDeclarations = {
+      flow: 'plan',
+      claims: [normalizedClaim as PlanClaimDeclaration],
+    };
+    const wrongDigest = hashText(canonicalJsonStringify(normalizedDeclarations));
+    const plan = makePlan(legacyDeclarations, makeCertificate(wrongDigest));
+    expect(hasCurrentPlanApprovalCertificate(plan)).toBe(false);
+  });
+
+  it('normalization does not mutate the persisted claim declaration', () => {
+    const claim = { ...LEGACY_CLAIM } as PlanClaimDeclaration;
+    const before = JSON.stringify(claim);
+    normalizePlanClaimDeclaration(claim);
+    expect(JSON.stringify(claim)).toBe(before);
   });
 });

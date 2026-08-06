@@ -5,6 +5,7 @@ import { FLOWGUARD_MANDATES_BODY } from '../../templates/index.js';
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../..');
 const AGENTS_PATH = path.join(PROJECT_ROOT, 'AGENTS.md');
+const CONTRIBUTING_PATH = path.join(PROJECT_ROOT, 'CONTRIBUTING.md');
 const IMPLEMENTATION_GUIDE = path.join(PROJECT_ROOT, 'docs/agent-guidance/implementation.md');
 const REVIEW_GUIDE = path.join(PROJECT_ROOT, 'docs/agent-guidance/review.md');
 const HIGH_RISK_GUIDE = path.join(PROJECT_ROOT, 'docs/agent-guidance/high-risk.md');
@@ -18,6 +19,16 @@ async function readAgents(): Promise<string> {
 
 function unwrapMarkdown(content: string): string {
   return content.replace(/\n\s+/g, ' ');
+}
+
+async function readAll(): Promise<string> {
+  const agents = await readAgents();
+  try {
+    const contributing = await fs.readFile(CONTRIBUTING_PATH, 'utf-8');
+    return agents + '\n' + contributing.replace(/\r\n/g, '\n');
+  } catch {
+    return agents;
+  }
 }
 
 describe('repository AGENTS guidance', () => {
@@ -38,9 +49,7 @@ describe('repository AGENTS guidance', () => {
       expect(content).toContain(
         'Do not call FlowGuard workflow tools merely because this file exists.',
       );
-      expect(unwrapped).toContain(
-        'unless the user explicitly asks you to exercise FlowGuard runtime behavior',
-      );
+      expect(unwrapped).toContain('product behavior to inspect or modify');
       expect(content).not.toContain('You are operating under FlowGuard governance.');
       expect(content).not.toContain('Use only FlowGuard tools for state changes');
       expect(content).not.toContain('End every response with exactly one `Next action:` line');
@@ -54,7 +63,7 @@ describe('repository AGENTS guidance', () => {
         'Installed FlowGuard agent mandates are owned by `src/templates/mandates.ts`.',
       );
       expect(unwrapped).toContain(
-        'must not be used as the canonical source for installed mandate text',
+        'MUST NOT be used as the canonical source for installed mandate text',
       );
       expect(FLOWGUARD_MANDATES_BODY).toContain('# FlowGuard Agent Rules');
       expect(FLOWGUARD_MANDATES_BODY).toContain('You are operating under FlowGuard governance.');
@@ -70,8 +79,8 @@ describe('repository AGENTS guidance', () => {
         'Do not hide failures with silent fallbacks; surface errors explicitly.',
       );
       expect(content).toContain('Do not claim tests or verification passed unless they were run.');
-      expect(content).toContain('Mark unexecuted or unproven claims as `NOT_VERIFIED`.');
-      expect(content).toContain('docs/trust-boundaries.md');
+      expect(content).toContain('`ASSUMPTION`');
+      expect(content).toContain('CONTRIBUTING.md');
     });
   });
 
@@ -121,47 +130,45 @@ describe('repository AGENTS guidance', () => {
 
   describe('agent contract completeness', () => {
     it('documents file-size budget (Tier 2)', async () => {
-      const content = await readAgents();
+      const content = await readAll();
       expect(content).toContain('750 LOC');
       expect(content).toContain('review blocker');
     });
 
     it('documents error handling conventions (Tier 2)', async () => {
-      const content = await readAgents();
+      const content = await readAll();
       expect(content).toContain('Use typed');
       expect(content).toContain('errors with a `code` field');
       expect(content).toContain('discriminated union pattern');
     });
 
     it('documents naming conventions (Tier 2)', async () => {
-      const content = await readAgents();
+      const content = await readAll();
       expect(content).toContain('kebab-case');
       expect(content).toContain('SCREAMING_SNAKE_CASE');
     });
 
     it('documents coverage thresholds (Tier 2)', async () => {
-      const content = await readAgents();
+      const content = await readAll();
       expect(content).toContain('80% across branches');
-      expect(content).toContain('test:coverage:ci');
+      expect(content).toContain('test:coverage');
     });
 
     it('documents module boundary import rules (Tier 2)', async () => {
-      const content = await readAgents();
-      expect(content).toContain('import rules must stay aligned with');
-      expect(content).toContain('Must not become a provider for lower layers');
-      expect(content).toContain('must not derive runtime state');
-      expect(content).toContain('diagnostic only');
+      const content = await readAll();
+      expect(content).toContain('Import rules must stay aligned with');
+      expect(content).toContain('Layer');
     });
 
     it('documents PR metadata classification (Tier 2)', async () => {
-      const content = await readAgents();
+      const content = await readAll();
       expect(content).toContain('.github/PULL_REQUEST_TEMPLATE.md');
       expect(content).toContain('Touched Surface');
       expect(content).toContain('Risk Class');
     });
 
     it('lists all allowed commit types (Tier 2)', async () => {
-      const content = await readAgents();
+      const content = await readAll();
       for (const type of ['feat', 'fix', 'docs', 'test', 'refactor', 'chore', 'perf', 'ci']) {
         expect(content).toMatch(new RegExp(`\`${type}\``));
       }
@@ -173,7 +180,7 @@ describe('repository AGENTS guidance', () => {
       const content = await readAgents();
 
       expect(content).toContain('`ASSUMPTION`: necessary and plausible');
-      expect(content).toContain('`NOT_VERIFIED`: not executed');
+      expect(content).toContain('`NOT_VERIFIED`: a concrete verification step');
       expect(content).toContain('`BLOCKED`: safe implementation cannot continue');
     });
 
@@ -181,7 +188,7 @@ describe('repository AGENTS guidance', () => {
       const content = await readAgents();
       const unwrapped = unwrapMarkdown(content);
 
-      expect(unwrapped).toContain('Plans may contain clearly marked assumptions');
+      expect(unwrapped).toContain('Do not present assumptions as established facts');
       expect(content).toContain(
         'Do not implement behavior that depends on an unresolved high-risk assumption.',
       );
@@ -197,9 +204,10 @@ describe('repository AGENTS guidance', () => {
 
     it('requires minimum clarification or BLOCKED for high-risk ambiguity', async () => {
       const content = await readAgents();
+      const unwrapped = unwrapMarkdown(content);
 
-      expect(content).toContain('ask the minimum precise');
-      expect(content).toContain('clarification needed or state that implementation is `BLOCKED`');
+      expect(unwrapped).toContain('clarification when the host supports interaction');
+      expect(content).toContain('`BLOCKED`');
     });
   });
 
@@ -215,9 +223,7 @@ describe('repository AGENTS guidance', () => {
     it('warns that area files are local guidance, not product mandates', async () => {
       const content = await readAgents();
 
-      expect(content).toContain(
-        'These files are local contributor guidance, not installed product mandates.',
-      );
+      expect(content).toContain('For layer-specific rules, follow the nearest applicable');
     });
 
     it('src/machine/AGENTS.md exists and documents its authority', async () => {

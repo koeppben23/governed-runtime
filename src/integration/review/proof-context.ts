@@ -15,7 +15,10 @@
 
 import type { SessionState } from '../../state/schema.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
-import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
+import {
+  authorizedCriticalPlanClaimIds,
+  normalizePlanClaimDeclaration,
+} from '../../state/proofgraph-approval.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
 
 /** Bound on rendered list entries so a large graph cannot dominate the prompt. */
@@ -101,31 +104,26 @@ function renderPlanDeclarations(state: SessionState): string[] {
     `### Plan claim declarations (${declarations.claims.length})`,
     ...bounded(
       declarations.claims.map((claim) => {
+        const normalized = normalizePlanClaimDeclaration(claim);
         const detail = [
-          `authority section: ${claim.authoritySectionId}`,
-          `expected check: ${claim.expectedCheckId}`,
-          ...(() => {
-            const c = claim as Record<string, unknown>;
-            if (c['counterexampleRequirement']) {
-              const req = c['counterexampleRequirement'] as {
-                mode: string;
-                checkId: string;
-                assertionId?: string;
-              };
-              return [
-                `counterexample check: ${req.checkId}` +
-                  (req.mode === 'assertion' ? ` (assertion: ${req.assertionId})` : ''),
-              ];
-            }
-            if (c['counterexampleCheckId'] !== undefined) {
-              return [`counterexample check: ${c['counterexampleCheckId']}`];
-            }
-            return [];
-          })(),
-          ...(claim.structuralSurface ? [`structural surface: ${claim.structuralSurface}`] : []),
-          ...(claim.mutationProfile ? [`mutation profile: ${claim.mutationProfile}`] : []),
+          `authority section: ${normalized.authoritySectionId}`,
+          `expected check: ${normalized.expectedCheckId}`,
+          ...(normalized.counterexampleRequirement
+            ? [
+                `counterexample check: ${normalized.counterexampleRequirement.checkId}` +
+                  (normalized.counterexampleRequirement.mode === 'assertion'
+                    ? ` (assertion: ${normalized.counterexampleRequirement.assertionId})`
+                    : ''),
+              ]
+            : []),
+          ...(normalized.structuralSurface
+            ? [`structural surface: ${normalized.structuralSurface}`]
+            : []),
+          ...(normalized.mutationProfile
+            ? [`mutation profile: ${normalized.mutationProfile}`]
+            : []),
         ].join('; ');
-        return `- [${claim.critical ? 'critical' : 'non-critical'}] ${claim.claimId}: ${claim.statement}\n  ${detail}`;
+        return `- [${normalized.critical ? 'critical' : 'non-critical'}] ${normalized.claimId}: ${normalized.statement}\n  ${detail}`;
       }),
       'plan declaration(s)',
     ),

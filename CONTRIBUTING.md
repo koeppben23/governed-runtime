@@ -65,7 +65,7 @@ npm run build
 
 FlowGuard uses Vitest for testing. All tests must pass before submitting a PR.
 Linting is enforced on `src/**/*.ts` with an additional type-aware safety profile on critical governance surfaces (`src/audit`, `src/config`, `src/redaction`, `src/adapters/workspace`).
-Coverage thresholds are enforced globally and must remain green:
+Coverage thresholds are 80% across branches, lines, functions, and statements:
 
 - Branches: 80%
 - Lines: 80%
@@ -150,7 +150,7 @@ describe('ModuleName / Feature', () => {
 | Files            | kebab-case      | `session-state.ts` |
 | Functions        | camelCase       | `executeHydrate()` |
 | Classes          | PascalCase      | `PersistenceError` |
-| Constants        | SCREAMING_SNAKE | `MAX_ITERATIONS`   |
+| Constants        | SCREAMING_SNAKE_CASE | `MAX_ITERATIONS`   |
 | Types/Interfaces | PascalCase      | `RailResult`       |
 | Enums            | PascalCase      | `Command.HYDRATE`  |
 
@@ -203,7 +203,7 @@ regress silently; review-enforced rules depend on reviewer diligence.
 
 ### File Size Budget
 
-Single source of truth for the size budget. The blocker thresholds are enforced
+Exceeding the file-size budget is a review blocker. Single source of truth for the size budget. The blocker thresholds are enforced
 by `src/architecture/__tests__/file-size.test.ts` (constants `PROD_FILE_LOC_BLOCKER`
 = 750, `TEST_FILE_LOC_BLOCKER` = 2000).
 
@@ -325,6 +325,8 @@ The following checks are merge-blocking for both protected branches:
 
 ## Pull Request Process
 
+Use `.github/PULL_REQUEST_TEMPLATE.md` as the canonical source for PR metadata.
+
 ### Ticket Readiness Contract
 
 Tickets should be considered ready for implementation only when the following
@@ -343,7 +345,7 @@ Recommended GitHub Project fields:
 
 | Field                | Values                                                                                      |
 | -------------------- | ------------------------------------------------------------------------------------------- |
-| `Risk`               | `TRIVIAL`, `STANDARD`, `HIGH-RISK`                                                          |
+| `Risk Class`         | `TRIVIAL`, `STANDARD`, `HIGH-RISK`                                                          |
 | `Touched Surface`    | `Docs`, `CLI`, `Policy`, `State`, `Audit`, `Archive`, `Release`, `Installer`, `CI`, `Tests` |
 | `Docs Required`      | `Yes`, `No`, `Unknown`                                                                      |
 | `Changelog Required` | `Yes`, `No`, `Unknown`                                                                      |
@@ -430,6 +432,8 @@ See [Conventional Commits](#conventional-commits) section above.
 - Request review from maintainers
 
 ## Architecture Rules
+
+Import rules must stay aligned with `npm run test:architecture`.
 
 These rules are enforced by `src/architecture/__tests__/dependency-rules.test.ts`:
 

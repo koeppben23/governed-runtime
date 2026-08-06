@@ -11,6 +11,10 @@
 import { z } from 'zod';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
+import {
+  CounterexampleRequirement,
+  type CounterexampleRequirement as CounterexampleRequirementType,
+} from './proofgraph.js';
 import * as crypto from 'node:crypto';
 
 /** RFC 4122 DNS namespace, used to derive stable UUIDv5 claim identities. */
@@ -98,6 +102,65 @@ export type PlanClaimDeclaration = z.infer<typeof PlanClaimDeclaration>;
 export const PlanClaimDeclarationInput = planBase.omit({ claimId: true }).strict();
 export type PlanClaimDeclarationInput = z.infer<typeof PlanClaimDeclarationInput>;
 
+// ─── Read Normalization (PR 1B) ─────────────────────────────────────────────
+
+/** Internal legacy shape for type narrowing only. */
+type LegacyPlanClaimDeclaration = z.infer<typeof legacyPlanBase>;
+
+/**
+ * Runtime-normalized plan claim — counterexample is always a CounterexampleRequirement.
+ * Legacy `counterexampleCheckId` is normalized to `{ mode: 'check', checkId }` at read time.
+ * Certificate digests remain validated against the original persisted form.
+ */
+export const NormalizedPlanClaim = z
+  .object({
+    claimId: z.string().uuid(),
+    statement: z.string().min(1),
+    critical: z.boolean(),
+    authoritySectionId: z.string().min(1),
+    expectedCheckId: z.string().min(1),
+    counterexampleRequirement: CounterexampleRequirement.optional(),
+    structuralSurface: z.string().min(1).optional(),
+    mutationProfile: z.string().min(1).optional(),
+  })
+  .strict();
+export type NormalizedPlanClaim = z.infer<typeof NormalizedPlanClaim>;
+
+/**
+ * Normalize a persisted plan claim declaration (union of writable + legacy shapes)
+ * into the runtime-normalized form. Legacy `counterexampleCheckId` is converted to
+ * `{ mode: 'check', checkId }`. The original object is not mutated.
+ *
+ * Certificate digests MUST be validated against the original persisted form before
+ * calling this function.
+ */
+export function normalizePlanClaimDeclaration(
+  declaration: PlanClaimDeclaration,
+): NormalizedPlanClaim {
+  const counterexampleRequirement: CounterexampleRequirementType | undefined =
+    'counterexampleRequirement' in declaration
+      ? declaration.counterexampleRequirement
+      : (declaration as LegacyPlanClaimDeclaration).counterexampleCheckId !== undefined
+        ? {
+            mode: 'check' as const,
+            checkId: (declaration as LegacyPlanClaimDeclaration).counterexampleCheckId!,
+          }
+        : undefined;
+
+  const normalized = {
+    claimId: declaration.claimId,
+    statement: declaration.statement,
+    critical: declaration.critical,
+    authoritySectionId: declaration.authoritySectionId,
+    expectedCheckId: declaration.expectedCheckId,
+    counterexampleRequirement,
+    structuralSurface: declaration.structuralSurface,
+    mutationProfile: declaration.mutationProfile,
+  } satisfies NormalizedPlanClaim;
+
+  return normalized;
+}
+
 /**
  * Normalize architecture claim inputs to persisted declarations by minting a
  * deterministic claimId host-side.
@@ -121,7 +184,7 @@ export function normalizeArchitectureClaims(
  */
 export function normalizePlanClaims(
   claims: readonly PlanClaimDeclarationInput[] | undefined,
-): PlanClaimDeclaration[] | undefined {
+): WritablePlanClaimDeclaration[] | undefined {
   return claims?.map((claim) => ({
     ...claim,
     claimId: mintProofGraphClaimId({
@@ -129,7 +192,7 @@ export function normalizePlanClaims(
       statement: claim.statement,
       authoritySectionId: claim.authoritySectionId,
     }),
-  })) as PlanClaimDeclaration[];
+  }));
 }
 
 /** An ADR claim names the review evidence and assumptions for the decision. */

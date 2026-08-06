@@ -137,6 +137,54 @@ describe('projectPlanProofObligations', () => {
     expect(result).not.toBeNull();
     expect(result!.criticalCount).toBe(0);
   });
+
+  it('legacy counterexampleCheckId and assertion counterexampleRequirement produce equivalent projections', () => {
+    const legacy = {
+      flow: 'plan' as const,
+      claims: [
+        {
+          claimId: '00000000-0000-0000-0000-000000000010',
+          statement: 'legacy',
+          critical: true,
+          expectedCheckId: 'test',
+          authoritySectionId: 'sec-legacy',
+          counterexampleCheckId: 'security',
+        },
+      ],
+    } as PlanClaimDeclarations;
+
+    const assertionForm = {
+      flow: 'plan' as const,
+      claims: [
+        {
+          claimId: '00000000-0000-0000-0000-000000000010',
+          statement: 'legacy',
+          critical: true,
+          expectedCheckId: 'test',
+          authoritySectionId: 'sec-legacy',
+          counterexampleRequirement: {
+            mode: 'assertion' as const,
+            checkId: 'security',
+            assertionId: 'junit:com.example.Test#method',
+          },
+        },
+      ],
+    } as PlanClaimDeclarations;
+
+    const legacyResult = projectPlanProofObligations(legacy);
+    const assertionResult = projectPlanProofObligations(assertionForm);
+
+    expect(legacyResult?.kind).toBe('declaration');
+    expect(assertionResult?.kind).toBe('declaration');
+
+    if (legacyResult?.kind !== 'declaration' || assertionResult?.kind !== 'declaration') {
+      throw new Error('expected declaration presentation');
+    }
+
+    expect(legacyResult.falsificationReadyCount).toBe(assertionResult.falsificationReadyCount);
+    expect(legacyResult.missingFalsificationCount).toBe(assertionResult.missingFalsificationCount);
+    expect(legacyResult.criticalCount).toBe(assertionResult.criticalCount);
+  });
 });
 
 describe('projectArchitectureDecisionClaims', () => {

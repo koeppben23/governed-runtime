@@ -8,12 +8,12 @@ state.
 
 ## Reason Codes
 
-* Reason codes are the canonical structured error catalog. Each code has a
+- Reason codes are the canonical structured error catalog. Each code has a
   `messageTemplate`, `recoverySteps`, and optional `quickFixCommand`.
-* New reason codes are added in category files (`reasons-precondition.ts`,
+- New reason codes are added in category files (`reasons-precondition.ts`,
   `reasons-validation.ts`, `reasons-infra.ts`, `reasons-validation-review.ts`).
-* All codes are re-exported through the barrel at `reasons.ts`.
-* After adding or removing a reason code, run the completeness test:
+- All codes are re-exported through the barrel at `reasons.ts`.
+- After adding or removing a reason code, run the completeness test:
 
 ```sh
 npx vitest run --project unit src/config/reasons-completeness.test.ts
@@ -21,40 +21,40 @@ npx vitest run --project unit src/config/reasons-completeness.test.ts
 
 ## Config Schema
 
-* `flowguard-config.ts` defines the runtime config schema using Zod.
-* Every nested object must have `.default()`.
-* `schemaVersion` is the literal `"v1"`.
+- `flowguard-config.ts` defines the runtime config schema using Zod.
+- Every nested object must have `.default()`.
+- `schemaVersion` is the literal `"v1"`.
 
 ## Policy Types
 
-* Core policy types are defined in `policy-types.ts`.
-* Policy resolution logic is split across `policy-resolver.ts`, `policy-central.ts`,
+- Core policy types are defined in `policy-types.ts`.
+- Policy resolution logic is split across `policy-resolver.ts`, `policy-central.ts`,
   `policy-ci.ts`, and `policy-snapshot.ts`.
-* Policy must not import from `src/state/`, `src/rails/`, or `src/integration/`.
+- Policy must not import from `src/state/`, `src/rails/`, or `src/integration/`.
 
 ## Profiles
 
-* Profile definitions live in `profile.ts` and `profile-types.ts`.
-* Profile content files are in `profiles/content/`.
-* Built-in profiles must never reference `AGENTS.md`.
+- Profile definitions live in `profile.ts` and `profile-types.ts`.
+- Profile content files are in `profiles/content/`.
+- Built-in profiles must never reference `AGENTS.md`.
 
 ## Module Boundary
 
-* `src/config/` may import from `src/shared/` and `src/logging/log-level.ts` only.
-* `src/config/` must not import from `src/state/`, `src/rails/`, or
+- `src/config/` may import from `src/shared/` and `src/logging/log-level.ts` only.
+- `src/config/` must not import from `src/state/`, `src/rails/`, or
   `src/integration/`.
-* `src/config/` must not derive runtime state — it defines schemas, not behavior.
+- `src/config/` must not derive runtime state — it defines schemas, not behavior.
 
 ## Do Not Introduce
 
-* Parallel registries for reason codes or error categories.
-* Local enum copies of canonical types.
-* Ad-hoc serializers that duplicate `src/shared/canonical-json.ts`.
-* Inline reason or mandate definitions outside the owning barrel.
+- Parallel registries for reason codes or error categories.
+- Local enum copies of canonical types.
+- Ad-hoc serializers that duplicate `src/shared/canonical-json.ts`.
+- Inline reason or mandate definitions outside the owning barrel.
 
-## Verification
+## Additional Verification for This Subtree
 
-Run these checks for all config-layer changes:
+Apply the repository-wide verification rules first. In addition, run these checks for all config-layer changes:
 
 ```sh
 npm run check
