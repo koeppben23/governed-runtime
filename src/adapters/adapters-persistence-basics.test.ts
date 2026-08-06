@@ -192,6 +192,222 @@ describe('persistence', () => {
       }
     });
 
+    it('migrates legacy plan claim counterexampleCheckId to counterexampleRequirement', async () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      const plan = json.plan as Record<string, unknown>;
+      plan.claimDeclarations = {
+        flow: 'plan',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000001',
+            statement: 'legacy claim',
+            critical: true,
+            authoritySectionId: 's1',
+            expectedCheckId: 'test',
+            counterexampleCheckId: 'security',
+            structuralSurface: 'command-registration',
+            mutationProfile: 'semantic',
+          },
+        ],
+      };
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+
+      const loaded = await readState(tmpDir);
+      const claim = loaded?.plan?.claimDeclarations?.claims[0];
+      expect(claim).toBeDefined();
+      expect((claim as Record<string, unknown>)['counterexampleCheckId']).toBeUndefined();
+      expect(claim?.counterexampleRequirement).toEqual({
+        mode: 'check',
+        checkId: 'security',
+      });
+      expect(claim?.statement).toBe('legacy claim');
+      expect(claim?.critical).toBe(true);
+      expect(claim?.authoritySectionId).toBe('s1');
+      expect(claim?.expectedCheckId).toBe('test');
+      expect(claim?.structuralSurface).toBe('command-registration');
+      expect(claim?.mutationProfile).toBe('semantic');
+    });
+
+    it('invalidates approvalCertificate when legacy plan claims are migrated', async () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      const plan = json.plan as Record<string, unknown>;
+      plan.claimDeclarations = {
+        flow: 'plan',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000001',
+            statement: 'legacy claim',
+            critical: true,
+            authoritySectionId: 's1',
+            expectedCheckId: 'test',
+            counterexampleCheckId: 'security',
+          },
+        ],
+      };
+      plan.approvalCertificate = {
+        flow: 'plan',
+        authorityDigest: 'a'.repeat(64),
+        claimDeclarationsDigest: 'b'.repeat(64),
+        decisionAttestationDigest: 'c'.repeat(64),
+        approvedAt: FIXED_TIME,
+        approvedBy: 'test',
+        certificateId: '00000000-0000-4000-8000-000000000002',
+        planVersion: 1,
+        planRecordDigest: 'd'.repeat(64),
+        reviewObligationId: null,
+        reviewEvidenceDigest: null,
+      };
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+
+      const loaded = await readState(tmpDir);
+      expect(loaded?.plan?.approvalCertificate).toBeUndefined();
+    });
+
+    it('preserves modern plan claims unchanged during migration', async () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      const plan = json.plan as Record<string, unknown>;
+      plan.claimDeclarations = {
+        flow: 'plan',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000003',
+            statement: 'modern claim',
+            critical: false,
+            authoritySectionId: 's1',
+            expectedCheckId: 'test',
+            counterexampleRequirement: {
+              mode: 'assertion',
+              checkId: 'security',
+              assertionId: 'junit:x#y',
+            },
+          },
+        ],
+      };
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+
+      const loaded = await readState(tmpDir);
+      const claim = loaded?.plan?.claimDeclarations?.claims[0];
+      expect(claim?.counterexampleRequirement).toEqual({
+        mode: 'assertion',
+        checkId: 'security',
+        assertionId: 'junit:x#y',
+      });
+      expect(claim?.critical).toBe(false);
+    });
+
+    it('migrates mixed legacy and modern claim arrays', async () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      const plan = json.plan as Record<string, unknown>;
+      plan.claimDeclarations = {
+        flow: 'plan',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000001',
+            statement: 'legacy claim',
+            critical: true,
+            authoritySectionId: 's1',
+            expectedCheckId: 'test',
+            counterexampleCheckId: 'security',
+          },
+          {
+            claimId: '00000000-0000-4000-8000-000000000003',
+            statement: 'modern claim',
+            critical: false,
+            authoritySectionId: 's1',
+            expectedCheckId: 'test',
+            counterexampleRequirement: {
+              mode: 'assertion',
+              checkId: 'security',
+              assertionId: 'junit:x#y',
+            },
+          },
+        ],
+      };
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+
+      const loaded = await readState(tmpDir);
+      const claims = loaded?.plan?.claimDeclarations?.claims;
+      expect(claims).toHaveLength(2);
+      expect(claims![0]?.counterexampleRequirement).toEqual({
+        mode: 'check',
+        checkId: 'security',
+      });
+      expect(claims![1]?.counterexampleRequirement).toEqual({
+        mode: 'assertion',
+        checkId: 'security',
+        assertionId: 'junit:x#y',
+      });
+    });
+
+    it('readState is idempotent for migrated legacy claims', async () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      const plan = json.plan as Record<string, unknown>;
+      plan.claimDeclarations = {
+        flow: 'plan',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000001',
+            statement: 'legacy claim',
+            critical: true,
+            authoritySectionId: 's1',
+            expectedCheckId: 'test',
+            counterexampleCheckId: 'security',
+          },
+        ],
+      };
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+
+      const first = await readState(tmpDir);
+      const second = await readState(tmpDir);
+
+      const claim1 = first?.plan?.claimDeclarations?.claims[0];
+      const claim2 = second?.plan?.claimDeclarations?.claims[0];
+      expect(claim1?.counterexampleRequirement).toEqual({ mode: 'check', checkId: 'security' });
+      expect(claim2).toEqual(claim1);
+    });
+
+    it('rejects malformed legacy plan claim with SCHEMA_VALIDATION_FAILED', async () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      const plan = json.plan as Record<string, unknown>;
+      plan.claimDeclarations = {
+        flow: 'plan',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000001',
+            statement: 'legacy claim',
+            critical: true,
+            authoritySectionId: 's1',
+            expectedCheckId: 'test',
+            counterexampleCheckId: 42,
+          },
+        ],
+      };
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+
+      await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
+      try {
+        await readState(tmpDir);
+      } catch (err) {
+        expect(err).toBeInstanceOf(PersistenceError);
+        expect((err as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
+        expect((err as PersistenceError).message).toContain(
+          'Legacy plan claim failed frozen schema validation',
+        );
+      }
+    });
+
     it('stateExists returns true after writeState', async () => {
       expect(await stateExists(tmpDir)).toBe(false);
       await writeState(tmpDir, makeProgressedState('TICKET'));

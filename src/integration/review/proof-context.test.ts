@@ -140,6 +140,61 @@ describe('renderDeclarationPreview', () => {
     expect(text).toContain('required review evidence: service-layer-review');
   });
 
+  it('renders counterexample requirement in check-mode without assertion suffix', () => {
+    const state: SessionState = {
+      ...planState,
+      plan: {
+        ...planState.plan!,
+        claimDeclarations: {
+          flow: 'plan',
+          claims: [
+            {
+              claimId: CLAIM_ID,
+              statement: 'check-mode claim',
+              critical: true,
+              authoritySectionId: 's1',
+              expectedCheckId: 'build',
+              counterexampleRequirement: { mode: 'check', checkId: 'security' },
+            },
+          ],
+        },
+      },
+    };
+    const text = renderDeclarationPreview(state).join('\n');
+    expect(text).toContain('counterexample check: security');
+    expect(text).not.toContain('(assertion:');
+  });
+
+  it('renders counterexample requirement in assertion-mode with assertionId', () => {
+    const state: SessionState = {
+      ...planState,
+      plan: {
+        ...planState.plan!,
+        claimDeclarations: {
+          flow: 'plan',
+          claims: [
+            {
+              claimId: CLAIM_ID,
+              statement: 'assertion-mode claim',
+              critical: true,
+              authoritySectionId: 's1',
+              expectedCheckId: 'build',
+              counterexampleRequirement: {
+                mode: 'assertion',
+                checkId: 'security',
+                assertionId: 'junit:com.example.Test#method',
+              },
+            },
+          ],
+        },
+      },
+    };
+    const text = renderDeclarationPreview(state).join('\n');
+    expect(text).toContain(
+      'counterexample check: security (assertion: junit:com.example.Test#method)',
+    );
+  });
+
   it('renders nothing when no declarations exist', () => {
     expect(renderDeclarationPreview(makeState('READY'))).toEqual([]);
   });

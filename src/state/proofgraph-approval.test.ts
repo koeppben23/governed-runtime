@@ -5,13 +5,14 @@ import {
   ArchitectureClaimDeclarations,
   FlowClaimDeclarations,
   PlanClaimDeclarations,
+  PlanClaimDeclaration,
   ProofGraphApprovalCertificate,
   PlanApprovalCertificate,
+  WritablePlanClaimDeclaration,
   mintProofGraphClaimId,
   PlanClaimDeclarationInput,
   ArchitectureClaimDeclarationInput,
   hasCurrentPlanApprovalCertificate,
-  type PlanClaimDeclaration,
   type PlanClaimAuthority,
 } from './proofgraph-approval.js';
 import { SessionState } from './schema.js';
@@ -301,7 +302,7 @@ describe('certificate integrity', () => {
 
   function makePlan(
     declarations: PlanClaimDeclarations,
-    certificate: PlanApprovalCertificate,
+    certificate?: PlanApprovalCertificate,
   ): PlanClaimAuthority {
     return {
       current: { digest: 'plan-digest', planVersion: 1, recordDigest: 'rec-digest' },
@@ -333,7 +334,7 @@ describe('certificate integrity', () => {
   });
 
   it('rejects when no certificate is present', () => {
-    const plan = makePlan(declarations, undefined!);
+    const plan = makePlan(declarations);
     expect(hasCurrentPlanApprovalCertificate(plan)).toBe(false);
   });
 
@@ -342,5 +343,94 @@ describe('certificate integrity', () => {
     const plan = makePlan(declarations, makeCertificate(digest));
     const diverged = { ...plan, current: { ...plan.current, digest: 'changed' } };
     expect(hasCurrentPlanApprovalCertificate(diverged)).toBe(false);
+  });
+});
+
+describe('read-model schema boundaries', () => {
+  const BASE = {
+    claimId: '00000000-0000-4000-8000-000000000001',
+    statement: 'test',
+    critical: true,
+    authoritySectionId: 's1',
+    expectedCheckId: 'test',
+  };
+
+  it('PlanClaimDeclaration accepts mode=check', () => {
+    const result = PlanClaimDeclaration.parse({
+      ...BASE,
+      counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
+    });
+    expect(result.counterexampleRequirement).toEqual({ mode: 'check', checkId: 'security' });
+  });
+
+  it('PlanClaimDeclaration accepts mode=assertion', () => {
+    const result = PlanClaimDeclaration.parse({
+      ...BASE,
+      counterexampleRequirement: {
+        mode: 'assertion' as const,
+        checkId: 'security',
+        assertionId: 'junit:x#y',
+      },
+    });
+    expect(result.counterexampleRequirement).toEqual({
+      mode: 'assertion',
+      checkId: 'security',
+      assertionId: 'junit:x#y',
+    });
+  });
+
+  it('PlanClaimDeclaration rejects counterexampleCheckId', () => {
+    expect(() =>
+      PlanClaimDeclaration.parse({
+        ...BASE,
+        counterexampleCheckId: 'security',
+      }),
+    ).toThrow();
+  });
+
+  it('PlanClaimDeclaration rejects extra fields (strict)', () => {
+    expect(() =>
+      PlanClaimDeclaration.parse({
+        ...BASE,
+        extraField: 'value',
+      }),
+    ).toThrow();
+  });
+
+  it('WritablePlanClaimDeclaration rejects mode=check', () => {
+    expect(() =>
+      WritablePlanClaimDeclaration.parse({
+        ...BASE,
+        counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
+      }),
+    ).toThrow();
+  });
+
+  it('WritablePlanClaimDeclaration accepts mode=assertion', () => {
+    const result = WritablePlanClaimDeclaration.parse({
+      ...BASE,
+      counterexampleRequirement: {
+        mode: 'assertion' as const,
+        checkId: 'security',
+        assertionId: 'junit:x#y',
+      },
+    });
+    expect(result.counterexampleRequirement).toEqual({
+      mode: 'assertion',
+      checkId: 'security',
+      assertionId: 'junit:x#y',
+    });
+  });
+
+  it('PlanClaimDeclarationInput rejects mode=check', () => {
+    expect(() =>
+      PlanClaimDeclarationInput.parse({
+        statement: 'test',
+        critical: true,
+        authoritySectionId: 's1',
+        expectedCheckId: 'test',
+        counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
+      }),
+    ).toThrow();
   });
 });
