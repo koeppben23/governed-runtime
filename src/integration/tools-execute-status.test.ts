@@ -1060,11 +1060,17 @@ describe('status', () => {
 type CallShape = 'full' | 'whyBlocked' | 'evidence' | 'context' | 'readiness';
 
 interface StatusContractEntry {
+  /** Command whose prompt reads flowguard_status. */
   readonly label: string;
+  /** Phases this command is allowed to run in (or '*' for all). */
   readonly phases: readonly Phase[] | '*';
+  /** The flowguard_status call shape the prompt uses. */
   readonly callShape: CallShape;
+  /** Top-level status fields the prompt reads (emitted in every allowed phase). */
   readonly requiredTopLevel: readonly string[];
+  /** Nested status paths the prompt reads. */
   readonly requiredPaths?: readonly string[];
+  /** Fields only required in specific phases. */
   readonly phaseGatedTopLevel?: ReadonlyArray<{ field: string; phases: readonly Phase[] }>;
 }
 
