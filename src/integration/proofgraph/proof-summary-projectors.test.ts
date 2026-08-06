@@ -138,7 +138,7 @@ describe('projectPlanProofObligations', () => {
     expect(result!.criticalCount).toBe(0);
   });
 
-  it('legacy counterexampleCheckId and assertion counterexampleRequirement produce equivalent projections', () => {
+  it('counterexample requirement (check-mode) and assertion requirement produce equivalent projections', () => {
     const legacy = {
       flow: 'plan' as const,
       claims: [
@@ -148,7 +148,7 @@ describe('projectPlanProofObligations', () => {
           critical: true,
           expectedCheckId: 'test',
           authoritySectionId: 'sec-legacy',
-          counterexampleCheckId: 'security',
+          counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
         },
       ],
     } as PlanClaimDeclarations;

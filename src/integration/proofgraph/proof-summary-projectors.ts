@@ -18,10 +18,7 @@ import type {
   PlanClaimDeclarations,
   ArchitectureClaimDeclarations,
 } from '../../state/proofgraph-approval.js';
-import {
-  authorizedCriticalPlanClaimIds,
-  normalizePlanClaimDeclaration,
-} from '../../state/proofgraph-approval.js';
+import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
 
 import type {
   CompactProofClaim,
@@ -218,7 +215,7 @@ export function projectPlanProofObligations(
 ): CompactProofPresentation | null {
   const claims = declarations?.claims;
   if (!claims || claims.length === 0) return null;
-  const normalized = claims.map(normalizePlanClaimDeclaration);
+  const normalized = claims;
   const criticalCount = claims.filter((c) => c.critical).length;
   const falsificationReady = normalized.filter(
     (c) => c.critical && c.counterexampleRequirement?.checkId,

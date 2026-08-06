@@ -60,7 +60,7 @@ function stateWithClaims() {
             critical: true,
             authoritySectionId: 'implementation',
             expectedCheckId: 'test',
-            counterexampleCheckId: 'security',
+            counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
             structuralSurface: 'command-registration',
             mutationProfile: 'semantic',
           },
@@ -79,7 +79,7 @@ function stateWithClaims() {
                 critical: true,
                 authoritySectionId: 'implementation',
                 expectedCheckId: 'test',
-                counterexampleCheckId: 'security',
+                counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
                 structuralSurface: 'command-registration',
                 mutationProfile: 'semantic',
               },
@@ -318,7 +318,7 @@ describe('materializeApprovedPlanContract', () => {
     });
   });
 
-  it('legacy counterexampleCheckId is normalized and materialized with counterexampleRefs', async () => {
+  it('counterexample requirement is materialized with counterexampleRefs', async () => {
     const state = stateWithClaims();
     const result = await materializeApprovedPlanContractResult(
       {

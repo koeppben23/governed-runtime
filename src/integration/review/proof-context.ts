@@ -15,10 +15,7 @@
 
 import type { SessionState } from '../../state/schema.js';
 import type { ProofGraphProjection } from '../../state/proofgraph.js';
-import {
-  authorizedCriticalPlanClaimIds,
-  normalizePlanClaimDeclaration,
-} from '../../state/proofgraph-approval.js';
+import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
 
 /** Bound on rendered list entries so a large graph cannot dominate the prompt. */
@@ -104,26 +101,21 @@ function renderPlanDeclarations(state: SessionState): string[] {
     `### Plan claim declarations (${declarations.claims.length})`,
     ...bounded(
       declarations.claims.map((claim) => {
-        const normalized = normalizePlanClaimDeclaration(claim);
         const detail = [
-          `authority section: ${normalized.authoritySectionId}`,
-          `expected check: ${normalized.expectedCheckId}`,
-          ...(normalized.counterexampleRequirement
+          `authority section: ${claim.authoritySectionId}`,
+          `expected check: ${claim.expectedCheckId}`,
+          ...(claim.counterexampleRequirement
             ? [
-                `counterexample check: ${normalized.counterexampleRequirement.checkId}` +
-                  (normalized.counterexampleRequirement.mode === 'assertion'
-                    ? ` (assertion: ${normalized.counterexampleRequirement.assertionId})`
+                `counterexample check: ${claim.counterexampleRequirement.checkId}` +
+                  (claim.counterexampleRequirement.mode === 'assertion'
+                    ? ` (assertion: ${claim.counterexampleRequirement.assertionId})`
                     : ''),
               ]
             : []),
-          ...(normalized.structuralSurface
-            ? [`structural surface: ${normalized.structuralSurface}`]
-            : []),
-          ...(normalized.mutationProfile
-            ? [`mutation profile: ${normalized.mutationProfile}`]
-            : []),
+          ...(claim.structuralSurface ? [`structural surface: ${claim.structuralSurface}`] : []),
+          ...(claim.mutationProfile ? [`mutation profile: ${claim.mutationProfile}`] : []),
         ].join('; ');
-        return `- [${normalized.critical ? 'critical' : 'non-critical'}] ${normalized.claimId}: ${normalized.statement}\n  ${detail}`;
+        return `- [${claim.critical ? 'critical' : 'non-critical'}] ${claim.claimId}: ${claim.statement}\n  ${detail}`;
       }),
       'plan declaration(s)',
     ),
