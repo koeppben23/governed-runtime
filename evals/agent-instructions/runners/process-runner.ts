@@ -82,6 +82,20 @@ function walk(
     const relPath = relDir ? join(relDir, name) : name;
     if (isIgnored(relPath)) continue;
     const fullPath = join(root, relPath);
+
+    // Try reading first — no TOCTOU. If it's a regular file (or a symlink
+    // to one), we get its content. If it's a directory or broken symlink,
+    // readFileSync throws and we check lstat for recursion.
+    try {
+      const buf = readFileSync(fullPath);
+      const snapshotPath = relPath.split(sep).join('/');
+      entries.set(snapshotPath, { sha256: sha256(buf), bytes: buf.length });
+      contents.set(snapshotPath, buf.toString('utf-8'));
+      continue;
+    } catch {
+      // Not a readable regular file — check type
+    }
+
     let st;
     try {
       st = lstatSync(fullPath);
@@ -91,17 +105,6 @@ function walk(
     if (st.isSymbolicLink()) continue;
     if (st.isDirectory()) {
       walk(root, relPath, entries, contents);
-    } else {
-      // codeql[js/file-system-race] — deterministic eval test snapshot,
-      // single-threaded, lstat→readFileSync gap is not exploitable here
-      try {
-        const buf = readFileSync(fullPath);
-        const snapshotPath = relPath.split(sep).join('/');
-        entries.set(snapshotPath, { sha256: sha256(buf), bytes: buf.length });
-        contents.set(snapshotPath, buf.toString('utf-8'));
-      } catch {
-        // file was removed or changed between lstat and read — skip
-      }
     }
   }
 }
