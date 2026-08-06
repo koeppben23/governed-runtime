@@ -317,4 +317,62 @@ describe('materializeApprovedPlanContract', () => {
       coverage: [{ cause: 'invalid_certificate' }],
     });
   });
+
+  it('legacy counterexampleCheckId is normalized and materialized with counterexampleRefs', async () => {
+    const state = stateWithClaims();
+    const result = await materializeApprovedPlanContractResult(
+      {
+        ...state,
+        validationAttempts: [
+          {
+            attemptId: '11111111-1111-4111-8111-111111111111',
+            scope: 'implementation' as const,
+            implementationDigest: IMPL_DIGEST,
+            result: {
+              checkId: 'test',
+              passed: true,
+              detail: 'passed',
+              executedAt: NOW,
+              kind: 'test' as const,
+              command: 'npm test',
+              exitCode: 0,
+              executionMs: 1,
+              outputDigest: 'a'.repeat(64),
+              timedOut: false,
+              outcome: 'supported' as const,
+            },
+          },
+          {
+            attemptId: '22222222-2222-4222-8222-222222222222',
+            scope: 'implementation' as const,
+            implementationDigest: IMPL_DIGEST,
+            result: {
+              checkId: 'security',
+              passed: true,
+              detail: 'passed',
+              executedAt: NOW,
+              kind: 'security' as const,
+              command: 'npm run security',
+              exitCode: 0,
+              executionMs: 1,
+              outputDigest: 'b'.repeat(64),
+              timedOut: false,
+              outcome: 'supported' as const,
+            },
+          },
+        ],
+      },
+      process.cwd(),
+    );
+    const claim = result.contract.claims[0];
+    expect(claim).toBeDefined();
+    expect(claim!.counterexampleRefs).toHaveLength(1);
+    expect((claim!.counterexampleRefs[0]! as { attemptId: string }).attemptId).toBe(
+      '22222222-2222-4222-8222-222222222222',
+    );
+    expect(claim!.counterexampleRequirement).toEqual({
+      mode: 'check',
+      checkId: 'security',
+    });
+  });
 });

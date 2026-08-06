@@ -41,7 +41,15 @@ function walkDir(relativeDir, result, targetName) {
     return;
   }
   for (const entry of entries) {
-    if (entry === 'node_modules' || entry === 'dist' || entry === '.git' || entry === '.codex')
+    if (
+      entry === 'node_modules' ||
+      entry === 'dist' ||
+      entry === '.git' ||
+      entry === '.codex' ||
+      entry === 'coverage' ||
+      entry === 'tmp' ||
+      entry.startsWith('.')
+    )
       continue;
     const fullPath = join(fullDir, entry);
     let st;
@@ -59,15 +67,14 @@ function walkDir(relativeDir, result, targetName) {
 }
 
 function allAgentsMd() {
-  const files = ['AGENTS.md'];
-  walkDir('src', files, 'AGENTS.md');
+  const files = [];
+  walkDir('.', files, 'AGENTS.md');
   return files;
 }
 
 function allClaudeMd() {
   const files = [];
-  if (existsSync(join(ROOT, 'CLAUDE.md'))) files.push('CLAUDE.md');
-  walkDir('src', files, 'CLAUDE.md');
+  walkDir('.', files, 'CLAUDE.md');
   return files;
 }
 
@@ -159,8 +166,8 @@ check('5. CLAUDE.md adapter purity', () => {
   return ok;
 });
 
-// --- Check 6: Nested AGENTS.md do not weaken root Safety/Evidence/Git rules ---
-check('6. Nested AGENTS.md rule strength', () => {
+// --- Check 6: Nested AGENTS.md do not weaken root Git rules ---
+check('6. Nested AGENTS.md Git rule strength', () => {
   let ok = true;
   for (const file of nestedAgentsMd()) {
     const content = readFile(file);
