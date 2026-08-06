@@ -384,6 +384,7 @@ describe('FlowGuard tool-level E2E', () => {
             activeChecks: ['typecheck'],
             verificationCandidates: [
               {
+                assertionCapability: 'unsupported' as const,
                 kind: 'typecheck',
                 command: 'npx tsc --noEmit',
                 source: 'test',
@@ -410,6 +411,7 @@ describe('FlowGuard tool-level E2E', () => {
             activeChecks: ['typecheck'],
             verificationCandidates: [
               {
+                assertionCapability: 'unsupported' as const,
                 kind: 'typecheck',
                 command: 'npx tsc --noEmit',
                 source: 'test',
@@ -460,6 +462,7 @@ describe('FlowGuard tool-level E2E', () => {
             activeChecks: ['typecheck'],
             verificationCandidates: [
               {
+                assertionCapability: 'unsupported' as const,
                 kind: 'typecheck',
                 command: 'npx tsc --noEmit',
                 source: 'test',

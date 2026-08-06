@@ -36,7 +36,7 @@ function planClaim(
     statement: 'updateTask rejects unknown ids',
     critical: true,
     positiveCheckId: 'build',
-    counterexampleCheckId: 'regression',
+    counterexampleRequirement: { mode: 'check' as const, checkId: 'regression' },
     authoritySectionId: 'step-1',
     ...overrides,
   };
@@ -50,7 +50,7 @@ describe('validateProofClaimContract — accepted declarations', () => {
   });
 
   it('accepts a non-critical claim without a counterexample check', () => {
-    const claim = planClaim({ critical: false, counterexampleCheckId: undefined });
+    const claim = planClaim({ critical: false, counterexampleRequirement: undefined });
     expect(validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] })).toEqual({
       kind: 'ok',
     });
@@ -65,37 +65,45 @@ describe('validateProofClaimContract — accepted declarations', () => {
 
 describe('validateProofClaimContract — critical contract', () => {
   it('rejects a critical claim without a counterexample check', () => {
-    const claim = planClaim({ counterexampleCheckId: undefined });
+    const claim = planClaim({ counterexampleRequirement: undefined });
     const result = validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] });
 
     expect(result).toMatchObject({ kind: 'invalid', claimRef: CLAIM_A });
     if (result.kind !== 'invalid') return;
-    expect(result.field).toBe('counterexampleCheckId');
+    expect(result.field).toBe('counterexampleRequirement');
     expect(result.detail).toContain('never become PROVEN');
   });
 
   it('rejects a critical claim that reuses its positive check as the counterexample', () => {
-    const claim = planClaim({ counterexampleCheckId: 'build' });
+    const claim = planClaim({
+      counterexampleRequirement: { mode: 'check' as const, checkId: 'build' },
+    });
     const result = validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] });
 
-    expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleCheckId' });
+    expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleRequirement' });
     if (result.kind !== 'invalid') return;
     expect(result.detail).toContain('distinct from its positive check');
   });
 
   it('reports the same-check violation using declare_contract public fields', () => {
-    const claim = planClaim({ claimId: undefined, counterexampleCheckId: 'build' });
+    const claim = planClaim({
+      claimId: undefined,
+      counterexampleRequirement: { mode: 'check' as const, checkId: 'build' },
+    });
     const result = validateProofClaimContract({
       ...BASE,
       source: 'declare_contract',
       claims: [claim],
     });
 
-    expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleCheckId' });
+    expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleRequirement' });
   });
 
   it('allows a non-critical claim to reuse an optional counterexample check', () => {
-    const claim = planClaim({ critical: false, counterexampleCheckId: 'build' });
+    const claim = planClaim({
+      critical: false,
+      counterexampleRequirement: { mode: 'check' as const, checkId: 'build' },
+    });
 
     expect(validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] })).toEqual({
       kind: 'ok',
@@ -115,10 +123,12 @@ describe('validateProofClaimContract — check references', () => {
   });
 
   it('rejects a counterexample check that is not active', () => {
-    const claim = planClaim({ counterexampleCheckId: 'e2e' });
+    const claim = planClaim({
+      counterexampleRequirement: { mode: 'check' as const, checkId: 'e2e' },
+    });
     expect(validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] })).toMatchObject({
       kind: 'invalid',
-      field: 'counterexampleCheckId',
+      field: 'counterexampleRequirement',
     });
   });
 });

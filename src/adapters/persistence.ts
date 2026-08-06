@@ -235,6 +235,29 @@ function migrateLegacyReviewerVerdicts(json: unknown): boolean {
   return acc.migrated;
 }
 
+function migrateLegacyValidationOutcomes(json: unknown): void {
+  if (!json || typeof json !== 'object') return;
+  walk(json);
+}
+
+function walk(node: unknown): void {
+  if (Array.isArray(node)) {
+    for (const item of node) walk(item);
+    return;
+  }
+  if (!node || typeof node !== 'object') return;
+  const obj = node as Record<string, unknown>;
+  if (
+    typeof obj.checkId === 'string' &&
+    typeof obj.passed === 'boolean' &&
+    typeof obj.executedAt === 'string' &&
+    obj.outcome === undefined
+  ) {
+    obj.outcome = obj.passed ? 'supported' : 'inconclusive';
+  }
+  for (const v of Object.values(obj)) walk(v);
+}
+
 function isLegacyApprove(v: unknown): boolean {
   return v === 'approve';
 }
@@ -325,6 +348,8 @@ export async function readState(sessionDir: string): Promise<SessionState | null
       { filePath },
     );
   }
+
+  migrateLegacyValidationOutcomes(json);
 
   const result = SessionState.safeParse(json);
   if (!result.success) {

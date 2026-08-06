@@ -4,6 +4,15 @@
  *
  * This module interprets already-collected ExecutionEvidence. It never executes
  * commands, never changes pass/fail, and never contributes to outputDigest.
+ *
+ * The outcome parameter controls diagnostic authority:
+ *  - supported:   no guidance needed (passed)
+ *  - falsified:   the check found explicit claim-relevant falsification —
+ *                 standard category-based repair guidance applies
+ *  - inconclusive: the check failed but produced nothing claim-relevant —
+ *                 diagnostic only, explicitly NOT_VERIFIED
+ *  - blocked:     the check could not execute (timeout, crash, no output) —
+ *                 provider-recovery diagnostics only, no implementation change
  */
 
 import type { ExecutionEvidence } from './executor.js';
@@ -13,6 +22,7 @@ import type {
   RepairGuidanceConfidence,
   RepairGuidanceEvidenceExcerpt,
   RepairGuidanceLocation,
+  ValidationOutcome,
 } from '../state/evidence-validation.js';
 
 const MAX_PARSE_CHARS = 8_192;
@@ -36,15 +46,35 @@ interface StreamLine {
   readonly text: string;
 }
 
-export function deriveRepairGuidance(evidence: ExecutionEvidence): RepairGuidance {
+export function deriveRepairGuidance(
+  evidence: ExecutionEvidence,
+  outcome: ValidationOutcome,
+): RepairGuidance {
   const excerpts = collectEvidenceExcerpts(evidence);
 
-  if (evidence.passed) {
+  if (outcome === 'supported') {
     return unavailable('passed', excerpts, [
       'No repair action is recommended for a passing check.',
     ]);
   }
 
+  if (outcome === 'blocked') {
+    return unavailable('insufficient_confidence', excerpts, [
+      'The check could not produce answerative output (timeout, crash, or empty output).',
+      'Inspect the check command for portability, resource limits, or silent failures in the execution environment.',
+      'Rerun the check after reducing scope or increasing the configured timeout through normal project configuration.',
+    ]);
+  }
+
+  if (outcome === 'inconclusive') {
+    return unavailable('insufficient_confidence', excerpts, [
+      'The check produced output that was not claim-relevant and does not establish a reliable repair category.',
+      'Inspect the bounded stdout/stderr excerpts for transient or environmental issues.',
+      'Consider rerunning the check; do not assume the root cause is an implementation defect without further explicit evidence.',
+    ]);
+  }
+
+  // outcome === 'falsified': explicit claim-relevant failure — standard analysis applies
   if (evidence.timedOut) {
     return available('timeout', 'high', [], excerpts, [
       'Inspect whether the command hangs, exceeds the configured timeout, or needs a narrower verification target.',
@@ -72,7 +102,7 @@ export function deriveRepairGuidance(evidence: ExecutionEvidence): RepairGuidanc
   );
 }
 
-function parseFailureOutput(evidence: ExecutionEvidence): ParsedOutput {
+export function parseFailureOutput(evidence: ExecutionEvidence): ParsedOutput {
   const lines = outputLines(evidence);
   const hasMeaningfulOutput = lines.some((line) => line.text.length > 0);
   const locations = collectLocations(lines);

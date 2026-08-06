@@ -5,6 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { bindCounterexamples } from './counterexample-binder.js';
 import { makeState } from '../../fixtures.js';
+import { ProofCounterexample } from '../../state/proofgraph.js';
 import type { SessionState } from '../../state/schema.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
@@ -31,6 +32,7 @@ function validationResult(passed: boolean) {
     executionMs: 5,
     outputDigest: SHA,
     timedOut: false,
+    outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
   };
 }
 
@@ -58,7 +60,7 @@ function stateWith(
 }
 
 describe('bindCounterexamples', () => {
-  it('maps a failing counterexample check to contradicted', () => {
+  it('maps a failing counterexample check to not_verified (inconclusive)', () => {
     const state = stateWith([
       {
         attemptId: ATT,
@@ -68,7 +70,33 @@ describe('bindCounterexamples', () => {
       },
     ]);
     const [cx] = bindCounterexamples(state, NOW);
-    expect(cx).toMatchObject({ claimId: CLAIM, outcome: 'contradicted', boundDigest: IMPL_DIGEST });
+    expect(cx).toMatchObject({ claimId: CLAIM, outcome: 'not_verified', boundDigest: IMPL_DIGEST });
+  });
+
+  it('maps an inconclusive result to not_verified', () => {
+    const state = stateWith([
+      {
+        attemptId: ATT,
+        scope: 'implementation',
+        implementationDigest: IMPL_DIGEST,
+        result: { ...validationResult(false), outcome: 'inconclusive' as const },
+      },
+    ]);
+    const [cx] = bindCounterexamples(state, NOW);
+    expect(cx).toMatchObject({ claimId: CLAIM, outcome: 'not_verified', boundDigest: IMPL_DIGEST });
+  });
+
+  it('maps outcome=blocked to blocked', () => {
+    const state = stateWith([
+      {
+        attemptId: ATT,
+        scope: 'implementation',
+        implementationDigest: IMPL_DIGEST,
+        result: { ...validationResult(false), outcome: 'blocked' as const, timedOut: true },
+      },
+    ]);
+    const [cx] = bindCounterexamples(state, NOW);
+    expect(cx!.outcome).toBe('blocked');
   });
 
   it('maps a passing counterexample check to supported', () => {
@@ -105,5 +133,28 @@ describe('bindCounterexamples', () => {
       },
     });
     expect(bindCounterexamples(state, NOW)).toEqual([]);
+  });
+
+  it('every produced ProofCounterexample passes schema validation', () => {
+    const state = stateWith([
+      {
+        attemptId: ATT,
+        scope: 'implementation',
+        implementationDigest: IMPL_DIGEST,
+        result: validationResult(true),
+      },
+    ]);
+    const counterexamples = bindCounterexamples(state, NOW);
+    expect(counterexamples.length).toBeGreaterThan(0);
+    for (const counterexample of counterexamples) {
+      expect(() => ProofCounterexample.parse(counterexample)).not.toThrow();
+    }
+  });
+
+  it('unresolved attempt has non-empty checkId', () => {
+    const state = stateWith([]);
+    const [cx] = bindCounterexamples(state, NOW);
+    expect(cx!.checkId).toBeTruthy();
+    expect(cx!.attemptId).toBeTruthy();
   });
 });

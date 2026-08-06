@@ -104,6 +104,7 @@ describe('state schemas', () => {
         executionMs: 1200,
         outputDigest: 'a'.repeat(64),
         timedOut: false,
+        outcome: 'supported',
       };
       expect(ValidationResult.parse(result)).toEqual(result);
     });

@@ -424,6 +424,8 @@ describe('status.ts MUTATION_KILL matrix', () => {
             executionMs: 1,
             outputDigest: 'unit-digest',
             timedOut: false,
+            outcome: 'inconclusive' as const,
+            classificationReason: 'non-zero exit code',
           },
           {
             checkId: 'lint',
@@ -436,6 +438,7 @@ describe('status.ts MUTATION_KILL matrix', () => {
             executionMs: 1,
             outputDigest: 'lint-digest',
             timedOut: false,
+            outcome: 'supported' as const,
           },
         ],
       };

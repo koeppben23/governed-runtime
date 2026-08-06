@@ -4,7 +4,6 @@
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
  */
-
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
@@ -47,9 +46,7 @@ import type { Phase } from '../state/schema.js';
 import { evaluateCompleteness } from '../audit/completeness.js';
 import { REVIEW_REPORT_SCHEMA_ID } from '../shared/flowguard-identifiers.js';
 import { computeRecordDigest } from '../state/evidence-plan.js';
-
 // ─── Zod v4 Metadata Regression (P1 review gate) ──────────────────────────────
-
 describe('tool-schemas-zod-v4', () => {
   const allTools = {
     status,
@@ -64,7 +61,6 @@ describe('tool-schemas-zod-v4', () => {
     archive,
     architecture,
   } as const;
-
   it('every tool exposes Zod v4 _zod metadata on all args', () => {
     for (const [name, tool] of Object.entries(allTools)) {
       for (const [argName, schema] of Object.entries(tool.args)) {
@@ -79,7 +75,6 @@ describe('tool-schemas-zod-v4', () => {
     }
   });
 });
-
 // ─── Git Mock ────────────────────────────────────────────────────────────────
 
 vi.mock('../adapters/git', async (importOriginal) => {
@@ -508,6 +503,7 @@ describe('status', () => {
         ...state!,
         verificationCandidates: [
           {
+            assertionCapability: 'unsupported' as const,
             kind: 'test',
             command: 'pnpm test',
             source: 'package.json:scripts.test',
@@ -522,6 +518,7 @@ describe('status', () => {
       const candidates = result.verificationCandidates as Array<Record<string, unknown>>;
       expect(candidates).toHaveLength(1);
       expect(candidates[0]).toMatchObject({
+        assertionCapability: 'unsupported' as const,
         kind: 'test',
         command: 'pnpm test',
         source: 'package.json:scripts.test',
@@ -576,6 +573,7 @@ describe('status', () => {
         validation: [],
         verificationCandidates: [
           {
+            assertionCapability: 'unsupported' as const,
             kind: 'build',
             command: './mvnw verify',
             source: 'repo:mvnw',
@@ -1024,7 +1022,7 @@ describe('status', () => {
         kind: 'derived_repair_guidance',
         advisory: true,
         source: 'run_check_output',
-        status: 'available',
+        status: 'unavailable',
       });
 
       // Verify status surfaces the guidance
@@ -1041,7 +1039,7 @@ describe('status', () => {
         kind: 'derived_repair_guidance',
         advisory: true,
         source: 'run_check_output',
-        status: 'available',
+        status: 'unavailable',
       });
       expect(statusGuidance.notVerified).toEqual(
         expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
@@ -1312,6 +1310,49 @@ describe('status-prompt-contract', () => {
 // Tool: declare_contract (ProofGraph declaration, #762)
 // =============================================================================
 
+function makeStructuredSecurityCandidate() {
+  return {
+    assertionCapability: 'structured' as const,
+    kind: 'security' as const,
+    command: 'npm run security',
+    source: 'test',
+    confidence: 'high' as const,
+    reason: 'security',
+    assertionReport: {
+      collection: 'snapshot_diff' as const,
+      transport: 'file' as const,
+      format: 'junit_xml' as const,
+      standardPatterns: ['TEST-*.xml'],
+    },
+  };
+}
+
+function makeAssertionExtraction(assertionId: string, status: 'passed' | 'failed') {
+  return {
+    status: 'extracted' as const,
+    attemptId: '00000000-0000-4000-8000-0000000000dd',
+    format: 'junit_xml' as const,
+    reportDigests: ['a'.repeat(64)],
+    assertions: [
+      {
+        assertionId,
+        framework: 'junit' as const,
+        status,
+        testName: 'verify',
+        suiteName: 'com.example.SecurityTest',
+      },
+    ],
+    summary: {
+      assertionCount: 1,
+      passedCount: status === 'passed' ? 1 : 0,
+      failedCount: status === 'failed' ? 1 : 0,
+      erroredCount: 0,
+      skippedCount: 0,
+      suiteInfrastructureError: false,
+    },
+  };
+}
+
 describe('declare_contract', () => {
   const NOW = '2026-01-01T00:00:00.000Z';
   const SHA = 'a'.repeat(64);
@@ -1355,6 +1396,7 @@ describe('declare_contract', () => {
             executionMs: 5,
             outputDigest: SHA,
             timedOut: false,
+            outcome: 'supported' as const,
           },
         },
         {
@@ -1372,8 +1414,24 @@ describe('declare_contract', () => {
             executionMs: 5,
             outputDigest: SHA,
             timedOut: false,
+            outcome: 'supported' as const,
+            assertionExtraction: makeAssertionExtraction(
+              'junit:com.example.SecurityTest#verify',
+              'passed',
+            ),
           },
         },
+      ],
+      verificationCandidates: [
+        {
+          assertionCapability: 'unsupported' as const,
+          kind: checkId as 'test',
+          command: 'npm test',
+          source: 'test',
+          confidence: 'high' as const,
+          reason: 'test',
+        },
+        makeStructuredSecurityCandidate(),
       ],
     });
     return sessDir;
@@ -1389,7 +1447,11 @@ describe('declare_contract', () => {
               statement: 'the change is covered by the test check',
               checkId: 'test',
               critical: true,
-              counterexampleCheckId: 'security',
+              counterexampleRequirement: {
+                mode: 'assertion' as const,
+                checkId: 'security',
+                assertionId: 'junit:com.example.SecurityTest#verify',
+              },
               authority: 'ticket',
             },
           ],
@@ -1475,7 +1537,11 @@ describe('declare_contract', () => {
               statement: 'The manual plan-provenanced fact is covered.',
               checkId: 'test',
               critical: true,
-              counterexampleCheckId: 'security',
+              counterexampleRequirement: {
+                mode: 'assertion' as const,
+                checkId: 'security',
+                assertionId: 'junit:com.example.SecurityTest#verify',
+              },
               authority: 'plan',
             },
           ],
@@ -1562,7 +1628,11 @@ describe('declare_contract', () => {
       statement: 'the declared command surface is consistent and covered by tests',
       checkId: 'test',
       critical: true,
-      counterexampleCheckId: 'security',
+      counterexampleRequirement: {
+        mode: 'assertion' as const,
+        checkId: 'security',
+        assertionId: 'junit:com.example.SecurityTest#verify',
+      },
       authority: 'ticket' as const,
       structuralSurface: 'command-registration' as const,
     };
@@ -1594,7 +1664,7 @@ describe('declare_contract', () => {
       expect(declared.requiredEvidence!.adversarial).toEqual(['counterexample']);
     });
 
-    it('is CONTRADICTED when the negative/fault scenario actually falsifies it', async () => {
+    it('is CONTRADICTED when a matching assertion fails', async () => {
       await hydrateSession();
       const { computeFingerprint, sessionDir: resolveSessionDir } =
         await import('../adapters/workspace/index.js');
@@ -1602,6 +1672,30 @@ describe('declare_contract', () => {
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
       const digest = 'impl-combined';
+      const assertionId = 'junit:com.example.SecurityTest#verifyNoSqlInjection';
+      const failedExtraction = {
+        status: 'extracted' as const,
+        attemptId: '00000000-0000-4000-8000-0000000000aa',
+        format: 'junit_xml' as const,
+        reportDigests: ['a'.repeat(64)],
+        assertions: [
+          {
+            assertionId,
+            framework: 'junit' as const,
+            status: 'failed' as const,
+            testName: 'verifyNoSqlInjection',
+            suiteName: 'com.example.SecurityTest',
+          },
+        ],
+        summary: {
+          assertionCount: 1,
+          passedCount: 0,
+          failedCount: 1,
+          erroredCount: 0,
+          skippedCount: 0,
+          suiteInfrastructureError: false,
+        },
+      };
       const attempt = (checkId: string, passed: boolean) => ({
         attemptId: crypto.randomUUID(),
         scope: 'implementation' as const,
@@ -1617,12 +1711,37 @@ describe('declare_contract', () => {
           executionMs: 5,
           outputDigest: SHA,
           timedOut: false,
+          outcome: passed ? ('supported' as const) : ('inconclusive' as const),
         },
       });
       await writeStateWithArtifacts(sessDir, {
         ...state!,
         phase: 'IMPL_VALIDATION',
         activeChecks: ['test', 'security'],
+        verificationCandidates: [
+          {
+            assertionCapability: 'unsupported' as const,
+            kind: 'test' as const,
+            command: 'npm test',
+            source: 'test',
+            confidence: 'high' as const,
+            reason: 'test',
+          },
+          {
+            assertionCapability: 'structured' as const,
+            kind: 'security' as const,
+            command: 'npm run security',
+            source: 'test',
+            confidence: 'high' as const,
+            reason: 'security',
+            assertionReport: {
+              collection: 'snapshot_diff' as const,
+              transport: 'file' as const,
+              format: 'junit_xml' as const,
+              standardPatterns: ['TEST-*.xml'],
+            },
+          },
+        ],
         ticket: {
           text: 'approved ticket',
           digest: 'ticket-digest',
@@ -1630,13 +1749,37 @@ describe('declare_contract', () => {
           createdAt: NOW,
         },
         implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
-        validationAttempts: [attempt('test', true), attempt('security', false)],
+        validationAttempts: [
+          attempt('test', true),
+          {
+            ...attempt('security', false),
+            result: {
+              ...attempt('security', false).result,
+              assertionExtraction: failedExtraction,
+            },
+          },
+        ],
       });
-      const result = parseToolResult(await declare_contract.execute({ claims: [COMBINED] }, ctx));
+      const result = parseToolResult(
+        await declare_contract.execute(
+          {
+            claims: [
+              {
+                ...COMBINED,
+                counterexampleRequirement: {
+                  mode: 'assertion' as const,
+                  checkId: 'security',
+                  assertionId,
+                },
+              },
+            ],
+          },
+          ctx,
+        ),
+      );
       const claims = (result.proofGraph as Record<string, unknown>).claims as Array<
         Record<string, unknown>
       >;
-      // Falsification wins over the passing positive and structural evidence.
       expect(claims[0]!.verificationState).toBe('CONTRADICTED');
     });
   });
@@ -1662,7 +1805,7 @@ describe('declare_contract', () => {
     );
     expect(result.error).toBe(true);
     expect(result.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
-    expect(String(result.message)).toContain('counterexampleCheckId');
+    expect(String(result.message)).toContain('counterexampleRequirement');
   });
 
   it('rejects a critical claim that reuses its positive check as the counterexample', async () => {
@@ -1675,7 +1818,11 @@ describe('declare_contract', () => {
               statement: 'critical but not independently falsified',
               checkId: 'test',
               critical: true,
-              counterexampleCheckId: 'test',
+              counterexampleRequirement: {
+                mode: 'assertion' as const,
+                checkId: 'test',
+                assertionId: 'junit:com.example.Test#testMethod',
+              },
               authority: 'ticket',
             },
           ],
@@ -1765,7 +1912,7 @@ describe('declare_contract', () => {
     expect(result.code).toBe('COMMAND_NOT_ALLOWED');
   });
 
-  it('reports CONTRADICTED when a declared counterexample check failed', async () => {
+  it('reports CONTRADICTED when a declared counterexample assertion falsifies', async () => {
     await hydrateSession();
     const { computeFingerprint, sessionDir: resolveSessionDir } =
       await import('../adapters/workspace/index.js');
@@ -1773,6 +1920,7 @@ describe('declare_contract', () => {
     const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
     const state = await readState(sessDir);
     const digest = 'impl-cx';
+    const assertionId = 'junit:com.example.SecurityTest#verifyNoXss';
     function attempt(checkId: string, passed: boolean) {
       return {
         attemptId: crypto.randomUUID(),
@@ -1789,6 +1937,7 @@ describe('declare_contract', () => {
           executionMs: 5,
           outputDigest: SHA,
           timedOut: false,
+          outcome: passed ? ('supported' as const) : ('inconclusive' as const),
         },
       };
     }
@@ -1796,9 +1945,29 @@ describe('declare_contract', () => {
       ...state!,
       phase: 'IMPL_REVIEW',
       activeChecks: ['test', 'security'],
+      verificationCandidates: [
+        {
+          assertionCapability: 'unsupported' as const,
+          kind: 'test' as const,
+          command: 'npm test',
+          source: 'test',
+          confidence: 'high' as const,
+          reason: 'test',
+        },
+        makeStructuredSecurityCandidate(),
+      ],
       ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
       implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
-      validationAttempts: [attempt('test', true), attempt('security', false)],
+      validationAttempts: [
+        attempt('test', true),
+        {
+          ...attempt('security', false),
+          result: {
+            ...attempt('security', false).result,
+            assertionExtraction: makeAssertionExtraction(assertionId, 'failed'),
+          },
+        },
+      ],
     });
     const result = parseToolResult(
       await declare_contract.execute(
@@ -1808,8 +1977,12 @@ describe('declare_contract', () => {
               statement: 'the change is safe',
               checkId: 'test',
               critical: true,
-              counterexampleCheckId: 'security',
               authority: 'ticket',
+              counterexampleRequirement: {
+                mode: 'assertion' as const,
+                checkId: 'security',
+                assertionId,
+              },
             },
           ],
         },

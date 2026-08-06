@@ -45,6 +45,7 @@ import {
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
+import { projectPlanProofObligations } from '../proofgraph/proof-summary-projectors.js';
 
 function findPriorPlanTargetPaths(
   assurance: import('../../state/schema.js').SessionState['reviewAssurance'],
@@ -189,6 +190,7 @@ export async function convergedPlanReviewCardResponse(
     policyMode: finalState.policySnapshot?.mode,
     taskTitle: firstLine(finalState.ticket?.text),
     forcedConvergence,
+    proofSummary: projectPlanProofObligations(finalState.plan?.claimDeclarations) ?? undefined,
   };
   // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   const reviewCard = buildPlanReviewCard(reviewCardInput);

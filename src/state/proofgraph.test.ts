@@ -130,6 +130,8 @@ describe('proofgraph schemas', () => {
     it('ProofCounterexample parses with an outcome', () => {
       const cx = {
         claimId: UUID,
+        attemptId: '00000000-0000-4000-8000-000000000001',
+        checkId: 'test',
         scenario: 'mutate the alias target and re-run',
         outcome: 'contradicted' as const,
         boundDigest: 'CURR',

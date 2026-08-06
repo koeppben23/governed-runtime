@@ -42,6 +42,7 @@ function makeExecutors(overrides?: Partial<ContinueExecutors>): ContinueExecutor
       executionMs: 1,
       outputDigest: 'a'.repeat(64),
       timedOut: false,
+      outcome: 'supported' as const,
     })),
     selfReview: vi.fn().mockResolvedValue({ verdict: 'accept' as const }),
     implReview: vi.fn().mockResolvedValue({ verdict: 'accept' as const }),

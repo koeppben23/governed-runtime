@@ -282,6 +282,7 @@ describe('BAD', () => {
       verificationCandidates: [
         ...(state!.verificationCandidates ?? []),
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'security' as const,
           command: 'npm audit',
           source: 'manual',
@@ -367,6 +368,8 @@ describe('CORNER', () => {
           executionMs: 200,
           outputDigest: 'b'.repeat(64),
           timedOut: false,
+          outcome: 'inconclusive' as const,
+          classificationReason: 'non-zero exit code',
         },
       ],
     };
@@ -560,7 +563,7 @@ describe('CORNER', () => {
       expect(rg.kind).toBe('derived_repair_guidance');
       expect(rg.advisory).toBe(true);
       expect(rg.source).toBe('run_check_output');
-      expect(rg.status).toBe('available');
+      expect(rg.status).toBe('unavailable');
       expect(rg.notVerified).toEqual(
         expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
       );
@@ -605,9 +608,8 @@ describe('EDGE', () => {
     expect(result.derivedRepairGuidance).toBeDefined();
     if (result.derivedRepairGuidance) {
       const rg = result.derivedRepairGuidance as Record<string, unknown>;
-      expect(rg.status).toBe('available');
-      expect(rg.category).toBe('timeout');
-      expect(rg.confidence).toBe('high');
+      expect(rg.status).toBe('unavailable');
+      expect(rg.category ?? rg.reason).toBeDefined();
     }
   });
 
@@ -739,6 +741,7 @@ describe('CONCURRENCY', () => {
       verificationCandidates: [
         ...(s!.verificationCandidates ?? []),
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'lint',
           command: 'npm run lint',
           source: 'discovery' as const,
@@ -746,6 +749,7 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'test',
           command: 'npm test',
           source: 'discovery' as const,
@@ -753,6 +757,7 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
         {
+          assertionCapability: 'unsupported' as const,
           kind: 'build',
           command: 'npm run build',
           source: 'discovery' as const,

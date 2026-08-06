@@ -185,6 +185,7 @@ export const VALIDATION_PASSED: ValidationResult[] = [
     executionMs: 1200,
     outputDigest: 'a'.repeat(64),
     timedOut: false,
+    outcome: 'supported',
   },
   {
     checkId: 'lint',
@@ -197,6 +198,7 @@ export const VALIDATION_PASSED: ValidationResult[] = [
     executionMs: 800,
     outputDigest: 'b'.repeat(64),
     timedOut: false,
+    outcome: 'supported',
   },
 ];
 
@@ -212,6 +214,7 @@ export const VALIDATION_FAILED: ValidationResult[] = [
     executionMs: 2000,
     outputDigest: 'c'.repeat(64),
     timedOut: false,
+    outcome: 'inconclusive',
   },
   {
     checkId: 'lint',
@@ -224,6 +227,7 @@ export const VALIDATION_FAILED: ValidationResult[] = [
     executionMs: 800,
     outputDigest: 'd'.repeat(64),
     timedOut: false,
+    outcome: 'supported',
   },
 ];
 

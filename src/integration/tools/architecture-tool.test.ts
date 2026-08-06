@@ -186,7 +186,7 @@ describe('integration/tools/architecture (wrapper)', () => {
     });
     mocks.autoAdvance.mockReturnValue({
       kind: 'advanced',
-      state: makeState('ARCHITECTURE', {
+      state: makeState('ARCH_COMPLETE', {
         architecture: {
           id: 'ADR-001',
           title: 'ADR',
@@ -194,9 +194,21 @@ describe('integration/tools/architecture (wrapper)', () => {
           digest: 'digest-adr',
           status: 'proposed',
           createdAt: '2026-01-01T00:00:00.000Z',
+          claimDeclarations: {
+            flow: 'architecture',
+            claims: [
+              {
+                claimId: 'a1111111-1111-1111-1111-111111111111',
+                statement: 'The decision uses a safe approach.',
+                critical: true,
+                authoritySectionId: 'sec-1',
+                requiredReviewEvidence: ['review-evid-1'],
+              },
+            ],
+          },
         },
       }),
-      evalResult: { kind: 'pending' },
+      evalResult: { kind: 'ready' },
       transitions: [],
     });
   });

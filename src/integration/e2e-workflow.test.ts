@@ -1187,7 +1187,11 @@ describe('ProofGraph demo fixtures', () => {
     critical: true,
     authoritySectionId: 'step-1',
     expectedCheckId: 'build',
-    counterexampleCheckId: 'test',
+    counterexampleRequirement: {
+      mode: 'assertion' as const,
+      checkId: 'test',
+      assertionId: 'junit:com.example.Test#testMethod',
+    },
   } as const;
 
   async function driveToImplementationReview(mutationProfile?: 'proofgraph-evaluator') {

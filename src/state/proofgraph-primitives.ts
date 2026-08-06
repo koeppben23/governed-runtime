@@ -63,7 +63,12 @@ export const ProofProviderKind = z.enum([
 export type ProofProviderKind = z.infer<typeof ProofProviderKind>;
 
 /** Outcome of an executed falsification scenario against a claim. */
-export const CounterexampleOutcome = z.enum(['supported', 'contradicted', 'not_verified']);
+export const CounterexampleOutcome = z.enum([
+  'supported',
+  'contradicted',
+  'not_verified',
+  'blocked',
+]);
 export type CounterexampleOutcome = z.infer<typeof CounterexampleOutcome>;
 
 /**

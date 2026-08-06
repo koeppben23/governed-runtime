@@ -82,6 +82,16 @@ function addCandidate(
   byKind: Map<VerificationCandidateKind, VerificationCandidate>,
   candidate: VerificationCandidate,
 ): void {
+  const existing = byKind.get(candidate.kind);
+  // Structured candidates upgrade unsupported ones; never downgrade
+  if (
+    existing &&
+    candidate.assertionCapability === 'structured' &&
+    existing.assertionCapability === 'unsupported'
+  ) {
+    byKind.set(candidate.kind, candidate);
+    return;
+  }
   if (byKind.has(candidate.kind)) return;
   byKind.set(candidate.kind, candidate);
 }
@@ -139,6 +149,7 @@ function addScriptCandidates(
       continue;
     }
     addCandidate(byKind, {
+      assertionCapability: 'unsupported' as const,
       kind: mapping.kind,
       command: scriptCommand(packageManager, mapping.script),
       source: `package.json:scripts.${mapping.script}`,
@@ -155,22 +166,36 @@ function addWrapperCandidates(
   if (rootFiles.has('mvnw') || rootFiles.has('mvnw.cmd')) {
     const hasPosixWrapper = rootFiles.has('mvnw');
     addCandidate(byKind, {
+      assertionCapability: 'structured' as const,
       kind: 'build',
       command: hasPosixWrapper ? './mvnw verify' : 'mvnw.cmd verify',
       source: hasPosixWrapper ? 'repo:mvnw' : 'repo:mvnw.cmd',
       confidence: 'high',
       reason: 'Maven wrapper detected; wrapper command is preferred over global Maven binary',
+      assertionReport: {
+        collection: 'snapshot_diff' as const,
+        transport: 'file' as const,
+        format: 'junit_xml' as const,
+        standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+      },
     });
   }
 
   if (rootFiles.has('gradlew') || rootFiles.has('gradlew.bat')) {
     const hasPosixWrapper = rootFiles.has('gradlew');
     addCandidate(byKind, {
+      assertionCapability: 'structured' as const,
       kind: 'test',
       command: hasPosixWrapper ? './gradlew check' : 'gradlew.bat check',
       source: hasPosixWrapper ? 'repo:gradlew' : 'repo:gradlew.bat',
       confidence: 'high',
       reason: 'Gradle wrapper detected; wrapper command is preferred over global Gradle binary',
+      assertionReport: {
+        collection: 'snapshot_diff' as const,
+        transport: 'file' as const,
+        format: 'junit_xml' as const,
+        standardPatterns: ['build/test-results/test/TEST-*.xml'],
+      },
     });
   }
 }
@@ -186,6 +211,7 @@ function addFallbackCandidates(
 
   if (ids.has('buildTool:maven')) {
     addCandidate(byKind, {
+      assertionCapability: 'unsupported' as const,
       kind: 'build',
       command: 'mvn verify',
       source: 'detectedStack:buildTool:maven',
@@ -196,6 +222,7 @@ function addFallbackCandidates(
 
   if (ids.has('buildTool:gradle') || ids.has('buildTool:gradle-kotlin')) {
     addCandidate(byKind, {
+      assertionCapability: 'unsupported' as const,
       kind: 'test',
       command: 'gradle check',
       source: ids.has('buildTool:gradle')
@@ -208,26 +235,44 @@ function addFallbackCandidates(
 
   if (ids.has('testFramework:vitest')) {
     addCandidate(byKind, {
+      assertionCapability: 'structured' as const,
       kind: 'test',
       command: fallbackCommand(packageManager, 'vitest run'),
       source: 'detectedStack:testFramework:vitest',
       confidence: 'medium',
       reason: `Vitest detected and no repo-native test script found; using ${packageManager} fallback`,
+      assertionReport: {
+        collection: 'run_specific' as const,
+        transport: 'file' as const,
+        format: 'vitest_json' as const,
+        outputArgumentTemplate:
+          '--reporter=json --outputFile=.flowguard/reports/{attemptId}/vitest.json',
+        resultPatternTemplate: '.flowguard/reports/{attemptId}/vitest.json',
+      },
     });
   }
 
   if (ids.has('testFramework:jest')) {
     addCandidate(byKind, {
+      assertionCapability: 'structured' as const,
       kind: 'test',
       command: fallbackCommand(packageManager, 'jest'),
       source: 'detectedStack:testFramework:jest',
       confidence: 'medium',
       reason: `Jest detected and no repo-native test script found; using ${packageManager} fallback`,
+      assertionReport: {
+        collection: 'run_specific' as const,
+        transport: 'file' as const,
+        format: 'jest_json' as const,
+        outputArgumentTemplate: '--json --outputFile=.flowguard/reports/{attemptId}/jest.json',
+        resultPatternTemplate: '.flowguard/reports/{attemptId}/jest.json',
+      },
     });
   }
 
   if (ids.has('qualityTool:eslint') || ids.has('tool:eslint')) {
     addCandidate(byKind, {
+      assertionCapability: 'unsupported' as const,
       kind: 'lint',
       command: fallbackCommand(packageManager, 'eslint .'),
       source: ids.has('qualityTool:eslint')
@@ -240,6 +285,7 @@ function addFallbackCandidates(
 
   if (ids.has('language:typescript') || ids.has('tool:typescript')) {
     addCandidate(byKind, {
+      assertionCapability: 'unsupported' as const,
       kind: 'typecheck',
       command: fallbackCommand(packageManager, 'tsc --noEmit'),
       source: ids.has('language:typescript')

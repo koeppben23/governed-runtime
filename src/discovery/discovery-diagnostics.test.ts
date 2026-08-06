@@ -385,6 +385,7 @@ describe('discovery/diagnostics (#372)', () => {
           maxBytesPerFile: 65536,
           maxTotalBytes: 2097152,
           timedOut: false,
+          outcome: 'supported' as const,
         },
       };
       // Imported schema allows optional new fields

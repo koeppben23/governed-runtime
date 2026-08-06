@@ -22,6 +22,8 @@ import * as crypto from 'node:crypto';
 import { z } from 'zod';
 
 import type { Phase, SessionState } from '../../state/schema.js';
+import { AssertionCounterexampleRequirement } from '../../state/proofgraph-approval.js';
+import type { AssertionCounterexampleRequirement as AssertionCounterexampleRequirementType } from '../../state/proofgraph-approval.js';
 import type { DeclaredClaim } from '../../state/proofgraph.js';
 import type { ProofProviderKind } from '../../state/proofgraph-primitives.js';
 import type { ClaimAuthorityRef } from '../../state/proofgraph-refs.js';
@@ -129,10 +131,10 @@ type RawClaim = {
   statement: string;
   checkId: string;
   critical: boolean;
-  counterexampleCheckId?: string;
   authority?: AuthoritySource;
   structuralSurface?: string;
   mutationProfile?: string;
+  counterexampleRequirement?: AssertionCounterexampleRequirementType;
 };
 
 /**
@@ -193,6 +195,20 @@ function buildOptionalEvidence(
  * Returns the built claims, the first checkId that could not resolve, or the
  * first mutation profile with no digest-verified attempt at this revision.
  */
+function resolveCounterexampleRef(
+  state: SessionState,
+  rc: RawClaim,
+  digest: string,
+):
+  | { readonly refs: ValidationAttemptRef[] }
+  | { readonly error: { readonly unresolvedCheckId: string } } {
+  const checkId = rc.counterexampleRequirement?.checkId;
+  if (checkId === undefined) return { refs: [] };
+  const attempt = resolveImplAttempt(state.validationAttempts, checkId, digest);
+  if (attempt === undefined) return { error: { unresolvedCheckId: checkId } };
+  return { refs: [{ kind: 'validation_attempt', attemptId: attempt.attemptId }] };
+}
+
 function buildDeclaredClaims(
   state: SessionState,
   rawClaims: readonly RawClaim[],
@@ -210,16 +226,9 @@ function buildDeclaredClaims(
       kind: 'validation_attempt',
       attemptId: evidence.attemptId,
     };
-    const counterexampleRefs: ValidationAttemptRef[] = [];
-    if (rc.counterexampleCheckId !== undefined) {
-      const counterexample = resolveImplAttempt(
-        state.validationAttempts,
-        rc.counterexampleCheckId,
-        digest,
-      );
-      if (counterexample === undefined) return { unresolvedCheckId: rc.counterexampleCheckId };
-      counterexampleRefs.push({ kind: 'validation_attempt', attemptId: counterexample.attemptId });
-    }
+    const counterexampleResolution = resolveCounterexampleRef(state, rc, digest);
+    if ('error' in counterexampleResolution) return counterexampleResolution.error;
+    const counterexampleRefs = counterexampleResolution.refs;
     const provenance = resolveAuthority(state, rc.authority);
     const isFact = provenance !== null;
     const critical = rc.critical;
@@ -242,6 +251,7 @@ function buildDeclaredClaims(
         positive,
         adversarial: critical && isFact ? ['counterexample' as const] : [],
       },
+      counterexampleRequirement: rc.counterexampleRequirement,
     });
   }
   return { claims };
@@ -266,7 +276,7 @@ function validateDeclaredClaimContract(
       statement: claim.statement,
       critical: claim.critical,
       positiveCheckId: claim.checkId,
-      counterexampleCheckId: claim.counterexampleCheckId,
+      counterexampleRequirement: claim.counterexampleRequirement,
       structuralSurface: claim.structuralSurface,
       mutationProfile: claim.mutationProfile,
     })),
@@ -277,6 +287,61 @@ function validateDeclaredClaimContract(
     field: result.field,
     detail: result.detail,
   });
+}
+
+/**
+ * Gate assertion-mode counterexample requirements: the session must have a
+ * verification candidate with structured assertion capability matching the
+ * requirement's checkId.  For assertion mode, the assertionId prefix must
+ * also match the candidate's report format.
+ */
+function validateAssertionCapabilityGate(
+  rawClaims: readonly RawClaim[],
+  state: SessionState,
+): string | null {
+  const PREFIX_FORMAT_MAP: Record<string, string> = {
+    'junit:': 'junit_xml',
+    'vitest:': 'vitest_json',
+    'jest:': 'jest_json',
+    'go:': 'go_test_json',
+  };
+
+  for (const declaration of rawClaims) {
+    const requirement = declaration.counterexampleRequirement;
+    if (!requirement) continue;
+
+    const candidate = state.verificationCandidates?.find((c) => c.kind === requirement.checkId);
+    if (!candidate) {
+      return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+        reason: `Verification check '${requirement.checkId}' is not in the active verification candidates.`,
+      });
+    }
+
+    if (candidate.assertionCapability !== 'structured') {
+      return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+        reason: `Verification check '${requirement.checkId}' does not support structured assertion evidence for assertion-mode counterexample binding.`,
+      });
+    }
+
+    const prefix = Object.keys(PREFIX_FORMAT_MAP).find((p) =>
+      requirement.assertionId.startsWith(p),
+    );
+    if (!prefix) {
+      return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+        reason: `Assertion ID '${requirement.assertionId}' has an unrecognized prefix. Supported: junit:, vitest:, jest:, go:.`,
+      });
+    }
+    const expectedFormat = PREFIX_FORMAT_MAP[prefix]!;
+    if (
+      (candidate as { assertionReport?: { format: string } }).assertionReport?.format !==
+      expectedFormat
+    ) {
+      return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+        reason: `Assertion format mismatch: '${requirement.assertionId}' prefix requires '${expectedFormat}' but candidate has '${(candidate as { assertionReport?: { format: string } }).assertionReport?.format}'.`,
+      });
+    }
+  }
+  return null;
 }
 
 /**
@@ -325,14 +390,7 @@ export const declare_contract: ToolDefinition = {
             .describe(
               'Whether the claim is critical. Required and explicit: a critical claim can block ' +
                 'the final approval, so it must never be assumed. A critical claim additionally ' +
-                'requires a distinct counterexampleCheckId.',
-            ),
-          counterexampleCheckId: z
-            .string()
-            .min(1)
-            .optional()
-            .describe(
-              'Optional distinct check whose FAILURE would contradict this claim (adversarial falsification); required for critical claims.',
+                'requires a distinct counterexample requirement.',
             ),
           authority: z
             .enum(['ticket', 'plan', 'architecture'])
@@ -358,6 +416,9 @@ export const declare_contract: ToolDefinition = {
                 'surviving mutants make the claim UNPROVEN, and a profile with no recorded ' +
                 'mutation report is NOT_VERIFIED rather than a pass.',
             ),
+          counterexampleRequirement: AssertionCounterexampleRequirement.optional().describe(
+            'Assertion-mode counterexample requirement: binds a specific test assertion whose failure contradicts this claim (junit:/vitest:/jest:/go: prefix).',
+          ),
         }),
       )
       .min(1)
@@ -387,6 +448,12 @@ export const declare_contract: ToolDefinition = {
 
         const mergeViolation = validateMergedClaimIds(args.claims as readonly RawClaim[], state);
         if (mergeViolation) return mergeViolation;
+
+        const capabilityGate = validateAssertionCapabilityGate(
+          args.claims as readonly RawClaim[],
+          state,
+        );
+        if (capabilityGate) return capabilityGate;
 
         const worktree = getWorktree(context);
         const verdicts = await resolveVerifiedMutationVerdicts(worktree, state.mutationAttempts);

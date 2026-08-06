@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { deriveRepairGuidance } from './repair-guidance.js';
+import { deriveRepairGuidance, parseFailureOutput } from './repair-guidance.js';
 import type { ExecutionEvidence } from './executor.js';
 
 const VALID_DIGEST = 'a'.repeat(64);
@@ -29,10 +29,162 @@ function makeEvidence(overrides: Partial<ExecutionEvidence> = {}): ExecutionEvid
 
 // ─── HAPPY ───────────────────────────────────────────────────────────────────
 
-describe('HAPPY', () => {
+describe('HAPPY: parseFailureOutput', () => {
+  it('derives typecheck category from TS error output', () => {
+    const evidence = makeEvidence({
+      kind: 'typecheck',
+      passed: false,
+      exitCode: 1,
+      stderr:
+        "src/app.ts(10,5): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.",
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.category).toBe('typecheck');
+  });
+
+  it('derives lint category from eslint-style output', () => {
+    const evidence = makeEvidence({
+      kind: 'lint',
+      passed: false,
+      exitCode: 1,
+      stdout: 'src/auth/login.ts:42:15   error    Unexpected console statement  no-console',
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.category).toBe('lint');
+  });
+
+  it('derives test category from vitest/jest output', () => {
+    const evidence = makeEvidence({
+      kind: 'test',
+      passed: false,
+      exitCode: 1,
+      stdout: 'FAIL  src/users.test.ts > creates user\nAssertionError: expected false to be true',
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.category).toBe('test');
+  });
+
+  it('derives build category from module-not-found output', () => {
+    const evidence = makeEvidence({
+      kind: 'build',
+      passed: false,
+      exitCode: 1,
+      stdout: "Module not found: Error: Cannot resolve 'lodash' in src/utils/helpers.ts",
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.category).toBe('build');
+  });
+
+  it('derives coverage category from coverage threshold output', () => {
+    const evidence = makeEvidence({
+      kind: 'coverage',
+      passed: false,
+      exitCode: 1,
+      stderr: 'ERROR: Coverage threshold for branches (80%) not met: 72.5%',
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.category).toBe('coverage');
+  });
+
+  it('derives security category from npm audit output', () => {
+    const evidence = makeEvidence({
+      kind: 'security',
+      passed: false,
+      exitCode: 1,
+      stdout: 'found 1 high severity vulnerability (GHSA-xxxx-yyyy-zzzz)\n  lodash < 4.17.21',
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.category).toBe('security');
+  });
+
+  it('derives format category from prettier output', () => {
+    const evidence = makeEvidence({
+      kind: 'format',
+      passed: false,
+      exitCode: 1,
+      stdout:
+        'Code style issues found in 3 files. Run Prettier to fix.\nsrc/app.ts\nsrc/helpers.ts',
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.category).toBe('format');
+  });
+
+  it('returns null category for unparseable gibberish', () => {
+    const evidence = makeEvidence({
+      kind: 'test',
+      passed: false,
+      exitCode: 1,
+      stderr: '### ??? nonsense text without patterns',
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.category).toBeNull();
+  });
+
+  it('finds file locations from source code references in output', () => {
+    const evidence = makeEvidence({
+      kind: 'typecheck',
+      passed: false,
+      exitCode: 1,
+      stderr:
+        "src/app.ts(10,5): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.",
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.locations).toContainEqual(
+      expect.objectContaining({ file: 'src/app.ts', line: 10, column: 5 }),
+    );
+  });
+
+  it('returns high confidence when locations found and category detected', () => {
+    const evidence = makeEvidence({
+      kind: 'typecheck',
+      passed: false,
+      exitCode: 1,
+      stderr: "src/app.ts(10,5): error TS2345: Argument of type 'string' is not assignable.",
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.confidence).toBe('high');
+  });
+
+  it('returns medium confidence when category detected but no locations', () => {
+    const evidence = makeEvidence({
+      kind: 'test',
+      passed: false,
+      exitCode: 1,
+      stdout: 'Tests failed: 3 of 5 assertions failed',
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.category).toBe('test');
+    expect(parsed.confidence).toBe('medium');
+  });
+
+  it('returns low confidence when no category detected', () => {
+    const evidence = makeEvidence({
+      kind: 'test',
+      passed: false,
+      exitCode: 1,
+      stderr: '### ??? nonsense text without patterns',
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.confidence).toBe('low');
+  });
+});
+
+describe('HAPPY: deriveRepairGuidance', () => {
   it('returns unavailable for passing checks', () => {
     const evidence = makeEvidence({ passed: true, exitCode: 0 });
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'supported');
 
     expect(guidance).toMatchObject({
       kind: 'derived_repair_guidance',
@@ -46,90 +198,58 @@ describe('HAPPY', () => {
     ]);
   });
 
-  it('derives typecheck failure with file locations from TS error output', () => {
+  it('returns unavailable for inconclusive outcome with diagnostic guidance', () => {
     const evidence = makeEvidence({
       kind: 'typecheck',
       passed: false,
       exitCode: 1,
-      stderr:
-        "src/app.ts(10,5): error TS2345: Argument of type 'string' is not assignable to parameter of type 'number'.",
+      stderr: 'src/app.ts(10,5): error TS2345: type mismatch',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
-    expect(guidance.status).toBe('available');
-    if (guidance.status !== 'available') throw new Error('expected available');
-    expect(guidance.category).toBe('typecheck');
-    expect(guidance.confidence).toBe('high');
-    expect(guidance.affectedLocations).toContainEqual(
-      expect.objectContaining({ file: 'src/app.ts', line: 10, column: 5 }),
-    );
-    expect(guidance.recommendedNextActions[0]).toContain('type');
-  });
-
-  it('derives lint failure with file locations from eslint-style output', () => {
-    const evidence = makeEvidence({
-      kind: 'lint',
-      passed: false,
-      exitCode: 1,
-      stdout: 'src/auth/login.ts:42:15   error    Unexpected console statement  no-console',
+    const guidance = deriveRepairGuidance(evidence, 'inconclusive');
+    expect(guidance).toMatchObject({
+      status: 'unavailable',
+      reason: 'insufficient_confidence',
     });
-
-    const guidance = deriveRepairGuidance(evidence);
-    expect(guidance.status).toBe('available');
-    if (guidance.status !== 'available') throw new Error('expected available');
-    expect(guidance.category).toBe('lint');
-    expect(guidance.confidence).toBe('high');
-    expect(guidance.affectedLocations).toContainEqual(
-      expect.objectContaining({ file: 'src/auth/login.ts', line: 42, column: 15 }),
+    expect(guidance.recommendedNextActions).toEqual(
+      expect.arrayContaining([expect.stringContaining('not claim-relevant')]),
     );
   });
 
-  it('derives test failure from vitest/jest output', () => {
+  it('returns unavailable for blocked outcome with provider-recovery guidance', () => {
     const evidence = makeEvidence({
-      kind: 'test',
+      kind: 'typecheck',
       passed: false,
-      exitCode: 1,
-      stdout: 'FAIL  src/users.test.ts > creates user\nAssertionError: expected false to be true',
+      exitCode: 124,
+      timedOut: true,
     });
 
-    const guidance = deriveRepairGuidance(evidence);
-    expect(guidance.status).toBe('available');
-    if (guidance.status !== 'available') throw new Error('expected available');
-    expect(guidance.category).toBe('test');
-    expect(guidance.recommendedNextActions[0]).toContain('test');
-  });
-
-  it('derives build failure from module-not-found output', () => {
-    const evidence = makeEvidence({
-      kind: 'build',
-      passed: false,
-      exitCode: 1,
-      stdout: "Module not found: Error:Cannot resolve 'lodash' in src/utils/helpers.ts",
+    const guidance = deriveRepairGuidance(evidence, 'blocked');
+    expect(guidance).toMatchObject({
+      status: 'unavailable',
+      reason: 'insufficient_confidence',
     });
-
-    const guidance = deriveRepairGuidance(evidence);
-    expect(guidance.status).toBe('available');
-    if (guidance.status !== 'available') throw new Error('expected available');
-    expect(guidance.category).toBe('build');
-    expect(guidance.recommendedNextActions[0]).toContain('build');
+    expect(guidance.recommendedNextActions).toEqual(
+      expect.arrayContaining([expect.stringContaining('answerative')]),
+    );
   });
 });
 
 // ─── BAD ─────────────────────────────────────────────────────────────────────
 
 describe('BAD', () => {
-  it('returns unavailable for unparseable gibberish output', () => {
+  it('returns unavailable for unparseable gibberish output via deriveRepairGuidance', () => {
     const evidence = makeEvidence({
       kind: 'test',
       passed: false,
       exitCode: 1,
-      stderr: '\x00\x01\x02 garbage !!! ### ??? nonsense text without patterns',
+      stdout: '### ??? nonsense text without patterns',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'inconclusive');
     expect(guidance).toMatchObject({
       status: 'unavailable',
-      reason: 'unparseable',
+      reason: 'insufficient_confidence',
     });
     expect(guidance.notVerified).toEqual(
       expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
@@ -140,97 +260,23 @@ describe('BAD', () => {
 // ─── CORNER ──────────────────────────────────────────────────────────────────
 
 describe('CORNER', () => {
-  it('derives coverage threshold failure', () => {
-    const evidence = makeEvidence({
-      kind: 'coverage',
-      passed: false,
-      exitCode: 1,
-      stderr: 'ERROR: Coverage threshold for branches (80%) not met: 72.5%',
-    });
-
-    const guidance = deriveRepairGuidance(evidence);
-    expect(guidance.status).toBe('available');
-    if (guidance.status !== 'available') throw new Error('expected available');
-    expect(guidance.category).toBe('coverage');
-  });
-
-  it('derives security failure from npm audit output', () => {
-    const evidence = makeEvidence({
-      kind: 'security',
-      passed: false,
-      exitCode: 1,
-      stdout: 'found 1 high severity vulnerability (GHSA-xxxx-yyyy-zzzz)\n  lodash < 4.17.21',
-    });
-
-    const guidance = deriveRepairGuidance(evidence);
-    expect(guidance.status).toBe('available');
-    if (guidance.status !== 'available') throw new Error('expected available');
-    expect(guidance.category).toBe('security');
-  });
-
-  it('derives format failure from prettier output', () => {
-    const evidence = makeEvidence({
-      kind: 'format',
-      passed: false,
-      exitCode: 1,
-      stdout:
-        'Code style issues found in 3 files. Run Prettier to fix.\nsrc/app.ts\nsrc/helpers.ts',
-    });
-
-    const guidance = deriveRepairGuidance(evidence);
-    expect(guidance.status).toBe('available');
-    if (guidance.status !== 'available') throw new Error('expected available');
-    expect(guidance.category).toBe('format');
-  });
-
-  it('returns unparseable when category detected but no locations and output is ambiguous', () => {
-    const evidence = makeEvidence({
-      kind: 'test',
-      passed: false,
-      exitCode: 1,
-      stdout: 'Test run failed with 2 error(s). Process exited.',
-    });
-
-    const guidance = deriveRepairGuidance(evidence);
-    // No specific test framework pattern matched, no file locations → unparseable
-    expect(guidance.status).toBe('unavailable');
-    if (guidance.status === 'unavailable') expect(guidance.reason).toBe('unparseable');
-  });
-
-  it('provides timeout guidance without claiming root cause', () => {
+  it('includes NOT_VERIFIED disclaimer in every result', () => {
     const evidence = makeEvidence({
       kind: 'typecheck',
       passed: false,
-      exitCode: 124,
-      timedOut: true,
-      stdout: 'partial output before kill',
-    });
-
-    const guidance = deriveRepairGuidance(evidence);
-    expect(guidance.status).toBe('available');
-    if (guidance.status !== 'available') throw new Error('expected available');
-    expect(guidance.category).toBe('timeout');
-    expect(guidance.confidence).toBe('high');
-    expect(guidance.recommendedNextActions.join(', ')).not.toMatch(/root cause/);
-  });
-
-  it('preserves evidence excerpts from relevant stream', () => {
-    const evidence = makeEvidence({
-      kind: 'lint',
-      passed: false,
       exitCode: 1,
-      stdout: 'src/x.ts:10:3  error  no-unused-vars',
-      stderr: 'internal warning: slow plugin',
+      stderr: 'src/app.ts(10,5): error TS2345: type mismatch',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
-    expect(guidance.status).toBe('available');
-    if (guidance.status !== 'available') throw new Error('expected available');
-    expect(guidance.evidence.length).toBeGreaterThan(0);
-    expect(guidance.evidence.some((e) => e.stream === 'stdout')).toBe(true);
+    const guidance = deriveRepairGuidance(evidence, 'inconclusive');
+    expect(guidance.notVerified).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('NOT_VERIFIED: Repair guidance is derived advisory interpretation'),
+      ]),
+    );
   });
 
-  it('bounded evidence excerpts to max 5', () => {
+  it('preserves evidence excerpts bounded to max 5', () => {
     const lines = Array.from({ length: 20 }, (_, i) => `src/file${i}.ts:${i}:1  error  rule-${i}`);
     const evidence = makeEvidence({
       kind: 'lint',
@@ -239,10 +285,8 @@ describe('CORNER', () => {
       stdout: lines.join('\n'),
     });
 
-    const guidance = deriveRepairGuidance(evidence);
-    if (guidance.status !== 'available') throw new Error('expected available');
+    const guidance = deriveRepairGuidance(evidence, 'inconclusive');
     expect(guidance.evidence.length).toBeLessThanOrEqual(5);
-    expect(guidance.affectedLocations.length).toBeLessThanOrEqual(10);
   });
 
   it('sanitizes control characters from excerpts', () => {
@@ -253,8 +297,7 @@ describe('CORNER', () => {
       stdout: 'src/ctrl.ts(1,2): \x00\x1f\x07error\x1b  TS1234: control chars',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
-    if (guidance.status !== 'available') throw new Error('expected available');
+    const guidance = deriveRepairGuidance(evidence, 'inconclusive');
     for (const e of guidance.evidence) {
       // eslint-disable-next-line no-control-regex
       expect(e.excerpt).not.toMatch(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/);
@@ -271,13 +314,8 @@ describe('CORNER', () => {
       stdout: `src/evil.ts(1,1): error TS9999: ${malicious}`,
     });
 
-    const guidance = deriveRepairGuidance(evidence);
-    // The location is extracted, the excerpt is sanitized, but guidance does not act on the malicious text
-    expect(guidance.status).toBe('available');
-    if (guidance.status !== 'available') throw new Error('expected available');
-    expect(guidance.notVerified).toEqual(
-      expect.arrayContaining([expect.stringContaining('NOT_VERIFIED')]),
-    );
+    const guidance = deriveRepairGuidance(evidence, 'inconclusive');
+    expect(guidance.status).toBe('unavailable');
     // Excerpts exist but are bounded
     expect(guidance.evidence.every((e) => e.excerpt.length <= 240)).toBe(true);
   });
@@ -286,7 +324,7 @@ describe('CORNER', () => {
 // ─── EDGE ────────────────────────────────────────────────────────────────────
 
 describe('EDGE', () => {
-  it('same exitCode/passed/timedOut/outputDigest with different derivedRepairGuidance has no effect on existing evidence fields', () => {
+  it('derivedRepairGuidance does not affect evidence hash fields', () => {
     const evidence = makeEvidence({
       passed: false,
       exitCode: 1,
@@ -295,14 +333,14 @@ describe('EDGE', () => {
       stdout: 'src/mod.ts(1,10): error TS2322: type mismatch',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'inconclusive');
 
     expect(evidence.passed).toBe(false);
     expect(evidence.exitCode).toBe(1);
     expect(evidence.timedOut).toBe(false);
     expect(evidence.outputDigest).toBe(VALID_DIGEST);
     // Guidance is derived but does not change evidence
-    expect(guidance.status).toBe('available');
+    expect(guidance.status).toBe('unavailable');
   });
 
   it('limits parse window to avoid memory issues on huge output', () => {
@@ -315,11 +353,9 @@ describe('EDGE', () => {
       stdout: big,
     });
 
-    const guidance = deriveRepairGuidance(evidence);
+    const guidance = deriveRepairGuidance(evidence, 'inconclusive');
     // Should not crash and should still find the error location
-    expect(guidance.status).toBe('available');
-    if (guidance.status !== 'available') throw new Error('expected available');
-    expect(guidance.affectedLocations.length).toBeGreaterThan(0);
+    expect(guidance.status).toBe('unavailable');
   });
 
   it('handles empty stdout/stderr gracefully', () => {
@@ -331,8 +367,37 @@ describe('EDGE', () => {
       stderr: '',
     });
 
-    const guidance = deriveRepairGuidance(evidence);
-    expect(guidance.status).toBe('unavailable');
-    if (guidance.status === 'unavailable') expect(guidance.reason).toBe('unparseable');
+    const guidance = deriveRepairGuidance(evidence, 'inconclusive');
+    expect(guidance).toMatchObject({
+      status: 'unavailable',
+      reason: 'insufficient_confidence',
+    });
+  });
+
+  it('parseFailureOutput returns null category for empty output', () => {
+    const evidence = makeEvidence({
+      kind: 'test',
+      passed: false,
+      exitCode: 99,
+      stdout: '',
+      stderr: '',
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.category).toBeNull();
+    expect(parsed.confidence).toBe('low');
+  });
+
+  it('parseFailureOutput respects max location cap', () => {
+    const lines = Array.from({ length: 30 }, (_, i) => `src/file${i}.ts:${i}:${i}`);
+    const evidence = makeEvidence({
+      kind: 'lint',
+      passed: false,
+      exitCode: 1,
+      stdout: lines.join('\n'),
+    });
+
+    const parsed = parseFailureOutput(evidence);
+    expect(parsed.locations.length).toBeLessThanOrEqual(10);
   });
 });

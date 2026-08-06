@@ -13,11 +13,12 @@
  * policy-layer decision and is intentionally not encoded here.
  *
  * Verification-state precedence (first match wins):
- *   1. missing provenance                 -> NOT_VERIFIED
- *   2. a FRESH counterexample contradicted it -> CONTRADICTED
- *   3. a provider errored (execution)     -> BLOCKED
- *   4. a required provider was unavailable-> NOT_VERIFIED
- *   5. a provider reported a failure      -> UNPROVEN
+ *   1. missing provenance                       -> NOT_VERIFIED
+ *   2. a FRESH counterexample contradicted it    -> CONTRADICTED
+ *  2.5 a FRESH counterexample is blocked         -> BLOCKED
+ *   3. a provider errored (execution)            -> BLOCKED
+ *   4. a required provider was unavailable       -> NOT_VERIFIED
+ *   5. a provider reported a failure             -> UNPROVEN
  *   6. required positive (fresh) + adversarial evidence all satisfied -> PROVEN
  *   7. required adversarial evidence missing/unresolved -> NOT_VERIFIED
  *   8. positive evidence only stale -> STALE, otherwise -> UNPROVEN
@@ -123,6 +124,7 @@ function computeFreshness(
 interface AdversarialAnalysis {
   readonly freshContradicted: boolean;
   readonly freshSupported: boolean;
+  readonly freshBlocked: boolean;
   readonly hasStaleAdversarial: boolean;
   readonly hasFreshAdversarial: boolean;
 }
@@ -133,10 +135,20 @@ function analyzeCounterexamples(
 ): AdversarialAnalysis {
   let freshContradicted = false;
   let freshSupported = false;
+  let freshBlocked = false;
   let hasStaleAdversarial = false;
   let hasFreshAdversarial = false;
   for (const c of counterexamples) {
-    if (c.outcome !== 'contradicted' && c.outcome !== 'supported') continue;
+    if (c.outcome === 'not_verified') continue;
+    if (c.outcome === 'blocked') {
+      if (isFreshCounterexample(c, currentImplementationDigest)) {
+        freshBlocked = true;
+        hasFreshAdversarial = true;
+      } else {
+        hasStaleAdversarial = true;
+      }
+      continue;
+    }
     if (isFreshCounterexample(c, currentImplementationDigest)) {
       hasFreshAdversarial = true;
       if (c.outcome === 'contradicted') freshContradicted = true;
@@ -145,7 +157,13 @@ function analyzeCounterexamples(
       hasStaleAdversarial = true;
     }
   }
-  return { freshContradicted, freshSupported, hasStaleAdversarial, hasFreshAdversarial };
+  return {
+    freshContradicted,
+    freshSupported,
+    freshBlocked,
+    hasStaleAdversarial,
+    hasFreshAdversarial,
+  };
 }
 
 /** Resolve a claim's state once precedence 1-5 has not already decided it. */
@@ -192,6 +210,9 @@ function deriveVerificationState(
   const cx = analyzeCounterexamples(counterexamples, input.currentImplementationDigest);
   // 2. Only a FRESH executed counterexample that falsified the claim contradicts it.
   if (cx.freshContradicted) return 'CONTRADICTED';
+  // 2.5 A fresh blocked counterexample blocks the claim — evidence provider could not
+  //      produce an answerative result (timeout, crash, empty output).
+  if (cx.freshBlocked) return 'BLOCKED';
   // 3./4. Distinguish an execution error (BLOCKED) from a missing provider (NOT_VERIFIED).
   if (results.some((r) => r.status === 'error')) return 'BLOCKED';
   if (results.some((r) => r.status === 'unavailable')) return 'NOT_VERIFIED';
@@ -212,8 +233,13 @@ function evaluateClaim(
   evaluatedAt: string,
 ): ProofClaim {
   const results = input.providerResults.filter((r) => r.claimId === claim.claimId);
-  const counterexamples = input.counterexamples.filter((c) => c.claimId === claim.claimId);
-  const verificationState = deriveVerificationState(claim, results, counterexamples, input);
+  const rawCounterexamples = input.counterexamples.filter((c) => c.claimId === claim.claimId);
+  const selection = selectCurrentCounterexamples(rawCounterexamples);
+
+  const verificationState = selection.conflicting
+    ? 'NOT_VERIFIED'
+    : deriveVerificationState(claim, results, selection.counterexamples, input);
+
   const freshness = computeFreshness(
     results.filter((r) => r.status === 'pass'),
     input,
@@ -222,6 +248,87 @@ function evaluateClaim(
   return freshness === undefined
     ? { ...claim, verificationState }
     : { ...claim, verificationState, freshness };
+}
+
+// ─── Supersession: deterministische Attempt-Auswahl ─────────────────────────
+
+type AttemptKey = string;
+
+interface CurrentCounterexampleSelection {
+  counterexamples: readonly ProofCounterexample[];
+  conflicting: boolean;
+  conflictReason?: string;
+}
+
+interface CounterexampleGroupResolution {
+  status: 'current' | 'conflicting';
+  value?: ProofCounterexample;
+  values?: readonly ProofCounterexample[];
+}
+
+function resolveAttemptHistory(
+  sortedNewestFirst: readonly ProofCounterexample[],
+): CounterexampleGroupResolution {
+  const latest = sortedNewestFirst[0] as ProofCounterexample;
+  const older = sortedNewestFirst.slice(1);
+
+  const next = older[0];
+  if (next !== undefined && next.executedAt === latest.executedAt) {
+    const outcomes = new Set(
+      sortedNewestFirst.filter((c) => c.executedAt === latest.executedAt).map((c) => c.outcome),
+    );
+    if (outcomes.size > 1) {
+      return {
+        status: 'conflicting',
+        values: sortedNewestFirst.filter((c) => c.executedAt === latest.executedAt),
+      };
+    }
+  }
+
+  if (latest.outcome === 'contradicted') {
+    return { status: 'current', value: latest };
+  }
+
+  const hasOlderContradiction = older.some((c) => c.outcome === 'contradicted');
+  if (hasOlderContradiction) {
+    return { status: 'conflicting', values: sortedNewestFirst };
+  }
+
+  return { status: 'current', value: latest };
+}
+
+function selectCurrentCounterexamples(
+  counterexamples: readonly ProofCounterexample[],
+): CurrentCounterexampleSelection {
+  const groups = new Map<AttemptKey, ProofCounterexample[]>();
+
+  for (const c of counterexamples) {
+    const key = `${c.claimId}:${c.checkId}:${c.boundDigest}`;
+    const existing = groups.get(key) ?? [];
+    existing.push(c);
+    groups.set(key, existing);
+  }
+
+  const resolved: ProofCounterexample[] = [];
+  let conflicting = false;
+  let conflictReason: string | undefined;
+
+  for (const [, group] of groups) {
+    if (group.length === 1) {
+      resolved.push(group[0]!);
+      continue;
+    }
+    const sorted = [...group].sort((a, b) => b.executedAt.localeCompare(a.executedAt));
+    const resolution = resolveAttemptHistory(sorted);
+    if (resolution.status === 'current' && resolution.value) {
+      resolved.push(resolution.value);
+    } else {
+      conflicting = true;
+      conflictReason = `conflicting counterexample outcomes at revision ${group[0]!.boundDigest.slice(0, 12)}`;
+    }
+  }
+
+  return { counterexamples: resolved, conflicting, conflictReason };
 }
 
 /**

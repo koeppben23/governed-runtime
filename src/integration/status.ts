@@ -301,6 +301,8 @@ export interface FinishCard {
     consumesObligations: false;
     triggersExport: false;
   };
+  /** Compact ProofGraph summary for the completion card. */
+  proofSummary?: import('../presentation/proof-summary.js').CompactProofPresentation;
 }
 
 // ─── Projection Builder ───────────────────────────────────────────────────────

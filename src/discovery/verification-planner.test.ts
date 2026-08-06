@@ -23,7 +23,7 @@ function makeReadFile(files: Record<string, string | undefined>) {
 
 describe('verification planner', () => {
   describe('HAPPY', () => {
-    it('prefers distinct demo package scripts over a Maven wrapper', async () => {
+    it('structured Maven wrapper upgrades unsupported package script for build', async () => {
       const candidates = await planVerificationCandidates({
         detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
         allFiles: ['package.json', 'pom.xml', 'mvnw'],
@@ -37,13 +37,13 @@ describe('verification planner', () => {
         }),
       });
 
-      expect(candidates).toMatchObject([
-        { kind: 'build', command: 'npm run build', source: 'package.json:scripts.build' },
-        { kind: 'test', command: 'npm run test', source: 'package.json:scripts.test' },
-      ]);
+      const buildCandidate = candidates.find((c) => c.kind === 'build');
+      expect(buildCandidate?.command).toBe('./mvnw verify');
+      expect(buildCandidate?.assertionCapability).toBe('structured');
+      expect(candidates.find((c) => c.kind === 'test')).toBeTruthy();
     });
 
-    it('uses package scripts with detected pnpm and suppresses vitest fallback', async () => {
+    it('structured vitest fallback upgrades unsupported package script test', async () => {
       const detectedStack = makeDetectedStack([
         { kind: 'buildTool', id: 'pnpm', evidence: 'pnpm-lock.yaml' },
         { kind: 'testFramework', id: 'vitest', evidence: 'vitest.config.ts' },
@@ -63,10 +63,10 @@ describe('verification planner', () => {
         }),
       });
 
-      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('pnpm test');
-      expect(candidates.map((c) => c.command)).not.toContain('pnpm vitest run');
-      expect(candidates.find((c) => c.kind === 'test')?.source).toBe('package.json:scripts.test');
-      expect(candidates.find((c) => c.kind === 'test')?.confidence).toBe('high');
+      const testCandidate = candidates.find((c) => c.kind === 'test');
+      expect(testCandidate?.assertionCapability).toBe('structured');
+      expect(testCandidate?.command).toBe('pnpm vitest run');
+      expect(candidates.find((c) => c.kind === 'test')?.confidence).toBe('medium');
     });
 
     it('uses vitest fallback when no test script exists', async () => {
@@ -331,7 +331,7 @@ describe('verification planner', () => {
       });
       const elapsedMs = performance.now() - started;
 
-      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('pnpm test');
+      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('pnpm vitest run');
       expect(elapsedMs).toBeLessThan(200);
     });
   });

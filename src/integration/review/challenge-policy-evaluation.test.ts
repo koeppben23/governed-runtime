@@ -263,6 +263,7 @@ async function runResolutionAndIndependentReReview(frozen: boolean): Promise<boo
             executionMs: 1,
             outputDigest: 'a'.repeat(64),
             timedOut: false,
+            outcome: 'supported' as const,
           },
         },
       ],

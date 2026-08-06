@@ -174,6 +174,7 @@ describe('validate rail', () => {
       executionMs: 100,
       outputDigest: 'a'.repeat(64),
       timedOut: false,
+      outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
     };
   }
 
@@ -374,6 +375,7 @@ describe('continue rail', () => {
       executionMs: 100,
       outputDigest: 'a'.repeat(64),
       timedOut: false,
+      outcome: 'supported' as const,
     }),
     selfReview: async () => ({ verdict: 'accept' as const }),
     implReview: async () => ({ verdict: 'accept' as const }),
@@ -414,6 +416,8 @@ describe('continue rail', () => {
           executionMs: 100,
           outputDigest: 'a'.repeat(64),
           timedOut: false,
+          outcome: (checkId !== 'test' ? 'supported' : 'inconclusive') as
+            'supported' | 'inconclusive',
         }),
       };
       const result = await executeContinue(state, ctx, failingExecutors);

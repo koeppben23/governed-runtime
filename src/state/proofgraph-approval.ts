@@ -51,8 +51,29 @@ const preEvidenceClaimDeclaration = {
   authoritySectionId: z.string().min(1),
 } as const;
 
+/** Structured counterexample requirement for assertion-mode claims. */
+export const AssertionCounterexampleRequirement = z
+  .object({
+    mode: z.literal('assertion'),
+    checkId: z.string().min(1),
+    assertionId: z.string().min(1),
+  })
+  .readonly();
+export type AssertionCounterexampleRequirement = z.infer<typeof AssertionCounterexampleRequirement>;
+
 /** A plan claim names the checks expected to cover and falsify it after implementation. */
 const planBase = z
+  .object({
+    ...preEvidenceClaimDeclaration,
+    expectedCheckId: z.string().min(1),
+    counterexampleRequirement: AssertionCounterexampleRequirement.optional(),
+    structuralSurface: z.string().min(1).optional(),
+    mutationProfile: z.string().min(1).optional(),
+  })
+  .strict();
+
+/** Legacy plan claim shape — only for reading persisted pre-migration sessions. */
+const legacyPlanBase = z
   .object({
     ...preEvidenceClaimDeclaration,
     expectedCheckId: z.string().min(1),
@@ -62,10 +83,18 @@ const planBase = z
   })
   .strict();
 
-export const PlanClaimDeclaration = planBase.readonly();
+/** Writable plan claim declaration (assertion-mode only). */
+export const WritablePlanClaimDeclaration = planBase.readonly();
+export type WritablePlanClaimDeclaration = z.infer<typeof WritablePlanClaimDeclaration>;
+
+/** Persisted plan claim — accepts both new and legacy shapes. */
+export const PlanClaimDeclaration = z.union([
+  WritablePlanClaimDeclaration,
+  legacyPlanBase.readonly(),
+]);
 export type PlanClaimDeclaration = z.infer<typeof PlanClaimDeclaration>;
 
-/** Public input for a plan claim — claimId is minted host-side. */
+/** Public input for a plan claim — claimId is minted host-side, assertion-mode only. */
 export const PlanClaimDeclarationInput = planBase.omit({ claimId: true }).strict();
 export type PlanClaimDeclarationInput = z.infer<typeof PlanClaimDeclarationInput>;
 

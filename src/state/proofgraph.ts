@@ -52,6 +52,27 @@ export const RequiredEvidence = z
 export type RequiredEvidence = z.infer<typeof RequiredEvidence>;
 
 /**
+ * Counterexample binding requirement for a claim.
+ *
+ * mode=check: legacy counterexample based on check-level outcome.
+ *   Can produce supported/not_verified/blocked, but never contradicted.
+ * mode=assertion: targeted counterexample bound to a concrete assertion.
+ *   A failed matching assertion → contradicted.
+ */
+export const CounterexampleRequirement = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('check'),
+    checkId: z.string().min(1),
+  }),
+  z.object({
+    mode: z.literal('assertion'),
+    checkId: z.string().min(1),
+    assertionId: z.string().min(1),
+  }),
+]);
+export type CounterexampleRequirement = z.infer<typeof CounterexampleRequirement>;
+
+/**
  * Shared shape between a declared claim (evaluator input) and an evaluated
  * claim (evaluator output). `provenance` is mandatory as a value but may be
  * `null` — a `null` provenance is surfaced as `NOT_VERIFIED`, never proven.
@@ -73,6 +94,8 @@ const proofClaimBase = {
   counterexampleRefs: z.array(ClaimEvidenceRef),
   /** Policy-required evidence classes; absent ⇒ no explicit requirement. */
   requiredEvidence: RequiredEvidence.optional(),
+  /** Optional counterexample requirement (check-level or assertion-level). */
+  counterexampleRequirement: CounterexampleRequirement.optional(),
   /** Optional confidence in [0, 1] for advisory (non-fact) signals. */
   confidence: z.number().min(0).max(1).optional(),
 } as const;
@@ -234,6 +257,10 @@ export type ProofProviderResult = z.infer<typeof ProofProviderResult>;
 export const ProofCounterexample = z
   .object({
     claimId: z.string().uuid(),
+    /** The validation attempt that produced this counterexample. */
+    attemptId: z.string().uuid(),
+    /** The check kind that was executed (e.g. 'build', 'test'). */
+    checkId: z.string().min(1),
     scenario: z.string().min(1),
     outcome: CounterexampleOutcome,
     boundDigest: z.string().min(1),

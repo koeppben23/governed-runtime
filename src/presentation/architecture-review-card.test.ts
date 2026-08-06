@@ -186,4 +186,52 @@ describe('architecture review golden fixtures', () => {
     });
     expect(card).toBe(await readGolden('review-architecture-changes-requested.md'));
   });
+
+  it('injects decision claims section when proofSummary is provided', () => {
+    const adrText = '## Context\nfoo\n\n## Decision\nbar\n\n## Consequences\nbaz\n';
+    const card = buildArchitectureReviewCard({
+      phase: 'ARCH_REVIEW',
+      phaseLabel: 'Ready for architecture review',
+      adrTitle: 'Use presentation-only command aliases',
+      adrId: 'ADR-001',
+      adrDigest: 'abc123',
+      adrText,
+      iteration: 1,
+      overallVerdict: 'accept',
+      isApproved: false,
+      productNextAction: {
+        text: 'Review the ADR.',
+        commands: ['/approve', '/request-changes'],
+      },
+      proofSummary: {
+        kind: 'declaration',
+        flow: 'architecture',
+        claimCount: 1,
+        criticalCount: 1,
+      },
+    });
+    expect(card).toContain('## Proof obligations');
+    expect(card).toContain('1 architecture claim(s) declared');
+    expect(card).toContain('AWAITING EVIDENCE');
+  });
+
+  it('omits decision claims section when proofSummary is absent', () => {
+    const adrText = '## Context\nfoo\n\n## Decision\nbar\n\n## Consequences\nbaz\n';
+    const card = buildArchitectureReviewCard({
+      phase: 'ARCH_REVIEW',
+      phaseLabel: 'Ready for architecture review',
+      adrTitle: 'Use presentation-only command aliases',
+      adrId: 'ADR-001',
+      adrDigest: 'abc123',
+      adrText,
+      iteration: 1,
+      overallVerdict: 'accept',
+      isApproved: false,
+      productNextAction: {
+        text: 'Review the ADR.',
+        commands: ['/approve', '/request-changes'],
+      },
+    });
+    expect(card).not.toContain('## Proof obligations');
+  });
 });

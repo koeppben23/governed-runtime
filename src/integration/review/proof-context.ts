@@ -104,9 +104,24 @@ function renderPlanDeclarations(state: SessionState): string[] {
         const detail = [
           `authority section: ${claim.authoritySectionId}`,
           `expected check: ${claim.expectedCheckId}`,
-          ...(claim.counterexampleCheckId
-            ? [`counterexample check: ${claim.counterexampleCheckId}`]
-            : []),
+          ...(() => {
+            const c = claim as Record<string, unknown>;
+            if (c['counterexampleRequirement']) {
+              const req = c['counterexampleRequirement'] as {
+                mode: string;
+                checkId: string;
+                assertionId?: string;
+              };
+              return [
+                `counterexample check: ${req.checkId}` +
+                  (req.mode === 'assertion' ? ` (assertion: ${req.assertionId})` : ''),
+              ];
+            }
+            if (c['counterexampleCheckId'] !== undefined) {
+              return [`counterexample check: ${c['counterexampleCheckId']}`];
+            }
+            return [];
+          })(),
           ...(claim.structuralSurface ? [`structural surface: ${claim.structuralSurface}`] : []),
           ...(claim.mutationProfile ? [`mutation profile: ${claim.mutationProfile}`] : []),
         ].join('; ');

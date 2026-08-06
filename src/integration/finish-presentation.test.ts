@@ -181,4 +181,90 @@ describe('buildFinishDocument', () => {
       triggersExport: false,
     });
   });
+
+  it('includes proofSummary with completion context when proofGraph exists', () => {
+    const state = completeState({
+      proofGraph: {
+        version: 'proofgraph.v1' as const,
+        claims: [
+          {
+            claimId: '99999999-9999-9999-9999-999999999999',
+            statement: 'Test claim',
+            signalClass: 'fact' as const,
+            critical: true,
+            provenance: {
+              kind: 'canonical_authority' as const,
+              authorityId: 'plan',
+              digest: 'aaaa'.repeat(16),
+              approval: {
+                certificateId: '11111111-1111-1111-1111-111111111111',
+                claimDeclarationsDigest: 'b'.repeat(64),
+                decisionAttestationDigest: 'c'.repeat(64),
+                declarationId: '22222222-2222-2222-2222-222222222222',
+              },
+            },
+            evidenceRefs: [],
+            counterexampleRefs: [],
+            verificationState: 'PROVEN' as const,
+          },
+        ],
+        evaluatedAt: '2025-01-01T00:00:00Z',
+      },
+      implementation: {
+        changedFiles: ['src/foo.ts'],
+        domainFiles: ['src/foo.ts'],
+        digest: 'impl-digest',
+        executedAt: '2025-01-01T00:00:00Z',
+      },
+    });
+    const card = buildFinishCard(state, getPolicyPreset('solo'));
+    expect(card.proofSummary).toBeDefined();
+    expect(card.proofSummary?.kind).toBe('evaluation');
+    if (card.proofSummary?.kind === 'evaluation') {
+      expect(card.proofSummary.decisionContext).toBe('completion');
+    }
+  });
+
+  it('renders ProofGraph section in finish document markdown when proofGraph exists', () => {
+    const state = completeState({
+      proofGraph: {
+        version: 'proofgraph.v1' as const,
+        claims: [
+          {
+            claimId: '88888888-8888-8888-8888-888888888888',
+            statement: 'Test claim',
+            signalClass: 'fact' as const,
+            critical: true,
+            provenance: {
+              kind: 'canonical_authority' as const,
+              authorityId: 'plan',
+              digest: 'aaaa'.repeat(16),
+              approval: {
+                certificateId: '11111111-1111-1111-1111-111111111111',
+                claimDeclarationsDigest: 'b'.repeat(64),
+                decisionAttestationDigest: 'c'.repeat(64),
+                declarationId: '22222222-2222-2222-2222-222222222222',
+              },
+            },
+            evidenceRefs: [],
+            counterexampleRefs: [],
+            verificationState: 'PROVEN' as const,
+          },
+        ],
+        evaluatedAt: '2025-01-01T00:00:00Z',
+      },
+      implementation: {
+        changedFiles: ['src/foo.ts'],
+        domainFiles: ['src/foo.ts'],
+        digest: 'impl-digest',
+        executedAt: '2025-01-01T00:00:00Z',
+      },
+    });
+    const card = buildFinishCard(state, getPolicyPreset('solo'));
+    const pres = buildFinishPresentationProjection(state, card);
+    const doc = buildFinishDocument(pres);
+    const markdown = renderMarkdown(doc);
+    expect(markdown).toContain('## ProofGraph');
+    expect(markdown).toContain('All critical claims PROVEN');
+  });
 });

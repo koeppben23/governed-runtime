@@ -9,6 +9,7 @@
  */
 
 import type { ProofContract, ProofContractCoverage } from '../../state/proofgraph-contract.js';
+import type { CounterexampleRequirement } from '../../state/proofgraph.js';
 import {
   hasCurrentPlanApprovalCertificate,
   type PlanClaimDeclaration,
@@ -103,10 +104,7 @@ export async function materializeApprovedPlanContractResult(
     return { contract: EMPTY_CONTRACT, coverage: [{ cause: 'missing_declarations' }] };
   }
   if (certificate.kind !== 'valid') {
-    return {
-      contract: EMPTY_CONTRACT,
-      coverage: [{ cause: certificate.cause }],
-    };
+    return { contract: EMPTY_CONTRACT, coverage: [{ cause: certificate.cause }] };
   }
   if (!implementationDigest) {
     return { contract: EMPTY_CONTRACT, coverage: [{ cause: 'missing_implementation' }] };
@@ -134,8 +132,18 @@ export async function materializeApprovedPlanContractResult(
     if (declaration.mutationProfile && mutationAttempt === null) {
       coverage.push({ claimId: declaration.claimId, cause: 'unverified_mutation_profile' });
     }
-    const counterexampleAttempts = declaration.counterexampleCheckId
-      ? attempts.filter((attempt) => attempt.result.checkId === declaration.counterexampleCheckId)
+    const declarationRecord = declaration as Record<string, unknown>;
+    const existingRequirement = declarationRecord['counterexampleRequirement'] as
+      CounterexampleRequirement | undefined;
+    const legacyCheckId = declarationRecord['counterexampleCheckId'] as string | undefined;
+    const requirement: CounterexampleRequirement | undefined =
+      existingRequirement ??
+      (legacyCheckId !== undefined
+        ? { mode: 'check' as const, checkId: legacyCheckId }
+        : undefined);
+    const counterexampleCheckId = requirement?.checkId;
+    const counterexampleAttempts = counterexampleCheckId
+      ? attempts.filter((attempt) => attempt.result.checkId === counterexampleCheckId)
       : [];
     return {
       claimId: declaration.claimId,
@@ -158,6 +166,7 @@ export async function materializeApprovedPlanContractResult(
         kind: 'validation_attempt' as const,
         attemptId: attempt.attemptId,
       })),
+      counterexampleRequirement: requirement,
       requiredEvidence: requiredEvidence(declaration),
     };
   });

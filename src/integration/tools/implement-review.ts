@@ -89,6 +89,127 @@ import { resolveRuntimeReviewPlatform } from '../review/orchestration-mode.js';
 import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import { nextImplementationReviewIteration } from './implement-shared.js';
+import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
+import type { CompactProofPresentation } from '../../presentation/proof-summary.js';
+import { renderCompactProofSection } from '../../presentation/proof-summary.js';
+
+function attachProofSummaryToBlockedResponse(
+  blockedResponse: string,
+  proofSummary: CompactProofPresentation | null,
+): string {
+  if (!proofSummary) return blockedResponse;
+  const parsed = JSON.parse(blockedResponse) as Record<string, unknown>;
+  parsed.proofSummary = proofSummary;
+  parsed.presentation = {
+    markdown: buildImplReviewBlockedMarkdown(
+      String(parsed.message ?? 'The independent review could not be completed.'),
+      proofSummary,
+    ),
+  };
+  return JSON.stringify(parsed);
+}
+
+function buildImplReviewBlockedMarkdown(
+  message: string,
+  proofSummary: CompactProofPresentation,
+): string {
+  return [
+    '## Implementation review blocked',
+    '',
+    message,
+    '',
+    renderCompactProofSection(proofSummary),
+    '',
+    '→ Restore independent review capability and retry the implementation review.',
+  ].join('\n');
+}
+
+export function buildImplReviewConvergedMarkdown(
+  statusLine: string,
+  proofSummary: CompactProofPresentation,
+): string {
+  return [
+    statusLine,
+    '',
+    renderCompactProofSection(proofSummary),
+    '',
+    '→ Continue to completion or run flowguard_status for review context.',
+  ].join('\n');
+}
+
+export function buildImplReviewChangesRequestedMarkdown(
+  statusLine: string,
+  proofSummary: CompactProofPresentation,
+): string {
+  return [
+    statusLine,
+    '',
+    renderCompactProofSection(proofSummary),
+    '',
+    '→ Make the requested code changes, then call flowguard_implement to re-record.',
+  ].join('\n');
+}
+
+function proofDecisionContextForVerdict(
+  verdict: LoopVerdict,
+): 'current_gate' | 'prospective_approval' {
+  return verdict === 'accept' ? 'current_gate' : 'prospective_approval';
+}
+
+function projectProofSummaryForVerdict(
+  state: SessionState,
+  verdict: LoopVerdict,
+): CompactProofPresentation | null {
+  return projectImplementationProofStatus(state, {
+    decisionContext: proofDecisionContextForVerdict(verdict),
+  });
+}
+
+export type ResolvedSubmittedReviewProof =
+  | {
+      readonly kind: 'blocked';
+      readonly response: string;
+    }
+  | {
+      readonly kind: 'proceed';
+      readonly proofSummary: CompactProofPresentation | null;
+    };
+
+/**
+ * Branch logic for the proof context in a submitted implementation review.
+ *
+ * 1. If findings are blocked → blocked response with injected proof summary.
+ * 2. If changes_requested → proceed with pre-transition (prospective) summary.
+ * 3. If accept → proceed with post-review (current_gate) summary.
+ *
+ * Both the handler and tests call this function. Mutating the branch decisions
+ * inside this function will break the corresponding tests.
+ */
+export function resolveSubmittedReviewProofResponse(input: {
+  findingsBlocked: string | null;
+  preTransitionState: SessionState;
+  reviewedState: SessionState;
+  verdict: LoopVerdict;
+}): ResolvedSubmittedReviewProof {
+  const preProof = projectImplementationProofStatus(input.preTransitionState);
+
+  if (input.findingsBlocked) {
+    return {
+      kind: 'blocked',
+      response: attachProofSummaryToBlockedResponse(input.findingsBlocked, preProof),
+    };
+  }
+
+  if (input.verdict === 'changes_requested') {
+    return { kind: 'proceed', proofSummary: preProof };
+  }
+
+  return {
+    kind: 'proceed',
+    proofSummary: projectProofSummaryForVerdict(input.reviewedState, input.verdict),
+  };
+}
+
 function findPendingImplObligation(state: SessionState) {
   const assuranceBase = ensureReviewAssurance(state.reviewAssurance);
   return (
@@ -336,6 +457,7 @@ async function handleChangesRequestedReview(input: {
   reviewedState: SessionState;
   iteration: number;
   reviewFindings: ReviewFindings[];
+  proofSummary?: CompactProofPresentation | null;
 }): Promise<string> {
   const target = evaluateWithEvent(input.runtime.state.phase, 'CHANGES_REQUESTED');
   if (target === undefined) {
@@ -375,6 +497,15 @@ async function handleChangesRequestedReview(input: {
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
+  if (input.proofSummary) {
+    response.proofSummary = input.proofSummary;
+    response.presentation = {
+      markdown: buildImplReviewChangesRequestedMarkdown(
+        `Implementation review iteration ${input.iteration}/${input.runtime.maxImplReviewIterations}. Changes requested.`,
+        input.proofSummary,
+      ),
+    };
+  }
   return appendNextAction(JSON.stringify(response), finalState);
 }
 
@@ -383,6 +514,7 @@ async function handleApprovedReview(input: {
   reviewedState: SessionState;
   iteration: number;
   reviewFindings: ReviewFindings[];
+  proofSummary?: CompactProofPresentation | null;
 }): Promise<string> {
   const advanced = autoAdvance(
     input.reviewedState,
@@ -403,6 +535,17 @@ async function handleApprovedReview(input: {
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
+
+  if (input.proofSummary) {
+    response.proofSummary = input.proofSummary;
+    const statusLine =
+      input.runtime.args.reviewVerdict === 'accept'
+        ? `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`
+        : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
+    response.presentation = {
+      markdown: buildImplReviewConvergedMarkdown(statusLine, input.proofSummary),
+    };
+  }
 
   if (input.runtime.args.reviewVerdict === 'accept') {
     response.status = `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`;
@@ -464,7 +607,6 @@ async function handleSubmittedImplementationReview(input: {
     submittedVerdict,
     pendingObligation?.obligationId ?? 'unknown',
   );
-  if (findingsBlocked) return findingsBlocked;
 
   const { reviewedState, newReviewFindings } = appendImplReviewState({
     runtime,
@@ -474,12 +616,23 @@ async function handleSubmittedImplementationReview(input: {
     evidenceInvocationId: resolved.evidenceInvocationId,
   });
 
+  const proofDecision = resolveSubmittedReviewProofResponse({
+    findingsBlocked,
+    preTransitionState: runtime.state,
+    reviewedState,
+    verdict: submittedVerdict,
+  });
+  if (proofDecision.kind === 'blocked') return proofDecision.response;
+
+  const proofSummary = proofDecision.proofSummary;
+
   if (submittedVerdict === 'changes_requested') {
     return handleChangesRequestedReview({
       runtime,
       reviewedState,
       iteration,
       reviewFindings: newReviewFindings,
+      proofSummary,
     });
   }
   const validationGate = implValidationEvidenceGate(runtime.state);
@@ -489,6 +642,7 @@ async function handleSubmittedImplementationReview(input: {
     reviewedState,
     iteration,
     reviewFindings: newReviewFindings,
+    proofSummary: proofSummary ?? undefined,
   });
 }
 

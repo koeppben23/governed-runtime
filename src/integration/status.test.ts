@@ -559,6 +559,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           executionMs: 1,
           outputDigest: 'check_1_digest',
           timedOut: false,
+          outcome: 'supported' as const,
         },
       ],
       implValidation: [
@@ -573,6 +574,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           executionMs: 1,
           outputDigest: 'check_1_digest',
           timedOut: false,
+          outcome: 'supported' as const,
         },
       ],
       implementation: {
@@ -655,6 +657,8 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           executionMs: 1,
           outputDigest: 'check_1_digest',
           timedOut: false,
+          outcome: 'inconclusive' as const,
+          classificationReason: 'non-zero exit code',
         },
         {
           checkId: 'check_2',
@@ -667,6 +671,7 @@ describe('buildEvidenceDetailProjection — EDGE', () => {
           executionMs: 1,
           outputDigest: 'check_2_digest',
           timedOut: false,
+          outcome: 'supported' as const,
         },
       ],
     };
