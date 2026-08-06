@@ -1,5 +1,9 @@
 # Machine Layer Contributor Notes
 
+## Scope
+
+This file adds instructions for files in this directory subtree.
+
 ## Authority
 
 The state machine in `src/machine/` is the canonical authority for FlowGuard
@@ -49,7 +53,7 @@ phase transitions, guard evaluation, and command routing.
 
 ## Additional Verification for This Subtree
 
-Apply the repository-wide verification rules first. In addition, run these checks for all machine-layer changes:
+Apply the repository-wide verification rules first. In addition:
 
 ```sh
 npx vitest run --project unit src/machine/

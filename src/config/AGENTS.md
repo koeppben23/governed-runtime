@@ -1,5 +1,9 @@
 # Config Layer Contributor Notes
 
+## Scope
+
+This file adds instructions for files in this directory subtree.
+
 ## Authority
 
 `src/config/` is the canonical authority for FlowGuard configuration schemas,
@@ -54,7 +58,7 @@ npx vitest run --project unit src/config/reasons-completeness.test.ts
 
 ## Additional Verification for This Subtree
 
-Apply the repository-wide verification rules first. In addition, run these checks for all config-layer changes:
+Apply the repository-wide verification rules first. In addition:
 
 ```sh
 npm run check

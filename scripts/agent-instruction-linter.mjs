@@ -15,19 +15,23 @@
 
 import { readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import {
+  normalizeRepoPath,
+  isRootAgentFile,
+  checkPathReferences,
+  checkClaudeAdjacency,
+  checkInstructionChainBudgets,
+} from './agent-instruction-linter-paths.mjs';
+import {
+  checkCanonicalScope,
+  checkAdditiveVerification,
+  checkDuplicateParagraphs,
+} from './agent-instruction-linter-markdown.mjs';
 
-// ── Path helpers ──────────────────────────────────────────────────────
+export { normalizeRepoPath };
+export { isRootAgentFile };
 
-export function normalizeRepoPath(filePath) {
-  return filePath
-    .replace(/^\.\//, '')
-    .replace(/^\.\\/, '')
-    .replace(/\\/g, '/');
-}
-
-export function isRootAgentFile(relativePath) {
-  return normalizeRepoPath(relativePath) === 'AGENTS.md';
-}
+// ── Helpers ───────────────────────────────────────────────────────────
 
 function repoRel(root, filePath) {
   return relative(root, join(root, filePath)).split(sep).join('/');
@@ -217,6 +221,24 @@ export function lintAgentInstructions({ root, ignoredPaths = [] }) {
       });
     }
   }
+
+  // Check 7: Repository path references exist
+  checkPathReferences(root, allAgentsMd(root, ignoredPaths), diagnostics);
+
+  // Check 8: CLAUDE.md files have adjacent AGENTS.md
+  checkClaudeAdjacency(root, allClaudeMd(root, ignoredPaths), diagnostics);
+
+  // Check 9: Nested AGENTS.md have canonical Scope section
+  checkCanonicalScope(root, nestedAgentsMd(root, ignoredPaths), diagnostics);
+
+  // Check 10: Instruction chain byte budget
+  checkInstructionChainBudgets(root, nestedAgentsMd(root, ignoredPaths), diagnostics);
+
+  // Check 11: Nested AGENTS.md have additive Verification section
+  checkAdditiveVerification(root, nestedAgentsMd(root, ignoredPaths), diagnostics);
+
+  // Check 12: Duplicate instruction paragraphs (advisory)
+  checkDuplicateParagraphs(root, allAgentsMd(root, ignoredPaths), diagnostics);
 
   return {
     ok: diagnostics.every((d) => d.kind !== 'error'),
