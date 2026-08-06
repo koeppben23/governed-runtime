@@ -11,7 +11,6 @@
 import type { ProofContract, ProofContractCoverage } from '../../state/proofgraph-contract.js';
 import {
   hasCurrentPlanApprovalCertificate,
-  normalizePlanClaimDeclaration,
   type PlanClaimDeclaration,
 } from '../../state/proofgraph-approval.js';
 import type { SessionState } from '../../state/schema.js';
@@ -132,11 +131,10 @@ export async function materializeApprovedPlanContractResult(
     if (declaration.mutationProfile && mutationAttempt === null) {
       coverage.push({ claimId: declaration.claimId, cause: 'unverified_mutation_profile' });
     }
-    const normalized = normalizePlanClaimDeclaration(declaration);
-    const requirement = normalized.counterexampleRequirement;
-    const counterexampleCheckId = requirement?.checkId;
-    const counterexampleAttempts = counterexampleCheckId
-      ? attempts.filter((attempt) => attempt.result.checkId === counterexampleCheckId)
+    const requirement = declaration.counterexampleRequirement;
+    const requiredCheckId = requirement?.checkId;
+    const counterexampleAttempts = requiredCheckId
+      ? attempts.filter((attempt) => attempt.result.checkId === requiredCheckId)
       : [];
     return {
       claimId: declaration.claimId,

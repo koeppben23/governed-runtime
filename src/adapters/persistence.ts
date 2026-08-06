@@ -53,6 +53,7 @@ import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import * as crypto from 'node:crypto';
+import { z } from 'zod';
 import { getAdapterLogger } from '../logging/adapter-logger.js';
 import { SessionState } from '../state/schema.js';
 import { ReviewReport } from '../state/evidence.js';
@@ -315,6 +316,58 @@ function migrateAssuranceVerdicts(node: unknown, acc: { migrated: boolean }): vo
   }
 }
 
+const LegacyPlanClaimZ = z
+  .object({
+    claimId: z.string().uuid(),
+    statement: z.string().min(1),
+    critical: z.boolean(),
+    authoritySectionId: z.string().min(1),
+    expectedCheckId: z.string().min(1),
+    counterexampleCheckId: z.string().min(1).optional(),
+    structuralSurface: z.string().min(1).optional(),
+    mutationProfile: z.string().min(1).optional(),
+  })
+  .strict();
+
+function migrateLegacyPlanClaims(json: unknown): void {
+  if (!json || typeof json !== 'object') return;
+  const s = json as Record<string, unknown>;
+  const plan = s.plan;
+  if (!plan || typeof plan !== 'object') return;
+  const p = plan as Record<string, unknown>;
+  const declarations = p.claimDeclarations;
+  if (!declarations || typeof declarations !== 'object') return;
+  const d = declarations as Record<string, unknown>;
+  const claims = d.claims;
+  if (!Array.isArray(claims)) return;
+
+  let hasLegacy = false;
+  for (const claim of claims) {
+    if (!claim || typeof claim !== 'object') continue;
+    const c = claim as Record<string, unknown>;
+    if (c.counterexampleCheckId === undefined) continue;
+
+    const parsed = LegacyPlanClaimZ.safeParse(claim);
+    if (!parsed.success) {
+      throw new PersistenceError(
+        'SCHEMA_VALIDATION_FAILED',
+        `Legacy plan claim failed frozen schema validation: ${parsed.error.message}`,
+      );
+    }
+
+    hasLegacy = true;
+    c.counterexampleRequirement = {
+      mode: 'check',
+      checkId: c.counterexampleCheckId,
+    };
+    delete c.counterexampleCheckId;
+  }
+
+  if (hasLegacy) {
+    delete p.approvalCertificate;
+  }
+}
+
 export async function readState(sessionDir: string): Promise<SessionState | null> {
   const filePath = statePath(sessionDir);
 
@@ -350,6 +403,8 @@ export async function readState(sessionDir: string): Promise<SessionState | null
   }
 
   migrateLegacyValidationOutcomes(json);
+
+  migrateLegacyPlanClaims(json);
 
   const result = SessionState.safeParse(json);
   if (!result.success) {
