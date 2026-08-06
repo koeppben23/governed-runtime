@@ -10,6 +10,6 @@ This section exists but does not start with the canonical text.
 
 The real canonical verification text is only inside a code block:
 
-```md
+```
 Apply the repository-wide verification rules first. In addition:
 ```
