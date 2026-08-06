@@ -106,6 +106,15 @@ export default defineConfig({
       },
       {
         test: {
+          name: 'evals',
+          include: ['evals/**/*.test.ts'],
+          globals: false,
+          restoreMocks: true,
+          testTimeout: 30_000,
+        },
+      },
+      {
+        test: {
           name: 'fuzz',
           setupFiles: ['./vitest.setup.ts'],
           include: ['src/**/*.fuzz.test.ts'],

@@ -1,0 +1,25 @@
+id: nested-verification
+description: Agent must cumulate root-level and subtree-specific verification rules
+mode: workspace
+task: |
+  Fix a type error in src/config/flowguard-config.ts.
+
+workspace:
+  mode: fixture
+  fixture: nested-verification
+
+assertions:
+  - type: output_contains
+    severity: hard
+    description: Root-level type checking is mentioned
+    value: npm run check
+
+  - type: output_contains
+    severity: hard
+    description: Subtree-specific config checks are mentioned
+    value: npx vitest run --project unit src/config/
+
+  - type: output_matches
+    severity: hard
+    description: Additional verification from nested AGENTS.md is referenced
+    pattern: "(?i)npx vitest run"
