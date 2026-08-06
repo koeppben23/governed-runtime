@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, symlinkSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { runProcess } from '../runners/process-runner.js';
+import { runProcess, snapshotWorkspace } from '../runners/process-runner.js';
 import type { RunnerConfig } from '../schema.js';
 
 const FIXTURE = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures');
@@ -112,5 +112,35 @@ describe('process-runner', () => {
     expect(hashBefore).toBe(hashAfter);
 
     rmSync(fixtureDir, { recursive: true, force: true });
+  });
+
+  it('does not follow symlinks in workspace snapshots', () => {
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'eval-symlink-test-'));
+    const outsideDir = mkdtempSync(join(tmpdir(), 'eval-outside-'));
+
+    writeFileSync(join(fixtureDir, 'real.txt'), 'real');
+    writeFileSync(join(outsideDir, 'secret.txt'), 'secret');
+
+    try {
+      symlinkSync(outsideDir, join(fixtureDir, 'external-dir'), 'dir');
+    } catch {
+      // symlink not supported on this platform — skip
+      rmSync(fixtureDir, { recursive: true, force: true });
+      rmSync(outsideDir, { recursive: true, force: true });
+      return;
+    }
+    symlinkSync(join(outsideDir, 'secret.txt'), join(fixtureDir, 'linked-secret.txt'));
+
+    const { entries } = snapshotWorkspace(fixtureDir);
+    const paths = Array.from(entries.keys());
+
+    expect(paths).toContain('real.txt');
+    // Symlinked directory must not be traversed
+    expect(paths.some((p) => p.includes('secret.txt'))).toBe(false);
+    // Symlinked file must not be included
+    expect(paths).not.toContain('linked-secret.txt');
+
+    rmSync(fixtureDir, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
   });
 });

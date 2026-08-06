@@ -8,8 +8,8 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync, cpSync, rmSync, mkdtempSync } from 'node:fs';
-import { join, relative, basename } from 'node:path';
+import { readFileSync, readdirSync, lstatSync, cpSync, rmSync, mkdtempSync } from 'node:fs';
+import { join, sep, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { RunnerConfig } from '../schema.js';
 import type { WorkspaceSnapshot } from '../assertions.js';
@@ -84,7 +84,7 @@ function walk(
     const fullPath = join(root, relPath);
     let st;
     try {
-      st = statSync(fullPath);
+      st = lstatSync(fullPath);
     } catch {
       continue;
     }
@@ -93,8 +93,9 @@ function walk(
       walk(root, relPath, entries, contents);
     } else if (st.isFile()) {
       const buf = readFileSync(fullPath);
-      entries.set(relPath, { sha256: sha256(buf), bytes: buf.length });
-      contents.set(relPath, buf.toString('utf-8'));
+      const snapshotPath = relPath.split(sep).join('/');
+      entries.set(snapshotPath, { sha256: sha256(buf), bytes: buf.length });
+      contents.set(snapshotPath, buf.toString('utf-8'));
     }
   }
 }
