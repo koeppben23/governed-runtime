@@ -29,10 +29,9 @@ an instruction-only rule.
 - When a required capability is unavailable, do not simulate the result.
   Continue with safe read-only work where possible, or stop the action as
   `BLOCKED`.
-- Resolve ambiguity from repository evidence first. If an unresolved ambiguity
-  would materially change safety-sensitive or irreversible behavior, request
-  clarification when the host supports interaction; otherwise stop that part as
-  `BLOCKED`.
+- Resolve ambiguity from repository evidence first. For material high-risk
+  ambiguity, do not guess. Resolve it through repository evidence or
+  clarification; otherwise mark the affected action `BLOCKED`.
 
 ## Normative Terms
 
