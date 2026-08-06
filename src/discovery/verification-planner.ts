@@ -16,6 +16,14 @@
 import type { DetectedStack, VerificationCandidate, VerificationCandidateKind } from './types.js';
 import { ASSERTION_PROFILES, type PlannerContext } from './assertion-provider-catalog.js';
 
+const WRAPPER_PROFILE_IDS = new Set(['junit-maven-wrapper', 'junit-gradle-wrapper']);
+const FALLBACK_PROFILE_IDS = new Set([
+  'vitest-fallback',
+  'jest-fallback',
+  'pytest-json-fallback',
+  'go-test-stdout',
+]);
+
 type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 
 interface VerificationPlannerInput {
@@ -65,17 +73,12 @@ export async function planVerificationCandidates(
   addScriptCandidates(byKind, scripts, packageManager);
 
   // Wrapper profiles (mvnw, gradlew) — run before fallbacks
-  applyProfiles(byKind, ctx, ['junit-maven-wrapper', 'junit-gradle-wrapper']);
+  applyProfiles(byKind, ctx, WRAPPER_PROFILE_IDS);
 
   addNonAssertionFallbacks(byKind, detectedStackIds, packageManager);
 
   // Assertion fallback profiles — only if no candidate exists for the kind
-  applyProfiles(byKind, ctx, [
-    'vitest-fallback',
-    'jest-fallback',
-    'pytest-json-fallback',
-    'go-test-stdout',
-  ]);
+  applyProfiles(byKind, ctx, FALLBACK_PROFILE_IDS);
 
   return [...byKind.values()].sort((a, b) => {
     const orderDiff = KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
@@ -87,15 +90,11 @@ export async function planVerificationCandidates(
 function applyProfiles(
   byKind: Map<VerificationCandidateKind, VerificationCandidate>,
   ctx: PlannerContext,
-  profileIds: readonly string[],
+  profileIds: ReadonlySet<string>,
 ): void {
-  for (const profileId of profileIds) {
-    const profile = ASSERTION_PROFILES.find((p) => p.profileId === profileId);
-    if (!profile) continue;
-
-    // Wrapper profiles always overwrite; fallback profiles only fill gaps
-    const isWrapper = profileId.includes('wrapper');
-    if (!isWrapper && byKind.has(profile.kind)) continue;
+  for (const profile of ASSERTION_PROFILES) {
+    if (!profileIds.has(profile.profileId)) continue;
+    if (byKind.has(profile.kind)) continue;
 
     const candidate = profile.createCandidate(ctx);
     if (candidate) {

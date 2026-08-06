@@ -24,13 +24,13 @@ function makeReadFile(files: Record<string, string | undefined>) {
 describe('verification planner', () => {
   describe('HAPPY', () => {
     it('structured Maven wrapper candidate is produced alongside package script test', async () => {
+      // Remove build script — wrapper fills the gap. Test script stays as repo-native.
       const candidates = await planVerificationCandidates({
         detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
         allFiles: ['package.json', 'pom.xml', 'mvnw'],
         readFile: makeReadFile({
           'package.json': JSON.stringify({
             scripts: {
-              build: './mvnw verify',
               test: './mvnw -Dtest=TaskControllerTest test',
             },
           }),

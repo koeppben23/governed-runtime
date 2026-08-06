@@ -76,8 +76,6 @@ export interface ExecutionProfile {
   readonly providerId: ProviderId;
   readonly format: ReportFormatId;
   readonly kind: VerificationCandidateKind;
-  readonly confidence: 'high' | 'medium';
-  readonly source: string;
 
   /** Liefert einen Candidate nur mit ausreichender Evidence, sonst null. */
   createCandidate(
@@ -104,8 +102,6 @@ const jUnitMavenWrapperProfile: ExecutionProfile = {
   providerId: 'junit',
   format: 'junit_xml',
   kind: 'build',
-  confidence: 'high',
-  source: 'repo:mvnw',
   createCandidate(ctx) {
     const hasPosix = ctx.rootFiles.has('mvnw');
     const hasWin = ctx.rootFiles.has('mvnw.cmd');
@@ -136,8 +132,6 @@ const jUnitGradleWrapperProfile: ExecutionProfile = {
   providerId: 'junit',
   format: 'junit_xml',
   kind: 'test',
-  confidence: 'high',
-  source: 'repo:gradlew',
   createCandidate(ctx) {
     const hasPosix = ctx.rootFiles.has('gradlew');
     const hasWin = ctx.rootFiles.has('gradlew.bat');
@@ -168,8 +162,6 @@ const vitestFallbackProfile: ExecutionProfile = {
   providerId: 'vitest',
   format: 'vitest_json',
   kind: 'test',
-  confidence: 'medium',
-  source: 'detectedStack:testFramework:vitest',
   createCandidate(ctx) {
     if (!ctx.detectedStackIds.has('testFramework:vitest')) return null;
     const pm = ctx.packageManager;
@@ -201,8 +193,6 @@ const jestFallbackProfile: ExecutionProfile = {
   providerId: 'jest',
   format: 'jest_json',
   kind: 'test',
-  confidence: 'medium',
-  source: 'detectedStack:testFramework:jest',
   createCandidate(ctx) {
     if (!ctx.detectedStackIds.has('testFramework:jest')) return null;
     const pm = ctx.packageManager;
@@ -233,15 +223,12 @@ const pytestJsonProfile: ExecutionProfile = {
   providerId: 'pytest',
   format: 'pytest_json',
   kind: 'test',
-  confidence: 'medium',
-  source: 'detectedStack:testFramework:pytest',
   createCandidate(ctx) {
     if (!ctx.detectedStackIds.has('testFramework:pytest')) return null;
     return {
       assertionCapability: 'structured' as const,
       kind: 'test',
-      command:
-        'python -m pytest --json-report --json-report-file=.flowguard/reports/{attemptId}/pytest.json',
+      command: 'python -m pytest',
       source: 'detectedStack:testFramework:pytest',
       confidence: 'medium',
       reason: 'pytest detected; using structured JSON assertion extraction',
@@ -266,8 +253,6 @@ const goTestStdoutProfile: ExecutionProfile = {
   providerId: 'go_test',
   format: 'go_test_json',
   kind: 'test',
-  confidence: 'medium',
-  source: 'detectedStack:testFramework:go_test',
   createCandidate(ctx) {
     if (!ctx.detectedStackIds.has('testFramework:go_test')) return null;
     return {

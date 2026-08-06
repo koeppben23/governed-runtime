@@ -10,8 +10,11 @@
  */
 
 import type { DetectedStack, VerificationCandidate } from '../state/discovery-schemas.js';
-import type { ProviderId } from '../state/assertion-identity.js';
-import { DESCRIPTOR_BY_DETECTION } from '../discovery/assertion-provider-catalog.js';
+import type { ProviderId, ReportFormatId } from '../state/assertion-identity.js';
+import {
+  PROVIDER_DESCRIPTORS,
+  DESCRIPTOR_BY_DETECTION,
+} from '../discovery/assertion-provider-catalog.js';
 import {
   ASSERTION_CODEC_BY_PROVIDER,
   ASSERTION_FORMATS_BY_PROVIDER,
@@ -30,7 +33,7 @@ export interface ResolvedProviderCapability {
 
   assertionBinding: {
     status: 'available' | 'unsupported';
-    format?: string;
+    format?: ReportFormatId;
   };
 
   candidate: {
@@ -79,7 +82,7 @@ export function resolveProviderCapabilities(
   const candidateMap = buildCandidateMap(verificationCandidates);
   const results: ResolvedProviderCapability[] = [];
 
-  for (const desc of DESCRIPTOR_BY_DETECTION.values()) {
+  for (const desc of PROVIDER_DESCRIPTORS) {
     const evidence = detectionMap.get(desc.providerId) ?? [];
     const codec = ASSERTION_CODEC_BY_PROVIDER.get(desc.providerId);
     const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(desc.providerId);
