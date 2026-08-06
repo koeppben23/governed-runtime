@@ -33,6 +33,7 @@ import {
   AdversarialEvidenceKind,
   Freshness,
 } from './proofgraph-primitives.js';
+import { AssertionIdentity } from './assertion-identity.js';
 
 /** Persisted ProofGraph projection schema version. */
 export const PROOFGRAPH_SCHEMA_VERSION = 'proofgraph.v1' as const;
@@ -67,7 +68,7 @@ export const CounterexampleRequirement = z.discriminatedUnion('mode', [
   z.object({
     mode: z.literal('assertion'),
     checkId: z.string().min(1),
-    assertionId: z.string().min(1),
+    assertion: AssertionIdentity,
   }),
 ]);
 export type CounterexampleRequirement = z.infer<typeof CounterexampleRequirement>;

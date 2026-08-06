@@ -369,13 +369,13 @@ describe('read-model schema boundaries', () => {
       counterexampleRequirement: {
         mode: 'assertion' as const,
         checkId: 'security',
-        assertionId: 'junit:x#y',
+        assertion: { providerId: 'junit', localId: 'x#y' },
       },
     });
     expect(result.counterexampleRequirement).toEqual({
       mode: 'assertion',
       checkId: 'security',
-      assertionId: 'junit:x#y',
+      assertion: { providerId: 'junit', localId: 'x#y' },
     });
   });
 
@@ -412,13 +412,13 @@ describe('read-model schema boundaries', () => {
       counterexampleRequirement: {
         mode: 'assertion' as const,
         checkId: 'security',
-        assertionId: 'junit:x#y',
+        assertion: { providerId: 'junit', localId: 'x#y' },
       },
     });
     expect(result.counterexampleRequirement).toEqual({
       mode: 'assertion',
       checkId: 'security',
-      assertionId: 'junit:x#y',
+      assertion: { providerId: 'junit', localId: 'x#y' },
     });
   });
 

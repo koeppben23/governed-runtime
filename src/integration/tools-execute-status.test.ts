@@ -1,9 +1,3 @@
-/**
- * @module integration/tools-execute-status.test
- * @description Execution tests for the status tool.
- *
- * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
- */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
@@ -1289,16 +1283,13 @@ describe('status-prompt-contract', () => {
     });
   }
 
-  // Negative control: a field NO prompt reads must NOT be present — proves the
-  // guard would actually fail if a required field were missing/renamed.
+  // Negative control: prove absence of unrequested field also fails.
   it('NEGATIVE CONTROL: a made-up field is absent from full status (guard is sharp)', async () => {
     const result = await statusFor('VALIDATION', 'full');
     expect('madeUpFieldThatNoPromptReads' in result).toBe(false);
   });
 
-  // Gap B documentation: the focused whyBlocked projection has NO top-level
-  // `blocker` key (the old /why prompt incorrectly read blocker.*). The reason
-  // lives under whyBlocked.* — asserted by the /why contract entry above.
+  // Gap B: focused whyBlocked projection has no top-level `blocker` key.
   it('Gap B: focused whyBlocked has no top-level "blocker" (reason is under whyBlocked.*)', async () => {
     const result = await statusFor('VALIDATION', 'whyBlocked');
     expect('blocker' in result).toBe(false);
@@ -1322,12 +1313,14 @@ function makeStructuredSecurityCandidate() {
       collection: 'snapshot_diff' as const,
       transport: 'file' as const,
       format: 'junit_xml' as const,
+      providerId: 'junit',
       standardPatterns: ['TEST-*.xml'],
     },
   };
 }
 
 function makeAssertionExtraction(assertionId: string, status: 'passed' | 'failed') {
+  const localId = assertionId.includes(':') ? assertionId.split(':')[1]! : assertionId;
   return {
     status: 'extracted' as const,
     attemptId: '00000000-0000-4000-8000-0000000000dd',
@@ -1335,8 +1328,8 @@ function makeAssertionExtraction(assertionId: string, status: 'passed' | 'failed
     reportDigests: ['a'.repeat(64)],
     assertions: [
       {
-        assertionId,
-        framework: 'junit' as const,
+        assertion: { providerId: 'junit', localId },
+        providerId: 'junit',
         status,
         testName: 'verify',
         suiteName: 'com.example.SecurityTest',
@@ -1450,7 +1443,7 @@ describe('declare_contract', () => {
               counterexampleRequirement: {
                 mode: 'assertion' as const,
                 checkId: 'security',
-                assertionId: 'junit:com.example.SecurityTest#verify',
+                assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
               },
               authority: 'ticket',
             },
@@ -1540,7 +1533,7 @@ describe('declare_contract', () => {
               counterexampleRequirement: {
                 mode: 'assertion' as const,
                 checkId: 'security',
-                assertionId: 'junit:com.example.SecurityTest#verify',
+                assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
               },
               authority: 'plan',
             },
@@ -1631,7 +1624,7 @@ describe('declare_contract', () => {
       counterexampleRequirement: {
         mode: 'assertion' as const,
         checkId: 'security',
-        assertionId: 'junit:com.example.SecurityTest#verify',
+        assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
       },
       authority: 'ticket' as const,
       structuralSurface: 'command-registration' as const,
@@ -1672,7 +1665,6 @@ describe('declare_contract', () => {
       const sessDir = resolveSessionDir(fp.fingerprint, ctx.sessionID);
       const state = await readState(sessDir);
       const digest = 'impl-combined';
-      const assertionId = 'junit:com.example.SecurityTest#verifyNoSqlInjection';
       const failedExtraction = {
         status: 'extracted' as const,
         attemptId: '00000000-0000-4000-8000-0000000000aa',
@@ -1680,8 +1672,11 @@ describe('declare_contract', () => {
         reportDigests: ['a'.repeat(64)],
         assertions: [
           {
-            assertionId,
-            framework: 'junit' as const,
+            assertion: {
+              providerId: 'junit',
+              localId: 'com.example.SecurityTest#verifyNoSqlInjection',
+            },
+            providerId: 'junit',
             status: 'failed' as const,
             testName: 'verifyNoSqlInjection',
             suiteName: 'com.example.SecurityTest',
@@ -1738,6 +1733,7 @@ describe('declare_contract', () => {
               collection: 'snapshot_diff' as const,
               transport: 'file' as const,
               format: 'junit_xml' as const,
+              providerId: 'junit',
               standardPatterns: ['TEST-*.xml'],
             },
           },
@@ -1769,7 +1765,10 @@ describe('declare_contract', () => {
                 counterexampleRequirement: {
                   mode: 'assertion' as const,
                   checkId: 'security',
-                  assertionId,
+                  assertion: {
+                    providerId: 'junit',
+                    localId: 'com.example.SecurityTest#verifyNoSqlInjection',
+                  },
                 },
               },
             ],
@@ -1821,7 +1820,7 @@ describe('declare_contract', () => {
               counterexampleRequirement: {
                 mode: 'assertion' as const,
                 checkId: 'test',
-                assertionId: 'junit:com.example.Test#testMethod',
+                assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
               },
               authority: 'ticket',
             },
@@ -1981,7 +1980,7 @@ describe('declare_contract', () => {
               counterexampleRequirement: {
                 mode: 'assertion' as const,
                 checkId: 'security',
-                assertionId,
+                assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verifyNoXss' },
               },
             },
           ],

@@ -7,12 +7,15 @@ import type {
   AssertionExtractionResult,
   AssertionExtractionSummary,
 } from '../state/evidence-validation.js';
-import type { AssertionReportFormat, AssertionReportSpec } from '../state/discovery-schemas.js';
+import type { ReportFormatId, ProviderId } from '../state/assertion-identity.js';
+import type { AssertionReportSpec } from '../state/discovery-schemas.js';
 
-import { parseJUnitXml } from './assertion-parsers/junit-xml.js';
-import { parseJestJson } from './assertion-parsers/jest-json.js';
-import { parseVitestJson } from './assertion-parsers/vitest-json.js';
-import { parseGoTestJson } from './assertion-parsers/go-test-json.js';
+import {
+  PARSER_BY_FORMAT,
+  FORMATS_BY_PROVIDER,
+  ASSERTION_FORMATS_BY_PROVIDER,
+  ASSERTION_CODEC_BY_PROVIDER,
+} from './assertion-parsers/registry.js';
 
 const MAX_FILES_PER_PATTERN = 100;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -35,6 +38,23 @@ export interface PreparedAssertionExtraction {
 interface ParserResult {
   assertions: import('../state/evidence-validation.js').StructuredAssertionEvidence[];
   summary: AssertionExtractionSummary;
+}
+
+function parseWithFormat(
+  format: ReportFormatId,
+  providerId: ProviderId,
+  content: string,
+  fileName: string,
+): ParserResult {
+  const supportedFormats = FORMATS_BY_PROVIDER.get(providerId);
+  if (!supportedFormats?.has(format)) {
+    throw new Error(`Provider '${providerId}' does not support report format '${format}'`);
+  }
+  const parser = PARSER_BY_FORMAT.get(format);
+  if (!parser) {
+    throw new Error(`unsupported assertion report format: ${format}`);
+  }
+  return parser.parse(content, fileName, { providerId });
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -75,23 +95,19 @@ export async function completeAssertionExtraction(
 ): Promise<AssertionExtractionResult> {
   const { attemptId, spec, cwd } = prepared;
 
+  const supportedFormats = FORMATS_BY_PROVIDER.get(spec.providerId);
+  if (!supportedFormats?.has(spec.format as ReportFormatId)) {
+    return {
+      status: 'blocked',
+      attemptId,
+      reason: `Provider '${spec.providerId}' does not support report format '${spec.format}'`,
+    };
+  }
+
   try {
-    switch (spec.collection) {
-      case 'stdout':
-        return extractFromStdout(attemptId, spec.format, execution.stdout);
-
-      case 'run_specific':
-        return extractFromRunSpecific(attemptId, spec.format, cwd, prepared.runSpecificPattern!);
-
-      case 'snapshot_diff':
-        return extractFromSnapshotDiff(
-          attemptId,
-          spec.format,
-          cwd,
-          spec.standardPatterns,
-          prepared.preExecutionSnapshot ?? [],
-        );
-    }
+    const raw = await extractRaw(spec, cwd, attemptId, execution, prepared);
+    const result = stripNonBindingAssertions(raw, spec);
+    return validateExtractedIdentities(result, spec);
   } catch (err: unknown) {
     const reason = err instanceof Error ? err.message : String(err);
     return { status: 'blocked', attemptId, reason };
@@ -100,12 +116,94 @@ export async function completeAssertionExtraction(
 
 // ─── Extraction Strategies ──────────────────────────────────────────────────
 
+async function extractRaw(
+  spec: AssertionReportSpec,
+  cwd: string,
+  attemptId: string,
+  execution: ExecutionEvidence,
+  prepared: PreparedAssertionExtraction,
+): Promise<AssertionExtractionResult> {
+  switch (spec.collection) {
+    case 'stdout':
+      return extractFromStdout(attemptId, spec.format, spec.providerId, execution.stdout);
+    case 'run_specific':
+      return extractFromRunSpecific(
+        attemptId,
+        spec.format,
+        spec.providerId,
+        cwd,
+        prepared.runSpecificPattern!,
+      );
+    case 'snapshot_diff':
+      return extractFromSnapshotDiff(
+        attemptId,
+        spec.format,
+        spec.providerId,
+        cwd,
+        spec.standardPatterns,
+        prepared.preExecutionSnapshot ?? [],
+      );
+  }
+}
+
+function stripNonBindingAssertions(
+  result: AssertionExtractionResult,
+  spec: AssertionReportSpec,
+): AssertionExtractionResult {
+  if (result.status !== 'extracted') return result;
+
+  const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(spec.providerId);
+  const isBinding = bindingFormats?.has(spec.format as ReportFormatId);
+  if (isBinding) return result;
+
+  return {
+    ...result,
+    assertions: [],
+    summary: {
+      ...result.summary,
+      assertionCount: 0,
+      passedCount: 0,
+      failedCount: 0,
+      erroredCount: 0,
+      skippedCount: 0,
+    },
+  };
+}
+
+function validateExtractedIdentities(
+  result: AssertionExtractionResult,
+  spec: AssertionReportSpec,
+): AssertionExtractionResult {
+  if (result.status !== 'extracted' || result.assertions.length === 0) return result;
+
+  const codec = ASSERTION_CODEC_BY_PROVIDER.get(spec.providerId);
+  if (!codec) {
+    return {
+      status: 'inconclusive',
+      attemptId: result.attemptId,
+      reason: `Provider '${spec.providerId}' has no registered assertion identity codec`,
+    };
+  }
+
+  for (const assertion of result.assertions) {
+    if (!codec.validateLocalId(assertion.assertion.localId)) {
+      return {
+        status: 'inconclusive',
+        attemptId: result.attemptId,
+        reason: `Local assertion id '${assertion.assertion.localId}' failed codec validation for provider '${spec.providerId}'`,
+      };
+    }
+  }
+  return result;
+}
+
 async function extractFromStdout(
   attemptId: string,
-  format: AssertionReportFormat,
+  format: ReportFormatId,
+  providerId: ProviderId,
   stdout: string,
 ): Promise<AssertionExtractionResult> {
-  const parsed = parseWithFormat(format, stdout, '<stdout>');
+  const parsed = parseWithFormat(format, providerId, stdout, '<stdout>');
   if (!parsed.assertions.length) {
     return {
       status: 'inconclusive',
@@ -126,7 +224,8 @@ async function extractFromStdout(
 
 async function extractFromRunSpecific(
   attemptId: string,
-  format: AssertionReportFormat,
+  format: ReportFormatId,
+  providerId: ProviderId,
   cwd: string,
   pattern: string,
 ): Promise<AssertionExtractionResult> {
@@ -141,12 +240,13 @@ async function extractFromRunSpecific(
       reason: `too many report files: ${paths.length} (max ${MAX_FILES_PER_PATTERN})`,
     };
   }
-  return parseAndMergeFiles(attemptId, format, cwd, paths);
+  return parseAndMergeFiles(attemptId, format, providerId, cwd, paths);
 }
 
 async function extractFromSnapshotDiff(
   attemptId: string,
-  format: AssertionReportFormat,
+  format: ReportFormatId,
+  providerId: ProviderId,
   cwd: string,
   patterns: string[],
   preSnapshot: ReportFileSnapshot[],
@@ -168,7 +268,7 @@ async function extractFromSnapshotDiff(
       reason: `too many changed report files: ${changedPaths.length} (max ${MAX_FILES_PER_PATTERN})`,
     };
   }
-  return parseAndMergeFiles(attemptId, format, cwd, changedPaths);
+  return parseAndMergeFiles(attemptId, format, providerId, cwd, changedPaths);
 }
 
 // ─── Snapshot & Diff ────────────────────────────────────────────────────────
@@ -213,7 +313,8 @@ function diffSnapshots(pre: ReportFileSnapshot[], post: ReportFileSnapshot[]): s
 
 async function parseAndMergeFiles(
   attemptId: string,
-  format: AssertionReportFormat,
+  format: ReportFormatId,
+  providerId: ProviderId,
   cwd: string,
   paths: string[],
 ): Promise<AssertionExtractionResult> {
@@ -240,7 +341,7 @@ async function parseAndMergeFiles(
       };
     }
 
-    const parsed = parseWithFormat(format, content, relPath);
+    const parsed = parseWithFormat(format, providerId, content, relPath);
     allAssertions.push(...parsed.assertions);
     allSummaries.push(parsed.summary);
     digests.push(sha256(content));
@@ -262,25 +363,6 @@ async function parseAndMergeFiles(
     assertions: allAssertions,
     summary: mergeSummaries(allSummaries),
   };
-}
-
-function parseWithFormat(
-  format: AssertionReportFormat,
-  content: string,
-  fileName: string,
-): ParserResult {
-  switch (format) {
-    case 'junit_xml':
-      return parseJUnitXml(content, fileName);
-    case 'jest_json':
-      return parseJestJson(content);
-    case 'vitest_json':
-      return parseVitestJson(content);
-    case 'go_test_json':
-      return parseGoTestJson(content);
-    default:
-      throw new Error(`unsupported assertion report format: ${format}`);
-  }
 }
 
 // ─── Summary Merging ────────────────────────────────────────────────────────

@@ -176,6 +176,7 @@ function addWrapperCandidates(
         collection: 'snapshot_diff' as const,
         transport: 'file' as const,
         format: 'junit_xml' as const,
+        providerId: 'junit' as const,
         standardPatterns: ['target/surefire-reports/TEST-*.xml'],
       },
     });
@@ -194,6 +195,7 @@ function addWrapperCandidates(
         collection: 'snapshot_diff' as const,
         transport: 'file' as const,
         format: 'junit_xml' as const,
+        providerId: 'junit' as const,
         standardPatterns: ['build/test-results/test/TEST-*.xml'],
       },
     });
@@ -245,6 +247,7 @@ function addFallbackCandidates(
         collection: 'run_specific' as const,
         transport: 'file' as const,
         format: 'vitest_json' as const,
+        providerId: 'vitest' as const,
         outputArgumentTemplate:
           '--reporter=json --outputFile=.flowguard/reports/{attemptId}/vitest.json',
         resultPatternTemplate: '.flowguard/reports/{attemptId}/vitest.json',
@@ -264,8 +267,32 @@ function addFallbackCandidates(
         collection: 'run_specific' as const,
         transport: 'file' as const,
         format: 'jest_json' as const,
+        providerId: 'jest' as const,
         outputArgumentTemplate: '--json --outputFile=.flowguard/reports/{attemptId}/jest.json',
         resultPatternTemplate: '.flowguard/reports/{attemptId}/jest.json',
+      },
+    });
+  }
+
+  if (ids.has('testFramework:pytest') || ids.has('language:python')) {
+    addCandidate(byKind, {
+      assertionCapability: 'structured' as const,
+      kind: 'test',
+      command:
+        'python -m pytest --json-report --json-report-file=.flowguard/reports/{attemptId}/pytest.json',
+      source: ids.has('testFramework:pytest')
+        ? 'detectedStack:testFramework:pytest'
+        : 'detectedStack:language:python',
+      confidence: 'medium',
+      reason: 'pytest detected; using structured JSON assertion extraction',
+      assertionReport: {
+        collection: 'run_specific' as const,
+        transport: 'file' as const,
+        format: 'pytest_json' as const,
+        providerId: 'pytest' as const,
+        outputArgumentTemplate:
+          '--json-report --json-report-file=.flowguard/reports/{attemptId}/pytest.json',
+        resultPatternTemplate: '.flowguard/reports/{attemptId}/pytest.json',
       },
     });
   }

@@ -228,9 +228,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // counterexampleCheckId as REQUIRED for critical claims and states that a
     // critical claim blocks the final evidence approval while its evidence is
     // missing, stale, or contradicted.
+    // Refreshed for structured assertion identity model: assertionId string
+    // replaced by assertion: { providerId, localId } in plan template examples.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'ede609b55a52b56d221c5352364775b5ede7215469fa8dcbfcd3e3d99a124763',
+      'a2f193376ada51885fb59832a0140bfaf80e9fab7f0b0466eeaa2a7235646554',
     );
   });
 

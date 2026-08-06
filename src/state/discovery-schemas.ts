@@ -15,17 +15,11 @@
  */
 
 import { z } from 'zod';
+import { ReportFormatId, ProviderId } from './assertion-identity.js';
 
 // ─── Assertion Report Format ─────────────────────────────────────────────────
 
-/** Format identifier for structured assertion report parsers. */
-export const AssertionReportFormat = z.enum([
-  'junit_xml',
-  'jest_json',
-  'vitest_json',
-  'go_test_json',
-]);
-export type AssertionReportFormat = z.infer<typeof AssertionReportFormat>;
+export { ReportFormatId };
 
 // ─── Topology (subset for state) ─────────────────────────────────────────────
 
@@ -63,20 +57,23 @@ export const AssertionReportSpec = z.discriminatedUnion('collection', [
   z.object({
     collection: z.literal('run_specific'),
     transport: z.literal('file'),
-    format: AssertionReportFormat,
+    format: ReportFormatId,
+    providerId: ProviderId,
     outputArgumentTemplate: z.string().min(1),
     resultPatternTemplate: z.string().min(1),
   }),
   z.object({
     collection: z.literal('snapshot_diff'),
     transport: z.literal('file'),
-    format: AssertionReportFormat,
+    format: ReportFormatId,
+    providerId: ProviderId,
     standardPatterns: z.array(z.string().min(1)).min(1),
   }),
   z.object({
     collection: z.literal('stdout'),
     transport: z.literal('stdout'),
-    format: AssertionReportFormat,
+    format: ReportFormatId,
+    providerId: ProviderId,
   }),
 ]);
 export type AssertionReportSpec = z.infer<typeof AssertionReportSpec>;

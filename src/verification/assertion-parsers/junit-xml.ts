@@ -2,10 +2,13 @@
  * @module verification/assertion-parsers/junit-xml
  * @description JUnit XML report parser for structured assertion evidence.
  *
- * Covers Maven Surefire/Failsafe, Gradle, and Pytest (with --junitxml).
+ * Covers Maven Surefire/Failsafe, Gradle, and pytest (with --junitxml).
  * Extracts test results and maps them to StructuredAssertionEvidence.
  *
- * Assertion ID format: junit:<classname>#<methodname>
+ * The parser receives a {@link ParseContext} so a single XML parser can serve
+ * multiple frameworks. The identity codec (junit or pytest) controls how
+ * `localId` is built from the parsed XML fields.
+ *
  * Status mapping:
  *   <failure> element → failed
  *   <error> element   → errored
@@ -14,36 +17,40 @@
  *
  * Suite-level errors (no matching testcase): sets suiteInfrastructureError.
  *
- * @version v1
+ * @version v2
  */
 
-import type {
-  AssertionExtractionSummary,
-  StructuredAssertionEvidence,
-} from '../../state/evidence-validation.js';
-import type { StructuredAssertionFramework } from '../../state/evidence-validation.js';
+import type { StructuredAssertionEvidence } from '../../state/evidence-validation.js';
+import type { ProviderId } from '../../state/evidence-validation.js';
+import type { AssertionIdentity } from '../../state/assertion-identity.js';
+import type { ParseContext, ParserResult } from './types.js';
 import { createHash } from 'node:crypto';
-
-interface JUnitParseResult {
-  assertions: StructuredAssertionEvidence[];
-  summary: AssertionExtractionSummary;
-}
 
 function sha256(content: string): string {
   return createHash('sha256').update(content, 'utf-8').digest('hex');
 }
 
-export function parseJUnitXml(xmlContent: string, _fileName: string): JUnitParseResult {
+/**
+ * Canonical localId for a JUnit test: classname followed by # and method name.
+ */
+export function buildJUnitLocalId(className: string, methodName: string): string {
+  return `${className}#${methodName}`;
+}
+
+export function parseJUnitXml(
+  xmlContent: string,
+  _fileName: string,
+  context: ParseContext,
+): ParserResult {
   const assertions: StructuredAssertionEvidence[] = [];
   let suiteInfrastructureError = false;
+  const providerId: ProviderId = context.providerId;
 
   const testCaseRegex = /<testcase\b[^>]*classname="([^"]*)"\s+name="([^"]*)"[^>]*>/g;
 
-  // Detect suite-level infrastructure errors (errors attribute on testsuite)
   const suiteErrorsMatch = /<testsuite\b[^>]*errors="(\d+)"/.exec(xmlContent);
   const suiteErrors = suiteErrorsMatch ? Number(suiteErrorsMatch[1]) : 0;
 
-  // Extract testcases
   const testCases: {
     classname: string;
     name: string;
@@ -60,7 +67,6 @@ export function parseJUnitXml(xmlContent: string, _fileName: string): JUnitParse
   }
 
   if (testCases.length === 0 && suiteErrors > 0) {
-    suiteInfrastructureError = true;
     return {
       assertions: [],
       summary: {
@@ -76,7 +82,8 @@ export function parseJUnitXml(xmlContent: string, _fileName: string): JUnitParse
 
   for (const tc of testCases) {
     const region = xmlContent.slice(tc.offset, tc.endOffset);
-    const assertionId = `junit:${tc.classname}#${tc.name}`;
+    const localId = buildJUnitLocalId(tc.classname, tc.name);
+    const assertion: AssertionIdentity = { providerId, localId };
 
     const hasFailure = /<failure\b/.test(region);
     const hasError = /<error\b/.test(region);
@@ -108,8 +115,8 @@ export function parseJUnitXml(xmlContent: string, _fileName: string): JUnitParse
     }
 
     assertions.push({
-      assertionId,
-      framework: 'junit' as StructuredAssertionFramework,
+      assertion,
+      providerId,
       status,
       suiteName: tc.classname.split('.').slice(0, -1).join('.') || undefined,
       testName: tc.name,

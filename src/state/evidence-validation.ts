@@ -11,7 +11,9 @@
 
 import { z } from 'zod';
 import { CheckId } from './evidence-primitives.js';
-import { VerificationCandidateKindSchema, AssertionReportFormat } from './discovery-schemas.js';
+import { VerificationCandidateKindSchema } from './discovery-schemas.js';
+import { ReportFormatId } from './discovery-schemas.js';
+import { ProviderId, AssertionIdentity } from './assertion-identity.js';
 
 export const RepairGuidanceCategory = z.enum([
   'typecheck',
@@ -92,21 +94,14 @@ export type ValidationOutcome = z.infer<typeof ValidationOutcome>;
 
 // ─── Structured Assertion Evidence ───────────────────────────────────────────
 
-export const StructuredAssertionFramework = z.enum([
-  'junit',
-  'vitest',
-  'jest',
-  'pytest',
-  'go_test',
-]);
-export type StructuredAssertionFramework = z.infer<typeof StructuredAssertionFramework>;
+export { ProviderId };
 
 export const StructuredAssertionEvidence = z
   .object({
-    /** Stable identifier, e.g. junit:com.example.Test#method */
-    assertionId: z.string().min(1),
-    /** Framework that produced this assertion */
-    framework: StructuredAssertionFramework,
+    /** Structured provider-scoped assertion identity. */
+    assertion: AssertionIdentity,
+    /** Provider that produced this assertion evidence. */
+    providerId: ProviderId,
     /** Assertion-level status */
     status: z.enum(['passed', 'failed', 'errored', 'skipped']),
     /** Suite or package name */
@@ -162,7 +157,7 @@ export const AssertionExtractionResult = z.discriminatedUnion('status', [
   z.object({
     status: z.literal('extracted'),
     attemptId: z.string().uuid(),
-    format: AssertionReportFormat,
+    format: ReportFormatId,
     reportDigests: z.array(z.string().min(1)).min(1),
     assertions: z.array(StructuredAssertionEvidence),
     summary: AssertionExtractionSummary,

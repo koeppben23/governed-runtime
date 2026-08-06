@@ -229,20 +229,20 @@ function checkAuthoritySection(
   );
 }
 
-/** Rule 7: assertion-mode counterexample requirement must include an assertionId. */
+/** Rule 7: assertion-mode counterexample requirement must include an assertion. */
 function checkCounterexampleAssertion(
   input: ClaimContractInput,
   claim: NormalizedClaimDeclaration,
 ): ClaimContractResult | null {
   if (
     claim.counterexampleRequirement?.mode === 'assertion' &&
-    !claim.counterexampleRequirement.assertionId
+    !claim.counterexampleRequirement.assertion
   ) {
     return invalid(
       input.source,
       claim,
-      'counterexampleRequirement.assertionId',
-      'assertion-mode counterexample requirement must include an assertionId',
+      'counterexampleRequirement.assertion',
+      'assertion-mode counterexample requirement must include an assertion identity',
     );
   }
   return null;

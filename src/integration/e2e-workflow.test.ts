@@ -1190,7 +1190,7 @@ describe('ProofGraph demo fixtures', () => {
     counterexampleRequirement: {
       mode: 'assertion' as const,
       checkId: 'test',
-      assertionId: 'junit:com.example.Test#testMethod',
+      assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
     },
   } as const;
 

@@ -1,14 +1,11 @@
 import type {
   AssertionExtractionSummary,
   StructuredAssertionEvidence,
-  StructuredAssertionFramework,
 } from '../../state/evidence-validation.js';
+import type { ProviderId } from '../../state/evidence-validation.js';
+import type { AssertionIdentity } from '../../state/assertion-identity.js';
+import type { ParseContext, ParserResult } from './types.js';
 import { createHash } from 'node:crypto';
-
-interface GoTestJsonResult {
-  assertions: StructuredAssertionEvidence[];
-  summary: AssertionExtractionSummary;
-}
 
 interface GoTestEvent {
   Action?: string;
@@ -28,15 +25,16 @@ function mapStatus(action: string): 'passed' | 'failed' | 'skipped' {
   return 'skipped';
 }
 
-function buildAssertionId(pkg: string, test: string): string {
-  return `go:${pkg}::${test}`;
+export function buildGoLocalId(pkg: string, test: string): string {
+  return `${pkg}::${test}`;
 }
 
 function testKey(pkg: string, test: string): string {
   return `${pkg}\x00${test}`;
 }
 
-export function parseGoTestJson(eventsJson: string): GoTestJsonResult {
+export function parseGoTestJson(eventsJson: string, context: ParseContext): ParserResult {
+  const providerId: ProviderId = context.providerId;
   const lines = eventsJson.split('\n');
   const outputByTest = new Map<string, string[]>();
   const assertions: StructuredAssertionEvidence[] = [];
@@ -66,7 +64,8 @@ export function parseGoTestJson(eventsJson: string): GoTestJsonResult {
 
     if ((action === 'pass' || action === 'fail' || action === 'skip') && test) {
       const status = mapStatus(action);
-      const assertionId = buildAssertionId(pkg, test);
+      const localId = buildGoLocalId(pkg, test);
+      const assertion: AssertionIdentity = { providerId, localId };
       const key = testKey(pkg, test);
       const outputs = outputByTest.get(key) ?? [];
 
@@ -80,8 +79,8 @@ export function parseGoTestJson(eventsJson: string): GoTestJsonResult {
       }
 
       assertions.push({
-        assertionId,
-        framework: 'go_test' as StructuredAssertionFramework,
+        assertion,
+        providerId,
         status,
         suiteName: pkg || undefined,
         testName: test,
@@ -104,7 +103,7 @@ export function parseGoTestJson(eventsJson: string): GoTestJsonResult {
   };
 }
 
-function emptyResult(): GoTestJsonResult {
+function emptyResult(): ParserResult {
   return {
     assertions: [],
     summary: {
