@@ -9,6 +9,9 @@ import {
   mintProofGraphClaimId,
   PlanClaimDeclarationInput,
   ArchitectureClaimDeclarationInput,
+  normalizePlanClaimDeclaration,
+  type PlanClaimDeclaration,
+  type NormalizedPlanClaim,
 } from './proofgraph-approval.js';
 import { SessionState } from './schema.js';
 import { makeState } from '../fixtures.js';
@@ -263,5 +266,90 @@ describe('ArchitectureClaimDeclarationInput', () => {
         requiredReviewEvidence: ['evidence'],
       }),
     ).toThrow();
+  });
+});
+
+describe('normalizePlanClaimDeclaration', () => {
+  const BASE = {
+    claimId: '00000000-0000-4000-8000-000000000001',
+    statement: 'test',
+    critical: true,
+    authoritySectionId: 's1',
+    expectedCheckId: 'test',
+  } as const;
+
+  it('preserves assertion requirement unchanged', () => {
+    const input: PlanClaimDeclaration = {
+      ...BASE,
+      counterexampleRequirement: {
+        mode: 'assertion' as const,
+        checkId: 'security',
+        assertionId: 'junit:com.example.Test#method',
+      },
+    };
+    const result = normalizePlanClaimDeclaration(input);
+    expect(result.counterexampleRequirement).toEqual({
+      mode: 'assertion',
+      checkId: 'security',
+      assertionId: 'junit:com.example.Test#method',
+    });
+  });
+
+  it('normalizes legacy counterexampleCheckId to mode=check', () => {
+    const input: PlanClaimDeclaration = {
+      ...BASE,
+      counterexampleCheckId: 'security',
+    } as PlanClaimDeclaration;
+    const result = normalizePlanClaimDeclaration(input);
+    expect(result.counterexampleRequirement).toEqual({
+      mode: 'check',
+      checkId: 'security',
+    });
+  });
+
+  it('returns undefined for missing counterexample', () => {
+    const input = { ...BASE } as PlanClaimDeclaration;
+    const result = normalizePlanClaimDeclaration(input);
+    expect(result.counterexampleRequirement).toBeUndefined();
+  });
+
+  it('does not include counterexampleCheckId in normalized result', () => {
+    const input: PlanClaimDeclaration = {
+      ...BASE,
+      counterexampleCheckId: 'security',
+    } as PlanClaimDeclaration;
+    const result = normalizePlanClaimDeclaration(input) as Record<string, unknown>;
+    expect(result['counterexampleCheckId']).toBeUndefined();
+  });
+
+  it('does not mutate the input object', () => {
+    const input: PlanClaimDeclaration = {
+      ...BASE,
+      counterexampleCheckId: 'security',
+    } as PlanClaimDeclaration;
+    const original = { ...input };
+    normalizePlanClaimDeclaration(input);
+    expect(input).toEqual(original);
+  });
+
+  it('preserves all other claim fields unchanged', () => {
+    const input: PlanClaimDeclaration = {
+      ...BASE,
+      counterexampleRequirement: {
+        mode: 'assertion' as const,
+        checkId: 'sec',
+        assertionId: 'junit:x#y',
+      },
+      structuralSurface: 'command-registration',
+      mutationProfile: 'all-killed',
+    };
+    const result = normalizePlanClaimDeclaration(input);
+    expect(result.claimId).toBe(BASE.claimId);
+    expect(result.statement).toBe(BASE.statement);
+    expect(result.critical).toBe(BASE.critical);
+    expect(result.authoritySectionId).toBe(BASE.authoritySectionId);
+    expect(result.expectedCheckId).toBe(BASE.expectedCheckId);
+    expect(result.structuralSurface).toBe('command-registration');
+    expect(result.mutationProfile).toBe('all-killed');
   });
 });
