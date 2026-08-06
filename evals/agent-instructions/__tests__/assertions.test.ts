@@ -152,6 +152,15 @@ describe('evaluateAssertion — file', () => {
     );
     expect(r.passed).toBe(true);
   });
+
+  it('file_not_contains fails when file does not exist', () => {
+    const ctx = emptyCtx();
+    const r = evaluateAssertion(
+      { type: 'file_not_contains', path: 'src/gone.ts', value: 'anything', severity: 'hard', description: 'no anything' },
+      ctx,
+    );
+    expect(r.passed).toBe(false);
+  });
 });
 
 describe('evaluateAllAssertions', () => {

@@ -1,5 +1,18 @@
 import { z } from 'zod';
 
+// ── Path validation ───────────────────────────────────────────────────
+
+const pathSchema = z
+  .string()
+  .min(1)
+  .refine(
+    (p) => {
+      const normalized = p.replace(/\\/g, '/');
+      return !normalized.startsWith('/') && !normalized.split('/').includes('..');
+    },
+    { message: 'must be a repository-relative path without traversal' },
+  );
+
 // ── Severity ──────────────────────────────────────────────────────────
 
 const SeveritySchema = z.enum(['hard', 'advisory']);
@@ -54,32 +67,32 @@ const OutputAssertionSchema = z.discriminatedUnion('type', [
 const FileAssertionSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('file_exists'),
-    path: z.string().min(1),
+    path: pathSchema,
     severity: SeveritySchema.default('hard'),
     description: z.string().min(1),
   }),
   z.object({
     type: z.literal('file_changed'),
-    path: z.string().min(1),
+    path: pathSchema,
     severity: SeveritySchema.default('hard'),
     description: z.string().min(1),
   }),
   z.object({
     type: z.literal('file_not_changed'),
-    path: z.string().min(1),
+    path: pathSchema,
     severity: SeveritySchema.default('hard'),
     description: z.string().min(1),
   }),
   z.object({
     type: z.literal('file_contains'),
-    path: z.string().min(1),
+    path: pathSchema,
     value: z.string().min(1),
     severity: SeveritySchema.default('hard'),
     description: z.string().min(1),
   }),
   z.object({
     type: z.literal('file_not_contains'),
-    path: z.string().min(1),
+    path: pathSchema,
     value: z.string().min(1),
     severity: SeveritySchema.default('hard'),
     description: z.string().min(1),
@@ -107,7 +120,7 @@ export const EvalCaseSchema = z.discriminatedUnion('mode', [
     mode: z.literal('workspace'),
     workspace: z.object({
       mode: z.literal('fixture'),
-      fixture: z.string().min(1),
+      fixture: pathSchema,
     }),
     assertions: AssertionSchema.array().min(1),
   }),
@@ -134,7 +147,6 @@ export const RunnerConfigSchema = z.object({
   command: z.string().min(1),
   args: z.array(z.string()).default([]),
   timeoutMs: z.number().int().positive().default(600_000),
-  workspaceMode: z.enum(['copy', 'none']).default('copy'),
 });
 
 export type RunnerConfig = z.infer<typeof RunnerConfigSchema>;

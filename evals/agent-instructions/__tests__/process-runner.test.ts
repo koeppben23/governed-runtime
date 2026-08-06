@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { runProcess } from '../runners/process-runner.js';
 import type { RunnerConfig } from '../schema.js';
 
@@ -13,13 +16,16 @@ function config(args: string[]): RunnerConfig {
     command: process.execPath,
     args: [FAKE_AGENT, ...args],
     timeoutMs: 15_000,
-    workspaceMode: 'copy',
   };
+}
+
+function sha256File(p: string): string {
+  return createHash('sha256').update(readFileSync(p)).digest('hex');
 }
 
 describe('process-runner', () => {
   it('captures stdout from a passing process', async () => {
-    const outcome = await runProcess(config(['pass']), FIXTURE);
+    const outcome = await runProcess(config(['pass']), FIXTURE, 'test prompt', true);
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
       expect(outcome.stdout).toContain('All checks passed');
@@ -28,7 +34,7 @@ describe('process-runner', () => {
   });
 
   it('captures stderr', async () => {
-    const outcome = await runProcess(config(['exit-1']), FIXTURE);
+    const outcome = await runProcess(config(['exit-1']), FIXTURE, 'test prompt', true);
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
       expect(outcome.stderr).toContain('something went wrong');
@@ -39,16 +45,16 @@ describe('process-runner', () => {
   it('detects timeout', async () => {
     const c = config(['timeout']);
     c.timeoutMs = 2000;
-    const outcome = await runProcess(c, FIXTURE);
-    // Timeout may result in 'runner_error' (timeout) or 'runner_error' (signal)
-    // depending on whether the runner's kill or the process close fires first.
-    // Both are valid: the key invariant is that a hanging process does not
-    // return status 'completed'.
+    const outcome = await runProcess(c, FIXTURE, 'test prompt', true);
     expect(outcome.status).toBe('runner_error');
+    expect(outcome).toMatchObject({
+      status: 'runner_error',
+      errorKind: 'timeout',
+    });
   });
 
   it('detects process crash (exit code != 0)', async () => {
-    const outcome = await runProcess(config(['crash']), FIXTURE);
+    const outcome = await runProcess(config(['crash']), FIXTURE, 'test prompt', true);
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
       expect(outcome.exitCode).toBe(137);
@@ -56,14 +62,53 @@ describe('process-runner', () => {
   });
 
   it('detects file creation in workspace', async () => {
-    const outcome = await runProcess(config(['workspace-write']), FIXTURE);
+    const outcome = await runProcess(config(['workspace-write']), FIXTURE, 'test prompt', true);
     expect(outcome.status).toBe('completed');
     if (outcome.status === 'completed') {
-      // The workspace-write mode writes new-file.txt
-      // Workspace is a copy, so the after snapshot should have it
       const hasNewFile = outcome.afterSnapshot.has('new-file.txt') ||
         Array.from(outcome.afterSnapshot.keys()).some((k) => k.endsWith('new-file.txt'));
       expect(hasNewFile).toBe(true);
     }
+  });
+
+  it('handles spawn error for missing command', async () => {
+    const c: RunnerConfig = {
+      name: 'nonexistent',
+      command: '/this/command/does/not/exist',
+      args: [],
+      timeoutMs: 5000,
+    };
+    const outcome = await runProcess(c, FIXTURE, 'test prompt', true);
+    expect(outcome.status).toBe('runner_error');
+    expect(['spawn', 'signal'].includes(outcome.errorKind)).toBe(true);
+  });
+
+  it('passes the prompt to the process via stdin', async () => {
+    const outcome = await runProcess(config(['echo-stdin']), FIXTURE, 'Hello from eval', true);
+    expect(outcome.status).toBe('completed');
+    if (outcome.status === 'completed') {
+      expect(outcome.stdout).toContain('Hello from eval');
+    }
+  });
+
+  it('does not modify original fixture after workspace-copy run', async () => {
+    const fixtureDir = join(tmpdir(), `eval-fixture-test-${Date.now()}`);
+    mkdirSync(fixtureDir, { recursive: true });
+    writeFileSync(join(fixtureDir, 'data.txt'), 'original');
+    const hashBefore = sha256File(join(fixtureDir, 'data.txt'));
+
+    const c: RunnerConfig = {
+      name: 'write-test',
+      command: process.execPath,
+      args: [FAKE_AGENT, 'workspace-write'],
+      timeoutMs: 10_000,
+    };
+
+    await runProcess(c, fixtureDir, 'test prompt', true);
+    const hashAfter = sha256File(join(fixtureDir, 'data.txt'));
+
+    expect(hashBefore).toBe(hashAfter);
+
+    rmSync(fixtureDir, { recursive: true, force: true });
   });
 });

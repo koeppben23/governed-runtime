@@ -102,7 +102,7 @@ export function evaluateAssertion(
     case 'file_not_contains': {
       const content = ctx.afterContent.get(assertion.path);
       if (content === undefined) {
-        return { ...base, passed: true, expected: `NOT "${assertion.value}"` };
+        return { ...base, passed: false, expected: `existing file without "${assertion.value}"`, received: 'file not found' };
       }
       return { ...base, passed: !content.includes(assertion.value), expected: `NOT "${assertion.value}"` };
     }

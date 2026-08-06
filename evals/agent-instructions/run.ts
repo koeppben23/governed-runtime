@@ -1,6 +1,6 @@
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { loadCases } from './load-cases.js';
 import { runProcess } from './runners/process-runner.js';
@@ -12,12 +12,21 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const CASES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'cases');
 const RESULTS_DIR = join(ROOT, 'eval-results');
 
-// ── Output-only fixture (empty dir) ───────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────
 
-function emptyFixtureDir(): string {
-  const dir = join(tmpdir(), `eval-empty-${Date.now()}`);
+function makeEmptyDir(): { dir: string; cleanup: () => void } {
+  const dir = join(tmpdir(), `eval-empty-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   mkdirSync(dir, { recursive: true });
-  return dir;
+  return {
+    dir,
+    cleanup: () => {
+      try {
+        rmSync(dir, { recursive: true, force: true });
+      } catch {
+        // best-effort
+      }
+    },
+  };
 }
 
 // ── Main entry ────────────────────────────────────────────────────────
@@ -28,13 +37,24 @@ export async function runEval(config: RunnerConfig): Promise<EvalCaseResult[]> {
 
   for (const evalCase of cases) {
     const startMs = Date.now();
+    const forceCopy = evalCase.mode === 'workspace';
 
-    const fixtureRoot =
-      evalCase.mode === 'workspace'
-        ? join(CASES_DIR, evalCase.id, 'fixture')
-        : emptyFixtureDir();
+    let fixtureRoot: string;
+    let cleanupTemp: (() => void) | undefined;
 
-    const outcome = await runProcess(config, fixtureRoot);
+    if (evalCase.mode === 'workspace') {
+      fixtureRoot = join(CASES_DIR, evalCase.id, 'fixture');
+    } else {
+      const empty = makeEmptyDir();
+      fixtureRoot = empty.dir;
+      cleanupTemp = empty.cleanup;
+    }
+
+    const outcome = await runProcess(config, fixtureRoot, evalCase.task, forceCopy);
+
+    if (cleanupTemp) {
+      cleanupTemp();
+    }
 
     if (outcome.status === 'runner_error') {
       results.push(
@@ -89,12 +109,6 @@ export function writeReports(
 
   const summary = summarizeResults(runnerName, results);
   writeFileSync(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2));
-
-  for (const r of results) {
-    const caseDir = join(casesDir, r.caseId);
-    mkdirSync(caseDir, { recursive: true });
-    writeFileSync(join(caseDir, 'result.json'), JSON.stringify(r, null, 2));
-  }
 
   const mdLines = [
     `# Eval Run: ${runnerName}`,

@@ -120,4 +120,23 @@ describe('EvalCaseSchema', () => {
     });
     expect(result.success).toBe(false);
   });
+
+  it('rejects file assertion path with traversal', () => {
+    const result = EvalCaseSchema.safeParse({
+      id: 'test-case',
+      description: 'A test case',
+      task: 'Do something',
+      mode: 'workspace',
+      workspace: { mode: 'fixture', fixture: 'ok-fixture' },
+      assertions: [
+        {
+          type: 'file_changed',
+          path: '../../outside.txt',
+          severity: 'hard',
+          description: 'should be rejected',
+        },
+      ],
+    });
+    expect(result.success).toBe(false);
+  });
 });

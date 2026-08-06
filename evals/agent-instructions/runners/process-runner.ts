@@ -2,17 +2,17 @@
  * process-runner.ts
  *
  * Generic shell-free process runner for eval case execution.
- * Spawns a configured command, captures stdout/stderr, enforces
- * timeout, and returns a typed RunnerOutcome.
+ * Spawns a configured command, passes the prompt via stdin, captures
+ * stdout/stderr, enforces timeout, and returns a typed RunnerOutcome.
  */
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync, cpSync, rmSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, cpSync, rmSync, mkdirSync } from 'node:fs';
 import { join, relative, basename } from 'node:path';
 import { tmpdir } from 'node:os';
-import type { RunnerConfig } from './schema.js';
-import type { WorkspaceSnapshot, WorkspaceEntry } from './assertions.js';
+import type { RunnerConfig } from '../schema.js';
+import type { WorkspaceSnapshot } from '../assertions.js';
 
 // ── Outcome types ─────────────────────────────────────────────────────
 
@@ -101,11 +101,11 @@ function walk(
 
 // ── Workspace setup ───────────────────────────────────────────────────
 
-export function setupWorkspace(
+function setupWorkspace(
   fixtureRoot: string,
-  mode: 'copy' | 'none',
+  forceCopy: boolean,
 ): { workspaceRoot: string; cleanup: () => void } | RunnerErrorOutcome {
-  if (mode === 'none') {
+  if (!forceCopy) {
     return {
       workspaceRoot: fixtureRoot,
       cleanup: () => {},
@@ -142,97 +142,111 @@ export function setupWorkspace(
 export async function runProcess(
   config: RunnerConfig,
   fixtureRoot: string,
-  cwd?: string,
+  prompt: string,
+  forceCopy: boolean,
 ): Promise<RunnerOutcome> {
-  const ws = setupWorkspace(fixtureRoot, config.workspaceMode);
+  const ws = setupWorkspace(fixtureRoot, forceCopy);
   if ('status' in ws) return ws;
 
   const { workspaceRoot, cleanup } = ws;
-  const effectiveCwd = cwd ?? workspaceRoot;
 
-  const before = snapshotWorkspace(effectiveCwd);
+  const before = snapshotWorkspace(workspaceRoot);
 
-  const startMs = Date.now();
   let child: ChildProcess;
-  try {
-    child = spawn(config.command, config.args, {
-      cwd: effectiveCwd,
-      shell: false,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-  } catch (err) {
-    cleanup();
-    return {
-      status: 'runner_error',
-      errorKind: 'spawn',
-      message: `Failed to spawn "${config.command}": ${(err as Error).message}`,
-      stdout: '',
-      stderr: '',
+  const startMs = Date.now();
+
+  return new Promise<RunnerOutcome>((resolve) => {
+    try {
+      child = spawn(config.command, config.args, {
+        cwd: workspaceRoot,
+        shell: false,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    } catch (err) {
+      cleanup();
+      resolve({
+        status: 'runner_error',
+        errorKind: 'spawn',
+        message: `Failed to spawn "${config.command}": ${(err as Error).message}`,
+        stdout: '',
+        stderr: '',
+      });
+      return;
+    }
+
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+
+    const finish = (outcome: RunnerOutcome) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(outcome);
     };
-  }
 
-  let stdout = '';
-  let stderr = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString('utf-8');
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf-8');
+    });
 
-  child.stdout?.on('data', (chunk: Buffer) => {
-    stdout += chunk.toString('utf-8');
-  });
-  child.stderr?.on('data', (chunk: Buffer) => {
-    stderr += chunk.toString('utf-8');
-  });
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      finish({
+        status: 'runner_error',
+        errorKind: 'timeout',
+        message: `Process timed out after ${config.timeoutMs}ms`,
+        stdout,
+        stderr,
+      });
+    }, config.timeoutMs);
 
-  const timedOut = await new Promise<'timeout' | null>((resolve) => {
-    const timer = setTimeout(() => resolve('timeout'), config.timeoutMs);
-    child.on('close', () => {
+    child.on('error', (err) => {
       clearTimeout(timer);
-      resolve(null);
+      finish({
+        status: 'runner_error',
+        errorKind: 'spawn',
+        message: `Process error: ${err.message}`,
+        stdout,
+        stderr,
+      });
     });
+
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+
+      if (signal) {
+        finish({
+          status: 'runner_error',
+          errorKind: 'signal',
+          message: `Process terminated by signal ${signal}`,
+          stdout,
+          stderr,
+        });
+        return;
+      }
+
+      const durationMs = Date.now() - startMs;
+      const exitCode = code ?? -1;
+
+      const after = snapshotWorkspace(workspaceRoot);
+
+      finish({
+        status: 'completed',
+        exitCode,
+        stdout,
+        stderr,
+        durationMs,
+        beforeSnapshot: before.entries,
+        afterSnapshot: after.entries,
+        beforeContent: before.contents,
+        afterContent: after.contents,
+      });
+    });
+
+    // Write prompt to stdin and close it
+    child.stdin?.end(prompt);
   });
-
-  if (timedOut === 'timeout') {
-    child.kill('SIGKILL');
-    // drain any remaining output
-    await new Promise<void>((resolve) => {
-      child.on('close', () => resolve());
-      setTimeout(() => resolve(), 2000);
-    });
-    cleanup();
-    return {
-      status: 'runner_error',
-      errorKind: 'timeout',
-      message: `Process timed out after ${config.timeoutMs}ms`,
-      stdout,
-      stderr,
-    };
-  }
-
-  const signal = child.signalCode;
-  if (signal) {
-    cleanup();
-    return {
-      status: 'runner_error',
-      errorKind: 'signal',
-      message: `Process terminated by signal ${signal}`,
-      stdout,
-      stderr,
-    };
-  }
-
-  const durationMs = Date.now() - startMs;
-  const exitCode = child.exitCode ?? -1;
-
-  const after = snapshotWorkspace(effectiveCwd);
-  cleanup();
-
-  return {
-    status: 'completed',
-    exitCode,
-    stdout,
-    stderr,
-    durationMs,
-    beforeSnapshot: before.entries,
-    afterSnapshot: after.entries,
-    beforeContent: before.contents,
-    afterContent: after.contents,
-  };
 }
