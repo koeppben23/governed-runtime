@@ -180,7 +180,7 @@ describe('repository AGENTS guidance', () => {
       const content = await readAgents();
 
       expect(content).toContain('`ASSUMPTION`: necessary and plausible');
-      expect(content).toContain('`NOT_VERIFIED`: not executed');
+      expect(content).toContain('`NOT_VERIFIED`: a concrete verification step');
       expect(content).toContain('`BLOCKED`: safe implementation cannot continue');
     });
 

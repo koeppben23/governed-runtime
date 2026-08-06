@@ -3,15 +3,22 @@
 /**
  * check-agent-instructions.mjs
  *
- * Drift checks for AGENTS.md and CLAUDE.md instruction files.
+ * Deterministic structural checks for repository instruction files.
+ * Performs 6 static checks on AGENTS.md and CLAUDE.md files.
+ * Does not prove semantic consistency or policy compliance.
+ *
  * Run via: node scripts/check-agent-instructions.mjs
  */
 
-import { readFileSync, existsSync, readdirSync, lstatSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, readdirSync, lstatSync } from 'node:fs';
+import { join, relative, sep, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+
+function repoRel(filePath) {
+  return relative(ROOT, join(ROOT, filePath)).split(sep).join('/');
+}
 
 const PKG = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8'));
 const pkgScripts = new Set(Object.keys(PKG.scripts ?? {}));
@@ -66,13 +73,13 @@ function walkDir(relativeDir, result, targetName) {
 function allAgentsMd() {
   const files = [];
   walkDir('.', files, 'AGENTS.md');
-  return files;
+  return files.map(repoRel);
 }
 
 function allClaudeMd() {
   const files = [];
   walkDir('.', files, 'CLAUDE.md');
-  return files;
+  return files.map(repoRel);
 }
 
 function nestedAgentsMd() {
