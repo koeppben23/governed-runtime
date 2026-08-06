@@ -228,3 +228,128 @@ describe('CLI wrapper', () => {
     expect(result.status).toBe(0);
   });
 });
+
+// ── Check 7: Path references ───────────────────────────────────────
+
+describe('Check 7 — path references', () => {
+  it('fails when AGENTS.md references a non-existent path', () => {
+    const result = lintFixture('path-missing');
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'error',
+        message: 'references missing path "src/nonexistent-file.ts"',
+      }),
+    );
+  });
+
+  it('ignores glob patterns', () => {
+    const result = lintFixture('path-glob-ignored');
+    expect(result.diagnostics).not.toContainEqual(
+      expect.objectContaining({ message: expect.stringContaining('src/**/*.ts') }),
+    );
+  });
+
+  it('ignores paths inside fenced code blocks', () => {
+    const result = lintFixture('path-codeblock-ignored');
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics).toHaveLength(0);
+  });
+});
+
+// ── Check 8: CLAUDE.md adjacency ───────────────────────────────────
+
+describe('Check 8 — CLAUDE.md adjacency', () => {
+  it('fails when CLAUDE.md has no adjacent AGENTS.md', () => {
+    const result = lintFixture('claude-no-adjacent');
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'error',
+        message: 'missing adjacent AGENTS.md',
+      }),
+    );
+  });
+});
+
+// ── Check 9: Canonical Scope ───────────────────────────────────────
+
+describe('Check 9 — canonical Scope section', () => {
+  it('fails when nested AGENTS.md lacks canonical Scope', () => {
+    const result = lintFixture('scope-missing');
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'error',
+        message: 'missing canonical Scope section',
+      }),
+    );
+  });
+});
+
+// ── Check 10: Chain budget ─────────────────────────────────────────
+
+describe('Check 10 — chain byte budget', () => {
+  it('warns when chain exceeds 16 KiB warning threshold', () => {
+    const result = lintFixture('chain-warn');
+    expect(result.ok).toBe(true);
+    const warnDiag = result.diagnostics.find(
+      (d) => d.kind === 'warn' && d.message.includes('16 KiB'),
+    );
+    expect(warnDiag).toBeDefined();
+  });
+
+  it('errors when chain exceeds 20 KiB maximum', () => {
+    const result = lintFixture('chain-error');
+    expect(result.ok).toBe(false);
+    const errDiag = result.diagnostics.find(
+      (d) => d.kind === 'error' && d.message.includes('20 KiB'),
+    );
+    expect(errDiag).toBeDefined();
+  });
+
+  it('includes all ancestor files in deep chain', () => {
+    const result = lintFixture('deep-chain');
+    expect(result.ok).toBe(true);
+    // Budget is under thresholds but chain structure is correct —
+    // no error means the chain was computed correctly
+    expect(result.diagnostics.filter((d) => d.kind === 'error')).toHaveLength(0);
+  });
+});
+
+// ── Check 11: Additive Verification ────────────────────────────────
+
+describe('Check 11 — additive verification', () => {
+  it('fails when nested AGENTS.md lacks verification section', () => {
+    const result = lintFixture('verify-missing');
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'error',
+        message: expect.stringContaining('Additional Verification'),
+      }),
+    );
+  });
+});
+
+// ── Check 12: Duplicate paragraphs ─────────────────────────────────
+
+describe('Check 12 — duplicate paragraphs (advisory)', () => {
+  it('warns on duplicated instruction paragraphs', () => {
+    const result = lintFixture('duplicate-paragraphs');
+    const warnDiag = result.diagnostics.find(
+      (d) => d.kind === 'warn' && d.message.includes('duplicated instruction paragraph'),
+    );
+    expect(warnDiag).toBeDefined();
+    expect(result.ok).toBe(true);
+  });
+
+  it('does not warn on allowed canonical duplicates', () => {
+    const result = lintFixture('duplicate-allowed');
+    const dupDiag = result.diagnostics.find(
+      (d) => d.kind === 'warn' && d.message.includes('duplicated'),
+    );
+    expect(dupDiag).toBeUndefined();
+    expect(result.ok).toBe(true);
+  });
+});

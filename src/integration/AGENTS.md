@@ -1,5 +1,9 @@
 # Integration Layer Contributor Notes
 
+## Scope
+
+This file adds instructions for files in this directory subtree.
+
 ## Authority
 
 `src/integration/` consumes canonical authorities and exposes the runtime-facing
@@ -65,7 +69,7 @@ Never use bare `throw new Error(...)` at these boundaries.
 
 ## Additional Verification for This Subtree
 
-Apply the repository-wide verification rules first. In addition, run these checks for all integration-layer changes:
+Apply the repository-wide verification rules first. In addition:
 
 ```sh
 npm run check
