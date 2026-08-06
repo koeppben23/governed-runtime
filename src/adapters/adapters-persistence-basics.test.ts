@@ -347,7 +347,7 @@ describe('persistence', () => {
       });
     });
 
-    it('readState is idempotent for migrated legacy claims', async () => {
+    it('migration is deterministic across repeated reads of the same legacy file', async () => {
       const state = makeProgressedState('PLAN_REVIEW');
       const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
       const plan = json.plan as Record<string, unknown>;
