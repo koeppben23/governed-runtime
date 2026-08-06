@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { runProcess } from '../runners/process-runner.js';
@@ -95,8 +95,7 @@ describe('process-runner', () => {
   });
 
   it('does not modify original fixture after workspace-copy run', async () => {
-    const fixtureDir = join(tmpdir(), `eval-fixture-test-${Date.now()}`);
-    mkdirSync(fixtureDir, { recursive: true });
+    const fixtureDir = mkdtempSync(join(tmpdir(), 'eval-fixture-test-'));
     writeFileSync(join(fixtureDir, 'data.txt'), 'original');
     const hashBefore = sha256File(join(fixtureDir, 'data.txt'));
 

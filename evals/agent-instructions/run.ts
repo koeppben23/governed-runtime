@@ -1,6 +1,7 @@
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { loadCases } from './load-cases.js';
 import { runProcess } from './runners/process-runner.js';
@@ -13,8 +14,7 @@ const CASES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'cases');
 const RESULTS_DIR = join(ROOT, 'eval-results');
 
 function makeEmptyDir(): { dir: string; cleanup: () => void } {
-  const dir = join(tmpdir(), `eval-empty-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-  mkdirSync(dir, { recursive: true });
+  const dir = mkdtempSync(join(tmpdir(), 'eval-empty-'));
   return {
     dir,
     cleanup: () => {

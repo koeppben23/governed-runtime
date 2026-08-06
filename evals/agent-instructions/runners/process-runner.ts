@@ -8,7 +8,7 @@
 
 import { spawn, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync, cpSync, rmSync, mkdirSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, cpSync, rmSync, mkdtempSync } from 'node:fs';
 import { join, relative, basename } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { RunnerConfig } from '../schema.js';
@@ -112,7 +112,7 @@ function setupWorkspace(
     };
   }
 
-  const wsRoot = join(tmpdir(), `eval-ws-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const wsRoot = mkdtempSync(join(tmpdir(), 'eval-ws-'));
   try {
     cpSync(fixtureRoot, wsRoot, { recursive: true, dereference: false });
   } catch (err) {
