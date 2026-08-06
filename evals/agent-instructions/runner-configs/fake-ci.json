@@ -1,0 +1,10 @@
+{
+  "name": "fake-ci",
+  "command": "node",
+  "args": [
+    "{repoRoot}/evals/agent-instructions/fixtures/fake-agent.mjs",
+    "pass"
+  ],
+  "promptTransport": "stdin",
+  "timeoutMs": 600000
+}

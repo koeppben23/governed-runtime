@@ -168,7 +168,7 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     }));
 
-    const d = writeReports('fake-host', cases, 'test-run-5');
+    const d = writeReports('fake-host', cases, { runId: 'test-run-5' });
     const s = JSON.parse(readFileSync(join(d, 'summary.json'), 'utf-8'));
     expect(s.cases[0].caseId).toBe('a');
     expect(s.cases[1].caseId).toBe('b');

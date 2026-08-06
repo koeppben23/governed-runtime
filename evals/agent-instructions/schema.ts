@@ -141,12 +141,40 @@ export type EvalCase = z.infer<typeof EvalCaseSchema>;
 
 // ── Runner config ─────────────────────────────────────────────────────
 
-export const RunnerConfigSchema = z.object({
+const RunnerBase = {
   name: z.string().min(1),
   command: z.string().min(1),
-  args: z.array(z.string()).default([]),
+  staticEnv: z.record(z.string(), z.string()).default({}),
+  secretEnvNames: z
+    .array(z.string().regex(/^[A-Z_][A-Z0-9_]*$/))
+    .default([]),
   timeoutMs: z.number().int().positive().default(600_000),
-});
+};
+
+export const RunnerConfigSchema = z.discriminatedUnion('promptTransport', [
+  z.object({
+    ...RunnerBase,
+    promptTransport: z.literal('stdin'),
+    args: z.array(z.string()).default([]),
+  }),
+  z.object({
+    ...RunnerBase,
+    promptTransport: z.literal('argument'),
+    args: z.array(z.string()).default([]),
+  }).superRefine((c, ctx) => {
+    const count = c.args.reduce(
+      (t, a) => t + a.split('{prompt}').length - 1,
+      0,
+    );
+    if (count !== 1) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['args'],
+        message: 'exactly one {prompt} placeholder required',
+      });
+    }
+  }),
+]);
 
 export type RunnerConfig = z.infer<typeof RunnerConfigSchema>;
 

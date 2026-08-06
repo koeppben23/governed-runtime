@@ -7,6 +7,7 @@ import { loadCases } from './load-cases.js';
 import { runProcess } from './runners/process-runner.js';
 import { evaluateAllAssertions, type AssertionContext } from './assertions.js';
 import { scoreCase, summarizeResults } from './score.js';
+import { redactSecrets } from './redact.js';
 import type { RunnerConfig, ExecutedEvalCase, EvalCaseResult } from './schema.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -27,8 +28,25 @@ function makeEmptyDir(): { dir: string; cleanup: () => void } {
   };
 }
 
-export async function runEval(config: RunnerConfig): Promise<ExecutedEvalCase[]> {
-  const cases = loadCases(CASES_DIR).sort((a, b) => a.id.localeCompare(b.id));
+export async function runEval(
+  config: RunnerConfig,
+  repoRoot: string,
+  caseIds?: string[],
+): Promise<ExecutedEvalCase[]> {
+  let cases = loadCases(CASES_DIR).sort((a, b) => a.id.localeCompare(b.id));
+
+  if (caseIds && caseIds.length > 0) {
+    const idSet = new Set(caseIds);
+    const unknown = caseIds.filter((id) => !cases.some((c) => c.id === id));
+    if (unknown.length > 0) {
+      throw new Error(`Unknown case ID(s): ${unknown.join(', ')}`);
+    }
+    cases = cases.filter((c) => idSet.has(c.id));
+    if (cases.length === 0) {
+      throw new Error('No matching cases found');
+    }
+  }
+
   const results: ExecutedEvalCase[] = [];
 
   for (const evalCase of cases) {
@@ -46,7 +64,7 @@ export async function runEval(config: RunnerConfig): Promise<ExecutedEvalCase[]>
       cleanupTemp = empty.cleanup;
     }
 
-    const outcome = await runProcess(config, fixtureRoot, evalCase.task, forceCopy);
+    const outcome = await runProcess(config, fixtureRoot, evalCase.task, forceCopy, repoRoot);
 
     if (cleanupTemp) {
       cleanupTemp();
@@ -107,19 +125,21 @@ export async function runEval(config: RunnerConfig): Promise<ExecutedEvalCase[]>
 export function writeReports(
   runnerName: string,
   executed: ExecutedEvalCase[],
-  runId?: string,
+  opts?: { redactionValues?: string[]; runId?: string },
 ): string {
+  const redactionValues = opts?.redactionValues ?? [];
   const ordered = [...executed].sort((a, b) =>
     a.evalCase.id.localeCompare(b.evalCase.id),
   );
-  const id = runId ?? `run-${Date.now()}`;
+  const id = opts?.runId ?? `run-${Date.now()}`;
   const runDir = join(RESULTS_DIR, id);
   const casesDir = join(runDir, 'cases');
   mkdirSync(casesDir, { recursive: true });
 
   const caseResults = ordered.map((e) => e.result);
   const summary = summarizeResults(runnerName, caseResults);
-  writeFileSync(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2));
+  const redactedSummary = redactSecrets(JSON.stringify(summary), redactionValues);
+  writeFileSync(join(runDir, 'summary.json'), redactedSummary + '\n');
 
   for (const e of ordered) {
     const caseDir = join(casesDir, e.evalCase.id);
@@ -128,8 +148,14 @@ export function writeReports(
     writeFileSync(join(caseDir, 'prompt.txt'), e.evalCase.task + '\n');
 
     if (e.outcome.status === 'completed' || e.outcome.status === 'runner_error') {
-      writeFileSync(join(caseDir, 'stdout.txt'), e.outcome.stdout || '');
-      writeFileSync(join(caseDir, 'stderr.txt'), e.outcome.stderr || '');
+      writeFileSync(
+        join(caseDir, 'stdout.txt'),
+        redactSecrets(e.outcome.stdout || '', redactionValues),
+      );
+      writeFileSync(
+        join(caseDir, 'stderr.txt'),
+        redactSecrets(e.outcome.stderr || '', redactionValues),
+      );
     }
 
     const outcomeSummary =
@@ -145,8 +171,14 @@ export function writeReports(
             message: e.outcome.message,
           };
 
-    writeFileSync(join(caseDir, 'outcome.json'), JSON.stringify(outcomeSummary, null, 2));
-    writeFileSync(join(caseDir, 'result.json'), JSON.stringify(e.result, null, 2));
+    writeFileSync(
+      join(caseDir, 'outcome.json'),
+      redactSecrets(JSON.stringify(outcomeSummary, null, 2), redactionValues) + '\n',
+    );
+    writeFileSync(
+      join(caseDir, 'result.json'),
+      redactSecrets(JSON.stringify(e.result, null, 2), redactionValues) + '\n',
+    );
   }
 
   const mdLines = [

@@ -26,6 +26,7 @@ export interface CompletedOutcome {
   afterSnapshot: WorkspaceSnapshot;
   beforeContent: Map<string, string>;
   afterContent: Map<string, string>;
+  redactionValues: string[];
 }
 
 export interface RunnerErrorOutcome {
@@ -34,6 +35,7 @@ export interface RunnerErrorOutcome {
   message: string;
   stdout: string;
   stderr: string;
+  redactionValues: string[];
 }
 
 export type RunnerOutcome = CompletedOutcome | RunnerErrorOutcome;
@@ -154,23 +156,58 @@ export async function runProcess(
   fixtureRoot: string,
   prompt: string,
   forceCopy: boolean,
+  repoRoot: string,
 ): Promise<RunnerOutcome> {
   const ws = setupWorkspace(fixtureRoot, forceCopy);
-  if ('status' in ws) return ws;
+  if ('status' in ws) return { ...ws, redactionValues: [] };
 
   const { workspaceRoot, cleanup } = ws;
 
   const before = snapshotWorkspace(workspaceRoot);
+
+  // Resolve args with {repoRoot} and {prompt}
+  const resolvedArgs = config.args.map((a) =>
+    a.replace('{repoRoot}', repoRoot),
+  );
+  const useStdin = config.promptTransport === 'stdin';
+  if (!useStdin) {
+    // argument transport: replace {prompt} in exactly one position
+    // already validated by schema
+    for (let i = 0; i < resolvedArgs.length; i++) {
+      resolvedArgs[i] = resolvedArgs[i].replace('{prompt}', prompt);
+    }
+  }
+
+  // Build child env
+  const redactionValues: string[] = [];
+  const childEnv: NodeJS.ProcessEnv = { ...process.env, ...(config.staticEnv ?? {}) };
+  for (const name of config.secretEnvNames ?? []) {
+    const val = process.env[name];
+    if (val === undefined) {
+      cleanup();
+      return {
+        status: 'runner_error',
+        errorKind: 'internal',
+        message: `Missing required environment variable: ${name}`,
+        stdout: '',
+        stderr: '',
+        redactionValues: [],
+      };
+    }
+    childEnv[name] = val;
+    redactionValues.push(val);
+  }
 
   let child: ChildProcess;
   const startMs = Date.now();
 
   return new Promise<RunnerOutcome>((resolve) => {
     try {
-      child = spawn(config.command, config.args, {
+      child = spawn(config.command, resolvedArgs, {
         cwd: workspaceRoot,
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
+        env: childEnv,
       });
     } catch (err) {
       cleanup();
@@ -180,6 +217,7 @@ export async function runProcess(
         message: `Failed to spawn "${config.command}": ${(err as Error).message}`,
         stdout: '',
         stderr: '',
+        redactionValues: [],
       });
       return;
     }
@@ -210,6 +248,7 @@ export async function runProcess(
         message: `Process timed out after ${config.timeoutMs}ms`,
         stdout,
         stderr,
+        redactionValues,
       });
     }, config.timeoutMs);
 
@@ -221,6 +260,7 @@ export async function runProcess(
         message: `Process error: ${err.message}`,
         stdout,
         stderr,
+        redactionValues,
       });
     });
 
@@ -234,6 +274,7 @@ export async function runProcess(
           message: `Process terminated by signal ${signal}`,
           stdout,
           stderr,
+          redactionValues,
         });
         return;
       }
@@ -253,10 +294,15 @@ export async function runProcess(
         afterSnapshot: after.entries,
         beforeContent: before.contents,
         afterContent: after.contents,
+        redactionValues,
       });
     });
 
-    // Write prompt to stdin and close it
-    child.stdin?.end(prompt);
+    // Write prompt to stdin (stdin transport) or close immediately (argument)
+    if (useStdin) {
+      child.stdin?.end(prompt);
+    } else {
+      child.stdin?.end();
+    }
   });
 }
