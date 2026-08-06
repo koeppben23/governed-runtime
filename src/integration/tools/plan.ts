@@ -60,10 +60,7 @@ import type {
 } from '../../state/evidence.js';
 import { computeRecordDigest } from '../../state/evidence-plan.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
-import {
-  PlanClaimDeclarationInput as PlanClaimDeclarationSchema,
-  type WritablePlanClaimDeclaration,
-} from '../../state/proofgraph-approval.js';
+import { PlanClaimDeclarationInput as PlanClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
 import { normalizePlanClaims } from '../../state/proofgraph-approval.js';
 import type { CounterexampleRequirement } from '../../state/proofgraph.js';
 import { validateProofClaimContract } from '../proofgraph/claim-contract.js';
@@ -216,8 +213,7 @@ function validatePlanClaimContract(args: PlanArgs, state: SessionState): string 
       statement: claim.statement,
       critical: claim.critical,
       positiveCheckId: claim.expectedCheckId,
-      counterexampleRequirement: (claim as WritablePlanClaimDeclaration)
-        .counterexampleRequirement as CounterexampleRequirement | undefined,
+      counterexampleRequirement: claim.counterexampleRequirement,
       structuralSurface: claim.structuralSurface,
       mutationProfile: claim.mutationProfile,
       authoritySectionId: claim.authoritySectionId,

@@ -11,7 +11,10 @@
 import { z } from 'zod';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
-import type { CounterexampleRequirement } from './proofgraph.js';
+import {
+  CounterexampleRequirement,
+  type CounterexampleRequirement as CounterexampleRequirementType,
+} from './proofgraph.js';
 import * as crypto from 'node:crypto';
 
 /** RFC 4122 DNS namespace, used to derive stable UUIDv5 claim identities. */
@@ -116,16 +119,7 @@ export const NormalizedPlanClaim = z
     critical: z.boolean(),
     authoritySectionId: z.string().min(1),
     expectedCheckId: z.string().min(1),
-    counterexampleRequirement: z
-      .discriminatedUnion('mode', [
-        z.object({ mode: z.literal('check'), checkId: z.string().min(1) }),
-        z.object({
-          mode: z.literal('assertion'),
-          checkId: z.string().min(1),
-          assertionId: z.string().min(1),
-        }),
-      ])
-      .optional(),
+    counterexampleRequirement: CounterexampleRequirement.optional(),
     structuralSurface: z.string().min(1).optional(),
     mutationProfile: z.string().min(1).optional(),
   })
@@ -143,7 +137,7 @@ export type NormalizedPlanClaim = z.infer<typeof NormalizedPlanClaim>;
 export function normalizePlanClaimDeclaration(
   declaration: PlanClaimDeclaration,
 ): NormalizedPlanClaim {
-  const counterexampleRequirement: CounterexampleRequirement | undefined =
+  const counterexampleRequirement: CounterexampleRequirementType | undefined =
     'counterexampleRequirement' in declaration
       ? declaration.counterexampleRequirement
       : (declaration as LegacyPlanClaimDeclaration).counterexampleCheckId !== undefined
@@ -190,7 +184,7 @@ export function normalizeArchitectureClaims(
  */
 export function normalizePlanClaims(
   claims: readonly PlanClaimDeclarationInput[] | undefined,
-): PlanClaimDeclaration[] | undefined {
+): WritablePlanClaimDeclaration[] | undefined {
   return claims?.map((claim) => ({
     ...claim,
     claimId: mintProofGraphClaimId({
@@ -198,7 +192,7 @@ export function normalizePlanClaims(
       statement: claim.statement,
       authoritySectionId: claim.authoritySectionId,
     }),
-  })) as PlanClaimDeclaration[];
+  }));
 }
 
 /** An ADR claim names the review evidence and assumptions for the decision. */

@@ -10,12 +10,16 @@ import {
   PlanClaimDeclarationInput,
   ArchitectureClaimDeclarationInput,
   normalizePlanClaimDeclaration,
+  hasCurrentPlanApprovalCertificate,
   type PlanClaimDeclaration,
   type NormalizedPlanClaim,
+  type PlanClaimAuthority,
 } from './proofgraph-approval.js';
 import { SessionState } from './schema.js';
 import { makeState } from '../fixtures.js';
 import { computeRecordDigest } from './evidence-plan.js';
+import { hashText } from '../shared/hashing.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
 const CERTIFICATE = {
@@ -351,5 +355,48 @@ describe('normalizePlanClaimDeclaration', () => {
     expect(result.expectedCheckId).toBe(BASE.expectedCheckId);
     expect(result.structuralSurface).toBe('command-registration');
     expect(result.mutationProfile).toBe('all-killed');
+  });
+});
+
+describe('certificate integrity with legacy claims', () => {
+  const LEGACY_CLAIM = {
+    claimId: '00000000-0000-4000-8000-000000000002',
+    statement: 'legacy',
+    critical: true,
+    authoritySectionId: 's1',
+    expectedCheckId: 'test',
+    counterexampleCheckId: 'security',
+  } as const;
+
+  it('legacy claim with counterexampleCheckId passes certificate digest validation against original form', () => {
+    const declarations: PlanClaimDeclarations = {
+      flow: 'plan',
+      claims: [LEGACY_CLAIM as PlanClaimDeclaration],
+    };
+    const digest = hashText(canonicalJsonStringify(declarations));
+    const plan = {
+      current: { digest: 'plan-digest', planVersion: 1, recordDigest: 'rec-digest' },
+      claimDeclarations: declarations,
+      approvalCertificate: {
+        flow: 'plan' as const,
+        authorityDigest: 'plan-digest',
+        planVersion: 1,
+        planRecordDigest: 'rec-digest',
+        claimDeclarationsDigest: digest,
+        certificateId: 'cert-id',
+        decisionAttestationDigest: 'dec-digest',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        actor: 'test',
+        planDigest: 'plan-digest',
+      },
+    };
+    expect(hasCurrentPlanApprovalCertificate(plan as unknown as PlanClaimAuthority)).toBe(true);
+  });
+
+  it('normalization does not mutate the persisted claim declaration', () => {
+    const claim = { ...LEGACY_CLAIM } as PlanClaimDeclaration;
+    const before = JSON.stringify(claim);
+    normalizePlanClaimDeclaration(claim);
+    expect(JSON.stringify(claim)).toBe(before);
   });
 });
