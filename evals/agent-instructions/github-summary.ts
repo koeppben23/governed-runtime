@@ -7,12 +7,19 @@
 
 import type { ExecutedEvalCase } from './schema.js';
 
+function escapeCell(value: string): string {
+  return value
+    .replace(/\r?\n/g, ' ')
+    .replace(/\|/g, '\\|');
+}
+
 export function renderGitHubSummary(
   runnerName: string,
   executed: ExecutedEvalCase[],
 ): string {
+  const safeRunner = escapeCell(runnerName);
   const lines = [
-    `## Agent Instruction Eval: ${runnerName}`,
+    `## Agent Instruction Eval: ${safeRunner}`,
     '',
     '| Case | Verdict | Hard Failures | Advisory Failures |',
     '| --- | --- | ---: | ---: |',
@@ -26,7 +33,7 @@ export function renderGitHubSummary(
       (r) => r.severity === 'advisory' && !r.passed,
     ).length;
     lines.push(
-      `| ${e.evalCase.id} | ${e.result.verdict} | ${hard} | ${advisory} |`,
+      `| ${escapeCell(e.evalCase.id)} | ${e.result.verdict} | ${hard} | ${advisory} |`,
     );
   }
 

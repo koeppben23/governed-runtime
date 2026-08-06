@@ -175,7 +175,7 @@ export function writeReports(
 
   const caseResults = ordered.map((e) => e.result);
   const summary = summarizeResults(runnerName, caseResults);
-  const redactedSummary = redactSecrets(JSON.stringify(summary), redactionValues);
+  const redactedSummary = redactSecrets(JSON.stringify(summary, null, 2), redactionValues);
   writeFileSync(join(runDir, 'summary.json'), redactedSummary + '\n');
 
   for (const e of ordered) {

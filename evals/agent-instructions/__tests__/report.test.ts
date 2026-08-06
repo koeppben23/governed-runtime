@@ -194,4 +194,46 @@ describe('writeReports', () => {
 
     rmSync(d, { recursive: true, force: true });
   });
+
+  it('redacts secrets from all persisted text artifacts', () => {
+    const c: ExecutedEvalCase = {
+      evalCase: { ...BASE_CASE, id: 'c1' },
+      result: {
+        caseId: 'c1',
+        verdict: 'PASS',
+        durationMs: 50,
+        assertionResults: [],
+      },
+      outcome: {
+        status: 'completed',
+        exitCode: 0,
+        stdout: 'using secret: my-secret-key-is-long-enough',
+        stderr: '',
+        durationMs: 100,
+        beforeSnapshot: new Map(),
+        afterSnapshot: new Map(),
+        beforeContent: new Map(),
+        afterContent: new Map(),
+      },
+    };
+
+    const d = writeReports('fake-host', [c], {
+      runId: 'test-run-redact',
+      redactionValues: ['my-secret-key-is-long-enough'],
+    });
+
+    const caseDir = join(d, 'cases', 'c1');
+    const allFiles = ['stdout.txt', 'stderr.txt', 'result.json', 'outcome.json'];
+    for (const f of allFiles) {
+      const content = readFileSync(join(caseDir, f), 'utf-8');
+      expect(content).not.toContain('my-secret-key-is-long-enough');
+    }
+    // The secret appeared in stdout — verify it was redacted
+    expect(readFileSync(join(caseDir, 'stdout.txt'), 'utf-8')).toContain('***REDACTED***');
+    // summary files are also passed through redactSecrets
+    expect(readFileSync(join(d, 'summary.json'), 'utf-8')).not.toContain('my-secret-key-is-long-enough');
+    expect(readFileSync(join(d, 'summary.md'), 'utf-8')).not.toContain('my-secret-key-is-long-enough');
+
+    rmSync(d, { recursive: true, force: true });
+  });
 });

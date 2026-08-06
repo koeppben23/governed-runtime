@@ -38,7 +38,6 @@ const REPO_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '..',
   '..',
-  '..',
 );
 
 async function main(): Promise<void> {
