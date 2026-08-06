@@ -37,8 +37,7 @@ an instruction-only rule.
 ## Normative Terms
 
 - **MUST** / **MUST NOT**: required for correctness or repository policy.
-- **SHOULD** / **SHOULD NOT**: default unless repository evidence justifies an
-  exception.
+- **SHOULD** / **SHOULD NOT**: default unless evidence justifies an exception.
 - **MAY**: optional.
 
 ## Repository vs. Product Behavior
@@ -123,15 +122,10 @@ applicable `AGENTS.md` or in `docs/`.
 - **Architecture-sensitive**: `npm run test:architecture`.
 - **High-risk**: `npm run mutation`. Mark `NOT_VERIFIED` if skipped.
 
-At completion, report:
-
-1. behavior changed;
-2. files changed;
-3. checks actually run and their outcomes;
-4. relevant checks not run, each marked `NOT_VERIFIED`;
-5. remaining assumptions and blockers.
-
-Do not include empty sections.
+At completion, report: (1) behavior changed; (2) files changed; (3) checks
+actually run and their outcomes; (4) relevant checks not run, each marked
+`NOT_VERIFIED`; (5) remaining assumptions and blockers. Do not include empty
+sections.
 
 ## Git Conventions
 
@@ -147,8 +141,7 @@ For layer-specific rules, follow the nearest applicable `AGENTS.md`:
 
 - `src/machine/AGENTS.md` — state transitions, guard ordering, invariants
 - `src/config/AGENTS.md` — reason code registry, policy types, config schema
-- `src/integration/AGENTS.md` — plugin lifecycle, tool authoring, review
-  pipeline
+- `src/integration/AGENTS.md` — plugin lifecycle, tool authoring, review pipeline
 
 For PR metadata, commands, module boundaries, and naming conventions, see
 `CONTRIBUTING.md`.
