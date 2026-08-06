@@ -206,7 +206,7 @@ describe('repository AGENTS guidance', () => {
       const content = await readAgents();
       const unwrapped = unwrapMarkdown(content);
 
-      expect(unwrapped).toContain('clarification when the host supports interaction');
+      expect(unwrapped).toContain('do not guess');
       expect(content).toContain('`BLOCKED`');
     });
   });
