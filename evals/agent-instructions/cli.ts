@@ -60,7 +60,7 @@ async function main(): Promise<void> {
   }
 
   const executed = await runEval(parsed.data);
-  const runDir = writeReports(executed);
+  const runDir = writeReports(parsed.data.name, executed);
 
   const hasFail = executed.some((e) => e.result.verdict === 'FAIL');
   const hasRunnerError = executed.some((e) => e.result.verdict === 'RUNNER_ERROR');

@@ -59,9 +59,10 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     };
 
-    const d = writeReports([c], 'test-run-1');
+    const d = writeReports('fake-host', [c], 'test-run-1');
     const s = JSON.parse(readFileSync(join(d, 'summary.json'), 'utf-8'));
     expect(s.schemaVersion).toBe(1);
+    expect(s.runner).toBe('fake-host');
     expect(s.passed).toBe(1);
     expect(s.failed).toBe(0);
     expect(s.runnerErrors).toBe(0);
@@ -81,8 +82,9 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     };
 
-    const d = writeReports([c], 'test-run-2');
+    const d = writeReports('fake-host', [c], 'test-run-2');
     const md = readFileSync(join(d, 'summary.md'), 'utf-8');
+    expect(md).toContain('Eval Run: fake-host');
     expect(md).toContain('FAIL');
     expect(md).toContain('c1');
 
@@ -101,7 +103,7 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     };
 
-    const d = writeReports([c], 'test-run-3');
+    const d = writeReports('fake-host', [c], 'test-run-3');
     const caseDir = join(d, 'cases', 'c1');
 
     const prompt = readFileSync(join(caseDir, 'prompt.txt'), 'utf-8');
@@ -116,6 +118,13 @@ describe('writeReports', () => {
     const result = JSON.parse(readFileSync(join(caseDir, 'result.json'), 'utf-8'));
     expect(result.caseId).toBe('c1');
     expect(result.verdict).toBe('PASS');
+
+    const outcome = JSON.parse(readFileSync(join(caseDir, 'outcome.json'), 'utf-8'));
+    expect(outcome).toEqual({
+      status: 'completed',
+      exitCode: 0,
+      durationMs: 100,
+    });
 
     rmSync(d, { recursive: true, force: true });
   });
@@ -133,14 +142,21 @@ describe('writeReports', () => {
       outcome: runnerErrorOutcome(),
     };
 
-    const d = writeReports([c], 'test-run-4');
+    const d = writeReports('fake-host', [c], 'test-run-4');
     const stdout = readFileSync(join(d, 'cases', 'c1', 'stdout.txt'), 'utf-8');
     expect(stdout).toContain('partial stdout');
+
+    const outcome = JSON.parse(readFileSync(join(d, 'cases', 'c1', 'outcome.json'), 'utf-8'));
+    expect(outcome).toEqual({
+      status: 'runner_error',
+      errorKind: 'timeout',
+      message: 'timed out',
+    });
 
     rmSync(d, { recursive: true, force: true });
   });
 
-  it('sorts cases by insertion order', () => {
+  it('sorts cases by id', () => {
     const cases: ExecutedEvalCase[] = ['b', 'a'].map((id) => ({
       evalCase: { ...BASE_CASE, id },
       result: {
@@ -152,10 +168,10 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     }));
 
-    const d = writeReports(cases, 'test-run-5');
+    const d = writeReports('fake-host', cases, 'test-run-5');
     const s = JSON.parse(readFileSync(join(d, 'summary.json'), 'utf-8'));
-    expect(s.cases[0].caseId).toBe('b');
-    expect(s.cases[1].caseId).toBe('a');
+    expect(s.cases[0].caseId).toBe('a');
+    expect(s.cases[1].caseId).toBe('b');
 
     rmSync(d, { recursive: true, force: true });
   });
@@ -172,7 +188,7 @@ describe('writeReports', () => {
       outcome: completedOutcome(),
     };
 
-    const d = writeReports([c], 'test-run-6');
+    const d = writeReports('fake-host', [c], 'test-run-6');
     const s = readFileSync(join(d, 'summary.json'), 'utf-8');
     expect(s).not.toContain(tmpdir());
 

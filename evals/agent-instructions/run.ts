@@ -104,18 +104,24 @@ export async function runEval(config: RunnerConfig): Promise<ExecutedEvalCase[]>
 
 // ── Report persistence ────────────────────────────────────────────────
 
-export function writeReports(executed: ExecutedEvalCase[], runId?: string): string {
-  const runnerName = executed[0]?.result.caseId ? 'eval-run' : 'eval-run';
+export function writeReports(
+  runnerName: string,
+  executed: ExecutedEvalCase[],
+  runId?: string,
+): string {
+  const ordered = [...executed].sort((a, b) =>
+    a.evalCase.id.localeCompare(b.evalCase.id),
+  );
   const id = runId ?? `run-${Date.now()}`;
   const runDir = join(RESULTS_DIR, id);
   const casesDir = join(runDir, 'cases');
   mkdirSync(casesDir, { recursive: true });
 
-  const caseResults = executed.map((e) => e.result);
+  const caseResults = ordered.map((e) => e.result);
   const summary = summarizeResults(runnerName, caseResults);
   writeFileSync(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2));
 
-  for (const e of executed) {
+  for (const e of ordered) {
     const caseDir = join(casesDir, e.evalCase.id);
     mkdirSync(caseDir, { recursive: true });
 
@@ -126,6 +132,20 @@ export function writeReports(executed: ExecutedEvalCase[], runId?: string): stri
       writeFileSync(join(caseDir, 'stderr.txt'), e.outcome.stderr || '');
     }
 
+    const outcomeSummary =
+      e.outcome.status === 'completed'
+        ? {
+            status: 'completed' as const,
+            exitCode: e.outcome.exitCode,
+            durationMs: e.outcome.durationMs,
+          }
+        : {
+            status: 'runner_error' as const,
+            errorKind: e.outcome.errorKind,
+            message: e.outcome.message,
+          };
+
+    writeFileSync(join(caseDir, 'outcome.json'), JSON.stringify(outcomeSummary, null, 2));
     writeFileSync(join(caseDir, 'result.json'), JSON.stringify(e.result, null, 2));
   }
 
