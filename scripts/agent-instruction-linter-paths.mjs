@@ -6,7 +6,7 @@
  */
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve, relative, sep } from 'node:path';
 import { maskFencedCodeBlocks } from './agent-instruction-linter-markdown.mjs';
 
 const PATH_PREFIXES = ['src/', 'docs/', 'scripts/', '.github/'];
@@ -79,16 +79,26 @@ function isConservativePath(ref) {
 }
 
 function cleanRef(ref) {
-  const stripped = ref.replace(LINE_SUFFIX, '').trim();
+  const stripped = ref.trim().replace(LINE_SUFFIX, '');
   if (GLOB_OR_PLACEHOLDER.test(stripped)) return null;
   if (URL_PATTERN.test(stripped)) return null;
   if (/\s/.test(stripped)) return null;
   return stripped;
 }
 
+function isRegularFile(p) {
+  try {
+    return statSync(p).isFile();
+  } catch {
+    return false;
+  }
+}
+
 // ── Check 7: Path references exist ────────────────────────────────────
 
 export function checkPathReferences(root, agents, diagnostics) {
+  const resolvedRoot = resolve(root);
+
   for (const file of agents) {
     const content = readFile(root, file);
     const body = maskFencedCodeBlocks(content);
@@ -99,8 +109,21 @@ export function checkPathReferences(root, agents, diagnostics) {
       const key = `${file}:${ref}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      const fullPath = join(root, ref);
-      if (!existsSync(fullPath)) {
+
+      // Traversal protection
+      const resolved = resolve(resolvedRoot, ref);
+      const rel = relative(resolvedRoot, resolved);
+      if (rel.startsWith(`..${sep}`) || rel === '..') {
+        diagnostics.push({
+          file,
+          kind: 'error',
+          check: 'repository-path-reference',
+          message: `path reference escapes repository root: "${ref}"`,
+        });
+        continue;
+      }
+
+      if (!existsSync(resolved)) {
         diagnostics.push({
           file,
           kind: 'error',
@@ -117,7 +140,7 @@ export function checkClaudeAdjacency(root, claudes, diagnostics) {
   for (const file of claudes) {
     const dir = dirname(join(root, file));
     const adjacent = join(dir, 'AGENTS.md');
-    if (!existsSync(adjacent)) {
+    if (!isRegularFile(adjacent)) {
       diagnostics.push({
         file,
         kind: 'error',

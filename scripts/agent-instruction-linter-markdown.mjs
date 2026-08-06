@@ -23,12 +23,10 @@ function readFile(root, path) {
 
 // ── Fenced code block masking ────────────────────────────────────────
 
-const FENCE_LINE = /^(```+|~~~+)\s*$/m;
-
 /**
- * Replaces fenced code block bodies with blank lines, preserving line
- * counts but removing their content from structural analysis.
- * Handles 3+ backtick fences and 3+ tilde fences.
+ * Replaces fenced code block bodies with spaces, preserving line lengths
+ * and character positions relative to the original content.
+ * Handles 3+ backtick fences (with optional info strings) and 3+ tilde fences.
  */
 export function maskFencedCodeBlocks(content) {
   const lines = content.split('\n');
@@ -37,84 +35,62 @@ export function maskFencedCodeBlocks(content) {
   let fenceMarker = '';
 
   for (const line of lines) {
-    const m = line.match(/^(```+|~~~+)(\s|$)/);
+    const m = line.match(/^(```+|~~~+)/);
     if (m) {
       const marker = m[1];
       if (!inFence) {
         inFence = true;
         fenceMarker = marker;
-        result.push(line);
+        // mask the fence line itself
+        result.push(' '.repeat(line.length));
       } else if (marker.length >= fenceMarker.length && marker[0] === fenceMarker[0]) {
         inFence = false;
         fenceMarker = '';
-        result.push(line);
+        result.push(' '.repeat(line.length));
       } else {
         result.push(line);
       }
     } else {
-      result.push(inFence ? '' : line);
+      result.push(inFence ? ' '.repeat(line.length) : line);
     }
   }
 
   return result.join('\n');
 }
 
-function stripCodeBlocks(content) {
-  return maskFencedCodeBlocks(content);
-}
-
 // ── Section extraction ────────────────────────────────────────────────
+
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 /**
  * Extracts the body of a Markdown section at heading level `level` (1–6).
- * Stops at the next heading of equal or higher rank (`#{1,level}`) outside
- * fenced code blocks. Returns the body text (without the heading line).
+ * Operates on fenced-code-block-masked content to avoid false matches
+ * inside code fences. Stops at the next heading of equal or higher rank
+ * (`#{1,level}`). Returns the body text from the original (unmasked) content.
  */
 export function extractMarkdownSection(content, heading, level) {
-  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const masked = maskFencedCodeBlocks(content);
+  const escaped = escapeRegExp(heading);
   const startRe = new RegExp(`^${'#'.repeat(level)}\\s+${escaped}\\s*$`, 'm');
-  const startMatch = content.match(startRe);
+
+  const startMatch = startRe.exec(masked);
   if (!startMatch || startMatch.index === undefined) return null;
 
   const bodyStart = startMatch.index + startMatch[0].length;
-  let rest = content.slice(bodyStart);
-
-  // skip leading blank lines in the section body
-  rest = rest.replace(/^\n+/, '');
-
+  const maskedRest = masked.slice(bodyStart);
   const stopRe = new RegExp(`^#{1,${level}}\\s+`, 'm');
+  const stopMatch = stopRe.exec(maskedRest);
 
-  // Search for stop heading outside code blocks, scanning sequentially.
-  // Skip over fenced code blocks when searching.
-  let searchFrom = 0;
-  let blockStart = rest.indexOf('```');
+  const bodyEnd = stopMatch
+    ? bodyStart + stopMatch.index
+    : content.length;
 
-  while (blockStart !== -1) {
-    const blockEnd = rest.indexOf('```', blockStart + 3);
-    if (blockEnd === -1) break;
-
-    // Search for stop heading in text before this code block
-    const beforeBlock = rest.slice(searchFrom, blockStart);
-    stopRe.lastIndex = 0;
-    const match = stopRe.exec(beforeBlock);
-    if (match) {
-      return rest.slice(0, searchFrom + match.index).trimEnd();
-    }
-
-    searchFrom = blockEnd + 3;
-    blockStart = rest.indexOf('```', searchFrom);
-  }
-
-  // Search remaining text after last code block
-  const afterLastBlock = rest.slice(searchFrom);
-  stopRe.lastIndex = 0;
-  const match = stopRe.exec(afterLastBlock);
-  if (match) {
-    return rest.slice(0, searchFrom + match.index).trimEnd();
-  }
-
-  // No stop heading found — return full body
-  return rest.trimEnd();
+  return content
+    .slice(bodyStart, bodyEnd)
+    .replace(/^\n+/, '')
+    .trimEnd();
 }
 
 // ── Check 9: Canonical Scope section ──────────────────────────────────
@@ -172,7 +148,7 @@ export function checkDuplicateParagraphs(root, agents, diagnostics) {
 
   for (const file of agents) {
     const content = readFile(root, file);
-    const body = stripCodeBlocks(content);
+    const body = maskFencedCodeBlocks(content);
     const paragraphs = body.split(/\n\n+/);
 
     for (const para of paragraphs) {

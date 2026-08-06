@@ -259,6 +259,17 @@ describe('Check 7 — path references', () => {
     expect(result.ok).toBe(true);
     expect(result.diagnostics).toHaveLength(0);
   });
+
+  it('rejects path references that escape the repository root', () => {
+    const result = lintFixture('path-traversal');
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'error',
+        message: expect.stringContaining('escapes repository root'),
+      }),
+    );
+  });
 });
 
 // ── Check 8: CLAUDE.md adjacency ───────────────────────────────────
