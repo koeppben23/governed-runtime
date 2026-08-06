@@ -46,7 +46,7 @@
     "check:node-toolchain": "node scripts/check-node-toolchain-consistency.mjs",
     "check:prod": "tsc --noEmit -p tsconfig.json",
     "check:tests": "tsc --noEmit -p tsconfig.test.json",
-    "check": "npm run check:prod && npm run check:tests",
+    "check": "npm run check:prod && npm run check:tests && npm run check:agent-instructions",
     "typecheck": "npm run check",
     "check:opencode-host": "node scripts/check-opencode-host-drift.mjs",
     "check:unused-dependencies": "knip --dependencies",

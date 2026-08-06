@@ -138,7 +138,7 @@ describe('projectPlanProofObligations', () => {
     expect(result!.criticalCount).toBe(0);
   });
 
-  it('legacy counterexampleCheckId and normalized mode=check produce equivalent projections', () => {
+  it('legacy counterexampleCheckId and assertion counterexampleRequirement produce equivalent projections', () => {
     const legacy = {
       flow: 'plan' as const,
       claims: [
@@ -153,7 +153,7 @@ describe('projectPlanProofObligations', () => {
       ],
     } as PlanClaimDeclarations;
 
-    const normalized = {
+    const assertionForm = {
       flow: 'plan' as const,
       claims: [
         {
@@ -162,19 +162,28 @@ describe('projectPlanProofObligations', () => {
           critical: true,
           expectedCheckId: 'test',
           authoritySectionId: 'sec-legacy',
-          counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
+          counterexampleRequirement: {
+            mode: 'assertion' as const,
+            checkId: 'security',
+            assertionId: 'junit:com.example.Test#method',
+          },
         },
       ],
     } as PlanClaimDeclarations;
 
     const legacyResult = projectPlanProofObligations(legacy);
-    const normalizedResult = projectPlanProofObligations(normalized);
+    const assertionResult = projectPlanProofObligations(assertionForm);
 
-    expect(legacyResult?.falsificationReadyCount).toBe(normalizedResult?.falsificationReadyCount);
-    expect(legacyResult?.missingFalsificationCount).toBe(
-      normalizedResult?.missingFalsificationCount,
-    );
-    expect(legacyResult?.criticalCount).toBe(normalizedResult?.criticalCount);
+    expect(legacyResult?.kind).toBe('declaration');
+    expect(assertionResult?.kind).toBe('declaration');
+
+    if (legacyResult?.kind !== 'declaration' || assertionResult?.kind !== 'declaration') {
+      throw new Error('expected declaration presentation');
+    }
+
+    expect(legacyResult.falsificationReadyCount).toBe(assertionResult.falsificationReadyCount);
+    expect(legacyResult.missingFalsificationCount).toBe(assertionResult.missingFalsificationCount);
+    expect(legacyResult.criticalCount).toBe(assertionResult.criticalCount);
   });
 });
 
