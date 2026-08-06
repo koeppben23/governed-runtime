@@ -35,7 +35,7 @@ export function maskFencedCodeBlocks(content) {
   let fenceMarker = '';
 
   for (const line of lines) {
-    const m = line.match(/^(```+|~~~+)/);
+    const m = line.match(/^ {0,3}(```+|~~~+)/);
     if (m) {
       const marker = m[1];
       if (!inFence) {

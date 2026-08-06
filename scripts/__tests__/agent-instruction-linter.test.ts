@@ -10,6 +10,7 @@ import {
   classifyInstructionChainBytes,
   applicableAgentChain,
 } from '../agent-instruction-linter-paths.mjs';
+import { maskFencedCodeBlocks } from '../agent-instruction-linter-markdown.mjs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 
@@ -18,6 +19,62 @@ const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
 function lintFixture(name: string) {
   return lintAgentInstructions({ root: join(FIXTURES, name) });
 }
+
+describe('maskFencedCodeBlocks', () => {
+  it('masks triple-backtick fences', () => {
+    const input = 'before\n```\ninside\n```\nafter';
+    const output = maskFencedCodeBlocks(input);
+    expect(output).toContain('before');
+    expect(output).toContain('after');
+    expect(output).not.toMatch(/inside/);
+    expect(output.length).toBe(input.length);
+  });
+
+  it('masks tilde fences', () => {
+    const input = 'before\n~~~\ninside\n~~~\nafter';
+    const output = maskFencedCodeBlocks(input);
+    expect(output).not.toMatch(/inside/);
+    expect(output.length).toBe(input.length);
+  });
+
+  it('masks four-backtick fences', () => {
+    const input = 'before\n````\ninside\n````\nafter';
+    const output = maskFencedCodeBlocks(input);
+    expect(output).not.toMatch(/inside/);
+    expect(output.length).toBe(input.length);
+  });
+
+  it('masks fences with info strings', () => {
+    const input = 'before\n```sh\ninside\n```\nafter';
+    const output = maskFencedCodeBlocks(input);
+    expect(output).not.toMatch(/inside/);
+    expect(output.length).toBe(input.length);
+  });
+
+  it('masks unterminated fences to EOF', () => {
+    const input = 'before\n```\ninside';
+    const output = maskFencedCodeBlocks(input);
+    expect(output).toContain('before');
+    expect(output).not.toMatch(/inside/);
+    expect(output.length).toBe(input.length);
+  });
+
+  it('does not treat shorter fence as closing', () => {
+    const input = 'before\n````\ninside\n```\nstill inside\n````\nafter';
+    const output = maskFencedCodeBlocks(input);
+    expect(output).not.toMatch(/inside/);
+    expect(output).not.toMatch(/still inside/);
+    expect(output).toContain('after');
+    expect(output.length).toBe(input.length);
+  });
+
+  it('masks indented fences (up to 3 spaces)', () => {
+    const input = 'before\n   ```\ninside\n   ```\nafter';
+    const output = maskFencedCodeBlocks(input);
+    expect(output).not.toMatch(/inside/);
+    expect(output.length).toBe(input.length);
+  });
+});
 
 describe('normalizeRepoPath', () => {
   it('returns AGENTS.md unchanged for POSIX root path', () => {
