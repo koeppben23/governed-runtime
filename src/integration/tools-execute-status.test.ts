@@ -439,6 +439,12 @@ describe('status', () => {
       expect(Array.isArray(result.verificationCandidates)).toBe(true);
     });
 
+    it('returns verificationCandidates array (empty by default)', async () => {
+      await hydrateSession();
+      const result = parseToolResult(await status.execute({}, ctx));
+      expect(Array.isArray(result.verificationCandidates)).toBe(true);
+    });
+
     it('returns why-blocked surface when whyBlocked flag is set', async () => {
       await hydrateSession();
       const result = parseToolResult(await status.execute({ whyBlocked: true }, ctx));
@@ -1060,20 +1066,11 @@ describe('status', () => {
 type CallShape = 'full' | 'whyBlocked' | 'evidence' | 'context' | 'readiness';
 
 interface StatusContractEntry {
-  /** Command whose prompt reads flowguard_status. */
   readonly label: string;
-  /** Phases this command is allowed to run in (or '*' for all), used to scope the check. */
   readonly phases: readonly Phase[] | '*';
-  /** The flowguard_status call shape the prompt uses. */
   readonly callShape: CallShape;
-  /** Top-level status fields the prompt reads (must be emitted in every allowed phase). */
   readonly requiredTopLevel: readonly string[];
-  /** Nested status paths the prompt reads, e.g. 'whyBlocked.reasonText'. */
   readonly requiredPaths?: readonly string[];
-  /**
-   * Top-level fields only required in specific phases (e.g. remainingChecks only
-   * exists in VALIDATION). Checked only when the allowed phase matches.
-   */
   readonly phaseGatedTopLevel?: ReadonlyArray<{ field: string; phases: readonly Phase[] }>;
 }
 

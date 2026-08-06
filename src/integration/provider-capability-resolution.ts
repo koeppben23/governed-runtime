@@ -63,7 +63,11 @@ function buildDetectionMap(detectedStack: DetectedStack | undefined): Map<Provid
   return map;
 }
 
-type CandidateInfo = { candidate: VerificationCandidate; formatId: ReportFormatId };
+type CandidateInfo = {
+  candidate: VerificationCandidate;
+  formatId: ReportFormatId;
+  bindingCapable: boolean;
+};
 
 function buildCandidateMap(
   candidates: readonly VerificationCandidate[] | undefined,
@@ -71,13 +75,18 @@ function buildCandidateMap(
   const map = new Map<ProviderId, CandidateInfo>();
   for (const c of candidates ?? []) {
     if (c.assertionCapability !== 'structured') continue;
-    const report = (c as { assertionReport?: { providerId?: ProviderId; format?: ReportFormatId } })
+    const report = (c as { assertionReport?: { providerId?: ProviderId; format?: string } })
       .assertionReport;
     if (!report?.providerId) continue;
     const formatId = report.format;
     if (!formatId) continue;
-    if (!map.has(report.providerId)) {
-      map.set(report.providerId, { candidate: c, formatId });
+
+    const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(report.providerId);
+    const supported = bindingFormats?.has(formatId) === true;
+    const existing = map.get(report.providerId);
+
+    if (!existing || (!existing.bindingCapable && supported)) {
+      map.set(report.providerId, { candidate: c, formatId, bindingCapable: supported });
     }
   }
   return map;

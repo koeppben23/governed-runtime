@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { resolveProviderCapabilities } from './provider-capability-resolution.js';
 import type { DetectedStack, VerificationCandidate } from '../state/discovery-schemas.js';
+import type { ProviderId, ReportFormatId } from '../state/assertion-identity.js';
 
 function makeDetectedStack(
   items: Array<{ kind: string; id: string; evidence?: string }>,
@@ -22,8 +23,8 @@ function makeDetectedStack(
 }
 
 function makeStructuredCandidate(
-  providerId: string,
-  format: string,
+  providerId: ProviderId,
+  format: ReportFormatId,
   overrides?: Partial<VerificationCandidate>,
 ): VerificationCandidate {
   return {
@@ -37,8 +38,8 @@ function makeStructuredCandidate(
     assertionReport: {
       collection: 'run_specific' as const,
       transport: 'file' as const,
-      format: format as never,
-      providerId: providerId as never,
+      format,
+      providerId,
       outputArgumentTemplate: '--out={attemptId}',
       resultPatternTemplate: '{attemptId}.xml',
     },
@@ -148,5 +149,27 @@ describe('resolveProviderCapabilities', () => {
     for (const r of result) {
       expect(r.candidate.status).toBe('unavailable');
     }
+  });
+
+  it('prefers binding-capable candidate when multiple exist for same provider', () => {
+    const candidates = [
+      makeStructuredCandidate('pytest', 'junit_xml'),
+      makeStructuredCandidate('pytest', 'pytest_json'),
+    ];
+    const result = resolveProviderCapabilities(undefined, candidates);
+    const pytest = result.find((r) => r.providerId === 'pytest')!;
+    expect(pytest.candidate.status).toBe('available');
+    expect(pytest.candidate.format).toBe('pytest_json');
+  });
+
+  it('an earlier binding-capable candidate is preferred over a later one', () => {
+    const candidates = [
+      makeStructuredCandidate('vitest', 'vitest_json'),
+      makeStructuredCandidate('vitest', 'junit_xml'),
+    ];
+    const result = resolveProviderCapabilities(undefined, candidates);
+    const vitest = result.find((r) => r.providerId === 'vitest')!;
+    expect(vitest.candidate.status).toBe('available');
+    expect(vitest.candidate.format).toBe('vitest_json');
   });
 });
