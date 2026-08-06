@@ -36,8 +36,8 @@ an instruction-only rule.
 
 ## Normative Terms
 
-- **MUST** / **MUST NOT**: required for correctness or repository policy.
-- **SHOULD** / **SHOULD NOT**: default unless evidence justifies an exception.
+- **MUST / MUST NOT**: required for correctness or repository policy.
+- **SHOULD / SHOULD NOT**: default unless evidence justifies an exception.
 - **MAY**: optional.
 
 ## Repository vs. Product Behavior
@@ -121,7 +121,7 @@ or inline reason or mandate definitions.
 Also run `npm run build` for distribution changes and
 `npm run check:unused-dependencies` for dependency or module-surface changes.
 For high-risk authority, transition, guard, policy, or security-boundary
-changes, run mutation and meaningful negative-path verification.
+changes, run `npm run mutation` and meaningful negative-path verification.
 At completion, report changed behavior, changed files, executed checks and
 outcomes, relevant `NOT_VERIFIED` checks, and remaining assumptions or
 blockers. Omit empty categories.

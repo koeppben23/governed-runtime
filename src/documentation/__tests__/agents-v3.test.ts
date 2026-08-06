@@ -317,6 +317,21 @@ describe('repository AGENTS guidance', () => {
       expect(section).toMatch(/imports, exports, file placement,[\s\S]*layer boundaries change/);
     });
 
+    it('defines baseline verification for every change', async () => {
+      const section = await readVerificationSection();
+      expect(section).toContain('Run the narrowest test that exercises the changed behavior.');
+      expect(section).toContain('Run `npm run check:format` for every change.');
+    });
+
+    it('defines distribution, module-surface, and high-risk verification', async () => {
+      const section = await readVerificationSection();
+      expect(section).toMatch(/`npm run build` for distribution changes/);
+      expect(section).toMatch(
+        /`npm run check:unused-dependencies` for dependency or module-surface changes/,
+      );
+      expect(section).toMatch(/`npm run mutation`[\s\S]*meaningful negative-path verification/);
+    });
+
     it('requires cumulative nested verification', async () => {
       const section = await readVerificationSection();
       expect(section).toContain('additional verification from every applicable nested');
