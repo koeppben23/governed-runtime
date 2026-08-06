@@ -10,7 +10,11 @@ import type {
 import type { ReportFormatId, ProviderId } from '../state/assertion-identity.js';
 import type { AssertionReportSpec } from '../state/discovery-schemas.js';
 
-import { PARSER_BY_FORMAT } from './assertion-parsers/registry.js';
+import {
+  PARSER_BY_FORMAT,
+  FORMATS_BY_PROVIDER,
+  ASSERTION_FORMATS_BY_PROVIDER,
+} from './assertion-parsers/registry.js';
 
 const MAX_FILES_PER_PATTERN = 100;
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -41,6 +45,10 @@ function parseWithFormat(
   content: string,
   fileName: string,
 ): ParserResult {
+  const supportedFormats = FORMATS_BY_PROVIDER.get(providerId);
+  if (!supportedFormats?.has(format)) {
+    throw new Error(`Provider '${providerId}' does not support report format '${format}'`);
+  }
   const parser = PARSER_BY_FORMAT.get(format);
   if (!parser) {
     throw new Error(`unsupported assertion report format: ${format}`);
@@ -86,30 +94,19 @@ export async function completeAssertionExtraction(
 ): Promise<AssertionExtractionResult> {
   const { attemptId, spec, cwd } = prepared;
 
+  const supportedFormats = FORMATS_BY_PROVIDER.get(spec.providerId);
+  if (!supportedFormats?.has(spec.format as ReportFormatId)) {
+    return {
+      status: 'blocked',
+      attemptId,
+      reason: `Provider '${spec.providerId}' does not support report format '${spec.format}'`,
+    };
+  }
+
   try {
-    switch (spec.collection) {
-      case 'stdout':
-        return extractFromStdout(attemptId, spec.format, spec.providerId, execution.stdout);
-
-      case 'run_specific':
-        return extractFromRunSpecific(
-          attemptId,
-          spec.format,
-          spec.providerId,
-          cwd,
-          prepared.runSpecificPattern!,
-        );
-
-      case 'snapshot_diff':
-        return extractFromSnapshotDiff(
-          attemptId,
-          spec.format,
-          spec.providerId,
-          cwd,
-          spec.standardPatterns,
-          prepared.preExecutionSnapshot ?? [],
-        );
-    }
+    const raw = await extractRaw(spec, cwd, attemptId, execution, prepared);
+    const result = stripNonBindingAssertions(raw, spec);
+    return result;
   } catch (err: unknown) {
     const reason = err instanceof Error ? err.message : String(err);
     return { status: 'blocked', attemptId, reason };
@@ -117,6 +114,60 @@ export async function completeAssertionExtraction(
 }
 
 // ─── Extraction Strategies ──────────────────────────────────────────────────
+
+async function extractRaw(
+  spec: AssertionReportSpec,
+  cwd: string,
+  attemptId: string,
+  execution: ExecutionEvidence,
+  prepared: PreparedAssertionExtraction,
+): Promise<AssertionExtractionResult> {
+  switch (spec.collection) {
+    case 'stdout':
+      return extractFromStdout(attemptId, spec.format, spec.providerId, execution.stdout);
+    case 'run_specific':
+      return extractFromRunSpecific(
+        attemptId,
+        spec.format,
+        spec.providerId,
+        cwd,
+        prepared.runSpecificPattern!,
+      );
+    case 'snapshot_diff':
+      return extractFromSnapshotDiff(
+        attemptId,
+        spec.format,
+        spec.providerId,
+        cwd,
+        spec.standardPatterns,
+        prepared.preExecutionSnapshot ?? [],
+      );
+  }
+}
+
+function stripNonBindingAssertions(
+  result: AssertionExtractionResult,
+  spec: AssertionReportSpec,
+): AssertionExtractionResult {
+  if (result.status !== 'extracted') return result;
+
+  const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(spec.providerId);
+  const isBinding = bindingFormats?.has(spec.format as ReportFormatId);
+  if (isBinding) return result;
+
+  return {
+    ...result,
+    assertions: [],
+    summary: {
+      ...result.summary,
+      assertionCount: 0,
+      passedCount: 0,
+      failedCount: 0,
+      erroredCount: 0,
+      skippedCount: 0,
+    },
+  };
+}
 
 async function extractFromStdout(
   attemptId: string,

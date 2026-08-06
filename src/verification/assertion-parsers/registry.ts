@@ -80,7 +80,7 @@ const junitCodec: AssertionIdentityCodec = {
   assertionBindingFormats: new Set<ReportFormatId>(['junit_xml']),
   buildLocalId(parsed) {
     if (parsed.kind !== 'junit_xml') {
-      return `${parsed.kind}#unknown`;
+      throw new Error(`junit codec received unexpected ParsedAssertion kind: ${parsed.kind}`);
     }
     return buildJUnitLocalId(parsed.className, parsed.methodName);
   },
@@ -94,7 +94,7 @@ const vitestCodec: AssertionIdentityCodec = {
   assertionBindingFormats: new Set<ReportFormatId>(['vitest_json']),
   buildLocalId(parsed) {
     if (parsed.kind !== 'vitest_json') {
-      return 'vitest_json::unknown';
+      throw new Error(`vitest codec received unexpected ParsedAssertion kind: ${parsed.kind}`);
     }
     return buildVitestLocalId(parsed.filePath, [...parsed.ancestorTitles], parsed.title);
   },
@@ -108,7 +108,7 @@ const jestCodec: AssertionIdentityCodec = {
   assertionBindingFormats: new Set<ReportFormatId>(['jest_json']),
   buildLocalId(parsed) {
     if (parsed.kind !== 'jest_json') {
-      return 'jest_json::unknown';
+      throw new Error(`jest codec received unexpected ParsedAssertion kind: ${parsed.kind}`);
     }
     return buildJestLocalId(parsed.filePath, [...parsed.ancestorTitles], parsed.title);
   },
@@ -122,7 +122,7 @@ const goTestCodec: AssertionIdentityCodec = {
   assertionBindingFormats: new Set<ReportFormatId>(['go_test_json']),
   buildLocalId(parsed) {
     if (parsed.kind !== 'go_test_json') {
-      return 'go_test_json::unknown';
+      throw new Error(`go_test codec received unexpected ParsedAssertion kind: ${parsed.kind}`);
     }
     return buildGoLocalId(parsed.pkg, parsed.testName);
   },
@@ -136,7 +136,7 @@ const pytestCodec: AssertionIdentityCodec = {
   assertionBindingFormats: new Set<ReportFormatId>(['pytest_json']),
   buildLocalId(parsed) {
     if (parsed.kind !== 'pytest_json') {
-      return 'pytest_json::unknown';
+      throw new Error(`pytest codec received unexpected ParsedAssertion kind: ${parsed.kind}`);
     }
     return buildPytestLocalId(parsed.nodeId);
   },

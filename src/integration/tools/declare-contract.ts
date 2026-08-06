@@ -296,6 +296,35 @@ function validateDeclaredClaimContract(
  * requirement's checkId.  For assertion mode, the assertionId prefix must
  * also match the candidate's report format.
  */
+function validateAssertionGate(
+  candidate: NonNullable<SessionState['verificationCandidates']>[number],
+  requirement: NonNullable<RawClaim['counterexampleRequirement']>,
+): string | null {
+  const providerId = requirement.assertion.providerId;
+  const candidateProviderId = (candidate as { assertionReport?: { providerId?: string } })
+    .assertionReport?.providerId;
+  if (candidateProviderId !== providerId) {
+    return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+      reason: `Assertion provider '${providerId}' does not match candidate provider '${candidateProviderId}'.`,
+    });
+  }
+  const assertionFormats = ASSERTION_FORMATS_BY_PROVIDER.get(providerId);
+  if (!assertionFormats || assertionFormats.size === 0) {
+    return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+      reason: `Provider '${providerId}' does not support assertion-level counterexample binding.`,
+    });
+  }
+  const candidateFormat = (candidate as { assertionReport?: { format: string } }).assertionReport
+    ?.format;
+  if (!candidateFormat || !assertionFormats.has(candidateFormat)) {
+    const supported = [...assertionFormats].join(', ');
+    return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
+      reason: `Provider '${providerId}' requires assertion format in [${supported}] but candidate has '${candidateFormat}'.`,
+    });
+  }
+  return null;
+}
+
 function validateAssertionCapabilityGate(
   rawClaims: readonly RawClaim[],
   state: SessionState,
@@ -318,21 +347,8 @@ function validateAssertionCapabilityGate(
     }
 
     if (requirement.mode === 'assertion') {
-      const providerId = requirement.assertion.providerId;
-      const assertionFormats = ASSERTION_FORMATS_BY_PROVIDER.get(providerId);
-      if (!assertionFormats || assertionFormats.size === 0) {
-        return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-          reason: `Provider '${providerId}' does not support assertion-level counterexample binding.`,
-        });
-      }
-      const candidateFormat = (candidate as { assertionReport?: { format: string } })
-        .assertionReport?.format;
-      if (!candidateFormat || !assertionFormats.has(candidateFormat)) {
-        const supported = [...assertionFormats].join(', ');
-        return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-          reason: `Provider '${providerId}' requires assertion format in [${supported}] but candidate has '${candidateFormat}'.`,
-        });
-      }
+      const violation = validateAssertionGate(candidate, requirement);
+      if (violation) return violation;
     }
   }
   return null;

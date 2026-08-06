@@ -274,6 +274,29 @@ function addFallbackCandidates(
     });
   }
 
+  if (ids.has('testFramework:pytest') || ids.has('language:python')) {
+    addCandidate(byKind, {
+      assertionCapability: 'structured' as const,
+      kind: 'test',
+      command:
+        'python -m pytest --json-report --json-report-file=.flowguard/reports/{attemptId}/pytest.json',
+      source: ids.has('testFramework:pytest')
+        ? 'detectedStack:testFramework:pytest'
+        : 'detectedStack:language:python',
+      confidence: 'medium',
+      reason: 'pytest detected; using structured JSON assertion extraction',
+      assertionReport: {
+        collection: 'run_specific' as const,
+        transport: 'file' as const,
+        format: 'pytest_json' as const,
+        providerId: 'pytest' as const,
+        outputArgumentTemplate:
+          '--json-report --json-report-file=.flowguard/reports/{attemptId}/pytest.json',
+        resultPatternTemplate: '.flowguard/reports/{attemptId}/pytest.json',
+      },
+    });
+  }
+
   if (ids.has('qualityTool:eslint') || ids.has('tool:eslint')) {
     addCandidate(byKind, {
       assertionCapability: 'unsupported' as const,
