@@ -7,7 +7,7 @@
  * Run via: node scripts/check-agent-instructions.mjs
  */
 
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, lstatSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,10 +22,7 @@ let globalOk = true;
 
 function countLines(filePath) {
   const raw = readFileSync(join(ROOT, filePath), 'utf8');
-  return raw
-    .replace(/\r\n/g, '\n')
-    .replace(/\n$/, '')
-    .split('\n').length;
+  return raw.replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n').length;
 }
 
 function readFile(path) {
@@ -47,17 +44,17 @@ function walkDir(relativeDir, result, targetName) {
       entry === '.git' ||
       entry === '.codex' ||
       entry === 'coverage' ||
-      entry === 'tmp' ||
-      entry.startsWith('.')
+      entry === 'tmp'
     )
       continue;
     const fullPath = join(fullDir, entry);
     let st;
     try {
-      st = statSync(fullPath);
+      st = lstatSync(fullPath);
     } catch {
       continue;
     }
+    if (st.isSymbolicLink()) continue;
     if (st.isDirectory()) {
       walkDir(join(relativeDir, entry), result, targetName);
     } else if (entry === targetName) {
@@ -128,9 +125,7 @@ check('3. No host/model names in AGENTS.md', () => {
       const before = cleaned.lastIndexOf('\n', match.index);
       const line = cleaned.slice(before + 1, cleaned.indexOf('\n', match.index));
       if (line.includes('http')) continue;
-      console.error(
-        `   FAIL ${file}:${lineNumber(cleaned, match.index)}: "${match[0]}"`,
-      );
+      console.error(`   FAIL ${file}:${lineNumber(cleaned, match.index)}: "${match[0]}"`);
       ok = false;
     }
   }
