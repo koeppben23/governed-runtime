@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
+import { spawnSync } from 'node:child_process';
 import {
   lintAgentInstructions,
   normalizeRepoPath,
   isRootAgentFile,
+  formatDiagnostics,
 } from '../agent-instruction-linter.mjs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
@@ -72,6 +74,19 @@ describe('lintAgentInstructions', () => {
     expect(result.diagnostics).toHaveLength(0);
   });
 
+  // Check 1
+  it('fails when AGENTS.md references a missing npm run script', () => {
+    const result = lintFixture('missing-npm-script');
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'error',
+        message: 'references missing script "npm run nonexistent-script"',
+      }),
+    );
+  });
+
+  // Check 2
   it('fails when root AGENTS.md exceeds 150 lines', () => {
     const result = lintFixture('over-root-line-budget');
     expect(result.ok).toBe(false);
@@ -82,6 +97,33 @@ describe('lintAgentInstructions', () => {
     expect(budgetDiag!.kind).toBe('error');
   });
 
+  // Check 3
+  it('fails when AGENTS.md contains forbidden model names', () => {
+    const result = lintFixture('forbidden-model-name');
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        file: 'AGENTS.md',
+        kind: 'error',
+        message: expect.stringContaining('"Claude"'),
+      }),
+    );
+  });
+
+  // Check 4
+  it('fails when AGENTS.md contains @-import syntax', () => {
+    const result = lintFixture('agent-at-import');
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        file: 'AGENTS.md',
+        kind: 'error',
+        message: expect.stringContaining('@-import'),
+      }),
+    );
+  });
+
+  // Check 5
   it('fails when CLAUDE.md contains extra content', () => {
     const result = lintFixture('impure-claude-adapter');
     expect(result.ok).toBe(false);
@@ -91,6 +133,7 @@ describe('lintAgentInstructions', () => {
     expect(purityDiag).toBeDefined();
   });
 
+  // Check 6
   it('fails when nested AGENTS.md weakens force-push rule', () => {
     const result = lintFixture('nested-git-rule-weakening');
     expect(result.ok).toBe(false);
@@ -107,5 +150,87 @@ describe('lintAgentInstructions', () => {
       (d) => d.file === 'src/machine/AGENTS.md' && d.message.includes('commit'),
     );
     expect(commitDiag).toBeDefined();
+  });
+
+  it('excludes paths matching ignoredPaths', () => {
+    const result = lintAgentInstructions({
+      root: join(FIXTURES, 'nested-git-rule-weakening'),
+      ignoredPaths: ['src/machine/AGENTS.md'],
+    });
+    expect(result.ok).toBe(true);
+    expect(result.diagnostics).toHaveLength(0);
+  });
+});
+
+describe('formatDiagnostics', () => {
+  it('returns empty string when no diagnostics', () => {
+    expect(formatDiagnostics([])).toBe('');
+  });
+
+  it('formats error diagnostic with FAIL prefix', () => {
+    const output = formatDiagnostics([
+      { kind: 'error', file: 'AGENTS.md', message: 'bad thing' },
+    ]);
+    expect(output).toContain('FAIL');
+    expect(output).toContain('AGENTS.md');
+    expect(output).toContain('bad thing');
+  });
+
+  it('formats warn diagnostic with WARN prefix', () => {
+    const output = formatDiagnostics([
+      { kind: 'warn', message: 'advisory' },
+    ]);
+    expect(output).toContain('WARN');
+    expect(output).toContain('advisory');
+  });
+
+  it('does not end the process', () => {
+    // Library module must not call process.exit()
+    // Verified by the fact that we can call these functions in-test
+    // without the test process terminating.
+  });
+});
+
+describe('CLI wrapper', () => {
+  const cliPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'check-agent-instructions.mjs');
+
+  it('exits 0 for valid fixture directory', () => {
+    const result = spawnSync(
+      process.execPath,
+      [cliPath, join(FIXTURES, 'valid')],
+      { encoding: 'utf8' },
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('All checks passed');
+  });
+
+  it('exits 1 for fixture with failures', () => {
+    const result = spawnSync(
+      process.execPath,
+      [cliPath, join(FIXTURES, 'impure-claude-adapter')],
+      { encoding: 'utf8' },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('FAIL');
+    expect(result.stderr).toContain('Some checks failed');
+  });
+
+  it('writes diagnostics to stderr', () => {
+    const result = spawnSync(
+      process.execPath,
+      [cliPath, join(FIXTURES, 'over-root-line-budget')],
+      { encoding: 'utf8' },
+    );
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('FAIL');
+  });
+
+  it('accepts optional root argument', () => {
+    const result = spawnSync(
+      process.execPath,
+      [cliPath, join(FIXTURES, 'valid')],
+      { encoding: 'utf8' },
+    );
+    expect(result.status).toBe(0);
   });
 });

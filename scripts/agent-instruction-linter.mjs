@@ -7,14 +7,14 @@
  * semantic consistency, instruction compliance, or policy enforcement.
  *
  * Export:
- *   lintAgentInstructions({ root }) → { ok, diagnostics }
- *   normalizeRepoPath(path)        → string
- *   isRootAgentFile(path)          → boolean
+ *   lintAgentInstructions({ root, ignoredPaths? }) → { ok, diagnostics }
+ *   formatDiagnostics(result)                       → string
+ *   normalizeRepoPath(path)                         → string
+ *   isRootAgentFile(path)                           → boolean
  */
 
 import { readFileSync, readdirSync, lstatSync } from 'node:fs';
-import { join, relative, sep, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, relative, sep } from 'node:path';
 
 // ── Path helpers ──────────────────────────────────────────────────────
 
@@ -45,6 +45,16 @@ function readFile(root, path) {
   return readFileSync(join(root, path), 'utf8');
 }
 
+function isIgnored(relativePath, ignoredPaths) {
+  const normalized = normalizeRepoPath(relativePath);
+  for (const ignored of ignoredPaths) {
+    if (normalized === ignored || normalized.startsWith(`${ignored}/`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function walkDir(root, relativeDir, result, targetName) {
   const fullDir = join(root, relativeDir);
   let entries;
@@ -63,7 +73,6 @@ function walkDir(root, relativeDir, result, targetName) {
       entry === 'tmp'
     )
       continue;
-    if (entry.startsWith('__') && entry.endsWith('__')) continue;
     const fullPath = join(fullDir, entry);
     let st;
     try {
@@ -80,35 +89,48 @@ function walkDir(root, relativeDir, result, targetName) {
   }
 }
 
-function allAgentsMd(root) {
+function allAgentsMd(root, ignoredPaths) {
   const files = [];
   walkDir(root, '.', files, 'AGENTS.md');
-  return files.map((f) => repoRel(root, f));
+  return files
+    .map((f) => repoRel(root, f))
+    .filter((f) => !isIgnored(f, ignoredPaths));
 }
 
-function allClaudeMd(root) {
+function allClaudeMd(root, ignoredPaths) {
   const files = [];
   walkDir(root, '.', files, 'CLAUDE.md');
-  return files.map((f) => repoRel(root, f));
+  return files
+    .map((f) => repoRel(root, f))
+    .filter((f) => !isIgnored(f, ignoredPaths));
 }
 
-function nestedAgentsMd(root) {
-  return allAgentsMd(root).filter((f) => !isRootAgentFile(f));
+function nestedAgentsMd(root, ignoredPaths) {
+  return allAgentsMd(root, ignoredPaths).filter((f) => !isRootAgentFile(f));
 }
 
 function lineNumber(content, index) {
   return content.slice(0, index).split('\n').length;
 }
 
-// ── Main entry ────────────────────────────────────────────────────────
+// ── Default ignore set ────────────────────────────────────────────────
 
-export function lintAgentInstructions({ root }) {
+/** Paths excluded when linting the real repository root. */
+export const DEFAULT_IGNORED_PATHS = ['scripts/__tests__/fixtures'];
+
+// ── Lint entry ────────────────────────────────────────────────────────
+
+/**
+ * @param {{ root: string, ignoredPaths?: string[] }} opts
+ * @returns {{ ok: boolean, diagnostics: { file?: string, kind: 'error'|'warn', message: string }[] }}
+ */
+export function lintAgentInstructions({ root, ignoredPaths = [] }) {
   const diagnostics = [];
   const PKG = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
   const pkgScripts = new Set(Object.keys(PKG.scripts ?? {}));
 
   // Check 1: npm run scripts referenced in AGENTS.md exist in package.json
-  for (const file of allAgentsMd(root)) {
+  for (const file of allAgentsMd(root, ignoredPaths)) {
     const content = readFile(root, file);
     for (const m of content.matchAll(/`npm run ([\w:-]+)`/g)) {
       if (!pkgScripts.has(m[1])) {
@@ -133,7 +155,7 @@ export function lintAgentInstructions({ root }) {
 
   // Check 3: No host/model names in AGENTS.md
   const FORBIDDEN = /\b(Claude|Codex|DeepSeek|GPT-?\d?|Opus|Sonnet)\b/g;
-  for (const file of allAgentsMd(root)) {
+  for (const file of allAgentsMd(root, ignoredPaths)) {
     const content = readFile(root, file);
     const cleaned = content.replace(/\[.*?\]\[.*?\]/g, '');
     FORBIDDEN.lastIndex = 0;
@@ -151,7 +173,7 @@ export function lintAgentInstructions({ root }) {
   }
 
   // Check 4: No @-import syntax in AGENTS.md
-  for (const file of allAgentsMd(root)) {
+  for (const file of allAgentsMd(root, ignoredPaths)) {
     const content = readFile(root, file);
     for (const line of content.split('\n')) {
       if (/^@\S/.test(line.trim())) {
@@ -165,7 +187,7 @@ export function lintAgentInstructions({ root }) {
   }
 
   // Check 5: CLAUDE.md adapter purity
-  for (const file of allClaudeMd(root)) {
+  for (const file of allClaudeMd(root, ignoredPaths)) {
     const content = readFile(root, file).trim();
     if (content !== '@AGENTS.md') {
       diagnostics.push({
@@ -177,7 +199,7 @@ export function lintAgentInstructions({ root }) {
   }
 
   // Check 6: Nested AGENTS.md do not weaken root Git rules
-  for (const file of nestedAgentsMd(root)) {
+  for (const file of nestedAgentsMd(root, ignoredPaths)) {
     const content = readFile(root, file);
     if (/\b[Mm]ay\s+force[ -]?push\b/.test(content)) {
       diagnostics.push({
@@ -196,25 +218,19 @@ export function lintAgentInstructions({ root }) {
   }
 
   return {
-    ok: diagnostics.length === 0,
+    ok: diagnostics.every((d) => d.kind !== 'error'),
     diagnostics,
   };
 }
 
-// ── CLI entry ─────────────────────────────────────────────────────────
+// ── Formatting ────────────────────────────────────────────────────────
 
-export function runCli() {
-  const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-  const result = lintAgentInstructions({ root });
-  for (const d of result.diagnostics) {
-    const prefix = d.kind === 'error' ? 'FAIL' : 'WARN';
-    const loc = d.file ? `${d.file}: ` : '';
-    console.error(`   ${prefix} ${loc}${d.message}`);
-  }
-  if (!result.ok) {
-    console.error('\nSome checks failed.');
-    process.exit(1);
-  }
-  console.log('\nAll checks passed.');
-  process.exit(0);
+export function formatDiagnostics(diagnostics) {
+  return diagnostics
+    .map((d) => {
+      const prefix = d.kind === 'error' ? 'FAIL' : 'WARN';
+      const loc = d.file ? `${d.file}: ` : '';
+      return `   ${prefix} ${loc}${d.message}`;
+    })
+    .join('\n');
 }
