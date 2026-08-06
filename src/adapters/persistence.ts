@@ -432,8 +432,13 @@ function migrateClaimDeclarationAssertions(s: Record<string, unknown>): void {
     if (!req || typeof req !== 'object') continue;
     const r = req as Record<string, unknown>;
     if (r.mode !== 'assertion') continue;
+    if (r.assertionId !== undefined && r.assertion !== undefined) {
+      throw new PersistenceError(
+        'SCHEMA_VALIDATION_FAILED',
+        'Legacy assertion claim has both assertionId and assertion fields',
+      );
+    }
     if (r.assertionId === undefined) continue;
-    if (r.assertion !== undefined) continue;
 
     const parsed = LegacyAssertionRequirementZ.safeParse(req);
     if (!parsed.success) {
@@ -490,10 +495,25 @@ function migrateEvidenceAssertions(s: Record<string, unknown>): void {
     for (const assertion of assertions) {
       if (!assertion || typeof assertion !== 'object') continue;
       const asr = assertion as Record<string, unknown>;
+      if (asr.assertionId !== undefined && asr.assertion !== undefined) {
+        throw new PersistenceError(
+          'SCHEMA_VALIDATION_FAILED',
+          'Legacy assertion evidence has both assertionId and assertion fields',
+        );
+      }
+      if (asr.framework !== undefined && asr.providerId !== undefined) {
+        throw new PersistenceError(
+          'SCHEMA_VALIDATION_FAILED',
+          'Legacy assertion evidence has both framework and providerId fields',
+        );
+      }
+      if (asr.assertionId !== undefined && asr.framework === undefined) {
+        throw new PersistenceError(
+          'SCHEMA_VALIDATION_FAILED',
+          'Legacy assertion evidence has assertionId but missing framework field',
+        );
+      }
       if (asr.assertionId === undefined) continue;
-      if (asr.assertion !== undefined) continue;
-      if (asr.framework === undefined) continue;
-      if (asr.providerId !== undefined) continue;
 
       const parsed = LegacyStructuredAssertionEvidenceZ.safeParse(assertion);
       if (!parsed.success) {

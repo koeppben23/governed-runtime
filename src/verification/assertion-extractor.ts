@@ -14,6 +14,7 @@ import {
   PARSER_BY_FORMAT,
   FORMATS_BY_PROVIDER,
   ASSERTION_FORMATS_BY_PROVIDER,
+  ASSERTION_CODEC_BY_PROVIDER,
 } from './assertion-parsers/registry.js';
 
 const MAX_FILES_PER_PATTERN = 100;
@@ -106,7 +107,7 @@ export async function completeAssertionExtraction(
   try {
     const raw = await extractRaw(spec, cwd, attemptId, execution, prepared);
     const result = stripNonBindingAssertions(raw, spec);
-    return result;
+    return validateExtractedIdentities(result, spec);
   } catch (err: unknown) {
     const reason = err instanceof Error ? err.message : String(err);
     return { status: 'blocked', attemptId, reason };
@@ -167,6 +168,33 @@ function stripNonBindingAssertions(
       skippedCount: 0,
     },
   };
+}
+
+function validateExtractedIdentities(
+  result: AssertionExtractionResult,
+  spec: AssertionReportSpec,
+): AssertionExtractionResult {
+  if (result.status !== 'extracted' || result.assertions.length === 0) return result;
+
+  const codec = ASSERTION_CODEC_BY_PROVIDER.get(spec.providerId);
+  if (!codec) {
+    return {
+      status: 'inconclusive',
+      attemptId: result.attemptId,
+      reason: `Provider '${spec.providerId}' has no registered assertion identity codec`,
+    };
+  }
+
+  for (const assertion of result.assertions) {
+    if (!codec.validateLocalId(assertion.assertion.localId)) {
+      return {
+        status: 'inconclusive',
+        attemptId: result.attemptId,
+        reason: `Local assertion id '${assertion.assertion.localId}' failed codec validation for provider '${spec.providerId}'`,
+      };
+    }
+  }
+  return result;
 }
 
 async function extractFromStdout(

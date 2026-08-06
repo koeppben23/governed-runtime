@@ -744,6 +744,168 @@ describe('persistence', () => {
       }
     });
 
+    it('rejects legacy claim with both assertionId and assertion fields', async () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      const plan = json.plan as Record<string, unknown>;
+      plan.claimDeclarations = {
+        flow: 'plan',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000001',
+            statement: 'dual claim',
+            critical: true,
+            authoritySectionId: 's1',
+            expectedCheckId: 'test',
+            counterexampleRequirement: {
+              mode: 'assertion',
+              checkId: 'security',
+              assertionId: 'junit:Old',
+              assertion: { providerId: 'junit', localId: 'New' },
+            },
+          },
+        ],
+      };
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+
+      await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
+      try {
+        await readState(tmpDir);
+      } catch (err) {
+        expect((err as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
+        expect((err as PersistenceError).message).toContain(
+          'both assertionId and assertion fields',
+        );
+      }
+    });
+
+    it('rejects legacy evidence with both framework and providerId fields', async () => {
+      const state = makeProgressedState('IMPL_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      json.implementation = {
+        changedFiles: ['test.ts'],
+        domainFiles: ['test.ts'],
+        digest: 'impl-digest',
+        executedAt: FIXED_TIME,
+      };
+      json.validationAttempts = [
+        {
+          attemptId: '00000000-0000-4000-8000-0000000000d1',
+          scope: 'implementation',
+          implementationDigest: 'impl-digest',
+          result: {
+            checkId: 'security',
+            passed: true,
+            detail: '',
+            executedAt: FIXED_TIME,
+            kind: 'security',
+            command: 'run',
+            exitCode: 0,
+            executionMs: 5,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported',
+            assertionExtraction: {
+              status: 'extracted',
+              attemptId: '00000000-0000-4000-8000-0000000000d2',
+              format: 'junit_xml',
+              reportDigests: ['b'.repeat(64)],
+              assertions: [
+                {
+                  assertionId: 'junit:Something',
+                  framework: 'junit',
+                  providerId: 'pytest',
+                  status: 'passed',
+                  testName: 'test',
+                },
+              ],
+              summary: {
+                assertionCount: 1,
+                passedCount: 1,
+                failedCount: 0,
+                erroredCount: 0,
+                skippedCount: 0,
+                suiteInfrastructureError: false,
+              },
+            },
+          },
+        },
+      ];
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+
+      await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
+      try {
+        await readState(tmpDir);
+      } catch (err) {
+        expect((err as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
+        expect((err as PersistenceError).message).toContain('both framework and providerId fields');
+      }
+    });
+
+    it('rejects legacy evidence with assertionId but no framework', async () => {
+      const state = makeProgressedState('IMPL_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      json.implementation = {
+        changedFiles: ['test.ts'],
+        domainFiles: ['test.ts'],
+        digest: 'impl-digest',
+        executedAt: FIXED_TIME,
+      };
+      json.validationAttempts = [
+        {
+          attemptId: '00000000-0000-4000-8000-0000000000e1',
+          scope: 'implementation',
+          implementationDigest: 'impl-digest',
+          result: {
+            checkId: 'security',
+            passed: true,
+            detail: '',
+            executedAt: FIXED_TIME,
+            kind: 'security',
+            command: 'run',
+            exitCode: 0,
+            executionMs: 5,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported',
+            assertionExtraction: {
+              status: 'extracted',
+              attemptId: '00000000-0000-4000-8000-0000000000e2',
+              format: 'junit_xml',
+              reportDigests: ['b'.repeat(64)],
+              assertions: [
+                {
+                  assertionId: 'junit:Something',
+                  status: 'passed',
+                  testName: 'test',
+                },
+              ],
+              summary: {
+                assertionCount: 1,
+                passedCount: 1,
+                failedCount: 0,
+                erroredCount: 0,
+                skippedCount: 0,
+                suiteInfrastructureError: false,
+              },
+            },
+          },
+        },
+      ];
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+
+      await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
+      try {
+        await readState(tmpDir);
+      } catch (err) {
+        expect((err as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
+        expect((err as PersistenceError).message).toContain('missing framework field');
+      }
+    });
+
     it('stateExists returns true after writeState', async () => {
       expect(await stateExists(tmpDir)).toBe(false);
       await writeState(tmpDir, makeProgressedState('TICKET'));
