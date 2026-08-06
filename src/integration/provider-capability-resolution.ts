@@ -75,14 +75,16 @@ function buildCandidateMap(
   const map = new Map<ProviderId, CandidateInfo>();
   for (const c of candidates ?? []) {
     if (c.assertionCapability !== 'structured') continue;
-    const report = (c as { assertionReport?: { providerId?: ProviderId; format?: string } })
-      .assertionReport;
-    if (!report?.providerId) continue;
+    const report = c.assertionReport;
+    if (!report || !report.providerId) continue;
     const formatId = report.format;
     if (!formatId) continue;
 
     const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(report.providerId);
     const supported = bindingFormats?.has(formatId) === true;
+    // First candidate wins; later binding-capable candidate upgrades an
+    // incompatible earlier pick. If multiple binding-capable candidates
+    // exist for the same provider, the first one wins (stable input order).
     const existing = map.get(report.providerId);
 
     if (!existing || (!existing.bindingCapable && supported)) {

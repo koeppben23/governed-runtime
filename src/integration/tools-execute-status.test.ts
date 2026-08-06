@@ -439,12 +439,6 @@ describe('status', () => {
       expect(Array.isArray(result.verificationCandidates)).toBe(true);
     });
 
-    it('returns verificationCandidates array (empty by default)', async () => {
-      await hydrateSession();
-      const result = parseToolResult(await status.execute({}, ctx));
-      expect(Array.isArray(result.verificationCandidates)).toBe(true);
-    });
-
     it('returns why-blocked surface when whyBlocked flag is set', async () => {
       await hydrateSession();
       const result = parseToolResult(await status.execute({ whyBlocked: true }, ctx));

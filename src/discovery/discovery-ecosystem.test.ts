@@ -488,6 +488,19 @@ python_version = "3.12"
       expect(result.data.qualityTools.find((t) => t.id === 'mypy')).toBeDefined();
     });
 
+    it('detects go_test from go.mod via framework config rules', async () => {
+      const input = inputWithFiles(
+        { 'go.mod': 'module example.com/test\n\ngo 1.21\n' },
+        {
+          allFiles: ['go.mod', 'main.go', 'main_test.go'],
+          configFiles: ['go.mod'],
+        },
+      );
+      const result = await collectStack(input);
+      expect(result.data.languages.find((l) => l.id === 'go')).toBeDefined();
+      expect(result.data.testFrameworks.find((t) => t.id === 'go_test')).toBeDefined();
+    });
+
     it('detects Rust language, cargo build tool, edition, and toolchain version', async () => {
       const input = inputWithFiles(
         {
