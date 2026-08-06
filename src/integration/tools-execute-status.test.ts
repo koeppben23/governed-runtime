@@ -4,7 +4,6 @@
  *
  * @test-policy HAPPY, BAD, CORNER, EDGE — all four categories present.
  */
-
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import * as crypto from 'node:crypto';
 import * as fs from 'node:fs/promises';
@@ -1315,6 +1314,49 @@ describe('status-prompt-contract', () => {
 // Tool: declare_contract (ProofGraph declaration, #762)
 // =============================================================================
 
+function makeStructuredSecurityCandidate() {
+  return {
+    assertionCapability: 'structured' as const,
+    kind: 'security' as const,
+    command: 'npm run security',
+    source: 'test',
+    confidence: 'high' as const,
+    reason: 'security',
+    assertionReport: {
+      collection: 'snapshot_diff' as const,
+      transport: 'file' as const,
+      format: 'junit_xml' as const,
+      standardPatterns: ['TEST-*.xml'],
+    },
+  };
+}
+
+function makeAssertionExtraction(assertionId: string, status: 'passed' | 'failed') {
+  return {
+    status: 'extracted' as const,
+    attemptId: '00000000-0000-4000-8000-0000000000dd',
+    format: 'junit_xml' as const,
+    reportDigests: ['a'.repeat(64)],
+    assertions: [
+      {
+        assertionId,
+        framework: 'junit' as const,
+        status,
+        testName: 'verify',
+        suiteName: 'com.example.SecurityTest',
+      },
+    ],
+    summary: {
+      assertionCount: 1,
+      passedCount: status === 'passed' ? 1 : 0,
+      failedCount: status === 'failed' ? 1 : 0,
+      erroredCount: 0,
+      skippedCount: 0,
+      suiteInfrastructureError: false,
+    },
+  };
+}
+
 describe('declare_contract', () => {
   const NOW = '2026-01-01T00:00:00.000Z';
   const SHA = 'a'.repeat(64);
@@ -1377,29 +1419,10 @@ describe('declare_contract', () => {
             outputDigest: SHA,
             timedOut: false,
             outcome: 'supported' as const,
-            assertionExtraction: {
-              status: 'extracted' as const,
-              attemptId: '00000000-0000-4000-8000-0000000000dd',
-              format: 'junit_xml' as const,
-              reportDigests: ['a'.repeat(64)],
-              assertions: [
-                {
-                  assertionId: 'junit:com.example.SecurityTest#verify',
-                  framework: 'junit' as const,
-                  status: 'passed' as const,
-                  testName: 'verify',
-                  suiteName: 'com.example.SecurityTest',
-                },
-              ],
-              summary: {
-                assertionCount: 1,
-                passedCount: 1,
-                failedCount: 0,
-                erroredCount: 0,
-                skippedCount: 0,
-                suiteInfrastructureError: false,
-              },
-            },
+            assertionExtraction: makeAssertionExtraction(
+              'junit:com.example.SecurityTest#verify',
+              'passed',
+            ),
           },
         },
       ],
@@ -1412,20 +1435,7 @@ describe('declare_contract', () => {
           confidence: 'high' as const,
           reason: 'test',
         },
-        {
-          assertionCapability: 'structured' as const,
-          kind: 'security' as const,
-          command: 'npm run security',
-          source: 'test',
-          confidence: 'high' as const,
-          reason: 'security',
-          assertionReport: {
-            collection: 'snapshot_diff' as const,
-            transport: 'file' as const,
-            format: 'junit_xml' as const,
-            standardPatterns: ['TEST-*.xml'],
-          },
-        },
+        makeStructuredSecurityCandidate(),
       ],
     });
     return sessDir;
@@ -1948,20 +1958,7 @@ describe('declare_contract', () => {
           confidence: 'high' as const,
           reason: 'test',
         },
-        {
-          assertionCapability: 'structured' as const,
-          kind: 'security' as const,
-          command: 'npm run security',
-          source: 'test',
-          confidence: 'high' as const,
-          reason: 'security',
-          assertionReport: {
-            collection: 'snapshot_diff' as const,
-            transport: 'file' as const,
-            format: 'junit_xml' as const,
-            standardPatterns: ['TEST-*.xml'],
-          },
-        },
+        makeStructuredSecurityCandidate(),
       ],
       ticket: { text: 'approved ticket', digest: 'ticket-digest', source: 'user', createdAt: NOW },
       implementation: { changedFiles: ['a.ts'], domainFiles: [], digest, executedAt: NOW },
@@ -1971,29 +1968,7 @@ describe('declare_contract', () => {
           ...attempt('security', false),
           result: {
             ...attempt('security', false).result,
-            assertionExtraction: {
-              status: 'extracted' as const,
-              attemptId: '00000000-0000-4000-8000-0000000000bb',
-              format: 'junit_xml' as const,
-              reportDigests: ['a'.repeat(64)],
-              assertions: [
-                {
-                  assertionId,
-                  framework: 'junit' as const,
-                  status: 'failed' as const,
-                  testName: 'verifyNoXss',
-                  suiteName: 'com.example.SecurityTest',
-                },
-              ],
-              summary: {
-                assertionCount: 1,
-                passedCount: 0,
-                failedCount: 1,
-                erroredCount: 0,
-                skippedCount: 0,
-                suiteInfrastructureError: false,
-              },
-            },
+            assertionExtraction: makeAssertionExtraction(assertionId, 'failed'),
           },
         },
       ],
