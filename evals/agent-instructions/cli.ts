@@ -26,7 +26,7 @@
  */
 
 import { readFileSync, appendFileSync } from 'node:fs';
-import { resolve, dirname, join } from 'node:path';
+import { resolve, dirname } from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { RunnerConfigSchema } from './schema.js';
