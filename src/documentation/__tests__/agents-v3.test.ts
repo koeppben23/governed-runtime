@@ -31,6 +31,18 @@ async function readAll(): Promise<string> {
   }
 }
 
+function readVerificationSection(): Promise<string> {
+  return readAgents().then((content: string) => extractSection(content, 'Verification'));
+}
+
+function extractSection(content: string, heading: string): string {
+  const start = content.indexOf(`## ${heading}`);
+  if (start === -1) throw new Error(`Missing section: ${heading}`);
+  const rest = content.slice(start);
+  const next = rest.slice(3).search(/^## /m);
+  return next === -1 ? rest : rest.slice(0, next + 3);
+}
+
 describe('repository AGENTS guidance', () => {
   describe('local contributor contract', () => {
     it('identifies root AGENTS.md as local contributor guidance', async () => {
@@ -278,5 +290,69 @@ describe('repository AGENTS guidance', () => {
         expect(content.replace(/\r\n/g, '\n').trim()).toBe('@AGENTS.md');
       },
     );
+  });
+
+  describe('verification contract (PR B)', () => {
+    it('defines the seven-step verification selection contract', async () => {
+      const section = await readVerificationSection();
+      for (let step = 1; step <= 7; step += 1) {
+        expect(section).toMatch(new RegExp(`^${step}\\. `, 'm'));
+      }
+      expect(section).not.toMatch(/^8\. /m);
+    });
+
+    it('prescribes type checking for TypeScript changes', async () => {
+      const section = await readVerificationSection();
+      expect(section).toMatch(/Run `npm run check` for TypeScript changes\./);
+    });
+
+    it('prescribes linting for TypeScript changes', async () => {
+      const section = await readVerificationSection();
+      expect(section).toMatch(/Run `npm run lint:strict` for TypeScript changes\./);
+    });
+
+    it('prescribes architecture test for boundary changes', async () => {
+      const section = await readVerificationSection();
+      expect(section).toContain('`npm run test:architecture`');
+      expect(section).toMatch(/imports, exports, file placement,[\s\S]*layer boundaries change/);
+    });
+
+    it('defines baseline verification for every change', async () => {
+      const section = await readVerificationSection();
+      expect(section).toContain('Run the narrowest test that exercises the changed behavior.');
+      expect(section).toContain('Run `npm run check:format` for every change.');
+    });
+
+    it('defines distribution, module-surface, and high-risk verification', async () => {
+      const section = await readVerificationSection();
+      expect(section).toMatch(/`npm run build` for distribution changes/);
+      expect(section).toMatch(
+        /`npm run check:unused-dependencies` for dependency or module-surface changes/,
+      );
+      expect(section).toMatch(/`npm run mutation`[\s\S]*meaningful negative-path verification/);
+    });
+
+    it('requires cumulative nested verification', async () => {
+      const section = await readVerificationSection();
+      expect(section).toContain('additional verification from every applicable nested');
+    });
+
+    it('requires explicit evidence for unexecuted checks', async () => {
+      const section = await readVerificationSection();
+      expect(section).toMatch(/Mark every relevant check not run as `NOT_VERIFIED`/);
+    });
+
+    it('defines the completion report', async () => {
+      const section = await readVerificationSection();
+      expect(section).toMatch(/executed checks and\s+outcomes/);
+      expect(section).toMatch(/remaining assumptions or\s+blockers/);
+      expect(section).toContain('Omit empty categories');
+    });
+
+    it('implementation.md defers to root verification contract', async () => {
+      const content = await fs.readFile(IMPLEMENTATION_GUIDE, 'utf-8');
+      expect(content).toMatch(/`AGENTS\.md` is the canonical verification-selection\s+contract/);
+      expect(content).toContain('This guide does not define a separate verification matrix');
+    });
   });
 });
