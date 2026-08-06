@@ -16,6 +16,8 @@
 import { readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import {
+  normalizeRepoPath,
+  isRootAgentFile,
   checkPathReferences,
   checkClaudeAdjacency,
   checkInstructionChainBudgets,
@@ -26,18 +28,10 @@ import {
   checkDuplicateParagraphs,
 } from './agent-instruction-linter-markdown.mjs';
 
-// ── Path helpers ──────────────────────────────────────────────────────
+export { normalizeRepoPath };
+export { isRootAgentFile };
 
-export function normalizeRepoPath(filePath) {
-  return filePath
-    .replace(/^\.\//, '')
-    .replace(/^\.\\/, '')
-    .replace(/\\/g, '/');
-}
-
-export function isRootAgentFile(relativePath) {
-  return normalizeRepoPath(relativePath) === 'AGENTS.md';
-}
+// ── Helpers ───────────────────────────────────────────────────────────
 
 function repoRel(root, filePath) {
   return relative(root, join(root, filePath)).split(sep).join('/');

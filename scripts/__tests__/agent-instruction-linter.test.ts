@@ -6,6 +6,10 @@ import {
   isRootAgentFile,
   formatDiagnostics,
 } from '../agent-instruction-linter.mjs';
+import {
+  classifyInstructionChainBytes,
+  applicableAgentChain,
+} from '../agent-instruction-linter-paths.mjs';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 
@@ -285,35 +289,81 @@ describe('Check 9 — canonical Scope section', () => {
       }),
     );
   });
+
+  it('does not recognize Scope inside a fenced code block', () => {
+    const result = lintFixture('scope-in-codeblock');
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'error',
+        message: 'missing canonical Scope section',
+      }),
+    );
+  });
 });
 
 // ── Check 10: Chain budget ─────────────────────────────────────────
+
+describe('classifyInstructionChainBytes', () => {
+  it('returns null below 16 KiB', () => {
+    expect(classifyInstructionChainBytes(0)).toBeNull();
+    expect(classifyInstructionChainBytes(16383)).toBeNull();
+  });
+
+  it('returns warn at exactly 16 KiB', () => {
+    expect(classifyInstructionChainBytes(16384)).toBe('warn');
+  });
+
+  it('returns warn between 16 and 20 KiB', () => {
+    expect(classifyInstructionChainBytes(20479)).toBe('warn');
+  });
+
+  it('returns error at exactly 20 KiB', () => {
+    expect(classifyInstructionChainBytes(20480)).toBe('error');
+  });
+
+  it('returns error above 20 KiB', () => {
+    expect(classifyInstructionChainBytes(30000)).toBe('error');
+  });
+});
+
+describe('applicableAgentChain', () => {
+  it('returns only existing files in root-to-leaf order', () => {
+    const root = join(FIXTURES, 'chain-warn');
+    const chain = applicableAgentChain(root, 'src/AGENTS.md');
+    expect(chain).toEqual(['AGENTS.md', 'src/AGENTS.md']);
+  });
+});
 
 describe('Check 10 — chain byte budget', () => {
   it('warns when chain exceeds 16 KiB warning threshold', () => {
     const result = lintFixture('chain-warn');
     expect(result.ok).toBe(true);
     const warnDiag = result.diagnostics.find(
-      (d) => d.kind === 'warn' && d.message.includes('16 KiB'),
+      (d) => d.kind === 'warn' && d.check === 'instruction-chain-budget',
     );
     expect(warnDiag).toBeDefined();
+    expect(warnDiag!.details.files).toHaveLength(2);
   });
 
   it('errors when chain exceeds 20 KiB maximum', () => {
     const result = lintFixture('chain-error');
     expect(result.ok).toBe(false);
     const errDiag = result.diagnostics.find(
-      (d) => d.kind === 'error' && d.message.includes('20 KiB'),
+      (d) => d.kind === 'error' && d.check === 'instruction-chain-budget',
     );
     expect(errDiag).toBeDefined();
+    expect(errDiag!.details.files).toHaveLength(2);
   });
 
-  it('includes all ancestor files in deep chain', () => {
-    const result = lintFixture('deep-chain');
-    expect(result.ok).toBe(true);
-    // Budget is under thresholds but chain structure is correct —
-    // no error means the chain was computed correctly
-    expect(result.diagnostics.filter((d) => d.kind === 'error')).toHaveLength(0);
+  it('includes all ancestor files in deep chain structure', () => {
+    const root = join(FIXTURES, 'deep-chain');
+    const chain = applicableAgentChain(root, 'src/config/AGENTS.md');
+    expect(chain).toEqual([
+      'AGENTS.md',
+      'src/AGENTS.md',
+      'src/config/AGENTS.md',
+    ]);
   });
 });
 
@@ -322,6 +372,17 @@ describe('Check 10 — chain byte budget', () => {
 describe('Check 11 — additive verification', () => {
   it('fails when nested AGENTS.md lacks verification section', () => {
     const result = lintFixture('verify-missing');
+    expect(result.ok).toBe(false);
+    expect(result.diagnostics).toContainEqual(
+      expect.objectContaining({
+        kind: 'error',
+        message: expect.stringContaining('Additional Verification'),
+      }),
+    );
+  });
+
+  it('does not recognize Verification text inside a fenced code block', () => {
+    const result = lintFixture('verify-in-codeblock');
     expect(result.ok).toBe(false);
     expect(result.diagnostics).toContainEqual(
       expect.objectContaining({

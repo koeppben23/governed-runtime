@@ -1,17 +1,16 @@
 /**
  * agent-instruction-linter-paths.mjs
  *
- * Path reference existence, CLAUDE.md adjacency, and instruction chain
- * budget checks for repository instruction files.
+ * Path reference existence, CLAUDE.md adjacency, instruction chain
+ * budget checks, and path normalization for repository instruction files.
  */
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { normalizeRepoPath } from './agent-instruction-linter.mjs';
+import { maskFencedCodeBlocks } from './agent-instruction-linter-markdown.mjs';
 
 const PATH_PREFIXES = ['src/', 'docs/', 'scripts/', '.github/'];
 const ROOT_FILES = new Set(['package.json', 'CONTRIBUTING.md']);
-const CODE_BLOCK = /```[\s\S]*?```/g;
 const BACKTICK = /`([^`]+)`/g;
 const LINE_SUFFIX = /:\d+(:\d+)?$/;
 const GLOB_OR_PLACEHOLDER = /[*?{}<>]/;
@@ -19,6 +18,50 @@ const URL_PATTERN = /:\/\//;
 
 const CHAIN_WARN_BYTES = 16 * 1024;
 const CHAIN_MAX_BYTES = 20 * 1024;
+
+// ── Path normalization ───────────────────────────────────────────────
+
+export function normalizeRepoPath(filePath) {
+  return filePath
+    .replace(/^\.\//, '')
+    .replace(/^\.\\/, '')
+    .replace(/\\/g, '/');
+}
+
+export function isRootAgentFile(relativePath) {
+  return normalizeRepoPath(relativePath) === 'AGENTS.md';
+}
+
+// ── Chain helpers ─────────────────────────────────────────────────────
+
+export function classifyInstructionChainBytes(bytes) {
+  if (bytes >= CHAIN_MAX_BYTES) return 'error';
+  if (bytes >= CHAIN_WARN_BYTES) return 'warn';
+  return null;
+}
+
+export function applicableAgentChain(root, file) {
+  const candidates = ['AGENTS.md', ...ancestorsUpTo(file)];
+  if (file !== 'AGENTS.md') candidates.push(file);
+
+  return [...new Set(candidates)].filter((candidate) => {
+    const full = join(root, candidate);
+    try {
+      return statSync(full).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+function ancestorsUpTo(file) {
+  const parts = normalizeRepoPath(file).split('/');
+  const result = [];
+  for (let i = 1; i < parts.length; i++) {
+    result.push(parts.slice(0, i).join('/') + '/AGENTS.md');
+  }
+  return result;
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────
 
@@ -28,10 +71,6 @@ function readFile(root, path) {
 
 function fileBytes(root, path) {
   return statSync(join(root, path)).size;
-}
-
-function stripCodeBlocks(content) {
-  return content.replace(CODE_BLOCK, '');
 }
 
 function isConservativePath(ref) {
@@ -52,7 +91,7 @@ function cleanRef(ref) {
 export function checkPathReferences(root, agents, diagnostics) {
   for (const file of agents) {
     const content = readFile(root, file);
-    const body = stripCodeBlocks(content);
+    const body = maskFencedCodeBlocks(content);
     const seen = new Set();
     for (const m of body.matchAll(BACKTICK)) {
       const ref = cleanRef(m[1]);
@@ -90,39 +129,25 @@ export function checkClaudeAdjacency(root, claudes, diagnostics) {
 
 // ── Check 10: Instruction chain byte budget ───────────────────────────
 
-function ancestorsUpTo(file) {
-  const parts = normalizeRepoPath(file).split('/');
-  const result = [];
-  for (let i = 1; i < parts.length; i++) {
-    result.push(parts.slice(0, i).join('/') + '/AGENTS.md');
-  }
-  return result;
-}
-
 export function checkInstructionChainBudgets(root, nested, diagnostics) {
   for (const file of nested) {
-    const ancestorFiles = ancestorsUpTo(file);
-    const files = ['AGENTS.md', ...ancestorFiles.filter((f) => f !== file)];
-    if (file !== 'AGENTS.md') files.push(file);
+    const files = applicableAgentChain(root, file);
+    const total = files.reduce((sum, f) => sum + fileBytes(root, f), 0);
+    const classification = classifyInstructionChainBytes(total);
 
-    let total = 0;
-    for (const f of files) {
-      if (existsSync(join(root, f))) {
-        total += fileBytes(root, f);
-      }
-    }
-
-    if (total >= CHAIN_MAX_BYTES) {
+    if (classification === 'error') {
       diagnostics.push({
         file,
         kind: 'error',
+        check: 'instruction-chain-budget',
         message: `applicable instruction chain is ${(total / 1024).toFixed(1)} KiB (maximum 20 KiB)`,
         details: { bytes: total, files },
       });
-    } else if (total >= CHAIN_WARN_BYTES) {
+    } else if (classification === 'warn') {
       diagnostics.push({
         file,
         kind: 'warn',
+        check: 'instruction-chain-budget',
         message: `applicable instruction chain is ${(total / 1024).toFixed(1)} KiB (warning threshold 16 KiB)`,
         details: { bytes: total, files },
       });

@@ -8,7 +8,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-const CODE_BLOCK = /```[\s\S]*?```/g;
 const CANONICAL_SCOPE = 'This file adds instructions for files in this directory subtree.';
 const CANONICAL_VERIFICATION =
   'Apply the repository-wide verification rules first. In addition:';
@@ -22,8 +21,46 @@ function readFile(root, path) {
   return readFileSync(join(root, path), 'utf8');
 }
 
+// ── Fenced code block masking ────────────────────────────────────────
+
+const FENCE_LINE = /^(```+|~~~+)\s*$/m;
+
+/**
+ * Replaces fenced code block bodies with blank lines, preserving line
+ * counts but removing their content from structural analysis.
+ * Handles 3+ backtick fences and 3+ tilde fences.
+ */
+export function maskFencedCodeBlocks(content) {
+  const lines = content.split('\n');
+  const result = [];
+  let inFence = false;
+  let fenceMarker = '';
+
+  for (const line of lines) {
+    const m = line.match(/^(```+|~~~+)(\s|$)/);
+    if (m) {
+      const marker = m[1];
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = marker;
+        result.push(line);
+      } else if (marker.length >= fenceMarker.length && marker[0] === fenceMarker[0]) {
+        inFence = false;
+        fenceMarker = '';
+        result.push(line);
+      } else {
+        result.push(line);
+      }
+    } else {
+      result.push(inFence ? '' : line);
+    }
+  }
+
+  return result.join('\n');
+}
+
 function stripCodeBlocks(content) {
-  return content.replace(CODE_BLOCK, '');
+  return maskFencedCodeBlocks(content);
 }
 
 // ── Section extraction ────────────────────────────────────────────────
