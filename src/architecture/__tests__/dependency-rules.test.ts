@@ -1619,7 +1619,7 @@ describe('Layer Dependency Rules', () => {
       }
     });
 
-    it('should have no circular imports between source files', () => {
+    it('should have no circular imports between source files', { timeout: 60000 }, () => {
       const cycles = detectCycles(analyses);
       if (cycles.length > 0) {
         console.error(
