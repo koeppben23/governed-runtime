@@ -6,6 +6,7 @@ import {
   FlowClaimDeclarations,
   PlanClaimDeclarations,
   ProofGraphApprovalCertificate,
+  PlanApprovalCertificate,
   mintProofGraphClaimId,
   PlanClaimDeclarationInput,
   ArchitectureClaimDeclarationInput,
@@ -359,6 +360,7 @@ describe('normalizePlanClaimDeclaration', () => {
 });
 
 describe('certificate integrity with legacy claims', () => {
+  const NOW = '2026-01-01T00:00:00.000Z';
   const LEGACY_CLAIM = {
     claimId: '00000000-0000-4000-8000-000000000002',
     statement: 'legacy',
@@ -368,29 +370,53 @@ describe('certificate integrity with legacy claims', () => {
     counterexampleCheckId: 'security',
   } as const;
 
-  it('legacy claim with counterexampleCheckId passes certificate digest validation against original form', () => {
-    const declarations: PlanClaimDeclarations = {
+  function makeCertificate(digest: string) {
+    return PlanApprovalCertificate.parse({
       flow: 'plan',
-      claims: [LEGACY_CLAIM as PlanClaimDeclaration],
-    };
-    const digest = hashText(canonicalJsonStringify(declarations));
-    const plan = {
+      authorityDigest: 'plan-digest',
+      planVersion: 1,
+      planRecordDigest: 'rec-digest',
+      claimDeclarationsDigest: digest,
+      decisionAttestationDigest: 'dec-digest',
+      approvedAt: NOW,
+      approvedBy: 'test',
+      certificateId: '00000000-0000-4000-8000-000000000003',
+      reviewObligationId: null,
+      reviewEvidenceDigest: null,
+    });
+  }
+
+  function makePlan(
+    declarations: PlanClaimDeclarations,
+    certificate: PlanApprovalCertificate,
+  ): PlanClaimAuthority {
+    return {
       current: { digest: 'plan-digest', planVersion: 1, recordDigest: 'rec-digest' },
       claimDeclarations: declarations,
-      approvalCertificate: {
-        flow: 'plan' as const,
-        authorityDigest: 'plan-digest',
-        planVersion: 1,
-        planRecordDigest: 'rec-digest',
-        claimDeclarationsDigest: digest,
-        certificateId: 'cert-id',
-        decisionAttestationDigest: 'dec-digest',
-        createdAt: '2026-01-01T00:00:00.000Z',
-        actor: 'test',
-        planDigest: 'plan-digest',
-      },
+      approvalCertificate: certificate,
     };
-    expect(hasCurrentPlanApprovalCertificate(plan as unknown as PlanClaimAuthority)).toBe(true);
+  }
+
+  const legacyDeclarations: PlanClaimDeclarations = {
+    flow: 'plan',
+    claims: [LEGACY_CLAIM as PlanClaimDeclaration],
+  };
+
+  it('legacy claim with counterexampleCheckId passes certificate digest validation against original persisted form', () => {
+    const digest = hashText(canonicalJsonStringify(legacyDeclarations));
+    const plan = makePlan(legacyDeclarations, makeCertificate(digest));
+    expect(hasCurrentPlanApprovalCertificate(plan)).toBe(true);
+  });
+
+  it('certificate with digest of normalized form is REJECTED for legacy persisted claim', () => {
+    const normalizedClaim = normalizePlanClaimDeclaration(LEGACY_CLAIM as PlanClaimDeclaration);
+    const normalizedDeclarations: PlanClaimDeclarations = {
+      flow: 'plan',
+      claims: [normalizedClaim as PlanClaimDeclaration],
+    };
+    const wrongDigest = hashText(canonicalJsonStringify(normalizedDeclarations));
+    const plan = makePlan(legacyDeclarations, makeCertificate(wrongDigest));
+    expect(hasCurrentPlanApprovalCertificate(plan)).toBe(false);
   });
 
   it('normalization does not mutate the persisted claim declaration', () => {

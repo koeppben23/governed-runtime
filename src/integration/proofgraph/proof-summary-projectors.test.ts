@@ -137,6 +137,45 @@ describe('projectPlanProofObligations', () => {
     expect(result).not.toBeNull();
     expect(result!.criticalCount).toBe(0);
   });
+
+  it('legacy counterexampleCheckId and normalized mode=check produce equivalent projections', () => {
+    const legacy = {
+      flow: 'plan' as const,
+      claims: [
+        {
+          claimId: '00000000-0000-0000-0000-000000000010',
+          statement: 'legacy',
+          critical: true,
+          expectedCheckId: 'test',
+          authoritySectionId: 'sec-legacy',
+          counterexampleCheckId: 'security',
+        },
+      ],
+    } as PlanClaimDeclarations;
+
+    const normalized = {
+      flow: 'plan' as const,
+      claims: [
+        {
+          claimId: '00000000-0000-0000-0000-000000000010',
+          statement: 'legacy',
+          critical: true,
+          expectedCheckId: 'test',
+          authoritySectionId: 'sec-legacy',
+          counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
+        },
+      ],
+    } as PlanClaimDeclarations;
+
+    const legacyResult = projectPlanProofObligations(legacy);
+    const normalizedResult = projectPlanProofObligations(normalized);
+
+    expect(legacyResult?.falsificationReadyCount).toBe(normalizedResult?.falsificationReadyCount);
+    expect(legacyResult?.missingFalsificationCount).toBe(
+      normalizedResult?.missingFalsificationCount,
+    );
+    expect(legacyResult?.criticalCount).toBe(normalizedResult?.criticalCount);
+  });
 });
 
 describe('projectArchitectureDecisionClaims', () => {
