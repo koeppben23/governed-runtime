@@ -7,7 +7,42 @@ import { loadCases } from './load-cases.js';
 import { runProcess } from './runners/process-runner.js';
 import { evaluateAllAssertions, type AssertionContext } from './assertions.js';
 import { scoreCase, summarizeResults } from './score.js';
+import { redactSecrets } from './redact.js';
 import type { RunnerConfig, ExecutedEvalCase, EvalCaseResult } from './schema.js';
+
+// ── Environment resolution ──────────────────────────────────────────
+
+export interface ResolvedEnv {
+  childEnv: NodeJS.ProcessEnv;
+  redactionValues: string[];
+}
+
+export function resolveRunnerEnv(config: RunnerConfig): ResolvedEnv {
+  const redactionValues: string[] = [];
+  const childEnv: NodeJS.ProcessEnv = {
+    ...process.env,
+    ...(config.staticEnv ?? {}),
+  };
+
+  const missing: string[] = [];
+  for (const name of config.secretEnvNames ?? []) {
+    const val = process.env[name];
+    if (val === undefined) {
+      missing.push(name);
+      continue;
+    }
+    childEnv[name] = val;
+    redactionValues.push(val);
+  }
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required environment variable(s):\n${missing.map((m) => `  - ${m}`).join('\n')}`,
+    );
+  }
+
+  return { childEnv, redactionValues };
+}
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const CASES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'cases');
@@ -27,8 +62,28 @@ function makeEmptyDir(): { dir: string; cleanup: () => void } {
   };
 }
 
-export async function runEval(config: RunnerConfig): Promise<ExecutedEvalCase[]> {
-  const cases = loadCases(CASES_DIR).sort((a, b) => a.id.localeCompare(b.id));
+export async function runEval(
+  config: RunnerConfig,
+  repoRoot: string,
+  caseIds?: string[],
+): Promise<{ executed: ExecutedEvalCase[]; redactionValues: string[] }> {
+  const env = resolveRunnerEnv(config);
+
+  let cases = loadCases(CASES_DIR).sort((a, b) => a.id.localeCompare(b.id));
+
+  if (caseIds && caseIds.length > 0) {
+    const requestedIds = [...new Set(caseIds)];
+    const idSet = new Set(requestedIds);
+    const unknown = requestedIds.filter((id) => !cases.some((c) => c.id === id));
+    if (unknown.length > 0) {
+      throw new Error(`Unknown case ID(s): ${unknown.join(', ')}`);
+    }
+    cases = cases.filter((c) => idSet.has(c.id));
+    if (cases.length === 0) {
+      throw new Error('No matching cases found');
+    }
+  }
+
   const results: ExecutedEvalCase[] = [];
 
   for (const evalCase of cases) {
@@ -46,7 +101,7 @@ export async function runEval(config: RunnerConfig): Promise<ExecutedEvalCase[]>
       cleanupTemp = empty.cleanup;
     }
 
-    const outcome = await runProcess(config, fixtureRoot, evalCase.task, forceCopy);
+    const outcome = await runProcess(config, fixtureRoot, evalCase.task, forceCopy, repoRoot, env.childEnv);
 
     if (cleanupTemp) {
       cleanupTemp();
@@ -99,7 +154,7 @@ export async function runEval(config: RunnerConfig): Promise<ExecutedEvalCase[]>
     results.push({ evalCase, result, outcome });
   }
 
-  return results;
+  return { executed: results, redactionValues: env.redactionValues };
 }
 
 // ── Report persistence ────────────────────────────────────────────────
@@ -107,29 +162,37 @@ export async function runEval(config: RunnerConfig): Promise<ExecutedEvalCase[]>
 export function writeReports(
   runnerName: string,
   executed: ExecutedEvalCase[],
-  runId?: string,
+  opts?: { redactionValues?: string[]; runId?: string },
 ): string {
+  const redactionValues = opts?.redactionValues ?? [];
   const ordered = [...executed].sort((a, b) =>
     a.evalCase.id.localeCompare(b.evalCase.id),
   );
-  const id = runId ?? `run-${Date.now()}`;
+  const id = opts?.runId ?? `run-${Date.now()}`;
   const runDir = join(RESULTS_DIR, id);
   const casesDir = join(runDir, 'cases');
   mkdirSync(casesDir, { recursive: true });
 
   const caseResults = ordered.map((e) => e.result);
   const summary = summarizeResults(runnerName, caseResults);
-  writeFileSync(join(runDir, 'summary.json'), JSON.stringify(summary, null, 2));
+  const redactedSummary = redactSecrets(JSON.stringify(summary, null, 2), redactionValues);
+  writeFileSync(join(runDir, 'summary.json'), redactedSummary + '\n');
 
   for (const e of ordered) {
     const caseDir = join(casesDir, e.evalCase.id);
     mkdirSync(caseDir, { recursive: true });
 
-    writeFileSync(join(caseDir, 'prompt.txt'), e.evalCase.task + '\n');
+    writeFileSync(join(caseDir, 'prompt.txt'), redactSecrets(e.evalCase.task + '\n', redactionValues));
 
     if (e.outcome.status === 'completed' || e.outcome.status === 'runner_error') {
-      writeFileSync(join(caseDir, 'stdout.txt'), e.outcome.stdout || '');
-      writeFileSync(join(caseDir, 'stderr.txt'), e.outcome.stderr || '');
+      writeFileSync(
+        join(caseDir, 'stdout.txt'),
+        redactSecrets(e.outcome.stdout || '', redactionValues),
+      );
+      writeFileSync(
+        join(caseDir, 'stderr.txt'),
+        redactSecrets(e.outcome.stderr || '', redactionValues),
+      );
     }
 
     const outcomeSummary =
@@ -145,8 +208,14 @@ export function writeReports(
             message: e.outcome.message,
           };
 
-    writeFileSync(join(caseDir, 'outcome.json'), JSON.stringify(outcomeSummary, null, 2));
-    writeFileSync(join(caseDir, 'result.json'), JSON.stringify(e.result, null, 2));
+    writeFileSync(
+      join(caseDir, 'outcome.json'),
+      redactSecrets(JSON.stringify(outcomeSummary, null, 2), redactionValues) + '\n',
+    );
+    writeFileSync(
+      join(caseDir, 'result.json'),
+      redactSecrets(JSON.stringify(e.result, null, 2), redactionValues) + '\n',
+    );
   }
 
   const mdLines = [
@@ -160,7 +229,7 @@ export function writeReports(
     '',
     ...summary.cases.map((c) => `- **${c.caseId}**: ${c.verdict}`),
   ];
-  writeFileSync(join(runDir, 'summary.md'), mdLines.join('\n') + '\n');
+  writeFileSync(join(runDir, 'summary.md'), redactSecrets(mdLines.join('\n') + '\n', redactionValues));
 
   return runDir;
 }

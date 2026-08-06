@@ -154,6 +154,8 @@ export async function runProcess(
   fixtureRoot: string,
   prompt: string,
   forceCopy: boolean,
+  repoRoot: string,
+  childEnv: NodeJS.ProcessEnv,
 ): Promise<RunnerOutcome> {
   const ws = setupWorkspace(fixtureRoot, forceCopy);
   if ('status' in ws) return ws;
@@ -162,15 +164,27 @@ export async function runProcess(
 
   const before = snapshotWorkspace(workspaceRoot);
 
+  // Resolve args with {repoRoot} and {prompt}
+  const resolvedArgs = config.args.map((a) =>
+    a.replace('{repoRoot}', repoRoot),
+  );
+  const useStdin = config.promptTransport === 'stdin';
+  if (!useStdin) {
+    for (let i = 0; i < resolvedArgs.length; i++) {
+      resolvedArgs[i] = resolvedArgs[i].replace('{prompt}', prompt);
+    }
+  }
+
   let child: ChildProcess;
   const startMs = Date.now();
 
   return new Promise<RunnerOutcome>((resolve) => {
     try {
-      child = spawn(config.command, config.args, {
+      child = spawn(config.command, resolvedArgs, {
         cwd: workspaceRoot,
         shell: false,
         stdio: ['pipe', 'pipe', 'pipe'],
+        env: childEnv,
       });
     } catch (err) {
       cleanup();
@@ -185,7 +199,7 @@ export async function runProcess(
     }
 
     let stdout = '';
-    let stderr = '';
+    let stderrOut = '';
     let settled = false;
 
     const finish = (outcome: RunnerOutcome) => {
@@ -199,7 +213,7 @@ export async function runProcess(
       stdout += chunk.toString('utf-8');
     });
     child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf-8');
+      stderrOut += chunk.toString('utf-8');
     });
 
     const timer = setTimeout(() => {
@@ -209,7 +223,7 @@ export async function runProcess(
         errorKind: 'timeout',
         message: `Process timed out after ${config.timeoutMs}ms`,
         stdout,
-        stderr,
+        stderr: stderrOut,
       });
     }, config.timeoutMs);
 
@@ -220,7 +234,7 @@ export async function runProcess(
         errorKind: 'spawn',
         message: `Process error: ${err.message}`,
         stdout,
-        stderr,
+        stderr: stderrOut,
       });
     });
 
@@ -233,7 +247,7 @@ export async function runProcess(
           errorKind: 'signal',
           message: `Process terminated by signal ${signal}`,
           stdout,
-          stderr,
+          stderr: stderrOut,
         });
         return;
       }
@@ -247,7 +261,7 @@ export async function runProcess(
         status: 'completed',
         exitCode,
         stdout,
-        stderr,
+        stderr: stderrOut,
         durationMs,
         beforeSnapshot: before.entries,
         afterSnapshot: after.entries,
@@ -256,7 +270,10 @@ export async function runProcess(
       });
     });
 
-    // Write prompt to stdin and close it
-    child.stdin?.end(prompt);
+    if (useStdin) {
+      child.stdin?.end(prompt);
+    } else {
+      child.stdin?.end();
+    }
   });
 }

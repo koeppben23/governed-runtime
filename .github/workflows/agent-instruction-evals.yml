@@ -1,0 +1,72 @@
+name: Agent Instruction Evals
+
+on:
+  workflow_dispatch:
+    inputs:
+      case:
+        description: 'Optional exact case ID (e.g. canonical-authority)'
+        required: false
+        type: string
+      timeout_minutes:
+        description: 'Per-case timeout in minutes (1-30)'
+        required: false
+        default: '10'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-instruction-evals
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # actions/checkout v7.0.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # actions/setup-node v7.0.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate timeout input
+        run: |
+          T="${{ inputs.timeout_minutes }}"
+          case "$T" in
+            ''|*[!0-9]*) echo "timeout_minutes must be an integer"; exit 2 ;;
+          esac
+          if [ "$T" -lt 1 ] || [ "$T" -gt 30 ]; then
+            echo "timeout_minutes must be between 1 and 30"
+            exit 2
+          fi
+          echo "TIMEOUT_MS=$((T * 60000))" >> "$GITHUB_ENV"
+
+      - name: Run advisory eval smoke
+        run: |
+          ARGS=(
+            --config evals/agent-instructions/runner-configs/fake-ci.json
+            --advisory
+            --timeout-ms "$TIMEOUT_MS"
+          )
+          if [ -n "${{ inputs.case }}" ]; then
+            ARGS+=(--case "${{ inputs.case }}")
+          fi
+          npx tsx evals/agent-instructions/cli.ts "${ARGS[@]}"
+
+      - name: Upload eval artifacts
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # actions/upload-artifact v7.0.1
+        with:
+          name: agent-instruction-evals-${{ github.run_id }}
+          path: eval-results/
+          retention-days: 1
+          if-no-files-found: error
