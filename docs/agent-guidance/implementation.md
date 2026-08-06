@@ -29,10 +29,9 @@ Use this guide for implementation depth beyond `AGENTS.md`.
 
 ## Verification Expectations
 
-- `TRIVIAL`: verify only if touched content can break (links, snippets, generated docs).
-- `STANDARD`: targeted tests/checks plus lint/typecheck when practical.
-- `HIGH-RISK`: negative-path coverage plus lint, typecheck, build, and relevant integration/e2e checks.
-- Release/installer: validate exact generated artifact install path.
+The repository root `AGENTS.md` is the canonical verification-selection
+contract. Apply it together with every applicable nested instruction file.
+This guide does not define a separate verification matrix.
 
 ## Non-Interactive Execution
 
