@@ -4,6 +4,7 @@ import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { collectAssertionReports } from './assertion-report-collector.js';
+import { completeAssertionExtraction } from './assertion-extractor.js';
 import type {
   PreparedVerificationExecution,
   PreparedAssertionReportRunSpecific,
@@ -325,5 +326,34 @@ describe('collectAssertionReports', () => {
       }
       await rm(tmpDir, { recursive: true, force: true });
     });
+  });
+});
+
+describe('completeAssertionExtraction attemptId regression', () => {
+  it('preserves prepared.attemptId through collection and extraction', async () => {
+    const AID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+    const prepared: PreparedVerificationExecution = {
+      attemptId: AID,
+      kind: 'test',
+      command: 'go test -json ./...',
+      assertion: {
+        capability: 'structured',
+        report: {
+          kind: 'stdout',
+          spec: {
+            collection: 'stdout' as const,
+            transport: 'stdout' as const,
+            format: 'go_test_json' as const,
+            providerId: 'go_test' as const,
+          },
+        } satisfies PreparedAssertionReportStdout,
+      },
+    };
+    // Valid Go test JSON — will be parsed successfully
+    const evidence = makeEvidence(
+      '{"Action":"pass","Test":"TestCreate","Package":"example.com/pkg"}\n',
+    );
+    const result = await completeAssertionExtraction(prepared, evidence, '/tmp');
+    expect((result as { attemptId: string }).attemptId).toBe(AID);
   });
 });
