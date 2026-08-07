@@ -155,11 +155,23 @@ export const run_check: ToolDefinition = {
  * C. Persist result under lock with retry (revalidate fresh state under lock,
  *    merge evidence, auto-advance, atomic write)
  */
-async function executeRunCheckPhased(
+
+type PhaseAResult =
+  | string
+  | {
+      sessDir: string;
+      state: SessionState;
+      guard: { checkId: string; candidate: VerificationCandidate };
+      subject: ReturnType<typeof freezeValidationSubject>;
+      preAttestation: ExecutionSubjectAttestation;
+      worktree: string;
+      subjectInputs: readonly ExecutionSubjectInput[];
+    };
+
+async function validateAndAttest(
   kind: VerificationCandidateKind,
   context: ToolContext,
-): Promise<ToolResult> {
-  // ── Phase A: Validate request (read-only, no lock) ──
+): Promise<PhaseAResult> {
   const { sessDir, state } = await withReadOnlySession(context);
   if (!state) {
     throw Object.assign(new Error('No FlowGuard session found — run /hydrate first.'), {
@@ -171,22 +183,42 @@ async function executeRunCheckPhased(
   if (typeof guard === 'string') return guard;
   const subject = freezeValidationSubject(state);
 
-  // ── Pre-execution attestation ──
   const worktree = getWorktree(context);
-  const subjectInputs = guard.candidate.executionSubjectInputs ?? [];
-  const preAttestation = await attestExecutionSubject(
+  const subjectInputs = state.executionSubjectInputsByKind?.[kind] ?? [];
+  const result = await attestExecutionSubject(
     subjectInputs,
     worktree,
     subject.scope === 'implementation' ? subject.implementationDigest : subject.planDigest,
     subject.scope === 'implementation' ? (state.implementation?.changedFiles ?? []) : [],
   );
-  if (preAttestation.kind === 'subject_changed') {
+  if (result.kind === 'subject_changed') {
     return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
-      component: preAttestation.component,
+      component: result.component,
       phase: 'pre_execution',
-      detail: preAttestation.detail,
+      detail: result.detail,
     });
   }
+
+  return {
+    sessDir,
+    state,
+    guard,
+    subject,
+    preAttestation: result.attestation,
+    worktree,
+    subjectInputs,
+  };
+}
+
+async function executeRunCheckPhased(
+  kind: VerificationCandidateKind,
+  context: ToolContext,
+): Promise<ToolResult> {
+  // ── Phase A: Validate + attest (read-only, no lock) ──
+  const phaseA = await validateAndAttest(kind, context);
+  if (typeof phaseA === 'string') return phaseA;
+
+  const { sessDir, state, guard, subject, preAttestation, worktree, subjectInputs } = phaseA;
 
   // ── Phase B: Execute check (NO lock — subprocess runs independently) ──
   const attemptId = randomUUID();
@@ -220,7 +252,11 @@ async function executeRunCheckPhased(
     subject,
     subjectInputs,
     worktree,
-    preAttestation: preAttestation.attestation,
+    preAttestation,
+    implementationDigest:
+      subject.scope === 'implementation' ? subject.implementationDigest : subject.planDigest,
+    changedFiles:
+      subject.scope === 'implementation' ? (state.implementation?.changedFiles ?? []) : [],
     outcome,
     sessDir,
     sessionId: context.sessionID,
@@ -236,6 +272,8 @@ async function persistAfterAttestation(params: {
   subjectInputs: readonly ExecutionSubjectInput[];
   worktree: string;
   preAttestation: ExecutionSubjectAttestation;
+  implementationDigest: string;
+  changedFiles: readonly string[];
   outcome: ValidationOutcome;
   sessDir: string;
   sessionId: string;
@@ -244,6 +282,8 @@ async function persistAfterAttestation(params: {
     params.subjectInputs,
     params.worktree,
     params.preAttestation,
+    params.implementationDigest,
+    params.changedFiles,
   );
   if (postAttestation.kind === 'subject_changed') {
     return persistCheckResultWithRetry({

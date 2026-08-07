@@ -36,7 +36,10 @@ export async function resolveRuntimeProviderCapabilities(
     state.detectedStack ?? undefined,
     state.verificationCandidates,
     await resolveRuntimeReadiness(
-      state.verificationCandidates?.map((c) => ({ candidate: c })) ?? [],
+      state.verificationCandidates?.map((c) => ({
+        candidate: c,
+        executionSubjectInputs: state.executionSubjectInputsByKind?.[c.kind] ?? [],
+      })) ?? [],
       runner,
       cwd,
     ),

@@ -117,7 +117,6 @@ export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapabi
     source: z.string().min(1),
     confidence: VerificationCandidateConfidenceSchema,
     reason: z.string().min(1),
-    executionSubjectInputs: z.array(ExecutionSubjectInputSchema).optional(),
   }),
   z.object({
     assertionCapability: z.literal('structured'),
@@ -127,7 +126,6 @@ export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapabi
     confidence: VerificationCandidateConfidenceSchema,
     reason: z.string().min(1),
     assertionReport: AssertionReportSpec,
-    executionSubjectInputs: z.array(ExecutionSubjectInputSchema).optional(),
   }),
 ]);
 export type VerificationCandidate = z.infer<typeof VerificationCandidateSchema>;

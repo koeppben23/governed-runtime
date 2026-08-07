@@ -14,6 +14,7 @@
  */
 
 import type { DetectedStack, VerificationCandidate, VerificationCandidateKind } from './types.js';
+import type { ExecutionSubjectInput } from '../state/discovery-schemas.js';
 import {
   ASSERTION_PROFILES,
   REPORT_TEMPLATES_BY_PROVIDER,
@@ -93,6 +94,22 @@ export function stripToCandidates(
   return planned.map((p) => p.candidate);
 }
 
+/**
+ * Extract execution subject inputs from planned candidates, keyed by kind,
+ * for persistence alongside the provider-neutral VerificationCandidate list.
+ */
+export function extractExecutionSubjectInputs(
+  planned: readonly PlannedVerificationCandidate[],
+): Record<string, ExecutionSubjectInput[]> {
+  const map: Record<string, ExecutionSubjectInput[]> = {};
+  for (const p of planned) {
+    if (p.executionSubjectInputs.length > 0) {
+      map[p.candidate.kind] = [...p.executionSubjectInputs];
+    }
+  }
+  return map;
+}
+
 function applyProfiles(
   byKind: Map<VerificationCandidateKind, PlannedVerificationCandidate>,
   ctx: PlannerContext,
@@ -108,13 +125,9 @@ function applyProfiles(
     const raw = profile.createCandidate(ctx);
     if (raw) {
       byKind.set(raw.kind, {
-        candidate: {
-          ...raw,
-          executionSubjectInputs: raw.executionSubjectInputs ?? [
-            { kind: 'implementation' as const },
-          ],
-        },
+        candidate: raw,
         executionProfileId: profile.profileId,
+        executionSubjectInputs: [{ kind: 'implementation' as const }],
       });
     }
   }
@@ -208,11 +221,11 @@ function addScriptCandidates(
             confidence: 'high',
             reason: `Repo-native ${mapping.script} script enriched: ${analysis.provider.evidence} (provider: ${analysis.provider.providerId})`,
             assertionReport: reportTemplate,
-            executionSubjectInputs: [
-              { kind: 'implementation' as const },
-              { kind: 'file' as const, path: 'package.json' },
-            ],
           },
+          executionSubjectInputs: [
+            { kind: 'implementation' as const },
+            { kind: 'file' as const, path: 'package.json' },
+          ],
         });
         continue;
       }
@@ -235,11 +248,11 @@ function addScriptCandidates(
         source: `package.json:scripts.${mapping.script}`,
         confidence: 'high',
         reason,
-        executionSubjectInputs: [
-          { kind: 'implementation' as const },
-          { kind: 'file' as const, path: 'package.json' },
-        ],
       },
+      executionSubjectInputs: [
+        { kind: 'implementation' as const },
+        { kind: 'file' as const, path: 'package.json' },
+      ],
     });
   }
 }
@@ -269,6 +282,7 @@ function addNonAssertionFallbacks(
         confidence: 'medium',
         reason: 'Maven build tool detected without wrapper evidence',
       },
+      executionSubjectInputs: [{ kind: 'implementation' as const }],
     });
   }
 
@@ -284,6 +298,7 @@ function addNonAssertionFallbacks(
         confidence: 'medium',
         reason: 'Gradle build tool detected without wrapper evidence',
       },
+      executionSubjectInputs: [{ kind: 'implementation' as const }],
     });
   }
 
@@ -299,6 +314,7 @@ function addNonAssertionFallbacks(
         confidence: 'medium',
         reason: `ESLint detected and no repo-native lint script found; using ${packageManager} fallback`,
       },
+      executionSubjectInputs: [{ kind: 'implementation' as const }],
     });
   }
 
@@ -314,6 +330,7 @@ function addNonAssertionFallbacks(
         confidence: 'low',
         reason: `TypeScript detected and no repo-native typecheck script found; using ${packageManager} fallback`,
       },
+      executionSubjectInputs: [{ kind: 'implementation' as const }],
     });
   }
 }

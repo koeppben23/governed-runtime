@@ -57,7 +57,7 @@ describe('runtime readiness via status projection', () => {
     ];
 
     const results = await resolveRuntimeReadiness(
-      candidates.map((c) => ({ candidate: c })),
+      candidates.map((c) => ({ candidate: c, executionSubjectInputs: [] })),
       runner,
       '/tmp',
     );
@@ -93,7 +93,7 @@ describe('runtime readiness via status projection', () => {
     ];
 
     const results = await resolveRuntimeReadiness(
-      candidates.map((c) => ({ candidate: c })),
+      candidates.map((c) => ({ candidate: c, executionSubjectInputs: [] })),
       runner,
       '/tmp',
     );
@@ -128,7 +128,7 @@ describe('runtime readiness via status projection', () => {
     ];
 
     const results = await resolveRuntimeReadiness(
-      candidates.map((c) => ({ candidate: c })),
+      candidates.map((c) => ({ candidate: c, executionSubjectInputs: [] })),
       runner,
       '/tmp',
     );
@@ -161,7 +161,11 @@ describe('runtime readiness via status projection', () => {
     ];
 
     const results = await resolveRuntimeReadiness(
-      candidates.map((c) => ({ candidate: c, executionProfileId: 'junit-maven-wrapper' })),
+      candidates.map((c) => ({
+        candidate: c,
+        executionProfileId: 'junit-maven-wrapper',
+        executionSubjectInputs: [],
+      })),
       runner,
       '/tmp',
     );
@@ -196,7 +200,11 @@ describe('runtime readiness via status projection', () => {
     ];
 
     const results = await resolveRuntimeReadiness(
-      candidates.map((c) => ({ candidate: c, executionProfileId: 'junit-gradle-wrapper' })),
+      candidates.map((c) => ({
+        candidate: c,
+        executionProfileId: 'junit-gradle-wrapper',
+        executionSubjectInputs: [],
+      })),
       runner,
       '/tmp',
     );

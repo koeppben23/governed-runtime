@@ -106,9 +106,25 @@ export async function reattestExecutionSubject(
   inputs: readonly ExecutionSubjectInput[],
   worktree: string,
   preAttestation: ExecutionSubjectAttestation,
+  implementationDigest: string,
+  changedFiles: readonly string[],
 ): Promise<AttestationResult> {
   for (const input of inputs) {
-    if (input.kind === 'file') {
+    if (input.kind === 'implementation') {
+      if (changedFiles.length === 0) continue;
+      const sortedFiles = [...changedFiles].sort();
+      const hashes = await hashWorktreeFiles(worktree, sortedFiles);
+      const digest = hashText(sortedFiles.map((f) => `${f}:${hashes[f] ?? 'deleted'}`).join('\n'));
+      const expected = preAttestation.surfaceDigests.get('implementation');
+      if (expected !== undefined && digest !== expected) {
+        return {
+          kind: 'subject_changed',
+          component: 'implementation',
+          phase: 'post_execution',
+          detail: `implementation digest changed during execution: expected ${expected.slice(0, 8)}..., computed ${digest.slice(0, 8)}...`,
+        };
+      }
+    } else if (input.kind === 'file') {
       try {
         const content = readFileSync(join(worktree, input.path), 'utf-8');
         const digest = hashText(content);
