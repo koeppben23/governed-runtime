@@ -24,6 +24,7 @@ import {
 import { buildScriptInvocation, type PackageManager } from './package-script-command.js';
 import { analyzeVerificationScript } from './verification-script-analysis.js';
 import type { ProviderId } from '../state/assertion-identity.js';
+import type { PlannedVerificationCandidate } from './verification-candidate-planned.js';
 
 type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 
@@ -54,8 +55,8 @@ const BUILD_TOOL_PM_ORDER: readonly PackageManager[] = ['pnpm', 'yarn', 'bun', '
  */
 export async function planVerificationCandidates(
   input: VerificationPlannerInput,
-): Promise<VerificationCandidate[]> {
-  const byKind = new Map<VerificationCandidateKind, VerificationCandidate>();
+): Promise<PlannedVerificationCandidate[]> {
+  const byKind = new Map<VerificationCandidateKind, PlannedVerificationCandidate>();
   const rootFiles = new Set(input.allFiles.filter((f) => !f.includes('/') && !f.includes('\\')));
   const packageManager = detectPackageManager(input.detectedStack, rootFiles);
   const detectedStackIds = new Set(
@@ -76,16 +77,27 @@ export async function planVerificationCandidates(
   addNonAssertionFallbacks(byKind, detectedStackIds, packageManager);
 
   return [...byKind.values()].sort((a, b) => {
-    const orderDiff = KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
+    const orderDiff = KIND_ORDER[a.candidate.kind] - KIND_ORDER[b.candidate.kind];
     if (orderDiff !== 0) return orderDiff;
-    return a.command.localeCompare(b.command);
+    return a.candidate.command.localeCompare(b.candidate.command);
   });
 }
 
+/**
+ * Strip executionProfileId from planned candidates to produce the
+ * provider-neutral VerificationCandidate[] for state persistence.
+ */
+export function stripToCandidates(
+  planned: readonly PlannedVerificationCandidate[],
+): VerificationCandidate[] {
+  return planned.map((p) => p.candidate);
+}
+
 function applyProfiles(
-  byKind: Map<VerificationCandidateKind, VerificationCandidate>,
+  byKind: Map<VerificationCandidateKind, PlannedVerificationCandidate>,
   ctx: PlannerContext,
   profiles: ReadonlyArray<{
+    readonly profileId?: string;
     readonly kind: VerificationCandidateKind;
     createCandidate(ctx: PlannerContext): VerificationCandidate | null;
   }>,
@@ -93,9 +105,12 @@ function applyProfiles(
   for (const profile of profiles) {
     if (byKind.has(profile.kind)) continue;
 
-    const candidate = profile.createCandidate(ctx);
-    if (candidate) {
-      byKind.set(candidate.kind, candidate);
+    const raw = profile.createCandidate(ctx);
+    if (raw) {
+      byKind.set(raw.kind, {
+        candidate: raw,
+        executionProfileId: profile.profileId,
+      });
     }
   }
 }
@@ -143,7 +158,7 @@ async function readPackageScripts(readFile: ReadFileFn): Promise<Record<string, 
 }
 
 function addScriptCandidates(
-  byKind: Map<VerificationCandidateKind, VerificationCandidate>,
+  byKind: Map<VerificationCandidateKind, PlannedVerificationCandidate>,
   scripts: Record<string, string>,
   packageManager: PackageManager,
 ): void {
@@ -180,13 +195,15 @@ function addScriptCandidates(
 
       if (reportTemplate) {
         byKind.set(mapping.kind, {
-          assertionCapability: 'structured' as const,
-          kind: mapping.kind,
-          command: buildScriptInvocation(packageManager, mapping.script).command,
-          source: `package.json:scripts.${mapping.script}`,
-          confidence: 'high',
-          reason: `Repo-native ${mapping.script} script enriched: ${analysis.provider.evidence} (provider: ${analysis.provider.providerId})`,
-          assertionReport: reportTemplate,
+          candidate: {
+            assertionCapability: 'structured' as const,
+            kind: mapping.kind,
+            command: buildScriptInvocation(packageManager, mapping.script).command,
+            source: `package.json:scripts.${mapping.script}`,
+            confidence: 'high',
+            reason: `Repo-native ${mapping.script} script enriched: ${analysis.provider.evidence} (provider: ${analysis.provider.providerId})`,
+            assertionReport: reportTemplate,
+          },
         });
         continue;
       }
@@ -202,12 +219,14 @@ function addScriptCandidates(
     }
 
     byKind.set(mapping.kind, {
-      assertionCapability: 'unsupported' as const,
-      kind: mapping.kind,
-      command: buildScriptInvocation(packageManager, mapping.script).command,
-      source: `package.json:scripts.${mapping.script}`,
-      confidence: 'high',
-      reason,
+      candidate: {
+        assertionCapability: 'unsupported' as const,
+        kind: mapping.kind,
+        command: buildScriptInvocation(packageManager, mapping.script).command,
+        source: `package.json:scripts.${mapping.script}`,
+        confidence: 'high',
+        reason,
+      },
     });
   }
 }
@@ -223,57 +242,65 @@ function buildSignatureMap(): ReadonlyMap<ProviderId, readonly ScriptSignature[]
 }
 
 function addNonAssertionFallbacks(
-  byKind: Map<VerificationCandidateKind, VerificationCandidate>,
+  byKind: Map<VerificationCandidateKind, PlannedVerificationCandidate>,
   ids: ReadonlySet<string>,
   packageManager: PackageManager,
 ): void {
   if (ids.has('buildTool:maven') && !byKind.has('build')) {
     byKind.set('build', {
-      assertionCapability: 'unsupported' as const,
-      kind: 'build',
-      command: 'mvn verify',
-      source: 'detectedStack:buildTool:maven',
-      confidence: 'medium',
-      reason: 'Maven build tool detected without wrapper evidence',
+      candidate: {
+        assertionCapability: 'unsupported' as const,
+        kind: 'build',
+        command: 'mvn verify',
+        source: 'detectedStack:buildTool:maven',
+        confidence: 'medium',
+        reason: 'Maven build tool detected without wrapper evidence',
+      },
     });
   }
 
   if ((ids.has('buildTool:gradle') || ids.has('buildTool:gradle-kotlin')) && !byKind.has('test')) {
     byKind.set('test', {
-      assertionCapability: 'unsupported' as const,
-      kind: 'test',
-      command: 'gradle check',
-      source: ids.has('buildTool:gradle')
-        ? 'detectedStack:buildTool:gradle'
-        : 'detectedStack:buildTool:gradle-kotlin',
-      confidence: 'medium',
-      reason: 'Gradle build tool detected without wrapper evidence',
+      candidate: {
+        assertionCapability: 'unsupported' as const,
+        kind: 'test',
+        command: 'gradle check',
+        source: ids.has('buildTool:gradle')
+          ? 'detectedStack:buildTool:gradle'
+          : 'detectedStack:buildTool:gradle-kotlin',
+        confidence: 'medium',
+        reason: 'Gradle build tool detected without wrapper evidence',
+      },
     });
   }
 
   if ((ids.has('qualityTool:eslint') || ids.has('tool:eslint')) && !byKind.has('lint')) {
     byKind.set('lint', {
-      assertionCapability: 'unsupported' as const,
-      kind: 'lint',
-      command: fallbackCommand(packageManager, 'eslint .'),
-      source: ids.has('qualityTool:eslint')
-        ? 'detectedStack:qualityTool:eslint'
-        : 'detectedStack:tool:eslint',
-      confidence: 'medium',
-      reason: `ESLint detected and no repo-native lint script found; using ${packageManager} fallback`,
+      candidate: {
+        assertionCapability: 'unsupported' as const,
+        kind: 'lint',
+        command: fallbackCommand(packageManager, 'eslint .'),
+        source: ids.has('qualityTool:eslint')
+          ? 'detectedStack:qualityTool:eslint'
+          : 'detectedStack:tool:eslint',
+        confidence: 'medium',
+        reason: `ESLint detected and no repo-native lint script found; using ${packageManager} fallback`,
+      },
     });
   }
 
   if ((ids.has('language:typescript') || ids.has('tool:typescript')) && !byKind.has('typecheck')) {
     byKind.set('typecheck', {
-      assertionCapability: 'unsupported' as const,
-      kind: 'typecheck',
-      command: fallbackCommand(packageManager, 'tsc --noEmit'),
-      source: ids.has('language:typescript')
-        ? 'detectedStack:language:typescript'
-        : 'detectedStack:tool:typescript',
-      confidence: 'low',
-      reason: `TypeScript detected and no repo-native typecheck script found; using ${packageManager} fallback`,
+      candidate: {
+        assertionCapability: 'unsupported' as const,
+        kind: 'typecheck',
+        command: fallbackCommand(packageManager, 'tsc --noEmit'),
+        source: ids.has('language:typescript')
+          ? 'detectedStack:language:typescript'
+          : 'detectedStack:tool:typescript',
+        confidence: 'low',
+        reason: `TypeScript detected and no repo-native typecheck script found; using ${packageManager} fallback`,
+      },
     });
   }
 }

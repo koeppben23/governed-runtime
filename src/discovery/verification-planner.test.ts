@@ -37,10 +37,10 @@ describe('verification planner', () => {
         }),
       });
 
-      const buildCandidate = candidates.find((c) => c.kind === 'build');
-      expect(buildCandidate?.command).toBe('./mvnw verify');
-      expect(buildCandidate?.assertionCapability).toBe('structured');
-      expect(candidates.find((c) => c.kind === 'test')).toBeTruthy();
+      const buildCandidate = candidates.find((c) => c.candidate.kind === 'build');
+      expect(buildCandidate?.candidate.command).toBe('./mvnw verify');
+      expect(buildCandidate?.candidate.assertionCapability).toBe('structured');
+      expect(candidates.find((c) => c.candidate.kind === 'test')).toBeTruthy();
     });
 
     it('repo-native test script wins over vitest fallback', async () => {
@@ -63,12 +63,14 @@ describe('verification planner', () => {
         }),
       });
 
-      const testCandidate = candidates.find((c) => c.kind === 'test');
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
       // Script enrichment: vitest is recognized and the candidate gets structured
-      expect(testCandidate?.assertionCapability).toBe('structured');
-      expect(testCandidate?.command).toBe('pnpm test');
-      expect(testCandidate?.source).toBe('package.json:scripts.test');
-      expect(candidates.find((c) => c.kind === 'test')?.confidence).toBe('high');
+      expect(testCandidate?.candidate.assertionCapability).toBe('structured');
+      expect(testCandidate?.candidate.command).toBe('pnpm test');
+      expect(testCandidate?.candidate.source).toBe('package.json:scripts.test');
+      expect(candidates.find((c) => c.candidate.kind === 'test')?.candidate.confidence).toBe(
+        'high',
+      );
     });
 
     it('uses vitest fallback when no test script exists', async () => {
@@ -85,11 +87,11 @@ describe('verification planner', () => {
         }),
       });
 
-      const testCandidate = candidates.find((c) => c.kind === 'test');
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
       expect(testCandidate).toBeDefined();
-      expect(testCandidate?.command).toBe('pnpm vitest run');
-      expect(testCandidate?.source).toBe('detectedStack:testFramework:vitest');
-      expect(testCandidate?.confidence).toBe('medium');
+      expect(testCandidate?.candidate.command).toBe('pnpm vitest run');
+      expect(testCandidate?.candidate.source).toBe('detectedStack:testFramework:vitest');
+      expect(testCandidate?.candidate.confidence).toBe('medium');
     });
 
     it('prefers Maven wrapper over global Maven', async () => {
@@ -103,9 +105,9 @@ describe('verification planner', () => {
         readFile: makeReadFile({}),
       });
 
-      const buildCandidate = candidates.find((c) => c.kind === 'build');
-      expect(buildCandidate?.command).toBe('./mvnw verify');
-      expect(candidates.map((c) => c.command)).not.toContain('mvn verify');
+      const buildCandidate = candidates.find((c) => c.candidate.kind === 'build');
+      expect(buildCandidate?.candidate.command).toBe('./mvnw verify');
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('mvn verify');
     });
 
     it('uses Windows Maven wrapper command when only mvnw.cmd exists', async () => {
@@ -119,9 +121,9 @@ describe('verification planner', () => {
         readFile: makeReadFile({}),
       });
 
-      const buildCandidate = candidates.find((c) => c.kind === 'build');
-      expect(buildCandidate?.command).toBe('mvnw.cmd verify');
-      expect(candidates.map((c) => c.command)).not.toContain('mvn verify');
+      const buildCandidate = candidates.find((c) => c.candidate.kind === 'build');
+      expect(buildCandidate?.candidate.command).toBe('mvnw.cmd verify');
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('mvn verify');
     });
 
     it('prefers Gradle wrapper over global Gradle', async () => {
@@ -135,9 +137,9 @@ describe('verification planner', () => {
         readFile: makeReadFile({}),
       });
 
-      const testCandidate = candidates.find((c) => c.kind === 'test');
-      expect(testCandidate?.command).toBe('./gradlew check');
-      expect(candidates.map((c) => c.command)).not.toContain('gradle check');
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.command).toBe('./gradlew check');
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('gradle check');
     });
 
     it('uses Windows Gradle wrapper command when only gradlew.bat exists', async () => {
@@ -151,9 +153,9 @@ describe('verification planner', () => {
         readFile: makeReadFile({}),
       });
 
-      const testCandidate = candidates.find((c) => c.kind === 'test');
-      expect(testCandidate?.command).toBe('gradlew.bat check');
-      expect(candidates.map((c) => c.command)).not.toContain('gradle check');
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.command).toBe('gradlew.bat check');
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('gradle check');
     });
 
     it('recognizes jest as structured via script enrichment', async () => {
@@ -171,12 +173,12 @@ describe('verification planner', () => {
         }),
       });
 
-      const testCandidate = candidates.find((c) => c.kind === 'test');
-      expect(testCandidate?.assertionCapability).toBe('structured');
-      expect(testCandidate?.command).toBe('npm run test --');
-      expect(testCandidate?.source).toBe('package.json:scripts.test');
-      if (testCandidate?.assertionCapability === 'structured') {
-        expect(testCandidate.assertionReport.format).toBe('jest_json');
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.assertionCapability).toBe('structured');
+      expect(testCandidate?.candidate.command).toBe('npm run test --');
+      expect(testCandidate?.candidate.source).toBe('package.json:scripts.test');
+      if (testCandidate?.candidate.assertionCapability === 'structured') {
+        expect(testCandidate.candidate.assertionReport.format).toBe('jest_json');
       }
     });
 
@@ -191,8 +193,8 @@ describe('verification planner', () => {
         }),
       });
 
-      const testCandidate = candidates.find((c) => c.kind === 'test');
-      expect(testCandidate?.assertionCapability).toBe('unsupported');
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.assertionCapability).toBe('unsupported');
     });
 
     it('existing reporter config is not enrichable', async () => {
@@ -206,8 +208,8 @@ describe('verification planner', () => {
         }),
       });
 
-      const testCandidate = candidates.find((c) => c.kind === 'test');
-      expect(testCandidate?.assertionCapability).toBe('unsupported');
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.assertionCapability).toBe('unsupported');
     });
 
     it('unrecognized script remains unsupported', async () => {
@@ -221,8 +223,8 @@ describe('verification planner', () => {
         }),
       });
 
-      const testCandidate = candidates.find((c) => c.kind === 'test');
-      expect(testCandidate?.assertionCapability).toBe('unsupported');
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.assertionCapability).toBe('unsupported');
     });
   });
 
@@ -239,8 +241,10 @@ describe('verification planner', () => {
         readFile: makeReadFile({ 'package.json': '{invalid-json' }),
       });
 
-      expect(candidates.find((c) => c.kind === 'lint')?.command).toBe('pnpm eslint .');
-      expect(candidates.find((c) => c.kind === 'lint')?.source).toBe(
+      expect(candidates.find((c) => c.candidate.kind === 'lint')?.candidate.command).toBe(
+        'pnpm eslint .',
+      );
+      expect(candidates.find((c) => c.candidate.kind === 'lint')?.candidate.source).toBe(
         'detectedStack:qualityTool:eslint',
       );
     });
@@ -271,8 +275,8 @@ describe('verification planner', () => {
         readFile: makeReadFile({}),
       });
 
-      expect(candidates.map((c) => c.kind)).toEqual(['test', 'lint', 'typecheck']);
-      expect(candidates.map((c) => c.command)).toEqual([
+      expect(candidates.map((c) => c.candidate.kind)).toEqual(['test', 'lint', 'typecheck']);
+      expect(candidates.map((c) => c.candidate.command)).toEqual([
         'pnpm vitest run',
         'pnpm eslint .',
         'pnpm tsc --noEmit',
@@ -295,7 +299,9 @@ describe('verification planner', () => {
         }),
       });
 
-      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('pnpm jest');
+      expect(candidates.find((c) => c.candidate.kind === 'test')?.candidate.command).toBe(
+        'pnpm jest',
+      );
     });
 
     it('ignores npm placeholder test script and continues with fallback', async () => {
@@ -316,8 +322,10 @@ describe('verification planner', () => {
         }),
       });
 
-      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('npx vitest run');
-      expect(candidates.map((c) => c.command)).not.toContain('npm run test');
+      expect(candidates.find((c) => c.candidate.kind === 'test')?.candidate.command).toBe(
+        'npx vitest run',
+      );
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('npm run test');
     });
 
     it('ignores single-quote placeholder test script and continues with fallback', async () => {
@@ -338,8 +346,10 @@ describe('verification planner', () => {
         }),
       });
 
-      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('npx jest');
-      expect(candidates.map((c) => c.command)).not.toContain('npm run test');
+      expect(candidates.find((c) => c.candidate.kind === 'test')?.candidate.command).toBe(
+        'npx jest',
+      );
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('npm run test');
     });
 
     it('ignores placeholder lint and build scripts', async () => {
@@ -356,8 +366,8 @@ describe('verification planner', () => {
         }),
       });
 
-      expect(candidates.map((c) => c.kind)).not.toContain('lint');
-      expect(candidates.map((c) => c.kind)).not.toContain('build');
+      expect(candidates.map((c) => c.candidate.kind)).not.toContain('lint');
+      expect(candidates.map((c) => c.candidate.kind)).not.toContain('build');
       expect(candidates).toEqual([]);
     });
 
@@ -379,8 +389,10 @@ describe('verification planner', () => {
         }),
       });
 
-      expect(candidates.find((c) => c.kind === 'lint')?.command).toBe('pnpm lint');
-      expect(candidates.map((c) => c.command)).not.toContain('pnpm eslint .');
+      expect(candidates.find((c) => c.candidate.kind === 'lint')?.candidate.command).toBe(
+        'pnpm lint',
+      );
+      expect(candidates.map((c) => c.candidate.command)).not.toContain('pnpm eslint .');
     });
   });
 
@@ -402,7 +414,9 @@ describe('verification planner', () => {
       });
       const elapsedMs = performance.now() - started;
 
-      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('pnpm test');
+      expect(candidates.find((c) => c.candidate.kind === 'test')?.candidate.command).toBe(
+        'pnpm test',
+      );
       expect(elapsedMs).toBeLessThan(200);
     });
   });

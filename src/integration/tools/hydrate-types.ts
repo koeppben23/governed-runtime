@@ -5,7 +5,7 @@ import type { CentralPolicyEvidence, FlowGuardPolicy } from '../../config/policy
 import type { RepoSignals } from '../../config/profile.js';
 import type { extractDiscoverySummary } from '../../discovery/orchestrator.js';
 import type { DetectedStack, DiscoveryResult, ProfileResolution } from '../../discovery/types.js';
-import type { planVerificationCandidates } from '../../discovery/verification-planner.js';
+import type { VerificationCandidate } from '../../state/discovery-schemas.js';
 import type { RailContext } from '../../rails/types.js';
 import type { PolicyMode } from '../../state/policy-mode.js';
 import type { SessionState } from '../../state/schema.js';
@@ -34,7 +34,7 @@ export interface DiscoveryHydration {
   readonly discoveryDigest?: string;
   readonly discoverySummary?: ReturnType<typeof extractDiscoverySummary>;
   readonly detectedStack?: DetectedStack | null;
-  readonly verificationCandidates?: Awaited<ReturnType<typeof planVerificationCandidates>>;
+  readonly verificationCandidates?: VerificationCandidate[];
   readonly profileResolution?: ProfileResolution;
 }
 
