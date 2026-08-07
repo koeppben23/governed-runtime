@@ -95,6 +95,12 @@ describe('proofgraph legacy guard', () => {
     expect(violations).toEqual([]);
   });
 
+  it('counterexample binder must not fall back to check-level outcome classification', () => {
+    const content = readFileSync(join(SRC, 'audit/proofgraph/counterexample-binder.ts'), 'utf-8');
+    const hasCheckLevelFallback = /toCounterexampleOutcome/.test(content);
+    expect(hasCheckLevelFallback).toBe(false);
+  });
+
   it('gate-participating files do not import assertion-parsers or toolchain-probe', () => {
     const violations: string[] = [];
     for (const rel of GATE_FILES) {

@@ -268,8 +268,6 @@ describe('status', () => {
       expect(configConsistency.ok).toBe(true);
       const gate = result.proofGraphGate as Record<string, unknown>;
       expect(gate).toBeDefined();
-      // Enforcement is unconditional (#762); `enforced` is a compatibility constant.
-      expect(gate.enforced).toBe(true);
       // Nothing is gated: this session declares no certificate-authorized claim.
       expect(gate.gated).toBe(false);
     });
@@ -1487,6 +1485,10 @@ describe('declare_contract', () => {
       counterexampleRefs: [
         { kind: 'validation_attempt' as const, attemptId: state!.validationAttempts[1]!.attemptId },
       ],
+      counterexampleRequirement: {
+        checkId: 'security',
+        assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
+      },
       requiredEvidence: {
         positive: ['executed_test' as const],
         adversarial: ['counterexample' as const],

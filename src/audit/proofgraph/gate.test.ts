@@ -67,7 +67,7 @@ const UUID = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, '0
 describe('evaluateProofGraphGate', () => {
   it('does not gate a session without any claims', () => {
     const decision = evaluateProofGraphGate(summary([]));
-    expect(decision).toMatchObject({ enforced: true, gated: false, blockingClaimIds: [] });
+    expect(decision).toMatchObject({ gated: false, blockingClaimIds: [] });
   });
 
   it('blocks when a certificate-authorized critical claim is absent from the projection', () => {
@@ -81,14 +81,9 @@ describe('evaluateProofGraphGate', () => {
     });
   });
 
-  it('reports enforcement as unconditional', () => {
-    // Compatibility constant: consumers of flowguard_status still read this field.
-    expect(evaluateProofGraphGate(summary([])).enforced).toBe(true);
-  });
-
   it('does not gate when all critical fact claims are PROVEN', () => {
     const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'PROVEN' })]));
-    expect(decision).toMatchObject({ enforced: true, gated: false, blockingClaimIds: [] });
+    expect(decision).toMatchObject({ gated: false, blockingClaimIds: [] });
     // The reason a reviewer reads must match the verdict, not merely exist.
     expect(decision.reason).toBe('All critical fact claims are PROVEN.');
   });

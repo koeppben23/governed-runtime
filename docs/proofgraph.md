@@ -118,7 +118,13 @@ flowguard_declare_contract({
       statement: "the change is covered by the test check",
       checkId: "test",              // evidence: a passing attempt PROVES the claim
       critical: true,               // required
-      counterexampleCheckId: "security" // required for critical claims; a distinct check whose FAILURE contradicts the claim
+      counterexampleRequirement: {  // required for critical claims; a distinct check whose FAILURE contradicts the claim
+        checkId: "security",
+        assertion: {
+          providerId: "junit",
+          localId: "com.example.UserTest#createsUser"
+        }
+      }
     }
   ]
 })
@@ -136,13 +142,14 @@ gate.
 ## Falsification (counterexamples)
 
 Counterexamples are evidence-bound, never asserted. A claim's
-`counterexampleCheckId` names a check whose **failure** would contradict it. The
-outcome is derived from the executed validation result:
+`counterexampleRequirement` binds a specific verification check to a
+concrete provider-scoped assertion. Only a matching failed assertion can
+contradict the claim. The outcome is derived from the executed validation result:
 
-- the attempt failed → `contradicted` (the falsification succeeded → claim
+- the matching assertion failed → `contradicted` (the falsification succeeded → claim
   `CONTRADICTED`, which wins over any passing positive evidence);
-- the attempt passed → `supported`;
-- missing → `not_verified`.
+- the matching assertion passed → `supported`;
+- missing or assertion mismatch → `not_verified`.
 
 A **critical `fact` claim additionally requires** a `supported` counterexample from a
 check distinct from its positive check:
@@ -216,5 +223,4 @@ surfaces explicitly, rather than merely implying:
 - `unresolvedAssumptions` — each non-`PROVEN` claim with a reason distinguishing
   an unsourced assumption, a falsification, an errored provider, missing
   evidence, and superseded (stale) evidence;
-- the registration and config-default consistency reports and the gate decision
-  (`enforced` is a constant compatibility field; enforcement is unconditional).
+- the registration and config-default consistency reports and the gate decision.

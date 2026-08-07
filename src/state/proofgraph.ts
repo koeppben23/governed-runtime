@@ -90,14 +90,20 @@ const proofClaimBase = {
   counterexampleRefs: z.array(ClaimEvidenceRef),
   /** Policy-required evidence classes; absent ⇒ no explicit requirement. */
   requiredEvidence: RequiredEvidence.optional(),
-  /** Optional counterexample requirement (check-level or assertion-level). */
+  /** Optional counterexample requirement (assertion-level). */
   counterexampleRequirement: CounterexampleRequirement.optional(),
   /** Optional confidence in [0, 1] for advisory (non-fact) signals. */
   confidence: z.number().min(0).max(1).optional(),
 } as const;
 
 /** A claim declaration — the evaluator input (no verification state). */
-export const DeclaredClaim = z.object(proofClaimBase).readonly();
+export const DeclaredClaim = z
+  .object(proofClaimBase)
+  .refine((c) => c.counterexampleRefs.length === 0 || c.counterexampleRequirement !== undefined, {
+    message:
+      'counterexampleRefs require a counterexampleRequirement with a bound assertion identity',
+  })
+  .readonly();
 export type DeclaredClaim = z.infer<typeof DeclaredClaim>;
 
 /** An evaluated claim — declaration plus assigned verification state and freshness. */

@@ -138,7 +138,7 @@ describe('projectPlanProofObligations', () => {
     expect(result!.criticalCount).toBe(0);
   });
 
-  it('counterexample requirement (check-mode) and assertion requirement produce equivalent projections', () => {
+  it('counterexample requirements produce equivalent projections regardless of localId', () => {
     const legacy = {
       flow: 'plan' as const,
       claims: [

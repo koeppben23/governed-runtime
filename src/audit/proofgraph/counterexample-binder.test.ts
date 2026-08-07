@@ -1,6 +1,10 @@
 /**
  * @module audit/proofgraph/counterexample-binder.test
  * @description Binding declared counterexample refs to executed outcomes (#762).
+ *
+ * After legacy eradication: a counterexample without a counterexampleRequirement
+ * always returns not_verified (defensive corruption handling). All positive
+ * outcomes require assertion-level binding via a structured counterexampleRequirement.
  */
 import { describe, it, expect } from 'vitest';
 import { bindCounterexamples } from './counterexample-binder.js';
@@ -19,6 +23,11 @@ const AUTHORITY_REF = {
   digest: 'authority',
 };
 const IMPL = { changedFiles: ['a.ts'], domainFiles: [], digest: IMPL_DIGEST, executedAt: NOW };
+
+const COUNTEREXAMPLE_REQ = {
+  checkId: 'security',
+  assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
+};
 
 function validationResult(passed: boolean) {
   return {
@@ -45,16 +54,21 @@ function claim(attemptId = ATT) {
     provenance: AUTHORITY_REF,
     evidenceRefs: [],
     counterexampleRefs: [{ kind: 'validation_attempt' as const, attemptId }],
+    counterexampleRequirement: COUNTEREXAMPLE_REQ,
   };
 }
 
 function stateWith(
   attempts: SessionState['validationAttempts'],
   phase: SessionState['phase'] = 'IMPL_REVIEW',
+  overrides: Partial<ReturnType<typeof claim>> = {},
 ): SessionState {
   return makeState(phase, {
     implementation: IMPL,
-    proofContract: { version: 'contract.v1', claims: [claim()] },
+    proofContract: {
+      version: 'contract.v1',
+      claims: [{ ...claim(), ...overrides }],
+    },
     validationAttempts: attempts,
   });
 }
@@ -86,7 +100,7 @@ describe('bindCounterexamples', () => {
     expect(cx).toMatchObject({ claimId: CLAIM, outcome: 'not_verified', boundDigest: IMPL_DIGEST });
   });
 
-  it('maps outcome=blocked to blocked', () => {
+  it('returns not_verified for outcome=blocked (defensive fallback when no assertion extraction)', () => {
     const state = stateWith([
       {
         attemptId: ATT,
@@ -96,10 +110,10 @@ describe('bindCounterexamples', () => {
       },
     ]);
     const [cx] = bindCounterexamples(state, NOW).counterexamples;
-    expect(cx!.outcome).toBe('blocked');
+    expect(cx!.outcome).toBe('not_verified');
   });
 
-  it('maps a passing counterexample check to supported', () => {
+  it('returns not_verified for a passing counterexample without assertion extraction', () => {
     const state = stateWith([
       {
         attemptId: ATT,
@@ -108,7 +122,23 @@ describe('bindCounterexamples', () => {
         result: validationResult(true),
       },
     ]);
-    expect(bindCounterexamples(state, NOW).counterexamples[0]!.outcome).toBe('supported');
+    expect(bindCounterexamples(state, NOW).counterexamples[0]!.outcome).toBe('not_verified');
+  });
+
+  it('returns not_verified when counterexampleRequirement is absent (defensive corruption handling)', () => {
+    const state = stateWith(
+      [
+        {
+          attemptId: ATT,
+          scope: 'implementation',
+          implementationDigest: IMPL_DIGEST,
+          result: { ...validationResult(true), outcome: 'supported' as const },
+        },
+      ],
+      'IMPL_REVIEW',
+      { counterexampleRequirement: undefined },
+    );
+    expect(bindCounterexamples(state, NOW).counterexamples[0]!.outcome).toBe('not_verified');
   });
 
   it('marks a missing counterexample attempt as not_verified', () => {
