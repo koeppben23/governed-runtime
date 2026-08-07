@@ -42,7 +42,7 @@ import {
   architecture,
   declare_contract,
 } from './tools/index.js';
-import { readState, writeState } from '../adapters/persistence.js';
+import { readState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { verifyChain } from '../audit/integrity.js';
 import {
@@ -79,23 +79,48 @@ vi.mock('../adapters/actor', async (importOriginal) => {
   };
 });
 
-// Mock the verification executor to avoid real subprocess execution in tests
-vi.mock('../verification/executor', () => ({
-  executeCheck: vi
-    .fn()
-    .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => ({
-      kind: input.kind,
-      command: input.command,
-      exitCode: 0,
-      passed: true,
-      executionMs: 100,
-      outputDigest: 'a'.repeat(64),
-      stdout: 'OK',
-      stderr: '',
-      timedOut: false,
-      startedAt: new Date().toISOString(),
-    })),
-}));
+// Mock the verification executor to avoid real subprocess execution in tests.
+// Structured snapshot_diff checks require a post-execution file diff; the mock
+// injects a JUnit XML report on-disk so assertion collection can detect it.
+vi.mock('../verification/executor', () => {
+  let reportSequence = 0;
+
+  const writeJUnitXml = async (cwd: string) => {
+    const fsPromises = await import('node:fs/promises');
+    const reportDir = `${cwd}/target/surefire-reports`;
+    await fsPromises.mkdir(reportDir, { recursive: true });
+    await fsPromises.writeFile(
+      `${reportDir}/TEST-com.example.Test.xml`,
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+        '<testsuite name="com.example.Test" tests="1" failures="0" errors="0" skipped="0">\n' +
+        `  <testcase classname="com.example.Test" name="testMethod" time="0.00${++reportSequence}"/>\n` +
+        '</testsuite>\n',
+      'utf-8',
+    );
+  };
+
+  return {
+    executeCheck: vi
+      .fn()
+      .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => {
+        if (input.kind === 'test') {
+          await writeJUnitXml(input.cwd);
+        }
+        return {
+          kind: input.kind,
+          command: input.command,
+          exitCode: 0,
+          passed: true,
+          executionMs: 100,
+          outputDigest: 'a'.repeat(64),
+          stdout: 'OK',
+          stderr: '',
+          timedOut: false,
+          startedAt: new Date().toISOString(),
+        };
+      }),
+  };
+});
 
 const gitMock = await import('../adapters/git.js');
 const actorMock = await import('../adapters/actor.js');
@@ -189,6 +214,9 @@ async function passValidation(context: TestToolContext = ctx): Promise<void> {
   const state = await readState(sessDir);
   if (!state || state.activeChecks.length === 0) return;
   for (const kind of state.activeChecks) {
+    // Stop early if the last check auto-advanced past validation phases
+    const currentPhase = await getPhase(context);
+    if (currentPhase !== 'VALIDATION' && currentPhase !== 'IMPL_VALIDATION') return;
     await callOk(run_check, { kind }, context);
   }
 }
@@ -1184,7 +1212,7 @@ describe('ProofGraph demo fixtures', () => {
   const PLAN_CLAIM = {
     claimId: 'a7728939-52e4-5d3b-bac2-b4b1ac99b3ad',
     statement: 'The governed change satisfies its approved behavior.',
-    critical: true,
+    critical: false,
     authoritySectionId: 'step-1',
     expectedCheckId: 'build',
     counterexampleRequirement: {
@@ -1193,54 +1221,40 @@ describe('ProofGraph demo fixtures', () => {
     },
   } as const;
 
-  async function driveToImplementationReview(mutationProfile?: 'proofgraph-evaluator') {
-    await fs.writeFile(
-      `${ws.tmpDir}/package.json`,
-      JSON.stringify({ scripts: { build: 'true', test: './mvnw test' } }),
-      'utf8',
-    );
-    await fs.writeFile(`${ws.tmpDir}/mvnw`, '#!/bin/sh\necho "mvnw"', 'utf8');
-    await fs.chmod(`${ws.tmpDir}/mvnw`, 0o755);
-    await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
+  async function driveToImplementationReview(
+    mutationProfile?: 'proofgraph-evaluator',
+    critical = false,
+  ) {
+    if (critical) {
+      // Structured candidates required for satisfiability of critical claims.
+      // hydrate discovers repo-native JUnit test via mvnw → ScriptSignature.
+      await fs.writeFile(`${ws.tmpDir}/mvnw`, '#!/bin/sh\necho "mvnw"', 'utf-8');
+      await fs.chmod(`${ws.tmpDir}/mvnw`, 0o755);
+      await fs.writeFile(
+        `${ws.tmpDir}/package.json`,
+        JSON.stringify({ scripts: { build: 'true', test: './mvnw test' } }),
+        'utf8',
+      );
+      await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
+      // Verify structured test candidate was produced by planner enrichment
+      const state = await readState(await getSessDir());
+      const testCand = state?.verificationCandidates?.find((c) => c.kind === 'test');
+      expect(testCand).toMatchObject({
+        assertionCapability: 'structured',
+        assertionReport: { providerId: 'junit', format: 'junit_xml' },
+      });
+    } else {
+      await fs.writeFile(
+        `${ws.tmpDir}/package.json`,
+        JSON.stringify({ scripts: { build: 'true', test: 'true' } }),
+        'utf8',
+      );
+      await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
+    }
     await callOk(ticket, { text: 'Demonstrate ProofGraph evidence.', source: 'user' });
-    // Inject structured candidates so plan claims pass satisfiability
-    const sessDir = await getSessDir();
-    const st = await readState(sessDir);
-    await writeState(sessDir, {
-      ...st!,
-      verificationCandidates: [
-        {
-          assertionCapability: 'unsupported' as const,
-          kind: 'build' as const,
-          command: './mvnw verify',
-          source: 'repo:mvnw',
-          confidence: 'high' as const,
-          reason: 'Maven build',
-        },
-        {
-          assertionCapability: 'structured' as const,
-          kind: 'test' as const,
-          command: './mvnw test',
-          source: 'repo:mvnw',
-          confidence: 'high' as const,
-          reason: 'JUnit via Maven wrapper',
-          assertionReport: {
-            collection: 'snapshot_diff' as const,
-            transport: 'file' as const,
-            format: 'junit_xml' as const,
-            providerId: 'junit' as const,
-            standardPatterns: ['target/surefire-reports/TEST-*.xml'],
-          },
-        },
-      ],
-      executionSubjectInputsByKind: {
-        build: [{ kind: 'implementation' as const }],
-        test: [{ kind: 'implementation' as const }],
-      },
-    });
     await callOk(plan, {
       planText: PLAN_TEXT,
-      claims: [{ ...PLAN_CLAIM, ...(mutationProfile ? { mutationProfile } : {}) }],
+      claims: [{ ...PLAN_CLAIM, critical, ...(mutationProfile ? { mutationProfile } : {}) }],
     });
     for (let i = 0; i < 5 && (await getPhase()) !== 'PLAN_REVIEW'; i++) {
       await callOk(plan, { reviewVerdict: 'accept' });
@@ -1285,7 +1299,7 @@ describe('ProofGraph demo fixtures', () => {
   });
 
   it('blocks final approval when a certificate-bound fact lacks required mutation evidence', async () => {
-    await driveToImplementationReview('proofgraph-evaluator');
+    await driveToImplementationReview('proofgraph-evaluator', true);
     const sessDir = await getSessDir();
     const materialized = await readState(sessDir);
     expect(materialized!.proofContractCoverage).toContainEqual({
