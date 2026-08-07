@@ -210,7 +210,9 @@ function fullEvidence(): SessionState['validationAttempts'] {
         assertionExtraction: {
           status: 'extracted' as const,
           attemptId: COUNTEREXAMPLE_ATTEMPT_ID,
+          providerId: 'junit' as const,
           format: 'junit_xml' as const,
+          bindingCapability: 'assertion' as const,
           reportDigests: ['a'.repeat(64)],
           assertions: [
             {

@@ -1321,7 +1321,9 @@ function makeAssertionExtraction(assertionId: string, status: 'passed' | 'failed
   return {
     status: 'extracted' as const,
     attemptId: '00000000-0000-4000-8000-0000000000dd',
+    providerId: 'junit' as const,
     format: 'junit_xml' as const,
+    bindingCapability: 'assertion' as const,
     reportDigests: ['a'.repeat(64)],
     assertions: [
       {
@@ -1662,6 +1664,8 @@ describe('declare_contract', () => {
       const failedExtraction = {
         status: 'extracted' as const,
         attemptId: '00000000-0000-4000-8000-0000000000aa',
+        providerId: 'junit' as const,
+        bindingCapability: 'assertion' as const,
         format: 'junit_xml' as const,
         reportDigests: ['a'.repeat(64)],
         assertions: [

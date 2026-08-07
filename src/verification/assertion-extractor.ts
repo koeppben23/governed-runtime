@@ -1,39 +1,32 @@
-import { readFile, readdir } from 'node:fs/promises';
-import { relative, resolve, sep, dirname, basename, join } from 'node:path';
-import { createHash } from 'node:crypto';
+/**
+ * @module verification/assertion-extractor
+ * @description Structured assertion extraction from collected reports.
+ *
+ * Parses raw assertion reports via the registry and validates local
+ * identities through provider codecs. Report collection (filesystem I/O,
+ * snapshot diffing, stdout reading) lives in assertion-report-collector.ts.
+ *
+ * @version v2
+ */
 
-import type { ExecutionEvidence } from './executor.js';
 import type {
   AssertionExtractionResult,
   AssertionExtractionSummary,
 } from '../state/evidence-validation.js';
 import type { ReportFormatId, ProviderId } from '../state/assertion-identity.js';
 import type { AssertionReportSpec } from '../state/discovery-schemas.js';
+import type { PreparedVerificationExecution } from './verification-execution.js';
+import type { CollectedAssertionReport } from './assertion-report-collector.js';
+import { collectAssertionReports } from './assertion-report-collector.js';
+import type { ExecutionEvidence } from './executor.js';
 
 import {
   PARSER_BY_FORMAT,
-  FORMATS_BY_PROVIDER,
   ASSERTION_FORMATS_BY_PROVIDER,
   ASSERTION_CODEC_BY_PROVIDER,
 } from './assertion-parsers/registry.js';
 
-const MAX_FILES_PER_PATTERN = 100;
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
-
-interface ReportFileSnapshot {
-  path: string;
-  digest: string;
-  size: number;
-}
-
-export interface PreparedAssertionExtraction {
-  attemptId: string;
-  spec: AssertionReportSpec;
-  cwd: string;
-  preExecutionSnapshot?: ReportFileSnapshot[];
-  runSpecificPattern?: string;
-  runSpecificOutputArg?: string;
-}
+// ─── Internal ────────────────────────────────────────────────────────────────
 
 interface ParserResult {
   assertions: import('../state/evidence-validation.js').StructuredAssertionEvidence[];
@@ -46,10 +39,6 @@ function parseWithFormat(
   content: string,
   fileName: string,
 ): ParserResult {
-  const supportedFormats = FORMATS_BY_PROVIDER.get(providerId);
-  if (!supportedFormats?.has(format)) {
-    throw new Error(`Provider '${providerId}' does not support report format '${format}'`);
-  }
   const parser = PARSER_BY_FORMAT.get(format);
   if (!parser) {
     throw new Error(`unsupported assertion report format: ${format}`);
@@ -59,90 +48,41 @@ function parseWithFormat(
 
 // ─── Public API ──────────────────────────────────────────────────────────────
 
-export function commandSuffix(spec: AssertionReportSpec, attemptId: string): string {
-  if (spec.collection !== 'run_specific') return '';
-  return spec.outputArgumentTemplate.replace(/\{attemptId\}/g, attemptId);
-}
-
-export async function prepareAssertionExtraction(
-  spec: AssertionReportSpec,
-  cwd: string,
-  attemptId: string,
-): Promise<PreparedAssertionExtraction> {
-  const base: Omit<PreparedAssertionExtraction, 'spec'> = {
-    attemptId,
-    cwd,
-  };
-
-  switch (spec.collection) {
-    case 'run_specific': {
-      const runSpecificPattern = spec.resultPatternTemplate.replace(/\{attemptId\}/g, attemptId);
-      const runSpecificOutputArg = spec.outputArgumentTemplate.replace(/\{attemptId\}/g, attemptId);
-      return { ...base, spec, runSpecificPattern, runSpecificOutputArg };
-    }
-    case 'snapshot_diff': {
-      const preExecutionSnapshot = await takeSnapshot(cwd, spec.standardPatterns);
-      return { ...base, spec, preExecutionSnapshot };
-    }
-    case 'stdout':
-      return { ...base, spec };
-  }
-}
-
 export async function completeAssertionExtraction(
-  prepared: PreparedAssertionExtraction,
+  prepared: PreparedVerificationExecution,
   execution: ExecutionEvidence,
+  cwd: string,
 ): Promise<AssertionExtractionResult> {
-  const { attemptId, spec, cwd } = prepared;
+  const { attemptId } = prepared;
 
-  const supportedFormats = FORMATS_BY_PROVIDER.get(spec.providerId);
-  if (!supportedFormats?.has(spec.format as ReportFormatId)) {
+  if (prepared.assertion.capability !== 'structured') {
+    return { status: 'not_configured' };
+  }
+
+  const collection = await collectAssertionReports(prepared, execution, cwd);
+  if (collection.status === 'blocked') {
     return {
       status: 'blocked',
       attemptId,
-      reason: `Provider '${spec.providerId}' does not support report format '${spec.format}'`,
+      reasonCode: collection.reasonCode,
+      reason: collection.reason,
     };
   }
 
+  const report = collection.report;
+  const spec = prepared.assertion.report.spec;
+
   try {
-    const raw = await extractRaw(spec, cwd, attemptId, execution, prepared);
+    const raw = await parseCollectedReport(report, attemptId);
     const result = stripNonBindingAssertions(raw, spec);
     return validateExtractedIdentities(result, spec);
   } catch (err: unknown) {
-    const reason = err instanceof Error ? err.message : String(err);
-    return { status: 'blocked', attemptId, reason };
-  }
-}
-
-// ─── Extraction Strategies ──────────────────────────────────────────────────
-
-async function extractRaw(
-  spec: AssertionReportSpec,
-  cwd: string,
-  attemptId: string,
-  execution: ExecutionEvidence,
-  prepared: PreparedAssertionExtraction,
-): Promise<AssertionExtractionResult> {
-  switch (spec.collection) {
-    case 'stdout':
-      return extractFromStdout(attemptId, spec.format, spec.providerId, execution.stdout);
-    case 'run_specific':
-      return extractFromRunSpecific(
-        attemptId,
-        spec.format,
-        spec.providerId,
-        cwd,
-        prepared.runSpecificPattern!,
-      );
-    case 'snapshot_diff':
-      return extractFromSnapshotDiff(
-        attemptId,
-        spec.format,
-        spec.providerId,
-        cwd,
-        spec.standardPatterns,
-        prepared.preExecutionSnapshot ?? [],
-      );
+    return {
+      status: 'inconclusive',
+      attemptId,
+      reasonCode: 'parse_failed',
+      reason: err instanceof Error ? err.message : String(err),
+    };
   }
 }
 
@@ -158,6 +98,7 @@ function stripNonBindingAssertions(
 
   return {
     ...result,
+    bindingCapability: 'check_only',
     assertions: [],
     summary: {
       ...result.summary,
@@ -181,6 +122,7 @@ function validateExtractedIdentities(
     return {
       status: 'inconclusive',
       attemptId: result.attemptId,
+      reasonCode: 'identity_codec_missing',
       reason: `Provider '${spec.providerId}' has no registered assertion identity codec`,
     };
   }
@@ -190,6 +132,7 @@ function validateExtractedIdentities(
       return {
         status: 'inconclusive',
         attemptId: result.attemptId,
+        reasonCode: 'invalid_local_id',
         reason: `Local assertion id '${assertion.assertion.localId}' failed codec validation for provider '${spec.providerId}'`,
       };
     }
@@ -197,175 +140,72 @@ function validateExtractedIdentities(
   return result;
 }
 
-async function extractFromStdout(
+// ─── Parsing dispatch ────────────────────────────────────────────────────────
+
+async function parseCollectedReport(
+  report: CollectedAssertionReport,
   attemptId: string,
-  format: ReportFormatId,
-  providerId: ProviderId,
-  stdout: string,
 ): Promise<AssertionExtractionResult> {
-  const parsed = parseWithFormat(format, providerId, stdout, '<stdout>');
-  if (!parsed.assertions.length) {
-    return {
-      status: 'inconclusive',
-      attemptId,
-      reason: 'report parsing produced no test results',
-    };
-  }
-  const digest = sha256(stdout);
-  return {
-    status: 'extracted',
-    attemptId,
-    format,
-    reportDigests: [digest],
-    assertions: parsed.assertions,
-    summary: parsed.summary,
-  };
-}
-
-async function extractFromRunSpecific(
-  attemptId: string,
-  format: ReportFormatId,
-  providerId: ProviderId,
-  cwd: string,
-  pattern: string,
-): Promise<AssertionExtractionResult> {
-  const paths = await globFiles(cwd, pattern);
-  if (paths.length === 0) {
-    return { status: 'blocked', attemptId, reason: 'expected reports not found' };
-  }
-  if (paths.length > MAX_FILES_PER_PATTERN) {
-    return {
-      status: 'blocked',
-      attemptId,
-      reason: `too many report files: ${paths.length} (max ${MAX_FILES_PER_PATTERN})`,
-    };
-  }
-  return parseAndMergeFiles(attemptId, format, providerId, cwd, paths);
-}
-
-async function extractFromSnapshotDiff(
-  attemptId: string,
-  format: ReportFormatId,
-  providerId: ProviderId,
-  cwd: string,
-  patterns: string[],
-  preSnapshot: ReportFileSnapshot[],
-): Promise<AssertionExtractionResult> {
-  const postSnapshot = await takeSnapshot(cwd, patterns);
-  const changedPaths = diffSnapshots(preSnapshot, postSnapshot);
-
-  if (changedPaths.length === 0) {
-    return {
-      status: 'blocked',
-      attemptId,
-      reason: 'no new report files produced',
-    };
-  }
-  if (changedPaths.length > MAX_FILES_PER_PATTERN) {
-    return {
-      status: 'blocked',
-      attemptId,
-      reason: `too many changed report files: ${changedPaths.length} (max ${MAX_FILES_PER_PATTERN})`,
-    };
-  }
-  return parseAndMergeFiles(attemptId, format, providerId, cwd, changedPaths);
-}
-
-// ─── Snapshot & Diff ────────────────────────────────────────────────────────
-
-async function takeSnapshot(cwd: string, patterns: string[]): Promise<ReportFileSnapshot[]> {
-  const snapshot: ReportFileSnapshot[] = [];
-  const seen = new Set<string>();
-
-  for (const pattern of patterns) {
-    const paths = await globFiles(cwd, pattern);
-    for (const relPath of paths) {
-      if (seen.has(relPath)) continue;
-      seen.add(relPath);
-
-      const fullPath = resolve(cwd, relPath);
-      if (!isWithinCwd(fullPath, cwd)) continue;
-
-      const content = await readFile(fullPath);
-      if (content.length > MAX_FILE_BYTES) continue;
-
-      const digest = sha256(content);
-      snapshot.push({ path: relPath, digest, size: content.length });
-    }
-  }
-  return snapshot;
-}
-
-function diffSnapshots(pre: ReportFileSnapshot[], post: ReportFileSnapshot[]): string[] {
-  const preByPath = new Map(pre.map((s) => [s.path, s]));
-  const changed: string[] = [];
-
-  for (const postEntry of post) {
-    const preEntry = preByPath.get(postEntry.path);
-    if (!preEntry || preEntry.digest !== postEntry.digest || preEntry.size !== postEntry.size) {
-      changed.push(postEntry.path);
-    }
-  }
-  return changed;
-}
-
-// ─── File Parsing ───────────────────────────────────────────────────────────
-
-async function parseAndMergeFiles(
-  attemptId: string,
-  format: ReportFormatId,
-  providerId: ProviderId,
-  cwd: string,
-  paths: string[],
-): Promise<AssertionExtractionResult> {
-  const allAssertions: ParserResult['assertions'] = [];
-  const allSummaries: AssertionExtractionSummary[] = [];
-  const digests: string[] = [];
-
-  for (const relPath of paths) {
-    const fullPath = resolve(cwd, relPath);
-    if (!isWithinCwd(fullPath, cwd)) {
+  switch (report.transport) {
+    case 'stdout': {
+      const parsed = parseWithFormat(report.format, report.providerId, report.content, '<stdout>');
+      if (!parsed.assertions.length) {
+        return {
+          status: 'inconclusive',
+          attemptId,
+          reasonCode: 'report_empty',
+          reason: 'report parsing produced no test results',
+        };
+      }
+      const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(report.providerId);
       return {
-        status: 'blocked',
+        status: 'extracted',
         attemptId,
-        reason: `path traversal rejected: ${relPath}`,
+        providerId: report.providerId,
+        format: report.format,
+        bindingCapability: bindingFormats?.has(report.format) === true ? 'assertion' : 'check_only',
+        reportDigests: [report.digest],
+        assertions: parsed.assertions,
+        summary: parsed.summary,
       };
     }
+    case 'file': {
+      const allAssertions: ParserResult['assertions'] = [];
+      const allSummaries: AssertionExtractionSummary[] = [];
+      const digests: string[] = [];
 
-    const content = await readFile(fullPath, 'utf-8');
-    if (content.length > MAX_FILE_BYTES) {
+      for (const file of report.reports) {
+        const parsed = parseWithFormat(report.format, report.providerId, file.content, file.path);
+        allAssertions.push(...parsed.assertions);
+        allSummaries.push(parsed.summary);
+        digests.push(file.digest);
+      }
+
+      if (allAssertions.length === 0) {
+        return {
+          status: 'inconclusive',
+          attemptId,
+          reasonCode: 'report_empty',
+          reason: 'report parsing produced no test results',
+        };
+      }
+
+      const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(report.providerId);
       return {
-        status: 'blocked',
+        status: 'extracted',
         attemptId,
-        reason: `file too large: ${relPath} (${content.length} bytes, max ${MAX_FILE_BYTES})`,
+        providerId: report.providerId,
+        format: report.format,
+        bindingCapability: bindingFormats?.has(report.format) === true ? 'assertion' : 'check_only',
+        reportDigests: digests,
+        assertions: allAssertions,
+        summary: mergeSummaries(allSummaries),
       };
     }
-
-    const parsed = parseWithFormat(format, providerId, content, relPath);
-    allAssertions.push(...parsed.assertions);
-    allSummaries.push(parsed.summary);
-    digests.push(sha256(content));
   }
-
-  if (allAssertions.length === 0) {
-    return {
-      status: 'inconclusive',
-      attemptId,
-      reason: 'report parsing produced no test results',
-    };
-  }
-
-  return {
-    status: 'extracted',
-    attemptId,
-    format,
-    reportDigests: digests,
-    assertions: allAssertions,
-    summary: mergeSummaries(allSummaries),
-  };
 }
 
-// ─── Summary Merging ────────────────────────────────────────────────────────
+// ─── Summary Merging ─────────────────────────────────────────────────────────
 
 function mergeSummaries(summaries: AssertionExtractionSummary[]): AssertionExtractionSummary {
   return {
@@ -383,61 +223,4 @@ function sum(
   key: keyof AssertionExtractionSummary,
 ): number {
   return summaries.reduce((acc, s) => acc + (s[key] as number), 0);
-}
-
-// ─── Glob ───────────────────────────────────────────────────────────────────
-
-async function globFiles(cwd: string, pattern: string): Promise<string[]> {
-  const resolvedCwd = resolve(cwd);
-  const dirPart = dirname(pattern);
-  const fileGlob = basename(pattern);
-  const baseDir = dirPart === '.' ? resolvedCwd : resolve(resolvedCwd, dirPart);
-
-  if (!isWithinCwd(baseDir, resolvedCwd)) return [];
-
-  const results: string[] = [];
-  const regex = globToRegex(fileGlob);
-
-  const collect = async (dir: string): Promise<void> => {
-    let entries;
-    try {
-      entries = await readdir(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-
-    for (const entry of entries) {
-      const fullPath = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        await collect(fullPath);
-      } else if (entry.isFile() && regex.test(entry.name)) {
-        if (!isWithinCwd(fullPath, resolvedCwd)) continue;
-        results.push(relative(resolvedCwd, fullPath));
-        if (results.length >= MAX_FILES_PER_PATTERN + 1) return;
-      }
-    }
-  };
-
-  await collect(baseDir);
-  return results;
-}
-
-function globToRegex(glob: string): RegExp {
-  const escaped = glob
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*/g, '.*')
-    .replace(/\?/g, '.');
-  return new RegExp(`^${escaped}$`);
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function isWithinCwd(target: string, cwd: string): boolean {
-  const resolvedTarget = resolve(target);
-  const resolvedCwd = resolve(cwd);
-  return resolvedTarget === resolvedCwd || resolvedTarget.startsWith(resolvedCwd + sep);
-}
-
-function sha256(content: Buffer | string): string {
-  return createHash('sha256').update(content).digest('hex');
 }
