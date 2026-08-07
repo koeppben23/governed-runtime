@@ -50,16 +50,6 @@ import { blocked } from '../config/reasons.js';
 import { compareActorIdentity, isAssuranceAtLeast } from '../identity/actor-info.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
-import { summarizeProofGraph } from '../audit/proofgraph/summary.js';
-// Runtime candidates from PR 8 — typed as unknown here to avoid rails→integration import.
-// The actual type (ResolvedVerificationCandidate) is verified at the caller boundary.
-type RuntimeCandidate = {
-  readonly candidate: {
-    readonly assertionCapability: string;
-    readonly assertionReport?: { readonly providerId: string };
-  };
-  readonly runtime: { readonly status: string };
-};
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -75,8 +65,6 @@ export interface ReviewDecisionInput {
   readonly rationale: string;
   readonly decidedBy: string;
   readonly decisionIdentity?: DecisionIdentity;
-  /** PR-8 runtime readiness results, passed from the approval handler for ProofGraph enforcement. */
-  readonly runtimeCandidates?: readonly RuntimeCandidate[];
 }
 
 // ─── Verdict → Event mapping ──────────────────────────────────────────────────
@@ -275,16 +263,8 @@ function enforceProofGraphEvidenceApproval(
   if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve') {
     return null;
   }
-
-  // Rebuild a runtime-aware evaluation when runtime candidates are available
-  const projection = input.runtimeCandidates?.length
-    ? summarizeProofGraph(state, new Date().toISOString(), {
-        runtimeCandidates: input.runtimeCandidates,
-      }).projection
-    : state.proofGraph;
-
   const decision = evaluateProofGraphGate({
-    projection,
+    projection: state.proofGraph,
     authorizedCriticalClaimIds: authorizedCriticalPlanClaimIds(state.plan),
     implementationDigest: state.implementation?.digest,
     riskAssessment: state.implementationRiskAssessment,

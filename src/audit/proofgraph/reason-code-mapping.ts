@@ -47,7 +47,7 @@ export type AssertionBindingReasonCode =
 export function mapBindingReasonToRegistryCode(reasonCode: AssertionBindingReasonCode): string {
   switch (reasonCode) {
     case 'check_mismatch':
-      return 'PROOFGRAPH_ASSERTION_IDENTITY_MISMATCH';
+      return 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING';
     case 'evidence_missing':
       return 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING';
     case 'check_only_evidence':

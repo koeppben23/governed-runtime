@@ -64,9 +64,9 @@ describe('mapBindingReasonToRegistryCode', () => {
     );
   });
 
-  it('check_mismatch → PROOFGRAPH_ASSERTION_IDENTITY_MISMATCH', () => {
+  it('check_mismatch → PROOFGRAPH_ASSERTION_EVIDENCE_MISSING', () => {
     expect(mapBindingReasonToRegistryCode('check_mismatch')).toBe(
-      'PROOFGRAPH_ASSERTION_IDENTITY_MISMATCH',
+      'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING',
     );
   });
 });
