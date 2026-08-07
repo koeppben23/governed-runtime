@@ -64,8 +64,10 @@ describe('verification planner', () => {
       });
 
       const testCandidate = candidates.find((c) => c.kind === 'test');
-      expect(testCandidate?.assertionCapability).toBe('unsupported');
+      // Script enrichment: vitest is recognized and the candidate gets structured
+      expect(testCandidate?.assertionCapability).toBe('structured');
       expect(testCandidate?.command).toBe('pnpm test');
+      expect(testCandidate?.source).toBe('package.json:scripts.test');
       expect(candidates.find((c) => c.kind === 'test')?.confidence).toBe('high');
     });
 
@@ -152,6 +154,75 @@ describe('verification planner', () => {
       const testCandidate = candidates.find((c) => c.kind === 'test');
       expect(testCandidate?.command).toBe('gradlew.bat check');
       expect(candidates.map((c) => c.command)).not.toContain('gradle check');
+    });
+
+    it('recognizes jest as structured via script enrichment', async () => {
+      const detectedStack = makeDetectedStack([
+        { kind: 'buildTool', id: 'npm', evidence: 'package.json' },
+      ]);
+
+      const candidates = await planVerificationCandidates({
+        detectedStack,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'jest' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.kind === 'test');
+      expect(testCandidate?.assertionCapability).toBe('structured');
+      expect(testCandidate?.command).toBe('npm run test --');
+      expect(testCandidate?.source).toBe('package.json:scripts.test');
+      if (testCandidate?.assertionCapability === 'structured') {
+        expect(testCandidate.assertionReport.format).toBe('jest_json');
+      }
+    });
+
+    it('compound shell command is not enrichable', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: null,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'vitest && ./cleanup.sh' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.kind === 'test');
+      expect(testCandidate?.assertionCapability).toBe('unsupported');
+    });
+
+    it('reporter conflict is not enrichable', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: null,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'vitest --reporter=junit' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.kind === 'test');
+      expect(testCandidate?.assertionCapability).toBe('unsupported');
+    });
+
+    it('unrecognized script remains unsupported', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: null,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'node scripts/custom-test.js' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.kind === 'test');
+      expect(testCandidate?.assertionCapability).toBe('unsupported');
     });
   });
 

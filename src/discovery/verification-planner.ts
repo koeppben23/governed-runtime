@@ -17,8 +17,13 @@ import type { DetectedStack, VerificationCandidate, VerificationCandidateKind } 
 import {
   WRAPPER_PROFILES,
   FALLBACK_PROFILES,
+  DESCRIPTOR_BY_PROVIDER,
   type PlannerContext,
+  type ScriptSignature,
 } from './assertion-provider-catalog.js';
+import { buildScriptInvocation, type PackageManager } from './package-script-command.js';
+import { analyzeVerificationScript } from './verification-script-analysis.js';
+import type { ProviderId } from '../state/assertion-identity.js';
 
 type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 
@@ -27,8 +32,6 @@ interface VerificationPlannerInput {
   readonly allFiles: readonly string[];
   readonly readFile: ReadFileFn;
 }
-
-type PackageManager = 'pnpm' | 'yarn' | 'bun' | 'npm';
 
 const KIND_ORDER: Record<VerificationCandidateKind, number> = {
   build: 0,
@@ -143,12 +146,6 @@ async function readPackageScripts(readFile: ReadFileFn): Promise<Record<string, 
   return result;
 }
 
-function scriptCommand(packageManager: PackageManager, scriptName: string): string {
-  if (packageManager === 'npm') return `npm run ${scriptName}`;
-  if (packageManager === 'bun') return `bun run ${scriptName}`;
-  return `${packageManager} ${scriptName}`;
-}
-
 function addScriptCandidates(
   byKind: Map<VerificationCandidateKind, VerificationCandidate>,
   scripts: Record<string, string>,
@@ -166,20 +163,68 @@ function addScriptCandidates(
     { kind: 'security', script: 'audit' },
   ];
 
+  const signatureMap = buildSignatureMap();
+
   for (const mapping of mappings) {
     if (!(mapping.script in scripts)) continue;
-    if (isLikelyPlaceholderScript(scripts[mapping.script]!)) continue;
-    // Scripts always win — no fallback can overwrite a repo-native command
+    const command = scripts[mapping.script]!;
+    if (isLikelyPlaceholderScript(command)) continue;
     if (byKind.has(mapping.kind)) continue;
+
+    const analysis = analyzeVerificationScript(mapping.script, command, signatureMap);
+
+    const canEnrich =
+      analysis.provider.status === 'identified' &&
+      !analysis.isCompound &&
+      !analysis.reporterConflict &&
+      analysis.argumentForwarding === 'supported';
+
+    if (canEnrich) {
+      const descriptor = DESCRIPTOR_BY_PROVIDER.get(analysis.provider.providerId);
+      const reportTemplate = descriptor?.assertionReportTemplate;
+
+      if (reportTemplate) {
+        byKind.set(mapping.kind, {
+          assertionCapability: 'structured' as const,
+          kind: mapping.kind,
+          command: buildScriptInvocation(packageManager, mapping.script).command,
+          source: `package.json:scripts.${mapping.script}`,
+          confidence: 'high',
+          reason: `Repo-native ${mapping.script} script enriched: ${analysis.provider.evidence} (provider: ${analysis.provider.providerId})`,
+          assertionReport: reportTemplate,
+        });
+        continue;
+      }
+    }
+
+    let reason = `Repo-native ${mapping.script} script detected and ${packageManager} package manager detected`;
+    if (analysis.provider.status === 'identified') {
+      if (analysis.isCompound) {
+        reason += `; provider '${analysis.provider.providerId}' detected but script is a compound shell command`;
+      } else if (analysis.reporterConflict) {
+        reason += `; reporter arguments already configured, cannot safely enrich`;
+      }
+    }
+
     byKind.set(mapping.kind, {
       assertionCapability: 'unsupported' as const,
       kind: mapping.kind,
-      command: scriptCommand(packageManager, mapping.script),
+      command: buildScriptInvocation(packageManager, mapping.script).command,
       source: `package.json:scripts.${mapping.script}`,
       confidence: 'high',
-      reason: `Repo-native ${mapping.script} script detected and ${packageManager} package manager detected`,
+      reason,
     });
   }
+}
+
+function buildSignatureMap(): ReadonlyMap<ProviderId, readonly ScriptSignature[]> {
+  const map = new Map<ProviderId, ScriptSignature[]>();
+  for (const descriptor of DESCRIPTOR_BY_PROVIDER.values()) {
+    if (descriptor.scriptSignatures && descriptor.scriptSignatures.length > 0) {
+      map.set(descriptor.providerId, [...descriptor.scriptSignatures]);
+    }
+  }
+  return map;
 }
 
 function addNonAssertionFallbacks(
