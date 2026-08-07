@@ -643,7 +643,6 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     expect(summary.projection.claims[0]?.verificationState).toBe('PROVEN');
 
     const decision = evaluateProofGraphGate(summary);
-    expect(decision.enforced).toBe(true);
     expect(decision.gated).toBe(false);
   });
 

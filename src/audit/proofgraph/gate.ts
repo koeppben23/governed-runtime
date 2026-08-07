@@ -51,7 +51,6 @@ function isValidBindingCode(value: string): value is AssertionBindingReasonCode 
 
 /** The evaluated ProofGraph gate decision. */
 export interface ProofGraphGateDecision {
-  readonly enforced: true;
   readonly gated: boolean;
   readonly blockingClaimIds: readonly string[];
   /** Per-claim blocking details with typed reason codes. */
@@ -113,7 +112,6 @@ export function evaluateProofGraphGate(input: {
   });
 
   return {
-    enforced: true,
     gated: !enforcement.satisfied,
     blockingClaimIds: enforcement.blockingClaims.map((b) => b.claimId),
     blockingClaims: enforcement.blockingClaims,

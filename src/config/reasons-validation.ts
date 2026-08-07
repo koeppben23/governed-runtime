@@ -327,6 +327,17 @@ export const VALIDATION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'VERIFICATION_SUBJECT_CHANGED',
+    category: 'state',
+    messageTemplate:
+      'The execution subject ({component}) changed during the {phase} phase: {detail}',
+    recoverySteps: [
+      'Re-run discovery to capture the current execution surface',
+      'Re-execute verification against the current subject',
+    ],
+  },
+
+  {
     code: 'CONTENT_ANALYSIS_REQUIRED',
     category: 'input',
     messageTemplate:

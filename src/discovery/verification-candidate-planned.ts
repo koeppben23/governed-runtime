@@ -12,9 +12,10 @@
  * @version v1
  */
 
-import type { VerificationCandidate } from '../state/discovery-schemas.js';
+import type { VerificationCandidate, ExecutionSubjectInput } from '../state/discovery-schemas.js';
 
 export interface PlannedVerificationCandidate {
   readonly candidate: VerificationCandidate;
   readonly executionProfileId?: string;
+  readonly executionSubjectInputs: readonly ExecutionSubjectInput[];
 }

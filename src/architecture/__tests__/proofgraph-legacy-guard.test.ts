@@ -95,6 +95,12 @@ describe('proofgraph legacy guard', () => {
     expect(violations).toEqual([]);
   });
 
+  it('counterexample binder must not fall back to check-level outcome classification', () => {
+    const content = readFileSync(join(SRC, 'audit/proofgraph/counterexample-binder.ts'), 'utf-8');
+    const hasCheckLevelFallback = /toCounterexampleOutcome/.test(content);
+    expect(hasCheckLevelFallback).toBe(false);
+  });
+
   it('gate-participating files do not import assertion-parsers or toolchain-probe', () => {
     const violations: string[] = [];
     for (const rel of GATE_FILES) {
@@ -151,6 +157,31 @@ describe('proofgraph legacy guard', () => {
         if (regex.test(content)) {
           violations.push(`${rel}: ${regex}`);
         }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('execution-subject resolution must not derive behavior from candidate.source or candidate.command', () => {
+    const files = [
+      'verification/execution-subject.ts',
+      'verification/executor.ts',
+      'integration/tools/run-check-tool.ts',
+    ];
+    const violations: string[] = [];
+    for (const rel of files) {
+      const content = readFileSync(join(SRC, rel), 'utf-8');
+      if (
+        /\.source\s*===\s*['"]/.test(content) ||
+        /\.source\.startsWith/.test(content) ||
+        /\.command\s*===\s*['"]/.test(content) ||
+        /\.command\.includes/.test(content) ||
+        /Object\.values\(.*scripts/.test(content) ||
+        /isPackageScript/.test(content)
+      ) {
+        violations.push(
+          `${rel}: derives semantic behavior from VerificationCandidate.source or .command`,
+        );
       }
     }
     expect(violations).toEqual([]);

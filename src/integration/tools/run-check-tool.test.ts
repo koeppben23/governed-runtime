@@ -35,6 +35,9 @@ import { executeCheck } from '../../verification/executor.js';
 import { PersistenceError } from '../../adapters/persistence.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
+import { hashWorktreeFiles } from '../../adapters/git.js';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { withSessionWriteLockRetry } from '../../adapters/lock-retry.js';
 import {
   resetAdapterLogger,
@@ -134,6 +137,19 @@ afterEach(async () => {
   resetAdapterLogger();
   await ws.cleanup();
 });
+
+async function writeImplFileAndDigest(
+  tmpDir: string,
+  filePath: string,
+  content: string,
+): Promise<string> {
+  const fullPath = join(tmpDir, filePath);
+  mkdirSync(join(fullPath, '..'), { recursive: true });
+  writeFileSync(fullPath, content, 'utf-8');
+  writeFileSync(join(tmpDir, 'package.json'), JSON.stringify({ scripts: {} }), 'utf-8');
+  const hashes = await hashWorktreeFiles(tmpDir, [filePath]);
+  return hashText(`${filePath}:${hashes[filePath] ?? 'deleted'}`);
+}
 
 function captureLogger(): {
   log: AdapterLogger;
@@ -426,13 +442,14 @@ describe('CORNER', () => {
     await driveToValidation();
     const sessDir = await getSessDir();
     const state = await readState(sessDir);
+    const implDigest = await writeImplFileAndDigest(ws.tmpDir, 'src/example.ts', 'test');
     await writeState(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
       implementation: {
         changedFiles: ['src/example.ts'],
         domainFiles: ['src/example.ts'],
-        digest: 'implementation-digest',
+        digest: implDigest,
         executedAt: '2026-01-01T00:00:00.000Z',
       },
     });
@@ -443,7 +460,7 @@ describe('CORNER', () => {
     expect(finalState!.validationAttempts).toHaveLength(1);
     expect(finalState!.validationAttempts[0]).toMatchObject({
       scope: 'implementation',
-      implementationDigest: 'implementation-digest',
+      implementationDigest: implDigest,
     });
   });
 
@@ -452,13 +469,14 @@ describe('CORNER', () => {
     const sessDir = await getSessDir();
     const state = await readState(sessDir);
     const claimId = '11111111-1111-4111-8111-111111111111';
+    const implDigest = await writeImplFileAndDigest(ws.tmpDir, 'src/example.ts', 'test');
     await writeState(sessDir, {
       ...state!,
       phase: 'IMPL_VALIDATION',
       implementation: {
         changedFiles: ['src/example.ts'],
         domainFiles: ['src/example.ts'],
-        digest: 'implementation-digest',
+        digest: implDigest,
         executedAt: '2026-01-01T00:00:00.000Z',
       },
       plan: {
@@ -765,6 +783,12 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
       ],
+      executionSubjectInputsByKind: {
+        ...(s!.executionSubjectInputsByKind ?? {}),
+        lint: [{ kind: 'implementation' as const }],
+        test: [{ kind: 'implementation' as const }],
+        build: [{ kind: 'implementation' as const }],
+      },
     });
 
     // Execute 4 checks in parallel — each check runs outside the lock,

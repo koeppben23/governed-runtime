@@ -150,7 +150,7 @@ describe('renderDeclarationPreview', () => {
           claims: [
             {
               claimId: CLAIM_ID,
-              statement: 'check-mode claim',
+              statement: 'counterexample claim',
               critical: true,
               authoritySectionId: 's1',
               expectedCheckId: 'build',
@@ -177,7 +177,7 @@ describe('renderDeclarationPreview', () => {
           claims: [
             {
               claimId: CLAIM_ID,
-              statement: 'assertion-mode claim',
+              statement: 'counterexample claim with explicit assertion',
               critical: true,
               authoritySectionId: 's1',
               expectedCheckId: 'build',

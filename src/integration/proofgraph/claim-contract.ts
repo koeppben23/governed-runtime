@@ -229,7 +229,7 @@ function checkAuthoritySection(
   );
 }
 
-/** Rule 7: assertion-mode counterexample requirement must include an assertion. */
+/** Rule 7: counterexample requirement must include an assertion. */
 function checkCounterexampleAssertion(
   input: ClaimContractInput,
   claim: NormalizedClaimDeclaration,
@@ -239,7 +239,7 @@ function checkCounterexampleAssertion(
       input.source,
       claim,
       'counterexampleRequirement.assertion',
-      'assertion-mode counterexample requirement must include an assertion identity',
+      'counterexample requirement must include an assertion identity',
     );
   }
   return null;

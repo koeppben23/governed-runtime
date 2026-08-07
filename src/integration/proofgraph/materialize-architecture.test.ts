@@ -144,7 +144,6 @@ describe('architecture claims never gate an approval', () => {
     expect(summary.projection.claims[0]?.verificationState).not.toBe('PROVEN');
 
     const decision = evaluateProofGraphGate(summary);
-    expect(decision.enforced).toBe(true);
     expect(decision.gated).toBe(false);
     expect(decision.blockingClaimIds).toEqual([]);
   });

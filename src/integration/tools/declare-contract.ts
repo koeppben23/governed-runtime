@@ -291,9 +291,9 @@ function validateDeclaredClaimContract(
 }
 
 /**
- * Gate assertion-mode counterexample requirements: the session must have a
+ * Gate counterexample requirements: the session must have a
  * verification candidate with structured assertion capability matching the
- * requirement's checkId.  For assertion mode, the assertionId prefix must
+ * requirement's checkId. The assertionId prefix must
  * also match the candidate's report format.
  */
 function validateAssertionGate(
@@ -311,7 +311,7 @@ function validateAssertionGate(
   const assertionFormats = ASSERTION_FORMATS_BY_PROVIDER.get(providerId);
   if (!assertionFormats || assertionFormats.size === 0) {
     return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-      reason: `Provider '${providerId}' does not support assertion-level counterexample binding.`,
+      reason: `Provider '${providerId}' does not support structured assertion evidence for counterexample binding.`,
     });
   }
   const candidateFormat = (candidate as { assertionReport?: { format: string } }).assertionReport
@@ -342,7 +342,7 @@ function validateAssertionCapabilityGate(
 
     if (candidate.assertionCapability !== 'structured') {
       return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-        reason: `Verification check '${requirement.checkId}' does not support structured assertion evidence for assertion-mode counterexample binding.`,
+        reason: `Verification check '${requirement.checkId}' does not support structured assertion evidence for counterexample binding.`,
       });
     }
 

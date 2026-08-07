@@ -38,6 +38,7 @@ import {
 import {
   DiscoverySummarySchema,
   DetectedStackSchema,
+  ExecutionSubjectInputSchema,
   VerificationCandidatesSchema,
 } from './discovery-schemas.js';
 import { ProofGraphProjection } from './proofgraph.js';
@@ -509,6 +510,17 @@ export const SessionState = z.object({
    * MUST NOT be treated as executed checks.
    */
   verificationCandidates: VerificationCandidatesSchema.optional(),
+
+  /**
+   * Execution-subject inputs keyed by verification kind.
+   *
+   * Produced by the planner alongside verificationCandidates. Each entry declares
+   * which surfaces (implementation files, config files) must be attested before
+   * and after the check runs.
+   */
+  executionSubjectInputsByKind: z
+    .record(z.string(), z.array(ExecutionSubjectInputSchema))
+    .optional(),
 
   /**
    * Pre-implementation worktree baseline (P-baseline).

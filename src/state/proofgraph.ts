@@ -35,6 +35,26 @@ import {
 } from './proofgraph-primitives.js';
 import { AssertionIdentity } from './assertion-identity.js';
 
+// ─── Evidence Attestation ───────────────────────────────────────────────────
+
+/**
+ * Provenance of a provider result.
+ *
+ * - `flowguard_executed`: FlowGuard executed the process itself (execFile).
+ * - `flowguard_observed`: FlowGuard independently observed and integrity-checked
+ *   the artifact presented to it. It does NOT attest how that artifact was produced.
+ * - `external_self_reported`: the caller claims a process ran; FlowGuard did not
+ *   execute or observe it.
+ *
+ * `external_self_reported` evidence cannot satisfy positive proof requirements.
+ */
+export const EvidenceAttestation = z.enum([
+  'flowguard_executed',
+  'flowguard_observed',
+  'external_self_reported',
+]);
+export type EvidenceAttestation = z.infer<typeof EvidenceAttestation>;
+
 /** Persisted ProofGraph projection schema version. */
 export const PROOFGRAPH_SCHEMA_VERSION = 'proofgraph.v1' as const;
 
@@ -90,14 +110,20 @@ const proofClaimBase = {
   counterexampleRefs: z.array(ClaimEvidenceRef),
   /** Policy-required evidence classes; absent ⇒ no explicit requirement. */
   requiredEvidence: RequiredEvidence.optional(),
-  /** Optional counterexample requirement (check-level or assertion-level). */
+  /** Optional counterexample requirement (assertion-level). */
   counterexampleRequirement: CounterexampleRequirement.optional(),
   /** Optional confidence in [0, 1] for advisory (non-fact) signals. */
   confidence: z.number().min(0).max(1).optional(),
 } as const;
 
 /** A claim declaration — the evaluator input (no verification state). */
-export const DeclaredClaim = z.object(proofClaimBase).readonly();
+export const DeclaredClaim = z
+  .object(proofClaimBase)
+  .refine((c) => c.counterexampleRefs.length === 0 || c.counterexampleRequirement !== undefined, {
+    message:
+      'counterexampleRefs require a counterexampleRequirement with a bound assertion identity',
+  })
+  .readonly();
 export type DeclaredClaim = z.infer<typeof DeclaredClaim>;
 
 /** An evaluated claim — declaration plus assigned verification state and freshness. */
@@ -219,6 +245,7 @@ const providerResultCommon = {
   executedAt: z.string().datetime(),
   /** Display-only detail; never a substitute for the canonical fields. */
   detail: z.string().optional(),
+  attestation: EvidenceAttestation,
 } as const;
 
 /**

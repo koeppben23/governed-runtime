@@ -280,6 +280,37 @@ tracked separately. (Merged via #585.)
 | NR9  | Non-Regression Note | Diagnostic logs are centrally redacted at the sink layer (message + extra); console/file/OTLP sinks cannot emit unredacted secrets or paths. |
 | NR10 | Non-Regression Note | `logging/` owns its `LogLevel` type and must not import `config/`; enforced by the `logging-no-config` rule in `dependency-rules.test.ts`.   |
 
+## 2026-08-07 — ProofGraph Closure Triaged
+
+### Trust Model
+
+| ID     | Severity | Title                                                              | Status     |
+| ------ | -------- | ------------------------------------------------------------------ | ---------- |
+| **T1** | **P1**   | **Mutation evidence is externally self-reported**                  | **Closed** |
+| **T2** | **P1**   | **Execution subject surface attestation incomplete**               | **Open**   |
+
+**T1 — Mutation evidence is externally self-reported (Closed).**
+`record_mutation_evidence` accepts caller-supplied `command`, `startedAt`,
+`completedAt`, and `exitCode`. FlowGuard reads and digest-verifies the output
+report but does not execute or observe the process. As of the ProofGraph
+closure (`fix/proofgraph-closure`), mutation results carry
+`attestation: 'external_self_reported'` and cannot satisfy positive proof
+requirements. A claim requiring `fault_injection` stays `UNPROVEN` until a
+FlowGuard-executed mutation provider is added. The evidence remains visible
+and auditable. See `src/state/proofgraph.ts` `EvidenceAttestation` and
+`src/audit/proofgraph/evaluate.ts` `deriveFromRequiredEvidence`.
+
+**T2 — Execution subject surface attestation incomplete (Open).**
+Execution Subject Attestation (`src/verification/execution-subject.ts`)
+currently attests only the implementation digest and `package.json` script
+sources. Other configuration surfaces that affect verification semantics
+(`vitest.config.*`, `jest.config.*`, `pytest.ini`, `pyproject.toml`, `pom.xml`,
+`build.gradle*`, `go.mod`, etc.) are not yet attested. An agent that modifies
+these files after `/implement` but before `flowguard_run_check` could alter
+verification behavior without detection. The implementation re-attestation
+prevents direct source/test file tampering, but config-driven tampering
+remains possible.
+
 ## Maintenance Rules
 
 - Keep this file aligned with #487 and child issues.

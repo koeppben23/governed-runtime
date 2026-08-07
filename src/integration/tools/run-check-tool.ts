@@ -57,8 +57,6 @@ import { autoAdvance } from '../../rails/types.js';
 // Verification executor
 import { executeCheck } from '../../verification/executor.js';
 import { deriveRepairGuidance } from '../../verification/repair-guidance.js';
-
-// Evidence types
 import type {
   ValidationAttempt,
   ValidationResult,
@@ -96,6 +94,12 @@ import {
   nextImplementationReviewIteration,
 } from './implement-shared.js';
 import { materializeApprovedPlanContractResult } from '../proofgraph/materialize-contract.js';
+import {
+  attestExecutionSubject,
+  reattestExecutionSubject,
+  type ExecutionSubjectInput,
+  type ExecutionSubjectAttestation,
+} from '../../verification/execution-subject.js';
 
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
 const RUN_CHECK_RETRIES = RUN_CHECK_RETRY_DELAYS_MS.length;
@@ -151,11 +155,23 @@ export const run_check: ToolDefinition = {
  * C. Persist result under lock with retry (revalidate fresh state under lock,
  *    merge evidence, auto-advance, atomic write)
  */
-async function executeRunCheckPhased(
+
+type PhaseAResult =
+  | string
+  | {
+      sessDir: string;
+      state: SessionState;
+      guard: { checkId: string; candidate: VerificationCandidate };
+      subject: ReturnType<typeof freezeValidationSubject>;
+      preAttestation: ExecutionSubjectAttestation;
+      worktree: string;
+      subjectInputs: readonly ExecutionSubjectInput[];
+    };
+
+async function validateAndAttest(
   kind: VerificationCandidateKind,
   context: ToolContext,
-): Promise<ToolResult> {
-  // ── Phase A: Validate request (read-only, no lock) ──
+): Promise<PhaseAResult> {
   const { sessDir, state } = await withReadOnlySession(context);
   if (!state) {
     throw Object.assign(new Error('No FlowGuard session found — run /hydrate first.'), {
@@ -166,6 +182,52 @@ async function executeRunCheckPhased(
   const guard = validateRunCheckRequest(kind, state);
   if (typeof guard === 'string') return guard;
   const subject = freezeValidationSubject(state);
+
+  const worktree = getWorktree(context);
+  const subjectInputs = state.executionSubjectInputsByKind?.[kind] ?? [];
+
+  if (subjectInputs.length === 0) {
+    return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
+      component: 'execution_surface',
+      phase: 'pre_execution',
+      detail: `no execution subject inputs for kind '${kind}' — attestation metadata missing`,
+    });
+  }
+
+  const result = await attestExecutionSubject(
+    subjectInputs,
+    worktree,
+    subject.scope === 'implementation' ? subject.implementationDigest : subject.planDigest,
+    subject.scope === 'implementation' ? (state.implementation?.changedFiles ?? []) : [],
+  );
+  if (result.kind === 'subject_changed') {
+    return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
+      component: result.component,
+      phase: 'pre_execution',
+      detail: result.detail,
+    });
+  }
+
+  return {
+    sessDir,
+    state,
+    guard,
+    subject,
+    preAttestation: result.attestation,
+    worktree,
+    subjectInputs,
+  };
+}
+
+async function executeRunCheckPhased(
+  kind: VerificationCandidateKind,
+  context: ToolContext,
+): Promise<ToolResult> {
+  // ── Phase A: Validate + attest (read-only, no lock) ──
+  const phaseA = await validateAndAttest(kind, context);
+  if (typeof phaseA === 'string') return phaseA;
+
+  const { sessDir, state, guard, subject, preAttestation, worktree, subjectInputs } = phaseA;
 
   // ── Phase B: Execute check (NO lock — subprocess runs independently) ──
   const attemptId = randomUUID();
@@ -189,19 +251,75 @@ async function executeRunCheckPhased(
     extraction,
     guard.candidate.assertionCapability,
   );
-  const derivedRepairGuidance = deriveRepairGuidance(evidence, outcome);
 
-  // ── Phase C: Persist with lock retry ──
-  return persistCheckResultWithRetry({
+  // ── Post-execution attestation + persist ──
+  return persistAfterAttestation({
     kind,
     evidence,
-    derivedRepairGuidance,
-    outcome,
     extraction,
     attemptId,
     subject,
+    subjectInputs,
+    worktree,
+    preAttestation,
+    implementationDigest:
+      subject.scope === 'implementation' ? subject.implementationDigest : subject.planDigest,
+    changedFiles:
+      subject.scope === 'implementation' ? (state.implementation?.changedFiles ?? []) : [],
+    outcome,
     sessDir,
     sessionId: context.sessionID,
+  });
+}
+
+async function persistAfterAttestation(params: {
+  kind: VerificationCandidateKind;
+  evidence: Awaited<ReturnType<typeof executeCheck>>;
+  extraction?: AssertionExtractionResult;
+  attemptId: string;
+  subject: ValidationSubject;
+  subjectInputs: readonly ExecutionSubjectInput[];
+  worktree: string;
+  preAttestation: ExecutionSubjectAttestation;
+  implementationDigest: string;
+  changedFiles: readonly string[];
+  outcome: ValidationOutcome;
+  sessDir: string;
+  sessionId: string;
+}): Promise<ToolResult> {
+  const postAttestation = await reattestExecutionSubject(
+    params.subjectInputs,
+    params.worktree,
+    params.preAttestation,
+    params.implementationDigest,
+    params.changedFiles,
+  );
+  if (postAttestation.kind === 'subject_changed') {
+    return persistCheckResultWithRetry({
+      kind: params.kind,
+      evidence: params.evidence,
+      derivedRepairGuidance: deriveRepairGuidance(params.evidence, 'blocked'),
+      outcome: 'blocked',
+      extraction: params.extraction,
+      attemptId: params.attemptId,
+      subject: params.subject,
+      sessDir: params.sessDir,
+      sessionId: params.sessionId,
+      classificationReasonOverride: `VERIFICATION_SUBJECT_CHANGED: ${postAttestation.detail}`,
+    });
+  }
+
+  // ── Phase C: Persist with lock retry ──
+  return persistCheckResultWithRetry({
+    kind: params.kind,
+    evidence: params.evidence,
+    derivedRepairGuidance: deriveRepairGuidance(params.evidence, params.outcome),
+    outcome: params.outcome,
+    extraction: params.extraction,
+    attemptId: params.attemptId,
+    subject: params.subject,
+    sessDir: params.sessDir,
+    sessionId: params.sessionId,
   });
 }
 
@@ -217,6 +335,7 @@ interface PersistCheckInput {
   subject: ValidationSubject;
   sessDir: string;
   sessionId: string;
+  classificationReasonOverride?: string;
 }
 
 // The lock-retry callback keeps execution and persistence intentionally separated.
@@ -232,6 +351,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
     subject,
     sessDir,
     sessionId,
+    classificationReasonOverride,
   } = input;
   const logger = getAdapterLogger();
   return withSessionWriteLockRetry(
@@ -250,13 +370,14 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       const subjectBlock = validationSubjectBlock(freshState, subject);
       if (subjectBlock) return subjectBlock;
 
-      const validationResult = buildValidationResult(
-        reGuard.checkId,
+      const validationResult = buildValidationResult({
+        checkId: reGuard.checkId,
         evidence,
         outcome,
         derivedRepairGuidance,
         extraction,
-      );
+        classificationReasonOverride,
+      });
       const allResults = mergeValidationResult(freshState, validationResult);
       const passedIds = new Set(allResults.filter((v) => v.passed).map((v) => v.checkId));
       const validationAttempt = buildValidationAttempt(subject, validationResult, attemptId);
@@ -287,7 +408,8 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       logger.info('tool', 'check_persisted', {
         sessionId,
         checkId: kind,
-        passed: evidence.passed,
+        passed: validationResult.passed,
+        outcome: validationResult.outcome,
         ...getLogTraceFields(),
       });
 
@@ -380,16 +502,26 @@ function blockWhenNoActiveChecks(state: SessionState): string | null {
 
 type CheckEvidence = Awaited<ReturnType<typeof executeCheck>>;
 
-function buildValidationResult(
-  checkId: string,
-  evidence: CheckEvidence,
-  outcome: ValidationOutcome,
-  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>,
-  extraction?: AssertionExtractionResult,
-): ValidationResult {
+function buildValidationResult(params: {
+  checkId: string;
+  evidence: CheckEvidence;
+  outcome: ValidationOutcome;
+  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
+  extraction?: AssertionExtractionResult;
+  classificationReasonOverride?: string;
+}): ValidationResult {
+  const {
+    checkId,
+    evidence,
+    outcome,
+    derivedRepairGuidance,
+    extraction,
+    classificationReasonOverride,
+  } = params;
+  const passed = outcome === 'supported';
   return {
     checkId,
-    passed: evidence.passed,
+    passed,
     detail: formatValidationDetail(evidence),
     executedAt: evidence.startedAt,
     kind: evidence.kind,
@@ -399,9 +531,9 @@ function buildValidationResult(
     outputDigest: evidence.outputDigest,
     timedOut: evidence.timedOut,
     outcome,
-    classificationReason: evidence.passed
-      ? undefined
-      : `exitCode=${evidence.exitCode}, timedOut=${evidence.timedOut}`,
+    classificationReason:
+      classificationReasonOverride ??
+      (passed ? undefined : `exitCode=${evidence.exitCode}, timedOut=${evidence.timedOut}`),
     derivedRepairGuidance,
     assertionExtraction: extraction,
   };

@@ -41,7 +41,7 @@ export interface ResolvedVerificationCandidate {
 export function wrapForResolution(
   candidates: readonly VerificationCandidate[],
 ): PlannedVerificationCandidate[] {
-  return candidates.map((c) => ({ candidate: c }));
+  return candidates.map((c) => ({ candidate: c, executionSubjectInputs: [] }));
 }
 
 export async function resolveRuntimeReadiness(

@@ -175,7 +175,10 @@ function deriveFromRequiredEvidence(
 ): ClaimVerificationState {
   const required = claim.requiredEvidence ?? EMPTY_REQUIRED;
   const freshPassKinds = new Set(
-    passing.filter((r) => isFresh(bindingOf(r), input)).map((r) => r.providerKind),
+    passing
+      .filter((r) => r.attestation !== 'external_self_reported')
+      .filter((r) => isFresh(bindingOf(r), input))
+      .map((r) => r.providerKind),
   );
   // Required adversarial evidence: a FRESH 'supported' counterexample. A missing,
   // stale, or 'not_verified' counterexample is unmet, never a pass-by-fallback.

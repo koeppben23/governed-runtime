@@ -51,6 +51,7 @@ function unavailable(claimId: string, evaluatedAt: string, reason: string): Proo
     status: 'unavailable',
     executedAt: evaluatedAt,
     detail: reason,
+    attestation: 'external_self_reported',
   };
 }
 
@@ -88,6 +89,7 @@ function resolveFromAttempt(
       resultDigest: attempt.projectionDigest,
       executedAt: attempt.completedAt,
       detail: `mutation command exited with code ${attempt.exitCode}; no valid verdict`,
+      attestation: 'external_self_reported',
     };
   }
   const clean = survivorCount === 0;
@@ -108,6 +110,7 @@ function resolveFromAttempt(
     detail: clean
       ? `${profileId}: ${killedCount} mutants detected, no survivors`
       : `${profileId}: ${survivorCount} surviving mutants (${killedCount} detected)`,
+    attestation: 'external_self_reported',
   };
 }
 

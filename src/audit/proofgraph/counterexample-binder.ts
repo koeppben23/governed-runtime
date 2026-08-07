@@ -22,17 +22,6 @@ import type { ValidationResult } from '../../state/evidence-validation.js';
 import { bindAssertionEvidence } from './assertion-evidence-binding.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 
-function toCounterexampleOutcome(result: ValidationResult): CounterexampleOutcome {
-  switch (result.outcome) {
-    case 'supported':
-      return 'supported';
-    case 'inconclusive':
-      return 'not_verified';
-    case 'blocked':
-      return 'blocked';
-  }
-}
-
 interface ClassifiedOutcome {
   readonly outcome: CounterexampleOutcome;
   readonly diagnosticCode?: AssertionBindingReasonCode;
@@ -40,10 +29,8 @@ interface ClassifiedOutcome {
 
 function classifyClaimOutcome(
   result: ValidationResult,
-  requirement?: CounterexampleRequirement,
+  requirement: CounterexampleRequirement,
 ): ClassifiedOutcome {
-  if (!requirement) return { outcome: toCounterexampleOutcome(result) };
-
   const extraction = result.assertionExtraction;
   if (!extraction) return { outcome: 'not_verified', diagnosticCode: 'evidence_missing' };
 
@@ -104,7 +91,7 @@ function bindClaimCounterexamples(
     const requirement = claim.counterexampleRequirement;
     const classified = requirement
       ? classifyClaimOutcome(attempt.result, requirement)
-      : { outcome: toCounterexampleOutcome(attempt.result) };
+      : { outcome: 'not_verified' as const };
     if (classified.diagnosticCode) {
       if (!diagnostics.has(claim.claimId)) {
         diagnostics.set(claim.claimId, classified.diagnosticCode);
