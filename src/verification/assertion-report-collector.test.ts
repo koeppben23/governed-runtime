@@ -7,7 +7,9 @@ import { collectAssertionReports } from './assertion-report-collector.js';
 import type {
   PreparedVerificationExecution,
   PreparedAssertionReportRunSpecific,
+  PreparedAssertionReportSnapshotDiff,
   PreparedAssertionReportStdout,
+  ReportFileSnapshot,
 } from './verification-execution.js';
 import type { ExecutionEvidence } from './executor.js';
 
@@ -194,6 +196,134 @@ describe('collectAssertionReports', () => {
       };
       const result = await collectAssertionReports(prepared, makeEvidence(''), '/tmp');
       expect(result.status).toBe('blocked');
+    });
+  });
+
+  describe('snapshot_diff', () => {
+    it('collects changed/new reports and ignores unchanged', async () => {
+      const tmpDir = await mkdtemp(join(tmpdir(), 'fc-'));
+      await mkdir(join(tmpDir, 'reports'), { recursive: true });
+
+      // Pre-existing unchanging file
+      const unchangedPath = join('reports', 'unchanged.xml');
+      const unchangedContent = '<testsuite></testsuite>';
+      await writeFile(join(tmpDir, unchangedPath), unchangedContent);
+
+      const preSnapshot: ReportFileSnapshot[] = [
+        { path: unchangedPath, digest: sha256(unchangedContent), size: unchangedContent.length },
+      ];
+
+      // After execution: unchanged file stays, new file appears
+      const changedPath = join('reports', 'changed.xml');
+      const changedContent = '<testsuite><testcase name="t"/></testsuite>';
+      await writeFile(join(tmpDir, changedPath), changedContent);
+
+      const prepared: PreparedVerificationExecution = {
+        attemptId: 'run-1',
+        kind: 'build',
+        command: './mvnw test',
+        assertion: {
+          capability: 'structured',
+          report: {
+            kind: 'snapshot_diff',
+            spec: {
+              collection: 'snapshot_diff' as const,
+              transport: 'file' as const,
+              format: 'junit_xml' as const,
+              providerId: 'junit' as const,
+              standardPatterns: ['reports/TEST-*.xml', 'reports/*.xml'],
+            },
+            preExecutionSnapshot: preSnapshot,
+          } satisfies PreparedAssertionReportSnapshotDiff,
+        },
+      };
+      const result = await collectAssertionReports(prepared, makeEvidence(''), tmpDir);
+      expect(result.status).toBe('collected');
+      if (result.status === 'collected' && result.report.transport === 'file') {
+        expect(result.report.reports).toHaveLength(1);
+        expect(result.report.reports[0]!.path).toBe(changedPath);
+        // Unchanged file must NOT be in reports
+        expect(result.report.reports.find((r) => r.path === unchangedPath)).toBeUndefined();
+      }
+      await rm(tmpDir, { recursive: true, force: true });
+    });
+
+    it('blocks when no reports changed', async () => {
+      const tmpDir = await mkdtemp(join(tmpdir(), 'fc-'));
+      await mkdir(join(tmpDir, 'reports'), { recursive: true });
+      const unchangedPath = join('reports', 'unchanged.xml');
+      const unchangedContent = '<testsuite></testsuite>';
+      await writeFile(join(tmpDir, unchangedPath), unchangedContent);
+
+      const preSnapshot: ReportFileSnapshot[] = [
+        { path: unchangedPath, digest: sha256(unchangedContent), size: unchangedContent.length },
+      ];
+
+      const prepared: PreparedVerificationExecution = {
+        attemptId: 'run-1',
+        kind: 'build',
+        command: './mvnw test',
+        assertion: {
+          capability: 'structured',
+          report: {
+            kind: 'snapshot_diff',
+            spec: {
+              collection: 'snapshot_diff' as const,
+              transport: 'file' as const,
+              format: 'junit_xml' as const,
+              providerId: 'junit' as const,
+              standardPatterns: ['reports/TEST-*.xml'],
+            },
+            preExecutionSnapshot: preSnapshot,
+          } satisfies PreparedAssertionReportSnapshotDiff,
+        },
+      };
+      const result = await collectAssertionReports(prepared, makeEvidence(''), tmpDir);
+      expect(result.status).toBe('blocked');
+      if (result.status === 'blocked') {
+        expect(result.reasonCode).toBe('report_missing');
+      }
+      await rm(tmpDir, { recursive: true, force: true });
+    });
+
+    it('collects deterministically sorted reports', async () => {
+      const tmpDir = await mkdtemp(join(tmpdir(), 'fc-'));
+      await mkdir(join(tmpDir, 'reports'), { recursive: true });
+
+      const preSnapshot: ReportFileSnapshot[] = [];
+      const paths = ['reports/z.xml', 'reports/a.xml', 'reports/m.xml'];
+      for (const p of paths) {
+        await writeFile(join(tmpDir, p), '<testsuite/>');
+      }
+
+      const prepared: PreparedVerificationExecution = {
+        attemptId: 'run-1',
+        kind: 'build',
+        command: './mvnw test',
+        assertion: {
+          capability: 'structured',
+          report: {
+            kind: 'snapshot_diff',
+            spec: {
+              collection: 'snapshot_diff' as const,
+              transport: 'file' as const,
+              format: 'junit_xml' as const,
+              providerId: 'junit' as const,
+              standardPatterns: ['reports/*.xml'],
+            },
+            preExecutionSnapshot: preSnapshot,
+          } satisfies PreparedAssertionReportSnapshotDiff,
+        },
+      };
+      const result = await collectAssertionReports(prepared, makeEvidence(''), tmpDir);
+      expect(result.status).toBe('collected');
+      if (result.status === 'collected' && result.report.transport === 'file') {
+        expect(result.report.reports).toHaveLength(3);
+        expect(result.report.reports[0]!.path).toBe(join('reports', 'a.xml'));
+        expect(result.report.reports[1]!.path).toBe(join('reports', 'm.xml'));
+        expect(result.report.reports[2]!.path).toBe(join('reports', 'z.xml'));
+      }
+      await rm(tmpDir, { recursive: true, force: true });
     });
   });
 });

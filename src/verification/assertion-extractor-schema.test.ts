@@ -122,3 +122,41 @@ describe('blocked/inconclusive reason codes', () => {
     ).toThrow();
   });
 });
+
+describe('attemptId is preserved through extraction', () => {
+  it('extracted result carries a valid UUID attemptId', () => {
+    const AID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+    const result = {
+      status: 'extracted' as const,
+      attemptId: AID,
+      providerId: 'junit' as const,
+      format: 'junit_xml' as const,
+      bindingCapability: 'assertion' as const,
+      reportDigests: ['aaaa'.repeat(16)],
+      assertions: [
+        {
+          assertion: { providerId: 'junit' as const, localId: 'Test#m' },
+          providerId: 'junit' as const,
+          status: 'passed' as const,
+          testName: 'm',
+        },
+      ],
+      summary: {
+        assertionCount: 1,
+        passedCount: 1,
+        failedCount: 0,
+        erroredCount: 0,
+        skippedCount: 0,
+        suiteInfrastructureError: false,
+      },
+    };
+    const parsed = AssertionExtractionResult.parse(result);
+    expect(parsed.status).toBe('extracted');
+    if (parsed.status === 'extracted') {
+      expect(parsed.attemptId).toBe(AID);
+      expect(parsed.attemptId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+    }
+  });
+});
