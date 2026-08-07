@@ -161,7 +161,6 @@ async function buildProofGraphProjectionResponse(
   state: SessionState,
   policy: FlowGuardPolicy,
   checkFields: Record<string, unknown>,
-  runtimeCandidates?: readonly ResolvedVerificationCandidate[],
 ): Promise<string> {
   const now = new Date().toISOString();
   const structuralSurfaces = evaluateStructuralSurfaces();
@@ -180,7 +179,6 @@ async function buildProofGraphProjectionResponse(
     ],
     surfaceDigests: surfaceDigestMap(structuralSurfaces),
     mutationSummaries,
-    runtimeCandidates,
   });
   const proofGraphGate = evaluateProofGraphGate({
     projection: proofGraph.projection,
@@ -215,11 +213,10 @@ interface ResolveProjectionInput {
   readonly policy: FlowGuardPolicy;
   readonly sessDir: string;
   readonly presentation: PresentationRenderOptions;
-  readonly runtimeCandidates?: readonly ResolvedVerificationCandidate[];
 }
 
 async function resolveProjection(input: ResolveProjectionInput): Promise<string | null> {
-  const { args, state, policy, sessDir, presentation, runtimeCandidates } = input;
+  const { args, state, policy, sessDir, presentation } = input;
   const checkFields = buildCheckProjectionFields(state);
   // /finish is the most comprehensive focused projection and is placed first so
   // its own template call is never shadowed by a stray additional flag. This
@@ -292,7 +289,7 @@ async function resolveProjection(input: ResolveProjectionInput): Promise<string 
     );
   }
   if (args.proofGraph) {
-    return await buildProofGraphProjectionResponse(state, policy, checkFields, runtimeCandidates);
+    return await buildProofGraphProjectionResponse(state, policy, checkFields);
   }
   return null;
 }
@@ -718,7 +715,6 @@ export const status: ToolDefinition = {
         policy,
         sessDir,
         presentation,
-        runtimeCandidates,
       });
       if (projection !== null) return projection;
 

@@ -50,6 +50,7 @@ import { blocked } from '../config/reasons.js';
 import { compareActorIdentity, isAssuranceAtLeast } from '../identity/actor-info.js';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { evaluateProofGraphGate } from '../audit/proofgraph/gate.js';
+import { mapEnforcementReasonToRegistryCode } from '../audit/proofgraph/reason-code-mapping.js';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -283,7 +284,15 @@ function enforceProofGraphEvidenceApproval(
       triggers: decision.relevantTriggers.join(', '),
     });
   }
+  // facts_unproven — use per-claim reason codes when available
+  const claimDetails = decision.blockingClaims
+    .map((bc) => {
+      const registryCode = mapEnforcementReasonToRegistryCode(bc.reasonCode);
+      return `${bc.claimId} (${registryCode})`;
+    })
+    .join(', ');
   return blocked('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN', {
+    claimDetails,
     claimIds: decision.blockingClaimIds.join(', '),
   });
 }

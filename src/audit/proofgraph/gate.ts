@@ -20,6 +20,8 @@ import type { RiskTrigger } from '../../state/schema.js';
 import {
   computeProofGraphEnforcement,
   type EnforcementDecisionKind,
+  type EnforcementReasonCode,
+  type BlockingClaim,
 } from './enforcement-projection.js';
 
 /** The evaluated ProofGraph gate decision. */
@@ -27,6 +29,10 @@ export interface ProofGraphGateDecision {
   readonly enforced: true;
   readonly gated: boolean;
   readonly blockingClaimIds: readonly string[];
+  /** Per-claim blocking details with typed reason codes. */
+  readonly blockingClaims: readonly BlockingClaim[];
+  /** Enforcement reason code for the gate decision. */
+  readonly reasonCode: EnforcementReasonCode;
   readonly reason: string;
   readonly kind: EnforcementDecisionKind;
   readonly relevantTriggers: readonly Exclude<RiskTrigger, 'ceremony_only'>[];
@@ -82,6 +88,8 @@ export function evaluateProofGraphGate(input: {
     enforced: true,
     gated: !enforcement.satisfied,
     blockingClaimIds: enforcement.blockingClaims.map((b) => b.claimId),
+    blockingClaims: enforcement.blockingClaims,
+    reasonCode: enforcement.reasonCode,
     reason: enforcement.reason,
     kind: enforcement.decisionKind,
     relevantTriggers: triggers,
