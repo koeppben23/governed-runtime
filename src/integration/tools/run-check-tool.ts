@@ -103,7 +103,6 @@ import {
   nextImplementationReviewIteration,
 } from './implement-shared.js';
 import { materializeApprovedPlanContractResult } from '../proofgraph/materialize-contract.js';
-import { hashWorktreeFiles } from '../../adapters/git.js';
 import { hashText } from '../../shared/hashing.js';
 
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
@@ -125,7 +124,7 @@ function resolveExecutionSubjectInputs(
   candidate: VerificationCandidate,
   worktree: string,
 ): ExecutionSubjectInput[] {
-  const inputs: ExecutionSubjectInput[] = [{ kind: 'implementation' }];
+  const inputs: ExecutionSubjectInput[] = [];
   if (isPackageScriptCommand(worktree, candidate.command)) {
     inputs.push({ kind: 'file', path: 'package.json' });
   }
@@ -135,33 +134,32 @@ function resolveExecutionSubjectInputs(
 async function attestExecutionSubject(
   inputs: readonly ExecutionSubjectInput[],
   worktree: string,
-  implementationDigest: string,
-  changedFiles: readonly string[],
 ): Promise<AttestationResult> {
+  if (inputs.length === 0) {
+    return {
+      kind: 'ok',
+      attestation: { inputs, digest: hashText('no-surfaces'), surfaceDigests: new Map() },
+    };
+  }
+
   const surfaceDigests = new Map<string, string>();
   const parts: string[] = [];
 
   for (const input of inputs) {
-    if (input.kind === 'implementation') {
-      if (changedFiles.length === 0) continue;
-      const sortedFiles = [...changedFiles].sort();
-      const hashes = await hashWorktreeFiles(worktree, sortedFiles);
-      const digest = hashText(sortedFiles.map((f) => `${f}:${hashes[f] ?? 'deleted'}`).join('\n'));
-      if (digest !== implementationDigest) {
+    if (input.kind === 'file') {
+      try {
+        const content = readFileSync(join(worktree, input.path), 'utf-8');
+        const digest = hashText(content);
+        surfaceDigests.set(input.path, digest);
+        parts.push(`${input.path}:${digest}`);
+      } catch {
         return {
           kind: 'subject_changed',
-          component: 'implementation',
+          component: 'execution_surface',
           phase: 'pre_execution',
-          detail: `implementation digest mismatch: expected ${implementationDigest.slice(0, 8)}..., computed ${digest.slice(0, 8)}...`,
+          detail: `cannot read execution surface: ${input.path}`,
         };
       }
-      surfaceDigests.set('implementation', digest);
-      parts.push(`implementation:${digest}`);
-    } else {
-      const content = readFileSync(join(worktree, input.path), 'utf-8');
-      const digest = hashText(content);
-      surfaceDigests.set(input.path, digest);
-      parts.push(`${input.path}:${digest}`);
     }
   }
 
@@ -182,16 +180,25 @@ async function reattestExecutionSubject(
   preAttestation: ExecutionSubjectAttestation,
 ): Promise<AttestationResult> {
   for (const input of inputs) {
-    if (input.kind === 'implementation') continue;
-    const content = readFileSync(join(worktree, input.path), 'utf-8');
-    const digest = hashText(content);
-    const expected = preAttestation.surfaceDigests.get(input.path);
-    if (expected !== undefined && digest !== expected) {
+    if (input.kind !== 'file') continue;
+    try {
+      const content = readFileSync(join(worktree, input.path), 'utf-8');
+      const digest = hashText(content);
+      const expected = preAttestation.surfaceDigests.get(input.path);
+      if (expected !== undefined && digest !== expected) {
+        return {
+          kind: 'subject_changed',
+          component: 'execution_surface',
+          phase: 'post_execution',
+          detail: `${input.path} changed during execution`,
+        };
+      }
+    } catch {
       return {
         kind: 'subject_changed',
         component: 'execution_surface',
         phase: 'post_execution',
-        detail: `${input.path} changed during execution`,
+        detail: `cannot re-read execution surface: ${input.path}`,
       };
     }
   }
@@ -271,12 +278,7 @@ async function executeRunCheckPhased(
   // ── Pre-execution attestation ──
   const worktree = getWorktree(context);
   const subjectInputs = resolveExecutionSubjectInputs(guard.candidate, worktree);
-  const preAttestation = await attestExecutionSubject(
-    subjectInputs,
-    worktree,
-    subject.scope === 'implementation' ? subject.implementationDigest : subject.planDigest,
-    subject.scope === 'implementation' ? (state.implementation?.changedFiles ?? []) : [],
-  );
+  const preAttestation = await attestExecutionSubject(subjectInputs, worktree);
   if (preAttestation.kind === 'subject_changed') {
     return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
       component: preAttestation.component,

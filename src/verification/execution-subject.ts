@@ -16,9 +16,15 @@
  * proof evidence.
  *
  * Scope (this commit):
- *   - { kind: 'implementation' } — mandatory for every check
  *   - { kind: 'file', path: 'package.json' } — when check command is a repo-native
  *     package.json script
+ *
+ *   Implementation re-attestation is handled by the existing
+ *   freezeValidationSubject / validationSubjectBlock mechanism
+ *   (Phase A → Phase C lock-acquisition check). The attestation here
+ *   adds execution-surface-level integrity for files the agent can
+ *   modify between planning and execution without changing the
+ *   implementation digest.
  *
  *   Configuration-surface attestation is incomplete: config files (vitest.config.*,
  *   jest.config.*, pytest.ini, pom.xml, build.gradle*, go.mod, etc.) are not yet
