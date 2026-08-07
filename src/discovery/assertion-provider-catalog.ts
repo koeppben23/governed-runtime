@@ -30,10 +30,9 @@ export type ScriptSignature =
 export interface RuntimeRequirement {
   readonly id: string;
   readonly role: 'runtime' | 'tool' | 'reporter';
-  readonly probe: {
-    readonly command: string;
-    readonly versionPattern?: string;
-  };
+  readonly probe:
+    | { readonly kind: 'exec'; readonly command: string; readonly versionPattern?: string }
+    | { readonly kind: 'executable_file'; readonly path: string };
 }
 
 export interface AssertionProviderDescriptor {
@@ -62,7 +61,7 @@ export const PROVIDER_DESCRIPTORS: readonly AssertionProviderDescriptor[] = [
       {
         id: 'java',
         role: 'runtime',
-        probe: { command: 'java -version' },
+        probe: { kind: 'exec', command: 'java -version' },
       },
     ],
   },
@@ -76,7 +75,7 @@ export const PROVIDER_DESCRIPTORS: readonly AssertionProviderDescriptor[] = [
       {
         id: 'vitest',
         role: 'tool',
-        probe: { command: 'node_modules/.bin/vitest --version' },
+        probe: { kind: 'exec', command: 'node_modules/.bin/vitest --version' },
       },
     ],
     assertionReportTemplate: {
@@ -99,7 +98,7 @@ export const PROVIDER_DESCRIPTORS: readonly AssertionProviderDescriptor[] = [
       {
         id: 'jest',
         role: 'tool',
-        probe: { command: 'node_modules/.bin/jest --version' },
+        probe: { kind: 'exec', command: 'node_modules/.bin/jest --version' },
       },
     ],
     assertionReportTemplate: {
@@ -126,17 +125,17 @@ export const PROVIDER_DESCRIPTORS: readonly AssertionProviderDescriptor[] = [
       {
         id: 'python',
         role: 'runtime',
-        probe: { command: 'python --version' },
+        probe: { kind: 'exec', command: 'python --version' },
       },
       {
         id: 'pytest',
         role: 'tool',
-        probe: { command: 'python -c "import pytest"' },
+        probe: { kind: 'exec', command: 'python -c "import pytest"' },
       },
       {
         id: 'pytest-json-report',
         role: 'reporter',
-        probe: { command: 'python -c "import pytest_jsonreport"' },
+        probe: { kind: 'exec', command: 'python -c "import pytest_jsonreport"' },
       },
     ],
     assertionReportTemplate: {
@@ -159,7 +158,7 @@ export const PROVIDER_DESCRIPTORS: readonly AssertionProviderDescriptor[] = [
       {
         id: 'go',
         role: 'tool',
-        probe: { command: 'go version' },
+        probe: { kind: 'exec', command: 'go version' },
       },
     ],
     assertionReportTemplate: {
@@ -223,12 +222,12 @@ const jUnitMavenWrapperProfile: ExecutionProfile = {
     {
       id: 'java',
       role: 'runtime',
-      probe: { command: 'java -version' },
+      probe: { kind: 'exec', command: 'java -version' },
     },
     {
       id: 'mvnw',
       role: 'tool',
-      probe: { command: 'test -x ./mvnw' },
+      probe: { kind: 'executable_file', path: './mvnw' },
     },
   ],
   createCandidate(ctx) {
@@ -265,12 +264,12 @@ const jUnitGradleWrapperProfile: ExecutionProfile = {
     {
       id: 'java',
       role: 'runtime',
-      probe: { command: 'java -version' },
+      probe: { kind: 'exec', command: 'java -version' },
     },
     {
       id: 'gradlew',
       role: 'tool',
-      probe: { command: 'test -x ./gradlew' },
+      probe: { kind: 'executable_file', path: './gradlew' },
     },
   ],
   createCandidate(ctx) {

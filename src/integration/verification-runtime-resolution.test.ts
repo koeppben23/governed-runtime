@@ -12,9 +12,9 @@ class FakeProbeRunner implements ProbeRunner {
   constructor(private readonly responses: Record<string, ProbeResult>) {}
 
   async probe(request: ProbeRequest): Promise<ProbeResult> {
-    return (
-      this.responses[request.tool.command] ?? { status: 'unknown', reason: 'no fake response' }
-    );
+    const key =
+      request.tool.kind === 'executable_file' ? `file:${request.tool.path}` : request.tool.command;
+    return this.responses[key] ?? { status: 'unknown', reason: 'no fake response' };
   }
 }
 

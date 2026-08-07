@@ -148,6 +148,7 @@ describe('Execution Profiles', () => {
 
     for (const desc of PROVIDER_DESCRIPTORS) {
       for (const req of desc.runtimeRequirements ?? []) {
+        if (req.probe.kind !== 'exec') continue;
         for (const pattern of installPatterns) {
           expect(
             req.probe.command,

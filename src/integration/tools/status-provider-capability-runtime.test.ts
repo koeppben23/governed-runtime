@@ -17,8 +17,10 @@ class FakeProbeRunner implements ProbeRunner {
   constructor(private readonly responses: Record<string, ProbeResult>) {}
 
   async probe(request: ProbeRequest): Promise<ProbeResult> {
+    const key =
+      request.tool.kind === 'executable_file' ? `file:${request.tool.path}` : request.tool.command;
     return (
-      this.responses[request.tool.command] ?? {
+      this.responses[key] ?? {
         status: 'unknown',
         reason: 'no fake response',
       }
@@ -125,7 +127,7 @@ describe('runtime readiness via status projection', () => {
   it('JUnit maven wrapper probes java and mvnw via profile requirements', async () => {
     const runner = new FakeProbeRunner({
       'java -version': { status: 'available', version: '21.0.12' },
-      'test -x ./mvnw': { status: 'available' },
+      'file:./mvnw': { status: 'available' },
     });
 
     const candidates: VerificationCandidate[] = [
@@ -156,7 +158,7 @@ describe('runtime readiness via status projection', () => {
   it('JUnit gradle wrapper reports tool_missing when gradlew missing', async () => {
     const runner = new FakeProbeRunner({
       'java -version': { status: 'available', version: '21.0.12' },
-      'test -x ./gradlew': { status: 'missing' },
+      'file:./gradlew': { status: 'missing' },
     });
 
     const candidates: VerificationCandidate[] = [

@@ -78,9 +78,9 @@ export const PERF_BUDGETS = {
 
   /**
    * Single guard predicate check.
-   * CI adjustment: 4x baseline to absorb shared-runner scheduling variance.
+   * CI adjustment: 3x baseline to absorb shared-runner scheduling variance.
    */
-  guardPredicateMs: 4 * CI_MULTIPLIER * PERF_BUDGET_FACTOR,
+  guardPredicateMs: 3 * CI_MULTIPLIER * PERF_BUDGET_FACTOR,
 
   /** Full hash chain verification for 1000 events. */
   auditChainVerify1000Ms: 100 * CI_MULTIPLIER,

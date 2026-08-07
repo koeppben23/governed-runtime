@@ -16,7 +16,8 @@ class FakeProbeRunner implements ProbeRunner {
   }
 
   async probe(request: ProbeRequest): Promise<ProbeResult> {
-    const key = request.tool.command;
+    const key =
+      request.tool.kind === 'executable_file' ? `file:${request.tool.path}` : request.tool.command;
     const found = this.responses.get(key);
     if (found) return found;
     return { status: 'unknown', reason: `no fake response for: ${key}` };
@@ -30,7 +31,7 @@ describe('FakeProbeRunner', () => {
     });
 
     const result = await runner.probe({
-      tool: { id: 'python', role: 'runtime', command: 'python --version' },
+      tool: { kind: 'exec', id: 'python', role: 'runtime', command: 'python --version' },
       cwd: '/tmp',
     });
 
@@ -46,7 +47,7 @@ describe('FakeProbeRunner', () => {
     });
 
     const result = await runner.probe({
-      tool: { id: 'go', role: 'tool', command: 'go version' },
+      tool: { kind: 'exec', id: 'go', role: 'tool', command: 'go version' },
       cwd: '/tmp',
     });
 
@@ -57,7 +58,7 @@ describe('FakeProbeRunner', () => {
     const runner = new FakeProbeRunner({});
 
     const result = await runner.probe({
-      tool: { id: 'unknown', role: 'tool', command: 'unknown-cmd --version' },
+      tool: { kind: 'exec', id: 'unknown', role: 'tool', command: 'unknown-cmd --version' },
       cwd: '/tmp',
     });
 
@@ -70,7 +71,7 @@ describe('FakeProbeRunner', () => {
     });
 
     const result = await runner.probe({
-      tool: { id: 'pytest', role: 'tool', command: 'pytest' },
+      tool: { kind: 'exec', id: 'pytest', role: 'tool', command: 'pytest' },
       cwd: '/tmp',
     });
 
@@ -82,7 +83,7 @@ describe('ProcessProbeRunner', () => {
   it('available for node --version', async () => {
     const runner = new ProcessProbeRunner();
     const result = await runner.probe({
-      tool: { id: 'node', role: 'runtime', command: 'node --version' },
+      tool: { kind: 'exec', id: 'node', role: 'runtime', command: 'node --version' },
       cwd: '/tmp',
     });
 
@@ -92,7 +93,7 @@ describe('ProcessProbeRunner', () => {
   it('missing for nonexistent binary', async () => {
     const runner = new ProcessProbeRunner();
     const result = await runner.probe({
-      tool: { id: 'nonexistent', role: 'tool', command: 'nonexistent-binary-xyz123' },
+      tool: { kind: 'exec', id: 'nonexistent', role: 'tool', command: 'nonexistent-binary-xyz123' },
       cwd: '/tmp',
     });
 
@@ -102,11 +103,11 @@ describe('ProcessProbeRunner', () => {
   it('caches results for same probe', async () => {
     const runner = new ProcessProbeRunner();
     const first = await runner.probe({
-      tool: { id: 'node', role: 'runtime', command: 'node --version' },
+      tool: { kind: 'exec', id: 'node', role: 'runtime', command: 'node --version' },
       cwd: '/tmp',
     });
     const second = await runner.probe({
-      tool: { id: 'node', role: 'runtime', command: 'node --version' },
+      tool: { kind: 'exec', id: 'node', role: 'runtime', command: 'node --version' },
       cwd: '/tmp',
     });
 

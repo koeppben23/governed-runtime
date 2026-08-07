@@ -13,17 +13,26 @@
  */
 
 import { execFile } from 'node:child_process';
+import { access, constants } from 'node:fs/promises';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 export type ProbeRole = 'runtime' | 'tool' | 'reporter';
 
-export interface ProbeSpec {
-  readonly id: string;
-  readonly role: ProbeRole;
-  readonly command: string;
-  readonly versionPattern?: string;
-}
+export type ProbeSpec =
+  | {
+      readonly kind: 'exec';
+      readonly id: string;
+      readonly role: ProbeRole;
+      readonly command: string;
+      readonly versionPattern?: string;
+    }
+  | {
+      readonly kind: 'executable_file';
+      readonly id: string;
+      readonly role: ProbeRole;
+      readonly path: string;
+    };
 
 export interface ProbeRequest {
   readonly tool: ProbeSpec;
@@ -50,7 +59,7 @@ export class ProcessProbeRunner implements ProbeRunner {
   private readonly cache = new Map<string, Promise<ProbeResult>>();
 
   async probe(request: ProbeRequest): Promise<ProbeResult> {
-    const cacheKey = `${request.tool.command}:${request.cwd}`;
+    const cacheKey = cacheKeyFor(request);
     const cached = this.cache.get(cacheKey);
     if (cached) return cached;
 
@@ -61,9 +70,37 @@ export class ProcessProbeRunner implements ProbeRunner {
 
   private async runProbe(request: ProbeRequest): Promise<ProbeResult> {
     const { tool, cwd } = request;
-    const tokens = parseShellCommand(tool.command);
+
+    if (tool.kind === 'executable_file') {
+      return this.probeExecutableFile(tool.path, cwd);
+    }
+
+    return this.probeExec(tool.command, cwd, tool.versionPattern);
+  }
+
+  private async probeExecutableFile(relPath: string, cwd: string): Promise<ProbeResult> {
+    const { join } = await import('node:path');
+    const absPath = join(cwd, relPath);
+    try {
+      await access(absPath, constants.X_OK);
+      return { status: 'available' };
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code === 'ENOENT' || code === 'EACCES') {
+        return { status: 'missing' };
+      }
+      return { status: 'unknown', reason: String(err) };
+    }
+  }
+
+  private async probeExec(
+    command: string,
+    cwd: string,
+    versionPattern?: string,
+  ): Promise<ProbeResult> {
+    const tokens = parseShellCommand(command);
     if (tokens.length === 0) {
-      return { status: 'unknown', reason: `empty probe command: ${tool.command}` };
+      return { status: 'unknown', reason: `empty probe command: ${command}` };
     }
     const cmd = tokens[0]!;
     const args = tokens.slice(1);
@@ -76,8 +113,8 @@ export class ProcessProbeRunner implements ProbeRunner {
 
       if (result.exitCode === 0) {
         let version: string | undefined;
-        if (tool.versionPattern) {
-          const re = new RegExp(tool.versionPattern);
+        if (versionPattern) {
+          const re = new RegExp(versionPattern);
           const match = re.exec(result.stdout);
           version = match?.[1];
         }
@@ -96,6 +133,14 @@ export class ProcessProbeRunner implements ProbeRunner {
 }
 
 // ─── Internal — subprocess execution ────────────────────────────────────────
+
+function cacheKeyFor(request: ProbeRequest): string {
+  const { tool, cwd } = request;
+  if (tool.kind === 'executable_file') {
+    return `file:${tool.path}:${cwd}`;
+  }
+  return `exec:${tool.command}:${cwd}`;
+}
 
 interface ExecResult {
   exitCode: number;

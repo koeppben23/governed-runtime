@@ -80,17 +80,55 @@ export async function resolveRuntimeReadiness(
 
 // ─── Internal ────────────────────────────────────────────────────────────────
 
+function buildProbeSpec(
+  req: RuntimeRequirement,
+): import('../verification/toolchain-probe.js').ProbeSpec {
+  if (req.probe.kind === 'executable_file') {
+    return {
+      kind: 'executable_file',
+      id: req.id,
+      role: req.role,
+      path: req.probe.path,
+    };
+  }
+  return {
+    kind: 'exec',
+    id: req.id,
+    role: req.role,
+    command: req.probe.command,
+    versionPattern: req.probe.versionPattern,
+  };
+}
+
 function getEffectiveRequirements(candidate: VerificationCandidate): readonly RuntimeRequirement[] {
   if (candidate.assertionCapability !== 'structured') return [];
 
   const matchingProfile = findMatchingProfile(candidate);
-  if (matchingProfile?.runtimeRequirements?.length) {
-    return matchingProfile.runtimeRequirements;
-  }
+  const raw = matchingProfile?.runtimeRequirements?.length
+    ? matchingProfile.runtimeRequirements
+    : (() => {
+        const descriptor = DESCRIPTOR_BY_PROVIDER.get(candidate.assertionReport.providerId);
+        return descriptor?.runtimeRequirements ?? [];
+      })();
 
-  const providerId = candidate.assertionReport.providerId;
-  const descriptor = DESCRIPTOR_BY_PROVIDER.get(providerId);
-  return descriptor?.runtimeRequirements ?? [];
+  // Translate wrapper probe paths for Windows candidates
+  return raw.map((req) => translateWrapperProbe(candidate, req));
+}
+
+function translateWrapperProbe(
+  candidate: VerificationCandidate,
+  req: RuntimeRequirement,
+): RuntimeRequirement {
+  if (req.probe.kind !== 'executable_file') return req;
+
+  const source = candidate.source;
+  if (source === 'repo:mvnw.cmd' && req.id === 'mvnw') {
+    return { ...req, probe: { kind: 'executable_file', path: 'mvnw.cmd' } };
+  }
+  if (source === 'repo:gradlew.bat' && req.id === 'gradlew') {
+    return { ...req, probe: { kind: 'executable_file', path: 'gradlew.bat' } };
+  }
+  return req;
 }
 
 function findMatchingProfile(candidate: VerificationCandidate): ExecutionProfile | undefined {
@@ -139,15 +177,8 @@ async function probeRequirements(
   const results: ResolvedRequirement[] = [];
 
   for (const req of requirements) {
-    const probeResult = await runner.probe({
-      tool: {
-        id: req.id,
-        role: req.role,
-        command: req.probe.command,
-        versionPattern: req.probe.versionPattern,
-      },
-      cwd,
-    });
+    const probeSpec = buildProbeSpec(req);
+    const probeResult = await runner.probe({ tool: probeSpec, cwd });
 
     let status: 'available' | 'missing' | 'unknown';
     if (probeResult.status === 'available') {
