@@ -69,8 +69,8 @@ const PROVIDER_SWITCH_PATTERNS = [
   /"repo:mvnw"/,
   /"repo:gradlew"/,
   /"detectedStack:testFramework:"/,
-  /\`\$\{framework\}-fallback\`/,
-  /\`\$\{framework\}-stdout\`/,
+  /`\$\{framework\}-fallback`/,
+  /`\$\{framework\}-stdout`/,
 ];
 
 const GATE_BOUNDARY_IMPORTS = [
