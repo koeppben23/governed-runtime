@@ -195,6 +195,9 @@ export interface ExecutionProfile {
   createCandidate(
     ctx: PlannerContext,
   ): import('../state/discovery-schemas.js').VerificationCandidate | null;
+
+  /** Profile-specific runtime requirements override provider defaults (PR 8). */
+  readonly runtimeRequirements?: readonly RuntimeRequirement[];
 }
 
 // ─── Implementation Helpers ──────────────────────────────────────────────────
@@ -216,6 +219,18 @@ const jUnitMavenWrapperProfile: ExecutionProfile = {
   providerId: 'junit',
   format: 'junit_xml',
   kind: 'build',
+  runtimeRequirements: [
+    {
+      id: 'java',
+      role: 'runtime',
+      probe: { command: 'java -version' },
+    },
+    {
+      id: 'mvnw',
+      role: 'tool',
+      probe: { command: 'test -x ./mvnw' },
+    },
+  ],
   createCandidate(ctx) {
     const hasPosix = ctx.rootFiles.has('mvnw');
     const hasWin = ctx.rootFiles.has('mvnw.cmd');
@@ -246,6 +261,18 @@ const jUnitGradleWrapperProfile: ExecutionProfile = {
   providerId: 'junit',
   format: 'junit_xml',
   kind: 'test',
+  runtimeRequirements: [
+    {
+      id: 'java',
+      role: 'runtime',
+      probe: { command: 'java -version' },
+    },
+    {
+      id: 'gradlew',
+      role: 'tool',
+      probe: { command: 'test -x ./gradlew' },
+    },
+  ],
   createCandidate(ctx) {
     const hasPosix = ctx.rootFiles.has('gradlew');
     const hasWin = ctx.rootFiles.has('gradlew.bat');

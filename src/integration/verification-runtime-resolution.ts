@@ -11,7 +11,11 @@
 
 import type { VerificationCandidate } from '../state/discovery-schemas.js';
 import type { RuntimeRequirement } from '../discovery/assertion-provider-catalog.js';
-import { DESCRIPTOR_BY_PROVIDER } from '../discovery/assertion-provider-catalog.js';
+import {
+  DESCRIPTOR_BY_PROVIDER,
+  ASSERTION_PROFILES,
+  type ExecutionProfile,
+} from '../discovery/assertion-provider-catalog.js';
 import type { ProbeRunner, ProbeRole } from '../verification/toolchain-probe.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -52,10 +56,9 @@ export async function resolveRuntimeReadiness(
       continue;
     }
 
-    const providerId = candidate.assertionReport.providerId;
-    const descriptor = DESCRIPTOR_BY_PROVIDER.get(providerId);
+    const requirements = getEffectiveRequirements(candidate);
 
-    if (!descriptor?.runtimeRequirements || descriptor.runtimeRequirements.length === 0) {
+    if (requirements.length === 0) {
       results.push({
         candidate,
         runtime: { status: 'ready', requirements: [] },
@@ -63,7 +66,7 @@ export async function resolveRuntimeReadiness(
       continue;
     }
 
-    const resolvedReqs = await probeRequirements(descriptor.runtimeRequirements, runner, cwd);
+    const resolvedReqs = await probeRequirements(requirements, runner, cwd);
     const status = aggregateStatus(resolvedReqs);
 
     results.push({
@@ -76,6 +79,57 @@ export async function resolveRuntimeReadiness(
 }
 
 // ─── Internal ────────────────────────────────────────────────────────────────
+
+function getEffectiveRequirements(candidate: VerificationCandidate): readonly RuntimeRequirement[] {
+  if (candidate.assertionCapability !== 'structured') return [];
+
+  const matchingProfile = findMatchingProfile(candidate);
+  if (matchingProfile?.runtimeRequirements?.length) {
+    return matchingProfile.runtimeRequirements;
+  }
+
+  const providerId = candidate.assertionReport.providerId;
+  const descriptor = DESCRIPTOR_BY_PROVIDER.get(providerId);
+  return descriptor?.runtimeRequirements ?? [];
+}
+
+function findMatchingProfile(candidate: VerificationCandidate): ExecutionProfile | undefined {
+  const { source, kind } = candidate;
+  for (const profile of ASSERTION_PROFILES) {
+    if (profile.kind !== kind) continue;
+    if (matchWrapperSource(source, profile)) return profile;
+    if (matchFallbackSource(source, profile)) return profile;
+    if (matchEnrichedSource(candidate, profile)) return profile;
+  }
+  return undefined;
+}
+
+function matchWrapperSource(source: string, profile: ExecutionProfile): boolean {
+  if (source === 'repo:mvnw' || source === 'repo:mvnw.cmd') {
+    return profile.profileId === 'junit-maven-wrapper';
+  }
+  if (source === 'repo:gradlew' || source === 'repo:gradlew.bat') {
+    return profile.profileId === 'junit-gradle-wrapper';
+  }
+  return false;
+}
+
+function matchFallbackSource(source: string, profile: ExecutionProfile): boolean {
+  if (!source.startsWith('detectedStack:testFramework:')) return false;
+  const framework = source.slice('detectedStack:testFramework:'.length);
+  return (
+    profile.profileId === `${framework}-fallback` || profile.profileId === `${framework}-stdout`
+  );
+}
+
+function matchEnrichedSource(candidate: VerificationCandidate, profile: ExecutionProfile): boolean {
+  if (!candidate.source.startsWith('package.json:scripts.')) return false;
+  if (candidate.assertionCapability !== 'structured') return false;
+  return (
+    profile.format === candidate.assertionReport.format &&
+    profile.providerId === candidate.assertionReport.providerId
+  );
+}
 
 async function probeRequirements(
   requirements: readonly RuntimeRequirement[],
