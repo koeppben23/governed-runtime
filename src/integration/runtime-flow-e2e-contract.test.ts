@@ -419,6 +419,9 @@ describe('FlowGuard tool-level E2E', () => {
                 reason: 'E2E test candidate',
               },
             ],
+            executionSubjectInputsByKind: {
+              typecheck: [{ kind: 'implementation' as const }],
+            },
           }),
         );
         mkdirSync(path.join(s.worktree, 'src'), { recursive: true });
