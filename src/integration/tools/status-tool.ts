@@ -27,11 +27,10 @@ import {
 import type { SessionState } from '../../state/schema.js';
 import type { ReviewFindings } from '../../state/evidence.js';
 import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
-import { resolveRuntimeReadiness } from '../verification-runtime-resolution.js';
-import { ProcessProbeRunner } from '../../verification/toolchain-probe.js';
-import { computeProviderCapabilities } from './status-provider-projection.js';
-import { wrapForResolution } from '../verification-runtime-resolution.js';
-import type { ResolvedVerificationCandidate } from '../verification-runtime-resolution.js';
+import {
+  computeProviderCapabilities,
+  resolveRuntimeWithProfileIds,
+} from './status-provider-projection.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { CompletenessReport } from '../../audit/completeness.js';
@@ -703,13 +702,8 @@ export const status: ToolDefinition = {
       const completeness = evaluateCompleteness(state);
       const args = _args as StatusArgs;
 
-      // Resolve runtime readiness via toolchain probes
-      const probeRunner = new ProcessProbeRunner();
-      const runtimeCandidates = await resolveRuntimeReadiness(
-        wrapForResolution(state.verificationCandidates ?? []),
-        probeRunner,
-        state.binding.worktree,
-      );
+      // Resolve runtime readiness via toolchain probes — planner for profile IDs
+      const runtimeCandidates = await resolveRuntimeWithProfileIds(state);
 
       const projection = await resolveProjection({
         args,
