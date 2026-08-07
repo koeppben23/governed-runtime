@@ -23,6 +23,7 @@ export function validateProviderExtensions(
   const scriptSigs: { providerId: string; executionProfileId: string; candidateKind: string }[] =
     [];
   const profileKindById = new Map<string, string>();
+  const assertionFormatsByProvider = new Map<string, Set<string>>();
 
   for (const ext of extensions) {
     const pid = ext.manifest.providerId;
@@ -37,6 +38,7 @@ export function validateProviderExtensions(
       detectionIds.add(detId);
     }
 
+    const provAssertionFormats = new Set<string>();
     for (const fmt of ext.verification.formats) {
       const existing = formatParsers.get(fmt.format);
       if (existing !== undefined && existing !== fmt.parser) {
@@ -46,7 +48,11 @@ export function validateProviderExtensions(
         });
       }
       formatParsers.set(fmt.format, fmt.parser);
+      if (fmt.bindingCapability === 'assertion') {
+        provAssertionFormats.add(fmt.format);
+      }
     }
+    assertionFormatsByProvider.set(pid, provAssertionFormats);
 
     if (ext.verification.identityCodec) {
       if (ext.verification.identityCodec.providerId !== pid)
@@ -95,6 +101,27 @@ export function validateProviderExtensions(
       profilesByProvider.set(pid, provProfiles);
 
       profileKindById.set(profile.profileId, profile.kind);
+
+      // Report integrity: assertionReport must reference the owning provider and format
+      const report = profile.assertionReport;
+      if (report.providerId !== profile.providerId) {
+        errors.push({
+          kind: 'profile_report_provider_mismatch',
+          message: `Profile '${profile.profileId}' assertionReport.providerId='${report.providerId}' != profile.providerId='${profile.providerId}'`,
+        });
+      }
+      if (report.format !== profile.format) {
+        errors.push({
+          kind: 'profile_report_format_mismatch',
+          message: `Profile '${profile.profileId}' assertionReport.format='${report.format}' != profile.format='${profile.format}'`,
+        });
+      }
+      if (!provAssertionFormats.has(report.format)) {
+        errors.push({
+          kind: 'profile_report_format_not_assertion_capable',
+          message: `Profile '${profile.profileId}' assertionReport.format='${report.format}' is not assertion-binding capable for provider '${pid}'`,
+        });
+      }
     }
 
     if (

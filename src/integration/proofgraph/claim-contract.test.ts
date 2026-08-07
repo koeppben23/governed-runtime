@@ -23,9 +23,9 @@ const CLAIM_A = '10000000-0000-4000-8000-00000000000a';
 const CLAIM_B = '10000000-0000-4000-8000-00000000000b';
 
 const BASE = {
-  activeChecks: ['build', 'security'],
-  allowedSurfaces: ['command-registration', 'config-defaults'],
-  allowedMutationProfiles: ['proofgraph-evaluator', 'proofgraph-gate'],
+  activeChecks: ['build', 'security'] as const,
+  allowedSurfaces: ['command-registration', 'config-defaults'] as const,
+  allowedMutationProfiles: ['proofgraph-evaluator', 'proofgraph-gate'] as const,
   verificationCandidates: [
     {
       assertionCapability: 'unsupported' as const,
@@ -51,7 +51,7 @@ const BASE = {
       },
     },
   ],
-} as const;
+};
 
 function planClaim(
   overrides: Partial<NormalizedClaimDeclaration> = {},
