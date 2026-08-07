@@ -6,11 +6,19 @@
  * - detected stack items (tool/framework/package-manager evidence)
  * - root package.json scripts
  * - root Java wrapper files (mvnw/gradlew)
+ * - execution profiles from the assertion provider catalog
  *
  * Planner only: it never executes commands.
+ *
+ * @version v3
  */
 
 import type { DetectedStack, VerificationCandidate, VerificationCandidateKind } from './types.js';
+import {
+  WRAPPER_PROFILES,
+  FALLBACK_PROFILES,
+  type PlannerContext,
+} from './assertion-provider-catalog.js';
 
 type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 
@@ -36,9 +44,10 @@ const BUILD_TOOL_PM_ORDER: readonly PackageManager[] = ['pnpm', 'yarn', 'bun', '
 
 /**
  * Plan advisory verification candidates using repo-first precedence:
- * 1) package.json scripts
- * 2) wrapper commands (mvnw/gradlew)
- * 3) tool defaults from detected stack
+ * 1) package.json scripts (highest priority — never overwritten by fallbacks)
+ * 2) wrapper commands via execution profiles (mvnw/gradlew)
+ * 3) tool defaults from detected stack (non-assertion: eslint, tsc)
+ * 4) assertion execution profile fallbacks
  */
 export async function planVerificationCandidates(
   input: VerificationPlannerInput,
@@ -46,18 +55,50 @@ export async function planVerificationCandidates(
   const byKind = new Map<VerificationCandidateKind, VerificationCandidate>();
   const rootFiles = new Set(input.allFiles.filter((f) => !f.includes('/') && !f.includes('\\')));
   const packageManager = detectPackageManager(input.detectedStack, rootFiles);
+  const detectedStackIds = new Set(
+    (input.detectedStack?.items ?? []).map((item) => `${item.kind}:${item.id}`),
+  );
+
+  const ctx: PlannerContext = {
+    rootFiles,
+    packageManager,
+    detectedStackIds,
+  };
 
   const scripts = await readPackageScripts(input.readFile);
   addScriptCandidates(byKind, scripts, packageManager);
 
-  addWrapperCandidates(byKind, rootFiles);
-  addFallbackCandidates(byKind, input.detectedStack, packageManager);
+  // Wrapper profiles (mvnw, gradlew) — run before fallbacks
+  applyProfiles(byKind, ctx, WRAPPER_PROFILES);
+
+  addNonAssertionFallbacks(byKind, detectedStackIds, packageManager);
+
+  // Assertion fallback profiles — only if no candidate exists for the kind
+  applyProfiles(byKind, ctx, FALLBACK_PROFILES);
 
   return [...byKind.values()].sort((a, b) => {
     const orderDiff = KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
     if (orderDiff !== 0) return orderDiff;
     return a.command.localeCompare(b.command);
   });
+}
+
+function applyProfiles(
+  byKind: Map<VerificationCandidateKind, VerificationCandidate>,
+  ctx: PlannerContext,
+  profiles: ReadonlyArray<{
+    readonly kind: VerificationCandidateKind;
+    createCandidate(ctx: PlannerContext): VerificationCandidate | null;
+  }>,
+): void {
+  for (const profile of profiles) {
+    if (byKind.has(profile.kind)) continue;
+
+    const candidate = profile.createCandidate(ctx);
+    if (candidate) {
+      byKind.set(candidate.kind, candidate);
+    }
+  }
 }
 
 function detectPackageManager(
@@ -76,24 +117,6 @@ function detectPackageManager(
   if (rootFiles.has('yarn.lock')) return 'yarn';
   if (rootFiles.has('bun.lock') || rootFiles.has('bun.lockb')) return 'bun';
   return 'npm';
-}
-
-function addCandidate(
-  byKind: Map<VerificationCandidateKind, VerificationCandidate>,
-  candidate: VerificationCandidate,
-): void {
-  const existing = byKind.get(candidate.kind);
-  // Structured candidates upgrade unsupported ones; never downgrade
-  if (
-    existing &&
-    candidate.assertionCapability === 'structured' &&
-    existing.assertionCapability === 'unsupported'
-  ) {
-    byKind.set(candidate.kind, candidate);
-    return;
-  }
-  if (byKind.has(candidate.kind)) return;
-  byKind.set(candidate.kind, candidate);
 }
 
 async function readPackageScripts(readFile: ReadFileFn): Promise<Record<string, string>> {
@@ -145,10 +168,10 @@ function addScriptCandidates(
 
   for (const mapping of mappings) {
     if (!(mapping.script in scripts)) continue;
-    if (isLikelyPlaceholderScript(scripts[mapping.script]!)) {
-      continue;
-    }
-    addCandidate(byKind, {
+    if (isLikelyPlaceholderScript(scripts[mapping.script]!)) continue;
+    // Scripts always win — no fallback can overwrite a repo-native command
+    if (byKind.has(mapping.kind)) continue;
+    byKind.set(mapping.kind, {
       assertionCapability: 'unsupported' as const,
       kind: mapping.kind,
       command: scriptCommand(packageManager, mapping.script),
@@ -159,60 +182,13 @@ function addScriptCandidates(
   }
 }
 
-function addWrapperCandidates(
+function addNonAssertionFallbacks(
   byKind: Map<VerificationCandidateKind, VerificationCandidate>,
-  rootFiles: ReadonlySet<string>,
-): void {
-  if (rootFiles.has('mvnw') || rootFiles.has('mvnw.cmd')) {
-    const hasPosixWrapper = rootFiles.has('mvnw');
-    addCandidate(byKind, {
-      assertionCapability: 'structured' as const,
-      kind: 'build',
-      command: hasPosixWrapper ? './mvnw verify' : 'mvnw.cmd verify',
-      source: hasPosixWrapper ? 'repo:mvnw' : 'repo:mvnw.cmd',
-      confidence: 'high',
-      reason: 'Maven wrapper detected; wrapper command is preferred over global Maven binary',
-      assertionReport: {
-        collection: 'snapshot_diff' as const,
-        transport: 'file' as const,
-        format: 'junit_xml' as const,
-        providerId: 'junit' as const,
-        standardPatterns: ['target/surefire-reports/TEST-*.xml'],
-      },
-    });
-  }
-
-  if (rootFiles.has('gradlew') || rootFiles.has('gradlew.bat')) {
-    const hasPosixWrapper = rootFiles.has('gradlew');
-    addCandidate(byKind, {
-      assertionCapability: 'structured' as const,
-      kind: 'test',
-      command: hasPosixWrapper ? './gradlew check' : 'gradlew.bat check',
-      source: hasPosixWrapper ? 'repo:gradlew' : 'repo:gradlew.bat',
-      confidence: 'high',
-      reason: 'Gradle wrapper detected; wrapper command is preferred over global Gradle binary',
-      assertionReport: {
-        collection: 'snapshot_diff' as const,
-        transport: 'file' as const,
-        format: 'junit_xml' as const,
-        providerId: 'junit' as const,
-        standardPatterns: ['build/test-results/test/TEST-*.xml'],
-      },
-    });
-  }
-}
-
-function addFallbackCandidates(
-  byKind: Map<VerificationCandidateKind, VerificationCandidate>,
-  detectedStack: DetectedStack | null | undefined,
+  ids: ReadonlySet<string>,
   packageManager: PackageManager,
 ): void {
-  if (!detectedStack) return;
-
-  const ids = new Set(detectedStack.items.map((item) => `${item.kind}:${item.id}`));
-
-  if (ids.has('buildTool:maven')) {
-    addCandidate(byKind, {
+  if (ids.has('buildTool:maven') && !byKind.has('build')) {
+    byKind.set('build', {
       assertionCapability: 'unsupported' as const,
       kind: 'build',
       command: 'mvn verify',
@@ -222,8 +198,8 @@ function addFallbackCandidates(
     });
   }
 
-  if (ids.has('buildTool:gradle') || ids.has('buildTool:gradle-kotlin')) {
-    addCandidate(byKind, {
+  if ((ids.has('buildTool:gradle') || ids.has('buildTool:gradle-kotlin')) && !byKind.has('test')) {
+    byKind.set('test', {
       assertionCapability: 'unsupported' as const,
       kind: 'test',
       command: 'gradle check',
@@ -235,70 +211,8 @@ function addFallbackCandidates(
     });
   }
 
-  if (ids.has('testFramework:vitest')) {
-    addCandidate(byKind, {
-      assertionCapability: 'structured' as const,
-      kind: 'test',
-      command: fallbackCommand(packageManager, 'vitest run'),
-      source: 'detectedStack:testFramework:vitest',
-      confidence: 'medium',
-      reason: `Vitest detected and no repo-native test script found; using ${packageManager} fallback`,
-      assertionReport: {
-        collection: 'run_specific' as const,
-        transport: 'file' as const,
-        format: 'vitest_json' as const,
-        providerId: 'vitest' as const,
-        outputArgumentTemplate:
-          '--reporter=json --outputFile=.flowguard/reports/{attemptId}/vitest.json',
-        resultPatternTemplate: '.flowguard/reports/{attemptId}/vitest.json',
-      },
-    });
-  }
-
-  if (ids.has('testFramework:jest')) {
-    addCandidate(byKind, {
-      assertionCapability: 'structured' as const,
-      kind: 'test',
-      command: fallbackCommand(packageManager, 'jest'),
-      source: 'detectedStack:testFramework:jest',
-      confidence: 'medium',
-      reason: `Jest detected and no repo-native test script found; using ${packageManager} fallback`,
-      assertionReport: {
-        collection: 'run_specific' as const,
-        transport: 'file' as const,
-        format: 'jest_json' as const,
-        providerId: 'jest' as const,
-        outputArgumentTemplate: '--json --outputFile=.flowguard/reports/{attemptId}/jest.json',
-        resultPatternTemplate: '.flowguard/reports/{attemptId}/jest.json',
-      },
-    });
-  }
-
-  if (ids.has('testFramework:pytest') || ids.has('language:python')) {
-    addCandidate(byKind, {
-      assertionCapability: 'structured' as const,
-      kind: 'test',
-      command:
-        'python -m pytest --json-report --json-report-file=.flowguard/reports/{attemptId}/pytest.json',
-      source: ids.has('testFramework:pytest')
-        ? 'detectedStack:testFramework:pytest'
-        : 'detectedStack:language:python',
-      confidence: 'medium',
-      reason: 'pytest detected; using structured JSON assertion extraction',
-      assertionReport: {
-        collection: 'run_specific' as const,
-        transport: 'file' as const,
-        format: 'pytest_json' as const,
-        providerId: 'pytest' as const,
-        outputArgumentTemplate:
-          '--json-report --json-report-file=.flowguard/reports/{attemptId}/pytest.json',
-        resultPatternTemplate: '.flowguard/reports/{attemptId}/pytest.json',
-      },
-    });
-  }
-
-  if (ids.has('qualityTool:eslint') || ids.has('tool:eslint')) {
-    addCandidate(byKind, {
+  if ((ids.has('qualityTool:eslint') || ids.has('tool:eslint')) && !byKind.has('lint')) {
+    byKind.set('lint', {
       assertionCapability: 'unsupported' as const,
       kind: 'lint',
       command: fallbackCommand(packageManager, 'eslint .'),
@@ -310,8 +224,8 @@ function addFallbackCandidates(
     });
   }
 
-  if (ids.has('language:typescript') || ids.has('tool:typescript')) {
-    addCandidate(byKind, {
+  if ((ids.has('language:typescript') || ids.has('tool:typescript')) && !byKind.has('typecheck')) {
+    byKind.set('typecheck', {
       assertionCapability: 'unsupported' as const,
       kind: 'typecheck',
       command: fallbackCommand(packageManager, 'tsc --noEmit'),

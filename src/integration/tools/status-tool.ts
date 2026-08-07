@@ -27,6 +27,7 @@ import {
 import type { SessionState } from '../../state/schema.js';
 import type { ReviewFindings } from '../../state/evidence.js';
 import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
+import { resolveProviderCapabilities } from '../provider-capability-resolution.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { CompletenessReport } from '../../audit/completeness.js';
@@ -455,6 +456,13 @@ async function loadDiscoveryStatusContext(wsDir: string): Promise<DiscoveryStatu
   }
 }
 
+function computeProviderCapabilities(state: SessionState) {
+  return resolveProviderCapabilities(
+    state.detectedStack ?? undefined,
+    state.verificationCandidates,
+  );
+}
+
 function buildProfileStatus(
   state: SessionState,
   discoveryHealth: DiscoveryHealthProjection | null,
@@ -477,10 +485,9 @@ function buildProfileStatus(
     profileName: state.activeProfile?.name ?? 'None',
     profileRules,
     detectedStack: state.detectedStack ?? null,
-    // Surfaced in the FULL projection too (not just focused) so the /check and
-    // /validate prompts — which read it from an unfocused status call — find it.
     activeChecks: state.activeChecks,
     verificationCandidates: state.verificationCandidates ?? [],
+    providerCapabilities: computeProviderCapabilities(state),
   };
 }
 

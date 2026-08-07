@@ -23,14 +23,14 @@ function makeReadFile(files: Record<string, string | undefined>) {
 
 describe('verification planner', () => {
   describe('HAPPY', () => {
-    it('structured Maven wrapper upgrades unsupported package script for build', async () => {
+    it('structured Maven wrapper candidate is produced alongside package script test', async () => {
+      // Remove build script — wrapper fills the gap. Test script stays as repo-native.
       const candidates = await planVerificationCandidates({
         detectedStack: makeDetectedStack([{ kind: 'buildTool', id: 'maven', evidence: 'pom.xml' }]),
         allFiles: ['package.json', 'pom.xml', 'mvnw'],
         readFile: makeReadFile({
           'package.json': JSON.stringify({
             scripts: {
-              build: './mvnw verify',
               test: './mvnw -Dtest=TaskControllerTest test',
             },
           }),
@@ -43,7 +43,7 @@ describe('verification planner', () => {
       expect(candidates.find((c) => c.kind === 'test')).toBeTruthy();
     });
 
-    it('structured vitest fallback upgrades unsupported package script test', async () => {
+    it('repo-native test script wins over vitest fallback', async () => {
       const detectedStack = makeDetectedStack([
         { kind: 'buildTool', id: 'pnpm', evidence: 'pnpm-lock.yaml' },
         { kind: 'testFramework', id: 'vitest', evidence: 'vitest.config.ts' },
@@ -64,9 +64,9 @@ describe('verification planner', () => {
       });
 
       const testCandidate = candidates.find((c) => c.kind === 'test');
-      expect(testCandidate?.assertionCapability).toBe('structured');
-      expect(testCandidate?.command).toBe('pnpm vitest run');
-      expect(candidates.find((c) => c.kind === 'test')?.confidence).toBe('medium');
+      expect(testCandidate?.assertionCapability).toBe('unsupported');
+      expect(testCandidate?.command).toBe('pnpm test');
+      expect(candidates.find((c) => c.kind === 'test')?.confidence).toBe('high');
     });
 
     it('uses vitest fallback when no test script exists', async () => {
@@ -331,7 +331,7 @@ describe('verification planner', () => {
       });
       const elapsedMs = performance.now() - started;
 
-      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('pnpm vitest run');
+      expect(candidates.find((c) => c.kind === 'test')?.command).toBe('pnpm test');
       expect(elapsedMs).toBeLessThan(200);
     });
   });
