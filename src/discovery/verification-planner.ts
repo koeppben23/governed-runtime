@@ -108,7 +108,12 @@ function applyProfiles(
     const raw = profile.createCandidate(ctx);
     if (raw) {
       byKind.set(raw.kind, {
-        candidate: raw,
+        candidate: {
+          ...raw,
+          executionSubjectInputs: raw.executionSubjectInputs ?? [
+            { kind: 'implementation' as const },
+          ],
+        },
         executionProfileId: profile.profileId,
       });
     }
@@ -203,6 +208,10 @@ function addScriptCandidates(
             confidence: 'high',
             reason: `Repo-native ${mapping.script} script enriched: ${analysis.provider.evidence} (provider: ${analysis.provider.providerId})`,
             assertionReport: reportTemplate,
+            executionSubjectInputs: [
+              { kind: 'implementation' as const },
+              { kind: 'file' as const, path: 'package.json' },
+            ],
           },
         });
         continue;
@@ -226,6 +235,10 @@ function addScriptCandidates(
         source: `package.json:scripts.${mapping.script}`,
         confidence: 'high',
         reason,
+        executionSubjectInputs: [
+          { kind: 'implementation' as const },
+          { kind: 'file' as const, path: 'package.json' },
+        ],
       },
     });
   }

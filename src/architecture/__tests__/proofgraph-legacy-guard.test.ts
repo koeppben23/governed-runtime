@@ -162,7 +162,7 @@ describe('proofgraph legacy guard', () => {
     expect(violations).toEqual([]);
   });
 
-  it('execution-subject resolution must not parse VerificationCandidate.source', () => {
+  it('execution-subject resolution must not derive behavior from candidate.source or candidate.command', () => {
     const files = [
       'verification/execution-subject.ts',
       'verification/executor.ts',
@@ -171,8 +171,17 @@ describe('proofgraph legacy guard', () => {
     const violations: string[] = [];
     for (const rel of files) {
       const content = readFileSync(join(SRC, rel), 'utf-8');
-      if (/candidate\.source/.test(content) || /\.source\s*\./.test(content)) {
-        violations.push(`${rel}: derives behavior from VerificationCandidate.source`);
+      if (
+        /\.source\s*===\s*['"]/.test(content) ||
+        /\.source\.startsWith/.test(content) ||
+        /\.command\s*===\s*['"]/.test(content) ||
+        /\.command\.includes/.test(content) ||
+        /Object\.values\(.*scripts/.test(content) ||
+        /isPackageScript/.test(content)
+      ) {
+        violations.push(
+          `${rel}: derives semantic behavior from VerificationCandidate.source or .command`,
+        );
       }
     }
     expect(violations).toEqual([]);

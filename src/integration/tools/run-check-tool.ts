@@ -24,8 +24,6 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
 import {
@@ -59,13 +57,6 @@ import { autoAdvance } from '../../rails/types.js';
 // Verification executor
 import { executeCheck } from '../../verification/executor.js';
 import { deriveRepairGuidance } from '../../verification/repair-guidance.js';
-import type {
-  ExecutionSubjectInput,
-  ExecutionSubjectAttestation,
-  AttestationResult,
-} from '../../verification/execution-subject.js';
-
-// Evidence types
 import type {
   ValidationAttempt,
   ValidationResult,
@@ -103,110 +94,15 @@ import {
   nextImplementationReviewIteration,
 } from './implement-shared.js';
 import { materializeApprovedPlanContractResult } from '../proofgraph/materialize-contract.js';
-import { hashText } from '../../shared/hashing.js';
+import {
+  attestExecutionSubject,
+  reattestExecutionSubject,
+  type ExecutionSubjectInput,
+  type ExecutionSubjectAttestation,
+} from '../../verification/execution-subject.js';
 
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
 const RUN_CHECK_RETRIES = RUN_CHECK_RETRY_DELAYS_MS.length;
-
-// ─── Execution Subject Attestation ──────────────────────────────────────────
-
-function isPackageScriptCommand(worktree: string, command: string): boolean {
-  try {
-    const pkg = JSON.parse(readFileSync(join(worktree, 'package.json'), 'utf-8'));
-    const scripts: Record<string, string> = pkg.scripts ?? {};
-    return Object.values(scripts).includes(command);
-  } catch {
-    return false;
-  }
-}
-
-function resolveExecutionSubjectInputs(
-  candidate: VerificationCandidate,
-  worktree: string,
-): ExecutionSubjectInput[] {
-  const inputs: ExecutionSubjectInput[] = [];
-  if (isPackageScriptCommand(worktree, candidate.command)) {
-    inputs.push({ kind: 'file', path: 'package.json' });
-  }
-  return inputs;
-}
-
-async function attestExecutionSubject(
-  inputs: readonly ExecutionSubjectInput[],
-  worktree: string,
-): Promise<AttestationResult> {
-  if (inputs.length === 0) {
-    return {
-      kind: 'ok',
-      attestation: { inputs, digest: hashText('no-surfaces'), surfaceDigests: new Map() },
-    };
-  }
-
-  const surfaceDigests = new Map<string, string>();
-  const parts: string[] = [];
-
-  for (const input of inputs) {
-    if (input.kind === 'file') {
-      try {
-        const content = readFileSync(join(worktree, input.path), 'utf-8');
-        const digest = hashText(content);
-        surfaceDigests.set(input.path, digest);
-        parts.push(`${input.path}:${digest}`);
-      } catch {
-        return {
-          kind: 'subject_changed',
-          component: 'execution_surface',
-          phase: 'pre_execution',
-          detail: `cannot read execution surface: ${input.path}`,
-        };
-      }
-    }
-  }
-
-  return {
-    kind: 'ok',
-    attestation: {
-      inputs,
-      digest: hashText(parts.sort().join('\n')),
-      surfaceDigests,
-    },
-  };
-}
-
-/** Verify post-execution subject matches pre-execution attestation. */
-async function reattestExecutionSubject(
-  inputs: readonly ExecutionSubjectInput[],
-  worktree: string,
-  preAttestation: ExecutionSubjectAttestation,
-): Promise<AttestationResult> {
-  for (const input of inputs) {
-    if (input.kind !== 'file') continue;
-    try {
-      const content = readFileSync(join(worktree, input.path), 'utf-8');
-      const digest = hashText(content);
-      const expected = preAttestation.surfaceDigests.get(input.path);
-      if (expected !== undefined && digest !== expected) {
-        return {
-          kind: 'subject_changed',
-          component: 'execution_surface',
-          phase: 'post_execution',
-          detail: `${input.path} changed during execution`,
-        };
-      }
-    } catch {
-      return {
-        kind: 'subject_changed',
-        component: 'execution_surface',
-        phase: 'post_execution',
-        detail: `cannot re-read execution surface: ${input.path}`,
-      };
-    }
-  }
-  return {
-    kind: 'ok',
-    attestation: preAttestation,
-  };
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_run_check — Execute Verification Command with Evidence
@@ -277,8 +173,13 @@ async function executeRunCheckPhased(
 
   // ── Pre-execution attestation ──
   const worktree = getWorktree(context);
-  const subjectInputs = resolveExecutionSubjectInputs(guard.candidate, worktree);
-  const preAttestation = await attestExecutionSubject(subjectInputs, worktree);
+  const subjectInputs = guard.candidate.executionSubjectInputs ?? [];
+  const preAttestation = await attestExecutionSubject(
+    subjectInputs,
+    worktree,
+    subject.scope === 'implementation' ? subject.implementationDigest : subject.planDigest,
+    subject.scope === 'implementation' ? (state.implementation?.changedFiles ?? []) : [],
+  );
   if (preAttestation.kind === 'subject_changed') {
     return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
       component: preAttestation.component,
@@ -309,33 +210,66 @@ async function executeRunCheckPhased(
     extraction,
     guard.candidate.assertionCapability,
   );
-  const derivedRepairGuidance = deriveRepairGuidance(evidence, outcome);
 
-  // ── Post-execution attestation ──
-  const postAttestation = await reattestExecutionSubject(
+  // ── Post-execution attestation + persist ──
+  return persistAfterAttestation({
+    kind,
+    evidence,
+    extraction,
+    attemptId,
+    subject,
     subjectInputs,
     worktree,
-    preAttestation.attestation,
+    preAttestation: preAttestation.attestation,
+    outcome,
+    sessDir,
+    sessionId: context.sessionID,
+  });
+}
+
+async function persistAfterAttestation(params: {
+  kind: VerificationCandidateKind;
+  evidence: Awaited<ReturnType<typeof executeCheck>>;
+  extraction?: AssertionExtractionResult;
+  attemptId: string;
+  subject: ValidationSubject;
+  subjectInputs: readonly ExecutionSubjectInput[];
+  worktree: string;
+  preAttestation: ExecutionSubjectAttestation;
+  outcome: ValidationOutcome;
+  sessDir: string;
+  sessionId: string;
+}): Promise<ToolResult> {
+  const postAttestation = await reattestExecutionSubject(
+    params.subjectInputs,
+    params.worktree,
+    params.preAttestation,
   );
   if (postAttestation.kind === 'subject_changed') {
-    return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
-      component: postAttestation.component,
-      phase: 'post_execution',
-      detail: postAttestation.detail,
+    return persistCheckResultWithRetry({
+      kind: params.kind,
+      evidence: params.evidence,
+      derivedRepairGuidance: deriveRepairGuidance(params.evidence, 'blocked'),
+      outcome: 'blocked',
+      extraction: params.extraction,
+      attemptId: params.attemptId,
+      subject: params.subject,
+      sessDir: params.sessDir,
+      sessionId: params.sessionId,
     });
   }
 
   // ── Phase C: Persist with lock retry ──
   return persistCheckResultWithRetry({
-    kind,
-    evidence,
-    derivedRepairGuidance,
-    outcome,
-    extraction,
-    attemptId,
-    subject,
-    sessDir,
-    sessionId: context.sessionID,
+    kind: params.kind,
+    evidence: params.evidence,
+    derivedRepairGuidance: deriveRepairGuidance(params.evidence, params.outcome),
+    outcome: params.outcome,
+    extraction: params.extraction,
+    attemptId: params.attemptId,
+    subject: params.subject,
+    sessDir: params.sessDir,
+    sessionId: params.sessionId,
   });
 }
 

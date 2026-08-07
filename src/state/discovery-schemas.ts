@@ -17,6 +17,15 @@
 import { z } from 'zod';
 import { ReportFormatId, ProviderId } from './assertion-identity.js';
 
+// ─── Execution Subject Input ───────────────────────────────────────────────
+
+/** An input surface whose integrity must be attested at execution time. */
+export const ExecutionSubjectInputSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('implementation') }).readonly(),
+  z.object({ kind: z.literal('file'), path: z.string().min(1) }).readonly(),
+]);
+export type ExecutionSubjectInput = z.infer<typeof ExecutionSubjectInputSchema>;
+
 // ─── Assertion Report Format ─────────────────────────────────────────────────
 
 export { ReportFormatId };
@@ -108,6 +117,7 @@ export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapabi
     source: z.string().min(1),
     confidence: VerificationCandidateConfidenceSchema,
     reason: z.string().min(1),
+    executionSubjectInputs: z.array(ExecutionSubjectInputSchema).optional(),
   }),
   z.object({
     assertionCapability: z.literal('structured'),
@@ -117,6 +127,7 @@ export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapabi
     confidence: VerificationCandidateConfidenceSchema,
     reason: z.string().min(1),
     assertionReport: AssertionReportSpec,
+    executionSubjectInputs: z.array(ExecutionSubjectInputSchema).optional(),
   }),
 ]);
 export type VerificationCandidate = z.infer<typeof VerificationCandidateSchema>;
