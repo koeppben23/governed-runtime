@@ -5,15 +5,35 @@
  * Der Catalog hängt ausschließlich von src/state/ ab — nicht vom Verification-Layer
  * (Parser, Codecs, Registry). Discovery importiert Katalog → Discovery-Intern.
  *
- * @version v1
+ * @version v2
  */
 
 import type { ProviderId, ReportFormatId } from '../state/assertion-identity.js';
-import type { VerificationCandidateKind } from '../state/discovery-schemas.js';
+import type { VerificationCandidateKind, AssertionReportSpec } from '../state/discovery-schemas.js';
 
 // ─── Provider Descriptors ────────────────────────────────────────────────────
 
 type DetectionId = `${string}:${string}`;
+
+export type ScriptSignature =
+  | {
+      readonly executable: string;
+      readonly requiredArgsPrefix?: readonly string[];
+    }
+  | {
+      readonly moduleInvocation: {
+        readonly executable: string;
+        readonly module: string;
+      };
+    };
+
+export interface RuntimeRequirement {
+  readonly id: string;
+  readonly role: 'runtime' | 'tool' | 'reporter';
+  readonly probe:
+    | { readonly kind: 'exec'; readonly command: string; readonly versionPattern?: string }
+    | { readonly kind: 'executable_file'; readonly path: string };
+}
 
 export interface AssertionProviderDescriptor {
   readonly providerId: ProviderId;
@@ -22,6 +42,13 @@ export interface AssertionProviderDescriptor {
   readonly detectionIds: readonly DetectionId[];
   /** Format, das assertion-level binding unterstützt. */
   readonly preferredAssertionFormat: ReportFormatId;
+
+  /** Script signatures for provider-aware script enrichment (PR 8). */
+  readonly scriptSignatures?: readonly ScriptSignature[];
+  /** Declarative runtime requirements for toolchain probing (PR 8). */
+  readonly runtimeRequirements?: readonly RuntimeRequirement[];
+  /** Immutable report template — {attemptId} resolved by prepareVerificationExecution(). */
+  readonly assertionReportTemplate?: AssertionReportSpec;
 }
 
 export const PROVIDER_DESCRIPTORS: readonly AssertionProviderDescriptor[] = [
@@ -30,30 +57,116 @@ export const PROVIDER_DESCRIPTORS: readonly AssertionProviderDescriptor[] = [
     label: 'JUnit',
     detectionIds: ['testFramework:junit'],
     preferredAssertionFormat: 'junit_xml',
+    runtimeRequirements: [
+      {
+        id: 'java',
+        role: 'runtime',
+        probe: { kind: 'exec', command: 'java -version' },
+      },
+    ],
   },
   {
     providerId: 'vitest',
     label: 'Vitest',
     detectionIds: ['testFramework:vitest'],
     preferredAssertionFormat: 'vitest_json',
+    scriptSignatures: [{ executable: 'vitest' }],
+    runtimeRequirements: [
+      {
+        id: 'vitest',
+        role: 'tool',
+        probe: { kind: 'exec', command: 'node_modules/.bin/vitest --version' },
+      },
+    ],
+    assertionReportTemplate: {
+      collection: 'run_specific' as const,
+      transport: 'file' as const,
+      format: 'vitest_json' as const,
+      providerId: 'vitest' as const,
+      outputArgumentTemplate:
+        '--reporter=json --outputFile=.flowguard/reports/{attemptId}/vitest.json',
+      resultPatternTemplate: '.flowguard/reports/{attemptId}/vitest.json',
+    },
   },
   {
     providerId: 'jest',
     label: 'Jest',
     detectionIds: ['testFramework:jest'],
     preferredAssertionFormat: 'jest_json',
+    scriptSignatures: [{ executable: 'jest' }],
+    runtimeRequirements: [
+      {
+        id: 'jest',
+        role: 'tool',
+        probe: { kind: 'exec', command: 'node_modules/.bin/jest --version' },
+      },
+    ],
+    assertionReportTemplate: {
+      collection: 'run_specific' as const,
+      transport: 'file' as const,
+      format: 'jest_json' as const,
+      providerId: 'jest' as const,
+      outputArgumentTemplate: '--json --outputFile=.flowguard/reports/{attemptId}/jest.json',
+      resultPatternTemplate: '.flowguard/reports/{attemptId}/jest.json',
+    },
   },
   {
     providerId: 'pytest',
     label: 'pytest',
     detectionIds: ['testFramework:pytest'],
     preferredAssertionFormat: 'pytest_json',
+    scriptSignatures: [
+      { executable: 'pytest' },
+      {
+        moduleInvocation: { executable: 'python', module: 'pytest' },
+      },
+    ],
+    runtimeRequirements: [
+      {
+        id: 'python',
+        role: 'runtime',
+        probe: { kind: 'exec', command: 'python --version' },
+      },
+      {
+        id: 'pytest',
+        role: 'tool',
+        probe: { kind: 'exec', command: 'python -c "import pytest"' },
+      },
+      {
+        id: 'pytest-json-report',
+        role: 'reporter',
+        probe: { kind: 'exec', command: 'python -c "import pytest_jsonreport"' },
+      },
+    ],
+    assertionReportTemplate: {
+      collection: 'run_specific' as const,
+      transport: 'file' as const,
+      format: 'pytest_json' as const,
+      providerId: 'pytest' as const,
+      outputArgumentTemplate:
+        '--json-report --json-report-file=.flowguard/reports/{attemptId}/pytest.json',
+      resultPatternTemplate: '.flowguard/reports/{attemptId}/pytest.json',
+    },
   },
   {
     providerId: 'go_test',
     label: 'Go test',
     detectionIds: ['testFramework:go_test', 'language:go'],
     preferredAssertionFormat: 'go_test_json',
+    scriptSignatures: [{ executable: 'go', requiredArgsPrefix: ['test'] }],
+    runtimeRequirements: [
+      {
+        id: 'go',
+        role: 'tool',
+        probe: { kind: 'exec', command: 'go version' },
+      },
+    ],
+    assertionReportTemplate: {
+      collection: 'stdout' as const,
+      transport: 'stdout' as const,
+      format: 'go_test_json' as const,
+      providerId: 'go_test' as const,
+    },
   },
 ];
 
@@ -81,6 +194,9 @@ export interface ExecutionProfile {
   createCandidate(
     ctx: PlannerContext,
   ): import('../state/discovery-schemas.js').VerificationCandidate | null;
+
+  /** Profile-specific runtime requirements override provider defaults (PR 8). */
+  readonly runtimeRequirements?: readonly RuntimeRequirement[];
 }
 
 // ─── Implementation Helpers ──────────────────────────────────────────────────
@@ -102,6 +218,18 @@ const jUnitMavenWrapperProfile: ExecutionProfile = {
   providerId: 'junit',
   format: 'junit_xml',
   kind: 'build',
+  runtimeRequirements: [
+    {
+      id: 'java',
+      role: 'runtime',
+      probe: { kind: 'exec', command: 'java -version' },
+    },
+    {
+      id: 'mvnw',
+      role: 'tool',
+      probe: { kind: 'executable_file', path: './mvnw' },
+    },
+  ],
   createCandidate(ctx) {
     const hasPosix = ctx.rootFiles.has('mvnw');
     const hasWin = ctx.rootFiles.has('mvnw.cmd');
@@ -132,6 +260,18 @@ const jUnitGradleWrapperProfile: ExecutionProfile = {
   providerId: 'junit',
   format: 'junit_xml',
   kind: 'test',
+  runtimeRequirements: [
+    {
+      id: 'java',
+      role: 'runtime',
+      probe: { kind: 'exec', command: 'java -version' },
+    },
+    {
+      id: 'gradlew',
+      role: 'tool',
+      probe: { kind: 'executable_file', path: './gradlew' },
+    },
+  ],
   createCandidate(ctx) {
     const hasPosix = ctx.rootFiles.has('gradlew');
     const hasWin = ctx.rootFiles.has('gradlew.bat');

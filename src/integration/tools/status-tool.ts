@@ -27,7 +27,10 @@ import {
 import type { SessionState } from '../../state/schema.js';
 import type { ReviewFindings } from '../../state/evidence.js';
 import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
-import { resolveProviderCapabilities } from '../provider-capability-resolution.js';
+import { resolveRuntimeReadiness } from '../verification-runtime-resolution.js';
+import { ProcessProbeRunner } from '../../verification/toolchain-probe.js';
+import { computeProviderCapabilities } from './status-provider-projection.js';
+import type { ResolvedVerificationCandidate } from '../verification-runtime-resolution.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { CompletenessReport } from '../../audit/completeness.js';
@@ -426,6 +429,7 @@ interface FullStatusInput {
   readonly discoveryHealth: DiscoveryHealthProjection | null;
   readonly discoveryDrift: DiscoveryDriftStatusProjection;
   readonly presentation: PresentationRenderOptions;
+  readonly runtimeCandidates?: readonly ResolvedVerificationCandidate[];
 }
 
 async function loadDiscoveryStatusContext(wsDir: string): Promise<DiscoveryStatusContext> {
@@ -456,16 +460,10 @@ async function loadDiscoveryStatusContext(wsDir: string): Promise<DiscoveryStatu
   }
 }
 
-function computeProviderCapabilities(state: SessionState) {
-  return resolveProviderCapabilities(
-    state.detectedStack ?? undefined,
-    state.verificationCandidates,
-  );
-}
-
 function buildProfileStatus(
   state: SessionState,
   discoveryHealth: DiscoveryHealthProjection | null,
+  runtimeCandidates?: readonly ResolvedVerificationCandidate[],
 ): Record<string, unknown> {
   const base = state.activeProfile?.ruleContent ?? '';
   const phaseExtra = state.activeProfile?.phaseRuleContent?.[state.phase];
@@ -487,7 +485,7 @@ function buildProfileStatus(
     detectedStack: state.detectedStack ?? null,
     activeChecks: state.activeChecks,
     verificationCandidates: state.verificationCandidates ?? [],
-    providerCapabilities: computeProviderCapabilities(state),
+    providerCapabilities: computeProviderCapabilities(state, runtimeCandidates),
   };
 }
 
@@ -603,7 +601,7 @@ function buildFullStatusResponse(input: FullStatusInput): string {
     implementationGuidance,
     archiveStatus: state.archiveStatus ?? null,
     appliedPolicy: buildAppliedPolicyStatus(state),
-    ...buildProfileStatus(state, discoveryHealth),
+    ...buildProfileStatus(state, discoveryHealth, input.runtimeCandidates),
     ...buildEvidenceStatus(state),
     ...buildImplementationStatus(state),
     evalKind: ev.kind,
@@ -700,6 +698,14 @@ export const status: ToolDefinition = {
       const completeness = evaluateCompleteness(state);
       const args = _args as StatusArgs;
 
+      // Resolve runtime readiness via toolchain probes
+      const probeRunner = new ProcessProbeRunner();
+      const runtimeCandidates = await resolveRuntimeReadiness(
+        state.verificationCandidates ?? [],
+        probeRunner,
+        state.binding.worktree,
+      );
+
       const projection = await resolveProjection(args, state, policy, sessDir, presentation);
       if (projection !== null) return projection;
 
@@ -718,6 +724,7 @@ export const status: ToolDefinition = {
         discoveryHealth,
         discoveryDrift,
         presentation,
+        runtimeCandidates,
       });
     } catch (err) {
       if (err instanceof ActorClaimError) {

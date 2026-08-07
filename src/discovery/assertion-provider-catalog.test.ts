@@ -133,15 +133,29 @@ describe('Execution Profiles', () => {
     expect(candidate?.command).toBe('mvnw.cmd verify');
   });
 
-  it('pytest profile command does not contain reporter args (only base command)', () => {
-    const profile = ASSERTION_PROFILES.find((p) => p.profileId === 'pytest-json-fallback')!;
-    const ctx: PlannerContext = {
-      rootFiles: new Set(),
-      packageManager: 'npm',
-      detectedStackIds: new Set(['testFramework:pytest']),
-    };
-    const candidate = profile.createCandidate(ctx);
-    expect(candidate?.command).toBe('python -m pytest');
-    expect(candidate?.command).not.toContain('--json-report');
+  it('every runtime requirement probe command is read-only', () => {
+    const installPatterns = [
+      /\bnpm\s+install\b/,
+      /\bnpm\s+i\b/,
+      /\bpnpm\s+add\b/,
+      /\byarn\s+add\b/,
+      /\bpip\s+install\b/,
+      /\bpip3\s+install\b/,
+      /\bgo\s+install\b/,
+      /\bgo\s+get\b/,
+      /\bnpx\s+\S/,
+    ];
+
+    for (const desc of PROVIDER_DESCRIPTORS) {
+      for (const req of desc.runtimeRequirements ?? []) {
+        if (req.probe.kind !== 'exec') continue;
+        for (const pattern of installPatterns) {
+          expect(
+            req.probe.command,
+            `Provider '${desc.providerId}' runtime requirement '${req.id}' has install/network probe: ${req.probe.command}`,
+          ).not.toMatch(pattern);
+        }
+      }
+    }
   });
 });
