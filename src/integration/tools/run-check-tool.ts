@@ -24,6 +24,8 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
 import {
@@ -57,6 +59,11 @@ import { autoAdvance } from '../../rails/types.js';
 // Verification executor
 import { executeCheck } from '../../verification/executor.js';
 import { deriveRepairGuidance } from '../../verification/repair-guidance.js';
+import type {
+  ExecutionSubjectInput,
+  ExecutionSubjectAttestation,
+  AttestationResult,
+} from '../../verification/execution-subject.js';
 
 // Evidence types
 import type {
@@ -96,9 +103,103 @@ import {
   nextImplementationReviewIteration,
 } from './implement-shared.js';
 import { materializeApprovedPlanContractResult } from '../proofgraph/materialize-contract.js';
+import { hashWorktreeFiles } from '../../adapters/git.js';
+import { hashText } from '../../shared/hashing.js';
 
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
 const RUN_CHECK_RETRIES = RUN_CHECK_RETRY_DELAYS_MS.length;
+
+// ─── Execution Subject Attestation ──────────────────────────────────────────
+
+function isPackageScriptCommand(worktree: string, command: string): boolean {
+  try {
+    const pkg = JSON.parse(readFileSync(join(worktree, 'package.json'), 'utf-8'));
+    const scripts: Record<string, string> = pkg.scripts ?? {};
+    return Object.values(scripts).includes(command);
+  } catch {
+    return false;
+  }
+}
+
+function resolveExecutionSubjectInputs(
+  candidate: VerificationCandidate,
+  worktree: string,
+): ExecutionSubjectInput[] {
+  const inputs: ExecutionSubjectInput[] = [{ kind: 'implementation' }];
+  if (isPackageScriptCommand(worktree, candidate.command)) {
+    inputs.push({ kind: 'file', path: 'package.json' });
+  }
+  return inputs;
+}
+
+async function attestExecutionSubject(
+  inputs: readonly ExecutionSubjectInput[],
+  worktree: string,
+  implementationDigest: string,
+  changedFiles: readonly string[],
+): Promise<AttestationResult> {
+  const surfaceDigests = new Map<string, string>();
+  const parts: string[] = [];
+
+  for (const input of inputs) {
+    if (input.kind === 'implementation') {
+      if (changedFiles.length === 0) continue;
+      const sortedFiles = [...changedFiles].sort();
+      const hashes = await hashWorktreeFiles(worktree, sortedFiles);
+      const digest = hashText(sortedFiles.map((f) => `${f}:${hashes[f] ?? 'deleted'}`).join('\n'));
+      if (digest !== implementationDigest) {
+        return {
+          kind: 'subject_changed',
+          component: 'implementation',
+          phase: 'pre_execution',
+          detail: `implementation digest mismatch: expected ${implementationDigest.slice(0, 8)}..., computed ${digest.slice(0, 8)}...`,
+        };
+      }
+      surfaceDigests.set('implementation', digest);
+      parts.push(`implementation:${digest}`);
+    } else {
+      const content = readFileSync(join(worktree, input.path), 'utf-8');
+      const digest = hashText(content);
+      surfaceDigests.set(input.path, digest);
+      parts.push(`${input.path}:${digest}`);
+    }
+  }
+
+  return {
+    kind: 'ok',
+    attestation: {
+      inputs,
+      digest: hashText(parts.sort().join('\n')),
+      surfaceDigests,
+    },
+  };
+}
+
+/** Verify post-execution subject matches pre-execution attestation. */
+async function reattestExecutionSubject(
+  inputs: readonly ExecutionSubjectInput[],
+  worktree: string,
+  preAttestation: ExecutionSubjectAttestation,
+): Promise<AttestationResult> {
+  for (const input of inputs) {
+    if (input.kind === 'implementation') continue;
+    const content = readFileSync(join(worktree, input.path), 'utf-8');
+    const digest = hashText(content);
+    const expected = preAttestation.surfaceDigests.get(input.path);
+    if (expected !== undefined && digest !== expected) {
+      return {
+        kind: 'subject_changed',
+        component: 'execution_surface',
+        phase: 'post_execution',
+        detail: `${input.path} changed during execution`,
+      };
+    }
+  }
+  return {
+    kind: 'ok',
+    attestation: preAttestation,
+  };
+}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // flowguard_run_check — Execute Verification Command with Evidence
@@ -167,6 +268,23 @@ async function executeRunCheckPhased(
   if (typeof guard === 'string') return guard;
   const subject = freezeValidationSubject(state);
 
+  // ── Pre-execution attestation ──
+  const worktree = getWorktree(context);
+  const subjectInputs = resolveExecutionSubjectInputs(guard.candidate, worktree);
+  const preAttestation = await attestExecutionSubject(
+    subjectInputs,
+    worktree,
+    subject.scope === 'implementation' ? subject.implementationDigest : subject.planDigest,
+    subject.scope === 'implementation' ? (state.implementation?.changedFiles ?? []) : [],
+  );
+  if (preAttestation.kind === 'subject_changed') {
+    return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
+      component: preAttestation.component,
+      phase: 'pre_execution',
+      detail: preAttestation.detail,
+    });
+  }
+
   // ── Phase B: Execute check (NO lock — subprocess runs independently) ──
   const attemptId = randomUUID();
   let prepared: PreparedVerificationExecution | undefined;
@@ -190,6 +308,20 @@ async function executeRunCheckPhased(
     guard.candidate.assertionCapability,
   );
   const derivedRepairGuidance = deriveRepairGuidance(evidence, outcome);
+
+  // ── Post-execution attestation ──
+  const postAttestation = await reattestExecutionSubject(
+    subjectInputs,
+    worktree,
+    preAttestation.attestation,
+  );
+  if (postAttestation.kind === 'subject_changed') {
+    return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
+      component: postAttestation.component,
+      phase: 'post_execution',
+      detail: postAttestation.detail,
+    });
+  }
 
   // ── Phase C: Persist with lock retry ──
   return persistCheckResultWithRetry({

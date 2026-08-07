@@ -161,4 +161,20 @@ describe('proofgraph legacy guard', () => {
     }
     expect(violations).toEqual([]);
   });
+
+  it('execution-subject resolution must not parse VerificationCandidate.source', () => {
+    const files = [
+      'verification/execution-subject.ts',
+      'verification/executor.ts',
+      'integration/tools/run-check-tool.ts',
+    ];
+    const violations: string[] = [];
+    for (const rel of files) {
+      const content = readFileSync(join(SRC, rel), 'utf-8');
+      if (/candidate\.source/.test(content) || /\.source\s*\./.test(content)) {
+        violations.push(`${rel}: derives behavior from VerificationCandidate.source`);
+      }
+    }
+    expect(violations).toEqual([]);
+  });
 });
