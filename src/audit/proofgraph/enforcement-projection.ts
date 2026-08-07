@@ -1,10 +1,13 @@
 /**
  * @module audit/proofgraph/enforcement-projection
- * @description Centralized ProofGraph enforcement projection.
+ * @description Governance/blocking projection over already-evaluated ProofGraph claims.
  *
- * Single source of truth for claim verification decisions. Both the gate
- * (`evaluateProofGraphGate`) and `flowguard_status` consume this projection
- * — no duplicate traversal, no second interpretation of claims.
+ * Consumes evaluated ProofClaims (verification states assigned by the evaluator)
+ * and projects governance-relevant enforcement decisions: which claims block,
+ * why they block, and the overall gate disposition.
+ *
+ * This module does NOT evaluate claims — the evaluator (evaluate.ts) owns
+ * ClaimVerificationState. This module owns governance interpretation.
  *
  * Pure function: no side effects, no state access, deterministic.
  *
@@ -13,9 +16,22 @@
 
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofClaim } from '../../state/proofgraph.js';
-import type { ClaimVerificationState, Freshness } from '../../state/proofgraph-primitives.js';
+import type { ClaimVerificationState } from '../../state/proofgraph-primitives.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
+
+/** Reason codes emitted by the enforcement projection. */
+export type EnforcementReasonCode =
+  | 'proven'
+  | 'counterexample_observed'
+  | 'evidence_missing'
+  | 'evidence_stale'
+  | 'evidence_unproven'
+  | 'provider_execution_error'
+  | 'provenance_missing'
+  | 'evaluation_unavailable'
+  | 'risk_assessment_stale'
+  | 'critical_fact_required';
 
 export interface ClaimEnforcementState {
   readonly claimId: string;
@@ -24,14 +40,13 @@ export interface ClaimEnforcementState {
   readonly signalClass: string;
   readonly gateEligible: boolean;
   readonly verificationState: ClaimVerificationState;
-  readonly freshness?: Freshness;
-  readonly reasons: readonly string[];
+  readonly reasonCodes: readonly EnforcementReasonCode[];
 }
 
 export interface BlockingClaim {
   readonly claimId: string;
   readonly state: 'CONTRADICTED' | 'NOT_VERIFIED' | 'STALE' | 'BLOCKED' | 'UNPROVEN';
-  readonly reason: string;
+  readonly reasonCode: EnforcementReasonCode;
 }
 
 export type EnforcementDecisionKind =
@@ -46,6 +61,7 @@ export interface ProofGraphEnforcement {
   readonly blockingClaims: readonly BlockingClaim[];
   readonly satisfied: boolean;
   readonly decisionKind: EnforcementDecisionKind;
+  readonly reasonCode: EnforcementReasonCode;
   readonly reason: string;
 }
 
@@ -58,20 +74,30 @@ function isGateEligible(claim: ProofClaim): boolean {
   );
 }
 
-function claimReasons(claim: ProofClaim): string[] {
-  const reasons: string[] = [];
+function claimReasonCodes(claim: ProofClaim): EnforcementReasonCode[] {
+  const reasons: EnforcementReasonCode[] = [];
   if (!claim.provenance) {
     reasons.push('provenance_missing');
-  } else if (claim.verificationState === 'NOT_VERIFIED') {
-    reasons.push('evidence_not_verified');
-  } else if (claim.verificationState === 'STALE') {
-    reasons.push('evidence_stale');
-  } else if (claim.verificationState === 'CONTRADICTED') {
-    reasons.push('counterexample_observed');
-  } else if (claim.verificationState === 'BLOCKED') {
-    reasons.push('provider_execution_error');
-  } else if (claim.verificationState === 'UNPROVEN') {
-    reasons.push('evidence_unproven');
+  }
+  switch (claim.verificationState) {
+    case 'PROVEN':
+      reasons.push('proven');
+      break;
+    case 'CONTRADICTED':
+      reasons.push('counterexample_observed');
+      break;
+    case 'NOT_VERIFIED':
+      reasons.push('evidence_missing');
+      break;
+    case 'STALE':
+      reasons.push('evidence_stale');
+      break;
+    case 'BLOCKED':
+      reasons.push('provider_execution_error');
+      break;
+    case 'UNPROVEN':
+      reasons.push('evidence_unproven');
+      break;
   }
   return reasons;
 }
@@ -87,6 +113,10 @@ function blockingStateFor(state: ClaimVerificationState): BlockingClaim['state']
     case 'PROVEN':
       return null;
   }
+}
+
+function primaryReason(reasons: EnforcementReasonCode[]): EnforcementReasonCode {
+  return reasons[0] ?? 'evidence_missing';
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────
@@ -111,10 +141,11 @@ function evaluatePreconditions(
       blockingClaims: missingIds.map((id) => ({
         claimId: id,
         state: 'NOT_VERIFIED' as const,
-        reason: 'evaluation_unavailable',
+        reasonCode: 'evaluation_unavailable' as const,
       })),
       satisfied: false,
       decisionKind: 'evaluation_unavailable',
+      reasonCode: 'evaluation_unavailable',
       reason:
         'Certificate-authorized critical plan claim(s) have no persisted ProofGraph evaluation.',
     };
@@ -126,6 +157,7 @@ function evaluatePreconditions(
       blockingClaims: [],
       satisfied: false,
       decisionKind: 'risk_assessment_stale',
+      reasonCode: 'risk_assessment_stale',
       reason:
         'The implementation risk assessment is missing, stale, or predates trigger classification.',
     };
@@ -137,6 +169,7 @@ function evaluatePreconditions(
       blockingClaims: [],
       satisfied: false,
       decisionKind: 'critical_fact_required',
+      reasonCode: 'critical_fact_required',
       reason:
         'A critical, certificate-authorized fact claim is required for the current risk triggers.',
     };
@@ -157,7 +190,7 @@ export function computeProofGraphEnforcement(
   let satisfied = true;
 
   for (const claim of eligibleClaims) {
-    const reasons = claimReasons(claim);
+    const reasonCodes = claimReasonCodes(claim);
     claims.push({
       claimId: claim.claimId,
       statement: claim.statement,
@@ -165,24 +198,29 @@ export function computeProofGraphEnforcement(
       signalClass: claim.signalClass,
       gateEligible: true,
       verificationState: claim.verificationState,
-      freshness: claim.freshness,
-      reasons,
+      reasonCodes,
     });
 
     if (claim.verificationState !== 'PROVEN') {
       satisfied = false;
       const bs = blockingStateFor(claim.verificationState);
       if (bs) {
-        blockingClaims.push({ claimId: claim.claimId, state: bs, reason: reasons.join('; ') });
+        blockingClaims.push({
+          claimId: claim.claimId,
+          state: bs,
+          reasonCode: primaryReason(reasonCodes),
+        });
       }
     }
   }
 
+  const reasonCode: EnforcementReasonCode = satisfied ? 'proven' : 'evidence_unproven';
   return {
     claims,
     blockingClaims,
     satisfied,
     decisionKind: satisfied ? 'clear' : 'facts_unproven',
+    reasonCode,
     reason: satisfied
       ? 'All critical fact claims are PROVEN.'
       : `${blockingClaims.length} critical fact claim(s) are not PROVEN.`,

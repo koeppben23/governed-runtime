@@ -38,16 +38,17 @@ function toCounterexampleOutcome(result: ValidationResult): CounterexampleOutcom
 function classifyClaimOutcome(
   result: ValidationResult,
   requirement?: CounterexampleRequirement,
-  attemptId?: string,
 ): CounterexampleOutcome {
   if (!requirement) return toCounterexampleOutcome(result);
-
-  if (result.checkId !== requirement.checkId) return 'not_verified';
 
   const extraction = result.assertionExtraction;
   if (!extraction) return 'not_verified';
 
-  const binding = bindAssertionEvidence(requirement, extraction, attemptId ?? '');
+  const binding = bindAssertionEvidence({
+    requirement,
+    checkId: result.checkId,
+    extraction,
+  });
 
   if (binding.status !== 'bound') return 'not_verified';
 
@@ -97,7 +98,7 @@ export function bindCounterexamples(
       }
       const requirement = claim.counterexampleRequirement;
       const outcome = requirement
-        ? classifyClaimOutcome(attempt.result, requirement, attempt.attemptId)
+        ? classifyClaimOutcome(attempt.result, requirement)
         : toCounterexampleOutcome(attempt.result);
       counterexamples.push({
         claimId: claim.claimId,

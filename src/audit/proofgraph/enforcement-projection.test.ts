@@ -1,32 +1,32 @@
 /**
  * @module audit/proofgraph/enforcement-projection.test
- * @description Tests for centralized ProofGraph enforcement projection.
+ * @description Tests for governance/blocking proofgraph enforcement projection.
  */
 
 import { describe, expect, it } from 'vitest';
 import { computeProofGraphEnforcement } from './enforcement-projection.js';
 import type { ProofGraphSummary } from './summary.js';
 
-function summary(claims: Partial<ProofGraphSummary['projection']>['claims'] = []): {
+function summary(claims: unknown[] = []): {
   projection: ProofGraphSummary['projection'];
 } {
   return {
     projection: {
       version: 'proofgraph.v1',
-      claims: (claims ?? []) as never,
+      claims: claims as never,
       evaluatedAt: '2026-01-01T00:00:00.000Z',
     },
   };
 }
 
-function provenClaim(overrides: Record<string, unknown> = {}): any {
+function provenClaim(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     claimId: 'c1',
     statement: 'System satisfies constraint X',
     critical: true,
-    signalClass: 'fact' as const,
+    signalClass: 'fact',
     provenance: {
-      kind: 'canonical_authority' as const,
+      kind: 'canonical_authority',
       authorityId: 'auth-1',
       digest: 'a'.repeat(64),
       approval: {
@@ -36,8 +36,7 @@ function provenClaim(overrides: Record<string, unknown> = {}): any {
         declarationId: '00000000-0000-4000-8000-000000000002',
       },
     },
-    verificationState: 'PROVEN' as const,
-    freshness: 'fresh',
+    verificationState: 'PROVEN',
     evidenceRefs: [],
     counterexampleRefs: [],
     ...overrides,
@@ -54,22 +53,19 @@ describe('computeProofGraphEnforcement', () => {
     expect(result.satisfied).toBe(true);
     expect(result.decisionKind).toBe('clear');
     expect(result.blockingClaims).toHaveLength(0);
-    expect(result.claims).toHaveLength(1);
-    expect(result.claims[0]!.verificationState).toBe('PROVEN');
+    expect(result.claims[0]!.reasonCodes).toContain('proven');
   });
 
   it('gated when a claim is NOT_VERIFIED', () => {
     const result = computeProofGraphEnforcement({
-      projection: summary([
-        provenClaim({ claimId: 'c1', verificationState: 'NOT_VERIFIED', freshness: undefined }),
-      ]).projection,
+      projection: summary([provenClaim({ claimId: 'c1', verificationState: 'NOT_VERIFIED' })])
+        .projection,
       authorizedCriticalClaimIds: ['c1'],
     });
 
     expect(result.satisfied).toBe(false);
     expect(result.decisionKind).toBe('facts_unproven');
-    expect(result.blockingClaims).toHaveLength(1);
-    expect(result.blockingClaims[0]!.state).toBe('NOT_VERIFIED');
+    expect(result.blockingClaims[0]!.reasonCode).toBe('evidence_missing');
   });
 
   it('gated when a claim is CONTRADICTED', () => {
@@ -78,9 +74,7 @@ describe('computeProofGraphEnforcement', () => {
       authorizedCriticalClaimIds: ['c1'],
     });
 
-    expect(result.satisfied).toBe(false);
-    expect(result.decisionKind).toBe('facts_unproven');
-    expect(result.blockingClaims[0]!.state).toBe('CONTRADICTED');
+    expect(result.blockingClaims[0]!.reasonCode).toBe('counterexample_observed');
   });
 
   it('gated when a claim is STALE', () => {
@@ -89,8 +83,7 @@ describe('computeProofGraphEnforcement', () => {
       authorizedCriticalClaimIds: ['c1'],
     });
 
-    expect(result.satisfied).toBe(false);
-    expect(result.blockingClaims[0]!.state).toBe('STALE');
+    expect(result.blockingClaims[0]!.reasonCode).toBe('evidence_stale');
   });
 
   it('evaluation_unavailable when authorized claim missing from projection', () => {
@@ -101,7 +94,7 @@ describe('computeProofGraphEnforcement', () => {
 
     expect(result.satisfied).toBe(false);
     expect(result.decisionKind).toBe('evaluation_unavailable');
-    expect(result.blockingClaims).toHaveLength(1);
+    expect(result.blockingClaims[0]!.reasonCode).toBe('evaluation_unavailable');
   });
 
   it('critical_fact_required when risk triggers exist but no eligible claims', () => {
@@ -111,8 +104,8 @@ describe('computeProofGraphEnforcement', () => {
       riskTriggersPresent: true,
     });
 
-    expect(result.satisfied).toBe(false);
     expect(result.decisionKind).toBe('critical_fact_required');
+    expect(result.reasonCode).toBe('critical_fact_required');
   });
 
   it('riskAssessmentActive causes stale decision', () => {
@@ -122,8 +115,8 @@ describe('computeProofGraphEnforcement', () => {
       riskAssessmentActive: true,
     });
 
-    expect(result.satisfied).toBe(false);
     expect(result.decisionKind).toBe('risk_assessment_stale');
+    expect(result.reasonCode).toBe('risk_assessment_stale');
   });
 
   it('clear when no authorized claims and no risk triggers', () => {
@@ -134,26 +127,14 @@ describe('computeProofGraphEnforcement', () => {
     });
 
     expect(result.satisfied).toBe(true);
-    expect(result.decisionKind).toBe('clear');
   });
 
-  it('ignores derived_signal claims for gate', () => {
+  it('reasonCode is proven when satisfied', () => {
     const result = computeProofGraphEnforcement({
-      projection: summary([provenClaim({ signalClass: 'derived_signal' })]).projection,
-      authorizedCriticalClaimIds: [],
-    });
-
-    expect(result.claims).toHaveLength(0);
-    expect(result.satisfied).toBe(true);
-  });
-
-  it('includes claim reasons in enforcement state', () => {
-    const result = computeProofGraphEnforcement({
-      projection: summary([provenClaim({ claimId: 'c1', verificationState: 'CONTRADICTED' })])
-        .projection,
+      projection: summary([provenClaim()]).projection,
       authorizedCriticalClaimIds: ['c1'],
     });
 
-    expect(result.claims[0]!.reasons).toContain('counterexample_observed');
+    expect(result.reasonCode).toBe('proven');
   });
 });

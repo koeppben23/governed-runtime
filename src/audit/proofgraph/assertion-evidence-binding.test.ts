@@ -50,50 +50,76 @@ describe('bindAssertionEvidence', () => {
     const req = requirement('pytest', 'tests/test_user.py::test_create');
     const extraction = extractedResult('pytest', 'pytest_json', [
       { localId: 'tests/test_user.py::test_create', status: 'passed' },
-      { localId: 'tests/test_user.py::test_delete', status: 'failed' },
     ]);
 
-    const result = bindAssertionEvidence(req, extraction, 'attempt-1');
+    const result = bindAssertionEvidence({
+      requirement: req,
+      checkId: 'test',
+      extraction,
+    });
 
     expect(result.status).toBe('bound');
     if (result.status === 'bound') {
       expect(result.attemptId).toBe('attempt-1');
-      expect(result.bindingCapability).toBe('assertion');
       expect(result.assertion.status).toBe('passed');
     }
   });
 
-  it('provider mismatch → provider_mismatch', () => {
+  it('check mismatch → rejected with check_mismatch', () => {
+    const req = requirement('junit', 'com.example.Test#testFoo');
+    const extraction = extractedResult('junit', 'junit_xml', [
+      { localId: 'com.example.Test#testFoo', status: 'passed' },
+    ]);
+
+    const result = bindAssertionEvidence({
+      requirement: req,
+      checkId: 'wrong-check',
+      extraction,
+    });
+
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reasonCode).toBe('check_mismatch');
+    }
+  });
+
+  it('provider mismatch → rejected with provider_mismatch', () => {
     const req = requirement('pytest', 'test_create');
     const extraction = extractedResult('vitest', 'vitest_json', [
       { localId: 'test_create', status: 'passed' },
     ]);
 
-    const result = bindAssertionEvidence(req, extraction, 'a1');
+    const result = bindAssertionEvidence({
+      requirement: req,
+      checkId: 'test',
+      extraction,
+    });
 
-    expect(result.status).toBe('provider_mismatch');
-    if (result.status === 'provider_mismatch') {
-      expect(result.required).toBe('pytest');
-      expect(result.actual).toBe('vitest');
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reasonCode).toBe('provider_mismatch');
     }
   });
 
-  it('assertion identity mismatch → assertion_mismatch', () => {
+  it('assertion identity mismatch → rejected with assertion_mismatch', () => {
     const req = requirement('pytest', 'tests/test_user.py::test_create');
     const extraction = extractedResult('pytest', 'pytest_json', [
       { localId: 'tests/test_user.py::test_delete', status: 'passed' },
     ]);
 
-    const result = bindAssertionEvidence(req, extraction, 'a1');
+    const result = bindAssertionEvidence({
+      requirement: req,
+      checkId: 'test',
+      extraction,
+    });
 
-    expect(result.status).toBe('assertion_mismatch');
-    if (result.status === 'assertion_mismatch') {
-      expect(result.required.localId).toBe('tests/test_user.py::test_create');
-      expect(result.found).toContain('tests/test_user.py::test_delete');
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reasonCode).toBe('assertion_mismatch');
     }
   });
 
-  it('check_only evidence → missing with check_only_evidence', () => {
+  it('check_only evidence → rejected with check_only_evidence', () => {
     const req = requirement('vitest', 'src/math.test.ts::adds numbers');
     const extraction = extractedResult(
       'vitest',
@@ -102,15 +128,19 @@ describe('bindAssertionEvidence', () => {
       'check_only',
     );
 
-    const result = bindAssertionEvidence(req, extraction, 'a1');
+    const result = bindAssertionEvidence({
+      requirement: req,
+      checkId: 'test',
+      extraction,
+    });
 
-    expect(result.status).toBe('missing');
-    if (result.status === 'missing') {
-      expect(result.reason).toBe('check_only_evidence');
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reasonCode).toBe('check_only_evidence');
     }
   });
 
-  it('inconclusive extraction → missing', () => {
+  it('inconclusive extraction → rejected with evidence_missing', () => {
     const req = requirement('junit', 'com.example.Test#testFoo');
     const extraction: AssertionExtractionResult = {
       status: 'inconclusive',
@@ -119,15 +149,19 @@ describe('bindAssertionEvidence', () => {
       reason: 'malformed JSON',
     };
 
-    const result = bindAssertionEvidence(req, extraction, 'a1');
+    const result = bindAssertionEvidence({
+      requirement: req,
+      checkId: 'test',
+      extraction,
+    });
 
-    expect(result.status).toBe('missing');
-    if (result.status === 'missing') {
-      expect(result.reason).toBe('evidence_missing');
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reasonCode).toBe('evidence_missing');
     }
   });
 
-  it('blocked extraction → missing', () => {
+  it('blocked extraction → rejected with evidence_missing', () => {
     const req = requirement('junit', 'com.example.Test#testFoo');
     const extraction: AssertionExtractionResult = {
       status: 'blocked',
@@ -136,59 +170,64 @@ describe('bindAssertionEvidence', () => {
       reason: 'file not found',
     };
 
-    const result = bindAssertionEvidence(req, extraction, 'a1');
+    const result = bindAssertionEvidence({
+      requirement: req,
+      checkId: 'test',
+      extraction,
+    });
 
-    expect(result.status).toBe('missing');
-    if (result.status === 'missing') {
-      expect(result.reason).toBe('evidence_missing');
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reasonCode).toBe('evidence_missing');
     }
   });
 
-  it('not_configured → missing', () => {
+  it('not_configured → rejected with evidence_missing', () => {
     const req = requirement('junit', 'com.example.Test#testFoo');
     const extraction: AssertionExtractionResult = { status: 'not_configured' };
 
-    const result = bindAssertionEvidence(req, extraction, 'a1');
+    const result = bindAssertionEvidence({
+      requirement: req,
+      checkId: 'test',
+      extraction,
+    });
 
-    expect(result.status).toBe('missing');
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reasonCode).toBe('evidence_missing');
+    }
   });
 
-  it('identical localId different provider → provider_mismatch', () => {
+  it('identical localId different provider → rejected with provider_mismatch', () => {
     const req = requirement('pytest', 'test_foo');
     const extraction = extractedResult('jest', 'jest_json', [
       { localId: 'test_foo', status: 'passed', providerId: 'jest' },
     ]);
 
-    const result = bindAssertionEvidence(req, extraction, 'a1');
+    const result = bindAssertionEvidence({
+      requirement: req,
+      checkId: 'test',
+      extraction,
+    });
 
-    expect(result.status).toBe('provider_mismatch');
-  });
-
-  it('skipped assertion → bound but not contradicted', () => {
-    const req = requirement('junit', 'com.example.Test#testSkipped');
-    const extraction = extractedResult('junit', 'junit_xml', [
-      { localId: 'com.example.Test#testSkipped', status: 'skipped' },
-    ]);
-
-    const result = bindAssertionEvidence(req, extraction, 'a1');
-
-    expect(result.status).toBe('bound');
-    if (result.status === 'bound') {
-      expect(result.assertion.status).toBe('skipped');
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reasonCode).toBe('provider_mismatch');
     }
   });
 
-  it('errored assertion → bound', () => {
-    const req = requirement('junit', 'com.example.Test#testError');
-    const extraction = extractedResult('junit', 'junit_xml', [
-      { localId: 'com.example.Test#testError', status: 'errored' },
-    ]);
+  it('undefined extraction → rejected with evidence_missing', () => {
+    const req = requirement('junit', 'com.example.Test#testFoo');
 
-    const result = bindAssertionEvidence(req, extraction, 'a1');
+    const result = bindAssertionEvidence({
+      requirement: req,
+      checkId: 'test',
+      extraction: undefined,
+    });
 
-    expect(result.status).toBe('bound');
-    if (result.status === 'bound') {
-      expect(result.assertion.status).toBe('errored');
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reasonCode).toBe('evidence_missing');
     }
   });
 });

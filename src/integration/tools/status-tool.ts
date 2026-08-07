@@ -161,6 +161,7 @@ async function buildProofGraphProjectionResponse(
   state: SessionState,
   policy: FlowGuardPolicy,
   checkFields: Record<string, unknown>,
+  runtimeCandidates?: readonly ResolvedVerificationCandidate[],
 ): Promise<string> {
   const now = new Date().toISOString();
   const structuralSurfaces = evaluateStructuralSurfaces();
@@ -179,6 +180,7 @@ async function buildProofGraphProjectionResponse(
     ],
     surfaceDigests: surfaceDigestMap(structuralSurfaces),
     mutationSummaries,
+    runtimeCandidates,
   });
   const proofGraphGate = evaluateProofGraphGate({
     projection: proofGraph.projection,
@@ -207,13 +209,17 @@ async function buildProofGraphProjectionResponse(
 /**
  * Resolve a focused projection response, or null if no projection flag is set.
  */
-async function resolveProjection(
-  args: StatusArgs,
-  state: SessionState,
-  policy: FlowGuardPolicy,
-  sessDir: string,
-  presentation: PresentationRenderOptions,
-): Promise<string | null> {
+interface ResolveProjectionInput {
+  readonly args: StatusArgs;
+  readonly state: SessionState;
+  readonly policy: FlowGuardPolicy;
+  readonly sessDir: string;
+  readonly presentation: PresentationRenderOptions;
+  readonly runtimeCandidates?: readonly ResolvedVerificationCandidate[];
+}
+
+async function resolveProjection(input: ResolveProjectionInput): Promise<string | null> {
+  const { args, state, policy, sessDir, presentation, runtimeCandidates } = input;
   const checkFields = buildCheckProjectionFields(state);
   // /finish is the most comprehensive focused projection and is placed first so
   // its own template call is never shadowed by a stray additional flag. This
@@ -286,7 +292,7 @@ async function resolveProjection(
     );
   }
   if (args.proofGraph) {
-    return await buildProofGraphProjectionResponse(state, policy, checkFields);
+    return await buildProofGraphProjectionResponse(state, policy, checkFields, runtimeCandidates);
   }
   return null;
 }
@@ -706,7 +712,14 @@ export const status: ToolDefinition = {
         state.binding.worktree,
       );
 
-      const projection = await resolveProjection(args, state, policy, sessDir, presentation);
+      const projection = await resolveProjection({
+        args,
+        state,
+        policy,
+        sessDir,
+        presentation,
+        runtimeCandidates,
+      });
       if (projection !== null) return projection;
 
       const { discovery, discoveryHealth } = await loadDiscoveryStatusContext(wsDir);

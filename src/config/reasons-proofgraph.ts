@@ -133,7 +133,6 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Use a verification command that produces structured test reports (e.g. Maven Surefire, Gradle, Vitest, Jest)',
       'Ensure the project is configured with a recognized test framework',
-      'Alternatively, use mode=check for non-assertion counterexample requirements',
     ],
   },
 

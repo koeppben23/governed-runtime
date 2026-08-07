@@ -21,10 +21,12 @@ import type {
   CounterexampleOutcome,
   SignalClass,
 } from '../../state/proofgraph-primitives.js';
+import type { ResolvedVerificationCandidate } from '../../integration/verification-runtime-resolution.js';
 import { deriveProofGraph } from './derive.js';
 import { isFreshCounterexample } from './evaluate.js';
 import { bindExecutedTestEvidence } from './executed-test-binder.js';
 import { bindCounterexamples } from './counterexample-binder.js';
+import { bindRuntimeUnavailableEvidence } from './runtime-availability-binder.js';
 import type { MutationProfileSummary, MutationSurvivor } from './mutation-report.js';
 
 /** Adversarial outcome for one claim, with explicit revision freshness. */
@@ -129,6 +131,8 @@ export interface ExternalProofEvidence {
   readonly surfaceDigests?: Readonly<Record<string, string>>;
   /** Recorded mutation verdicts, surfaced verbatim in the projection. */
   readonly mutationSummaries?: readonly MutationProfileSummary[];
+  /** PR-8 runtime readiness results for claim-scoped unavailable evidence. */
+  readonly runtimeCandidates?: readonly ResolvedVerificationCandidate[];
 }
 
 function emptyCounts(): Record<ClaimVerificationState, number> {
@@ -170,6 +174,7 @@ export function summarizeProofGraph(
 ): ProofGraphSummary {
   const providerResults = [
     ...bindExecutedTestEvidence(state, evaluatedAt),
+    ...bindRuntimeUnavailableEvidence(state, evaluatedAt, external.runtimeCandidates),
     ...(external.providerResults ?? []),
   ];
   const executedCounterexamples = bindCounterexamples(state, evaluatedAt);

@@ -3,22 +3,23 @@
  * @description Single authority for assertion evidence binding decisions.
  *
  * Evaluates whether a validation result's structured assertion extraction
- * satisfies a specific CounterexampleRequirement. Separates identity/capability
- * binding from freshness evaluation — freshness is decided by the caller using
- * isFresh() / ProofProviderBinding after a successful bind.
+ * satisfies a specific CounterexampleRequirement. Handles all aspects of
+ * the binding decision — checkId matching, provider matching, assertion
+ * identity matching, and capability checking.
  *
- * Fail-closed: any mismatch or missing capability returns a typed rejection.
- * check_only evidence can never bind assertion-level requirements.
- *
- * @version v1
+ * @version v2
  */
 
 import type { CounterexampleRequirement } from '../../state/proofgraph.js';
 import type { AssertionExtractionResult } from '../../state/evidence-validation.js';
-import type { AssertionIdentity, ProviderId } from '../../state/assertion-identity.js';
 import type { StructuredAssertionEvidence } from '../../state/evidence-validation.js';
 
-// ─── Decision Types ─────────────────────────────────────────────────────────
+export type AssertionBindingReasonCode =
+  | 'check_mismatch'
+  | 'evidence_missing'
+  | 'check_only_evidence'
+  | 'provider_mismatch'
+  | 'assertion_mismatch';
 
 export type AssertionBindingDecision =
   | {
@@ -28,49 +29,67 @@ export type AssertionBindingDecision =
       readonly bindingCapability: 'assertion';
     }
   | {
-      readonly status: 'missing';
-      readonly reason: 'evidence_missing' | 'check_only_evidence';
-    }
-  | {
-      readonly status: 'provider_mismatch';
-      readonly required: ProviderId;
-      readonly actual: ProviderId;
-    }
-  | {
-      readonly status: 'assertion_mismatch';
-      readonly required: AssertionIdentity;
-      readonly found: readonly string[];
-    }
-  | {
-      readonly status: 'check_mismatch';
-      readonly required: string;
-      readonly actual: string;
-    }
-  | {
-      readonly status: 'invalid';
-      readonly reason: string;
+      readonly status: 'rejected';
+      readonly reasonCode: AssertionBindingReasonCode;
+      readonly detail: string;
     };
 
-// ─── Public API ──────────────────────────────────────────────────────────────
+export interface AssertionBindingRequest {
+  readonly requirement: CounterexampleRequirement;
+  readonly checkId: string;
+  readonly extraction: AssertionExtractionResult | undefined;
+}
 
-export function bindAssertionEvidence(
-  requirement: CounterexampleRequirement,
-  extraction: AssertionExtractionResult,
-  attemptId: string,
-): AssertionBindingDecision {
-  if (extraction.status !== 'extracted') {
-    return { status: 'missing', reason: 'evidence_missing' };
+function describeMissingExtraction(extraction: AssertionExtractionResult | undefined): string {
+  if (!extraction) return 'no extraction result available';
+  if (extraction.status === 'blocked')
+    return `extraction blocked: ${'reason' in extraction ? extraction.reason : 'unknown'}`;
+  if (extraction.status === 'inconclusive')
+    return `extraction inconclusive: ${'reason' in extraction ? extraction.reason : 'unknown'}`;
+  if (extraction.status === 'not_configured')
+    return 'no structured assertion capability configured';
+  return `extraction status: ${extraction.status}`;
+}
+
+function validatePreconditions(request: AssertionBindingRequest): AssertionBindingDecision | null {
+  const { requirement, checkId, extraction } = request;
+
+  if (checkId !== requirement.checkId) {
+    return {
+      status: 'rejected',
+      reasonCode: 'check_mismatch',
+      detail: `expected check '${requirement.checkId}', got '${checkId}'`,
+    };
+  }
+
+  if (!extraction || extraction.status !== 'extracted') {
+    return {
+      status: 'rejected',
+      reasonCode: 'evidence_missing',
+      detail: describeMissingExtraction(extraction),
+    };
   }
 
   if (extraction.bindingCapability !== 'assertion') {
-    return { status: 'missing', reason: 'check_only_evidence' };
+    return {
+      status: 'rejected',
+      reasonCode: 'check_only_evidence',
+      detail: `check '${checkId}' only provides check-level evidence`,
+    };
   }
 
+  return null;
+}
+
+function matchAssertion(
+  requirement: CounterexampleRequirement,
+  extraction: AssertionExtractionResult & { status: 'extracted' },
+): AssertionBindingDecision {
   if (extraction.providerId !== requirement.assertion.providerId) {
     return {
-      status: 'provider_mismatch',
-      required: requirement.assertion.providerId,
-      actual: extraction.providerId,
+      status: 'rejected',
+      reasonCode: 'provider_mismatch',
+      detail: `required '${requirement.assertion.providerId}', got '${extraction.providerId}'`,
     };
   }
 
@@ -79,25 +98,35 @@ export function bindAssertionEvidence(
   );
 
   if (!assertion) {
+    const found = extraction.assertions.map((a) => a.assertion.localId);
     return {
-      status: 'assertion_mismatch',
-      required: requirement.assertion,
-      found: extraction.assertions.map((a) => a.assertion.localId),
+      status: 'rejected',
+      reasonCode: 'assertion_mismatch',
+      detail: `required '${requirement.assertion.localId}' not found; found: ${found.join(', ') || 'none'}`,
     };
   }
 
   if (assertion.providerId !== requirement.assertion.providerId) {
     return {
-      status: 'provider_mismatch',
-      required: requirement.assertion.providerId,
-      actual: assertion.providerId,
+      status: 'rejected',
+      reasonCode: 'provider_mismatch',
+      detail: `required '${requirement.assertion.providerId}', assertion belongs to '${assertion.providerId}'`,
     };
   }
 
   return {
     status: 'bound',
     assertion,
-    attemptId,
-    bindingCapability: extraction.bindingCapability,
+    attemptId: extraction.attemptId,
+    bindingCapability: extraction.bindingCapability as 'assertion',
   };
+}
+
+export function bindAssertionEvidence(request: AssertionBindingRequest): AssertionBindingDecision {
+  const precondition = validatePreconditions(request);
+  if (precondition) return precondition;
+  return matchAssertion(
+    request.requirement,
+    request.extraction as AssertionExtractionResult & { status: 'extracted' },
+  );
 }
