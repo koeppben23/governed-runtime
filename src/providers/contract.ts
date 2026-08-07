@@ -70,6 +70,9 @@ export interface ExecutionProfile {
 
   /** Profile-specific runtime requirements override provider defaults. */
   readonly runtimeRequirements?: readonly RuntimeRequirement[];
+
+  /** Optional: produce platform-specific requirements from the created candidate's source. */
+  resolveRuntimeRequirements?(candidate: VerificationCandidate): readonly RuntimeRequirement[];
 }
 
 // ─── Verification — Format Registration ──────────────────────────────────────

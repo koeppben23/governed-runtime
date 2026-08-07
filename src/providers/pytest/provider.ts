@@ -8,6 +8,7 @@ import {
   parsePytestJson,
   buildPytestLocalId,
 } from '../../verification/assertion-parsers/pytest-json.js';
+import { parseJUnitXml } from '../../verification/assertion-parsers/junit-xml.js';
 import type { AssertionProviderExtension } from '../contract.js';
 import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
 import type { ProviderId } from '../../state/assertion-identity.js';
@@ -92,6 +93,16 @@ export const pytestProvider: AssertionProviderExtension = {
           },
         },
         bindingCapability: 'assertion' as const,
+      },
+      {
+        format: 'junit_xml' as ReportFormatId,
+        parser: {
+          format: 'junit_xml' as ReportFormatId,
+          parse(content: string, fileName: string, context: { providerId: string }) {
+            return parseJUnitXml(content, fileName, context);
+          },
+        },
+        bindingCapability: 'check_only' as const,
       },
     ],
     identityCodec: {

@@ -82,6 +82,21 @@ function mavenProfile() {
         },
       };
     },
+    resolveRuntimeRequirements(candidate: { source: string }) {
+      const isWin = candidate.source === 'repo:mvnw.cmd';
+      return [
+        {
+          id: 'java',
+          role: 'runtime' as const,
+          probe: { kind: 'exec' as const, command: 'java -version' },
+        },
+        {
+          id: 'mvnw',
+          role: 'tool' as const,
+          probe: { kind: 'executable_file' as const, path: isWin ? 'mvnw.cmd' : './mvnw' },
+        },
+      ];
+    },
   };
 }
 
@@ -123,6 +138,21 @@ function gradleProfile() {
           standardPatterns: ['build/test-results/test/TEST-*.xml'],
         },
       };
+    },
+    resolveRuntimeRequirements(candidate: { source: string }) {
+      const isWin = candidate.source === 'repo:gradlew.bat';
+      return [
+        {
+          id: 'java',
+          role: 'runtime' as const,
+          probe: { kind: 'exec' as const, command: 'java -version' },
+        },
+        {
+          id: 'gradlew',
+          role: 'tool' as const,
+          probe: { kind: 'executable_file' as const, path: isWin ? 'gradlew.bat' : './gradlew' },
+        },
+      ];
     },
   };
 }

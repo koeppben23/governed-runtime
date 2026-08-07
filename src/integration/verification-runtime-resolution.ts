@@ -11,12 +11,9 @@
 
 import type { VerificationCandidate } from '../state/discovery-schemas.js';
 import type { RuntimeRequirement } from '../providers/registry.js';
-import {
-  RUNTIME_REQUIREMENTS_BY_PROVIDER,
-  ASSERTION_PROFILES,
-  type ExecutionProfile,
-} from '../providers/registry.js';
+import { RUNTIME_REQUIREMENTS_BY_PROVIDER, ASSERTION_PROFILES } from '../providers/registry.js';
 import type { ProbeRunner, ProbeRole } from '../verification/toolchain-probe.js';
+import type { PlannedVerificationCandidate } from '../discovery/verification-candidate-planned.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -38,41 +35,40 @@ export interface ResolvedVerificationCandidate {
   };
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
+/**
+ * Wraps VerificationCandidate[] into PlannedVerificationCandidate[] for compatibility.
+ */
+export function wrapForResolution(
+  candidates: readonly VerificationCandidate[],
+): PlannedVerificationCandidate[] {
+  return candidates.map((c) => ({ candidate: c }));
+}
 
 export async function resolveRuntimeReadiness(
-  candidates: readonly VerificationCandidate[],
+  candidates: readonly PlannedVerificationCandidate[],
   runner: ProbeRunner,
   cwd: string,
 ): Promise<readonly ResolvedVerificationCandidate[]> {
   const results: ResolvedVerificationCandidate[] = [];
 
-  for (const candidate of candidates) {
+  for (const planned of candidates) {
+    const candidate = planned.candidate;
     if (candidate.assertionCapability !== 'structured') {
-      results.push({
-        candidate,
-        runtime: { status: 'unavailable', requirements: [] },
-      });
+      results.push({ candidate, runtime: { status: 'unavailable', requirements: [] } });
       continue;
     }
 
-    const requirements = getEffectiveRequirements(candidate);
+    const requirements = getEffectiveRequirements(candidate, planned.executionProfileId);
 
     if (requirements.length === 0) {
-      results.push({
-        candidate,
-        runtime: { status: 'ready', requirements: [] },
-      });
+      results.push({ candidate, runtime: { status: 'ready', requirements: [] } });
       continue;
     }
 
     const resolvedReqs = await probeRequirements(requirements, runner, cwd);
     const status = aggregateStatus(resolvedReqs);
 
-    results.push({
-      candidate,
-      runtime: { status, requirements: resolvedReqs },
-    });
+    results.push({ candidate, runtime: { status, requirements: resolvedReqs } });
   }
 
   return results;
@@ -100,34 +96,27 @@ function buildProbeSpec(
   };
 }
 
-function getEffectiveRequirements(candidate: VerificationCandidate): readonly RuntimeRequirement[] {
+function getEffectiveRequirements(
+  candidate: VerificationCandidate,
+  executionProfileId?: string,
+): readonly RuntimeRequirement[] {
   if (candidate.assertionCapability !== 'structured') return [];
 
-  const matchingProfile = findMatchingProfile(candidate);
-  const raw = matchingProfile?.runtimeRequirements?.length
-    ? matchingProfile.runtimeRequirements
-    : (() => {
-        const pid = candidate.assertionReport.providerId;
-        return RUNTIME_REQUIREMENTS_BY_PROVIDER.get(pid) ?? [];
-      })();
+  const profile = executionProfileId
+    ? ASSERTION_PROFILES.find((p) => p.profileId === executionProfileId)
+    : undefined;
 
-  // Profile-level requirements matched by provider + format + kind
-  return raw;
-}
-
-function findMatchingProfile(candidate: VerificationCandidate): ExecutionProfile | undefined {
-  if (candidate.assertionCapability !== 'structured') return undefined;
-
-  const { kind } = candidate;
-  const { format, providerId } = candidate.assertionReport;
-
-  for (const profile of ASSERTION_PROFILES) {
-    if (profile.kind !== kind) continue;
-    if (profile.format !== format) continue;
-    if (profile.providerId !== providerId) continue;
-    return profile;
+  // Profile-specific requirements with possible platform resolution
+  if (profile?.resolveRuntimeRequirements) {
+    return profile.resolveRuntimeRequirements(candidate);
   }
-  return undefined;
+
+  if (profile?.runtimeRequirements?.length) {
+    return profile.runtimeRequirements;
+  }
+
+  const pid = candidate.assertionReport.providerId;
+  return RUNTIME_REQUIREMENTS_BY_PROVIDER.get(pid) ?? [];
 }
 
 async function probeRequirements(
