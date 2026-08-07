@@ -29,7 +29,7 @@ describe('analyzeVerificationScript', () => {
       expect(result.provider.confidence).toBe('high');
     }
     expect(result.isCompound).toBe(false);
-    expect(result.reporterConflict).toBe(false);
+    expect(result.reporterConfigurationPresent).toBe(false);
     expect(result.argumentForwarding).toBe('supported');
   });
 
@@ -128,10 +128,10 @@ describe('analyzeVerificationScript', () => {
     expect(result.argumentForwarding).toBe('unsupported');
   });
 
-  it('vitest --reporter=junit → identified but reporter conflict', () => {
+  it('vitest --reporter=junit → identified but reporter configuration present', () => {
     const result = analyzeVerificationScript('test', 'vitest --reporter=junit', SIGNATURES);
     expect(result.provider.status).toBe('identified');
-    expect(result.reporterConflict).toBe(true);
+    expect(result.reporterConfigurationPresent).toBe(true);
   });
 
   it('turbo test → unidentified', () => {

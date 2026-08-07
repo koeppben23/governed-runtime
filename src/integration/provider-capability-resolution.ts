@@ -6,7 +6,7 @@
  * Importiert aus Discovery (Katalog) und Verification (Registry) — nur im
  * Integration-Layer erlaubt.
  *
- * @version v1
+ * @version v2
  */
 
 import type { DetectedStack, VerificationCandidate } from '../state/discovery-schemas.js';
@@ -19,6 +19,10 @@ import {
   ASSERTION_CODEC_BY_PROVIDER,
   ASSERTION_FORMATS_BY_PROVIDER,
 } from '../verification/assertion-parsers/registry.js';
+import type {
+  ResolvedVerificationCandidate,
+  RuntimeStatus,
+} from './verification-runtime-resolution.js';
 
 // ─── Public Types ────────────────────────────────────────────────────────────
 
@@ -41,6 +45,10 @@ export interface ResolvedProviderCapability {
     format?: ReportFormatId;
     source?: string;
     reason?: 'no_structured_candidate' | 'format_not_binding_capable';
+  };
+
+  runtime: {
+    status: RuntimeStatus;
   };
 }
 
@@ -117,9 +125,11 @@ function resolveCandidate(
 export function resolveProviderCapabilities(
   detectedStack: DetectedStack | undefined,
   verificationCandidates: readonly VerificationCandidate[] | undefined,
+  runtimeCandidates?: readonly ResolvedVerificationCandidate[] | undefined,
 ): ResolvedProviderCapability[] {
   const detectionMap = buildDetectionMap(detectedStack);
   const candidateMap = buildCandidateMap(verificationCandidates);
+  const runtimeByProvider = buildRuntimeMap(runtimeCandidates);
   const results: ResolvedProviderCapability[] = [];
 
   for (const desc of PROVIDER_DESCRIPTORS) {
@@ -141,8 +151,26 @@ export function resolveProviderCapabilities(
         format: bindingAvailable ? desc.preferredAssertionFormat : undefined,
       },
       candidate: resolveCandidate(candidateMap.get(desc.providerId), bindingFormats),
+      runtime: {
+        status: runtimeByProvider.get(desc.providerId) ?? 'unknown',
+      },
     });
   }
 
   return results;
+}
+
+function buildRuntimeMap(
+  runtimeCandidates: readonly ResolvedVerificationCandidate[] | undefined,
+): Map<ProviderId, RuntimeStatus> {
+  const map = new Map<ProviderId, RuntimeStatus>();
+  for (const rc of runtimeCandidates ?? []) {
+    if (rc.candidate.assertionCapability !== 'structured') continue;
+    const providerId = rc.candidate.assertionReport.providerId;
+    if (!providerId) continue;
+    if (!map.has(providerId)) {
+      map.set(providerId, rc.runtime.status);
+    }
+  }
+  return map;
 }

@@ -28,6 +28,9 @@ import type { SessionState } from '../../state/schema.js';
 import type { ReviewFindings } from '../../state/evidence.js';
 import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
 import { resolveProviderCapabilities } from '../provider-capability-resolution.js';
+import { resolveRuntimeReadiness } from '../verification-runtime-resolution.js';
+import type { ProbeRunner } from '../../verification/toolchain-probe.js';
+import type { ResolvedVerificationCandidate } from '../verification-runtime-resolution.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { CompletenessReport } from '../../audit/completeness.js';
@@ -456,10 +459,26 @@ async function loadDiscoveryStatusContext(wsDir: string): Promise<DiscoveryStatu
   }
 }
 
-function computeProviderCapabilities(state: SessionState) {
+function computeProviderCapabilities(
+  state: SessionState,
+  runtimeCandidates?: readonly ResolvedVerificationCandidate[],
+) {
   return resolveProviderCapabilities(
     state.detectedStack ?? undefined,
     state.verificationCandidates,
+    runtimeCandidates,
+  );
+}
+
+export async function resolveRuntimeProviderCapabilities(
+  state: SessionState,
+  runner: ProbeRunner,
+  cwd: string,
+) {
+  return resolveProviderCapabilities(
+    state.detectedStack ?? undefined,
+    state.verificationCandidates,
+    await resolveRuntimeReadiness(state.verificationCandidates ?? [], runner, cwd),
   );
 }
 

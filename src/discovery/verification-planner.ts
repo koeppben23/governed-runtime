@@ -176,7 +176,7 @@ function addScriptCandidates(
     const canEnrich =
       analysis.provider.status === 'identified' &&
       !analysis.isCompound &&
-      !analysis.reporterConflict &&
+      !analysis.reporterConfigurationPresent &&
       analysis.argumentForwarding === 'supported';
 
     if (canEnrich) {
@@ -201,8 +201,8 @@ function addScriptCandidates(
     if (analysis.provider.status === 'identified') {
       if (analysis.isCompound) {
         reason += `; provider '${analysis.provider.providerId}' detected but script is a compound shell command`;
-      } else if (analysis.reporterConflict) {
-        reason += `; reporter arguments already configured, cannot safely enrich`;
+      } else if (analysis.reporterConfigurationPresent) {
+        reason += `; existing reporter configuration detected, cannot safely enrich`;
       }
     }
 

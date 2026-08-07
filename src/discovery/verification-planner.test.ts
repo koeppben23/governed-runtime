@@ -195,7 +195,7 @@ describe('verification planner', () => {
       expect(testCandidate?.assertionCapability).toBe('unsupported');
     });
 
-    it('reporter conflict is not enrichable', async () => {
+    it('existing reporter config is not enrichable', async () => {
       const candidates = await planVerificationCandidates({
         detectedStack: null,
         allFiles: ['package.json'],

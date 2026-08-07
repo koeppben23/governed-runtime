@@ -15,14 +15,17 @@ import type { VerificationCandidateKind, AssertionReportSpec } from '../state/di
 
 type DetectionId = `${string}:${string}`;
 
-export interface ScriptSignature {
-  readonly executable?: string;
-  readonly requiredArgsPrefix?: readonly string[];
-  readonly moduleInvocation?: {
-    readonly executable: string;
-    readonly module: string;
-  };
-}
+export type ScriptSignature =
+  | {
+      readonly executable: string;
+      readonly requiredArgsPrefix?: readonly string[];
+    }
+  | {
+      readonly moduleInvocation: {
+        readonly executable: string;
+        readonly module: string;
+      };
+    };
 
 export interface RuntimeRequirement {
   readonly id: string;

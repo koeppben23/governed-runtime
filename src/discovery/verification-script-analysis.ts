@@ -33,7 +33,7 @@ export interface ScriptAnalysis {
       };
 
   readonly argumentForwarding: 'supported' | 'unsupported' | 'unknown';
-  readonly reporterConflict: boolean;
+  readonly reporterConfigurationPresent: boolean;
   readonly isCompound: boolean;
 }
 
@@ -61,11 +61,7 @@ const EXEC_PREFIXES = ['npx', 'pnpm exec', 'yarn exec', 'bunx'];
  * Represents a tokenized script command view after prefix stripping.
  */
 interface TokenizedCommand {
-  /** The first token(s) that identify the tool being invoked. */
-  readonly toolTokens: readonly string[];
-  /** The remaining tokens after the tool identifier. */
-  readonly restTokens: readonly string[];
-  /** Whether the original command used an exec prefix (npx, pnpm exec etc). */
+  readonly tokens: readonly string[];
   readonly viaExecPrefix: boolean;
 }
 
@@ -79,13 +75,13 @@ export function analyzeVerificationScript(
   const trimmed = command.trim();
 
   const isCompound = UNSAFE_SHELL_RE.test(trimmed);
-  const reporterConflict = checkReporterConflict(trimmed);
+  const reporterConfigurationPresent = checkExistingReporterConfig(trimmed);
 
   const base: Omit<ScriptAnalysis, 'provider'> = {
     scriptName,
     command: trimmed,
     argumentForwarding: isCompound ? 'unsupported' : 'supported',
-    reporterConflict,
+    reporterConfigurationPresent,
     isCompound,
   };
 
@@ -94,7 +90,7 @@ export function analyzeVerificationScript(
     return { ...base, provider: { status: 'unidentified' } };
   }
 
-  const match = matchSignatures(tokenized.toolTokens, signatures);
+  const match = matchSignatures(tokenized.tokens, signatures);
   if (!match) {
     return { ...base, provider: { status: 'unidentified' } };
   }
@@ -148,11 +144,7 @@ function tokenize(command: string): TokenizedCommand | null {
   const tokens = remaining.split(/\s+/);
   if (tokens.length === 0) return null;
 
-  return {
-    toolTokens: tokens,
-    restTokens: [],
-    viaExecPrefix,
-  };
+  return { tokens, viaExecPrefix };
 }
 
 // ─── Signature Matching ──────────────────────────────────────────────────────
@@ -172,8 +164,7 @@ function matchSignatures(
 
   for (const [providerId, sigs] of signatures) {
     for (const sig of sigs) {
-      // Module invocation: python -m pytest
-      if (sig.moduleInvocation) {
+      if ('moduleInvocation' in sig) {
         const mi = sig.moduleInvocation;
         if (
           firstToken === mi.executable &&
@@ -187,7 +178,6 @@ function matchSignatures(
             viaModuleInvocation: true,
           };
         }
-        // Also match bare module name: pytest
         if (firstToken === mi.module) {
           return {
             providerId,
@@ -198,7 +188,6 @@ function matchSignatures(
         continue;
       }
 
-      // Executable match with optional requiredArgsPrefix
       if (firstToken !== sig.executable) continue;
 
       if (sig.requiredArgsPrefix && sig.requiredArgsPrefix.length > 0) {
@@ -231,7 +220,7 @@ function matchSignatures(
 
 // ─── Reporter Detection ──────────────────────────────────────────────────────
 
-function checkReporterConflict(command: string): boolean {
+function checkExistingReporterConfig(command: string): boolean {
   const lower = command.toLowerCase();
   return REPORTER_FLAGS.some((re) => re.test(lower));
 }
