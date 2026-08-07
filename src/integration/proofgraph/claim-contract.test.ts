@@ -23,10 +23,34 @@ const CLAIM_A = '10000000-0000-4000-8000-00000000000a';
 const CLAIM_B = '10000000-0000-4000-8000-00000000000b';
 
 const BASE = {
-  activeChecks: ['build', 'regression'],
+  activeChecks: ['build', 'security'],
   allowedSurfaces: ['command-registration', 'config-defaults'],
   allowedMutationProfiles: ['proofgraph-evaluator', 'proofgraph-gate'],
-  verificationCandidates: [],
+  verificationCandidates: [
+    {
+      assertionCapability: 'unsupported' as const,
+      kind: 'build' as const,
+      command: './mvnw verify',
+      source: 'repo:mvnw',
+      confidence: 'high' as const,
+      reason: 'Maven build',
+    },
+    {
+      assertionCapability: 'structured' as const,
+      kind: 'security' as const,
+      command: './mvnw test',
+      source: 'repo:mvnw',
+      confidence: 'high' as const,
+      reason: 'JUnit via Maven wrapper (test)',
+      assertionReport: {
+        collection: 'snapshot_diff' as const,
+        transport: 'file' as const,
+        format: 'junit_xml' as const,
+        providerId: 'junit' as const,
+        standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+      },
+    },
+  ],
 } as const;
 
 function planClaim(
@@ -38,8 +62,8 @@ function planClaim(
     critical: true,
     positiveCheckId: 'build',
     counterexampleRequirement: {
-      checkId: 'regression',
-      assertion: { providerId: 'junit', localId: 'some-id' },
+      checkId: 'security',
+      assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
     },
     authoritySectionId: 'step-1',
     ...overrides,
@@ -85,9 +109,14 @@ describe('validateProofClaimContract — critical contract', () => {
         assertion: { providerId: 'junit', localId: 'some-id' },
       },
     });
-    const result = validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] });
+    const result = validateProofClaimContract({
+      ...BASE,
+      verificationCandidates: [],
+      source: 'plan',
+      claims: [claim],
+    });
 
-    expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleRequirement' });
+    expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleRequirement.checkId' });
     if (result.kind !== 'invalid') return;
     expect(result.failureKind).toBe('unsatisfiable');
     expect(result.detail).toContain('not in active verification candidates');
@@ -103,11 +132,12 @@ describe('validateProofClaimContract — critical contract', () => {
     });
     const result = validateProofClaimContract({
       ...BASE,
+      verificationCandidates: [],
       source: 'declare_contract',
       claims: [claim],
     });
 
-    expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleRequirement' });
+    expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleRequirement.checkId' });
     if (result.kind !== 'invalid') return;
     expect(result.failureKind).toBe('unsatisfiable');
   });
@@ -135,7 +165,7 @@ describe('validateProofClaimContract — check references', () => {
     expect(result).toMatchObject({ kind: 'invalid', field: 'expectedCheckId' });
     if (result.kind !== 'invalid') return;
     // The author needs to know what they could have referenced instead.
-    expect(result.detail).toContain('build, regression');
+    expect(result.detail).toContain('build, security');
   });
 
   it('rejects a counterexample check that is not active', () => {
@@ -219,7 +249,7 @@ describe('validateProofClaimContract — public field language', () => {
   it('identifies a declare_contract claim by statement, since its id is derived', () => {
     const claims = [
       planClaim({ claimId: undefined }),
-      planClaim({ claimId: undefined, positiveCheckId: 'regression' }),
+      planClaim({ claimId: undefined, positiveCheckId: 'security' }),
     ];
     const result = validateProofClaimContract({ ...BASE, source: 'declare_contract', claims });
     if (result.kind !== 'invalid') throw new Error('expected invalid');

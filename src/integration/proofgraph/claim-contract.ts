@@ -253,6 +253,7 @@ function checkCounterexampleSatisfiability(
   input: ClaimContractInput,
   claim: NormalizedClaimDeclaration,
 ): ClaimContractResult | null {
+  if (!claim.critical) return null;
   const req = claim.counterexampleRequirement;
   if (!req) return null;
 

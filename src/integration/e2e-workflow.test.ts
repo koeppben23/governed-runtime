@@ -42,7 +42,7 @@ import {
   architecture,
   declare_contract,
 } from './tools/index.js';
-import { readState } from '../adapters/persistence.js';
+import { readState, writeState } from '../adapters/persistence.js';
 import { readAuditTrail } from '../adapters/persistence-audit.js';
 import { verifyChain } from '../audit/integrity.js';
 import {
@@ -1196,11 +1196,48 @@ describe('ProofGraph demo fixtures', () => {
   async function driveToImplementationReview(mutationProfile?: 'proofgraph-evaluator') {
     await fs.writeFile(
       `${ws.tmpDir}/package.json`,
-      JSON.stringify({ scripts: { build: 'true', test: 'true' } }),
+      JSON.stringify({ scripts: { build: 'true', test: './mvnw test' } }),
       'utf8',
     );
+    await fs.writeFile(`${ws.tmpDir}/mvnw`, '#!/bin/sh\necho "mvnw"', 'utf8');
+    await fs.chmod(`${ws.tmpDir}/mvnw`, 0o755);
     await callOk(hydrate, { policyMode: 'team', profileId: 'baseline' });
     await callOk(ticket, { text: 'Demonstrate ProofGraph evidence.', source: 'user' });
+    // Inject structured candidates so plan claims pass satisfiability
+    const sessDir = await getSessDir();
+    const st = await readState(sessDir);
+    await writeState(sessDir, {
+      ...st!,
+      verificationCandidates: [
+        {
+          assertionCapability: 'unsupported' as const,
+          kind: 'build' as const,
+          command: './mvnw verify',
+          source: 'repo:mvnw',
+          confidence: 'high' as const,
+          reason: 'Maven build',
+        },
+        {
+          assertionCapability: 'structured' as const,
+          kind: 'test' as const,
+          command: './mvnw test',
+          source: 'repo:mvnw',
+          confidence: 'high' as const,
+          reason: 'JUnit via Maven wrapper',
+          assertionReport: {
+            collection: 'snapshot_diff' as const,
+            transport: 'file' as const,
+            format: 'junit_xml' as const,
+            providerId: 'junit' as const,
+            standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+          },
+        },
+      ],
+      executionSubjectInputsByKind: {
+        build: [{ kind: 'implementation' as const }],
+        test: [{ kind: 'implementation' as const }],
+      },
+    });
     await callOk(plan, {
       planText: PLAN_TEXT,
       claims: [{ ...PLAN_CLAIM, ...(mutationProfile ? { mutationProfile } : {}) }],

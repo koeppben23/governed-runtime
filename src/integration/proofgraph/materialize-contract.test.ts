@@ -37,6 +37,31 @@ const PLAN_RECORD_DIGEST = computeRecordDigest({
 
 function stateWithClaims() {
   const state = makeState('IMPL_REVIEW', {
+    verificationCandidates: [
+      {
+        assertionCapability: 'unsupported' as const,
+        kind: 'test' as const,
+        command: './mvnw verify',
+        source: 'repo:mvnw',
+        confidence: 'high' as const,
+        reason: 'Maven test',
+      },
+      {
+        assertionCapability: 'structured' as const,
+        kind: 'security' as const,
+        command: './mvnw test',
+        source: 'repo:mvnw',
+        confidence: 'high' as const,
+        reason: 'JUnit via Maven wrapper',
+        assertionReport: {
+          collection: 'snapshot_diff' as const,
+          transport: 'file' as const,
+          format: 'junit_xml' as const,
+          providerId: 'junit' as const,
+          standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+        },
+      },
+    ],
     plan: {
       current: {
         body: 'approved plan',
