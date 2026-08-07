@@ -177,6 +177,7 @@ export function bindStructuralEvidence(
           status: 'unavailable',
           executedAt: evaluatedAt,
           detail: `unknown structural surface: ${ref.surfaceId}`,
+          attestation: 'flowguard_observed',
         });
         continue;
       }
@@ -200,6 +201,7 @@ export function bindStructuralEvidence(
         resultDigest: evaluation.resultDigest,
         executedAt: evaluatedAt,
         detail: evaluation.detail,
+        attestation: 'flowguard_observed',
       });
     }
   }

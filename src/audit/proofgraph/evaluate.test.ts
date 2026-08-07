@@ -56,6 +56,7 @@ function result(
       input: {},
       status: 'unavailable',
       executedAt: NOW,
+      attestation: 'flowguard_executed',
     });
   }
   return ProofProviderResult.parse({
@@ -69,6 +70,7 @@ function result(
     status,
     resultDigest: SHA,
     executedAt: NOW,
+    attestation: 'flowguard_executed',
   });
 }
 
@@ -268,6 +270,7 @@ describe('evaluateProofGraph', () => {
         status,
         resultDigest: SHA,
         executedAt: NOW,
+        attestation: 'flowguard_observed',
       });
     }
 
@@ -386,6 +389,7 @@ describe('evaluateProofGraph', () => {
         status: 'pass',
         resultDigest: SHA,
         executedAt: NOW,
+        attestation: 'flowguard_observed',
       });
       const out = evaluate({
         claims: [
@@ -479,6 +483,7 @@ describe('evaluateProofGraph', () => {
         status: 'pass',
         resultDigest: SHA,
         executedAt: NOW,
+        attestation: 'flowguard_executed',
       });
     }
 
@@ -534,6 +539,7 @@ describe('evaluateProofGraph', () => {
         status: 'pass',
         resultDigest: SHA,
         executedAt: NOW,
+        attestation: 'flowguard_observed',
       });
     }
 
@@ -755,6 +761,60 @@ describe('evaluateProofGraph', () => {
         ],
       });
       expect(out.claims[0]!.verificationState).not.toBe('CONTRADICTED');
+      expect(out.claims[0]!.verificationState).toBe('PROVEN');
+    });
+  });
+
+  describe('security invariant: external_self_reported evidence cannot satisfy positive requirements', () => {
+    const id = uuid(100);
+
+    it('fresh external_self_reported fault_injection pass leaves claim UNPROVEN', () => {
+      const out = evaluate({
+        claims: [
+          claim(id, { requiredEvidence: { positive: ['fault_injection'], adversarial: [] } }),
+        ],
+        providerResults: [
+          ProofProviderResult.parse({
+            claimId: id,
+            providerKind: 'fault_injection',
+            providerId: 'semantic-mutation',
+            providerVersion: 'semantic-mutation.v1',
+            input: { command: 'npx stryker run' },
+            source: { location: 'mutation-attempt:mut-att', stableId: 'mut-att:p' },
+            binding: { kind: 'implementation', digest: CURR },
+            status: 'pass',
+            resultDigest: SHA,
+            executedAt: NOW,
+            attestation: 'external_self_reported',
+          }),
+        ],
+        counterexamples: [],
+      });
+      expect(out.claims[0]!.verificationState).toBe('UNPROVEN');
+    });
+
+    it('fresh flowguard_executed fault_injection pass satisfies the requirement → PROVEN', () => {
+      const out = evaluate({
+        claims: [
+          claim(id, { requiredEvidence: { positive: ['fault_injection'], adversarial: [] } }),
+        ],
+        providerResults: [
+          ProofProviderResult.parse({
+            claimId: id,
+            providerKind: 'fault_injection',
+            providerId: 'semantic-mutation',
+            providerVersion: 'semantic-mutation.v1',
+            input: { command: 'npx stryker run' },
+            source: { location: 'mutation-attempt:mut-att', stableId: 'mut-att:p' },
+            binding: { kind: 'implementation', digest: CURR },
+            status: 'pass',
+            resultDigest: SHA,
+            executedAt: NOW,
+            attestation: 'flowguard_executed',
+          }),
+        ],
+        counterexamples: [],
+      });
       expect(out.claims[0]!.verificationState).toBe('PROVEN');
     });
   });

@@ -57,6 +57,7 @@ export function bindExecutedTestEvidence(
           status: 'unavailable',
           executedAt: evaluatedAt,
           detail: `no implementation validation attempt for ${ref.attemptId}`,
+          attestation: 'flowguard_executed',
         });
         continue;
       }
@@ -85,6 +86,7 @@ export function bindExecutedTestEvidence(
         resultDigest: r.outputDigest,
         executedAt: r.executedAt,
         detail: r.command,
+        attestation: 'flowguard_executed' as const,
       };
       results.push(
         r.passed

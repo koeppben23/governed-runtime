@@ -112,6 +112,7 @@ describe('proofgraph schemas', () => {
         resultDigest: SHA,
         executedAt: NOW,
         detail: 'vitest run',
+        attestation: 'flowguard_executed',
       };
       expect(ProofProviderResult.parse(result)).toEqual(result);
     });
@@ -133,6 +134,7 @@ describe('proofgraph schemas', () => {
         status: 'pass' as const,
         resultDigest: SHA,
         executedAt: NOW,
+        attestation: 'flowguard_observed',
       };
       expect(ProofProviderResult.parse(result)).toEqual(result);
     });
@@ -147,6 +149,7 @@ describe('proofgraph schemas', () => {
         status: 'unavailable' as const,
         executedAt: NOW,
         detail: 'no implementation validation attempt',
+        attestation: 'flowguard_executed',
       };
       expect(ProofProviderResult.parse(result)).toEqual(result);
     });
@@ -203,6 +206,7 @@ describe('proofgraph schemas', () => {
           status: 'pass',
           resultDigest: 'nothex',
           executedAt: NOW,
+          attestation: 'flowguard_executed',
         }),
       ).toThrow();
     });
@@ -218,6 +222,7 @@ describe('proofgraph schemas', () => {
       status: 'pass' as const,
       resultDigest: SHA,
       executedAt: NOW,
+      attestation: 'flowguard_executed' as const,
     };
     const without = (key: string): Record<string, unknown> => {
       const clone: Record<string, unknown> = { ...validExecuted };
@@ -258,6 +263,7 @@ describe('proofgraph schemas', () => {
       input: {},
       status: 'unavailable' as const,
       executedAt: NOW,
+      attestation: 'flowguard_executed' as const,
     };
 
     it('rejects unavailable results carrying executed-only fields', () => {

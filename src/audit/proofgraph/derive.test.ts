@@ -49,6 +49,7 @@ function passResult(boundDigest: string) {
     resultDigest: SHA,
     executedAt: NOW,
     detail: 'npm test',
+    attestation: 'flowguard_executed' as const,
   };
 }
 

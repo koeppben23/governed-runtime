@@ -126,6 +126,10 @@ describe('summarizeProofGraph reviewer projection', () => {
           {
             ...claim(),
             counterexampleRefs: [{ kind: 'validation_attempt' as const, attemptId: CX_ATT }],
+            counterexampleRequirement: {
+              checkId: 'security',
+              assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
+            },
           },
         ],
       },
@@ -140,7 +144,7 @@ describe('summarizeProofGraph reviewer projection', () => {
     const summary = summarizeProofGraph(stateWithCounterexample(IMPL_DIGEST), NOW);
     expect(summary.counterexamples).toHaveLength(1);
     expect(summary.counterexamples[0]).toMatchObject({
-      outcome: 'supported',
+      outcome: 'not_verified',
       boundDigest: IMPL_DIGEST,
       stale: false,
     });
