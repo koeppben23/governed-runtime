@@ -31,6 +31,7 @@ import {
   computeProviderCapabilities,
   resolveRuntimeWithProfileIds,
 } from './status-provider-projection.js';
+import type { ResolvedVerificationCandidate } from '../verification-runtime-resolution.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { CompletenessReport } from '../../audit/completeness.js';
