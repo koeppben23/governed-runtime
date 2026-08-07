@@ -1,10 +1,9 @@
 /**
  * Runtime Assertion Provider Conformance Tests
  *
- * Exercises the full production pipeline (Candidate → prepare → execute →
- * collect → extract) against real fixture projects with pinned toolchain
- * versions. Discovery is exercised through explicit stack construction
- * that mirrors what the production orchestrator would produce.
+ * Exercises the full production pipeline against real fixture projects:
+ *   collectStack → planVerificationCandidates → prepareVerificationExecution
+ *   → executeCheck → collectAssertionReports → completeAssertionExtraction
  *
  * Gated behind FLOWGUARD_RUNTIME_CONFORMANCE=1 — these tests run only in CI
  * where all toolchains (Maven, Gradle, Node, Python, Go) are pre-installed.
@@ -20,30 +19,51 @@ import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { mkdtemp, rm, cp, readdir, mkdir } from 'node:fs/promises';
 
+import { collectStack } from '../../../src/discovery/collectors/stack-detection.js';
 import { planVerificationCandidates } from '../../../src/discovery/verification-planner.js';
 import { prepareVerificationExecution } from '../../../src/verification/verification-execution.js';
 import { executeCheck } from '../../../src/verification/executor.js';
 import { completeAssertionExtraction } from '../../../src/verification/assertion-extractor.js';
+import type { CollectorInput, DetectedItem } from '../../../src/discovery/types.js';
 import type { VerificationCandidate } from '../../../src/state/discovery-schemas.js';
-import type {
-  DetectedStack,
-  DetectedStackItem,
-} from '../../../src/state/discovery-schemas.js';
+import type { DetectedStack, DetectedStackItem } from '../../../src/state/discovery-schemas.js';
 
 const runIf = process.env.FLOWGUARD_RUNTIME_CONFORMANCE === '1' ? it : it.skip;
 const PROJECTS_ROOT = join(import.meta.dirname, 'projects');
 
-// ─── Per-project detected stacks ──────────────────────────────────────────
+// ─── Convert collector StackInfo → DetectedStack ─────────────────────────
 
-function detectedStack(
-  summary: string,
-  items: readonly DetectedStackItem[],
-): DetectedStack {
+const KIND_MAP: Record<string, DetectedStackItem['kind']> = {
+  languages: 'language',
+  frameworks: 'framework',
+  buildTools: 'buildTool',
+  testFrameworks: 'testFramework',
+  runtimes: 'runtime',
+  tools: 'tool',
+  qualityTools: 'qualityTool',
+  databases: 'database',
+};
+
+function toDetectedStack(info: Record<string, DetectedItem[]>): DetectedStack | null {
+  const items: DetectedStackItem[] = [];
+  for (const [category, detectedItems] of Object.entries(info)) {
+    const kind = KIND_MAP[category];
+    if (!kind || !Array.isArray(detectedItems)) continue;
+    for (const item of detectedItems) {
+      items.push({
+        kind,
+        id: item.id,
+        version: item.version,
+        evidence: item.evidence?.[0],
+      });
+    }
+  }
+  if (items.length === 0) return null;
   return {
-    summary,
-    items: [...items],
+    summary: items.map((i) => `${i.kind}:${i.id}`).join(', '),
+    items,
     versions: items
-      .filter((i) => i.version !== undefined)
+      .filter((i) => i.version)
       .map((i) => ({
         id: i.id,
         version: i.version!,
@@ -53,51 +73,44 @@ function detectedStack(
   };
 }
 
-function npmStack(framework: string): DetectedStack {
-  return detectedStack(`buildTool:npm, testFramework:${framework}`, [
-    { kind: 'buildTool', id: 'npm', evidence: 'package.json' },
-    { kind: 'testFramework', id: framework, evidence: 'package.json' },
-  ]);
-}
+// ─── Per-project expected localIds (subset for identity verification) ────
 
-function pythonStack(): DetectedStack {
-  return detectedStack('testFramework:pytest', [
-    { kind: 'testFramework', id: 'pytest', evidence: 'pyproject.toml' },
-  ]);
-}
-
-function mavenStack(): DetectedStack {
-  return detectedStack('buildTool:maven', [
-    { kind: 'buildTool', id: 'maven', evidence: 'pom.xml' },
-  ]);
-}
-
-function gradleStack(): DetectedStack {
-  return detectedStack('buildTool:gradle', [
-    { kind: 'buildTool', id: 'gradle', evidence: 'build.gradle.kts' },
-  ]);
-}
-
-function goStack(): DetectedStack {
-  return detectedStack('language:go, testFramework:go_test', [
-    { kind: 'language', id: 'go', evidence: 'go.mod' },
-    { kind: 'testFramework', id: 'go_test', evidence: 'go.mod' },
-  ]);
-}
+const EXPECTED_LOCAL_IDS: Record<string, string[]> = {
+  'maven-junit': [
+    'com.example.CalculatorTest#testAddition',
+    'com.example.CalculatorTest#testFailingAssertion',
+    'com.example.CalculatorTest#testSkipped',
+    'com.example.CalculatorTest$AdvancedOperations#testNestedFailing',
+    'com.example.CalculatorTest$AdvancedOperations#testMultiplication',
+  ],
+  'gradle-junit': [
+    'com.example.CalculatorTest#testAddition',
+    'com.example.CalculatorTest#testFailingAssertion',
+    'com.example.CalculatorTest#testSkipped',
+  ],
+  vitest: ['src/math.test.ts::calculator::add::adds two positive numbers'],
+  jest: ['src/math.test.js::calculator::add::adds two positive numbers'],
+  pytest: [
+    'tests/test_math.py::test_addition',
+    'tests/test_math.py::test_failing_assertion',
+    'tests/test_math.py::test_parametrized[2-3-5]',
+    'tests/test_math.py::TestMultiply::test_positive',
+  ],
+  go: ['flowguard-conformance-go::TestAddition'],
+};
 
 interface RuntimeFixture {
   readonly name: string;
-  readonly stack: DetectedStack;
   readonly expectedAssertionCount: number;
 }
 
 const FIXTURES: RuntimeFixture[] = [
-  { name: 'maven-junit', stack: mavenStack(), expectedAssertionCount: 6 },
-  { name: 'gradle-junit', stack: gradleStack(), expectedAssertionCount: 6 },
-  { name: 'vitest', stack: npmStack('vitest'), expectedAssertionCount: 6 },
-  { name: 'jest', stack: npmStack('jest'), expectedAssertionCount: 6 },
-  { name: 'pytest', stack: pythonStack(), expectedAssertionCount: 11 },
-  { name: 'go', stack: goStack(), expectedAssertionCount: 5 },
+  { name: 'maven-junit', expectedAssertionCount: 6 },
+  { name: 'gradle-junit', expectedAssertionCount: 6 },
+  { name: 'vitest', expectedAssertionCount: 6 },
+  { name: 'jest', expectedAssertionCount: 6 },
+  { name: 'pytest', expectedAssertionCount: 11 },
+  { name: 'go', expectedAssertionCount: 5 },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -157,12 +170,26 @@ describe('Runtime Assertion Provider Conformance', () => {
   for (const fixture of FIXTURES) {
     describe(`[${fixture.name}] end-to-end pipeline`, () => {
       runIf(
-        `full pipeline: Candidate → prepare → execute → extract`,
+        `full pipeline: Discovery → Candidate → prepare → execute → extract`,
         async () => {
           const tmpDir = await mkdtemp(join(tmpdir(), `fg-rt-${fixture.name}-`));
           await cp(join(PROJECTS_ROOT, fixture.name), tmpDir, { recursive: true });
 
           const allFiles = await collectAllFiles(tmpDir);
+          const packageFiles = allFiles.filter(
+            (f) =>
+              f.endsWith('package.json') ||
+              f.endsWith('pom.xml') ||
+              f.endsWith('pyproject.toml') ||
+              f.endsWith('go.mod'),
+          );
+          const configFiles = allFiles.filter(
+            (f) =>
+              f.includes('vitest.config') ||
+              f.includes('jest.config') ||
+              f.includes('build.gradle') ||
+              f.includes('settings.gradle'),
+          );
 
           const readFileFn = async (
             relativePath: string,
@@ -174,8 +201,20 @@ describe('Runtime Assertion Provider Conformance', () => {
             }
           };
 
+          const collectorInput: CollectorInput = {
+            worktreePath: tmpDir,
+            fingerprint: `runtime-conformance-${fixture.name}`,
+            allFiles,
+            packageFiles,
+            configFiles,
+            readFile: readFileFn,
+          };
+
+          const stackOutput = await collectStack(collectorInput);
+          const detectedStack = toDetectedStack(stackOutput.data);
+
           const candidates = await planVerificationCandidates({
-            detectedStack: fixture.stack,
+            detectedStack,
             allFiles,
             readFile: readFileFn,
           });
@@ -193,7 +232,6 @@ describe('Runtime Assertion Provider Conformance', () => {
           expect(prepared.assertion.capability).toBe('structured');
 
           if (prepared.assertion.capability === 'structured') {
-            // Pre-create report output directories for run_specific collection
             if (prepared.assertion.report.kind === 'run_specific') {
               const resultDir = join(
                 tmpDir,
@@ -202,20 +240,13 @@ describe('Runtime Assertion Provider Conformance', () => {
               await mkdir(resultDir, { recursive: true });
             }
 
-            // Use venv's Python for pytest projects
-            let cmd = prepared.command;
-            if (fixture.name === 'pytest') {
-              const venvPython = join(tmpDir, '.venv', 'bin', 'python');
-              cmd = cmd.replace(/^python\s/, `${venvPython} `);
-            }
-
             const execution = await executeCheck({
               kind: prepared.kind,
-              command: cmd,
+              command: prepared.command,
               cwd: tmpDir,
             });
 
-            expect(execution.command).toBe(cmd);
+            expect(execution.command).toBe(prepared.command);
 
             if (prepared.assertion.report.kind === 'run_specific') {
               expect(prepared.command).toContain(prepared.attemptId);
@@ -229,8 +260,16 @@ describe('Runtime Assertion Provider Conformance', () => {
 
             expect(
               extraction.status,
-              `extraction status: ${extraction.status} reason: ${'reason' in extraction ? extraction.reason : 'n/a'}`,
+              `extraction status: ${extraction.status} reason: ${'reason' in extraction ? (extraction as { reason: string }).reason : 'n/a'}`,
             ).toBe('extracted');
+
+            // exitCode from test runner must be non-zero (fixtures have failures)
+            expect(
+              execution.exitCode,
+              `${fixture.name}: test process exitCode is 0 but fixture has failing tests`,
+            ).not.toBe(0);
+
+            expect(extraction.status).toBe('extracted');
 
             if (extraction.status === 'extracted') {
               expect(extraction.attemptId).toBe(prepared.attemptId);
@@ -256,8 +295,19 @@ describe('Runtime Assertion Provider Conformance', () => {
               );
               expect(hasFailedAssertion).toBe(true);
 
-              if (execution.exitCode !== 0) {
-                expect(extraction.status).toBe('extracted');
+              // Verify expected localId substrings are present in at least one assertion
+              // Runtime paths differ from golden fixtures (temp dir copies) so use suffix matching
+              const expectedSuffixes = EXPECTED_LOCAL_IDS[fixture.name];
+              if (expectedSuffixes) {
+                for (const suffix of expectedSuffixes) {
+                  const found = extraction.assertions.some(
+                    (a) => a.assertion.localId.endsWith(suffix),
+                  );
+                  expect(
+                    found,
+                    `${fixture.name}: no assertion localId ending with: ${suffix}. Found: ${localIds.join(', ')}`,
+                  ).toBe(true);
+                }
               }
             }
           }
