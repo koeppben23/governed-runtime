@@ -139,7 +139,7 @@ export interface ComputeEnforcementInput {
   readonly projection?: ProofGraphSummary['projection'];
   readonly authorizedCriticalClaimIds?: readonly string[];
   readonly implementationDigest?: string;
-  readonly riskAssessmentActive?: boolean;
+  readonly riskAssessmentStale?: boolean;
   readonly riskTriggersPresent?: boolean;
   /** Per-claim binding diagnostic codes from counterexample evaluation. */
   readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
@@ -168,7 +168,7 @@ function evaluatePreconditions(
     };
   }
 
-  if (input.riskAssessmentActive === true) {
+  if (input.riskAssessmentStale === true) {
     return {
       claims: [],
       blockingClaims: [],

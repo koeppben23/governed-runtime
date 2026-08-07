@@ -111,62 +111,23 @@ function getEffectiveRequirements(candidate: VerificationCandidate): readonly Ru
         return RUNTIME_REQUIREMENTS_BY_PROVIDER.get(pid) ?? [];
       })();
 
-  // Translate wrapper probe paths for Windows candidates
-  return raw.map((req) => translateWrapperProbe(candidate, req));
-}
-
-function translateWrapperProbe(
-  candidate: VerificationCandidate,
-  req: RuntimeRequirement,
-): RuntimeRequirement {
-  if (req.probe.kind !== 'executable_file') return req;
-
-  const source = candidate.source;
-  if (source === 'repo:mvnw.cmd' && req.id === 'mvnw') {
-    return { ...req, probe: { kind: 'executable_file', path: 'mvnw.cmd' } };
-  }
-  if (source === 'repo:gradlew.bat' && req.id === 'gradlew') {
-    return { ...req, probe: { kind: 'executable_file', path: 'gradlew.bat' } };
-  }
-  return req;
+  // Profile-level requirements matched by provider + format + kind
+  return raw;
 }
 
 function findMatchingProfile(candidate: VerificationCandidate): ExecutionProfile | undefined {
-  const { source, kind } = candidate;
+  if (candidate.assertionCapability !== 'structured') return undefined;
+
+  const { kind } = candidate;
+  const { format, providerId } = candidate.assertionReport;
+
   for (const profile of ASSERTION_PROFILES) {
     if (profile.kind !== kind) continue;
-    if (matchWrapperSource(source, profile)) return profile;
-    if (matchFallbackSource(source, profile)) return profile;
-    if (matchEnrichedSource(candidate, profile)) return profile;
+    if (profile.format !== format) continue;
+    if (profile.providerId !== providerId) continue;
+    return profile;
   }
   return undefined;
-}
-
-function matchWrapperSource(source: string, profile: ExecutionProfile): boolean {
-  if (source === 'repo:mvnw' || source === 'repo:mvnw.cmd') {
-    return profile.profileId === 'junit-maven-wrapper';
-  }
-  if (source === 'repo:gradlew' || source === 'repo:gradlew.bat') {
-    return profile.profileId === 'junit-gradle-wrapper';
-  }
-  return false;
-}
-
-function matchFallbackSource(source: string, profile: ExecutionProfile): boolean {
-  if (!source.startsWith('detectedStack:testFramework:')) return false;
-  const framework = source.slice('detectedStack:testFramework:'.length);
-  return (
-    profile.profileId === `${framework}-fallback` || profile.profileId === `${framework}-stdout`
-  );
-}
-
-function matchEnrichedSource(candidate: VerificationCandidate, profile: ExecutionProfile): boolean {
-  if (!candidate.source.startsWith('package.json:scripts.')) return false;
-  if (candidate.assertionCapability !== 'structured') return false;
-  return (
-    profile.format === candidate.assertionReport.format &&
-    profile.providerId === candidate.assertionReport.providerId
-  );
 }
 
 async function probeRequirements(

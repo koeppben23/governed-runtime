@@ -109,11 +109,11 @@ describe('computeProofGraphEnforcement', () => {
     expect(result.reasonCode).toBe('critical_fact_required');
   });
 
-  it('riskAssessmentActive causes stale decision', () => {
+  it('riskAssessmentStale causes stale decision', () => {
     const result = computeProofGraphEnforcement({
       projection: summary([provenClaim()]).projection,
       authorizedCriticalClaimIds: ['c1'],
-      riskAssessmentActive: true,
+      riskAssessmentStale: true,
     });
 
     expect(result.decisionKind).toBe('risk_assessment_stale');

@@ -107,7 +107,7 @@ export function evaluateProofGraphGate(input: {
     projection: input.projection,
     authorizedCriticalClaimIds: input.authorizedCriticalClaimIds,
     implementationDigest: input.implementationDigest,
-    riskAssessmentActive: riskStale,
+    riskAssessmentStale: riskStale,
     riskTriggersPresent: triggers.length > 0,
     claimDiagnostics: input.claimDiagnostics ?? readDiagnosticsFromProjection(input.projection),
   });
