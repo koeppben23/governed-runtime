@@ -296,6 +296,7 @@ async function persistAfterAttestation(params: {
       subject: params.subject,
       sessDir: params.sessDir,
       sessionId: params.sessionId,
+      classificationReasonOverride: `VERIFICATION_SUBJECT_CHANGED: ${postAttestation.detail}`,
     });
   }
 
@@ -325,6 +326,7 @@ interface PersistCheckInput {
   subject: ValidationSubject;
   sessDir: string;
   sessionId: string;
+  classificationReasonOverride?: string;
 }
 
 // The lock-retry callback keeps execution and persistence intentionally separated.
@@ -340,6 +342,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
     subject,
     sessDir,
     sessionId,
+    classificationReasonOverride,
   } = input;
   const logger = getAdapterLogger();
   return withSessionWriteLockRetry(
@@ -358,13 +361,14 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       const subjectBlock = validationSubjectBlock(freshState, subject);
       if (subjectBlock) return subjectBlock;
 
-      const validationResult = buildValidationResult(
-        reGuard.checkId,
+      const validationResult = buildValidationResult({
+        checkId: reGuard.checkId,
         evidence,
         outcome,
         derivedRepairGuidance,
         extraction,
-      );
+        classificationReasonOverride,
+      });
       const allResults = mergeValidationResult(freshState, validationResult);
       const passedIds = new Set(allResults.filter((v) => v.passed).map((v) => v.checkId));
       const validationAttempt = buildValidationAttempt(subject, validationResult, attemptId);
@@ -488,16 +492,26 @@ function blockWhenNoActiveChecks(state: SessionState): string | null {
 
 type CheckEvidence = Awaited<ReturnType<typeof executeCheck>>;
 
-function buildValidationResult(
-  checkId: string,
-  evidence: CheckEvidence,
-  outcome: ValidationOutcome,
-  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>,
-  extraction?: AssertionExtractionResult,
-): ValidationResult {
+function buildValidationResult(params: {
+  checkId: string;
+  evidence: CheckEvidence;
+  outcome: ValidationOutcome;
+  derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
+  extraction?: AssertionExtractionResult;
+  classificationReasonOverride?: string;
+}): ValidationResult {
+  const {
+    checkId,
+    evidence,
+    outcome,
+    derivedRepairGuidance,
+    extraction,
+    classificationReasonOverride,
+  } = params;
+  const passed = outcome === 'supported';
   return {
     checkId,
-    passed: evidence.passed,
+    passed,
     detail: formatValidationDetail(evidence),
     executedAt: evidence.startedAt,
     kind: evidence.kind,
@@ -507,9 +521,9 @@ function buildValidationResult(
     outputDigest: evidence.outputDigest,
     timedOut: evidence.timedOut,
     outcome,
-    classificationReason: evidence.passed
-      ? undefined
-      : `exitCode=${evidence.exitCode}, timedOut=${evidence.timedOut}`,
+    classificationReason:
+      classificationReasonOverride ??
+      (passed ? undefined : `exitCode=${evidence.exitCode}, timedOut=${evidence.timedOut}`),
     derivedRepairGuidance,
     assertionExtraction: extraction,
   };
