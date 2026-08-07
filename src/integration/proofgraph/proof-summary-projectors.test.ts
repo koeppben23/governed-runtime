@@ -148,7 +148,10 @@ describe('projectPlanProofObligations', () => {
           critical: true,
           expectedCheckId: 'test',
           authoritySectionId: 'sec-legacy',
-          counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
+          counterexampleRequirement: {
+            checkId: 'security',
+            assertion: { providerId: 'junit', localId: 'some-id' },
+          },
         },
       ],
     } as PlanClaimDeclarations;
@@ -163,7 +166,6 @@ describe('projectPlanProofObligations', () => {
           expectedCheckId: 'test',
           authoritySectionId: 'sec-legacy',
           counterexampleRequirement: {
-            mode: 'assertion' as const,
             checkId: 'security',
             assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
           },

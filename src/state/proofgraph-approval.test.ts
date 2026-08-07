@@ -281,7 +281,10 @@ describe('certificate integrity', () => {
     critical: true,
     authoritySectionId: 's1',
     expectedCheckId: 'test',
-    counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
+    counterexampleRequirement: {
+      checkId: 'security',
+      assertion: { providerId: 'junit', localId: 'some-id' },
+    },
   };
 
   function makeCertificate(digest: string) {
@@ -355,25 +358,29 @@ describe('read-model schema boundaries', () => {
     expectedCheckId: 'test',
   };
 
-  it('PlanClaimDeclaration accepts mode=check', () => {
-    const result = PlanClaimDeclaration.parse({
-      ...BASE,
-      counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
-    });
-    expect(result.counterexampleRequirement).toEqual({ mode: 'check', checkId: 'security' });
-  });
-
-  it('PlanClaimDeclaration accepts mode=assertion', () => {
+  it('PlanClaimDeclaration accepts counterexampleRequirement', () => {
     const result = PlanClaimDeclaration.parse({
       ...BASE,
       counterexampleRequirement: {
-        mode: 'assertion' as const,
+        checkId: 'security',
+        assertion: { providerId: 'junit', localId: 'some-id' },
+      },
+    });
+    expect(result.counterexampleRequirement).toEqual({
+      checkId: 'security',
+      assertion: { providerId: 'junit', localId: 'some-id' },
+    });
+  });
+
+  it('PlanClaimDeclaration accepts counterexampleRequirement with different assertion', () => {
+    const result = PlanClaimDeclaration.parse({
+      ...BASE,
+      counterexampleRequirement: {
         checkId: 'security',
         assertion: { providerId: 'junit', localId: 'x#y' },
       },
     });
     expect(result.counterexampleRequirement).toEqual({
-      mode: 'assertion',
       checkId: 'security',
       assertion: { providerId: 'junit', localId: 'x#y' },
     });
@@ -397,40 +404,34 @@ describe('read-model schema boundaries', () => {
     ).toThrow();
   });
 
-  it('WritablePlanClaimDeclaration rejects mode=check', () => {
-    expect(() =>
-      WritablePlanClaimDeclaration.parse({
-        ...BASE,
-        counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
-      }),
-    ).toThrow();
-  });
-
-  it('WritablePlanClaimDeclaration accepts mode=assertion', () => {
+  it('WritablePlanClaimDeclaration accepts counterexampleRequirement', () => {
     const result = WritablePlanClaimDeclaration.parse({
       ...BASE,
       counterexampleRequirement: {
-        mode: 'assertion' as const,
         checkId: 'security',
         assertion: { providerId: 'junit', localId: 'x#y' },
       },
     });
     expect(result.counterexampleRequirement).toEqual({
-      mode: 'assertion',
       checkId: 'security',
       assertion: { providerId: 'junit', localId: 'x#y' },
     });
   });
 
-  it('PlanClaimDeclarationInput rejects mode=check', () => {
-    expect(() =>
-      PlanClaimDeclarationInput.parse({
-        statement: 'test',
-        critical: true,
-        authoritySectionId: 's1',
-        expectedCheckId: 'test',
-        counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
-      }),
-    ).toThrow();
+  it('PlanClaimDeclarationInput accepts counterexampleRequirement', () => {
+    const result = PlanClaimDeclarationInput.parse({
+      statement: 'test',
+      critical: true,
+      authoritySectionId: 's1',
+      expectedCheckId: 'test',
+      counterexampleRequirement: {
+        checkId: 'security',
+        assertion: { providerId: 'junit', localId: 'x#y' },
+      },
+    });
+    expect(result.counterexampleRequirement).toEqual({
+      checkId: 'security',
+      assertion: { providerId: 'junit', localId: 'x#y' },
+    });
   });
 });

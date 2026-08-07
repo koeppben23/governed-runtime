@@ -140,7 +140,7 @@ describe('renderDeclarationPreview', () => {
     expect(text).toContain('required review evidence: service-layer-review');
   });
 
-  it('renders counterexample requirement in check-mode without assertion suffix', () => {
+  it('renders counterexample requirement with assertion suffix', () => {
     const state: SessionState = {
       ...planState,
       plan: {
@@ -154,18 +154,20 @@ describe('renderDeclarationPreview', () => {
               critical: true,
               authoritySectionId: 's1',
               expectedCheckId: 'build',
-              counterexampleRequirement: { mode: 'check', checkId: 'security' },
+              counterexampleRequirement: {
+                checkId: 'security',
+                assertion: { providerId: 'junit', localId: 'my-test' },
+              },
             },
           ],
         },
       },
     };
     const text = renderDeclarationPreview(state).join('\n');
-    expect(text).toContain('counterexample check: security');
-    expect(text).not.toContain('(assertion:');
+    expect(text).toContain('counterexample check: security (assertion: my-test)');
   });
 
-  it('renders counterexample requirement in assertion-mode with assertionId', () => {
+  it('renders counterexample requirement with explicit assertionId', () => {
     const state: SessionState = {
       ...planState,
       plan: {
@@ -180,7 +182,6 @@ describe('renderDeclarationPreview', () => {
               authoritySectionId: 's1',
               expectedCheckId: 'build',
               counterexampleRequirement: {
-                mode: 'assertion',
                 checkId: 'security',
                 assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
               },

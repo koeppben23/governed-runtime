@@ -93,12 +93,11 @@ ${DISCOVERY_REVIEW_CAPTURE}
    - \`authoritySectionId\`: the governing \`## Implementation\` step or section.
    - \`expectedCheckId\`: the check kind that must pass (from \`activeChecks\` /
      \`verificationCandidates\`, e.g. \`build\`).
-    - \`counterexampleRequirement\`: an assertion-mode requirement for critical claims.
-      Example: \`{ mode: "assertion", checkId: "test", assertion: { providerId: "junit", localId: "com.example.SecurityTest#verifyNoXss" } }\`.
+    - \`counterexampleRequirement\`: required for critical claims.
+      Example: \`{ checkId: "test", assertion: { providerId: "junit", localId: "com.example.SecurityTest#verifyNoXss" } }\`.
       REQUIRED whenever \`critical\` is true — a critical claim without it can never
       become PROVEN and is rejected at submission. \`checkId\` MUST differ from
-      \`expectedCheckId\`; \`assertionId\` identifies the specific test assertion
-      whose failure would contradict the claim (prefix: \`junit:\`, \`vitest:\`, \`jest:\`, \`go:\`).
+      \`expectedCheckId\`; \`assertion.providerId\` and \`assertion.localId\` identify the specific test assertion
    Declare at least one claim per critical behavioral change. Do NOT invent claims
    that the plan does not actually assert.
 5. Call \`flowguard_plan({ planText, claims })\` with the full plan markdown and the

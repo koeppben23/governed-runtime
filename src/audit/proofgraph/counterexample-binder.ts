@@ -42,11 +42,6 @@ function classifyClaimOutcome(
 
   if (result.checkId !== requirement.checkId) return 'not_verified';
 
-  if (requirement.mode === 'check') {
-    const base = toCounterexampleOutcome(result);
-    return base === 'contradicted' ? 'not_verified' : base;
-  }
-
   const extraction = result.assertionExtraction;
   if (!extraction || extraction.status !== 'extracted') return 'not_verified';
 

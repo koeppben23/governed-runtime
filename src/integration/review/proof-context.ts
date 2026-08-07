@@ -106,10 +106,7 @@ function renderPlanDeclarations(state: SessionState): string[] {
           `expected check: ${claim.expectedCheckId}`,
           ...(claim.counterexampleRequirement
             ? [
-                `counterexample check: ${claim.counterexampleRequirement.checkId}` +
-                  (claim.counterexampleRequirement.mode === 'assertion'
-                    ? ` (assertion: ${claim.counterexampleRequirement.assertion.localId})`
-                    : ''),
+                `counterexample check: ${claim.counterexampleRequirement.checkId} (assertion: ${claim.counterexampleRequirement.assertion.localId})`,
               ]
             : []),
           ...(claim.structuralSurface ? [`structural surface: ${claim.structuralSurface}`] : []),

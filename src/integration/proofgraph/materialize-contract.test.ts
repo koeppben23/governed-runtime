@@ -60,7 +60,10 @@ function stateWithClaims() {
             critical: true,
             authoritySectionId: 'implementation',
             expectedCheckId: 'test',
-            counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
+            counterexampleRequirement: {
+              checkId: 'security',
+              assertion: { providerId: 'junit', localId: 'some-id' },
+            },
             structuralSurface: 'command-registration',
             mutationProfile: 'semantic',
           },
@@ -79,7 +82,10 @@ function stateWithClaims() {
                 critical: true,
                 authoritySectionId: 'implementation',
                 expectedCheckId: 'test',
-                counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
+                counterexampleRequirement: {
+                  checkId: 'security',
+                  assertion: { providerId: 'junit', localId: 'some-id' },
+                },
                 structuralSurface: 'command-registration',
                 mutationProfile: 'semantic',
               },
@@ -371,8 +377,8 @@ describe('materializeApprovedPlanContract', () => {
       '22222222-2222-4222-8222-222222222222',
     );
     expect(claim!.counterexampleRequirement).toEqual({
-      mode: 'check',
       checkId: 'security',
+      assertion: { providerId: 'junit', localId: 'some-id' },
     });
   });
 });

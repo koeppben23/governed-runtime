@@ -56,7 +56,6 @@ const preEvidenceClaimDeclaration = {
 /** Structured counterexample requirement for assertion-mode claims. */
 export const AssertionCounterexampleRequirement = z
   .object({
-    mode: z.literal('assertion'),
     checkId: z.string().min(1),
     assertion: AssertionIdentity,
   })

@@ -81,7 +81,6 @@ const CRITICAL_CLAIM: PlanClaimDeclaration = {
   expectedCheckId: 'build',
   // A critical claim is only PROVEN with executed adversarial evidence.
   counterexampleRequirement: {
-    mode: 'assertion' as const,
     checkId: 'regression',
     assertion: { providerId: 'junit', localId: 'counterexample' },
   },
@@ -94,7 +93,6 @@ const CRITICAL_CLAIM_INPUT: PlanClaimDeclarationInput = {
   authoritySectionId: 'implementation-step-1',
   expectedCheckId: 'build',
   counterexampleRequirement: {
-    mode: 'assertion' as const,
     checkId: 'regression',
     assertion: { providerId: 'junit', localId: 'counterexample' },
   },
@@ -329,7 +327,6 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
           {
             ...CRITICAL_CLAIM_INPUT,
             counterexampleRequirement: {
-              mode: 'assertion' as const,
               checkId: 'build',
               assertion: { providerId: 'junit', localId: 'counterexample' },
             },
