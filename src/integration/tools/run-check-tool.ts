@@ -68,7 +68,7 @@ import { isExecutionError } from '../../state/evidence-validation.js';
 import type { AssertionExtractionResult } from '../../state/evidence-validation.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 
-import type { AssertionCapability } from '../../state/discovery-schemas.js';
+import type { AssertionCapability, VerificationCandidate } from '../../state/discovery-schemas.js';
 
 import {
   prepareVerificationExecution,
@@ -172,11 +172,7 @@ async function executeRunCheckPhased(
   let prepared: PreparedVerificationExecution | undefined;
   let fullCommand = guard.candidate.command;
   if (guard.candidate.assertionCapability === 'structured' && guard.candidate.assertionReport) {
-    prepared = await prepareVerificationExecution(
-      guard.candidate as Parameters<typeof prepareVerificationExecution>[0],
-      getWorktree(context),
-      attemptId,
-    );
+    prepared = await prepareVerificationExecution(guard.candidate, getWorktree(context), attemptId);
     fullCommand = prepared.command;
   }
   const evidence = await executeCheck({
@@ -342,12 +338,7 @@ function validateRunCheckRequest(
   | string
   | {
       checkId: string;
-      candidate: {
-        kind: VerificationCandidateKind;
-        command: string;
-        assertionCapability: AssertionCapability;
-        assertionReport?: Record<string, unknown>;
-      };
+      candidate: VerificationCandidate;
     } {
   if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
     return formatBlocked('COMMAND_NOT_ALLOWED', { command: '/run_check', phase: state.phase });

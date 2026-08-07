@@ -128,6 +128,9 @@ export const StructuredAssertionEvidence = z
       message: 'failure details only allowed when status is failed or errored',
     },
   )
+  .refine((data) => data.providerId === data.assertion.providerId, {
+    message: 'providerId must match assertion.providerId',
+  })
   .readonly();
 export type StructuredAssertionEvidence = z.infer<typeof StructuredAssertionEvidence>;
 
@@ -158,10 +161,39 @@ export type AssertionExtractionReasonCode = z.infer<typeof AssertionExtractionRe
 export const AssertionBindingCapability = z.enum(['assertion', 'check_only']);
 export type AssertionBindingCapability = z.infer<typeof AssertionBindingCapability>;
 
+const ExtractedAssertionResultSchema = z
+  .object({
+    status: z.literal('extracted'),
+    attemptId: z.string().uuid(),
+    providerId: ProviderId,
+    format: ReportFormatId,
+    bindingCapability: AssertionBindingCapability,
+    reportDigests: z.array(z.string().min(1)).min(1),
+    assertions: z.array(StructuredAssertionEvidence),
+    summary: AssertionExtractionSummary,
+  })
+  .superRefine((data, ctx) => {
+    if (data.bindingCapability === 'check_only' && data.assertions.length > 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'check_only binding capability must not carry assertion-level evidence',
+        path: ['bindingCapability'],
+      });
+    }
+    for (let i = 0; i < data.assertions.length; i++) {
+      const a = data.assertions[i]!;
+      if (a.providerId !== data.providerId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `assertion providerId '${a.providerId}' does not match extraction providerId '${data.providerId}'`,
+          path: ['assertions', i, 'providerId'],
+        });
+      }
+    }
+  });
+
 export const AssertionExtractionResult = z.discriminatedUnion('status', [
-  z.object({
-    status: z.literal('not_configured'),
-  }),
+  z.object({ status: z.literal('not_configured') }),
   z.object({
     status: z.literal('blocked'),
     attemptId: z.string().uuid(),
@@ -174,16 +206,7 @@ export const AssertionExtractionResult = z.discriminatedUnion('status', [
     reasonCode: AssertionExtractionReasonCode,
     reason: z.string().min(1),
   }),
-  z.object({
-    status: z.literal('extracted'),
-    attemptId: z.string().uuid(),
-    providerId: ProviderId,
-    format: ReportFormatId,
-    bindingCapability: AssertionBindingCapability,
-    reportDigests: z.array(z.string().min(1)).min(1),
-    assertions: z.array(StructuredAssertionEvidence),
-    summary: AssertionExtractionSummary,
-  }),
+  ExtractedAssertionResultSchema,
 ]);
 export type AssertionExtractionResult = z.infer<typeof AssertionExtractionResult>;
 

@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
 import type { VerificationCandidate } from '../state/discovery-schemas.js';
 import type { ReportFormatId } from '../state/assertion-identity.js';
 import type { AssertionReportSpec } from '../state/discovery-schemas.js';
-import { FORMATS_BY_PROVIDER } from './assertion-parsers/registry.js';
+import { FORMATS_BY_PROVIDER, PARSER_BY_FORMAT } from './assertion-parsers/registry.js';
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
@@ -113,6 +113,10 @@ function validateAssertionReportSpec(spec: AssertionReportSpec): void {
     throw new Error(
       `Provider '${spec.providerId}' does not support report format '${spec.format}'`,
     );
+  }
+  const parser = PARSER_BY_FORMAT.get(spec.format as ReportFormatId);
+  if (!parser) {
+    throw new Error(`No parser registered for report format '${spec.format}'`);
   }
 }
 

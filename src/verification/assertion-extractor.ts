@@ -35,6 +35,7 @@ import {
 } from './assertion-parsers/registry.js';
 
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_FILES_PER_PATTERN = 100;
 
 // ─── Internal ────────────────────────────────────────────────────────────────
 
@@ -82,7 +83,7 @@ export async function completeAssertionExtraction(
     return validateExtractedIdentities(result, spec);
   } catch (err: unknown) {
     return {
-      status: 'blocked',
+      status: 'inconclusive',
       attemptId,
       reasonCode: 'parse_failed',
       reason: err instanceof Error ? err.message : String(err),
@@ -225,6 +226,14 @@ async function extractFromRunSpecific(
       reason: `expected reports matching '${pattern}' not found after execution`,
     };
   }
+  if (paths.length > MAX_FILES_PER_PATTERN) {
+    return {
+      status: 'blocked',
+      attemptId,
+      reasonCode: 'report_ambiguous',
+      reason: `too many reports matching '${pattern}': ${paths.length} (max ${MAX_FILES_PER_PATTERN})`,
+    };
+  }
   return parseAndMergeFiles(attemptId, format, providerId, cwd, paths);
 }
 
@@ -362,6 +371,7 @@ export async function globFiles(cwd: string, pattern: string): Promise<string[]>
       } else if (entry.isFile() && regex.test(entry.name)) {
         if (!isWithinCwd(fullPath, resolvedCwd)) continue;
         results.push(rel(resolvedCwd, fullPath));
+        if (results.length >= MAX_FILES_PER_PATTERN + 1) return;
       }
     }
   };
