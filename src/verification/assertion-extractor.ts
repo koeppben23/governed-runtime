@@ -73,7 +73,7 @@ export async function completeAssertionExtraction(
   const spec = prepared.assertion.report.spec;
 
   try {
-    const raw = await parseCollectedReport(report);
+    const raw = await parseCollectedReport(report, attemptId);
     const result = stripNonBindingAssertions(raw, spec);
     return validateExtractedIdentities(result, spec);
   } catch (err: unknown) {
@@ -144,6 +144,7 @@ function validateExtractedIdentities(
 
 async function parseCollectedReport(
   report: CollectedAssertionReport,
+  attemptId: string,
 ): Promise<AssertionExtractionResult> {
   switch (report.transport) {
     case 'stdout': {
@@ -151,7 +152,7 @@ async function parseCollectedReport(
       if (!parsed.assertions.length) {
         return {
           status: 'inconclusive',
-          attemptId: '',
+          attemptId,
           reasonCode: 'report_empty',
           reason: 'report parsing produced no test results',
         };
@@ -159,7 +160,7 @@ async function parseCollectedReport(
       const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(report.providerId);
       return {
         status: 'extracted',
-        attemptId: '',
+        attemptId,
         providerId: report.providerId,
         format: report.format,
         bindingCapability: bindingFormats?.has(report.format) === true ? 'assertion' : 'check_only',
@@ -183,7 +184,7 @@ async function parseCollectedReport(
       if (allAssertions.length === 0) {
         return {
           status: 'inconclusive',
-          attemptId: '',
+          attemptId,
           reasonCode: 'report_empty',
           reason: 'report parsing produced no test results',
         };
@@ -192,7 +193,7 @@ async function parseCollectedReport(
       const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(report.providerId);
       return {
         status: 'extracted',
-        attemptId: '',
+        attemptId,
         providerId: report.providerId,
         format: report.format,
         bindingCapability: bindingFormats?.has(report.format) === true ? 'assertion' : 'check_only',

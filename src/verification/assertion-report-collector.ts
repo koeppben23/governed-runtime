@@ -93,7 +93,7 @@ export async function collectAssertionReports(
     case 'snapshot_diff':
       return collectSnapshotDiff(
         reportCtx.preExecutionSnapshot,
-        [...(reportCtx.spec as { standardPatterns: string[] }).standardPatterns],
+        reportCtx.spec.standardPatterns,
         spec.format,
         spec.providerId,
         prepared.attemptId,
@@ -241,17 +241,8 @@ async function collectStdout(
   stdout: string,
   format: ReportFormatId,
   providerId: ProviderId,
-  attemptId: string,
+  _attemptId: string,
 ): Promise<ReportCollectionResult> {
-  if (!stdout || stdout.trim().length === 0) {
-    return {
-      status: 'blocked',
-      attemptId,
-      reasonCode: 'report_empty',
-      reason: 'execution stdout is empty — no assertion report to collect',
-    };
-  }
-
   return {
     status: 'collected',
     report: {
