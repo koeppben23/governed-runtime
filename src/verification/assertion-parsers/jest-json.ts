@@ -59,7 +59,7 @@ export function parseJestJson(jsonText: string, context: ParseContext): ParserRe
   try {
     report = JSON.parse(jsonText) as JestJsonReport;
   } catch {
-    return emptyResult();
+    throw new Error('jest_json: failed to parse JSON report');
   }
 
   const testResults = report?.testResults;

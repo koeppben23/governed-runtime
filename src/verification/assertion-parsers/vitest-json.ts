@@ -58,7 +58,7 @@ export function parseVitestJson(jsonText: string, context: ParseContext): Parser
   try {
     report = JSON.parse(jsonText) as VitestJsonReport;
   } catch {
-    return emptyResult();
+    throw new Error('vitest_json: failed to parse JSON report');
   }
 
   const testResults = report?.testResults;

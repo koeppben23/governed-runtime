@@ -46,10 +46,20 @@ export function parseJUnitXml(
   let suiteInfrastructureError = false;
   const providerId: ProviderId = context.providerId;
 
-  const testCaseRegex = /<testcase\b[^>]*classname="([^"]*)"\s+name="([^"]*)"[^>]*>/g;
-
   const suiteErrorsMatch = /<testsuite\b[^>]*errors="(\d+)"/.exec(xmlContent);
   const suiteErrors = suiteErrorsMatch ? Number(suiteErrorsMatch[1]) : 0;
+
+  const hasTestsuiteTag = /<testsuite\b/i.test(xmlContent);
+  const hasTestcaseTag = /<testcase\b/i.test(xmlContent);
+  if (!hasTestsuiteTag && !hasTestcaseTag) {
+    throw new Error(
+      'junit_xml: not a valid JUnit XML report — no <testsuite> or <testcase> tags found',
+    );
+  }
+
+  const testCaseOpenRegex = /<testcase\b[^>]*>/g;
+  const attrClassname = /\bclassname="([^"]*)"/;
+  const attrName = /\bname="([^"]*)"/;
 
   const testCases: {
     classname: string;
@@ -58,12 +68,29 @@ export function parseJUnitXml(
     endOffset: number;
   }[] = [];
   let tcm;
-  while ((tcm = testCaseRegex.exec(xmlContent)) !== null) {
-    const classname = tcm[1]!;
-    const name = tcm[2]!;
-    const offset = tcm.index + tcm[0].length;
-    const closeTag = xmlContent.indexOf('</testcase>', offset);
-    testCases.push({ classname, name, offset, endOffset: closeTag });
+  while ((tcm = testCaseOpenRegex.exec(xmlContent)) !== null) {
+    const tag = tcm[0];
+    const classnameMatch = attrClassname.exec(tag);
+    const nameMatch = attrName.exec(tag);
+    if (!classnameMatch || !nameMatch) continue;
+    const isSelfClosing = tag.endsWith('/>');
+    const afterOpen = tcm.index + tag.length;
+    if (isSelfClosing) {
+      testCases.push({
+        classname: classnameMatch[1]!,
+        name: nameMatch[1]!,
+        offset: afterOpen,
+        endOffset: afterOpen,
+      });
+    } else {
+      const closeTag = xmlContent.indexOf('</testcase>', afterOpen);
+      testCases.push({
+        classname: classnameMatch[1]!,
+        name: nameMatch[1]!,
+        offset: afterOpen,
+        endOffset: closeTag !== -1 ? closeTag : afterOpen,
+      });
+    }
   }
 
   if (testCases.length === 0 && suiteErrors > 0) {
