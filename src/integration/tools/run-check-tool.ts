@@ -185,6 +185,15 @@ async function validateAndAttest(
 
   const worktree = getWorktree(context);
   const subjectInputs = state.executionSubjectInputsByKind?.[kind] ?? [];
+
+  if (subject.scope === 'implementation' && subjectInputs.length === 0) {
+    return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
+      component: 'implementation',
+      phase: 'pre_execution',
+      detail: `no execution subject inputs for kind '${kind}' — attestation metadata missing`,
+    });
+  }
+
   const result = await attestExecutionSubject(
     subjectInputs,
     worktree,
@@ -399,7 +408,8 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       logger.info('tool', 'check_persisted', {
         sessionId,
         checkId: kind,
-        passed: evidence.passed,
+        passed: validationResult.passed,
+        outcome: validationResult.outcome,
         ...getLogTraceFields(),
       });
 
