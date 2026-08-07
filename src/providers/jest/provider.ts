@@ -49,6 +49,14 @@ export const jestProvider: AssertionProviderExtension = {
         format: 'jest_json' as const,
         kind: 'test' as const,
         priority: 3,
+        assertionReport: {
+          collection: 'run_specific' as const,
+          transport: 'file' as const,
+          format: 'jest_json' as const,
+          providerId: 'jest' as const,
+          outputArgumentTemplate: '--json --outputFile=.flowguard/reports/{attemptId}/jest.json',
+          resultPatternTemplate: '.flowguard/reports/{attemptId}/jest.json',
+        },
         createCandidate(ctx: { detectedStackIds: ReadonlySet<string>; packageManager: string }) {
           if (!ctx.detectedStackIds.has('testFramework:jest')) return null;
           const pm = ctx.packageManager;

@@ -69,7 +69,15 @@ export interface ExecutionProfile {
   readonly kind: VerificationCandidateKind;
   readonly priority: number;
 
-  /** Liefert einen Candidate nur mit ausreichender Evidence, sonst null. */
+  /**
+   * Static report semantics for this profile.
+   *
+   * Used for repo-native script enrichment where the profile identity is already
+   * confirmed by a ScriptSignature match — no discovery predicate is needed.
+   */
+  readonly assertionReport: AssertionReportSpec;
+
+  /** Discovery-gated candidate with repo evidence, or null when not applicable. */
   createCandidate(ctx: PlannerContext): VerificationCandidate | null;
 
   /** Profile-specific runtime requirements override provider defaults. */

@@ -66,6 +66,15 @@ export const pytestProvider: AssertionProviderExtension = {
         format: 'pytest_json' as const,
         kind: 'test' as const,
         priority: 4,
+        assertionReport: {
+          collection: 'run_specific' as const,
+          transport: 'file' as const,
+          format: 'pytest_json' as const,
+          providerId: 'pytest' as const,
+          outputArgumentTemplate:
+            '--json-report --json-report-file=.flowguard/reports/{attemptId}/pytest.json',
+          resultPatternTemplate: '.flowguard/reports/{attemptId}/pytest.json',
+        },
         createCandidate(ctx: { detectedStackIds: ReadonlySet<string> }) {
           if (!ctx.detectedStackIds.has('testFramework:pytest')) return null;
           return {

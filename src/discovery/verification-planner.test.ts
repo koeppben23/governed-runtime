@@ -183,6 +183,61 @@ describe('verification planner', () => {
       }
     });
 
+    it('jest script enrichment requires only signature match, not stack detection', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: null,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'jest' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.assertionCapability).toBe('structured');
+      expect(testCandidate?.candidate.command).toBe('npm run test --');
+      expect(testCandidate?.candidate.source).toBe('package.json:scripts.test');
+      if (testCandidate?.candidate.assertionCapability === 'structured') {
+        expect(testCandidate.candidate.assertionReport.format).toBe('jest_json');
+      }
+    });
+
+    it('vitest script enrichment requires only signature match, not stack detection', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: null,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'vitest run' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.candidate.assertionCapability).toBe('structured');
+      expect(testCandidate?.candidate.command).toBe('npm run test --');
+      expect(testCandidate?.candidate.source).toBe('package.json:scripts.test');
+      if (testCandidate?.candidate.assertionCapability === 'structured') {
+        expect(testCandidate.candidate.assertionReport.format).toBe('vitest_json');
+      }
+    });
+
+    it('enriched candidate preserves executionProfileId', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: null,
+        allFiles: ['package.json'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({
+            scripts: { test: 'jest' },
+          }),
+        }),
+      });
+
+      const testCandidate = candidates.find((c) => c.candidate.kind === 'test');
+      expect(testCandidate?.executionProfileId).toBe('jest-fallback');
+    });
+
     it('compound shell command is not enrichable', async () => {
       const candidates = await planVerificationCandidates({
         detectedStack: null,

@@ -39,6 +39,13 @@ function mavenProfile() {
     format: 'junit_xml' as const,
     kind: 'build' as const,
     priority: 0,
+    assertionReport: {
+      collection: 'snapshot_diff' as const,
+      transport: 'file' as const,
+      format: 'junit_xml' as const,
+      providerId: 'junit' as const,
+      standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+    },
     runtimeRequirements: [
       {
         id: 'java',
@@ -96,6 +103,13 @@ function gradleProfile() {
     format: 'junit_xml' as const,
     kind: 'test' as const,
     priority: 1,
+    assertionReport: {
+      collection: 'snapshot_diff' as const,
+      transport: 'file' as const,
+      format: 'junit_xml' as const,
+      providerId: 'junit' as const,
+      standardPatterns: ['build/test-results/test/TEST-*.xml'],
+    },
     runtimeRequirements: [
       {
         id: 'java',
@@ -153,6 +167,13 @@ function mavenTestProfile() {
     format: 'junit_xml' as const,
     kind: 'test' as const,
     priority: 0,
+    assertionReport: {
+      collection: 'snapshot_diff' as const,
+      transport: 'file' as const,
+      format: 'junit_xml' as const,
+      providerId: 'junit' as const,
+      standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+    },
     createCandidate(ctx: { rootFiles: ReadonlySet<string> }) {
       const hasPosix = ctx.rootFiles.has('mvnw');
       const hasWin = ctx.rootFiles.has('mvnw.cmd');
@@ -185,6 +206,13 @@ function mavenVerifyProfile() {
     format: 'junit_xml' as const,
     kind: 'build' as const,
     priority: 0,
+    assertionReport: {
+      collection: 'snapshot_diff' as const,
+      transport: 'file' as const,
+      format: 'junit_xml' as const,
+      providerId: 'junit' as const,
+      standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+    },
     createCandidate(ctx: { rootFiles: ReadonlySet<string> }) {
       const hasPosix = ctx.rootFiles.has('mvnw');
       const hasWin = ctx.rootFiles.has('mvnw.cmd');
@@ -217,6 +245,13 @@ function gradleTestProfile() {
     format: 'junit_xml' as const,
     kind: 'test' as const,
     priority: 1,
+    assertionReport: {
+      collection: 'snapshot_diff' as const,
+      transport: 'file' as const,
+      format: 'junit_xml' as const,
+      providerId: 'junit' as const,
+      standardPatterns: ['build/test-results/test/TEST-*.xml'],
+    },
     createCandidate(ctx: { rootFiles: ReadonlySet<string> }) {
       const hasPosix = ctx.rootFiles.has('gradlew');
       const hasWin = ctx.rootFiles.has('gradlew.bat');
@@ -249,6 +284,13 @@ function gradleCheckProfile() {
     format: 'junit_xml' as const,
     kind: 'build' as const,
     priority: 1,
+    assertionReport: {
+      collection: 'snapshot_diff' as const,
+      transport: 'file' as const,
+      format: 'junit_xml' as const,
+      providerId: 'junit' as const,
+      standardPatterns: ['build/test-results/test/TEST-*.xml'],
+    },
     createCandidate(ctx: { rootFiles: ReadonlySet<string> }) {
       const hasPosix = ctx.rootFiles.has('gradlew');
       const hasWin = ctx.rootFiles.has('gradlew.bat');

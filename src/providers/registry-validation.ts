@@ -19,6 +19,10 @@ export function validateProviderExtensions(
   const profileIds = new Set<string>();
   const detectionIds = new Set<string>();
   const formatParsers = new Map<string, unknown>();
+  const profilesByProvider = new Map<string, Set<string>>();
+  const scriptSigs: { providerId: string; executionProfileId: string; candidateKind: string }[] =
+    [];
+  const profileKindById = new Map<string, string>();
 
   for (const ext of extensions) {
     const pid = ext.manifest.providerId;
@@ -85,6 +89,12 @@ export function validateProviderExtensions(
           kind: 'profile_format_not_registered',
           message: `Profile '${profile.profileId}' format '${profile.format}' not registered`,
         });
+
+      const provProfiles = profilesByProvider.get(pid) ?? new Set();
+      provProfiles.add(profile.profileId);
+      profilesByProvider.set(pid, provProfiles);
+
+      profileKindById.set(profile.profileId, profile.kind);
     }
 
     if (
@@ -109,6 +119,41 @@ export function validateProviderExtensions(
           message: `Provider '${pid}' has unsafe probe: ${req.probe.command}`,
         });
       }
+    }
+
+    if (ext.discovery.scriptSignatures) {
+      for (const sig of ext.discovery.scriptSignatures) {
+        scriptSigs.push({
+          providerId: pid,
+          executionProfileId: sig.executionProfileId,
+          candidateKind: sig.candidateKind,
+        });
+      }
+    }
+  }
+
+  // Cross-provider: script-signature → profile referential integrity
+  for (const sig of scriptSigs) {
+    const kind = profileKindById.get(sig.executionProfileId);
+    if (kind === undefined) {
+      errors.push({
+        kind: 'signature_profile_missing',
+        message: `Provider '${sig.providerId}': script signature references unknown profile '${sig.executionProfileId}'`,
+      });
+      continue;
+    }
+    const provProfiles = profilesByProvider.get(sig.providerId);
+    if (!provProfiles?.has(sig.executionProfileId)) {
+      errors.push({
+        kind: 'signature_profile_cross_provider',
+        message: `Provider '${sig.providerId}': script signature references profile '${sig.executionProfileId}' from a different provider`,
+      });
+    }
+    if (kind !== sig.candidateKind) {
+      errors.push({
+        kind: 'signature_kind_mismatch',
+        message: `Provider '${sig.providerId}': script signature candidateKind='${sig.candidateKind}' but profile '${sig.executionProfileId}' has kind='${kind}'`,
+      });
     }
   }
 

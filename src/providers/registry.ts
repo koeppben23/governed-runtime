@@ -126,33 +126,7 @@ export function buildProviderRegistry(
 
   const profilesById = new Map<string, ExecutionProfile>();
   for (const p of profiles) {
-    if (profilesById.has(p.profileId)) {
-      throw new Error(`Duplicate execution profile id '${p.profileId}' in provider registry`);
-    }
     profilesById.set(p.profileId, p);
-  }
-
-  // Validate script-signature → profile references
-  for (const [providerId, sigs] of scriptSignaturesByProvider) {
-    for (const sig of sigs) {
-      const profile = profilesById.get(sig.executionProfileId);
-      if (!profile) {
-        throw new Error(
-          `Provider '${providerId}': script signature references unknown profile '${sig.executionProfileId}'`,
-        );
-      }
-      const providerProfiles = profilesByProvider.get(providerId) ?? [];
-      if (!providerProfiles.some((p) => p.profileId === sig.executionProfileId)) {
-        throw new Error(
-          `Provider '${providerId}': script signature references profile '${sig.executionProfileId}' from a different provider`,
-        );
-      }
-      if (profile.kind !== sig.candidateKind) {
-        throw new Error(
-          `Provider '${providerId}': script signature candidateKind='${sig.candidateKind}' but referenced profile '${sig.executionProfileId}' has kind='${profile.kind}'`,
-        );
-      }
-    }
   }
 
   return {

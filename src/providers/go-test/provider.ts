@@ -44,6 +44,12 @@ export const goTestProvider: AssertionProviderExtension = {
         format: 'go_test_json' as const,
         kind: 'test' as const,
         priority: 5,
+        assertionReport: {
+          collection: 'stdout' as const,
+          transport: 'stdout' as const,
+          format: 'go_test_json' as const,
+          providerId: 'go_test' as const,
+        },
         createCandidate(ctx: { detectedStackIds: ReadonlySet<string> }) {
           if (!ctx.detectedStackIds.has('testFramework:go_test')) return null;
           return {

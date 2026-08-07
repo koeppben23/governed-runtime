@@ -106,42 +106,6 @@ function resolveCounterexampleAttempts(
 }
 
 /**
-  expectedAttempts: SessionState['validationAttempts'],
-  declaration: PlanClaimDeclaration,
-  mutationAttempt: ReturnType<typeof resolveMutationAttempt>,
-) {
-  const refs: ProofContract['claims'][number]['evidenceRefs'][number][] = expectedAttempts.map(
-    (attempt) => ({ kind: 'validation_attempt' as const, attemptId: attempt.attemptId }),
-  );
-  if (declaration.structuralSurface) {
-    refs.push({ kind: 'structural_surface', surfaceId: declaration.structuralSurface });
-  }
-  if (declaration.mutationProfile && mutationAttempt) {
-    refs.push({
-      kind: 'mutation_attempt',
-      attemptId: mutationAttempt.attemptId,
-      profileId: declaration.mutationProfile,
-    });
-  }
-  return refs;
-}
-
-function requiredEvidence(declaration: PlanClaimDeclaration) {
-  const positive: NonNullable<ProofContract['claims'][number]['requiredEvidence']>['positive'] = [
-    'executed_test',
-  ];
-  if (declaration.structuralSurface) {
-    positive.push(
-      declaration.structuralSurface === 'config-defaults'
-        ? 'schema_compare'
-        : 'structural_assertion',
-    );
-  }
-  if (declaration.mutationProfile) positive.push('fault_injection');
-  return { positive, adversarial: declaration.critical ? ['counterexample' as const] : [] };
-}
-
-/**
  * Produce the explicit implementation-review coverage contract.
  *
  * An empty contract deliberately records that this transition had no eligible
