@@ -49,6 +49,14 @@ export function parseJUnitXml(
   const suiteErrorsMatch = /<testsuite\b[^>]*errors="(\d+)"/.exec(xmlContent);
   const suiteErrors = suiteErrorsMatch ? Number(suiteErrorsMatch[1]) : 0;
 
+  const hasTestsuiteTag = /<testsuite\b/i.test(xmlContent);
+  const hasTestcaseTag = /<testcase\b/i.test(xmlContent);
+  if (!hasTestsuiteTag && !hasTestcaseTag) {
+    throw new Error(
+      'junit_xml: not a valid JUnit XML report — no <testsuite> or <testcase> tags found',
+    );
+  }
+
   const testCaseOpenRegex = /<testcase\b[^>]*>/g;
   const attrClassname = /\bclassname="([^"]*)"/;
   const attrName = /\bname="([^"]*)"/;

@@ -94,6 +94,56 @@ const JUNIT_MAVEN_BASIC: AssertionProviderConformanceCase = {
   },
 };
 
+const JUNIT_MULTI_SUITE: AssertionProviderConformanceCase = {
+  id: 'junit-multi-suite',
+  providerId: 'junit',
+  format: 'junit_xml',
+  collection: 'snapshot_diff',
+  fixture: 'junit/multi-suite.xml',
+  expected: {
+    bindingCapability: 'assertion',
+    assertions: [
+      {
+        localId: 'com.example.CalculatorTest#testAddition',
+        status: 'passed',
+        testName: 'testAddition',
+      },
+      {
+        localId: 'com.example.CalculatorTest#testFailingAssertion',
+        status: 'failed',
+        testName: 'testFailingAssertion',
+      },
+      {
+        localId: 'com.example.CalculatorTest#testSkipped',
+        status: 'skipped',
+        testName: 'testSkipped',
+      },
+      {
+        localId: 'com.example.CalculatorTest#testSubtraction',
+        status: 'passed',
+        testName: 'testSubtraction',
+      },
+      {
+        localId: 'com.example.CalculatorTest$AdvancedOperations#testNestedFailing',
+        status: 'failed',
+        testName: 'testNestedFailing',
+      },
+      {
+        localId: 'com.example.CalculatorTest$AdvancedOperations#testMultiplication',
+        status: 'passed',
+        testName: 'testMultiplication',
+      },
+    ],
+    summary: {
+      assertionCount: 6,
+      passedCount: 3,
+      failedCount: 2,
+      erroredCount: 0,
+      skippedCount: 1,
+    },
+  },
+};
+
 // ─── Vitest 3.2.7 ─────────────────────────────────────────────────────────
 
 const VITEST_BASIC: AssertionProviderConformanceCase = {
@@ -145,6 +195,82 @@ const VITEST_BASIC: AssertionProviderConformanceCase = {
     summary: {
       assertionCount: 6,
       passedCount: 4,
+      failedCount: 1,
+      erroredCount: 0,
+      skippedCount: 1,
+      suiteInfrastructureError: false,
+    },
+  },
+};
+
+const VITEST_NESTED: AssertionProviderConformanceCase = {
+  id: 'vitest-nested',
+  providerId: 'vitest',
+  format: 'vitest_json',
+  collection: 'run_specific',
+  fixture: 'vitest/nested.json',
+  expected: {
+    bindingCapability: 'assertion',
+    assertions: [
+      {
+        localId:
+          'src/nested.test.ts::outer::inner::nested passes',
+        status: 'passed',
+        testName: 'nested passes',
+      },
+      {
+        localId:
+          'src/nested.test.ts::outer::inner::nested fails',
+        status: 'failed',
+        testName: 'nested fails',
+      },
+      {
+        localId: 'src/nested.test.ts::outer::outer skipped',
+        status: 'skipped',
+        testName: 'outer skipped',
+      },
+    ],
+    summary: {
+      assertionCount: 3,
+      passedCount: 1,
+      failedCount: 1,
+      erroredCount: 0,
+      skippedCount: 1,
+      suiteInfrastructureError: false,
+    },
+  },
+};
+
+const JEST_NESTED: AssertionProviderConformanceCase = {
+  id: 'jest-nested',
+  providerId: 'jest',
+  format: 'jest_json',
+  collection: 'run_specific',
+  fixture: 'jest/nested.json',
+  expected: {
+    bindingCapability: 'assertion',
+    assertions: [
+      {
+        localId:
+          'src/nested.test.js::outer::inner::nested passes',
+        status: 'passed',
+        testName: 'nested passes',
+      },
+      {
+        localId:
+          'src/nested.test.js::outer::inner::nested fails',
+        status: 'failed',
+        testName: 'nested fails',
+      },
+      {
+        localId: 'src/nested.test.js::outer::outer skipped',
+        status: 'skipped',
+        testName: 'outer skipped',
+      },
+    ],
+    summary: {
+      assertionCount: 3,
+      passedCount: 1,
       failedCount: 1,
       erroredCount: 0,
       skippedCount: 1,
@@ -208,6 +334,46 @@ const JEST_BASIC: AssertionProviderConformanceCase = {
       erroredCount: 0,
       skippedCount: 1,
       suiteInfrastructureError: false,
+    },
+  },
+};
+
+const PYTEST_PARAMETRIZED: AssertionProviderConformanceCase = {
+  id: 'pytest-parametrized',
+  providerId: 'pytest',
+  format: 'pytest_json',
+  collection: 'run_specific',
+  fixture: 'pytest/parametrized.json',
+  expected: {
+    bindingCapability: 'assertion',
+    assertions: [
+      {
+        localId: 'tests/test_math.py::test_parametrized[2-3-5]',
+        status: 'passed',
+        testName: 'test_parametrized[2-3-5]',
+      },
+      {
+        localId: 'tests/test_math.py::test_parametrized[-1--1--2]',
+        status: 'passed',
+        testName: 'test_parametrized[-1--1--2]',
+      },
+      {
+        localId: 'tests/test_math.py::test_parametrized[0-5-5]',
+        status: 'passed',
+        testName: 'test_parametrized[0-5-5]',
+      },
+      {
+        localId: 'tests/test_math.py::test_parametrized_failing[2-3-6]',
+        status: 'failed',
+        testName: 'test_parametrized_failing[2-3-6]',
+      },
+    ],
+    summary: {
+      assertionCount: 4,
+      passedCount: 3,
+      failedCount: 1,
+      erroredCount: 0,
+      skippedCount: 0,
     },
   },
 };
@@ -290,6 +456,43 @@ const PYTEST_BASIC: AssertionProviderConformanceCase = {
   },
 };
 
+const GO_SUBTESTS: AssertionProviderConformanceCase = {
+  id: 'go-subtests',
+  providerId: 'go_test',
+  format: 'go_test_json',
+  collection: 'stdout',
+  fixture: 'go/subtests.jsonl',
+  expected: {
+    bindingCapability: 'assertion',
+    assertions: [
+      {
+        localId: 'flowguard-conformance-go::TestNested',
+        status: 'failed',
+        testName: 'TestNested',
+      },
+      {
+        localId:
+          'flowguard-conformance-go::TestNested/nested_failing',
+        status: 'failed',
+        testName: 'TestNested/nested_failing',
+      },
+      {
+        localId:
+          'flowguard-conformance-go::TestNested/multiplication',
+        status: 'passed',
+        testName: 'TestNested/multiplication',
+      },
+    ],
+    summary: {
+      assertionCount: 3,
+      passedCount: 1,
+      failedCount: 2,
+      erroredCount: 0,
+      skippedCount: 0,
+    },
+  },
+};
+
 // ─── Go 1.26.5 ────────────────────────────────────────────────────────────
 
 const GO_BASIC: AssertionProviderConformanceCase = {
@@ -350,8 +553,18 @@ const GO_BASIC: AssertionProviderConformanceCase = {
 
 // ─── Exported registry ────────────────────────────────────────────────────
 
-export const CONFORMANCE_CASES: readonly AssertionProviderConformanceCase[] =
-  [JUNIT_MAVEN_BASIC, VITEST_BASIC, JEST_BASIC, PYTEST_BASIC, GO_BASIC];
+export const CONFORMANCE_CASES: readonly AssertionProviderConformanceCase[] = [
+  JUNIT_MAVEN_BASIC,
+  JUNIT_MULTI_SUITE,
+  VITEST_BASIC,
+  VITEST_NESTED,
+  JEST_BASIC,
+  JEST_NESTED,
+  PYTEST_BASIC,
+  PYTEST_PARAMETRIZED,
+  GO_BASIC,
+  GO_SUBTESTS,
+];
 
 export const NEGATIVE_CASES: readonly NegativeConformanceCase[] = [
   {
@@ -359,6 +572,14 @@ export const NEGATIVE_CASES: readonly NegativeConformanceCase[] = [
     providerId: 'junit',
     format: 'junit_xml',
     fixture: 'junit/malformed.xml',
+    expectedStatus: 'inconclusive',
+    expectedReasonCode: 'parse_failed',
+  },
+  {
+    id: 'junit-empty',
+    providerId: 'junit',
+    format: 'junit_xml',
+    fixture: 'junit/empty-testsuite.xml',
     expectedStatus: 'inconclusive',
     expectedReasonCode: 'report_empty',
   },
@@ -368,6 +589,14 @@ export const NEGATIVE_CASES: readonly NegativeConformanceCase[] = [
     format: 'vitest_json',
     fixture: 'vitest/malformed.json',
     expectedStatus: 'inconclusive',
+    expectedReasonCode: 'parse_failed',
+  },
+  {
+    id: 'vitest-empty',
+    providerId: 'vitest',
+    format: 'vitest_json',
+    fixture: 'vitest/empty.json',
+    expectedStatus: 'inconclusive',
     expectedReasonCode: 'report_empty',
   },
   {
@@ -376,6 +605,14 @@ export const NEGATIVE_CASES: readonly NegativeConformanceCase[] = [
     format: 'jest_json',
     fixture: 'jest/malformed.json',
     expectedStatus: 'inconclusive',
+    expectedReasonCode: 'parse_failed',
+  },
+  {
+    id: 'jest-empty',
+    providerId: 'jest',
+    format: 'jest_json',
+    fixture: 'jest/empty.json',
+    expectedStatus: 'inconclusive',
     expectedReasonCode: 'report_empty',
   },
   {
@@ -383,6 +620,14 @@ export const NEGATIVE_CASES: readonly NegativeConformanceCase[] = [
     providerId: 'pytest',
     format: 'pytest_json',
     fixture: 'pytest/malformed.json',
+    expectedStatus: 'inconclusive',
+    expectedReasonCode: 'parse_failed',
+  },
+  {
+    id: 'pytest-empty',
+    providerId: 'pytest',
+    format: 'pytest_json',
+    fixture: 'pytest/empty.json',
     expectedStatus: 'inconclusive',
     expectedReasonCode: 'report_empty',
   },

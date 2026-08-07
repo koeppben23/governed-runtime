@@ -59,7 +59,7 @@ export function parsePytestJson(jsonText: string, context: ParseContext): Parser
   try {
     report = JSON.parse(jsonText) as PytestJsonReport;
   } catch {
-    return emptyResult();
+    throw new Error('pytest_json: failed to parse JSON report');
   }
 
   const tests = report?.tests;

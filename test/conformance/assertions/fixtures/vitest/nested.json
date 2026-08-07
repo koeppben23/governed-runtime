@@ -1,0 +1,76 @@
+{
+  "numTotalTestSuites": 3,
+  "numPassedTestSuites": 0,
+  "numFailedTestSuites": 3,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 3,
+  "numPassedTests": 1,
+  "numFailedTests": 1,
+  "numPendingTests": 1,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1786089229583,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "outer",
+            "inner"
+          ],
+          "fullName": "outer inner nested passes",
+          "status": "passed",
+          "title": "nested passes",
+          "duration": 0.49629099999998516,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "outer",
+            "inner"
+          ],
+          "fullName": "outer inner nested fails",
+          "status": "failed",
+          "title": "nested fails",
+          "duration": 2.680666000000002,
+          "failureMessages": [
+            "AssertionError: expected 2 to be 3 // Object.is equality\n    at /Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/src/nested.test.ts:10:21\n    at file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:104:5)\n    at runSuite (file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///Users/koeppben/work/governed-runtime/test/conformance/assertions/projects/vitest/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)"
+          ],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "outer"
+          ],
+          "fullName": "outer outer skipped",
+          "status": "skipped",
+          "title": "outer skipped",
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1786089229741,
+      "endTime": 1786089229744.6807,
+      "status": "failed",
+      "message": "",
+      "name": "src/nested.test.ts"
+    }
+  ]
+}
