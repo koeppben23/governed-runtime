@@ -783,6 +783,12 @@ describe('CONCURRENCY', () => {
           reason: 'test',
         },
       ],
+      executionSubjectInputsByKind: {
+        ...(s!.executionSubjectInputsByKind ?? {}),
+        lint: [{ kind: 'implementation' as const }],
+        test: [{ kind: 'implementation' as const }],
+        build: [{ kind: 'implementation' as const }],
+      },
     });
 
     // Execute 4 checks in parallel — each check runs outside the lock,

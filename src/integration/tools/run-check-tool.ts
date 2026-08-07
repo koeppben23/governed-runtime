@@ -186,9 +186,9 @@ async function validateAndAttest(
   const worktree = getWorktree(context);
   const subjectInputs = state.executionSubjectInputsByKind?.[kind] ?? [];
 
-  if (subject.scope === 'implementation' && subjectInputs.length === 0) {
+  if (subjectInputs.length === 0) {
     return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
-      component: 'implementation',
+      component: 'execution_surface',
       phase: 'pre_execution',
       detail: `no execution subject inputs for kind '${kind}' — attestation metadata missing`,
     });
