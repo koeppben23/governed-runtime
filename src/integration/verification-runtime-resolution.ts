@@ -10,12 +10,12 @@
  */
 
 import type { VerificationCandidate } from '../state/discovery-schemas.js';
-import type { RuntimeRequirement } from '../discovery/assertion-provider-catalog.js';
+import type { RuntimeRequirement } from '../providers/registry.js';
 import {
-  DESCRIPTOR_BY_PROVIDER,
+  RUNTIME_REQUIREMENTS_BY_PROVIDER,
   ASSERTION_PROFILES,
   type ExecutionProfile,
-} from '../discovery/assertion-provider-catalog.js';
+} from '../providers/registry.js';
 import type { ProbeRunner, ProbeRole } from '../verification/toolchain-probe.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -107,8 +107,8 @@ function getEffectiveRequirements(candidate: VerificationCandidate): readonly Ru
   const raw = matchingProfile?.runtimeRequirements?.length
     ? matchingProfile.runtimeRequirements
     : (() => {
-        const descriptor = DESCRIPTOR_BY_PROVIDER.get(candidate.assertionReport.providerId);
-        return descriptor?.runtimeRequirements ?? [];
+        const pid = candidate.assertionReport.providerId;
+        return RUNTIME_REQUIREMENTS_BY_PROVIDER.get(pid) ?? [];
       })();
 
   // Translate wrapper probe paths for Windows candidates

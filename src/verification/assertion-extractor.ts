@@ -24,7 +24,7 @@ import {
   PARSER_BY_FORMAT,
   ASSERTION_FORMATS_BY_PROVIDER,
   ASSERTION_CODEC_BY_PROVIDER,
-} from './assertion-parsers/registry.js';
+} from '../providers/registry.js';
 
 // ─── Internal ────────────────────────────────────────────────────────────────
 

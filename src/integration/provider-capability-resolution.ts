@@ -11,14 +11,11 @@
 
 import type { DetectedStack, VerificationCandidate } from '../state/discovery-schemas.js';
 import type { ProviderId, ReportFormatId } from '../state/assertion-identity.js';
-import {
-  PROVIDER_DESCRIPTORS,
-  DESCRIPTOR_BY_DETECTION,
-} from '../discovery/assertion-provider-catalog.js';
+import { ASSERTION_PROVIDER_EXTENSIONS, DESCRIPTOR_BY_DETECTION } from '../providers/registry.js';
 import {
   ASSERTION_CODEC_BY_PROVIDER,
   ASSERTION_FORMATS_BY_PROVIDER,
-} from '../verification/assertion-parsers/registry.js';
+} from '../providers/registry.js';
 import type {
   ResolvedVerificationCandidate,
   RuntimeStatus,
@@ -132,27 +129,33 @@ export function resolveProviderCapabilities(
   const runtimeByProvider = buildRuntimeMap(runtimeCandidates);
   const results: ResolvedProviderCapability[] = [];
 
-  for (const desc of PROVIDER_DESCRIPTORS) {
-    const evidence = detectionMap.get(desc.providerId) ?? [];
-    const codec = ASSERTION_CODEC_BY_PROVIDER.get(desc.providerId);
-    const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(desc.providerId);
+  for (const ext of ASSERTION_PROVIDER_EXTENSIONS) {
+    const pid = ext.manifest.providerId;
+    const evidence = detectionMap.get(pid) ?? [];
+    const codec = ASSERTION_CODEC_BY_PROVIDER.get(pid);
+    const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(pid);
+    const preferredFormat = ext.verification.formats.find(
+      (f) => f.bindingCapability === 'assertion',
+    )?.format;
     const bindingAvailable =
-      codec !== undefined && bindingFormats?.has(desc.preferredAssertionFormat) === true;
+      codec !== undefined &&
+      preferredFormat !== undefined &&
+      bindingFormats?.has(preferredFormat) === true;
 
     results.push({
-      providerId: desc.providerId,
-      label: desc.label,
+      providerId: pid,
+      label: ext.manifest.label,
       detection: {
         status: evidence.length > 0 ? 'detected' : 'not_detected',
         evidence,
       },
       assertionBinding: {
         status: bindingAvailable ? 'available' : 'unsupported',
-        format: bindingAvailable ? desc.preferredAssertionFormat : undefined,
+        format: bindingAvailable ? preferredFormat : undefined,
       },
-      candidate: resolveCandidate(candidateMap.get(desc.providerId), bindingFormats),
+      candidate: resolveCandidate(candidateMap.get(pid), bindingFormats),
       runtime: {
-        status: runtimeByProvider.get(desc.providerId) ?? 'unknown',
+        status: runtimeByProvider.get(pid) ?? 'unknown',
       },
     });
   }

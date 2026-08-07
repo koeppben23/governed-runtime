@@ -15,12 +15,12 @@
 
 import type { DetectedStack, VerificationCandidate, VerificationCandidateKind } from './types.js';
 import {
-  WRAPPER_PROFILES,
-  FALLBACK_PROFILES,
-  DESCRIPTOR_BY_PROVIDER,
+  ASSERTION_PROFILES,
+  REPORT_TEMPLATES_BY_PROVIDER,
+  SCRIPT_SIGNATURES_BY_PROVIDER,
   type PlannerContext,
   type ScriptSignature,
-} from './assertion-provider-catalog.js';
+} from '../providers/registry.js';
 import { buildScriptInvocation, type PackageManager } from './package-script-command.js';
 import { analyzeVerificationScript } from './verification-script-analysis.js';
 import type { ProviderId } from '../state/assertion-identity.js';
@@ -71,13 +71,10 @@ export async function planVerificationCandidates(
   const scripts = await readPackageScripts(input.readFile);
   addScriptCandidates(byKind, scripts, packageManager);
 
-  // Wrapper profiles (mvnw, gradlew) — run before fallbacks
-  applyProfiles(byKind, ctx, WRAPPER_PROFILES);
+  // Assertion profiles — ordered by priority, fill gaps only
+  applyProfiles(byKind, ctx, ASSERTION_PROFILES);
 
   addNonAssertionFallbacks(byKind, detectedStackIds, packageManager);
-
-  // Assertion fallback profiles — only if no candidate exists for the kind
-  applyProfiles(byKind, ctx, FALLBACK_PROFILES);
 
   return [...byKind.values()].sort((a, b) => {
     const orderDiff = KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
@@ -180,8 +177,7 @@ function addScriptCandidates(
       analysis.argumentForwarding === 'supported';
 
     if (canEnrich) {
-      const descriptor = DESCRIPTOR_BY_PROVIDER.get(analysis.provider.providerId);
-      const reportTemplate = descriptor?.assertionReportTemplate;
+      const reportTemplate = REPORT_TEMPLATES_BY_PROVIDER.get(analysis.provider.providerId);
 
       if (reportTemplate) {
         byKind.set(mapping.kind, {
@@ -219,9 +215,9 @@ function addScriptCandidates(
 
 function buildSignatureMap(): ReadonlyMap<ProviderId, readonly ScriptSignature[]> {
   const map = new Map<ProviderId, ScriptSignature[]>();
-  for (const descriptor of DESCRIPTOR_BY_PROVIDER.values()) {
-    if (descriptor.scriptSignatures && descriptor.scriptSignatures.length > 0) {
-      map.set(descriptor.providerId, [...descriptor.scriptSignatures]);
+  for (const [providerId, sigs] of SCRIPT_SIGNATURES_BY_PROVIDER) {
+    if (sigs.length > 0) {
+      map.set(providerId, [...sigs]);
     }
   }
   return map;

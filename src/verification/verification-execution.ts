@@ -17,7 +17,7 @@ import { createHash } from 'node:crypto';
 import type { VerificationCandidate } from '../state/discovery-schemas.js';
 import type { ReportFormatId } from '../state/assertion-identity.js';
 import type { AssertionReportSpec } from '../state/discovery-schemas.js';
-import { FORMATS_BY_PROVIDER, PARSER_BY_FORMAT } from './assertion-parsers/registry.js';
+import { FORMATS_BY_PROVIDER, PARSER_BY_FORMAT } from '../providers/registry.js';
 
 // ─── Public types ────────────────────────────────────────────────────────────
 
