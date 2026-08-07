@@ -84,9 +84,9 @@ const EXPECTED_LOCAL_IDS: Record<string, string[]> = {
     'com.example.CalculatorTest$AdvancedOperations#testMultiplication',
   ],
   'gradle-junit': [
-    'com.example.CalculatorTest#testAddition',
-    'com.example.CalculatorTest#testFailingAssertion',
-    'com.example.CalculatorTest#testSkipped',
+    'com.example.CalculatorTest#testAddition()',
+    'com.example.CalculatorTest#testFailingAssertion()',
+    'com.example.CalculatorTest#testSkipped()',
   ],
   vitest: ['src/math.test.ts::calculator::add::adds two positive numbers'],
   jest: ['src/math.test.js::calculator::add::adds two positive numbers'],
@@ -188,7 +188,8 @@ describe('Runtime Assertion Provider Conformance', () => {
               f.includes('vitest.config') ||
               f.includes('jest.config') ||
               f.includes('build.gradle') ||
-              f.includes('settings.gradle'),
+              f.includes('settings.gradle') ||
+              f.endsWith('go.mod'),
           );
 
           const readFileFn = async (
