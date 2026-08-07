@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { resolveRuntimeReadiness } from '../verification-runtime-resolution.js';
+import { resolveRuntimeReadiness, wrapForResolution } from '../verification-runtime-resolution.js';
 import type { ProbeRunner, ProbeRequest, ProbeResult } from '../../verification/toolchain-probe.js';
 import type { VerificationCandidate } from '../../state/discovery-schemas.js';
 import type {
@@ -56,7 +56,11 @@ describe('runtime readiness via status projection', () => {
       },
     ];
 
-    const results = await resolveRuntimeReadiness(candidates, runner, '/tmp');
+    const results = await resolveRuntimeReadiness(
+      candidates.map((c) => ({ candidate: c })),
+      runner,
+      '/tmp',
+    );
     expect(results).toHaveLength(1);
     expect(results[0]!.runtime.status).toBe('ready');
     expect(results[0]!.runtime.requirements).toHaveLength(1);
@@ -88,7 +92,11 @@ describe('runtime readiness via status projection', () => {
       },
     ];
 
-    const results = await resolveRuntimeReadiness(candidates, runner, '/tmp');
+    const results = await resolveRuntimeReadiness(
+      candidates.map((c) => ({ candidate: c })),
+      runner,
+      '/tmp',
+    );
     expect(results).toHaveLength(1);
     expect(results[0]!.runtime.status).toBe('tool_missing');
   });
@@ -119,7 +127,11 @@ describe('runtime readiness via status projection', () => {
       },
     ];
 
-    const results = await resolveRuntimeReadiness(candidates, runner, '/tmp');
+    const results = await resolveRuntimeReadiness(
+      candidates.map((c) => ({ candidate: c })),
+      runner,
+      '/tmp',
+    );
     expect(results).toHaveLength(1);
     expect(results[0]!.runtime.status).toBe('reporter_missing');
   });
@@ -148,7 +160,11 @@ describe('runtime readiness via status projection', () => {
       },
     ];
 
-    const results = await resolveRuntimeReadiness(candidates, runner, '/tmp');
+    const results = await resolveRuntimeReadiness(
+      candidates.map((c) => ({ candidate: c, executionProfileId: 'junit-maven-wrapper' })),
+      runner,
+      '/tmp',
+    );
     expect(results).toHaveLength(1);
     // Profile-level requirements (java + mvnw) both available → ready
     expect(results[0]!.runtime.status).toBe('ready');
@@ -179,7 +195,11 @@ describe('runtime readiness via status projection', () => {
       },
     ];
 
-    const results = await resolveRuntimeReadiness(candidates, runner, '/tmp');
+    const results = await resolveRuntimeReadiness(
+      candidates.map((c) => ({ candidate: c, executionProfileId: 'junit-gradle-wrapper' })),
+      runner,
+      '/tmp',
+    );
     expect(results).toHaveLength(1);
     expect(results[0]!.runtime.status).toBe('tool_missing');
     expect(results[0]!.runtime.requirements[0]!.status).toBe('available');

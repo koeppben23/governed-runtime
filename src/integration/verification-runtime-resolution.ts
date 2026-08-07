@@ -10,13 +10,10 @@
  */
 
 import type { VerificationCandidate } from '../state/discovery-schemas.js';
-import type { RuntimeRequirement } from '../discovery/assertion-provider-catalog.js';
-import {
-  DESCRIPTOR_BY_PROVIDER,
-  ASSERTION_PROFILES,
-  type ExecutionProfile,
-} from '../discovery/assertion-provider-catalog.js';
+import type { RuntimeRequirement } from '../providers/registry.js';
+import { RUNTIME_REQUIREMENTS_BY_PROVIDER, ASSERTION_PROFILES } from '../providers/registry.js';
 import type { ProbeRunner, ProbeRole } from '../verification/toolchain-probe.js';
+import type { PlannedVerificationCandidate } from '../discovery/verification-candidate-planned.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -38,41 +35,40 @@ export interface ResolvedVerificationCandidate {
   };
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
+/**
+ * Wraps VerificationCandidate[] into PlannedVerificationCandidate[] for compatibility.
+ */
+export function wrapForResolution(
+  candidates: readonly VerificationCandidate[],
+): PlannedVerificationCandidate[] {
+  return candidates.map((c) => ({ candidate: c }));
+}
 
 export async function resolveRuntimeReadiness(
-  candidates: readonly VerificationCandidate[],
+  candidates: readonly PlannedVerificationCandidate[],
   runner: ProbeRunner,
   cwd: string,
 ): Promise<readonly ResolvedVerificationCandidate[]> {
   const results: ResolvedVerificationCandidate[] = [];
 
-  for (const candidate of candidates) {
+  for (const planned of candidates) {
+    const candidate = planned.candidate;
     if (candidate.assertionCapability !== 'structured') {
-      results.push({
-        candidate,
-        runtime: { status: 'unavailable', requirements: [] },
-      });
+      results.push({ candidate, runtime: { status: 'unavailable', requirements: [] } });
       continue;
     }
 
-    const requirements = getEffectiveRequirements(candidate);
+    const requirements = getEffectiveRequirements(candidate, planned.executionProfileId);
 
     if (requirements.length === 0) {
-      results.push({
-        candidate,
-        runtime: { status: 'ready', requirements: [] },
-      });
+      results.push({ candidate, runtime: { status: 'ready', requirements: [] } });
       continue;
     }
 
     const resolvedReqs = await probeRequirements(requirements, runner, cwd);
     const status = aggregateStatus(resolvedReqs);
 
-    results.push({
-      candidate,
-      runtime: { status, requirements: resolvedReqs },
-    });
+    results.push({ candidate, runtime: { status, requirements: resolvedReqs } });
   }
 
   return results;
@@ -100,73 +96,27 @@ function buildProbeSpec(
   };
 }
 
-function getEffectiveRequirements(candidate: VerificationCandidate): readonly RuntimeRequirement[] {
+function getEffectiveRequirements(
+  candidate: VerificationCandidate,
+  executionProfileId?: string,
+): readonly RuntimeRequirement[] {
   if (candidate.assertionCapability !== 'structured') return [];
 
-  const matchingProfile = findMatchingProfile(candidate);
-  const raw = matchingProfile?.runtimeRequirements?.length
-    ? matchingProfile.runtimeRequirements
-    : (() => {
-        const descriptor = DESCRIPTOR_BY_PROVIDER.get(candidate.assertionReport.providerId);
-        return descriptor?.runtimeRequirements ?? [];
-      })();
+  const profile = executionProfileId
+    ? ASSERTION_PROFILES.find((p) => p.profileId === executionProfileId)
+    : undefined;
 
-  // Translate wrapper probe paths for Windows candidates
-  return raw.map((req) => translateWrapperProbe(candidate, req));
-}
-
-function translateWrapperProbe(
-  candidate: VerificationCandidate,
-  req: RuntimeRequirement,
-): RuntimeRequirement {
-  if (req.probe.kind !== 'executable_file') return req;
-
-  const source = candidate.source;
-  if (source === 'repo:mvnw.cmd' && req.id === 'mvnw') {
-    return { ...req, probe: { kind: 'executable_file', path: 'mvnw.cmd' } };
+  // Profile-specific requirements with possible platform resolution
+  if (profile?.resolveRuntimeRequirements) {
+    return profile.resolveRuntimeRequirements(candidate);
   }
-  if (source === 'repo:gradlew.bat' && req.id === 'gradlew') {
-    return { ...req, probe: { kind: 'executable_file', path: 'gradlew.bat' } };
-  }
-  return req;
-}
 
-function findMatchingProfile(candidate: VerificationCandidate): ExecutionProfile | undefined {
-  const { source, kind } = candidate;
-  for (const profile of ASSERTION_PROFILES) {
-    if (profile.kind !== kind) continue;
-    if (matchWrapperSource(source, profile)) return profile;
-    if (matchFallbackSource(source, profile)) return profile;
-    if (matchEnrichedSource(candidate, profile)) return profile;
+  if (profile?.runtimeRequirements?.length) {
+    return profile.runtimeRequirements;
   }
-  return undefined;
-}
 
-function matchWrapperSource(source: string, profile: ExecutionProfile): boolean {
-  if (source === 'repo:mvnw' || source === 'repo:mvnw.cmd') {
-    return profile.profileId === 'junit-maven-wrapper';
-  }
-  if (source === 'repo:gradlew' || source === 'repo:gradlew.bat') {
-    return profile.profileId === 'junit-gradle-wrapper';
-  }
-  return false;
-}
-
-function matchFallbackSource(source: string, profile: ExecutionProfile): boolean {
-  if (!source.startsWith('detectedStack:testFramework:')) return false;
-  const framework = source.slice('detectedStack:testFramework:'.length);
-  return (
-    profile.profileId === `${framework}-fallback` || profile.profileId === `${framework}-stdout`
-  );
-}
-
-function matchEnrichedSource(candidate: VerificationCandidate, profile: ExecutionProfile): boolean {
-  if (!candidate.source.startsWith('package.json:scripts.')) return false;
-  if (candidate.assertionCapability !== 'structured') return false;
-  return (
-    profile.format === candidate.assertionReport.format &&
-    profile.providerId === candidate.assertionReport.providerId
-  );
+  const pid = candidate.assertionReport.providerId;
+  return RUNTIME_REQUIREMENTS_BY_PROVIDER.get(pid) ?? [];
 }
 
 async function probeRequirements(

@@ -27,7 +27,7 @@ import type { AssertionCounterexampleRequirement as AssertionCounterexampleRequi
 import type { DeclaredClaim } from '../../state/proofgraph.js';
 import type { ProofProviderKind } from '../../state/proofgraph-primitives.js';
 import type { ClaimAuthorityRef } from '../../state/proofgraph-refs.js';
-import { ASSERTION_FORMATS_BY_PROVIDER } from '../../verification/assertion-parsers/registry.js';
+import { ASSERTION_FORMATS_BY_PROVIDER } from '../../providers/registry.js';
 import {
   SURFACE_COMMAND_REGISTRATION,
   SURFACE_CONFIG_DEFAULTS,

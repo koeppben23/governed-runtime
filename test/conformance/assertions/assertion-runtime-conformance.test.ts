@@ -20,7 +20,11 @@ import { tmpdir } from 'node:os';
 import { mkdtemp, rm, cp, readdir, mkdir } from 'node:fs/promises';
 
 import { collectStack } from '../../../src/discovery/collectors/stack-detection.js';
-import { planVerificationCandidates } from '../../../src/discovery/verification-planner.js';
+import {
+  planVerificationCandidates,
+  stripToCandidates,
+} from '../../../src/discovery/verification-planner.js';
+import type { PlannedVerificationCandidate } from '../../../src/discovery/verification-candidate-planned.js';
 import { prepareVerificationExecution } from '../../../src/verification/verification-execution.js';
 import { executeCheck } from '../../../src/verification/executor.js';
 import { completeAssertionExtraction } from '../../../src/verification/assertion-extractor.js';
@@ -116,16 +120,17 @@ const FIXTURES: RuntimeFixture[] = [
 // ─── Helpers ──────────────────────────────────────────────────────────────
 
 function findAssertionCandidate(
-  candidates: VerificationCandidate[],
+  candidates: PlannedVerificationCandidate[],
 ): VerificationCandidate | undefined {
-  for (const c of candidates) {
+  for (const p of candidates) {
+    const c = p.candidate;
     if (c.kind === 'test' || c.kind === 'build') {
       if (c.assertionCapability === 'structured') {
         return c;
       }
     }
   }
-  return candidates.find((c) => c.assertionCapability === 'structured');
+  return candidates.find((p) => p.candidate.assertionCapability === 'structured')?.candidate;
 }
 
 async function collectAllFiles(dir: string): Promise<string[]> {
@@ -192,9 +197,7 @@ describe('Runtime Assertion Provider Conformance', () => {
               f.endsWith('go.mod'),
           );
 
-          const readFileFn = async (
-            relativePath: string,
-          ): Promise<string | undefined> => {
+          const readFileFn = async (relativePath: string): Promise<string | undefined> => {
             try {
               return await readFile(join(tmpDir, relativePath), 'utf-8');
             } catch {
@@ -223,21 +226,15 @@ describe('Runtime Assertion Provider Conformance', () => {
           const testCandidate = findAssertionCandidate(candidates);
           expect(
             testCandidate,
-            `no structured assertion candidate found for ${fixture.name}. candidates: ${JSON.stringify(candidates.map((c) => ({ kind: c.kind, cap: c.assertionCapability, cmd: c.command })))}`,
+            `no structured assertion candidate found for ${fixture.name}. candidates: ${JSON.stringify(candidates.map((c) => ({ kind: c.candidate.kind, cap: c.candidate.assertionCapability, cmd: c.candidate.command })))}`,
           ).toBeDefined();
 
-          const prepared = await prepareVerificationExecution(
-            testCandidate!,
-            tmpDir,
-          );
+          const prepared = await prepareVerificationExecution(testCandidate!, tmpDir);
           expect(prepared.assertion.capability).toBe('structured');
 
           if (prepared.assertion.capability === 'structured') {
             if (prepared.assertion.report.kind === 'run_specific') {
-              const resultDir = join(
-                tmpDir,
-                dirname(prepared.assertion.report.resultPattern),
-              );
+              const resultDir = join(tmpDir, dirname(prepared.assertion.report.resultPattern));
               await mkdir(resultDir, { recursive: true });
             }
 
@@ -253,11 +250,7 @@ describe('Runtime Assertion Provider Conformance', () => {
               expect(prepared.command).toContain(prepared.attemptId);
             }
 
-            const extraction = await completeAssertionExtraction(
-              prepared,
-              execution,
-              tmpDir,
-            );
+            const extraction = await completeAssertionExtraction(prepared, execution, tmpDir);
 
             expect(
               extraction.status,
@@ -280,9 +273,7 @@ describe('Runtime Assertion Provider Conformance', () => {
                 fixture.expectedAssertionCount,
               );
 
-              const localIds = extraction.assertions.map(
-                (a) => a.assertion.localId,
-              );
+              const localIds = extraction.assertions.map((a) => a.assertion.localId);
               expect(new Set(localIds).size).toBe(localIds.length);
 
               for (const a of extraction.assertions) {
@@ -291,9 +282,7 @@ describe('Runtime Assertion Provider Conformance', () => {
                 expect(a.assertion.localId.length).toBeGreaterThan(0);
               }
 
-              const hasFailedAssertion = extraction.assertions.some(
-                (a) => a.status === 'failed',
-              );
+              const hasFailedAssertion = extraction.assertions.some((a) => a.status === 'failed');
               expect(hasFailedAssertion).toBe(true);
 
               // Verify expected localId substrings are present in at least one assertion
@@ -301,8 +290,8 @@ describe('Runtime Assertion Provider Conformance', () => {
               const expectedSuffixes = EXPECTED_LOCAL_IDS[fixture.name];
               if (expectedSuffixes) {
                 for (const suffix of expectedSuffixes) {
-                  const found = extraction.assertions.some(
-                    (a) => a.assertion.localId.endsWith(suffix),
+                  const found = extraction.assertions.some((a) =>
+                    a.assertion.localId.endsWith(suffix),
                   );
                   expect(
                     found,

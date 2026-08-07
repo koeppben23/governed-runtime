@@ -30,7 +30,7 @@ import {
   PARSER_BY_FORMAT,
   ASSERTION_CODEC_BY_PROVIDER,
   ASSERTION_FORMATS_BY_PROVIDER,
-} from '../../../src/verification/assertion-parsers/registry.js';
+} from '../../../src/providers/registry.js';
 import { CONFORMANCE_CASES, NEGATIVE_CASES } from './conformance-contract.js';
 import type { AssertionProviderConformanceCase } from './conformance-contract.js';
 import type {

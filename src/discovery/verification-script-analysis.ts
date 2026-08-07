@@ -13,7 +13,7 @@
  */
 
 import type { ProviderId } from '../state/assertion-identity.js';
-import type { ScriptSignature } from './assertion-provider-catalog.js';
+import type { ScriptSignature } from '../providers/registry.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

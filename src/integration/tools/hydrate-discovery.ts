@@ -20,7 +20,10 @@ import {
 } from '../../discovery/orchestrator.js';
 import type { DiscoveryResult, ProfileResolution } from '../../discovery/types.js';
 import { PROFILE_RESOLUTION_SCHEMA_VERSION } from '../../discovery/types.js';
-import { planVerificationCandidates } from '../../discovery/verification-planner.js';
+import {
+  planVerificationCandidates,
+  stripToCandidates,
+} from '../../discovery/verification-planner.js';
 import {
   writeDiscovery,
   writeProfileResolution,
@@ -289,11 +292,12 @@ export async function computeDiscoveryHydration(
     repoSignals.files,
     readRepoFile,
   );
-  const verificationCandidates = await planVerificationCandidates({
+  const planned = await planVerificationCandidates({
     detectedStack,
     allFiles: repoSignals.files,
     readFile: readRepoFile,
   });
+  const verificationCandidates = stripToCandidates(planned);
   return { discoveryDigest, discoverySummary, detectedStack, verificationCandidates };
 }
 

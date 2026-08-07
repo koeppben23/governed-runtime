@@ -29,6 +29,9 @@ const GATE_FILES = [
   'audit/proofgraph/assertion-evidence-binding.ts',
   'rails/review-decision.ts',
   'machine/guards.ts',
+  'verification/executor.ts',
+  'verification/assertion-extractor.ts',
+  'verification/assertion-report-collector.ts',
 ];
 
 const PROOFGRAPH_CORE_FILES = [
@@ -62,6 +65,12 @@ const PROVIDER_SWITCH_PATTERNS = [
   /case\s+['"]go_test['"]/,
   /switch\s*\(\s*providerId/,
   /switch\s*\(\s*provider/,
+  // Source-string heuristics (no longer used after PR 10)
+  /"repo:mvnw"/,
+  /"repo:gradlew"/,
+  /"detectedStack:testFramework:"/,
+  /`\$\{framework\}-fallback`/,
+  /`\$\{framework\}-stdout`/,
 ];
 
 const GATE_BOUNDARY_IMPORTS = [
@@ -107,6 +116,27 @@ describe('proofgraph legacy guard', () => {
         if (regex.test(content)) {
           violations.push(`${rel}: ${regex}`);
         }
+      }
+    }
+    expect(violations).toEqual([]);
+  });
+
+  it('state layer must not import from providers/', () => {
+    const STATE_FILES = [
+      'state/schema.ts',
+      'state/proofgraph.ts',
+      'state/proofgraph-primitives.ts',
+      'state/proofgraph-approval.ts',
+      'state/proofgraph-refs.ts',
+      'state/evidence-validation.ts',
+      'state/discovery-schemas.ts',
+      'state/assertion-identity.ts',
+    ];
+    const violations: string[] = [];
+    for (const rel of STATE_FILES) {
+      const content = readFileSync(join(SRC, rel), 'utf-8');
+      if (/import.*from.*['"]\.\.\/providers\//.test(content)) {
+        violations.push(rel);
       }
     }
     expect(violations).toEqual([]);

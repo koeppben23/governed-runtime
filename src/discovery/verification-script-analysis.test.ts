@@ -5,14 +5,14 @@
 
 import { describe, expect, it } from 'vitest';
 import { analyzeVerificationScript } from './verification-script-analysis.js';
-import { DESCRIPTOR_BY_PROVIDER, type ScriptSignature } from './assertion-provider-catalog.js';
+import { SCRIPT_SIGNATURES_BY_PROVIDER, type ScriptSignature } from '../providers/registry.js';
 import type { ProviderId } from '../state/assertion-identity.js';
 
 function buildSigMap(): ReadonlyMap<ProviderId, readonly ScriptSignature[]> {
   const map = new Map<ProviderId, ScriptSignature[]>();
-  for (const descriptor of DESCRIPTOR_BY_PROVIDER.values()) {
-    if (descriptor.scriptSignatures?.length) {
-      map.set(descriptor.providerId, [...descriptor.scriptSignatures]);
+  for (const [providerId, sigs] of SCRIPT_SIGNATURES_BY_PROVIDER) {
+    if (sigs.length > 0) {
+      map.set(providerId, [...sigs]);
     }
   }
   return map;
