@@ -80,6 +80,8 @@
     "test:smoke": "vitest run --project smoke",
     "test:fuzz": "vitest run --project fuzz",
     "test:fuzz:deep": "FAST_CHECK_NUM_RUNS=10000 vitest run --project fuzz",
+    "test:assertion-conformance": "vitest run --project conformance test/conformance/assertions/assertion-golden-conformance.test.ts",
+    "test:provider-conformance": "FLOWGUARD_RUNTIME_CONFORMANCE=1 vitest run --project conformance test/conformance/assertions/assertion-runtime-conformance.test.ts",
     "test:independent-review-e2e": "node scripts/verify-independent-review-e2e.js",
     "trigger:opencode-host-update": "node scripts/check-opencode-host-drift.mjs --trigger",
     "sync-version": "node scripts/sync-version.js",

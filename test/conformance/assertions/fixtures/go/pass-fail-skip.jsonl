@@ -1,0 +1,35 @@
+{"Time":"2026-08-07T09:18:27.668907+02:00","Action":"start","Package":"flowguard-conformance-go"}
+{"Time":"2026-08-07T09:18:30.846769+02:00","Action":"run","Package":"flowguard-conformance-go","Test":"TestAddition"}
+{"Time":"2026-08-07T09:18:30.846829+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestAddition","Output":"=== RUN   TestAddition\n"}
+{"Time":"2026-08-07T09:18:30.846864+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestAddition","Output":"--- PASS: TestAddition (0.00s)\n"}
+{"Time":"2026-08-07T09:18:30.846873+02:00","Action":"pass","Package":"flowguard-conformance-go","Test":"TestAddition","Elapsed":0}
+{"Time":"2026-08-07T09:18:30.846879+02:00","Action":"run","Package":"flowguard-conformance-go","Test":"TestSubtraction"}
+{"Time":"2026-08-07T09:18:30.846883+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestSubtraction","Output":"=== RUN   TestSubtraction\n"}
+{"Time":"2026-08-07T09:18:30.846888+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestSubtraction","Output":"--- PASS: TestSubtraction (0.00s)\n"}
+{"Time":"2026-08-07T09:18:30.846891+02:00","Action":"pass","Package":"flowguard-conformance-go","Test":"TestSubtraction","Elapsed":0}
+{"Time":"2026-08-07T09:18:30.846894+02:00","Action":"run","Package":"flowguard-conformance-go","Test":"TestFailing"}
+{"Time":"2026-08-07T09:18:30.846897+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestFailing","Output":"=== RUN   TestFailing\n"}
+{"Time":"2026-08-07T09:18:30.8469+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestFailing","Output":"    math_test.go:19: Multiply(2,3) = 6; want 7\n"}
+{"Time":"2026-08-07T09:18:30.846909+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestFailing","Output":"--- FAIL: TestFailing (0.00s)\n"}
+{"Time":"2026-08-07T09:18:30.846912+02:00","Action":"fail","Package":"flowguard-conformance-go","Test":"TestFailing","Elapsed":0}
+{"Time":"2026-08-07T09:18:30.846915+02:00","Action":"run","Package":"flowguard-conformance-go","Test":"TestSkipped"}
+{"Time":"2026-08-07T09:18:30.846918+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestSkipped","Output":"=== RUN   TestSkipped\n"}
+{"Time":"2026-08-07T09:18:30.846922+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestSkipped","Output":"    math_test.go:24: demonstrating skipped test\n"}
+{"Time":"2026-08-07T09:18:30.846926+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestSkipped","Output":"--- SKIP: TestSkipped (0.00s)\n"}
+{"Time":"2026-08-07T09:18:30.84693+02:00","Action":"skip","Package":"flowguard-conformance-go","Test":"TestSkipped","Elapsed":0}
+{"Time":"2026-08-07T09:18:30.846933+02:00","Action":"run","Package":"flowguard-conformance-go","Test":"TestNested"}
+{"Time":"2026-08-07T09:18:30.846935+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested","Output":"=== RUN   TestNested\n"}
+{"Time":"2026-08-07T09:18:30.846939+02:00","Action":"run","Package":"flowguard-conformance-go","Test":"TestNested/multiplication"}
+{"Time":"2026-08-07T09:18:30.846942+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested/multiplication","Output":"=== RUN   TestNested/multiplication\n"}
+{"Time":"2026-08-07T09:18:30.846952+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested/multiplication","Output":"--- PASS: TestNested/multiplication (0.00s)\n"}
+{"Time":"2026-08-07T09:18:30.846956+02:00","Action":"pass","Package":"flowguard-conformance-go","Test":"TestNested/multiplication","Elapsed":0}
+{"Time":"2026-08-07T09:18:30.846959+02:00","Action":"run","Package":"flowguard-conformance-go","Test":"TestNested/nested_failing"}
+{"Time":"2026-08-07T09:18:30.846962+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested/nested_failing","Output":"=== RUN   TestNested/nested_failing\n"}
+{"Time":"2026-08-07T09:18:30.846965+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested/nested_failing","Output":"    math_test.go:36: Add(1,1) = 2; want 3\n"}
+{"Time":"2026-08-07T09:18:30.846983+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested/nested_failing","Output":"--- FAIL: TestNested/nested_failing (0.00s)\n"}
+{"Time":"2026-08-07T09:18:30.846986+02:00","Action":"fail","Package":"flowguard-conformance-go","Test":"TestNested/nested_failing","Elapsed":0}
+{"Time":"2026-08-07T09:18:30.846989+02:00","Action":"output","Package":"flowguard-conformance-go","Test":"TestNested","Output":"--- FAIL: TestNested (0.00s)\n"}
+{"Time":"2026-08-07T09:18:30.846998+02:00","Action":"fail","Package":"flowguard-conformance-go","Test":"TestNested","Elapsed":0}
+{"Time":"2026-08-07T09:18:30.847+02:00","Action":"output","Package":"flowguard-conformance-go","Output":"FAIL\n"}
+{"Time":"2026-08-07T09:18:30.848078+02:00","Action":"output","Package":"flowguard-conformance-go","Output":"FAIL\tflowguard-conformance-go\t3.179s\n"}
+{"Time":"2026-08-07T09:18:30.848108+02:00","Action":"fail","Package":"flowguard-conformance-go","Elapsed":3.179}

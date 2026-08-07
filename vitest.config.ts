@@ -123,6 +123,20 @@ export default defineConfig({
           testTimeout: 120_000,
         },
       },
+      {
+        test: {
+          name: 'conformance',
+          setupFiles: ['./vitest.setup.ts'],
+          include: ['test/conformance/assertions/**/*.test.ts'],
+          exclude: [
+            'test/conformance/assertions/projects/**',
+            'test/conformance/assertions/fixtures/**',
+          ],
+          globals: false,
+          restoreMocks: true,
+          testTimeout: 120_000,
+        },
+      },
     ],
   },
 });
