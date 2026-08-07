@@ -75,6 +75,30 @@ describe('proofgraph schemas', () => {
       expect(ProofGraphProjection.parse(projection)).toEqual(projection);
     });
 
+    it('ProofGraphProjection accepts valid claimDiagnostics', () => {
+      const projection = {
+        version: PROOFGRAPH_SCHEMA_VERSION,
+        claims: [],
+        evaluatedAt: NOW,
+        claimDiagnostics: {
+          '00000000-0000-4000-8000-000000000001': 'check_only_evidence' as const,
+        },
+      };
+      expect(ProofGraphProjection.parse(projection)).toEqual(projection);
+    });
+
+    it('ProofGraphProjection rejects invalid claimDiagnostics value', () => {
+      const projection = {
+        version: PROOFGRAPH_SCHEMA_VERSION,
+        claims: [],
+        evaluatedAt: NOW,
+        claimDiagnostics: {
+          '00000000-0000-4000-8000-000000000001': 'invalid_code',
+        },
+      };
+      expect(() => ProofGraphProjection.parse(projection)).toThrow();
+    });
+
     it('ProofProviderResult parses with a 64-hex result digest', () => {
       const result = {
         claimId: UUID,

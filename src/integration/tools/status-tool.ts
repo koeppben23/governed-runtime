@@ -185,6 +185,7 @@ async function buildProofGraphProjectionResponse(
     authorizedCriticalClaimIds: authorizedCriticalPlanClaimIds(state.plan),
     implementationDigest: state.implementation?.digest,
     riskAssessment: state.implementationRiskAssessment,
+    claimDiagnostics: proofGraph.claimDiagnostics,
   });
   const registrationConsistency = checkRegistrationConsistency();
   const configConsistency = checkConfigDefaultConsistency();
@@ -207,13 +208,16 @@ async function buildProofGraphProjectionResponse(
 /**
  * Resolve a focused projection response, or null if no projection flag is set.
  */
-async function resolveProjection(
-  args: StatusArgs,
-  state: SessionState,
-  policy: FlowGuardPolicy,
-  sessDir: string,
-  presentation: PresentationRenderOptions,
-): Promise<string | null> {
+interface ResolveProjectionInput {
+  readonly args: StatusArgs;
+  readonly state: SessionState;
+  readonly policy: FlowGuardPolicy;
+  readonly sessDir: string;
+  readonly presentation: PresentationRenderOptions;
+}
+
+async function resolveProjection(input: ResolveProjectionInput): Promise<string | null> {
+  const { args, state, policy, sessDir, presentation } = input;
   const checkFields = buildCheckProjectionFields(state);
   // /finish is the most comprehensive focused projection and is placed first so
   // its own template call is never shadowed by a stray additional flag. This
@@ -706,7 +710,13 @@ export const status: ToolDefinition = {
         state.binding.worktree,
       );
 
-      const projection = await resolveProjection(args, state, policy, sessDir, presentation);
+      const projection = await resolveProjection({
+        args,
+        state,
+        policy,
+        sessDir,
+        presentation,
+      });
       if (projection !== null) return projection;
 
       const { discovery, discoveryHealth } = await loadDiscoveryStatusContext(wsDir);

@@ -69,7 +69,7 @@ describe('bindCounterexamples', () => {
         result: validationResult(false),
       },
     ]);
-    const [cx] = bindCounterexamples(state, NOW);
+    const [cx] = bindCounterexamples(state, NOW).counterexamples;
     expect(cx).toMatchObject({ claimId: CLAIM, outcome: 'not_verified', boundDigest: IMPL_DIGEST });
   });
 
@@ -82,7 +82,7 @@ describe('bindCounterexamples', () => {
         result: { ...validationResult(false), outcome: 'inconclusive' as const },
       },
     ]);
-    const [cx] = bindCounterexamples(state, NOW);
+    const [cx] = bindCounterexamples(state, NOW).counterexamples;
     expect(cx).toMatchObject({ claimId: CLAIM, outcome: 'not_verified', boundDigest: IMPL_DIGEST });
   });
 
@@ -95,7 +95,7 @@ describe('bindCounterexamples', () => {
         result: { ...validationResult(false), outcome: 'blocked' as const, timedOut: true },
       },
     ]);
-    const [cx] = bindCounterexamples(state, NOW);
+    const [cx] = bindCounterexamples(state, NOW).counterexamples;
     expect(cx!.outcome).toBe('blocked');
   });
 
@@ -108,11 +108,11 @@ describe('bindCounterexamples', () => {
         result: validationResult(true),
       },
     ]);
-    expect(bindCounterexamples(state, NOW)[0]!.outcome).toBe('supported');
+    expect(bindCounterexamples(state, NOW).counterexamples[0]!.outcome).toBe('supported');
   });
 
   it('marks a missing counterexample attempt as not_verified', () => {
-    const cx = bindCounterexamples(stateWith([]), NOW)[0]!;
+    const cx = bindCounterexamples(stateWith([]), NOW).counterexamples[0]!;
     expect(cx.outcome).toBe('not_verified');
     expect(cx.boundDigest).toBe(IMPL_DIGEST);
   });
@@ -121,7 +121,7 @@ describe('bindCounterexamples', () => {
     const state = makeState('IMPL_REVIEW', {
       proofContract: { version: 'contract.v1', claims: [claim()] },
     });
-    expect(bindCounterexamples(state, NOW)).toEqual([]);
+    expect(bindCounterexamples(state, NOW).counterexamples).toEqual([]);
   });
 
   it('ignores non-validation_attempt counterexample references', () => {
@@ -132,7 +132,7 @@ describe('bindCounterexamples', () => {
         claims: [{ ...claim(), counterexampleRefs: [{ kind: 'content', digest: 'x' }] }],
       },
     });
-    expect(bindCounterexamples(state, NOW)).toEqual([]);
+    expect(bindCounterexamples(state, NOW).counterexamples).toEqual([]);
   });
 
   it('every produced ProofCounterexample passes schema validation', () => {
@@ -144,7 +144,7 @@ describe('bindCounterexamples', () => {
         result: validationResult(true),
       },
     ]);
-    const counterexamples = bindCounterexamples(state, NOW);
+    const counterexamples = bindCounterexamples(state, NOW).counterexamples;
     expect(counterexamples.length).toBeGreaterThan(0);
     for (const counterexample of counterexamples) {
       expect(() => ProofCounterexample.parse(counterexample)).not.toThrow();
@@ -153,7 +153,7 @@ describe('bindCounterexamples', () => {
 
   it('unresolved attempt has non-empty checkId', () => {
     const state = stateWith([]);
-    const [cx] = bindCounterexamples(state, NOW);
+    const [cx] = bindCounterexamples(state, NOW).counterexamples;
     expect(cx!.checkId).toBeTruthy();
     expect(cx!.attemptId).toBeTruthy();
   });

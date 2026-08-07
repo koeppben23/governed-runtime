@@ -283,7 +283,12 @@ function enforceProofGraphEvidenceApproval(
       triggers: decision.relevantTriggers.join(', '),
     });
   }
+  // facts_unproven — use per-claim registry codes from blocking claims
+  const claimDetails = decision.blockingClaims
+    .map((bc) => `${bc.claimId} (${bc.registryCode})`)
+    .join(', ');
   return blocked('PROOFGRAPH_CRITICAL_FACTS_UNPROVEN', {
+    claimDetails,
     claimIds: decision.blockingClaimIds.join(', '),
   });
 }

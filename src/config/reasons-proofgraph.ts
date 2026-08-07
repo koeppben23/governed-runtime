@@ -133,7 +133,51 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     recoverySteps: [
       'Use a verification command that produces structured test reports (e.g. Maven Surefire, Gradle, Vitest, Jest)',
       'Ensure the project is configured with a recognized test framework',
-      'Alternatively, use mode=check for non-assertion counterexample requirements',
+    ],
+  },
+
+  {
+    code: 'PROOFGRAPH_ASSERTION_BINDING_UNAVAILABLE',
+    category: 'precondition',
+    messageTemplate:
+      "Assertion-level claim '{claimId}' requires assertion-binding-capable evidence, but the report for check '{checkId}' only provides check-level evidence (bindingCapability=check_only).",
+    recoverySteps: [
+      'Use a verification command that produces structured test reports with assertion-level identity',
+      'Rerun the verification check with an assertion-binding-capable reporter configuration',
+    ],
+  },
+
+  {
+    code: 'PROOFGRAPH_ASSERTION_IDENTITY_MISMATCH',
+    category: 'precondition',
+    messageTemplate:
+      "Assertion '{required}' required by claim '{claimId}' was not found in the report for check '{checkId}'. Found: {found}.",
+    recoverySteps: [
+      'Verify that the required test is included in the verification check output',
+      'Check that the test name matches the expected assertion identity exactly',
+      'Rerun the verification check and confirm the assertion appears in the report',
+    ],
+  },
+
+  {
+    code: 'PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH',
+    category: 'precondition',
+    messageTemplate:
+      "Claim '{claimId}' requires assertions from provider '{required}', but the report for check '{checkId}' was produced by '{actual}'.",
+    recoverySteps: [
+      'Ensure the verification check uses the correct test framework',
+      'A JUnit assertion cannot be proven by Vitest output or vice versa',
+    ],
+  },
+
+  {
+    code: 'PROOFGRAPH_EVIDENCE_STALE',
+    category: 'precondition',
+    messageTemplate:
+      "Evidence for claim '{claimId}' is bound to a non-current revision and cannot prove the claim for the current implementation.",
+    recoverySteps: [
+      'Re-run the verification checks against the current implementation revision',
+      'Stale evidence must be refreshed before it can satisfy a claim',
     ],
   },
 ];

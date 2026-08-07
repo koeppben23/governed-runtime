@@ -16,6 +16,7 @@
 
 import type { SessionState } from '../../state/schema.js';
 import type { ProofGraphProjection, ProofProviderResult } from '../../state/proofgraph.js';
+import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 import type {
   ClaimVerificationState,
   CounterexampleOutcome,
@@ -70,6 +71,8 @@ export interface ProofGraphSummary {
   readonly mutation: readonly MutationStatus[];
   /** Claims surfaced as unresolved: unsourced, contradicted, stale, or blocked. */
   readonly unresolvedAssumptions: readonly UnresolvedAssumption[];
+  /** Per-claim binding diagnostic reason codes from counterexample evaluation. */
+  readonly claimDiagnostics: ReadonlyMap<string, AssertionBindingReasonCode>;
 }
 
 /**
@@ -156,6 +159,18 @@ function unresolvedReason(claim: ProofGraphProjection['claims'][number]): string
   }
 }
 
+/** The evaluator owns ClaimVerificationState; enforcement owns governance interpretation. */
+
+function diagnosticsAsRecord(
+  diagnostics: ReadonlyMap<string, AssertionBindingReasonCode>,
+): Readonly<Record<string, AssertionBindingReasonCode>> {
+  const record: Record<string, AssertionBindingReasonCode> = {};
+  for (const [key, value] of diagnostics) {
+    record[key] = value;
+  }
+  return record;
+}
+
 /**
  * Summarize the ProofGraph for a session.
  *
@@ -172,13 +187,19 @@ export function summarizeProofGraph(
     ...bindExecutedTestEvidence(state, evaluatedAt),
     ...(external.providerResults ?? []),
   ];
-  const executedCounterexamples = bindCounterexamples(state, evaluatedAt);
+  const { counterexamples: executedCounterexamples, diagnostics } = bindCounterexamples(
+    state,
+    evaluatedAt,
+  );
   const projection = deriveProofGraph(
     state,
     providerResults,
     executedCounterexamples,
     evaluatedAt,
-    external.surfaceDigests ?? {},
+    {
+      currentSurfaceDigests: external.surfaceDigests ?? {},
+      claimDiagnostics: diagnosticsAsRecord(diagnostics),
+    },
   );
 
   const counts = emptyCounts();
@@ -229,5 +250,6 @@ export function summarizeProofGraph(
     counterexamples,
     mutation,
     unresolvedAssumptions,
+    claimDiagnostics: diagnostics,
   };
 }

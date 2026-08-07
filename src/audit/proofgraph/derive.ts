@@ -16,6 +16,7 @@ import type {
   ProofGraphProjection,
   ProofProviderResult,
   ProofCounterexample,
+  AssertionBindingReasonCode,
 } from '../../state/proofgraph.js';
 import { evaluateProofGraph } from './evaluate.js';
 
@@ -27,30 +28,38 @@ import { evaluateProofGraph } from './evaluate.js';
  * @param counterexamples Executed counterexamples across claims.
  * @param evaluatedAt     ISO-8601 evaluation timestamp (caller-supplied for determinism).
  * @param currentSurfaceDigests Current digest per surface id for `surface_set`-bound results.
+ * @param claimDiagnostics Per-claim binding diagnostic codes persisted alongside the projection.
  */
 export function deriveProofGraph(
   state: SessionState,
   providerResults: readonly ProofProviderResult[],
   counterexamples: readonly ProofCounterexample[],
   evaluatedAt: string,
-  currentSurfaceDigests: Readonly<Record<string, string>> = {},
+  opts?: {
+    currentSurfaceDigests?: Readonly<Record<string, string>>;
+    claimDiagnostics?: Readonly<Record<string, AssertionBindingReasonCode>>;
+  },
 ): ProofGraphProjection {
   const standaloneClaims = new Map(
     state.standaloneReviewEvidence.flatMap((evidence) =>
       evidence.task.claims.map((claim) => [claim.claimId, claim] as const),
     ),
   );
-  return evaluateProofGraph(
+  const surfaceDigests = opts?.currentSurfaceDigests ?? {};
+  const diagnostics = opts?.claimDiagnostics;
+  const base = evaluateProofGraph(
     {
-      // Standalone-review objectives are hypotheses with null provenance. They
-      // can therefore appear in the graph without ever becoming false claims.
       claims: [...(state.proofContract?.claims ?? []), ...standaloneClaims.values()],
       providerResults,
       counterexamples,
       currentImplementationDigest: state.implementation?.digest ?? null,
       currentPlanDigest: state.plan?.current.digest ?? null,
-      currentSurfaceDigests,
+      currentSurfaceDigests: surfaceDigests,
     },
     evaluatedAt,
   );
+  if (diagnostics && Object.keys(diagnostics).length > 0) {
+    return { ...base, claimDiagnostics: diagnostics };
+  }
+  return base;
 }

@@ -58,6 +58,7 @@ function summary(claims: ProofClaim[]): ProofGraphSummary {
     counterexamples: [],
     mutation: [],
     unresolvedAssumptions: [],
+    claimDiagnostics: new Map(),
   };
 }
 
