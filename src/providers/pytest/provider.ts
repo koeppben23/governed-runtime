@@ -22,8 +22,16 @@ export const pytestProvider: AssertionProviderExtension = {
   discovery: {
     detectionIds: ['testFramework:pytest'],
     scriptSignatures: [
-      { executable: 'pytest' },
-      { moduleInvocation: { executable: 'python', module: 'pytest' } },
+      {
+        executionProfileId: 'pytest-json-fallback',
+        candidateKind: 'test' as const,
+        executable: 'pytest',
+      },
+      {
+        executionProfileId: 'pytest-json-fallback',
+        candidateKind: 'test' as const,
+        moduleInvocation: { executable: 'python', module: 'pytest' },
+      },
     ],
     runtimeRequirements: [
       {

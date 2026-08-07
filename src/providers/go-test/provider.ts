@@ -20,7 +20,14 @@ export const goTestProvider: AssertionProviderExtension = {
 
   discovery: {
     detectionIds: ['testFramework:go_test', 'language:go'],
-    scriptSignatures: [{ executable: 'go', requiredArgsPrefix: ['test'] }],
+    scriptSignatures: [
+      {
+        executionProfileId: 'go-test-stdout',
+        candidateKind: 'test' as const,
+        executable: 'go',
+        requiredArgsPrefix: ['test'],
+      },
+    ],
     runtimeRequirements: [
       { id: 'go', role: 'tool' as const, probe: { kind: 'exec' as const, command: 'go version' } },
     ],

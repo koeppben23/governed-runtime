@@ -146,6 +146,134 @@ function gradleProfile() {
   };
 }
 
+function mavenTestProfile() {
+  return {
+    profileId: 'junit-maven-test' as const,
+    providerId: 'junit' as const,
+    format: 'junit_xml' as const,
+    kind: 'test' as const,
+    priority: 0,
+    createCandidate(ctx: { rootFiles: ReadonlySet<string> }) {
+      const hasPosix = ctx.rootFiles.has('mvnw');
+      const hasWin = ctx.rootFiles.has('mvnw.cmd');
+      if (!hasPosix && !hasWin) return null;
+      return {
+        assertionCapability: 'structured' as const,
+        kind: 'test' as const,
+        command: hasPosix ? './mvnw test' : 'mvnw.cmd test',
+        source: hasPosix
+          ? 'provider:junit:junit-maven-test'
+          : 'provider:junit:junit-maven-test:win',
+        confidence: 'high' as const,
+        reason: 'JUnit via Maven wrapper (test)',
+        assertionReport: {
+          collection: 'snapshot_diff' as const,
+          transport: 'file' as const,
+          format: 'junit_xml' as const,
+          providerId: 'junit' as const,
+          standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+        },
+      };
+    },
+  };
+}
+
+function mavenVerifyProfile() {
+  return {
+    profileId: 'junit-maven-verify' as const,
+    providerId: 'junit' as const,
+    format: 'junit_xml' as const,
+    kind: 'build' as const,
+    priority: 0,
+    createCandidate(ctx: { rootFiles: ReadonlySet<string> }) {
+      const hasPosix = ctx.rootFiles.has('mvnw');
+      const hasWin = ctx.rootFiles.has('mvnw.cmd');
+      if (!hasPosix && !hasWin) return null;
+      return {
+        assertionCapability: 'structured' as const,
+        kind: 'build' as const,
+        command: hasPosix ? './mvnw verify' : 'mvnw.cmd verify',
+        source: hasPosix
+          ? 'provider:junit:junit-maven-verify'
+          : 'provider:junit:junit-maven-verify:win',
+        confidence: 'high' as const,
+        reason: 'JUnit via Maven wrapper (verify, includes tests)',
+        assertionReport: {
+          collection: 'snapshot_diff' as const,
+          transport: 'file' as const,
+          format: 'junit_xml' as const,
+          providerId: 'junit' as const,
+          standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+        },
+      };
+    },
+  };
+}
+
+function gradleTestProfile() {
+  return {
+    profileId: 'junit-gradle-test' as const,
+    providerId: 'junit' as const,
+    format: 'junit_xml' as const,
+    kind: 'test' as const,
+    priority: 1,
+    createCandidate(ctx: { rootFiles: ReadonlySet<string> }) {
+      const hasPosix = ctx.rootFiles.has('gradlew');
+      const hasWin = ctx.rootFiles.has('gradlew.bat');
+      if (!hasPosix && !hasWin) return null;
+      return {
+        assertionCapability: 'structured' as const,
+        kind: 'test' as const,
+        command: hasPosix ? './gradlew test' : 'gradlew.bat test',
+        source: hasPosix
+          ? 'provider:junit:junit-gradle-test'
+          : 'provider:junit:junit-gradle-test:win',
+        confidence: 'high' as const,
+        reason: 'JUnit via Gradle wrapper (test)',
+        assertionReport: {
+          collection: 'snapshot_diff' as const,
+          transport: 'file' as const,
+          format: 'junit_xml' as const,
+          providerId: 'junit' as const,
+          standardPatterns: ['build/test-results/test/TEST-*.xml'],
+        },
+      };
+    },
+  };
+}
+
+function gradleCheckProfile() {
+  return {
+    profileId: 'junit-gradle-check' as const,
+    providerId: 'junit' as const,
+    format: 'junit_xml' as const,
+    kind: 'build' as const,
+    priority: 1,
+    createCandidate(ctx: { rootFiles: ReadonlySet<string> }) {
+      const hasPosix = ctx.rootFiles.has('gradlew');
+      const hasWin = ctx.rootFiles.has('gradlew.bat');
+      if (!hasPosix && !hasWin) return null;
+      return {
+        assertionCapability: 'structured' as const,
+        kind: 'build' as const,
+        command: hasPosix ? './gradlew check' : 'gradlew.bat check',
+        source: hasPosix
+          ? 'provider:junit:junit-gradle-check'
+          : 'provider:junit:junit-gradle-check:win',
+        confidence: 'high' as const,
+        reason: 'JUnit via Gradle wrapper (check, includes tests)',
+        assertionReport: {
+          collection: 'snapshot_diff' as const,
+          transport: 'file' as const,
+          format: 'junit_xml' as const,
+          providerId: 'junit' as const,
+          standardPatterns: ['build/test-results/test/TEST-*.xml'],
+        },
+      };
+    },
+  };
+}
+
 export const junitProvider: AssertionProviderExtension = {
   manifest: {
     providerId: 'junit' as ProviderId,
@@ -161,7 +289,88 @@ export const junitProvider: AssertionProviderExtension = {
         probe: { kind: 'exec' as const, command: 'java -version' },
       },
     ],
-    executionProfiles: [mavenProfile(), gradleProfile()],
+    scriptSignatures: [
+      {
+        executionProfileId: 'junit-maven-test',
+        candidateKind: 'test' as const,
+        executable: './mvnw',
+        requiredArgsPrefix: ['test'],
+      },
+      {
+        executionProfileId: 'junit-maven-test',
+        candidateKind: 'test' as const,
+        executable: 'mvnw',
+        requiredArgsPrefix: ['test'],
+      },
+      {
+        executionProfileId: 'junit-maven-test',
+        candidateKind: 'test' as const,
+        executable: 'mvnw.cmd',
+        requiredArgsPrefix: ['test'],
+      },
+      {
+        executionProfileId: 'junit-maven-verify',
+        candidateKind: 'build' as const,
+        executable: './mvnw',
+        requiredArgsPrefix: ['verify'],
+      },
+      {
+        executionProfileId: 'junit-maven-verify',
+        candidateKind: 'build' as const,
+        executable: 'mvnw',
+        requiredArgsPrefix: ['verify'],
+      },
+      {
+        executionProfileId: 'junit-maven-verify',
+        candidateKind: 'build' as const,
+        executable: 'mvnw.cmd',
+        requiredArgsPrefix: ['verify'],
+      },
+      {
+        executionProfileId: 'junit-gradle-test',
+        candidateKind: 'test' as const,
+        executable: './gradlew',
+        requiredArgsPrefix: ['test'],
+      },
+      {
+        executionProfileId: 'junit-gradle-test',
+        candidateKind: 'test' as const,
+        executable: 'gradlew',
+        requiredArgsPrefix: ['test'],
+      },
+      {
+        executionProfileId: 'junit-gradle-test',
+        candidateKind: 'test' as const,
+        executable: 'gradlew.bat',
+        requiredArgsPrefix: ['test'],
+      },
+      {
+        executionProfileId: 'junit-gradle-check',
+        candidateKind: 'build' as const,
+        executable: './gradlew',
+        requiredArgsPrefix: ['check'],
+      },
+      {
+        executionProfileId: 'junit-gradle-check',
+        candidateKind: 'build' as const,
+        executable: 'gradlew',
+        requiredArgsPrefix: ['check'],
+      },
+      {
+        executionProfileId: 'junit-gradle-check',
+        candidateKind: 'build' as const,
+        executable: 'gradlew.bat',
+        requiredArgsPrefix: ['check'],
+      },
+    ],
+    executionProfiles: [
+      mavenProfile(),
+      gradleProfile(),
+      mavenTestProfile(),
+      mavenVerifyProfile(),
+      gradleTestProfile(),
+      gradleCheckProfile(),
+    ],
   },
 
   verification: {

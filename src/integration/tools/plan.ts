@@ -62,7 +62,10 @@ import { computeRecordDigest } from '../../state/evidence-plan.js';
 import { ReviewFindings as ReviewFindingsSchema } from '../../state/evidence.js';
 import { PlanClaimDeclarationInput as PlanClaimDeclarationSchema } from '../../state/proofgraph-approval.js';
 import { normalizePlanClaims } from '../../state/proofgraph-approval.js';
-import { validateProofClaimContract } from '../proofgraph/claim-contract.js';
+import {
+  validateProofClaimContract,
+  formatClaimContractViolation,
+} from '../proofgraph/claim-contract.js';
 import { STRUCTURAL_SURFACE_IDS } from '../proofgraph/structural-provider.js';
 import { MUTATION_PROFILE_IDS } from '../proofgraph/mutation-provider.js';
 import {
@@ -207,6 +210,7 @@ function validatePlanClaimContract(args: PlanArgs, state: SessionState): string 
     activeChecks: state.activeChecks,
     allowedSurfaces: STRUCTURAL_SURFACE_IDS,
     allowedMutationProfiles: MUTATION_PROFILE_IDS,
+    verificationCandidates: state.verificationCandidates ?? [],
     claims: normalized.map((claim) => ({
       claimId: claim.claimId,
       statement: claim.statement,
@@ -219,11 +223,7 @@ function validatePlanClaimContract(args: PlanArgs, state: SessionState): string 
     })),
   });
   if (result.kind === 'ok') return null;
-  return formatBlocked('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE', {
-    claimRef: result.claimRef,
-    field: result.field,
-    detail: result.detail,
-  });
+  return formatClaimContractViolation(result, (code, params) => formatBlocked(code, params));
 }
 
 function validateReviewInputShape(input: PlanInputFlags, state: SessionState): string | null {

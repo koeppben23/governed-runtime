@@ -77,6 +77,70 @@ function requiredEvidence(declaration: PlanClaimDeclaration) {
   return { positive, adversarial: declaration.critical ? ['counterexample' as const] : [] };
 }
 
+function resolveCounterexampleAttempts(
+  state: SessionState,
+  declaration: PlanClaimDeclaration,
+  attempts: SessionState['validationAttempts'],
+): {
+  counterexampleAttempts: typeof attempts;
+  cxGap?: ProofContractCoverage;
+} {
+  const requirement = declaration.counterexampleRequirement;
+  const requiredCheckId = requirement?.checkId;
+  if (!requiredCheckId) return { counterexampleAttempts: [] };
+  const candidate = state.verificationCandidates?.find((c) => c.kind === requiredCheckId);
+  if (candidate?.assertionCapability === 'structured') {
+    return {
+      counterexampleAttempts: attempts.filter(
+        (attempt) => attempt.result.checkId === requiredCheckId,
+      ),
+    };
+  }
+  return {
+    counterexampleAttempts: [],
+    cxGap: {
+      claimId: declaration.claimId,
+      cause: 'invalid_counterexample_contract' as const,
+    },
+  };
+}
+
+/**
+  expectedAttempts: SessionState['validationAttempts'],
+  declaration: PlanClaimDeclaration,
+  mutationAttempt: ReturnType<typeof resolveMutationAttempt>,
+) {
+  const refs: ProofContract['claims'][number]['evidenceRefs'][number][] = expectedAttempts.map(
+    (attempt) => ({ kind: 'validation_attempt' as const, attemptId: attempt.attemptId }),
+  );
+  if (declaration.structuralSurface) {
+    refs.push({ kind: 'structural_surface', surfaceId: declaration.structuralSurface });
+  }
+  if (declaration.mutationProfile && mutationAttempt) {
+    refs.push({
+      kind: 'mutation_attempt',
+      attemptId: mutationAttempt.attemptId,
+      profileId: declaration.mutationProfile,
+    });
+  }
+  return refs;
+}
+
+function requiredEvidence(declaration: PlanClaimDeclaration) {
+  const positive: NonNullable<ProofContract['claims'][number]['requiredEvidence']>['positive'] = [
+    'executed_test',
+  ];
+  if (declaration.structuralSurface) {
+    positive.push(
+      declaration.structuralSurface === 'config-defaults'
+        ? 'schema_compare'
+        : 'structural_assertion',
+    );
+  }
+  if (declaration.mutationProfile) positive.push('fault_injection');
+  return { positive, adversarial: declaration.critical ? ['counterexample' as const] : [] };
+}
+
 /**
  * Produce the explicit implementation-review coverage contract.
  *
@@ -131,11 +195,12 @@ export async function materializeApprovedPlanContractResult(
     if (declaration.mutationProfile && mutationAttempt === null) {
       coverage.push({ claimId: declaration.claimId, cause: 'unverified_mutation_profile' });
     }
-    const requirement = declaration.counterexampleRequirement;
-    const requiredCheckId = requirement?.checkId;
-    const counterexampleAttempts = requiredCheckId
-      ? attempts.filter((attempt) => attempt.result.checkId === requiredCheckId)
-      : [];
+    const { counterexampleAttempts, cxGap } = resolveCounterexampleAttempts(
+      state,
+      declaration,
+      attempts,
+    );
+    if (cxGap) coverage.push(cxGap);
     return {
       claimId: declaration.claimId,
       statement: declaration.statement,
@@ -157,7 +222,7 @@ export async function materializeApprovedPlanContractResult(
         kind: 'validation_attempt' as const,
         attemptId: attempt.attemptId,
       })),
-      counterexampleRequirement: requirement,
+      counterexampleRequirement: declaration.counterexampleRequirement,
       requiredEvidence: requiredEvidence(declaration),
     };
   });

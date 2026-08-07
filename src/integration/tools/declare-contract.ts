@@ -27,13 +27,15 @@ import type { AssertionCounterexampleRequirement as AssertionCounterexampleRequi
 import type { DeclaredClaim } from '../../state/proofgraph.js';
 import type { ProofProviderKind } from '../../state/proofgraph-primitives.js';
 import type { ClaimAuthorityRef } from '../../state/proofgraph-refs.js';
-import { ASSERTION_FORMATS_BY_PROVIDER } from '../../providers/registry.js';
 import {
   SURFACE_COMMAND_REGISTRATION,
   SURFACE_CONFIG_DEFAULTS,
   STRUCTURAL_SURFACE_IDS,
 } from '../proofgraph/structural-provider.js';
-import { validateProofClaimContract } from '../proofgraph/claim-contract.js';
+import {
+  validateProofClaimContract,
+  formatClaimContractViolation,
+} from '../proofgraph/claim-contract.js';
 import {
   MUTATION_PROFILE_IDS,
   resolveVerifiedMutationAttempt,
@@ -273,6 +275,7 @@ function validateDeclaredClaimContract(
     activeChecks: state.activeChecks,
     allowedSurfaces: STRUCTURAL_SURFACE_IDS,
     allowedMutationProfiles: MUTATION_PROFILE_IDS,
+    verificationCandidates: state.verificationCandidates ?? [],
     claims: rawClaims.map((claim) => ({
       statement: claim.statement,
       critical: claim.critical,
@@ -283,73 +286,7 @@ function validateDeclaredClaimContract(
     })),
   });
   if (result.kind === 'ok') return null;
-  return formatBlocked('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE', {
-    claimRef: result.claimRef,
-    field: result.field,
-    detail: result.detail,
-  });
-}
-
-/**
- * Gate counterexample requirements: the session must have a
- * verification candidate with structured assertion capability matching the
- * requirement's checkId. The assertionId prefix must
- * also match the candidate's report format.
- */
-function validateAssertionGate(
-  candidate: NonNullable<SessionState['verificationCandidates']>[number],
-  requirement: NonNullable<RawClaim['counterexampleRequirement']>,
-): string | null {
-  const providerId = requirement.assertion.providerId;
-  const candidateProviderId = (candidate as { assertionReport?: { providerId?: string } })
-    .assertionReport?.providerId;
-  if (candidateProviderId !== providerId) {
-    return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-      reason: `Assertion provider '${providerId}' does not match candidate provider '${candidateProviderId}'.`,
-    });
-  }
-  const assertionFormats = ASSERTION_FORMATS_BY_PROVIDER.get(providerId);
-  if (!assertionFormats || assertionFormats.size === 0) {
-    return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-      reason: `Provider '${providerId}' does not support structured assertion evidence for counterexample binding.`,
-    });
-  }
-  const candidateFormat = (candidate as { assertionReport?: { format: string } }).assertionReport
-    ?.format;
-  if (!candidateFormat || !assertionFormats.has(candidateFormat)) {
-    const supported = [...assertionFormats].join(', ');
-    return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-      reason: `Provider '${providerId}' requires assertion format in [${supported}] but candidate has '${candidateFormat}'.`,
-    });
-  }
-  return null;
-}
-
-function validateAssertionCapabilityGate(
-  rawClaims: readonly RawClaim[],
-  state: SessionState,
-): string | null {
-  for (const declaration of rawClaims) {
-    const requirement = declaration.counterexampleRequirement;
-    if (!requirement) continue;
-
-    const candidate = state.verificationCandidates?.find((c) => c.kind === requirement.checkId);
-    if (!candidate) {
-      return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-        reason: `Verification check '${requirement.checkId}' is not in the active verification candidates.`,
-      });
-    }
-
-    if (candidate.assertionCapability !== 'structured') {
-      return formatBlocked('UNSUPPORTED_ASSERTION_CAPABILITY', {
-        reason: `Verification check '${requirement.checkId}' does not support structured assertion evidence for counterexample binding.`,
-      });
-    }
-
-    const violation = validateAssertionGate(candidate, requirement);
-    if (violation) return violation;
-  }
-  return null;
+  return formatClaimContractViolation(result, (code, params) => formatBlocked(code, params));
 }
 
 /**
@@ -456,12 +393,6 @@ export const declare_contract: ToolDefinition = {
 
         const mergeViolation = validateMergedClaimIds(args.claims as readonly RawClaim[], state);
         if (mergeViolation) return mergeViolation;
-
-        const capabilityGate = validateAssertionCapabilityGate(
-          args.claims as readonly RawClaim[],
-          state,
-        );
-        if (capabilityGate) return capabilityGate;
 
         const worktree = getWorktree(context);
         const verdicts = await resolveVerifiedMutationVerdicts(worktree, state.mutationAttempts);

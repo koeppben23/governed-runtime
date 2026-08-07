@@ -24,7 +24,9 @@ export const jestProvider: AssertionProviderExtension = {
 
   discovery: {
     detectionIds: ['testFramework:jest'],
-    scriptSignatures: [{ executable: 'jest' }],
+    scriptSignatures: [
+      { executionProfileId: 'jest-fallback', candidateKind: 'test' as const, executable: 'jest' },
+    ],
     runtimeRequirements: [
       {
         id: 'jest',

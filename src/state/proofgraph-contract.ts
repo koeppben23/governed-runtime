@@ -43,6 +43,7 @@ export const ProofContractCoverage = z
       'missing_implementation',
       'missing_expected_check',
       'unverified_mutation_profile',
+      'invalid_counterexample_contract',
     ]),
   })
   .readonly();

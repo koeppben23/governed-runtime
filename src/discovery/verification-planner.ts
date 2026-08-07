@@ -17,7 +17,7 @@ import type { DetectedStack, VerificationCandidate, VerificationCandidateKind } 
 import type { ExecutionSubjectInput } from '../state/discovery-schemas.js';
 import {
   ASSERTION_PROFILES,
-  REPORT_TEMPLATES_BY_PROVIDER,
+  PROFILE_BY_ID,
   SCRIPT_SIGNATURES_BY_PROVIDER,
   type PlannerContext,
   type ScriptSignature,
@@ -71,7 +71,7 @@ export async function planVerificationCandidates(
   };
 
   const scripts = await readPackageScripts(input.readFile);
-  addScriptCandidates(byKind, scripts, packageManager);
+  addScriptCandidates(byKind, scripts, packageManager, ctx);
 
   applyProfiles(byKind, ctx, ASSERTION_PROFILES);
 
@@ -179,6 +179,7 @@ function addScriptCandidates(
   byKind: Map<VerificationCandidateKind, PlannedVerificationCandidate>,
   scripts: Record<string, string>,
   packageManager: PackageManager,
+  ctx: PlannerContext,
 ): void {
   const mappings: Array<{ kind: VerificationCandidateKind; script: string }> = [
     { kind: 'test', script: 'test' },
@@ -209,25 +210,33 @@ function addScriptCandidates(
       analysis.argumentForwarding === 'supported';
 
     if (canEnrich) {
-      const reportTemplate = REPORT_TEMPLATES_BY_PROVIDER.get(analysis.provider.providerId);
-
-      if (reportTemplate) {
-        byKind.set(mapping.kind, {
-          candidate: {
-            assertionCapability: 'structured' as const,
-            kind: mapping.kind,
-            command: buildScriptInvocation(packageManager, mapping.script).command,
-            source: `package.json:scripts.${mapping.script}`,
-            confidence: 'high',
-            reason: `Repo-native ${mapping.script} script enriched: ${analysis.provider.evidence} (provider: ${analysis.provider.providerId})`,
-            assertionReport: reportTemplate,
-          },
-          executionSubjectInputs: [
-            { kind: 'implementation' as const },
-            { kind: 'file' as const, path: 'package.json' },
-          ],
-        });
-        continue;
+      const profileId = analysis.provider.executionProfileId;
+      if (analysis.provider.candidateKind !== mapping.kind) continue;
+      const profile = PROFILE_BY_ID.get(profileId);
+      if (profile) {
+        const profileCandidate = profile.createCandidate(ctx);
+        if (
+          profileCandidate &&
+          profileCandidate.assertionCapability === 'structured' &&
+          profileCandidate.assertionReport
+        ) {
+          byKind.set(mapping.kind, {
+            candidate: {
+              assertionCapability: 'structured' as const,
+              kind: mapping.kind,
+              command: buildScriptInvocation(packageManager, mapping.script).command,
+              source: `package.json:scripts.${mapping.script}`,
+              confidence: 'high',
+              reason: `Repo-native ${mapping.script} script enriched via ${profileId}`,
+              assertionReport: profileCandidate.assertionReport,
+            },
+            executionSubjectInputs: [
+              { kind: 'implementation' as const },
+              { kind: 'file' as const, path: 'package.json' },
+            ],
+          });
+          continue;
+        }
       }
     }
 

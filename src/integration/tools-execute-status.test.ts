@@ -1828,8 +1828,9 @@ describe('declare_contract', () => {
       ),
     );
 
-    expect(result.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
-    expect(String(result.message)).toContain('distinct from its positive check');
+    expect(result.code).toBe('PROOFGRAPH_CLAIM_UNSATISFIABLE');
+    expect(String(result.message)).toContain('counterexampleRequirement');
+    expect(String(result.message)).toContain('assertionCapability');
   });
 
   it('rejects a claim referencing a check that is not active', async () => {

@@ -27,7 +27,13 @@ export const vitestProvider: AssertionProviderExtension = {
 
   discovery: {
     detectionIds: ['testFramework:vitest'],
-    scriptSignatures: [{ executable: 'vitest' }],
+    scriptSignatures: [
+      {
+        executionProfileId: 'vitest-fallback',
+        candidateKind: 'test' as const,
+        executable: 'vitest',
+      },
+    ],
     runtimeRequirements: [
       {
         id: 'vitest',

@@ -32,10 +32,14 @@ export interface ProviderManifest {
 
 export type ScriptSignature =
   | {
+      readonly executionProfileId: string;
+      readonly candidateKind: VerificationCandidateKind;
       readonly executable: string;
       readonly requiredArgsPrefix?: readonly string[];
     }
   | {
+      readonly executionProfileId: string;
+      readonly candidateKind: VerificationCandidateKind;
       readonly moduleInvocation: {
         readonly executable: string;
         readonly module: string;

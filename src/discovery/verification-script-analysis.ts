@@ -14,6 +14,7 @@
 
 import type { ProviderId } from '../state/assertion-identity.js';
 import type { ScriptSignature } from '../providers/registry.js';
+import type { VerificationCandidateKind } from '../state/discovery-schemas.js';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -25,6 +26,8 @@ export interface ScriptAnalysis {
     | {
         readonly status: 'identified';
         readonly providerId: ProviderId;
+        readonly executionProfileId: string;
+        readonly candidateKind: VerificationCandidateKind;
         readonly confidence: 'high' | 'medium';
         readonly evidence: string;
       }
@@ -106,6 +109,8 @@ export function analyzeVerificationScript(
     provider: {
       status: 'identified',
       providerId: match.providerId,
+      executionProfileId: match.executionProfileId,
+      candidateKind: match.candidateKind,
       confidence,
       evidence: match.evidence,
     },
@@ -151,6 +156,8 @@ function tokenize(command: string): TokenizedCommand | null {
 
 interface SignatureMatch {
   providerId: ProviderId;
+  executionProfileId: string;
+  candidateKind: VerificationCandidateKind;
   evidence: string;
   viaModuleInvocation: boolean;
 }
@@ -174,6 +181,8 @@ function matchSignatures(
         ) {
           return {
             providerId,
+            executionProfileId: sig.executionProfileId,
+            candidateKind: sig.candidateKind,
             evidence: `script:${mi.executable} -m ${mi.module}`,
             viaModuleInvocation: true,
           };
@@ -181,6 +190,8 @@ function matchSignatures(
         if (firstToken === mi.module) {
           return {
             providerId,
+            executionProfileId: sig.executionProfileId,
+            candidateKind: sig.candidateKind,
             evidence: `script:${mi.module}`,
             viaModuleInvocation: false,
           };
@@ -202,6 +213,8 @@ function matchSignatures(
         if (!matched) continue;
         return {
           providerId,
+          executionProfileId: sig.executionProfileId,
+          candidateKind: sig.candidateKind,
           evidence: `script:${sig.executable} ${prefix.join(' ')}`,
           viaModuleInvocation: false,
         };
@@ -209,6 +222,8 @@ function matchSignatures(
 
       return {
         providerId,
+        executionProfileId: sig.executionProfileId,
+        candidateKind: sig.candidateKind,
         evidence: `script:${sig.executable}`,
         viaModuleInvocation: false,
       };

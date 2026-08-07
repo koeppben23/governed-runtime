@@ -22,8 +22,21 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
       "Claim '{claimRef}' cannot be declared: {field} — {detail}. A claim that cannot become PROVEN would block the final approval permanently, so it is rejected at declaration time.",
     recoverySteps: [
       'Correct the named field for that claim and resubmit the complete declaration set',
-      'A critical claim needs both an expected check and a counterexample check that would falsify it',
+      'A critical claim needs a counterexample check that would falsify it',
       'Reference only checks that are active in this session, and registered surfaces/profiles',
+    ],
+  },
+
+  {
+    code: 'PROOFGRAPH_CLAIM_UNSATISFIABLE',
+    category: 'precondition',
+    messageTemplate:
+      "Claim '{claimRef}' cannot be declared: {field} — {detail}. This claim can never become PROVEN regardless of fresh evidence.",
+    recoverySteps: [
+      'Ensure the counterexample check has assertionCapability=structured',
+      'Verify the assertion provider matches the verification candidate',
+      'Confirm the assertion localId is valid for the provider codec',
+      'Re-submit the plan with corrected claim declarations',
     ],
   },
 
@@ -34,6 +47,7 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
       'Evidence approval is blocked because critical fact claim(s) are not PROVEN: {claimIds}.',
     recoverySteps: [
       'Record fresh evidence that proves every listed critical fact claim',
+      'If the declared evidence route is no longer satisfiable, return to plan revision; re-running checks cannot repair a structurally incompatible claim binding',
       'Return to EVIDENCE_REVIEW and approve after the persisted ProofGraph is PROVEN',
     ],
   },

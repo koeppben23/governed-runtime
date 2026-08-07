@@ -26,6 +26,7 @@ const BASE = {
   activeChecks: ['build', 'regression'],
   allowedSurfaces: ['command-registration', 'config-defaults'],
   allowedMutationProfiles: ['proofgraph-evaluator', 'proofgraph-gate'],
+  verificationCandidates: [],
 } as const;
 
 function planClaim(
@@ -77,7 +78,7 @@ describe('validateProofClaimContract — critical contract', () => {
     expect(result.detail).toContain('never become PROVEN');
   });
 
-  it('rejects a critical claim that reuses its positive check as the counterexample', () => {
+  it('rejects a critical claim when the counterexample check has no verification candidate', () => {
     const claim = planClaim({
       counterexampleRequirement: {
         checkId: 'build',
@@ -88,10 +89,11 @@ describe('validateProofClaimContract — critical contract', () => {
 
     expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleRequirement' });
     if (result.kind !== 'invalid') return;
-    expect(result.detail).toContain('distinct from its positive check');
+    expect(result.failureKind).toBe('unsatisfiable');
+    expect(result.detail).toContain('not in active verification candidates');
   });
 
-  it('reports the same-check violation using declare_contract public fields', () => {
+  it('reports the satisfiability violation using declare_contract public fields', () => {
     const claim = planClaim({
       claimId: undefined,
       counterexampleRequirement: {
@@ -106,6 +108,8 @@ describe('validateProofClaimContract — critical contract', () => {
     });
 
     expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleRequirement' });
+    if (result.kind !== 'invalid') return;
+    expect(result.failureKind).toBe('unsatisfiable');
   });
 
   it('allows a non-critical claim to reuse an optional counterexample check', () => {

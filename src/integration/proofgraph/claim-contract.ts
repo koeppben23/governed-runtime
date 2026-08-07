@@ -25,6 +25,11 @@
 
 import type { TaskClass } from '../../state/schema.js';
 import type { CounterexampleRequirement } from '../../state/proofgraph.js';
+import type { VerificationCandidate } from '../../state/discovery-schemas.js';
+import {
+  ASSERTION_FORMATS_BY_PROVIDER,
+  ASSERTION_CODEC_BY_PROVIDER,
+} from '../../providers/registry.js';
 
 /** Write boundary a declaration arrived through; selects the public field names. */
 export type ClaimContractSource = 'plan' | 'declare_contract';
@@ -52,13 +57,17 @@ export interface ClaimContractInput {
   readonly activeChecks: readonly string[];
   readonly allowedSurfaces: readonly string[];
   readonly allowedMutationProfiles: readonly string[];
+  readonly verificationCandidates: readonly VerificationCandidate[];
   readonly source: ClaimContractSource;
 }
+
+export type ClaimContractFailureKind = 'contract_incomplete' | 'unsatisfiable';
 
 export type ClaimContractResult =
   | { readonly kind: 'ok' }
   | {
       readonly kind: 'invalid';
+      readonly failureKind: ClaimContractFailureKind;
       /** Public identity of the offending claim in the caller's own vocabulary. */
       readonly claimRef: string;
       /** Public field name as the caller knows it. */
@@ -102,9 +111,11 @@ function invalid(
   claim: NormalizedClaimDeclaration,
   field: string,
   detail: string,
+  failureKind: ClaimContractFailureKind = 'contract_incomplete',
 ): ClaimContractResult {
   return {
     kind: 'invalid',
+    failureKind,
     claimRef: claimRef(source, claim),
     field: label(source, field),
     detail,
@@ -143,14 +154,6 @@ function checkCriticalContract(
       claim,
       'counterexampleRequirement',
       'a critical claim requires a counterexample requirement; without it the claim can never become PROVEN.',
-    );
-  }
-  if (claim.counterexampleRequirement.checkId === claim.positiveCheckId) {
-    return invalid(
-      input.source,
-      claim,
-      'counterexampleRequirement',
-      'a critical claim requires a counterexample requirement distinct from its positive check.',
     );
   }
   return null;
@@ -245,6 +248,91 @@ function checkCounterexampleAssertion(
   return null;
 }
 
+/** Rule 8: counterexample check must be structurally capable of producing assertion evidence. */
+function checkCounterexampleSatisfiability(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): ClaimContractResult | null {
+  const req = claim.counterexampleRequirement;
+  if (!req) return null;
+
+  const candidate = input.verificationCandidates.find((c) => c.kind === req.checkId);
+  if (!candidate) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.checkId',
+      `counterexample check '${req.checkId}' is not in active verification candidates`,
+      'unsatisfiable',
+    );
+  }
+
+  if (candidate.assertionCapability !== 'structured') {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.checkId',
+      `check '${req.checkId}' has assertionCapability='${candidate.assertionCapability}', cannot produce assertion evidence for provider '${req.assertion.providerId}'`,
+      'unsatisfiable',
+    );
+  }
+
+  const report = candidate.assertionReport;
+  if (!report) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement',
+      `check '${req.checkId}' is structured but has no assertionReport`,
+      'unsatisfiable',
+    );
+  }
+
+  if (report.providerId !== req.assertion.providerId) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.assertion.providerId',
+      `check produces assertions from '${report.providerId}', claim requires '${req.assertion.providerId}'`,
+      'unsatisfiable',
+    );
+  }
+
+  const formats = ASSERTION_FORMATS_BY_PROVIDER.get(req.assertion.providerId);
+  if (!formats || !formats.has(report.format)) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.assertion.providerId',
+      `format '${report.format}' from provider '${req.assertion.providerId}' is not assertion-binding-capable`,
+      'unsatisfiable',
+    );
+  }
+
+  const codec = ASSERTION_CODEC_BY_PROVIDER.get(req.assertion.providerId);
+  if (!codec) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.assertion.providerId',
+      `provider '${req.assertion.providerId}' has no registered identity codec`,
+      'unsatisfiable',
+    );
+  }
+
+  if (!codec.validateLocalId(req.assertion.localId)) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.assertion.localId',
+      `'${req.assertion.localId}' is not a valid assertion identity for provider '${req.assertion.providerId}'`,
+      'unsatisfiable',
+    );
+  }
+
+  return null;
+}
+
 /**
  * Validate the full claim set atomically.
  *
@@ -263,10 +351,35 @@ export function validateProofClaimContract(input: ClaimContractInput): ClaimCont
       checkCheckReferences(input, claim) ??
       checkRegistries(input, claim) ??
       checkAuthoritySection(input, claim) ??
-      checkCounterexampleAssertion(input, claim);
+      checkCounterexampleAssertion(input, claim) ??
+      checkCounterexampleSatisfiability(input, claim);
     if (violation) return violation;
   }
   return { kind: 'ok' };
+}
+
+/**
+ * Format a claim contract violation into a blocked result.
+ *
+ * Maps `failureKind` to the appropriate reason code. Both /plan and
+ * /declare-contract must use this function so reason-code selection
+ * cannot drift between write boundaries.
+ */
+export function formatClaimContractViolation(
+  result: ClaimContractResult & { kind: 'invalid' },
+  formatBlocked: (code: string, params: Record<string, string>) => string,
+): string {
+  return result.failureKind === 'unsatisfiable'
+    ? formatBlocked('PROOFGRAPH_CLAIM_UNSATISFIABLE', {
+        claimRef: result.claimRef,
+        field: result.field,
+        detail: result.detail,
+      })
+    : formatBlocked('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE', {
+        claimRef: result.claimRef,
+        field: result.field,
+        detail: result.detail,
+      });
 }
 
 /**

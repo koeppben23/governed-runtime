@@ -71,7 +71,33 @@ const ATTEMPT_ID = '20000000-0000-4000-8000-000000000002';
 const COUNTEREXAMPLE_ATTEMPT_ID = '30000000-0000-4000-8000-000000000003';
 
 /** Checks the declared claims reference; they must be active to be declarable. */
-const ACTIVE_CHECKS = ['build', 'regression'];
+const ACTIVE_CHECKS = ['build', 'security'];
+
+const STRUCTURED_CANDIDATES = [
+  {
+    assertionCapability: 'unsupported' as const,
+    kind: 'build' as const,
+    command: './mvnw verify',
+    source: 'repo:mvnw',
+    confidence: 'high' as const,
+    reason: 'Maven build',
+  },
+  {
+    assertionCapability: 'structured' as const,
+    kind: 'security' as const,
+    command: './mvnw test',
+    source: 'repo:mvnw',
+    confidence: 'high' as const,
+    reason: 'JUnit via Maven wrapper (test)',
+    assertionReport: {
+      collection: 'snapshot_diff' as const,
+      transport: 'file' as const,
+      format: 'junit_xml' as const,
+      providerId: 'junit' as const,
+      standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+    },
+  },
+];
 
 const CRITICAL_CLAIM: PlanClaimDeclaration = {
   claimId: CRITICAL_CLAIM_ID,
@@ -81,8 +107,8 @@ const CRITICAL_CLAIM: PlanClaimDeclaration = {
   expectedCheckId: 'build',
   // A critical claim is only PROVEN with executed adversarial evidence.
   counterexampleRequirement: {
-    checkId: 'regression',
-    assertion: { providerId: 'junit', localId: 'counterexample' },
+    checkId: 'security',
+    assertion: { providerId: 'junit', localId: 'com.example.CounterTest#counterexample' },
   },
 };
 
@@ -93,8 +119,8 @@ const CRITICAL_CLAIM_INPUT: PlanClaimDeclarationInput = {
   authoritySectionId: 'implementation-step-1',
   expectedCheckId: 'build',
   counterexampleRequirement: {
-    checkId: 'regression',
-    assertion: { providerId: 'junit', localId: 'counterexample' },
+    checkId: 'security',
+    assertion: { providerId: 'junit', localId: 'com.example.CounterTest#counterexample' },
   },
 };
 
@@ -200,7 +226,7 @@ function attempt(
 
 /** Positive check plus the executed falsification attempt the claim declares. */
 function fullEvidence(): SessionState['validationAttempts'] {
-  const cx = attempt(COUNTEREXAMPLE_ATTEMPT_ID, 'regression', true, 'test');
+  const cx = attempt(COUNTEREXAMPLE_ATTEMPT_ID, 'security', true, 'test');
   return [
     attempt(ATTEMPT_ID, 'build', true),
     {
@@ -216,7 +242,7 @@ function fullEvidence(): SessionState['validationAttempts'] {
           reportDigests: ['a'.repeat(64)],
           assertions: [
             {
-              assertion: { providerId: 'junit', localId: 'counterexample' },
+              assertion: { providerId: 'junit', localId: 'com.example.CounterTest#counterexample' },
               providerId: 'junit',
               status: 'passed' as const,
               testName: 'counterexample',
@@ -263,7 +289,11 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-claims');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', { ticket: TICKET, activeChecks: ACTIVE_CHECKS }),
+      makeState('TICKET', {
+        ticket: TICKET,
+        activeChecks: ACTIVE_CHECKS,
+        verificationCandidates: STRUCTURED_CANDIDATES,
+      }),
     );
 
     const raw = await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM_INPUT] }, env.tc);
@@ -277,7 +307,11 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-prompt');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', { ticket: TICKET, activeChecks: ACTIVE_CHECKS }),
+      makeState('TICKET', {
+        ticket: TICKET,
+        activeChecks: ACTIVE_CHECKS,
+        verificationCandidates: STRUCTURED_CANDIDATES,
+      }),
     );
     await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM_INPUT] }, env.tc);
 
@@ -295,7 +329,11 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-reject');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', { ticket: TICKET, activeChecks: ACTIVE_CHECKS }),
+      makeState('TICKET', {
+        ticket: TICKET,
+        activeChecks: ACTIVE_CHECKS,
+        verificationCandidates: STRUCTURED_CANDIDATES,
+      }),
     );
 
     const raw = await plan.execute(
@@ -319,7 +357,11 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-same-check');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', { ticket: TICKET, activeChecks: ACTIVE_CHECKS }),
+      makeState('TICKET', {
+        ticket: TICKET,
+        activeChecks: ACTIVE_CHECKS,
+        verificationCandidates: STRUCTURED_CANDIDATES,
+      }),
     );
 
     const raw = await plan.execute(
@@ -330,7 +372,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
             ...CRITICAL_CLAIM_INPUT,
             counterexampleRequirement: {
               checkId: 'build',
-              assertion: { providerId: 'junit', localId: 'counterexample' },
+              assertion: { providerId: 'junit', localId: 'com.example.CounterTest#counterexample' },
             },
           },
         ],
@@ -339,8 +381,9 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     );
     const parsed = JSON.parse(String(raw));
 
-    expect(parsed.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
+    expect(parsed.code).toBe('PROOFGRAPH_CLAIM_UNSATISFIABLE');
     expect(String(parsed.message)).toContain('counterexampleRequirement');
+    expect(String(parsed.message)).toContain('assertionCapability');
     const state = await readState(env.sDir);
     expect(state!.plan).toBeFalsy();
     expect(state!.phase).toBe('TICKET');
@@ -350,21 +393,29 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-inactive-check');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', { ticket: TICKET, activeChecks: ['build'] }),
+      makeState('TICKET', {
+        ticket: TICKET,
+        activeChecks: ['build'],
+        verificationCandidates: STRUCTURED_CANDIDATES,
+      }),
     );
 
     const raw = await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM_INPUT] }, env.tc);
     const parsed = JSON.parse(String(raw));
 
     expect(parsed.code).toBe('PROOFGRAPH_CLAIM_CONTRACT_INCOMPLETE');
-    expect(String(parsed.message)).toContain('regression');
+    expect(String(parsed.message)).toContain('security');
   });
 
   it('warns early when target paths look HIGH-RISK without a critical claim', async () => {
     env = await boot('plan-warn');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', { ticket: TICKET, activeChecks: ACTIVE_CHECKS }),
+      makeState('TICKET', {
+        ticket: TICKET,
+        activeChecks: ACTIVE_CHECKS,
+        verificationCandidates: STRUCTURED_CANDIDATES,
+      }),
     );
 
     const raw = await plan.execute(
@@ -387,7 +438,11 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     env = await boot('plan-cert');
     await writeStateWithArtifacts(
       env.sDir,
-      makeState('TICKET', { ticket: TICKET, activeChecks: ACTIVE_CHECKS }),
+      makeState('TICKET', {
+        ticket: TICKET,
+        activeChecks: ACTIVE_CHECKS,
+        verificationCandidates: STRUCTURED_CANDIDATES,
+      }),
     );
     await plan.execute({ planText: PLAN_TEXT, claims: [CRITICAL_CLAIM_INPUT] }, env.tc);
     const submitted = await readState(env.sDir);
@@ -564,6 +619,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     const base = makeState('PLAN_REVIEW', {
       ticket: TICKET,
       activeChecks: ACTIVE_CHECKS,
+      verificationCandidates: STRUCTURED_CANDIDATES,
       plan: {
         current: {
           body: PLAN_TEXT,

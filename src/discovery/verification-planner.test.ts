@@ -161,6 +161,7 @@ describe('verification planner', () => {
     it('recognizes jest as structured via script enrichment', async () => {
       const detectedStack = makeDetectedStack([
         { kind: 'buildTool', id: 'npm', evidence: 'package.json' },
+        { kind: 'testFramework', id: 'jest', evidence: 'package.json' },
       ]);
 
       const candidates = await planVerificationCandidates({

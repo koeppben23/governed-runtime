@@ -56,6 +56,7 @@ export interface ProviderRegistry {
   readonly runtimeRequirementsByProvider: ReadonlyMap<ProviderId, readonly RuntimeRequirement[]>;
   readonly scriptSignaturesByProvider: ReadonlyMap<ProviderId, readonly ScriptSignature[]>;
   readonly reportTemplatesByProvider: ReadonlyMap<ProviderId, AssertionReportSpec | undefined>;
+  readonly profilesById: ReadonlyMap<string, ExecutionProfile>;
 }
 
 export function buildProviderRegistry(
@@ -123,6 +124,37 @@ export function buildProviderRegistry(
 
   profiles.sort((a, b) => a.priority - b.priority);
 
+  const profilesById = new Map<string, ExecutionProfile>();
+  for (const p of profiles) {
+    if (profilesById.has(p.profileId)) {
+      throw new Error(`Duplicate execution profile id '${p.profileId}' in provider registry`);
+    }
+    profilesById.set(p.profileId, p);
+  }
+
+  // Validate script-signature → profile references
+  for (const [providerId, sigs] of scriptSignaturesByProvider) {
+    for (const sig of sigs) {
+      const profile = profilesById.get(sig.executionProfileId);
+      if (!profile) {
+        throw new Error(
+          `Provider '${providerId}': script signature references unknown profile '${sig.executionProfileId}'`,
+        );
+      }
+      const providerProfiles = profilesByProvider.get(providerId) ?? [];
+      if (!providerProfiles.some((p) => p.profileId === sig.executionProfileId)) {
+        throw new Error(
+          `Provider '${providerId}': script signature references profile '${sig.executionProfileId}' from a different provider`,
+        );
+      }
+      if (profile.kind !== sig.candidateKind) {
+        throw new Error(
+          `Provider '${providerId}': script signature candidateKind='${sig.candidateKind}' but referenced profile '${sig.executionProfileId}' has kind='${profile.kind}'`,
+        );
+      }
+    }
+  }
+
   return {
     extensions,
     parserByFormat,
@@ -142,6 +174,7 @@ export function buildProviderRegistry(
     runtimeRequirementsByProvider,
     scriptSignaturesByProvider,
     reportTemplatesByProvider,
+    profilesById,
   };
 }
 
@@ -166,6 +199,7 @@ export const ASSERTION_FORMATS_BY_PROVIDER = DEFAULT_REGISTRY.assertionFormatsBy
 export const DESCRIPTOR_BY_PROVIDER = DEFAULT_REGISTRY.descriptorByProvider;
 export const DESCRIPTOR_BY_DETECTION = DEFAULT_REGISTRY.descriptorByDetection;
 export const ASSERTION_PROFILES = DEFAULT_REGISTRY.profiles;
+export const PROFILE_BY_ID = DEFAULT_REGISTRY.profilesById;
 export const REPORT_TEMPLATES_BY_PROVIDER = DEFAULT_REGISTRY.reportTemplatesByProvider;
 export const SCRIPT_SIGNATURES_BY_PROVIDER = DEFAULT_REGISTRY.scriptSignaturesByProvider;
 export const RUNTIME_REQUIREMENTS_BY_PROVIDER = DEFAULT_REGISTRY.runtimeRequirementsByProvider;
