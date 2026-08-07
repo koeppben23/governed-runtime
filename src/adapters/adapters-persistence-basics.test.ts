@@ -301,6 +301,168 @@ describe('persistence', () => {
         expect((err as PersistenceError).code).toBe('SCHEMA_VALIDATION_FAILED');
       }
     });
+
+    it('rejects legacy counterexampleCheckId field', async () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      const plan = json.plan as Record<string, unknown>;
+      plan.claimDeclarations = {
+        flow: 'plan',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000001',
+            statement: 'legacy',
+            critical: true,
+            authoritySectionId: 's1',
+            expectedCheckId: 'test',
+            counterexampleCheckId: 'security',
+          },
+        ],
+      };
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+      await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
+    });
+
+    it('rejects counterexampleRequirement with mode field', async () => {
+      const state = makeProgressedState('PLAN_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      const plan = json.plan as Record<string, unknown>;
+      plan.claimDeclarations = {
+        flow: 'plan',
+        claims: [
+          {
+            claimId: '00000000-0000-4000-8000-000000000001',
+            statement: 'with mode',
+            critical: true,
+            authoritySectionId: 's1',
+            expectedCheckId: 'test',
+            counterexampleRequirement: {
+              mode: 'assertion',
+              checkId: 'security',
+              assertion: { providerId: 'junit', localId: 'x#y' },
+            },
+          },
+        ],
+      };
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+      await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
+    });
+
+    it('rejects assertionId in StructuredAssertionEvidence', async () => {
+      const state = makeProgressedState('IMPL_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      json.implementation = {
+        changedFiles: ['a.ts'],
+        domainFiles: ['a.ts'],
+        digest: 'impl-digest',
+        executedAt: '2026-01-01T00:00:00.000Z',
+      };
+      json.validationAttempts = [
+        {
+          attemptId: '00000000-0000-4000-8000-000000000001',
+          scope: 'implementation',
+          implementationDigest: 'impl-digest',
+          result: {
+            checkId: 'security',
+            passed: true,
+            detail: '',
+            executedAt: '2026-01-01T00:00:00.000Z',
+            kind: 'security',
+            command: 'run',
+            exitCode: 0,
+            executionMs: 5,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported',
+            assertionExtraction: {
+              status: 'extracted',
+              attemptId: '00000000-0000-4000-8000-000000000002',
+              format: 'junit_xml',
+              reportDigests: ['b'.repeat(64)],
+              assertions: [
+                {
+                  assertionId: 'junit:Test#m',
+                  assertion: { providerId: 'junit', localId: 'Test#m' },
+                  providerId: 'junit',
+                  status: 'passed',
+                  testName: 'm',
+                },
+              ],
+              summary: {
+                assertionCount: 1,
+                passedCount: 1,
+                failedCount: 0,
+                erroredCount: 0,
+                skippedCount: 0,
+                suiteInfrastructureError: false,
+              },
+            },
+          },
+        },
+      ];
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+      await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
+    });
+
+    it('rejects framework in StructuredAssertionEvidence', async () => {
+      const state = makeProgressedState('IMPL_REVIEW');
+      const json = JSON.parse(JSON.stringify(state)) as Record<string, unknown>;
+      json.implementation = {
+        changedFiles: ['a.ts'],
+        domainFiles: ['a.ts'],
+        digest: 'impl-digest',
+        executedAt: '2026-01-01T00:00:00.000Z',
+      };
+      json.validationAttempts = [
+        {
+          attemptId: '00000000-0000-4000-8000-000000000001',
+          scope: 'implementation',
+          implementationDigest: 'impl-digest',
+          result: {
+            checkId: 'security',
+            passed: true,
+            detail: '',
+            executedAt: '2026-01-01T00:00:00.000Z',
+            kind: 'security',
+            command: 'run',
+            exitCode: 0,
+            executionMs: 5,
+            outputDigest: 'a'.repeat(64),
+            timedOut: false,
+            outcome: 'supported',
+            assertionExtraction: {
+              status: 'extracted',
+              attemptId: '00000000-0000-4000-8000-000000000002',
+              format: 'junit_xml',
+              reportDigests: ['b'.repeat(64)],
+              assertions: [
+                {
+                  framework: 'junit',
+                  assertion: { providerId: 'junit', localId: 'Test#m' },
+                  providerId: 'junit',
+                  status: 'passed',
+                  testName: 'm',
+                },
+              ],
+              summary: {
+                assertionCount: 1,
+                passedCount: 1,
+                failedCount: 0,
+                erroredCount: 0,
+                skippedCount: 0,
+                suiteInfrastructureError: false,
+              },
+            },
+          },
+        },
+      ];
+      await fs.mkdir(tmpDir, { recursive: true });
+      await fs.writeFile(statePath(tmpDir), JSON.stringify(json), 'utf-8');
+      await expect(readState(tmpDir)).rejects.toThrow(PersistenceError);
+    });
   });
 
   // ─── CORNER ─────────────────────────────────────────────────

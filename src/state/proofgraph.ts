@@ -64,6 +64,7 @@ export const CounterexampleRequirement = z
     checkId: z.string().min(1),
     assertion: AssertionIdentity,
   })
+  .strict()
   .readonly();
 export type CounterexampleRequirement = z.infer<typeof CounterexampleRequirement>;
 
