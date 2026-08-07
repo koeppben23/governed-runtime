@@ -346,10 +346,8 @@ function validateAssertionCapabilityGate(
       });
     }
 
-    if (requirement.mode === 'assertion') {
-      const violation = validateAssertionGate(candidate, requirement);
-      if (violation) return violation;
-    }
+    const violation = validateAssertionGate(candidate, requirement);
+    if (violation) return violation;
   }
   return null;
 }
@@ -427,7 +425,7 @@ export const declare_contract: ToolDefinition = {
                 'mutation report is NOT_VERIFIED rather than a pass.',
             ),
           counterexampleRequirement: AssertionCounterexampleRequirement.optional().describe(
-            'Assertion-mode counterexample requirement: binds a specific test assertion whose failure contradicts this claim (junit:/vitest:/jest:/go: prefix).',
+            'Counterexample requirement: binds a specific test assertion whose failure contradicts this claim.',
           ),
         }),
       )

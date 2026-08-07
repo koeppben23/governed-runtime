@@ -121,6 +121,7 @@ export const StructuredAssertionEvidence = z
       })
       .optional(),
   })
+  .strict()
   .refine(
     (data) => data.status === 'failed' || data.status === 'errored' || data.failure === undefined,
     {

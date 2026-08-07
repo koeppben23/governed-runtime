@@ -55,22 +55,17 @@ export type RequiredEvidence = z.infer<typeof RequiredEvidence>;
 /**
  * Counterexample binding requirement for a claim.
  *
- * mode=check: legacy counterexample based on check-level outcome.
- *   Can produce supported/not_verified/blocked, but never contradicted.
- * mode=assertion: targeted counterexample bound to a concrete assertion.
- *   A failed matching assertion → contradicted.
+ * Binds a dedicated verification check to one concrete provider-scoped
+ * assertion. Only a matching failed assertion can contradict the claim.
+ * Check-level outcomes alone never produce a counterexample contradiction.
  */
-export const CounterexampleRequirement = z.discriminatedUnion('mode', [
-  z.object({
-    mode: z.literal('check'),
-    checkId: z.string().min(1),
-  }),
-  z.object({
-    mode: z.literal('assertion'),
+export const CounterexampleRequirement = z
+  .object({
     checkId: z.string().min(1),
     assertion: AssertionIdentity,
-  }),
-]);
+  })
+  .strict()
+  .readonly();
 export type CounterexampleRequirement = z.infer<typeof CounterexampleRequirement>;
 
 /**

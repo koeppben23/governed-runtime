@@ -234,10 +234,7 @@ function checkCounterexampleAssertion(
   input: ClaimContractInput,
   claim: NormalizedClaimDeclaration,
 ): ClaimContractResult | null {
-  if (
-    claim.counterexampleRequirement?.mode === 'assertion' &&
-    !claim.counterexampleRequirement.assertion
-  ) {
+  if (claim.counterexampleRequirement && !claim.counterexampleRequirement.assertion) {
     return invalid(
       input.source,
       claim,

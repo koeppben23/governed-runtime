@@ -53,13 +53,13 @@ const preEvidenceClaimDeclaration = {
   authoritySectionId: z.string().min(1),
 } as const;
 
-/** Structured counterexample requirement for assertion-mode claims. */
+/** Structured assertion-bound counterexample requirement. */
 export const AssertionCounterexampleRequirement = z
   .object({
-    mode: z.literal('assertion'),
     checkId: z.string().min(1),
     assertion: AssertionIdentity,
   })
+  .strict()
   .readonly();
 export type AssertionCounterexampleRequirement = z.infer<typeof AssertionCounterexampleRequirement>;
 
@@ -74,7 +74,7 @@ const planBase = z
   })
   .strict();
 
-/** Writable plan claim declaration (assertion-mode only). */
+/** Writable plan claim declaration. */
 export const WritablePlanClaimDeclaration = planBase.readonly();
 export type WritablePlanClaimDeclaration = z.infer<typeof WritablePlanClaimDeclaration>;
 
@@ -93,7 +93,7 @@ export const PlanClaimDeclaration = z
   .readonly();
 export type PlanClaimDeclaration = z.infer<typeof PlanClaimDeclaration>;
 
-/** Public input for a plan claim — claimId is minted host-side, assertion-mode only. */
+/** Public input for a plan claim — claimId is minted host-side. */
 export const PlanClaimDeclarationInput = planBase.omit({ claimId: true }).strict();
 export type PlanClaimDeclarationInput = z.infer<typeof PlanClaimDeclarationInput>;
 

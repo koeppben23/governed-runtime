@@ -230,9 +230,11 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // missing, stale, or contradicted.
     // Refreshed for structured assertion identity model: assertionId string
     // replaced by assertion: { providerId, localId } in plan template examples.
+    // Refreshed for assertion-only counterexamples: mode field removed from
+    // counterexampleRequirement examples, assertionId replaced by assertion.
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'a2f193376ada51885fb59832a0140bfaf80e9fab7f0b0466eeaa2a7235646554',
+      '8e004cd144e1fff022d2da0549f9a33f71f0d5fc2c25e1585e841ad2b23c889a',
     );
   });
 

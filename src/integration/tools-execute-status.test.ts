@@ -1438,7 +1438,6 @@ describe('declare_contract', () => {
               checkId: 'test',
               critical: true,
               counterexampleRequirement: {
-                mode: 'assertion' as const,
                 checkId: 'security',
                 assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
               },
@@ -1528,7 +1527,6 @@ describe('declare_contract', () => {
               checkId: 'test',
               critical: true,
               counterexampleRequirement: {
-                mode: 'assertion' as const,
                 checkId: 'security',
                 assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
               },
@@ -1619,7 +1617,6 @@ describe('declare_contract', () => {
       checkId: 'test',
       critical: true,
       counterexampleRequirement: {
-        mode: 'assertion' as const,
         checkId: 'security',
         assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verify' },
       },
@@ -1760,7 +1757,6 @@ describe('declare_contract', () => {
               {
                 ...COMBINED,
                 counterexampleRequirement: {
-                  mode: 'assertion' as const,
                   checkId: 'security',
                   assertion: {
                     providerId: 'junit',
@@ -1815,7 +1811,6 @@ describe('declare_contract', () => {
               checkId: 'test',
               critical: true,
               counterexampleRequirement: {
-                mode: 'assertion' as const,
                 checkId: 'test',
                 assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
               },
@@ -1975,7 +1970,6 @@ describe('declare_contract', () => {
               critical: true,
               authority: 'ticket',
               counterexampleRequirement: {
-                mode: 'assertion' as const,
                 checkId: 'security',
                 assertion: { providerId: 'junit', localId: 'com.example.SecurityTest#verifyNoXss' },
               },

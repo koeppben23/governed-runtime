@@ -1188,7 +1188,6 @@ describe('ProofGraph demo fixtures', () => {
     authoritySectionId: 'step-1',
     expectedCheckId: 'build',
     counterexampleRequirement: {
-      mode: 'assertion' as const,
       checkId: 'test',
       assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
     },

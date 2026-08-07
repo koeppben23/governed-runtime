@@ -61,7 +61,10 @@ function withCertifiedCriticalPlan(state: ReturnType<typeof makeProgressedState>
         critical: true,
         authoritySectionId: 'proof',
         expectedCheckId: 'test',
-        counterexampleRequirement: { mode: 'check' as const, checkId: 'security' },
+        counterexampleRequirement: {
+          checkId: 'security',
+          assertion: { providerId: 'junit', localId: 'some-id' },
+        },
       },
     ],
   };
