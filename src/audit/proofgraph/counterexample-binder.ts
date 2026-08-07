@@ -15,13 +15,14 @@
  * CONTRADICTED, which wins over any passing positive evidence.
  * A `blocked` counterexample makes the evaluator report the claim as BLOCKED.
  *
- * @version v1
+ * @version v2 — assertion binding delegated to assertion-evidence-binding.ts
  */
 
 import type { SessionState } from '../../state/schema.js';
 import type { ProofCounterexample, CounterexampleRequirement } from '../../state/proofgraph.js';
 import type { CounterexampleOutcome } from '../../state/proofgraph-primitives.js';
 import type { ValidationResult } from '../../state/evidence-validation.js';
+import { bindAssertionEvidence } from './assertion-evidence-binding.js';
 
 function toCounterexampleOutcome(result: ValidationResult): CounterexampleOutcome {
   switch (result.outcome) {
@@ -37,22 +38,20 @@ function toCounterexampleOutcome(result: ValidationResult): CounterexampleOutcom
 function classifyClaimOutcome(
   result: ValidationResult,
   requirement?: CounterexampleRequirement,
+  attemptId?: string,
 ): CounterexampleOutcome {
   if (!requirement) return toCounterexampleOutcome(result);
 
   if (result.checkId !== requirement.checkId) return 'not_verified';
 
   const extraction = result.assertionExtraction;
-  if (!extraction || extraction.status !== 'extracted') return 'not_verified';
+  if (!extraction) return 'not_verified';
 
-  const assertion = extraction.assertions.find(
-    (a) =>
-      a.assertion.providerId === requirement.assertion.providerId &&
-      a.assertion.localId === requirement.assertion.localId,
-  );
-  if (!assertion) return 'not_verified';
+  const binding = bindAssertionEvidence(requirement, extraction, attemptId ?? '');
 
-  switch (assertion.status) {
+  if (binding.status !== 'bound') return 'not_verified';
+
+  switch (binding.assertion.status) {
     case 'failed':
       return 'contradicted';
     case 'passed':
@@ -98,7 +97,7 @@ export function bindCounterexamples(
       }
       const requirement = claim.counterexampleRequirement;
       const outcome = requirement
-        ? classifyClaimOutcome(attempt.result, requirement)
+        ? classifyClaimOutcome(attempt.result, requirement, attempt.attemptId)
         : toCounterexampleOutcome(attempt.result);
       counterexamples.push({
         claimId: claim.claimId,
