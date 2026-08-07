@@ -110,6 +110,17 @@ export const ProofClaim = z
   .readonly();
 export type ProofClaim = z.infer<typeof ProofClaim>;
 
+// ─── Binding Diagnostic Codes ────────────────────────────────────────────────
+
+export const AssertionBindingReasonCodeSchema = z.enum([
+  'check_mismatch',
+  'evidence_missing',
+  'check_only_evidence',
+  'provider_mismatch',
+  'assertion_mismatch',
+]);
+export type AssertionBindingReasonCode = z.infer<typeof AssertionBindingReasonCodeSchema>;
+
 /** Compact, persisted ProofGraph projection. */
 export const ProofGraphProjection = z
   .object({
@@ -117,7 +128,7 @@ export const ProofGraphProjection = z
     claims: z.array(ProofClaim),
     evaluatedAt: z.string().datetime(),
     /** Per-claim binding diagnostic codes from counterexample evaluation. */
-    claimDiagnostics: z.record(z.string(), z.string()).optional(),
+    claimDiagnostics: z.record(z.string().uuid(), AssertionBindingReasonCodeSchema).optional(),
   })
   .readonly();
 export type ProofGraphProjection = z.infer<typeof ProofGraphProjection>;

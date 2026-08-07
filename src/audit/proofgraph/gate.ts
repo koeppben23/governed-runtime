@@ -32,9 +32,21 @@ function readDiagnosticsFromProjection(
   if (!projection?.claimDiagnostics) return undefined;
   const map = new Map<string, AssertionBindingReasonCode>();
   for (const [key, value] of Object.entries(projection.claimDiagnostics)) {
-    map.set(key, value as AssertionBindingReasonCode);
+    if (isValidBindingCode(value)) {
+      map.set(key, value);
+    }
   }
-  return map;
+  return map.size > 0 ? map : undefined;
+}
+
+function isValidBindingCode(value: string): value is AssertionBindingReasonCode {
+  return (
+    value === 'check_mismatch' ||
+    value === 'evidence_missing' ||
+    value === 'check_only_evidence' ||
+    value === 'provider_mismatch' ||
+    value === 'assertion_mismatch'
+  );
 }
 
 /** The evaluated ProofGraph gate decision. */

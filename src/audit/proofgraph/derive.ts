@@ -16,6 +16,7 @@ import type {
   ProofGraphProjection,
   ProofProviderResult,
   ProofCounterexample,
+  AssertionBindingReasonCode,
 } from '../../state/proofgraph.js';
 import { evaluateProofGraph } from './evaluate.js';
 
@@ -36,7 +37,7 @@ export function deriveProofGraph(
   evaluatedAt: string,
   opts?: {
     currentSurfaceDigests?: Readonly<Record<string, string>>;
-    claimDiagnostics?: Readonly<Record<string, string>>;
+    claimDiagnostics?: Readonly<Record<string, AssertionBindingReasonCode>>;
   },
 ): ProofGraphProjection {
   const standaloneClaims = new Map(

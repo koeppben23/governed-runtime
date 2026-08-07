@@ -13,13 +13,9 @@
 import type { CounterexampleRequirement } from '../../state/proofgraph.js';
 import type { AssertionExtractionResult } from '../../state/evidence-validation.js';
 import type { StructuredAssertionEvidence } from '../../state/evidence-validation.js';
+import type { AssertionBindingReasonCode } from '../../state/proofgraph.js';
 
-export type AssertionBindingReasonCode =
-  | 'check_mismatch'
-  | 'evidence_missing'
-  | 'check_only_evidence'
-  | 'provider_mismatch'
-  | 'assertion_mismatch';
+export type { AssertionBindingReasonCode };
 
 export type AssertionBindingDecision =
   | {

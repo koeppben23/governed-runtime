@@ -163,8 +163,8 @@ function unresolvedReason(claim: ProofGraphProjection['claims'][number]): string
 
 function diagnosticsAsRecord(
   diagnostics: ReadonlyMap<string, AssertionBindingReasonCode>,
-): Record<string, string> {
-  const record: Record<string, string> = {};
+): Readonly<Record<string, AssertionBindingReasonCode>> {
+  const record: Record<string, AssertionBindingReasonCode> = {};
   for (const [key, value] of diagnostics) {
     record[key] = value;
   }
