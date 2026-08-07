@@ -17,10 +17,11 @@
 
 import type { ProofGraphSummary } from './summary.js';
 import type { RiskTrigger } from '../../state/schema.js';
+import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
+import { type EnforcementReasonCode } from './reason-code-mapping.js';
 import {
   computeProofGraphEnforcement,
   type EnforcementDecisionKind,
-  type EnforcementReasonCode,
   type BlockingClaim,
 } from './enforcement-projection.js';
 
@@ -68,6 +69,8 @@ export function evaluateProofGraphGate(input: {
   readonly authorizedCriticalClaimIds?: readonly string[];
   readonly implementationDigest?: string;
   readonly riskAssessment?: ImplementationRiskAssessmentForGate;
+  /** Per-claim binding diagnostics for enforcement surface. */
+  readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
 }): ProofGraphGateDecision {
   const triggers = relevantTriggers(input.riskAssessment);
 
@@ -82,6 +85,7 @@ export function evaluateProofGraphGate(input: {
     implementationDigest: input.implementationDigest,
     riskAssessmentActive: riskStale,
     riskTriggersPresent: triggers.length > 0,
+    claimDiagnostics: input.claimDiagnostics,
   });
 
   return {

@@ -16,6 +16,7 @@
 
 import type { SessionState } from '../../state/schema.js';
 import type { ProofGraphProjection, ProofProviderResult } from '../../state/proofgraph.js';
+import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 import type {
   ClaimVerificationState,
   CounterexampleOutcome,
@@ -70,6 +71,8 @@ export interface ProofGraphSummary {
   readonly mutation: readonly MutationStatus[];
   /** Claims surfaced as unresolved: unsourced, contradicted, stale, or blocked. */
   readonly unresolvedAssumptions: readonly UnresolvedAssumption[];
+  /** Per-claim binding diagnostic reason codes from counterexample evaluation. */
+  readonly claimDiagnostics: ReadonlyMap<string, AssertionBindingReasonCode>;
 }
 
 /**
@@ -172,7 +175,10 @@ export function summarizeProofGraph(
     ...bindExecutedTestEvidence(state, evaluatedAt),
     ...(external.providerResults ?? []),
   ];
-  const executedCounterexamples = bindCounterexamples(state, evaluatedAt);
+  const { counterexamples: executedCounterexamples, diagnostics } = bindCounterexamples(
+    state,
+    evaluatedAt,
+  );
   const projection = deriveProofGraph(
     state,
     providerResults,
@@ -229,5 +235,6 @@ export function summarizeProofGraph(
     counterexamples,
     mutation,
     unresolvedAssumptions,
+    claimDiagnostics: diagnostics,
   };
 }

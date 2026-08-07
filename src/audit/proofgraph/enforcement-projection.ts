@@ -17,21 +17,17 @@
 import type { ProofGraphSummary } from './summary.js';
 import type { ProofClaim } from '../../state/proofgraph.js';
 import type { ClaimVerificationState } from '../../state/proofgraph-primitives.js';
+import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
+import {
+  mapBindingReasonToRegistryCode,
+  mapEnforcementReasonToRegistryCode,
+} from './reason-code-mapping.js';
+import type { EnforcementReasonCode } from './reason-code-mapping.js';
 
-// ─── Types ──────────────────────────────────────────────────────────────────
+// Re-export for consumers
+export type { EnforcementReasonCode };
 
 /** Reason codes emitted by the enforcement projection. */
-export type EnforcementReasonCode =
-  | 'proven'
-  | 'counterexample_observed'
-  | 'evidence_missing'
-  | 'evidence_stale'
-  | 'evidence_unproven'
-  | 'provider_execution_error'
-  | 'provenance_missing'
-  | 'evaluation_unavailable'
-  | 'risk_assessment_stale'
-  | 'critical_fact_required';
 
 export interface ClaimEnforcementState {
   readonly claimId: string;
@@ -41,6 +37,8 @@ export interface ClaimEnforcementState {
   readonly gateEligible: boolean;
   readonly verificationState: ClaimVerificationState;
   readonly reasonCodes: readonly EnforcementReasonCode[];
+  /** Registry code derived from the primary blocking reason. */
+  readonly registryCode?: string;
 }
 
 export interface BlockingClaim {
@@ -74,20 +72,25 @@ function isGateEligible(claim: ProofClaim): boolean {
   );
 }
 
-function claimReasonCodes(claim: ProofClaim): EnforcementReasonCode[] {
+function claimReasonCodes(
+  claim: ProofClaim,
+  diagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>,
+): EnforcementReasonCode[] {
   const reasons: EnforcementReasonCode[] = [];
   if (!claim.provenance) {
     reasons.push('provenance_missing');
   }
+  const diag = diagnostics?.get(claim.claimId);
   switch (claim.verificationState) {
     case 'PROVEN':
       reasons.push('proven');
       break;
     case 'CONTRADICTED':
-      reasons.push('counterexample_observed');
+      reasons.push(diag ? 'counterexample_observed' : 'counterexample_observed');
       break;
     case 'NOT_VERIFIED':
-      reasons.push('evidence_missing');
+      // Use the binding diagnostic if available, otherwise generic evidence_missing
+      reasons.push(diag ? mapDiagnosticToEnforcement(diag) : 'evidence_missing');
       break;
     case 'STALE':
       reasons.push('evidence_stale');
@@ -100,6 +103,31 @@ function claimReasonCodes(claim: ProofClaim): EnforcementReasonCode[] {
       break;
   }
   return reasons;
+}
+
+function mapDiagnosticToEnforcement(diag: AssertionBindingReasonCode): EnforcementReasonCode {
+  switch (diag) {
+    case 'check_mismatch':
+    case 'evidence_missing':
+      return 'evidence_missing';
+    case 'check_only_evidence':
+    case 'provider_mismatch':
+    case 'assertion_mismatch':
+      // These are specific assertion binding failures — surfaced as evidence_missing
+      // but the diagnostic reason is preserved for the registry code mapping
+      return 'evidence_missing';
+  }
+}
+
+function primaryRegistryCode(
+  enforcementCodes: readonly EnforcementReasonCode[],
+  bindingDiag?: AssertionBindingReasonCode,
+): string {
+  if (bindingDiag) {
+    return mapBindingReasonToRegistryCode(bindingDiag);
+  }
+  const primary = enforcementCodes[0] ?? 'evidence_missing';
+  return mapEnforcementReasonToRegistryCode(primary);
 }
 
 function blockingStateFor(state: ClaimVerificationState): BlockingClaim['state'] | null {
@@ -127,6 +155,8 @@ export interface ComputeEnforcementInput {
   readonly implementationDigest?: string;
   readonly riskAssessmentActive?: boolean;
   readonly riskTriggersPresent?: boolean;
+  /** Per-claim binding diagnostic codes from counterexample evaluation. */
+  readonly claimDiagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>;
 }
 
 function evaluatePreconditions(
@@ -190,7 +220,11 @@ export function computeProofGraphEnforcement(
   let satisfied = true;
 
   for (const claim of eligibleClaims) {
-    const reasonCodes = claimReasonCodes(claim);
+    const reasonCodes = claimReasonCodes(claim, input.claimDiagnostics);
+    const registryCode = primaryRegistryCode(
+      reasonCodes,
+      input.claimDiagnostics?.get(claim.claimId),
+    );
     claims.push({
       claimId: claim.claimId,
       statement: claim.statement,
@@ -199,6 +233,7 @@ export function computeProofGraphEnforcement(
       gateEligible: true,
       verificationState: claim.verificationState,
       reasonCodes,
+      registryCode,
     });
 
     if (claim.verificationState !== 'PROVEN') {

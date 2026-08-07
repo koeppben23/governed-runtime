@@ -11,11 +11,8 @@
  *   - blocked             → blocked (could not execute; timeout, crash, no output)
  *   - missing / wrong scope → not_verified
  *
- * A `contradicted` counterexample makes the evaluator report the claim as
- * CONTRADICTED, which wins over any passing positive evidence.
- * A `blocked` counterexample makes the evaluator report the claim as BLOCKED.
- *
- * @version v2 — assertion binding delegated to assertion-evidence-binding.ts
+ * @version v2 — assertion binding delegated to assertion-evidence-binding.ts,
+ * diagnostics propagated for enforcement visibility.
  */
 
 import type { SessionState } from '../../state/schema.js';
@@ -23,6 +20,7 @@ import type { ProofCounterexample, CounterexampleRequirement } from '../../state
 import type { CounterexampleOutcome } from '../../state/proofgraph-primitives.js';
 import type { ValidationResult } from '../../state/evidence-validation.js';
 import { bindAssertionEvidence } from './assertion-evidence-binding.js';
+import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
 
 function toCounterexampleOutcome(result: ValidationResult): CounterexampleOutcome {
   switch (result.outcome) {
@@ -35,14 +33,19 @@ function toCounterexampleOutcome(result: ValidationResult): CounterexampleOutcom
   }
 }
 
+interface ClassifiedOutcome {
+  readonly outcome: CounterexampleOutcome;
+  readonly diagnosticCode?: AssertionBindingReasonCode;
+}
+
 function classifyClaimOutcome(
   result: ValidationResult,
   requirement?: CounterexampleRequirement,
-): CounterexampleOutcome {
-  if (!requirement) return toCounterexampleOutcome(result);
+): ClassifiedOutcome {
+  if (!requirement) return { outcome: toCounterexampleOutcome(result) };
 
   const extraction = result.assertionExtraction;
-  if (!extraction) return 'not_verified';
+  if (!extraction) return { outcome: 'not_verified', diagnosticCode: 'evidence_missing' };
 
   const binding = bindAssertionEvidence({
     requirement,
@@ -50,66 +53,94 @@ function classifyClaimOutcome(
     extraction,
   });
 
-  if (binding.status !== 'bound') return 'not_verified';
+  if (binding.status !== 'bound') {
+    return { outcome: 'not_verified', diagnosticCode: binding.reasonCode };
+  }
 
   switch (binding.assertion.status) {
     case 'failed':
-      return 'contradicted';
+      return { outcome: 'contradicted' };
     case 'passed':
-      return 'supported';
+      return { outcome: 'supported' };
     case 'errored':
-      return 'blocked';
+      return { outcome: 'blocked' };
     case 'skipped':
-      return 'not_verified';
+      return { outcome: 'not_verified' };
   }
+}
+
+export interface CounterexampleBindingResult {
+  readonly counterexamples: readonly ProofCounterexample[];
+  readonly diagnostics: ReadonlyMap<string, AssertionBindingReasonCode>;
+}
+
+function bindClaimCounterexamples(
+  claim: {
+    claimId: string;
+    counterexampleRefs: readonly { kind: string; attemptId?: string }[];
+    counterexampleRequirement?: CounterexampleRequirement;
+  },
+  state: SessionState,
+  currentDigest: string,
+  evaluatedAt: string,
+  diagnostics: Map<string, AssertionBindingReasonCode>,
+): ProofCounterexample[] {
+  const results: ProofCounterexample[] = [];
+  for (const ref of claim.counterexampleRefs) {
+    if (ref.kind !== 'validation_attempt' || !ref.attemptId) continue;
+    const attempt = state.validationAttempts.find((a) => a.attemptId === ref.attemptId);
+    if (attempt === undefined || attempt.scope !== 'implementation') {
+      results.push({
+        claimId: claim.claimId,
+        attemptId: ref.attemptId,
+        checkId: 'unresolved_validation_attempt',
+        scenario: `unresolved counterexample attempt ${ref.attemptId}`,
+        outcome: 'not_verified',
+        boundDigest: currentDigest,
+        executedAt: evaluatedAt,
+      });
+      continue;
+    }
+    const requirement = claim.counterexampleRequirement;
+    const classified = requirement
+      ? classifyClaimOutcome(attempt.result, requirement)
+      : { outcome: toCounterexampleOutcome(attempt.result) };
+    if (classified.diagnosticCode) {
+      if (!diagnostics.has(claim.claimId)) {
+        diagnostics.set(claim.claimId, classified.diagnosticCode);
+      }
+    }
+    results.push({
+      claimId: claim.claimId,
+      attemptId: attempt.attemptId,
+      checkId: attempt.result.checkId,
+      scenario: `falsification via check '${attempt.result.checkId}'`,
+      outcome: classified.outcome,
+      boundDigest: attempt.implementationDigest,
+      executedAt: attempt.result.executedAt,
+    });
+  }
+  return results;
 }
 
 /**
  * Bind the counterexample references declared on a session's contract claims to
  * executed outcomes against the current implementation revision.
- *
- * @param state       Session state (contract claims + validation ledger + impl digest).
- * @param evaluatedAt ISO-8601 timestamp used for `not_verified` counterexamples.
  */
 export function bindCounterexamples(
   state: SessionState,
   evaluatedAt: string,
-): ProofCounterexample[] {
+): CounterexampleBindingResult {
   const claims = state.proofContract?.claims ?? [];
   const currentDigest = state.implementation?.digest;
-  if (currentDigest === undefined) return [];
+  if (currentDigest === undefined) return { counterexamples: [], diagnostics: new Map() };
 
+  const diagnostics = new Map<string, AssertionBindingReasonCode>();
   const counterexamples: ProofCounterexample[] = [];
   for (const claim of claims) {
-    for (const ref of claim.counterexampleRefs) {
-      if (ref.kind !== 'validation_attempt') continue;
-      const attempt = state.validationAttempts.find((a) => a.attemptId === ref.attemptId);
-      if (attempt === undefined || attempt.scope !== 'implementation') {
-        counterexamples.push({
-          claimId: claim.claimId,
-          attemptId: ref.attemptId,
-          checkId: 'unresolved_validation_attempt',
-          scenario: `unresolved counterexample attempt ${ref.attemptId}`,
-          outcome: 'not_verified',
-          boundDigest: currentDigest,
-          executedAt: evaluatedAt,
-        });
-        continue;
-      }
-      const requirement = claim.counterexampleRequirement;
-      const outcome = requirement
-        ? classifyClaimOutcome(attempt.result, requirement)
-        : toCounterexampleOutcome(attempt.result);
-      counterexamples.push({
-        claimId: claim.claimId,
-        attemptId: attempt.attemptId,
-        checkId: attempt.result.checkId,
-        scenario: `falsification via check '${attempt.result.checkId}'`,
-        outcome,
-        boundDigest: attempt.implementationDigest,
-        executedAt: attempt.result.executedAt,
-      });
-    }
+    counterexamples.push(
+      ...bindClaimCounterexamples(claim, state, currentDigest, evaluatedAt, diagnostics),
+    );
   }
-  return counterexamples;
+  return { counterexamples, diagnostics };
 }

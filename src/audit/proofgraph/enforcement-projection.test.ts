@@ -54,6 +54,7 @@ describe('computeProofGraphEnforcement', () => {
     expect(result.decisionKind).toBe('clear');
     expect(result.blockingClaims).toHaveLength(0);
     expect(result.claims[0]!.reasonCodes).toContain('proven');
+    expect(result.claims[0]!.registryCode).toBeDefined();
   });
 
   it('gated when a claim is NOT_VERIFIED', () => {

@@ -1,14 +1,25 @@
 /**
  * @module audit/proofgraph/reason-code-mapping
- * @description Single mapping authority from EnforcementReasonCode to
- * registered BlockedReason codes for ProofGraph governance decisions.
+ * @description Single mapping authority from enforcement/binding reason codes
+ * to registered BlockedReason codes for ProofGraph governance decisions.
  *
  * Both gate and status consume this mapping — no ad-hoc string projection.
  *
  * @version v1
  */
 
-import type { EnforcementReasonCode } from './enforcement-projection.js';
+/** Reason codes emitted by the enforcement projection. */
+export type EnforcementReasonCode =
+  | 'proven'
+  | 'counterexample_observed'
+  | 'evidence_missing'
+  | 'evidence_stale'
+  | 'evidence_unproven'
+  | 'provider_execution_error'
+  | 'provenance_missing'
+  | 'evaluation_unavailable'
+  | 'risk_assessment_stale'
+  | 'critical_fact_required';
 
 /** Maps enforcement reason codes to registry BlockedReason codes. */
 export function mapEnforcementReasonToRegistryCode(reasonCode: EnforcementReasonCode): string {

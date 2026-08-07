@@ -185,6 +185,7 @@ async function buildProofGraphProjectionResponse(
     authorizedCriticalClaimIds: authorizedCriticalPlanClaimIds(state.plan),
     implementationDigest: state.implementation?.digest,
     riskAssessment: state.implementationRiskAssessment,
+    claimDiagnostics: proofGraph.claimDiagnostics,
   });
   const registrationConsistency = checkRegistrationConsistency();
   const configConsistency = checkConfigDefaultConsistency();
