@@ -45,6 +45,8 @@ export interface BlockingClaim {
   readonly claimId: string;
   readonly state: 'CONTRADICTED' | 'NOT_VERIFIED' | 'STALE' | 'BLOCKED' | 'UNPROVEN';
   readonly reasonCode: EnforcementReasonCode;
+  /** Registry code derived from the binding diagnostic, or generic enforcement mapping. */
+  readonly registryCode: string;
 }
 
 export type EnforcementDecisionKind =
@@ -74,23 +76,21 @@ function isGateEligible(claim: ProofClaim): boolean {
 
 function claimReasonCodes(
   claim: ProofClaim,
-  diagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>,
+  _diagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>,
 ): EnforcementReasonCode[] {
   const reasons: EnforcementReasonCode[] = [];
   if (!claim.provenance) {
     reasons.push('provenance_missing');
   }
-  const diag = diagnostics?.get(claim.claimId);
   switch (claim.verificationState) {
     case 'PROVEN':
       reasons.push('proven');
       break;
     case 'CONTRADICTED':
-      reasons.push(diag ? 'counterexample_observed' : 'counterexample_observed');
+      reasons.push('counterexample_observed');
       break;
     case 'NOT_VERIFIED':
-      // Use the binding diagnostic if available, otherwise generic evidence_missing
-      reasons.push(diag ? mapDiagnosticToEnforcement(diag) : 'evidence_missing');
+      reasons.push('evidence_missing');
       break;
     case 'STALE':
       reasons.push('evidence_stale');
@@ -103,20 +103,6 @@ function claimReasonCodes(
       break;
   }
   return reasons;
-}
-
-function mapDiagnosticToEnforcement(diag: AssertionBindingReasonCode): EnforcementReasonCode {
-  switch (diag) {
-    case 'check_mismatch':
-    case 'evidence_missing':
-      return 'evidence_missing';
-    case 'check_only_evidence':
-    case 'provider_mismatch':
-    case 'assertion_mismatch':
-      // These are specific assertion binding failures — surfaced as evidence_missing
-      // but the diagnostic reason is preserved for the registry code mapping
-      return 'evidence_missing';
-  }
 }
 
 function primaryRegistryCode(
@@ -172,6 +158,7 @@ function evaluatePreconditions(
         claimId: id,
         state: 'NOT_VERIFIED' as const,
         reasonCode: 'evaluation_unavailable' as const,
+        registryCode: mapEnforcementReasonToRegistryCode('evaluation_unavailable'),
       })),
       satisfied: false,
       decisionKind: 'evaluation_unavailable',
@@ -244,6 +231,7 @@ export function computeProofGraphEnforcement(
           claimId: claim.claimId,
           state: bs,
           reasonCode: primaryReason(reasonCodes),
+          registryCode,
         });
       }
     }

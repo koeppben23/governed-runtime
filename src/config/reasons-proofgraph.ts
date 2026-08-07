@@ -180,15 +180,4 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
       'Stale evidence must be refreshed before it can satisfy a claim',
     ],
   },
-
-  {
-    code: 'PROOFGRAPH_PROVIDER_UNAVAILABLE',
-    category: 'precondition',
-    messageTemplate:
-      "Provider '{providerId}' required by claim '{claimId}' is not available at runtime: {detail}.",
-    recoverySteps: [
-      'Install or configure the required toolchain and reporter plugins',
-      'Run the verification checks again after the provider is available',
-    ],
-  },
 ];
