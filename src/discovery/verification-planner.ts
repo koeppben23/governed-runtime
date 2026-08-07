@@ -24,7 +24,6 @@ import {
 import { buildScriptInvocation, type PackageManager } from './package-script-command.js';
 import { analyzeVerificationScript } from './verification-script-analysis.js';
 import type { ProviderId } from '../state/assertion-identity.js';
-import type { PlannedVerificationCandidate } from './verification-candidate-planned.js';
 
 type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 
@@ -80,20 +79,6 @@ export async function planVerificationCandidates(
     const orderDiff = KIND_ORDER[a.kind] - KIND_ORDER[b.kind];
     if (orderDiff !== 0) return orderDiff;
     return a.command.localeCompare(b.command);
-  });
-}
-
-export function reconstructPlannedCandidates(
-  candidates: readonly VerificationCandidate[],
-): PlannedVerificationCandidate[] {
-  return candidates.map((c) => {
-    if (c.assertionCapability !== 'structured') return { candidate: c };
-    const { format, providerId } = c.assertionReport;
-    const { kind } = c;
-    const profile = ASSERTION_PROFILES.find(
-      (p) => p.kind === kind && p.format === format && p.providerId === providerId,
-    );
-    return { candidate: c, executionProfileId: profile?.profileId };
   });
 }
 

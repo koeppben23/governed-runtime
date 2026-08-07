@@ -30,7 +30,7 @@ import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.
 import { resolveRuntimeReadiness } from '../verification-runtime-resolution.js';
 import { ProcessProbeRunner } from '../../verification/toolchain-probe.js';
 import { computeProviderCapabilities } from './status-provider-projection.js';
-import { reconstructPlannedCandidates } from '../../discovery/verification-planner.js';
+import { wrapForResolution } from '../verification-runtime-resolution.js';
 import type { ResolvedVerificationCandidate } from '../verification-runtime-resolution.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import type { EvalResult } from '../../machine/evaluate.js';
@@ -706,7 +706,7 @@ export const status: ToolDefinition = {
       // Resolve runtime readiness via toolchain probes
       const probeRunner = new ProcessProbeRunner();
       const runtimeCandidates = await resolveRuntimeReadiness(
-        reconstructPlannedCandidates(state.verificationCandidates ?? []),
+        wrapForResolution(state.verificationCandidates ?? []),
         probeRunner,
         state.binding.worktree,
       );

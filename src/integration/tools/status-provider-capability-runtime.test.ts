@@ -6,7 +6,6 @@
 
 import { describe, expect, it } from 'vitest';
 import { resolveRuntimeReadiness, wrapForResolution } from '../verification-runtime-resolution.js';
-import { reconstructPlannedCandidates } from '../../discovery/verification-planner.js';
 import type { ProbeRunner, ProbeRequest, ProbeResult } from '../../verification/toolchain-probe.js';
 import type { VerificationCandidate } from '../../state/discovery-schemas.js';
 import type {
@@ -58,7 +57,7 @@ describe('runtime readiness via status projection', () => {
     ];
 
     const results = await resolveRuntimeReadiness(
-      reconstructPlannedCandidates(candidates),
+      candidates.map((c) => ({ candidate: c })),
       runner,
       '/tmp',
     );
@@ -94,7 +93,7 @@ describe('runtime readiness via status projection', () => {
     ];
 
     const results = await resolveRuntimeReadiness(
-      reconstructPlannedCandidates(candidates),
+      candidates.map((c) => ({ candidate: c })),
       runner,
       '/tmp',
     );
@@ -129,7 +128,7 @@ describe('runtime readiness via status projection', () => {
     ];
 
     const results = await resolveRuntimeReadiness(
-      reconstructPlannedCandidates(candidates),
+      candidates.map((c) => ({ candidate: c })),
       runner,
       '/tmp',
     );
@@ -162,7 +161,7 @@ describe('runtime readiness via status projection', () => {
     ];
 
     const results = await resolveRuntimeReadiness(
-      reconstructPlannedCandidates(candidates),
+      candidates.map((c) => ({ candidate: c, executionProfileId: 'junit-maven-wrapper' })),
       runner,
       '/tmp',
     );
@@ -197,7 +196,7 @@ describe('runtime readiness via status projection', () => {
     ];
 
     const results = await resolveRuntimeReadiness(
-      reconstructPlannedCandidates(candidates),
+      candidates.map((c) => ({ candidate: c, executionProfileId: 'junit-gradle-wrapper' })),
       runner,
       '/tmp',
     );

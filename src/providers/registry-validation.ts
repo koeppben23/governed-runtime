@@ -17,73 +17,87 @@ export function validateProviderExtensions(
   const errors: ValidationError[] = [];
   const providerIds = new Set<string>();
   const profileIds = new Set<string>();
+  const detectionIds = new Set<string>();
+  const formatParsers = new Map<string, unknown>();
 
   for (const ext of extensions) {
     const pid = ext.manifest.providerId;
 
-    if (providerIds.has(pid)) {
-      errors.push({ kind: 'duplicate_provider_id', message: `Duplicate providerId: ${pid}` });
-    }
+    if (providerIds.has(pid))
+      errors.push({ kind: 'duplicate_provider_id', message: `Duplicate: ${pid}` });
     providerIds.add(pid);
 
-    // Codec provider match
-    if (ext.verification.identityCodec) {
-      if (ext.verification.identityCodec.providerId !== pid) {
+    for (const detId of ext.discovery.detectionIds) {
+      if (detectionIds.has(detId))
+        errors.push({ kind: 'duplicate_detection_id', message: `Duplicate: ${detId}` });
+      detectionIds.add(detId);
+    }
+
+    for (const fmt of ext.verification.formats) {
+      const existing = formatParsers.get(fmt.format);
+      if (existing !== undefined && existing !== fmt.parser) {
         errors.push({
-          kind: 'codec_provider_mismatch',
-          message: `Codec providerId '${ext.verification.identityCodec.providerId}' != manifest '${pid}'`,
+          kind: 'conflicting_format_parser',
+          message: `Format '${fmt.format}' has conflicting parsers`,
         });
+      }
+      formatParsers.set(fmt.format, fmt.parser);
+    }
+
+    if (ext.verification.identityCodec) {
+      if (ext.verification.identityCodec.providerId !== pid)
+        errors.push({ kind: 'codec_provider_mismatch', message: `Codec != ${pid}` });
+
+      for (const fmt of ext.verification.formats) {
+        const inCodec = ext.verification.identityCodec.assertionBindingFormats.has(fmt.format);
+        const isAssertion = fmt.bindingCapability === 'assertion';
+        if (isAssertion !== inCodec) {
+          errors.push({
+            kind: 'codec_binding_mismatch',
+            message: `Format '${fmt.format}' binding inconsistent with codec`,
+          });
+        }
       }
     }
 
-    // Assertion-binding format has codec
     for (const fmt of ext.verification.formats) {
       if (fmt.bindingCapability === 'assertion' && !ext.verification.identityCodec) {
         errors.push({
           kind: 'assertion_format_without_codec',
-          message: `Provider '${pid}': format '${fmt.format}' is assertion-binding but no codec`,
+          message: `Format '${fmt.format}' is assertion-binding but no codec for '${pid}'`,
         });
       }
     }
 
-    // Profile validation
     for (const profile of ext.discovery.executionProfiles) {
-      if (profileIds.has(profile.profileId)) {
-        errors.push({
-          kind: 'duplicate_profile_id',
-          message: `Duplicate profileId: ${profile.profileId}`,
-        });
-      }
+      if (profileIds.has(profile.profileId))
+        errors.push({ kind: 'duplicate_profile_id', message: `Duplicate: ${profile.profileId}` });
       profileIds.add(profile.profileId);
 
-      if (profile.providerId !== pid) {
+      if (profile.providerId !== pid)
         errors.push({
           kind: 'profile_provider_mismatch',
-          message: `Profile '${profile.profileId}' providerId != manifest '${pid}'`,
+          message: `Profile ${profile.profileId} != ${pid}`,
         });
-      }
 
-      const fmtRegistered = ext.verification.formats.some((f) => f.format === profile.format);
-      if (!fmtRegistered) {
+      if (!ext.verification.formats.some((f) => f.format === profile.format))
         errors.push({
           kind: 'profile_format_not_registered',
           message: `Profile '${profile.profileId}' format '${profile.format}' not registered`,
         });
-      }
     }
 
-    // Report template provider match
-    if (ext.discovery.assertionReportTemplate) {
-      if (ext.discovery.assertionReportTemplate.providerId !== pid) {
-        errors.push({
-          kind: 'report_template_provider_mismatch',
-          message: `Template providerId != manifest '${pid}'`,
-        });
-      }
+    if (
+      ext.discovery.assertionReportTemplate &&
+      ext.discovery.assertionReportTemplate.providerId !== pid
+    ) {
+      errors.push({ kind: 'report_template_provider_mismatch', message: `Template != ${pid}` });
     }
 
-    // Unsafe probe commands
-    for (const req of ext.discovery.runtimeRequirements ?? []) {
+    for (const req of [
+      ...(ext.discovery.runtimeRequirements ?? []),
+      ...ext.discovery.executionProfiles.flatMap((p) => p.runtimeRequirements ?? []),
+    ]) {
       if (
         req.probe.kind === 'exec' &&
         /\b(npm\s+install|pnpm\s+add|yarn\s+add|pip\s+install|go\s+install)\b/i.test(
@@ -92,7 +106,7 @@ export function validateProviderExtensions(
       ) {
         errors.push({
           kind: 'unsafe_probe_command',
-          message: `Provider '${pid}' requirement '${req.id}' has install probe`,
+          message: `Provider '${pid}' has unsafe probe: ${req.probe.command}`,
         });
       }
     }

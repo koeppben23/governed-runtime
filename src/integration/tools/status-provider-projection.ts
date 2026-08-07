@@ -10,7 +10,7 @@
 import type { SessionState } from '../../state/schema.js';
 import { resolveProviderCapabilities } from '../provider-capability-resolution.js';
 import { resolveRuntimeReadiness } from '../verification-runtime-resolution.js';
-import { reconstructPlannedCandidates } from '../../discovery/verification-planner.js';
+import { wrapForResolution } from '../verification-runtime-resolution.js';
 import type { ProbeRunner } from '../../verification/toolchain-probe.js';
 import type { ResolvedVerificationCandidate } from '../verification-runtime-resolution.js';
 
@@ -34,7 +34,7 @@ export async function resolveRuntimeProviderCapabilities(
     state.detectedStack ?? undefined,
     state.verificationCandidates,
     await resolveRuntimeReadiness(
-      reconstructPlannedCandidates(state.verificationCandidates ?? []),
+      wrapForResolution(state.verificationCandidates ?? []),
       runner,
       cwd,
     ),

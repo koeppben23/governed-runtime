@@ -9,25 +9,14 @@
  * @version v1
  */
 
-import {
-  parseJUnitXml,
-  buildJUnitLocalId,
-} from '../../verification/assertion-parsers/junit-xml.js';
+import { buildJUnitLocalId } from '../../verification/assertion-parsers/junit-xml.js';
+import { junitXmlParser } from '../../verification/assertion-parsers/parsers.js';
 import type { AssertionProviderExtension } from '../contract.js';
 import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
 import type { ProviderId } from '../../state/assertion-identity.js';
 import type { ReportFormatId } from '../../state/assertion-identity.js';
 
 const JUNIT_LOCAL_ID_RE = /^[^#]+#[^#]+$/;
-
-function junitParser() {
-  return {
-    format: 'junit_xml' as ReportFormatId,
-    parse(content: string, fileName: string, context: { providerId: string }) {
-      return parseJUnitXml(content, fileName, context);
-    },
-  };
-}
 
 function junitCodec() {
   return {
@@ -179,7 +168,7 @@ export const junitProvider: AssertionProviderExtension = {
     formats: [
       {
         format: 'junit_xml' as ReportFormatId,
-        parser: junitParser(),
+        parser: junitXmlParser,
         bindingCapability: 'assertion' as const,
       },
     ],
