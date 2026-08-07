@@ -68,13 +68,13 @@ import { isExecutionError } from '../../state/evidence-validation.js';
 import type { AssertionExtractionResult } from '../../state/evidence-validation.js';
 import type { ReviewObligation } from '../../state/evidence.js';
 
-import type { AssertionCapability, AssertionReportSpec } from '../../state/discovery-schemas.js';
+import type { AssertionCapability } from '../../state/discovery-schemas.js';
 
 import {
-  prepareAssertionExtraction,
-  completeAssertionExtraction,
-  commandSuffix,
-} from '../../verification/assertion-extractor.js';
+  prepareVerificationExecution,
+  type PreparedVerificationExecution,
+} from '../../verification/verification-execution.js';
+import { completeAssertionExtraction } from '../../verification/assertion-extractor.js';
 
 // Adapter — lock retry
 import { withSessionWriteLockRetry, PersistenceError } from '../../adapters/lock-retry.js';
@@ -169,16 +169,15 @@ async function executeRunCheckPhased(
 
   // ── Phase B: Execute check (NO lock — subprocess runs independently) ──
   const attemptId = randomUUID();
-  let prepared: Awaited<ReturnType<typeof prepareAssertionExtraction>> | undefined;
+  let prepared: PreparedVerificationExecution | undefined;
   let fullCommand = guard.candidate.command;
   if (guard.candidate.assertionCapability === 'structured' && guard.candidate.assertionReport) {
-    prepared = await prepareAssertionExtraction(
-      guard.candidate.assertionReport,
+    prepared = await prepareVerificationExecution(
+      guard.candidate as Parameters<typeof prepareVerificationExecution>[0],
       getWorktree(context),
       attemptId,
     );
-    fullCommand =
-      `${guard.candidate.command} ${commandSuffix(prepared.spec, prepared.attemptId)}`.trim();
+    fullCommand = prepared.command;
   }
   const evidence = await executeCheck({
     kind,
@@ -187,7 +186,7 @@ async function executeRunCheckPhased(
   });
   let extraction: AssertionExtractionResult | undefined;
   if (prepared) {
-    extraction = await completeAssertionExtraction(prepared, evidence);
+    extraction = await completeAssertionExtraction(prepared, evidence, getWorktree(context));
   }
   const outcome = classifyValidationOutcome(
     evidence,
@@ -347,7 +346,7 @@ function validateRunCheckRequest(
         kind: VerificationCandidateKind;
         command: string;
         assertionCapability: AssertionCapability;
-        assertionReport?: AssertionReportSpec;
+        assertionReport?: Record<string, unknown>;
       };
     } {
   if (!isCommandAllowed(state.phase, Command.VALIDATE)) {

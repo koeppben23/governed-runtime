@@ -141,6 +141,23 @@ export const AssertionExtractionSummary = z.object({
 });
 export type AssertionExtractionSummary = z.infer<typeof AssertionExtractionSummary>;
 
+export const AssertionExtractionReasonCode = z.enum([
+  'report_missing',
+  'report_empty',
+  'report_ambiguous',
+  'report_too_large',
+  'path_rejected',
+  'parse_failed',
+  'provider_format_mismatch',
+  'binding_format_unsupported',
+  'identity_codec_missing',
+  'invalid_local_id',
+]);
+export type AssertionExtractionReasonCode = z.infer<typeof AssertionExtractionReasonCode>;
+
+export const AssertionBindingCapability = z.enum(['assertion', 'check_only']);
+export type AssertionBindingCapability = z.infer<typeof AssertionBindingCapability>;
+
 export const AssertionExtractionResult = z.discriminatedUnion('status', [
   z.object({
     status: z.literal('not_configured'),
@@ -148,17 +165,21 @@ export const AssertionExtractionResult = z.discriminatedUnion('status', [
   z.object({
     status: z.literal('blocked'),
     attemptId: z.string().uuid(),
+    reasonCode: AssertionExtractionReasonCode,
     reason: z.string().min(1),
   }),
   z.object({
     status: z.literal('inconclusive'),
     attemptId: z.string().uuid(),
+    reasonCode: AssertionExtractionReasonCode,
     reason: z.string().min(1),
   }),
   z.object({
     status: z.literal('extracted'),
     attemptId: z.string().uuid(),
+    providerId: ProviderId,
     format: ReportFormatId,
+    bindingCapability: AssertionBindingCapability,
     reportDigests: z.array(z.string().min(1)).min(1),
     assertions: z.array(StructuredAssertionEvidence),
     summary: AssertionExtractionSummary,

@@ -59,8 +59,20 @@ export const AssertionReportSpec = z.discriminatedUnion('collection', [
     transport: z.literal('file'),
     format: ReportFormatId,
     providerId: ProviderId,
-    outputArgumentTemplate: z.string().min(1),
-    resultPatternTemplate: z.string().min(1),
+    outputArgumentTemplate: z
+      .string()
+      .min(1)
+      .refine(
+        (v) => v.includes('{attemptId}'),
+        'run-specific outputArgumentTemplate must contain {attemptId}',
+      ),
+    resultPatternTemplate: z
+      .string()
+      .min(1)
+      .refine(
+        (v) => v.includes('{attemptId}'),
+        'run-specific resultPatternTemplate must contain {attemptId}',
+      ),
   }),
   z.object({
     collection: z.literal('snapshot_diff'),
