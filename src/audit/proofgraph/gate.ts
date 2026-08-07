@@ -16,14 +16,26 @@
  */
 
 import type { ProofGraphSummary } from './summary.js';
+import type { ProofGraphProjection } from '../../state/proofgraph.js';
 import type { RiskTrigger } from '../../state/schema.js';
 import type { AssertionBindingReasonCode } from './assertion-evidence-binding.js';
-import { type EnforcementReasonCode } from './reason-code-mapping.js';
 import {
   computeProofGraphEnforcement,
   type EnforcementDecisionKind,
+  type EnforcementReasonCode,
   type BlockingClaim,
 } from './enforcement-projection.js';
+
+function readDiagnosticsFromProjection(
+  projection?: ProofGraphProjection,
+): ReadonlyMap<string, AssertionBindingReasonCode> | undefined {
+  if (!projection?.claimDiagnostics) return undefined;
+  const map = new Map<string, AssertionBindingReasonCode>();
+  for (const [key, value] of Object.entries(projection.claimDiagnostics)) {
+    map.set(key, value as AssertionBindingReasonCode);
+  }
+  return map;
+}
 
 /** The evaluated ProofGraph gate decision. */
 export interface ProofGraphGateDecision {
@@ -85,7 +97,7 @@ export function evaluateProofGraphGate(input: {
     implementationDigest: input.implementationDigest,
     riskAssessmentActive: riskStale,
     riskTriggersPresent: triggers.length > 0,
-    claimDiagnostics: input.claimDiagnostics,
+    claimDiagnostics: input.claimDiagnostics ?? readDiagnosticsFromProjection(input.projection),
   });
 
   return {

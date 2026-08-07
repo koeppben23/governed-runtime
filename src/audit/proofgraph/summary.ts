@@ -159,6 +159,18 @@ function unresolvedReason(claim: ProofGraphProjection['claims'][number]): string
   }
 }
 
+/** The evaluator owns ClaimVerificationState; enforcement owns governance interpretation. */
+
+function diagnosticsAsRecord(
+  diagnostics: ReadonlyMap<string, AssertionBindingReasonCode>,
+): Record<string, string> {
+  const record: Record<string, string> = {};
+  for (const [key, value] of diagnostics) {
+    record[key] = value;
+  }
+  return record;
+}
+
 /**
  * Summarize the ProofGraph for a session.
  *
@@ -184,7 +196,10 @@ export function summarizeProofGraph(
     providerResults,
     executedCounterexamples,
     evaluatedAt,
-    external.surfaceDigests ?? {},
+    {
+      currentSurfaceDigests: external.surfaceDigests ?? {},
+      claimDiagnostics: diagnosticsAsRecord(diagnostics),
+    },
   );
 
   const counts = emptyCounts();

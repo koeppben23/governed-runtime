@@ -116,6 +116,8 @@ export const ProofGraphProjection = z
     version: z.literal(PROOFGRAPH_SCHEMA_VERSION),
     claims: z.array(ProofClaim),
     evaluatedAt: z.string().datetime(),
+    /** Per-claim binding diagnostic codes from counterexample evaluation. */
+    claimDiagnostics: z.record(z.string(), z.string()).optional(),
   })
   .readonly();
 export type ProofGraphProjection = z.infer<typeof ProofGraphProjection>;
