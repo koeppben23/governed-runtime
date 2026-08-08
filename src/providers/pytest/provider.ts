@@ -114,7 +114,9 @@ export const pytestProvider: AssertionProviderExtension = {
       {
         format: 'junit_xml' as ReportFormatId,
         parser: junitXmlParser,
-        bindingCapability: 'check_only' as const,
+        // pytest's JUnit XML report attests complete suite totals, but does not
+        // provide stable pytest node identities for assertion binding.
+        bindingCapability: 'aggregate' as const,
       },
     ],
     identityCodec: {

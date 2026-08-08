@@ -27,10 +27,28 @@ interface ClassifiedOutcome {
   readonly diagnosticCode?: AssertionBindingReasonCode;
 }
 
+function classifyAggregateOutcome(
+  result: ValidationResult,
+  requirement: Extract<CounterexampleRequirement, { kind: 'aggregate_check' }>,
+): ClassifiedOutcome {
+  const extraction = result.assertionExtraction;
+  if (
+    result.checkId !== requirement.checkId ||
+    extraction?.status !== 'extracted' ||
+    extraction.bindingCapability !== 'aggregate'
+  ) {
+    return { outcome: 'not_verified', diagnosticCode: 'evidence_missing' };
+  }
+  return result.passed ? { outcome: 'supported' } : { outcome: 'contradicted' };
+}
+
 function classifyClaimOutcome(
   result: ValidationResult,
   requirement: CounterexampleRequirement,
 ): ClassifiedOutcome {
+  if ('kind' in requirement && requirement.kind === 'aggregate_check') {
+    return classifyAggregateOutcome(result, requirement);
+  }
   if (!('kind' in requirement) || requirement.kind !== 'assertion') {
     return { outcome: 'not_verified', diagnosticCode: 'evidence_missing' };
   }

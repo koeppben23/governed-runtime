@@ -50,6 +50,11 @@ import type {
   PlanClaimDeclarationInput,
 } from '../state/proofgraph-approval.js';
 
+type V2PlanClaimDeclaration = Extract<
+  PlanClaimDeclaration,
+  { claimScope: 'suite' | 'specific_behavior' }
+>;
+
 vi.mock('../verification/executor', () => ({
   executeCheck: vi.fn().mockResolvedValue({
     kind: 'build',
@@ -127,6 +132,35 @@ const CRITICAL_CLAIM_INPUT: PlanClaimDeclarationInput = {
     assertion: { providerId: 'junit', localId: 'com.example.CounterTest#counterexample' },
   },
 };
+
+const AGGREGATE_CLAIM: V2PlanClaimDeclaration = {
+  claimId: '884c0696-adae-5789-9fe5-1e86e365ec1e',
+  statement: 'the complete pytest suite remains green after the implementation.',
+  critical: true,
+  claimScope: 'suite',
+  authoritySectionId: 'implementation-step-1',
+  expectedCheckId: 'build',
+  counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+};
+
+const AGGREGATE_CANDIDATES = [
+  STRUCTURED_CANDIDATES[0]!,
+  {
+    assertionCapability: 'structured' as const,
+    kind: 'security' as const,
+    command: 'pytest --junitxml=reports.xml',
+    source: 'provider:pytest',
+    confidence: 'high' as const,
+    reason: 'pytest JUnit XML complete suite report',
+    assertionReport: {
+      collection: 'snapshot_diff' as const,
+      transport: 'file' as const,
+      format: 'junit_xml' as const,
+      providerId: 'pytest' as const,
+      standardPatterns: ['reports.xml'],
+    },
+  },
+];
 
 const PLAN_TEXT = [
   '# Implementation Plan',
@@ -251,6 +285,43 @@ function fullEvidence(): SessionState['validationAttempts'] {
               status: 'passed' as const,
               testName: 'counterexample',
               suiteName: 'counterexample',
+            },
+          ],
+          summary: {
+            assertionCount: 1,
+            passedCount: 1,
+            failedCount: 0,
+            erroredCount: 0,
+            skippedCount: 0,
+            suiteInfrastructureError: false,
+          },
+        },
+      },
+    },
+  ];
+}
+
+function aggregateEvidence(): SessionState['validationAttempts'] {
+  const cx = attempt(COUNTEREXAMPLE_ATTEMPT_ID, 'security', true, 'test');
+  return [
+    attempt(ATTEMPT_ID, 'build', true),
+    {
+      ...cx,
+      result: {
+        ...cx.result,
+        assertionExtraction: {
+          status: 'extracted' as const,
+          attemptId: COUNTEREXAMPLE_ATTEMPT_ID,
+          providerId: 'pytest' as const,
+          format: 'junit_xml' as const,
+          bindingCapability: 'aggregate' as const,
+          reportDigests: ['b'.repeat(64)],
+          assertions: [
+            {
+              assertion: { providerId: 'pytest', localId: 'tests/test_api.py::test_update' },
+              providerId: 'pytest',
+              status: 'passed' as const,
+              testName: 'test_update',
             },
           ],
           summary: {
@@ -624,11 +695,14 @@ describe('implementation risk assessment (runtime)', () => {
 
 describe('ProofGraph materialization and gate (runtime)', () => {
   /** Approve the plan through the real rail so the certificate is authentic. */
-  function approvedPlanState(): SessionState {
+  function approvedPlanState(
+    claim: V2PlanClaimDeclaration = CRITICAL_CLAIM,
+    verificationCandidates: SessionState['verificationCandidates'] = STRUCTURED_CANDIDATES,
+  ): SessionState {
     const base = makeState('PLAN_REVIEW', {
       ticket: TICKET,
       activeChecks: ACTIVE_CHECKS,
-      verificationCandidates: STRUCTURED_CANDIDATES,
+      verificationCandidates,
       plan: {
         current: {
           body: PLAN_TEXT,
@@ -650,7 +724,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         },
         history: [],
         reviewFindings: undefined,
-        claimDeclarations: { flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] },
+        claimDeclarations: { flow: 'plan', version: 'v2', claims: [claim] },
       },
     });
     const approved = executeReviewDecision(
@@ -662,9 +736,13 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     return approved.state;
   }
 
-  function implReviewState(attempts: SessionState['validationAttempts']): SessionState {
+  function implReviewState(
+    attempts: SessionState['validationAttempts'],
+    claim: V2PlanClaimDeclaration = CRITICAL_CLAIM,
+    verificationCandidates: SessionState['verificationCandidates'] = STRUCTURED_CANDIDATES,
+  ): SessionState {
     return {
-      ...approvedPlanState(),
+      ...approvedPlanState(claim, verificationCandidates),
       phase: 'IMPL_REVIEW',
       implementation: IMPL_EVIDENCE,
       validationAttempts: attempts,
@@ -709,6 +787,18 @@ describe('ProofGraph materialization and gate (runtime)', () => {
 
     const decision = evaluateProofGraphGate(summary);
     expect(decision.gated).toBe(false);
+  });
+
+  it('materializes and proves an aggregate_check from a complete pytest report', async () => {
+    const state = implReviewState(aggregateEvidence(), AGGREGATE_CLAIM, AGGREGATE_CANDIDATES);
+    const { contract, coverage } = await materializeApprovedPlanContractResult(state, '/tmp');
+    const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+
+    expect(coverage).toEqual([]);
+    expect(contract.claims[0]?.counterexampleRefs).toEqual([
+      { kind: 'validation_attempt', attemptId: COUNTEREXAMPLE_ATTEMPT_ID },
+    ]);
+    expect(summary.projection.claims[0]?.verificationState).toBe('PROVEN');
   });
 
   it('NEGATIVE gate: an unproven critical fact blocks the human approval', async () => {

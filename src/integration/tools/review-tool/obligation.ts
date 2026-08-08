@@ -304,6 +304,27 @@ export function matchesReviewObligationInput(
   return typeof inputFingerprint === 'string' && inputFingerprint === fingerprintReviewInput(args);
 }
 
+/** Option A continuation: re-supply the immutable source alongside identity and verdict. */
+export function validateHostTaskContinuationInput(
+  obligation: ReviewObligation,
+  args: ReviewToolArgs,
+): string | null {
+  if (!hasReviewContentInput(args)) {
+    return formatBlocked('REVIEW_OBLIGATION_INPUT_MISMATCH', {
+      obligationId: obligation.obligationId,
+      reason:
+        'A host-task continuation must include the original immutable review content fields, reviewObligationId, and reviewVerdict.',
+    });
+  }
+  if (!matchesReviewObligationInput(obligation, args)) {
+    return formatBlocked('REVIEW_OBLIGATION_INPUT_MISMATCH', {
+      obligationId: obligation.obligationId,
+      reason: 'The supplied review input does not match the host-task review obligation.',
+    });
+  }
+  return null;
+}
+
 // ─── Obligation lifecycle ────────────────────────────────────────────────────
 
 /**
@@ -423,7 +444,7 @@ export async function ensureMissingAnalysisObligation(
   const verdictFirstCall = args.reviewVerdict !== undefined && existing === null;
   if (!verdictFirstCall && args.reviewFindings !== undefined) return { message: null };
   if (!existing) {
-    return createAndPrepareMissingAnalysisObligation(
+    return createAndPrepareMissingAnalysisObligation({
       sessDir,
       state,
       args,
@@ -431,7 +452,7 @@ export async function ensureMissingAnalysisObligation(
       context,
       fingerprint,
       inputFingerprint,
-    );
+    });
   }
   return {
     message: formatMissingContentAnalysis(
@@ -442,14 +463,18 @@ export async function ensureMissingAnalysisObligation(
   };
 }
 
+interface MissingAnalysisObligationInput {
+  readonly sessDir: string;
+  readonly context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource'>;
+  readonly state: SessionState;
+  readonly args: ReviewToolArgs;
+  readonly now: string;
+  readonly fingerprint: string;
+  readonly inputFingerprint: string;
+}
+
 async function createAndPrepareMissingAnalysisObligation(
-  sessDir: string,
-  state: SessionState,
-  args: ReviewToolArgs,
-  now: string,
-  context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource'>,
-  fingerprint: string,
-  inputFingerprint: string,
+  input: MissingAnalysisObligationInput,
 ): Promise<{
   message: string | null;
   obligation?: ReviewObligation;
@@ -457,20 +482,20 @@ async function createAndPrepareMissingAnalysisObligation(
   assurance?: ReviewAssuranceState;
 }> {
   const created = await createNewReviewObligation({
-    state,
-    args,
-    now,
-    fingerprint,
-    inputFingerprint,
-    ...context,
+    state: input.state,
+    args: input.args,
+    now: input.now,
+    fingerprint: input.fingerprint,
+    inputFingerprint: input.inputFingerprint,
+    ...input.context,
   });
   if (created.blocked) return { message: created.blocked };
   const obligation = created.obligation!;
-  const persisted = await persistReviewObligation(sessDir, state, obligation);
+  const persisted = await persistReviewObligation(input.sessDir, input.state, obligation);
   return {
     message: formatMissingContentAnalysis(
       obligation.obligationId,
-      state.policySnapshot?.reviewInvocationPolicy === 'host_task_required',
+      input.state.policySnapshot?.reviewInvocationPolicy === 'host_task_required',
     ),
     obligation,
     attemptId: persisted.attemptId,

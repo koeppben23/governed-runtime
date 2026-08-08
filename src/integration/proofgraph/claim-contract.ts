@@ -262,6 +262,15 @@ function checkAggregateCounterexampleCapability(
   candidate: VerificationCandidate,
 ): ClaimContractResult | null {
   if (requirement.kind !== 'aggregate_check') return null;
+  if (candidate.assertionCapability !== 'structured') {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.checkId',
+      `check '${requirement.checkId}' has assertionCapability='${candidate.assertionCapability}', cannot produce aggregate evidence`,
+      'unsatisfiable',
+    );
+  }
   const report = candidate.assertionReport;
   const formats =
     report &&
@@ -296,15 +305,18 @@ function checkCounterexampleSatisfiability(
     );
   }
 
-  const aggregateCapability = checkAggregateCounterexampleCapability(input, claim, req, candidate);
-  if (req.kind === 'aggregate_check') return aggregateCapability;
+  if (req.kind === 'aggregate_check') {
+    return checkAggregateCounterexampleCapability(input, claim, req, candidate);
+  }
+
+  const assertionRequirement = req;
 
   if (candidate.assertionCapability !== 'structured') {
     return invalid(
       input.source,
       claim,
       'counterexampleRequirement.checkId',
-      `check '${req.checkId}' has assertionCapability='${candidate.assertionCapability}', cannot produce assertion evidence for provider '${req.assertion.providerId}'`,
+      `check '${assertionRequirement.checkId}' has assertionCapability='${candidate.assertionCapability}', cannot produce assertion evidence for provider '${assertionRequirement.assertion.providerId}'`,
       'unsatisfiable',
     );
   }
@@ -320,44 +332,44 @@ function checkCounterexampleSatisfiability(
     );
   }
 
-  if (report.providerId !== req.assertion.providerId) {
+  if (report.providerId !== assertionRequirement.assertion.providerId) {
     return invalid(
       input.source,
       claim,
       'counterexampleRequirement.assertion.providerId',
-      `check produces assertions from '${report.providerId}', claim requires '${req.assertion.providerId}'`,
+      `check produces assertions from '${report.providerId}', claim requires '${assertionRequirement.assertion.providerId}'`,
       'unsatisfiable',
     );
   }
 
-  const formats = ASSERTION_FORMATS_BY_PROVIDER.get(req.assertion.providerId);
+  const formats = ASSERTION_FORMATS_BY_PROVIDER.get(assertionRequirement.assertion.providerId);
   if (!formats || !formats.has(report.format)) {
     return invalid(
       input.source,
       claim,
       'counterexampleRequirement.assertion.providerId',
-      `format '${report.format}' from provider '${req.assertion.providerId}' is not assertion-binding-capable`,
+      `format '${report.format}' from provider '${assertionRequirement.assertion.providerId}' is not assertion-binding-capable`,
       'unsatisfiable',
     );
   }
 
-  const codec = ASSERTION_CODEC_BY_PROVIDER.get(req.assertion.providerId);
+  const codec = ASSERTION_CODEC_BY_PROVIDER.get(assertionRequirement.assertion.providerId);
   if (!codec) {
     return invalid(
       input.source,
       claim,
       'counterexampleRequirement.assertion.providerId',
-      `provider '${req.assertion.providerId}' has no registered identity codec`,
+      `provider '${assertionRequirement.assertion.providerId}' has no registered identity codec`,
       'unsatisfiable',
     );
   }
 
-  if (!codec.validateLocalId(req.assertion.localId)) {
+  if (!codec.validateLocalId(assertionRequirement.assertion.localId)) {
     return invalid(
       input.source,
       claim,
       'counterexampleRequirement.assertion.localId',
-      `'${req.assertion.localId}' is not a valid assertion identity for provider '${req.assertion.providerId}'`,
+      `'${assertionRequirement.assertion.localId}' is not a valid assertion identity for provider '${assertionRequirement.assertion.providerId}'`,
       'unsatisfiable',
     );
   }

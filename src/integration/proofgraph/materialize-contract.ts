@@ -18,6 +18,7 @@ import {
   resolveVerifiedMutationAttempt,
   resolveVerifiedMutationVerdicts,
 } from './mutation-provider.js';
+import { AGGREGATE_FORMATS_BY_PROVIDER } from '../../providers/registry.js';
 
 const EMPTY_CONTRACT: ProofContract = { version: 'contract.v1', claims: [] };
 
@@ -77,6 +78,15 @@ function requiredEvidence(declaration: PlanClaimDeclaration) {
   return { positive, adversarial: declaration.critical ? ['counterexample' as const] : [] };
 }
 
+function supportsAggregateCounterexample(state: SessionState, requiredCheckId: string): boolean {
+  const candidate = state.verificationCandidates?.find((c) => c.kind === requiredCheckId);
+  const report =
+    candidate?.assertionCapability === 'structured' ? candidate.assertionReport : undefined;
+  return Boolean(
+    report && AGGREGATE_FORMATS_BY_PROVIDER.get(report.providerId)?.has(report.format),
+  );
+}
+
 function resolveCounterexampleAttempts(
   state: SessionState,
   declaration: PlanClaimDeclaration,
@@ -89,6 +99,13 @@ function resolveCounterexampleAttempts(
   const requiredCheckId = requirement?.checkId;
   if (!requiredCheckId) return { counterexampleAttempts: [] };
   if ('kind' in requirement && requirement.kind === 'aggregate_check') {
+    if (supportsAggregateCounterexample(state, requiredCheckId)) {
+      return {
+        counterexampleAttempts: attempts.filter(
+          (attempt) => attempt.result.checkId === requiredCheckId,
+        ),
+      };
+    }
     return {
       counterexampleAttempts: [],
       cxGap: {

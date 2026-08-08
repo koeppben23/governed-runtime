@@ -158,7 +158,7 @@ export const AssertionExtractionReasonCode = z.enum([
 ]);
 export type AssertionExtractionReasonCode = z.infer<typeof AssertionExtractionReasonCode>;
 
-export const AssertionBindingCapability = z.enum(['assertion', 'check_only']);
+export const AssertionBindingCapability = z.enum(['assertion', 'aggregate', 'check_only']);
 export type AssertionBindingCapability = z.infer<typeof AssertionBindingCapability>;
 
 const ExtractedAssertionResultSchema = z
@@ -178,6 +178,21 @@ const ExtractedAssertionResultSchema = z
         code: z.ZodIssueCode.custom,
         message: 'check_only binding capability must not carry assertion-level evidence',
         path: ['bindingCapability'],
+      });
+    }
+    if (
+      data.bindingCapability === 'aggregate' &&
+      (data.summary.suiteInfrastructureError ||
+        data.summary.passedCount +
+          data.summary.failedCount +
+          data.summary.erroredCount +
+          data.summary.skippedCount !==
+          data.summary.assertionCount)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'aggregate evidence requires a complete provider-attested report summary',
+        path: ['summary'],
       });
     }
     for (let i = 0; i < data.assertions.length; i++) {

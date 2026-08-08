@@ -120,19 +120,24 @@ describe('validateProofClaimContract — critical contract', () => {
   });
 
   it('accepts aggregate coverage when the candidate report provider and format are registered', () => {
-    const providerId = 'test-aggregate-provider';
-    const format = 'test_aggregate_format';
     const result = validateProofClaimContract({
       ...BASE,
       source: 'plan',
-      aggregateFormatsByProvider: new Map([[providerId, new Set([format])]]),
       verificationCandidates: [
+        BASE.verificationCandidates[0]!,
         {
-          ...BASE.verificationCandidates[1],
+          assertionCapability: 'structured' as const,
+          kind: 'security' as const,
+          command: './mvnw test',
+          source: 'repo:mvnw',
+          confidence: 'high' as const,
+          reason: 'pytest JUnit XML suite report',
           assertionReport: {
-            ...BASE.verificationCandidates[1].assertionReport!,
-            providerId: providerId as never,
-            format: format as never,
+            collection: 'snapshot_diff' as const,
+            transport: 'file' as const,
+            providerId: 'pytest' as never,
+            format: 'junit_xml' as never,
+            standardPatterns: ['reports.xml'],
           },
         },
       ],

@@ -45,20 +45,7 @@ export function deriveProofGraph(
       evidence.task.claims.map((claim) => [claim.claimId, claim] as const),
     ),
   );
-  const surfaceDigests = opts?.currentSurfaceDigests ?? {};
-  const diagnostics = opts?.claimDiagnostics;
-  // Pre-v2 plan declarations did not persist proofEligibility. Preserve their
-  // certificate for audit while denying proof even for already-materialized claims.
-  const declarations = state.plan?.claimDeclarations;
-  const legacyPlanClaimIds =
-    declarations && !('version' in declarations)
-      ? new Set(declarations.claims.map((claim) => claim.claimId))
-      : new Set<string>();
-  const contractClaims = (state.proofContract?.claims ?? []).map((claim) =>
-    claim.proofEligibility === undefined && legacyPlanClaimIds.has(claim.claimId)
-      ? { ...claim, proofEligibility: 'legacy_declaration_v1' as const }
-      : claim,
-  );
+  const contractClaims = normalizeContractClaims(state);
   const base = evaluateProofGraph(
     {
       claims: [...contractClaims, ...standaloneClaims.values()],
@@ -66,12 +53,28 @@ export function deriveProofGraph(
       counterexamples,
       currentImplementationDigest: state.implementation?.digest ?? null,
       currentPlanDigest: state.plan?.current.digest ?? null,
-      currentSurfaceDigests: surfaceDigests,
+      currentSurfaceDigests: opts?.currentSurfaceDigests ?? {},
     },
     evaluatedAt,
   );
+  const diagnostics = opts?.claimDiagnostics;
   if (diagnostics && Object.keys(diagnostics).length > 0) {
     return { ...base, claimDiagnostics: diagnostics };
   }
   return base;
+}
+
+function normalizeContractClaims(state: SessionState) {
+  // Pre-v2 plan declarations did not persist proofEligibility. Preserve their
+  // certificate for audit while denying proof even for already-materialized claims.
+  const declarations = state.plan?.claimDeclarations;
+  const legacyPlanClaimIds =
+    declarations && !('version' in declarations)
+      ? new Set(declarations.claims.map((claim) => claim.claimId))
+      : new Set<string>();
+  return (state.proofContract?.claims ?? []).map((claim) =>
+    claim.proofEligibility === undefined && legacyPlanClaimIds.has(claim.claimId)
+      ? { ...claim, proofEligibility: 'legacy_declaration_v1' as const }
+      : claim,
+  );
 }

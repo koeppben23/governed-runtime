@@ -40,7 +40,7 @@ import {
   ensureMissingAnalysisObligation,
   hasReviewContentInput,
   hasImplicitContentSignal,
-  matchesReviewObligationInput,
+  validateHostTaskContinuationInput,
   resolveSubmittedReviewObligation,
   validateSubmittedReviewFindings,
   consumeValidatedReviewObligation,
@@ -62,8 +62,6 @@ import {
   appendPreparedReviewEvidence,
   prepareStandaloneReviewEvidence,
 } from './preparation.js';
-
-// ─── Content Digest Binding ─────────────────────────────────────────────────
 
 async function bindReviewContentDigest(
   context: Parameters<ToolDefinition['execute']>[1],
@@ -348,19 +346,6 @@ function resolveHostTaskObligation(
   return { kind: 'missing' };
 }
 
-function validateHostTaskObligationInput(
-  obligation: ReviewObligation,
-  args: ReviewToolArgs,
-): string | null {
-  if (!matchesReviewObligationInput(obligation, args)) {
-    return formatBlocked('REVIEW_OBLIGATION_INPUT_MISMATCH', {
-      obligationId: obligation.obligationId,
-      reason: 'The supplied review input does not match the host-task review obligation.',
-    });
-  }
-  return null;
-}
-
 type AttemptRejectionResult =
   | { ok: true }
   | {
@@ -416,7 +401,7 @@ async function prepareHostTaskVerdictReview(
   }
 
   const obligation = resolution.obligation;
-  const inputBlock = validateHostTaskObligationInput(obligation, exec.args);
+  const inputBlock = validateHostTaskContinuationInput(obligation, exec.args);
   if (inputBlock) return inputBlock;
   const resolved = resolveHostTaskFindings(state.reviewAssurance, obligation);
 

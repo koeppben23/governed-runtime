@@ -573,14 +573,18 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
       String(await review.execute({ reviewVerdict: 'changes_requested' }, ctx)),
     ) as Record<string, unknown>;
     expect(noId.code).toBe('REVIEW_OBLIGATION_ID_REQUIRED');
-    expect(noId.reviewObligationId).toBe(obligationId);
     expect(JSON.stringify(await readState(sessDir))).toBe(beforeNoId);
 
     // The exact A/A1 lineage and matching captured verdict complete once.
     const completion = JSON.parse(
       String(
         await review.execute(
-          { reviewObligationId: obligationId, reviewVerdict: 'changes_requested' },
+          {
+            branch: 'feature-add-due-date',
+            inputOrigin: 'branch',
+            reviewObligationId: obligationId,
+            reviewVerdict: 'changes_requested',
+          },
           ctx,
         ),
       ),
