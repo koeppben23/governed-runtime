@@ -47,9 +47,21 @@ export function deriveProofGraph(
   );
   const surfaceDigests = opts?.currentSurfaceDigests ?? {};
   const diagnostics = opts?.claimDiagnostics;
+  // Pre-v2 plan declarations did not persist proofEligibility. Preserve their
+  // certificate for audit while denying proof even for already-materialized claims.
+  const declarations = state.plan?.claimDeclarations;
+  const legacyPlanClaimIds =
+    declarations && !('version' in declarations)
+      ? new Set(declarations.claims.map((claim) => claim.claimId))
+      : new Set<string>();
+  const contractClaims = (state.proofContract?.claims ?? []).map((claim) =>
+    claim.proofEligibility === undefined && legacyPlanClaimIds.has(claim.claimId)
+      ? { ...claim, proofEligibility: 'legacy_declaration_v1' as const }
+      : claim,
+  );
   const base = evaluateProofGraph(
     {
-      claims: [...(state.proofContract?.claims ?? []), ...standaloneClaims.values()],
+      claims: [...contractClaims, ...standaloneClaims.values()],
       providerResults,
       counterexamples,
       currentImplementationDigest: state.implementation?.digest ?? null,

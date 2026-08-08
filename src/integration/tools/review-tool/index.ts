@@ -147,38 +147,90 @@ function resolveObligationBranchSource(
   return resolveBranchReviewSource(exec.args.branch, exec.args.base, exec.context.worktree);
 }
 
-function missingHostTaskVerdictBlock(
+type HostTaskContinuationAuthority =
+  | { readonly kind: 'not_applicable' }
+  | {
+      readonly kind: 'explicit';
+      readonly reviewObligationId: string;
+      readonly reviewVerdict: 'accept' | 'changes_requested';
+    }
+  | {
+      readonly kind: 'id_required';
+      readonly compatibleObligationIds: readonly string[];
+    }
+  | {
+      readonly kind: 'ambiguous';
+      readonly compatibleObligationIds: readonly string[];
+    };
+
+function resolveHostTaskContinuationAuthority(
   state: SessionState,
   exec: ReviewExecutionContext,
-): string | null {
+): HostTaskContinuationAuthority {
   if (
-    exec.policy !== 'host_task_required' ||
-    exec.args.reviewVerdict === undefined ||
-    exec.args.reviewObligationId !== undefined ||
-    hasReviewContentInput(exec.args)
+    exec.policy !== 'host_task_required' || exec.args.reviewVerdict === undefined
   ) {
-    return null;
+    return { kind: 'not_applicable' };
   }
-  const candidates = (state.reviewAssurance?.obligations ?? []).filter(
-    (obligation) =>
-      obligation.obligationType === 'review' &&
-      obligation.status !== 'consumed' &&
-      obligation.status !== 'blocked',
-  );
-  if (candidates.length > 1) {
+  if (exec.args.reviewObligationId !== undefined) {
+    return {
+      kind: 'explicit',
+      reviewObligationId: exec.args.reviewObligationId,
+      reviewVerdict: exec.args.reviewVerdict,
+    };
+  }
+  // A verdict accompanying content can be the first call; obligation creation
+  // remains authoritative for that path rather than guessing a continuation.
+  if (hasReviewContentInput(exec.args)) return { kind: 'not_applicable' };
+  const compatibleObligationIds = (state.reviewAssurance?.obligations ?? [])
+    .filter(
+      (obligation) =>
+        obligation.obligationType === 'review' &&
+        obligation.status !== 'consumed' &&
+        obligation.status !== 'blocked',
+    )
+    .filter((obligation) =>
+      (state.reviewAssurance?.invocations ?? []).some(
+        (invocation) =>
+          invocation.obligationId === obligation.obligationId &&
+          invocation.invocationMode === 'host_subagent_task' &&
+          invocation.hostVisible === true &&
+          invocation.capturedRawFindings != null &&
+          invocation.capturedVerdict === exec.args.reviewVerdict &&
+          (obligation.invocationId === invocation.invocationId || invocation.attemptId !== undefined),
+      ),
+    )
+    .map((obligation) => obligation.obligationId);
+  return compatibleObligationIds.length > 1
+    ? { kind: 'ambiguous', compatibleObligationIds }
+    : { kind: 'id_required', compatibleObligationIds };
+}
+
+function formatHostTaskContinuationAuthority(authority: HostTaskContinuationAuthority): string | null {
+  if (authority.kind === 'not_applicable' || authority.kind === 'explicit') return null;
+  if (authority.kind === 'ambiguous') {
     return formatBlocked('REVIEW_OBLIGATION_AMBIGUOUS', {
-      obligationIds: candidates.map((obligation) => obligation.obligationId).join(', '),
+      obligationIds: authority.compatibleObligationIds.join(', '),
       reason:
-        'More than one active review obligation could receive this host-task verdict. Supply reviewObligationId explicitly.',
+        'More than one compatible host-task review obligation has captured the supplied verdict. Supply reviewObligationId explicitly.',
     });
   }
   return formatBlocked('REVIEW_OBLIGATION_ID_REQUIRED', {
     reason:
       'A host-task review verdict requires reviewObligationId unless this is the first content-aware review call.',
-    ...(candidates.length === 1 ? { reviewObligationId: candidates[0]!.obligationId } : {}),
+    ...(authority.compatibleObligationIds.length === 1
+      ? { reviewObligationId: authority.compatibleObligationIds[0]! }
+      : {}),
     continuation:
       'Call flowguard_review with the original content fields, reviewObligationId, and reviewVerdict.',
   });
+}
+
+function missingHostTaskVerdictBlock(
+  state: SessionState,
+  exec: ReviewExecutionContext,
+): string | null {
+  return formatHostTaskContinuationAuthority(resolveHostTaskContinuationAuthority(state, exec));
 }
 
 async function prepareReviewExecution(
@@ -308,15 +360,6 @@ function validateHostTaskObligationInput(
   return null;
 }
 
-function getHostTaskVerdictContinuation(
-  exec: ReviewExecutionContext,
-): { reviewObligationId: string; reviewVerdict: 'accept' | 'changes_requested' } | null {
-  if (exec.policy !== 'host_task_required') return null;
-  const { reviewObligationId, reviewVerdict } = exec.args;
-  if (reviewObligationId === undefined || reviewVerdict === undefined) return null;
-  return { reviewObligationId, reviewVerdict };
-}
-
 type AttemptRejectionResult =
   | { ok: true }
   | {
@@ -360,14 +403,13 @@ async function prepareHostTaskVerdictReview(
 ): Promise<ReviewPreparation | string | null> {
   // A verdict without an ID is an allowed first call. It must create (or reissue
   // instructions for) an obligation rather than guessing a continuation identity.
-  const continuation = getHostTaskVerdictContinuation(exec);
-  if (!continuation) return null;
-  if (!hasReviewContentInput(exec.args)) return null;
+  const authority = resolveHostTaskContinuationAuthority(state, exec);
+  if (authority.kind !== 'explicit') return null;
 
-  const resolution = resolveHostTaskObligation(state, continuation.reviewObligationId);
+  const resolution = resolveHostTaskObligation(state, authority.reviewObligationId);
   if (resolution.kind === 'missing') {
     return formatBlocked('REVIEW_OBLIGATION_NOT_FOUND', {
-      obligationId: continuation.reviewObligationId,
+      obligationId: authority.reviewObligationId,
       reason: 'The host-task review obligation is missing, consumed, or blocked.',
     });
   }
@@ -420,9 +462,9 @@ async function prepareHostTaskVerdictReview(
     });
   }
 
-  if (continuation.reviewVerdict !== resolved.findings.overallVerdict) {
+  if (authority.reviewVerdict !== resolved.findings.overallVerdict) {
     return formatBlocked('SUBAGENT_FINDINGS_VERDICT_MISMATCH', {
-      provided: continuation.reviewVerdict,
+      provided: authority.reviewVerdict,
       expected: resolved.findings.overallVerdict,
     });
   }

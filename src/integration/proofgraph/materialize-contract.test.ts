@@ -11,6 +11,7 @@ import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 import { computeRecordDigest } from '../../state/evidence-plan.js';
 import { evaluateProofGraph } from '../../audit/proofgraph/evaluate.js';
+import { deriveProofGraph } from '../../audit/proofgraph/derive.js';
 import {
   materializeApprovedPlanContract,
   materializeApprovedPlanContractResult,
@@ -182,6 +183,45 @@ describe('materializeApprovedPlanContract', () => {
       },
       NOW,
     );
+    expect(projection.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+  });
+
+  it('keeps an already-materialized legacy claim from becoming PROVEN when eligibility is absent', () => {
+    const state = stateWithClaims();
+    const claim = {
+      claimId: CLAIM_ID,
+      statement: 'the approved plan behavior is implemented',
+      signalClass: 'fact' as const,
+      critical: false,
+      provenance: {
+        kind: 'canonical_authority' as const,
+        authorityId: 'plan',
+        digest: PLAN_DIGEST,
+      },
+      evidenceRefs: [],
+      counterexampleRefs: [],
+    };
+    const projection = deriveProofGraph(
+      { ...state, proofContract: { version: 'contract.v1' as const, claims: [claim] } },
+      [
+        {
+          claimId: CLAIM_ID,
+          providerKind: 'executed_test',
+          providerId: 'test-provider',
+          providerVersion: '1',
+          status: 'pass',
+          input: { command: 'npm test' },
+          source: { location: 'package.json', stableId: 'test' },
+          binding: { kind: 'implementation', digest: IMPL_DIGEST },
+          resultDigest: 'a'.repeat(64),
+          executedAt: NOW,
+          attestation: 'flowguard_executed',
+        },
+      ],
+      [],
+      NOW,
+    );
+    expect(state.plan!.approvalCertificate).toBeDefined();
     expect(projection.claims[0]!.verificationState).toBe('NOT_VERIFIED');
   });
 

@@ -115,7 +115,34 @@ describe('validateProofClaimContract — critical contract', () => {
       ],
     });
     expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
-    if (result.kind === 'invalid') expect(result.detail).toContain('structured assertion reports');
+    if (result.kind === 'invalid') expect(result.detail).toContain('aggregate counterexample capability');
+  });
+
+  it('accepts aggregate coverage when the candidate report provider and format are registered', () => {
+    const providerId = 'test-aggregate-provider';
+    const format = 'test_aggregate_format';
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      aggregateFormatsByProvider: new Map([[providerId, new Set([format])]]),
+      verificationCandidates: [
+        {
+          ...BASE.verificationCandidates[1],
+          assertionReport: {
+            ...BASE.verificationCandidates[1].assertionReport!,
+            providerId: providerId as never,
+            format: format as never,
+          },
+        },
+      ],
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+        }),
+      ],
+    });
+    expect(result).toEqual({ kind: 'ok' });
   });
 
   it('rejects a critical claim without a counterexample check', () => {

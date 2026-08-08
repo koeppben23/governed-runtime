@@ -29,6 +29,7 @@ import type { VerificationCandidate } from '../../state/discovery-schemas.js';
 import {
   ASSERTION_FORMATS_BY_PROVIDER,
   ASSERTION_CODEC_BY_PROVIDER,
+  AGGREGATE_FORMATS_BY_PROVIDER,
 } from '../../providers/registry.js';
 
 /** Write boundary a declaration arrived through; selects the public field names. */
@@ -59,6 +60,8 @@ export interface ClaimContractInput {
   readonly allowedSurfaces: readonly string[];
   readonly allowedMutationProfiles: readonly string[];
   readonly verificationCandidates: readonly VerificationCandidate[];
+  /** Derived provider-registry capability map; defaults to the installed registry. */
+  readonly aggregateFormatsByProvider?: ReadonlyMap<string, ReadonlySet<string>>;
   readonly source: ClaimContractSource;
 }
 
@@ -256,13 +259,18 @@ function checkAggregateCounterexampleCapability(
   input: ClaimContractInput,
   claim: NormalizedClaimDeclaration,
   requirement: NonNullable<NormalizedClaimDeclaration['counterexampleRequirement']>,
+  candidate: VerificationCandidate,
 ): ClaimContractResult | null {
   if (requirement.kind !== 'aggregate_check') return null;
+  const report = candidate.assertionReport;
+  const formats =
+    report && (input.aggregateFormatsByProvider ?? AGGREGATE_FORMATS_BY_PROVIDER).get(report.providerId);
+  if (report && formats?.has(report.format)) return null;
   return invalid(
     input.source,
     claim,
     'counterexampleRequirement',
-    `check '${requirement.checkId}' has no registered aggregate counterexample capability; structured assertion reports do not provide aggregate coverage`,
+    `check '${requirement.checkId}' has no registered aggregate counterexample capability for its assertion report provider and format`,
     'unsatisfiable',
   );
 }
@@ -287,8 +295,8 @@ function checkCounterexampleSatisfiability(
     );
   }
 
-  const aggregateCapability = checkAggregateCounterexampleCapability(input, claim, req);
-  if (req.kind === 'aggregate_check') return aggregateCapability!;
+  const aggregateCapability = checkAggregateCounterexampleCapability(input, claim, req, candidate);
+  if (req.kind === 'aggregate_check') return aggregateCapability;
 
   if (candidate.assertionCapability !== 'structured') {
     return invalid(

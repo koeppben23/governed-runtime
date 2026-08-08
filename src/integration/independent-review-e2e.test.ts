@@ -544,5 +544,63 @@ describe('independent-review e2e: host_task_required runtime path (real plugin h
     ).toBeDefined();
     expect(bound?.invocationMode).toBe('host_subagent_task');
     expect(bound?.hostVisible).toBe(true);
+
+    // An unrelated active review without captured lineage must not make this
+    // continuation ambiguous. A no-ID verdict still never mutates state.
+    const boundObligation = finalState?.reviewAssurance?.obligations.find(
+      (item) => item.obligationId === obligationId,
+    );
+    if (!boundObligation) throw new TypeError('Expected bound standalone review obligation');
+    await writeState(sessDir, {
+      ...finalState!,
+      reviewAssurance: {
+        ...finalState!.reviewAssurance!,
+        obligations: [
+          ...finalState!.reviewAssurance!.obligations,
+          {
+            ...boundObligation,
+            obligationId: '4c9f1c40-3333-4aaa-8bbb-cccccccccccc',
+            invocationId: null,
+            status: 'pending',
+            fulfilledAt: null,
+            consumedAt: null,
+          },
+        ],
+      },
+    });
+    const beforeNoId = JSON.stringify(await readState(sessDir));
+    const noId = JSON.parse(
+      String(await review.execute({ reviewVerdict: 'changes_requested' }, ctx)),
+    ) as Record<string, unknown>;
+    expect(noId.code).toBe('REVIEW_OBLIGATION_ID_REQUIRED');
+    expect(noId.reviewObligationId).toBe(obligationId);
+    expect(JSON.stringify(await readState(sessDir))).toBe(beforeNoId);
+
+    // The exact A/A1 lineage and matching captured verdict complete once.
+    const completion = JSON.parse(
+      String(
+        await review.execute(
+          { reviewObligationId: obligationId, reviewVerdict: 'changes_requested' },
+          ctx,
+        ),
+      ),
+    ) as Record<string, unknown>;
+    expect(completion.phase).toBe('REVIEW_COMPLETE');
+    expect(completion.reviewCard).toContain('host_subagent_task');
+    expect(completion.reviewCard).toContain(CHILD_SESSION);
+    const consumed = await readState(sessDir);
+    const consumedInvocation = consumed?.reviewAssurance?.invocations.find(
+      (item) => item.invocationId === bound?.invocationId,
+    );
+    const obligation = consumed?.reviewAssurance?.obligations.find(
+      (item) => item.obligationId === obligationId,
+    );
+    expect(obligation?.status).toBe('consumed');
+    expect(consumedInvocation?.consumedByObligationId).toBe(obligationId);
+    expect(consumed?.standaloneReviewEvidence.at(-1)).toMatchObject({
+      kind: 'completed',
+      findingsDigest: expect.any(String),
+      attestationDigest: expect.any(String),
+    });
   });
 });
