@@ -168,7 +168,7 @@ describe('presentation.markdown rendering contract', () => {
     );
     expect(markdown).toContain('## ProofGraph');
     expect(markdown).toContain(
-      '→ Make the requested code changes, then call flowguard_implement to re-record.',
+      'Make the requested code changes, then call flowguard_implement to re-record.',
     );
     expect(markdown).not.toContain('→ Continue to completion');
   });
@@ -183,7 +183,7 @@ describe('presentation.markdown rendering contract', () => {
     expect(markdown).toContain('If submitted for approval now:');
     expect(markdown).toContain('CONTRADICTED');
     expect(markdown).toContain(
-      '→ Make the requested code changes, then call flowguard_implement to re-record.',
+      'Make the requested code changes, then call flowguard_implement to re-record.',
     );
   });
 
@@ -227,7 +227,7 @@ describe('presentation.markdown rendering contract', () => {
     expect(parsed.presentation.markdown).toContain('## Implementation review blocked');
     expect(parsed.presentation.markdown).toContain('## ProofGraph');
     expect(parsed.presentation.markdown).toContain(
-      '→ Restore independent review capability and retry the implementation review.',
+      'Restore independent review capability and retry the implementation review.',
     );
   });
 });

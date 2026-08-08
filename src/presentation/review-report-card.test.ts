@@ -34,7 +34,6 @@ const baseInput = {
   proofSummary: {
     kind: 'evaluation',
     overallStatus: 'NOT_DECLARED',
-    headlineStatus: 'NOT_VERIFIED',
     claimCount: 0,
     criticalCount: 0,
     criticalProvenCount: 0,
@@ -47,7 +46,6 @@ const baseInput = {
     coverage: 'NOT_DECLARED',
     unmetCriticalClaims: [],
     otherHighlightedClaims: [],
-    evidenceFreshness: 'NOT_VERIFIED',
     approval: { status: 'not_recorded' },
     decisionContext: 'completion',
   } satisfies CompactProofPresentation,

@@ -54,7 +54,7 @@ import {
   buildProofApprovalProjection,
   type ProofApprovalProjection,
 } from './proofgraph/approval-projection.js';
-import { projectImplementationProofStatus } from './proofgraph/proof-summary-projectors.js';
+import { projectProofStatusForState } from './proofgraph/proof-summary-projectors.js';
 
 // Re-export for consumers
 export type { StatusActionProjection, StatusConclusionProjection };
@@ -374,7 +374,7 @@ export function buildStatusProjection(
       failed: completeness.summary.failed,
     },
     proofGraph: summarizePersistedProofGraph(state),
-    proofSummary: projectImplementationProofStatus(state, { decisionContext: 'current_gate' }),
+    proofSummary: projectProofStatusForState(state),
     proofApprovals: buildProofApprovalProjection(state),
     reviewLoop: getReviewLoopProgress(state),
     remainingChecks:

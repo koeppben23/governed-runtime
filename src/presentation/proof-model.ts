@@ -42,7 +42,25 @@ export type CompactProofPresentation =
     }
   | {
       readonly kind: 'evaluation';
-      readonly overallStatus: Exclude<ProofGraphPresentationStatus, 'AWAITING_EVIDENCE'>;
+      readonly overallStatus: 'NOT_DECLARED';
+      readonly claimCount: 0;
+      readonly criticalCount: 0;
+      readonly criticalProvenCount: 0;
+      readonly provenCount: 0;
+      readonly contradictedCount: 0;
+      readonly blockedCount: 0;
+      readonly staleCount: 0;
+      readonly unprovenCount: 0;
+      readonly notVerifiedCount: 0;
+      readonly coverage: 'NOT_DECLARED';
+      readonly unmetCriticalClaims: readonly [];
+      readonly otherHighlightedClaims: readonly [];
+      readonly approval: ProofApprovalPresentation;
+      readonly decisionContext: 'current_gate' | 'prospective_approval' | 'completion';
+    }
+  | {
+      readonly kind: 'evaluation';
+      readonly overallStatus: ClaimVerificationState;
       readonly claimCount: number;
       readonly criticalCount: number;
       readonly criticalProvenCount: number;

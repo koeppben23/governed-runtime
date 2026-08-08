@@ -18,10 +18,7 @@ import type {
   PlanClaimDeclarations,
   ArchitectureClaimDeclarations,
 } from '../../state/proofgraph-approval.js';
-import {
-  authorizedCriticalPlanClaimIds,
-  hasCurrentPlanApprovalCertificate,
-} from '../../state/proofgraph-approval.js';
+import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
 
 import type {
   CompactProofClaim,
@@ -29,10 +26,14 @@ import type {
   ClaimVerificationState,
 } from '../../presentation/proof-summary.js';
 import type { ProofApprovalPresentation } from '../../presentation/proof-model.js';
+import { buildProofApprovalProjection } from './approval-projection.js';
 
 // ─── Decision context ───────────────────────────────────────────────────────
 
 type ProofDecisionContext = 'current_gate' | 'prospective_approval' | 'completion';
+
+const PLAN_PROOF_PHASES = new Set(['PLAN', 'PLAN_REVIEW', 'VALIDATION']);
+const ARCHITECTURE_PROOF_PHASES = new Set(['ARCHITECTURE', 'ARCH_REVIEW', 'ARCH_COMPLETE']);
 
 /**
  * Legacy declaration-only helpers retained for callers without resolved state.
@@ -233,17 +234,15 @@ function selectUnmetCriticalClaims(
 }
 
 function approvalPresentation(state: SessionState): ProofApprovalPresentation {
-  if (hasCurrentPlanApprovalCertificate(state.plan)) {
-    return {
-      status: 'current',
-      flow: 'plan',
-      certificateId: state.plan.approvalCertificate.certificateId,
-    };
-  }
-  if (state.plan?.approvalCertificate || state.architecture?.approvalCertificate) {
-    return { status: 'stale_or_unbound' };
-  }
-  return { status: 'not_recorded' };
+  const approval = buildProofApprovalProjection(state);
+  const certificate = approval.certificates[0];
+  if (!certificate) return { status: 'not_recorded' };
+  if (approval.coverageGaps.length > 0) return { status: 'stale_or_unbound' };
+  return {
+    status: 'current',
+    flow: certificate.flow,
+    certificateId: certificate.certificateId,
+  };
 }
 
 // ─── Count tallies ──────────────────────────────────────────────────────────
@@ -390,13 +389,33 @@ function buildEvaluationResult(
 ): CompactProofPresentation {
   const claims = state.proofGraph?.claims ?? [];
   const summary = summarizePersistedProofGraph(state);
+  if (claims.length === 0) {
+    return {
+      kind: 'evaluation',
+      overallStatus: 'NOT_DECLARED',
+      claimCount: 0,
+      criticalCount: 0,
+      criticalProvenCount: 0,
+      provenCount: 0,
+      contradictedCount: 0,
+      blockedCount: 0,
+      staleCount: 0,
+      unprovenCount: 0,
+      notVerifiedCount: 0,
+      coverage: 'NOT_DECLARED',
+      unmetCriticalClaims: [],
+      otherHighlightedClaims: [],
+      approval: approvalPresentation(state),
+      decisionContext,
+    };
+  }
   const tallies = tallyClaims(claims);
   const unmetCriticalClaims = selectUnmetCriticalClaims(claims, state.plan?.claimDeclarations);
   const result: CompactProofPresentation = {
     kind: 'evaluation',
     claimCount: summary.claimCount,
     coverage: summary.coverage,
-    overallStatus: claims.length === 0 ? 'NOT_DECLARED' : computeHeadlineStatus(claims, gateResult),
+    overallStatus: computeHeadlineStatus(claims, gateResult),
     headlineStatus: computeHeadlineStatus(claims, gateResult),
     ...primReason(gateResult),
     unmetCriticalClaims,
@@ -418,6 +437,13 @@ function buildEvaluationResult(
     approval: approvalPresentation(state),
   };
   return result;
+}
+
+/** Single phase-aware ProofGraph projector for resolved governance state. */
+export function projectProofStatusForState(state: SessionState): CompactProofPresentation {
+  if (PLAN_PROOF_PHASES.has(state.phase)) return projectPlanProofStatus(state);
+  if (ARCHITECTURE_PROOF_PHASES.has(state.phase)) return projectArchitectureProofStatus(state);
+  return projectImplementationProofStatus(state, { decisionContext: 'current_gate' });
 }
 
 export function projectImplementationProofStatus(

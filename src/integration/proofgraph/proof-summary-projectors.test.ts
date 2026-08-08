@@ -20,6 +20,7 @@ import {
   projectArchitectureDecisionClaims,
   projectImplementationProofStatus,
   projectCompletionProofStatus,
+  projectProofStatusForState,
 } from './proof-summary-projectors.js';
 import type { ProofClaim } from '../../state/proofgraph.js';
 import type { SessionState } from '../../state/schema.js';
@@ -186,6 +187,36 @@ describe('projectPlanProofObligations', () => {
     expect(legacyResult.falsificationReadyCount).toBe(assertionResult.falsificationReadyCount);
     expect(legacyResult.missingFalsificationCount).toBe(assertionResult.missingFalsificationCount);
     expect(legacyResult.criticalCount).toBe(assertionResult.criticalCount);
+  });
+});
+
+describe('projectProofStatusForState', () => {
+  it('uses declared plan claims at PLAN_REVIEW before ProofGraph materialization', () => {
+    const state = {
+      ...makeState('PLAN_REVIEW'),
+      plan: {
+        ...PLAN_RECORD,
+        claimDeclarations: {
+          flow: 'plan' as const,
+          claims: [
+            {
+              claimId: '00000000-0000-0000-0000-000000000099',
+              statement: 'Declared plan claim',
+              critical: true,
+              expectedCheckId: 'check-1',
+              authoritySectionId: 'sec-1',
+            },
+          ],
+        },
+      },
+      proofGraph: undefined,
+    } as SessionState;
+
+    expect(projectProofStatusForState(state)).toMatchObject({
+      kind: 'declaration',
+      overallStatus: 'AWAITING_EVIDENCE',
+      claimCount: 1,
+    });
   });
 });
 

@@ -97,4 +97,16 @@ describe('ProofGraph presentation SSOT', () => {
     });
     expect(violations).toEqual([]);
   });
+
+  it('reserves ProofGraph Markdown rendering for the shared renderer', () => {
+    const violations = collectSourceFiles().flatMap((abs) => {
+      const rel = relative(SRC, abs);
+      if (rel === 'presentation/markdown.ts' || rel === CANONICAL_MODULE) return [];
+      const content = readFileSync(abs, 'utf-8');
+      return /\bimport\b[^;]*renderProofGraphMarkdown[^;]*from/.test(content)
+        ? [`${rel}: imports renderProofGraphMarkdown outside presentation/markdown.ts`]
+        : [];
+    });
+    expect(violations).toEqual([]);
+  });
 });

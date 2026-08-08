@@ -21,7 +21,7 @@ import {
   type StatusActionProjection,
 } from './status-conclusion.js';
 import type { BlockedProjection, FinishCard } from './status.js';
-import { projectImplementationProofStatus } from './proofgraph/proof-summary-projectors.js';
+import { projectProofStatusForState } from './proofgraph/proof-summary-projectors.js';
 
 // ─── /why Projection Types ─────────────────────────────────────────────────────
 
@@ -98,7 +98,7 @@ export function buildWhyPresentationProjection(
     phaseLabel: PHASE_LABELS[state.phase],
     blocker,
     evidenceSlots,
-    proofSummary: projectImplementationProofStatus(state, { decisionContext: 'current_gate' }),
+    proofSummary: projectProofStatusForState(state),
     conclusion: buildWhyConclusion(evalResult, productNext),
   };
 }

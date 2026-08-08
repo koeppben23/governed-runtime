@@ -101,11 +101,11 @@ import type { ImplementRuntime } from './implement-shared.js';
 import { nextImplementationReviewIteration } from './implement-shared.js';
 import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import type { CompactProofPresentation } from '../../presentation/proof-summary.js';
-import { renderProofGraphMarkdown } from '../../presentation/proof-summary.js';
-
-function renderProofSection(summary: CompactProofPresentation): string {
-  return renderProofGraphMarkdown(summary);
-}
+import {
+  buildImplReviewBlockedMarkdown,
+  buildImplReviewChangesRequestedMarkdown,
+} from './implement-review-presentation.js';
+export { buildImplReviewChangesRequestedMarkdown } from './implement-review-presentation.js';
 
 function attachProofSummaryToBlockedResponse(
   blockedResponse: string,
@@ -120,34 +120,6 @@ function attachProofSummaryToBlockedResponse(
     ),
   };
   return JSON.stringify(parsed);
-}
-
-function buildImplReviewBlockedMarkdown(
-  message: string,
-  proofSummary: CompactProofPresentation,
-): string {
-  return [
-    '## Implementation review blocked',
-    '',
-    message,
-    '',
-    renderProofSection(proofSummary),
-    '',
-    '→ Restore independent review capability and retry the implementation review.',
-  ].join('\n');
-}
-
-export function buildImplReviewChangesRequestedMarkdown(
-  statusLine: string,
-  proofSummary: CompactProofPresentation,
-): string {
-  return [
-    statusLine,
-    '',
-    renderProofSection(proofSummary),
-    '',
-    '→ Make the requested code changes, then call flowguard_implement to re-record.',
-  ].join('\n');
 }
 
 function proofDecisionContextForVerdict(
