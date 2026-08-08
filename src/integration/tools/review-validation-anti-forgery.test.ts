@@ -105,6 +105,7 @@ function strictAssuranceFixture(
         blockedCode: null,
         fulfilledAt: new Date().toISOString(),
         consumedAt: null,
+        reviewedFileScope: ['src/foo.ts'],
       },
     ],
     invocations: [

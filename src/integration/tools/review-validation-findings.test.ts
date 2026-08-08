@@ -83,6 +83,7 @@ function strictAssuranceFixture(
         blockedCode: null,
         fulfilledAt: new Date().toISOString(),
         consumedAt: null,
+        reviewedFileScope: ['src/foo.ts'],
       },
     ],
     invocations: [
@@ -621,6 +622,7 @@ describe('validateReviewFindings — implementation challenge freshness', () => 
       consumedAt: null,
       requiredChallengeCount: 1,
       requiredChallengeKind: 'implementation_challenge' as const,
+      reviewedFileScope: ['src/foo.ts'],
     };
   }
 

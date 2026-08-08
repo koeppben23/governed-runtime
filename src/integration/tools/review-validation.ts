@@ -290,8 +290,8 @@ function checkReviewFindingsScope(
     findings: scopeLocations,
     reviewedFileScope: obligation.reviewedFileScope,
   });
-  if (!scopeResult.ok && scopeResult.code === 'REVIEW_FINDING_OUT_OF_SCOPE') {
-    return formatBlocked('REVIEW_FINDING_OUT_OF_SCOPE', {
+  if (!scopeResult.ok) {
+    return formatBlocked(scopeResult.code, {
       outOfScopePaths: scopeResult.details.outOfScopePaths.join(', '),
       obligationId: obligation.obligationId,
     });
