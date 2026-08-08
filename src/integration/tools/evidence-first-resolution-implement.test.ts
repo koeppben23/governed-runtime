@@ -130,7 +130,13 @@ vi.mock('../../presentation/phase-labels.js', () => ({
 }));
 
 vi.mock('../../presentation/next-action-copy.js', () => ({
-  buildProductNextAction: vi.fn(() => ''),
+  buildProductNextAction: vi.fn(() => ({ text: 'next action', commands: [] })),
+}));
+
+vi.mock('../../presentation/index.js', () => ({
+  PHASE_LABELS: { IMPL_REVIEW: 'Implementation review' },
+  buildEvidenceReviewCard: vi.fn(() => 'review card'),
+  buildProductNextAction: vi.fn(() => ({ text: 'next action', commands: [] })),
 }));
 
 vi.mock('../../presentation/plan-review-card.js', () => ({
@@ -323,6 +329,7 @@ function implStateWithEvidence(
           blockedCode: null,
           fulfilledAt: now,
           consumedAt: null,
+          reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
         },
       ],
       invocations: [
@@ -628,6 +635,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
             blockedCode: null,
             fulfilledAt: now,
             consumedAt: null,
+            reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
           },
         ],
         invocations: [manualAttestedInvocation({ obligationType: 'implement', findings })],

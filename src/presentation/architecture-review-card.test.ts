@@ -3,13 +3,17 @@
  * @description Unit tests for buildArchitectureReviewCard.
  */
 import { describe, it, expect } from 'vitest';
-import { buildArchitectureReviewCard } from './architecture-review-card.js';
+import {
+  buildArchitectureReviewCard as buildCard,
+  type ArchitectureReviewCardInput,
+} from './architecture-review-card.js';
+import type { CompactProofPresentation } from './proof-model.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 async function readGolden(name: string): Promise<string> {
   const p = resolve(__dirname, '..', '..', 'testdata', 'presentation', name);
-  return readFile(p, 'utf-8');
+  return (await readFile(p, 'utf-8')).trimEnd();
 }
 
 const baseInput = {
@@ -21,7 +25,22 @@ const baseInput = {
     commands: ['/approve', '/request-changes', '/reject'] as readonly string[],
   },
   isApproved: false,
+  proofSummary: {
+    kind: 'declaration',
+    flow: 'architecture',
+    overallStatus: 'NOT_DECLARED',
+    claimCount: 0,
+    criticalCount: 0,
+    approval: { attestations: [] },
+  } satisfies CompactProofPresentation,
 };
+function buildArchitectureReviewCard(
+  input: Omit<ArchitectureReviewCardInput, 'proofSummary'> &
+    Partial<Pick<ArchitectureReviewCardInput, 'proofSummary'>>,
+  options?: Parameters<typeof buildCard>[1],
+) {
+  return buildCard({ proofSummary: baseInput.proofSummary, ...input }, options);
+}
 
 describe('buildArchitectureReviewCard', () => {
   it('keeps Unicode canonical by default and supports an ASCII transient rendering', () => {
@@ -206,13 +225,15 @@ describe('architecture review golden fixtures', () => {
       proofSummary: {
         kind: 'declaration',
         flow: 'architecture',
+        overallStatus: 'AWAITING_EVIDENCE',
         claimCount: 1,
         criticalCount: 1,
+        approval: { attestations: [] },
       },
     });
-    expect(card).toContain('## Proof obligations');
+    expect(card).toContain('## ProofGraph');
     expect(card).toContain('1 architecture claim(s) declared');
-    expect(card).toContain('AWAITING EVIDENCE');
+    expect(card).toContain('AWAITING_EVIDENCE');
   });
 
   it('omits decision claims section when proofSummary is absent', () => {

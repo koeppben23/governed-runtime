@@ -19,7 +19,7 @@ function extractedResult(
   providerId: string,
   format: string,
   assertions: Array<{ localId: string; status: string; providerId?: string }>,
-  bindingCapability: 'assertion' | 'check_only' = 'assertion',
+  bindingCapability: 'assertion' | 'aggregate' | 'check_only' = 'assertion',
 ): AssertionExtractionResult {
   return {
     status: 'extracted',
@@ -126,6 +126,27 @@ describe('bindAssertionEvidence', () => {
       'vitest_json',
       [{ localId: 'src/math.test.ts::adds numbers', status: 'passed' }],
       'check_only',
+    );
+
+    const result = bindAssertionEvidence({
+      requirement: req,
+      checkId: 'test',
+      extraction,
+    });
+
+    expect(result.status).toBe('rejected');
+    if (result.status === 'rejected') {
+      expect(result.reasonCode).toBe('check_only_evidence');
+    }
+  });
+
+  it('aggregate evidence → rejected with check_only_evidence', () => {
+    const req = requirement('pytest', 'tests/test_user.py::test_create');
+    const extraction = extractedResult(
+      'pytest',
+      'junit_xml',
+      [{ localId: 'tests/test_user.py::test_create', status: 'passed' }],
+      'aggregate',
     );
 
     const result = bindAssertionEvidence({

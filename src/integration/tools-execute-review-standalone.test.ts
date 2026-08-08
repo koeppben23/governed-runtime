@@ -302,7 +302,6 @@ describe('review (standalone flow)', () => {
               severity: 'major' as const,
               category: 'risk' as const,
               message: 'Critical security flaw in authentication flow',
-              location: 'src/auth/login.ts:45',
             },
           ]
         : [];
@@ -1150,7 +1149,6 @@ describe('review (standalone flow)', () => {
               severity: 'critical' as const,
               category: 'correctness' as const,
               message: 'Logic error in token refresh',
-              location: 'src/auth/token.ts:120',
             },
           ],
           majorRisks: [

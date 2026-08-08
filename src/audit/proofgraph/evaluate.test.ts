@@ -105,6 +105,15 @@ function evaluate(
 }
 
 describe('evaluateProofGraph', () => {
+  it('never proves a legacy declaration regardless of fresh positive evidence', () => {
+    const id = uuid(99);
+    const projection = evaluate({
+      claims: [claim(id, { proofEligibility: 'legacy_declaration_v1' })],
+      providerResults: [result(id, 'pass')],
+      counterexamples: [counterexample(id, 'supported')],
+    });
+    expect(projection.claims[0]!.verificationState).toBe('NOT_VERIFIED');
+  });
   describe('the six verification states', () => {
     it('NOT_VERIFIED when provenance is missing (mandatory provenance)', () => {
       const c = claim(uuid(1), { provenance: null });

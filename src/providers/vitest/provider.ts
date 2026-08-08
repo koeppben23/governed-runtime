@@ -8,6 +8,7 @@ import {
   parseVitestJson,
   buildVitestLocalId,
 } from '../../verification/assertion-parsers/vitest-json.js';
+import { junitXmlParser } from '../../verification/assertion-parsers/parsers.js';
 import type { AssertionProviderExtension } from '../contract.js';
 import type { ParsedAssertion } from '../../verification/assertion-parsers/types.js';
 import type { ProviderId } from '../../state/assertion-identity.js';
@@ -88,6 +89,46 @@ export const vitestProvider: AssertionProviderExtension = {
           };
         },
       },
+      {
+        profileId: 'vitest-junit-aggregate',
+        providerId: 'vitest' as const,
+        format: 'junit_xml' as const,
+        kind: 'test' as const,
+        priority: 3,
+        alternate: true,
+        assertionReport: {
+          collection: 'run_specific' as const,
+          transport: 'file' as const,
+          format: 'junit_xml' as const,
+          providerId: 'vitest' as const,
+          outputArgumentTemplate:
+            '--reporter=junit --outputFile=.flowguard/reports/{attemptId}/vitest.junit.xml',
+          resultPatternTemplate: '.flowguard/reports/{attemptId}/vitest.junit.xml',
+        },
+        attestFullCheckScope(command: string) {
+          return /\bvitest\s+run\s*$/.test(command.trim());
+        },
+        createCandidate(ctx: { detectedStackIds: ReadonlySet<string>; packageManager: string }) {
+          if (!ctx.detectedStackIds.has('testFramework:vitest')) return null;
+          return {
+            assertionCapability: 'structured' as const,
+            kind: 'test' as const,
+            command: fallbackCmd(ctx.packageManager, 'vitest run'),
+            source: 'detectedStack:testFramework:vitest:aggregate',
+            confidence: 'medium' as const,
+            reason: 'Vitest JUnit aggregate suite evidence',
+            assertionReport: {
+              collection: 'run_specific' as const,
+              transport: 'file' as const,
+              format: 'junit_xml' as const,
+              providerId: 'vitest' as const,
+              outputArgumentTemplate:
+                '--reporter=junit --outputFile=.flowguard/reports/{attemptId}/vitest.junit.xml',
+              resultPatternTemplate: '.flowguard/reports/{attemptId}/vitest.junit.xml',
+            },
+          };
+        },
+      },
     ],
   },
 
@@ -102,6 +143,11 @@ export const vitestProvider: AssertionProviderExtension = {
           },
         },
         bindingCapability: 'assertion' as const,
+      },
+      {
+        format: 'junit_xml' as ReportFormatId,
+        parser: junitXmlParser,
+        bindingCapability: 'aggregate' as const,
       },
     ],
     identityCodec: {

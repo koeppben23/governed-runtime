@@ -11,7 +11,10 @@
 
 import { z } from 'zod';
 import { CheckId } from './evidence-primitives.js';
-import { VerificationCandidateKindSchema } from './discovery-schemas.js';
+import {
+  FullCheckScopeAttestationSchema,
+  VerificationCandidateKindSchema,
+} from './discovery-schemas.js';
 import { ReportFormatId } from './discovery-schemas.js';
 import { ProviderId, AssertionIdentity } from './assertion-identity.js';
 
@@ -158,7 +161,7 @@ export const AssertionExtractionReasonCode = z.enum([
 ]);
 export type AssertionExtractionReasonCode = z.infer<typeof AssertionExtractionReasonCode>;
 
-export const AssertionBindingCapability = z.enum(['assertion', 'check_only']);
+export const AssertionBindingCapability = z.enum(['assertion', 'aggregate', 'check_only']);
 export type AssertionBindingCapability = z.infer<typeof AssertionBindingCapability>;
 
 const ExtractedAssertionResultSchema = z
@@ -178,6 +181,21 @@ const ExtractedAssertionResultSchema = z
         code: z.ZodIssueCode.custom,
         message: 'check_only binding capability must not carry assertion-level evidence',
         path: ['bindingCapability'],
+      });
+    }
+    if (
+      data.bindingCapability === 'aggregate' &&
+      (data.summary.suiteInfrastructureError ||
+        data.summary.passedCount +
+          data.summary.failedCount +
+          data.summary.erroredCount +
+          data.summary.skippedCount !==
+          data.summary.assertionCount)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'aggregate evidence requires a complete provider-attested report summary',
+        path: ['summary'],
       });
     }
     for (let i = 0; i < data.assertions.length; i++) {
@@ -224,6 +242,8 @@ export const ValidationResult = z
     executedAt: z.string().datetime(),
     /** The verification kind that was executed. */
     kind: VerificationCandidateKindSchema,
+    /** Exact verification candidate selected for this execution, when identified. */
+    candidateId: z.string().min(1).optional(),
     /** The exact command that was run. */
     command: z.string().min(1),
     /** Process exit code. */
@@ -240,6 +260,8 @@ export const ValidationResult = z
     classificationReason: z.string().min(1).optional(),
     /** Structured assertion extraction result (only for assertionCapability='structured'). */
     assertionExtraction: AssertionExtractionResult.optional(),
+    /** Candidate scope attestation frozen when this command was executed. */
+    fullCheckScopeAttestation: FullCheckScopeAttestationSchema.optional(),
     /** Derived advisory repair guidance; never validation evidence authority. */
     derivedRepairGuidance: RepairGuidance.optional(),
   })

@@ -53,6 +53,7 @@ export type EnforcementDecisionKind =
   | 'clear'
   | 'evaluation_unavailable'
   | 'risk_assessment_stale'
+  | 'certificate_invalid'
   | 'critical_fact_required'
   | 'facts_unproven';
 
@@ -76,12 +77,13 @@ function isGateEligible(claim: ProofClaim): boolean {
 
 function claimReasonCodes(
   claim: ProofClaim,
-  _diagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>,
+  diagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>,
 ): EnforcementReasonCode[] {
   const reasons: EnforcementReasonCode[] = [];
   if (!claim.provenance) {
     reasons.push('provenance_missing');
   }
+  const diag = diagnostics?.get(claim.claimId);
   switch (claim.verificationState) {
     case 'PROVEN':
       reasons.push('proven');
@@ -90,7 +92,7 @@ function claimReasonCodes(
       reasons.push('counterexample_observed');
       break;
     case 'NOT_VERIFIED':
-      reasons.push('evidence_missing');
+      reasons.push(diag ?? 'evidence_missing');
       break;
     case 'STALE':
       reasons.push('evidence_stale');
@@ -138,6 +140,8 @@ function primaryReason(reasons: EnforcementReasonCode[]): EnforcementReasonCode 
 export interface ComputeEnforcementInput {
   readonly projection?: ProofGraphSummary['projection'];
   readonly authorizedCriticalClaimIds?: readonly string[];
+  /** A current certificate is required before any final-evidence approval. */
+  readonly certificateValid?: boolean;
   readonly implementationDigest?: string;
   readonly riskAssessmentStale?: boolean;
   readonly riskTriggersPresent?: boolean;
@@ -149,6 +153,16 @@ function evaluatePreconditions(
   input: ComputeEnforcementInput,
   eligibleClaims: readonly ProofClaim[],
 ): ProofGraphEnforcement | null {
+  if (input.certificateValid === false) {
+    return {
+      claims: [],
+      blockingClaims: [],
+      satisfied: false,
+      decisionKind: 'certificate_invalid',
+      reasonCode: 'evaluation_unavailable',
+      reason: 'The plan approval certificate is missing, stale, or does not bind the current plan.',
+    };
+  }
   const eligibleIds = new Set(eligibleClaims.map((c) => c.claimId));
   const missingIds = (input.authorizedCriticalClaimIds ?? []).filter((id) => !eligibleIds.has(id));
   if (missingIds.length > 0) {
@@ -180,6 +194,11 @@ function evaluatePreconditions(
     };
   }
 
+  // Authority invariant: zero claims + riskTriggersPresent → critical_fact_required.
+  // Zero claims + no risk triggers → clear (satisfied). The enforcement outcome
+  // for zero claims depends solely on whether risk triggers were detected for
+  // the current implementation. This differs from the evaluation_unavailable path
+  // (authorized claims missing from projection), which always blocks.
   if (eligibleClaims.length === 0 && input.riskTriggersPresent === true) {
     return {
       claims: [],

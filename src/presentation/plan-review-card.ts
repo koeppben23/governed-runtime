@@ -14,18 +14,12 @@
  */
 
 import type { Phase } from '../state/schema.js';
-import type {
-  ReviewCardDocument,
-  PresentationSection,
-  PresentationConclusion,
-  KeyValueItem,
-  PresentationAction,
-} from './model.js';
+import type { ReviewCardDocument, PresentationSection, KeyValueItem } from './model.js';
 import { renderMarkdown } from './markdown.js';
-import { normalizedMarkdown } from './model.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
-import type { CompactProofPresentation } from './proof-summary.js';
-import { renderCompactProofSection } from './proof-summary.js';
+import type { CompactProofPresentation } from './proof-model.js';
+import { buildProofGraphSection } from './proof-summary.js';
+import { buildReviewDecisionConclusion } from './review-decision.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -54,7 +48,7 @@ export interface PlanReviewCardInput {
    */
   forcedConvergence?: boolean;
   /** Compact ProofGraph summary for the review card (pre-approval declarations). */
-  proofSummary?: CompactProofPresentation;
+  proofSummary: CompactProofPresentation;
 }
 
 // ─── Action Descriptions ───────────────────────────────────────────────────────
@@ -85,6 +79,11 @@ export function buildPlanReviewCard(
   input: PlanReviewCardInput,
   options?: PresentationRenderOptions,
 ): string {
+  return renderMarkdown(buildPlanReviewDocument(input), options);
+}
+
+/** Build the typed plan-review document before Markdown rendering. */
+export function buildPlanReviewDocument(input: PlanReviewCardInput): ReviewCardDocument {
   const { planText, phaseLabel, productNextAction, planVersion, policyMode, taskTitle } = input;
 
   const sections: PresentationSection[] = [];
@@ -123,10 +122,7 @@ export function buildPlanReviewCard(
   }
 
   // ── Proof obligations (pre-approval) ───────────────────────────────
-  if (input.proofSummary) {
-    const rendered = renderCompactProofSection(input.proofSummary);
-    sections.push({ kind: 'text', content: normalizedMarkdown(rendered) });
-  }
+  sections.push(buildProofGraphSection(input.proofSummary));
 
   // ── Plan Body (verbatim) ───────────────────────────────────────────
   sections.push({
@@ -143,37 +139,8 @@ export function buildPlanReviewCard(
       ? 'decision'
       : 'terminal',
     sections,
-    conclusion: buildConclusion(productNextAction),
+    conclusion: buildReviewDecisionConclusion(productNextAction, PLAN_ACTION_DESCRIPTIONS),
   };
 
-  return renderMarkdown(document, options);
-}
-
-// ─── Conclusion Projection ─────────────────────────────────────────────────────
-
-function buildConclusion(productNextAction: {
-  text: string;
-  commands: readonly string[];
-}): PresentationConclusion {
-  const commands = new Set(productNextAction.commands);
-  const actions: PresentationAction[] = [];
-  for (const command of ['/approve', '/request-changes', '/reject']) {
-    if (commands.has(command)) {
-      actions.push({
-        invocation: command,
-        description: PLAN_ACTION_DESCRIPTIONS[command] ?? command,
-        visibility: 'available',
-      });
-    }
-  }
-
-  if (actions.length > 0) {
-    return {
-      kind: 'decision_required',
-      question: productNextAction.text,
-      actions,
-    };
-  }
-
-  return { kind: 'terminal', message: productNextAction.text };
+  return document;
 }

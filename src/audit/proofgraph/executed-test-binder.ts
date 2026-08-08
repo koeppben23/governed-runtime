@@ -30,6 +30,13 @@ export const EXECUTED_TEST_PROVIDER_VERSION = 'executed-test.v1';
  */
 export const VALIDATION_CHECK_LOCATION_PREFIX = 'validation-check:';
 
+function lacksRequiredSuiteScope(
+  claim: { readonly claimScope?: 'specific_behavior' | 'suite' },
+  result: { readonly fullCheckScopeAttestation?: 'full_check' },
+): boolean {
+  return claim.claimScope === 'suite' && result.fullCheckScopeAttestation !== 'full_check';
+}
+
 /**
  * Bind implementation validation attempts referenced by the session's contract
  * claims into executed-test provider results.
@@ -62,6 +69,20 @@ export function bindExecutedTestEvidence(
         continue;
       }
       const r = attempt.result;
+      if (lacksRequiredSuiteScope(claim, r)) {
+        results.push({
+          claimId: claim.claimId,
+          providerKind: 'executed_test',
+          providerId: EXECUTED_TEST_PROVIDER_ID,
+          providerVersion: EXECUTED_TEST_PROVIDER_VERSION,
+          input: {},
+          status: 'unavailable',
+          executedAt: evaluatedAt,
+          detail: `suite claim requires a full-check attested attempt for ${ref.attemptId}`,
+          attestation: 'flowguard_executed',
+        });
+        continue;
+      }
       // Executed evidence needs exactly one reproducible input; fall back to a
       // deterministic check-id assertion when a command string is unavailable.
       const input =

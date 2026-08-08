@@ -23,16 +23,19 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
 import { challengeKindForObligation } from '../../config/policy-types.js';
 import type { TaskClass } from '../../state/schema.js';
+import type { ReviewedScope } from './enforcement/findings-consistency.js';
 
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
-
 export const REVIEW_CRITERIA_VERSION = 'p40-v1';
-
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
-// No fallback: if the import fails, the module fails fast (desired for governance)
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
-
+const defaultScope = (t: ReviewObligationType, f: readonly string[] | undefined) =>
+  f !== undefined
+    ? { kind: 'files' as const, paths: [...f] }
+    : t === 'architecture'
+      ? { kind: 'not_applicable' as const, reason: 'architecture_obligation' }
+      : { kind: 'unavailable' as const, reason: 'scope_not_resolved' };
 export function getReviewMandateDigest(): string {
   return REVIEW_MANDATE_DIGEST;
 }
@@ -46,7 +49,6 @@ export function ensureReviewAssurance(
 ): ReviewAssuranceState {
   return assurance ?? emptyReviewAssurance();
 }
-
 export function createReviewObligation(input: {
   obligationType: ReviewObligationType;
   iteration: number;
@@ -58,7 +60,6 @@ export function createReviewObligation(input: {
    * verify at binding time that the reviewer's evidence addresses exactly this
    * subject — not a different plan version or different branch. Never supplied
    * by or echoed from the reviewer.
-   *
    * Required. Obligations without an authoritative subjectDigest are fail-closed
    * rejected; no binding is possible without a proven subject identity.
    */
@@ -72,8 +73,10 @@ export function createReviewObligation(input: {
   profileSource?: ReviewProfileSource;
   /** Frozen session policy; without its challenge policy, enforcement is disabled. */
   policySnapshot?: Pick<PolicySnapshot, 'challengePolicy'> | null;
-  /** Runtime paths are classified by the canonical phase-tool gate. */
+  /** Runtime paths classified by the canonical phase-tool gate. */
   changedFiles?: readonly string[];
+  /** Explicit file-scope state. Absent → derived from changedFiles + obligationType. */
+  reviewedScope?: ReviewedScope;
   /**
    * The author's declared task class. Used as a fail-closed FLOOR on the
    * challenge count so a high-risk change cannot collapse the requirement to 0
@@ -84,6 +87,7 @@ export function createReviewObligation(input: {
    */
   claimedTaskClass?: TaskClass;
   metadata?: Record<string, unknown>;
+  fingerprintVersion?: 'v1' | 'v2';
 }): ReviewObligation {
   if (!input.subjectDigest || input.subjectDigest.length === 0) {
     throw new Error(
@@ -126,6 +130,9 @@ export function createReviewObligation(input: {
     ...requirements,
     subjectDigest: input.subjectDigest,
     metadata: input.metadata,
+    ...(input.fingerprintVersion ? { fingerprintVersion: input.fingerprintVersion } : {}),
+    reviewedFileScope:
+      input.reviewedScope ?? defaultScope(input.obligationType, input.changedFiles),
   };
 }
 
@@ -218,6 +225,7 @@ export function findLatestPendingReviewObligation(
   assurance: ReviewAssuranceState | undefined,
   obligationType: ReviewObligationType,
   metadataFingerprint?: string,
+  fingerprintVersion?: 'v1' | 'v2',
 ): ReviewObligation | null {
   const base = ensureReviewAssurance(assurance);
   const candidates = base.obligations.filter(
@@ -231,7 +239,13 @@ export function findLatestPendingReviewObligation(
   if (metadataFingerprint) {
     return (
       candidates
-        .filter((o) => o.metadata && o.metadata.fingerprint === metadataFingerprint)
+        .filter(
+          (o) =>
+            o.metadata &&
+            o.metadata.fingerprint === metadataFingerprint &&
+            (fingerprintVersion === undefined ||
+              (o.fingerprintVersion ?? 'v1') === fingerprintVersion),
+        )
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .at(0) ?? null
     );

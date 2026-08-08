@@ -14,21 +14,22 @@ import type { ProofClaim } from '../../state/proofgraph.js';
 import { summarizePersistedProofGraph } from '../../audit/proofgraph/summary.js';
 import type { ProofGraphGateDecision } from '../../audit/proofgraph/gate.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
-import type {
-  PlanClaimDeclarations,
-  ArchitectureClaimDeclarations,
-} from '../../state/proofgraph-approval.js';
 import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
 
 import type {
   CompactProofClaim,
   CompactProofPresentation,
   ClaimVerificationState,
-} from '../../presentation/proof-summary.js';
+} from '../../presentation/proof-model.js';
+import type { ProofApprovalPresentation } from '../../presentation/proof-model.js';
+import { buildProofApprovalProjection } from './approval-projection.js';
 
 // ─── Decision context ───────────────────────────────────────────────────────
 
 type ProofDecisionContext = 'current_gate' | 'prospective_approval' | 'completion';
+
+const PLAN_PROOF_PHASES = new Set(['PLAN', 'PLAN_REVIEW', 'VALIDATION']);
+const ARCHITECTURE_PROOF_PHASES = new Set(['ARCHITECTURE', 'ARCH_REVIEW', 'ARCH_COMPLETE']);
 
 // ─── Claim reason (derived from verification state) ─────────────────────────
 
@@ -146,7 +147,7 @@ function selectHighlightedClaims(
   const results: CompactProofClaim[] = [];
   for (const state of HIGHLIGHT_ORDER) {
     for (const claim of claims) {
-      if (claim.verificationState !== state || claim.claimId === results[0]?.claimId) continue;
+      if (claim.verificationState !== state || claim.critical) continue;
       const planDecl = planById.get(claim.claimId);
       results.push({
         claimId: claim.claimId,
@@ -162,6 +163,44 @@ function selectHighlightedClaims(
   }
   // Defensive: PROVEN must never appear in highlights regardless of order array changes.
   return results.filter((c) => c.status !== 'PROVEN');
+}
+
+function selectUnmetCriticalClaims(
+  claims: readonly ProofClaim[],
+  planDeclarations:
+    | {
+        readonly claims: readonly { readonly claimId: string; readonly expectedCheckId?: string }[];
+      }
+    | undefined,
+): CompactProofClaim[] {
+  const planById = new Map((planDeclarations?.claims ?? []).map((d) => [d.claimId, d] as const));
+  return claims
+    .filter((claim) => claim.critical && claim.verificationState !== 'PROVEN')
+    .map((claim) => ({
+      claimId: claim.claimId,
+      statement: claim.statement,
+      status: claim.verificationState,
+      critical: true,
+      reason: claimReason(claim.verificationState),
+      recovery: claimRecovery(claim.verificationState, planById.get(claim.claimId)),
+    }));
+}
+
+function approvalPresentation(
+  state: SessionState,
+  flow?: 'plan' | 'architecture',
+): ProofApprovalPresentation {
+  const approval = buildProofApprovalProjection(state);
+  const certificates = flow
+    ? approval.certificates.filter((certificate) => certificate.flow === flow)
+    : approval.certificates;
+  return {
+    attestations: certificates.map((certificate) => ({
+      flow: certificate.flow,
+      certificateId: certificate.certificateId,
+      binding: certificate.binding,
+    })),
+  };
 }
 
 // ─── Count tallies ──────────────────────────────────────────────────────────
@@ -210,11 +249,18 @@ function tallyClaims(claims: readonly ProofClaim[]) {
 
 // ─── Projectors ─────────────────────────────────────────────────────────────
 
-export function projectPlanProofObligations(
-  declarations: PlanClaimDeclarations | undefined,
-): CompactProofPresentation | null {
-  const claims = declarations?.claims;
-  if (!claims || claims.length === 0) return null;
+export function projectPlanProofStatus(state: SessionState): CompactProofPresentation {
+  const claims = state.plan?.claimDeclarations?.claims ?? [];
+  if (claims.length === 0) {
+    return {
+      kind: 'declaration',
+      flow: 'plan',
+      overallStatus: 'NOT_DECLARED',
+      claimCount: 0,
+      criticalCount: 0,
+      approval: approvalPresentation(state, 'plan'),
+    };
+  }
   const normalized = claims;
   const criticalCount = claims.filter((c) => c.critical).length;
   const falsificationReady = normalized.filter(
@@ -224,23 +270,34 @@ export function projectPlanProofObligations(
   return {
     kind: 'declaration',
     flow: 'plan',
+    overallStatus: 'AWAITING_EVIDENCE',
     claimCount: claims.length,
     criticalCount,
     ...(falsificationReady > 0 ? { falsificationReadyCount: falsificationReady } : {}),
     ...(missingFalsification > 0 ? { missingFalsificationCount: missingFalsification } : {}),
+    approval: approvalPresentation(state, 'plan'),
   };
 }
 
-export function projectArchitectureDecisionClaims(
-  declarations: ArchitectureClaimDeclarations | undefined,
-): CompactProofPresentation | null {
-  const claims = declarations?.claims;
-  if (!claims || claims.length === 0) return null;
+export function projectArchitectureProofStatus(state: SessionState): CompactProofPresentation {
+  const claims = state.architecture?.claimDeclarations?.claims ?? [];
+  if (claims.length === 0) {
+    return {
+      kind: 'declaration',
+      flow: 'architecture',
+      overallStatus: 'NOT_DECLARED',
+      claimCount: 0,
+      criticalCount: 0,
+      approval: approvalPresentation(state, 'architecture'),
+    };
+  }
   return {
     kind: 'declaration',
     flow: 'architecture',
+    overallStatus: 'AWAITING_EVIDENCE',
     claimCount: claims.length,
     criticalCount: claims.filter((c) => c.critical).length,
+    approval: approvalPresentation(state, 'architecture'),
   };
 }
 
@@ -262,6 +319,11 @@ function primReason(gate: ProofGraphGateDecision): { primaryReason?: string } {
         primaryReason:
           'At least one mandatory critical claim is undeclared. Declare the claim in your plan first.',
       };
+    case 'certificate_invalid':
+      return {
+        primaryReason:
+          'The plan approval certificate is missing, stale, or does not bind the current plan.',
+      };
     case 'clear':
       return {};
     default:
@@ -274,12 +336,17 @@ function primReason(gate: ProofGraphGateDecision): { primaryReason?: string } {
 function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision }) {
   return (
     opts?.gate ??
-    evaluateProofGraphGate({
-      projection: state.proofGraph,
-      authorizedCriticalClaimIds: authorizedCriticalPlanClaimIds(state.plan),
-      implementationDigest: state.implementation?.digest,
-      riskAssessment: state.implementationRiskAssessment,
-    })
+    (() => {
+      const authorization = authorizedCriticalPlanClaimIds(state.plan);
+      return evaluateProofGraphGate({
+        projection: state.proofGraph,
+        authorizedCriticalClaimIds:
+          authorization.kind === 'authorized' ? authorization.claimIds : [],
+        certificateValid: authorization.kind === 'authorized',
+        implementationDigest: state.implementation?.digest,
+        riskAssessment: state.implementationRiskAssessment,
+      });
+    })()
   );
 }
 
@@ -290,35 +357,76 @@ function buildEvaluationResult(
 ): CompactProofPresentation {
   const claims = state.proofGraph?.claims ?? [];
   const summary = summarizePersistedProofGraph(state);
+  if (claims.length === 0) {
+    return {
+      kind: 'evaluation',
+      overallStatus: 'NOT_DECLARED',
+      claimCount: 0,
+      criticalCount: 0,
+      criticalProvenCount: 0,
+      provenCount: 0,
+      contradictedCount: 0,
+      blockedCount: 0,
+      staleCount: 0,
+      unprovenCount: 0,
+      notVerifiedCount: 0,
+      coverage: 'NOT_DECLARED',
+      unmetCriticalClaims: [],
+      otherHighlightedClaims: [],
+      approval: approvalPresentation(state),
+      decisionContext,
+    };
+  }
   const tallies = tallyClaims(claims);
+  const unmetCriticalClaims = selectUnmetCriticalClaims(claims, state.plan?.claimDeclarations);
   const result: CompactProofPresentation = {
     kind: 'evaluation',
     claimCount: summary.claimCount,
     coverage: summary.coverage,
+    overallStatus: computeHeadlineStatus(claims, gateResult),
     headlineStatus: computeHeadlineStatus(claims, gateResult),
     ...primReason(gateResult),
-    highlightedClaims: selectHighlightedClaims(claims, state.plan?.claimDeclarations),
+    unmetCriticalClaims,
+    otherHighlightedClaims: selectHighlightedClaims(claims, state.plan?.claimDeclarations),
     evidenceFreshness: deriveEvidenceFreshness(claims),
     revisionDigest: state.implementation?.digest,
     decisionContext: decisionContext,
     ...tallies,
     criticalCount: tallies.criticalCount,
+    criticalProvenCount: claims.filter(
+      (claim) => claim.critical && claim.verificationState === 'PROVEN',
+    ).length,
     provenCount: tallies.provenCount,
     contradictedCount: tallies.contradictedCount,
     blockedCount: tallies.blockedCount,
     staleCount: tallies.staleCount,
     unprovenCount: tallies.unprovenCount,
     notVerifiedCount: tallies.notVerifiedCount,
+    approval: approvalPresentation(state),
   };
   return result;
+}
+
+/** Single phase-aware ProofGraph projector for resolved governance state. */
+export function projectProofStatusForState(state: SessionState): CompactProofPresentation {
+  if (PLAN_PROOF_PHASES.has(state.phase)) return projectPlanProofStatus(state);
+  if (ARCHITECTURE_PROOF_PHASES.has(state.phase)) return projectArchitectureProofStatus(state);
+  return projectImplementationProofStatus(state, { decisionContext: 'current_gate' });
 }
 
 export function projectImplementationProofStatus(
   state: SessionState,
   opts?: { gate?: ProofGraphGateDecision; decisionContext?: ProofDecisionContext },
-): CompactProofPresentation | null {
-  const claims = state.proofGraph?.claims ?? [];
-  if (claims.length === 0) return null;
+): CompactProofPresentation {
+  // Approved declarations remain governance obligations until a materialized
+  // graph can evaluate them. An empty graph is not evidence that nothing was
+  // declared.
+  if (
+    (state.proofGraph?.claims.length ?? 0) === 0 &&
+    (state.plan?.claimDeclarations?.claims.length ?? 0) > 0
+  ) {
+    return projectPlanProofStatus(state);
+  }
   const gateResult = resolveGate(state, opts);
   const context =
     opts?.decisionContext ??
@@ -326,6 +434,6 @@ export function projectImplementationProofStatus(
   return buildEvaluationResult(state, gateResult, context);
 }
 
-export function projectCompletionProofStatus(state: SessionState): CompactProofPresentation | null {
+export function projectCompletionProofStatus(state: SessionState): CompactProofPresentation {
   return projectImplementationProofStatus(state, { decisionContext: 'completion' });
 }

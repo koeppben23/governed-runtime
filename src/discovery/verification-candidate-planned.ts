@@ -17,5 +17,7 @@ import type { VerificationCandidate, ExecutionSubjectInput } from '../state/disc
 export interface PlannedVerificationCandidate {
   readonly candidate: VerificationCandidate;
   readonly executionProfileId?: string;
+  /** Repo-native script body used only to attest full-check scope. Never persisted or executed. */
+  readonly scopeSemanticCommand?: string;
   readonly executionSubjectInputs: readonly ExecutionSubjectInput[];
 }

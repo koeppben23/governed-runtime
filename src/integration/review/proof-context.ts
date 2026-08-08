@@ -104,11 +104,13 @@ function renderPlanDeclarations(state: SessionState): string[] {
         const detail = [
           `authority section: ${claim.authoritySectionId}`,
           `expected check: ${claim.expectedCheckId}`,
-          ...(claim.counterexampleRequirement
+          ...(claim.counterexampleRequirement && 'assertion' in claim.counterexampleRequirement
             ? [
                 `counterexample check: ${claim.counterexampleRequirement.checkId} (assertion: ${claim.counterexampleRequirement.assertion.localId})`,
               ]
-            : []),
+            : claim.counterexampleRequirement
+              ? [`counterexample check: ${claim.counterexampleRequirement.checkId} (aggregate)`]
+              : []),
           ...(claim.structuralSurface ? [`structural surface: ${claim.structuralSurface}`] : []),
           ...(claim.mutationProfile ? [`mutation profile: ${claim.mutationProfile}`] : []),
         ].join('; ');
@@ -183,9 +185,11 @@ export function renderCoverageGaps(state: SessionState): string[] {
 /** Render the persisted critical-fact requirement without performing fresh classification. */
 export function renderCriticalClaimRequirement(state: SessionState): string[] {
   if (!state.implementation) return [];
+  const authorization = authorizedCriticalPlanClaimIds(state.plan);
   const decision = evaluateProofGraphGate({
     projection: state.proofGraph,
-    authorizedCriticalClaimIds: authorizedCriticalPlanClaimIds(state.plan),
+    authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    certificateValid: authorization.kind === 'authorized',
     implementationDigest: state.implementation.digest,
     riskAssessment: state.implementationRiskAssessment,
   });

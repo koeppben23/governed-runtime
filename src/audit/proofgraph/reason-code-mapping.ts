@@ -19,33 +19,43 @@ export type EnforcementReasonCode =
   | 'provenance_missing'
   | 'evaluation_unavailable'
   | 'risk_assessment_stale'
-  | 'critical_fact_required';
+  | 'critical_fact_required'
+  | 'aggregate_check_mismatch'
+  | 'aggregate_candidate_mismatch'
+  | 'aggregate_scope_unattested'
+  | 'aggregate_extraction_missing'
+  | 'aggregate_capability_missing'
+  | 'provider_mismatch'
+  | 'assertion_mismatch'
+  | 'check_mismatch'
+  | 'check_only_evidence';
 
 /** Maps enforcement reason codes to registry BlockedReason codes. */
 export function mapEnforcementReasonToRegistryCode(reasonCode: EnforcementReasonCode): string {
-  switch (reasonCode) {
-    case 'proven':
-      return 'PROOFGRAPH_EVIDENCE_PROVEN';
-    case 'counterexample_observed':
-      return 'PROOFGRAPH_COUNTEREXAMPLE_OBSERVED';
-    case 'evidence_missing':
-      return 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING';
-    case 'evidence_stale':
-      return 'PROOFGRAPH_EVIDENCE_STALE';
-    case 'evidence_unproven':
-      return 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN';
-    case 'provider_execution_error':
-      return 'PROOFGRAPH_PROVIDER_EXECUTION_ERROR';
-    case 'provenance_missing':
-      return 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING';
-    case 'evaluation_unavailable':
-      return 'PROOFGRAPH_EVALUATION_UNAVAILABLE';
-    case 'risk_assessment_stale':
-      return 'PROOFGRAPH_RISK_ASSESSMENT_STALE';
-    case 'critical_fact_required':
-      return 'PROOFGRAPH_CRITICAL_FACT_REQUIRED';
-  }
+  return ENFORCEMENT_REGISTRY_MAP[reasonCode] ?? 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING';
 }
+
+const ENFORCEMENT_REGISTRY_MAP: Record<EnforcementReasonCode, string> = {
+  proven: 'PROOFGRAPH_EVIDENCE_PROVEN',
+  counterexample_observed: 'PROOFGRAPH_COUNTEREXAMPLE_OBSERVED',
+  evidence_missing: 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING',
+  evidence_stale: 'PROOFGRAPH_EVIDENCE_STALE',
+  evidence_unproven: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
+  provider_execution_error: 'PROOFGRAPH_PROVIDER_EXECUTION_ERROR',
+  provenance_missing: 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING',
+  evaluation_unavailable: 'PROOFGRAPH_EVALUATION_UNAVAILABLE',
+  risk_assessment_stale: 'PROOFGRAPH_RISK_ASSESSMENT_STALE',
+  critical_fact_required: 'PROOFGRAPH_CRITICAL_FACT_REQUIRED',
+  aggregate_check_mismatch: 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH',
+  aggregate_candidate_mismatch: 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH',
+  aggregate_scope_unattested: 'PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED',
+  aggregate_extraction_missing: 'PROOFGRAPH_AGGREGATE_EXTRACTION_MISSING',
+  aggregate_capability_missing: 'PROOFGRAPH_AGGREGATE_CAPABILITY_MISSING',
+  provider_mismatch: 'PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH',
+  assertion_mismatch: 'PROOFGRAPH_ASSERTION_IDENTITY_MISMATCH',
+  check_mismatch: 'PROOFGRAPH_ASSERTION_EVIDENCE_MISSING',
+  check_only_evidence: 'PROOFGRAPH_ASSERTION_BINDING_UNAVAILABLE',
+};
 
 /** Maps AssertionBindingReasonCode to registry BlockedReason codes. */
 import type { AssertionBindingReasonCode } from '../../state/proofgraph.js';
@@ -63,5 +73,15 @@ export function mapBindingReasonToRegistryCode(reasonCode: AssertionBindingReaso
       return 'PROOFGRAPH_ASSERTION_PROVIDER_MISMATCH';
     case 'assertion_mismatch':
       return 'PROOFGRAPH_ASSERTION_IDENTITY_MISMATCH';
+    case 'aggregate_check_mismatch':
+      return 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH';
+    case 'aggregate_candidate_mismatch':
+      return 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH';
+    case 'aggregate_scope_unattested':
+      return 'PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED';
+    case 'aggregate_extraction_missing':
+      return 'PROOFGRAPH_AGGREGATE_EXTRACTION_MISSING';
+    case 'aggregate_capability_missing':
+      return 'PROOFGRAPH_AGGREGATE_CAPABILITY_MISSING';
   }
 }

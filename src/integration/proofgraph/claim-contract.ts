@@ -24,11 +24,12 @@
  */
 
 import type { TaskClass } from '../../state/schema.js';
-import type { CounterexampleRequirement } from '../../state/proofgraph.js';
+import type { V2CounterexampleRequirement } from '../../state/proofgraph-approval.js';
 import type { VerificationCandidate } from '../../state/discovery-schemas.js';
 import {
   ASSERTION_FORMATS_BY_PROVIDER,
   ASSERTION_CODEC_BY_PROVIDER,
+  AGGREGATE_FORMATS_BY_PROVIDER,
 } from '../../providers/registry.js';
 
 /** Write boundary a declaration arrived through; selects the public field names. */
@@ -44,8 +45,9 @@ export interface NormalizedClaimDeclaration {
   readonly claimId?: string;
   readonly statement: string;
   readonly critical: boolean;
+  readonly claimScope: 'specific_behavior' | 'suite';
   readonly positiveCheckId: string;
-  readonly counterexampleRequirement?: CounterexampleRequirement;
+  readonly counterexampleRequirement?: V2CounterexampleRequirement;
   readonly structuralSurface?: string;
   readonly mutationProfile?: string;
   /** Present only for plan declarations; architecture/contract flows omit it. */
@@ -58,6 +60,8 @@ export interface ClaimContractInput {
   readonly allowedSurfaces: readonly string[];
   readonly allowedMutationProfiles: readonly string[];
   readonly verificationCandidates: readonly VerificationCandidate[];
+  /** Derived provider-registry capability map; defaults to the installed registry. */
+  readonly aggregateFormatsByProvider?: ReadonlyMap<string, ReadonlySet<string>>;
   readonly source: ClaimContractSource;
 }
 
@@ -232,23 +236,84 @@ function checkAuthoritySection(
   );
 }
 
-/** Rule 7: counterexample requirement must include an assertion. */
-function checkCounterexampleAssertion(
+/** Rule 7: scope and falsification requirement must be compatible. */
+function checkCounterexampleScope(
   input: ClaimContractInput,
   claim: NormalizedClaimDeclaration,
 ): ClaimContractResult | null {
-  if (claim.counterexampleRequirement && !claim.counterexampleRequirement.assertion) {
+  const requirement = claim.counterexampleRequirement;
+  if (!requirement) return null;
+  const expectedKind = claim.claimScope === 'suite' ? 'aggregate_check' : 'assertion';
+  if (requirement.kind !== expectedKind) {
     return invalid(
       input.source,
       claim,
-      'counterexampleRequirement.assertion',
-      'counterexample requirement must include an assertion identity',
+      'counterexampleRequirement',
+      `${claim.claimScope} claims require a ${expectedKind} counterexample requirement`,
     );
   }
   return null;
 }
 
-/** Rule 8: counterexample check must be structurally capable of producing assertion evidence. */
+function checkAggregateCounterexampleCapability(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+  requirement: NonNullable<NormalizedClaimDeclaration['counterexampleRequirement']>,
+  candidate: VerificationCandidate,
+): ClaimContractResult | null {
+  if (requirement.kind !== 'aggregate_check') return null;
+  if (candidate.assertionCapability !== 'structured') {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement.checkId',
+      `check '${requirement.checkId}' has assertionCapability='${candidate.assertionCapability}', cannot produce aggregate evidence`,
+      'unsatisfiable',
+    );
+  }
+  const report = candidate.assertionReport;
+  const formats =
+    report &&
+    (input.aggregateFormatsByProvider ?? AGGREGATE_FORMATS_BY_PROVIDER).get(report.providerId);
+  if (
+    report &&
+    formats?.has(report.format) &&
+    candidate.fullCheckScopeAttestation === 'full_check'
+  ) {
+    return null;
+  }
+  if (report && formats?.has(report.format)) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement',
+      `check '${requirement.checkId}' has aggregate parsing capability but no explicit full-check scope completeness attestation`,
+      'unsatisfiable',
+    );
+  }
+  return invalid(
+    input.source,
+    claim,
+    'counterexampleRequirement',
+    `check '${requirement.checkId}' has no registered aggregate counterexample capability for its assertion report provider and format`,
+    'unsatisfiable',
+  );
+}
+
+function resolveCounterexampleCandidate(
+  candidates: readonly VerificationCandidate[],
+  requirement: NonNullable<NormalizedClaimDeclaration['counterexampleRequirement']>,
+): VerificationCandidate | undefined {
+  const candidateId = 'candidateId' in requirement ? requirement.candidateId : undefined;
+  return candidateId
+    ? candidates.find(
+        (candidate) =>
+          candidate.candidateId === candidateId && candidate.kind === requirement.checkId,
+      )
+    : candidates.find((candidate) => candidate.kind === requirement.checkId);
+}
+
+/** Rule 8: counterexample check must provide the declared capability. */
 function checkCounterexampleSatisfiability(
   input: ClaimContractInput,
   claim: NormalizedClaimDeclaration,
@@ -257,7 +322,7 @@ function checkCounterexampleSatisfiability(
   const req = claim.counterexampleRequirement;
   if (!req) return null;
 
-  const candidate = input.verificationCandidates.find((c) => c.kind === req.checkId);
+  const candidate = resolveCounterexampleCandidate(input.verificationCandidates, req);
   if (!candidate) {
     return invalid(
       input.source,
@@ -268,12 +333,18 @@ function checkCounterexampleSatisfiability(
     );
   }
 
+  if (req.kind === 'aggregate_check') {
+    return checkAggregateCounterexampleCapability(input, claim, req, candidate);
+  }
+
+  const assertionRequirement = req;
+
   if (candidate.assertionCapability !== 'structured') {
     return invalid(
       input.source,
       claim,
       'counterexampleRequirement.checkId',
-      `check '${req.checkId}' has assertionCapability='${candidate.assertionCapability}', cannot produce assertion evidence for provider '${req.assertion.providerId}'`,
+      `check '${assertionRequirement.checkId}' has assertionCapability='${candidate.assertionCapability}', cannot produce assertion evidence for provider '${assertionRequirement.assertion.providerId}'`,
       'unsatisfiable',
     );
   }
@@ -289,44 +360,93 @@ function checkCounterexampleSatisfiability(
     );
   }
 
-  if (report.providerId !== req.assertion.providerId) {
+  if (report.providerId !== assertionRequirement.assertion.providerId) {
     return invalid(
       input.source,
       claim,
       'counterexampleRequirement.assertion.providerId',
-      `check produces assertions from '${report.providerId}', claim requires '${req.assertion.providerId}'`,
+      `check produces assertions from '${report.providerId}', claim requires '${assertionRequirement.assertion.providerId}'`,
       'unsatisfiable',
     );
   }
 
-  const formats = ASSERTION_FORMATS_BY_PROVIDER.get(req.assertion.providerId);
+  const formats = ASSERTION_FORMATS_BY_PROVIDER.get(assertionRequirement.assertion.providerId);
   if (!formats || !formats.has(report.format)) {
     return invalid(
       input.source,
       claim,
       'counterexampleRequirement.assertion.providerId',
-      `format '${report.format}' from provider '${req.assertion.providerId}' is not assertion-binding-capable`,
+      `format '${report.format}' from provider '${assertionRequirement.assertion.providerId}' is not assertion-binding-capable`,
       'unsatisfiable',
     );
   }
 
-  const codec = ASSERTION_CODEC_BY_PROVIDER.get(req.assertion.providerId);
+  const codec = ASSERTION_CODEC_BY_PROVIDER.get(assertionRequirement.assertion.providerId);
   if (!codec) {
     return invalid(
       input.source,
       claim,
       'counterexampleRequirement.assertion.providerId',
-      `provider '${req.assertion.providerId}' has no registered identity codec`,
+      `provider '${assertionRequirement.assertion.providerId}' has no registered identity codec`,
       'unsatisfiable',
     );
   }
 
-  if (!codec.validateLocalId(req.assertion.localId)) {
+  if (!codec.validateLocalId(assertionRequirement.assertion.localId)) {
     return invalid(
       input.source,
       claim,
       'counterexampleRequirement.assertion.localId',
-      `'${req.assertion.localId}' is not a valid assertion identity for provider '${req.assertion.providerId}'`,
+      `'${assertionRequirement.assertion.localId}' is not a valid assertion identity for provider '${assertionRequirement.assertion.providerId}'`,
+      'unsatisfiable',
+    );
+  }
+
+  return null;
+}
+
+/** Rule 9: a suite claim requires a structurally reachable positive full-suite path. */
+function checkSuitePositiveSatisfiability(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): ClaimContractResult | null {
+  if (claim.claimScope !== 'suite') return null;
+
+  const candidates = input.verificationCandidates.filter((c) => c.kind === claim.positiveCheckId);
+
+  if (candidates.length === 0) {
+    return invalid(
+      input.source,
+      claim,
+      'positiveCheckId',
+      `suite claim requires an active verification candidate for check '${claim.positiveCheckId}'`,
+      'unsatisfiable',
+    );
+  }
+
+  const suiteCandidate = candidates.find(
+    (c) => c.assertionCapability === 'structured' && c.fullCheckScopeAttestation === 'full_check',
+  );
+
+  if (!suiteCandidate) {
+    const best = candidates.find((c) => c.assertionCapability === 'structured');
+    if (!best) {
+      return invalid(
+        input.source,
+        claim,
+        'positiveCheckId',
+        `no structured assertion-capable candidate for check '${claim.positiveCheckId}' (${candidates.length} candidate(s), all assertionCapability='unsupported'); suite claims require structured full-suite evidence`,
+        'unsatisfiable',
+      );
+    }
+    const candidateLabel = best.candidateId
+      ? `candidate '${best.candidateId}'`
+      : `check '${claim.positiveCheckId}'`;
+    return invalid(
+      input.source,
+      claim,
+      'positiveCheckId',
+      `${candidateLabel} is structured but lacks explicit full-check scope completeness attestation required for suite claims; provider '${best.source}' does not attest full-suite coverage`,
       'unsatisfiable',
     );
   }
@@ -352,7 +472,8 @@ export function validateProofClaimContract(input: ClaimContractInput): ClaimCont
       checkCheckReferences(input, claim) ??
       checkRegistries(input, claim) ??
       checkAuthoritySection(input, claim) ??
-      checkCounterexampleAssertion(input, claim) ??
+      checkSuitePositiveSatisfiability(input, claim) ??
+      checkCounterexampleScope(input, claim) ??
       checkCounterexampleSatisfiability(input, claim);
     if (violation) return violation;
   }

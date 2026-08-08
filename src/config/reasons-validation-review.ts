@@ -462,4 +462,29 @@ export const REVIEW_VALIDATION_REASONS = [
       'Do not retry the command until the misconfigured transition path is fixed',
     ],
   },
+  // ─── Review Findings Scope Enforcement ───────────────────────────────────
+
+  {
+    code: 'REVIEW_FINDING_OUT_OF_SCOPE',
+    category: 'state',
+    messageTemplate:
+      'Reviewer findings reference paths outside the frozen reviewed file scope: {outOfScopePaths}. Obligation {obligationId}.',
+    recoverySteps: [
+      'Check that the reviewer was given the correct set of changed files',
+      'Re-run the review with a reviewer prompt that includes the correct file scope',
+      'If the findings are legitimate, add the missing paths to the review scope and re-run',
+    ],
+  },
+
+  {
+    code: 'REVIEW_FINDING_SCOPE_UNVERIFIABLE',
+    category: 'state',
+    messageTemplate:
+      'Review obligation {obligationId} has no frozen reviewedFileScope; scope verification is unavailable.',
+    recoverySteps: [
+      'File scope must be resolved at obligation creation time for file-backed reviews',
+      'Re-run the review to create a new obligation with a verifiable frozen scope',
+      'If the review context is deliberately non-file-backed, set the scope to not_applicable',
+    ],
+  },
 ] as const satisfies readonly BlockedReason[];

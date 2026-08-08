@@ -41,6 +41,7 @@ describe('plan command template declares claims', () => {
       'claimId',
       'statement',
       'critical',
+      'claimScope',
       'authoritySectionId',
       'expectedCheckId',
       'counterexampleRequirement',

@@ -89,15 +89,24 @@ ${DISCOVERY_REVIEW_CAPTURE}
    check expected to establish it after implementation:
    - \`claimId\`: fresh UUID.
    - \`statement\`: the behavior or forbidden state asserted.
-   - \`critical\`: true when the change is unsafe to approve without this claim.
+    - \`critical\`: true when the change is unsafe to approve without this claim.
+    - \`claimScope\`: \`specific_behavior\` for one behavior, or \`suite\` only when
+      the claim concerns a whole verification suite.
    - \`authoritySectionId\`: the governing \`## Implementation\` step or section.
    - \`expectedCheckId\`: the check kind that must pass (from \`activeChecks\` /
      \`verificationCandidates\`, e.g. \`build\`).
     - \`counterexampleRequirement\`: required for critical claims.
-      Example: \`{ checkId: "test", assertion: { providerId: "junit", localId: "com.example.SecurityTest#verifyNoXss" } }\`.
+       A \`specific_behavior\` claim requires \`{ kind: "assertion", checkId: "test",
+       assertion: { providerId: "junit", localId: "com.example.SecurityTest#verifyNoXss" } }\`.
+       A \`suite\` claim requires \`{ kind: "aggregate_check", checkId: "test" }\` and
+       is accepted only when that provider registers aggregate coverage; structured assertion
+       reports are not aggregate coverage.
       REQUIRED whenever \`critical\` is true — a critical claim without it can never
-      become PROVEN and is rejected at submission. \`checkId\` MUST differ from
-      \`expectedCheckId\`; \`assertion.providerId\` and \`assertion.localId\` identify the specific test assertion
+      become PROVEN and is rejected at submission. \`checkId\` MAY match
+      \`expectedCheckId\`. Choose a counterexample check whose current verification
+      candidate is structurally capable of producing and binding the required
+       AssertionIdentity or aggregate capability. Check-ID diversity is not an independence requirement.
+      \`assertion.providerId\` and \`assertion.localId\` identify the specific test assertion
    Declare at least one claim per critical behavioral change. Do NOT invent claims
    that the plan does not actually assert.
 5. Call \`flowguard_plan({ planText, claims })\` with the full plan markdown and the
@@ -146,7 +155,7 @@ ${SHARED_REVIEW_LOOP({
 - Every plan step names a specific file path and concrete change (never "implement the feature").
 - Declare structured \`claims\` on every plan submission and revision; a plan that asserts critical behavior without a claim leaves the ProofGraph contract empty.
 - Never declare a claim the plan does not assert, and never name a check that is not active in this session.
-- A critical claim blocks the final evidence approval while its declared evidence is missing, stale, or contradicted. Declare \`critical: true\` only for behavior that genuinely must hold, and always with a distinct falsifying counterexample check.
+- A critical claim blocks the final evidence approval while its declared evidence is missing, stale, or contradicted. Declare \`critical: true\` only for behavior that genuinely must hold, and always with a structurally bindable counterexample check.
 - Always complete the independent review before proceeding (use plugin findings or the reviewer subagent).
 - When revising a plan, include the COMPLETE plan text (not a diff).
 - Cite Source for each verification check, or state NOT_VERIFIED with recovery steps.

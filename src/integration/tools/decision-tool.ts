@@ -141,7 +141,10 @@ export const decision: ToolDefinition = {
             result,
           });
 
-          const persisted = await persistAndFormat(sessDir, finalResult);
+          const persisted = await persistAndFormat(sessDir, finalResult, {
+            evidenceApprovalCompletion:
+              state.phase === 'EVIDENCE_REVIEW' && args.verdict === 'approve',
+          });
 
           // Consume the user-decision intent ONLY on a fully successful decision,
           // and only in human-gated mode. Placing this after finalizeDecision (and

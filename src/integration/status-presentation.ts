@@ -30,6 +30,7 @@ import {
   type BlockerSection,
   type NoticeSection,
 } from '../presentation/index.js';
+import { buildProofGraphSection } from '../presentation/proof-summary.js';
 
 // ─── Presentation Input ────────────────────────────────────────────────────────
 
@@ -68,6 +69,9 @@ export function buildStatusDocument(input: FullStatusPresentationInput): Present
 
   // 3. Evidence summary
   sections.push(buildEvidenceSection(status));
+
+  // 3b. ProofGraph is mandatory for every resolved governance status.
+  sections.push(buildProofGraphSection(status.proofSummary));
 
   // 4. Available actions
   if (status.allowedCommands.length > 0) {

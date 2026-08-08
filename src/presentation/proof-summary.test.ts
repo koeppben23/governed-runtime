@@ -15,11 +15,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  renderCompactProofSection,
-  type CompactProofPresentation,
-  type ClaimVerificationState,
-} from './proof-summary.js';
+import { renderCompactProofSection, buildProofGraphSection } from './proof-summary.js';
+import type { ClaimVerificationState, CompactProofPresentation } from './proof-model.js';
 
 function makeDeclaration(opts?: {
   flow?: 'plan' | 'architecture';
@@ -31,10 +28,12 @@ function makeDeclaration(opts?: {
   return {
     kind: 'declaration',
     flow: opts?.flow ?? 'plan',
+    overallStatus: 'AWAITING_EVIDENCE',
     claimCount: opts?.claimCount ?? 3,
     criticalCount: opts?.criticalCount ?? 3,
     falsificationReadyCount: opts?.falsificationReadyCount,
     missingFalsificationCount: opts?.missingFalsificationCount,
+    approval: { attestations: [] },
   };
 }
 
@@ -54,8 +53,10 @@ function makeEvaluation(
 ): CompactProofPresentation {
   return {
     kind: 'evaluation',
+    overallStatus: headlineStatus,
     claimCount: 5,
     criticalCount: 3,
+    criticalProvenCount: headlineStatus === 'PROVEN' ? 3 : 0,
     provenCount: opts?.provenCount ?? 2,
     contradictedCount: opts?.contradictedCount ?? 0,
     blockedCount: opts?.blockedCount ?? 0,
@@ -66,7 +67,10 @@ function makeEvaluation(
     headlineStatus,
     decisionContext: opts?.decisionContext ?? 'current_gate',
     revisionDigest: opts?.revisionDigest,
-    evidenceFreshness: opts?.evidenceFreshness,
+    evidenceFreshness: opts?.evidenceFreshness ?? 'CURRENT',
+    approval: { attestations: [] },
+    unmetCriticalClaims: [],
+    otherHighlightedClaims: [],
   };
 }
 
@@ -74,10 +78,10 @@ describe('renderCompactProofSection', () => {
   describe('declaration', () => {
     it('renders plan declaration with claim counts', () => {
       const result = renderCompactProofSection(makeDeclaration());
-      expect(result).toContain('## Proof obligations');
+      expect(result).toContain('AWAITING_EVIDENCE');
       expect(result).toContain('3 plan claim(s) declared');
       expect(result).toContain('3 critical');
-      expect(result).toContain('AWAITING EVIDENCE');
+      expect(result).toContain('AWAITING_EVIDENCE');
     });
 
     it('renders architecture declaration', () => {
@@ -112,10 +116,9 @@ describe('renderCompactProofSection', () => {
   describe('evaluation', () => {
     it('renders PROVEN headline', () => {
       const result = renderCompactProofSection(makeEvaluation('PROVEN', { provenCount: 5 }));
-      expect(result).toContain('## ProofGraph');
       expect(result).toContain('All critical claims PROVEN');
       expect(result).toContain('5 PROVEN');
-      expect(result).toContain('→ Full evidence lineage:');
+      expect(result).toContain('Evidence lineage:');
     });
 
     it('renders CONTRADICTED headline with reason, no scenario text', () => {
@@ -123,7 +126,7 @@ describe('renderCompactProofSection', () => {
         contradictedCount: 1,
         provenCount: 1,
       });
-      (pres as Record<string, unknown>).highlightedClaims = [
+      (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
           claimId: 'a'.repeat(36),
           statement: 'No SQL injection is possible.',
@@ -138,13 +141,13 @@ describe('renderCompactProofSection', () => {
       expect(result).toContain('falsified');
       expect(result).toContain('Fresh adversarial evidence falsified');
       expect(result).not.toContain('scenario');
-      expect(result).toContain('→ Inspect the blocking claim');
+      expect(result).toContain('Inspect the blocking claim');
       expect(result).toContain('1 CONTRADICTED');
     });
 
     it('renders BLOCKED headline with provider-failure reason', () => {
       const pres = makeEvaluation('BLOCKED', { blockedCount: 1 });
-      (pres as Record<string, unknown>).highlightedClaims = [
+      (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
           claimId: 'b'.repeat(36),
           statement: 'All API endpoints are covered.',
@@ -161,7 +164,7 @@ describe('renderCompactProofSection', () => {
 
     it('renders STALE headline without asserting implementation changed', () => {
       const pres = makeEvaluation('STALE', { staleCount: 1 });
-      (pres as Record<string, unknown>).highlightedClaims = [
+      (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
           claimId: 'c'.repeat(36),
           statement: 'Rate limiting is enforced.',
@@ -193,12 +196,29 @@ describe('renderCompactProofSection', () => {
       expect(result).toContain('Evidence freshness: Stale');
     });
 
+    it('renders multiple approval attestations without collapsing their binding', () => {
+      const presentation = makeEvaluation('PROVEN', { provenCount: 5 });
+      if (presentation.kind !== 'evaluation') throw new Error('expected evaluation presentation');
+      const result = renderCompactProofSection({
+        ...presentation,
+        approval: {
+          attestations: [
+            { flow: 'plan', certificateId: 'plan-cert', binding: 'current' },
+            { flow: 'architecture', certificateId: 'architecture-cert', binding: 'current' },
+          ],
+        },
+      });
+      expect(result).toContain('- plan: Current (certificate `plan-cert`)');
+      expect(result).toContain('- architecture: Current (certificate `architecture-cert`)');
+      expect(result).not.toContain('Stale or unbound');
+    });
+
     it('renders prospective approval prefix', () => {
       const pres = makeEvaluation('UNPROVEN', {
         unprovenCount: 1,
         decisionContext: 'prospective_approval',
       });
-      (pres as Record<string, unknown>).highlightedClaims = [
+      (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
           claimId: 'd'.repeat(36),
           statement: 'Memory safety is guaranteed.',
@@ -216,7 +236,7 @@ describe('renderCompactProofSection', () => {
         unprovenCount: 1,
         decisionContext: 'completion',
       });
-      (pres as Record<string, unknown>).highlightedClaims = [
+      (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
           claimId: 'e'.repeat(36),
           statement: 'Final unresolved claim.',
@@ -235,7 +255,7 @@ describe('renderCompactProofSection', () => {
       const pres = makeEvaluation('BLOCKED', { blockedCount: 1 });
       (pres as Record<string, unknown>).primaryReason =
         'The implementation risk assessment is outdated and must be refreshed.';
-      (pres as Record<string, unknown>).highlightedClaims = [
+      (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
           claimId: 'f'.repeat(36),
           statement: 'Additional claim still unresolved.',
@@ -281,5 +301,20 @@ describe('renderCompactProofSection', () => {
       expect(result).not.toContain('0 STALE');
       expect(result).not.toContain('0 NOT_VERIFIED');
     });
+  });
+});
+
+describe('buildProofGraphSection', () => {
+  it('returns a typed proofGraph section', () => {
+    const section = buildProofGraphSection(makeEvaluation('PROVEN', { provenCount: 1 }));
+    expect(section.kind).toBe('proofGraph');
+    expect(section.proof.overallStatus).toBe('PROVEN');
+  });
+
+  it('preserves declaration semantics in a typed section', () => {
+    const decl = makeDeclaration({ flow: 'plan', claimCount: 1, criticalCount: 1 });
+    const section = buildProofGraphSection(decl);
+    expect(section.kind).toBe('proofGraph');
+    expect(section.proof.claimCount).toBe(1);
   });
 });

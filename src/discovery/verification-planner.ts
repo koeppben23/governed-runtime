@@ -26,6 +26,8 @@ import { buildScriptInvocation, type PackageManager } from './package-script-com
 import { analyzeVerificationScript } from './verification-script-analysis.js';
 import type { ProviderId } from '../state/assertion-identity.js';
 import type { PlannedVerificationCandidate } from './verification-candidate-planned.js';
+import { canonicalJsonStringify } from '../shared/canonical-json.js';
+import { hashText } from '../shared/hashing.js';
 
 type ReadFileFn = (relativePath: string) => Promise<string | undefined>;
 
@@ -57,7 +59,7 @@ const BUILD_TOOL_PM_ORDER: readonly PackageManager[] = ['pnpm', 'yarn', 'bun', '
 export async function planVerificationCandidates(
   input: VerificationPlannerInput,
 ): Promise<PlannedVerificationCandidate[]> {
-  const byKind = new Map<VerificationCandidateKind, PlannedVerificationCandidate>();
+  const byKind = new Map<string, PlannedVerificationCandidate>();
   const rootFiles = new Set(input.allFiles.filter((f) => !f.includes('/') && !f.includes('\\')));
   const packageManager = detectPackageManager(input.detectedStack, rootFiles);
   const detectedStackIds = new Set(
@@ -77,11 +79,18 @@ export async function planVerificationCandidates(
 
   addNonAssertionFallbacks(byKind, detectedStackIds, packageManager);
 
-  return [...byKind.values()].sort((a, b) => {
+  const ordered = [...byKind.values()].sort((a, b) => {
     const orderDiff = KIND_ORDER[a.candidate.kind] - KIND_ORDER[b.candidate.kind];
     if (orderDiff !== 0) return orderDiff;
     return a.candidate.command.localeCompare(b.candidate.command);
   });
+  return ordered.map((planned) => ({
+    ...planned,
+    candidate: {
+      ...planned.candidate,
+      candidateId: `vc_${hashText(canonicalJsonStringify(planned.candidate))}`,
+    },
+  }));
 }
 
 /**
@@ -110,23 +119,51 @@ export function extractExecutionSubjectInputs(
   return map;
 }
 
+/** Extract candidate-specific execution subject inputs for exact candidate execution. */
+export function extractExecutionSubjectInputsByCandidateId(
+  planned: readonly PlannedVerificationCandidate[],
+): Record<string, ExecutionSubjectInput[]> {
+  const map: Record<string, ExecutionSubjectInput[]> = {};
+  for (const p of planned) {
+    if (p.candidate.candidateId && p.executionSubjectInputs.length > 0) {
+      map[p.candidate.candidateId] = [...p.executionSubjectInputs];
+    }
+  }
+  return map;
+}
+
 function applyProfiles(
-  byKind: Map<VerificationCandidateKind, PlannedVerificationCandidate>,
+  byKind: Map<string, PlannedVerificationCandidate>,
   ctx: PlannerContext,
   profiles: ReadonlyArray<{
     readonly profileId?: string;
     readonly kind: VerificationCandidateKind;
+    readonly alternate?: boolean;
     createCandidate(ctx: PlannerContext): VerificationCandidate | null;
+    attestFullCheckScope?(command: string): boolean;
   }>,
 ): void {
   for (const profile of profiles) {
-    if (byKind.has(profile.kind)) continue;
+    if (byKind.has(profile.kind) && !profile.alternate) continue;
 
     const raw = profile.createCandidate(ctx);
     if (raw) {
-      byKind.set(raw.kind, {
-        candidate: raw,
+      const defaultPlan = byKind.get(profile.kind);
+      const defaultCandidate = defaultPlan?.candidate;
+      // Alternate evidence routes preserve the repo-native execution authority.
+      const routed =
+        profile.alternate && defaultCandidate
+          ? { ...raw, command: defaultCandidate.command, source: defaultCandidate.source }
+          : raw;
+      const scopeSemanticCommand =
+        profile.alternate && defaultPlan?.scopeSemanticCommand
+          ? defaultPlan.scopeSemanticCommand
+          : raw.command;
+      const candidate = attestFullCheckScope(profile, routed, scopeSemanticCommand);
+      byKind.set(profile.alternate ? profile.profileId! : raw.kind, {
+        candidate,
         executionProfileId: profile.profileId,
+        scopeSemanticCommand,
         executionSubjectInputs: [{ kind: 'implementation' as const }],
       });
     }
@@ -176,7 +213,7 @@ async function readPackageScripts(readFile: ReadFileFn): Promise<Record<string, 
 }
 
 function addScriptCandidates(
-  byKind: Map<VerificationCandidateKind, PlannedVerificationCandidate>,
+  byKind: Map<string, PlannedVerificationCandidate>,
   scripts: Record<string, string>,
   packageManager: PackageManager,
   _ctx: PlannerContext,
@@ -215,16 +252,21 @@ function addScriptCandidates(
       const profile = PROFILE_BY_ID.get(profileId);
       if (profile) {
         byKind.set(mapping.kind, {
-          candidate: {
-            assertionCapability: 'structured' as const,
-            kind: mapping.kind,
-            command: buildScriptInvocation(packageManager, mapping.script).command,
-            source: `package.json:scripts.${mapping.script}`,
-            confidence: 'high',
-            reason: `Repo-native ${mapping.script} script enriched via ${profileId}`,
-            assertionReport: profile.assertionReport,
-          },
+          candidate: attestFullCheckScope(
+            profile,
+            {
+              assertionCapability: 'structured' as const,
+              kind: mapping.kind,
+              command: buildScriptInvocation(packageManager, mapping.script).command,
+              source: `package.json:scripts.${mapping.script}`,
+              confidence: 'high',
+              reason: `Repo-native ${mapping.script} script enriched via ${profileId}`,
+              assertionReport: profile.assertionReport,
+            },
+            command,
+          ),
           executionProfileId: profileId,
+          scopeSemanticCommand: command,
           executionSubjectInputs: [
             { kind: 'implementation' as const },
             { kind: 'file' as const, path: 'package.json' },
@@ -260,6 +302,20 @@ function addScriptCandidates(
   }
 }
 
+function attestFullCheckScope(
+  profile: { attestFullCheckScope?(command: string): boolean },
+  candidate: VerificationCandidate,
+  scopeSemanticCommand: string,
+): VerificationCandidate {
+  if (
+    candidate.assertionCapability === 'structured' &&
+    profile.attestFullCheckScope?.(scopeSemanticCommand) === true
+  ) {
+    return { ...candidate, fullCheckScopeAttestation: 'full_check' };
+  }
+  return candidate;
+}
+
 function buildSignatureMap(): ReadonlyMap<ProviderId, readonly ScriptSignature[]> {
   const map = new Map<ProviderId, ScriptSignature[]>();
   for (const [providerId, sigs] of SCRIPT_SIGNATURES_BY_PROVIDER) {
@@ -271,7 +327,7 @@ function buildSignatureMap(): ReadonlyMap<ProviderId, readonly ScriptSignature[]
 }
 
 function addNonAssertionFallbacks(
-  byKind: Map<VerificationCandidateKind, PlannedVerificationCandidate>,
+  byKind: Map<string, PlannedVerificationCandidate>,
   ids: ReadonlySet<string>,
   packageManager: PackageManager,
 ): void {

@@ -16,6 +16,10 @@
 import type { SessionState } from '../../state/schema.js';
 import type { ProofContractCoverage } from '../../state/proofgraph-contract.js';
 import type { ClaimVerificationState } from '../../state/proofgraph-primitives.js';
+import {
+  hasCurrentArchitectureApprovalCertificate,
+  hasCurrentPlanApprovalCertificate,
+} from '../../state/proofgraph-approval.js';
 
 /** Digest binding of one human approval certificate. */
 export interface ApprovalCertificateProjection {
@@ -28,6 +32,7 @@ export interface ApprovalCertificateProjection {
   readonly approvedBy: string;
   /** Number of declarations bound by this certificate. */
   readonly declaredClaimCount: number;
+  readonly binding: 'current' | 'stale_or_unbound';
 }
 
 /** One materialized claim and the evidence chain that backs it. */
@@ -64,6 +69,7 @@ function certificateProjection(state: SessionState): ApprovalCertificateProjecti
     certificates.push({
       ...plan.approvalCertificate,
       declaredClaimCount: plan.claimDeclarations?.claims.length ?? 0,
+      binding: hasCurrentPlanApprovalCertificate(plan) ? 'current' : 'stale_or_unbound',
     });
   }
   const architecture = state.architecture;
@@ -71,6 +77,9 @@ function certificateProjection(state: SessionState): ApprovalCertificateProjecti
     certificates.push({
       ...architecture.approvalCertificate,
       declaredClaimCount: architecture.claimDeclarations?.claims.length ?? 0,
+      binding: hasCurrentArchitectureApprovalCertificate(architecture)
+        ? 'current'
+        : 'stale_or_unbound',
     });
   }
   return certificates;

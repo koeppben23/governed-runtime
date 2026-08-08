@@ -96,6 +96,25 @@ export function promptContainsValue(prompt: string, keyword: string, expected: n
   return pattern.test(prompt);
 }
 
+// ─── Step Exhaustion Detection ─────────────────────────────────────────────
+
+const STEP_EXHAUSTION_MARKERS = [
+  /maximum\s+steps\s+reached/i,
+  /step\s+limit\s+exceeded/i,
+  /step\s+budget\s+exhausted/i,
+];
+
+/**
+ * Detect whether a subagent was forcibly terminated due to step exhaustion.
+ *
+ * Checks the task result text for known compatibility markers. When detected,
+ * the subagent's output is incomplete and must never be bound as complete review
+ * evidence — the reviewer did not finish.
+ */
+export function detectStepExhaustion(taskResult: string): boolean {
+  return STEP_EXHAUSTION_MARKERS.some((marker) => marker.test(taskResult));
+}
+
 // ─── Session ID Resolution & Injection ───────────────────────────────────────
 
 /**

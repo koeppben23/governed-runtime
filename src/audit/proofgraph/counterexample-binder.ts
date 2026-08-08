@@ -27,10 +27,34 @@ interface ClassifiedOutcome {
   readonly diagnosticCode?: AssertionBindingReasonCode;
 }
 
+function classifyAggregateOutcome(
+  result: ValidationResult,
+  requirement: Extract<CounterexampleRequirement, { kind: 'aggregate_check' }>,
+): ClassifiedOutcome {
+  const extraction = result.assertionExtraction;
+  if (result.checkId !== requirement.checkId)
+    return { outcome: 'not_verified', diagnosticCode: 'aggregate_check_mismatch' };
+  if (requirement.candidateId !== undefined && result.candidateId !== requirement.candidateId)
+    return { outcome: 'not_verified', diagnosticCode: 'aggregate_candidate_mismatch' };
+  if (result.fullCheckScopeAttestation !== 'full_check')
+    return { outcome: 'not_verified', diagnosticCode: 'aggregate_scope_unattested' };
+  if (extraction?.status !== 'extracted')
+    return { outcome: 'not_verified', diagnosticCode: 'aggregate_extraction_missing' };
+  if (extraction.bindingCapability !== 'aggregate')
+    return { outcome: 'not_verified', diagnosticCode: 'aggregate_capability_missing' };
+  return result.passed ? { outcome: 'supported' } : { outcome: 'contradicted' };
+}
+
 function classifyClaimOutcome(
   result: ValidationResult,
   requirement: CounterexampleRequirement,
 ): ClassifiedOutcome {
+  if ('kind' in requirement && requirement.kind === 'aggregate_check') {
+    return classifyAggregateOutcome(result, requirement);
+  }
+  if (!('assertion' in requirement)) {
+    return { outcome: 'not_verified', diagnosticCode: 'evidence_missing' };
+  }
   const extraction = result.assertionExtraction;
   if (!extraction) return { outcome: 'not_verified', diagnosticCode: 'evidence_missing' };
 

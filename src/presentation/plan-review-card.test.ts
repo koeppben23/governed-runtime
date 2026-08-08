@@ -15,13 +15,14 @@
  * NOT the legacy blockquote/`## Next recommended action` footer.
  */
 import { describe, expect, it } from 'vitest';
-import { buildPlanReviewCard } from './plan-review-card.js';
+import { buildPlanReviewCard as buildCard, type PlanReviewCardInput } from './plan-review-card.js';
+import type { CompactProofPresentation } from './proof-model.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
 async function readGolden(name: string): Promise<string> {
   const p = resolve(__dirname, '..', '..', 'testdata', 'presentation', name);
-  return readFile(p, 'utf-8');
+  return (await readFile(p, 'utf-8')).trimEnd();
 }
 
 // #709 implementation-plan visual contract: one `#` top heading, `##` sections.
@@ -86,6 +87,22 @@ const productNextActionPartial = {
   text: 'Review the plan.',
   commands: ['/approve'] as readonly string[],
 };
+
+const proofSummary: CompactProofPresentation = {
+  kind: 'declaration',
+  flow: 'plan',
+  overallStatus: 'NOT_DECLARED',
+  claimCount: 0,
+  criticalCount: 0,
+  approval: { attestations: [] },
+};
+function buildPlanReviewCard(
+  input: Omit<PlanReviewCardInput, 'proofSummary'> &
+    Partial<Pick<PlanReviewCardInput, 'proofSummary'>>,
+  options?: Parameters<typeof buildCard>[1],
+) {
+  return buildCard({ proofSummary, ...input }, options);
+}
 
 describe('buildPlanReviewCard', () => {
   it('keeps Unicode canonical by default and supports an ASCII transient rendering', () => {
@@ -638,14 +655,16 @@ describe('plan review golden fixtures', () => {
       proofSummary: {
         kind: 'declaration',
         flow: 'plan',
+        overallStatus: 'AWAITING_EVIDENCE',
         claimCount: 2,
         criticalCount: 1,
+        approval: { attestations: [] },
       },
     });
-    expect(card).toContain('## Proof obligations');
+    expect(card).toContain('## ProofGraph');
     expect(card).toContain('2 plan claim(s) declared');
     expect(card).toContain('1 critical');
-    expect(card).toContain('AWAITING EVIDENCE');
+    expect(card).toContain('AWAITING_EVIDENCE');
   });
 
   it('omits proof obligations section when proofSummary is absent', () => {

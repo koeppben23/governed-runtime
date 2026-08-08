@@ -79,13 +79,41 @@ export type RequiredEvidence = z.infer<typeof RequiredEvidence>;
  * assertion. Only a matching failed assertion can contradict the claim.
  * Check-level outcomes alone never produce a counterexample contradiction.
  */
-export const CounterexampleRequirement = z
+export const LegacyAssertionCounterexampleRequirement = z
+  .object({ checkId: z.string().min(1), assertion: AssertionIdentity })
+  .strict()
+  .readonly();
+export type LegacyAssertionCounterexampleRequirement = z.infer<
+  typeof LegacyAssertionCounterexampleRequirement
+>;
+
+/** V2 counterexample requirements distinguish assertion and suite coverage. */
+export const AssertionCounterexampleRequirement = z
   .object({
+    kind: z.literal('assertion'),
     checkId: z.string().min(1),
     assertion: AssertionIdentity,
   })
   .strict()
   .readonly();
+export const AggregateCounterexampleRequirement = z
+  .object({
+    kind: z.literal('aggregate_check'),
+    checkId: z.string().min(1),
+    /** Exact candidate required for aggregate evidence when multiple candidates share a kind. */
+    candidateId: z.string().min(1).optional(),
+  })
+  .strict()
+  .readonly();
+export const V2CounterexampleRequirement = z.discriminatedUnion('kind', [
+  AssertionCounterexampleRequirement,
+  AggregateCounterexampleRequirement,
+]);
+export type V2CounterexampleRequirement = z.infer<typeof V2CounterexampleRequirement>;
+export const CounterexampleRequirement = z.union([
+  LegacyAssertionCounterexampleRequirement,
+  V2CounterexampleRequirement,
+]);
 export type CounterexampleRequirement = z.infer<typeof CounterexampleRequirement>;
 
 /**
@@ -102,6 +130,8 @@ const proofClaimBase = {
   signalClass: SignalClass,
   /** Whether the claim is critical (subject to stricter evidence gating). */
   critical: z.boolean(),
+  /** v2 declaration scope; suite claims require complete-suite positive evidence. */
+  claimScope: z.enum(['specific_behavior', 'suite']).optional(),
   /** Approved GOVERNING source (ticket/plan-ADR/canonical authority). `null` ⇒ unproven assumption. */
   provenance: ClaimAuthorityRef.nullable(),
   /** Digest-bound positive EVIDENCE references (never governing provenance). */
@@ -112,6 +142,8 @@ const proofClaimBase = {
   requiredEvidence: RequiredEvidence.optional(),
   /** Optional counterexample requirement (assertion-level). */
   counterexampleRequirement: CounterexampleRequirement.optional(),
+  /** V1 declarations are audit-visible but cannot establish v2 proof. */
+  proofEligibility: z.enum(['eligible', 'legacy_declaration_v1']).optional(),
   /** Optional confidence in [0, 1] for advisory (non-fact) signals. */
   confidence: z.number().min(0).max(1).optional(),
 } as const;
@@ -144,6 +176,11 @@ export const AssertionBindingReasonCodeSchema = z.enum([
   'check_only_evidence',
   'provider_mismatch',
   'assertion_mismatch',
+  'aggregate_check_mismatch',
+  'aggregate_candidate_mismatch',
+  'aggregate_scope_unattested',
+  'aggregate_extraction_missing',
+  'aggregate_capability_missing',
 ]);
 export type AssertionBindingReasonCode = z.infer<typeof AssertionBindingReasonCodeSchema>;
 

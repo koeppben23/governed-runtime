@@ -75,6 +75,9 @@ export const pytestProvider: AssertionProviderExtension = {
             '--json-report --json-report-file=.flowguard/reports/{attemptId}/pytest.json',
           resultPatternTemplate: '.flowguard/reports/{attemptId}/pytest.json',
         },
+        attestFullCheckScope(command: string) {
+          return command.trim() === 'pytest' || command.trim() === 'python -m pytest';
+        },
         createCandidate(ctx: { detectedStackIds: ReadonlySet<string> }) {
           if (!ctx.detectedStackIds.has('testFramework:pytest')) return null;
           return {
@@ -92,6 +95,44 @@ export const pytestProvider: AssertionProviderExtension = {
               outputArgumentTemplate:
                 '--json-report --json-report-file=.flowguard/reports/{attemptId}/pytest.json',
               resultPatternTemplate: '.flowguard/reports/{attemptId}/pytest.json',
+            },
+          };
+        },
+      },
+      {
+        profileId: 'pytest-junit-aggregate',
+        providerId: 'pytest' as const,
+        format: 'junit_xml' as const,
+        kind: 'test' as const,
+        priority: 5,
+        alternate: true,
+        assertionReport: {
+          collection: 'run_specific' as const,
+          transport: 'file' as const,
+          format: 'junit_xml' as const,
+          providerId: 'pytest' as const,
+          outputArgumentTemplate: '--junitxml=.flowguard/reports/{attemptId}/pytest.junit.xml',
+          resultPatternTemplate: '.flowguard/reports/{attemptId}/pytest.junit.xml',
+        },
+        attestFullCheckScope(command: string) {
+          return command.trim() === 'python -m pytest';
+        },
+        createCandidate(ctx: { detectedStackIds: ReadonlySet<string> }) {
+          if (!ctx.detectedStackIds.has('testFramework:pytest')) return null;
+          return {
+            assertionCapability: 'structured' as const,
+            kind: 'test' as const,
+            command: 'python -m pytest',
+            source: 'detectedStack:testFramework:pytest:aggregate',
+            confidence: 'medium' as const,
+            reason: 'pytest JUnit XML aggregate suite evidence',
+            assertionReport: {
+              collection: 'run_specific' as const,
+              transport: 'file' as const,
+              format: 'junit_xml' as const,
+              providerId: 'pytest' as const,
+              outputArgumentTemplate: '--junitxml=.flowguard/reports/{attemptId}/pytest.junit.xml',
+              resultPatternTemplate: '.flowguard/reports/{attemptId}/pytest.junit.xml',
             },
           };
         },
@@ -114,7 +155,9 @@ export const pytestProvider: AssertionProviderExtension = {
       {
         format: 'junit_xml' as ReportFormatId,
         parser: junitXmlParser,
-        bindingCapability: 'check_only' as const,
+        // pytest's JUnit XML report attests complete suite totals, but does not
+        // provide stable pytest node identities for assertion binding.
+        bindingCapability: 'aggregate' as const,
       },
     ],
     identityCodec: {

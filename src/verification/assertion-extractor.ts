@@ -23,6 +23,7 @@ import type { ExecutionEvidence } from './executor.js';
 import {
   PARSER_BY_FORMAT,
   ASSERTION_FORMATS_BY_PROVIDER,
+  AGGREGATE_FORMATS_BY_PROVIDER,
   ASSERTION_CODEC_BY_PROVIDER,
 } from '../providers/registry.js';
 
@@ -92,9 +93,11 @@ function stripNonBindingAssertions(
 ): AssertionExtractionResult {
   if (result.status !== 'extracted') return result;
 
-  const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(spec.providerId);
-  const isBinding = bindingFormats?.has(spec.format as ReportFormatId);
-  if (isBinding) return result;
+  const bindingCapability = resolveBindingCapability(
+    spec.providerId,
+    spec.format as ReportFormatId,
+  );
+  if (bindingCapability !== 'check_only') return { ...result, bindingCapability };
 
   return {
     ...result,
@@ -111,11 +114,23 @@ function stripNonBindingAssertions(
   };
 }
 
+function resolveBindingCapability(
+  providerId: ProviderId,
+  format: ReportFormatId,
+): 'assertion' | 'aggregate' | 'check_only' {
+  if (ASSERTION_FORMATS_BY_PROVIDER.get(providerId)?.has(format)) return 'assertion';
+  if (AGGREGATE_FORMATS_BY_PROVIDER.get(providerId)?.has(format)) return 'aggregate';
+  return 'check_only';
+}
+
 function validateExtractedIdentities(
   result: AssertionExtractionResult,
   spec: AssertionReportSpec,
 ): AssertionExtractionResult {
   if (result.status !== 'extracted' || result.assertions.length === 0) return result;
+
+  // Aggregate reports attest suite totals; their parsed test IDs are not assertion bindings.
+  if (result.bindingCapability === 'aggregate') return result;
 
   const codec = ASSERTION_CODEC_BY_PROVIDER.get(spec.providerId);
   if (!codec) {
@@ -157,13 +172,12 @@ async function parseCollectedReport(
           reason: 'report parsing produced no test results',
         };
       }
-      const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(report.providerId);
       return {
         status: 'extracted',
         attemptId,
         providerId: report.providerId,
         format: report.format,
-        bindingCapability: bindingFormats?.has(report.format) === true ? 'assertion' : 'check_only',
+        bindingCapability: resolveBindingCapability(report.providerId, report.format),
         reportDigests: [report.digest],
         assertions: parsed.assertions,
         summary: parsed.summary,
@@ -190,13 +204,12 @@ async function parseCollectedReport(
         };
       }
 
-      const bindingFormats = ASSERTION_FORMATS_BY_PROVIDER.get(report.providerId);
       return {
         status: 'extracted',
         attemptId,
         providerId: report.providerId,
         format: report.format,
-        bindingCapability: bindingFormats?.has(report.format) === true ? 'assertion' : 'check_only',
+        bindingCapability: resolveBindingCapability(report.providerId, report.format),
         reportDigests: digests,
         assertions: allAssertions,
         summary: mergeSummaries(allSummaries),

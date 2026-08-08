@@ -35,9 +35,9 @@ import { executeCheck } from '../../verification/executor.js';
 import { PersistenceError } from '../../adapters/persistence.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
-import { hashWorktreeFiles } from '../../adapters/git.js';
+import { hashWorktreeFiles, listRepoSignals } from '../../adapters/git.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { withSessionWriteLockRetry } from '../../adapters/lock-retry.js';
 import {
   resetAdapterLogger,
@@ -239,6 +239,39 @@ describe('HAPPY', () => {
     expect(validation!.outputDigest).toBe('a'.repeat(64));
   });
 
+  it('freezes a full-check attestation from the candidate on the executed attempt', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: (state!.verificationCandidates ?? []).map((candidate) =>
+        candidate.kind === 'typecheck'
+          ? {
+              assertionCapability: 'structured' as const,
+              kind: candidate.kind,
+              command: candidate.command,
+              source: candidate.source,
+              confidence: candidate.confidence,
+              reason: candidate.reason,
+              fullCheckScopeAttestation: 'full_check' as const,
+              assertionReport: {
+                collection: 'stdout' as const,
+                transport: 'stdout' as const,
+                format: 'junit_xml' as const,
+                providerId: 'junit' as const,
+              },
+            }
+          : candidate,
+      ),
+    });
+
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const persisted = await readState(sd);
+    expect(persisted!.validationAttempts[0]!.result.fullCheckScopeAttestation).toBe('full_check');
+  });
+
   it('advances to IMPLEMENTATION when all active checks pass', async () => {
     await driveToValidation();
     // Discovery detects TypeScript → activeChecks=['typecheck']
@@ -264,6 +297,110 @@ describe('HAPPY', () => {
         cwd: ws.tmpDir,
       }),
     );
+  });
+
+  it('selects and persists the exact candidate when candidateId is supplied', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const primary = state!.verificationCandidates!.find(
+      (candidate) => candidate.kind === 'typecheck',
+    )!;
+    const candidateId = 'typecheck-alternate';
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: [
+        primary,
+        { ...primary, candidateId, command: 'npm run exact-typecheck' },
+      ],
+      executionSubjectInputsByCandidateId: {
+        ...(state!.executionSubjectInputsByCandidateId ?? {}),
+        [candidateId]: state!.executionSubjectInputsByKind!.typecheck ?? [],
+      },
+    });
+
+    await callOk(run_check, { kind: 'typecheck', candidateId });
+
+    expect(executeCheck).toHaveBeenCalledWith(
+      expect.objectContaining({ command: 'npm run exact-typecheck' }),
+    );
+    expect((await readState(sd))!.validation[0]!.candidateId).toBe(candidateId);
+  });
+
+  it('persists complete-suite aggregate evidence from a repo-native pytest alternate', async () => {
+    writeFileSync(
+      join(ws.tmpDir, 'package.json'),
+      JSON.stringify({ scripts: { test: 'python -m pytest' } }),
+      'utf-8',
+    );
+    writeFileSync(join(ws.tmpDir, 'requirements.txt'), 'pytest>=7\n', 'utf-8');
+    writeFileSync(
+      join(ws.tmpDir, 'pyproject.toml'),
+      '[project]\ndependencies = ["pytest>=7"]\n',
+      'utf-8',
+    );
+    vi.mocked(listRepoSignals).mockResolvedValueOnce({
+      files: ['package.json', 'requirements.txt', 'pyproject.toml'],
+      packageFiles: ['package.json', 'requirements.txt'],
+      configFiles: ['pyproject.toml'],
+      packageFilePaths: ['package.json', 'requirements.txt'],
+      configFilePaths: ['pyproject.toml'],
+    });
+    await driveToValidation();
+
+    const sd = await getSessDir();
+    const aggregate = (await readState(sd))!.verificationCandidates!.find(
+      (candidate) =>
+        candidate.kind === 'test' &&
+        candidate.assertionCapability === 'structured' &&
+        candidate.assertionReport.format === 'junit_xml',
+    );
+    expect(aggregate).toBeDefined();
+    expect(aggregate).toMatchObject({
+      command: 'npm run test --',
+      fullCheckScopeAttestation: 'full_check',
+    });
+    expect((await readState(sd))!.activeChecks).toContain('test');
+
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      const reportPath = /--junitxml=(\S+)/.exec(input.command)?.[1];
+      expect(reportPath).toBeDefined();
+      const absoluteReportPath = join(input.cwd, reportPath!);
+      mkdirSync(dirname(absoluteReportPath), { recursive: true });
+      writeFileSync(
+        absoluteReportPath,
+        '<testsuite tests="1" failures="0" errors="0"><testcase classname="tests.test_suite" name="suite" /></testsuite>',
+        'utf-8',
+      );
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    await callOk(run_check, { kind: 'test', candidateId: aggregate!.candidateId });
+
+    const attempt = (await readState(sd))!.validationAttempts.find(
+      (entry) => entry.result.candidateId === aggregate!.candidateId,
+    );
+    expect(attempt?.result).toMatchObject({
+      candidateId: aggregate!.candidateId,
+      fullCheckScopeAttestation: 'full_check',
+      assertionExtraction: {
+        status: 'extracted',
+        bindingCapability: 'aggregate',
+        format: 'junit_xml',
+        providerId: 'pytest',
+      },
+    });
   });
 });
 

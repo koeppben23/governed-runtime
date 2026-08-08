@@ -22,8 +22,8 @@ import * as crypto from 'node:crypto';
 import { z } from 'zod';
 
 import type { Phase, SessionState } from '../../state/schema.js';
-import { AssertionCounterexampleRequirement } from '../../state/proofgraph-approval.js';
-import type { AssertionCounterexampleRequirement as AssertionCounterexampleRequirementType } from '../../state/proofgraph-approval.js';
+import { V2CounterexampleRequirement } from '../../state/proofgraph-approval.js';
+import type { V2CounterexampleRequirement as V2CounterexampleRequirementType } from '../../state/proofgraph-approval.js';
 import type { DeclaredClaim } from '../../state/proofgraph.js';
 import type { ProofProviderKind } from '../../state/proofgraph-primitives.js';
 import type { ClaimAuthorityRef } from '../../state/proofgraph-refs.js';
@@ -134,10 +134,11 @@ type RawClaim = {
   statement: string;
   checkId: string;
   critical: boolean;
+  claimScope: 'specific_behavior' | 'suite';
   authority?: AuthoritySource;
   structuralSurface?: string;
   mutationProfile?: string;
-  counterexampleRequirement?: AssertionCounterexampleRequirementType;
+  counterexampleRequirement?: V2CounterexampleRequirementType;
 };
 
 /**
@@ -245,6 +246,7 @@ function buildDeclaredClaims(
       // No auto-`fact`: classification follows the resolved governing authority.
       signalClass: isFact ? 'fact' : 'hypothesis',
       critical,
+      proofEligibility: 'eligible' as const,
       provenance,
       evidenceRefs,
       counterexampleRefs,
@@ -279,6 +281,7 @@ function validateDeclaredClaimContract(
     claims: rawClaims.map((claim) => ({
       statement: claim.statement,
       critical: claim.critical,
+      claimScope: claim.claimScope,
       positiveCheckId: claim.checkId,
       counterexampleRequirement: claim.counterexampleRequirement,
       structuralSurface: claim.structuralSurface,
@@ -361,8 +364,13 @@ export const declare_contract: ToolDefinition = {
                 'surviving mutants make the claim UNPROVEN, and a profile with no recorded ' +
                 'mutation report is NOT_VERIFIED rather than a pass.',
             ),
-          counterexampleRequirement: AssertionCounterexampleRequirement.optional().describe(
-            'Counterexample requirement: binds a specific test assertion whose failure contradicts this claim.',
+          claimScope: z
+            .enum(['specific_behavior', 'suite'])
+            .describe(
+              'specific_behavior requires assertion evidence; suite requires aggregate_check evidence.',
+            ),
+          counterexampleRequirement: V2CounterexampleRequirement.optional().describe(
+            'Counterexample requirement: assertion with identity, or aggregate_check for suite coverage.',
           ),
         }),
       )

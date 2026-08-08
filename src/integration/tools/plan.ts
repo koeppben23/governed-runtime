@@ -215,6 +215,7 @@ function validatePlanClaimContract(args: PlanArgs, state: SessionState): string 
       claimId: claim.claimId,
       statement: claim.statement,
       critical: claim.critical,
+      claimScope: claim.claimScope,
       positiveCheckId: claim.expectedCheckId,
       counterexampleRequirement: claim.counterexampleRequirement,
       structuralSurface: claim.structuralSurface,
@@ -343,7 +344,7 @@ function buildPlanSubmissionState(
         ? [...(scope.state.plan?.reviewFindings ?? []), reviewFindings]
         : scope.state.plan?.reviewFindings,
       claimDeclarations: scope.args.claims
-        ? { flow: 'plan', claims: normalizePlanClaims(scope.args.claims)! }
+        ? { flow: 'plan', version: 'v2' as const, claims: normalizePlanClaims(scope.args.claims)! }
         : scope.state.plan?.claimDeclarations,
     },
     // #428: a new plan invalidates any prior validation evidence. Without this
@@ -491,7 +492,7 @@ function buildReviewedPlanState(
       history: revision.history,
       reviewFindings: newReviewFindings,
       claimDeclarations: scope.args.claims
-        ? { flow: 'plan', claims: normalizePlanClaims(scope.args.claims)! }
+        ? { flow: 'plan', version: 'v2' as const, claims: normalizePlanClaims(scope.args.claims)! }
         : scope.state.plan?.claimDeclarations,
     },
     selfReview: {
@@ -563,7 +564,7 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     planEvidence,
     planVersion,
     reviewFindings,
-    classification.kind === 'available' ? classification.changedFiles : undefined,
+    classification.kind === 'available' ? classification.changedFiles : [],
   );
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
   const advanced = autoAdvance(nextState, evalFn, scope.ctx);

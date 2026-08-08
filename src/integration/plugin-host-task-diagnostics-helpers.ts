@@ -106,6 +106,7 @@ export function pendingObligation(overrides: Partial<ReviewObligation> = {}): Re
     planVersion: 1,
     now: NOW,
     subjectDigest: 'diagnostics-test-subject',
+    changedFiles: ['src/foo.ts'],
   });
   return { ...base, ...overrides };
 }

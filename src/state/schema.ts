@@ -523,6 +523,14 @@ export const SessionState = z.object({
     .optional(),
 
   /**
+   * Candidate-specific execution-subject inputs. Takes precedence over the
+   * kind map when a candidateId is available; the kind map supports legacy state.
+   */
+  executionSubjectInputsByCandidateId: z
+    .record(z.string(), z.array(ExecutionSubjectInputSchema))
+    .optional(),
+
+  /**
    * Pre-implementation worktree baseline (P-baseline).
    *
    * Snapshot of files already dirty at session start (hydrate), used by

@@ -104,6 +104,8 @@ describe('presentation/index.ts barrel', () => {
     'PHASE_LABELS',
     'buildProductNextAction',
     'buildPlanReviewCard',
+    'buildEvidenceReviewCard',
+    'buildEvidenceApprovalCompletionDocument',
     'buildArchitectureReviewCard',
     'buildReviewReportCard',
     'normalizedMarkdown',
@@ -149,6 +151,11 @@ describe('presentation/index.ts barrel', () => {
     it('re-exports buildReviewReportCard', async () => {
       const mod = await import('./presentation/index.js');
       expect(typeof mod.buildReviewReportCard).toBe('function');
+    });
+
+    it('re-exports buildEvidenceReviewCard', async () => {
+      const mod = await import('./presentation/index.js');
+      expect(typeof mod.buildEvidenceReviewCard).toBe('function');
     });
   });
 

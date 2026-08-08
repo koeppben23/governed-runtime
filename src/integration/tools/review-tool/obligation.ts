@@ -7,7 +7,8 @@
  * @version v1
  */
 
-import { hashText, hashTextShort } from '../../../shared/hashing.js';
+export { fingerprintReviewInput } from './fingerprint.js';
+import { fingerprintReviewInput } from './fingerprint.js';
 
 import type { SessionState } from '../../../state/schema.js';
 import type { ReviewFindings, ReviewObligation } from '../../../state/evidence.js';
@@ -28,6 +29,10 @@ import {
 } from '../../review/assurance.js';
 import { REVIEWER_SUBAGENT_TYPE } from '../../../shared/flowguard-identifiers.js';
 import { validateChallengeConsistency } from '../../review/enforcement/challenge-consistency.js';
+import {
+  validateReviewFindingsScope,
+  type FindingWithLocation,
+} from '../../review/enforcement/findings-consistency.js';
 import { collectPreviouslyUsedChallengeIds } from '../../review/challenge-history.js';
 import { buildHostTaskChallengeContract } from '../../review/host-task-policy.js';
 import { formatBlocked, writeStateWithArtifacts } from '../helpers.js';
@@ -100,7 +105,17 @@ export function formatBlockedWithAttestation(
   });
 }
 
-export function formatMissingContentAnalysis(obligationId: string): string {
+export function formatMissingContentAnalysis(
+  obligationId: string,
+  hostTaskRequired = false,
+): string {
+  if (hostTaskRequired) {
+    return formatBlockedWithAttestation(
+      'CONTENT_ANALYSIS_REQUIRED',
+      `Content-aware /review requires subagent analysis. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool, then re-run flowguard_review with the original content fields, reviewObligationId '${obligationId}', and reviewVerdict matching the captured reviewer verdict. Do not submit or copy reviewFindings in host-task mode.`,
+      obligationId,
+    );
+  }
   return formatBlockedWithAttestation(
     'CONTENT_ANALYSIS_REQUIRED',
     `Content-aware /review requires subagent analysis. Call the ${REVIEWER_SUBAGENT_TYPE} subagent via Task tool to analyze the provided content, then re-run flowguard_review with the complete ReviewFindings object. Manual JSON/attestation copy alone is not sufficient in strict mode; FlowGuard must persist matching ReviewInvocationEvidence.`,
@@ -263,27 +278,8 @@ export {
   type RequiredBranchReviewProvenance,
 } from '../../review/review-provenance.js';
 
-export function fingerprintReviewInput(args: {
-  prNumber?: number;
-  branch?: string;
-  url?: string;
-  text?: string;
-  inputOrigin?: string;
-  references?: unknown;
-  resolvedBranchSha?: string;
-  resolvedBaseSha?: string;
-}): string {
-  const payload = JSON.stringify({
-    prNumber: args.prNumber,
-    branch: args.branch,
-    url: args.url,
-    textHash: args.text ? hashTextShort(args.text, 16) : undefined,
-    inputOrigin: args.inputOrigin,
-    references: args.references ? hashTextShort(JSON.stringify(args.references), 16) : undefined,
-    resolvedBranchSha: args.resolvedBranchSha,
-    resolvedBaseSha: args.resolvedBaseSha,
-  });
-  return hashText(payload);
+function fingerprintVersionOf(obligation: ReviewObligation): 'v1' | 'v2' {
+  return obligation.fingerprintVersion ?? 'v1';
 }
 
 export function matchesReviewObligationInput(
@@ -291,7 +287,31 @@ export function matchesReviewObligationInput(
   args: ReviewToolArgs,
 ): boolean {
   const inputFingerprint = obligation.metadata?.inputFingerprint;
-  return typeof inputFingerprint === 'string' && inputFingerprint === fingerprintReviewInput(args);
+  return (
+    typeof inputFingerprint === 'string' &&
+    inputFingerprint === fingerprintReviewInput(args, fingerprintVersionOf(obligation))
+  );
+}
+
+/** Option A continuation: re-supply the immutable source alongside identity and verdict. */
+export function validateHostTaskContinuationInput(
+  obligation: ReviewObligation,
+  args: ReviewToolArgs,
+): string | null {
+  if (!hasReviewContentInput(args)) {
+    return formatBlocked('REVIEW_OBLIGATION_INPUT_MISMATCH', {
+      obligationId: obligation.obligationId,
+      reason:
+        'A host-task continuation must include the original immutable review content fields, reviewObligationId, and reviewVerdict.',
+    });
+  }
+  if (!matchesReviewObligationInput(obligation, args)) {
+    return formatBlocked('REVIEW_OBLIGATION_INPUT_MISMATCH', {
+      obligationId: obligation.obligationId,
+      reason: 'The supplied review input does not match the host-task review obligation.',
+    });
+  }
+  return null;
 }
 
 // ─── Obligation lifecycle ────────────────────────────────────────────────────
@@ -329,6 +349,7 @@ interface NewReviewObligationInput {
   readonly resolvedSource: ResolvedBranchReviewSource | undefined;
   readonly fingerprint: string;
   readonly inputFingerprint: string;
+  readonly fingerprintVersion: 'v2';
 }
 
 async function createNewReviewObligation(
@@ -348,7 +369,9 @@ async function createNewReviewObligation(
     };
   }
   const resolvedTargetPaths =
-    classification.kind === 'available' ? [...classification.changedFiles] : undefined;
+    classification.kind === 'available'
+      ? [...classification.changedFiles]
+      : ([] as readonly string[]);
   const metadata: Record<string, unknown> = {
     fingerprint: input.fingerprint,
     inputFingerprint: input.inputFingerprint,
@@ -378,6 +401,7 @@ async function createNewReviewObligation(
       // not the session's own task-class claim. The C1 floor applies only to the
       // author's own change (plan/architecture/implement).
       metadata,
+      fingerprintVersion: input.fingerprintVersion,
     }),
   };
 }
@@ -403,36 +427,84 @@ export async function ensureMissingAnalysisObligation(
 
   if (!hasReviewContentInput(args)) return { message: null };
 
-  const fingerprint = fingerprintReviewInput({
-    ...args,
-    resolvedBranchSha: context.resolvedSource?.resolvedBranchSha,
-    resolvedBaseSha: context.resolvedSource?.resolvedBaseSha,
-  });
-  const inputFingerprint = fingerprintReviewInput(args);
-  const existing = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
+  const fingerprint = fingerprintReviewInput(
+    {
+      ...args,
+      resolvedBranchSha: context.resolvedSource?.resolvedBranchSha,
+      resolvedBaseSha: context.resolvedSource?.resolvedBaseSha,
+    },
+    'v2',
+  );
+  const inputFingerprint = fingerprintReviewInput(args, 'v2');
+  const existing = findLatestPendingReviewObligation(
+    state.reviewAssurance,
+    'review',
+    fingerprint,
+    'v2',
+  );
   const verdictFirstCall = args.reviewVerdict !== undefined && existing === null;
   if (!verdictFirstCall && args.reviewFindings !== undefined) return { message: null };
-  let obligation = existing;
-  if (!obligation) {
-    const created = await createNewReviewObligation({
+  if (!existing) {
+    return createAndPrepareMissingAnalysisObligation({
+      sessDir,
       state,
       args,
       now,
+      context,
       fingerprint,
       inputFingerprint,
-      ...context,
+      fingerprintVersion: 'v2',
     });
-    if (created.blocked) return { message: created.blocked };
-    obligation = created.obligation!;
-    const persisted = await persistReviewObligation(sessDir, state, obligation);
-    return {
-      message: formatMissingContentAnalysis(obligation.obligationId),
-      obligation,
-      attemptId: persisted.attemptId,
-      assurance: persisted.assurance,
-    };
   }
-  return { message: formatMissingContentAnalysis(obligation.obligationId), obligation };
+  return {
+    message: formatMissingContentAnalysis(
+      existing.obligationId,
+      state.policySnapshot?.reviewInvocationPolicy === 'host_task_required',
+    ),
+    obligation: existing,
+  };
+}
+
+interface MissingAnalysisObligationInput {
+  readonly sessDir: string;
+  readonly context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource'>;
+  readonly state: SessionState;
+  readonly args: ReviewToolArgs;
+  readonly now: string;
+  readonly fingerprint: string;
+  readonly inputFingerprint: string;
+  readonly fingerprintVersion: 'v2';
+}
+
+async function createAndPrepareMissingAnalysisObligation(
+  input: MissingAnalysisObligationInput,
+): Promise<{
+  message: string | null;
+  obligation?: ReviewObligation;
+  attemptId?: string;
+  assurance?: ReviewAssuranceState;
+}> {
+  const created = await createNewReviewObligation({
+    state: input.state,
+    args: input.args,
+    now: input.now,
+    fingerprint: input.fingerprint,
+    inputFingerprint: input.inputFingerprint,
+    fingerprintVersion: input.fingerprintVersion,
+    ...input.context,
+  });
+  if (created.blocked) return { message: created.blocked };
+  const obligation = created.obligation!;
+  const persisted = await persistReviewObligation(input.sessDir, input.state, obligation);
+  return {
+    message: formatMissingContentAnalysis(
+      obligation.obligationId,
+      input.state.policySnapshot?.reviewInvocationPolicy === 'host_task_required',
+    ),
+    obligation,
+    attemptId: persisted.attemptId,
+    assurance: persisted.assurance,
+  };
 }
 
 function isActiveReviewObligation(
@@ -501,10 +573,10 @@ export async function resolveSubmittedReviewObligation(
       blocked: suppliedBlock,
     };
   }
-  const fingerprint = fingerprintReviewInput(args);
+  const fingerprint = fingerprintReviewInput(args, 'v2');
   let obligation =
     obligationById ??
-    findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
+    findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint, 'v2');
 
   if (!obligation) {
     const created = await createNewReviewObligation({
@@ -515,6 +587,7 @@ export async function resolveSubmittedReviewObligation(
       resolvedSource: undefined,
       fingerprint,
       inputFingerprint: fingerprint,
+      fingerprintVersion: 'v2',
     });
     if (created.blocked) return { obligation: null, blocked: created.blocked };
     obligation = created.obligation!;
@@ -582,6 +655,26 @@ export function validateSubmittedReviewFindings(
   if (!challengeConsistency.ok) {
     return formatSubagentReviewNotInvoked(
       `${challengeConsistency.code}: ${JSON.stringify(challengeConsistency.details)}`,
+      obligation.obligationId,
+    );
+  }
+
+  const scopeLocations: FindingWithLocation[] = [];
+  [findings.blockingIssues, findings.majorRisks].forEach((arr) => {
+    if (Array.isArray(arr))
+      arr.forEach((item) => {
+        if (item && typeof item === 'object') scopeLocations.push(item as FindingWithLocation);
+      });
+  });
+  const scopeResult = validateReviewFindingsScope({
+    findings: scopeLocations,
+    reviewedFileScope: obligation.reviewedFileScope,
+  });
+  if (!scopeResult.ok) {
+    return formatSubagentReviewNotInvoked(
+      scopeResult.code === 'REVIEW_FINDING_OUT_OF_SCOPE'
+        ? `Reviewer findings reference paths outside the reviewed file scope: ${scopeResult.details.outOfScopePaths.join(', ')}`
+        : `Review file scope could not be verified for obligation ${obligation.obligationId}`,
       obligation.obligationId,
     );
   }

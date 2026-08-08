@@ -74,6 +74,7 @@ export interface HydrateSessionInput {
   readonly detectedStack?: DetectedStack | null;
   readonly verificationCandidates?: VerificationCandidates;
   readonly executionSubjectInputsByKind?: Record<string, ExecutionSubjectInput[]>;
+  readonly executionSubjectInputsByCandidateId?: Record<string, ExecutionSubjectInput[]>;
   readonly claimedTaskClass?: TaskClass;
   /**
    * Files already dirty in the worktree at session start (with content hashes),
@@ -306,6 +307,7 @@ function buildNewHydrateState(
     detectedStack: s.detectedStack ?? null,
     verificationCandidates: s.verificationCandidates ?? [],
     executionSubjectInputsByKind: s.executionSubjectInputsByKind ?? {},
+    executionSubjectInputsByCandidateId: s.executionSubjectInputsByCandidateId ?? {},
     ...(s.baselineDirtyFiles
       ? {
           implementationBaseline: {

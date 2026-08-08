@@ -64,11 +64,21 @@ import {
 import type { SessionState } from '../../state/schema.js';
 import { evaluate, evaluateWithEvent } from '../../machine/evaluate.js';
 import { implValidationPassed } from '../../machine/guards.js';
+import { resolveNextAction } from '../../machine/next-action.js';
 
 // Rail helpers
 import { applyTransition, autoAdvance } from '../../rails/types.js';
 
 // Adapters
+import { readConfig } from '../../adapters/persistence-config.js';
+
+// Presentation
+import {
+  buildEvidenceReviewCard,
+  PHASE_LABELS,
+  buildProductNextAction,
+} from '../../presentation/index.js';
+import type { EvidenceReviewCardInput } from '../../presentation/evidence-review-card.js';
 
 // Evidence types
 import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
@@ -90,14 +100,17 @@ import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import { nextImplementationReviewIteration } from './implement-shared.js';
 import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
-import type { CompactProofPresentation } from '../../presentation/proof-summary.js';
-import { renderCompactProofSection } from '../../presentation/proof-summary.js';
+import type { CompactProofPresentation } from '../../presentation/proof-model.js';
+import {
+  buildImplReviewBlockedMarkdown,
+  buildImplReviewChangesRequestedMarkdown,
+} from './implement-review-presentation.js';
+export { buildImplReviewChangesRequestedMarkdown } from './implement-review-presentation.js';
 
 function attachProofSummaryToBlockedResponse(
   blockedResponse: string,
-  proofSummary: CompactProofPresentation | null,
+  proofSummary: CompactProofPresentation,
 ): string {
-  if (!proofSummary) return blockedResponse;
   const parsed = JSON.parse(blockedResponse) as Record<string, unknown>;
   parsed.proofSummary = proofSummary;
   parsed.presentation = {
@@ -109,47 +122,6 @@ function attachProofSummaryToBlockedResponse(
   return JSON.stringify(parsed);
 }
 
-function buildImplReviewBlockedMarkdown(
-  message: string,
-  proofSummary: CompactProofPresentation,
-): string {
-  return [
-    '## Implementation review blocked',
-    '',
-    message,
-    '',
-    renderCompactProofSection(proofSummary),
-    '',
-    '→ Restore independent review capability and retry the implementation review.',
-  ].join('\n');
-}
-
-export function buildImplReviewConvergedMarkdown(
-  statusLine: string,
-  proofSummary: CompactProofPresentation,
-): string {
-  return [
-    statusLine,
-    '',
-    renderCompactProofSection(proofSummary),
-    '',
-    '→ Continue to completion or run flowguard_status for review context.',
-  ].join('\n');
-}
-
-export function buildImplReviewChangesRequestedMarkdown(
-  statusLine: string,
-  proofSummary: CompactProofPresentation,
-): string {
-  return [
-    statusLine,
-    '',
-    renderCompactProofSection(proofSummary),
-    '',
-    '→ Make the requested code changes, then call flowguard_implement to re-record.',
-  ].join('\n');
-}
-
 function proofDecisionContextForVerdict(
   verdict: LoopVerdict,
 ): 'current_gate' | 'prospective_approval' {
@@ -159,7 +131,7 @@ function proofDecisionContextForVerdict(
 function projectProofSummaryForVerdict(
   state: SessionState,
   verdict: LoopVerdict,
-): CompactProofPresentation | null {
+): CompactProofPresentation {
   return projectImplementationProofStatus(state, {
     decisionContext: proofDecisionContextForVerdict(verdict),
   });
@@ -172,7 +144,7 @@ export type ResolvedSubmittedReviewProof =
     }
   | {
       readonly kind: 'proceed';
-      readonly proofSummary: CompactProofPresentation | null;
+      readonly proofSummary: CompactProofPresentation;
     };
 
 /**
@@ -457,7 +429,7 @@ async function handleChangesRequestedReview(input: {
   reviewedState: SessionState;
   iteration: number;
   reviewFindings: ReviewFindings[];
-  proofSummary?: CompactProofPresentation | null;
+  proofSummary: CompactProofPresentation;
 }): Promise<string> {
   const target = evaluateWithEvent(input.runtime.state.phase, 'CHANGES_REQUESTED');
   if (target === undefined) {
@@ -497,15 +469,14 @@ async function handleChangesRequestedReview(input: {
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
-  if (input.proofSummary) {
-    response.proofSummary = input.proofSummary;
-    response.presentation = {
-      markdown: buildImplReviewChangesRequestedMarkdown(
-        `Implementation review iteration ${input.iteration}/${input.runtime.maxImplReviewIterations}. Changes requested.`,
-        input.proofSummary,
-      ),
-    };
-  }
+  response.proofSummary = input.proofSummary;
+  response.presentation = {
+    markdown: buildImplReviewChangesRequestedMarkdown(
+      `Implementation review iteration ${input.iteration}/${input.runtime.maxImplReviewIterations}. Changes requested.`,
+      input.proofSummary,
+      buildProductNextAction(resolveNextAction(finalState.phase, finalState), finalState.phase),
+    ),
+  };
   return appendNextAction(JSON.stringify(response), finalState);
 }
 
@@ -514,8 +485,13 @@ async function handleApprovedReview(input: {
   reviewedState: SessionState;
   iteration: number;
   reviewFindings: ReviewFindings[];
-  proofSummary?: CompactProofPresentation | null;
+  proofSummary: CompactProofPresentation;
 }): Promise<string> {
+  // Resolve presentation dependencies before any state mutation.
+  // If config I/O fails, no EVIDENCE_REVIEW state has been persisted.
+  const glyphProfile = (await readConfig(input.runtime.worktree)).presentation.opencode
+    .glyphProfile;
+
   const advanced = autoAdvance(
     input.reviewedState,
     (s) => evaluate(s, input.runtime.policy),
@@ -536,16 +512,27 @@ async function handleApprovedReview(input: {
   };
   addLatestImplementationReview(response, input.reviewFindings);
 
-  if (input.proofSummary) {
-    response.proofSummary = input.proofSummary;
-    const statusLine =
-      input.runtime.args.reviewVerdict === 'accept'
-        ? `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`
-        : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
-    response.presentation = {
-      markdown: buildImplReviewConvergedMarkdown(statusLine, input.proofSummary),
-    };
-  }
+  response.proofSummary = input.proofSummary;
+  const statusLine =
+    input.runtime.args.reviewVerdict === 'accept'
+      ? `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`
+      : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
+  const nextAction = resolveNextAction(finalState.phase, finalState);
+  const productNext = buildProductNextAction(nextAction, finalState.phase);
+  const latestFindings = input.reviewFindings.at(-1);
+  const cardInput: EvidenceReviewCardInput = {
+    phaseLabel: PHASE_LABELS[finalState.phase],
+    productNextAction: productNext,
+    proofSummary: input.proofSummary,
+    statusLine,
+    forcedConvergence: input.runtime.args.reviewVerdict !== 'accept',
+    majorRisks: latestFindings?.majorRisks,
+    missingVerification: latestFindings?.missingVerification,
+    unknowns: latestFindings?.unknowns,
+  };
+  response.presentation = {
+    markdown: buildEvidenceReviewCard(cardInput, { glyphProfile }),
+  };
 
   if (input.runtime.args.reviewVerdict === 'accept') {
     response.status = `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`;
@@ -642,7 +629,7 @@ async function handleSubmittedImplementationReview(input: {
     reviewedState,
     iteration,
     reviewFindings: newReviewFindings,
-    proofSummary: proofSummary ?? undefined,
+    proofSummary,
   });
 }
 

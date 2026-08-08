@@ -8,54 +8,13 @@
  * @version v1
  */
 
-// ─── Public types ───────────────────────────────────────────────────────────
-
-export interface CompactProofClaim {
-  readonly claimId: string;
-  readonly statement: string;
-  readonly status: ClaimVerificationState;
-  readonly critical: boolean;
-  readonly reason?: string;
-  readonly recovery?: readonly string[];
-}
-
-/** Covers all six evaluation states from the proofgraph evaluator. */
-export type ClaimVerificationState =
-  'PROVEN' | 'UNPROVEN' | 'CONTRADICTED' | 'STALE' | 'BLOCKED' | 'NOT_VERIFIED';
-
-export type CompactProofPresentation =
-  | {
-      readonly kind: 'declaration';
-      readonly flow: 'plan' | 'architecture';
-      readonly claimCount: number;
-      readonly criticalCount: number;
-      readonly falsificationReadyCount?: number;
-      readonly missingFalsificationCount?: number;
-    }
-  | {
-      readonly kind: 'evaluation';
-      readonly claimCount: number;
-      readonly criticalCount: number;
-      readonly provenCount: number;
-      readonly contradictedCount: number;
-      readonly blockedCount: number;
-      readonly staleCount: number;
-      readonly unprovenCount: number;
-      readonly notVerifiedCount: number;
-      readonly coverage: 'NOT_DECLARED' | 'NOT_VERIFIED' | 'PROVEN';
-      readonly headlineStatus: ClaimVerificationState;
-      /** Primary reason when the gate blocks without a specific claim (e.g. evaluation_unavailable). */
-      readonly primaryReason?: string;
-      readonly highlightedClaims?: readonly CompactProofClaim[];
-      readonly evidenceFreshness?: 'CURRENT' | 'STALE' | 'NOT_VERIFIED';
-      readonly revisionDigest?: string;
-      /**
-       * Whether this evaluation is at the actual gate (`current_gate`), a
-       * preview of what would happen at approval (`prospective_approval`),
-       * or a completion summary (`completion`).
-       */
-      readonly decisionContext: 'current_gate' | 'prospective_approval' | 'completion';
-    };
+import type { ProofGraphSection } from './model.js';
+import type {
+  ClaimVerificationState,
+  CompactProofClaim,
+  CompactProofPresentation,
+  ProofApprovalPresentation,
+} from './proof-model.js';
 
 // ─── Renderer ───────────────────────────────────────────────────────────────
 
@@ -66,11 +25,20 @@ export function renderCompactProofSection(presentation: CompactProofPresentation
   return renderEvaluationSection(presentation);
 }
 
+/** Render the canonical ProofGraph heading and semantic content as Markdown. */
+export function renderProofGraphMarkdown(presentation: CompactProofPresentation): string {
+  return `## ProofGraph\n\n${renderCompactProofSection(presentation)}`;
+}
+
 function renderDeclarationSection(p: CompactProofPresentation & { kind: 'declaration' }): string {
   const lines: string[] = [];
   const flowLabel = p.flow === 'plan' ? 'Plan' : 'Architecture';
-  lines.push('## Proof obligations');
-  lines.push('');
+  if (p.overallStatus === 'NOT_DECLARED') {
+    lines.push('Status: NOT_DECLARED');
+    lines.push('No proof obligations declared.');
+    appendApproval(lines, p.approval);
+    return lines.join('\n');
+  }
   lines.push(`${p.claimCount} ${flowLabel.toLowerCase()} claim(s) declared`);
   lines.push(`${p.criticalCount} critical`);
 
@@ -87,14 +55,24 @@ function renderDeclarationSection(p: CompactProofPresentation & { kind: 'declara
   }
 
   lines.push('');
-  lines.push('Status: AWAITING EVIDENCE');
+  lines.push('Status: AWAITING_EVIDENCE');
+  appendApproval(lines, p.approval);
   return lines.join('\n');
 }
 
 function renderEvaluationSection(p: CompactProofPresentation & { kind: 'evaluation' }): string {
   const lines: string[] = [];
-  lines.push('## ProofGraph');
 
+  if (p.overallStatus === 'NOT_DECLARED') {
+    lines.push('Status: NOT_DECLARED');
+    lines.push('No proof obligations declared.');
+    lines.push('Critical coverage: 0/0 proven');
+    lines.push('Evidence freshness: Not verified');
+    appendApproval(lines, p.approval);
+    lines.push('');
+    lines.push('Evidence lineage: `flowguard_status({ proofGraph: true })`');
+    return lines.join('\n');
+  }
   const prefix =
     p.decisionContext === 'prospective_approval'
       ? 'If submitted for approval now:'
@@ -116,21 +94,17 @@ function renderEvaluationSection(p: CompactProofPresentation & { kind: 'evaluati
       lines.push(p.primaryReason);
     }
 
-    if (p.highlightedClaims && p.highlightedClaims.length > 0) {
+    if (p.unmetCriticalClaims.length > 0) {
       lines.push('');
-      for (const claim of p.highlightedClaims) {
-        lines.push(`"${claim.statement}"`);
-        if (claim.reason) lines.push(`${claim.reason}`);
-        if (claim.recovery && claim.recovery.length > 0) {
-          for (const step of claim.recovery) {
-            lines.push(`${step}`);
-          }
-        }
-        lines.push('');
-      }
+      lines.push('Unmet critical claims:');
+      appendClaims(lines, p.unmetCriticalClaims);
+    }
+    if (p.otherHighlightedClaims.length > 0) {
+      lines.push('');
+      lines.push('Other unresolved claims:');
+      appendClaims(lines, p.otherHighlightedClaims);
     }
   } else {
-    lines.push('');
     lines.push('All critical claims PROVEN.');
   }
 
@@ -143,29 +117,52 @@ function renderEvaluationSection(p: CompactProofPresentation & { kind: 'evaluati
   if (p.unprovenCount > 0) parts.push(`${p.unprovenCount} UNPROVEN`);
   if (p.notVerifiedCount > 0) parts.push(`${p.notVerifiedCount} NOT_VERIFIED`);
   lines.push(parts.join(' · '));
+  lines.push(`Critical coverage: ${p.criticalProvenCount}/${p.criticalCount} proven`);
 
   if (p.revisionDigest) {
     const short = p.revisionDigest.slice(0, 12);
     lines.push(`Revision: \`${short}\``);
   }
 
-  if (p.evidenceFreshness) {
-    const freshnessLabel: Record<string, string> = {
-      CURRENT: 'Current',
-      STALE: 'Stale',
-      NOT_VERIFIED: 'Not verified',
-    };
-    lines.push(`Evidence freshness: ${freshnessLabel[p.evidenceFreshness]}`);
-  }
+  const freshnessLabel: Record<string, string> = {
+    CURRENT: 'Current',
+    STALE: 'Stale',
+    NOT_VERIFIED: 'Not verified',
+  };
+  lines.push(`Evidence freshness: ${freshnessLabel[p.evidenceFreshness]}`);
+  appendApproval(lines, p.approval);
 
   lines.push('');
   const detailLabel =
     p.headlineStatus !== 'PROVEN'
-      ? '→ Inspect the blocking claim and evidence lineage: `flowguard_status({ proofGraph: true })`'
-      : '→ Full evidence lineage: `flowguard_status({ proofGraph: true })`';
+      ? 'Inspect the blocking claim and evidence lineage: `flowguard_status({ proofGraph: true })`'
+      : 'Evidence lineage: `flowguard_status({ proofGraph: true })`';
   lines.push(detailLabel);
 
   return lines.join('\n');
+}
+
+function appendClaims(lines: string[], claims: readonly CompactProofClaim[]): void {
+  for (const claim of claims) {
+    lines.push(`"${claim.statement}"`);
+    if (claim.reason) lines.push(claim.reason);
+    for (const step of claim.recovery ?? []) lines.push(step);
+  }
+}
+
+function appendApproval(lines: string[], approval: ProofApprovalPresentation): void {
+  if (approval.attestations.length === 0) {
+    lines.push('Approval evidence: Not recorded');
+  } else {
+    lines.push('Approval evidence:');
+    for (const attestation of approval.attestations) {
+      const binding = attestation.binding === 'current' ? 'Current' : 'Stale or unbound';
+      lines.push(
+        `- ${attestation.flow}: ${binding} (certificate \`${attestation.certificateId}\`)`,
+      );
+    }
+  }
+  lines.push('Verification effect: None — approval is not verification');
 }
 
 function renderHeadlineLabel(status: ClaimVerificationState): string {
@@ -183,4 +180,22 @@ function renderHeadlineLabel(status: ClaimVerificationState): string {
     case 'PROVEN':
       return 'All critical claims PROVEN';
   }
+}
+
+// ─── Canonical ProofGraph Presentation Section ────────────────────────────────
+
+/**
+ * Build the canonical proofGraph presentation section for review cards.
+ *
+ * Every card that displays ProofGraph data MUST use this function instead of
+ * calling {@link renderCompactProofSection} + rolling its own text wrapping.
+ * The heading semantics (## Proof obligations vs ## ProofGraph) are owned by
+ * {@link renderCompactProofSection}; the structural section wrapping is owned
+ * here.
+ */
+export function buildProofGraphSection(presentation: CompactProofPresentation): ProofGraphSection {
+  return {
+    kind: 'proofGraph',
+    proof: presentation,
+  };
 }

@@ -24,7 +24,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-
+import { z } from 'zod';
 import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
 import {
   withReadOnlySession,
@@ -40,47 +40,34 @@ import {
   createPolicyContext,
 } from './helpers.js';
 
-// State & Machine
 import type { SessionState } from '../../state/schema.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { evaluate } from '../../machine/evaluate.js';
-import { isCommandAllowed, Command } from '../../machine/commands.js';
-import { evaluateValidationEvidence } from '../../machine/validation-evidence.js';
 import {
+  type AssertionCapability,
+  type FullCheckScopeAttestation,
+  type VerificationCandidate,
   VerificationCandidateKindSchema,
   type VerificationCandidateKind,
 } from '../../state/discovery-schemas.js';
-
-// Rail helpers
 import { autoAdvance } from '../../rails/types.js';
-
-// Verification executor
 import { executeCheck } from '../../verification/executor.js';
 import { deriveRepairGuidance } from '../../verification/repair-guidance.js';
 import type {
+  AssertionExtractionResult,
   ValidationAttempt,
   ValidationResult,
   ValidationOutcome,
 } from '../../state/evidence-validation.js';
 import { isExecutionError } from '../../state/evidence-validation.js';
-import type { AssertionExtractionResult } from '../../state/evidence-validation.js';
 import type { ReviewObligation } from '../../state/evidence.js';
-
-import type { AssertionCapability, VerificationCandidate } from '../../state/discovery-schemas.js';
-
 import {
   prepareVerificationExecution,
   type PreparedVerificationExecution,
 } from '../../verification/verification-execution.js';
 import { completeAssertionExtraction } from '../../verification/assertion-extractor.js';
-
-// Adapter — lock retry
 import { withSessionWriteLockRetry, PersistenceError } from '../../adapters/lock-retry.js';
-
-// Identifiers
 import { REASON_LOCK_TIMEOUT_EXHAUSTED } from '../../shared/flowguard-identifiers.js';
-
-// Logging
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { reviewObligationResponseFields } from '../review/assurance.js';
 import {
@@ -100,7 +87,9 @@ import {
   type ExecutionSubjectInput,
   type ExecutionSubjectAttestation,
 } from '../../verification/execution-subject.js';
-
+import { canonicalJsonStringify } from '../../shared/canonical-json.js';
+import { hashText } from '../../shared/hashing.js';
+import { validateRunCheckRequest } from './run-check-request.js';
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
 const RUN_CHECK_RETRIES = RUN_CHECK_RETRY_DELAYS_MS.length;
 
@@ -119,10 +108,21 @@ export const run_check: ToolDefinition = {
     kind: VerificationCandidateKindSchema.describe(
       'Which verification kind to execute (e.g., "lint", "test", "typecheck", "build").',
     ),
+    candidateId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'Optional exact verification candidate identity. Must belong to the requested kind.',
+      ),
   },
   async execute(args, context) {
     try {
-      return await executeRunCheckPhased(args.kind as VerificationCandidateKind, context);
+      return await executeRunCheckPhased(
+        args.kind as VerificationCandidateKind,
+        args.candidateId as string | undefined,
+        context,
+      );
     } catch (err) {
       if (err instanceof PersistenceError && err.code === 'LOCK_TIMEOUT_EXHAUSTED') {
         getAdapterLogger().error('tool', 'lock_exhausted', {
@@ -146,21 +146,14 @@ export const run_check: ToolDefinition = {
 
 // ─── Phased Execution ─────────────────────────────────────────────────────────
 
-/**
- * Execute run_check in three phases:
- *
- * A. Validate request (read state, no lock)
- * B. Execute check (subprocess, NO lock — prevents slow checks from starving
- *    concurrent run_check calls)
- * C. Persist result under lock with retry (revalidate fresh state under lock,
- *    merge evidence, auto-advance, atomic write)
- */
+// Validate, execute outside the lock, then revalidate and persist under the lock.
 
 type PhaseAResult =
   | string
   | {
       sessDir: string;
       state: SessionState;
+      executionObservedStateDigest: string;
       guard: { checkId: string; candidate: VerificationCandidate };
       subject: ReturnType<typeof freezeValidationSubject>;
       preAttestation: ExecutionSubjectAttestation;
@@ -170,6 +163,7 @@ type PhaseAResult =
 
 async function validateAndAttest(
   kind: VerificationCandidateKind,
+  candidateId: string | undefined,
   context: ToolContext,
 ): Promise<PhaseAResult> {
   const { sessDir, state } = await withReadOnlySession(context);
@@ -179,12 +173,12 @@ async function validateAndAttest(
     });
   }
 
-  const guard = validateRunCheckRequest(kind, state);
+  const guard = validateRunCheckRequest(kind, candidateId, state);
   if (typeof guard === 'string') return guard;
   const subject = freezeValidationSubject(state);
 
   const worktree = getWorktree(context);
-  const subjectInputs = state.executionSubjectInputsByKind?.[kind] ?? [];
+  const subjectInputs = executionSubjectInputs(state, guard.candidate);
 
   if (subjectInputs.length === 0) {
     return formatBlocked('VERIFICATION_SUBJECT_CHANGED', {
@@ -211,6 +205,7 @@ async function validateAndAttest(
   return {
     sessDir,
     state,
+    executionObservedStateDigest: hashText(canonicalJsonStringify(state)),
     guard,
     subject,
     preAttestation: result.attestation,
@@ -221,13 +216,23 @@ async function validateAndAttest(
 
 async function executeRunCheckPhased(
   kind: VerificationCandidateKind,
+  candidateId: string | undefined,
   context: ToolContext,
 ): Promise<ToolResult> {
   // ── Phase A: Validate + attest (read-only, no lock) ──
-  const phaseA = await validateAndAttest(kind, context);
+  const phaseA = await validateAndAttest(kind, candidateId, context);
   if (typeof phaseA === 'string') return phaseA;
 
-  const { sessDir, state, guard, subject, preAttestation, worktree, subjectInputs } = phaseA;
+  const {
+    sessDir,
+    state,
+    executionObservedStateDigest,
+    guard,
+    subject,
+    preAttestation,
+    worktree,
+    subjectInputs,
+  } = phaseA;
 
   // ── Phase B: Execute check (NO lock — subprocess runs independently) ──
   const attemptId = randomUUID();
@@ -255,6 +260,7 @@ async function executeRunCheckPhased(
   // ── Post-execution attestation + persist ──
   return persistAfterAttestation({
     kind,
+    candidateId: guard.candidate.candidateId,
     evidence,
     extraction,
     attemptId,
@@ -267,13 +273,19 @@ async function executeRunCheckPhased(
     changedFiles:
       subject.scope === 'implementation' ? (state.implementation?.changedFiles ?? []) : [],
     outcome,
+    fullCheckScopeAttestation:
+      guard.candidate.assertionCapability === 'structured'
+        ? guard.candidate.fullCheckScopeAttestation
+        : undefined,
     sessDir,
     sessionId: context.sessionID,
+    executionObservedStateDigest,
   });
 }
 
 async function persistAfterAttestation(params: {
   kind: VerificationCandidateKind;
+  candidateId?: string;
   evidence: Awaited<ReturnType<typeof executeCheck>>;
   extraction?: AssertionExtractionResult;
   attemptId: string;
@@ -284,8 +296,10 @@ async function persistAfterAttestation(params: {
   implementationDigest: string;
   changedFiles: readonly string[];
   outcome: ValidationOutcome;
+  fullCheckScopeAttestation?: FullCheckScopeAttestation;
   sessDir: string;
   sessionId: string;
+  executionObservedStateDigest: string;
 }): Promise<ToolResult> {
   const postAttestation = await reattestExecutionSubject(
     params.subjectInputs,
@@ -297,14 +311,17 @@ async function persistAfterAttestation(params: {
   if (postAttestation.kind === 'subject_changed') {
     return persistCheckResultWithRetry({
       kind: params.kind,
+      candidateId: params.candidateId,
       evidence: params.evidence,
       derivedRepairGuidance: deriveRepairGuidance(params.evidence, 'blocked'),
       outcome: 'blocked',
       extraction: params.extraction,
+      fullCheckScopeAttestation: params.fullCheckScopeAttestation,
       attemptId: params.attemptId,
       subject: params.subject,
       sessDir: params.sessDir,
       sessionId: params.sessionId,
+      executionObservedStateDigest: params.executionObservedStateDigest,
       classificationReasonOverride: `VERIFICATION_SUBJECT_CHANGED: ${postAttestation.detail}`,
     });
   }
@@ -312,14 +329,17 @@ async function persistAfterAttestation(params: {
   // ── Phase C: Persist with lock retry ──
   return persistCheckResultWithRetry({
     kind: params.kind,
+    candidateId: params.candidateId,
     evidence: params.evidence,
     derivedRepairGuidance: deriveRepairGuidance(params.evidence, params.outcome),
     outcome: params.outcome,
     extraction: params.extraction,
+    fullCheckScopeAttestation: params.fullCheckScopeAttestation,
     attemptId: params.attemptId,
     subject: params.subject,
     sessDir: params.sessDir,
     sessionId: params.sessionId,
+    executionObservedStateDigest: params.executionObservedStateDigest,
   });
 }
 
@@ -327,14 +347,17 @@ async function persistAfterAttestation(params: {
 
 interface PersistCheckInput {
   kind: VerificationCandidateKind;
+  candidateId?: string;
   evidence: Awaited<ReturnType<typeof executeCheck>>;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
   outcome: ValidationOutcome;
   extraction?: AssertionExtractionResult;
+  fullCheckScopeAttestation?: FullCheckScopeAttestation;
   attemptId: string;
   subject: ValidationSubject;
   sessDir: string;
   sessionId: string;
+  executionObservedStateDigest: string;
   classificationReasonOverride?: string;
 }
 
@@ -343,14 +366,17 @@ interface PersistCheckInput {
 async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<ToolResult> {
   const {
     kind,
+    candidateId,
     evidence,
     derivedRepairGuidance,
     outcome,
     extraction,
+    fullCheckScopeAttestation,
     attemptId,
     subject,
     sessDir,
     sessionId,
+    executionObservedStateDigest,
     classificationReasonOverride,
   } = input;
   const logger = getAdapterLogger();
@@ -362,7 +388,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
       const freshPolicy = resolvePolicyFromState(freshState);
       const railCtx = createPolicyContext(freshPolicy);
 
-      const reGuard = validateRunCheckRequest(kind, freshState);
+      const reGuard = validateRunCheckRequest(kind, candidateId, freshState);
       if (typeof reGuard === 'string') {
         // State changed under us; do not persist stale result.
         return reGuard;
@@ -372,14 +398,15 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
 
       const validationResult = buildValidationResult({
         checkId: reGuard.checkId,
+        candidateId: reGuard.candidate.candidateId,
         evidence,
         outcome,
         derivedRepairGuidance,
         extraction,
+        fullCheckScopeAttestation,
         classificationReasonOverride,
       });
       const allResults = mergeValidationResult(freshState, validationResult);
-      const passedIds = new Set(allResults.filter((v) => v.passed).map((v) => v.checkId));
       const validationAttempt = buildValidationAttempt(subject, validationResult, attemptId);
       const nextState = buildNextValidationState(freshState, allResults, validationAttempt);
       const advanced = autoAdvance(nextState, (s) => evaluate(s, railCtx.policy), railCtx);
@@ -415,10 +442,11 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
 
       return formatRunCheckResponse({
         kind,
+        candidateId: validationResult.candidateId,
         evidence,
         derivedRepairGuidance,
         originalState: freshState,
-        passedIds,
+        executionObservedStateDigest,
         advanced,
         finalState: persisted,
         nextObligation: activated.obligation,
@@ -451,51 +479,14 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
   );
 }
 
-// ─── Request Validation ───────────────────────────────────────────────────────
-
-function validateRunCheckRequest(
-  kind: VerificationCandidateKind,
+function executionSubjectInputs(
   state: SessionState,
-):
-  | string
-  | {
-      checkId: string;
-      candidate: VerificationCandidate;
-    } {
-  if (!isCommandAllowed(state.phase, Command.VALIDATE)) {
-    return formatBlocked('COMMAND_NOT_ALLOWED', { command: '/run_check', phase: state.phase });
-  }
-  if (state.phase === 'VALIDATION' && !state.plan) {
-    return formatBlocked('PLAN_REQUIRED', { action: 'baseline validation' });
-  }
-  if (state.phase === 'IMPL_VALIDATION' && !state.implementation) {
-    return formatBlocked('IMPLEMENTATION_EVIDENCE_REQUIRED');
-  }
-  const activeChecksBlock = blockWhenNoActiveChecks(state);
-  if (activeChecksBlock) return activeChecksBlock;
-  const candidates = state.verificationCandidates ?? [];
-  const candidate = candidates.find((c) => c.kind === kind);
-  if (!candidate) {
-    return formatBlocked('CHECK_KIND_NOT_AVAILABLE', {
-      kind,
-      available: candidates.map((c) => c.kind).join(', ') || 'none',
-    });
-  }
-  if (!state.activeChecks.includes(kind)) {
-    return formatBlocked('CHECK_NOT_ACTIVE', {
-      checkId: kind,
-      activeChecks: state.activeChecks.join(', '),
-    });
-  }
-  return { checkId: kind, candidate };
-}
-
-function blockWhenNoActiveChecks(state: SessionState): string | null {
-  if (state.activeChecks.length > 0) return null;
-  const evidence = evaluateValidationEvidence(state);
-  return evidence.blocked && evidence.code !== null
-    ? formatBlocked(evidence.code)
-    : formatBlocked('NO_ACTIVE_CHECKS');
+  candidate: VerificationCandidate,
+): readonly ExecutionSubjectInput[] {
+  const byCandidate = candidate.candidateId
+    ? state.executionSubjectInputsByCandidateId?.[candidate.candidateId]
+    : undefined;
+  return byCandidate ?? state.executionSubjectInputsByKind?.[candidate.kind] ?? [];
 }
 
 // ─── Result Construction ──────────────────────────────────────────────────────
@@ -504,23 +495,28 @@ type CheckEvidence = Awaited<ReturnType<typeof executeCheck>>;
 
 function buildValidationResult(params: {
   checkId: string;
+  candidateId?: string;
   evidence: CheckEvidence;
   outcome: ValidationOutcome;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
   extraction?: AssertionExtractionResult;
+  fullCheckScopeAttestation?: FullCheckScopeAttestation;
   classificationReasonOverride?: string;
 }): ValidationResult {
   const {
     checkId,
+    candidateId,
     evidence,
     outcome,
     derivedRepairGuidance,
     extraction,
+    fullCheckScopeAttestation,
     classificationReasonOverride,
   } = params;
   const passed = outcome === 'supported';
   return {
     checkId,
+    candidateId,
     passed,
     detail: formatValidationDetail(evidence),
     executedAt: evidence.startedAt,
@@ -536,6 +532,7 @@ function buildValidationResult(params: {
       (passed ? undefined : `exitCode=${evidence.exitCode}, timedOut=${evidence.timedOut}`),
     derivedRepairGuidance,
     assertionExtraction: extraction,
+    fullCheckScopeAttestation,
   };
 }
 
@@ -659,18 +656,31 @@ function buildNextValidationState(
 
 function formatRunCheckResponse(input: {
   kind: string;
+  candidateId?: string;
   evidence: CheckEvidence;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
   originalState: SessionState;
-  passedIds: Set<string>;
+  executionObservedStateDigest: string;
   advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
   finalState: SessionState;
   nextObligation: ReviewObligation | null;
   policy: FlowGuardPolicy;
 }): ToolResult {
-  const { kind, evidence, derivedRepairGuidance, originalState, passedIds, advanced, finalState } =
-    input;
+  const {
+    kind,
+    evidence,
+    derivedRepairGuidance,
+    originalState,
+    executionObservedStateDigest,
+    advanced,
+    finalState,
+  } = input;
   const { evalResult: ev, transitions } = advanced;
+  const finalValidation =
+    originalState.phase === 'IMPL_VALIDATION' ? finalState.implValidation : finalState.validation;
+  const remainingChecks = finalState.activeChecks.filter(
+    (checkId) => !finalValidation.some((result) => result.checkId === checkId && result.passed),
+  );
   const platform = resolveRuntimeReviewPlatform();
   const mode = resolveReviewOrchestrationMode({
     platform,
@@ -696,6 +706,7 @@ function formatRunCheckResponse(input: {
       status: formatRunCheckStatus(kind, evidence),
       evidence: {
         kind: evidence.kind,
+        ...(input.candidateId ? { candidateId: input.candidateId } : {}),
         command: evidence.command,
         exitCode: evidence.exitCode,
         passed: evidence.passed,
@@ -703,8 +714,13 @@ function formatRunCheckResponse(input: {
         outputDigest: evidence.outputDigest,
         timedOut: evidence.timedOut,
       },
+      executionObservedStateDigest,
+      preCommitStateDigest: hashText(canonicalJsonStringify(originalState)),
+      committedStateDigest: hashText(canonicalJsonStringify(finalState)),
+      stateChangedDuringExecution:
+        executionObservedStateDigest !== hashText(canonicalJsonStringify(originalState)),
       derivedRepairGuidance,
-      remainingChecks: originalState.activeChecks.filter((id) => !passedIds.has(id)),
+      remainingChecks,
       ...reviewObligationResponseFields(input.nextObligation),
       next: reviewInstruction?.next ?? formatEval(ev),
       ...(reviewInstruction ? { reviewInvocation: reviewInstruction.reviewInvocation } : {}),

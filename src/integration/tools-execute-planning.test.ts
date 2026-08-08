@@ -558,6 +558,7 @@ describe('plan', () => {
               claimId: 'ed04dda1-96d3-569f-8acc-af53500de638',
               statement: 'Invalid credentials are rejected.',
               critical: false,
+              claimScope: 'specific_behavior',
               authoritySectionId: 'authentication',
               expectedCheckId: 'typecheck',
             },
@@ -570,11 +571,13 @@ describe('plan', () => {
       const state = await readState(await currentSessionDir());
       expect(state!.plan?.claimDeclarations).toEqual({
         flow: 'plan',
+        version: 'v2',
         claims: [
           {
             claimId: 'ed04dda1-96d3-569f-8acc-af53500de638',
             statement: 'Invalid credentials are rejected.',
             critical: false,
+            claimScope: 'specific_behavior',
             authoritySectionId: 'authentication',
             expectedCheckId: 'typecheck',
           },

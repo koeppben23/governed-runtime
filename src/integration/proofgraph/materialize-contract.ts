@@ -77,6 +77,20 @@ function requiredEvidence(declaration: PlanClaimDeclaration) {
   return { positive, adversarial: declaration.critical ? ['counterexample' as const] : [] };
 }
 
+function isAggregateCounterexampleAttempt(
+  attempt: SessionState['validationAttempts'][number],
+  requiredCheckId: string,
+  requiredCandidateId: string | undefined,
+): boolean {
+  return (
+    attempt.result.checkId === requiredCheckId &&
+    (requiredCandidateId === undefined || attempt.result.candidateId === requiredCandidateId) &&
+    attempt.result.fullCheckScopeAttestation === 'full_check' &&
+    attempt.result.assertionExtraction?.status === 'extracted' &&
+    attempt.result.assertionExtraction.bindingCapability === 'aggregate'
+  );
+}
+
 function resolveCounterexampleAttempts(
   state: SessionState,
   declaration: PlanClaimDeclaration,
@@ -88,6 +102,23 @@ function resolveCounterexampleAttempts(
   const requirement = declaration.counterexampleRequirement;
   const requiredCheckId = requirement?.checkId;
   if (!requiredCheckId) return { counterexampleAttempts: [] };
+  if ('kind' in requirement && requirement.kind === 'aggregate_check') {
+    const aggregateAttempts = attempts.filter((attempt) =>
+      isAggregateCounterexampleAttempt(attempt, requiredCheckId, requirement.candidateId),
+    );
+    if (aggregateAttempts.length > 0) {
+      return {
+        counterexampleAttempts: aggregateAttempts,
+      };
+    }
+    return {
+      counterexampleAttempts: [],
+      cxGap: {
+        claimId: declaration.claimId,
+        cause: 'aggregate_counterexample_unsupported' as const,
+      },
+    };
+  }
   const candidate = state.verificationCandidates?.find((c) => c.kind === requiredCheckId);
   if (candidate?.assertionCapability === 'structured') {
     return {
@@ -143,7 +174,11 @@ export async function materializeApprovedPlanContractResult(
       attempt.scope === 'implementation' && attempt.implementationDigest === implementationDigest,
   );
   const coverage: ProofContractCoverage[] = [];
+  const legacyDeclarations = !('version' in declarations);
   const claims = declarations.claims.map((declaration) => {
+    if (legacyDeclarations) {
+      coverage.push({ claimId: declaration.claimId, cause: 'legacy_claim_declaration_v1' });
+    }
     const expectedAttempts = attempts.filter(
       (attempt) => attempt.result.checkId === declaration.expectedCheckId,
     );
@@ -170,6 +205,7 @@ export async function materializeApprovedPlanContractResult(
       statement: declaration.statement,
       signalClass: 'fact' as const,
       critical: declaration.critical,
+      ...('claimScope' in declaration ? { claimScope: declaration.claimScope } : {}),
       provenance: {
         kind: 'canonical_authority' as const,
         authorityId: 'plan',
@@ -187,6 +223,9 @@ export async function materializeApprovedPlanContractResult(
         attemptId: attempt.attemptId,
       })),
       counterexampleRequirement: declaration.counterexampleRequirement,
+      proofEligibility: legacyDeclarations
+        ? ('legacy_declaration_v1' as const)
+        : ('eligible' as const),
       requiredEvidence: requiredEvidence(declaration),
     };
   });

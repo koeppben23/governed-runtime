@@ -68,6 +68,8 @@ export interface ExecutionProfile {
   readonly format: ReportFormatId;
   readonly kind: VerificationCandidateKind;
   readonly priority: number;
+  /** An opt-in alternate execution route for the same semantic check kind. */
+  readonly alternate?: boolean;
 
   /**
    * Static report semantics for this profile.
@@ -79,6 +81,9 @@ export interface ExecutionProfile {
 
   /** Discovery-gated candidate with repo evidence, or null when not applicable. */
   createCandidate(ctx: PlannerContext): VerificationCandidate | null;
+
+  /** Explicitly attest only commands known to execute this profile's full check scope. */
+  attestFullCheckScope?(command: string): boolean;
 
   /** Profile-specific runtime requirements override provider defaults. */
   readonly runtimeRequirements?: readonly RuntimeRequirement[];
@@ -92,7 +97,8 @@ export interface ExecutionProfile {
 export interface ProviderFormatRegistration {
   readonly format: ReportFormatId;
   readonly parser: import('../verification/assertion-parsers/types.js').AssertionReportParser;
-  readonly bindingCapability: 'assertion' | 'check_only';
+  /** Aggregate is distinct from structured assertion extraction. */
+  readonly bindingCapability: 'assertion' | 'aggregate' | 'check_only';
 }
 
 // ─── Complete Extension ──────────────────────────────────────────────────────

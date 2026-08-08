@@ -60,6 +60,10 @@ export type VerificationCandidateKind = z.infer<typeof VerificationCandidateKind
 export const VerificationCandidateConfidenceSchema = z.enum(['high', 'medium', 'low']);
 export type VerificationCandidateConfidence = z.infer<typeof VerificationCandidateConfidenceSchema>;
 
+/** Explicit profile attestation that the command executes the complete check scope. */
+export const FullCheckScopeAttestationSchema = z.literal('full_check');
+export type FullCheckScopeAttestation = z.infer<typeof FullCheckScopeAttestationSchema>;
+
 // ─── Assertion Report Specification ──────────────────────────────────────────
 
 export const AssertionReportSpec = z.discriminatedUnion('collection', [
@@ -111,6 +115,8 @@ export type AssertionReportSpec = z.infer<typeof AssertionReportSpec>;
  */
 export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapability', [
   z.object({
+    /** Stable planner identity for exact execution and evidence binding. */
+    candidateId: z.string().min(1).optional(),
     assertionCapability: z.literal('unsupported'),
     kind: VerificationCandidateKindSchema,
     command: z.string().min(1),
@@ -119,6 +125,8 @@ export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapabi
     reason: z.string().min(1),
   }),
   z.object({
+    /** Stable planner identity for exact execution and evidence binding. */
+    candidateId: z.string().min(1).optional(),
     assertionCapability: z.literal('structured'),
     kind: VerificationCandidateKindSchema,
     command: z.string().min(1),
@@ -126,6 +134,8 @@ export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapabi
     confidence: VerificationCandidateConfidenceSchema,
     reason: z.string().min(1),
     assertionReport: AssertionReportSpec,
+    /** Required in addition to aggregate parsing capability for suite claims. */
+    fullCheckScopeAttestation: FullCheckScopeAttestationSchema.optional(),
   }),
 ]);
 export type VerificationCandidate = z.infer<typeof VerificationCandidateSchema>;

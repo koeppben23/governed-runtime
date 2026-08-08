@@ -7,11 +7,32 @@ import { describe, expect, it } from 'vitest';
 import { validateProviderExtensions } from './registry-validation.js';
 import { ASSERTION_PROVIDER_EXTENSIONS } from './registry.js';
 import type { AssertionProviderExtension, ExecutionProfile } from './contract.js';
+import { pytestProvider } from './pytest/provider.js';
 
 describe('validateProviderExtensions', () => {
   it('production extensions pass validation', () => {
     const errors = validateProviderExtensions(ASSERTION_PROVIDER_EXTENSIONS);
     expect(errors).toEqual([]);
+  });
+
+  it('rejects an aggregate profile without full-scope attestation', () => {
+    const extension: AssertionProviderExtension = {
+      ...pytestProvider,
+      discovery: {
+        ...pytestProvider.discovery,
+        executionProfiles: pytestProvider.discovery.executionProfiles.map((profile) =>
+          profile.profileId === 'pytest-junit-aggregate'
+            ? { ...profile, attestFullCheckScope: undefined }
+            : profile,
+        ),
+      },
+    };
+
+    const errors = validateProviderExtensions([extension]);
+    expect(errors).toContainEqual({
+      kind: 'aggregate_profile_missing_scope_attestation',
+      message: "Aggregate profile 'pytest-junit-aggregate' must attest its full check scope",
+    });
   });
 
   it('detects duplicate providerId', () => {

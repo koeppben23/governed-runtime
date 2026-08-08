@@ -38,7 +38,11 @@ import {
 } from './review-validation-acceptance.js';
 import { resolveHostTaskFindings } from './review-validation-host-task.js';
 import { validateChallengeConsistency } from '../review/enforcement/challenge-consistency.js';
-import { validateReviewFindingsConsistency } from '../review/enforcement/findings-consistency.js';
+import {
+  validateReviewFindingsConsistency,
+  validateReviewFindingsScope,
+  type FindingWithLocation,
+} from '../review/enforcement/findings-consistency.js';
 
 // ─── Validation Context ───────────────────────────────────────────────────────
 
@@ -265,8 +269,38 @@ export function validateReviewFindings(
     );
   }
 
+  const scopeBlock = checkReviewFindingsScope(findings, obligation);
+  if (scopeBlock) return scopeBlock;
+
   if (ctx.strictEnforcement) return validateStrictReviewFindings(findings, ctx);
 
+  return null;
+}
+
+function checkReviewFindingsScope(
+  findings: ReviewFindings,
+  obligation: ReviewObligation | null,
+): string | null {
+  if (!obligation) return null;
+  const scopeLocations: FindingWithLocation[] = [];
+  [...(findings.blockingIssues ?? []), ...(findings.majorRisks ?? [])].forEach((item) => {
+    if (item && typeof item === 'object') scopeLocations.push(item);
+  });
+  const scopeResult = validateReviewFindingsScope({
+    findings: scopeLocations,
+    reviewedFileScope: obligation.reviewedFileScope,
+  });
+  if (!scopeResult.ok && scopeResult.code === 'REVIEW_FINDING_OUT_OF_SCOPE') {
+    return formatBlocked('REVIEW_FINDING_OUT_OF_SCOPE', {
+      outOfScopePaths: scopeResult.details.outOfScopePaths.join(', '),
+      obligationId: obligation.obligationId,
+    });
+  }
+  if (!scopeResult.ok && scopeResult.code === 'REVIEW_FINDING_SCOPE_UNVERIFIABLE') {
+    return formatBlocked('REVIEW_FINDING_SCOPE_UNVERIFIABLE', {
+      obligationId: obligation.obligationId,
+    });
+  }
   return null;
 }
 

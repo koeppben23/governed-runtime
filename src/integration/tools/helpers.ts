@@ -50,10 +50,16 @@ import type { RuntimeDiagnostics } from '../../diagnostics/index.js';
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { PHASE_LABELS, buildProductNextAction } from '../../presentation/index.js';
 import { renderMarkdown } from '../../presentation/index.js';
-import type { PresentationConclusion, PresentationDocument } from '../../presentation/index.js';
+import {
+  buildEvidenceApprovalCompletionDocument,
+  type PresentationConclusion,
+  type PresentationDocument,
+} from '../../presentation/index.js';
 import { buildRailConclusion } from './rail-conclusion.js';
+import { projectStatusActionFromCommand } from '../status-conclusion.js';
 import { getReviewLoopProgress } from '../review/review-loop-progress.js';
 import { refreshProofGraph } from '../proofgraph/refresh.js';
+import { projectCompletionProofStatus } from '../proofgraph/proof-summary-projectors.js';
 
 const lockedSessionDir = new AsyncLocalStorage<string>();
 
@@ -179,8 +185,15 @@ function presentationFormForConclusion(
   return 'success';
 }
 
+interface RailPresentationOptions {
+  readonly evidenceApprovalCompletion?: boolean;
+}
+
 /** Format a RailResult for LLM consumption. Audit transitions in metadata channel. */
-export function formatRailResult(result: RailResult): ToolResult {
+export function formatRailResult(
+  result: RailResult,
+  options: RailPresentationOptions = {},
+): ToolResult {
   if (result.kind === 'blocked') {
     getAdapterLogger().warn('machine', 'tool_blocked', {
       code: result.code,
@@ -216,6 +229,9 @@ export function formatRailResult(result: RailResult): ToolResult {
   const reviewDecision = result.state.reviewDecision;
   const { archiveStatus } = result.state;
   const reviewLoop = getReviewLoopProgress(result.state);
+  const presentation = options.evidenceApprovalCompletion
+    ? buildEvidenceApprovalCompletionPresentation(result.state)
+    : buildNextActionPresentation(result.state, result.evalResult);
   const json = JSON.stringify({
     phase: result.state.phase,
     phaseLabel: PHASE_LABELS[result.state.phase],
@@ -228,7 +244,7 @@ export function formatRailResult(result: RailResult): ToolResult {
     // machine-readable `next`/`nextAction`/`productNextAction` fields above are
     // unchanged. The rendered conclusion is the display authority; the command
     // template must not print a duplicate `Next action:` line when it is present.
-    presentation: buildNextActionPresentation(result.state, result.evalResult),
+    presentation,
     // Governance integrity: mark an aborted terminal session explicitly so it is
     // never presented as an indistinguishable clean completion. Distinct from the
     // blocked-result `error: true` convention (this is a successful tool call that
@@ -248,6 +264,17 @@ export function formatRailResult(result: RailResult): ToolResult {
     ...(reviewLoop ? { reviewLoop } : {}),
   });
   return { output: json, metadata: { transitions: result.transitions } };
+}
+
+function buildEvidenceApprovalCompletionPresentation(state: SessionState): { markdown: string } {
+  return {
+    markdown: renderMarkdown(
+      buildEvidenceApprovalCompletionDocument({
+        proofSummary: projectCompletionProofStatus(state),
+        exportAction: projectStatusActionFromCommand('/export', 'recommended'),
+      }),
+    ),
+  };
 }
 
 /**
@@ -530,7 +557,11 @@ export function createPolicyContext(policy: FlowGuardPolicy): RailContext {
  * Persist a RailResult if it's an "ok" result. Returns the formatted JSON.
  * Rails don't persist — the caller (this tool layer) does it atomically.
  */
-export async function persistAndFormat(sessDir: string, result: RailResult): Promise<ToolResult> {
+export async function persistAndFormat(
+  sessDir: string,
+  result: RailResult,
+  options: RailPresentationOptions = {},
+): Promise<ToolResult> {
   if (result.kind === 'ok') {
     if (result.transitions.length > 0) {
       getAdapterLogger().info('machine', 'transitions_applied', {
@@ -544,7 +575,7 @@ export async function persistAndFormat(sessDir: string, result: RailResult): Pro
     await writeStateWithArtifacts(sessDir, result.state);
     logPersistedLifecycle(result);
   }
-  return formatRailResult(result);
+  return formatRailResult(result, options);
 }
 
 function logPersistedLifecycle(result: Extract<RailResult, { kind: 'ok' }>): void {

@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import { bindCounterexamples } from './counterexample-binder.js';
 import { makeState } from '../../fixtures.js';
-import { ProofCounterexample } from '../../state/proofgraph.js';
+import { ProofCounterexample, type CounterexampleRequirement } from '../../state/proofgraph.js';
 import type { SessionState } from '../../state/schema.js';
 
 const NOW = '2026-01-01T00:00:00.000Z';
@@ -24,9 +24,13 @@ const AUTHORITY_REF = {
 };
 const IMPL = { changedFiles: ['a.ts'], domainFiles: [], digest: IMPL_DIGEST, executedAt: NOW };
 
-const COUNTEREXAMPLE_REQ = {
+const COUNTEREXAMPLE_REQ: CounterexampleRequirement = {
   checkId: 'security',
   assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
+};
+const AGGREGATE_COUNTEREXAMPLE_REQ: CounterexampleRequirement = {
+  kind: 'aggregate_check',
+  checkId: 'security',
 };
 
 function validationResult(passed: boolean) {
@@ -42,6 +46,30 @@ function validationResult(passed: boolean) {
     outputDigest: SHA,
     timedOut: false,
     outcome: (passed ? 'supported' : 'inconclusive') as 'supported' | 'inconclusive',
+  };
+}
+
+function aggregateValidationResult(fullCheckScopeAttestation?: 'full_check') {
+  return {
+    ...validationResult(true),
+    fullCheckScopeAttestation,
+    assertionExtraction: {
+      status: 'extracted' as const,
+      attemptId: ATT,
+      providerId: 'pytest' as const,
+      format: 'junit_xml' as const,
+      bindingCapability: 'aggregate' as const,
+      reportDigests: [SHA],
+      assertions: [],
+      summary: {
+        assertionCount: 0,
+        passedCount: 0,
+        failedCount: 0,
+        erroredCount: 0,
+        skippedCount: 0,
+        suiteInfrastructureError: false,
+      },
+    },
   };
 }
 
@@ -123,6 +151,126 @@ describe('bindCounterexamples', () => {
       },
     ]);
     expect(bindCounterexamples(state, NOW).counterexamples[0]!.outcome).toBe('not_verified');
+  });
+
+  it('does not upgrade an old aggregate attempt when the current candidate is full scope', () => {
+    const state = {
+      ...stateWith(
+        [
+          {
+            attemptId: ATT,
+            scope: 'implementation' as const,
+            implementationDigest: IMPL_DIGEST,
+            result: aggregateValidationResult(),
+          },
+        ],
+        'IMPL_REVIEW',
+        { counterexampleRequirement: AGGREGATE_COUNTEREXAMPLE_REQ },
+      ),
+      verificationCandidates: [
+        {
+          assertionCapability: 'structured' as const,
+          kind: 'security' as const,
+          command: 'pytest --junitxml=reports.xml',
+          source: 'provider:pytest',
+          confidence: 'high' as const,
+          reason: 'replacement candidate',
+          fullCheckScopeAttestation: 'full_check' as const,
+          assertionReport: {
+            collection: 'snapshot_diff' as const,
+            transport: 'file' as const,
+            format: 'junit_xml' as const,
+            providerId: 'pytest' as const,
+            standardPatterns: ['reports.xml'],
+          },
+        },
+      ],
+    };
+
+    expect(bindCounterexamples(state, NOW).counterexamples[0]!.outcome).toBe('not_verified');
+  });
+
+  it('supports an aggregate counterexample attested by its executed attempt', () => {
+    const state = stateWith(
+      [
+        {
+          attemptId: ATT,
+          scope: 'implementation',
+          implementationDigest: IMPL_DIGEST,
+          result: aggregateValidationResult('full_check'),
+        },
+      ],
+      'IMPL_REVIEW',
+      { counterexampleRequirement: AGGREGATE_COUNTEREXAMPLE_REQ },
+    );
+
+    expect(bindCounterexamples(state, NOW).counterexamples[0]!.outcome).toBe('supported');
+  });
+
+  it('records a distinct diagnostic for each aggregate binding precondition', () => {
+    const cases = [
+      {
+        result: { ...aggregateValidationResult('full_check'), checkId: 'other' },
+        diagnostic: 'aggregate_check_mismatch',
+      },
+      { result: aggregateValidationResult(), diagnostic: 'aggregate_scope_unattested' },
+      {
+        result: { ...aggregateValidationResult('full_check'), assertionExtraction: undefined },
+        diagnostic: 'aggregate_extraction_missing',
+      },
+      {
+        result: {
+          ...aggregateValidationResult('full_check'),
+          assertionExtraction: {
+            ...aggregateValidationResult('full_check').assertionExtraction!,
+            bindingCapability: 'assertion' as const,
+          },
+        },
+        diagnostic: 'aggregate_capability_missing',
+      },
+    ] as const;
+
+    for (const { result, diagnostic } of cases) {
+      const binding = bindCounterexamples(
+        stateWith(
+          [{ attemptId: ATT, scope: 'implementation', implementationDigest: IMPL_DIGEST, result }],
+          'IMPL_REVIEW',
+          { counterexampleRequirement: AGGREGATE_COUNTEREXAMPLE_REQ },
+        ),
+        NOW,
+      );
+      expect(binding.counterexamples[0]!.outcome).toBe('not_verified');
+      expect(binding.diagnostics.get(CLAIM)).toBe(diagnostic);
+    }
+  });
+
+  it('rejects aggregate evidence from a different candidate of the same check kind', () => {
+    const binding = bindCounterexamples(
+      stateWith(
+        [
+          {
+            attemptId: ATT,
+            scope: 'implementation',
+            implementationDigest: IMPL_DIGEST,
+            result: {
+              ...aggregateValidationResult('full_check'),
+              candidateId: 'security-secondary',
+            },
+          },
+        ],
+        'IMPL_REVIEW',
+        {
+          counterexampleRequirement: {
+            ...AGGREGATE_COUNTEREXAMPLE_REQ,
+            candidateId: 'security-primary',
+          },
+        },
+      ),
+      NOW,
+    );
+
+    expect(binding.counterexamples[0]?.outcome).toBe('not_verified');
+    expect(binding.diagnostics.get(CLAIM)).toBe('aggregate_candidate_mismatch');
   });
 
   it('returns not_verified when counterexampleRequirement is absent (defensive corruption handling)', () => {

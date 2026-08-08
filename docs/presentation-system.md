@@ -152,7 +152,9 @@ A document never contains more than one conclusion.
 
 ## 9. NULL / NOT_VERIFIED Rules
 
-- Fields that are `null` or `undefined` are **omitted** from the output.
+- Fields that are `null` or `undefined` are **omitted** from the output, except
+  the mandatory `ProofGraphSection` on a state-bound governance result. A
+  resolved session with no declared claims renders graph-level `NOT_DECLARED`.
 - Never replace missing data with `"unknown"`, `"—"`, or fabricated fallback text.
 - Never let the renderer substitute a default when a field is absent — the
   upstream projection decides omission.

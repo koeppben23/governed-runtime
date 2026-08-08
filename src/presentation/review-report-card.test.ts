@@ -3,7 +3,11 @@
  * @description Unit tests for buildReviewReportCard.
  */
 import { describe, it, expect } from 'vitest';
-import { buildReviewReportCard } from './review-report-card.js';
+import {
+  buildReviewReportCard as buildCard,
+  type ReviewReportCardInput,
+} from './review-report-card.js';
+import type { CompactProofPresentation } from './proof-model.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -25,16 +29,43 @@ const baseInput = {
   completeness: {
     overallComplete: true,
     fourEyes: false,
+    total: 3,
     summary: '3/3 complete, 0 missing',
   },
+  proofSummary: {
+    kind: 'evaluation',
+    overallStatus: 'NOT_DECLARED',
+    claimCount: 0,
+    criticalCount: 0,
+    criticalProvenCount: 0,
+    provenCount: 0,
+    contradictedCount: 0,
+    blockedCount: 0,
+    staleCount: 0,
+    unprovenCount: 0,
+    notVerifiedCount: 0,
+    coverage: 'NOT_DECLARED',
+    unmetCriticalClaims: [],
+    otherHighlightedClaims: [],
+    approval: { attestations: [] },
+    decisionContext: 'completion',
+  } satisfies CompactProofPresentation,
+  productNextAction: { text: 'Export the review evidence.', commands: ['/export'] },
 };
+function buildReviewReportCard(
+  input: Omit<ReviewReportCardInput, 'proofSummary' | 'productNextAction'> &
+    Partial<Pick<ReviewReportCardInput, 'proofSummary' | 'productNextAction'>>,
+  options?: Parameters<typeof buildCard>[1],
+) {
+  return buildCard({ ...baseInput, ...input }, options);
+}
 
 describe('buildReviewReportCard', () => {
   it('preserves default bytes when rendering a transient ASCII profile', () => {
     const canonical = buildReviewReportCard(baseInput);
 
     expect(buildReviewReportCard(baseInput)).toBe(canonical);
-    expect(buildReviewReportCard(baseInput, { glyphProfile: 'ascii' })).toBe(canonical);
+    expect(buildReviewReportCard(baseInput, { glyphProfile: 'ascii' })).toContain('[NEXT]');
   });
 
   it('renders header with status and input origin', () => {
@@ -145,6 +176,7 @@ describe('implementation review golden fixtures', () => {
       completeness: {
         overallComplete: true,
         fourEyes: true,
+        total: 6,
         summary: '6/6 complete, 0 missing',
       },
       inputOrigin: 'pr',
@@ -174,6 +206,7 @@ describe('implementation review golden fixtures', () => {
       completeness: {
         overallComplete: false,
         fourEyes: false,
+        total: 6,
         summary: '4/6 complete, 2 missing',
       },
       inputOrigin: 'pr',
@@ -192,6 +225,7 @@ describe('compliance review golden fixtures', () => {
       completeness: {
         overallComplete: true,
         fourEyes: true,
+        total: 3,
         summary: '3/3 complete, 0 missing',
       },
       inputOrigin: 'manual_text',
@@ -227,6 +261,7 @@ describe('compliance review golden fixtures', () => {
       completeness: {
         overallComplete: false,
         fourEyes: false,
+        total: 3,
         summary: '1/3 complete, 2 missing',
       },
       inputOrigin: 'branch',

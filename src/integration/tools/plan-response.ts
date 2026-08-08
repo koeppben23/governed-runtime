@@ -45,7 +45,7 @@ import {
   resolveReviewOrchestrationMode,
 } from '../review/orchestration-mode.js';
 import { resolvePreImplementationChallengeClassification } from './pre-implementation-challenge.js';
-import { projectPlanProofObligations } from '../proofgraph/proof-summary-projectors.js';
+import { projectPlanProofStatus } from '../proofgraph/proof-summary-projectors.js';
 
 function findPriorPlanTargetPaths(
   assurance: import('../../state/schema.js').SessionState['reviewAssurance'],
@@ -190,7 +190,7 @@ export async function convergedPlanReviewCardResponse(
     policyMode: finalState.policySnapshot?.mode,
     taskTitle: firstLine(finalState.ticket?.text),
     forcedConvergence,
-    proofSummary: projectPlanProofObligations(finalState.plan?.claimDeclarations) ?? undefined,
+    proofSummary: projectPlanProofStatus(finalState),
   };
   // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   const reviewCard = buildPlanReviewCard(reviewCardInput);
@@ -250,7 +250,9 @@ export async function persistNonConvergedPlanReview(
     targetPaths,
   );
   const resolvedTargetPaths =
-    classification.kind === 'available' ? [...classification.changedFiles] : undefined;
+    classification.kind === 'available'
+      ? [...classification.changedFiles]
+      : ([] as readonly string[]);
   const metadata: Record<string, unknown> = {};
   if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
     metadata.targetPaths = resolvedTargetPaths;

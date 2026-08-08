@@ -18,6 +18,7 @@ import type {
   PresentationConclusion,
 } from '../presentation/index.js';
 import type { WhyPresentationProjection, WhyConclusionProjection } from './status-why-finish.js';
+import { buildProofGraphSection } from '../presentation/proof-summary.js';
 
 /**
  * Build a compact-card PresentationDocument for /why.
@@ -63,6 +64,8 @@ export function buildWhyDocument(projection: WhyPresentationProjection): Present
       })),
     });
   }
+
+  sections.push(buildProofGraphSection(projection.proofSummary));
 
   // Conclusion — copied mechanically, not derived
   const conclusion = toPresentationConclusion(projection.conclusion);

@@ -21,6 +21,7 @@ import {
 } from './helpers.js';
 import type { EvalResult } from '../../machine/evaluate.js';
 import type { RailResult, AutoAdvanceOverflow } from '../../rails/types.js';
+import { makeProgressedState } from '../../fixtures.js';
 
 function parseJSON(s: string): Record<string, unknown> {
   return JSON.parse(s);
@@ -143,5 +144,30 @@ describe('formatRailResult', () => {
     expect(parsed.error).toBe(true);
     expect(parsed.code).toBe('TICKET_REQUIRED');
     expect(parsed.message).toBe('No ticket');
+  });
+
+  it('renders ProofGraph and only /export after evidence approval completes', () => {
+    const state = makeProgressedState('COMPLETE');
+    const result = formatRailResult(
+      {
+        kind: 'ok',
+        state,
+        evalResult: { kind: 'terminal' },
+        transitions: [
+          {
+            from: 'EVIDENCE_REVIEW',
+            to: 'COMPLETE',
+            event: 'APPROVE',
+            at: '2025-01-01T00:00:00Z',
+          },
+        ],
+      } as RailResult,
+      { evidenceApprovalCompletion: true },
+    );
+    const output = typeof result === 'string' ? result : result.output;
+    const presentation = parseJSON(output).presentation as { markdown: string };
+    expect(presentation.markdown).toContain('## ProofGraph');
+    expect(presentation.markdown).toContain('/export');
+    expect(presentation.markdown).not.toContain('/approve');
   });
 });

@@ -379,6 +379,8 @@ export const ReviewProfileSource = z.enum([
   'inherited_plan_full',
 ]);
 export type ReviewProfileSource = z.infer<typeof ReviewProfileSource>;
+export const ReviewInputFingerprintVersion = z.enum(['v1', 'v2']);
+export type ReviewInputFingerprintVersion = z.infer<typeof ReviewInputFingerprintVersion>;
 
 /**
  * P35 strict obligation record.
@@ -426,6 +428,8 @@ export const ReviewObligation = z.object({
    * surfaces any site that forgets to freeze the subject.
    */
   subjectDigest: z.string().min(1),
+  /** Missing means the legacy v1 fingerprint algorithm. */
+  fingerprintVersion: ReviewInputFingerprintVersion.optional(),
   /**
    * Ordered attempt IDs associated with this obligation.
    * Each reviewer Task invocation creates a new attempt; the latest attempt at
@@ -434,6 +438,39 @@ export const ReviewObligation = z.object({
   attemptIds: z.array(z.string().uuid()).optional(),
   /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * Frozen file scope for this obligation.
+   *
+   * `kind: 'files'`     — concrete set of file paths the reviewer was issued.
+   * `kind: 'not_applicable'` — review context has no file scope (ADR, plan text,
+   *    architecture section).
+   * `kind: 'unavailable'` — scope could not be resolved for a file-backed review.
+   *
+   * Absence of the field (legacy obligations persisted before this type) is
+   * treated as `unavailable`; consumers fail closed.
+   */
+  reviewedFileScope: z
+    .discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('files'),
+          paths: z.array(z.string().min(1)).readonly(),
+        })
+        .readonly(),
+      z
+        .object({
+          kind: z.literal('not_applicable'),
+          reason: z.string().min(1),
+        })
+        .readonly(),
+      z
+        .object({
+          kind: z.literal('unavailable'),
+          reason: z.string().min(1),
+        })
+        .readonly(),
+    ])
+    .optional(),
 });
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 

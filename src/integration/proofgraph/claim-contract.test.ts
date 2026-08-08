@@ -60,15 +60,35 @@ function planClaim(
     claimId: CLAIM_A,
     statement: 'updateTask rejects unknown ids',
     critical: true,
+    claimScope: 'specific_behavior',
     positiveCheckId: 'build',
     counterexampleRequirement: {
       checkId: 'security',
+      kind: 'assertion',
       assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
     },
     authoritySectionId: 'step-1',
     ...overrides,
   };
 }
+
+const securityFullCheckCandidate = {
+  assertionCapability: 'structured' as const,
+  candidateId: 'security-suite',
+  kind: 'security' as const,
+  command: './mvnw test',
+  source: 'repo:mvnw',
+  confidence: 'high' as const,
+  reason: 'Full suite security check',
+  assertionReport: {
+    collection: 'snapshot_diff' as const,
+    transport: 'file' as const,
+    format: 'junit_xml' as const,
+    providerId: 'junit' as const,
+    standardPatterns: ['target/surefire-reports/TEST-*.xml'],
+  },
+  fullCheckScopeAttestation: 'full_check' as const,
+};
 
 describe('validateProofClaimContract — accepted declarations', () => {
   it('accepts a complete critical plan claim', () => {
@@ -92,6 +112,149 @@ describe('validateProofClaimContract — accepted declarations', () => {
 });
 
 describe('validateProofClaimContract — critical contract', () => {
+  it('rejects a suite claim with a single assertion requirement', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      verificationCandidates: [BASE.verificationCandidates[0]!, securityFullCheckCandidate],
+      claims: [planClaim({ claimScope: 'suite', positiveCheckId: 'security' })],
+    });
+    expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleRequirement' });
+  });
+
+  it('fails closed when aggregate suite coverage is unsupported', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      verificationCandidates: [
+        BASE.verificationCandidates[0]!,
+        BASE.verificationCandidates[1]!,
+        securityFullCheckCandidate,
+      ],
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+        }),
+      ],
+    });
+    expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
+    if (result.kind === 'invalid')
+      expect(result.detail).toContain('aggregate counterexample capability');
+  });
+
+  it('accepts aggregate coverage when the candidate report provider and format are registered', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      verificationCandidates: [
+        BASE.verificationCandidates[0]!,
+        {
+          assertionCapability: 'structured' as const,
+          kind: 'security' as const,
+          command: './mvnw test',
+          source: 'repo:mvnw',
+          confidence: 'high' as const,
+          reason: 'pytest JUnit XML suite report',
+          assertionReport: {
+            collection: 'snapshot_diff' as const,
+            transport: 'file' as const,
+            providerId: 'pytest' as never,
+            format: 'junit_xml' as never,
+            standardPatterns: ['reports.xml'],
+          },
+          fullCheckScopeAttestation: 'full_check' as const,
+        },
+      ],
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+        }),
+      ],
+    });
+    expect(result).toEqual({ kind: 'ok' });
+  });
+
+  it('requires the declared aggregate candidate ID to match the candidate kind', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      verificationCandidates: [
+        BASE.verificationCandidates[0]!,
+        {
+          assertionCapability: 'structured' as const,
+          candidateId: 'security-primary',
+          kind: 'security' as const,
+          command: 'pytest --junitxml=reports.xml',
+          source: 'repo:pytest',
+          confidence: 'high' as const,
+          reason: 'complete pytest suite report',
+          assertionReport: {
+            collection: 'snapshot_diff' as const,
+            transport: 'file' as const,
+            providerId: 'pytest' as never,
+            format: 'junit_xml' as never,
+            standardPatterns: ['reports.xml'],
+          },
+          fullCheckScopeAttestation: 'full_check' as const,
+        },
+      ],
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          counterexampleRequirement: {
+            kind: 'aggregate_check',
+            checkId: 'security',
+            candidateId: 'security-other',
+          },
+        }),
+      ],
+    });
+
+    expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
+  });
+
+  it('rejects aggregate coverage without an explicit full-check scope completeness attestation', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      verificationCandidates: [
+        BASE.verificationCandidates[0]!,
+        {
+          assertionCapability: 'structured' as const,
+          kind: 'security' as const,
+          command: 'pytest tests/test_api.py',
+          source: 'repo:pytest',
+          confidence: 'high' as const,
+          reason: 'filtered pytest JUnit XML report',
+          assertionReport: {
+            collection: 'snapshot_diff' as const,
+            transport: 'file' as const,
+            providerId: 'pytest' as const,
+            format: 'junit_xml' as const,
+            standardPatterns: ['reports.xml'],
+          },
+        },
+        securityFullCheckCandidate,
+      ],
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+        }),
+      ],
+    });
+
+    expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
+    if (result.kind === 'invalid')
+      expect(result.detail).toContain('scope completeness attestation');
+  });
+
   it('rejects a critical claim without a counterexample check', () => {
     const claim = planClaim({ counterexampleRequirement: undefined });
     const result = validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] });
@@ -106,6 +269,7 @@ describe('validateProofClaimContract — critical contract', () => {
     const claim = planClaim({
       counterexampleRequirement: {
         checkId: 'build',
+        kind: 'assertion',
         assertion: { providerId: 'junit', localId: 'some-id' },
       },
     });
@@ -127,6 +291,7 @@ describe('validateProofClaimContract — critical contract', () => {
       claimId: undefined,
       counterexampleRequirement: {
         checkId: 'build',
+        kind: 'assertion',
         assertion: { providerId: 'junit', localId: 'some-id' },
       },
     });
@@ -147,10 +312,147 @@ describe('validateProofClaimContract — critical contract', () => {
       critical: false,
       counterexampleRequirement: {
         checkId: 'build',
+        kind: 'assertion',
         assertion: { providerId: 'junit', localId: 'some-id' },
       },
     });
 
+    expect(validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] })).toEqual({
+      kind: 'ok',
+    });
+  });
+});
+
+describe('validateProofClaimContract — suite claim satisfiability', () => {
+  it('rejects a requirement-less suite claim without a full-check candidate', () => {
+    const claim = planClaim({
+      claimScope: 'suite',
+      counterexampleRequirement: undefined,
+      critical: false,
+    });
+    const result = validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] });
+
+    expect(result).toMatchObject({
+      kind: 'invalid',
+      failureKind: 'unsatisfiable',
+      field: 'expectedCheckId',
+    });
+    if (result.kind === 'invalid') expect(result.detail).toContain('assertionCapability');
+  });
+
+  it('rejects a suite claim whose positive candidate has no full_check attestation', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          counterexampleRequirement: undefined,
+          critical: false,
+        }),
+      ],
+    });
+
+    expect(result).toMatchObject({
+      kind: 'invalid',
+      failureKind: 'unsatisfiable',
+      field: 'expectedCheckId',
+    });
+    if (result.kind === 'invalid')
+      expect(result.detail).toContain('scope completeness attestation');
+  });
+
+  it('accepts a suite claim with full-check positive candidate and no counterexample requirement', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      verificationCandidates: [BASE.verificationCandidates[0]!, securityFullCheckCandidate],
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          counterexampleRequirement: undefined,
+          critical: false,
+        }),
+      ],
+    });
+    expect(result).toEqual({ kind: 'ok' });
+  });
+
+  it('accepts a critical suite claim with full-check positive path and aggregate counterexample', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      verificationCandidates: [
+        BASE.verificationCandidates[0]!,
+        {
+          ...securityFullCheckCandidate,
+          assertionReport: {
+            ...securityFullCheckCandidate.assertionReport,
+            providerId: 'pytest' as never,
+            format: 'junit_xml' as never,
+          },
+        },
+      ],
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          critical: true,
+          counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+        }),
+      ],
+    });
+    expect(result).toEqual({ kind: 'ok' });
+  });
+
+  it('rejects a suite claim with full-check positive path but partially filtered counterexample candidate', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      verificationCandidates: [
+        BASE.verificationCandidates[0]!,
+        securityFullCheckCandidate,
+        {
+          assertionCapability: 'structured' as const,
+          kind: 'security' as const,
+          command: 'pytest tests/test_filter.py',
+          source: 'repo:pytest',
+          confidence: 'high' as const,
+          reason: 'filtered security check - partial suite',
+          assertionReport: {
+            collection: 'snapshot_diff' as const,
+            transport: 'file' as const,
+            providerId: 'pytest' as never,
+            format: 'junit_xml' as never,
+            standardPatterns: ['reports.xml'],
+          },
+        },
+      ],
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          positiveCheckId: 'security',
+          critical: true,
+          counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+        }),
+      ],
+    });
+
+    expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
+    if (result.kind === 'invalid')
+      expect(result.detail).toContain('aggregate counterexample capability');
+  });
+
+  it('specific_behavior with assertion-capable route is accepted', () => {
+    expect(validateProofClaimContract({ ...BASE, source: 'plan', claims: [planClaim()] })).toEqual({
+      kind: 'ok',
+    });
+  });
+
+  it('specific_behavior claim with unsupported positive check is still accepted (no suite requirement)', () => {
+    const claim = planClaim({ positiveCheckId: 'build' });
     expect(validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] })).toEqual({
       kind: 'ok',
     });
@@ -172,6 +474,7 @@ describe('validateProofClaimContract — check references', () => {
     const claim = planClaim({
       counterexampleRequirement: {
         checkId: 'e2e',
+        kind: 'assertion',
         assertion: { providerId: 'junit', localId: 'some-id' },
       },
     });
