@@ -239,6 +239,39 @@ describe('HAPPY', () => {
     expect(validation!.outputDigest).toBe('a'.repeat(64));
   });
 
+  it('freezes a full-check attestation from the candidate on the executed attempt', async () => {
+    await driveToValidation();
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    await writeState(sd, {
+      ...state!,
+      verificationCandidates: (state!.verificationCandidates ?? []).map((candidate) =>
+        candidate.kind === 'typecheck'
+          ? {
+              assertionCapability: 'structured' as const,
+              kind: candidate.kind,
+              command: candidate.command,
+              source: candidate.source,
+              confidence: candidate.confidence,
+              reason: candidate.reason,
+              fullCheckScopeAttestation: 'full_check' as const,
+              assertionReport: {
+                collection: 'stdout' as const,
+                transport: 'stdout' as const,
+                format: 'junit_xml' as const,
+                providerId: 'junit' as const,
+              },
+            }
+          : candidate,
+      ),
+    });
+
+    await callOk(run_check, { kind: 'typecheck' });
+
+    const persisted = await readState(sd);
+    expect(persisted!.validationAttempts[0]!.result.fullCheckScopeAttestation).toBe('full_check');
+  });
+
   it('advances to IMPLEMENTATION when all active checks pass', async () => {
     await driveToValidation();
     // Discovery detects TypeScript → activeChecks=['typecheck']

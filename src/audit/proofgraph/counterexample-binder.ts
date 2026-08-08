@@ -30,14 +30,11 @@ interface ClassifiedOutcome {
 function classifyAggregateOutcome(
   result: ValidationResult,
   requirement: Extract<CounterexampleRequirement, { kind: 'aggregate_check' }>,
-  state: SessionState,
 ): ClassifiedOutcome {
-  const candidate = state.verificationCandidates?.find((c) => c.kind === requirement.checkId);
   const extraction = result.assertionExtraction;
   if (
     result.checkId !== requirement.checkId ||
-    candidate?.assertionCapability !== 'structured' ||
-    candidate.fullCheckScopeAttestation !== 'full_check' ||
+    result.fullCheckScopeAttestation !== 'full_check' ||
     extraction?.status !== 'extracted' ||
     extraction.bindingCapability !== 'aggregate'
   ) {
@@ -49,10 +46,9 @@ function classifyAggregateOutcome(
 function classifyClaimOutcome(
   result: ValidationResult,
   requirement: CounterexampleRequirement,
-  state: SessionState,
 ): ClassifiedOutcome {
   if ('kind' in requirement && requirement.kind === 'aggregate_check') {
-    return classifyAggregateOutcome(result, requirement, state);
+    return classifyAggregateOutcome(result, requirement);
   }
   if (!('assertion' in requirement)) {
     return { outcome: 'not_verified', diagnosticCode: 'evidence_missing' };
@@ -116,7 +112,7 @@ function bindClaimCounterexamples(
     }
     const requirement = claim.counterexampleRequirement;
     const classified = requirement
-      ? classifyClaimOutcome(attempt.result, requirement, state)
+      ? classifyClaimOutcome(attempt.result, requirement)
       : { outcome: 'not_verified' as const };
     if (classified.diagnosticCode) {
       if (!diagnostics.has(claim.claimId)) {

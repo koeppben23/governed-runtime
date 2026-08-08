@@ -310,6 +310,7 @@ function aggregateEvidence(): SessionState['validationAttempts'] {
       ...cx,
       result: {
         ...cx.result,
+        fullCheckScopeAttestation: 'full_check' as const,
         assertionExtraction: {
           status: 'extracted' as const,
           attemptId: COUNTEREXAMPLE_ATTEMPT_ID,
@@ -813,7 +814,15 @@ describe('ProofGraph materialization and gate (runtime)', () => {
           fullCheckScopeAttestation: undefined,
         },
       ];
-      const state = implReviewState(aggregateEvidence(), AGGREGATE_CLAIM, filteredCandidates);
+      const attempts = aggregateEvidence().map((attempt) =>
+        attempt.attemptId === COUNTEREXAMPLE_ATTEMPT_ID
+          ? {
+              ...attempt,
+              result: { ...attempt.result, fullCheckScopeAttestation: undefined },
+            }
+          : attempt,
+      );
+      const state = implReviewState(attempts, AGGREGATE_CLAIM, filteredCandidates);
       const { contract, coverage } = await materializeApprovedPlanContractResult(state, '/tmp');
       const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
 

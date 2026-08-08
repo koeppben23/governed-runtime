@@ -18,7 +18,6 @@ import {
   resolveVerifiedMutationAttempt,
   resolveVerifiedMutationVerdicts,
 } from './mutation-provider.js';
-import { AGGREGATE_FORMATS_BY_PROVIDER } from '../../providers/registry.js';
 
 const EMPTY_CONTRACT: ProofContract = { version: 'contract.v1', claims: [] };
 
@@ -78,14 +77,15 @@ function requiredEvidence(declaration: PlanClaimDeclaration) {
   return { positive, adversarial: declaration.critical ? ['counterexample' as const] : [] };
 }
 
-function supportsAggregateCounterexample(state: SessionState, requiredCheckId: string): boolean {
-  const candidate = state.verificationCandidates?.find((c) => c.kind === requiredCheckId);
-  if (candidate?.assertionCapability !== 'structured') return false;
-  const report = candidate.assertionReport;
-  return Boolean(
-    report &&
-    candidate.fullCheckScopeAttestation === 'full_check' &&
-    AGGREGATE_FORMATS_BY_PROVIDER.get(report.providerId)?.has(report.format),
+function isAggregateCounterexampleAttempt(
+  attempt: SessionState['validationAttempts'][number],
+  requiredCheckId: string,
+): boolean {
+  return (
+    attempt.result.checkId === requiredCheckId &&
+    attempt.result.fullCheckScopeAttestation === 'full_check' &&
+    attempt.result.assertionExtraction?.status === 'extracted' &&
+    attempt.result.assertionExtraction.bindingCapability === 'aggregate'
   );
 }
 
@@ -101,11 +101,12 @@ function resolveCounterexampleAttempts(
   const requiredCheckId = requirement?.checkId;
   if (!requiredCheckId) return { counterexampleAttempts: [] };
   if ('kind' in requirement && requirement.kind === 'aggregate_check') {
-    if (supportsAggregateCounterexample(state, requiredCheckId)) {
+    const aggregateAttempts = attempts.filter((attempt) =>
+      isAggregateCounterexampleAttempt(attempt, requiredCheckId),
+    );
+    if (aggregateAttempts.length > 0) {
       return {
-        counterexampleAttempts: attempts.filter(
-          (attempt) => attempt.result.checkId === requiredCheckId,
-        ),
+        counterexampleAttempts: aggregateAttempts,
       };
     }
     return {

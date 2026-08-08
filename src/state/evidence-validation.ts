@@ -11,7 +11,10 @@
 
 import { z } from 'zod';
 import { CheckId } from './evidence-primitives.js';
-import { VerificationCandidateKindSchema } from './discovery-schemas.js';
+import {
+  FullCheckScopeAttestationSchema,
+  VerificationCandidateKindSchema,
+} from './discovery-schemas.js';
 import { ReportFormatId } from './discovery-schemas.js';
 import { ProviderId, AssertionIdentity } from './assertion-identity.js';
 
@@ -255,6 +258,8 @@ export const ValidationResult = z
     classificationReason: z.string().min(1).optional(),
     /** Structured assertion extraction result (only for assertionCapability='structured'). */
     assertionExtraction: AssertionExtractionResult.optional(),
+    /** Candidate scope attestation frozen when this command was executed. */
+    fullCheckScopeAttestation: FullCheckScopeAttestationSchema.optional(),
     /** Derived advisory repair guidance; never validation evidence authority. */
     derivedRepairGuidance: RepairGuidance.optional(),
   })

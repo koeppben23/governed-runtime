@@ -24,7 +24,6 @@
  */
 
 import { randomUUID } from 'node:crypto';
-
 import type { ToolContext, ToolDefinition, ToolResult } from './helpers.js';
 import {
   withReadOnlySession,
@@ -40,47 +39,36 @@ import {
   createPolicyContext,
 } from './helpers.js';
 
-// State & Machine
 import type { SessionState } from '../../state/schema.js';
 import type { FlowGuardPolicy } from '../../config/policy.js';
 import { evaluate } from '../../machine/evaluate.js';
 import { isCommandAllowed, Command } from '../../machine/commands.js';
 import { evaluateValidationEvidence } from '../../machine/validation-evidence.js';
 import {
+  type AssertionCapability,
+  type FullCheckScopeAttestation,
+  type VerificationCandidate,
   VerificationCandidateKindSchema,
   type VerificationCandidateKind,
 } from '../../state/discovery-schemas.js';
-
-// Rail helpers
 import { autoAdvance } from '../../rails/types.js';
-
-// Verification executor
 import { executeCheck } from '../../verification/executor.js';
 import { deriveRepairGuidance } from '../../verification/repair-guidance.js';
 import type {
+  AssertionExtractionResult,
   ValidationAttempt,
   ValidationResult,
   ValidationOutcome,
 } from '../../state/evidence-validation.js';
 import { isExecutionError } from '../../state/evidence-validation.js';
-import type { AssertionExtractionResult } from '../../state/evidence-validation.js';
 import type { ReviewObligation } from '../../state/evidence.js';
-
-import type { AssertionCapability, VerificationCandidate } from '../../state/discovery-schemas.js';
-
 import {
   prepareVerificationExecution,
   type PreparedVerificationExecution,
 } from '../../verification/verification-execution.js';
 import { completeAssertionExtraction } from '../../verification/assertion-extractor.js';
-
-// Adapter — lock retry
 import { withSessionWriteLockRetry, PersistenceError } from '../../adapters/lock-retry.js';
-
-// Identifiers
 import { REASON_LOCK_TIMEOUT_EXHAUSTED } from '../../shared/flowguard-identifiers.js';
-
-// Logging
 import { getAdapterLogger, getLogTraceFields } from '../../logging/adapter-logger.js';
 import { reviewObligationResponseFields } from '../review/assurance.js';
 import {
@@ -102,7 +90,6 @@ import {
 } from '../../verification/execution-subject.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
-
 const RUN_CHECK_RETRY_DELAYS_MS = [100, 200, 400] as const;
 const RUN_CHECK_RETRIES = RUN_CHECK_RETRY_DELAYS_MS.length;
 
@@ -272,6 +259,10 @@ async function executeRunCheckPhased(
     changedFiles:
       subject.scope === 'implementation' ? (state.implementation?.changedFiles ?? []) : [],
     outcome,
+    fullCheckScopeAttestation:
+      guard.candidate.assertionCapability === 'structured'
+        ? guard.candidate.fullCheckScopeAttestation
+        : undefined,
     sessDir,
     sessionId: context.sessionID,
     executionObservedStateDigest,
@@ -290,6 +281,7 @@ async function persistAfterAttestation(params: {
   implementationDigest: string;
   changedFiles: readonly string[];
   outcome: ValidationOutcome;
+  fullCheckScopeAttestation?: FullCheckScopeAttestation;
   sessDir: string;
   sessionId: string;
   executionObservedStateDigest: string;
@@ -308,6 +300,7 @@ async function persistAfterAttestation(params: {
       derivedRepairGuidance: deriveRepairGuidance(params.evidence, 'blocked'),
       outcome: 'blocked',
       extraction: params.extraction,
+      fullCheckScopeAttestation: params.fullCheckScopeAttestation,
       attemptId: params.attemptId,
       subject: params.subject,
       sessDir: params.sessDir,
@@ -324,6 +317,7 @@ async function persistAfterAttestation(params: {
     derivedRepairGuidance: deriveRepairGuidance(params.evidence, params.outcome),
     outcome: params.outcome,
     extraction: params.extraction,
+    fullCheckScopeAttestation: params.fullCheckScopeAttestation,
     attemptId: params.attemptId,
     subject: params.subject,
     sessDir: params.sessDir,
@@ -340,6 +334,7 @@ interface PersistCheckInput {
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
   outcome: ValidationOutcome;
   extraction?: AssertionExtractionResult;
+  fullCheckScopeAttestation?: FullCheckScopeAttestation;
   attemptId: string;
   subject: ValidationSubject;
   sessDir: string;
@@ -357,6 +352,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
     derivedRepairGuidance,
     outcome,
     extraction,
+    fullCheckScopeAttestation,
     attemptId,
     subject,
     sessDir,
@@ -387,6 +383,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         outcome,
         derivedRepairGuidance,
         extraction,
+        fullCheckScopeAttestation,
         classificationReasonOverride,
       });
       const allResults = mergeValidationResult(freshState, validationResult);
@@ -518,6 +515,7 @@ function buildValidationResult(params: {
   outcome: ValidationOutcome;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance>;
   extraction?: AssertionExtractionResult;
+  fullCheckScopeAttestation?: FullCheckScopeAttestation;
   classificationReasonOverride?: string;
 }): ValidationResult {
   const {
@@ -526,6 +524,7 @@ function buildValidationResult(params: {
     outcome,
     derivedRepairGuidance,
     extraction,
+    fullCheckScopeAttestation,
     classificationReasonOverride,
   } = params;
   const passed = outcome === 'supported';
@@ -546,6 +545,7 @@ function buildValidationResult(params: {
       (passed ? undefined : `exitCode=${evidence.exitCode}, timedOut=${evidence.timedOut}`),
     derivedRepairGuidance,
     assertionExtraction: extraction,
+    fullCheckScopeAttestation,
   };
 }
 
