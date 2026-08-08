@@ -668,11 +668,9 @@ export function validateSubmittedReviewFindings(
     findings: scopeLocations,
     reviewedFileScope: obligation.reviewedFileScope,
   });
-  if (!scopeResult.ok) {
+  if (!scopeResult.ok && scopeResult.code === 'REVIEW_FINDING_OUT_OF_SCOPE') {
     return formatSubagentReviewNotInvoked(
-      scopeResult.code === 'REVIEW_FINDING_OUT_OF_SCOPE'
-        ? `Reviewer findings reference paths outside the reviewed file scope: ${scopeResult.details.outOfScopePaths.join(', ')}`
-        : 'Legacy obligation: no frozen reviewedFileScope, scope unverifiable.',
+      `Reviewer findings reference paths outside the reviewed file scope: ${scopeResult.details.outOfScopePaths.join(', ')}`,
       obligation.obligationId,
     );
   }
