@@ -64,11 +64,21 @@ import {
 import type { SessionState } from '../../state/schema.js';
 import { evaluate, evaluateWithEvent } from '../../machine/evaluate.js';
 import { implValidationPassed } from '../../machine/guards.js';
+import { resolveNextAction } from '../../machine/next-action.js';
 
 // Rail helpers
 import { applyTransition, autoAdvance } from '../../rails/types.js';
 
 // Adapters
+import { readConfig } from '../../adapters/persistence-config.js';
+
+// Presentation
+import {
+  buildEvidenceReviewCard,
+  PHASE_LABELS,
+  buildProductNextAction,
+} from '../../presentation/index.js';
+import type { EvidenceReviewCardInput } from '../../presentation/evidence-review-card.js';
 
 // Evidence types
 import type { LoopVerdict, ReviewFindings } from '../../state/evidence.js';
@@ -542,9 +552,19 @@ async function handleApprovedReview(input: {
       input.runtime.args.reviewVerdict === 'accept'
         ? `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`
         : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
-    response.presentation = {
-      markdown: buildImplReviewConvergedMarkdown(statusLine, input.proofSummary),
+    const nextAction = resolveNextAction(finalState.phase, finalState);
+    const productNext = buildProductNextAction(nextAction, finalState.phase);
+    const cardInput: EvidenceReviewCardInput = {
+      phaseLabel: PHASE_LABELS[finalState.phase],
+      productNextAction: productNext,
+      proofSummary: input.proofSummary,
+      statusLine,
+      forcedConvergence: input.runtime.args.reviewVerdict !== 'accept',
     };
+    const glyphProfile = (await readConfig(input.runtime.worktree)).presentation.opencode
+      .glyphProfile;
+    const cardMarkdown = buildEvidenceReviewCard(cardInput, { glyphProfile });
+    response.presentation = { markdown: cardMarkdown };
   }
 
   if (input.runtime.args.reviewVerdict === 'accept') {

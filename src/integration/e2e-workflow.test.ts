@@ -103,7 +103,10 @@ vi.mock('../verification/executor', () => {
     executeCheck: vi
       .fn()
       .mockImplementation(async (input: { kind: string; command: string; cwd: string }) => {
-        if (input.kind === 'test') {
+        // Test-fixture simulation: both repo-native Maven verification candidates
+        // in this fixture resolve to structured JUnit profiles and therefore produce
+        // a fresh JUnit report during successful execution.
+        if (input.kind === 'test' || input.kind === 'build') {
           await writeJUnitXml(input.cwd);
         }
         return {
@@ -1241,8 +1244,17 @@ describe('ProofGraph demo fixtures', () => {
       const testCand = state?.verificationCandidates?.find((c) => c.kind === 'test');
       expect(testCand).toMatchObject({
         assertionCapability: 'structured',
+        kind: 'test',
+        command: 'npm run test --',
+        source: 'package.json:scripts.test',
         assertionReport: { providerId: 'junit', format: 'junit_xml' },
       });
+      expect(state?.executionSubjectInputsByKind?.test).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ kind: 'implementation' }),
+          expect.objectContaining({ kind: 'file', path: 'package.json' }),
+        ]),
+      );
     } else {
       await fs.writeFile(
         `${ws.tmpDir}/package.json`,

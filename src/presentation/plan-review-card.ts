@@ -14,18 +14,13 @@
  */
 
 import type { Phase } from '../state/schema.js';
-import type {
-  ReviewCardDocument,
-  PresentationSection,
-  PresentationConclusion,
-  KeyValueItem,
-  PresentationAction,
-} from './model.js';
+import type { ReviewCardDocument, PresentationSection, KeyValueItem } from './model.js';
 import { renderMarkdown } from './markdown.js';
 import { normalizedMarkdown } from './model.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-summary.js';
 import { renderCompactProofSection } from './proof-summary.js';
+import { buildReviewDecisionConclusion } from './review-decision.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -143,37 +138,8 @@ export function buildPlanReviewCard(
       ? 'decision'
       : 'terminal',
     sections,
-    conclusion: buildConclusion(productNextAction),
+    conclusion: buildReviewDecisionConclusion(productNextAction, PLAN_ACTION_DESCRIPTIONS),
   };
 
   return renderMarkdown(document, options);
-}
-
-// ─── Conclusion Projection ─────────────────────────────────────────────────────
-
-function buildConclusion(productNextAction: {
-  text: string;
-  commands: readonly string[];
-}): PresentationConclusion {
-  const commands = new Set(productNextAction.commands);
-  const actions: PresentationAction[] = [];
-  for (const command of ['/approve', '/request-changes', '/reject']) {
-    if (commands.has(command)) {
-      actions.push({
-        invocation: command,
-        description: PLAN_ACTION_DESCRIPTIONS[command] ?? command,
-        visibility: 'available',
-      });
-    }
-  }
-
-  if (actions.length > 0) {
-    return {
-      kind: 'decision_required',
-      question: productNextAction.text,
-      actions,
-    };
-  }
-
-  return { kind: 'terminal', message: productNextAction.text };
 }
