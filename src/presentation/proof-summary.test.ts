@@ -32,10 +32,12 @@ function makeDeclaration(opts?: {
   return {
     kind: 'declaration',
     flow: opts?.flow ?? 'plan',
+    overallStatus: 'AWAITING_EVIDENCE',
     claimCount: opts?.claimCount ?? 3,
     criticalCount: opts?.criticalCount ?? 3,
     falsificationReadyCount: opts?.falsificationReadyCount,
     missingFalsificationCount: opts?.missingFalsificationCount,
+    approval: { status: 'not_recorded' },
   };
 }
 
@@ -55,8 +57,10 @@ function makeEvaluation(
 ): CompactProofPresentation {
   return {
     kind: 'evaluation',
+    overallStatus: headlineStatus,
     claimCount: 5,
     criticalCount: 3,
+    criticalProvenCount: headlineStatus === 'PROVEN' ? 3 : 0,
     provenCount: opts?.provenCount ?? 2,
     contradictedCount: opts?.contradictedCount ?? 0,
     blockedCount: opts?.blockedCount ?? 0,
@@ -67,7 +71,10 @@ function makeEvaluation(
     headlineStatus,
     decisionContext: opts?.decisionContext ?? 'current_gate',
     revisionDigest: opts?.revisionDigest,
-    evidenceFreshness: opts?.evidenceFreshness,
+    evidenceFreshness: opts?.evidenceFreshness ?? 'CURRENT',
+    approval: { status: 'not_recorded' },
+    unmetCriticalClaims: [],
+    otherHighlightedClaims: [],
   };
 }
 
@@ -75,10 +82,10 @@ describe('renderCompactProofSection', () => {
   describe('declaration', () => {
     it('renders plan declaration with claim counts', () => {
       const result = renderCompactProofSection(makeDeclaration());
-      expect(result).toContain('## Proof obligations');
+      expect(result).toContain('AWAITING_EVIDENCE');
       expect(result).toContain('3 plan claim(s) declared');
       expect(result).toContain('3 critical');
-      expect(result).toContain('AWAITING EVIDENCE');
+      expect(result).toContain('AWAITING_EVIDENCE');
     });
 
     it('renders architecture declaration', () => {
@@ -113,7 +120,6 @@ describe('renderCompactProofSection', () => {
   describe('evaluation', () => {
     it('renders PROVEN headline', () => {
       const result = renderCompactProofSection(makeEvaluation('PROVEN', { provenCount: 5 }));
-      expect(result).toContain('## ProofGraph');
       expect(result).toContain('All critical claims PROVEN');
       expect(result).toContain('5 PROVEN');
       expect(result).toContain('→ Full evidence lineage:');
@@ -124,7 +130,7 @@ describe('renderCompactProofSection', () => {
         contradictedCount: 1,
         provenCount: 1,
       });
-      (pres as Record<string, unknown>).highlightedClaims = [
+      (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
           claimId: 'a'.repeat(36),
           statement: 'No SQL injection is possible.',
@@ -145,7 +151,7 @@ describe('renderCompactProofSection', () => {
 
     it('renders BLOCKED headline with provider-failure reason', () => {
       const pres = makeEvaluation('BLOCKED', { blockedCount: 1 });
-      (pres as Record<string, unknown>).highlightedClaims = [
+      (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
           claimId: 'b'.repeat(36),
           statement: 'All API endpoints are covered.',
@@ -162,7 +168,7 @@ describe('renderCompactProofSection', () => {
 
     it('renders STALE headline without asserting implementation changed', () => {
       const pres = makeEvaluation('STALE', { staleCount: 1 });
-      (pres as Record<string, unknown>).highlightedClaims = [
+      (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
           claimId: 'c'.repeat(36),
           statement: 'Rate limiting is enforced.',
@@ -199,7 +205,7 @@ describe('renderCompactProofSection', () => {
         unprovenCount: 1,
         decisionContext: 'prospective_approval',
       });
-      (pres as Record<string, unknown>).highlightedClaims = [
+      (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
           claimId: 'd'.repeat(36),
           statement: 'Memory safety is guaranteed.',
@@ -217,7 +223,7 @@ describe('renderCompactProofSection', () => {
         unprovenCount: 1,
         decisionContext: 'completion',
       });
-      (pres as Record<string, unknown>).highlightedClaims = [
+      (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
           claimId: 'e'.repeat(36),
           statement: 'Final unresolved claim.',
@@ -236,7 +242,7 @@ describe('renderCompactProofSection', () => {
       const pres = makeEvaluation('BLOCKED', { blockedCount: 1 });
       (pres as Record<string, unknown>).primaryReason =
         'The implementation risk assessment is outdated and must be refreshed.';
-      (pres as Record<string, unknown>).highlightedClaims = [
+      (pres as Record<string, unknown>).unmetCriticalClaims = [
         {
           claimId: 'f'.repeat(36),
           statement: 'Additional claim still unresolved.',
@@ -286,30 +292,16 @@ describe('renderCompactProofSection', () => {
 });
 
 describe('buildProofGraphSection', () => {
-  it('returns a text section wrapping the rendered proof summary', () => {
+  it('returns a typed proofGraph section', () => {
     const section = buildProofGraphSection(makeEvaluation('PROVEN', { provenCount: 1 }));
-    expect(section.kind).toBe('text');
-    if (section.kind === 'text') {
-      expect(section.content).toContain('## ProofGraph');
-      expect(section.content).toContain('All critical claims PROVEN');
-    }
+    expect(section.kind).toBe('proofGraph');
+    expect(section.proof.overallStatus).toBe('PROVEN');
   });
 
-  it('declaration kind renders ## Proof obligations', () => {
+  it('preserves declaration semantics in a typed section', () => {
     const decl = makeDeclaration({ flow: 'plan', claimCount: 1, criticalCount: 1 });
     const section = buildProofGraphSection(decl);
-    expect(section.kind).toBe('text');
-    if (section.kind === 'text') {
-      expect(section.content).toContain('## Proof obligations');
-      expect(section.content).toContain('1 plan claim(s) declared');
-    }
-  });
-
-  it('normalized content has no leading or trailing newlines', () => {
-    const section = buildProofGraphSection(makeEvaluation('PROVEN', { provenCount: 2 }));
-    if (section.kind === 'text') {
-      expect(section.content).not.toMatch(/^\n/);
-      expect(section.content).not.toMatch(/\n$/);
-    }
+    expect(section.kind).toBe('proofGraph');
+    expect(section.proof.claimCount).toBe(1);
   });
 });

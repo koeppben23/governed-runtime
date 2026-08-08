@@ -24,6 +24,8 @@ import type {
 } from './model.js';
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
+import type { CompactProofPresentation } from './proof-model.js';
+import { buildProofGraphSection } from './proof-summary.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -65,6 +67,10 @@ export interface ReviewReportCardInput {
   structuredOutputUsed?: boolean;
   reviewAssuranceLevel?: string;
   extractionMethod?: string;
+  /** Mandatory state-derived ProofGraph summary. */
+  proofSummary: CompactProofPresentation;
+  /** Canonical next action resolved from the completed state. */
+  productNextAction: { text: string; commands: readonly string[] };
 }
 
 // ─── Severity / Category Projection ─────────────────────────────────────────────
@@ -127,6 +133,11 @@ export function buildReviewReportCard(
   input: ReviewReportCardInput,
   options?: PresentationRenderOptions,
 ): string {
+  return renderMarkdown(buildReviewReportDocument(input), options);
+}
+
+/** Build the typed standalone-review document before Markdown rendering. */
+export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewCardDocument {
   const {
     phaseLabel,
     overallStatus,
@@ -143,6 +154,8 @@ export function buildReviewReportCard(
     structuredOutputUsed,
     reviewAssuranceLevel,
     extractionMethod,
+    proofSummary,
+    productNextAction,
   } = input;
 
   const sections: PresentationSection[] = [];
@@ -173,6 +186,7 @@ export function buildReviewReportCard(
     metadata.push({ label: 'References', value: refList });
   }
   sections.push({ kind: 'keyValue', items: metadata });
+  sections.push(buildProofGraphSection(proofSummary));
 
   // ── Findings ───────────────────────────────────────────────────────
   if (findings.length > 0) {
@@ -277,10 +291,17 @@ export function buildReviewReportCard(
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
-    form: 'terminal',
+    form: 'success',
     sections,
-    conclusion: { kind: 'terminal', message: 'Review report complete.' },
+    conclusion: {
+      kind: 'next_action',
+      action: {
+        invocation: productNextAction.commands[0] ?? null,
+        description: productNextAction.text,
+        visibility: 'recommended',
+      },
+    },
   };
 
-  return renderMarkdown(document, options);
+  return document;
 }

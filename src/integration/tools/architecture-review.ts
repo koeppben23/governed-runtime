@@ -49,7 +49,7 @@ import { readConfig } from '../../adapters/persistence-config.js';
 import { resolveNextAction } from '../../machine/next-action.js';
 import { getAdapterLogger } from '../../logging/adapter-logger.js';
 import { normalizeArchitectureClaims } from '../../state/proofgraph-approval.js';
-import { projectArchitectureDecisionClaims } from '../proofgraph/proof-summary-projectors.js';
+import { projectArchitectureProofStatus } from '../proofgraph/proof-summary-projectors.js';
 
 import {
   type ArchitectureArgs,
@@ -469,8 +469,7 @@ async function attachReviewCard(input: {
     productNextAction: productNext,
     isApproved: isComplete,
     forcedConvergence: input.forcedConvergence,
-    proofSummary:
-      projectArchitectureDecisionClaims(finalState.architecture?.claimDeclarations) ?? undefined,
+    proofSummary: projectArchitectureProofStatus(finalState),
   };
   // Cards and artifacts are canonical Unicode; only host-visible Markdown uses preferences.
   resp.reviewCard = buildArchitectureReviewCard(reviewCardInput);

@@ -207,7 +207,7 @@ describe('projectImplementationProofStatus', () => {
       ...makeState('IMPLEMENTATION'),
       proofGraph: undefined,
     };
-    expect(projectImplementationProofStatus(state)).toBeNull();
+    expect(projectImplementationProofStatus(state).overallStatus).toBe('NOT_DECLARED');
   });
 
   it('returns evaluation for PROVEN claims', () => {
@@ -253,7 +253,8 @@ describe('projectImplementationProofStatus', () => {
     const result = projectImplementationProofStatus(makeEvalState(claims));
     expect(result).not.toBeNull();
     const evalResult = result as Record<string, unknown>;
-    const highlighted = evalResult.highlightedClaims as Array<Record<string, unknown>> | undefined;
+    const highlighted = evalResult.unmetCriticalClaims as
+      Array<Record<string, unknown>> | undefined;
     expect(highlighted).toBeDefined();
     const first = highlighted?.[0];
     expect(first).toBeDefined();
@@ -327,7 +328,8 @@ describe('projectImplementationProofStatus', () => {
     const result = projectImplementationProofStatus(makeEvalState(claims));
     expect(result).not.toBeNull();
     const evalResult = result as Record<string, unknown>;
-    const highlighted = evalResult.highlightedClaims as Array<Record<string, unknown>> | undefined;
+    const highlighted = evalResult.unmetCriticalClaims as
+      Array<Record<string, unknown>> | undefined;
     expect(highlighted).toBeDefined();
     const first = highlighted?.[0];
     expect(first).toBeDefined();
@@ -343,7 +345,7 @@ describe('projectImplementationProofStatus', () => {
       ...makeState('IMPLEMENTATION'),
       proofGraph: undefined,
     };
-    expect(projectImplementationProofStatus(state)).toBeNull();
+    expect(projectImplementationProofStatus(state).overallStatus).toBe('NOT_DECLARED');
   });
 
   it('sets decisionContext to completion for projectCompletionProofStatus', () => {

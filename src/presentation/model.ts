@@ -199,6 +199,12 @@ export interface TextSection {
   readonly content: NormalizedMarkdown;
 }
 
+/** A canonical, state-derived ProofGraph summary. */
+export interface ProofGraphSection {
+  readonly kind: 'proofGraph';
+  readonly proof: import('./proof-model.js').CompactProofPresentation;
+}
+
 export interface CodeSection {
   readonly kind: 'code';
   /** Rendered as `## heading` when present. */
@@ -346,6 +352,7 @@ export type PresentationSection =
   | FindingsSection
   | ChecklistSection
   | TextSection
+  | ProofGraphSection
   | CodeSection
   | NoticeSection
   | BulletListSection

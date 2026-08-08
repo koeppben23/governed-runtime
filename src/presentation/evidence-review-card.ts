@@ -29,7 +29,7 @@ export interface EvidenceReviewCardInput {
     commands: readonly string[];
   };
   /** Optional compact ProofGraph summary for the review card (post-implementation evaluation). */
-  proofSummary?: CompactProofPresentation;
+  proofSummary: CompactProofPresentation;
   /** Status line describing the review convergence (converged or force-converged). */
   statusLine: string;
   /** True when the review loop force-converged at the iteration limit. */
@@ -54,6 +54,11 @@ export function buildEvidenceReviewCard(
   input: EvidenceReviewCardInput,
   options?: PresentationRenderOptions,
 ): string {
+  return renderMarkdown(buildEvidenceReviewDocument(input), options);
+}
+
+/** Build the typed evidence-review document before Markdown rendering. */
+export function buildEvidenceReviewDocument(input: EvidenceReviewCardInput): ReviewCardDocument {
   const sections: PresentationSection[] = [];
 
   // ── Title ──────────────────────────────────────────────────────────
@@ -79,9 +84,7 @@ export function buildEvidenceReviewCard(
   }
 
   // ── ProofGraph summary (post-evaluation) ────────────────────────────
-  if (input.proofSummary) {
-    sections.push(buildProofGraphSection(input.proofSummary));
-  }
+  sections.push(buildProofGraphSection(input.proofSummary));
 
   const document: ReviewCardDocument = {
     kind: 'review_card',
@@ -97,5 +100,5 @@ export function buildEvidenceReviewCard(
     ),
   };
 
-  return renderMarkdown(document, options);
+  return document;
 }

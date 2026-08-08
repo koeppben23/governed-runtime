@@ -21,6 +21,7 @@ import {
   type StatusActionProjection,
 } from './status-conclusion.js';
 import type { BlockedProjection, FinishCard } from './status.js';
+import { projectImplementationProofStatus } from './proofgraph/proof-summary-projectors.js';
 
 // ─── /why Projection Types ─────────────────────────────────────────────────────
 
@@ -45,6 +46,7 @@ export interface WhyPresentationProjection {
     readonly status: 'missing' | 'failed';
     readonly hint: string | null;
   }>;
+  readonly proofSummary: import('../presentation/proof-model.js').CompactProofPresentation;
   readonly conclusion: WhyConclusionProjection;
 }
 
@@ -96,6 +98,7 @@ export function buildWhyPresentationProjection(
     phaseLabel: PHASE_LABELS[state.phase],
     blocker,
     evidenceSlots,
+    proofSummary: projectImplementationProofStatus(state, { decisionContext: 'current_gate' }),
     conclusion: buildWhyConclusion(evalResult, productNext),
   };
 }

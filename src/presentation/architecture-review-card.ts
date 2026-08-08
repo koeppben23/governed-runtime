@@ -81,7 +81,7 @@ export interface ArchitectureReviewCardInput {
    */
   forcedConvergence?: boolean;
   /** Compact ProofGraph summary for the review card (decision claims). */
-  proofSummary?: CompactProofPresentation;
+  proofSummary: CompactProofPresentation;
 }
 
 // ─── Action Descriptions ───────────────────────────────────────────────────────
@@ -114,6 +114,13 @@ export function buildArchitectureReviewCard(
   input: ArchitectureReviewCardInput,
   options?: PresentationRenderOptions,
 ): string {
+  return renderMarkdown(buildArchitectureReviewDocument(input), options);
+}
+
+/** Build the typed architecture-review document before Markdown rendering. */
+export function buildArchitectureReviewDocument(
+  input: ArchitectureReviewCardInput,
+): ReviewCardDocument {
   const {
     phaseLabel,
     adrTitle,
@@ -159,9 +166,7 @@ export function buildArchitectureReviewCard(
   }
 
   // ── Decision claims (advisory) ──────────────────────────────────────
-  if (input.proofSummary) {
-    sections.push(buildProofGraphSection(input.proofSummary));
-  }
+  sections.push(buildProofGraphSection(input.proofSummary));
 
   // ── ADR Details ────────────────────────────────────────────────────
   if (adrId || adrDigest || iteration > 0) {
@@ -204,7 +209,7 @@ export function buildArchitectureReviewCard(
     conclusion: buildConclusion(productNextAction, isApproved),
   };
 
-  return renderMarkdown(document, options);
+  return document;
 }
 
 // ─── Findings Projection ────────────────────────────────────────────────────────

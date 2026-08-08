@@ -15,7 +15,8 @@
  * NOT the legacy blockquote/`## Next recommended action` footer.
  */
 import { describe, expect, it } from 'vitest';
-import { buildPlanReviewCard } from './plan-review-card.js';
+import { buildPlanReviewCard as buildCard, type PlanReviewCardInput } from './plan-review-card.js';
+import type { CompactProofPresentation } from './proof-model.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -86,6 +87,22 @@ const productNextActionPartial = {
   text: 'Review the plan.',
   commands: ['/approve'] as readonly string[],
 };
+
+const proofSummary: CompactProofPresentation = {
+  kind: 'declaration',
+  flow: 'plan',
+  overallStatus: 'NOT_DECLARED',
+  claimCount: 0,
+  criticalCount: 0,
+  approval: { status: 'not_recorded' },
+};
+function buildPlanReviewCard(
+  input: Omit<PlanReviewCardInput, 'proofSummary'> &
+    Partial<Pick<PlanReviewCardInput, 'proofSummary'>>,
+  options?: Parameters<typeof buildCard>[1],
+) {
+  return buildCard({ proofSummary, ...input }, options);
+}
 
 describe('buildPlanReviewCard', () => {
   it('keeps Unicode canonical by default and supports an ASCII transient rendering', () => {
@@ -638,8 +655,10 @@ describe('plan review golden fixtures', () => {
       proofSummary: {
         kind: 'declaration',
         flow: 'plan',
+        overallStatus: 'AWAITING_EVIDENCE',
         claimCount: 2,
         criticalCount: 1,
+        approval: { status: 'not_recorded' },
       },
     });
     expect(card).toContain('## Proof obligations');

@@ -80,4 +80,21 @@ describe('ProofGraph presentation SSOT', () => {
 
     expect(violations).toEqual([]);
   });
+
+  it('required governance document builders use the typed ProofGraph section', () => {
+    const requiredBuilders = [
+      'presentation/plan-review-card.ts',
+      'presentation/evidence-review-card.ts',
+      'presentation/architecture-review-card.ts',
+      'presentation/review-report-card.ts',
+      'integration/status-presentation.ts',
+      'integration/why-presentation.ts',
+      'integration/finish-presentation.ts',
+    ];
+    const violations = requiredBuilders.filter((rel) => {
+      const content = readFileSync(join(SRC, rel), 'utf-8');
+      return !content.includes('buildProofGraphSection(');
+    });
+    expect(violations).toEqual([]);
+  });
 });

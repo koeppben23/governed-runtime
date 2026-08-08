@@ -54,6 +54,7 @@ import {
   buildProofApprovalProjection,
   type ProofApprovalProjection,
 } from './proofgraph/approval-projection.js';
+import { projectImplementationProofStatus } from './proofgraph/proof-summary-projectors.js';
 
 // Re-export for consumers
 export type { StatusActionProjection, StatusConclusionProjection };
@@ -112,6 +113,8 @@ export interface StatusProjection {
     failed: number;
   };
   proofGraph: PersistedProofGraphSummary;
+  /** Mandatory compact ProofGraph presentation for every resolved session. */
+  proofSummary: import('../presentation/proof-model.js').CompactProofPresentation;
   /**
    * Approval-certificate and materialization chain (#762). Present so a reviewer
    * or auditor can verify the binding from declaration through executed evidence
@@ -302,7 +305,7 @@ export interface FinishCard {
     triggersExport: false;
   };
   /** Compact ProofGraph summary for the completion card. */
-  proofSummary?: import('../presentation/proof-summary.js').CompactProofPresentation;
+  proofSummary: import('../presentation/proof-summary.js').CompactProofPresentation;
 }
 
 // ─── Projection Builder ───────────────────────────────────────────────────────
@@ -371,6 +374,7 @@ export function buildStatusProjection(
       failed: completeness.summary.failed,
     },
     proofGraph: summarizePersistedProofGraph(state),
+    proofSummary: projectImplementationProofStatus(state, { decisionContext: 'current_gate' }),
     proofApprovals: buildProofApprovalProjection(state),
     reviewLoop: getReviewLoopProgress(state),
     remainingChecks:

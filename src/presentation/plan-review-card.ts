@@ -48,7 +48,7 @@ export interface PlanReviewCardInput {
    */
   forcedConvergence?: boolean;
   /** Compact ProofGraph summary for the review card (pre-approval declarations). */
-  proofSummary?: CompactProofPresentation;
+  proofSummary: CompactProofPresentation;
 }
 
 // ─── Action Descriptions ───────────────────────────────────────────────────────
@@ -79,6 +79,11 @@ export function buildPlanReviewCard(
   input: PlanReviewCardInput,
   options?: PresentationRenderOptions,
 ): string {
+  return renderMarkdown(buildPlanReviewDocument(input), options);
+}
+
+/** Build the typed plan-review document before Markdown rendering. */
+export function buildPlanReviewDocument(input: PlanReviewCardInput): ReviewCardDocument {
   const { planText, phaseLabel, productNextAction, planVersion, policyMode, taskTitle } = input;
 
   const sections: PresentationSection[] = [];
@@ -117,9 +122,7 @@ export function buildPlanReviewCard(
   }
 
   // ── Proof obligations (pre-approval) ───────────────────────────────
-  if (input.proofSummary) {
-    sections.push(buildProofGraphSection(input.proofSummary));
-  }
+  sections.push(buildProofGraphSection(input.proofSummary));
 
   // ── Plan Body (verbatim) ───────────────────────────────────────────
   sections.push({
@@ -139,5 +142,5 @@ export function buildPlanReviewCard(
     conclusion: buildReviewDecisionConclusion(productNextAction, PLAN_ACTION_DESCRIPTIONS),
   };
 
-  return renderMarkdown(document, options);
+  return document;
 }

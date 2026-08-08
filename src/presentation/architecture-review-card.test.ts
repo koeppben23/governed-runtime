@@ -3,7 +3,11 @@
  * @description Unit tests for buildArchitectureReviewCard.
  */
 import { describe, it, expect } from 'vitest';
-import { buildArchitectureReviewCard } from './architecture-review-card.js';
+import {
+  buildArchitectureReviewCard as buildCard,
+  type ArchitectureReviewCardInput,
+} from './architecture-review-card.js';
+import type { CompactProofPresentation } from './proof-model.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -21,7 +25,22 @@ const baseInput = {
     commands: ['/approve', '/request-changes', '/reject'] as readonly string[],
   },
   isApproved: false,
+  proofSummary: {
+    kind: 'declaration',
+    flow: 'architecture',
+    overallStatus: 'NOT_DECLARED',
+    claimCount: 0,
+    criticalCount: 0,
+    approval: { status: 'not_recorded' },
+  } satisfies CompactProofPresentation,
 };
+function buildArchitectureReviewCard(
+  input: Omit<ArchitectureReviewCardInput, 'proofSummary'> &
+    Partial<Pick<ArchitectureReviewCardInput, 'proofSummary'>>,
+  options?: Parameters<typeof buildCard>[1],
+) {
+  return buildCard({ proofSummary: baseInput.proofSummary, ...input }, options);
+}
 
 describe('buildArchitectureReviewCard', () => {
   it('keeps Unicode canonical by default and supports an ASCII transient rendering', () => {
@@ -206,8 +225,10 @@ describe('architecture review golden fixtures', () => {
       proofSummary: {
         kind: 'declaration',
         flow: 'architecture',
+        overallStatus: 'AWAITING_EVIDENCE',
         claimCount: 1,
         criticalCount: 1,
+        approval: { status: 'not_recorded' },
       },
     });
     expect(card).toContain('## Proof obligations');

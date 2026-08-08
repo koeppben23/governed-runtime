@@ -15,12 +15,15 @@ import type { ReviewExecutors } from '../../../rails/review.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
 import type { AutoAdvanceOverflow } from '../../../rails/types.js';
 import { PHASE_LABELS, buildReviewReportCard } from '../../../presentation/index.js';
+import { buildProductNextAction } from '../../../presentation/next-action-copy.js';
 import type { PresentationRenderOptions } from '../../../presentation/glyph-profile.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';
 import { writeReport, reportPath } from '../../../adapters/persistence.js';
 import { writeStateWithArtifacts, appendNextAction } from '../helpers.js';
 import { ensureReviewAssurance } from '../../review/assurance.js';
+import { resolveNextAction } from '../../../machine/next-action.js';
+import { projectCompletionProofStatus } from '../../proofgraph/proof-summary-projectors.js';
 import { NATIVE_ATTESTATION_REJECTION_FIELD } from '../../../shared/flowguard-identifiers.js';
 import type {
   NativeAttestationRejection,
@@ -285,6 +288,7 @@ function buildStandaloneReviewCard(
 ): string {
   const { args, result, finalState, report, validatedReviewObligation } = input;
   const boundInvocation = findBoundReviewInvocation(result, validatedReviewObligation);
+  const nextAction = resolveNextAction(finalState.phase, finalState);
   return buildReviewReportCard(
     {
       phase: finalState.phase,
@@ -295,6 +299,8 @@ function buildStandaloneReviewCard(
       inputOrigin: args.inputOrigin,
       references: args.references as Array<{ ref: string; type: string }> | undefined,
       obligationId: validatedReviewObligation?.obligationId,
+      proofSummary: projectCompletionProofStatus(finalState),
+      productNextAction: buildProductNextAction(nextAction, finalState.phase),
       ...reviewCardInvocationFields(boundInvocation, args),
     },
     options,

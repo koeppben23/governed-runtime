@@ -214,6 +214,6 @@ export function buildFinishCard(
       consumesObligations: false,
       triggersExport: false,
     },
-    proofSummary: projectCompletionProofStatus(state) ?? undefined,
+    proofSummary: projectCompletionProofStatus(state),
   };
 }

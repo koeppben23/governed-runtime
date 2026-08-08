@@ -18,17 +18,64 @@ import type {
   PlanClaimDeclarations,
   ArchitectureClaimDeclarations,
 } from '../../state/proofgraph-approval.js';
-import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
+import {
+  authorizedCriticalPlanClaimIds,
+  hasCurrentPlanApprovalCertificate,
+} from '../../state/proofgraph-approval.js';
 
 import type {
   CompactProofClaim,
   CompactProofPresentation,
   ClaimVerificationState,
 } from '../../presentation/proof-summary.js';
+import type { ProofApprovalPresentation } from '../../presentation/proof-model.js';
 
 // ─── Decision context ───────────────────────────────────────────────────────
 
 type ProofDecisionContext = 'current_gate' | 'prospective_approval' | 'completion';
+
+/**
+ * Legacy declaration-only helpers retained for callers without resolved state.
+ * Governance presentations must use the total state-based projectors below.
+ */
+export function projectPlanProofObligations(
+  declarations: PlanClaimDeclarations | undefined,
+): CompactProofPresentation | null {
+  const claims = declarations?.claims;
+  if (!claims || claims.length === 0) return null;
+  const criticalCount = claims.filter((claim) => claim.critical).length;
+  const falsificationReadyCount = claims.filter(
+    (claim) => claim.critical && claim.counterexampleRequirement?.checkId,
+  ).length;
+  return {
+    kind: 'declaration',
+    flow: 'plan',
+    overallStatus: 'AWAITING_EVIDENCE',
+    claimCount: claims.length,
+    criticalCount,
+    ...(falsificationReadyCount > 0 ? { falsificationReadyCount } : {}),
+    ...(criticalCount > falsificationReadyCount
+      ? { missingFalsificationCount: criticalCount - falsificationReadyCount }
+      : {}),
+    approval: { status: 'not_recorded' },
+  };
+}
+
+/** @deprecated Use projectArchitectureProofStatus with a resolved SessionState. */
+export function projectArchitectureDecisionClaims(
+  declarations: ArchitectureClaimDeclarations | undefined,
+): CompactProofPresentation | null {
+  const claims = declarations?.claims;
+  if (!claims || claims.length === 0) return null;
+  return {
+    kind: 'declaration',
+    flow: 'architecture',
+    overallStatus: 'AWAITING_EVIDENCE',
+    claimCount: claims.length,
+    criticalCount: claims.filter((claim) => claim.critical).length,
+    approval: { status: 'not_recorded' },
+  };
+}
 
 // ─── Claim reason (derived from verification state) ─────────────────────────
 
@@ -146,7 +193,7 @@ function selectHighlightedClaims(
   const results: CompactProofClaim[] = [];
   for (const state of HIGHLIGHT_ORDER) {
     for (const claim of claims) {
-      if (claim.verificationState !== state || claim.claimId === results[0]?.claimId) continue;
+      if (claim.verificationState !== state || claim.critical) continue;
       const planDecl = planById.get(claim.claimId);
       results.push({
         claimId: claim.claimId,
@@ -162,6 +209,41 @@ function selectHighlightedClaims(
   }
   // Defensive: PROVEN must never appear in highlights regardless of order array changes.
   return results.filter((c) => c.status !== 'PROVEN');
+}
+
+function selectUnmetCriticalClaims(
+  claims: readonly ProofClaim[],
+  planDeclarations:
+    | {
+        readonly claims: readonly { readonly claimId: string; readonly expectedCheckId?: string }[];
+      }
+    | undefined,
+): CompactProofClaim[] {
+  const planById = new Map((planDeclarations?.claims ?? []).map((d) => [d.claimId, d] as const));
+  return claims
+    .filter((claim) => claim.critical && claim.verificationState !== 'PROVEN')
+    .map((claim) => ({
+      claimId: claim.claimId,
+      statement: claim.statement,
+      status: claim.verificationState,
+      critical: true,
+      reason: claimReason(claim.verificationState),
+      recovery: claimRecovery(claim.verificationState, planById.get(claim.claimId)),
+    }));
+}
+
+function approvalPresentation(state: SessionState): ProofApprovalPresentation {
+  if (hasCurrentPlanApprovalCertificate(state.plan)) {
+    return {
+      status: 'current',
+      flow: 'plan',
+      certificateId: state.plan.approvalCertificate.certificateId,
+    };
+  }
+  if (state.plan?.approvalCertificate || state.architecture?.approvalCertificate) {
+    return { status: 'stale_or_unbound' };
+  }
+  return { status: 'not_recorded' };
 }
 
 // ─── Count tallies ──────────────────────────────────────────────────────────
@@ -210,11 +292,18 @@ function tallyClaims(claims: readonly ProofClaim[]) {
 
 // ─── Projectors ─────────────────────────────────────────────────────────────
 
-export function projectPlanProofObligations(
-  declarations: PlanClaimDeclarations | undefined,
-): CompactProofPresentation | null {
-  const claims = declarations?.claims;
-  if (!claims || claims.length === 0) return null;
+export function projectPlanProofStatus(state: SessionState): CompactProofPresentation {
+  const claims = state.plan?.claimDeclarations?.claims ?? [];
+  if (claims.length === 0) {
+    return {
+      kind: 'declaration',
+      flow: 'plan',
+      overallStatus: 'NOT_DECLARED',
+      claimCount: 0,
+      criticalCount: 0,
+      approval: approvalPresentation(state),
+    };
+  }
   const normalized = claims;
   const criticalCount = claims.filter((c) => c.critical).length;
   const falsificationReady = normalized.filter(
@@ -224,23 +313,34 @@ export function projectPlanProofObligations(
   return {
     kind: 'declaration',
     flow: 'plan',
+    overallStatus: 'AWAITING_EVIDENCE',
     claimCount: claims.length,
     criticalCount,
     ...(falsificationReady > 0 ? { falsificationReadyCount: falsificationReady } : {}),
     ...(missingFalsification > 0 ? { missingFalsificationCount: missingFalsification } : {}),
+    approval: approvalPresentation(state),
   };
 }
 
-export function projectArchitectureDecisionClaims(
-  declarations: ArchitectureClaimDeclarations | undefined,
-): CompactProofPresentation | null {
-  const claims = declarations?.claims;
-  if (!claims || claims.length === 0) return null;
+export function projectArchitectureProofStatus(state: SessionState): CompactProofPresentation {
+  const claims = state.architecture?.claimDeclarations?.claims ?? [];
+  if (claims.length === 0) {
+    return {
+      kind: 'declaration',
+      flow: 'architecture',
+      overallStatus: 'NOT_DECLARED',
+      claimCount: 0,
+      criticalCount: 0,
+      approval: approvalPresentation(state),
+    };
+  }
   return {
     kind: 'declaration',
     flow: 'architecture',
+    overallStatus: 'AWAITING_EVIDENCE',
     claimCount: claims.length,
     criticalCount: claims.filter((c) => c.critical).length,
+    approval: approvalPresentation(state),
   };
 }
 
@@ -291,24 +391,31 @@ function buildEvaluationResult(
   const claims = state.proofGraph?.claims ?? [];
   const summary = summarizePersistedProofGraph(state);
   const tallies = tallyClaims(claims);
+  const unmetCriticalClaims = selectUnmetCriticalClaims(claims, state.plan?.claimDeclarations);
   const result: CompactProofPresentation = {
     kind: 'evaluation',
     claimCount: summary.claimCount,
     coverage: summary.coverage,
+    overallStatus: claims.length === 0 ? 'NOT_DECLARED' : computeHeadlineStatus(claims, gateResult),
     headlineStatus: computeHeadlineStatus(claims, gateResult),
     ...primReason(gateResult),
-    highlightedClaims: selectHighlightedClaims(claims, state.plan?.claimDeclarations),
+    unmetCriticalClaims,
+    otherHighlightedClaims: selectHighlightedClaims(claims, state.plan?.claimDeclarations),
     evidenceFreshness: deriveEvidenceFreshness(claims),
     revisionDigest: state.implementation?.digest,
     decisionContext: decisionContext,
     ...tallies,
     criticalCount: tallies.criticalCount,
+    criticalProvenCount: claims.filter(
+      (claim) => claim.critical && claim.verificationState === 'PROVEN',
+    ).length,
     provenCount: tallies.provenCount,
     contradictedCount: tallies.contradictedCount,
     blockedCount: tallies.blockedCount,
     staleCount: tallies.staleCount,
     unprovenCount: tallies.unprovenCount,
     notVerifiedCount: tallies.notVerifiedCount,
+    approval: approvalPresentation(state),
   };
   return result;
 }
@@ -316,9 +423,7 @@ function buildEvaluationResult(
 export function projectImplementationProofStatus(
   state: SessionState,
   opts?: { gate?: ProofGraphGateDecision; decisionContext?: ProofDecisionContext },
-): CompactProofPresentation | null {
-  const claims = state.proofGraph?.claims ?? [];
-  if (claims.length === 0) return null;
+): CompactProofPresentation {
   const gateResult = resolveGate(state, opts);
   const context =
     opts?.decisionContext ??
@@ -326,6 +431,6 @@ export function projectImplementationProofStatus(
   return buildEvaluationResult(state, gateResult, context);
 }
 
-export function projectCompletionProofStatus(state: SessionState): CompactProofPresentation | null {
+export function projectCompletionProofStatus(state: SessionState): CompactProofPresentation {
   return projectImplementationProofStatus(state, { decisionContext: 'completion' });
 }

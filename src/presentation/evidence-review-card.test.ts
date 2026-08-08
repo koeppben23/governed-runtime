@@ -32,9 +32,11 @@ const terminalNextAction = {
 
 const evalProofSummary: CompactProofPresentation = {
   kind: 'evaluation',
+  overallStatus: 'PROVEN',
   headlineStatus: 'PROVEN',
   claimCount: 2,
   criticalCount: 1,
+  criticalProvenCount: 1,
   provenCount: 2,
   unprovenCount: 0,
   contradictedCount: 0,
@@ -42,6 +44,10 @@ const evalProofSummary: CompactProofPresentation = {
   staleCount: 0,
   notVerifiedCount: 0,
   coverage: 'PROVEN',
+  unmetCriticalClaims: [],
+  otherHighlightedClaims: [],
+  evidenceFreshness: 'CURRENT',
+  approval: { status: 'not_recorded' },
   decisionContext: 'current_gate',
 };
 
@@ -126,14 +132,14 @@ describe('buildEvidenceReviewCard', () => {
     expect(card).not.toContain('## Decision required');
   });
 
-  it('renders the decision gate without a ProofGraph summary', () => {
+  it('renders the decision gate with its mandatory ProofGraph summary', () => {
     const card = buildEvidenceReviewCard({
       ...baseInput,
-      proofSummary: undefined,
+      proofSummary: evalProofSummary,
     });
     expect(card).toContain('# FlowGuard Implementation Review');
     expect(card).toContain(baseInput.statusLine);
-    expect(card).not.toContain('## ProofGraph');
+    expect(card).toContain('## ProofGraph');
     expect(card).toContain('## Decision required');
     expect(card).toContain('/approve');
     expect(card).toContain('/request-changes');

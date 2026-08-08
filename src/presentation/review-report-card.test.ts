@@ -3,7 +3,11 @@
  * @description Unit tests for buildReviewReportCard.
  */
 import { describe, it, expect } from 'vitest';
-import { buildReviewReportCard } from './review-report-card.js';
+import {
+  buildReviewReportCard as buildCard,
+  type ReviewReportCardInput,
+} from './review-report-card.js';
+import type { CompactProofPresentation } from './proof-model.js';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
@@ -27,7 +31,35 @@ const baseInput = {
     fourEyes: false,
     summary: '3/3 complete, 0 missing',
   },
+  proofSummary: {
+    kind: 'evaluation',
+    overallStatus: 'NOT_DECLARED',
+    headlineStatus: 'NOT_VERIFIED',
+    claimCount: 0,
+    criticalCount: 0,
+    criticalProvenCount: 0,
+    provenCount: 0,
+    contradictedCount: 0,
+    blockedCount: 0,
+    staleCount: 0,
+    unprovenCount: 0,
+    notVerifiedCount: 0,
+    coverage: 'NOT_DECLARED',
+    unmetCriticalClaims: [],
+    otherHighlightedClaims: [],
+    evidenceFreshness: 'NOT_VERIFIED',
+    approval: { status: 'not_recorded' },
+    decisionContext: 'completion',
+  } satisfies CompactProofPresentation,
+  productNextAction: { text: 'Export the review evidence.', commands: ['/export'] },
 };
+function buildReviewReportCard(
+  input: Omit<ReviewReportCardInput, 'proofSummary' | 'productNextAction'> &
+    Partial<Pick<ReviewReportCardInput, 'proofSummary' | 'productNextAction'>>,
+  options?: Parameters<typeof buildCard>[1],
+) {
+  return buildCard({ ...baseInput, ...input }, options);
+}
 
 describe('buildReviewReportCard', () => {
   it('preserves default bytes when rendering a transient ASCII profile', () => {

@@ -49,6 +49,7 @@ import type {
 } from './model.js';
 import { validateCodeLanguage, normalizedMarkdown, PresentationContractError } from './model.js';
 import { GUIDANCE_STATUS_LABELS } from './labels.js';
+import { renderProofGraphMarkdown } from './proof-summary.js';
 import {
   presentationGlyphs,
   type PresentationGlyphs,
@@ -208,6 +209,8 @@ function renderSection(section: PresentationSection, glyphs: PresentationGlyphs)
       return sectionHeading(section) + renderChecklist(section);
     case 'text':
       return sectionHeading(section) + renderText(section);
+    case 'proofGraph':
+      return renderProofGraphMarkdown(section.proof);
     case 'code':
       return sectionHeading(section) + renderCode(section);
     case 'notice':

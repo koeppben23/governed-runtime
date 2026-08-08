@@ -101,18 +101,16 @@ import type { ImplementRuntime } from './implement-shared.js';
 import { nextImplementationReviewIteration } from './implement-shared.js';
 import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import type { CompactProofPresentation } from '../../presentation/proof-summary.js';
-import { buildProofGraphSection } from '../../presentation/proof-summary.js';
+import { renderProofGraphMarkdown } from '../../presentation/proof-summary.js';
 
 function renderProofSection(summary: CompactProofPresentation): string {
-  const section = buildProofGraphSection(summary);
-  return section.kind === 'text' ? section.content : '';
+  return renderProofGraphMarkdown(summary);
 }
 
 function attachProofSummaryToBlockedResponse(
   blockedResponse: string,
-  proofSummary: CompactProofPresentation | null,
+  proofSummary: CompactProofPresentation,
 ): string {
-  if (!proofSummary) return blockedResponse;
   const parsed = JSON.parse(blockedResponse) as Record<string, unknown>;
   parsed.proofSummary = proofSummary;
   parsed.presentation = {
@@ -161,7 +159,7 @@ function proofDecisionContextForVerdict(
 function projectProofSummaryForVerdict(
   state: SessionState,
   verdict: LoopVerdict,
-): CompactProofPresentation | null {
+): CompactProofPresentation {
   return projectImplementationProofStatus(state, {
     decisionContext: proofDecisionContextForVerdict(verdict),
   });
@@ -174,7 +172,7 @@ export type ResolvedSubmittedReviewProof =
     }
   | {
       readonly kind: 'proceed';
-      readonly proofSummary: CompactProofPresentation | null;
+      readonly proofSummary: CompactProofPresentation;
     };
 
 /**
@@ -459,7 +457,7 @@ async function handleChangesRequestedReview(input: {
   reviewedState: SessionState;
   iteration: number;
   reviewFindings: ReviewFindings[];
-  proofSummary?: CompactProofPresentation | null;
+  proofSummary: CompactProofPresentation;
 }): Promise<string> {
   const target = evaluateWithEvent(input.runtime.state.phase, 'CHANGES_REQUESTED');
   if (target === undefined) {
@@ -499,15 +497,13 @@ async function handleChangesRequestedReview(input: {
     _audit: { transitions },
   };
   addLatestImplementationReview(response, input.reviewFindings);
-  if (input.proofSummary) {
-    response.proofSummary = input.proofSummary;
-    response.presentation = {
-      markdown: buildImplReviewChangesRequestedMarkdown(
-        `Implementation review iteration ${input.iteration}/${input.runtime.maxImplReviewIterations}. Changes requested.`,
-        input.proofSummary,
-      ),
-    };
-  }
+  response.proofSummary = input.proofSummary;
+  response.presentation = {
+    markdown: buildImplReviewChangesRequestedMarkdown(
+      `Implementation review iteration ${input.iteration}/${input.runtime.maxImplReviewIterations}. Changes requested.`,
+      input.proofSummary,
+    ),
+  };
   return appendNextAction(JSON.stringify(response), finalState);
 }
 
@@ -516,7 +512,7 @@ async function handleApprovedReview(input: {
   reviewedState: SessionState;
   iteration: number;
   reviewFindings: ReviewFindings[];
-  proofSummary?: CompactProofPresentation | null;
+  proofSummary: CompactProofPresentation;
 }): Promise<string> {
   // Resolve presentation dependencies before any state mutation.
   // If config I/O fails, no EVIDENCE_REVIEW state has been persisted.
@@ -543,7 +539,7 @@ async function handleApprovedReview(input: {
   };
   addLatestImplementationReview(response, input.reviewFindings);
 
-  if (input.proofSummary) response.proofSummary = input.proofSummary;
+  response.proofSummary = input.proofSummary;
   const statusLine =
     input.runtime.args.reviewVerdict === 'accept'
       ? `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`
@@ -553,7 +549,7 @@ async function handleApprovedReview(input: {
   const cardInput: EvidenceReviewCardInput = {
     phaseLabel: PHASE_LABELS[finalState.phase],
     productNextAction: productNext,
-    proofSummary: input.proofSummary ?? undefined,
+    proofSummary: input.proofSummary,
     statusLine,
     forcedConvergence: input.runtime.args.reviewVerdict !== 'accept',
   };
@@ -656,7 +652,7 @@ async function handleSubmittedImplementationReview(input: {
     reviewedState,
     iteration,
     reviewFindings: newReviewFindings,
-    proofSummary: proofSummary ?? undefined,
+    proofSummary,
   });
 }
 

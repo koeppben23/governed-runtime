@@ -82,9 +82,7 @@ export function buildFinishDocument(
   sections.push(buildEvidenceSection(f));
 
   // 3b. ProofGraph
-  if (f.proofSummary) {
-    sections.push(buildProofGraphSection(f.proofSummary));
-  }
+  sections.push(buildProofGraphSection(f.proofSummary));
 
   // 4. Archive
   if (f.readiness.archiveStatus) {
