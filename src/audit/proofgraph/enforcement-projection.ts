@@ -193,6 +193,7 @@ function evaluatePreconditions(
     };
   }
 
+  // With no eligible facts, risk triggers are the sole authority requiring a claim.
   if (eligibleClaims.length === 0 && input.riskTriggersPresent === true) {
     return {
       claims: [],

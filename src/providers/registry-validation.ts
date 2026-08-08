@@ -116,12 +116,18 @@ export function validateProviderExtensions(
           message: `Profile '${profile.profileId}' assertionReport.format='${report.format}' != profile.format='${profile.format}'`,
         });
       }
+      const reportFormat = ext.verification.formats.find(
+        (format) => format.format === report.format,
+      );
+      if (reportFormat?.bindingCapability === 'aggregate' && !profile.attestFullCheckScope) {
+        errors.push({
+          kind: 'aggregate_profile_missing_scope_attestation',
+          message: `Aggregate profile '${profile.profileId}' must attest its full check scope`,
+        });
+      }
       if (
-        !ext.verification.formats.some(
-          (format) =>
-            format.format === report.format &&
-            (format.bindingCapability === 'assertion' || format.bindingCapability === 'aggregate'),
-        )
+        reportFormat?.bindingCapability !== 'assertion' &&
+        reportFormat?.bindingCapability !== 'aggregate'
       ) {
         errors.push({
           kind: 'profile_report_format_not_assertion_capable',
