@@ -117,6 +117,7 @@ function applyProfiles(
     readonly profileId?: string;
     readonly kind: VerificationCandidateKind;
     createCandidate(ctx: PlannerContext): VerificationCandidate | null;
+    attestFullCheckScope?(command: string): boolean;
   }>,
 ): void {
   for (const profile of profiles) {
@@ -124,8 +125,9 @@ function applyProfiles(
 
     const raw = profile.createCandidate(ctx);
     if (raw) {
+      const candidate = attestFullCheckScope(profile, raw, raw.command);
       byKind.set(raw.kind, {
-        candidate: raw,
+        candidate,
         executionProfileId: profile.profileId,
         executionSubjectInputs: [{ kind: 'implementation' as const }],
       });
@@ -215,15 +217,19 @@ function addScriptCandidates(
       const profile = PROFILE_BY_ID.get(profileId);
       if (profile) {
         byKind.set(mapping.kind, {
-          candidate: {
-            assertionCapability: 'structured' as const,
-            kind: mapping.kind,
-            command: buildScriptInvocation(packageManager, mapping.script).command,
-            source: `package.json:scripts.${mapping.script}`,
-            confidence: 'high',
-            reason: `Repo-native ${mapping.script} script enriched via ${profileId}`,
-            assertionReport: profile.assertionReport,
-          },
+          candidate: attestFullCheckScope(
+            profile,
+            {
+              assertionCapability: 'structured' as const,
+              kind: mapping.kind,
+              command: buildScriptInvocation(packageManager, mapping.script).command,
+              source: `package.json:scripts.${mapping.script}`,
+              confidence: 'high',
+              reason: `Repo-native ${mapping.script} script enriched via ${profileId}`,
+              assertionReport: profile.assertionReport,
+            },
+            command,
+          ),
           executionProfileId: profileId,
           executionSubjectInputs: [
             { kind: 'implementation' as const },
@@ -258,6 +264,20 @@ function addScriptCandidates(
       ],
     });
   }
+}
+
+function attestFullCheckScope(
+  profile: { attestFullCheckScope?(command: string): boolean },
+  candidate: VerificationCandidate,
+  command: string,
+): VerificationCandidate {
+  if (
+    candidate.assertionCapability === 'structured' &&
+    profile.attestFullCheckScope?.(command) === true
+  ) {
+    return { ...candidate, fullCheckScopeAttestation: 'full_check' };
+  }
+  return candidate;
 }
 
 function buildSignatureMap(): ReadonlyMap<ProviderId, readonly ScriptSignature[]> {

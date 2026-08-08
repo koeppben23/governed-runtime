@@ -275,7 +275,22 @@ function checkAggregateCounterexampleCapability(
   const formats =
     report &&
     (input.aggregateFormatsByProvider ?? AGGREGATE_FORMATS_BY_PROVIDER).get(report.providerId);
-  if (report && formats?.has(report.format)) return null;
+  if (
+    report &&
+    formats?.has(report.format) &&
+    candidate.fullCheckScopeAttestation === 'full_check'
+  ) {
+    return null;
+  }
+  if (report && formats?.has(report.format)) {
+    return invalid(
+      input.source,
+      claim,
+      'counterexampleRequirement',
+      `check '${requirement.checkId}' has aggregate parsing capability but no explicit full-check scope completeness attestation`,
+      'unsatisfiable',
+    );
+  }
   return invalid(
     input.source,
     claim,

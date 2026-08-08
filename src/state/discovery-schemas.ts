@@ -60,6 +60,10 @@ export type VerificationCandidateKind = z.infer<typeof VerificationCandidateKind
 export const VerificationCandidateConfidenceSchema = z.enum(['high', 'medium', 'low']);
 export type VerificationCandidateConfidence = z.infer<typeof VerificationCandidateConfidenceSchema>;
 
+/** Explicit profile attestation that the command executes the complete check scope. */
+export const FullCheckScopeAttestationSchema = z.literal('full_check');
+export type FullCheckScopeAttestation = z.infer<typeof FullCheckScopeAttestationSchema>;
+
 // ─── Assertion Report Specification ──────────────────────────────────────────
 
 export const AssertionReportSpec = z.discriminatedUnion('collection', [
@@ -126,6 +130,8 @@ export const VerificationCandidateSchema = z.discriminatedUnion('assertionCapabi
     confidence: VerificationCandidateConfidenceSchema,
     reason: z.string().min(1),
     assertionReport: AssertionReportSpec,
+    /** Required in addition to aggregate parsing capability for suite claims. */
+    fullCheckScopeAttestation: FullCheckScopeAttestationSchema.optional(),
   }),
 ]);
 export type VerificationCandidate = z.infer<typeof VerificationCandidateSchema>;

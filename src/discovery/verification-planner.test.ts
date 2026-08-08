@@ -183,6 +183,30 @@ describe('verification planner', () => {
       }
     });
 
+    it.each([
+      ['pytest', 'full_check'],
+      ['python -m pytest', 'full_check'],
+      ['pytest tests/test_api.py', undefined],
+      ['pytest -k update', undefined],
+    ])(
+      'attests pytest full check scope only for an exact unfiltered command: %s',
+      async (script, attestation) => {
+        const candidates = await planVerificationCandidates({
+          detectedStack: null,
+          allFiles: ['package.json'],
+          readFile: makeReadFile({
+            'package.json': JSON.stringify({ scripts: { test: script } }),
+          }),
+        });
+
+        const candidate = candidates.find((entry) => entry.candidate.kind === 'test')?.candidate;
+        expect(candidate?.assertionCapability).toBe('structured');
+        if (candidate?.assertionCapability === 'structured') {
+          expect(candidate.fullCheckScopeAttestation).toBe(attestation);
+        }
+      },
+    );
+
     it('jest script enrichment requires only signature match, not stack detection', async () => {
       const candidates = await planVerificationCandidates({
         detectedStack: null,

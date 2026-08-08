@@ -139,6 +139,7 @@ describe('validateProofClaimContract — critical contract', () => {
             format: 'junit_xml' as never,
             standardPatterns: ['reports.xml'],
           },
+          fullCheckScopeAttestation: 'full_check' as const,
         },
       ],
       claims: [
@@ -149,6 +150,41 @@ describe('validateProofClaimContract — critical contract', () => {
       ],
     });
     expect(result).toEqual({ kind: 'ok' });
+  });
+
+  it('rejects aggregate coverage without an explicit full-check scope completeness attestation', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      verificationCandidates: [
+        BASE.verificationCandidates[0]!,
+        {
+          assertionCapability: 'structured' as const,
+          kind: 'security' as const,
+          command: 'pytest tests/test_api.py',
+          source: 'repo:pytest',
+          confidence: 'high' as const,
+          reason: 'filtered pytest JUnit XML report',
+          assertionReport: {
+            collection: 'snapshot_diff' as const,
+            transport: 'file' as const,
+            providerId: 'pytest' as never,
+            format: 'junit_xml' as never,
+            standardPatterns: ['reports.xml'],
+          },
+        },
+      ],
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+        }),
+      ],
+    });
+
+    expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
+    if (result.kind === 'invalid')
+      expect(result.detail).toContain('scope completeness attestation');
   });
 
   it('rejects a critical claim without a counterexample check', () => {

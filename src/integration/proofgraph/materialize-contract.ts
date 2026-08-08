@@ -80,10 +80,12 @@ function requiredEvidence(declaration: PlanClaimDeclaration) {
 
 function supportsAggregateCounterexample(state: SessionState, requiredCheckId: string): boolean {
   const candidate = state.verificationCandidates?.find((c) => c.kind === requiredCheckId);
-  const report =
-    candidate?.assertionCapability === 'structured' ? candidate.assertionReport : undefined;
+  if (candidate?.assertionCapability !== 'structured') return false;
+  const report = candidate.assertionReport;
   return Boolean(
-    report && AGGREGATE_FORMATS_BY_PROVIDER.get(report.providerId)?.has(report.format),
+    report &&
+    candidate.fullCheckScopeAttestation === 'full_check' &&
+    AGGREGATE_FORMATS_BY_PROVIDER.get(report.providerId)?.has(report.format),
   );
 }
 

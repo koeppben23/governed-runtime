@@ -80,6 +80,9 @@ export interface ExecutionProfile {
   /** Discovery-gated candidate with repo evidence, or null when not applicable. */
   createCandidate(ctx: PlannerContext): VerificationCandidate | null;
 
+  /** Explicitly attest only commands known to execute this profile's full check scope. */
+  attestFullCheckScope?(command: string): boolean;
+
   /** Profile-specific runtime requirements override provider defaults. */
   readonly runtimeRequirements?: readonly RuntimeRequirement[];
 

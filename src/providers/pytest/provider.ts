@@ -75,6 +75,9 @@ export const pytestProvider: AssertionProviderExtension = {
             '--json-report --json-report-file=.flowguard/reports/{attemptId}/pytest.json',
           resultPatternTemplate: '.flowguard/reports/{attemptId}/pytest.json',
         },
+        attestFullCheckScope(command: string) {
+          return command.trim() === 'pytest' || command.trim() === 'python -m pytest';
+        },
         createCandidate(ctx: { detectedStackIds: ReadonlySet<string> }) {
           if (!ctx.detectedStackIds.has('testFramework:pytest')) return null;
           return {

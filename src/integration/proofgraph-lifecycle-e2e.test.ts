@@ -152,6 +152,7 @@ const AGGREGATE_CANDIDATES = [
     source: 'provider:pytest',
     confidence: 'high' as const,
     reason: 'pytest JUnit XML complete suite report',
+    fullCheckScopeAttestation: 'full_check' as const,
     assertionReport: {
       collection: 'snapshot_diff' as const,
       transport: 'file' as const,
@@ -800,6 +801,31 @@ describe('ProofGraph materialization and gate (runtime)', () => {
     ]);
     expect(summary.projection.claims[0]?.verificationState).toBe('PROVEN');
   });
+
+  it.each(['pytest tests/test_api.py', 'pytest -k update'])(
+    'does not prove an aggregate_check from a scope-filtered pytest report: %s',
+    async (command) => {
+      const filteredCandidates = [
+        AGGREGATE_CANDIDATES[0]!,
+        {
+          ...AGGREGATE_CANDIDATES[1]!,
+          command,
+          fullCheckScopeAttestation: undefined,
+        },
+      ];
+      const state = implReviewState(aggregateEvidence(), AGGREGATE_CLAIM, filteredCandidates);
+      const { contract, coverage } = await materializeApprovedPlanContractResult(state, '/tmp');
+      const summary = summarizeProofGraph({ ...state, proofContract: contract }, FIXED_TIME);
+
+      // The report totals are internally consistent, but the command's scope is not complete.
+      expect(coverage).toContainEqual({
+        claimId: AGGREGATE_CLAIM.claimId,
+        cause: 'aggregate_counterexample_unsupported',
+      });
+      expect(contract.claims[0]?.counterexampleRefs).toEqual([]);
+      expect(summary.projection.claims[0]?.verificationState).not.toBe('PROVEN');
+    },
+  );
 
   it('NEGATIVE gate: an unproven critical fact blocks the human approval', async () => {
     const state = implReviewState([]);
