@@ -234,7 +234,7 @@ describe('TEMPLATE_HASH_STABILITY', () => {
     // with bindability-oriented guidance and "structurally bindable counterexample check".
     const commandsJson = JSON.stringify(COMMANDS, Object.keys(COMMANDS).sort());
     expect(sha256(commandsJson)).toBe(
-      'f4c288b060822cecb465838558d4a653fc3bbcadef0b93d871e847dbfa340074',
+      '9c4a8ee7925635f687081e389ec6ef64f99af6b55e706d77a7fba823e7f818d2',
     );
   });
 

@@ -14,6 +14,7 @@ import type { CounterexampleRequirement } from '../../state/proofgraph.js';
 import type { AssertionExtractionResult } from '../../state/evidence-validation.js';
 import type { StructuredAssertionEvidence } from '../../state/evidence-validation.js';
 import type { AssertionBindingReasonCode } from '../../state/proofgraph.js';
+import type { AssertionIdentity } from '../../state/assertion-identity.js';
 
 export type { AssertionBindingReasonCode };
 
@@ -36,6 +37,11 @@ export interface AssertionBindingRequest {
   readonly extraction: AssertionExtractionResult | undefined;
 }
 
+type AssertionRequirement = {
+  readonly checkId: string;
+  readonly assertion: AssertionIdentity;
+};
+
 function describeMissingExtraction(extraction: AssertionExtractionResult | undefined): string {
   if (!extraction) return 'no extraction result available';
   if (extraction.status === 'blocked')
@@ -50,7 +56,9 @@ function describeMissingExtraction(extraction: AssertionExtractionResult | undef
 function validatePreconditions(request: AssertionBindingRequest): AssertionBindingDecision | null {
   const { requirement, checkId, extraction } = request;
 
-  if (!('kind' in requirement) || requirement.kind !== 'assertion') {
+  // Legacy assertion requirements have no kind discriminator. Only the explicit
+  // aggregate variant lacks an assertion identity and cannot bind here.
+  if (!('assertion' in requirement)) {
     return {
       status: 'rejected',
       reasonCode: 'evidence_missing',
@@ -86,7 +94,7 @@ function validatePreconditions(request: AssertionBindingRequest): AssertionBindi
 }
 
 function matchAssertion(
-  requirement: Extract<CounterexampleRequirement, { kind: 'assertion' }>,
+  requirement: AssertionRequirement,
   extraction: AssertionExtractionResult & { status: 'extracted' },
 ): AssertionBindingDecision {
   if (extraction.providerId !== requirement.assertion.providerId) {
@@ -130,7 +138,7 @@ export function bindAssertionEvidence(request: AssertionBindingRequest): Asserti
   const precondition = validatePreconditions(request);
   if (precondition) return precondition;
   return matchAssertion(
-    request.requirement as Extract<CounterexampleRequirement, { kind: 'assertion' }>,
+    request.requirement as AssertionRequirement,
     request.extraction as AssertionExtractionResult & { status: 'extracted' },
   );
 }

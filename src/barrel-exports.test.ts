@@ -105,6 +105,7 @@ describe('presentation/index.ts barrel', () => {
     'buildProductNextAction',
     'buildPlanReviewCard',
     'buildEvidenceReviewCard',
+    'buildEvidenceApprovalCompletionDocument',
     'buildArchitectureReviewCard',
     'buildReviewReportCard',
     'normalizedMarkdown',

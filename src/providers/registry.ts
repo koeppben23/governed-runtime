@@ -180,7 +180,7 @@ export const PARSER_BY_FORMAT = DEFAULT_REGISTRY.parserByFormat;
 export const ASSERTION_CODEC_BY_PROVIDER = DEFAULT_REGISTRY.codecByProvider;
 export const FORMATS_BY_PROVIDER = DEFAULT_REGISTRY.formatsByProvider;
 export const ASSERTION_FORMATS_BY_PROVIDER = DEFAULT_REGISTRY.assertionFormatsByProvider;
-/** Provider-neutral aggregate capability. Current providers intentionally register none. */
+/** Provider-neutral aggregate capability. */
 export const AGGREGATE_FORMATS_BY_PROVIDER = DEFAULT_REGISTRY.aggregateFormatsByProvider;
 export const DESCRIPTOR_BY_PROVIDER = DEFAULT_REGISTRY.descriptorByProvider;
 export const DESCRIPTOR_BY_DETECTION = DEFAULT_REGISTRY.descriptorByDetection;

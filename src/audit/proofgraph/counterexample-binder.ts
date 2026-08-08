@@ -49,7 +49,7 @@ function classifyClaimOutcome(
   if ('kind' in requirement && requirement.kind === 'aggregate_check') {
     return classifyAggregateOutcome(result, requirement);
   }
-  if (!('kind' in requirement) || requirement.kind !== 'assertion') {
+  if (!('assertion' in requirement)) {
     return { outcome: 'not_verified', diagnosticCode: 'evidence_missing' };
   }
   const extraction = result.assertionExtraction;
