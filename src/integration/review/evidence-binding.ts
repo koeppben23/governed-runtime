@@ -675,7 +675,7 @@ function prepareBindableFindings(input: {
     findings: locationFindings,
     reviewedFileScope: obligation.reviewedFileScope,
   });
-  if (!scopeResult.ok) {
+  if (!scopeResult.ok && scopeResult.code === 'REVIEW_FINDING_OUT_OF_SCOPE') {
     return {
       evidence: null,
       bindOutcome: 'review_finding_out_of_scope',
@@ -684,10 +684,7 @@ function prepareBindableFindings(input: {
         obligationId: obligation.obligationId,
         code: scopeResult.code,
         ...scopeResult.details,
-        message:
-          scopeResult.code === 'REVIEW_FINDING_SCOPE_UNVERIFIABLE'
-            ? 'Legacy obligation: no frozen reviewedFileScope, scope unverifiable.'
-            : 'Reviewer findings reference paths outside the reviewed file scope.',
+        message: 'Reviewer findings reference paths outside the reviewed file scope.',
       },
     };
   }
