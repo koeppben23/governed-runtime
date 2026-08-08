@@ -47,7 +47,7 @@ const evalProofSummary: CompactProofPresentation = {
   unmetCriticalClaims: [],
   otherHighlightedClaims: [],
   evidenceFreshness: 'CURRENT',
-  approval: { status: 'not_recorded' },
+  approval: { attestations: [] },
   decisionContext: 'current_gate',
 };
 

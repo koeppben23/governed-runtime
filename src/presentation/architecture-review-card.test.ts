@@ -31,7 +31,7 @@ const baseInput = {
     overallStatus: 'NOT_DECLARED',
     claimCount: 0,
     criticalCount: 0,
-    approval: { status: 'not_recorded' },
+    approval: { attestations: [] },
   } satisfies CompactProofPresentation,
 };
 function buildArchitectureReviewCard(
@@ -228,7 +228,7 @@ describe('architecture review golden fixtures', () => {
         overallStatus: 'AWAITING_EVIDENCE',
         claimCount: 1,
         criticalCount: 1,
-        approval: { status: 'not_recorded' },
+        approval: { attestations: [] },
       },
     });
     expect(card).toContain('## ProofGraph');

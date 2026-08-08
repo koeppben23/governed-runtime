@@ -58,7 +58,7 @@ export function projectPlanProofObligations(
     ...(criticalCount > falsificationReadyCount
       ? { missingFalsificationCount: criticalCount - falsificationReadyCount }
       : {}),
-    approval: { status: 'not_recorded' },
+    approval: { attestations: [] },
   };
 }
 
@@ -74,7 +74,7 @@ export function projectArchitectureDecisionClaims(
     overallStatus: 'AWAITING_EVIDENCE',
     claimCount: claims.length,
     criticalCount: claims.filter((claim) => claim.critical).length,
-    approval: { status: 'not_recorded' },
+    approval: { attestations: [] },
   };
 }
 
@@ -241,15 +241,12 @@ function approvalPresentation(
   const certificates = flow
     ? approval.certificates.filter((certificate) => certificate.flow === flow)
     : approval.certificates;
-  const certificate = certificates[0];
-  if (!certificate) return { status: 'not_recorded' };
-  if (certificates.length !== 1 || certificate.binding !== 'current') {
-    return { status: 'stale_or_unbound' };
-  }
   return {
-    status: 'current',
-    flow: certificate.flow,
-    certificateId: certificate.certificateId,
+    attestations: certificates.map((certificate) => ({
+      flow: certificate.flow,
+      certificateId: certificate.certificateId,
+      binding: certificate.binding,
+    })),
   };
 }
 

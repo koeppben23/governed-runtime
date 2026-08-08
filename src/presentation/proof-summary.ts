@@ -158,18 +158,16 @@ function appendClaims(lines: string[], claims: readonly CompactProofClaim[]): vo
 }
 
 function appendApproval(lines: string[], approval: ProofApprovalPresentation): void {
-  switch (approval.status) {
-    case 'current':
+  if (approval.attestations.length === 0) {
+    lines.push('Approval evidence: Not recorded');
+  } else {
+    lines.push('Approval evidence:');
+    for (const attestation of approval.attestations) {
+      const binding = attestation.binding === 'current' ? 'Current' : 'Stale or unbound';
       lines.push(
-        `Approval evidence: Current (${approval.flow} certificate \`${approval.certificateId}\`)`,
+        `- ${attestation.flow}: ${binding} (certificate \`${attestation.certificateId}\`)`,
       );
-      break;
-    case 'stale_or_unbound':
-      lines.push('Approval evidence: Stale or unbound');
-      break;
-    case 'not_recorded':
-      lines.push('Approval evidence: Not recorded');
-      break;
+    }
   }
   lines.push('Verification effect: None — approval is not verification');
 }

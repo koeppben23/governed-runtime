@@ -37,7 +37,7 @@ function makeDeclaration(opts?: {
     criticalCount: opts?.criticalCount ?? 3,
     falsificationReadyCount: opts?.falsificationReadyCount,
     missingFalsificationCount: opts?.missingFalsificationCount,
-    approval: { status: 'not_recorded' },
+    approval: { attestations: [] },
   };
 }
 
@@ -72,7 +72,7 @@ function makeEvaluation(
     decisionContext: opts?.decisionContext ?? 'current_gate',
     revisionDigest: opts?.revisionDigest,
     evidenceFreshness: opts?.evidenceFreshness ?? 'CURRENT',
-    approval: { status: 'not_recorded' },
+    approval: { attestations: [] },
     unmetCriticalClaims: [],
     otherHighlightedClaims: [],
   };
@@ -198,6 +198,23 @@ describe('renderCompactProofSection', () => {
         makeEvaluation('PROVEN', { evidenceFreshness: 'STALE' }),
       );
       expect(result).toContain('Evidence freshness: Stale');
+    });
+
+    it('renders multiple approval attestations without collapsing their binding', () => {
+      const presentation = makeEvaluation('PROVEN', { provenCount: 5 });
+      if (presentation.kind !== 'evaluation') throw new Error('expected evaluation presentation');
+      const result = renderCompactProofSection({
+        ...presentation,
+        approval: {
+          attestations: [
+            { flow: 'plan', certificateId: 'plan-cert', binding: 'current' },
+            { flow: 'architecture', certificateId: 'architecture-cert', binding: 'current' },
+          ],
+        },
+      });
+      expect(result).toContain('- plan: Current (certificate `plan-cert`)');
+      expect(result).toContain('- architecture: Current (certificate `architecture-cert`)');
+      expect(result).not.toContain('Stale or unbound');
     });
 
     it('renders prospective approval prefix', () => {

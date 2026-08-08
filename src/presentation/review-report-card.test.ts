@@ -46,7 +46,7 @@ const baseInput = {
     coverage: 'NOT_DECLARED',
     unmetCriticalClaims: [],
     otherHighlightedClaims: [],
-    approval: { status: 'not_recorded' },
+    approval: { attestations: [] },
     decisionContext: 'completion',
   } satisfies CompactProofPresentation,
   productNextAction: { text: 'Export the review evidence.', commands: ['/export'] },

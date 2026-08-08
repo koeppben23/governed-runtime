@@ -20,14 +20,13 @@ export interface CompactProofClaim {
 }
 
 /** Approval attestation is deliberately distinct from verification. */
-export type ProofApprovalPresentation =
-  | { readonly status: 'not_recorded' }
-  | {
-      readonly status: 'current';
-      readonly flow: 'plan' | 'architecture';
-      readonly certificateId: string;
-    }
-  | { readonly status: 'stale_or_unbound' };
+export interface ProofApprovalPresentation {
+  readonly attestations: readonly {
+    readonly flow: 'plan' | 'architecture';
+    readonly certificateId: string;
+    readonly binding: 'current' | 'stale_or_unbound';
+  }[];
+}
 
 export type CompactProofPresentation =
   | {

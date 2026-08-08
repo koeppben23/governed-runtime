@@ -156,7 +156,7 @@ function makeBaseProjection(overrides: Partial<StatusProjection> = {}): StatusPr
       coverage: 'NOT_DECLARED',
       unmetCriticalClaims: [],
       otherHighlightedClaims: [],
-      approval: { status: 'not_recorded' },
+      approval: { attestations: [] },
       decisionContext: 'current_gate',
     },
     proofApprovals: {
