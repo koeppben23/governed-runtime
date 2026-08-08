@@ -132,5 +132,21 @@ describe('review/enforcement/findings-consistency', () => {
       });
       expect(result.ok).toBe(true);
     });
+
+    it('same out-of-scope finding rejected regardless of finding source (symmetry)', () => {
+      const outOfScope = { location: 'src/secret.ts', severity: 'critical' };
+      const scope = ['src/foo.ts'];
+      expect(
+        validateReviewFindingsScope({ findings: [outOfScope], reviewedFileScope: scope }).ok,
+      ).toBe(false);
+      const combined = [{ location: 'src/foo.ts' }, outOfScope, { location: 'src/bar.ts' }];
+      const result = validateReviewFindingsScope({
+        findings: combined,
+        reviewedFileScope: ['src/foo.ts', 'src/bar.ts'],
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('expected rejection');
+      expect(result.details.outOfScopePaths).toEqual(['src/secret.ts']);
+    });
   });
 });
