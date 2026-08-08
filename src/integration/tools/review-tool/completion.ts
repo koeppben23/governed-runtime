@@ -14,8 +14,11 @@ import type { ReviewObligation } from '../../../state/evidence.js';
 import type { ReviewExecutors } from '../../../rails/review.js';
 import { autoAdvance, createPolicyEvalFn } from '../../../rails/types.js';
 import type { AutoAdvanceOverflow } from '../../../rails/types.js';
-import { PHASE_LABELS, buildReviewReportCard } from '../../../presentation/index.js';
-import { buildProductNextAction } from '../../../presentation/next-action-copy.js';
+import {
+  PHASE_LABELS,
+  buildProductNextAction,
+  buildReviewReportCard,
+} from '../../../presentation/index.js';
 import type { PresentationRenderOptions } from '../../../presentation/glyph-profile.js';
 import { materializeReviewCardArtifact } from '../../../adapters/workspace/index.js';
 import { readConfig } from '../../../adapters/persistence-config.js';

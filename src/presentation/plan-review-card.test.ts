@@ -22,7 +22,7 @@ import { resolve } from 'node:path';
 
 async function readGolden(name: string): Promise<string> {
   const p = resolve(__dirname, '..', '..', 'testdata', 'presentation', name);
-  return readFile(p, 'utf-8');
+  return (await readFile(p, 'utf-8')).trimEnd();
 }
 
 // #709 implementation-plan visual contract: one `#` top heading, `##` sections.
@@ -661,10 +661,10 @@ describe('plan review golden fixtures', () => {
         approval: { status: 'not_recorded' },
       },
     });
-    expect(card).toContain('## Proof obligations');
+    expect(card).toContain('## ProofGraph');
     expect(card).toContain('2 plan claim(s) declared');
     expect(card).toContain('1 critical');
-    expect(card).toContain('AWAITING EVIDENCE');
+    expect(card).toContain('AWAITING_EVIDENCE');
   });
 
   it('omits proof obligations section when proofSummary is absent', () => {

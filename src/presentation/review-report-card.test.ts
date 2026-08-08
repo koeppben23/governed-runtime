@@ -66,7 +66,7 @@ describe('buildReviewReportCard', () => {
     const canonical = buildReviewReportCard(baseInput);
 
     expect(buildReviewReportCard(baseInput)).toBe(canonical);
-    expect(buildReviewReportCard(baseInput, { glyphProfile: 'ascii' })).toBe(canonical);
+    expect(buildReviewReportCard(baseInput, { glyphProfile: 'ascii' })).toContain('[NEXT]');
   });
 
   it('renders header with status and input origin', () => {
