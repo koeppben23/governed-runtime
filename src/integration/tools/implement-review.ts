@@ -101,7 +101,12 @@ import type { ImplementRuntime } from './implement-shared.js';
 import { nextImplementationReviewIteration } from './implement-shared.js';
 import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
 import type { CompactProofPresentation } from '../../presentation/proof-summary.js';
-import { renderCompactProofSection } from '../../presentation/proof-summary.js';
+import { buildProofGraphSection } from '../../presentation/proof-summary.js';
+
+function renderProofSection(summary: CompactProofPresentation): string {
+  const section = buildProofGraphSection(summary);
+  return section.kind === 'text' ? section.content : '';
+}
 
 function attachProofSummaryToBlockedResponse(
   blockedResponse: string,
@@ -128,7 +133,7 @@ function buildImplReviewBlockedMarkdown(
     '',
     message,
     '',
-    renderCompactProofSection(proofSummary),
+    renderProofSection(proofSummary),
     '',
     '→ Restore independent review capability and retry the implementation review.',
   ].join('\n');
@@ -141,7 +146,7 @@ export function buildImplReviewChangesRequestedMarkdown(
   return [
     statusLine,
     '',
-    renderCompactProofSection(proofSummary),
+    renderProofSection(proofSummary),
     '',
     '→ Make the requested code changes, then call flowguard_implement to re-record.',
   ].join('\n');

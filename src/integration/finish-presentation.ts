@@ -28,8 +28,7 @@ import type {
   FinishConclusionProjection,
 } from './status-why-finish.js';
 import type { FinishCard } from './status.js';
-import { renderCompactProofSection } from '../presentation/proof-summary.js';
-import { normalizedMarkdown } from '../presentation/model.js';
+import { buildProofGraphSection } from '../presentation/proof-summary.js';
 
 // ─── Exit Option Copy ──────────────────────────────────────────────────────────
 
@@ -84,8 +83,7 @@ export function buildFinishDocument(
 
   // 3b. ProofGraph
   if (f.proofSummary) {
-    const proofMarkdown = renderCompactProofSection(f.proofSummary);
-    sections.push({ kind: 'text', content: normalizedMarkdown(proofMarkdown) });
+    sections.push(buildProofGraphSection(f.proofSummary));
   }
 
   // 4. Archive
