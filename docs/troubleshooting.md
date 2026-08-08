@@ -207,6 +207,8 @@ real, registered reason.
 | `REVIEW_FINDINGS_SESSION_MISMATCH`          | Findings came from a different session than the current FlowGuard session     | Use findings produced for the current session                                                                        |
 | `REVIEW_FINDINGS_HASH_MISMATCH`             | Findings hash does not match the review obligation                            | Re-run the review for the current obligation                                                                         |
 | `REVIEW_OBLIGATION_NOT_FOUND`               | Review continuation ID is missing, consumed, blocked, or mismatched           | Use the ID from the original `CONTENT_ANALYSIS_REQUIRED` response; otherwise start a fresh `/review`                 |
+| `REVIEW_OBLIGATION_ID_REQUIRED`             | Host-task review verdict was submitted without its obligation ID              | Submit the original content, `reviewObligationId`, and the captured reviewer verdict together                        |
+| `REVIEW_OBLIGATION_AMBIGUOUS`               | More than one active review obligation could receive the submitted verdict    | Select the exact ID from the original `CONTENT_ANALYSIS_REQUIRED` response                                           |
 | `REVIEW_OBLIGATION_INPUT_MISMATCH`          | Review continuation ID does not match the supplied immutable review input     | Reuse the exact branch, PR, URL, text, input origin, and references from the original review                         |
 | `REVIEW_CONTENT_SOURCE_INCOMPLETE`          | `inputOrigin` or `references` declared but no concrete content field provided | Provide `branch=<ref>`, `prNumber=<n>`, `url=<url>`, or non-empty `text`                                             |
 | `REVIEW_SELF_APPROVAL_DENIED`               | Manual-attested findings came from the governed parent session                | Invoke `flowguard-reviewer` in a distinct session                                                                    |
@@ -415,6 +417,8 @@ REVIEW_FINDINGS_REQUIRED
 REVIEW_FINDINGS_SESSION_MISMATCH
 REVIEW_ITERATION_MISMATCH
 REVIEW_MODE_SELF_NOT_ALLOWED
+REVIEW_OBLIGATION_AMBIGUOUS
+REVIEW_OBLIGATION_ID_REQUIRED
 REVIEW_OBLIGATION_INPUT_MISMATCH
 REVIEW_OBLIGATION_NOT_FOUND
 REVIEW_OBLIGATION_UNRESOLVED

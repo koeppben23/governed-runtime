@@ -49,6 +49,7 @@ export interface ProviderRegistry {
   readonly codecByProvider: ReadonlyMap<ProviderId, AssertionIdentityCodec>;
   readonly formatsByProvider: ReadonlyMap<ProviderId, ReadonlySet<ReportFormatId>>;
   readonly assertionFormatsByProvider: ReadonlyMap<ProviderId, ReadonlySet<ReportFormatId>>;
+  readonly aggregateFormatsByProvider: ReadonlyMap<ProviderId, ReadonlySet<ReportFormatId>>;
   readonly descriptorByProvider: ReadonlyMap<ProviderId, ProviderManifest>;
   readonly descriptorByDetection: ReadonlyMap<DetectionId, ProviderManifest>;
   readonly profiles: readonly ExecutionProfile[];
@@ -66,6 +67,7 @@ export function buildProviderRegistry(
   const codecByProvider = new Map<ProviderId, AssertionIdentityCodec>();
   const formatsByProvider = new Map<ProviderId, Set<ReportFormatId>>();
   const assertionFormatsByProvider = new Map<ProviderId, Set<ReportFormatId>>();
+  const aggregateFormatsByProvider = new Map<ProviderId, Set<ReportFormatId>>();
   const descriptorByProvider = new Map<ProviderId, ProviderManifest>();
   const descriptorByDetection = new Map<DetectionId, ProviderManifest>();
   const profiles: ExecutionProfile[] = [];
@@ -108,6 +110,11 @@ export function buildProviderRegistry(
         bindingSet.add(fmt.format);
         assertionFormatsByProvider.set(pid, bindingSet);
       }
+      if (fmt.bindingCapability === 'aggregate') {
+        const bindingSet = aggregateFormatsByProvider.get(pid) ?? new Set();
+        bindingSet.add(fmt.format);
+        aggregateFormatsByProvider.set(pid, bindingSet);
+      }
     }
 
     if (verification.identityCodec) {
@@ -138,6 +145,9 @@ export function buildProviderRegistry(
     ),
     assertionFormatsByProvider: new Map(
       [...assertionFormatsByProvider].map(([k, v]) => [k, v as ReadonlySet<ReportFormatId>]),
+    ),
+    aggregateFormatsByProvider: new Map(
+      [...aggregateFormatsByProvider].map(([k, v]) => [k, v as ReadonlySet<ReportFormatId>]),
     ),
     descriptorByProvider,
     descriptorByDetection,
@@ -170,6 +180,8 @@ export const PARSER_BY_FORMAT = DEFAULT_REGISTRY.parserByFormat;
 export const ASSERTION_CODEC_BY_PROVIDER = DEFAULT_REGISTRY.codecByProvider;
 export const FORMATS_BY_PROVIDER = DEFAULT_REGISTRY.formatsByProvider;
 export const ASSERTION_FORMATS_BY_PROVIDER = DEFAULT_REGISTRY.assertionFormatsByProvider;
+/** Provider-neutral aggregate capability. Current providers intentionally register none. */
+export const AGGREGATE_FORMATS_BY_PROVIDER = DEFAULT_REGISTRY.aggregateFormatsByProvider;
 export const DESCRIPTOR_BY_PROVIDER = DEFAULT_REGISTRY.descriptorByProvider;
 export const DESCRIPTOR_BY_DETECTION = DEFAULT_REGISTRY.descriptorByDetection;
 export const ASSERTION_PROFILES = DEFAULT_REGISTRY.profiles;

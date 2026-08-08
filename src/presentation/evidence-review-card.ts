@@ -11,7 +11,14 @@
  * @version v1
  */
 
-import type { ReviewCardDocument, PresentationSection, KeyValueItem } from './model.js';
+import type {
+  ReviewCardDocument,
+  PresentationSection,
+  KeyValueItem,
+  FindingGroup,
+  FindingItem,
+  PresentationAction,
+} from './model.js';
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-summary.js';
@@ -34,6 +41,12 @@ export interface EvidenceReviewCardInput {
   statusLine: string;
   /** True when the review loop force-converged at the iteration limit. */
   forcedConvergence?: boolean;
+  /** Accepted advisory risks from the latest independent implementation review. */
+  majorRisks?: Array<{ severity: string; category: string; message: string; location?: string }>;
+  /** Verification gaps identified by the latest independent implementation review. */
+  missingVerification?: string[];
+  /** Unresolved questions identified by the latest independent implementation review. */
+  unknowns?: string[];
 }
 
 // ─── Action Descriptions ───────────────────────────────────────────────────────
@@ -86,6 +99,8 @@ export function buildEvidenceReviewDocument(input: EvidenceReviewCardInput): Rev
   // ── ProofGraph summary (post-evaluation) ────────────────────────────
   sections.push(buildProofGraphSection(input.proofSummary));
 
+  appendAdvisoryFindingsSections(sections, input);
+
   const document: ReviewCardDocument = {
     kind: 'review_card',
     form: input.productNextAction.commands.some((command) =>
@@ -101,4 +116,46 @@ export function buildEvidenceReviewDocument(input: EvidenceReviewCardInput): Rev
   };
 
   return document;
+}
+
+/** Build the completion presentation after an EVIDENCE_REVIEW approval. */
+export function buildEvidenceApprovalCompletionDocument(input: {
+  proofSummary: CompactProofPresentation;
+  exportAction: PresentationAction;
+}): ReviewCardDocument {
+  return {
+    kind: 'review_card',
+    form: 'success',
+    sections: [buildProofGraphSection(input.proofSummary)],
+    conclusion: { kind: 'next_action', action: input.exportAction },
+  };
+}
+
+function appendAdvisoryFindingsSections(
+  sections: PresentationSection[],
+  input: Pick<EvidenceReviewCardInput, 'majorRisks' | 'missingVerification' | 'unknowns'>,
+): void {
+  if (input.majorRisks && input.majorRisks.length > 0) {
+    const items: FindingItem[] = input.majorRisks.map((finding) => ({
+      category: finding.category,
+      message: finding.message,
+      ...(finding.location ? { location: finding.location } : {}),
+    }));
+    const groups: FindingGroup[] = [{ severity: 'major', label: 'Major Risks', items }];
+    sections.push({ kind: 'findings', heading: 'Reviewer Findings', groups });
+  }
+  if (input.missingVerification && input.missingVerification.length > 0) {
+    sections.push({
+      kind: 'bulletList',
+      heading: `Missing Verification (${input.missingVerification.length})`,
+      items: input.missingVerification,
+    });
+  }
+  if (input.unknowns && input.unknowns.length > 0) {
+    sections.push({
+      kind: 'bulletList',
+      heading: `Unknowns (${input.unknowns.length})`,
+      items: input.unknowns,
+    });
+  }
 }

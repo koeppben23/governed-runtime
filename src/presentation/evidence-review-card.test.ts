@@ -155,6 +155,28 @@ describe('buildEvidenceReviewCard', () => {
     expect(card).toContain('Reviewer did NOT approve this implementation');
   });
 
+  it('renders accepted advisory implementation findings', () => {
+    const card = buildEvidenceReviewCard({
+      ...baseInput,
+      majorRisks: [
+        {
+          severity: 'major',
+          category: 'correctness',
+          message: 'Concurrent updates may race.',
+          location: 'src/updates.ts',
+        },
+      ],
+      missingVerification: ['No integration test covers concurrent updates.'],
+      unknowns: ['Production contention is unknown.'],
+    });
+    expect(card).toContain('## Reviewer Findings');
+    expect(card).toContain('Concurrent updates may race.');
+    expect(card).toContain('## Missing Verification (1)');
+    expect(card).toContain('No integration test covers concurrent updates.');
+    expect(card).toContain('## Unknowns (1)');
+    expect(card).toContain('Production contention is unknown.');
+  });
+
   it('ASCII glyph profile uses [WARN] prefix for force-convergence', () => {
     const card = buildEvidenceReviewCard(
       {

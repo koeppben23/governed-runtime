@@ -519,12 +519,16 @@ async function handleApprovedReview(input: {
       : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
   const nextAction = resolveNextAction(finalState.phase, finalState);
   const productNext = buildProductNextAction(nextAction, finalState.phase);
+  const latestFindings = input.reviewFindings.at(-1);
   const cardInput: EvidenceReviewCardInput = {
     phaseLabel: PHASE_LABELS[finalState.phase],
     productNextAction: productNext,
     proofSummary: input.proofSummary,
     statusLine,
     forcedConvergence: input.runtime.args.reviewVerdict !== 'accept',
+    majorRisks: latestFindings?.majorRisks,
+    missingVerification: latestFindings?.missingVerification,
+    unknowns: latestFindings?.unknowns,
   };
   response.presentation = {
     markdown: buildEvidenceReviewCard(cardInput, { glyphProfile }),

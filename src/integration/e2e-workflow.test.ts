@@ -1227,10 +1227,12 @@ describe('ProofGraph demo fixtures', () => {
     claimId: 'a7728939-52e4-5d3b-bac2-b4b1ac99b3ad',
     statement: 'The governed change satisfies its approved behavior.',
     critical: false,
+    claimScope: 'specific_behavior',
     authoritySectionId: 'step-1',
     expectedCheckId: 'build',
     counterexampleRequirement: {
       checkId: 'test',
+      kind: 'assertion',
       assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
     },
   } as const;
@@ -1305,6 +1307,7 @@ describe('ProofGraph demo fixtures', () => {
           statement: 'The change has an additional documented property.',
           checkId: 'test',
           critical: false,
+          claimScope: 'specific_behavior',
           authority: 'plan',
         },
       ],

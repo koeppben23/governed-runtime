@@ -163,6 +163,27 @@ export const PRECONDITION_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'REVIEW_OBLIGATION_ID_REQUIRED',
+    category: 'precondition',
+    messageTemplate: 'A host-task review verdict requires reviewObligationId. {reason}',
+    recoverySteps: [
+      'Reuse reviewObligationId from the original CONTENT_ANALYSIS_REQUIRED response',
+      'Submit the original content fields, reviewObligationId, and the captured reviewer verdict together',
+    ],
+  },
+
+  {
+    code: 'REVIEW_OBLIGATION_AMBIGUOUS',
+    category: 'precondition',
+    messageTemplate:
+      'More than one active review obligation matches this verdict: {obligationIds}. {reason}',
+    recoverySteps: [
+      'Select the exact reviewObligationId from the original CONTENT_ANALYSIS_REQUIRED response',
+      'Do not submit a verdict-only review while multiple active obligations exist',
+    ],
+  },
+
+  {
     code: 'REVIEW_OBLIGATION_INPUT_MISMATCH',
     category: 'precondition',
     messageTemplate:

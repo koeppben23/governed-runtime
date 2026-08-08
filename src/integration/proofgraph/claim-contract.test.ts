@@ -60,9 +60,11 @@ function planClaim(
     claimId: CLAIM_A,
     statement: 'updateTask rejects unknown ids',
     critical: true,
+    claimScope: 'specific_behavior',
     positiveCheckId: 'build',
     counterexampleRequirement: {
       checkId: 'security',
+      kind: 'assertion',
       assertion: { providerId: 'junit', localId: 'com.example.Test#testMethod' },
     },
     authoritySectionId: 'step-1',
@@ -92,6 +94,30 @@ describe('validateProofClaimContract — accepted declarations', () => {
 });
 
 describe('validateProofClaimContract — critical contract', () => {
+  it('rejects a suite claim with a single assertion requirement', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      claims: [planClaim({ claimScope: 'suite' })],
+    });
+    expect(result).toMatchObject({ kind: 'invalid', field: 'counterexampleRequirement' });
+  });
+
+  it('fails closed when aggregate suite coverage is unsupported', () => {
+    const result = validateProofClaimContract({
+      ...BASE,
+      source: 'plan',
+      claims: [
+        planClaim({
+          claimScope: 'suite',
+          counterexampleRequirement: { kind: 'aggregate_check', checkId: 'security' },
+        }),
+      ],
+    });
+    expect(result).toMatchObject({ kind: 'invalid', failureKind: 'unsatisfiable' });
+    if (result.kind === 'invalid') expect(result.detail).toContain('structured assertion reports');
+  });
+
   it('rejects a critical claim without a counterexample check', () => {
     const claim = planClaim({ counterexampleRequirement: undefined });
     const result = validateProofClaimContract({ ...BASE, source: 'plan', claims: [claim] });
@@ -106,6 +132,7 @@ describe('validateProofClaimContract — critical contract', () => {
     const claim = planClaim({
       counterexampleRequirement: {
         checkId: 'build',
+        kind: 'assertion',
         assertion: { providerId: 'junit', localId: 'some-id' },
       },
     });
@@ -127,6 +154,7 @@ describe('validateProofClaimContract — critical contract', () => {
       claimId: undefined,
       counterexampleRequirement: {
         checkId: 'build',
+        kind: 'assertion',
         assertion: { providerId: 'junit', localId: 'some-id' },
       },
     });
@@ -147,6 +175,7 @@ describe('validateProofClaimContract — critical contract', () => {
       critical: false,
       counterexampleRequirement: {
         checkId: 'build',
+        kind: 'assertion',
         assertion: { providerId: 'junit', localId: 'some-id' },
       },
     });
@@ -172,6 +201,7 @@ describe('validateProofClaimContract — check references', () => {
     const claim = planClaim({
       counterexampleRequirement: {
         checkId: 'e2e',
+        kind: 'assertion',
         assertion: { providerId: 'junit', localId: 'some-id' },
       },
     });

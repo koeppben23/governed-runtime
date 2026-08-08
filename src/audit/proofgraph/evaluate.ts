@@ -210,6 +210,9 @@ function deriveVerificationState(
 ): ClaimVerificationState {
   // 1. Provenance is mandatory; an unsourced manifest assertion is an assumption.
   if (claim.provenance === null) return 'NOT_VERIFIED';
+  // Legacy declarations retain their certificate digest for audit, but predate
+  // the v2 scope contract and therefore cannot establish proof.
+  if (claim.proofEligibility === 'legacy_declaration_v1') return 'NOT_VERIFIED';
   const cx = analyzeCounterexamples(counterexamples, input.currentImplementationDigest);
   // 2. Only a FRESH executed counterexample that falsified the claim contradicts it.
   if (cx.freshContradicted) return 'CONTRADICTED';

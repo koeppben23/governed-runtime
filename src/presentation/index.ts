@@ -9,7 +9,10 @@
 export { PHASE_LABELS } from './phase-labels.js';
 export { buildProductNextAction } from './next-action-copy.js';
 export { buildPlanReviewCard } from './plan-review-card.js';
-export { buildEvidenceReviewCard } from './evidence-review-card.js';
+export {
+  buildEvidenceReviewCard,
+  buildEvidenceApprovalCompletionDocument,
+} from './evidence-review-card.js';
 export { buildArchitectureReviewCard } from './architecture-review-card.js';
 export { buildReviewReportCard } from './review-report-card.js';
 export { normalizedMarkdown, validateCodeLanguage, PresentationContractError } from './model.js';

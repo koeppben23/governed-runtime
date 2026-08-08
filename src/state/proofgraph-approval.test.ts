@@ -71,6 +71,14 @@ describe('ProofGraph approval schemas', () => {
     ).toEqual({ flow: 'architecture', claims: [ARCHITECTURE_CLAIM] });
   });
 
+  it('preserves persisted v1 declarations without adding v2 fields', () => {
+    const legacy = { flow: 'plan', claims: [PLAN_CLAIM] };
+    const before = canonicalJsonStringify(legacy);
+    const parsed = PlanClaimDeclarations.parse(legacy);
+    expect(parsed).toEqual(legacy);
+    expect(canonicalJsonStringify(parsed)).toBe(before);
+  });
+
   it('rejects a declaration with a mismatched flow', () => {
     expect(() =>
       PlanClaimDeclarations.parse({ flow: 'architecture', claims: [PLAN_CLAIM] }),
@@ -225,6 +233,7 @@ describe('PlanClaimDeclarationInput', () => {
     const parsed = PlanClaimDeclarationInput.parse({
       statement: 'test',
       critical: true,
+      claimScope: 'specific_behavior',
       authoritySectionId: 's1',
       expectedCheckId: 'build',
     });
@@ -422,15 +431,18 @@ describe('read-model schema boundaries', () => {
     const result = PlanClaimDeclarationInput.parse({
       statement: 'test',
       critical: true,
+      claimScope: 'specific_behavior',
       authoritySectionId: 's1',
       expectedCheckId: 'test',
       counterexampleRequirement: {
         checkId: 'security',
+        kind: 'assertion',
         assertion: { providerId: 'junit', localId: 'x#y' },
       },
     });
     expect(result.counterexampleRequirement).toEqual({
       checkId: 'security',
+      kind: 'assertion',
       assertion: { providerId: 'junit', localId: 'x#y' },
     });
   });

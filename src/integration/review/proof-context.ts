@@ -104,11 +104,13 @@ function renderPlanDeclarations(state: SessionState): string[] {
         const detail = [
           `authority section: ${claim.authoritySectionId}`,
           `expected check: ${claim.expectedCheckId}`,
-          ...(claim.counterexampleRequirement
+          ...(claim.counterexampleRequirement && 'assertion' in claim.counterexampleRequirement
             ? [
                 `counterexample check: ${claim.counterexampleRequirement.checkId} (assertion: ${claim.counterexampleRequirement.assertion.localId})`,
               ]
-            : []),
+            : claim.counterexampleRequirement
+              ? [`counterexample check: ${claim.counterexampleRequirement.checkId} (aggregate)`]
+              : []),
           ...(claim.structuralSurface ? [`structural surface: ${claim.structuralSurface}`] : []),
           ...(claim.mutationProfile ? [`mutation profile: ${claim.mutationProfile}`] : []),
         ].join('; ');

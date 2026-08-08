@@ -162,9 +162,25 @@ async function prepareReviewExecution(
     exec.args.reviewObligationId === undefined &&
     !hasReviewContentInput(exec.args)
   ) {
+    const candidates = (state.reviewAssurance?.obligations ?? []).filter(
+      (obligation) =>
+        obligation.obligationType === 'review' &&
+        obligation.status !== 'consumed' &&
+        obligation.status !== 'blocked',
+    );
+    if (candidates.length > 1) {
+      return formatBlocked('REVIEW_OBLIGATION_AMBIGUOUS', {
+        obligationIds: candidates.map((obligation) => obligation.obligationId).join(', '),
+        reason:
+          'More than one active review obligation could receive this host-task verdict. Supply reviewObligationId explicitly.',
+      });
+    }
     return formatBlocked('REVIEW_OBLIGATION_ID_REQUIRED', {
       reason:
         'A host-task review verdict requires reviewObligationId unless this is the first content-aware review call.',
+      ...(candidates.length === 1 ? { reviewObligationId: candidates[0]!.obligationId } : {}),
+      continuation:
+        'Call flowguard_review with the original content fields, reviewObligationId, and reviewVerdict.',
     });
   }
   const resolvedSource = resolveObligationBranchSource(exec);

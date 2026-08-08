@@ -148,21 +148,14 @@ export const run_check: ToolDefinition = {
 
 // ─── Phased Execution ─────────────────────────────────────────────────────────
 
-/**
- * Execute run_check in three phases:
- *
- * A. Validate request (read state, no lock)
- * B. Execute check (subprocess, NO lock — prevents slow checks from starving
- *    concurrent run_check calls)
- * C. Persist result under lock with retry (revalidate fresh state under lock,
- *    merge evidence, auto-advance, atomic write)
- */
+// Validate, execute outside the lock, then revalidate and persist under the lock.
 
 type PhaseAResult =
   | string
   | {
       sessDir: string;
       state: SessionState;
+      executionObservedStateDigest: string;
       guard: { checkId: string; candidate: VerificationCandidate };
       subject: ReturnType<typeof freezeValidationSubject>;
       preAttestation: ExecutionSubjectAttestation;
@@ -213,6 +206,7 @@ async function validateAndAttest(
   return {
     sessDir,
     state,
+    executionObservedStateDigest: hashText(canonicalJsonStringify(state)),
     guard,
     subject,
     preAttestation: result.attestation,
@@ -229,7 +223,16 @@ async function executeRunCheckPhased(
   const phaseA = await validateAndAttest(kind, context);
   if (typeof phaseA === 'string') return phaseA;
 
-  const { sessDir, state, guard, subject, preAttestation, worktree, subjectInputs } = phaseA;
+  const {
+    sessDir,
+    state,
+    executionObservedStateDigest,
+    guard,
+    subject,
+    preAttestation,
+    worktree,
+    subjectInputs,
+  } = phaseA;
 
   // ── Phase B: Execute check (NO lock — subprocess runs independently) ──
   const attemptId = randomUUID();
@@ -271,6 +274,7 @@ async function executeRunCheckPhased(
     outcome,
     sessDir,
     sessionId: context.sessionID,
+    executionObservedStateDigest,
   });
 }
 
@@ -288,6 +292,7 @@ async function persistAfterAttestation(params: {
   outcome: ValidationOutcome;
   sessDir: string;
   sessionId: string;
+  executionObservedStateDigest: string;
 }): Promise<ToolResult> {
   const postAttestation = await reattestExecutionSubject(
     params.subjectInputs,
@@ -307,6 +312,7 @@ async function persistAfterAttestation(params: {
       subject: params.subject,
       sessDir: params.sessDir,
       sessionId: params.sessionId,
+      executionObservedStateDigest: params.executionObservedStateDigest,
       classificationReasonOverride: `VERIFICATION_SUBJECT_CHANGED: ${postAttestation.detail}`,
     });
   }
@@ -322,6 +328,7 @@ async function persistAfterAttestation(params: {
     subject: params.subject,
     sessDir: params.sessDir,
     sessionId: params.sessionId,
+    executionObservedStateDigest: params.executionObservedStateDigest,
   });
 }
 
@@ -337,6 +344,7 @@ interface PersistCheckInput {
   subject: ValidationSubject;
   sessDir: string;
   sessionId: string;
+  executionObservedStateDigest: string;
   classificationReasonOverride?: string;
 }
 
@@ -353,6 +361,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
     subject,
     sessDir,
     sessionId,
+    executionObservedStateDigest,
     classificationReasonOverride,
   } = input;
   const logger = getAdapterLogger();
@@ -419,6 +428,7 @@ async function persistCheckResultWithRetry(input: PersistCheckInput): Promise<To
         evidence,
         derivedRepairGuidance,
         originalState: freshState,
+        executionObservedStateDigest,
         advanced,
         finalState: persisted,
         nextObligation: activated.obligation,
@@ -662,13 +672,27 @@ function formatRunCheckResponse(input: {
   evidence: CheckEvidence;
   derivedRepairGuidance: ReturnType<typeof deriveRepairGuidance> | undefined;
   originalState: SessionState;
+  executionObservedStateDigest: string;
   advanced: Exclude<ReturnType<typeof autoAdvance>, { kind: 'overflow' }>;
   finalState: SessionState;
   nextObligation: ReviewObligation | null;
   policy: FlowGuardPolicy;
 }): ToolResult {
-  const { kind, evidence, derivedRepairGuidance, originalState, advanced, finalState } = input;
+  const {
+    kind,
+    evidence,
+    derivedRepairGuidance,
+    originalState,
+    executionObservedStateDigest,
+    advanced,
+    finalState,
+  } = input;
   const { evalResult: ev, transitions } = advanced;
+  const finalValidation =
+    originalState.phase === 'IMPL_VALIDATION' ? finalState.implValidation : finalState.validation;
+  const remainingChecks = finalState.activeChecks.filter(
+    (checkId) => !finalValidation.some((result) => result.checkId === checkId && result.passed),
+  );
   const platform = resolveRuntimeReviewPlatform();
   const mode = resolveReviewOrchestrationMode({
     platform,
@@ -701,13 +725,13 @@ function formatRunCheckResponse(input: {
         outputDigest: evidence.outputDigest,
         timedOut: evidence.timedOut,
       },
-      observedStateDigest: hashText(canonicalJsonStringify(originalState)),
+      executionObservedStateDigest,
+      preCommitStateDigest: hashText(canonicalJsonStringify(originalState)),
       committedStateDigest: hashText(canonicalJsonStringify(finalState)),
       stateChangedDuringExecution:
-        hashText(canonicalJsonStringify(originalState)) !==
-        hashText(canonicalJsonStringify(finalState)),
+        executionObservedStateDigest !== hashText(canonicalJsonStringify(originalState)),
       derivedRepairGuidance,
-      remainingChecks: finalState.activeChecks,
+      remainingChecks,
       ...reviewObligationResponseFields(input.nextObligation),
       next: reviewInstruction?.next ?? formatEval(ev),
       ...(reviewInstruction ? { reviewInvocation: reviewInstruction.reviewInvocation } : {}),

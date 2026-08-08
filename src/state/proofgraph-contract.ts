@@ -44,6 +44,8 @@ export const ProofContractCoverage = z
       'missing_expected_check',
       'unverified_mutation_profile',
       'invalid_counterexample_contract',
+      'legacy_claim_declaration_v1',
+      'aggregate_counterexample_unsupported',
     ]),
   })
   .readonly();

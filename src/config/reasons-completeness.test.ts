@@ -139,18 +139,18 @@ describe('P10c — reason code split', () => {
       ...PROOFGRAPH_REASONS.map((r: { code: string }) => r.code),
     ];
 
-    expect(allSplitCodes).toHaveLength(214);
+    expect(allSplitCodes).toHaveLength(216);
     // No duplicates across the 4 arrays
-    expect(new Set(allSplitCodes).size).toBe(214);
+    expect(new Set(allSplitCodes).size).toBe(216);
     // All split codes are registered in the default registry
     for (const code of allSplitCodes) {
       expect(defaultReasonRegistry.get(code)).toBeDefined();
     }
   });
 
-  it('PRECONDITION_REASONS has exactly 83 entries', async () => {
+  it('PRECONDITION_REASONS has exactly 85 entries', async () => {
     const { PRECONDITION_REASONS } = await import('./reasons-precondition.js');
-    expect(PRECONDITION_REASONS.length).toBe(83);
+    expect(PRECONDITION_REASONS.length).toBe(85);
     for (const r of PRECONDITION_REASONS) {
       expect(r.category).toBe('precondition');
     }

@@ -79,13 +79,27 @@ export type RequiredEvidence = z.infer<typeof RequiredEvidence>;
  * assertion. Only a matching failed assertion can contradict the claim.
  * Check-level outcomes alone never produce a counterexample contradiction.
  */
-export const CounterexampleRequirement = z
-  .object({
-    checkId: z.string().min(1),
-    assertion: AssertionIdentity,
-  })
+const LegacyAssertionCounterexampleRequirement = z
+  .object({ checkId: z.string().min(1), assertion: AssertionIdentity })
   .strict()
   .readonly();
+
+/** V2 counterexample requirements distinguish assertion and suite coverage. */
+export const CounterexampleRequirement = z.union([
+  LegacyAssertionCounterexampleRequirement,
+  z
+    .object({
+      kind: z.literal('assertion'),
+      checkId: z.string().min(1),
+      assertion: AssertionIdentity,
+    })
+    .strict()
+    .readonly(),
+  z
+    .object({ kind: z.literal('aggregate_check'), checkId: z.string().min(1) })
+    .strict()
+    .readonly(),
+]);
 export type CounterexampleRequirement = z.infer<typeof CounterexampleRequirement>;
 
 /**
@@ -112,6 +126,8 @@ const proofClaimBase = {
   requiredEvidence: RequiredEvidence.optional(),
   /** Optional counterexample requirement (assertion-level). */
   counterexampleRequirement: CounterexampleRequirement.optional(),
+  /** V1 declarations are audit-visible but cannot establish v2 proof. */
+  proofEligibility: z.enum(['eligible', 'legacy_declaration_v1']).optional(),
   /** Optional confidence in [0, 1] for advisory (non-fact) signals. */
   confidence: z.number().min(0).max(1).optional(),
 } as const;

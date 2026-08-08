@@ -50,6 +50,14 @@ function describeMissingExtraction(extraction: AssertionExtractionResult | undef
 function validatePreconditions(request: AssertionBindingRequest): AssertionBindingDecision | null {
   const { requirement, checkId, extraction } = request;
 
+  if (!('kind' in requirement) || requirement.kind !== 'assertion') {
+    return {
+      status: 'rejected',
+      reasonCode: 'evidence_missing',
+      detail: 'counterexample requirement does not bind a specific assertion',
+    };
+  }
+
   if (checkId !== requirement.checkId) {
     return {
       status: 'rejected',
@@ -78,7 +86,7 @@ function validatePreconditions(request: AssertionBindingRequest): AssertionBindi
 }
 
 function matchAssertion(
-  requirement: CounterexampleRequirement,
+  requirement: Extract<CounterexampleRequirement, { kind: 'assertion' }>,
   extraction: AssertionExtractionResult & { status: 'extracted' },
 ): AssertionBindingDecision {
   if (extraction.providerId !== requirement.assertion.providerId) {
@@ -122,7 +130,7 @@ export function bindAssertionEvidence(request: AssertionBindingRequest): Asserti
   const precondition = validatePreconditions(request);
   if (precondition) return precondition;
   return matchAssertion(
-    request.requirement,
+    request.requirement as Extract<CounterexampleRequirement, { kind: 'assertion' }>,
     request.extraction as AssertionExtractionResult & { status: 'extracted' },
   );
 }

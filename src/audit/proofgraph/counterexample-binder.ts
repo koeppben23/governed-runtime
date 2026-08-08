@@ -31,6 +31,9 @@ function classifyClaimOutcome(
   result: ValidationResult,
   requirement: CounterexampleRequirement,
 ): ClassifiedOutcome {
+  if (!('kind' in requirement) || requirement.kind !== 'assertion') {
+    return { outcome: 'not_verified', diagnosticCode: 'evidence_missing' };
+  }
   const extraction = result.assertionExtraction;
   if (!extraction) return { outcome: 'not_verified', diagnosticCode: 'evidence_missing' };
 

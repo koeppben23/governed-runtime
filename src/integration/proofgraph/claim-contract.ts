@@ -24,7 +24,7 @@
  */
 
 import type { TaskClass } from '../../state/schema.js';
-import type { CounterexampleRequirement } from '../../state/proofgraph.js';
+import type { V2CounterexampleRequirement } from '../../state/proofgraph-approval.js';
 import type { VerificationCandidate } from '../../state/discovery-schemas.js';
 import {
   ASSERTION_FORMATS_BY_PROVIDER,
@@ -44,8 +44,9 @@ export interface NormalizedClaimDeclaration {
   readonly claimId?: string;
   readonly statement: string;
   readonly critical: boolean;
+  readonly claimScope: 'specific_behavior' | 'suite';
   readonly positiveCheckId: string;
-  readonly counterexampleRequirement?: CounterexampleRequirement;
+  readonly counterexampleRequirement?: V2CounterexampleRequirement;
   readonly structuralSurface?: string;
   readonly mutationProfile?: string;
   /** Present only for plan declarations; architecture/contract flows omit it. */
@@ -232,23 +233,41 @@ function checkAuthoritySection(
   );
 }
 
-/** Rule 7: counterexample requirement must include an assertion. */
-function checkCounterexampleAssertion(
+/** Rule 7: scope and falsification requirement must be compatible. */
+function checkCounterexampleScope(
   input: ClaimContractInput,
   claim: NormalizedClaimDeclaration,
 ): ClaimContractResult | null {
-  if (claim.counterexampleRequirement && !claim.counterexampleRequirement.assertion) {
+  const requirement = claim.counterexampleRequirement;
+  if (!requirement) return null;
+  const expectedKind = claim.claimScope === 'suite' ? 'aggregate_check' : 'assertion';
+  if (requirement.kind !== expectedKind) {
     return invalid(
       input.source,
       claim,
-      'counterexampleRequirement.assertion',
-      'counterexample requirement must include an assertion identity',
+      'counterexampleRequirement',
+      `${claim.claimScope} claims require a ${expectedKind} counterexample requirement`,
     );
   }
   return null;
 }
 
-/** Rule 8: counterexample check must be structurally capable of producing assertion evidence. */
+function checkAggregateCounterexampleCapability(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+  requirement: NonNullable<NormalizedClaimDeclaration['counterexampleRequirement']>,
+): ClaimContractResult | null {
+  if (requirement.kind !== 'aggregate_check') return null;
+  return invalid(
+    input.source,
+    claim,
+    'counterexampleRequirement',
+    `check '${requirement.checkId}' has no registered aggregate counterexample capability; structured assertion reports do not provide aggregate coverage`,
+    'unsatisfiable',
+  );
+}
+
+/** Rule 8: counterexample check must provide the declared capability. */
 function checkCounterexampleSatisfiability(
   input: ClaimContractInput,
   claim: NormalizedClaimDeclaration,
@@ -267,6 +286,9 @@ function checkCounterexampleSatisfiability(
       'unsatisfiable',
     );
   }
+
+  const aggregateCapability = checkAggregateCounterexampleCapability(input, claim, req);
+  if (req.kind === 'aggregate_check') return aggregateCapability!;
 
   if (candidate.assertionCapability !== 'structured') {
     return invalid(
@@ -352,7 +374,7 @@ export function validateProofClaimContract(input: ClaimContractInput): ClaimCont
       checkCheckReferences(input, claim) ??
       checkRegistries(input, claim) ??
       checkAuthoritySection(input, claim) ??
-      checkCounterexampleAssertion(input, claim) ??
+      checkCounterexampleScope(input, claim) ??
       checkCounterexampleSatisfiability(input, claim);
     if (violation) return violation;
   }

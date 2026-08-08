@@ -99,15 +99,17 @@ const STRUCTURED_CANDIDATES = [
   },
 ];
 
-const CRITICAL_CLAIM: PlanClaimDeclaration = {
+const CRITICAL_CLAIM = {
   claimId: CRITICAL_CLAIM_ID,
   statement: 'updateTask returns 404 for an unknown id instead of 500.',
   critical: true,
+  claimScope: 'specific_behavior' as const,
   authoritySectionId: 'implementation-step-1',
   expectedCheckId: 'build',
   // A critical claim is only PROVEN with executed adversarial evidence.
   counterexampleRequirement: {
     checkId: 'security',
+    kind: 'assertion' as const,
     assertion: { providerId: 'junit', localId: 'com.example.CounterTest#counterexample' },
   },
 };
@@ -116,10 +118,12 @@ const CRITICAL_CLAIM: PlanClaimDeclaration = {
 const CRITICAL_CLAIM_INPUT: PlanClaimDeclarationInput = {
   statement: 'updateTask returns 404 for an unknown id instead of 500.',
   critical: true,
+  claimScope: 'specific_behavior',
   authoritySectionId: 'implementation-step-1',
   expectedCheckId: 'build',
   counterexampleRequirement: {
     checkId: 'security',
+    kind: 'assertion',
     assertion: { providerId: 'junit', localId: 'com.example.CounterTest#counterexample' },
   },
 };
@@ -300,7 +304,11 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
     expect(String(raw)).not.toContain('INTERNAL_ERROR');
 
     const state = await readState(env.sDir);
-    expect(state!.plan?.claimDeclarations).toEqual({ flow: 'plan', claims: [CRITICAL_CLAIM] });
+    expect(state!.plan?.claimDeclarations).toEqual({
+      flow: 'plan',
+      version: 'v2',
+      claims: [CRITICAL_CLAIM],
+    });
   });
 
   it('carries the declarations into the reviewer prompt before any evidence exists', async () => {
@@ -372,6 +380,7 @@ describe('ProofGraph claim lifecycle (runtime)', () => {
             ...CRITICAL_CLAIM_INPUT,
             counterexampleRequirement: {
               checkId: 'build',
+              kind: 'assertion',
               assertion: { providerId: 'junit', localId: 'com.example.CounterTest#counterexample' },
             },
           },
@@ -641,7 +650,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         },
         history: [],
         reviewFindings: undefined,
-        claimDeclarations: { flow: 'plan', claims: [CRITICAL_CLAIM] },
+        claimDeclarations: { flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] },
       },
     });
     const approved = executeReviewDecision(
@@ -777,7 +786,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
         },
         history: [],
         reviewFindings: undefined,
-        claimDeclarations: { flow: 'plan', claims: [CRITICAL_CLAIM] },
+        claimDeclarations: { flow: 'plan', version: 'v2', claims: [CRITICAL_CLAIM] },
       },
       reviewAssurance: {
         obligations: [
