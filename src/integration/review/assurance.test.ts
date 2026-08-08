@@ -284,6 +284,110 @@ describe('integration/review-assurance', () => {
     });
   });
 
+  describe('createReviewObligation — reviewedFileScope construction', () => {
+    it('plan + undefined changedFiles → unavailable', () => {
+      const result = createReviewObligation({
+        obligationType: 'plan',
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest: 'test',
+      });
+      expect(result.reviewedFileScope).toEqual({
+        kind: 'unavailable',
+        reason: 'scope_not_resolved',
+      });
+    });
+
+    it('review + undefined changedFiles → unavailable', () => {
+      const result = createReviewObligation({
+        obligationType: 'review',
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest: 'test',
+      });
+      expect(result.reviewedFileScope).toEqual({
+        kind: 'unavailable',
+        reason: 'scope_not_resolved',
+      });
+    });
+
+    it('implement + undefined changedFiles → unavailable', () => {
+      const result = createReviewObligation({
+        obligationType: 'implement',
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest: 'test',
+      });
+      expect(result.reviewedFileScope).toEqual({
+        kind: 'unavailable',
+        reason: 'scope_not_resolved',
+      });
+    });
+
+    it('architecture + undefined changedFiles → not_applicable', () => {
+      const result = createReviewObligation({
+        obligationType: 'architecture',
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest: 'test',
+      });
+      expect(result.reviewedFileScope).toEqual({
+        kind: 'not_applicable',
+        reason: 'architecture_obligation',
+      });
+    });
+
+    it('any type + empty changedFiles → files:[]', () => {
+      const result = createReviewObligation({
+        obligationType: 'plan',
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest: 'test',
+        changedFiles: [],
+      });
+      expect(result.reviewedFileScope).toEqual({
+        kind: 'files',
+        paths: [],
+      });
+    });
+
+    it('any type + concrete changedFiles → files with paths', () => {
+      const result = createReviewObligation({
+        obligationType: 'plan',
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest: 'test',
+        changedFiles: ['src/foo.ts'],
+      });
+      expect(result.reviewedFileScope).toEqual({
+        kind: 'files',
+        paths: ['src/foo.ts'],
+      });
+    });
+
+    it('explicit reviewedScope overrides derivation', () => {
+      const result = createReviewObligation({
+        obligationType: 'plan',
+        iteration: 0,
+        planVersion: 1,
+        now: NOW,
+        subjectDigest: 'test',
+        changedFiles: ['src/foo.ts'],
+        reviewedScope: { kind: 'unavailable', reason: 'diff_resolution_failed' },
+      });
+      expect(result.reviewedFileScope).toEqual({
+        kind: 'unavailable',
+        reason: 'diff_resolution_failed',
+      });
+    });
+  });
+
   describe('appendReviewObligation', () => {
     it('appends a pending obligation while preserving invocations', () => {
       const invocation = makeInvocation();
