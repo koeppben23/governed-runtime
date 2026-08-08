@@ -129,6 +129,9 @@ function validateExtractedIdentities(
 ): AssertionExtractionResult {
   if (result.status !== 'extracted' || result.assertions.length === 0) return result;
 
+  // Aggregate reports attest suite totals; their parsed test IDs are not assertion bindings.
+  if (result.bindingCapability === 'aggregate') return result;
+
   const codec = ASSERTION_CODEC_BY_PROVIDER.get(spec.providerId);
   if (!codec) {
     return {

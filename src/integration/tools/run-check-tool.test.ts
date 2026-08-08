@@ -36,8 +36,13 @@ import { PersistenceError } from '../../adapters/persistence.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 import { hashWorktreeFiles } from '../../adapters/git.js';
+import {
+  extractExecutionSubjectInputsByCandidateId,
+  planVerificationCandidates,
+  stripToCandidates,
+} from '../../discovery/verification-planner.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { withSessionWriteLockRetry } from '../../adapters/lock-retry.js';
 import {
   resetAdapterLogger,
@@ -325,6 +330,103 @@ describe('HAPPY', () => {
       expect.objectContaining({ command: 'npm run exact-typecheck' }),
     );
     expect((await readState(sd))!.validation[0]!.candidateId).toBe(candidateId);
+  });
+
+  it('persists complete-suite aggregate evidence from a repo-native pytest alternate', async () => {
+    writeFileSync(
+      join(ws.tmpDir, 'package.json'),
+      JSON.stringify({ scripts: { test: 'python -m pytest' } }),
+      'utf-8',
+    );
+    writeFileSync(join(ws.tmpDir, 'requirements.txt'), 'pytest>=7\n', 'utf-8');
+    writeFileSync(
+      join(ws.tmpDir, 'pyproject.toml'),
+      '[project]\ndependencies = ["pytest>=7"]\n',
+      'utf-8',
+    );
+    await driveToValidation();
+
+    const sd = await getSessDir();
+    const state = await readState(sd);
+    const planned = await planVerificationCandidates({
+      detectedStack: {
+        summary: 'pytest',
+        items: [{ kind: 'testFramework', id: 'pytest', evidence: 'requirements.txt' }],
+        versions: [],
+      },
+      allFiles: ['package.json', 'requirements.txt', 'pyproject.toml'],
+      readFile: async (relativePath) => {
+        if (relativePath === 'package.json')
+          return JSON.stringify({ scripts: { test: 'python -m pytest' } });
+        if (relativePath === 'requirements.txt') return 'pytest>=7\n';
+        if (relativePath === 'pyproject.toml') return '[project]\ndependencies = ["pytest>=7"]\n';
+        return undefined;
+      },
+    });
+    await writeState(sd, {
+      ...state!,
+      activeChecks: ['test'],
+      verificationCandidates: stripToCandidates(planned),
+      executionSubjectInputsByCandidateId: extractExecutionSubjectInputsByCandidateId(planned),
+    });
+    const aggregate = planned.find(
+      (entry) =>
+        entry.candidate.kind === 'test' &&
+        entry.candidate.assertionCapability === 'structured' &&
+        entry.candidate.assertionReport.format === 'junit_xml',
+    )?.candidate;
+    expect(aggregate).toBeDefined();
+    expect(aggregate).toMatchObject({
+      command: 'npm run test --',
+      fullCheckScopeAttestation: 'full_check',
+    });
+    const persistedCandidate = (await readState(sd))!.verificationCandidates!.find(
+      (candidate) =>
+        candidate.kind === 'test' &&
+        candidate.assertionCapability === 'structured' &&
+        candidate.assertionReport.format === 'junit_xml',
+    )!;
+    expect(persistedCandidate.candidateId).toBe(aggregate!.candidateId);
+
+    vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
+      const reportPath = /--junitxml=(\S+)/.exec(input.command)?.[1];
+      expect(reportPath).toBeDefined();
+      const absoluteReportPath = join(input.cwd, reportPath!);
+      mkdirSync(dirname(absoluteReportPath), { recursive: true });
+      writeFileSync(
+        absoluteReportPath,
+        '<testsuite tests="1" failures="0" errors="0"><testcase classname="tests.test_suite" name="suite" /></testsuite>',
+        'utf-8',
+      );
+      return {
+        kind: input.kind,
+        command: input.command,
+        exitCode: 0,
+        passed: true,
+        executionMs: 150,
+        outputDigest: 'a'.repeat(64),
+        stdout: 'All clear',
+        stderr: '',
+        timedOut: false,
+        startedAt: '2026-01-01T00:00:00.000Z',
+      };
+    });
+
+    await callOk(run_check, { kind: 'test', candidateId: aggregate!.candidateId });
+
+    const attempt = (await readState(sd))!.validationAttempts.find(
+      (entry) => entry.result.candidateId === aggregate!.candidateId,
+    );
+    expect(attempt?.result).toMatchObject({
+      candidateId: aggregate!.candidateId,
+      fullCheckScopeAttestation: 'full_check',
+      assertionExtraction: {
+        status: 'extracted',
+        bindingCapability: 'aggregate',
+        format: 'junit_xml',
+        providerId: 'pytest',
+      },
+    });
   });
 });
 

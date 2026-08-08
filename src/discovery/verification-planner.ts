@@ -148,16 +148,22 @@ function applyProfiles(
 
     const raw = profile.createCandidate(ctx);
     if (raw) {
-      const defaultCandidate = byKind.get(profile.kind)?.candidate;
+      const defaultPlan = byKind.get(profile.kind);
+      const defaultCandidate = defaultPlan?.candidate;
       // Alternate evidence routes preserve the repo-native execution authority.
       const routed =
         profile.alternate && defaultCandidate
           ? { ...raw, command: defaultCandidate.command, source: defaultCandidate.source }
           : raw;
-      const candidate = attestFullCheckScope(profile, routed, routed.command);
+      const scopeSemanticCommand =
+        profile.alternate && defaultPlan?.scopeSemanticCommand
+          ? defaultPlan.scopeSemanticCommand
+          : raw.command;
+      const candidate = attestFullCheckScope(profile, routed, scopeSemanticCommand);
       byKind.set(profile.alternate ? profile.profileId! : raw.kind, {
         candidate,
         executionProfileId: profile.profileId,
+        scopeSemanticCommand,
         executionSubjectInputs: [{ kind: 'implementation' as const }],
       });
     }
@@ -260,6 +266,7 @@ function addScriptCandidates(
             command,
           ),
           executionProfileId: profileId,
+          scopeSemanticCommand: command,
           executionSubjectInputs: [
             { kind: 'implementation' as const },
             { kind: 'file' as const, path: 'package.json' },
@@ -298,11 +305,11 @@ function addScriptCandidates(
 function attestFullCheckScope(
   profile: { attestFullCheckScope?(command: string): boolean },
   candidate: VerificationCandidate,
-  command: string,
+  scopeSemanticCommand: string,
 ): VerificationCandidate {
   if (
     candidate.assertionCapability === 'structured' &&
-    profile.attestFullCheckScope?.(command) === true
+    profile.attestFullCheckScope?.(scopeSemanticCommand) === true
   ) {
     return { ...candidate, fullCheckScopeAttestation: 'full_check' };
   }

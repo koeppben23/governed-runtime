@@ -99,7 +99,7 @@ describe('verification planner', () => {
       );
     });
 
-    it('preserves a repo-native pytest command for its aggregate alternate route', async () => {
+    it('preserves a filtered repo-native pytest command without full-scope attestation', async () => {
       const candidates = await planVerificationCandidates({
         detectedStack: makeDetectedStack([
           { kind: 'testFramework', id: 'pytest', evidence: 'pyproject.toml' },
@@ -117,6 +117,31 @@ describe('verification planner', () => {
       ]);
       expect(tests[1]!.candidate).toMatchObject({
         assertionCapability: 'structured',
+        assertionReport: { format: 'junit_xml' },
+      });
+      if (tests[1]!.candidate.assertionCapability === 'structured') {
+        expect(tests[1]!.candidate.fullCheckScopeAttestation).toBeUndefined();
+      }
+    });
+
+    it('attests a full repo-native pytest script for its aggregate alternate route', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'testFramework', id: 'pytest', evidence: 'pyproject.toml' },
+        ]),
+        allFiles: ['package.json', 'pyproject.toml'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { test: 'python -m pytest' } }),
+        }),
+      });
+      const aggregate = candidates.find(
+        (entry) => entry.executionProfileId === 'pytest-junit-aggregate',
+      )?.candidate;
+
+      expect(aggregate).toMatchObject({
+        command: 'npm run test --',
+        source: 'package.json:scripts.test',
+        fullCheckScopeAttestation: 'full_check',
         assertionReport: { format: 'junit_xml' },
       });
     });
