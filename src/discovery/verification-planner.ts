@@ -59,7 +59,7 @@ const BUILD_TOOL_PM_ORDER: readonly PackageManager[] = ['pnpm', 'yarn', 'bun', '
 export async function planVerificationCandidates(
   input: VerificationPlannerInput,
 ): Promise<PlannedVerificationCandidate[]> {
-  const byKind = new Map<VerificationCandidateKind, PlannedVerificationCandidate>();
+  const byKind = new Map<string, PlannedVerificationCandidate>();
   const rootFiles = new Set(input.allFiles.filter((f) => !f.includes('/') && !f.includes('\\')));
   const packageManager = detectPackageManager(input.detectedStack, rootFiles);
   const detectedStackIds = new Set(
@@ -133,7 +133,7 @@ export function extractExecutionSubjectInputsByCandidateId(
 }
 
 function applyProfiles(
-  byKind: Map<VerificationCandidateKind, PlannedVerificationCandidate>,
+  byKind: Map<string, PlannedVerificationCandidate>,
   ctx: PlannerContext,
   profiles: ReadonlyArray<{
     readonly profileId?: string;
@@ -148,8 +148,14 @@ function applyProfiles(
 
     const raw = profile.createCandidate(ctx);
     if (raw) {
-      const candidate = attestFullCheckScope(profile, raw, raw.command);
-      byKind.set((profile.alternate ? profile.profileId! : raw.kind) as VerificationCandidateKind, {
+      const defaultCandidate = byKind.get(profile.kind)?.candidate;
+      // Alternate evidence routes preserve the repo-native execution authority.
+      const routed =
+        profile.alternate && defaultCandidate
+          ? { ...raw, command: defaultCandidate.command, source: defaultCandidate.source }
+          : raw;
+      const candidate = attestFullCheckScope(profile, routed, routed.command);
+      byKind.set(profile.alternate ? profile.profileId! : raw.kind, {
         candidate,
         executionProfileId: profile.profileId,
         executionSubjectInputs: [{ kind: 'implementation' as const }],
@@ -201,7 +207,7 @@ async function readPackageScripts(readFile: ReadFileFn): Promise<Record<string, 
 }
 
 function addScriptCandidates(
-  byKind: Map<VerificationCandidateKind, PlannedVerificationCandidate>,
+  byKind: Map<string, PlannedVerificationCandidate>,
   scripts: Record<string, string>,
   packageManager: PackageManager,
   _ctx: PlannerContext,
@@ -314,7 +320,7 @@ function buildSignatureMap(): ReadonlyMap<ProviderId, readonly ScriptSignature[]
 }
 
 function addNonAssertionFallbacks(
-  byKind: Map<VerificationCandidateKind, PlannedVerificationCandidate>,
+  byKind: Map<string, PlannedVerificationCandidate>,
   ids: ReadonlySet<string>,
   packageManager: PackageManager,
 ): void {

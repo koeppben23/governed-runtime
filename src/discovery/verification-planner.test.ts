@@ -99,6 +99,28 @@ describe('verification planner', () => {
       );
     });
 
+    it('preserves a repo-native pytest command for its aggregate alternate route', async () => {
+      const candidates = await planVerificationCandidates({
+        detectedStack: makeDetectedStack([
+          { kind: 'testFramework', id: 'pytest', evidence: 'pyproject.toml' },
+        ]),
+        allFiles: ['package.json', 'pyproject.toml'],
+        readFile: makeReadFile({
+          'package.json': JSON.stringify({ scripts: { test: 'pytest -c config/ci.ini tests/' } }),
+        }),
+      });
+      const tests = candidates.filter((entry) => entry.candidate.kind === 'test');
+      expect(tests).toHaveLength(2);
+      expect(tests.map((entry) => entry.candidate.command)).toEqual([
+        'npm run test --',
+        'npm run test --',
+      ]);
+      expect(tests[1]!.candidate).toMatchObject({
+        assertionCapability: 'structured',
+        assertionReport: { format: 'junit_xml' },
+      });
+    });
+
     it('uses vitest fallback when no test script exists', async () => {
       const detectedStack = makeDetectedStack([
         { kind: 'buildTool', id: 'pnpm', evidence: 'pnpm-lock.yaml' },
