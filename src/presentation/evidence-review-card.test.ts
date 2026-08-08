@@ -126,6 +126,20 @@ describe('buildEvidenceReviewCard', () => {
     expect(card).not.toContain('## Decision required');
   });
 
+  it('renders the decision gate without a ProofGraph summary', () => {
+    const card = buildEvidenceReviewCard({
+      ...baseInput,
+      proofSummary: undefined,
+    });
+    expect(card).toContain('# FlowGuard Implementation Review');
+    expect(card).toContain(baseInput.statusLine);
+    expect(card).not.toContain('## ProofGraph');
+    expect(card).toContain('## Decision required');
+    expect(card).toContain('/approve');
+    expect(card).toContain('/request-changes');
+    expect(card).toContain('/reject');
+  });
+
   it('renders force-convergence warning when forcedConvergence is true', () => {
     const card = buildEvidenceReviewCard({
       ...baseInput,

@@ -543,24 +543,23 @@ async function handleApprovedReview(input: {
   };
   addLatestImplementationReview(response, input.reviewFindings);
 
-  if (input.proofSummary) {
-    response.proofSummary = input.proofSummary;
-    const statusLine =
-      input.runtime.args.reviewVerdict === 'accept'
-        ? `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`
-        : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
-    const nextAction = resolveNextAction(finalState.phase, finalState);
-    const productNext = buildProductNextAction(nextAction, finalState.phase);
-    const cardInput: EvidenceReviewCardInput = {
-      phaseLabel: PHASE_LABELS[finalState.phase],
-      productNextAction: productNext,
-      proofSummary: input.proofSummary,
-      statusLine,
-      forcedConvergence: input.runtime.args.reviewVerdict !== 'accept',
-    };
-    const cardMarkdown = buildEvidenceReviewCard(cardInput, { glyphProfile });
-    response.presentation = { markdown: cardMarkdown };
-  }
+  if (input.proofSummary) response.proofSummary = input.proofSummary;
+  const statusLine =
+    input.runtime.args.reviewVerdict === 'accept'
+      ? `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`
+      : `Implementation review reached max iterations (${input.iteration}/${input.runtime.maxImplReviewIterations}). Force-converged.`;
+  const nextAction = resolveNextAction(finalState.phase, finalState);
+  const productNext = buildProductNextAction(nextAction, finalState.phase);
+  const cardInput: EvidenceReviewCardInput = {
+    phaseLabel: PHASE_LABELS[finalState.phase],
+    productNextAction: productNext,
+    proofSummary: input.proofSummary ?? undefined,
+    statusLine,
+    forcedConvergence: input.runtime.args.reviewVerdict !== 'accept',
+  };
+  response.presentation = {
+    markdown: buildEvidenceReviewCard(cardInput, { glyphProfile }),
+  };
 
   if (input.runtime.args.reviewVerdict === 'accept') {
     response.status = `Implementation review converged at iteration ${input.iteration}. Reviewer accepted.`;

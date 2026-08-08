@@ -360,12 +360,22 @@ describe('e2e-workflow', () => {
       // 6. Implement + review
       await callOk(implement, {});
       await passValidation(); // IMPL_VALIDATION -> IMPL_REVIEW
+      let implementationReviewResult: Record<string, unknown> | undefined;
       for (let i = 0; i < 5; i++) {
         const phase = await getPhase();
         if (phase === 'EVIDENCE_REVIEW') break;
-        await callOk(review_implementation, { reviewVerdict: 'accept' });
+        implementationReviewResult = await callOk(review_implementation, {
+          reviewVerdict: 'accept',
+        });
       }
       expect(await getPhase()).toBe('EVIDENCE_REVIEW');
+      const presentation = implementationReviewResult?.presentation as
+        { markdown?: unknown } | undefined;
+      expect(presentation?.markdown).toContain('## Decision required');
+      expect(presentation?.markdown).toContain('/approve');
+      expect(presentation?.markdown).toContain('/request-changes');
+      expect(presentation?.markdown).toContain('/reject');
+      expect(presentation?.markdown).not.toContain('## ProofGraph');
 
       // 7. Decision: approve evidence
       await callOk(decision, { verdict: 'approve', rationale: 'Ship it' });

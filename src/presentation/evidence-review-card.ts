@@ -28,8 +28,8 @@ export interface EvidenceReviewCardInput {
     text: string;
     commands: readonly string[];
   };
-  /** Compact ProofGraph summary for the review card (post-implementation evaluation). */
-  proofSummary: CompactProofPresentation;
+  /** Optional compact ProofGraph summary for the review card (post-implementation evaluation). */
+  proofSummary?: CompactProofPresentation;
   /** Status line describing the review convergence (converged or force-converged). */
   statusLine: string;
   /** True when the review loop force-converged at the iteration limit. */

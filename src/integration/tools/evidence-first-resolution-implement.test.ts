@@ -130,7 +130,13 @@ vi.mock('../../presentation/phase-labels.js', () => ({
 }));
 
 vi.mock('../../presentation/next-action-copy.js', () => ({
-  buildProductNextAction: vi.fn(() => ''),
+  buildProductNextAction: vi.fn(() => ({ text: 'next action', commands: [] })),
+}));
+
+vi.mock('../../presentation/index.js', () => ({
+  PHASE_LABELS: { IMPL_REVIEW: 'Implementation review' },
+  buildEvidenceReviewCard: vi.fn(() => 'review card'),
+  buildProductNextAction: vi.fn(() => ({ text: 'next action', commands: [] })),
 }));
 
 vi.mock('../../presentation/plan-review-card.js', () => ({
