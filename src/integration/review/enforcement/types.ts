@@ -169,6 +169,7 @@ export type HostTaskBindOutcome =
   | 'challenge_evidence_unknown'
   | 'findings_incoherent'
   | 'review_finding_out_of_scope'
+  | 'review_finding_scope_unverifiable'
   | 'subject_mismatch'
   | 'stale_attempt'
   | 'idempotent_bound'

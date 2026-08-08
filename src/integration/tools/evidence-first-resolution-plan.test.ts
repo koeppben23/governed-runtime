@@ -314,6 +314,7 @@ function planStateWithEvidence(
           blockedCode: null,
           fulfilledAt: now,
           consumedAt: null,
+          reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
         },
       ],
       invocations: [
@@ -716,6 +717,7 @@ describe('BUG-17: plan evidence-first resolution', () => {
             blockedCode: null,
             fulfilledAt: now,
             consumedAt: null,
+            reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
           },
         ],
         invocations: [manualAttestedInvocation({ obligationType: 'plan', findings })],

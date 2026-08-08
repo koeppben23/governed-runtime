@@ -296,6 +296,11 @@ function checkReviewFindingsScope(
       obligationId: obligation.obligationId,
     });
   }
+  if (!scopeResult.ok && scopeResult.code === 'REVIEW_FINDING_SCOPE_UNVERIFIABLE') {
+    return formatBlocked('REVIEW_FINDING_SCOPE_UNVERIFIABLE', {
+      obligationId: obligation.obligationId,
+    });
+  }
   return null;
 }
 

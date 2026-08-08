@@ -110,6 +110,7 @@ async function seedSession(
             fulfilledAt: obligationStatus === 'pending' ? null : now,
             consumedAt: obligationStatus === 'consumed' ? now : null,
             subjectDigest: SUBJECT_DIGEST,
+            reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
           },
         ],
         invocations: [],

@@ -329,6 +329,7 @@ function implStateWithEvidence(
           blockedCode: null,
           fulfilledAt: now,
           consumedAt: null,
+          reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
         },
       ],
       invocations: [
@@ -634,6 +635,7 @@ describe('BUG-17: implement evidence-first resolution', () => {
             blockedCode: null,
             fulfilledAt: now,
             consumedAt: null,
+            reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
           },
         ],
         invocations: [manualAttestedInvocation({ obligationType: 'implement', findings })],

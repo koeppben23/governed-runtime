@@ -32,7 +32,12 @@ export const REVIEW_CRITERIA_VERSION = 'p40-v1';
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
 // No fallback: if the import fails, the module fails fast (desired for governance)
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
-
+const frs = (t: ReviewObligationType, f: readonly string[] | undefined) =>
+  f !== undefined
+    ? { kind: 'files' as const, paths: [...f] }
+    : t === 'architecture'
+      ? { kind: 'not_applicable' as const, reason: 'architecture_obligation' }
+      : { kind: 'files' as const, paths: [] as readonly string[] };
 export function getReviewMandateDigest(): string {
   return REVIEW_MANDATE_DIGEST;
 }
@@ -58,7 +63,6 @@ export function createReviewObligation(input: {
    * verify at binding time that the reviewer's evidence addresses exactly this
    * subject — not a different plan version or different branch. Never supplied
    * by or echoed from the reviewer.
-   *
    * Required. Obligations without an authoritative subjectDigest are fail-closed
    * rejected; no binding is possible without a proven subject identity.
    */
@@ -128,9 +132,7 @@ export function createReviewObligation(input: {
     subjectDigest: input.subjectDigest,
     metadata: input.metadata,
     ...(input.fingerprintVersion ? { fingerprintVersion: input.fingerprintVersion } : {}),
-    ...(input.changedFiles && input.changedFiles.length > 0
-      ? { reviewedFileScope: [...input.changedFiles] }
-      : {}),
+    reviewedFileScope: frs(input.obligationType, input.changedFiles),
   };
 }
 

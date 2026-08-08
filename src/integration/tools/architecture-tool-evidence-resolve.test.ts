@@ -243,6 +243,10 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               blockedCode: null,
               fulfilledAt: now,
               consumedAt: null,
+              reviewedFileScope: {
+                kind: 'not_applicable' as const,
+                reason: 'architecture_obligation',
+              },
             },
           ],
           invocations: [
@@ -319,12 +323,16 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               criteriaVersion: REVIEW_CRITERIA_VERSION,
               mandateDigest: REVIEW_MANDATE_DIGEST,
               createdAt: now,
-              pluginHandshakeAt: null,
+              pluginHandshakeAt: now,
               status: 'fulfilled',
               invocationId: INVOCATION_ID,
               blockedCode: null,
               fulfilledAt: now,
               consumedAt: null,
+              reviewedFileScope: {
+                kind: 'not_applicable' as const,
+                reason: 'architecture_obligation',
+              },
             },
           ],
           invocations: [
@@ -419,6 +427,10 @@ describe('architecture — BUG-15 evidence-resolve', () => {
               blockedCode: null,
               fulfilledAt: now,
               consumedAt: null,
+              reviewedFileScope: {
+                kind: 'not_applicable' as const,
+                reason: 'architecture_obligation',
+              },
             },
           ],
           invocations: [

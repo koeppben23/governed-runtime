@@ -944,6 +944,7 @@ describe('ProofGraph materialization and gate (runtime)', () => {
             fulfilledAt: FIXED_TIME,
             consumedAt: null,
             requiredChallengeCount: undefined,
+            reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
           },
         ],
         invocations: [

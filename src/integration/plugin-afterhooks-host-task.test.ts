@@ -86,6 +86,7 @@ async function seedHostTaskPlanSession(worktree: string, sessionID: string): Pro
             fulfilledAt: null,
             consumedAt: null,
             subjectDigest: SUBJECT_DIGEST,
+            reviewedFileScope: { kind: 'files' as const, paths: [] as readonly string[] },
           },
         ],
         invocations: [],

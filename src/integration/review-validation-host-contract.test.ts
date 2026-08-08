@@ -164,7 +164,7 @@ function pluginHandshakeAssurance(
         blockedCode: null,
         fulfilledAt: NOW,
         consumedAt: null,
-        reviewedFileScope: ['src/foo.ts'],
+        reviewedFileScope: { kind: 'files' as const, paths: ['src/foo.ts'] },
       },
     ],
     invocations: [

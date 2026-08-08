@@ -675,16 +675,19 @@ function prepareBindableFindings(input: {
     findings: locationFindings,
     reviewedFileScope: obligation.reviewedFileScope,
   });
-  if (!scopeResult.ok && scopeResult.code === 'REVIEW_FINDING_OUT_OF_SCOPE') {
+  if (!scopeResult.ok) {
+    const outOfScope = scopeResult.code === 'REVIEW_FINDING_OUT_OF_SCOPE';
     return {
       evidence: null,
-      bindOutcome: 'review_finding_out_of_scope',
+      bindOutcome: outOfScope ? 'review_finding_out_of_scope' : 'review_finding_scope_unverifiable',
       diagnostic: {
         childSessionId,
         obligationId: obligation.obligationId,
         code: scopeResult.code,
         ...scopeResult.details,
-        message: 'Reviewer findings reference paths outside the reviewed file scope.',
+        message: outOfScope
+          ? 'Reviewer findings reference paths outside the reviewed file scope.'
+          : 'Review file scope could not be verified for this obligation.',
       },
     };
   }

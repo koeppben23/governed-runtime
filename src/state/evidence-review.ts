@@ -439,16 +439,38 @@ export const ReviewObligation = z.object({
   /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
   metadata: z.record(z.string(), z.unknown()).optional(),
   /**
-   * Frozen set of file paths the reviewer was issued for this obligation.
-   * Frozen at obligation creation from the actual `changedFiles` set handed to
-   * the reviewer. Optional for backward compatibility with obligations persisted
-   * before this field existed.
+   * Frozen file scope for this obligation.
    *
-   * Absence (legacy) means `scope_unverifiable` — no hard claim that findings
-   * are scope-valid. Consumers that require scope verification must fail closed
-   * when this field is absent.
+   * `kind: 'files'`     — concrete set of file paths the reviewer was issued.
+   * `kind: 'not_applicable'` — review context has no file scope (ADR, plan text,
+   *    architecture section).
+   * `kind: 'unavailable'` — scope could not be resolved for a file-backed review.
+   *
+   * Absence of the field (legacy obligations persisted before this type) is
+   * treated as `unavailable`; consumers fail closed.
    */
-  reviewedFileScope: z.array(z.string().min(1)).readonly().optional(),
+  reviewedFileScope: z
+    .discriminatedUnion('kind', [
+      z
+        .object({
+          kind: z.literal('files'),
+          paths: z.array(z.string().min(1)).readonly(),
+        })
+        .readonly(),
+      z
+        .object({
+          kind: z.literal('not_applicable'),
+          reason: z.string().min(1),
+        })
+        .readonly(),
+      z
+        .object({
+          kind: z.literal('unavailable'),
+          reason: z.string().min(1),
+        })
+        .readonly(),
+    ])
+    .optional(),
 });
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 

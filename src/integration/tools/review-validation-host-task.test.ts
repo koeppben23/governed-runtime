@@ -52,7 +52,7 @@ describe('resolveHostTaskFindings', () => {
       blockedCode: null,
       fulfilledAt: now,
       consumedAt: null,
-      reviewedFileScope: ['src/foo.ts'],
+      reviewedFileScope: { kind: 'files' as const, paths: ['src/foo.ts'] },
       ...overrides,
     };
   }
@@ -915,7 +915,7 @@ describe('resolveHostTaskEffectiveFindings — directly-submitted challenge fres
       consumedAt: null,
       requiredChallengeCount: 1,
       requiredChallengeKind: 'implementation_challenge' as const,
-      reviewedFileScope: ['src/foo.ts'],
+      reviewedFileScope: { kind: 'files' as const, paths: ['src/foo.ts'] },
     };
   }
 
