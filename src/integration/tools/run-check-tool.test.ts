@@ -35,12 +35,7 @@ import { executeCheck } from '../../verification/executor.js';
 import { PersistenceError } from '../../adapters/persistence.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
-import { hashWorktreeFiles } from '../../adapters/git.js';
-import {
-  extractExecutionSubjectInputsByCandidateId,
-  planVerificationCandidates,
-  stripToCandidates,
-} from '../../discovery/verification-planner.js';
+import { hashWorktreeFiles, listRepoSignals } from '../../adapters/git.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { withSessionWriteLockRetry } from '../../adapters/lock-retry.js';
@@ -344,49 +339,28 @@ describe('HAPPY', () => {
       '[project]\ndependencies = ["pytest>=7"]\n',
       'utf-8',
     );
+    vi.mocked(listRepoSignals).mockResolvedValueOnce({
+      files: ['package.json', 'requirements.txt', 'pyproject.toml'],
+      packageFiles: ['package.json', 'requirements.txt'],
+      configFiles: ['pyproject.toml'],
+      packageFilePaths: ['package.json', 'requirements.txt'],
+      configFilePaths: ['pyproject.toml'],
+    });
     await driveToValidation();
 
     const sd = await getSessDir();
-    const state = await readState(sd);
-    const planned = await planVerificationCandidates({
-      detectedStack: {
-        summary: 'pytest',
-        items: [{ kind: 'testFramework', id: 'pytest', evidence: 'requirements.txt' }],
-        versions: [],
-      },
-      allFiles: ['package.json', 'requirements.txt', 'pyproject.toml'],
-      readFile: async (relativePath) => {
-        if (relativePath === 'package.json')
-          return JSON.stringify({ scripts: { test: 'python -m pytest' } });
-        if (relativePath === 'requirements.txt') return 'pytest>=7\n';
-        if (relativePath === 'pyproject.toml') return '[project]\ndependencies = ["pytest>=7"]\n';
-        return undefined;
-      },
-    });
-    await writeState(sd, {
-      ...state!,
-      activeChecks: ['test'],
-      verificationCandidates: stripToCandidates(planned),
-      executionSubjectInputsByCandidateId: extractExecutionSubjectInputsByCandidateId(planned),
-    });
-    const aggregate = planned.find(
-      (entry) =>
-        entry.candidate.kind === 'test' &&
-        entry.candidate.assertionCapability === 'structured' &&
-        entry.candidate.assertionReport.format === 'junit_xml',
-    )?.candidate;
+    const aggregate = (await readState(sd))!.verificationCandidates!.find(
+      (candidate) =>
+        candidate.kind === 'test' &&
+        candidate.assertionCapability === 'structured' &&
+        candidate.assertionReport.format === 'junit_xml',
+    );
     expect(aggregate).toBeDefined();
     expect(aggregate).toMatchObject({
       command: 'npm run test --',
       fullCheckScopeAttestation: 'full_check',
     });
-    const persistedCandidate = (await readState(sd))!.verificationCandidates!.find(
-      (candidate) =>
-        candidate.kind === 'test' &&
-        candidate.assertionCapability === 'structured' &&
-        candidate.assertionReport.format === 'junit_xml',
-    )!;
-    expect(persistedCandidate.candidateId).toBe(aggregate!.candidateId);
+    expect((await readState(sd))!.activeChecks).toContain('test');
 
     vi.mocked(executeCheck).mockImplementationOnce(async (input) => {
       const reportPath = /--junitxml=(\S+)/.exec(input.command)?.[1];
