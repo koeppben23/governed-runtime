@@ -99,6 +99,44 @@ export const pytestProvider: AssertionProviderExtension = {
           };
         },
       },
+      {
+        profileId: 'pytest-junit-aggregate',
+        providerId: 'pytest' as const,
+        format: 'junit_xml' as const,
+        kind: 'test' as const,
+        priority: 5,
+        alternate: true,
+        assertionReport: {
+          collection: 'run_specific' as const,
+          transport: 'file' as const,
+          format: 'junit_xml' as const,
+          providerId: 'pytest' as const,
+          outputArgumentTemplate: '--junitxml=.flowguard/reports/{attemptId}/pytest.junit.xml',
+          resultPatternTemplate: '.flowguard/reports/{attemptId}/pytest.junit.xml',
+        },
+        attestFullCheckScope(command: string) {
+          return command.trim() === 'python -m pytest';
+        },
+        createCandidate(ctx: { detectedStackIds: ReadonlySet<string> }) {
+          if (!ctx.detectedStackIds.has('testFramework:pytest')) return null;
+          return {
+            assertionCapability: 'structured' as const,
+            kind: 'test' as const,
+            command: 'python -m pytest',
+            source: 'detectedStack:testFramework:pytest:aggregate',
+            confidence: 'medium' as const,
+            reason: 'pytest JUnit XML aggregate suite evidence',
+            assertionReport: {
+              collection: 'run_specific' as const,
+              transport: 'file' as const,
+              format: 'junit_xml' as const,
+              providerId: 'pytest' as const,
+              outputArgumentTemplate: '--junitxml=.flowguard/reports/{attemptId}/pytest.junit.xml',
+              resultPatternTemplate: '.flowguard/reports/{attemptId}/pytest.junit.xml',
+            },
+          };
+        },
+      },
     ],
   },
 

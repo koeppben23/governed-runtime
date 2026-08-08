@@ -116,7 +116,13 @@ export function validateProviderExtensions(
           message: `Profile '${profile.profileId}' assertionReport.format='${report.format}' != profile.format='${profile.format}'`,
         });
       }
-      if (!provAssertionFormats.has(report.format)) {
+      if (
+        !ext.verification.formats.some(
+          (format) =>
+            format.format === report.format &&
+            (format.bindingCapability === 'assertion' || format.bindingCapability === 'aggregate'),
+        )
+      ) {
         errors.push({
           kind: 'profile_report_format_not_assertion_capable',
           message: `Profile '${profile.profileId}' assertionReport.format='${report.format}' is not assertion-binding capable for provider '${pid}'`,

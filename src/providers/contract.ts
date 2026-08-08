@@ -68,6 +68,8 @@ export interface ExecutionProfile {
   readonly format: ReportFormatId;
   readonly kind: VerificationCandidateKind;
   readonly priority: number;
+  /** An opt-in alternate execution route for the same semantic check kind. */
+  readonly alternate?: boolean;
 
   /**
    * Static report semantics for this profile.

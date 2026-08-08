@@ -7,7 +7,6 @@
  * @version v1
  */
 
-import { hashText } from '../../../shared/hashing.js';
 export { fingerprintReviewInput } from './fingerprint.js';
 import { fingerprintReviewInput } from './fingerprint.js';
 

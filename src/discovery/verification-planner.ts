@@ -138,17 +138,18 @@ function applyProfiles(
   profiles: ReadonlyArray<{
     readonly profileId?: string;
     readonly kind: VerificationCandidateKind;
+    readonly alternate?: boolean;
     createCandidate(ctx: PlannerContext): VerificationCandidate | null;
     attestFullCheckScope?(command: string): boolean;
   }>,
 ): void {
   for (const profile of profiles) {
-    if (byKind.has(profile.kind)) continue;
+    if (byKind.has(profile.kind) && !profile.alternate) continue;
 
     const raw = profile.createCandidate(ctx);
     if (raw) {
       const candidate = attestFullCheckScope(profile, raw, raw.command);
-      byKind.set(raw.kind, {
+      byKind.set((profile.alternate ? profile.profileId! : raw.kind) as VerificationCandidateKind, {
         candidate,
         executionProfileId: profile.profileId,
         executionSubjectInputs: [{ kind: 'implementation' as const }],
