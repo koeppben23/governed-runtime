@@ -21,7 +21,7 @@ import type {
 } from './model.js';
 import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
-import type { CompactProofPresentation } from './proof-summary.js';
+import type { CompactProofPresentation } from './proof-model.js';
 import { buildProofGraphSection } from './proof-summary.js';
 import { buildReviewDecisionConclusion } from './review-decision.js';
 

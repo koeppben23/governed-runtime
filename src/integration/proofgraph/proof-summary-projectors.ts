@@ -14,17 +14,13 @@ import type { ProofClaim } from '../../state/proofgraph.js';
 import { summarizePersistedProofGraph } from '../../audit/proofgraph/summary.js';
 import type { ProofGraphGateDecision } from '../../audit/proofgraph/gate.js';
 import { evaluateProofGraphGate } from '../../audit/proofgraph/gate.js';
-import type {
-  PlanClaimDeclarations,
-  ArchitectureClaimDeclarations,
-} from '../../state/proofgraph-approval.js';
 import { authorizedCriticalPlanClaimIds } from '../../state/proofgraph-approval.js';
 
 import type {
   CompactProofClaim,
   CompactProofPresentation,
   ClaimVerificationState,
-} from '../../presentation/proof-summary.js';
+} from '../../presentation/proof-model.js';
 import type { ProofApprovalPresentation } from '../../presentation/proof-model.js';
 import { buildProofApprovalProjection } from './approval-projection.js';
 
@@ -34,49 +30,6 @@ type ProofDecisionContext = 'current_gate' | 'prospective_approval' | 'completio
 
 const PLAN_PROOF_PHASES = new Set(['PLAN', 'PLAN_REVIEW', 'VALIDATION']);
 const ARCHITECTURE_PROOF_PHASES = new Set(['ARCHITECTURE', 'ARCH_REVIEW', 'ARCH_COMPLETE']);
-
-/**
- * Legacy declaration-only helpers retained for callers without resolved state.
- * Governance presentations must use the total state-based projectors below.
- */
-export function projectPlanProofObligations(
-  declarations: PlanClaimDeclarations | undefined,
-): CompactProofPresentation | null {
-  const claims = declarations?.claims;
-  if (!claims || claims.length === 0) return null;
-  const criticalCount = claims.filter((claim) => claim.critical).length;
-  const falsificationReadyCount = claims.filter(
-    (claim) => claim.critical && claim.counterexampleRequirement?.checkId,
-  ).length;
-  return {
-    kind: 'declaration',
-    flow: 'plan',
-    overallStatus: 'AWAITING_EVIDENCE',
-    claimCount: claims.length,
-    criticalCount,
-    ...(falsificationReadyCount > 0 ? { falsificationReadyCount } : {}),
-    ...(criticalCount > falsificationReadyCount
-      ? { missingFalsificationCount: criticalCount - falsificationReadyCount }
-      : {}),
-    approval: { attestations: [] },
-  };
-}
-
-/** @deprecated Use projectArchitectureProofStatus with a resolved SessionState. */
-export function projectArchitectureDecisionClaims(
-  declarations: ArchitectureClaimDeclarations | undefined,
-): CompactProofPresentation | null {
-  const claims = declarations?.claims;
-  if (!claims || claims.length === 0) return null;
-  return {
-    kind: 'declaration',
-    flow: 'architecture',
-    overallStatus: 'AWAITING_EVIDENCE',
-    claimCount: claims.length,
-    criticalCount: claims.filter((claim) => claim.critical).length,
-    approval: { attestations: [] },
-  };
-}
 
 // ─── Claim reason (derived from verification state) ─────────────────────────
 

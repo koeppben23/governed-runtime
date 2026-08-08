@@ -100,7 +100,7 @@ import { buildHostTaskChallengeContract } from '../review/host-task-policy.js';
 import type { ImplementRuntime } from './implement-shared.js';
 import { nextImplementationReviewIteration } from './implement-shared.js';
 import { projectImplementationProofStatus } from '../proofgraph/proof-summary-projectors.js';
-import type { CompactProofPresentation } from '../../presentation/proof-summary.js';
+import type { CompactProofPresentation } from '../../presentation/proof-model.js';
 import {
   buildImplReviewBlockedMarkdown,
   buildImplReviewChangesRequestedMarkdown,

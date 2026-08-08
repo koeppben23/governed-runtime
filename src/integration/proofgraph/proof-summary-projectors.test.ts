@@ -1,9 +1,6 @@
 /**
  * @test-policy
- * PROJECTORS: projectPlanProofObligations returns null for empty/undefined declarations,
- *             declaration presentation for non-empty.
- * PROJECTORS: projectArchitectureDecisionClaims returns null for empty/undefined declarations.
- * PROJECTORS: projectImplementationProofStatus returns null for empty proofGraph,
+ * PROJECTORS: projectImplementationProofStatus reports NOT_DECLARED for an empty proofGraph,
  *             evaluation presentation for non-empty with correct tallies and headline.
  * CORNER: PROVEN all-facts -> headline is PROVEN.
  * CORNER: CONTRADICTED -> headline is CONTRADICTED, decisionContext at gate.
@@ -13,13 +10,10 @@
 
 import { describe, expect, it } from 'vitest';
 
-import type { PlanClaimDeclarations } from '../../state/proofgraph-approval.js';
 import { makeState, PLAN_RECORD } from '../../fixtures.js';
 import { canonicalJsonStringify } from '../../shared/canonical-json.js';
 import { hashText } from '../../shared/hashing.js';
 import {
-  projectPlanProofObligations,
-  projectArchitectureDecisionClaims,
   projectImplementationProofStatus,
   projectCompletionProofStatus,
   projectProofStatusForState,
@@ -113,105 +107,6 @@ function makeEvalState(claims: ProofClaim[]): SessionState {
   } as unknown as SessionState;
 }
 
-describe('projectPlanProofObligations', () => {
-  it('returns null for undefined declarations', () => {
-    expect(projectPlanProofObligations(undefined)).toBeNull();
-  });
-
-  it('returns null for empty claims', () => {
-    expect(projectPlanProofObligations({ flow: 'plan' as const, claims: [] })).toBeNull();
-  });
-
-  it('returns declaration presentation for plan claims', () => {
-    const decls = {
-      flow: 'plan' as const,
-      claims: [
-        {
-          claimId: '00000000-0000-0000-0000-000000000001',
-          statement: 'Test',
-          critical: true,
-          expectedCheckId: 'check-1',
-          authoritySectionId: 'sec-1',
-        },
-      ],
-    } as PlanClaimDeclarations;
-    const result = projectPlanProofObligations(decls);
-    expect(result).not.toBeNull();
-    expect(result!.kind).toBe('declaration');
-    expect((result as { flow: string }).flow).toBe('plan');
-    expect(result!.claimCount).toBe(1);
-    expect(result!.criticalCount).toBe(1);
-  });
-
-  it('tallies critical count correctly', () => {
-    const decls = {
-      flow: 'plan' as const,
-      claims: [
-        {
-          claimId: '00000000-0000-0000-0000-000000000002',
-          statement: 'Non-critical',
-          critical: false,
-          expectedCheckId: 'check-2',
-          authoritySectionId: 'sec-2',
-        },
-      ],
-    } as PlanClaimDeclarations;
-    const result = projectPlanProofObligations(decls);
-    expect(result).not.toBeNull();
-    expect(result!.criticalCount).toBe(0);
-  });
-
-  it('counterexample requirements produce equivalent projections regardless of localId', () => {
-    const legacy = {
-      flow: 'plan' as const,
-      claims: [
-        {
-          claimId: '00000000-0000-0000-0000-000000000010',
-          statement: 'legacy',
-          critical: true,
-          expectedCheckId: 'test',
-          authoritySectionId: 'sec-legacy',
-          counterexampleRequirement: {
-            checkId: 'security',
-            assertion: { providerId: 'junit', localId: 'some-id' },
-          },
-        },
-      ],
-    } as PlanClaimDeclarations;
-
-    const assertionForm = {
-      flow: 'plan' as const,
-      claims: [
-        {
-          claimId: '00000000-0000-0000-0000-000000000010',
-          statement: 'legacy',
-          critical: true,
-          expectedCheckId: 'test',
-          authoritySectionId: 'sec-legacy',
-          counterexampleRequirement: {
-            checkId: 'security',
-            assertion: { providerId: 'junit', localId: 'com.example.Test#method' },
-          },
-        },
-      ],
-    } as PlanClaimDeclarations;
-
-    const legacyResult = projectPlanProofObligations(legacy);
-    const assertionResult = projectPlanProofObligations(assertionForm);
-
-    expect(legacyResult?.kind).toBe('declaration');
-    expect(assertionResult?.kind).toBe('declaration');
-
-    if (legacyResult?.kind !== 'declaration' || assertionResult?.kind !== 'declaration') {
-      throw new Error('expected declaration presentation');
-    }
-
-    expect(legacyResult.falsificationReadyCount).toBe(assertionResult.falsificationReadyCount);
-    expect(legacyResult.missingFalsificationCount).toBe(assertionResult.missingFalsificationCount);
-    expect(legacyResult.criticalCount).toBe(assertionResult.criticalCount);
-  });
-});
-
 describe('projectProofStatusForState', () => {
   it('uses declared plan claims at PLAN_REVIEW before ProofGraph materialization', () => {
     const state = {
@@ -239,18 +134,6 @@ describe('projectProofStatusForState', () => {
       overallStatus: 'AWAITING_EVIDENCE',
       claimCount: 1,
     });
-  });
-});
-
-describe('projectArchitectureDecisionClaims', () => {
-  it('returns null for undefined declarations', () => {
-    expect(projectArchitectureDecisionClaims(undefined)).toBeNull();
-  });
-
-  it('returns null for empty claims', () => {
-    expect(
-      projectArchitectureDecisionClaims({ flow: 'architecture' as const, claims: [] }),
-    ).toBeNull();
   });
 });
 

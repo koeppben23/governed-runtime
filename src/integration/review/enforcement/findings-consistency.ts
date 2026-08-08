@@ -51,9 +51,9 @@ export interface ReviewFindingsConsistencyInput {
 }
 
 /**
- * Canonical coherence check. Returns `{ ok: true }` when the verdict is
- * consistent with the blocking-issue count, otherwise a typed failure that the
- * caller renders into its blocked format.
+ * Canonical coherence check. An `accept` verdict is valid only with zero
+ * blocking issues; other verdicts are not constrained by this rule. Returns a
+ * typed failure that the caller renders into its blocked format when incoherent.
  */
 export function validateReviewFindingsConsistency(
   input: ReviewFindingsConsistencyInput,

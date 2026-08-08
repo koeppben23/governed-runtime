@@ -32,7 +32,7 @@ describe('prepareVerificationExecution', () => {
         collection: 'run_specific' as const,
         transport: 'file' as const,
         format: 'junit_xml' as const,
-        providerId: 'vitest' as const,
+        providerId: 'jest' as const,
         outputArgumentTemplate: '--out={attemptId}',
         resultPatternTemplate: '{attemptId}.xml',
       },

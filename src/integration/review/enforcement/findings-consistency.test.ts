@@ -31,7 +31,7 @@ describe('review/enforcement/findings-consistency', () => {
   });
 
   describe('HAPPY — coherent combinations pass', () => {
-    it('accept + 0 blocking issues → ok', () => {
+    it('P3: accept + zero blocking issues is the only accepted zero-claim case', () => {
       expect(
         validateReviewFindingsConsistency({ overallVerdict: 'accept', blockingIssueCount: 0 }),
       ).toEqual({ ok: true });

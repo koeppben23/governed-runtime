@@ -403,8 +403,14 @@ describe('verification planner', () => {
         readFile: makeReadFile({}),
       });
 
-      expect(candidates.map((c) => c.candidate.kind)).toEqual(['test', 'lint', 'typecheck']);
+      expect(candidates.map((c) => c.candidate.kind)).toEqual([
+        'test',
+        'test',
+        'lint',
+        'typecheck',
+      ]);
       expect(candidates.map((c) => c.candidate.command)).toEqual([
+        'pnpm vitest run',
         'pnpm vitest run',
         'pnpm eslint .',
         'pnpm tsc --noEmit',

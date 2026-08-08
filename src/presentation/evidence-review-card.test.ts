@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildEvidenceReviewCard } from './evidence-review-card.js';
 import { buildReviewDecisionConclusion } from './review-decision.js';
-import type { CompactProofPresentation } from './proof-summary.js';
+import type { CompactProofPresentation } from './proof-model.js';
 
 const EVIDENCE_ACTION_DESCRIPTIONS: Record<string, string> = {
   '/approve': 'approve the implementation evidence',

@@ -16,13 +16,6 @@ import type {
   ProofApprovalPresentation,
 } from './proof-model.js';
 
-export type {
-  ClaimVerificationState,
-  CompactProofClaim,
-  CompactProofPresentation,
-  ProofApprovalPresentation,
-} from './proof-model.js';
-
 // ─── Renderer ───────────────────────────────────────────────────────────────
 
 export function renderCompactProofSection(presentation: CompactProofPresentation): string {

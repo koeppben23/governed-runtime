@@ -15,12 +15,8 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import {
-  renderCompactProofSection,
-  buildProofGraphSection,
-  type CompactProofPresentation,
-  type ClaimVerificationState,
-} from './proof-summary.js';
+import { renderCompactProofSection, buildProofGraphSection } from './proof-summary.js';
+import type { ClaimVerificationState, CompactProofPresentation } from './proof-model.js';
 
 function makeDeclaration(opts?: {
   flow?: 'plan' | 'architecture';
