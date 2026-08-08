@@ -422,35 +422,59 @@ export async function ensureMissingAnalysisObligation(
   const existing = findLatestPendingReviewObligation(state.reviewAssurance, 'review', fingerprint);
   const verdictFirstCall = args.reviewVerdict !== undefined && existing === null;
   if (!verdictFirstCall && args.reviewFindings !== undefined) return { message: null };
-  let obligation = existing;
-  if (!obligation) {
-    const created = await createNewReviewObligation({
+  if (!existing) {
+    return createAndPrepareMissingAnalysisObligation(
+      sessDir,
       state,
       args,
       now,
+      context,
       fingerprint,
       inputFingerprint,
-      ...context,
-    });
-    if (created.blocked) return { message: created.blocked };
-    obligation = created.obligation!;
-    const persisted = await persistReviewObligation(sessDir, state, obligation);
-    return {
-      message: formatMissingContentAnalysis(
-        obligation.obligationId,
-        state.policySnapshot?.reviewInvocationPolicy === 'host_task_required',
-      ),
-      obligation,
-      attemptId: persisted.attemptId,
-      assurance: persisted.assurance,
-    };
+    );
   }
+  return {
+    message: formatMissingContentAnalysis(
+      existing.obligationId,
+      state.policySnapshot?.reviewInvocationPolicy === 'host_task_required',
+    ),
+    obligation: existing,
+  };
+}
+
+async function createAndPrepareMissingAnalysisObligation(
+  sessDir: string,
+  state: SessionState,
+  args: ReviewToolArgs,
+  now: string,
+  context: Pick<NewReviewObligationInput, 'worktree' | 'resolvedSource'>,
+  fingerprint: string,
+  inputFingerprint: string,
+): Promise<{
+  message: string | null;
+  obligation?: ReviewObligation;
+  attemptId?: string;
+  assurance?: ReviewAssuranceState;
+}> {
+  const created = await createNewReviewObligation({
+    state,
+    args,
+    now,
+    fingerprint,
+    inputFingerprint,
+    ...context,
+  });
+  if (created.blocked) return { message: created.blocked };
+  const obligation = created.obligation!;
+  const persisted = await persistReviewObligation(sessDir, state, obligation);
   return {
     message: formatMissingContentAnalysis(
       obligation.obligationId,
       state.policySnapshot?.reviewInvocationPolicy === 'host_task_required',
     ),
     obligation,
+    attemptId: persisted.attemptId,
+    assurance: persisted.assurance,
   };
 }
 

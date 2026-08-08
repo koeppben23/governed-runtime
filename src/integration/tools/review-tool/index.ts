@@ -147,42 +147,48 @@ function resolveObligationBranchSource(
   return resolveBranchReviewSource(exec.args.branch, exec.args.base, exec.context.worktree);
 }
 
+function missingHostTaskVerdictBlock(
+  state: SessionState,
+  exec: ReviewExecutionContext,
+): string | null {
+  if (
+    exec.policy !== 'host_task_required' ||
+    exec.args.reviewVerdict === undefined ||
+    exec.args.reviewObligationId !== undefined ||
+    hasReviewContentInput(exec.args)
+  ) {
+    return null;
+  }
+  const candidates = (state.reviewAssurance?.obligations ?? []).filter(
+    (obligation) =>
+      obligation.obligationType === 'review' &&
+      obligation.status !== 'consumed' &&
+      obligation.status !== 'blocked',
+  );
+  if (candidates.length > 1) {
+    return formatBlocked('REVIEW_OBLIGATION_AMBIGUOUS', {
+      obligationIds: candidates.map((obligation) => obligation.obligationId).join(', '),
+      reason:
+        'More than one active review obligation could receive this host-task verdict. Supply reviewObligationId explicitly.',
+    });
+  }
+  return formatBlocked('REVIEW_OBLIGATION_ID_REQUIRED', {
+    reason:
+      'A host-task review verdict requires reviewObligationId unless this is the first content-aware review call.',
+    ...(candidates.length === 1 ? { reviewObligationId: candidates[0]!.obligationId } : {}),
+    continuation:
+      'Call flowguard_review with the original content fields, reviewObligationId, and reviewVerdict.',
+  });
+}
+
 async function prepareReviewExecution(
   sessDir: string,
   state: SessionState,
   result: StartedReviewResult,
   exec: ReviewExecutionContext,
 ): Promise<ReviewPreparation | string> {
-  // A verdict has no standalone meaning without either the reviewed content or
-  // the obligation that binds it to captured host-task evidence. Do not let an
-  // omitted continuation ID silently start an unrelated content-free review.
-  if (
-    exec.policy === 'host_task_required' &&
-    exec.args.reviewVerdict !== undefined &&
-    exec.args.reviewObligationId === undefined &&
-    !hasReviewContentInput(exec.args)
-  ) {
-    const candidates = (state.reviewAssurance?.obligations ?? []).filter(
-      (obligation) =>
-        obligation.obligationType === 'review' &&
-        obligation.status !== 'consumed' &&
-        obligation.status !== 'blocked',
-    );
-    if (candidates.length > 1) {
-      return formatBlocked('REVIEW_OBLIGATION_AMBIGUOUS', {
-        obligationIds: candidates.map((obligation) => obligation.obligationId).join(', '),
-        reason:
-          'More than one active review obligation could receive this host-task verdict. Supply reviewObligationId explicitly.',
-      });
-    }
-    return formatBlocked('REVIEW_OBLIGATION_ID_REQUIRED', {
-      reason:
-        'A host-task review verdict requires reviewObligationId unless this is the first content-aware review call.',
-      ...(candidates.length === 1 ? { reviewObligationId: candidates[0]!.obligationId } : {}),
-      continuation:
-        'Call flowguard_review with the original content fields, reviewObligationId, and reviewVerdict.',
-    });
-  }
+  const missingVerdictBlock = missingHostTaskVerdictBlock(state, exec);
+  if (missingVerdictBlock) return missingVerdictBlock;
   const resolvedSource = resolveObligationBranchSource(exec);
 
   const hostTaskVerdict = await prepareHostTaskVerdictReview(sessDir, state, result, exec);
