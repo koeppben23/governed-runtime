@@ -13,10 +13,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   resolveSubmittedReviewProofResponse,
-  buildImplReviewConvergedMarkdown,
   buildImplReviewChangesRequestedMarkdown,
   type ResolvedSubmittedReviewProof,
 } from './implement-review.js';
+import { buildEvidenceReviewCard } from '../../presentation/index.js';
+import type { EvidenceReviewCardInput } from '../../presentation/evidence-review-card.js';
 import {
   projectCompletionProofStatus,
   projectImplementationProofStatus,
@@ -186,17 +187,25 @@ describe('presentation.markdown rendering contract', () => {
     );
   });
 
-  it('accept markdown shows current_gate', () => {
+  it('accept card shows current_gate ProofGraph and decision gate', () => {
     const summary = projectImplementationProofStatus(proofGraphState(), {
       decisionContext: 'current_gate',
     });
-    const markdown = buildImplReviewConvergedMarkdown(
-      'Implementation review converged at iteration 1. Reviewer accepted.',
-      summary!,
-    );
+    const cardInput: EvidenceReviewCardInput = {
+      phaseLabel: 'Ready for final review',
+      productNextAction: {
+        text: 'Review the implementation evidence.',
+        commands: ['/approve', '/request-changes', '/reject'],
+      },
+      proofSummary: summary!,
+      statusLine: 'Implementation review converged at iteration 1. Reviewer accepted.',
+    };
+    const markdown = buildEvidenceReviewCard(cardInput);
     expect(markdown).toContain('## ProofGraph');
     expect(markdown).toContain('All critical claims PROVEN');
     expect(markdown).not.toContain('If submitted for approval now:');
+    expect(markdown).toContain('## Decision required');
+    expect(markdown).toContain('/approve');
   });
 
   it('unable_to_review blocked response contains presentation.markdown', () => {

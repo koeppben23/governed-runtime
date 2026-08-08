@@ -17,6 +17,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   renderCompactProofSection,
+  buildProofGraphSection,
   type CompactProofPresentation,
   type ClaimVerificationState,
 } from './proof-summary.js';
@@ -281,5 +282,34 @@ describe('renderCompactProofSection', () => {
       expect(result).not.toContain('0 STALE');
       expect(result).not.toContain('0 NOT_VERIFIED');
     });
+  });
+});
+
+describe('buildProofGraphSection', () => {
+  it('returns a text section wrapping the rendered proof summary', () => {
+    const section = buildProofGraphSection(makeEvaluation('PROVEN', { provenCount: 1 }));
+    expect(section.kind).toBe('text');
+    if (section.kind === 'text') {
+      expect(section.content).toContain('## ProofGraph');
+      expect(section.content).toContain('All critical claims PROVEN');
+    }
+  });
+
+  it('declaration kind renders ## Proof obligations', () => {
+    const decl = makeDeclaration({ flow: 'plan', claimCount: 1, criticalCount: 1 });
+    const section = buildProofGraphSection(decl);
+    expect(section.kind).toBe('text');
+    if (section.kind === 'text') {
+      expect(section.content).toContain('## Proof obligations');
+      expect(section.content).toContain('1 plan claim(s) declared');
+    }
+  });
+
+  it('normalized content has no leading or trailing newlines', () => {
+    const section = buildProofGraphSection(makeEvaluation('PROVEN', { provenCount: 2 }));
+    if (section.kind === 'text') {
+      expect(section.content).not.toMatch(/^\n/);
+      expect(section.content).not.toMatch(/\n$/);
+    }
   });
 });

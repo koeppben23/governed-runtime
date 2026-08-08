@@ -8,6 +8,9 @@
  * @version v1
  */
 
+import type { PresentationSection } from './model.js';
+import { normalizedMarkdown } from './model.js';
+
 // ─── Public types ───────────────────────────────────────────────────────────
 
 export interface CompactProofClaim {
@@ -183,4 +186,24 @@ function renderHeadlineLabel(status: ClaimVerificationState): string {
     case 'PROVEN':
       return 'All critical claims PROVEN';
   }
+}
+
+// ─── Canonical ProofGraph Presentation Section ────────────────────────────────
+
+/**
+ * Build the canonical proofGraph presentation section for review cards.
+ *
+ * Every card that displays ProofGraph data MUST use this function instead of
+ * calling {@link renderCompactProofSection} + rolling its own text wrapping.
+ * The heading semantics (## Proof obligations vs ## ProofGraph) are owned by
+ * {@link renderCompactProofSection}; the structural section wrapping is owned
+ * here.
+ */
+export function buildProofGraphSection(
+  presentation: CompactProofPresentation,
+): PresentationSection {
+  return {
+    kind: 'text',
+    content: normalizedMarkdown(renderCompactProofSection(presentation)),
+  };
 }

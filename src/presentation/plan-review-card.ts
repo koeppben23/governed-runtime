@@ -16,10 +16,9 @@
 import type { Phase } from '../state/schema.js';
 import type { ReviewCardDocument, PresentationSection, KeyValueItem } from './model.js';
 import { renderMarkdown } from './markdown.js';
-import { normalizedMarkdown } from './model.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-summary.js';
-import { renderCompactProofSection } from './proof-summary.js';
+import { buildProofGraphSection } from './proof-summary.js';
 import { buildReviewDecisionConclusion } from './review-decision.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
@@ -119,8 +118,7 @@ export function buildPlanReviewCard(
 
   // ── Proof obligations (pre-approval) ───────────────────────────────
   if (input.proofSummary) {
-    const rendered = renderCompactProofSection(input.proofSummary);
-    sections.push({ kind: 'text', content: normalizedMarkdown(rendered) });
+    sections.push(buildProofGraphSection(input.proofSummary));
   }
 
   // ── Plan Body (verbatim) ───────────────────────────────────────────

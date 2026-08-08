@@ -24,10 +24,9 @@ import type {
   FindingItem,
 } from './model.js';
 import { renderMarkdown } from './markdown.js';
-import { normalizedMarkdown } from './model.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-summary.js';
-import { renderCompactProofSection } from './proof-summary.js';
+import { buildProofGraphSection } from './proof-summary.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -161,8 +160,7 @@ export function buildArchitectureReviewCard(
 
   // ── Decision claims (advisory) ──────────────────────────────────────
   if (input.proofSummary) {
-    const rendered = renderCompactProofSection(input.proofSummary);
-    sections.push({ kind: 'text', content: normalizedMarkdown(rendered) });
+    sections.push(buildProofGraphSection(input.proofSummary));
   }
 
   // ── ADR Details ────────────────────────────────────────────────────

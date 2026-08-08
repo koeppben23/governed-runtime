@@ -134,19 +134,6 @@ function buildImplReviewBlockedMarkdown(
   ].join('\n');
 }
 
-export function buildImplReviewConvergedMarkdown(
-  statusLine: string,
-  proofSummary: CompactProofPresentation,
-): string {
-  return [
-    statusLine,
-    '',
-    renderCompactProofSection(proofSummary),
-    '',
-    '→ Continue to completion or run flowguard_status for review context.',
-  ].join('\n');
-}
-
 export function buildImplReviewChangesRequestedMarkdown(
   statusLine: string,
   proofSummary: CompactProofPresentation,
@@ -526,6 +513,11 @@ async function handleApprovedReview(input: {
   reviewFindings: ReviewFindings[];
   proofSummary?: CompactProofPresentation | null;
 }): Promise<string> {
+  // Resolve presentation dependencies before any state mutation.
+  // If config I/O fails, no EVIDENCE_REVIEW state has been persisted.
+  const glyphProfile = (await readConfig(input.runtime.worktree)).presentation.opencode
+    .glyphProfile;
+
   const advanced = autoAdvance(
     input.reviewedState,
     (s) => evaluate(s, input.runtime.policy),
@@ -561,8 +553,6 @@ async function handleApprovedReview(input: {
       statusLine,
       forcedConvergence: input.runtime.args.reviewVerdict !== 'accept',
     };
-    const glyphProfile = (await readConfig(input.runtime.worktree)).presentation.opencode
-      .glyphProfile;
     const cardMarkdown = buildEvidenceReviewCard(cardInput, { glyphProfile });
     response.presentation = { markdown: cardMarkdown };
   }

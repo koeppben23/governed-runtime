@@ -11,12 +11,11 @@
  * @version v1
  */
 
-import type { ReviewCardDocument, PresentationSection } from './model.js';
+import type { ReviewCardDocument, PresentationSection, KeyValueItem } from './model.js';
 import { renderMarkdown } from './markdown.js';
-import { normalizedMarkdown } from './model.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-summary.js';
-import { renderCompactProofSection } from './proof-summary.js';
+import { buildProofGraphSection } from './proof-summary.js';
 import { buildReviewDecisionConclusion } from './review-decision.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
@@ -57,22 +56,31 @@ export function buildEvidenceReviewCard(
 ): string {
   const sections: PresentationSection[] = [];
 
-  // ── Header ──────────────────────────────────────────────────────────
-  const headerLines: string[] = [];
-  headerLines.push('# FlowGuard Implementation Review');
-  headerLines.push(`**Status:** ${input.statusLine}`);
-  headerLines.push(`**Phase:** ${input.phaseLabel}`);
+  // ── Title ──────────────────────────────────────────────────────────
+  sections.push({ kind: 'title', text: 'FlowGuard Implementation Review' });
+
+  // ── Metadata ───────────────────────────────────────────────────────
+  const metadata: KeyValueItem[] = [{ label: 'Status', value: input.statusLine }];
+  metadata.push({ label: 'Phase', value: input.phaseLabel });
+  sections.push({ kind: 'keyValue', items: metadata });
+
+  // ── Force-convergence warning ──────────────────────────────────────
   if (input.forcedConvergence) {
-    headerLines.push(
-      '**Warning:** Review loop force-converged at the iteration limit without reviewer approval. Your decision is required.',
-    );
+    sections.push({
+      kind: 'notice',
+      level: 'warning',
+      message: 'Reviewer did NOT approve this implementation.',
+      additionalMessages: [
+        'The independent review reached its iteration limit without convergence. ' +
+          'Review the implementation and outstanding findings carefully before approving.',
+      ],
+      details: [],
+    });
   }
-  sections.push({ kind: 'text', content: normalizedMarkdown(headerLines.join('\n')) });
 
   // ── ProofGraph summary (post-evaluation) ────────────────────────────
   if (input.proofSummary) {
-    const rendered = renderCompactProofSection(input.proofSummary);
-    sections.push({ kind: 'text', content: normalizedMarkdown(rendered) });
+    sections.push(buildProofGraphSection(input.proofSummary));
   }
 
   const document: ReviewCardDocument = {
