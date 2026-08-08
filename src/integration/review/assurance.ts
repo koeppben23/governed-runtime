@@ -128,6 +128,9 @@ export function createReviewObligation(input: {
     subjectDigest: input.subjectDigest,
     metadata: input.metadata,
     ...(input.fingerprintVersion ? { fingerprintVersion: input.fingerprintVersion } : {}),
+    ...(input.changedFiles && input.changedFiles.length > 0
+      ? { reviewedFileScope: [...input.changedFiles] }
+      : {}),
   };
 }
 

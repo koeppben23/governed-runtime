@@ -77,12 +77,13 @@ function isGateEligible(claim: ProofClaim): boolean {
 
 function claimReasonCodes(
   claim: ProofClaim,
-  _diagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>,
+  diagnostics?: ReadonlyMap<string, AssertionBindingReasonCode>,
 ): EnforcementReasonCode[] {
   const reasons: EnforcementReasonCode[] = [];
   if (!claim.provenance) {
     reasons.push('provenance_missing');
   }
+  const diag = diagnostics?.get(claim.claimId);
   switch (claim.verificationState) {
     case 'PROVEN':
       reasons.push('proven');
@@ -91,7 +92,7 @@ function claimReasonCodes(
       reasons.push('counterexample_observed');
       break;
     case 'NOT_VERIFIED':
-      reasons.push('evidence_missing');
+      reasons.push(diag ?? 'evidence_missing');
       break;
     case 'STALE':
       reasons.push('evidence_stale');
@@ -193,7 +194,11 @@ function evaluatePreconditions(
     };
   }
 
-  // With no eligible facts, risk triggers are the sole authority requiring a claim.
+  // Authority invariant: zero claims + riskTriggersPresent → critical_fact_required.
+  // Zero claims + no risk triggers → clear (satisfied). The enforcement outcome
+  // for zero claims depends solely on whether risk triggers were detected for
+  // the current implementation. This differs from the evaluation_unavailable path
+  // (authorized claims missing from projection), which always blocks.
   if (eligibleClaims.length === 0 && input.riskTriggersPresent === true) {
     return {
       claims: [],

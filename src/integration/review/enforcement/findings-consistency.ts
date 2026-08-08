@@ -38,6 +38,18 @@ export type ReviewFindingsConsistencyResult =
       };
     };
 
+/** Boundary-neutral result of the canonical file-scope consistency check. */
+export type ReviewFindingsScopeResult =
+  | { readonly ok: true }
+  | {
+      readonly ok: false;
+      readonly code: 'REVIEW_FINDING_OUT_OF_SCOPE' | 'REVIEW_FINDING_SCOPE_UNVERIFIABLE';
+      readonly details: {
+        readonly outOfScopePaths: readonly string[];
+        readonly reviewedFileScope: readonly string[];
+      };
+    };
+
 /**
  * Minimal shape required to evaluate the coherence rule.
  *
@@ -68,5 +80,77 @@ export function validateReviewFindingsConsistency(
       },
     };
   }
+  return { ok: true };
+}
+
+// ─── File-Scope Validation ────────────────────────────────────────────────
+
+function normalizeFilePath(raw: string): string {
+  let path = raw.trim();
+  while (path.startsWith('./')) {
+    path = path.slice(2);
+  }
+  const segments = path.split('/').filter(Boolean);
+  const resolved: string[] = [];
+  for (const segment of segments) {
+    if (segment === '..') {
+      if (resolved.length > 0 && resolved[resolved.length - 1] !== '..') {
+        resolved.pop();
+      } else {
+        resolved.push(segment);
+      }
+    } else if (segment !== '.') {
+      resolved.push(segment);
+    }
+  }
+  return resolved.join('/');
+}
+
+export interface FindingWithLocation {
+  readonly location?: string;
+}
+
+/**
+ * Canonical file-scope check. Every finding with a `location` must fall within
+ * the frozen `reviewedFileScope`. Legacy obligations without a frozen scope
+ * yield `scope_unverifiable` rather than silently passing.
+ *
+ * Separate from the verdict/blocking-issues coherence check but co-located in
+ * the same canonical authority module — no parallel validator.
+ */
+export function validateReviewFindingsScope(input: {
+  readonly findings: readonly FindingWithLocation[];
+  readonly reviewedFileScope?: readonly string[];
+}): ReviewFindingsScopeResult {
+  const scope = input.reviewedFileScope;
+
+  if (!scope) {
+    return {
+      ok: false,
+      code: 'REVIEW_FINDING_SCOPE_UNVERIFIABLE',
+      details: { outOfScopePaths: [], reviewedFileScope: [] },
+    };
+  }
+
+  const normalizedScope = new Set(scope.map(normalizeFilePath));
+  const outOfScope: string[] = [];
+
+  for (const finding of input.findings) {
+    const location = finding.location?.trim();
+    if (!location || location.length === 0) continue;
+    const normalized = normalizeFilePath(location);
+    if (!normalizedScope.has(normalized)) {
+      outOfScope.push(location);
+    }
+  }
+
+  if (outOfScope.length > 0) {
+    return {
+      ok: false,
+      code: 'REVIEW_FINDING_OUT_OF_SCOPE',
+      details: { outOfScopePaths: outOfScope, reviewedFileScope: scope },
+    };
+  }
+
   return { ok: true };
 }

@@ -48,6 +48,8 @@ export interface ReviewReportCardInput {
     overallComplete: boolean;
     fourEyes: boolean;
     summary: string;
+    /** Total slots evaluated. 0 means completeness was not assessed for any slots. */
+    total: number;
   };
   /** Where the review input originated (pr, branch, url, manual_text). */
   inputOrigin?: string;
@@ -228,7 +230,15 @@ export function buildReviewReportDocument(input: ReviewReportCardInput): ReviewC
     kind: 'keyValue',
     heading: 'Completeness',
     items: [
-      { label: 'Overall', value: completeness.overallComplete ? 'Complete' : 'Incomplete' },
+      {
+        label: 'Overall',
+        value:
+          completeness.total === 0
+            ? 'Not assessed'
+            : completeness.overallComplete
+              ? 'Complete'
+              : 'Incomplete',
+      },
       {
         label: 'Four-eyes principle',
         value: completeness.fourEyes ? 'Satisfied' : 'Not satisfied / Not recorded',

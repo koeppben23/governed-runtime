@@ -438,6 +438,17 @@ export const ReviewObligation = z.object({
   attemptIds: z.array(z.string().uuid()).optional(),
   /** Optional metadata, e.g. input fingerprint for standalone /review obligations. */
   metadata: z.record(z.string(), z.unknown()).optional(),
+  /**
+   * Frozen set of file paths the reviewer was issued for this obligation.
+   * Frozen at obligation creation from the actual `changedFiles` set handed to
+   * the reviewer. Optional for backward compatibility with obligations persisted
+   * before this field existed.
+   *
+   * Absence (legacy) means `scope_unverifiable` — no hard claim that findings
+   * are scope-valid. Consumers that require scope verification must fail closed
+   * when this field is absent.
+   */
+  reviewedFileScope: z.array(z.string().min(1)).readonly().optional(),
 });
 export type ReviewObligation = z.infer<typeof ReviewObligation>;
 

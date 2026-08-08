@@ -42,6 +42,7 @@ import {
   extractCapturedFindings,
   resolveSubagentSessionId,
   promptContainsValue,
+  detectStepExhaustion,
 } from './extraction.js';
 import { validateReviewFindingsConsistency } from './findings-consistency.js';
 export { enforceBeforeSubagentCall } from './prompt-integrity.js';
@@ -259,9 +260,14 @@ export function onTaskToolAfter(
   // Capture actual findings from the subagent response
   const capturedFindings = extractCapturedFindings(taskResult);
 
+  const terminationReason = detectStepExhaustion(taskResult)
+    ? ('step_exhausted' as const)
+    : undefined;
+
   const record: SubagentRecord = {
     sessionId,
     completedAt: now,
+    ...(terminationReason ? { terminationReason } : {}),
   };
 
   // Match exactly ONE pending review obligation (P34 1:1 contract).
@@ -291,6 +297,7 @@ export function onTaskToolAfter(
  * bad capture (new child session + new findings hash → no duplicate).
  */
 function hasUsableCapture(pending: PendingReview): boolean {
+  if (pending.subagentRecord?.terminationReason === 'step_exhausted') return false;
   const parsed = ReviewFindings.safeParse(pending.capturedFindings?.rawFindings);
   if (!parsed.success) return false;
   return validateReviewFindingsConsistency({

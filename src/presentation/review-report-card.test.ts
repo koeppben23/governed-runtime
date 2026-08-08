@@ -29,6 +29,7 @@ const baseInput = {
   completeness: {
     overallComplete: true,
     fourEyes: false,
+    total: 3,
     summary: '3/3 complete, 0 missing',
   },
   proofSummary: {
@@ -175,6 +176,7 @@ describe('implementation review golden fixtures', () => {
       completeness: {
         overallComplete: true,
         fourEyes: true,
+        total: 6,
         summary: '6/6 complete, 0 missing',
       },
       inputOrigin: 'pr',
@@ -204,6 +206,7 @@ describe('implementation review golden fixtures', () => {
       completeness: {
         overallComplete: false,
         fourEyes: false,
+        total: 6,
         summary: '4/6 complete, 2 missing',
       },
       inputOrigin: 'pr',
@@ -222,6 +225,7 @@ describe('compliance review golden fixtures', () => {
       completeness: {
         overallComplete: true,
         fourEyes: true,
+        total: 3,
         summary: '3/3 complete, 0 missing',
       },
       inputOrigin: 'manual_text',
@@ -257,6 +261,7 @@ describe('compliance review golden fixtures', () => {
       completeness: {
         overallComplete: false,
         fourEyes: false,
+        total: 3,
         summary: '1/3 complete, 2 missing',
       },
       inputOrigin: 'branch',

@@ -25,40 +25,17 @@ import {
   checkChallengeContract,
   normalizeFindingsChallenges,
 } from './enforcement/challenge-binding.js';
-import { validateReviewFindingsConsistency } from './enforcement/findings-consistency.js';
+import {
+  validateReviewFindingsConsistency,
+  validateReviewFindingsScope,
+  type FindingWithLocation,
+} from './enforcement/findings-consistency.js';
 import {
   ReviewActorInfo,
   ReviewFindings as ReviewFindingsSchema,
 } from '../../state/evidence-review.js';
 
-/**
- * Build host-subagent-task invocation evidence from enforcement state and persisted obligations.
- *
- * Called after `onTaskToolAfter` records a Task tool call to flowguard-reviewer.
- * Creates persistent ReviewInvocationEvidence with invocationMode='host_subagent_task'
- * and hostVisible=true, so that validateReviewFindings can find it during tool.execute.
- *
- * @param state - Session enforcement state (after onTaskToolAfter update)
- * @param sessionId - Current session ID (parent session)
- * @param obligations - Persisted review obligations from session state
- * @param invocations - Persisted invocation evidence from session state
- * @param now - ISO 8601 timestamp
- * @param attempts - Recorded invocation attempts. REQUIRED: the attempt is the
- *   primary binding authority, so callers must be explicit about which
- *   invocation envelopes exist. Passing an empty array means "no invocation was
- *   ever recorded", which correctly yields `unknown_attempt`.
- * @returns HostTaskBindResult with evidence (or null) plus diagnostic metadata
- */
-/**
- * Transport contract for the captured findings.
- *
- * F8: findings recovered from an embedded/brace-balanced block (mixed model
- * output) are downgraded from structured_high so the audit trail reflects the
- * lower provenance confidence. The whole contract must agree — a recovered block
- * was NOT clean structured output, so reviewOutputMode, structuredOutputUsed,
- * and extractionMethod are set consistently rather than left at their
- * structured-output defaults. Binding still proceeds.
- */
+/** Transport contract for captured findings: recovered findings downgrade assurance. */
 function transportContract(latest: PendingReviewRecord) {
   return latest.capturedFindings?.extractionMethod === 'recovered_block'
     ? {
@@ -685,10 +662,35 @@ function prepareBindableFindings(input: {
       };
     }
   }
-
   const contractCheck = checkChallengeContract(findings, obligation, childSessionId);
   if (contractCheck) return contractCheck;
-
+  const locationFindings: FindingWithLocation[] = [];
+  [findings.blockingIssues, findings.majorRisks].forEach((arr) => {
+    if (Array.isArray(arr))
+      arr.forEach((item) => {
+        if (item && typeof item === 'object') locationFindings.push(item as FindingWithLocation);
+      });
+  });
+  const scopeResult = validateReviewFindingsScope({
+    findings: locationFindings,
+    reviewedFileScope: obligation.reviewedFileScope,
+  });
+  if (!scopeResult.ok) {
+    return {
+      evidence: null,
+      bindOutcome: 'review_finding_out_of_scope',
+      diagnostic: {
+        childSessionId,
+        obligationId: obligation.obligationId,
+        code: scopeResult.code,
+        ...scopeResult.details,
+        message:
+          scopeResult.code === 'REVIEW_FINDING_SCOPE_UNVERIFIABLE'
+            ? 'Legacy obligation: no frozen reviewedFileScope, scope unverifiable.'
+            : 'Reviewer findings reference paths outside the reviewed file scope.',
+      },
+    };
+  }
   return { findings };
 }
 

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { validateReviewFindingsConsistency } from './findings-consistency.js';
+import {
+  validateReviewFindingsConsistency,
+  validateReviewFindingsScope,
+} from './findings-consistency.js';
 
 // F12: canonical verdict/blocking-issues coherence invariant (strict emptiness).
 // This is the single source of truth for the rule; both ingestion boundaries
@@ -72,6 +75,62 @@ describe('review/enforcement/findings-consistency', () => {
       expect(
         validateReviewFindingsConsistency({ overallVerdict: 'accept', blockingIssueCount: 0 }),
       ).toEqual({ ok: true });
+    });
+  });
+
+  describe('validateReviewFindingsScope', () => {
+    it('path matching a scope entry is valid', () => {
+      const result = validateReviewFindingsScope({
+        findings: [{ location: 'src/foo.ts' }],
+        reviewedFileScope: ['src/foo.ts', 'src/bar.ts'],
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    it('path outside scope is rejected', () => {
+      const result = validateReviewFindingsScope({
+        findings: [{ location: 'src/baz.ts' }],
+        reviewedFileScope: ['src/foo.ts'],
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('expected rejection');
+      expect(result.code).toBe('REVIEW_FINDING_OUT_OF_SCOPE');
+      expect(result.details.outOfScopePaths).toContain('src/baz.ts');
+    });
+
+    it('./ prefix is normalized before comparison', () => {
+      const result = validateReviewFindingsScope({
+        findings: [{ location: './src/foo.ts' }],
+        reviewedFileScope: ['src/foo.ts'],
+      });
+      expect(result.ok).toBe(true);
+    });
+
+    it('path traversal via ../ is caught and normalized', () => {
+      const result = validateReviewFindingsScope({
+        findings: [{ location: 'src/../etc/passwd' }],
+        reviewedFileScope: ['src/foo.ts'],
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('expected rejection');
+      expect(result.details.outOfScopePaths).toContain('src/../etc/passwd');
+    });
+
+    it('legacy obligation without reviewedFileScope → scope_unverifiable', () => {
+      const result = validateReviewFindingsScope({
+        findings: [{ location: 'src/foo.ts' }],
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) throw new Error('expected rejection');
+      expect(result.code).toBe('REVIEW_FINDING_SCOPE_UNVERIFIABLE');
+    });
+
+    it('findings without locations pass scope check', () => {
+      const result = validateReviewFindingsScope({
+        findings: [{ message: 'no location' }],
+        reviewedFileScope: ['src/foo.ts'],
+      });
+      expect(result.ok).toBe(true);
     });
   });
 });

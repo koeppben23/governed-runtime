@@ -233,10 +233,12 @@ function reviewCardCompleteness(report: ReviewReportResult): {
   overallComplete: boolean;
   fourEyes: boolean;
   summary: string;
+  total: number;
 } {
   return {
     overallComplete: report.completeness.overallComplete,
     fourEyes: report.completeness.fourEyes?.satisfied ?? false,
+    total: report.completeness.summary.total,
     summary:
       `${report.completeness.summary.complete}/${report.completeness.summary.total} complete, ` +
       `${report.completeness.summary.missing} missing`,

@@ -22,6 +22,14 @@ export interface SubagentRecord {
   readonly sessionId: string | null;
   /** ISO 8601 timestamp when the Task call completed. */
   readonly completedAt: string;
+  /**
+   * Host-detected termination reason. When present, the subagent did not
+   * complete normally and its output may be incomplete. Known values:
+   * - `step_exhausted`: the subagent reached its step budget and was
+   *   forcibly terminated; any findings are incomplete and must never be
+   *   bound as complete review evidence.
+   */
+  readonly terminationReason?: 'step_exhausted';
 }
 
 /**
@@ -160,6 +168,7 @@ export type HostTaskBindOutcome =
   | 'challenge_contract_violation'
   | 'challenge_evidence_unknown'
   | 'findings_incoherent'
+  | 'review_finding_out_of_scope'
   | 'subject_mismatch'
   | 'stale_attempt'
   | 'idempotent_bound'

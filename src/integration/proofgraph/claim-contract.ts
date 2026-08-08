@@ -405,6 +405,55 @@ function checkCounterexampleSatisfiability(
   return null;
 }
 
+/** Rule 9: a suite claim requires a structurally reachable positive full-suite path. */
+function checkSuitePositiveSatisfiability(
+  input: ClaimContractInput,
+  claim: NormalizedClaimDeclaration,
+): ClaimContractResult | null {
+  if (claim.claimScope !== 'suite') return null;
+
+  const candidates = input.verificationCandidates.filter((c) => c.kind === claim.positiveCheckId);
+
+  if (candidates.length === 0) {
+    return invalid(
+      input.source,
+      claim,
+      'positiveCheckId',
+      `suite claim requires an active verification candidate for check '${claim.positiveCheckId}'`,
+      'unsatisfiable',
+    );
+  }
+
+  const suiteCandidate = candidates.find(
+    (c) => c.assertionCapability === 'structured' && c.fullCheckScopeAttestation === 'full_check',
+  );
+
+  if (!suiteCandidate) {
+    const best = candidates.find((c) => c.assertionCapability === 'structured');
+    if (!best) {
+      return invalid(
+        input.source,
+        claim,
+        'positiveCheckId',
+        `no structured assertion-capable candidate for check '${claim.positiveCheckId}' (${candidates.length} candidate(s), all assertionCapability='unsupported'); suite claims require structured full-suite evidence`,
+        'unsatisfiable',
+      );
+    }
+    const candidateLabel = best.candidateId
+      ? `candidate '${best.candidateId}'`
+      : `check '${claim.positiveCheckId}'`;
+    return invalid(
+      input.source,
+      claim,
+      'positiveCheckId',
+      `${candidateLabel} is structured but lacks explicit full-check scope completeness attestation required for suite claims; provider '${best.source}' does not attest full-suite coverage`,
+      'unsatisfiable',
+    );
+  }
+
+  return null;
+}
+
 /**
  * Validate the full claim set atomically.
  *
@@ -423,6 +472,7 @@ export function validateProofClaimContract(input: ClaimContractInput): ClaimCont
       checkCheckReferences(input, claim) ??
       checkRegistries(input, claim) ??
       checkAuthoritySection(input, claim) ??
+      checkSuitePositiveSatisfiability(input, claim) ??
       checkCounterexampleScope(input, claim) ??
       checkCounterexampleSatisfiability(input, claim);
     if (violation) return violation;
