@@ -263,13 +263,18 @@ function enforceProofGraphEvidenceApproval(
   if (state.phase !== 'EVIDENCE_REVIEW' || input.verdict !== 'approve') {
     return null;
   }
+  const authorization = authorizedCriticalPlanClaimIds(state.plan);
   const decision = evaluateProofGraphGate({
     projection: state.proofGraph,
-    authorizedCriticalClaimIds: authorizedCriticalPlanClaimIds(state.plan),
+    authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    certificateValid: authorization.kind === 'authorized',
     implementationDigest: state.implementation?.digest,
     riskAssessment: state.implementationRiskAssessment,
   });
   if (!decision.gated) return null;
+  if (decision.kind === 'certificate_invalid') {
+    return blocked('PROOFGRAPH_CERTIFICATE_INVALID', {});
+  }
   if (decision.kind === 'evaluation_unavailable') {
     return blocked('PROOFGRAPH_EVALUATION_UNAVAILABLE', {
       claimIds: decision.blockingClaimIds.join(', '),

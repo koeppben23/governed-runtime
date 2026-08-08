@@ -181,9 +181,11 @@ async function buildProofGraphProjectionResponse(
     surfaceDigests: surfaceDigestMap(structuralSurfaces),
     mutationSummaries,
   });
+  const authorization = authorizedCriticalPlanClaimIds(state.plan);
   const proofGraphGate = evaluateProofGraphGate({
     projection: proofGraph.projection,
-    authorizedCriticalClaimIds: authorizedCriticalPlanClaimIds(state.plan),
+    authorizedCriticalClaimIds: authorization.kind === 'authorized' ? authorization.claimIds : [],
+    certificateValid: authorization.kind === 'authorized',
     implementationDigest: state.implementation?.digest,
     riskAssessment: state.implementationRiskAssessment,
     claimDiagnostics: proofGraph.claimDiagnostics,

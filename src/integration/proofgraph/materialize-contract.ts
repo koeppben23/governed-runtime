@@ -203,6 +203,7 @@ export async function materializeApprovedPlanContractResult(
       statement: declaration.statement,
       signalClass: 'fact' as const,
       critical: declaration.critical,
+      ...('claimScope' in declaration ? { claimScope: declaration.claimScope } : {}),
       provenance: {
         kind: 'canonical_authority' as const,
         authorityId: 'plan',

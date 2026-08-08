@@ -41,7 +41,7 @@ function validationResult(passed: boolean, over: Record<string, unknown> = {}) {
   };
 }
 
-function claimRefingAttempt(attemptId = ATT) {
+function claimRefingAttempt(attemptId = ATT, claimScope?: 'specific_behavior' | 'suite') {
   return {
     claimId: CLAIM,
     statement: 'the change is covered by a passing test',
@@ -50,6 +50,7 @@ function claimRefingAttempt(attemptId = ATT) {
     provenance: AUTHORITY_REF,
     evidenceRefs: [{ kind: 'validation_attempt' as const, attemptId }],
     counterexampleRefs: [],
+    ...(claimScope ? { claimScope } : {}),
   };
 }
 
@@ -125,6 +126,44 @@ describe('bindExecutedTestEvidence', () => {
       { attemptId: ATT, scope: 'baseline', planDigest: 'plan', result: validationResult(true) },
     ]);
     expect(bindExecutedTestEvidence(state, NOW)[0]!.status).toBe('unavailable');
+  });
+
+  it('requires attempt-bound full-check attestation for suite positive evidence', () => {
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL,
+      proofContract: {
+        version: 'contract.v1',
+        claims: [claimRefingAttempt(ATT, 'suite')],
+      },
+      validationAttempts: [
+        {
+          attemptId: ATT,
+          scope: 'implementation',
+          implementationDigest: IMPL_DIGEST,
+          result: validationResult(true),
+        },
+      ],
+    });
+    expect(bindExecutedTestEvidence(state, NOW)[0]!.status).toBe('unavailable');
+  });
+
+  it('binds suite positive evidence only when its executed attempt is full-check attested', () => {
+    const state = makeState('IMPL_VALIDATION', {
+      implementation: IMPL,
+      proofContract: {
+        version: 'contract.v1',
+        claims: [claimRefingAttempt(ATT, 'suite')],
+      },
+      validationAttempts: [
+        {
+          attemptId: ATT,
+          scope: 'implementation',
+          implementationDigest: IMPL_DIGEST,
+          result: validationResult(true, { fullCheckScopeAttestation: 'full_check' }),
+        },
+      ],
+    });
+    expect(bindExecutedTestEvidence(state, NOW)[0]!.status).toBe('pass');
   });
 
   it('ignores non-validation_attempt evidence references', () => {

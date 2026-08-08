@@ -11,7 +11,16 @@
 import { z } from 'zod';
 import { canonicalJsonStringify } from '../shared/canonical-json.js';
 import { hashText } from '../shared/hashing.js';
-import { AssertionIdentity } from './assertion-identity.js';
+import {
+  LegacyAssertionCounterexampleRequirement,
+  V2CounterexampleRequirement,
+} from './proofgraph.js';
+export {
+  AggregateCounterexampleRequirement,
+  AssertionCounterexampleRequirement,
+  LegacyAssertionCounterexampleRequirement,
+  V2CounterexampleRequirement,
+} from './proofgraph.js';
 import * as crypto from 'node:crypto';
 
 /** RFC 4122 DNS namespace, used to derive stable UUIDv5 claim identities. */
@@ -51,48 +60,6 @@ const preEvidenceClaimDeclaration = {
   critical: z.boolean(),
   authoritySectionId: z.string().min(1),
 } as const;
-
-/** Structured assertion-bound counterexample requirement. */
-const LegacyAssertionCounterexampleRequirement = z
-  .object({
-    checkId: z.string().min(1),
-    assertion: AssertionIdentity,
-  })
-  .strict()
-  .readonly();
-export const AssertionCounterexampleRequirement = z
-  .object({
-    kind: z.literal('assertion'),
-    checkId: z.string().min(1),
-    assertion: AssertionIdentity,
-  })
-  .strict()
-  .readonly();
-export const AggregateCounterexampleRequirement = z
-  .object({ kind: z.literal('aggregate_check'), checkId: z.string().min(1) })
-  .strict()
-  .readonly();
-export const V2CounterexampleRequirement = z.discriminatedUnion('kind', [
-  AssertionCounterexampleRequirement,
-  AggregateCounterexampleRequirement,
-]);
-export type AssertionCounterexampleRequirement = z.infer<typeof AssertionCounterexampleRequirement>;
-export type V2CounterexampleRequirement = z.infer<typeof V2CounterexampleRequirement>;
-
-/** A plan claim names the checks expected to cover and falsify it after implementation. */
-const legacyPlanBase = z
-  .object({
-    ...preEvidenceClaimDeclaration,
-    expectedCheckId: z.string().min(1),
-    counterexampleRequirement: LegacyAssertionCounterexampleRequirement.optional(),
-    structuralSurface: z.string().min(1).optional(),
-    mutationProfile: z.string().min(1).optional(),
-  })
-  .strict();
-
-/** Writable plan claim declaration. */
-export const WritablePlanClaimDeclaration = legacyPlanBase.readonly();
-export type WritablePlanClaimDeclaration = z.infer<typeof WritablePlanClaimDeclaration>;
 
 const LegacyPlanClaimDeclaration = z
   .object({
@@ -312,11 +279,19 @@ export function hasCurrentArchitectureApprovalCertificate(
 }
 
 /** Critical plan claims authorized by the certificate bound to the current plan. */
+export type AuthorizedCriticalPlanClaimIds =
+  | { readonly kind: 'authorized'; readonly claimIds: readonly string[] }
+  | { readonly kind: 'certificate_invalid' };
+
 export function authorizedCriticalPlanClaimIds(
   plan: PlanClaimAuthority | null | undefined,
-): readonly string[] {
-  if (!hasCurrentPlanApprovalCertificate(plan)) return [];
-  return (plan.claimDeclarations?.claims ?? [])
-    .filter((claim) => claim.critical)
-    .map((claim) => claim.claimId);
+): AuthorizedCriticalPlanClaimIds {
+  if (!plan?.approvalCertificate) return { kind: 'authorized', claimIds: [] };
+  if (!hasCurrentPlanApprovalCertificate(plan)) return { kind: 'certificate_invalid' };
+  return {
+    kind: 'authorized',
+    claimIds: (plan.claimDeclarations?.claims ?? [])
+      .filter((claim) => claim.critical)
+      .map((claim) => claim.claimId),
+  };
 }

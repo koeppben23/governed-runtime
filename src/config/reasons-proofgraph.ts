@@ -41,6 +41,16 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
   },
 
   {
+    code: 'PROOFGRAPH_CERTIFICATE_INVALID',
+    category: 'precondition',
+    messageTemplate:
+      'Evidence approval is blocked because the plan approval certificate is missing, stale, or does not bind the current plan.',
+    recoverySteps: [
+      'Return to plan review and obtain approval for the current immutable plan version',
+      'Do not approve evidence until the certificate binds the current plan record and declarations',
+    ],
+  },
+  {
     code: 'PROOFGRAPH_CRITICAL_FACTS_UNPROVEN',
     category: 'precondition',
     messageTemplate:
@@ -184,6 +194,34 @@ export const PROOFGRAPH_REASONS: readonly BlockedReason[] = [
     ],
   },
 
+  {
+    code: 'PROOFGRAPH_AGGREGATE_CHECK_MISMATCH',
+    category: 'precondition',
+    messageTemplate: "Aggregate evidence was recorded by a different check than '{checkId}'.",
+    recoverySteps: ['Run the aggregate counterexample check named by the claim'],
+  },
+  {
+    code: 'PROOFGRAPH_AGGREGATE_SCOPE_UNATTESTED',
+    category: 'precondition',
+    messageTemplate:
+      "Aggregate evidence for check '{checkId}' is not explicitly attested as a complete suite run.",
+    recoverySteps: [
+      'Run the complete declared suite without test filters and record its full-check attestation',
+    ],
+  },
+  {
+    code: 'PROOFGRAPH_AGGREGATE_EXTRACTION_MISSING',
+    category: 'precondition',
+    messageTemplate: "Aggregate evidence for check '{checkId}' has no extractable result report.",
+    recoverySteps: ['Re-run the check with its registered aggregate report configuration'],
+  },
+  {
+    code: 'PROOFGRAPH_AGGREGATE_CAPABILITY_MISSING',
+    category: 'precondition',
+    messageTemplate:
+      "Evidence for check '{checkId}' is not registered for aggregate suite binding.",
+    recoverySteps: ['Use a verification profile with registered aggregate report capability'],
+  },
   {
     code: 'PROOFGRAPH_EVIDENCE_STALE',
     category: 'precondition',

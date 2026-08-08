@@ -162,6 +162,16 @@ describe('proofgraph legacy guard', () => {
     expect(violations).toEqual([]);
   });
 
+  it('plan declarations are only written as v2', () => {
+    const content = readFileSync(join(SRC, 'integration/tools/plan.ts'), 'utf-8');
+    expect(content.match(/version:\s*'v2' as const/g)).toHaveLength(2);
+  });
+
+  it('production code does not construct legacy plan declaration literals', () => {
+    const content = readFileSync(join(SRC, 'integration/tools/plan.ts'), 'utf-8');
+    expect(content).not.toMatch(/claimDeclarations:\s*\{\s*flow:\s*'plan',\s*claims:/);
+  });
+
   it('execution-subject resolution must not derive behavior from candidate.source or candidate.command', () => {
     const files = [
       'verification/execution-subject.ts',

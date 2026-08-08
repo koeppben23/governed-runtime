@@ -2,8 +2,7 @@
  * @module presentation/review-decision
  * @description Shared projection for human decision gate conclusions.
  *
- * Extracted from plan-review-card.ts so that every review card (plan,
- * evidence, architecture) uses the same deterministic mapping from
+ * Used by decision-gated review cards so they share the same deterministic mapping from
  * product-next-action data to a typed PresentationConclusion.
  *
  * @version v1

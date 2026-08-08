@@ -3,8 +3,9 @@
  * @description Leaf semantic types for ProofGraph presentation.
  */
 
-export type ClaimVerificationState =
-  'PROVEN' | 'UNPROVEN' | 'CONTRADICTED' | 'STALE' | 'BLOCKED' | 'NOT_VERIFIED';
+import type { ClaimVerificationState as CanonicalClaimVerificationState } from '../state/proofgraph-primitives.js';
+
+export type ClaimVerificationState = CanonicalClaimVerificationState;
 
 /** Graph-level state; NOT_DECLARED is never a state of an individual claim. */
 export type ProofGraphPresentationStatus =

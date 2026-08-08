@@ -32,14 +32,14 @@ function classifyAggregateOutcome(
   requirement: Extract<CounterexampleRequirement, { kind: 'aggregate_check' }>,
 ): ClassifiedOutcome {
   const extraction = result.assertionExtraction;
-  if (
-    result.checkId !== requirement.checkId ||
-    result.fullCheckScopeAttestation !== 'full_check' ||
-    extraction?.status !== 'extracted' ||
-    extraction.bindingCapability !== 'aggregate'
-  ) {
-    return { outcome: 'not_verified', diagnosticCode: 'evidence_missing' };
-  }
+  if (result.checkId !== requirement.checkId)
+    return { outcome: 'not_verified', diagnosticCode: 'aggregate_check_mismatch' };
+  if (result.fullCheckScopeAttestation !== 'full_check')
+    return { outcome: 'not_verified', diagnosticCode: 'aggregate_scope_unattested' };
+  if (extraction?.status !== 'extracted')
+    return { outcome: 'not_verified', diagnosticCode: 'aggregate_extraction_missing' };
+  if (extraction.bindingCapability !== 'aggregate')
+    return { outcome: 'not_verified', diagnosticCode: 'aggregate_capability_missing' };
   return result.passed ? { outcome: 'supported' } : { outcome: 'contradicted' };
 }
 

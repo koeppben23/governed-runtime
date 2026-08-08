@@ -53,6 +53,7 @@ export type EnforcementDecisionKind =
   | 'clear'
   | 'evaluation_unavailable'
   | 'risk_assessment_stale'
+  | 'certificate_invalid'
   | 'critical_fact_required'
   | 'facts_unproven';
 
@@ -138,6 +139,8 @@ function primaryReason(reasons: EnforcementReasonCode[]): EnforcementReasonCode 
 export interface ComputeEnforcementInput {
   readonly projection?: ProofGraphSummary['projection'];
   readonly authorizedCriticalClaimIds?: readonly string[];
+  /** A current certificate is required before any final-evidence approval. */
+  readonly certificateValid?: boolean;
   readonly implementationDigest?: string;
   readonly riskAssessmentStale?: boolean;
   readonly riskTriggersPresent?: boolean;
@@ -149,6 +152,16 @@ function evaluatePreconditions(
   input: ComputeEnforcementInput,
   eligibleClaims: readonly ProofClaim[],
 ): ProofGraphEnforcement | null {
+  if (input.certificateValid === false) {
+    return {
+      claims: [],
+      blockingClaims: [],
+      satisfied: false,
+      decisionKind: 'certificate_invalid',
+      reasonCode: 'evaluation_unavailable',
+      reason: 'The plan approval certificate is missing, stale, or does not bind the current plan.',
+    };
+  }
   const eligibleIds = new Set(eligibleClaims.map((c) => c.claimId));
   const missingIds = (input.authorizedCriticalClaimIds ?? []).filter((id) => !eligibleIds.has(id));
   if (missingIds.length > 0) {

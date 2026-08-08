@@ -8,7 +8,6 @@ import {
   PlanClaimDeclaration,
   ProofGraphApprovalCertificate,
   PlanApprovalCertificate,
-  WritablePlanClaimDeclaration,
   mintProofGraphClaimId,
   PlanClaimDeclarationInput,
   ArchitectureClaimDeclarationInput,
@@ -413,8 +412,8 @@ describe('read-model schema boundaries', () => {
     ).toThrow();
   });
 
-  it('WritablePlanClaimDeclaration accepts counterexampleRequirement', () => {
-    const result = WritablePlanClaimDeclaration.parse({
+  it('PlanClaimDeclaration preserves legacy counterexampleRequirement for audit reads', () => {
+    const result = PlanClaimDeclaration.parse({
       ...BASE,
       counterexampleRequirement: {
         checkId: 'security',

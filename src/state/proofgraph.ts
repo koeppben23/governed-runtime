@@ -79,26 +79,35 @@ export type RequiredEvidence = z.infer<typeof RequiredEvidence>;
  * assertion. Only a matching failed assertion can contradict the claim.
  * Check-level outcomes alone never produce a counterexample contradiction.
  */
-const LegacyAssertionCounterexampleRequirement = z
+export const LegacyAssertionCounterexampleRequirement = z
   .object({ checkId: z.string().min(1), assertion: AssertionIdentity })
   .strict()
   .readonly();
+export type LegacyAssertionCounterexampleRequirement = z.infer<
+  typeof LegacyAssertionCounterexampleRequirement
+>;
 
 /** V2 counterexample requirements distinguish assertion and suite coverage. */
+export const AssertionCounterexampleRequirement = z
+  .object({
+    kind: z.literal('assertion'),
+    checkId: z.string().min(1),
+    assertion: AssertionIdentity,
+  })
+  .strict()
+  .readonly();
+export const AggregateCounterexampleRequirement = z
+  .object({ kind: z.literal('aggregate_check'), checkId: z.string().min(1) })
+  .strict()
+  .readonly();
+export const V2CounterexampleRequirement = z.discriminatedUnion('kind', [
+  AssertionCounterexampleRequirement,
+  AggregateCounterexampleRequirement,
+]);
+export type V2CounterexampleRequirement = z.infer<typeof V2CounterexampleRequirement>;
 export const CounterexampleRequirement = z.union([
   LegacyAssertionCounterexampleRequirement,
-  z
-    .object({
-      kind: z.literal('assertion'),
-      checkId: z.string().min(1),
-      assertion: AssertionIdentity,
-    })
-    .strict()
-    .readonly(),
-  z
-    .object({ kind: z.literal('aggregate_check'), checkId: z.string().min(1) })
-    .strict()
-    .readonly(),
+  V2CounterexampleRequirement,
 ]);
 export type CounterexampleRequirement = z.infer<typeof CounterexampleRequirement>;
 
@@ -116,6 +125,8 @@ const proofClaimBase = {
   signalClass: SignalClass,
   /** Whether the claim is critical (subject to stricter evidence gating). */
   critical: z.boolean(),
+  /** v2 declaration scope; suite claims require complete-suite positive evidence. */
+  claimScope: z.enum(['specific_behavior', 'suite']).optional(),
   /** Approved GOVERNING source (ticket/plan-ADR/canonical authority). `null` ⇒ unproven assumption. */
   provenance: ClaimAuthorityRef.nullable(),
   /** Digest-bound positive EVIDENCE references (never governing provenance). */
@@ -160,6 +171,10 @@ export const AssertionBindingReasonCodeSchema = z.enum([
   'check_only_evidence',
   'provider_mismatch',
   'assertion_mismatch',
+  'aggregate_check_mismatch',
+  'aggregate_scope_unattested',
+  'aggregate_extraction_missing',
+  'aggregate_capability_missing',
 ]);
 export type AssertionBindingReasonCode = z.infer<typeof AssertionBindingReasonCodeSchema>;
 

@@ -81,6 +81,11 @@ describe('evaluateProofGraphGate', () => {
     });
   });
 
+  it('blocks a present but invalid plan certificate before evaluating claims', () => {
+    const decision = evaluateProofGraphGate({ certificateValid: false });
+    expect(decision).toMatchObject({ gated: true, kind: 'certificate_invalid' });
+  });
+
   it('does not gate when all critical fact claims are PROVEN', () => {
     const decision = evaluateProofGraphGate(summary([claim(UUID(1), { state: 'PROVEN' })]));
     expect(decision).toMatchObject({ gated: false, blockingClaimIds: [] });

@@ -17,8 +17,6 @@ import type { Phase } from '../state/schema.js';
 import type {
   ReviewCardDocument,
   PresentationSection,
-  PresentationConclusion,
-  PresentationAction,
   KeyValueItem,
   FindingGroup,
   FindingItem,
@@ -27,6 +25,7 @@ import { renderMarkdown } from './markdown.js';
 import type { PresentationRenderOptions } from './glyph-profile.js';
 import type { CompactProofPresentation } from './proof-summary.js';
 import { buildProofGraphSection } from './proof-summary.js';
+import { buildReviewDecisionConclusion } from './review-decision.js';
 
 // ─── Card Input ──────────────────────────────────────────────────────────────
 
@@ -206,7 +205,9 @@ export function buildArchitectureReviewDocument(
         ? 'decision'
         : 'terminal',
     sections,
-    conclusion: buildConclusion(productNextAction, isApproved),
+    conclusion: isApproved
+      ? { kind: 'terminal', message: productNextAction.text }
+      : buildReviewDecisionConclusion(productNextAction, ADR_ACTION_DESCRIPTIONS),
   };
 
   return document;
@@ -292,30 +293,4 @@ function appendFindingsSections(sections: PresentationSection[], inputs: Finding
       items: unknowns,
     });
   }
-}
-
-// ─── Conclusion Projection ─────────────────────────────────────────────────────
-
-function buildConclusion(
-  productNextAction: { text: string; commands: readonly string[] },
-  isApproved: boolean,
-): PresentationConclusion {
-  if (!isApproved) {
-    const commands = new Set(productNextAction.commands);
-    const actions: PresentationAction[] = [];
-    for (const command of ['/approve', '/request-changes', '/reject']) {
-      if (commands.has(command)) {
-        actions.push({
-          invocation: command,
-          description: ADR_ACTION_DESCRIPTIONS[command] ?? command,
-          visibility: 'available',
-        });
-      }
-    }
-    if (actions.length > 0) {
-      return { kind: 'decision_required', question: productNextAction.text, actions };
-    }
-  }
-
-  return { kind: 'terminal', message: productNextAction.text };
 }

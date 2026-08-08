@@ -139,9 +139,9 @@ describe('P10c — reason code split', () => {
       ...PROOFGRAPH_REASONS.map((r: { code: string }) => r.code),
     ];
 
-    expect(allSplitCodes).toHaveLength(216);
+    expect(allSplitCodes).toHaveLength(221);
     // No duplicates across the 4 arrays
-    expect(new Set(allSplitCodes).size).toBe(216);
+    expect(new Set(allSplitCodes).size).toBe(221);
     // All split codes are registered in the default registry
     for (const code of allSplitCodes) {
       expect(defaultReasonRegistry.get(code)).toBeDefined();

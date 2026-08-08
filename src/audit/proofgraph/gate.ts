@@ -45,7 +45,11 @@ function isValidBindingCode(value: string): value is AssertionBindingReasonCode 
     value === 'evidence_missing' ||
     value === 'check_only_evidence' ||
     value === 'provider_mismatch' ||
-    value === 'assertion_mismatch'
+    value === 'assertion_mismatch' ||
+    value === 'aggregate_check_mismatch' ||
+    value === 'aggregate_scope_unattested' ||
+    value === 'aggregate_extraction_missing' ||
+    value === 'aggregate_capability_missing'
   );
 }
 
@@ -90,6 +94,7 @@ function relevantTriggers(
 export function evaluateProofGraphGate(input: {
   readonly projection?: ProofGraphSummary['projection'];
   readonly authorizedCriticalClaimIds?: readonly string[];
+  readonly certificateValid?: boolean;
   readonly implementationDigest?: string;
   readonly riskAssessment?: ImplementationRiskAssessmentForGate;
   /** Per-claim binding diagnostics for enforcement surface. */
@@ -105,6 +110,7 @@ export function evaluateProofGraphGate(input: {
   const enforcement = computeProofGraphEnforcement({
     projection: input.projection,
     authorizedCriticalClaimIds: input.authorizedCriticalClaimIds,
+    certificateValid: input.certificateValid,
     implementationDigest: input.implementationDigest,
     riskAssessmentStale: riskStale,
     riskTriggersPresent: triggers.length > 0,

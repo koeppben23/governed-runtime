@@ -207,6 +207,43 @@ describe('bindCounterexamples', () => {
     expect(bindCounterexamples(state, NOW).counterexamples[0]!.outcome).toBe('supported');
   });
 
+  it('records a distinct diagnostic for each aggregate binding precondition', () => {
+    const cases = [
+      {
+        result: { ...aggregateValidationResult('full_check'), checkId: 'other' },
+        diagnostic: 'aggregate_check_mismatch',
+      },
+      { result: aggregateValidationResult(), diagnostic: 'aggregate_scope_unattested' },
+      {
+        result: { ...aggregateValidationResult('full_check'), assertionExtraction: undefined },
+        diagnostic: 'aggregate_extraction_missing',
+      },
+      {
+        result: {
+          ...aggregateValidationResult('full_check'),
+          assertionExtraction: {
+            ...aggregateValidationResult('full_check').assertionExtraction!,
+            bindingCapability: 'assertion' as const,
+          },
+        },
+        diagnostic: 'aggregate_capability_missing',
+      },
+    ] as const;
+
+    for (const { result, diagnostic } of cases) {
+      const binding = bindCounterexamples(
+        stateWith(
+          [{ attemptId: ATT, scope: 'implementation', implementationDigest: IMPL_DIGEST, result }],
+          'IMPL_REVIEW',
+          { counterexampleRequirement: AGGREGATE_COUNTEREXAMPLE_REQ },
+        ),
+        NOW,
+      );
+      expect(binding.counterexamples[0]!.outcome).toBe('not_verified');
+      expect(binding.diagnostics.get(CLAIM)).toBe(diagnostic);
+    }
+  });
+
   it('returns not_verified when counterexampleRequirement is absent (defensive corruption handling)', () => {
     const state = stateWith(
       [

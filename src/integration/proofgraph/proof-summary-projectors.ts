@@ -366,6 +366,11 @@ function primReason(gate: ProofGraphGateDecision): { primaryReason?: string } {
         primaryReason:
           'At least one mandatory critical claim is undeclared. Declare the claim in your plan first.',
       };
+    case 'certificate_invalid':
+      return {
+        primaryReason:
+          'The plan approval certificate is missing, stale, or does not bind the current plan.',
+      };
     case 'clear':
       return {};
     default:
@@ -378,12 +383,17 @@ function primReason(gate: ProofGraphGateDecision): { primaryReason?: string } {
 function resolveGate(state: SessionState, opts?: { gate?: ProofGraphGateDecision }) {
   return (
     opts?.gate ??
-    evaluateProofGraphGate({
-      projection: state.proofGraph,
-      authorizedCriticalClaimIds: authorizedCriticalPlanClaimIds(state.plan),
-      implementationDigest: state.implementation?.digest,
-      riskAssessment: state.implementationRiskAssessment,
-    })
+    (() => {
+      const authorization = authorizedCriticalPlanClaimIds(state.plan);
+      return evaluateProofGraphGate({
+        projection: state.proofGraph,
+        authorizedCriticalClaimIds:
+          authorization.kind === 'authorized' ? authorization.claimIds : [],
+        certificateValid: authorization.kind === 'authorized',
+        implementationDigest: state.implementation?.digest,
+        riskAssessment: state.implementationRiskAssessment,
+      });
+    })()
   );
 }
 
