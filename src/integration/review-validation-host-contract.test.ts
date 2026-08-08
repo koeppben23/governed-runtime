@@ -164,6 +164,7 @@ function pluginHandshakeAssurance(
         blockedCode: null,
         fulfilledAt: NOW,
         consumedAt: null,
+        reviewedFileScope: ['src/foo.ts'],
       },
     ],
     invocations: [
@@ -380,6 +381,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          changedFiles: ['src/foo.ts'],
         });
         const findingsP = strictFindings({ iteration: 0, planVersion: 1 });
         const fhP = hashFindings(findingsP);
@@ -430,6 +432,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          changedFiles: ['src/foo.ts'],
         });
         const findingsI = strictFindings({ iteration: 0, planVersion: 1 });
         const fhI = hashFindings(findingsI);
@@ -498,6 +501,7 @@ describe('assurance lifecycle persistence across hosts', () => {
           planVersion: 1,
           now: NOW,
           subjectDigest: 'test',
+          changedFiles: ['src/foo.ts'],
         });
         const findingsA = strictFindings({ iteration: 0, planVersion: 1 });
         const fhA = hashFindings(findingsA);
