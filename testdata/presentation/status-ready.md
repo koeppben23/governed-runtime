@@ -10,6 +10,17 @@
 **Missing:** 0
 **Not yet required:** 9
 
+## ProofGraph
+
+Status: NOT_DECLARED
+No proof obligations declared.
+Critical coverage: 0/0 proven
+Evidence freshness: Not verified
+Approval evidence: Not recorded
+Verification effect: None — approval is not verification
+
+→ Full evidence lineage: `flowguard_status({ proofGraph: true })`
+
 ## Available actions
 
 - `/hydrate` — Prepare or restore a governed session.

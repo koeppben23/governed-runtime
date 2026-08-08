@@ -8,6 +8,13 @@
 ⚠ **Blocked:** — Awaiting plan review decision (approve / changes_requested / reject)
 **Recovery:** Review the plan and decide: /review-decision
 
+## ProofGraph
+
+Status: NOT_DECLARED
+No proof obligations declared.
+Approval evidence: Not recorded
+Verification effect: None — approval is not verification
+
 ## Decision required
 
 Awaiting plan review decision (approve / changes_requested / reject)
