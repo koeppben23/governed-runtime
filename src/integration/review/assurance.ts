@@ -23,21 +23,19 @@ import { REVIEWER_SUBAGENT_TYPE } from '../../shared/flowguard-identifiers.js';
 import { assessMinimumTaskClass, maxTaskClass } from '../phase-tool-gate.js';
 import { challengeKindForObligation } from '../../config/policy-types.js';
 import type { TaskClass } from '../../state/schema.js';
+import type { ReviewedScope } from './enforcement/findings-consistency.js';
 
 // Static import - mandate content is a constant in ESM
 import { REVIEWER_AGENT } from '../../templates/mandates.js';
-
 export const REVIEW_CRITERIA_VERSION = 'p40-v1';
-
 // Mandate digest - computed from actual REVIEWER_AGENT template at module load
-// No fallback: if the import fails, the module fails fast (desired for governance)
 export const REVIEW_MANDATE_DIGEST = hashText(REVIEWER_AGENT);
-const frs = (t: ReviewObligationType, f: readonly string[] | undefined) =>
+const defaultScope = (t: ReviewObligationType, f: readonly string[] | undefined) =>
   f !== undefined
     ? { kind: 'files' as const, paths: [...f] }
     : t === 'architecture'
       ? { kind: 'not_applicable' as const, reason: 'architecture_obligation' }
-      : { kind: 'files' as const, paths: [] as readonly string[] };
+      : { kind: 'unavailable' as const, reason: 'scope_not_resolved' };
 export function getReviewMandateDigest(): string {
   return REVIEW_MANDATE_DIGEST;
 }
@@ -51,7 +49,6 @@ export function ensureReviewAssurance(
 ): ReviewAssuranceState {
   return assurance ?? emptyReviewAssurance();
 }
-
 export function createReviewObligation(input: {
   obligationType: ReviewObligationType;
   iteration: number;
@@ -76,8 +73,10 @@ export function createReviewObligation(input: {
   profileSource?: ReviewProfileSource;
   /** Frozen session policy; without its challenge policy, enforcement is disabled. */
   policySnapshot?: Pick<PolicySnapshot, 'challengePolicy'> | null;
-  /** Runtime paths are classified by the canonical phase-tool gate. */
+  /** Runtime paths classified by the canonical phase-tool gate. */
   changedFiles?: readonly string[];
+  /** Explicit file-scope state. Absent → derived from changedFiles + obligationType. */
+  reviewedScope?: ReviewedScope;
   /**
    * The author's declared task class. Used as a fail-closed FLOOR on the
    * challenge count so a high-risk change cannot collapse the requirement to 0
@@ -132,7 +131,8 @@ export function createReviewObligation(input: {
     subjectDigest: input.subjectDigest,
     metadata: input.metadata,
     ...(input.fingerprintVersion ? { fingerprintVersion: input.fingerprintVersion } : {}),
-    reviewedFileScope: frs(input.obligationType, input.changedFiles),
+    reviewedFileScope:
+      input.reviewedScope ?? defaultScope(input.obligationType, input.changedFiles),
   };
 }
 

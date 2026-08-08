@@ -480,11 +480,11 @@ export const REVIEW_VALIDATION_REASONS = [
     code: 'REVIEW_FINDING_SCOPE_UNVERIFIABLE',
     category: 'state',
     messageTemplate:
-      'Legacy review obligation {obligationId} has no frozen reviewedFileScope; scope verification is unavailable.',
+      'Review obligation {obligationId} has no frozen reviewedFileScope; scope verification is unavailable.',
     recoverySteps: [
-      'This obligation was created before file-scope freezing was introduced',
-      'Re-run the review to create a new obligation with a frozen scope',
-      'If the findings are from a trusted source, the review may still be accepted manually',
+      'File scope must be resolved at obligation creation time for file-backed reviews',
+      'Re-run the review to create a new obligation with a verifiable frozen scope',
+      'If the review context is deliberately non-file-backed, set the scope to not_applicable',
     ],
   },
 ] as const satisfies readonly BlockedReason[];

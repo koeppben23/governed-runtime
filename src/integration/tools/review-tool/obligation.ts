@@ -369,7 +369,9 @@ async function createNewReviewObligation(
     };
   }
   const resolvedTargetPaths =
-    classification.kind === 'available' ? [...classification.changedFiles] : undefined;
+    classification.kind === 'available'
+      ? [...classification.changedFiles]
+      : ([] as readonly string[]);
   const metadata: Record<string, unknown> = {
     fingerprint: input.fingerprint,
     inputFingerprint: input.inputFingerprint,

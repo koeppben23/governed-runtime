@@ -250,7 +250,9 @@ export async function persistNonConvergedPlanReview(
     targetPaths,
   );
   const resolvedTargetPaths =
-    classification.kind === 'available' ? [...classification.changedFiles] : undefined;
+    classification.kind === 'available'
+      ? [...classification.changedFiles]
+      : ([] as readonly string[]);
   const metadata: Record<string, unknown> = {};
   if (resolvedTargetPaths && resolvedTargetPaths.length > 0) {
     metadata.targetPaths = resolvedTargetPaths;

@@ -564,7 +564,7 @@ async function handlePlanSubmission(scope: PlanExecutionScope): Promise<string> 
     planEvidence,
     planVersion,
     reviewFindings,
-    classification.kind === 'available' ? classification.changedFiles : undefined,
+    classification.kind === 'available' ? classification.changedFiles : [],
   );
   const evalFn = (s: SessionState) => evaluate(s, scope.policy);
   const advanced = autoAdvance(nextState, evalFn, scope.ctx);
