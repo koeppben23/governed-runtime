@@ -144,6 +144,16 @@ describe('review-decision rail', () => {
         expect(result.reason).toContain('00000000-0000-4000-8000-000000000763');
     });
 
+    it('blocks EVIDENCE_REVIEW approval when critical declarations lack a certificate', () => {
+      const certified = withCertifiedCriticalPlan(makeProgressedState('EVIDENCE_REVIEW'));
+      const result = executeReviewDecision(
+        { ...certified, plan: { ...certified.plan!, approvalCertificate: undefined } },
+        { verdict: 'approve', rationale: 'Ship it', decidedBy: 'reviewer-1' },
+        ctx,
+      );
+      expect(result).toMatchObject({ kind: 'blocked', code: 'PROOFGRAPH_CERTIFICATE_INVALID' });
+    });
+
     it('allows a missing ProofGraph projection when no critical plan claim is authorized', () => {
       const state = makeProgressedState('EVIDENCE_REVIEW');
       const result = executeReviewDecision(

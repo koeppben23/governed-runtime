@@ -281,12 +281,20 @@ export function hasCurrentArchitectureApprovalCertificate(
 /** Critical plan claims authorized by the certificate bound to the current plan. */
 export type AuthorizedCriticalPlanClaimIds =
   | { readonly kind: 'authorized'; readonly claimIds: readonly string[] }
+  | { readonly kind: 'certificate_missing' }
   | { readonly kind: 'certificate_invalid' };
 
 export function authorizedCriticalPlanClaimIds(
   plan: PlanClaimAuthority | null | undefined,
 ): AuthorizedCriticalPlanClaimIds {
-  if (!plan?.approvalCertificate) return { kind: 'authorized', claimIds: [] };
+  if (!plan?.approvalCertificate) {
+    const hasCriticalDeclarations = (plan?.claimDeclarations?.claims ?? []).some(
+      (claim) => claim.critical,
+    );
+    return hasCriticalDeclarations
+      ? { kind: 'certificate_missing' }
+      : { kind: 'authorized', claimIds: [] };
+  }
   if (!hasCurrentPlanApprovalCertificate(plan)) return { kind: 'certificate_invalid' };
   return {
     kind: 'authorized',
